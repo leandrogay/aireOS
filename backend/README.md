@@ -34,6 +34,7 @@ uvicorn app.main:app --reload
 Runs at [http://localhost:8000](http://localhost:8000)
 
 ## Backend Structure
+```bash
 backend/
     ├── app/
     │   ├── routers/
@@ -41,3 +42,4 @@ backend/
     │   └── main.py
     ├── venv/
     └── README.md
+```

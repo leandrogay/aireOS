@@ -14,6 +14,7 @@ npm run dev
 Runs at [http://localhost:3000](http://localhost:3000)
 
 ## Frontend Structure
+```bash
 frontend/
     ├── app/
     │   ├── dashboard/  
@@ -23,3 +24,4 @@ frontend/
     ├── public/
     ├── package.json
     └── README.md
+```
