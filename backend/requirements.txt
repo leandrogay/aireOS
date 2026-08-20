@@ -1,0 +1,7 @@
+dotenv
+fastapi
+uvicorn
+pandas
+openpyxl
+python-multipart
+google-cloud-storage
