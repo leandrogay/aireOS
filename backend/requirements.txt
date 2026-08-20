@@ -5,3 +5,6 @@ pandas
 openpyxl
 python-multipart
 google-cloud-storage
+python-dotenv
+google-cloud-bigquery
+db-dtypes

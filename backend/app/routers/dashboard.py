@@ -1,0 +1,64 @@
+from datetime import datetime
+from fastapi import APIRouter, HTTPException
+from google.api_core.exceptions import GoogleAPICallError
+from google.auth.exceptions import DefaultCredentialsError
+from app.services import storage
+
+router = APIRouter()
+
+_CREDENTIALS_DETAIL = (
+    "BigQuery credentials are not configured. Set "
+    "GOOGLE_APPLICATION_CREDENTIALS in backend/.env to a service "
+    "account key with BigQuery Data Viewer + Job User access."
+)
+
+@router.get("/api/sales/months")
+def get_ranking_months():
+    try:
+        months = storage.get_available_ranking_months()
+    except DefaultCredentialsError:
+        raise HTTPException(status_code=503, detail=_CREDENTIALS_DETAIL)
+    except GoogleAPICallError as e:
+        raise HTTPException(status_code=503, detail=f"Unable to reach BigQuery: {e.message}")
+
+    return {
+        "months": [
+            {"value": m, "label": datetime.strptime(m, "%Y-%m").strftime("%B %Y")}
+            for m in months
+        ]
+    }
+
+@router.get("/api/sales/weeks")
+def get_ranking_weeks(month: str | None = None):
+    try:
+        weeks = storage.get_available_ranking_weeks(month=month)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except DefaultCredentialsError:
+        raise HTTPException(status_code=503, detail=_CREDENTIALS_DETAIL)
+    except GoogleAPICallError as e:
+        raise HTTPException(status_code=503, detail=f"Unable to reach BigQuery: {e.message}")
+
+    return {"weeks": weeks}
+
+
+@router.get("/api/sales/skus")
+def get_sku_ranking(
+    metric: str = "value", order: str = "desc", month: str | None = None, week: str | None = None
+):
+    try:
+        ranked = storage.get_sku_ranking(metric=metric, order=order, month=month, week=week)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except DefaultCredentialsError:
+        raise HTTPException(status_code=503, detail=_CREDENTIALS_DETAIL)
+    except GoogleAPICallError as e:
+        raise HTTPException(status_code=503, detail=f"Unable to reach BigQuery: {e.message}")
+
+    return {
+        "metric": metric,
+        "order": order,
+        "month": month,
+        "week": week,
+        "skus": ranked.to_dict(orient="records") if not ranked.empty else [],
+    }

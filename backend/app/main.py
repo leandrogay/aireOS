@@ -1,6 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import ingest
+from app.routers import ingest, dashboard
+from dotenv import load_dotenv
+from pathlib import Path
+
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 app = FastAPI()
 
@@ -15,6 +19,7 @@ app.add_middleware(
 )
 
 app.include_router(ingest.router)
+app.include_router(dashboard.router)
 
 @app.get("/")
 def read_root():

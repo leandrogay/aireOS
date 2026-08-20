@@ -1,5 +1,7 @@
 'use client';
 
+import SkuRanking from "../components/SkuRanking";
+
 export default function DashboardPage() {
 
   return (
@@ -17,7 +19,9 @@ export default function DashboardPage() {
             <p className="text-2xl font-semibold text-gray-900">${"10,000"}</p>
           </div>
         </div>
+        <SkuRanking />
       </div>
+
     </main>
   );
 }
