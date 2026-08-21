@@ -18,7 +18,7 @@ source venv/bin/activate
 Install dependencies:
 
 ```bash
-pip install fastapi uvicorn pandas openpyxl python-multipart
+pip install -r requirements.txt
 ```
 
 ### Serving the Backend
