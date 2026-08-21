@@ -2,9 +2,9 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from google.api_core.exceptions import GoogleAPICallError
 from google.auth.exceptions import DefaultCredentialsError
-from app.services import storage
+from app.services import bigquery
 
-router = APIRouter()
+router = APIRouter(prefix="/api/sales", tags=["sales"])
 
 _CREDENTIALS_DETAIL = (
     "BigQuery credentials are not configured. Set "
@@ -12,10 +12,10 @@ _CREDENTIALS_DETAIL = (
     "account key with BigQuery Data Viewer + Job User access."
 )
 
-@router.get("/api/sales/months")
+@router.get("/months")
 def get_ranking_months():
     try:
-        months = storage.get_available_ranking_months()
+        months = bigquery.get_available_ranking_months()
     except DefaultCredentialsError:
         raise HTTPException(status_code=503, detail=_CREDENTIALS_DETAIL)
     except GoogleAPICallError as e:
@@ -28,10 +28,10 @@ def get_ranking_months():
         ]
     }
 
-@router.get("/api/sales/weeks")
+@router.get("/weeks")
 def get_ranking_weeks(month: str | None = None):
     try:
-        weeks = storage.get_available_ranking_weeks(month=month)
+        weeks = bigquery.get_available_ranking_weeks(month=month)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except DefaultCredentialsError:
@@ -42,12 +42,12 @@ def get_ranking_weeks(month: str | None = None):
     return {"weeks": weeks}
 
 
-@router.get("/api/sales/skus")
+@router.get("/skus")
 def get_sku_ranking(
     metric: str = "value", order: str = "desc", month: str | None = None, week: str | None = None
 ):
     try:
-        ranked = storage.get_sku_ranking(metric=metric, order=order, month=month, week=week)
+        ranked = bigquery.get_sku_ranking(metric=metric, order=order, month=month, week=week)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except DefaultCredentialsError:

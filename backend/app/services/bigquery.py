@@ -17,8 +17,7 @@ def get_bigquery_client(project="aire-data") -> bigquery.Client:
     return bigquery.Client(project=project)
 
 def get_available_ranking_months() -> list[str]:
-    #Distinct calendar months (YYYY-MM, most recent first) with weekly sellout data, derived from each week's start date. 
-    # Powers the month picker on the SKU ranking view.
+    # Distinct calendar months (YYYY-MM, most recent first) with weekly sellout data, derived from each week's start date. Powers the month picker on the SKU ranking view.
     query = f"""
         SELECT DISTINCT FORMAT_DATE('%Y-%m', period_start) AS month
         FROM `{BQFairprice_TABLE}`
@@ -31,7 +30,7 @@ def get_available_ranking_months() -> list[str]:
 
 
 def get_available_ranking_weeks(month: str) -> list[dict]:
-    #Distinct weeks within the given calendar month, labelled "Week 1","Week 2", etc. relative to that month. #Powers the week picker that lets staff drill from a month into a single week. The table's own period_label numbers weeks continuously across the whole year (e.g. "Week 32" in early August), so it's not used here, the week number is computed from each week's ordinal position within the selected month instead.
+    # Distinct weeks within the given calendar month, labelled "Week 1","Week 2", etc. relative to that month. Powers the week picker that lets staff drill from a month into a single week. The table's own period_label numbers weeks continuously across the whole year (e.g. "Week 32" in early August), so it's not used here, the week number is computed from each week's ordinal position within the selected month instead.
     if not month or not MONTH_PATTERN.match(month):
         raise ValueError("month must be in YYYY-MM format")
 
@@ -63,11 +62,7 @@ def get_available_ranking_weeks(month: str) -> list[dict]:
 def get_sku_ranking(
     metric: str = "value", order: str = "desc", month: str | None = None, week: str | None = None
 ) -> pd.DataFrame:
-    #Ranks SKUs from the client's BigQuery sellout table by total units sold (volume) or total revenue (value), for a single calendar month or, optionally, a single week within it.
-
-    #A month is required and rows are always restricted to period_type = 'week': the source table can hold multiple granularities of the same underlying data, so summing across them (or across months) would double-count. Weeks are bucketed into the calendar month their start date falls in. Passing `week` (a period_start date) narrows further to that single week instead of summing the whole month.
-
-    #`revenue` in the source table is only populated for FairPrice rows, so SKUs sold solely through other retailers report value=0 rather than being dropped or raising on a null.
+    # Ranks SKUs from the client's BigQuery sellout table by total units sold (volume) or total revenue (value), for a single calendar month or, optionally, a single week within it. A month is required and rows are always restricted to period_type = 'week'. Weeks are bucketed into the calendar month their start date falls in.
     
     if metric not in SKU_RANKING_METRICS:
         raise ValueError(f"metric must be one of {SKU_RANKING_METRICS}")
