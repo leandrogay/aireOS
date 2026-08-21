@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import ingest
+from app.routers import uploads
 
 app = FastAPI()
 
@@ -14,7 +14,7 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
-app.include_router(ingest.router)
+app.include_router(uploads.router)
 
 @app.get("/")
 def read_root():
