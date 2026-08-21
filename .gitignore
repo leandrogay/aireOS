@@ -7,6 +7,7 @@ venv/
 .venv/
 env/
 backend/venv/
+*.json
 
 # Byte-compiled / cache
 __pycache__/

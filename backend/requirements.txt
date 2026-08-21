@@ -1,6 +1,9 @@
+dotenv
 fastapi
 uvicorn
 pandas
 openpyxl
 python-multipart
 google-cloud-storage
+google-cloud-bigquery
+db-dtypes
