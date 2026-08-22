@@ -297,25 +297,25 @@ function PreviewModal({ previewState, onClose }) {
 
 	return (
 		<div
-			className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+			className="fixed inset-0 z-50 flex items-center justify-center bg-deep-violet-blue/50 p-4"
 			role="dialog"
 			aria-modal="true"
 			aria-labelledby="file-preview-title"
 		>
-			<div className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-amber-200 bg-amber-50 shadow-md dark:border-slate-700 dark:bg-slate-900">
-				<div className="flex items-center justify-between border-b border-amber-200 bg-amber-100 px-6 py-4 dark:border-slate-700 dark:bg-slate-800">
+			<div className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-lavander bg-cream shadow-md">
+				<div className="flex items-center justify-between border-b border-lavander bg-lavander px-6 py-4">
 					<div>
-						<h3 id="file-preview-title" className="text-lg font-semibold text-slate-900 dark:text-amber-50">
+						<h3 id="file-preview-title" className="font-serif text-lg text-deep-violet-blue">
 							File Preview
 						</h3>
-						<p className="text-sm text-slate-600 dark:text-slate-300">
+						<p className="text-sm text-deep-violet-blue/80">
 							{file.name}
 						</p>
 					</div>
 					<button
 						type="button"
 						onClick={onClose}
-						className="rounded-lg border border-amber-300 bg-amber-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-amber-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 dark:border-amber-400 dark:bg-amber-500 dark:text-slate-900"
+						className="rounded-lg border border-deep-violet-blue bg-deep-violet-blue px-4 py-2 text-sm font-medium text-white transition hover:bg-violet focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet"
 						aria-label="Close file preview"
 					>
 						Close
@@ -323,24 +323,24 @@ function PreviewModal({ previewState, onClose }) {
 				</div>
 
 				<div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-6">
-					<div className="grid gap-4 rounded-lg border border-amber-200 bg-white p-4 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-800 md:grid-cols-2">
-						<p className="text-slate-700 dark:text-slate-200">
-							<span className="font-semibold text-slate-900 dark:text-amber-50">Size:</span> {formatFileSize(file.size)}
+					<div className="grid gap-4 rounded-lg border border-lavander bg-white p-4 text-sm shadow-sm md:grid-cols-2">
+						<p className="text-deep-violet-blue">
+							<span className="font-semibold text-deep-violet-blue">Size:</span> {formatFileSize(file.size)}
 						</p>
-						<p className="text-slate-700 dark:text-slate-200">
-							<span className="font-semibold text-slate-900 dark:text-amber-50">Type:</span> .{extension || "unknown"}
+						<p className="text-deep-violet-blue">
+							<span className="font-semibold text-deep-violet-blue">Type:</span> .{extension || "unknown"}
 						</p>
-						<p className="text-slate-700 dark:text-slate-200">
-							<span className="font-semibold text-slate-900 dark:text-amber-50">Status:</span>{" "}
+						<p className="text-deep-violet-blue">
+							<span className="font-semibold text-deep-violet-blue">Status:</span>{" "}
 							{status === "accepted" ? "✓ Accepted" : "✗ Rejected"}
 						</p>
-						<p className="text-slate-700 dark:text-slate-200">
-							<span className="font-semibold text-slate-900 dark:text-amber-50">Warnings:</span> {warnings.length}
+						<p className="text-deep-violet-blue">
+							<span className="font-semibold text-deep-violet-blue">Warnings:</span> {warnings.length}
 						</p>
 					</div>
 
 					{!!errors.length && (
-						<div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300">
+						<div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
 							{errors.map((message) => (
 								<p key={message}>{message}</p>
 							))}
@@ -348,7 +348,7 @@ function PreviewModal({ previewState, onClose }) {
 					)}
 
 					{!!warnings.length && (
-						<div className="rounded-lg border border-amber-200 bg-amber-100 p-4 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+						<div className="rounded-lg border border-violet bg-lavander p-4 text-sm text-deep-violet-blue">
 							{warnings.map((message) => (
 								<p key={message}>{message}</p>
 							))}
@@ -356,31 +356,31 @@ function PreviewModal({ previewState, onClose }) {
 					)}
 
 					{loading && (
-						<div className="rounded-lg border border-amber-200 bg-white p-5 text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+						<div className="rounded-lg border border-lavander bg-white p-5 text-deep-violet-blue shadow-sm">
 							Loading preview...
 						</div>
 					)}
 
 					{loadError && (
-						<div className="rounded-lg border border-red-200 bg-red-50 p-5 text-sm text-red-700 shadow-sm dark:border-red-800 dark:bg-red-950/40 dark:text-red-300">
+						<div className="rounded-lg border border-red-200 bg-red-50 p-5 text-sm text-red-700 shadow-sm">
 							{loadError}
 						</div>
 					)}
 
 					{!loading && !loadError && data?.kind === "text" && (
-						<div className="rounded-lg border border-amber-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-							<p className="mb-3 text-sm font-semibold text-slate-900 dark:text-amber-50">First 20 lines</p>
-							<div className="overflow-x-auto rounded-md border border-amber-100 dark:border-slate-700">
+						<div className="rounded-lg border border-lavander bg-white p-4 shadow-sm">
+							<p className="mb-3 text-sm font-semibold text-deep-violet-blue">First 20 lines</p>
+							<div className="overflow-x-auto rounded-md border border-lavander">
 								<table className="min-w-full text-left text-sm">
-									<thead className="bg-amber-100 text-slate-900 dark:bg-slate-700 dark:text-amber-50">
+									<thead className="bg-lavander text-deep-violet-blue">
 										<tr>
 											<th className="px-3 py-2">Line</th>
 											<th className="px-3 py-2">Content</th>
 										</tr>
 									</thead>
-									<tbody className="text-slate-700 dark:text-slate-200">
+									<tbody className="text-deep-violet-blue">
 										{data.lines.map((line, index) => (
-											<tr key={`${line}-${index}`} className="border-t border-amber-100 dark:border-slate-700">
+											<tr key={`${line}-${index}`} className="border-t border-lavander">
 												<td className="px-3 py-2 align-top font-medium">{index + 1}</td>
 												<td className="px-3 py-2 whitespace-pre-wrap break-words">{line || "(empty line)"}</td>
 											</tr>
@@ -392,14 +392,14 @@ function PreviewModal({ previewState, onClose }) {
 					)}
 
 					{!loading && !loadError && data?.kind === "csv" && (
-						<div className="rounded-lg border border-amber-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-							<p className="mb-3 text-sm font-semibold text-slate-900 dark:text-amber-50">First 20 rows</p>
-							<div className="overflow-x-auto rounded-md border border-amber-100 dark:border-slate-700">
+						<div className="rounded-lg border border-lavander bg-white p-4 shadow-sm">
+							<p className="mb-3 text-sm font-semibold text-deep-violet-blue">First 20 rows</p>
+							<div className="overflow-x-auto rounded-md border border-lavander">
 								<table className="min-w-full text-left text-sm">
-									<tbody className="text-slate-700 dark:text-slate-200">
+									<tbody className="text-deep-violet-blue">
 										{data.rows.map((row, rowIndex) => (
-											<tr key={`row-${rowIndex}`} className="border-t border-amber-100 dark:border-slate-700">
-												<td className="bg-amber-50 px-3 py-2 align-top font-medium text-slate-900 dark:bg-slate-700 dark:text-amber-50">
+											<tr key={`row-${rowIndex}`} className="border-t border-lavander">
+												<td className="bg-cream px-3 py-2 align-top font-medium text-deep-violet-blue">
 													{rowIndex + 1}
 												</td>
 												{row.map((cell, cellIndex) => (
@@ -416,24 +416,24 @@ function PreviewModal({ previewState, onClose }) {
 					)}
 
 					{!loading && !loadError && data?.kind === "xlsx" && (
-						<div className="space-y-4 rounded-lg border border-amber-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+						<div className="space-y-4 rounded-lg border border-lavander bg-white p-4 shadow-sm">
 							<div>
-								<p className="text-sm font-semibold text-slate-900 dark:text-amber-50">Sheet names</p>
-								<p className="mt-2 text-sm text-slate-700 dark:text-slate-200">
+								<p className="text-sm font-semibold text-deep-violet-blue">Sheet names</p>
+								<p className="mt-2 text-sm text-deep-violet-blue">
 									{data.sheetNames.length ? data.sheetNames.join(", ") : "No sheet names found"}
 								</p>
 							</div>
 
 							<div>
-								<p className="mb-3 text-sm font-semibold text-slate-900 dark:text-amber-50">
+								<p className="mb-3 text-sm font-semibold text-deep-violet-blue">
 									First sheet preview (10 rows x 5 columns)
 								</p>
-								<div className="overflow-x-auto rounded-md border border-amber-100 dark:border-slate-700">
+								<div className="overflow-x-auto rounded-md border border-lavander">
 									<table className="min-w-full text-left text-sm">
-										<tbody className="text-slate-700 dark:text-slate-200">
+										<tbody className="text-deep-violet-blue">
 											{data.rows.map((row, rowIndex) => (
-												<tr key={`xlsx-row-${rowIndex}`} className="border-t border-amber-100 dark:border-slate-700">
-													<td className="bg-amber-50 px-3 py-2 align-top font-medium text-slate-900 dark:bg-slate-700 dark:text-amber-50">
+												<tr key={`xlsx-row-${rowIndex}`} className="border-t border-lavander">
+													<td className="bg-cream px-3 py-2 align-top font-medium text-deep-violet-blue">
 														{rowIndex + 1}
 													</td>
 													{row.map((cell, cellIndex) => (
@@ -445,7 +445,7 @@ function PreviewModal({ previewState, onClose }) {
 											))}
 											{!data.rows.length && (
 												<tr>
-													<td className="px-3 py-3 text-slate-600 dark:text-slate-300" colSpan={6}>
+													<td className="px-3 py-3 text-deep-violet-blue/80" colSpan={6}>
 														No tabular rows found in the first sheet.
 													</td>
 												</tr>
@@ -456,7 +456,7 @@ function PreviewModal({ previewState, onClose }) {
 							</div>
 
 							{data.note && (
-								<p className="text-sm text-slate-600 dark:text-slate-300">{data.note}</p>
+								<p className="text-sm text-deep-violet-blue/80">{data.note}</p>
 							)}
 						</div>
 					)}
@@ -719,10 +719,10 @@ export default function FileUpload({ onUpload, disabled = false }) {
 	);
 
 	return (
-		<section className="rounded-xl border border-amber-200 bg-amber-50 p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900 md:p-8">
+		<section className="rounded-xl border border-lavander bg-white p-6 shadow-sm md:p-8">
 			<div className="mb-6">
-				<h2 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-amber-50">Sales Data Upload</h2>
-				<p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+				<h2 className="font-serif text-2xl tracking-tight text-deep-violet-blue">Sales Data Upload</h2>
+				<p className="mt-2 text-sm text-deep-violet-blue/80">
 					Upload 1 to 10 files per action. Supported formats: .xlsx, .csv, .txt.
 				</p>
 			</div>
@@ -743,14 +743,14 @@ export default function FileUpload({ onUpload, disabled = false }) {
 				aria-label="Drag and drop sales files here or browse files"
 				className={`group rounded-xl border-2 border-dashed p-8 text-center transition ${
 					isDragging
-						? "border-amber-500 bg-amber-100 shadow-md dark:border-amber-400 dark:bg-slate-800"
-						: "border-amber-300 bg-stone-50 hover:border-amber-400 hover:bg-amber-100 dark:border-slate-600 dark:bg-slate-800"
+						? "border-deep-violet-blue bg-lavander shadow-md"
+						: "border-violet bg-cream hover:border-deep-violet-blue hover:bg-lavander"
 				} ${isProcessing ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
 			>
-				<p className="text-lg font-medium text-slate-900 dark:text-amber-50">
+				<p className="text-lg font-medium text-deep-violet-blue">
 					Drag and drop files here
 				</p>
-				<p className="mt-2 text-sm text-slate-600 dark:text-slate-300">or click to browse your device</p>
+				<p className="mt-2 text-sm text-deep-violet-blue/80">or click to browse your device</p>
 
 				<button
 					type="button"
@@ -759,7 +759,7 @@ export default function FileUpload({ onUpload, disabled = false }) {
 						handleBrowseClick();
 					}}
 					disabled={isProcessing}
-					className="mt-5 rounded-lg border border-amber-300 bg-amber-500 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-amber-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-400 dark:bg-amber-500 dark:text-slate-900"
+					className="mt-5 rounded-lg border border-deep-violet-blue bg-deep-violet-blue px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-violet focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet disabled:cursor-not-allowed disabled:opacity-60"
 					aria-label="Browse files"
 				>
 					Browse Files
@@ -778,9 +778,9 @@ export default function FileUpload({ onUpload, disabled = false }) {
 			</div>
 
 			{!!errors.length && (
-				<div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-950/40">
-					<h3 className="mb-2 text-sm font-semibold text-red-700 dark:text-red-300">Issues to Fix</h3>
-					<ul className="space-y-1 text-sm text-red-700 dark:text-red-300">
+				<div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4">
+					<h3 className="mb-2 text-sm font-semibold text-red-700">Issues to Fix</h3>
+					<ul className="space-y-1 text-sm text-red-700">
 						{errors.map((error, index) => (
 							<li key={`${error.itemId || error.fileName}-${index}`}>{error.message}</li>
 						))}
@@ -789,9 +789,9 @@ export default function FileUpload({ onUpload, disabled = false }) {
 			)}
 
 			{!!warnings.length && (
-				<div className="mt-4 rounded-lg border border-amber-200 bg-amber-100 p-4 dark:border-amber-700 dark:bg-amber-950/40">
-					<h3 className="mb-2 text-sm font-semibold text-amber-800 dark:text-amber-200">Warnings</h3>
-					<ul className="space-y-1 text-sm text-amber-800 dark:text-amber-200">
+				<div className="mt-4 rounded-lg border border-violet bg-lavander p-4">
+					<h3 className="mb-2 text-sm font-semibold text-deep-violet-blue">Warnings</h3>
+					<ul className="space-y-1 text-sm text-deep-violet-blue">
 						{warnings.map((warning) => (
 							<li key={warning.id}>{warning.message}</li>
 						))}
@@ -799,14 +799,14 @@ export default function FileUpload({ onUpload, disabled = false }) {
 				</div>
 			)}
 
-			<div className="mt-6 rounded-xl border border-amber-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+			<div className="mt-6 rounded-xl border border-lavander bg-cream p-4 shadow-sm">
 				<div className="mb-3 flex items-center justify-between">
-					<h3 className="text-sm font-semibold text-slate-900 dark:text-amber-50">Selected Files</h3>
-					<span className="text-xs text-slate-600 dark:text-slate-300">{fileItems.length} total</span>
+					<h3 className="text-sm font-semibold text-deep-violet-blue">Selected Files</h3>
+					<span className="text-xs text-deep-violet-blue/80">{fileItems.length} total</span>
 				</div>
 
 				{!fileItems.length && (
-					<p className="text-sm text-slate-600 dark:text-slate-300">No files selected yet.</p>
+					<p className="text-sm text-deep-violet-blue/80">No files selected yet.</p>
 				)}
 
 				{!!fileItems.length && (
@@ -814,21 +814,21 @@ export default function FileUpload({ onUpload, disabled = false }) {
 						{fileItems.map((item) => (
 							<li
 								key={item.id}
-								className="rounded-lg border border-amber-100 bg-amber-50 p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900"
+								className="rounded-lg border border-lavander bg-white p-3 shadow-sm"
 							>
 								<div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
 									<button
 										type="button"
 										onClick={() => openPreview(item)}
-										className="flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+										className="flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet"
 										aria-label={`Preview ${item.file.name}`}
 									>
 										<span className="text-lg" aria-hidden="true">
 											{getFileTypeIcon(item.file)}
 										</span>
 										<div className="min-w-0">
-											<p className="truncate text-sm font-medium text-slate-900 dark:text-amber-50">{item.file.name}</p>
-											<p className="text-xs text-slate-600 dark:text-slate-300">
+											<p className="truncate text-sm font-medium text-deep-violet-blue">{item.file.name}</p>
+											<p className="text-xs text-deep-violet-blue/80">
 												{formatFileSize(item.file.size)} • .{getFileExtension(item.file.name)}
 											</p>
 										</div>
@@ -838,8 +838,8 @@ export default function FileUpload({ onUpload, disabled = false }) {
 										<span
 											className={`rounded-md px-2 py-1 text-xs font-medium ${
 												item.status === "accepted"
-													? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
-													: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+													? "bg-green-100 text-green-700"
+													: "bg-red-100 text-red-700"
 											}`}
 											aria-label={item.status === "accepted" ? "Accepted file" : "Rejected file"}
 										>
@@ -849,7 +849,7 @@ export default function FileUpload({ onUpload, disabled = false }) {
 										<button
 											type="button"
 											onClick={() => removeFile(item.id)}
-											className="rounded-md border border-amber-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+											className="rounded-md border border-violet px-3 py-1.5 text-xs font-medium text-deep-violet-blue transition hover:bg-lavander focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet"
 											aria-label={`Remove ${item.file.name}`}
 										>
 											Remove
@@ -867,7 +867,7 @@ export default function FileUpload({ onUpload, disabled = false }) {
 					type="button"
 					onClick={handleUpload}
 					disabled={isProcessing || selectedFiles.length === 0}
-					className="rounded-lg border border-amber-300 bg-amber-500 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-amber-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-400 dark:bg-amber-500 dark:text-slate-900"
+					className="rounded-lg border border-deep-violet-blue bg-deep-violet-blue px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-violet focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet disabled:cursor-not-allowed disabled:opacity-60"
 					aria-label="Upload validated files"
 				>
 					{isProcessing ? "Uploading..." : `Upload ${selectedFiles.length} Valid File${selectedFiles.length === 1 ? "" : "s"}`}
