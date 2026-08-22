@@ -7,3 +7,5 @@ python-multipart
 google-cloud-storage
 google-auth
 google-api-core
+google-cloud-bigquery
+db-dtypes
