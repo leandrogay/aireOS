@@ -1,7 +1,9 @@
-python-dotenv
+dotenv
 fastapi
 uvicorn
 pandas
 openpyxl
 python-multipart
 google-cloud-storage
+google-auth
+google-api-core
