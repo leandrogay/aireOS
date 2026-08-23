@@ -6,13 +6,31 @@ import FileUpload from '../components/upload/FileUpload';
 export default function UploadPage() {
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [uploadResult, setUploadResult] = useState(null);
+  const [duplicates, setDuplicates] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
 
 const backendApiUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL;
 
+  const postFiles = async (files, force) => {
+    const formData = new FormData();
+    files.forEach((file) => {
+      formData.append('files', file);
+    });
+    formData.append('force', force ? 'true' : 'false');
+
+    const response = await fetch(`${backendApiUrl}/api/uploads`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    const data = await response.json().catch(() => null);
+    return { response, data };
+  };
+
   const handleUpload = async (files) => {
     setUploadedFiles(files);
     setUploadResult(null);
+    setDuplicates([]);
 
     if (!files?.length) {
       setUploadResult({
@@ -28,17 +46,7 @@ const backendApiUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL;
     setIsUploading(true);
 
     try {
-      const formData = new FormData();
-      files.forEach((file) => {
-        formData.append('files', file);
-      });
-
-      const response = await fetch(`${backendApiUrl}/api/uploads`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await response.json().catch(() => null);
+      const { response, data } = await postFiles(files, false);
 
       if (!response.ok) {
         setUploadResult({
@@ -51,11 +59,22 @@ const backendApiUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL;
         return;
       }
 
+      const results = Array.isArray(data?.results) ? data.results : [];
+      const duplicateResults = results
+        .filter((item) => item.reason === 'duplicate')
+        .map((item) => ({
+          ...item,
+          file: files.find((f) => f.name === item.filename),
+        }))
+        .filter((item) => item.file);
+      setDuplicates(duplicateResults);
+
       setUploadResult({
         success: Boolean(data?.success),
         uploaded: data?.uploaded ?? 0,
+        duplicates: data?.duplicates ?? 0,
         failed: data?.failed ?? 0,
-        results: Array.isArray(data?.results) ? data.results : [],
+        results: results.filter((item) => item.reason !== 'duplicate'),
         message: null,
       });
     } catch (error) {
@@ -66,6 +85,64 @@ const backendApiUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL;
         results: [],
         message:
           'Unable to connect to backend upload service. Check BACKEND_API_URL, server status, and CORS settings.',
+      });
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleReplace = async (duplicate) => {
+    setIsUploading(true);
+
+    try {
+      const { response, data } = await postFiles([duplicate.file], true);
+      const results = Array.isArray(data?.results) ? data.results : [];
+      const replaced = results[0];
+
+      setDuplicates((prev) => prev.filter((item) => item.filename !== duplicate.filename));
+
+      setUploadResult((prev) => {
+        const base = prev || { success: true, uploaded: 0, duplicates: 0, failed: 0, results: [], message: null };
+        const stillOk = response.ok && replaced?.success;
+        const nextUploaded = base.uploaded + (stillOk ? 1 : 0);
+        const nextDuplicates = Math.max(0, (base.duplicates || 0) - 1);
+        const nextFailed = base.failed + (stillOk ? 0 : 1);
+        return {
+          ...base,
+          uploaded: nextUploaded,
+          duplicates: nextDuplicates,
+          failed: nextFailed,
+          success: nextFailed === 0 && nextDuplicates === 0,
+          results: [
+            ...base.results,
+            stillOk
+              ? replaced
+              : {
+                  success: false,
+                  filename: duplicate.filename,
+                  error: data?.detail || replaced?.error || 'Replace failed. Please try again.',
+                },
+          ],
+        };
+      });
+    } catch (error) {
+      setDuplicates((prev) => prev.filter((item) => item.filename !== duplicate.filename));
+      setUploadResult((prev) => {
+        const base = prev || { success: true, uploaded: 0, duplicates: 0, failed: 0, results: [], message: null };
+        const nextFailed = base.failed + 1;
+        return {
+          ...base,
+          failed: nextFailed,
+          success: false,
+          results: [
+            ...base.results,
+            {
+              success: false,
+              filename: duplicate.filename,
+              error: 'Unable to connect to backend upload service.',
+            },
+          ],
+        };
       });
     } finally {
       setIsUploading(false);
@@ -99,6 +176,41 @@ const backendApiUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL;
           </div>
         )}
 
+        {duplicates.length > 0 && (
+          <div className="mt-6 p-6 bg-yellow-50 border border-yellow-300 rounded-lg">
+            <h2 className="font-serif text-lg text-yellow-900 mb-2">
+              Possible duplicate{duplicates.length > 1 ? 's' : ''} detected
+            </h2>
+            <p className="text-sm text-yellow-800 mb-4">
+              These filenames were already uploaded before. Uploading again would double-count
+              sales unless you replace the existing file.
+            </p>
+            <ul className="space-y-3">
+              {duplicates.map((dup) => (
+                <li
+                  key={dup.filename}
+                  className="flex flex-col gap-2 rounded-md bg-white border border-yellow-200 p-3 text-sm text-yellow-900 md:flex-row md:items-center md:justify-between"
+                >
+                  <span>
+                    <span className="font-medium">{dup.filename}</span>
+                    {dup.existing_uploaded_at && (
+                      <> was previously uploaded {new Date(dup.existing_uploaded_at).toLocaleString()}</>
+                    )}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleReplace(dup)}
+                    disabled={isUploading}
+                    className="rounded-md border border-yellow-600 bg-yellow-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-yellow-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Replace existing file
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {uploadResult && (
           <div
             className={`mt-6 p-6 rounded-lg border ${
@@ -116,7 +228,9 @@ const backendApiUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL;
             </h2>
 
             <p className="text-sm text-deep-violet-blue mb-4">
-              Uploaded: {uploadResult.uploaded} | Failed: {uploadResult.failed}
+              Uploaded: {uploadResult.uploaded}
+              {uploadResult.duplicates ? ` | Duplicates pending: ${uploadResult.duplicates}` : ''}
+              {' | '}Failed: {uploadResult.failed}
             </p>
 
             {uploadResult.message && (
