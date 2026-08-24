@@ -61,12 +61,8 @@ const backendApiUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL;
 
       const results = Array.isArray(data?.results) ? data.results : [];
       const duplicateResults = results
-        .filter((item) => item.reason === 'duplicate')
-        .map((item) => ({
-          ...item,
-          file: files.find((f) => f.name === item.filename),
-        }))
-        .filter((item) => item.file);
+        .map((item, index) => ({ ...item, id: index, file: files[index] }))
+        .filter((item) => item.reason === 'duplicate' && item.file);
       setDuplicates(duplicateResults);
 
       setUploadResult({
@@ -99,7 +95,7 @@ const backendApiUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL;
       const results = Array.isArray(data?.results) ? data.results : [];
       const replaced = results[0];
 
-      setDuplicates((prev) => prev.filter((item) => item.filename !== duplicate.filename));
+      setDuplicates((prev) => prev.filter((item) => item.id !== duplicate.id));
 
       setUploadResult((prev) => {
         const base = prev || { success: true, uploaded: 0, duplicates: 0, failed: 0, results: [], message: null };
@@ -126,7 +122,7 @@ const backendApiUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL;
         };
       });
     } catch (error) {
-      setDuplicates((prev) => prev.filter((item) => item.filename !== duplicate.filename));
+      setDuplicates((prev) => prev.filter((item) => item.id !== duplicate.id));
       setUploadResult((prev) => {
         const base = prev || { success: true, uploaded: 0, duplicates: 0, failed: 0, results: [], message: null };
         const nextFailed = base.failed + 1;
@@ -188,7 +184,7 @@ const backendApiUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL;
             <ul className="space-y-3">
               {duplicates.map((dup) => (
                 <li
-                  key={dup.filename}
+                  key={dup.id}
                   className="flex flex-col gap-2 rounded-md bg-white border border-yellow-200 p-3 text-sm text-yellow-900 md:flex-row md:items-center md:justify-between"
                 >
                   <span>
