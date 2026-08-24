@@ -116,18 +116,18 @@ def upload_file_bytes(filename: str, data: bytes, force: bool = False) -> dict:
     try:
         bucket = client.bucket(BUCKET_NAME)
 
-        if existing and force:
-            try:
-                existing.delete()
-            except gcloud_exceptions.NotFound:
-                pass
-
         blob = bucket.blob(destination)
         blob.metadata = {ORIGINAL_FILENAME_METADATA_KEY: safe_name}
         blob.upload_from_string(
             data,
             content_type=CONTENT_TYPES.get(ext, "application/octet-stream"),
         )
+
+        if existing and force:
+            try:
+                existing.delete()
+            except gcloud_exceptions.NotFound:
+                pass
     except gcloud_exceptions.Forbidden as e:
         raise GCSPermissionError(
             f"Upload denied — the service account lacks write permission on the bucket. Details: {e}"
