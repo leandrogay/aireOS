@@ -21,4 +21,11 @@ async def upload_files(files: List[UploadFile] = File(...)):
     payload: list[tuple[str, bytes]] = [
         (f.filename or "unnamed", await f.read()) for f in files
     ]
-    return storage.upload_many(payload)
+    
+    res = storage.upload_many(payload)
+    
+    if (res):
+        # res.update({"signature": "mapped"})
+        pass # trigger the signature workflow
+        
+    return res  
