@@ -543,18 +543,6 @@ export default function FileUpload({ onUpload, disabled = false }) {
 			const filesArray = Array.from(incomingFiles || []);
 			if (!filesArray.length) return;
 
-			if (filesArray.length > MAX_FILES_PER_ACTION) {
-				setErrors((prev) => [
-					...prev,
-					{
-						fileName: "Upload action",
-						message: `❌ Upload action - Too many files selected. Please upload between 1 and ${MAX_FILES_PER_ACTION} files per upload action.`,
-						itemId: `bulk-${Date.now()}`,
-					},
-				]);
-				return;
-			}
-
 			const acceptedNames = new Set(
 				fileItems.filter((item) => item.status === "accepted").map((item) => item.file.name)
 			);
@@ -590,10 +578,6 @@ export default function FileUpload({ onUpload, disabled = false }) {
 				if (status === "accepted") {
 					accepted.push(file);
 					acceptedNames.add(file.name);
-				} else {
-					itemErrors.forEach((message) => {
-						nextErrors.push({ fileName: file.name, message, itemId: item.id });
-					});
 				}
 			}
 
