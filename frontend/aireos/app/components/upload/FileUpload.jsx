@@ -36,6 +36,10 @@ function getDetailedErrorMessage(file, reason = "format") {
 		return `❌ ${file.name} - File is empty. Please upload a file with data.`;
 	}
 
+	if (reason === "duplicate_name") {
+		return `❌ ${file.name} - A file with this name is already selected. Remove it first if you want to replace it.`;
+	}
+
 	return `❌ ${file.name} - File is empty or contains no data. Please check your file and try again.`;
 }
 
@@ -539,6 +543,22 @@ export default function FileUpload({ onUpload, disabled = false }) {
 			const filesArray = Array.from(incomingFiles || []);
 			if (!filesArray.length) return;
 
+			if (filesArray.length > MAX_FILES_PER_ACTION) {
+				setErrors((prev) => [
+					...prev,
+					{
+						fileName: "Upload action",
+						message: `❌ Upload action - Too many files selected. Please upload between 1 and ${MAX_FILES_PER_ACTION} files per upload action.`,
+						itemId: `bulk-${Date.now()}`,
+					},
+				]);
+				return;
+			}
+
+			const acceptedNames = new Set(
+				fileItems.filter((item) => item.status === "accepted").map((item) => item.file.name)
+			);
+
 			const accepted = [];
 			const nextItems = [];
 
@@ -546,16 +566,20 @@ export default function FileUpload({ onUpload, disabled = false }) {
 				const itemWarnings = [];
 				const itemErrors = [];
 
-				if (file.size > LARGE_FILE_SIZE_BYTES) {
-					itemWarnings.push(`⚠️ ${file.name} - File is over 10MB. Upload may be slow.`);
-				}
-
-				if (!isValidFileFormat(file)) {
-					itemErrors.push(getDetailedErrorMessage(file, "format"));
+				if (acceptedNames.has(file.name)) {
+					itemErrors.push(getDetailedErrorMessage(file, "duplicate_name"));
 				} else {
-					const contentValidation = await isValidFileContent(file);
-					if (!contentValidation.valid) {
-						itemErrors.push(getDetailedErrorMessage(file, contentValidation.reason || "empty"));
+					if (file.size > LARGE_FILE_SIZE_BYTES) {
+						itemWarnings.push(`⚠️ ${file.name} - File is over 10MB. Upload may be slow.`);
+					}
+
+					if (!isValidFileFormat(file)) {
+						itemErrors.push(getDetailedErrorMessage(file, "format"));
+					} else {
+						const contentValidation = await isValidFileContent(file);
+						if (!contentValidation.valid) {
+							itemErrors.push(getDetailedErrorMessage(file, contentValidation.reason || "empty"));
+						}
 					}
 				}
 
@@ -565,13 +589,18 @@ export default function FileUpload({ onUpload, disabled = false }) {
 
 				if (status === "accepted") {
 					accepted.push(file);
+					acceptedNames.add(file.name);
+				} else {
+					itemErrors.forEach((message) => {
+						nextErrors.push({ fileName: file.name, message, itemId: item.id });
+					});
 				}
 			}
 
 			setFileItems((prev) => [...prev, ...nextItems]);
 			setSelectedFiles((prev) => [...prev, ...accepted]);
 		},
-		[buildFileItem, isProcessing, isValidFileContent, isValidFileFormat]
+		[buildFileItem, fileItems, isProcessing, isValidFileContent, isValidFileFormat]
 	);
 
 	const handleInputChange = useCallback(
