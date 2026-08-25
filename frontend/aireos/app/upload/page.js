@@ -2,14 +2,63 @@
 
 import { useState } from 'react';
 import FileUpload from '../components/upload/FileUpload';
+import { MappingReview } from '../components/upload/MappingReview';
 
-export default function UploadPage() {
+const REQUIRED_TARGET_FIELDS = ['sku', 'quantity_units', 'revenue', 'period_start'];
+
+const BASE_SUGGESTIONS = [
+  { sourceColumn: 'SKU', targetField: 'sku', confidence: 0.97 },
+  { sourceColumn: 'Product Name', targetField: 'product_name', confidence: 0.95 },
+  { sourceColumn: 'Qty Sold', targetField: 'quantity_units', confidence: 0.89 },
+  { sourceColumn: 'Sales Value', targetField: 'revenue', confidence: 0.92 },
+  { sourceColumn: 'Week Start', targetField: 'period_start', confidence: 0.86 },
+  { sourceColumn: 'Store', targetField: '', confidence: 0.41 },
+];
+
+const withStatuses = (suggestions) =>
+  suggestions.map((item) => ({
+    ...item,
+    status: item.targetField ? 'mapped' : 'unmapped',
+  }));
+
+const computeMappingMeta = (suggestions) => {
+  const mappedTargets = suggestions.filter((row) => row.targetField).map((row) => row.targetField);
+  const unmapped = suggestions.filter((row) => !row.targetField).map((row) => row.sourceColumn);
+  const requiredMissing = REQUIRED_TARGET_FIELDS.filter((field) => !mappedTargets.includes(field));
+  return { unmapped, requiredMissing };
+};
+
+const createFixtureMapping = (file, index) => {
+  const rawSuggestions = BASE_SUGGESTIONS.map((item) => ({ ...item }));
+
+  if (index % 2 === 1) {
+    rawSuggestions[3] = { ...rawSuggestions[3], targetField: '', confidence: 0.43 };
+    rawSuggestions.push({ sourceColumn: 'Retailer Code', targetField: 'retailer', confidence: 0.72 });
+  }
+
+  const suggestions = withStatuses(rawSuggestions);
+  const { unmapped, requiredMissing } = computeMappingMeta(suggestions);
+
+  return {
+    mappingId: `fixture-${index + 1}`,
+    filename: file.name,
+    columns: suggestions.map((row) => row.sourceColumn),
+    suggestions,
+    unmapped,
+    requiredMissing,
+    validated: false,
+    validatedAt: null,
+  };
+};
+
+export const UploadPage = () => {
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [uploadResult, setUploadResult] = useState(null);
   const [duplicates, setDuplicates] = useState([]);
+  const [mappingReviews, setMappingReviews] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
 
-const backendApiUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL;
+  const backendApiUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL;
 
   const postFiles = async (files, force) => {
     const formData = new FormData();
@@ -31,6 +80,7 @@ const backendApiUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL;
     setUploadedFiles(files);
     setUploadResult(null);
     setDuplicates([]);
+    setMappingReviews(files.map((file, index) => createFixtureMapping(file, index)));
 
     if (!files?.length) {
       setUploadResult({
@@ -85,6 +135,46 @@ const backendApiUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL;
     } finally {
       setIsUploading(false);
     }
+  };
+
+  const handleMappingTargetChange = (mappingId, rowIndex, nextTargetField) => {
+    setMappingReviews((prev) =>
+      prev.map((mapping) => {
+        if (mapping.mappingId !== mappingId) return mapping;
+
+        const suggestions = mapping.suggestions.map((row, index) => {
+          if (index !== rowIndex) return row;
+          return {
+            ...row,
+            targetField: nextTargetField,
+            status: nextTargetField ? 'mapped' : 'unmapped',
+          };
+        });
+
+        const { unmapped, requiredMissing } = computeMappingMeta(suggestions);
+        return {
+          ...mapping,
+          suggestions,
+          unmapped,
+          requiredMissing,
+          validated: false,
+          validatedAt: null,
+        };
+      }),
+    );
+  };
+
+  const handleMappingValidate = (mappingId) => {
+    setMappingReviews((prev) =>
+      prev.map((mapping) => {
+        if (mapping.mappingId !== mappingId) return mapping;
+        return {
+          ...mapping,
+          validated: true,
+          validatedAt: new Date().toISOString(),
+        };
+      }),
+    );
   };
 
   const handleReplace = async (duplicate) => {
@@ -172,6 +262,16 @@ const backendApiUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL;
           </div>
         )}
 
+        {mappingReviews.map((mapping) => (
+          <MappingReview
+            key={mapping.mappingId}
+            mapping={mapping}
+            onTargetChange={handleMappingTargetChange}
+            onValidate={handleMappingValidate}
+            disabled={isUploading}
+          />
+        ))}
+
         {duplicates.length > 0 && (
           <div className="mt-6 p-6 bg-yellow-50 border border-yellow-300 rounded-lg">
             <h2 className="font-serif text-lg text-yellow-900 mb-2">
@@ -256,4 +356,6 @@ const backendApiUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL;
       </div>
     </div>
   );
-}
+};
+
+export default UploadPage;
