@@ -8,11 +8,12 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 app = FastAPI()
 
-origins = ["http://localhost:3000"] # Frontend location
+# origins = ["http://localhost:3000"] # Frontend location
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    # allow_origins=origins,
+    allow_origin_regex=".*",   # dev only
     allow_credentials=True, 
     allow_methods=["*"],
     allow_headers=["*"]
