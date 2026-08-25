@@ -16,10 +16,9 @@ PROJECT_ID = os.environ.get("GCP_PROJECT_ID","PASTE_YOUR_GCP_PROJECT_ID_HERE")
 BUCKET_NAME = os.environ.get("GCS_BUCKET_NAME","PASTE_YOUR_BUCKET_NAME_HERE")
 DESTINATION_PREFIX = os.environ.get("GCS_DESTINATION_PREFIX", "uploads/")
 
-ALLOWED_EXTENSIONS = {".xlsx", ".xlsm", ".csv", ".txt"}
+ALLOWED_EXTENSIONS = {".xlsx", ".csv", ".txt"}
 CONTENT_TYPES = {
     ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    ".xlsm": "application/vnd.ms-excel.sheet.macroEnabled.12",
     ".csv": "text/csv",
     ".txt": "text/plain",
 }
