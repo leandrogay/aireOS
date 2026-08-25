@@ -1,7 +1,5 @@
 from typing import List
-
-from fastapi import APIRouter, UploadFile, File, HTTPException
-
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from app.services import storage
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
@@ -10,7 +8,7 @@ MAX_FILES_PER_REQUEST = 10
 
 
 @router.post("")
-async def upload_files(files: List[UploadFile] = File(...)):
+async def upload_files(files: List[UploadFile] = File(...), force: bool = Form(False)):
     """
     Accept 1 to 10 files and upload them all.
 
@@ -30,5 +28,4 @@ async def upload_files(files: List[UploadFile] = File(...)):
     payload: list[tuple[str, bytes]] = [
         (f.filename or "unnamed", await f.read()) for f in files
     ]
-
-    return storage.upload_many(payload)
+    return storage.upload_many(payload, force=force)
