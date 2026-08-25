@@ -1,3 +1,8 @@
+// shadcn/ui Card (generated via `npx shadcn add card`) — a themed container built
+// from composable pieces: Card (outer shell), CardHeader, CardTitle,
+// CardDescription, CardAction (top-right slot, e.g. a button), CardContent,
+// CardFooter. Compose only the pieces a given card needs, e.g.
+// <Card><CardHeader><CardTitle>...</CardTitle></CardHeader><CardContent>...</CardContent></Card>
 import * as React from "react"
 
 import { cn } from "@/lib/utils"

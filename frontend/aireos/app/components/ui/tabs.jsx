@@ -1,5 +1,11 @@
 "use client"
 
+// shadcn/ui Tabs (generated via `npx shadcn add tabs`), wrapping @base-ui/react's
+// Tabs. Tabs = root wrapper (controlled via value/onValueChange), TabsList = the
+// pill/segmented control, TabsTrigger = one selectable option inside it,
+// TabsContent = the panel shown for the active tab. A consumer that only needs
+// the switch itself (e.g. ModeToggle) can skip TabsContent entirely and drive
+// its own rendering off `value`/`onValueChange` instead.
 import { Tabs as TabsPrimitive } from "@base-ui/react/tabs"
 import { cva } from "class-variance-authority";
 

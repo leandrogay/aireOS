@@ -1,4 +1,11 @@
 "use client";
+// shadcn/ui Chart (generated via `npx shadcn add chart`) — a themed wrapper around
+// Recharts. ChartContainer sizes the chart and (via ChartStyle) injects each data
+// series' colour as a CSS variable from its `config` prop, so chart colours follow
+// the theme tokens in app/globals.css and switch automatically in light/dark mode.
+// ChartTooltip/ChartTooltipContent and ChartLegend/ChartLegendContent are drop-in
+// replacements for Recharts' <Tooltip>/<Legend> that render using that same
+// `config` (label + colour per data key) instead of showing raw field names.
 import * as React from "react"
 import * as RechartsPrimitive from "recharts"
 
@@ -275,6 +282,9 @@ function ChartLegendContent({
   );
 }
 
+// Resolves which entry in `config` describes a given tooltip/legend payload item —
+// checks the item itself first, then its nested `payload` (Recharts nests the
+// original datum there), since either can carry the field named by `key`.
 function getPayloadConfigFromPayload(
   config,
   payload,
