@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 
 const ALLOWED_EXTENSIONS = ["xlsx", "csv", "txt"];
-const MAX_FILES_PER_ACTION = 10;
+const MAX_ACCEPTED_FILES = 10;
 const LARGE_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const ACCEPTED_LIMIT_ERROR_ID = "accepted-limit";
 
 function getFileExtension(fileName) {
 	const parts = fileName.toLowerCase().split(".");
@@ -472,7 +473,6 @@ function PreviewModal({ previewState, onClose }) {
 
 export default function FileUpload({ onUpload, disabled = false }) {
 	const [selectedFiles, setSelectedFiles] = useState([]);
-	const [errors, setErrors] = useState([]);
 	const [fileItems, setFileItems] = useState([]);
 	const [isDragging, setIsDragging] = useState(false);
 	const [previewFile, setPreviewFile] = useState(null);
@@ -543,25 +543,12 @@ export default function FileUpload({ onUpload, disabled = false }) {
 			const filesArray = Array.from(incomingFiles || []);
 			if (!filesArray.length) return;
 
-			if (filesArray.length > MAX_FILES_PER_ACTION) {
-				setErrors((prev) => [
-					...prev,
-					{
-						fileName: "Upload action",
-						message: `❌ Upload action - Too many files selected. Please upload between 1 and ${MAX_FILES_PER_ACTION} files per upload action.`,
-						itemId: `bulk-${Date.now()}`,
-					},
-				]);
-				return;
-			}
-
 			const acceptedNames = new Set(
 				fileItems.filter((item) => item.status === "accepted").map((item) => item.file.name)
 			);
 
 			const accepted = [];
 			const nextItems = [];
-			const nextErrors = [];
 
 			for (const file of filesArray) {
 				const itemWarnings = [];
@@ -591,18 +578,11 @@ export default function FileUpload({ onUpload, disabled = false }) {
 				if (status === "accepted") {
 					accepted.push(file);
 					acceptedNames.add(file.name);
-				} else {
-					itemErrors.forEach((message) => {
-						nextErrors.push({ fileName: file.name, message, itemId: item.id });
-					});
 				}
 			}
 
 			setFileItems((prev) => [...prev, ...nextItems]);
 			setSelectedFiles((prev) => [...prev, ...accepted]);
-			if (nextErrors.length) {
-				setErrors((prev) => [...prev, ...nextErrors]);
-			}
 		},
 		[buildFileItem, fileItems, isProcessing, isValidFileContent, isValidFileFormat]
 	);
@@ -666,8 +646,6 @@ export default function FileUpload({ onUpload, disabled = false }) {
 					});
 				}
 
-				setErrors((prevErrors) => prevErrors.filter((error) => error.itemId !== itemId));
-
 				if (previewFile?.id === itemId) {
 					setPreviewFile(null);
 					setPreviewData(null);
@@ -680,6 +658,15 @@ export default function FileUpload({ onUpload, disabled = false }) {
 		},
 		[previewFile]
 	);
+
+	const removeAllFiles = useCallback(() => {
+		setFileItems([]);
+		setSelectedFiles([]);
+		setPreviewFile(null);
+		setPreviewData(null);
+		setPreviewError("");
+		setPreviewLoading(false);
+	}, []);
 
 	const openPreview = useCallback(async (item) => {
 		setPreviewFile(item);
@@ -723,9 +710,32 @@ export default function FileUpload({ onUpload, disabled = false }) {
 	}, []);
 
 	const handleUpload = useCallback(() => {
-		if (isProcessing || !selectedFiles.length) return;
+		if (isProcessing || !selectedFiles.length || selectedFiles.length > MAX_ACCEPTED_FILES) return;
 		onUpload?.(selectedFiles);
 	}, [isProcessing, onUpload, selectedFiles]);
+
+	const acceptedCount = selectedFiles.length;
+
+	const errors = useMemo(() => {
+		const nextErrors = [];
+
+		if (acceptedCount > MAX_ACCEPTED_FILES) {
+			nextErrors.push({
+				fileName: "Accepted files",
+				message: `❌ Too many accepted files. Please keep between 1 and ${MAX_ACCEPTED_FILES} accepted files on this page before uploading.`,
+				itemId: ACCEPTED_LIMIT_ERROR_ID,
+			});
+		}
+
+		fileItems.forEach((item) => {
+			if (item.status !== "rejected") return;
+			item.errors.forEach((message) => {
+				nextErrors.push({ fileName: item.file.name, message, itemId: item.id });
+			});
+		});
+
+		return nextErrors;
+	}, [acceptedCount, fileItems]);
 
 	const warnings = fileItems.flatMap((item) =>
 		item.warnings.map((message) => ({ id: `${item.id}-${message}`, message }))
@@ -736,7 +746,7 @@ export default function FileUpload({ onUpload, disabled = false }) {
 			<div className="mb-6">
 				<h2 className="font-serif text-2xl tracking-tight text-deep-violet-blue">Sales Data Upload</h2>
 				<p className="mt-2 text-sm text-deep-violet-blue/80">
-					Upload 1 to 10 files per action. Supported formats: .xlsx, .csv, .txt.
+					Keep 1 to 10 accepted files on this page before uploading. You can browse more than once. Rejected files do not count toward the limit. Supported formats: .xlsx, .csv, .txt.
 				</p>
 			</div>
 
@@ -813,9 +823,20 @@ export default function FileUpload({ onUpload, disabled = false }) {
 			)}
 
 			<div className="mt-6 rounded-xl border border-lavander bg-cream p-4 shadow-sm">
-				<div className="mb-3 flex items-center justify-between">
+				<div className="mb-3 flex items-center justify-between gap-3">
 					<h3 className="text-sm font-semibold text-deep-violet-blue">Selected Files</h3>
-					<span className="text-xs text-deep-violet-blue/80">{fileItems.length} total</span>
+					<div className="flex items-center gap-3">
+						<span className="text-xs text-deep-violet-blue/80">{acceptedCount} accepted</span>
+						<button
+							type="button"
+							onClick={removeAllFiles}
+							disabled={!fileItems.length || isProcessing}
+							className="rounded-md border border-violet px-3 py-1.5 text-xs font-medium text-deep-violet-blue transition hover:bg-lavander focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet disabled:cursor-not-allowed disabled:opacity-60"
+							aria-label="Remove all selected files"
+						>
+							Remove all
+						</button>
+					</div>
 				</div>
 
 				{!fileItems.length && (
@@ -879,7 +900,7 @@ export default function FileUpload({ onUpload, disabled = false }) {
 				<button
 					type="button"
 					onClick={handleUpload}
-					disabled={isProcessing || selectedFiles.length === 0}
+					disabled={isProcessing || acceptedCount === 0 || acceptedCount > MAX_ACCEPTED_FILES}
 					className="rounded-lg border border-deep-violet-blue bg-deep-violet-blue px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-violet focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet disabled:cursor-not-allowed disabled:opacity-60"
 					aria-label="Upload validated files"
 				>
