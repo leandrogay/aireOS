@@ -20,7 +20,7 @@ function toggleButtonClass(isActive) {
   }`;
 }
 
-export default function SkuRanking() {
+export default function SkuRanking({ dataVersion = 0 }) {
   const [metric, setMetric] = useState('value');
   const [order, setOrder] = useState('desc');
   const [months, setMonths] = useState([]);
@@ -41,7 +41,8 @@ export default function SkuRanking() {
     setSelectedWeek('');
   }
 
-  // Load the months that actually have data, then default to the most recent one
+  // Load the months that actually have data, then default to the most recent one.
+  // Also re-runs when dataVersion bumps (new BigQuery ingest detected).
   useEffect(() => {
     let cancelled = false;
 
@@ -53,8 +54,13 @@ export default function SkuRanking() {
         if (cancelled) return;
         setMonths(data.months);
         if (data.months.length > 0) {
-          setSelectedMonth(data.months[0].value);
+          setSelectedMonth((current) => {
+            const values = data.months.map((month) => month.value);
+            if (current && values.includes(current)) return current;
+            return data.months[0].value;
+          });
         } else {
+          setSelectedMonth(null);
           setLoading(false);
         }
       } catch (err) {
@@ -69,9 +75,9 @@ export default function SkuRanking() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [dataVersion]);
 
-  // Load the weeks within the selected month, and reset back to "all weeks" whenever the month changes (a previously picked week may not exist in the new month).
+  // Load the weeks within the selected month.
   useEffect(() => {
     if (!selectedMonth) return undefined;
 
@@ -94,7 +100,7 @@ export default function SkuRanking() {
     return () => {
       cancelled = true;
     };
-  }, [selectedMonth]);
+  }, [selectedMonth, dataVersion]);
 
   useEffect(() => {
     if (!selectedMonth) return undefined;
@@ -123,7 +129,7 @@ export default function SkuRanking() {
     return () => {
       cancelled = true;
     };
-  }, [metric, order, selectedMonth, selectedWeek]);
+  }, [metric, order, selectedMonth, selectedWeek, dataVersion]);
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-5 mb-8">

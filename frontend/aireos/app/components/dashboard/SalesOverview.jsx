@@ -90,12 +90,20 @@ function PeriodAxisTick({ x, y, payload }) {
  * data size — see backend/app/services/bigquery.py). Both `mode` and
  * `granularity` then just re-slice the already-fetched cache client-side, so
  * toggling either one afterward is instant with no refetch.
+ *
+ * Auto-refresh: parent polls /last-updated and bumps `dataVersion` when a
+ * retailer's loaded_at changes; we refetch both summary granularities then.
  */
-export default function SalesOverview() {
+export default function SalesOverview({
+  lastUpdatedByMode = {},
+  dataVersion = 0,
+  freshnessRefreshing = false,
+}) {
   const [mode, setMode] = useState("offline")
   const [granularity, setGranularity] = useState("week")
   const [summaryByGranularity, setSummaryByGranularity] = useState({})
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState(null)
 
   useEffect(() => {
@@ -110,24 +118,37 @@ export default function SalesOverview() {
       return [g, data]
     }
 
-    async function fetchAll() {
+    async function loadSummaries() {
       try {
+        if (dataVersion === 0) {
+          setLoading(true)
+        } else {
+          setRefreshing(true)
+        }
+
         const entries = await Promise.all(GRANULARITIES.map(fetchSummary))
-        if (!cancelled) setSummaryByGranularity(Object.fromEntries(entries))
+        if (cancelled) return
+
+        setSummaryByGranularity(Object.fromEntries(entries))
+        setError(null)
       } catch (err) {
         if (!cancelled) setError(err.message)
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) {
+          setLoading(false)
+          setRefreshing(false)
+        }
       }
     }
 
-    fetchAll()
+    loadSummaries()
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [dataVersion])
 
   const salesData = summaryByGranularity[granularity]?.[mode]
+  const lastUpdated = lastUpdatedByMode[mode]?.lastUpdated
 
   return (
     <div className="space-y-6 mb-8">
@@ -145,6 +166,10 @@ export default function SalesOverview() {
             <TabsTrigger value="month">Monthly</TabsTrigger>
           </TabsList>
         </Tabs>
+
+        {(refreshing || freshnessRefreshing) && (
+          <p className="text-xs text-muted-foreground">Refreshing latest data…</p>
+        )}
       </div>
 
       {loading && <p className="text-gray-500 text-sm">Loading dashboard...</p>}
@@ -166,11 +191,16 @@ export default function SalesOverview() {
             ))}
           </div>
 
-          <RevenueTrend
-            periodByFormat={salesData.periodByFormat}
-            periodTotal={salesData.periodTotal}
-            granularity={granularity}
-          />
+          <div>
+            <RevenueTrend
+              periodByFormat={salesData.periodByFormat}
+              periodTotal={salesData.periodTotal}
+              granularity={granularity}
+            />
+            <p className="mt-2 text-right text-xs text-muted-foreground">
+              Last Updated: {lastUpdated || "—"}
+            </p>
+          </div>
         </>
       )}
     </div>
