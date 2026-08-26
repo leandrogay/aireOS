@@ -20,7 +20,7 @@ function toggleButtonClass(isActive) {
   }`;
 }
 
-export default function SkuRanking({ dataVersion = 0 }) {
+export default function SkuRanking() {
   const [metric, setMetric] = useState('value');
   const [order, setOrder] = useState('desc');
   const [months, setMonths] = useState([]);
@@ -41,8 +41,7 @@ export default function SkuRanking({ dataVersion = 0 }) {
     setSelectedWeek('');
   }
 
-  // Load the months that actually have data, then default to the most recent one.
-  // Also re-runs when dataVersion bumps (new BigQuery ingest detected).
+  // Load the months that actually have data, then default to the most recent one
   useEffect(() => {
     let cancelled = false;
 
@@ -54,13 +53,8 @@ export default function SkuRanking({ dataVersion = 0 }) {
         if (cancelled) return;
         setMonths(data.months);
         if (data.months.length > 0) {
-          setSelectedMonth((current) => {
-            const values = data.months.map((month) => month.value);
-            if (current && values.includes(current)) return current;
-            return data.months[0].value;
-          });
+          setSelectedMonth(data.months[0].value);
         } else {
-          setSelectedMonth(null);
           setLoading(false);
         }
       } catch (err) {
@@ -75,9 +69,9 @@ export default function SkuRanking({ dataVersion = 0 }) {
     return () => {
       cancelled = true;
     };
-  }, [dataVersion]);
+  }, []);
 
-  // Load the weeks within the selected month.
+  // Load the weeks within the selected month, and reset back to "all weeks" whenever the month changes (a previously picked week may not exist in the new month).
   useEffect(() => {
     if (!selectedMonth) return undefined;
 
@@ -100,7 +94,7 @@ export default function SkuRanking({ dataVersion = 0 }) {
     return () => {
       cancelled = true;
     };
-  }, [selectedMonth, dataVersion]);
+  }, [selectedMonth]);
 
   useEffect(() => {
     if (!selectedMonth) return undefined;
@@ -129,7 +123,7 @@ export default function SkuRanking({ dataVersion = 0 }) {
     return () => {
       cancelled = true;
     };
-  }, [metric, order, selectedMonth, selectedWeek, dataVersion]);
+  }, [metric, order, selectedMonth, selectedWeek]);
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-5 mb-8">
