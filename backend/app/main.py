@@ -1,11 +1,15 @@
+from dotenv import load_dotenv
+from pathlib import Path
+
+# Load backend/.env before importing routers/services. Otherwise storage.py's
+# load_dotenv(venv/.env.local) can set GOOGLE_APPLICATION_CREDENTIALS first,
+# and dotenv will not override it with the value from backend/.env.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import uploads
 from app.routers import ingest, sales
-from dotenv import load_dotenv
-from pathlib import Path
-
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 app = FastAPI()
 

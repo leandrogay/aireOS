@@ -1,5 +1,25 @@
 @import "tailwindcss";
-@import "tw-animate-css";
+
+/* TEMPORARY WORKAROUND — revert to `@import "tw-animate-css";` once this is
+   confirmed no longer needed.
+   Some (not all — works fine on other machines/CI) local `next dev` setups
+   fail to resolve the bare "tw-animate-css" import, because that package's
+   exports map only declares a "style" condition with no "default" fallback.
+   Before relying on this hardcoded path long-term, whoever hits the crash
+   should first try, in order:
+     1. rm -rf node_modules .next && npm install   (clears stale Turbopack
+        cache — the single most common real cause of this)
+     2. Confirm you're using npm, not pnpm/yarn (this repo's lockfile is
+        package-lock.json — a different package manager hoists node_modules
+        differently and can change whether this resolves)
+     3. npx next --version   should print 16.3.1 — an old/global Next
+        install shadowing the local one behaves differently
+   If the plain import still fails after all three, this workaround is fine
+   to keep — just know it hardcodes node_modules' current layout, which is
+   NOT guaranteed to match a clean CI/deploy install, so re-test a real
+   `npm run build` after any dependency bump. */
+@import "../node_modules/tw-animate-css/dist/tw-animate.css";
+
 @import "shadcn/tailwind.css";
 
 @custom-variant dark (&:is(.dark *));
