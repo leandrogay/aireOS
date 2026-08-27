@@ -6,6 +6,11 @@ import { MappingReview } from '../components/upload/MappingReview';
 
 const REQUIRED_TARGET_FIELDS = ['sku', 'quantity_units', 'revenue', 'period_start'];
 
+// Listing mappings is several GCS round trips per stored contract, so this is
+// well above a normal load — it is a floor for "the backend is not answering",
+// not a latency budget.
+const MAPPING_LOAD_TIMEOUT_MS = 20000;
+
 // A rule set is indexed by target field: a required field is missing when its
 // rule has no source, and a column is unread when no rule points at it.
 const computeRuleMeta = (mapping, rules) => {
@@ -57,18 +62,33 @@ export default function UploadPage() {
     setMappingLoadError('');
 
     try {
-      const response = await fetch(`${backendApiUrl}/api/uploads/mappings`);
+      // A backend that accepts the connection but never answers — a dead uvicorn
+      // worker still holding its listen socket, say — would otherwise leave this
+      // spinning with nothing on screen to explain it.
+      const response = await fetch(`${backendApiUrl}/api/uploads/mappings`, {
+        signal: AbortSignal.timeout(MAPPING_LOAD_TIMEOUT_MS),
+      });
       const data = await response.json().catch(() => null);
 
       if (!response.ok) {
-        throw new Error(data?.detail || 'Unable to load stored mappings.');
+        throw new Error(
+          typeof data?.detail === 'string'
+            ? data.detail
+            : data?.detail?.message || 'Unable to load stored mappings.',
+        );
       }
 
       setMappingReviews(Array.isArray(data?.mappings) ? data.mappings : []);
       setEditingMappingIds([]);
       setEditSnapshots({});
     } catch (error) {
-      setMappingLoadError(error instanceof Error ? error.message : 'Unable to load stored mappings.');
+      setMappingLoadError(
+        error?.name === 'TimeoutError' || error?.name === 'AbortError'
+          ? `No response from the backend at ${backendApiUrl} after ${MAPPING_LOAD_TIMEOUT_MS / 1000}s. Check that it is running.`
+          : error instanceof Error
+            ? error.message
+            : 'Unable to load stored mappings.',
+      );
     } finally {
       setIsLoadingMappings(false);
     }
@@ -329,7 +349,7 @@ export default function UploadPage() {
             <div>
               <h2 className="font-serif text-2xl text-deep-violet-blue">Stored Mappings</h2>
               <p className="text-sm text-deep-violet-blue/80">
-                Read and amend the mappings saved in BigQuery.
+                Review the rules each file layout is mapped through, and confirm proposals.
               </p>
             </div>
             <button
