@@ -8,6 +8,9 @@ from pydantic import BaseModel
 from app.services import storage
 from app.services import generate_mapping
 from app.services import mapping_view
+from app.services import apply_contract as contract_application
+from app.services.mapping_service import extract_header_signature, find_matching_mapping
+from app.services.validation_service import process_and_validate
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 
@@ -19,6 +22,66 @@ class ConfirmRequest(BaseModel):
     # The review screen edits rules, not raw contracts. Sending those instead
     # keeps the contract shape -- and its validation -- on the server.
     rules: list[dict] | None = None
+
+
+def _preview(dataframe, limit: int = 3) -> list[dict]:
+    """Return a small JSON-safe preview without exposing the full upload."""
+    preview = dataframe.head(limit).copy()
+    for column in preview.select_dtypes(include=["datetime", "datetimetz"]).columns:
+        preview[column] = preview[column].dt.strftime("%Y-%m-%d")
+    preview = preview.astype(object).where(preview.notna(), None)
+    return preview.to_dict(orient="records")
+
+
+def resolve_and_apply_mapping(
+    filename: str, data: bytes, uploaded_to: str | None = None
+) -> dict:
+    """Resolve one mapping and immediately apply it when it is recognised."""
+    dataframe = contract_application.read_source_dataframe(filename, data)
+    headers = extract_header_signature(dataframe)
+
+    # AO1-2's approved FairPrice mapping is built into the application. It is
+    # checked before AO1-3 proposal generation so recognised files never call AI.
+    builtin = find_matching_mapping(headers)
+    if builtin:
+        validated = process_and_validate(dataframe, builtin, filename)
+        return {
+            "status": "mapped",
+            "mapping_id": builtin["mapping_id"],
+            "source": "builtin",
+            "processing": {
+                "rows_total": validated["total_rows"],
+                "rows_mapped": validated["rows_ingested"],
+                "rows_rejected": validated["total_rejected"],
+                "rejection_summary": validated["rejection_summary"],
+                "columns": list(validated["valid_df"].columns),
+                "preview": _preview(validated["valid_df"]),
+            },
+        }
+
+    resolved = generate_mapping.resolve_mapping(filename, data, uploaded_to)
+    if resolved.get("status") != "mapped":
+        return resolved
+
+    normalized = contract_application.apply_contract(
+        dataframe, resolved.get("contract") or {}
+    )
+    if "source_file" in generate_mapping.TARGET_SCHEMA:
+        normalized["source_file"] = filename
+
+    target_columns = [
+        column for column in generate_mapping.TARGET_SCHEMA if column in normalized
+    ]
+    normalized = normalized[target_columns]
+    resolved["processing"] = {
+        "rows_total": len(normalized),
+        "rows_mapped": len(normalized),
+        "rows_rejected": 0,
+        "rejection_summary": "",
+        "columns": target_columns,
+        "preview": _preview(normalized),
+    }
+    return resolved
 
 
 @router.post("")
@@ -58,7 +121,7 @@ async def upload_files(files: List[UploadFile] = File(...)):
         filename, data = entry
         try:
             return await asyncio.to_thread(
-                generate_mapping.resolve_mapping,
+                resolve_and_apply_mapping,
                 filename,
                 data,
                 uploaded.get("destination"),
@@ -69,6 +132,8 @@ async def upload_files(files: List[UploadFile] = File(...)):
             return {"status": "mapping_failed", "reason": "config", "error": str(e)}
         except generate_mapping.MappingGenerationError as e:
             return {"status": "mapping_failed", "reason": "bad_llm_output", "error": str(e)}
+        except contract_application.ContractApplicationError as e:
+            return {"status": "mapping_failed", "reason": "application", "error": str(e)}
         except Exception as e:
             return {"status": "mapping_failed", "reason": "unexpected", "error": str(e)}
 
