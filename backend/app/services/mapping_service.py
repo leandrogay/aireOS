@@ -31,6 +31,136 @@ _PACK_SUFFIX = re.compile(r"\s+\d+S$", re.IGNORECASE)
 _SIZE = re.compile(r"\b(S/M|XL|L|M|S)\b", re.IGNORECASE)
 
 
+# The measure block headers carry the period number and date, so they differ in
+# every file. A catalog mapping therefore stores the pattern, not the literal
+# header, and the recogniser matches it at ingest time.
+SALES_HEADER_PATTERN = "SALES | {Week|Month} {n} | {DD-MM-YYYY}"
+QUANTITY_HEADER_PATTERN = "Qty (in EA) | {Week|Month} {n} | {DD-MM-YYYY}"
+UPLOAD_FILENAME_SOURCE = "(upload filename)"
+
+# Every source column this mapping can read: the fixed dimension block plus the
+# two pattern-matched measure headers. This is what belongs in columns_json --
+# the dimension headers alone leave revenue and quantity_units unexplained.
+FAIRPRICE_SOURCE_COLUMNS = FAIRPRICE_DIMENSION_HEADERS + [
+    SALES_HEADER_PATTERN,
+    QUANTITY_HEADER_PATTERN,
+]
+
+# The declarative twin of apply_existing_mapping() below. Keep the two in step:
+# this list is what gets persisted and rendered, that function is what runs.
+# "mapped" is a straight carry-through, "derived" needs a transform first.
+FAIRPRICE_WIDE_FIELD_MAP = [
+    {"sourceColumn": "SKU No.", "targetField": "sku", "status": "mapped", "transform": None},
+    {"sourceColumn": "Store Code", "targetField": "store_code", "status": "mapped", "transform": None},
+    {"sourceColumn": "Store Name", "targetField": "store_name", "status": "mapped", "transform": "trim"},
+    {"sourceColumn": "Store Format", "targetField": "store_format", "status": "mapped", "transform": "trim"},
+    {"sourceColumn": "Brand", "targetField": "brand", "status": "mapped", "transform": "trim"},
+    {"sourceColumn": "Sales UOM", "targetField": "uom", "status": "mapped", "transform": "trim"},
+    {"sourceColumn": "Pack Size", "targetField": "pack_size", "status": "mapped", "transform": None},
+    {
+        "sourceColumn": "Article Description",
+        "targetField": "product_name",
+        "status": "derived",
+        "transform": "collapse whitespace, drop trailing pack suffix, title case",
+    },
+    {
+        "sourceColumn": "Article Description",
+        "targetField": "size",
+        "status": "derived",
+        "transform": "extract S / M / L / XL / S/M token from the cleaned product name",
+    },
+    {
+        "sourceColumn": "MCH",
+        "targetField": "product_category",
+        "status": "derived",
+        "transform": "title case",
+    },
+    {
+        "sourceColumn": "Brand + MCH",
+        "targetField": "sku_range",
+        "status": "derived",
+        "transform": "title case both, join with a space",
+    },
+    {
+        "sourceColumn": "Store Format",
+        "targetField": "retailer",
+        "status": "derived",
+        "transform": "FPON -> fairprice_online, anything else -> fairprice_offline",
+    },
+    {
+        "sourceColumn": SALES_HEADER_PATTERN,
+        "targetField": "revenue",
+        "status": "mapped",
+        "transform": None,
+    },
+    {
+        "sourceColumn": QUANTITY_HEADER_PATTERN,
+        "targetField": "quantity_units",
+        "status": "mapped",
+        "transform": None,
+    },
+    {
+        "sourceColumn": SALES_HEADER_PATTERN,
+        "targetField": "period_start",
+        "status": "derived",
+        "transform": "parse the DD-MM-YYYY date out of the period header",
+    },
+    {
+        "sourceColumn": SALES_HEADER_PATTERN,
+        "targetField": "period_end",
+        "status": "derived",
+        "transform": "week: period_start + 6 days; month: last day of that month",
+    },
+    {
+        "sourceColumn": SALES_HEADER_PATTERN,
+        "targetField": "period_type",
+        "status": "derived",
+        "transform": "Week / Month token from the period header, lowercased",
+    },
+    {
+        "sourceColumn": SALES_HEADER_PATTERN,
+        "targetField": "period_label",
+        "status": "derived",
+        "transform": "week: 'Week N (DD-MM-YYYY)'; month: 'YYYY-Mnn'",
+    },
+    {
+        "sourceColumn": UPLOAD_FILENAME_SOURCE,
+        "targetField": "source_file",
+        "status": "derived",
+        "transform": "name of the uploaded file",
+    },
+]
+
+
+def _referenced_source_columns() -> set:
+    referenced = set()
+    for entry in FAIRPRICE_WIDE_FIELD_MAP:
+        referenced.update(part.strip() for part in entry["sourceColumn"].split(" + "))
+    return referenced
+
+
+# Dimension headers the retailer sends that the target schema has no home for.
+FAIRPRICE_UNMAPPED_HEADERS = [
+    header
+    for header in FAIRPRICE_DIMENSION_HEADERS
+    if header not in _referenced_source_columns()
+]
+
+
+def build_fairprice_wide_rules() -> List[Dict[str, Any]]:
+    """Return the mapping as one rule per target field, in TARGET_SCHEMA order.
+
+    A stored mapping is a rule set, not a reading of some file, so there are no
+    "unmapped" rows here -- headers the mapping ignores live in
+    FAIRPRICE_UNMAPPED_HEADERS and are reported alongside, not as rules.
+    """
+    order = {field: index for index, field in enumerate(TARGET_SCHEMA)}
+    return sorted(
+        (dict(entry) for entry in FAIRPRICE_WIDE_FIELD_MAP),
+        key=lambda rule: order[rule["targetField"]],
+    )
+
+
 def extract_header_signature(df: pd.DataFrame) -> List[str]:
     """Return the exact ordered source headers; filenames are never involved."""
     return [str(column) for column in df.columns]

@@ -220,3 +220,27 @@ def delete_blob(path: str) -> bool:
         raise GCSPermissionError(f"Delete denied on {path}. Details: {e}")
     except Exception as e:
         raise GCSUploadError(f"Failed deleting {path}: {e}")
+
+
+def list_mapping_fingerprints(state: str) -> list[str]:
+    """
+    List the fingerprints stored under mappings/{state}/.
+
+    state is "pending" or "confirmed". Returns an empty list rather than
+    raising when the prefix has never been written to, since an app that has
+    confirmed nothing yet is a normal state and not an error.
+    """
+    prefix = f"{MAPPING_PREFIX}{state}/"
+    try:
+        blobs = get_storage_client().list_blobs(BUCKET_NAME, prefix=prefix)
+        return [
+            blob.name[len(prefix):-len(".json")]
+            for blob in blobs
+            if blob.name.endswith(".json")
+        ]
+    except gcloud_exceptions.Forbidden as e:
+        raise GCSPermissionError(f"List denied on {prefix}. Details: {e}")
+    except gcloud_exceptions.NotFound:
+        return []
+    except Exception as e:
+        raise GCSUploadError(f"Failed listing {prefix}: {e}")

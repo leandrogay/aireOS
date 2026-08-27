@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from app.services import storage
 from app.services import generate_mapping
+from app.services import mapping_view
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 
@@ -15,6 +16,9 @@ class ConfirmRequest(BaseModel):
     # Only present if the user edited the proposed contract before approving.
     # When omitted, the pending contract is confirmed unchanged.
     contract: dict | None = None
+    # The review screen edits rules, not raw contracts. Sending those instead
+    # keeps the contract shape -- and its validation -- on the server.
+    rules: list[dict] | None = None
 
 
 @router.post("")
@@ -81,6 +85,41 @@ async def upload_files(files: List[UploadFile] = File(...)):
     return res
 
 
+@router.get("/mappings")
+async def list_mappings():
+    """
+    Every mapping the review screen can show, in one shape.
+
+    That is the builtin FairPrice rule set plus each contract in the bucket --
+    confirmed ones first, then proposals still awaiting approval.
+    """
+
+    def collect() -> list[dict]:
+        packets = [mapping_view.builtin_packet()]
+
+        for state in ("confirmed", "pending"):
+            path_for = (
+                storage.confirmed_mapping_path
+                if state == "confirmed"
+                else storage.pending_mapping_path
+            )
+            for fingerprint in storage.list_mapping_fingerprints(state):
+                envelope = storage.download_json(path_for(fingerprint))
+                if envelope:
+                    packets.append(
+                        mapping_view.envelope_to_packet(fingerprint, envelope, state)
+                    )
+
+        return packets
+
+    try:
+        return {"mappings": await asyncio.to_thread(collect)}
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503, detail=f"Unable to read stored mappings: {exc}"
+        )
+
+
 @router.get("/mappings/{fingerprint}")
 async def get_mapping(fingerprint: str):
     """
@@ -111,15 +150,28 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
     is the last gate before it becomes the contract every future file with
     these headers gets run through.
     """
-    pending = await asyncio.to_thread(
+    envelope_before = await asyncio.to_thread(
         storage.download_json, storage.pending_mapping_path(fingerprint)
     )
-    if not pending:
+    # A confirmed contract can be amended again, and by then its pending blob
+    # has been cleaned up -- so fall back to the confirmed one.
+    if not envelope_before:
+        envelope_before = await asyncio.to_thread(
+            storage.download_json, storage.confirmed_mapping_path(fingerprint)
+        )
+    if not envelope_before:
         raise HTTPException(
-            status_code=404, detail="No pending mapping for that fingerprint."
+            status_code=404, detail="No mapping found for that fingerprint."
         )
 
-    proposed = body.contract if body.contract is not None else pending["contract"]
+    pending = envelope_before
+
+    if body.rules is not None:
+        proposed = mapping_view.rules_to_contract(body.rules)
+    elif body.contract is not None:
+        proposed = body.contract
+    else:
+        proposed = pending["contract"]
 
     contract = generate_mapping.validate_contract(
         proposed,
@@ -139,7 +191,7 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
     envelope = {
         **pending,
         "contract": contract,
-        "edited_by_user": body.contract is not None,
+        "edited_by_user": body.contract is not None or body.rules is not None,
         "confirmed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }
 
