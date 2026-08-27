@@ -1,66 +1,159 @@
 @import "tailwindcss";
 
-/*
-  AireOS design tokens (Tailwind v4 @theme)
+/* TEMPORARY WORKAROUND — revert to `@import "tw-animate-css";` once this is
+   confirmed no longer needed.
+   Some (not all — works fine on other machines/CI) local `next dev` setups
+   fail to resolve the bare "tw-animate-css" import, because that package's
+   exports map only declares a "style" condition with no "default" fallback.
+   Before relying on this hardcoded path long-term, whoever hits the crash
+   should first try, in order:
+     1. rm -rf node_modules .next && npm install   (clears stale Turbopack
+        cache — the single most common real cause of this)
+     2. Confirm you're using npm, not pnpm/yarn (this repo's lockfile is
+        package-lock.json — a different package manager hoists node_modules
+        differently and can change whether this resolves)
+     3. npx next --version   should print 16.3.1 — an old/global Next
+        install shadowing the local one behaves differently
+   If the plain import still fails after all three, this workaround is fine
+   to keep — just know it hardcodes node_modules' current layout, which is
+   NOT guaranteed to match a clean CI/deploy install, so re-test a real
+   `npm run build` after any dependency bump. */
+@import "../node_modules/tw-animate-css/dist/tw-animate.css";
 
-  This file is the shared visual reference for the frontend. Use these
-  Tailwind classes on feature pages instead of inventing new colours/fonts.
+@import "shadcn/tailwind.css";
 
-  Colours
-  -------
-  Name              Hex        Tailwind utilities
-  Deep Violet-Blue  #3A4369    bg-deep-violet-blue, text-deep-violet-blue, border-deep-violet-blue
-  Cream             #EAE4DE    bg-cream, text-cream, border-cream
-  White             #FFFFFF    bg-white, text-white, border-white
-  Celest            #E62A39    bg-celest, text-celest, border-celest
-  Violet            #A29BCC    bg-violet, text-violet, border-violet
-  Lavander          #DFE4F7    bg-lavander, text-lavander, border-lavander
-
-  Fonts
-  -----
-  DM Sans           font-sans     Body, UI, buttons, labels, tables
-  DM Serif Display  font-serif    Page titles and section headings
-
-  Typography
-  ----------
-  Page title     font-serif text-4xl text-deep-violet-blue
-  Section title  font-serif text-2xl text-deep-violet-blue
-  Body / helper  font-sans text-sm text-deep-violet-blue
-  Primary button bg-deep-violet-blue text-white hover:bg-violet
-  Card           bg-white border border-lavander
-  Page canvas    bg-cream
-
-  Success / error (functional states; keep green + red so status stays obvious)
-  -----------------------------------------------------------------------
-  Success  Tailwind green (e.g. bg-green-50, text-green-800, border-green-200)
-  Error    Tailwind red, or Celest for accent (e.g. bg-red-50, text-red-700, text-celest)
-
-  Dark mode is not used. Do not add dark: variants on new pages.
-*/
-
-:root {
-  --background: #eae4de;
-  --foreground: #3a4369;
-}
+@custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --color-deep-violet-blue: #3a4369;
-  --color-cream: #eae4de;
-  --color-celest: #e62a39;
-  --color-violet: #a29bcc;
-  --color-lavander: #dfe4f7;
   --font-sans: var(--font-dm-sans);
-  --font-serif: var(--font-dm-serif);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-dm-serif);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-html {
-  color-scheme: light;
+:root {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+
+  /* AIRE brand kit */
+  --aire-cream: #EAE4DE;
+  --aire-violet: #A29BCC;
+  --aire-lavender: #DFE4F7;
+  --aire-deep-blue: #3A4369;
+  /* Brand PDF is inconsistent here: hex swatch says #E62A39 (red), RGB value says a
+     light blue. Went with the RGB reading — flag to Sandra if this renders wrong. */
+  --aire-celest: #A7D2F2;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
 }

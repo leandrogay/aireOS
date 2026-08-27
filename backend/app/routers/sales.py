@@ -62,3 +62,15 @@ def get_sku_ranking(
         "week": week,
         "skus": ranked.to_dict(orient="records") if not ranked.empty else [],
     }
+
+
+@router.get("/dashboard-summary")
+def get_dashboard_summary(granularity: str = "week"):
+    try:
+        return bigquery.get_dashboard_summary(granularity=granularity)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except DefaultCredentialsError:
+        raise HTTPException(status_code=503, detail=_CREDENTIALS_DETAIL)
+    except GoogleAPICallError as e:
+        raise HTTPException(status_code=503, detail=f"Unable to reach BigQuery: {e.message}")
