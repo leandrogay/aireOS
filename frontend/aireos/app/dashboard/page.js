@@ -17,7 +17,7 @@ export default function DashboardPage() {
           dataVersion={dataVersion}
           freshnessRefreshing={refreshing}
         />
-        <SkuRanking />
+        <SkuRanking dataVersion={dataVersion} />
       </div>
     </main>
   );
