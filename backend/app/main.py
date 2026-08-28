@@ -3,9 +3,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from pathlib import Path
 
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
-
 from app.routers import sales, uploads
+
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 app = FastAPI()
 

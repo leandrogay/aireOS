@@ -108,3 +108,138 @@ def get_sku_ranking(
     ranked["rank"] = ranked.index + 1
 
     return ranked[SKU_RANKING_COLUMNS]
+
+
+DASHBOARD_RETAILERS = {"offline": "fairprice_offline", "online": "fairprice_online"}
+DASHBOARD_GRANULARITIES = ("week", "month")
+
+
+def _format_last_updated(value) -> str | None:
+    """Format a BigQuery loaded_at value as dd/mm/yy hh:mm:ss for the dashboard."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    ts = pd.to_datetime(value, utc=True)
+    if pd.isna(ts):
+        return None
+    # Display in Singapore time so staff see a local wall-clock stamp.
+    return ts.tz_convert("Asia/Singapore").strftime("%d/%m/%y %H:%M:%S")
+
+
+def get_data_freshness() -> dict:
+    """
+    Latest ingest time (MAX(loaded_at)) per retailer/channel.
+
+    Keys match the dashboard Offline/online modes (fairprice_offline /
+    fairprice_online). Retailers with no rows return lastUpdated=null.
+    """
+    retailers = list(DASHBOARD_RETAILERS.values())
+    query = f"""
+        SELECT
+          retailer,
+          MAX(loaded_at) AS loaded_at
+        FROM `{BQFairprice_TABLE}`
+        WHERE retailer IN UNNEST(@retailers)
+        GROUP BY retailer
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[bigquery.ArrayQueryParameter("retailers", "STRING", retailers)]
+    )
+
+    client = get_bigquery_client()
+    df = client.query(query, job_config=job_config).result().to_dataframe()
+    loaded_by_retailer = {
+        row["retailer"]: _format_last_updated(row["loaded_at"])
+        for _, row in df.iterrows()
+    } if not df.empty else {}
+
+    return {
+        mode: {
+            "retailer": retailer,
+            "lastUpdated": loaded_by_retailer.get(retailer),
+        }
+        for mode, retailer in DASHBOARD_RETAILERS.items()
+    }
+
+
+def get_dashboard_summary(granularity: str = "week") -> dict:
+    # Revenue/units per store format for the sales dashboard, split into offline
+    # (fairprice_offline) and online (fairprice_online), bucketed by week or by
+    # month. Monthly buckets reuse the same FORMAT_DATE('%Y-%m', period_start)
+    # grouping and "%B %Y" label formatting already established for the SKU
+    # ranking's month picker (get_available_ranking_months / sales.py's /months
+    # route), so both views agree on what "month" means for this table. All
+    # grouping happens here in SQL/pandas so the frontend only renders
+    # pre-aggregated numbers.
+    if granularity not in DASHBOARD_GRANULARITIES:
+        raise ValueError(f"granularity must be one of {DASHBOARD_GRANULARITIES}")
+
+    period_key_expr = (
+        "FORMAT_DATE('%Y-%m', period_start)" if granularity == "month" else "period_label"
+    )
+
+    query = f"""
+        SELECT
+          retailer,
+          store_format AS format,
+          {period_key_expr} AS period_key,
+          MIN(period_start) AS period_start,
+          SUM(revenue) AS revenue,
+          SUM(quantity_units) AS units
+        FROM `{BQFairprice_TABLE}`
+        WHERE period_type = 'week'
+          AND retailer IN UNNEST(@retailers)
+        GROUP BY retailer, format, period_key
+        ORDER BY period_start
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ArrayQueryParameter("retailers", "STRING", list(DASHBOARD_RETAILERS.values()))
+        ]
+    )
+
+    client = get_bigquery_client()
+    df = client.query(query, job_config=job_config).result().to_dataframe()
+
+    if not df.empty:
+        df["revenue"] = df["revenue"].round(2)
+        df["period_label"] = (
+            df["period_key"].apply(lambda m: datetime.strptime(m, "%Y-%m").strftime("%B %Y"))
+            if granularity == "month"
+            else df["period_key"]
+        )
+
+    return {mode: _dashboard_mode_summary(df, retailer) for mode, retailer in DASHBOARD_RETAILERS.items()}
+
+
+def _dashboard_mode_summary(df: pd.DataFrame, retailer: str) -> dict:
+    # Splits the pre-aggregated per-period-by-format rows down to one retailer,
+    # then reshapes into the three views the dashboard renders: per format, per
+    # period (week or month), and per period-and-format.
+    if df.empty:
+        return {"storeFormats": [], "periodTotal": [], "periodByFormat": []}
+
+    mode_df = df[df["retailer"] == retailer]
+
+    store_formats = (
+        mode_df.groupby("format", as_index=False)[["revenue", "units"]]
+        .sum()
+        .sort_values("revenue", ascending=False)
+    )
+
+    # Group by period_label alone (not period_start) — different store formats
+    # can have different MIN(period_start) within the same month (e.g. one
+    # format's earliest active week in a month is later than another's), so
+    # grouping by both would wrongly split one month/week into two rows here.
+    period_total = (
+        mode_df.groupby("period_label", as_index=False)
+        .agg(period_start=("period_start", "min"), revenue=("revenue", "sum"), units=("units", "sum"))
+        .sort_values("period_start")
+    )
+
+    period_by_format = mode_df.sort_values("period_start")[["period_label", "format", "revenue", "units"]]
+
+    return {
+        "storeFormats": store_formats[["format", "revenue", "units"]].to_dict(orient="records"),
+        "periodTotal": period_total[["period_label", "revenue", "units"]].to_dict(orient="records"),
+        "periodByFormat": period_by_format.to_dict(orient="records"),
+    }

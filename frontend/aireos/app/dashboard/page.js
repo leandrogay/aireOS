@@ -1,27 +1,24 @@
 'use client';
 
-import SkuRanking from "../components/SkuRanking";
+import SkuRanking from "@/components/dashboard/SkuRanking";
+import SalesOverview from "@/components/dashboard/SalesOverview";
+import useDataFreshness from "@/hooks/useDataFreshness";
 
 export default function DashboardPage() {
+  const { channels, dataVersion, refreshing } = useDataFreshness();
 
   return (
-    <main className="min-h-screen bg-gray-50 px-4 py-10">
+    <main className="min-h-screen bg-background px-4 py-10">
       <div className="max-w-5xl mx-auto">
-        <h1 className="text-2xl font-semibold text-gray-900 mb-6">Sales Dashboard</h1>
+        <h1 className="text-2xl font-semibold text-foreground mb-6">Sales Dashboard</h1>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
-          <div className="bg-white rounded-lg border border-gray-200 p-5">
-            <p className="text-sm text-gray-500">Total Orders</p>
-            <p className="text-2xl font-semibold text-gray-900">{100}</p>
-          </div>
-          <div className="bg-white rounded-lg border border-gray-200 p-5">
-            <p className="text-sm text-gray-500">Total Revenue</p>
-            <p className="text-2xl font-semibold text-gray-900">${"10,000"}</p>
-          </div>
-        </div>
-        <SkuRanking />
+        <SalesOverview
+          lastUpdatedByMode={channels}
+          dataVersion={dataVersion}
+          freshnessRefreshing={refreshing}
+        />
+        <SkuRanking dataVersion={dataVersion} />
       </div>
-
     </main>
   );
 }

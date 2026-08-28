@@ -36,10 +36,7 @@ export default function UploadPage() {
   const [editSnapshots, setEditSnapshots] = useState({});
   const [isUploading, setIsUploading] = useState(false);
 
-  const backendApiUrl =
-    process.env.NEXT_PUBLIC_BACKEND_API_URL ||
-    process.env.NEXT_PUBLIC_API_URL ||
-    'http://localhost:8000';
+const backendApiUrl = process.env.NEXT_PUBLIC_API_URL;
 
   const postFiles = async (files, force) => {
     const formData = new FormData();
@@ -244,7 +241,7 @@ export default function UploadPage() {
         failed: files.length,
         results: [],
         message:
-          'Unable to connect to backend upload service. Check BACKEND_API_URL, server status, and CORS settings.',
+          'Unable to connect to backend upload service. Check NEXT_PUBLIC_API_URL, server status, and CORS settings.',
       });
     } finally {
       setIsUploading(false);
