@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const METRICS = [
   { value: 'value', label: 'Sales Value' },
@@ -20,7 +20,7 @@ function toggleButtonClass(isActive) {
   }`;
 }
 
-export default function SkuRanking() {
+export default function SkuRanking({ dataVersion = 0 }) {
   const [metric, setMetric] = useState('value');
   const [order, setOrder] = useState('desc');
   const [months, setMonths] = useState([]);
@@ -31,6 +31,7 @@ export default function SkuRanking() {
   const [skus, setSkus] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const dataVersionRef = useRef(dataVersion);
 
   // A previously picked week may not exist in a newly selected month, so
   // reset back to "all weeks" whenever the month changes. Adjusting state
@@ -41,7 +42,9 @@ export default function SkuRanking() {
     setSelectedWeek('');
   }
 
-  // Load the months that actually have data, then default to the most recent one
+  // Load months on mount and when new ingest is detected. Keep the user's
+  // selected month if it still exists; only fall back to the newest month
+  // when the current choice is gone (or on first load).
   useEffect(() => {
     let cancelled = false;
 
@@ -53,8 +56,13 @@ export default function SkuRanking() {
         if (cancelled) return;
         setMonths(data.months);
         if (data.months.length > 0) {
-          setSelectedMonth(data.months[0].value);
+          setSelectedMonth((current) => {
+            const values = data.months.map((month) => month.value);
+            if (current && values.includes(current)) return current;
+            return data.months[0].value;
+          });
         } else {
+          setSelectedMonth(null);
           setLoading(false);
         }
       } catch (err) {
@@ -69,9 +77,10 @@ export default function SkuRanking() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [dataVersion]);
 
-  // Load the weeks within the selected month, and reset back to "all weeks" whenever the month changes (a previously picked week may not exist in the new month).
+  // Load weeks for the selected month. On freshness refresh, keep the user's
+  // week if it is still available; clear it only if that week disappeared.
   useEffect(() => {
     if (!selectedMonth) return undefined;
 
@@ -84,7 +93,12 @@ export default function SkuRanking() {
         );
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Failed to load available weeks');
-        if (!cancelled) setWeeks(data.weeks);
+        if (cancelled) return;
+        setWeeks(data.weeks);
+        setSelectedWeek((current) => {
+          if (!current) return '';
+          return data.weeks.some((week) => week.value === current) ? current : '';
+        });
       } catch (err) {
         if (!cancelled) setError(err.message);
       }
@@ -94,15 +108,19 @@ export default function SkuRanking() {
     return () => {
       cancelled = true;
     };
-  }, [selectedMonth]);
+  }, [selectedMonth, dataVersion]);
 
   useEffect(() => {
     if (!selectedMonth) return undefined;
 
     let cancelled = false;
+    const silentRefresh = dataVersionRef.current !== dataVersion;
+    dataVersionRef.current = dataVersion;
 
     async function fetchRanking() {
-      setLoading(true);
+      if (!silentRefresh) {
+        setLoading(true);
+      }
       setError(null);
       try {
         const weekParam = selectedWeek ? `&week=${selectedWeek}` : '';
@@ -123,7 +141,7 @@ export default function SkuRanking() {
     return () => {
       cancelled = true;
     };
-  }, [metric, order, selectedMonth, selectedWeek]);
+  }, [metric, order, selectedMonth, selectedWeek, dataVersion]);
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-5 mb-8">

@@ -114,6 +114,53 @@ DASHBOARD_RETAILERS = {"offline": "fairprice_offline", "online": "fairprice_onli
 DASHBOARD_GRANULARITIES = ("week", "month")
 
 
+def _format_last_updated(value) -> str | None:
+    """Format a BigQuery loaded_at value as dd/mm/yy hh:mm:ss for the dashboard."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    ts = pd.to_datetime(value, utc=True)
+    if pd.isna(ts):
+        return None
+    # Display in Singapore time so staff see a local wall-clock stamp.
+    return ts.tz_convert("Asia/Singapore").strftime("%d/%m/%y %H:%M:%S")
+
+
+def get_data_freshness() -> dict:
+    """
+    Latest ingest time (MAX(loaded_at)) per retailer/channel.
+
+    Keys match the dashboard Offline/online modes (fairprice_offline /
+    fairprice_online). Retailers with no rows return lastUpdated=null.
+    """
+    retailers = list(DASHBOARD_RETAILERS.values())
+    query = f"""
+        SELECT
+          retailer,
+          MAX(loaded_at) AS loaded_at
+        FROM `{BQFairprice_TABLE}`
+        WHERE retailer IN UNNEST(@retailers)
+        GROUP BY retailer
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[bigquery.ArrayQueryParameter("retailers", "STRING", retailers)]
+    )
+
+    client = get_bigquery_client()
+    df = client.query(query, job_config=job_config).result().to_dataframe()
+    loaded_by_retailer = {
+        row["retailer"]: _format_last_updated(row["loaded_at"])
+        for _, row in df.iterrows()
+    } if not df.empty else {}
+
+    return {
+        mode: {
+            "retailer": retailer,
+            "lastUpdated": loaded_by_retailer.get(retailer),
+        }
+        for mode, retailer in DASHBOARD_RETAILERS.items()
+    }
+
+
 def get_dashboard_summary(granularity: str = "week") -> dict:
     # Revenue/units per store format for the sales dashboard, split into offline
     # (fairprice_offline) and online (fairprice_online), bucketed by week or by

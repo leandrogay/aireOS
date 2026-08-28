@@ -74,3 +74,14 @@ def get_dashboard_summary(granularity: str = "week"):
         raise HTTPException(status_code=503, detail=_CREDENTIALS_DETAIL)
     except GoogleAPICallError as e:
         raise HTTPException(status_code=503, detail=f"Unable to reach BigQuery: {e.message}")
+
+
+@router.get("/last-updated")
+def get_last_updated():
+    """Latest BigQuery loaded_at per offline/online Fairprice channel."""
+    try:
+        return {"channels": bigquery.get_data_freshness()}
+    except DefaultCredentialsError:
+        raise HTTPException(status_code=503, detail=_CREDENTIALS_DETAIL)
+    except GoogleAPICallError as e:
+        raise HTTPException(status_code=503, detail=f"Unable to reach BigQuery: {e.message}")
