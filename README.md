@@ -46,10 +46,17 @@ sources of them, and they are normalised into that one shape for review.
 
 | Endpoint | Purpose |
 | --- | --- |
+| `POST /api/uploads` | Upload files, apply a recognised mapping immediately, or propose a mapping for an unrecognised layout |
 | `GET /api/uploads/mappings` | Every mapping the review screen shows, in one shape |
 | `GET /api/uploads/mappings/{fingerprint}` | One contract, confirmed if it exists, else pending |
 | `POST /api/uploads/mappings/{fingerprint}/confirm` | Approve a proposal, or amend a confirmed mapping |
 | `DELETE /api/uploads/mappings/{fingerprint}/pending` | Discard a rejected proposal |
+
+`POST /api/uploads` is the single ingestion entry point. Recognised FairPrice
+files use the built-in deterministic transformer. Other recognised layouts use
+their confirmed `identity_mapping` and `melt_groups` contract through
+`backend/app/services/apply_contract.py`. Unrecognised layouts continue to the
+Claude proposal and review workflow. Mapping does not insert rows into BigQuery.
 
 ## Coding Standards
 
