@@ -1,34 +1,28 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from pathlib import Path
 
-# Load backend/.env before importing routers/services. Otherwise storage.py's
-# load_dotenv(venv/.env.local) can set GOOGLE_APPLICATION_CREDENTIALS first,
-# and dotenv will not override it with the value from backend/.env.
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+from app.routers import sales, uploads
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from app.routers import uploads
-from app.routers import ingest, sales
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 app = FastAPI()
 
-origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-]
+# origins = ["http://localhost:3000"] # Frontend location
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True, 
+    # allow_origins=origins,
+    allow_origin_regex=".*",   # dev only
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"]
 )
 
 app.include_router(uploads.router)
-app.include_router(ingest.router)
 app.include_router(sales.router)
+
 
 @app.get("/")
 def read_root():
