@@ -46,6 +46,9 @@ class InvalidFileTypeError(Exception):
     """The uploaded file has a disallowed extension."""
 
 
+ORIGINAL_FILENAME_METADATA_KEY = "original_filename"
+
+
 @lru_cache(maxsize=1)
 def get_storage_client() -> storage.Client:
     """
@@ -68,13 +71,34 @@ def get_storage_client() -> storage.Client:
     return storage.Client(project=PROJECT_ID, credentials=credentials)
 
 
+# ---- Duplicate detection -----------------------------------------------------
+
+def find_existing_upload(client: storage.Client, safe_name: str):
+    """
+    Look for a previously uploaded blob with the same original filename.
+
+    Matches on the `original_filename` custom metadata tag rather than the
+    blob path, since every upload gets a timestamped destination path.
+    """
+    for blob in client.list_blobs(BUCKET_NAME, prefix=DESTINATION_PREFIX):
+        if (blob.metadata or {}).get(ORIGINAL_FILENAME_METADATA_KEY) == safe_name:
+            return blob
+    return None
+
+
 # ---- Upload: single file ----------------------------------------------------
 
-def upload_file_bytes(filename: str, data: bytes) -> dict:
+def upload_file_bytes(filename: str, data: bytes, force: bool = False) -> dict:
     """
     Validate and upload a single file's bytes to the bucket.
 
-    Returns a summary dict on success. Raises:
+    If a file with the same original filename was already uploaded and
+    `force` is not set, no upload happens and a "duplicate" result is
+    returned instead so the caller can warn and ask for confirmation.
+    Passing `force=True` deletes the previous blob for that filename and
+    replaces it, so sales data isn't double-counted.
+
+    Returns a summary dict on success or duplicate. Raises:
         InvalidFileTypeError  - disallowed extension
         GCSConfigError        - setup problem
         GCSPermissionError    - service account lacks write access
@@ -87,20 +111,43 @@ def upload_file_bytes(filename: str, data: bytes) -> dict:
         )
 
     client = get_storage_client()  # may raise GCSConfigError
+    safe_name = Path(filename).name  # strip any path components
 
-    # Timestamped destination so uploads don't overwrite each other:
+    existing = find_existing_upload(client, safe_name)
+    if existing and not force:
+        return {
+            "success": False,
+            "filename": safe_name,
+            "reason": "duplicate",
+            "duplicate": True,
+            "existing_destination": f"gs://{BUCKET_NAME}/{existing.name}",
+            "existing_uploaded_at": existing.time_created.isoformat() if existing.time_created else None,
+            "error": f"'{safe_name}' was already uploaded. Confirm to replace it.",
+        }
+
+    # Timestamped destination so replacements keep a record of when the
+    # current version was uploaded:
     #   uploads/2026-08-19_143012_fairprice_sellout.xlsx
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
-    safe_name = Path(filename).name  # strip any path components
     destination = f"{DESTINATION_PREFIX}{timestamp}_{safe_name}"
 
     try:
         bucket = client.bucket(BUCKET_NAME)
+
         blob = bucket.blob(destination)
+        blob.metadata = {ORIGINAL_FILENAME_METADATA_KEY: safe_name}
         blob.upload_from_string(
             data,
             content_type=CONTENT_TYPES.get(ext, "application/octet-stream"),
         )
+
+        # Delete the old blob only after the new one is confirmed uploaded,
+        # so a failed upload never leaves zero copies of the file.
+        if existing and force:
+            try:
+                existing.delete()
+            except gcloud_exceptions.NotFound:
+                pass
     except gcloud_exceptions.Forbidden as e:
         raise GCSPermissionError(
             f"Upload denied — the service account lacks write permission on the bucket. Details: {e}"
@@ -114,25 +161,27 @@ def upload_file_bytes(filename: str, data: bytes) -> dict:
         "size_bytes": len(data),
         "destination": f"gs://{BUCKET_NAME}/{destination}",
         "blob_path": destination,
+        "replaced": bool(existing and force),
     }
 
 
 # ---- Upload: one or many ----------------------------------------------------
 
-def upload_many(files: list[tuple[str, bytes]]) -> dict:
+def upload_many(files: list[tuple[str, bytes]], force: bool = False) -> dict:
     """
     Upload a batch of (filename, bytes) pairs. Works for one file or many.
 
     One bad file does not abort the rest — each file gets its own result entry,
     so the caller can report partial success. Results are returned in the same
     order as the input list, which the router relies on when pairing each
-    result back to its bytes.
+    result back to its bytes. Files that duplicate a previous upload are
+    skipped (not uploaded) unless `force` is set.
     """
     results = []
 
     for filename, data in files:
         try:
-            results.append(upload_file_bytes(filename, data))
+            results.append(upload_file_bytes(filename, data, force=force))
         except InvalidFileTypeError as e:
             results.append({
                 "success": False,
@@ -149,10 +198,12 @@ def upload_many(files: list[tuple[str, bytes]]) -> dict:
             })
 
     uploaded = sum(1 for r in results if r["success"])
+    duplicates = sum(1 for r in results if r.get("reason") == "duplicate")
     return {
         "success": bool(results) and uploaded == len(results),
         "uploaded": uploaded,
-        "failed": len(results) - uploaded,
+        "duplicates": duplicates,
+        "failed": len(results) - uploaded - duplicates,
         "results": results,
     }
 
