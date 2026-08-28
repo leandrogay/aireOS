@@ -6,7 +6,7 @@ import {
   confirmMapping,
   discardMapping,
   lookupMapping,
-} from '../../services/mappingHarnessApi';
+} from '../../services/mappingApi';
 import { normalizeBaseUrl } from '../../utils/mappingHarnessHelpers';
 import { WhitespaceProvider } from './whitespaceContext';
 import ApiBaseInput from './ApiBaseInput';
@@ -25,7 +25,7 @@ const DEFAULT_API_BASE =
 // Top-level container. Owns the API base, upload results, request log, and the
 // whitespace toggle, and is the single place backend calls are initiated
 // (through services/mappingHarnessApi.js).
-export default function MappingHarness() {
+export default function MappingDiv() {
   const [apiBase, setApiBase] = useState(DEFAULT_API_BASE);
   const [results, setResults] = useState(null);
   const [uploadError, setUploadError] = useState('');
