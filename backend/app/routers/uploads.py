@@ -2,7 +2,7 @@ import asyncio
 import datetime
 from typing import List
 
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from pydantic import BaseModel
 
 from app.services import storage
@@ -85,10 +85,15 @@ def resolve_and_apply_mapping(
 
 
 @router.post("")
-async def upload_files(files: List[UploadFile] = File(...)):
+async def upload_files(files: List[UploadFile] = File(...), force: bool = Form(False)):
     """
     Accept one or many files, upload them all, and propose a mapping contract
     for each.
+
+    Files that duplicate a previously uploaded filename are skipped (with a
+    "duplicate" result) unless `force` is set, in which case the previous
+    upload for that filename is replaced. A duplicate is not uploaded, so it
+    never reaches mapping resolution below.
 
     Returns HTTP 200 with a per-file result list even when some files fail, so a
     single bad file doesn't discard the successful ones. Check the "failed"
@@ -113,7 +118,7 @@ async def upload_files(files: List[UploadFile] = File(...)):
     ]
 
     # storage.upload_many is blocking (network I/O), so keep it off the event loop.
-    res = await asyncio.to_thread(storage.upload_many, payload)
+    res = await asyncio.to_thread(storage.upload_many, payload, force=force)
 
     async def resolve(entry: tuple[str, bytes], uploaded: dict):
         if not uploaded.get("success"):
