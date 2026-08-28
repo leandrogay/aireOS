@@ -7,7 +7,7 @@ import {
   discardMapping,
   lookupMapping,
 } from '../../services/mappingApi';
-import { normalizeBaseUrl } from '../../utils/mappingHarnessHelpers';
+import { normalizeBaseUrl } from '../../utils/mappingHelpers';
 import { WhitespaceProvider } from './whitespaceContext';
 import ApiBaseInput from './ApiBaseInput';
 import UploadPanel from './UploadPanel';

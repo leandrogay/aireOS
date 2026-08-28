@@ -1,6 +1,6 @@
 import StatusPill from './StatusPill';
 import ColumnName from './ColumnName';
-import { previewExtraction } from '../../utils/mappingHarnessHelpers';
+import { previewExtraction } from '../../utils/mappingHelpers';
 
 // One melt group: target field, column count, extraction regex + date format, a
 // preview of what the regex pulls from the first column, and the column list.
