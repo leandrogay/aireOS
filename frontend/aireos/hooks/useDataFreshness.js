@@ -5,9 +5,9 @@ import { useEffect, useRef, useState } from "react"
 export const FRESHNESS_POLL_MS = 15_000
 
 function channelStampChanged(previous, next) {
-  const modes = new Set([...Object.keys(previous || {}), ...Object.keys(next || {})])
-  for (const key of modes) {
-    if ((previous?.[key]?.lastUpdated ?? null) !== (next?.[key]?.lastUpdated ?? null)) {
+  const retailers = new Set([...Object.keys(previous || {}), ...Object.keys(next || {})])
+  for (const key of retailers) {
+    if ((previous?.[key] ?? null) !== (next?.[key] ?? null)) {
       return true
     }
   }
@@ -15,9 +15,14 @@ function channelStampChanged(previous, next) {
 }
 
 /**
- * Polls /api/sales/last-updated while the dashboard is open.
- * When any retailer's MAX(loaded_at) stamp changes, bumps dataVersion so
- * SalesOverview + SkuRanking can refetch without a manual page reload.
+ * Polls /api/sales/last-updated while the dashboard is open. Returns
+ * `channels`, a flat { [retailer]: lastUpdated } map across every customer
+ * (not just the one currently selected) — deliberately customer-agnostic so
+ * this can drive the page-header Customer selector's own refetch before a
+ * customer is even picked. Callers look up `channels[`${customer}_${mode}`]`
+ * themselves. When any retailer's MAX(loaded_at) stamp changes, bumps
+ * dataVersion so useDashboardSummary + SkuRanking can refetch without a
+ * manual page reload.
  */
 export default function useDataFreshness(pollMs = FRESHNESS_POLL_MS) {
   const [channels, setChannels] = useState({})

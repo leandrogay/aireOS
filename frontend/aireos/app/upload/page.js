@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import AppShell from '../components/layout/AppShell';
 import FileUpload from '../components/upload/FileUpload';
 import { MappingReview } from '../components/upload/MappingReview';
 
@@ -334,6 +335,7 @@ const backendApiUrl = process.env.NEXT_PUBLIC_API_URL;
   };
 
   return (
+    <AppShell>
     <div className="min-h-screen bg-cream p-8 font-sans">
       <div className="mx-auto max-w-3xl">
         <h1 className="mb-2 font-serif text-4xl text-deep-violet-blue">Upload Sales Data</h1>
@@ -481,5 +483,6 @@ const backendApiUrl = process.env.NEXT_PUBLIC_API_URL;
         )}
       </div>
     </div>
+    </AppShell>
   );
 }
