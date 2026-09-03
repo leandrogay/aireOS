@@ -32,14 +32,27 @@ const comparisonChartConfig = {
   previous: { label: "Previous", color: "var(--aire-lavender)" },
 }
 
-// Reshapes the flat [{ period_label, format, revenue }] rows the API returns
-// into one row per period with a column per format, which is the shape
-// Recharts needs for a stacked bar. Pure reshape — no sums/percentages.
+//Relabels it as the week's position within its own calendar month instead ("Week
+// 1"..."Week 5", from the day-of-month of period_start). Month-granularity
+// rows (period_label like "March 2026", no "Week " prefix) are left as-is.
+function displayLabelFor(periodLabel, periodStart) {
+  if (!periodLabel.startsWith("Week ")) return periodLabel
+  const dayOfMonth = new Date(`${periodStart}T00:00:00`).getDate()
+  return `Week ${Math.ceil(dayOfMonth / 7)}`
+}
+
+// Reshapes the flat [{ period_label, period_start, format, revenue }] rows
+// the API returns into one row per period with a column per format, which
+// is the shape Recharts needs for a stacked bar. Pure reshape — no
+// sums/percentages.
 function pivotByFormat(periodByFormat) {
   const byPeriod = new Map()
   for (const row of periodByFormat) {
     if (!byPeriod.has(row.period_label)) {
-      byPeriod.set(row.period_label, { period_label: row.period_label })
+      byPeriod.set(row.period_label, {
+        period_label: row.period_label,
+        displayLabel: displayLabelFor(row.period_label, row.period_start),
+      })
     }
     byPeriod.get(row.period_label)[row.format] = row.revenue
   }
@@ -275,11 +288,15 @@ function ComparisonTrend({ currentPeriodTotal, previousPeriodTotal }) {
 // stacked-bar-per-format view. Only used outside comparison mode.
 function RevenueTrend({ periodByFormat, periodTotal }) {
   if (periodByFormat.length === 0) {
+    const lineData = periodTotal.map((row) => ({
+      ...row,
+      displayLabel: displayLabelFor(row.period_label, row.period_start),
+    }))
     return (
       <ChartContainer config={fallbackChartConfig} className="h-[220px] w-full">
-        <LineChart accessibilityLayer data={periodTotal} margin={{ bottom: 8 }}>
+        <LineChart accessibilityLayer data={lineData} margin={{ bottom: 8 }}>
           <CartesianGrid vertical={false} />
-          <XAxis dataKey="period_label" />
+          <XAxis dataKey="displayLabel" />
           <ChartTooltip content={<ChartTooltipContent />} />
           <Line
             dataKey="revenue"
@@ -303,7 +320,7 @@ function RevenueTrend({ periodByFormat, periodTotal }) {
     <ChartContainer config={chartConfig} className="h-[220px] w-full">
       <BarChart accessibilityLayer data={chartData} margin={{ bottom: 8 }}>
         <CartesianGrid vertical={false} />
-        <XAxis dataKey="period_label" />
+        <XAxis dataKey="displayLabel" />
         <ChartTooltip content={<StackedTotalTooltip />} />
         <ChartLegend content={<ChartLegendContent />} />
         {formats.map((format, index) => (

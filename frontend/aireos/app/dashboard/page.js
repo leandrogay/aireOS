@@ -191,7 +191,7 @@ export default function DashboardPage() {
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-1 lg:grid-cols-3">
             <div className="lg:col-span-2">
               <RevenueTrendCard
                 summaryByMode={summary.summaryByMode}
@@ -225,10 +225,6 @@ export default function DashboardPage() {
                 defaultYearRange={defaultYearRange}
                 comparisonType={comparison.comparisonType}
                 onComparisonTypeChange={comparison.setComparisonType}
-                previousStart={comparison.previousStart}
-                previousEnd={comparison.previousEnd}
-                onPreviousStartChange={comparison.setPreviousStart}
-                onPreviousEndChange={comparison.setPreviousEnd}
                 dataVersion={dataVersion}
                 activeFilters={badges.length > 0 && badges}
                 onClearFilters={clearAllFilters}

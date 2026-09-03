@@ -334,7 +334,12 @@ def _dashboard_mode_summary(df: pd.DataFrame, retailer: str) -> dict:
         .sort_values("period_start")
     )
 
-    period_by_format = mode_df.sort_values("period_start")[["period_label", "format", "revenue", "units"]]
+    # Includes period_start (not just the label) so the frontend can derive
+    # its own "Week 1/2/3..." label relative to each bar's calendar month,
+    # instead of showing the label's absolute week-of-year number.
+    period_by_format = mode_df.sort_values("period_start")[
+        ["period_label", "period_start", "format", "revenue", "units"]
+    ]
 
     return {
         "storeFormats": store_formats[["format", "revenue", "units"]].to_dict(orient="records"),

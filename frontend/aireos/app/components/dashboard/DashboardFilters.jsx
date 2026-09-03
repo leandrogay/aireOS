@@ -44,10 +44,6 @@ export default function DashboardFilters({
   defaultYearRange,
   comparisonType,
   onComparisonTypeChange,
-  previousStart,
-  previousEnd,
-  onPreviousStartChange,
-  onPreviousEndChange,
   dataVersion = 0,
   activeFilters = null,
   onClearFilters,
@@ -141,8 +137,7 @@ export default function DashboardFilters({
     { label: 'Past Year', range: defaultYearRange },
   ];
 
-  const hasActiveFilters =
-    Boolean(activeFilters) || Boolean(comparisonType) || Boolean(previousStart || previousEnd);
+  const hasActiveFilters = Boolean(activeFilters) || Boolean(comparisonType);
 
   return (
     <div className="bg-white rounded-lg border border-lavander shadow-sm p-3 h-full">
@@ -250,6 +245,7 @@ export default function DashboardFilters({
               type="date"
               aria-label="End date"
               value={draftEnd}
+              min={draftStart || undefined}
               onChange={(e) => onEndChange(e.target.value)}
               className="min-w-0 flex-1 px-2 py-1 text-xs rounded-md border bg-white text-deep-violet-blue border-violet"
             />
@@ -258,7 +254,7 @@ export default function DashboardFilters({
 
         <div>
           <label className="block text-xs text-deep-violet-blue/70 mb-1">Compare To (vs. previous period)</label>
-          <div className="flex flex-wrap gap-1 mb-1">
+          <div className="flex flex-wrap gap-1">
             {COMPARISON_TYPES.map((c) => (
               <button
                 key={c.value}
@@ -269,29 +265,6 @@ export default function DashboardFilters({
                 {c.label}
               </button>
             ))}
-          </div>
-          <div className="flex items-center gap-1">
-            <input
-              type="date"
-              aria-label="Previous period start"
-              value={previousStart}
-              onChange={(e) => {
-                onPreviousStartChange(e.target.value);
-                onComparisonTypeChange(null);
-              }}
-              className="min-w-0 flex-1 px-2 py-1 text-xs rounded-md border bg-white text-deep-violet-blue border-violet"
-            />
-            <span className="text-xs text-deep-violet-blue/50">to</span>
-            <input
-              type="date"
-              aria-label="Previous period end"
-              value={previousEnd}
-              onChange={(e) => {
-                onPreviousEndChange(e.target.value);
-                onComparisonTypeChange(null);
-              }}
-              className="min-w-0 flex-1 px-2 py-1 text-xs rounded-md border bg-white text-deep-violet-blue border-violet"
-            />
           </div>
         </div>
       </div>

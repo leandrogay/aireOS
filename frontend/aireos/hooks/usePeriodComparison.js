@@ -12,12 +12,16 @@ import { useEffect, useState } from 'react';
  * but merely having a current scope does not, by itself, activate a
  * comparison — see `active` below.
  *
- * Inactive until the user deliberately engages the comparison controls
- * themselves — clicking a WoW/MoM/YoY preset, or filling in both "vs."
- * previous-period fields. Picking a Date Range (directly, or via the
- * Filter panel's This Week/This Month quick buttons) changes what WOULD be
- * compared but does not, on its own, turn the comparison on — the user
- * has to press Compare To themselves.
+ * Inactive until the user picks a WoW/MoM/YoY preset. Picking a Date Range
+ * (directly, or via the Filter panel's This Week/This Month quick buttons)
+ * changes what WOULD be compared but does not, on its own, turn the
+ * comparison on — the user has to press Compare To themselves.
+ *
+ * `previousStart`/`previousEnd` are read-only from a caller's perspective —
+ * once a preset resolves, they hold the backend-computed previous range
+ * (used to drive the chart's side-by-side "previous" fetch — see page.js's
+ * previousSummary), not something a caller sets to change what's compared.
+ * Their setters are only exposed for resetting on clear-all-filters.
  *
  * Must be called in the same component that owns startDate/endDate (i.e.
  * page.js), not a descendant — the "external change" detection below relies
@@ -43,11 +47,10 @@ export default function usePeriodComparison({
   const [error, setError] = useState(null);
   const [appliedRange, setAppliedRange] = useState([startDate, endDate]);
 
-  // A comparison is only "active" once the user has engaged the comparison
-  // controls themselves: picked a preset, or filled in both "vs." fields.
-  // The current scope existing (even a non-empty one) isn't enough on its
-  // own — that just describes what the dashboard is showing right now.
-  const active = Boolean(comparisonType) || Boolean(previousStart && previousEnd);
+  // A comparison is only "active" once the user has picked a WoW/MoM/YoY
+  // preset. The current scope existing (even a non-empty one) isn't enough
+  // on its own — that just describes what the dashboard is showing right now.
+  const active = Boolean(comparisonType);
 
   // If the shared current scope changed for a reason other than this hook's
   // own last resolution (e.g. This Week/This Month, editing Date Range
@@ -75,23 +78,10 @@ export default function usePeriodComparison({
       setLoading(true);
       setError(null);
       try {
-        const params = new URLSearchParams({ customer });
+        const params = new URLSearchParams({ customer, comparison_type: comparisonType });
         if (mode) params.set('mode', mode);
         if (sku) params.set('sku', sku);
         if (store) params.set('store', store);
-
-        if (comparisonType) {
-          params.set('comparison_type', comparisonType);
-        } else {
-          if (startDate && endDate) {
-            params.set('current_start', startDate);
-            params.set('current_end', endDate);
-          }
-          if (previousStart && previousEnd) {
-            params.set('previous_start', previousStart);
-            params.set('previous_end', previousEnd);
-          }
-        }
 
         const res = await fetch(
           `${process.env.NEXT_PUBLIC_API_URL}/api/sales/period-comparison?${params.toString()}`
