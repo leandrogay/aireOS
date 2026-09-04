@@ -1,6 +1,6 @@
 "use client"
 
-import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis } from "recharts"
+import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   ChartContainer,
@@ -32,13 +32,30 @@ const comparisonChartConfig = {
   previous: { label: "Previous", color: "var(--aire-lavender)" },
 }
 
-//Relabels it as the week's position within its own calendar month instead ("Week
-// 1"..."Week 5", from the day-of-month of period_start). Month-granularity
-// rows (period_label like "March 2026", no "Week " prefix) are left as-is.
+// Formats a week's period_start as its actual calendar date range, e.g.
+// "Sep 3 – Sep 9" (or "Sep 3, 2026 – Sep 9, 2026" with includeYear).
+function formatWeekRange(periodStart, { includeYear = false } = {}) {
+  if (!periodStart) return ""
+  const start = new Date(`${periodStart}T00:00:00`)
+  const end = new Date(start)
+  end.setDate(end.getDate() + 6)
+  const opts = includeYear
+    ? { month: "short", day: "numeric", year: "numeric" }
+    : { month: "short", day: "numeric" }
+  return `${start.toLocaleDateString("en-US", opts)} – ${end.toLocaleDateString("en-US", opts)}`
+}
+
 function displayLabelFor(periodLabel, periodStart) {
   if (!periodLabel.startsWith("Week ")) return periodLabel
-  const dayOfMonth = new Date(`${periodStart}T00:00:00`).getDate()
-  return `Week ${Math.ceil(dayOfMonth / 7)}`
+  return formatWeekRange(periodStart)
+}
+
+function formatAxisCurrency(value) {
+  if (typeof value !== "number") return value
+  if (Math.abs(value) >= 1000) {
+    return `$${(value / 1000).toLocaleString("en-US", { maximumFractionDigits: 1 })}k`
+  }
+  return `$${value}`
 }
 
 // Reshapes the flat [{ period_label, period_start, format, revenue }] rows
@@ -131,12 +148,15 @@ function buildComparisonChartData(currentPeriodTotal, previousPeriodTotal) {
 
   const rows = []
   for (let i = 0; i < length; i++) {
+    const currentStart = current[i]?.period_start ?? null
+    const previousStart = previous[i]?.period_start ?? null
     rows.push({
       index: i + 1,
       current: current[i]?.revenue ?? null,
       previous: previous[i]?.revenue ?? null,
-      currentLabel: current[i]?.period_label ?? null,
-      previousLabel: previous[i]?.period_label ?? null,
+      currentStart,
+      previousStart,
+      displayLabel: formatWeekRange(currentStart ?? previousStart),
     })
   }
   return rows
@@ -233,26 +253,18 @@ export default function RevenueTrendCard({
 
 // Side-by-side current-vs-previous revenue chart, shown while a Period
 // Comparison is active. Two ungrouped bars per relative-position tick means
-// Recharts lays them out side by side automatically (no stackId).
 function ComparisonTrend({ currentPeriodTotal, previousPeriodTotal }) {
   const chartData = buildComparisonChartData(currentPeriodTotal, previousPeriodTotal)
-
-  // "Week N" rather than the real calendar week ("Week 32 (06-08-2026)") —
-  // bars are aligned by relative position within each period, not by actual
-  // date, so a real week label here would misleadingly suggest the two bars
-  // at a given tick share a calendar week. The tooltip still shows both
-  // sides' actual dates on hover.
-  function tickLabel(index) {
-    return `Week ${index}`
-  }
 
   function tooltipLabel(_value, payload) {
     const row = payload?.[0]?.payload
     if (!row) return null
     return (
       <div className="space-y-0.5">
-        <div>{row.currentLabel ?? "No data"}</div>
-        <div className="text-muted-foreground">vs {row.previousLabel ?? "No data"}</div>
+        <div>{formatWeekRange(row.currentStart, { includeYear: true }) || "No data"}</div>
+        <div className="text-muted-foreground">
+          vs {formatWeekRange(row.previousStart, { includeYear: true }) || "No data"}
+        </div>
       </div>
     )
   }
@@ -261,7 +273,8 @@ function ComparisonTrend({ currentPeriodTotal, previousPeriodTotal }) {
     <ChartContainer config={comparisonChartConfig} className="h-[220px] w-full">
       <BarChart accessibilityLayer data={chartData} margin={{ bottom: 8 }}>
         <CartesianGrid vertical={false} />
-        <XAxis dataKey="index" tickFormatter={tickLabel} interval={0} tick={{ fontSize: 10 }} />
+        <XAxis dataKey="displayLabel" interval={0} tick={{ fontSize: 10 }} />
+        <YAxis tickFormatter={formatAxisCurrency} width={50} tick={{ fontSize: 10 }} />
         <ChartTooltip content={<ChartTooltipContent labelFormatter={tooltipLabel} />} />
         <ChartLegend content={<ChartLegendContent />} />
         <Bar
@@ -297,6 +310,7 @@ function RevenueTrend({ periodByFormat, periodTotal }) {
         <LineChart accessibilityLayer data={lineData} margin={{ bottom: 8 }}>
           <CartesianGrid vertical={false} />
           <XAxis dataKey="displayLabel" />
+          <YAxis tickFormatter={formatAxisCurrency} width={50} tick={{ fontSize: 10 }} />
           <ChartTooltip content={<ChartTooltipContent />} />
           <Line
             dataKey="revenue"
@@ -321,6 +335,7 @@ function RevenueTrend({ periodByFormat, periodTotal }) {
       <BarChart accessibilityLayer data={chartData} margin={{ bottom: 8 }}>
         <CartesianGrid vertical={false} />
         <XAxis dataKey="displayLabel" />
+        <YAxis tickFormatter={formatAxisCurrency} width={50} tick={{ fontSize: 10 }} />
         <ChartTooltip content={<StackedTotalTooltip />} />
         <ChartLegend content={<ChartLegendContent />} />
         {formats.map((format, index) => (
@@ -329,12 +344,6 @@ function RevenueTrend({ periodByFormat, periodTotal }) {
             dataKey={format}
             stackId="format"
             fill={`var(--color-${format})`}
-            // Rounding every segment's corners (the old radius={4} on each
-            // <Bar>) made adjacent segments pinch apart at their shared edge,
-            // reading as separate stacked blocks instead of one bar. Only the
-            // topmost segment (last in stack order — see
-            // sortFormatsByTotalDesc) gets rounded top corners; the rest stay
-            // square so they butt seamlessly against their neighbor.
             radius={index === formats.length - 1 ? [4, 4, 0, 0] : 0}
             maxBarSize={MAX_BAR_SIZE}
             isAnimationActive={false}

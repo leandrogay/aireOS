@@ -64,14 +64,6 @@ export default function DashboardPage() {
     setEndDate(end);
   }, []);
 
-  // No explicit Date Range filter yet? Fetch the chart/summary/ranking
-  // scoped to the current calendar month instead of the whole ~2-year
-  // history — this is purely the *fetch* scope, not the filter state: no
-  // badge, no pre-filled Date Range inputs, nothing shows as "active" until
-  // the user actually picks something. Anchored to the latest available
-  // data (see useDefaultDateRange), not the wall-clock date — this dataset
-  // doesn't update in real time, so a wall-clock default would show an
-  // empty dashboard once "today" moves past the last loaded date.
   const hasExplicitDateFilter = Boolean(startDate && endDate);
   const defaultMonthRange = useDefaultDateRange({ customer, mode, dataVersion, period: 'month' });
   const defaultWeekRange = useDefaultDateRange({ customer, mode, dataVersion, period: 'week' });
@@ -84,9 +76,12 @@ export default function DashboardPage() {
   // the chart switches to monthly bars for those (and for any custom range
   // of similar length) — matched by the named preset's own bounds first
   // (reliable regardless of exact day count), falling back to a day-span
-  // check for arbitrary custom ranges. Applied to BOTH the current and
-  // "previous" comparison fetches (not just the main one) so the two sides
-  // of a side-by-side comparison never end up on mismatched granularities.
+  // check for arbitrary custom ranges. 60 days (~2 months) is the cutoff —
+  // below that, weekly bars are still readable and more useful for spotting
+  // trends; above it, too many weekly bars get cramped and monthly rollups
+  // read better. Applied to BOTH the current and "previous" comparison
+  // fetches (not just the main one) so the two sides of a side-by-side
+  // comparison never end up on mismatched granularities.
   const isLongRangePreset =
     (Boolean(defaultSixMonthRange.start) &&
       effectiveStartDate === defaultSixMonthRange.start &&
@@ -95,7 +90,7 @@ export default function DashboardPage() {
       effectiveStartDate === defaultYearRange.start &&
       effectiveEndDate === defaultYearRange.end);
   const chartGranularity =
-    isLongRangePreset || daySpan(effectiveStartDate, effectiveEndDate) > 45 ? 'month' : 'week';
+    isLongRangePreset || daySpan(effectiveStartDate, effectiveEndDate) > 60 ? 'month' : 'week';
 
   const summary = useDashboardSummary({
     dataVersion,
