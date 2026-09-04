@@ -51,10 +51,11 @@ def check_db_connection() -> int:
 
 # ============================================================
 # SHARED SQL FRAGMENTS
+#
+# json_agg returns NULL when there are no rows, hence the
+# COALESCE to an empty array.
 # ============================================================
 
-# ARRAY(subquery) returns an empty array when there are no
-# rows, never NULL, so COALESCE is not needed here.
 _PROMOTION_COLUMNS = """
     p.promotion_id,
 
@@ -64,6 +65,7 @@ _PROMOTION_COLUMNS = """
     s.store_id,
     s.store_name,
     s.store_code,
+    s.store_format,
 
     p.period_start,
     p.period_end,
@@ -72,16 +74,33 @@ _PROMOTION_COLUMNS = """
     p.promotion_mechanic,
     p.voucher,
 
-    ARRAY(
-        SELECT ps.sku
+    COALESCE(
+        (
+            SELECT json_agg(line ORDER BY line.sku)
 
-        FROM promotion_skus ps
+            FROM (
+                SELECT
+                    sk.sku,
+                    sk.sku_range,
+                    sk.product_name,
+                    sk.product_category,
+                    sk.size,
+                    sk.brand,
+                    sk.uom,
+                    sk.pack_size,
+                    sk.price,
+                    ps.quantity_units
 
-        WHERE
-            ps.promotion_id = p.promotion_id
+                FROM promotion_skus ps
 
-        ORDER BY
-            ps.sku
+                JOIN skus sk
+                    ON sk.sku = ps.sku
+
+                WHERE
+                    ps.promotion_id = p.promotion_id
+            ) AS line
+        ),
+        '[]'::json
     ) AS skus,
 
     p.created_at,
@@ -400,22 +419,29 @@ def _get_or_create_store(
     retailer_id: int,
     store_name: str,
     store_code: str,
+    store_format: str | None = None,
 ) -> int:
-    # On conflict the existing store_name is preserved. A
+    # On conflict the existing store_name is preserved: a
     # promotion write must not silently rename a store that
-    # other promotions also point at; use the /stores
-    # endpoints to rename deliberately.
+    # other promotions also point at.
+    #
+    # store_format uses COALESCE so an incoming value can
+    # fill a gap on a store that has none, but can never
+    # overwrite a format already recorded. Use the /stores
+    # endpoints to change either field deliberately.
     query = text(
         """
         INSERT INTO stores (
             retailer_id,
             store_code,
-            store_name
+            store_name,
+            store_format
         )
         VALUES (
             :retailer_id,
             :store_code,
-            :store_name
+            :store_name,
+            :store_format
         )
 
         ON CONFLICT (
@@ -423,7 +449,11 @@ def _get_or_create_store(
             store_code
         )
         DO UPDATE SET
-            store_name = stores.store_name
+            store_name = stores.store_name,
+            store_format = COALESCE(
+                stores.store_format,
+                EXCLUDED.store_format
+            )
 
         RETURNING store_id
         """
@@ -435,6 +465,7 @@ def _get_or_create_store(
             "retailer_id": retailer_id,
             "store_code": store_code,
             "store_name": store_name,
+            "store_format": store_format,
         },
     ).scalar_one()
 
@@ -449,6 +480,7 @@ def _fetch_store(
             s.store_id,
             s.store_code,
             s.store_name,
+            s.store_format,
 
             r.retailer_id,
             r.retailer_name,
@@ -470,6 +502,7 @@ def _fetch_store(
             s.store_id,
             s.store_code,
             s.store_name,
+            s.store_format,
             r.retailer_id,
             r.retailer_name
         """
@@ -508,12 +541,14 @@ def create_store(
                 INSERT INTO stores (
                     retailer_id,
                     store_code,
-                    store_name
+                    store_name,
+                    store_format
                 )
                 VALUES (
                     :retailer_id,
                     :store_code,
-                    :store_name
+                    :store_name,
+                    :store_format
                 )
 
                 RETURNING store_id
@@ -523,6 +558,7 @@ def create_store(
                 "retailer_id": store.retailer_id,
                 "store_code": store.store_code,
                 "store_name": store.store_name,
+                "store_format": store.store_format,
             },
         ).scalar_one()
 
@@ -548,6 +584,7 @@ def get_stores(
             s.store_id,
             s.store_code,
             s.store_name,
+            s.store_format,
 
             r.retailer_id,
             r.retailer_name,
@@ -572,6 +609,7 @@ def get_stores(
             s.store_id,
             s.store_code,
             s.store_name,
+            s.store_format,
             r.retailer_id,
             r.retailer_name
 
@@ -651,7 +689,8 @@ def update_store(
                 SET
                     retailer_id = :retailer_id,
                     store_code = :store_code,
-                    store_name = :store_name
+                    store_name = :store_name,
+                    store_format = :store_format
 
                 WHERE
                     store_id = :store_id
@@ -662,6 +701,7 @@ def update_store(
                 "retailer_id": store.retailer_id,
                 "store_code": store.store_code,
                 "store_name": store.store_name,
+                "store_format": store.store_format,
             },
         )
 
@@ -745,63 +785,124 @@ def delete_store(
 # ============================================================
 
 
+_UPSERT_SKU = text(
+    """
+    INSERT INTO skus (
+        sku,
+        sku_range,
+        product_name,
+        product_category,
+        size,
+        brand,
+        uom,
+        pack_size,
+        price
+    )
+    VALUES (
+        :sku,
+        :sku_range,
+        :product_name,
+        :product_category,
+        :size,
+        :brand,
+        :uom,
+        :pack_size,
+        :price
+    )
+
+    ON CONFLICT (sku)
+    DO UPDATE SET
+        sku_range        = COALESCE(EXCLUDED.sku_range,        skus.sku_range),
+        product_name     = COALESCE(EXCLUDED.product_name,     skus.product_name),
+        product_category = COALESCE(EXCLUDED.product_category, skus.product_category),
+        size             = COALESCE(EXCLUDED.size,             skus.size),
+        brand            = COALESCE(EXCLUDED.brand,            skus.brand),
+        uom              = COALESCE(EXCLUDED.uom,              skus.uom),
+        pack_size        = COALESCE(EXCLUDED.pack_size,        skus.pack_size),
+        price            = COALESCE(EXCLUDED.price,            skus.price)
+    """
+)
+
+
+_UPSERT_PROMOTION_SKU = text(
+    """
+    INSERT INTO promotion_skus (
+        promotion_id,
+        sku,
+        quantity_units
+    )
+    VALUES (
+        :promotion_id,
+        :sku,
+        :quantity_units
+    )
+
+    ON CONFLICT (
+        promotion_id,
+        sku
+    )
+    DO UPDATE SET
+        quantity_units = EXCLUDED.quantity_units
+    """
+)
+
+
 def _add_skus_to_promotion(
     conn: Connection,
     promotion_id: int,
-    sku_codes: list[str],
+    sku_items: list,
 ) -> None:
-    # Sorted so concurrent transactions lock rows in the same
-    # order, which avoids deadlocks on overlapping SKU sets.
-    cleaned_skus = sorted({
-        sku.strip()
-        for sku in sku_codes
-        if sku and sku.strip()
-    })
+    # De-duplicate by code, keeping the last occurrence, then
+    # sort. Sorting makes concurrent transactions lock rows in
+    # the same order, which avoids deadlocks on overlapping
+    # SKU sets.
+    by_code = {
+        item.sku: item
+        for item in sku_items
+        if item.sku
+    }
 
-    if not cleaned_skus:
+    if not by_code:
         return
 
-    # Both statements are set-based: two round trips total,
-    # regardless of how many SKUs are in the promotion.
+    ordered = [
+        by_code[code]
+        for code in sorted(by_code)
+    ]
+
+    # A non-null incoming value updates the master record; a
+    # null one leaves what is already there. This is the
+    # opposite of the store policy, because SKU attributes are
+    # scraped facts that should track the source, whereas a
+    # store name is an identity a promotion must not rewrite.
     conn.execute(
-        text(
-            """
-            INSERT INTO skus (sku)
-
-            SELECT unnest(CAST(:skus AS VARCHAR[]))
-
-            ON CONFLICT (sku)
-            DO NOTHING
-            """
-        ),
-        {
-            "skus": cleaned_skus,
-        },
+        _UPSERT_SKU,
+        [
+            {
+                "sku": item.sku,
+                "sku_range": item.sku_range,
+                "product_name": item.product_name,
+                "product_category": item.product_category,
+                "size": item.size,
+                "brand": item.brand,
+                "uom": item.uom,
+                "pack_size": item.pack_size,
+                "price": item.price,
+            }
+            for item in ordered
+        ],
     )
 
     conn.execute(
-        text(
-            """
-            INSERT INTO promotion_skus (
-                promotion_id,
-                sku
-            )
-
-            SELECT
-                :promotion_id,
-                unnest(CAST(:skus AS VARCHAR[]))
-
-            ON CONFLICT (
-                promotion_id,
-                sku
-            )
-            DO NOTHING
-            """
-        ),
-        {
-            "promotion_id": promotion_id,
-            "skus": cleaned_skus,
-        },
+        _UPSERT_PROMOTION_SKU,
+        [
+            {
+                "promotion_id": promotion_id,
+                "sku": item.sku,
+                "quantity_units": item.quantity_units,
+            }
+            for item in ordered
+        ],
     )
 
 
@@ -858,6 +959,7 @@ def create_promotion(
             retailer_id,
             promotion.store_name,
             promotion.store_code,
+            promotion.store_format,
         )
 
         promotion_id = conn.execute(
@@ -995,6 +1097,7 @@ def update_promotion(
             retailer_id,
             promotion.store_name,
             promotion.store_code,
+            promotion.store_format,
         )
 
         # updated_at is set by the trg_promotions_updated_at
@@ -1036,8 +1139,9 @@ def update_promotion(
             },
         )
 
-        # Replace all current SKU mappings with
-        # the new list supplied by the request.
+        # Replace all current SKU mappings with the new list
+        # supplied by the request. Rows in `skus` are master
+        # data and are deliberately left in place.
         conn.execute(
             text(
                 """
