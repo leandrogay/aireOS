@@ -15,103 +15,29 @@ const ORDER_OPTIONS = [
 function toggleButtonClass(isActive) {
   return `px-3 py-1 text-xs rounded-full border transition-colors ${
     isActive
-      ? 'bg-blue-500 text-white border-blue-500'
-      : 'bg-white text-gray-600 border-gray-300'
+      ? 'bg-deep-violet-blue text-white border-deep-violet-blue'
+      : 'bg-white text-deep-violet-blue border-violet hover:bg-lavander'
   }`;
 }
 
-export default function SkuRanking({ dataVersion = 0 }) {
+export default function SkuRanking({
+  dataVersion = 0,
+  sku = '',
+  mode = 'offline',
+  customer = '',
+  store = '',
+  startDate = '',
+  endDate = '',
+}) {
   const [metric, setMetric] = useState('value');
   const [order, setOrder] = useState('desc');
-  const [months, setMonths] = useState([]);
-  const [selectedMonth, setSelectedMonth] = useState(null);
-  const [weeks, setWeeks] = useState([]);
-  const [selectedWeek, setSelectedWeek] = useState('');
-  const [weeksLoadedForMonth, setWeeksLoadedForMonth] = useState(null);
   const [skus, setSkus] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const dataVersionRef = useRef(dataVersion);
 
-  // A previously picked week may not exist in a newly selected month, so
-  // reset back to "all weeks" whenever the month changes. Adjusting state
-  // during render (rather than in an effect) avoids an extra cascading
-  // render, per React's guidance on resetting state when a value changes.
-  if (selectedMonth !== weeksLoadedForMonth) {
-    setWeeksLoadedForMonth(selectedMonth);
-    setSelectedWeek('');
-  }
-
-  // Load months on mount and when new ingest is detected. Keep the user's
-  // selected month if it still exists; only fall back to the newest month
-  // when the current choice is gone (or on first load).
   useEffect(() => {
-    let cancelled = false;
-
-    async function fetchMonths() {
-      try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/sales/months`);
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Failed to load available months');
-        if (cancelled) return;
-        setMonths(data.months);
-        if (data.months.length > 0) {
-          setSelectedMonth((current) => {
-            const values = data.months.map((month) => month.value);
-            if (current && values.includes(current)) return current;
-            return data.months[0].value;
-          });
-        } else {
-          setSelectedMonth(null);
-          setLoading(false);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err.message);
-          setLoading(false);
-        }
-      }
-    }
-
-    fetchMonths();
-    return () => {
-      cancelled = true;
-    };
-  }, [dataVersion]);
-
-  // Load weeks for the selected month. On freshness refresh, keep the user's
-  // week if it is still available; clear it only if that week disappeared.
-  useEffect(() => {
-    if (!selectedMonth) return undefined;
-
-    let cancelled = false;
-
-    async function fetchWeeks() {
-      try {
-        const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/api/sales/weeks?month=${selectedMonth}`
-        );
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Failed to load available weeks');
-        if (cancelled) return;
-        setWeeks(data.weeks);
-        setSelectedWeek((current) => {
-          if (!current) return '';
-          return data.weeks.some((week) => week.value === current) ? current : '';
-        });
-      } catch (err) {
-        if (!cancelled) setError(err.message);
-      }
-    }
-
-    fetchWeeks();
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedMonth, dataVersion]);
-
-  useEffect(() => {
-    if (!selectedMonth) return undefined;
+    if (!customer) return undefined;
 
     let cancelled = false;
     const silentRefresh = dataVersionRef.current !== dataVersion;
@@ -123,9 +49,14 @@ export default function SkuRanking({ dataVersion = 0 }) {
       }
       setError(null);
       try {
-        const weekParam = selectedWeek ? `&week=${selectedWeek}` : '';
+        const params = new URLSearchParams({ metric, order, customer });
+        if (sku) params.set('sku', sku);
+        if (mode) params.set('mode', mode);
+        if (store) params.set('store', store);
+        if (startDate) params.set('start_date', startDate);
+        if (endDate) params.set('end_date', endDate);
         const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/api/sales/skus?metric=${metric}&order=${order}&month=${selectedMonth}${weekParam}`
+          `${process.env.NEXT_PUBLIC_API_URL}/api/sales/skus?${params.toString()}`
         );
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Failed to load SKU ranking');
@@ -141,12 +72,17 @@ export default function SkuRanking({ dataVersion = 0 }) {
     return () => {
       cancelled = true;
     };
-  }, [metric, order, selectedMonth, selectedWeek, dataVersion]);
+  }, [metric, order, dataVersion, sku, mode, customer, store, startDate, endDate]);
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-5 mb-8">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <p className="text-sm font-medium text-gray-700">SKU Performance Ranking</p>
+    <div className="bg-white rounded-lg border border-lavander shadow-sm p-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+        <p className="text-sm font-medium text-deep-violet-blue">
+          SKU Performance Ranking{' '}
+          <span className="font-normal text-deep-violet-blue/50">
+            ({mode === 'online' ? 'Online' : 'Offline'})
+          </span>
+        </p>
 
         <div className="flex flex-wrap gap-2">
           {METRICS.map((m) => (
@@ -170,65 +106,33 @@ export default function SkuRanking({ dataVersion = 0 }) {
               {o.label}
             </button>
           ))}
-
-          <select
-            aria-label="Month"
-            value={selectedMonth ?? ''}
-            onChange={(e) => setSelectedMonth(e.target.value)}
-            disabled={months.length === 0}
-            className="px-3 py-1 text-xs rounded-full border bg-white text-gray-600 border-gray-300 disabled:opacity-50"
-          >
-            {months.length === 0 && <option value="">No data available</option>}
-            {months.map((m) => (
-              <option key={m.value} value={m.value}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-
-          <select
-            aria-label="Week"
-            value={selectedWeek}
-            onChange={(e) => setSelectedWeek(e.target.value)}
-            disabled={weeks.length === 0}
-            className="px-3 py-1 text-xs rounded-full border bg-white text-gray-600 border-gray-300 disabled:opacity-50"
-          >
-            <option value="">All weeks</option>
-            {weeks.map((w) => (
-              <option key={w.value} value={w.value}>
-                {w.label}
-              </option>
-            ))}
-          </select>
         </div>
       </div>
 
-      {loading && <p className="text-gray-500 text-sm">Loading SKU ranking...</p>}
+      {loading && <p className="text-deep-violet-blue/70 text-sm">Loading SKU ranking...</p>}
       {error && <p className="text-red-600 text-sm">{error}</p>}
 
       {!loading && !error && skus.length === 0 && (
-        <p className="text-gray-400 text-sm text-center py-6">No SKU data available yet.</p>
+        <p className="text-deep-violet-blue/50 text-sm text-center py-6">No SKU data available yet.</p>
       )}
 
       {!loading && !error && skus.length > 0 && (
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-gray-500 border-t border-gray-100">
-              <th className="px-3 py-2">Rank</th>
-              <th className="px-3 py-2">SKU</th>
-              <th className="px-3 py-2">Product</th>
-              <th className="px-3 py-2">Volume</th>
-              <th className="px-3 py-2">Value</th>
+            <tr className="text-left text-deep-violet-blue/70 border-t border-lavander">
+              <th className="px-3 py-1">Rank</th>
+              <th className="px-3 py-1">Product</th>
+              <th className="px-3 py-1">Volume</th>
+              <th className="px-3 py-1">Value</th>
             </tr>
           </thead>
           <tbody>
             {skus.map((s) => (
-              <tr key={s.sku} className="border-t border-gray-100 text-gray-700">
-                <td className="px-3 py-2">{s.rank}</td>
-                <td className="px-3 py-2">{s.sku}</td>
-                <td className="px-3 py-2">{s.product_name}</td>
-                <td className="px-3 py-2">{s.volume}</td>
-                <td className="px-3 py-2">${s.value.toLocaleString()}</td>
+              <tr key={s.sku} className="border-t border-lavander text-deep-violet-blue">
+                <td className="px-3 py-1">{s.rank}</td>
+                <td className="px-3 py-1">{s.product_name}</td>
+                <td className="px-3 py-1">{s.volume}</td>
+                <td className="px-3 py-1">${s.value.toLocaleString()}</td>
               </tr>
             ))}
           </tbody>
