@@ -1,5 +1,7 @@
+from functools import lru_cache
+
 from sqlalchemy import text
-from sqlalchemy.engine import Connection
+from sqlalchemy.engine import Connection, Engine
 
 from app.services import sql
 
@@ -22,17 +24,79 @@ class StoreHasPromotionsError(Exception):
 
 
 # ============================================================
+# ENGINE
+#
+# An Engine owns a connection pool. Building one per request
+# leaks pools and will exhaust the Cloud SQL connection limit
+# under load, so it is created once and reused.
+# ============================================================
+
+
+@lru_cache(maxsize=1)
+def _get_engine() -> Engine:
+    return sql.connect_with_connector()
+
+
+# ============================================================
 # DATABASE HEALTH
 # ============================================================
 
 
 def check_db_connection() -> int:
-    engine = sql.connect_with_connector()
-
-    with engine.connect() as conn:
+    with _get_engine().connect() as conn:
         return conn.execute(
             text("SELECT 1")
         ).scalar_one()
+
+
+# ============================================================
+# SHARED SQL FRAGMENTS
+# ============================================================
+
+# ARRAY(subquery) returns an empty array when there are no
+# rows, never NULL, so COALESCE is not needed here.
+_PROMOTION_COLUMNS = """
+    p.promotion_id,
+
+    r.retailer_id,
+    r.retailer_name AS retailer,
+
+    s.store_id,
+    s.store_name,
+    s.store_code,
+
+    p.period_start,
+    p.period_end,
+    p.period_label,
+    p.promo_type,
+    p.promotion_mechanic,
+    p.voucher,
+
+    ARRAY(
+        SELECT ps.sku
+
+        FROM promotion_skus ps
+
+        WHERE
+            ps.promotion_id = p.promotion_id
+
+        ORDER BY
+            ps.sku
+    ) AS skus,
+
+    p.created_at,
+    p.updated_at
+"""
+
+_PROMOTION_JOINS = """
+    FROM promotions p
+
+    JOIN stores s
+        ON s.store_id = p.store_id
+
+    JOIN retailers r
+        ON r.retailer_id = s.retailer_id
+"""
 
 
 # ============================================================
@@ -44,8 +108,9 @@ def _get_or_create_retailer(
     conn: Connection,
     retailer_name: str,
 ) -> int:
-    retailer_name = retailer_name.strip()
-
+    # The DO UPDATE is a deliberate no-op: it exists only so
+    # that RETURNING yields a row on conflict. DO NOTHING
+    # would return nothing at all.
     query = text(
         """
         INSERT INTO retailers (
@@ -57,7 +122,7 @@ def _get_or_create_retailer(
 
         ON CONFLICT (retailer_name)
         DO UPDATE SET
-            retailer_name = EXCLUDED.retailer_name
+            retailer_name = retailers.retailer_name
 
         RETURNING retailer_id
         """
@@ -117,9 +182,7 @@ def _fetch_retailer(
 def create_retailer(
     retailer,
 ) -> dict:
-    engine = sql.connect_with_connector()
-
-    with engine.begin() as conn:
+    with _get_engine().begin() as conn:
         retailer_id = conn.execute(
             text(
                 """
@@ -134,7 +197,7 @@ def create_retailer(
                 """
             ),
             {
-                "retailer_name": retailer.retailer_name.strip(),
+                "retailer_name": retailer.retailer_name,
             },
         ).scalar_one()
 
@@ -150,8 +213,6 @@ def create_retailer(
 
 
 def get_retailers() -> list[dict]:
-    engine = sql.connect_with_connector()
-
     query = text(
         """
         SELECT
@@ -173,7 +234,7 @@ def get_retailers() -> list[dict]:
         """
     )
 
-    with engine.connect() as conn:
+    with _get_engine().connect() as conn:
         results = conn.execute(
             query
         ).mappings().all()
@@ -192,9 +253,7 @@ def get_retailers() -> list[dict]:
 def get_retailer(
     retailer_id: int,
 ) -> dict | None:
-    engine = sql.connect_with_connector()
-
-    with engine.connect() as conn:
+    with _get_engine().connect() as conn:
         return _fetch_retailer(
             conn,
             retailer_id,
@@ -210,9 +269,7 @@ def update_retailer(
     retailer_id: int,
     retailer,
 ) -> dict | None:
-    engine = sql.connect_with_connector()
-
-    with engine.begin() as conn:
+    with _get_engine().begin() as conn:
         result = conn.execute(
             text(
                 """
@@ -229,7 +286,7 @@ def update_retailer(
             ),
             {
                 "retailer_id": retailer_id,
-                "retailer_name": retailer.retailer_name.strip(),
+                "retailer_name": retailer.retailer_name,
             },
         ).scalar()
 
@@ -250,13 +307,11 @@ def update_retailer(
 def delete_retailer(
     retailer_id: int,
 ) -> bool:
-    engine = sql.connect_with_connector()
-
-    with engine.begin() as conn:
+    with _get_engine().begin() as conn:
         retailer_exists = conn.execute(
             text(
                 """
-                SELECT retailer_id
+                SELECT 1
 
                 FROM retailers
 
@@ -271,14 +326,16 @@ def delete_retailer(
         if retailer_exists is None:
             return False
 
-        store_count = conn.execute(
+        has_stores = conn.execute(
             text(
                 """
-                SELECT COUNT(*)
+                SELECT EXISTS (
+                    SELECT 1
 
-                FROM stores
+                    FROM stores
 
-                WHERE retailer_id = :retailer_id
+                    WHERE retailer_id = :retailer_id
+                )
                 """
             ),
             {
@@ -286,7 +343,7 @@ def delete_retailer(
             },
         ).scalar_one()
 
-        if store_count > 0:
+        if has_stores:
             raise RetailerHasStoresError(
                 "Retailer cannot be deleted because "
                 "it still has stores."
@@ -320,7 +377,7 @@ def _ensure_retailer_exists(
     retailer = conn.execute(
         text(
             """
-            SELECT retailer_id
+            SELECT 1
 
             FROM retailers
 
@@ -342,8 +399,12 @@ def _get_or_create_store(
     conn: Connection,
     retailer_id: int,
     store_name: str,
-    store_code: int,
+    store_code: str,
 ) -> int:
+    # On conflict the existing store_name is preserved. A
+    # promotion write must not silently rename a store that
+    # other promotions also point at; use the /stores
+    # endpoints to rename deliberately.
     query = text(
         """
         INSERT INTO stores (
@@ -362,7 +423,7 @@ def _get_or_create_store(
             store_code
         )
         DO UPDATE SET
-            store_name = EXCLUDED.store_name
+            store_name = stores.store_name
 
         RETURNING store_id
         """
@@ -373,7 +434,7 @@ def _get_or_create_store(
         {
             "retailer_id": retailer_id,
             "store_code": store_code,
-            "store_name": store_name.strip(),
+            "store_name": store_name,
         },
     ).scalar_one()
 
@@ -435,9 +496,7 @@ def _fetch_store(
 def create_store(
     store,
 ) -> dict:
-    engine = sql.connect_with_connector()
-
-    with engine.begin() as conn:
+    with _get_engine().begin() as conn:
         _ensure_retailer_exists(
             conn,
             store.retailer_id,
@@ -463,7 +522,7 @@ def create_store(
             {
                 "retailer_id": store.retailer_id,
                 "store_code": store.store_code,
-                "store_name": store.store_name.strip(),
+                "store_name": store.store_name,
             },
         ).scalar_one()
 
@@ -481,8 +540,8 @@ def create_store(
 def get_stores(
     retailer_id: int | None = None,
 ) -> list[dict]:
-    engine = sql.connect_with_connector()
-
+    # The CAST is required: without it the driver cannot infer
+    # a type for the parameter when it is NULL.
     query = text(
         """
         SELECT
@@ -505,8 +564,8 @@ def get_stores(
 
         WHERE
             (
-                :retailer_id IS NULL
-                OR s.retailer_id = :retailer_id
+                CAST(:retailer_id AS INTEGER) IS NULL
+                OR s.retailer_id = CAST(:retailer_id AS INTEGER)
             )
 
         GROUP BY
@@ -522,7 +581,7 @@ def get_stores(
         """
     )
 
-    with engine.connect() as conn:
+    with _get_engine().connect() as conn:
         results = conn.execute(
             query,
             {
@@ -544,9 +603,7 @@ def get_stores(
 def get_store(
     store_id: int,
 ) -> dict | None:
-    engine = sql.connect_with_connector()
-
-    with engine.connect() as conn:
+    with _get_engine().connect() as conn:
         return _fetch_store(
             conn,
             store_id,
@@ -562,13 +619,11 @@ def update_store(
     store_id: int,
     store,
 ) -> dict | None:
-    engine = sql.connect_with_connector()
-
-    with engine.begin() as conn:
+    with _get_engine().begin() as conn:
         existing = conn.execute(
             text(
                 """
-                SELECT store_id
+                SELECT 1
 
                 FROM stores
 
@@ -606,7 +661,7 @@ def update_store(
                 "store_id": store_id,
                 "retailer_id": store.retailer_id,
                 "store_code": store.store_code,
-                "store_name": store.store_name.strip(),
+                "store_name": store.store_name,
             },
         )
 
@@ -624,13 +679,11 @@ def update_store(
 def delete_store(
     store_id: int,
 ) -> bool:
-    engine = sql.connect_with_connector()
-
-    with engine.begin() as conn:
+    with _get_engine().begin() as conn:
         existing = conn.execute(
             text(
                 """
-                SELECT store_id
+                SELECT 1
 
                 FROM stores
 
@@ -645,14 +698,16 @@ def delete_store(
         if existing is None:
             return False
 
-        promotion_count = conn.execute(
+        has_promotions = conn.execute(
             text(
                 """
-                SELECT COUNT(*)
+                SELECT EXISTS (
+                    SELECT 1
 
-                FROM promotions
+                    FROM promotions
 
-                WHERE store_id = :store_id
+                    WHERE store_id = :store_id
+                )
                 """
             ),
             {
@@ -660,7 +715,7 @@ def delete_store(
             },
         ).scalar_one()
 
-        if promotion_count > 0:
+        if has_promotions:
             raise StoreHasPromotionsError(
                 "Store cannot be deleted because "
                 "it has promotions."
@@ -684,36 +739,10 @@ def delete_store(
 
 # ============================================================
 # SKU HELPERS
+#
+# `sku` is the natural primary key of the skus table, so
+# there is no surrogate id and no lookup join needed.
 # ============================================================
-
-
-def _get_or_create_sku(
-    conn: Connection,
-    sku_code: str,
-) -> int:
-    query = text(
-        """
-        INSERT INTO skus (
-            sku_code
-        )
-        VALUES (
-            :sku_code
-        )
-
-        ON CONFLICT (sku_code)
-        DO UPDATE SET
-            sku_code = EXCLUDED.sku_code
-
-        RETURNING sku_id
-        """
-    )
-
-    return conn.execute(
-        query,
-        {
-            "sku_code": sku_code.strip(),
-        },
-    ).scalar_one()
 
 
 def _add_skus_to_promotion(
@@ -721,42 +750,59 @@ def _add_skus_to_promotion(
     promotion_id: int,
     sku_codes: list[str],
 ) -> None:
-    cleaned_skus = {
+    # Sorted so concurrent transactions lock rows in the same
+    # order, which avoids deadlocks on overlapping SKU sets.
+    cleaned_skus = sorted({
         sku.strip()
         for sku in sku_codes
         if sku and sku.strip()
-    }
+    })
 
-    for sku_code in cleaned_skus:
-        sku_id = _get_or_create_sku(
-            conn,
-            sku_code,
-        )
+    if not cleaned_skus:
+        return
 
-        conn.execute(
-            text(
-                """
-                INSERT INTO promotion_skus (
-                    promotion_id,
-                    sku_id
-                )
-                VALUES (
-                    :promotion_id,
-                    :sku_id
-                )
+    # Both statements are set-based: two round trips total,
+    # regardless of how many SKUs are in the promotion.
+    conn.execute(
+        text(
+            """
+            INSERT INTO skus (sku)
 
-                ON CONFLICT (
-                    promotion_id,
-                    sku_id
-                )
-                DO NOTHING
-                """
-            ),
-            {
-                "promotion_id": promotion_id,
-                "sku_id": sku_id,
-            },
-        )
+            SELECT unnest(CAST(:skus AS VARCHAR[]))
+
+            ON CONFLICT (sku)
+            DO NOTHING
+            """
+        ),
+        {
+            "skus": cleaned_skus,
+        },
+    )
+
+    conn.execute(
+        text(
+            """
+            INSERT INTO promotion_skus (
+                promotion_id,
+                sku
+            )
+
+            SELECT
+                :promotion_id,
+                unnest(CAST(:skus AS VARCHAR[]))
+
+            ON CONFLICT (
+                promotion_id,
+                sku
+            )
+            DO NOTHING
+            """
+        ),
+        {
+            "promotion_id": promotion_id,
+            "skus": cleaned_skus,
+        },
+    )
 
 
 # ============================================================
@@ -769,52 +815,11 @@ def _fetch_promotion(
     promotion_id: int,
 ) -> dict | None:
     query = text(
-        """
+        f"""
         SELECT
-            p.promotion_id,
+            {_PROMOTION_COLUMNS}
 
-            r.retailer_id,
-            r.retailer_name AS retailer,
-
-            s.store_id,
-            s.store_name,
-            s.store_code,
-
-            p.week_start,
-            p.week_end,
-            p.period_label,
-            p.promo_type,
-            p.promotion_mechanic,
-            p.voucher,
-
-            COALESCE(
-                ARRAY(
-                    SELECT sku.sku_code
-
-                    FROM promotion_skus ps
-
-                    JOIN skus sku
-                        ON sku.sku_id = ps.sku_id
-
-                    WHERE
-                        ps.promotion_id = p.promotion_id
-
-                    ORDER BY
-                        sku.sku_code
-                ),
-                ARRAY[]::VARCHAR[]
-            ) AS skus,
-
-            p.created_at,
-            p.updated_at
-
-        FROM promotions p
-
-        JOIN stores s
-            ON s.store_id = p.store_id
-
-        JOIN retailers r
-            ON r.retailer_id = s.retailer_id
+        {_PROMOTION_JOINS}
 
         WHERE
             p.promotion_id = :promotion_id
@@ -842,9 +847,7 @@ def _fetch_promotion(
 def create_promotion(
     promotion,
 ) -> dict:
-    engine = sql.connect_with_connector()
-
-    with engine.begin() as conn:
+    with _get_engine().begin() as conn:
         retailer_id = _get_or_create_retailer(
             conn,
             promotion.retailer,
@@ -862,8 +865,8 @@ def create_promotion(
                 """
                 INSERT INTO promotions (
                     store_id,
-                    week_start,
-                    week_end,
+                    period_start,
+                    period_end,
                     period_label,
                     promo_type,
                     promotion_mechanic,
@@ -871,8 +874,8 @@ def create_promotion(
                 )
                 VALUES (
                     :store_id,
-                    :week_start,
-                    :week_end,
+                    :period_start,
+                    :period_end,
                     :period_label,
                     CAST(
                         :promo_type
@@ -887,8 +890,8 @@ def create_promotion(
             ),
             {
                 "store_id": store_id,
-                "week_start": promotion.week_start,
-                "week_end": promotion.week_end,
+                "period_start": promotion.period_start,
+                "period_end": promotion.period_end,
                 "period_label": promotion.period_label,
                 "promo_type": promotion.promo_type,
                 "promotion_mechanic": promotion.promotion_mechanic,
@@ -914,63 +917,20 @@ def create_promotion(
 
 
 def get_promotions() -> list[dict]:
-    engine = sql.connect_with_connector()
-
     query = text(
-        """
+        f"""
         SELECT
-            p.promotion_id,
+            {_PROMOTION_COLUMNS}
 
-            r.retailer_id,
-            r.retailer_name AS retailer,
-
-            s.store_id,
-            s.store_name,
-            s.store_code,
-
-            p.week_start,
-            p.week_end,
-            p.period_label,
-            p.promo_type,
-            p.promotion_mechanic,
-            p.voucher,
-
-            COALESCE(
-                ARRAY(
-                    SELECT sku.sku_code
-
-                    FROM promotion_skus ps
-
-                    JOIN skus sku
-                        ON sku.sku_id = ps.sku_id
-
-                    WHERE
-                        ps.promotion_id = p.promotion_id
-
-                    ORDER BY
-                        sku.sku_code
-                ),
-                ARRAY[]::VARCHAR[]
-            ) AS skus,
-
-            p.created_at,
-            p.updated_at
-
-        FROM promotions p
-
-        JOIN stores s
-            ON s.store_id = p.store_id
-
-        JOIN retailers r
-            ON r.retailer_id = s.retailer_id
+        {_PROMOTION_JOINS}
 
         ORDER BY
-            p.week_start DESC,
+            p.period_start DESC,
             p.promotion_id DESC
         """
     )
 
-    with engine.connect() as conn:
+    with _get_engine().connect() as conn:
         results = conn.execute(
             query
         ).mappings().all()
@@ -989,9 +949,7 @@ def get_promotions() -> list[dict]:
 def get_promotion(
     promotion_id: int,
 ) -> dict | None:
-    engine = sql.connect_with_connector()
-
-    with engine.connect() as conn:
+    with _get_engine().connect() as conn:
         return _fetch_promotion(
             conn,
             promotion_id,
@@ -1007,13 +965,11 @@ def update_promotion(
     promotion_id: int,
     promotion,
 ) -> dict | None:
-    engine = sql.connect_with_connector()
-
-    with engine.begin() as conn:
+    with _get_engine().begin() as conn:
         existing = conn.execute(
             text(
                 """
-                SELECT promotion_id
+                SELECT 1
 
                 FROM promotions
 
@@ -1041,6 +997,8 @@ def update_promotion(
             promotion.store_code,
         )
 
+        # updated_at is set by the trg_promotions_updated_at
+        # trigger, so it is not listed here.
         conn.execute(
             text(
                 """
@@ -1048,8 +1006,8 @@ def update_promotion(
 
                 SET
                     store_id = :store_id,
-                    week_start = :week_start,
-                    week_end = :week_end,
+                    period_start = :period_start,
+                    period_end = :period_end,
                     period_label = :period_label,
 
                     promo_type = CAST(
@@ -1060,10 +1018,7 @@ def update_promotion(
                     promotion_mechanic =
                         :promotion_mechanic,
 
-                    voucher = :voucher,
-
-                    updated_at =
-                        CURRENT_TIMESTAMP
+                    voucher = :voucher
 
                 WHERE
                     promotion_id = :promotion_id
@@ -1072,8 +1027,8 @@ def update_promotion(
             {
                 "promotion_id": promotion_id,
                 "store_id": store_id,
-                "week_start": promotion.week_start,
-                "week_end": promotion.week_end,
+                "period_start": promotion.period_start,
+                "period_end": promotion.period_end,
                 "period_label": promotion.period_label,
                 "promo_type": promotion.promo_type,
                 "promotion_mechanic": promotion.promotion_mechanic,
@@ -1117,13 +1072,11 @@ def update_promotion(
 def delete_promotion(
     promotion_id: int,
 ) -> bool:
-    engine = sql.connect_with_connector()
-
-    with engine.begin() as conn:
+    with _get_engine().begin() as conn:
         existing = conn.execute(
             text(
                 """
-                SELECT promotion_id
+                SELECT 1
 
                 FROM promotions
 
@@ -1139,9 +1092,9 @@ def delete_promotion(
         if existing is None:
             return False
 
-        # Explicitly delete mappings first.
-        # This works even if ON DELETE CASCADE
-        # is not configured.
+        # promotion_skus has ON DELETE CASCADE, but this is
+        # kept explicit so the behaviour does not depend on
+        # the constraint being present.
         conn.execute(
             text(
                 """
