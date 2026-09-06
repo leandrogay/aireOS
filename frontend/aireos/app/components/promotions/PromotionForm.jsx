@@ -23,13 +23,13 @@ import {
 } from '@/app/utils/promotionForm';
 
 const inputClass =
-  'w-full rounded-md border border-lavander bg-cream px-2.5 py-1.5 text-sm text-deep-violet-blue focus:border-violet focus:outline-none';
-const labelClass = 'mb-1 block text-xs font-medium text-deep-violet-blue';
-const errorClass = 'mt-1 text-xs text-red-700';
+  'w-full rounded-md border border-lavander bg-cream px-2.5 py-1 text-sm text-deep-violet-blue focus:border-violet focus:outline-none';
+const labelClass = 'mb-0.5 block text-xs font-medium text-deep-violet-blue';
+const errorClass = 'mt-0.5 text-xs text-red-700';
 const checkRowClass =
-  'flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm text-deep-violet-blue hover:bg-cream';
+  'flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-sm text-deep-violet-blue hover:bg-cream';
 const segmentTriggerClass =
-  'rounded-full px-4 py-1 text-sm text-deep-violet-blue/55 data-active:border data-active:border-deep-violet-blue/25 data-active:bg-white data-active:text-deep-violet-blue data-active:shadow-sm';
+  'rounded-full px-3 py-0.5 text-xs text-deep-violet-blue/55 data-active:border data-active:border-deep-violet-blue/25 data-active:bg-white data-active:text-deep-violet-blue data-active:shadow-sm';
 
 /**
  * Inline validation message under a field after a failed submit.
@@ -228,9 +228,9 @@ export default function PromotionForm({
     <form
       noValidate
       onSubmit={onSubmit}
-      className="rounded-lg border border-lavander bg-white p-4 shadow-sm"
+      className="rounded-lg border border-lavander bg-white p-3 shadow-sm"
     >
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-serif text-xl text-deep-violet-blue">Create promotion</h2>
         <p className="text-xs text-deep-violet-blue/70">
           Required fields <span className="text-red-700">*</span>
@@ -240,9 +240,9 @@ export default function PromotionForm({
       <Tabs
         value={form.offerKind}
         onValueChange={setOfferKind}
-        className="mb-4"
+        className="mb-2"
       >
-        <TabsList className="h-10 rounded-full bg-lavander p-1">
+        <TabsList className="h-8 rounded-full bg-lavander p-0.5">
           <TabsTrigger value="monthly" className={segmentTriggerClass}>
             Monthly promotion
           </TabsTrigger>
@@ -253,7 +253,7 @@ export default function PromotionForm({
       </Tabs>
 
       {form.offerKind === 'monthly' && (
-        <div className="grid gap-x-3 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
           <fieldset className="sm:col-span-2">
             <legend className={labelClass}>
               Retailers <span className="text-red-700">*</span>
@@ -288,12 +288,9 @@ export default function PromotionForm({
                 </label>
               ))}
             </CheckboxDropdown>
-            {isLoadingRetailers && (
-              <p className="mt-1 text-xs text-deep-violet-blue/70">Loading retailers…</p>
-            )}
             {retailersError && <p className={errorClass}>{retailersError}</p>}
             {!isLoadingRetailers && !retailersError && retailerOptions.length === 0 && (
-              <p className="mt-1 text-[11px] text-deep-violet-blue/60">
+              <p className="mt-0.5 text-[11px] text-deep-violet-blue/60">
                 No retailers from GET /retailers yet.
               </p>
             )}
@@ -335,12 +332,9 @@ export default function PromotionForm({
                 </label>
               ))}
             </CheckboxDropdown>
-            {isLoadingStores && (
-              <p className="mt-1 text-xs text-deep-violet-blue/70">Loading stores…</p>
-            )}
             {storesError && <p className={errorClass}>{storesError}</p>}
             {!isLoadingStores && !storesError && storeOptions.length === 0 && (
-              <p className="mt-1 text-[11px] text-deep-violet-blue/60">
+              <p className="mt-0.5 text-[11px] text-deep-violet-blue/60">
                 No stores from GET /stores yet.
               </p>
             )}
@@ -389,8 +383,8 @@ export default function PromotionForm({
                 </option>
               ))}
             </select>
-            <p className="mt-0.5 text-[11px] text-deep-violet-blue/60">
-              Collected here only. Connect it after the backend adds recurrence.
+            <p className="mt-0.5 text-[10px] leading-tight text-deep-violet-blue/55">
+              Frontend only until the backend stores recurrence.
             </p>
           </label>
 
@@ -426,10 +420,10 @@ export default function PromotionForm({
                 </option>
               ))}
             </select>
-            <p className="mt-0.5 text-[11px] text-deep-violet-blue/60">
+            <p className="mt-0.5 text-[10px] leading-tight text-deep-violet-blue/55">
               {periodStart && periodEnd
                 ? `${formatMonthlyPeriodLabel(form.periodMonth, form.periodYear)} · ${periodStart} to ${periodEnd}`
-                : 'Saved as MMM-YYYY; dates fill from this month'}
+                : 'Saved as MMM-YYYY'}
             </p>
             <FieldError message={errors.periodLabel} />
           </label>
@@ -470,9 +464,9 @@ export default function PromotionForm({
             <FieldError message={errors.promotionMechanic} />
           </label>
 
-          <div className="sm:col-span-2">
+          <div>
             <span className={labelClass}>Voucher</span>
-            <div className="flex items-center gap-2 text-sm text-deep-violet-blue">
+            <div className="flex items-center gap-1.5 text-sm text-deep-violet-blue">
               <span>$</span>
               <input
                 type="number"
@@ -480,24 +474,24 @@ export default function PromotionForm({
                 step="0.01"
                 value={form.voucherOff}
                 onChange={(event) => patchForm({ voucherOff: event.target.value })}
-                className={`${inputClass} w-20`}
+                className={`${inputClass} min-w-0`}
                 placeholder="8"
               />
-              <span>off $</span>
+              <span className="shrink-0">off $</span>
               <input
                 type="number"
                 min="0"
                 step="0.01"
                 value={form.voucherOn}
                 onChange={(event) => patchForm({ voucherOn: event.target.value })}
-                className={`${inputClass} w-24`}
+                className={`${inputClass} min-w-0`}
                 placeholder="80"
               />
             </div>
             <FieldError message={errors.voucher} />
           </div>
 
-          <fieldset className="sm:col-span-2">
+          <fieldset>
             <legend className={labelClass}>
               SKU range <span className="text-red-700">*</span>
             </legend>
@@ -529,7 +523,7 @@ export default function PromotionForm({
       )}
 
       {form.offerKind === 'weekly' && (
-        <div className="grid gap-x-3 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
           <p className="sm:col-span-2 lg:col-span-4 rounded-md border border-violet bg-lavander px-3 py-2 text-xs text-deep-violet-blue">
             Weekly side offers are collected here only. They are not saved until the weekly backend table exists.
           </p>
@@ -626,7 +620,7 @@ export default function PromotionForm({
       )}
 
       {form.offerKind && (
-        <div className="mt-4">
+        <div className="mt-2.5">
           <button
             type="submit"
             disabled={isSubmitting}

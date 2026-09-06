@@ -18,13 +18,14 @@ import {
   storeCatalogOptions,
   validatePromotionForm,
 } from '@/app/utils/promotionForm';
+import { rememberPromotionRecurrence } from '@/app/utils/promotionOverview';
 
 /**
- * Promotions page for AO4-1.
+ * Promotions page for AO4-1 create and AO4-2 overview.
  *
  * Monthly promotions POST to the existing /api/promotions routes. Weekly
  * side offers are validated on the page only until a weekly backend exists.
- * Retailers and stores come from GET after Cloud SQL ingest.
+ * Retailers, stores, and the overview list come from GET after Cloud SQL ingest.
  */
 export default function PromotionsPage() {
   const [form, setForm] = useState(blankPromotionForm);
@@ -162,6 +163,7 @@ export default function PromotionsPage() {
         .map((promotion) => promotion.promotion_id)
         .filter((id) => id != null);
 
+      rememberPromotionRecurrence(createdIds, form.recurrence);
       setHighlightIds(createdIds);
 
       if (created.length && !failed.length) {
@@ -194,11 +196,11 @@ export default function PromotionsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-cream px-4 py-6 font-sans">
-      <div className="mx-auto flex max-w-5xl flex-col gap-4">
+    <div className="min-h-screen bg-cream px-4 py-3 font-sans">
+      <div className="mx-auto flex max-w-6xl flex-col gap-2.5">
         <header>
-          <h1 className="font-serif text-3xl text-deep-violet-blue">Promotions</h1>
-          <p className="text-sm text-deep-violet-blue/80">
+          <h1 className="font-serif text-2xl text-deep-violet-blue">Promotions</h1>
+          <p className="text-xs text-deep-violet-blue/80">
             Register a monthly promotion or a weekly side offer.
           </p>
         </header>

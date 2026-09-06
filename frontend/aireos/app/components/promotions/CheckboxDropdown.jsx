@@ -48,7 +48,7 @@ export default function CheckboxDropdown({
         disabled={disabled}
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
-        className="flex w-full items-center justify-between rounded-md border border-lavander bg-cream px-2.5 py-1.5 text-left text-sm text-deep-violet-blue focus:border-violet focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+        className="flex w-full items-center justify-between rounded-md border border-lavander bg-cream px-2.5 py-1 text-left text-sm text-deep-violet-blue focus:border-violet focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
       >
         <span className={summary ? '' : 'text-deep-violet-blue/50'}>
           {summary || placeholder}
