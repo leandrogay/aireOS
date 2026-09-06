@@ -33,15 +33,13 @@ const comparisonChartConfig = {
 }
 
 // Formats a week's period_start as its actual calendar date range, e.g.
-// "Sep 3 – Sep 9" (or "Sep 3, 2026 – Sep 9, 2026" with includeYear).
-function formatWeekRange(periodStart, { includeYear = false } = {}) {
+// "Sep 3 – Sep 9".
+function formatWeekRange(periodStart) {
   if (!periodStart) return ""
   const start = new Date(`${periodStart}T00:00:00`)
   const end = new Date(start)
   end.setDate(end.getDate() + 6)
-  const opts = includeYear
-    ? { month: "short", day: "numeric", year: "numeric" }
-    : { month: "short", day: "numeric" }
+  const opts = { month: "short", day: "numeric" }
   return `${start.toLocaleDateString("en-US", opts)} – ${end.toLocaleDateString("en-US", opts)}`
 }
 
@@ -135,31 +133,42 @@ function StackedTotalTooltip({ active, payload, label }) {
   )
 }
 
-// Aligns the current and previous periods' weekly totals by relative
-// position (1st week of each, 2nd week of each, ...) rather than actual
-// calendar date, since the two periods cover different real weeks — that's
-// the whole point of the comparison. Falls back gracefully if one side has
-// more weeks than the other (e.g. a custom range that isn't a clean month).
-function buildComparisonChartData(currentPeriodTotal, previousPeriodTotal) {
-  const byStart = (rows) => [...rows].sort((a, b) => a.period_start.localeCompare(b.period_start))
-  const current = byStart(currentPeriodTotal)
-  const previous = byStart(previousPeriodTotal)
-  const length = Math.max(current.length, previous.length)
+// Labels one side of a comparison by whatever unit that comparison type is
+// actually comparing — a WoW bar is one specific week, so it gets that
+// week's real date range; MoM compares whole months, so it gets the month
+// name; YoY compares whole years, so it gets just the year. Each of these
+// reads directly off the period's own start date (get_period_comparison
+// always returns current/previous start as the *first* day of that week,
+// month, or year respectively, even when the period itself is truncated to
+// however much data is actually available).
+function comparisonLabel(comparisonType, isoDate) {
+  if (!isoDate) return ""
+  const date = new Date(`${isoDate}T00:00:00`)
+  if (comparisonType === "yoy") return `${date.getFullYear()}`
+  if (comparisonType === "mom") return date.toLocaleDateString("en-US", { month: "long", year: "numeric" })
+  return formatWeekRange(isoDate)
+}
 
-  const rows = []
-  for (let i = 0; i < length; i++) {
-    const currentStart = current[i]?.period_start ?? null
-    const previousStart = previous[i]?.period_start ?? null
-    rows.push({
-      index: i + 1,
-      current: current[i]?.revenue ?? null,
-      previous: previous[i]?.revenue ?? null,
-      currentStart,
-      previousStart,
-      displayLabel: formatWeekRange(currentStart ?? previousStart),
-    })
-  }
-  return rows
+// One bar per side, each its own x-axis category (not a shared tick) — see
+// comparisonLabel — so hovering or reading the axis under a given bar
+// always describes that exact bar, current and previous are never
+// ambiguously overlaid on one tick the way a grouped pair would be.
+// Previous (the older period) comes first/left, current (the more recent
+// one) second/right, reading left-to-right in chronological order.
+function buildComparisonBars(result, comparisonType) {
+  const previousAvailable = Boolean(result.previous?.available)
+  return [
+    {
+      label: previousAvailable ? comparisonLabel(comparisonType, result.previous.start) : "No data",
+      current: null,
+      previous: previousAvailable ? result.previous.revenue : null,
+    },
+    {
+      label: comparisonLabel(comparisonType, result.current.start),
+      current: result.current.revenue,
+      previous: null,
+    },
+  ]
 }
 
 /**
@@ -172,10 +181,12 @@ function buildComparisonChartData(currentPeriodTotal, previousPeriodTotal) {
  * given, no client-side truncation.
  *
  * While a Period Comparison is active (see usePeriodComparison), the chart
- * switches to a side-by-side view: current vs. previous period's weekly
- * revenue, aligned by relative position rather than calendar date. The
- * per-store-format breakdown (the normal stacked view) is dropped in this
- * mode to keep two periods' worth of bars readable at once.
+ * switches to a single current-vs-previous total view driven directly by
+ * `comparisonResult` (the same aggregate the Period Comparison box below
+ * shows) rather than the weekly summary data — WoW's "current"/"previous"
+ * are each one week, but MoM/YoY compare whole months/years, so there's
+ * nothing to break down week-by-week for those. The per-store-format
+ * breakdown (the normal stacked view) is dropped in this mode.
  */
 export default function RevenueTrendCard({
   summaryByMode = {},
@@ -187,13 +198,11 @@ export default function RevenueTrendCard({
   mode = "offline",
   onModeChange = () => {},
   comparisonActive = false,
-  previousSummaryByMode = {},
-  previousLoading = false,
+  comparisonType = null,
+  comparisonResult = null,
+  comparisonLoading = false,
 }) {
   const salesData = summaryByMode[mode]
-  const previousSalesData = previousSummaryByMode[mode]
-  const showComparison = comparisonActive
-  const comparisonReady = showComparison && salesData && previousSalesData
 
   return (
     <div className="bg-white rounded-lg border border-lavander shadow-sm p-3 h-full">
@@ -220,79 +229,101 @@ export default function RevenueTrendCard({
         )}
       </div>
 
-      {loading && <p className="text-deep-violet-blue/70 text-sm">Loading dashboard...</p>}
-      {error && <p className="text-red-600 text-sm">{error}</p>}
-
-      {!loading && !error && showComparison && previousLoading && (
-        <p className="text-deep-violet-blue/70 text-sm">Loading comparison...</p>
-      )}
-
-      {!loading && !error && comparisonReady && (
-        <div>
-          <ComparisonTrend
-            currentPeriodTotal={salesData.periodTotal}
-            previousPeriodTotal={previousSalesData.periodTotal}
-          />
-          <p className="mt-1 text-right text-xs text-deep-violet-blue/60">
-            Last Updated: {lastUpdated || "—"}
-          </p>
-        </div>
-      )}
-
-      {!loading && !error && !showComparison && salesData && (
-        <div>
-          <RevenueTrend periodByFormat={salesData.periodByFormat} periodTotal={salesData.periodTotal} />
-          <p className="mt-1 text-right text-xs text-deep-violet-blue/60">
-            Last Updated: {lastUpdated || "—"}
-          </p>
-        </div>
+      {comparisonActive ? (
+        <>
+          {comparisonLoading && <p className="text-deep-violet-blue/70 text-sm">Loading comparison...</p>}
+          {!comparisonLoading && comparisonResult && (
+            <div>
+              <ComparisonTrend result={comparisonResult} comparisonType={comparisonType} />
+              <p className="mt-1 text-right text-xs text-deep-violet-blue/60">
+                Last Updated: {lastUpdated || "—"}
+              </p>
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          {loading && <p className="text-deep-violet-blue/70 text-sm">Loading dashboard...</p>}
+          {error && <p className="text-red-600 text-sm">{error}</p>}
+          {!loading && !error && salesData && (
+            <div>
+              <RevenueTrend periodByFormat={salesData.periodByFormat} periodTotal={salesData.periodTotal} />
+              <p className="mt-1 text-right text-xs text-deep-violet-blue/60">
+                Last Updated: {lastUpdated || "—"}
+              </p>
+            </div>
+          )}
+        </>
       )}
     </div>
   )
 }
 
-// Side-by-side current-vs-previous revenue chart, shown while a Period
-// Comparison is active. Two ungrouped bars per relative-position tick means
-function ComparisonTrend({ currentPeriodTotal, previousPeriodTotal }) {
-  const chartData = buildComparisonChartData(currentPeriodTotal, previousPeriodTotal)
-
-  function tooltipLabel(_value, payload) {
-    const row = payload?.[0]?.payload
-    if (!row) return null
-    return (
-      <div className="space-y-0.5">
-        <div>{formatWeekRange(row.currentStart, { includeYear: true }) || "No data"}</div>
-        <div className="text-muted-foreground">
-          vs {formatWeekRange(row.previousStart, { includeYear: true }) || "No data"}
-        </div>
-      </div>
-    )
-  }
+// Current-vs-previous total, shown while a Period Comparison is active.
+// Each side is its own bar at its own x-axis category (see
+// buildComparisonBars) rather than a grouped pair sharing one tick, so the
+// label under each bar always describes that exact bar.
+function ComparisonTrend({ result, comparisonType }) {
+  const chartData = buildComparisonBars(result, comparisonType)
 
   return (
-    <ChartContainer config={comparisonChartConfig} className="h-[220px] w-full">
-      <BarChart accessibilityLayer data={chartData} margin={{ bottom: 8 }}>
-        <CartesianGrid vertical={false} />
-        <XAxis dataKey="displayLabel" interval={0} tick={{ fontSize: 10 }} />
-        <YAxis tickFormatter={formatAxisCurrency} width={50} tick={{ fontSize: 10 }} />
-        <ChartTooltip content={<ChartTooltipContent labelFormatter={tooltipLabel} />} />
-        <ChartLegend content={<ChartLegendContent />} />
-        <Bar
-          dataKey="current"
-          fill="var(--color-current)"
-          radius={4}
-          maxBarSize={MAX_BAR_SIZE}
-          isAnimationActive={false}
-        />
-        <Bar
-          dataKey="previous"
-          fill="var(--color-previous)"
-          radius={4}
-          maxBarSize={MAX_BAR_SIZE}
-          isAnimationActive={false}
-        />
-      </BarChart>
-    </ChartContainer>
+    <div>
+      <ChartContainer config={comparisonChartConfig} className="h-[220px] w-full">
+        <BarChart accessibilityLayer data={chartData} margin={{ bottom: 8 }}>
+          <CartesianGrid vertical={false} />
+          <XAxis dataKey="label" interval={0} tick={{ fontSize: 10 }} />
+          <YAxis tickFormatter={formatAxisCurrency} width={50} tick={{ fontSize: 10 }} />
+          <ChartTooltip content={<ChartTooltipContent />} />
+          {/* Each category only ever has one of current/previous set (the
+              other is null) — without a shared stackId, Recharts still
+              reserves a same-size side-by-side "slot" for both series in
+              every category, so the one bar that actually has a value ends
+              up drawn off to one side of its own tick instead of centered
+              under it. Stacking two mutually-exclusive values just draws
+              whichever one is non-null centered on its category, with no
+              visual stacking effect since there's never more than one
+              present at a time. */}
+          <Bar
+            dataKey="previous"
+            stackId="comparison"
+            fill="var(--color-previous)"
+            radius={4}
+            maxBarSize={MAX_BAR_SIZE}
+            isAnimationActive={false}
+          />
+          <Bar
+            dataKey="current"
+            stackId="comparison"
+            fill="var(--color-current)"
+            radius={4}
+            maxBarSize={MAX_BAR_SIZE}
+            isAnimationActive={false}
+          />
+        </BarChart>
+      </ChartContainer>
+      {/* Manual legend, not Recharts' <Legend> — a stacked BarChart's
+          auto-generated legend order follows Recharts' own internal stack
+          bookkeeping rather than <Bar> JSX order or an explicit payload
+          override (both were tried and didn't change it), so there's no
+          reliable way to make the built-in legend read left-to-right in
+          the same previous-then-current order as the bars below it. */}
+      <div className="flex items-center justify-center gap-4 pt-3 text-xs text-deep-violet-blue/70">
+        <div className="flex items-center gap-1.5">
+          <div
+            className="h-2 w-2 shrink-0 rounded-[2px]"
+            style={{ backgroundColor: comparisonChartConfig.previous.color }}
+          />
+          Previous
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div
+            className="h-2 w-2 shrink-0 rounded-[2px]"
+            style={{ backgroundColor: comparisonChartConfig.current.color }}
+          />
+          Current
+        </div>
+      </div>
+    </div>
   )
 }
 

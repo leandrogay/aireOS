@@ -76,12 +76,7 @@ export default function DashboardPage() {
   // the chart switches to monthly bars for those (and for any custom range
   // of similar length) — matched by the named preset's own bounds first
   // (reliable regardless of exact day count), falling back to a day-span
-  // check for arbitrary custom ranges. 60 days (~2 months) is the cutoff —
-  // below that, weekly bars are still readable and more useful for spotting
-  // trends; above it, too many weekly bars get cramped and monthly rollups
-  // read better. Applied to BOTH the current and "previous" comparison
-  // fetches (not just the main one) so the two sides of a side-by-side
-  // comparison never end up on mismatched granularities.
+  // check for arbitrary custom ranges.
   const isLongRangePreset =
     (Boolean(defaultSixMonthRange.start) &&
       effectiveStartDate === defaultSixMonthRange.start &&
@@ -115,18 +110,6 @@ export default function DashboardPage() {
     onDateRangeChange: handleDateRangeChange,
     dataVersion,
   });
-  // Only fetched while a comparison is actually active — feeds the chart's
-  // side-by-side current-vs-previous view (see RevenueTrendCard).
-  const previousSummary = useDashboardSummary({
-    dataVersion,
-    sku,
-    customer,
-    store,
-    startDate: comparison.previousStart,
-    endDate: comparison.previousEnd,
-    granularity: chartGranularity,
-    enabled: comparison.active && Boolean(comparison.previousStart && comparison.previousEnd),
-  });
   const lastUpdated = customer ? channels[`${customer}_${mode}`] : null;
 
   function handleSkuChange(value, productName) {
@@ -159,8 +142,6 @@ export default function DashboardPage() {
     clearStore();
     clearDateRange();
     comparison.setComparisonType(null);
-    comparison.setPreviousStart('');
-    comparison.setPreviousEnd('');
   }
 
   const badges = [
@@ -198,8 +179,9 @@ export default function DashboardPage() {
                 mode={mode}
                 onModeChange={setMode}
                 comparisonActive={comparison.active}
-                previousSummaryByMode={previousSummary.summaryByMode}
-                previousLoading={previousSummary.loading}
+                comparisonType={comparison.comparisonType}
+                comparisonResult={comparison.result}
+                comparisonLoading={comparison.loading}
               />
             </div>
             <div>

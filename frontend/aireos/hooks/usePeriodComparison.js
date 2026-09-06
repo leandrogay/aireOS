@@ -17,12 +17,6 @@ import { useEffect, useState } from 'react';
  * changes what WOULD be compared but does not, on its own, turn the
  * comparison on — the user has to press Compare To themselves.
  *
- * `previousStart`/`previousEnd` are read-only from a caller's perspective —
- * once a preset resolves, they hold the backend-computed previous range
- * (used to drive the chart's side-by-side "previous" fetch — see page.js's
- * previousSummary), not something a caller sets to change what's compared.
- * Their setters are only exposed for resetting on clear-all-filters.
- *
  * Must be called in the same component that owns startDate/endDate (i.e.
  * page.js), not a descendant — the "external change" detection below relies
  * on this hook's own setAppliedRange and the caller's setStartDate/setEndDate
@@ -40,8 +34,6 @@ export default function usePeriodComparison({
   dataVersion = 0,
 }) {
   const [comparisonType, setComparisonType] = useState(null);
-  const [previousStart, setPreviousStart] = useState('');
-  const [previousEnd, setPreviousEnd] = useState('');
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -54,15 +46,13 @@ export default function usePeriodComparison({
 
   // If the shared current scope changed for a reason other than this hook's
   // own last resolution (e.g. This Week/This Month, editing Date Range
-  // directly, or clearing its badge), drop out of preset mode and forget
-  // the old previous-period pick — it no longer corresponds to the new
-  // current range — so a comparison, if re-engaged, starts fresh rather
-  // than silently comparing against a stale, mismatched period.
+  // directly, or clearing its badge), drop out of preset mode — the old
+  // pick no longer corresponds to the new current range — so a comparison,
+  // if re-engaged, starts fresh rather than silently comparing against a
+  // stale, mismatched period.
   if (appliedRange[0] !== startDate || appliedRange[1] !== endDate) {
     setAppliedRange([startDate, endDate]);
     if (comparisonType) setComparisonType(null);
-    setPreviousStart('');
-    setPreviousEnd('');
   }
 
   useEffect(() => {
@@ -95,10 +85,6 @@ export default function usePeriodComparison({
           setAppliedRange([data.current.start ?? '', data.current.end ?? '']);
           onDateRangeChange(data.current.start ?? '', data.current.end ?? '');
         }
-        if (data.previous.start !== previousStart || data.previous.end !== previousEnd) {
-          setPreviousStart(data.previous.start ?? '');
-          setPreviousEnd(data.previous.end ?? '');
-        }
       } catch (err) {
         if (!cancelled) setError(err.message);
       } finally {
@@ -110,28 +96,11 @@ export default function usePeriodComparison({
     return () => {
       cancelled = true;
     };
-  }, [
-    active,
-    comparisonType,
-    sku,
-    mode,
-    customer,
-    store,
-    dataVersion,
-    startDate,
-    endDate,
-    previousStart,
-    previousEnd,
-    onDateRangeChange,
-  ]);
+  }, [active, comparisonType, sku, mode, customer, store, dataVersion, startDate, endDate, onDateRangeChange]);
 
   return {
     comparisonType,
     setComparisonType,
-    previousStart,
-    previousEnd,
-    setPreviousStart,
-    setPreviousEnd,
     result,
     loading,
     error,

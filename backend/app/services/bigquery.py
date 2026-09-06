@@ -375,6 +375,12 @@ def _month_bounds(anchor: pd.Timestamp) -> tuple[pd.Timestamp, pd.Timestamp]:
     end = start + pd.offsets.MonthEnd(0)
     return start, end
 
+
+def _year_bounds(anchor: pd.Timestamp) -> tuple[pd.Timestamp, pd.Timestamp]:
+    start = pd.Timestamp(year=anchor.year, month=1, day=1)
+    end = pd.Timestamp(year=anchor.year, month=12, day=31)
+    return start, end
+
 def get_default_date_range(
     customer: str = DEFAULT_CUSTOMER, mode: str | None = None, period: str = "month"
 ) -> dict:
@@ -424,30 +430,40 @@ def _resolve_preset_range(comparison_type: str, retailer: str | None):
         # Weeks in this table are a consistent 7-day cadence, not
         # just "whatever sorts before it" — a gap would otherwise silently
         # mislabel a non-adjacent week as "previous". A week row is always a
-        # complete unit in this data (no partial-week concept), so no
-        # truncation is needed here the way month/year comparisons need below.
+        # complete unit in this data (no partial-week concept), so there's
+        # no "incomplete period" case to handle here the way month/year
+        # comparisons need below.
         current_start = anchor
         current_end = anchor + pd.Timedelta(days=6)
         previous_start = anchor - pd.Timedelta(days=7)
         previous_end = previous_start + pd.Timedelta(days=6)
-    else:
+    elif comparison_type == "mom":
+        # Current = month-to-date: the whole current month, truncated to
+        # whatever the latest available week actually covers if the month
+        # isn't fully populated yet. Previous = the same number of days
+        # from the start of the prior calendar month — comparing a partial
+        # current month (e.g. Aug 1-19) against a FULL prior month (Jul
+        # 1-31) would always make the prior month look bigger purely from
+        # having more days in it, not from an actual sales difference,
+        # so the previous side is truncated to match current's day-count
+        # (e.g. Jul 1-19) for a fair like-for-like comparison.
         month_start, month_end = _month_bounds(anchor)
         latest_available = anchor + pd.Timedelta(days=6)
-        # If the current month isn't fully populated yet (the latest
-        # available week doesn't reach the month's last day), comparing the
-        # full calendar month against a full prior month/year would be
-        # misleading — the "current" side would look artificially low from
-        # missing days, not an actual sales drop. Truncate both sides to the
-        # same day-count from their respective period starts, so it's always
-        # an apples-to-apples "first N days" comparison.
         current_start = month_start
         current_end = min(month_end, latest_available)
         days_covered = (current_end - current_start).days
-
-        if comparison_type == "mom":
-            previous_start = month_start - pd.DateOffset(months=1)
-        else:  # yoy — same calendar month one year back, not "last month" (that's mom)
-            previous_start = month_start - pd.DateOffset(years=1)
+        previous_start = month_start - pd.DateOffset(months=1)
+        previous_end = previous_start + pd.Timedelta(days=days_covered)
+    else:  # yoy
+        # Same day-matched truncation as MoM, applied to whole years
+        # instead of months — current = year-to-date, previous = the same
+        # number of days from the start of the prior calendar year.
+        year_start, year_end = _year_bounds(anchor)
+        latest_available = anchor + pd.Timedelta(days=6)
+        current_start = year_start
+        current_end = min(year_end, latest_available)
+        days_covered = (current_end - current_start).days
+        previous_start = year_start - pd.DateOffset(years=1)
         previous_end = previous_start + pd.Timedelta(days=days_covered)
 
     return current_start, current_end, previous_start, previous_end
