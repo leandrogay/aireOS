@@ -1,12 +1,13 @@
 'use client';
 
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
-import { formatPromoDate, promoTypeLabel } from '@/app/utils/promotionForm';
+import { RECURRENCE_OPTIONS, formatPromoDate, promoTypeLabel } from '@/app/utils/promotionForm';
 import {
   PROMOTION_STATUSES,
+  dedupePromotions,
   filterPromotions,
-  promotionEventName,
   promotionOccurrences,
   promotionRecurrenceLabel,
   promotionStatus,
@@ -14,13 +15,15 @@ import {
   readStoredRecurrenceMap,
   recurrenceForPromotion,
   sortPromotions,
+  uniquePromotionMechanics,
   uniquePromotionPeriods,
   uniquePromotionRetailers,
-  uniquePromotionStores,
+  uniquePromotionStoreNames,
+  uniquePromotionTypes,
 } from '@/app/utils/promotionOverview';
 
-const selectClass =
-  'rounded-md border border-lavander bg-cream px-2.5 py-1 text-xs text-deep-violet-blue focus:border-violet focus:outline-none';
+const pillClass =
+  'inline-flex w-max max-w-[11rem] items-center gap-1 whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide transition';
 
 /**
  * Vibrant status pills so Upcoming / Active / Past read at a glance.
@@ -58,9 +61,146 @@ function DetailTile({ label, value, children }) {
 }
 
 /**
- * AO4-2 promotion overview: GET /api/promotions rows, with retailer /
- * status / period filters and start/end date sort. Recurrence is shown
- * as frontend-only "Does not repeat" until the backend stores it.
+ * Oval column header that opens a filter menu on press.
+ *
+ * @param {object} props
+ */
+function HeaderFilter({
+  id,
+  label,
+  value,
+  allLabel,
+  options,
+  openId,
+  setOpenId,
+  onChange,
+}) {
+  const open = openId === id;
+  const selected = options.find((option) => option.value === value);
+  const buttonRef = useRef(null);
+  const menuRef = useRef(null);
+  const [menuPos, setMenuPos] = useState({ top: 0, left: 0, maxHeight: 256 });
+
+  useEffect(() => {
+    if (!open || !buttonRef.current) return;
+
+    /**
+     * Pin the menu to the header button, flipping up if the table would clip it.
+     */
+    const placeMenu = () => {
+      const rect = buttonRef.current.getBoundingClientRect();
+      const maxHeight = 256;
+      const spaceBelow = window.innerHeight - rect.bottom - 12;
+      const spaceAbove = rect.top - 12;
+      const openUp = spaceBelow < 160 && spaceAbove > spaceBelow;
+      const height = Math.max(120, Math.min(maxHeight, openUp ? spaceAbove : spaceBelow));
+
+      setMenuPos({
+        top: openUp ? rect.top - height - 6 : rect.bottom + 6,
+        left: Math.min(rect.left, window.innerWidth - 220),
+        maxHeight: height,
+      });
+    };
+
+    placeMenu();
+    window.addEventListener('resize', placeMenu);
+    window.addEventListener('scroll', placeMenu, true);
+    return () => {
+      window.removeEventListener('resize', placeMenu);
+      window.removeEventListener('scroll', placeMenu, true);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    /**
+     * Close when the pointer is outside both the pill and the portaled menu.
+     *
+     * @param {MouseEvent} event
+     */
+    const handlePointerDown = (event) => {
+      if (
+        buttonRef.current?.contains(event.target) ||
+        menuRef.current?.contains(event.target)
+      ) {
+        return;
+      }
+      setOpenId(null);
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [open, setOpenId]);
+
+  return (
+    <div className="relative">
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpenId(open ? null : id)}
+        className={`${pillClass} ${
+          value
+            ? 'border-deep-violet-blue bg-deep-violet-blue text-white'
+            : 'border-lavander bg-white text-deep-violet-blue hover:bg-cream'
+        }`}
+      >
+        <span className="truncate">{selected ? selected.label : label}</span>
+        <span className="text-[8px] leading-none" aria-hidden="true">
+          {open ? '▲' : '▼'}
+        </span>
+      </button>
+      {open &&
+        createPortal(
+          <div
+            ref={menuRef}
+            style={{
+              top: menuPos.top,
+              left: menuPos.left,
+              maxHeight: menuPos.maxHeight,
+            }}
+            className="fixed z-50 min-w-[12rem] overflow-y-auto rounded-xl border border-lavander bg-white py-1 shadow-lg"
+          >
+            <button
+              type="button"
+              onClick={() => {
+                onChange('');
+                setOpenId(null);
+              }}
+              className={`block w-full px-3 py-1.5 text-left text-[11px] font-normal normal-case tracking-normal hover:bg-cream ${
+                !value ? 'font-medium text-deep-violet-blue' : 'text-deep-violet-blue/80'
+              }`}
+            >
+              {allLabel}
+            </button>
+            {options.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => {
+                  onChange(option.value);
+                  setOpenId(null);
+                }}
+                className={`block w-full px-3 py-1.5 text-left text-[11px] font-normal normal-case tracking-normal hover:bg-cream ${
+                  value === option.value
+                    ? 'font-medium text-deep-violet-blue'
+                    : 'text-deep-violet-blue/80'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )}
+    </div>
+  );
+}
+
+/**
+ * AO4-2 promotion overview: GET /api/promotions rows, with a filter on
+ * each column except start/end date. Those two stay sort-only.
  *
  * @param {object} props
  */
@@ -72,45 +212,72 @@ export default function PromotionList({
   onRefresh,
 }) {
   const highlighted = new Set(highlightIds);
-  const [retailerFilter, setRetailerFilter] = useState('');
   const [storeFilter, setStoreFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
   const [periodFilter, setPeriodFilter] = useState('');
+  const [promoTypeFilter, setPromoTypeFilter] = useState('');
+  const [mechanicFilter, setMechanicFilter] = useState('');
+  const [recurrenceFilter, setRecurrenceFilter] = useState('');
+  const [retailerFilter, setRetailerFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
   const [sortField, setSortField] = useState('period_start');
   const [sortDirection, setSortDirection] = useState('desc');
   const [expandedId, setExpandedId] = useState(null);
+  const [openFilter, setOpenFilter] = useState(null);
   const recurrenceMap = useMemo(
     () => readStoredRecurrenceMap(),
     [promotions, highlightIds],
   );
 
-  const retailerOptions = useMemo(
-    () => uniquePromotionRetailers(promotions),
-    [promotions],
-  );
-  const periodOptions = useMemo(
-    () => uniquePromotionPeriods(promotions),
+  const uniquePromotions = useMemo(
+    () => dedupePromotions(promotions),
     [promotions],
   );
   const storeOptions = useMemo(
-    () => uniquePromotionStores(promotions, retailerFilter),
-    [promotions, retailerFilter],
+    () => uniquePromotionStoreNames(uniquePromotions),
+    [uniquePromotions],
+  );
+  const periodOptions = useMemo(
+    () => uniquePromotionPeriods(uniquePromotions),
+    [uniquePromotions],
+  );
+  const typeOptions = useMemo(
+    () => uniquePromotionTypes(uniquePromotions),
+    [uniquePromotions],
+  );
+  const mechanicOptions = useMemo(
+    () => uniquePromotionMechanics(uniquePromotions),
+    [uniquePromotions],
+  );
+  const retailerOptions = useMemo(
+    () => uniquePromotionRetailers(uniquePromotions),
+    [uniquePromotions],
   );
 
   const visible = useMemo(() => {
-    const filtered = filterPromotions(promotions, {
-      retailer: retailerFilter,
-      store: storeFilter,
-      status: statusFilter,
-      period: periodFilter,
-    });
+    const filtered = filterPromotions(
+      uniquePromotions,
+      {
+        storeName: storeFilter,
+        period: periodFilter,
+        promoType: promoTypeFilter,
+        mechanic: mechanicFilter,
+        recurrence: recurrenceFilter,
+        retailer: retailerFilter,
+        status: statusFilter,
+      },
+      recurrenceMap,
+    );
     return sortPromotions(filtered, sortField, sortDirection);
   }, [
-    promotions,
-    retailerFilter,
+    uniquePromotions,
     storeFilter,
-    statusFilter,
     periodFilter,
+    promoTypeFilter,
+    mechanicFilter,
+    recurrenceFilter,
+    retailerFilter,
+    statusFilter,
+    recurrenceMap,
     sortField,
     sortDirection,
   ]);
@@ -140,7 +307,25 @@ export default function PromotionList({
     return sortDirection === 'asc' ? '↑' : '↓';
   };
 
-  const hasFilters = Boolean(retailerFilter || storeFilter || statusFilter || periodFilter);
+  const clearFilters = () => {
+    setStoreFilter('');
+    setPeriodFilter('');
+    setPromoTypeFilter('');
+    setMechanicFilter('');
+    setRecurrenceFilter('');
+    setRetailerFilter('');
+    setStatusFilter('');
+  };
+
+  const hasFilters = Boolean(
+    storeFilter ||
+      periodFilter ||
+      promoTypeFilter ||
+      mechanicFilter ||
+      recurrenceFilter ||
+      retailerFilter ||
+      statusFilter,
+  );
 
   return (
     <section className="rounded-lg border border-lavander bg-white p-3 shadow-sm">
@@ -150,108 +335,29 @@ export default function PromotionList({
           <p className="mt-0.5 text-xs text-deep-violet-blue/70">
             {isLoading
               ? 'Loading promotions…'
-              : `${visible.length} of ${promotions.length} shown. Overlapping events stay listed.`}
+              : `${visible.length} of ${uniquePromotions.length} shown. Matching input combinations are listed once.`}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onRefresh}
-          disabled={isLoading}
-          className="rounded-md border border-deep-violet-blue bg-deep-violet-blue px-3 py-1 text-xs font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {isLoading ? 'Loading…' : 'Refresh'}
-        </button>
+        <div className="flex items-center gap-3">
+          {hasFilters && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="text-[11px] font-medium text-deep-violet-blue underline-offset-2 hover:underline"
+            >
+              Clear filters
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={isLoading}
+            className="rounded-md border border-deep-violet-blue bg-deep-violet-blue px-3 py-1 text-xs font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isLoading ? 'Loading…' : 'Refresh'}
+          </button>
+        </div>
       </div>
-
-      <div className="mb-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        <label className="block">
-          <span className="mb-0.5 block text-[11px] font-medium text-deep-violet-blue/70">
-            Retailer
-          </span>
-          <select
-            value={retailerFilter}
-            onChange={(event) => {
-              setRetailerFilter(event.target.value);
-              setStoreFilter('');
-            }}
-            className={`${selectClass} w-full`}
-          >
-            <option value="">All retailers</option>
-            {retailerOptions.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="block">
-          <span className="mb-0.5 block text-[11px] font-medium text-deep-violet-blue/70">
-            Store
-          </span>
-          <select
-            value={storeFilter}
-            onChange={(event) => setStoreFilter(event.target.value)}
-            className={`${selectClass} w-full`}
-          >
-            <option value="">All stores</option>
-            {storeOptions.map((store) => (
-              <option key={store.store_code || store.store_name} value={store.store_code}>
-                {store.store_name}
-                {store.store_code ? ` (${store.store_code})` : ''}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="block">
-          <span className="mb-0.5 block text-[11px] font-medium text-deep-violet-blue/70">
-            Status
-          </span>
-          <select
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value)}
-            className={`${selectClass} w-full`}
-          >
-            <option value="">All statuses</option>
-            {PROMOTION_STATUSES.map((status) => (
-              <option key={status.value} value={status.value}>
-                {status.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="block">
-          <span className="mb-0.5 block text-[11px] font-medium text-deep-violet-blue/70">
-            Time period
-          </span>
-          <select
-            value={periodFilter}
-            onChange={(event) => setPeriodFilter(event.target.value)}
-            className={`${selectClass} w-full`}
-          >
-            <option value="">All periods</option>
-            {periodOptions.map((label) => (
-              <option key={label} value={label}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-
-      {hasFilters && (
-        <button
-          type="button"
-          onClick={() => {
-            setRetailerFilter('');
-            setStoreFilter('');
-            setStatusFilter('');
-            setPeriodFilter('');
-          }}
-          className="mb-2 text-[11px] font-medium text-deep-violet-blue underline-offset-2 hover:underline"
-        >
-          Clear filters
-        </button>
-      )}
 
       {error && (
         <p className="mb-2 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700">
@@ -259,46 +365,150 @@ export default function PromotionList({
         </p>
       )}
 
-      {!error && !promotions.length && !isLoading && (
+      {!error && !uniquePromotions.length && !isLoading && (
         <p className="text-xs text-deep-violet-blue/80">No promotions registered yet.</p>
       )}
 
-      {!error && promotions.length > 0 && visible.length === 0 && (
-        <p className="text-xs text-deep-violet-blue/80">
-          No promotions match these filters.
-        </p>
-      )}
-
-      {visible.length > 0 && (
-        <div className="max-h-[28rem] overflow-auto rounded-md border border-lavander">
+      {uniquePromotions.length > 0 && (
+        <div className="overflow-x-auto rounded-md border border-lavander">
+          <div className="max-h-[28rem] overflow-y-auto">
           <table className="min-w-full text-left text-xs text-deep-violet-blue">
-            <thead className="sticky top-0 bg-cream">
-              <tr className="border-b border-lavander font-semibold uppercase tracking-wide text-deep-violet-blue/70">
-                <th className="px-2.5 py-2">Event name</th>
-                <th className="px-2.5 py-2">
+            <thead className="sticky top-0 z-10 bg-cream">
+              <tr className="border-b border-lavander">
+                <th className="px-1.5 py-2">
+                  <HeaderFilter
+                    id="store"
+                    label="Store name"
+                    value={storeFilter}
+                    allLabel="All stores"
+                    options={storeOptions.map((name) => ({ value: name, label: name }))}
+                    openId={openFilter}
+                    setOpenId={setOpenFilter}
+                    onChange={setStoreFilter}
+                  />
+                </th>
+                <th className="px-1.5 py-2">
+                  <HeaderFilter
+                    id="period"
+                    label="Period"
+                    value={periodFilter}
+                    allLabel="All periods"
+                    options={periodOptions.map((label) => ({ value: label, label }))}
+                    openId={openFilter}
+                    setOpenId={setOpenFilter}
+                    onChange={setPeriodFilter}
+                  />
+                </th>
+                <th className="px-1.5 py-2">
+                  <HeaderFilter
+                    id="promoType"
+                    label="Promo type"
+                    value={promoTypeFilter}
+                    allLabel="All types"
+                    options={typeOptions.map((type) => ({
+                      value: type,
+                      label: promoTypeLabel(type),
+                    }))}
+                    openId={openFilter}
+                    setOpenId={setOpenFilter}
+                    onChange={setPromoTypeFilter}
+                  />
+                </th>
+                <th className="px-1.5 py-2">
+                  <HeaderFilter
+                    id="mechanic"
+                    label="Mechanic"
+                    value={mechanicFilter}
+                    allLabel="All mechanics"
+                    options={mechanicOptions.map((mechanic) => ({
+                      value: mechanic,
+                      label: mechanic,
+                    }))}
+                    openId={openFilter}
+                    setOpenId={setOpenFilter}
+                    onChange={setMechanicFilter}
+                  />
+                </th>
+                <th className="px-1.5 py-2">
                   <button
                     type="button"
                     onClick={() => handleSort('period_start')}
-                    className="inline-flex items-center gap-1 hover:text-deep-violet-blue"
+                    className={`${pillClass} ${
+                      sortField === 'period_start'
+                        ? 'border-deep-violet-blue bg-white text-deep-violet-blue'
+                        : 'border-lavander bg-white text-deep-violet-blue/80 hover:bg-cream'
+                    }`}
                   >
-                    Start date <span className="text-[10px]">{sortMark('period_start')}</span>
+                    Start date
+                    <span className="text-[8px] leading-none">{sortMark('period_start')}</span>
                   </button>
                 </th>
-                <th className="px-2.5 py-2">
+                <th className="px-1.5 py-2">
                   <button
                     type="button"
                     onClick={() => handleSort('period_end')}
-                    className="inline-flex items-center gap-1 hover:text-deep-violet-blue"
+                    className={`${pillClass} ${
+                      sortField === 'period_end'
+                        ? 'border-deep-violet-blue bg-white text-deep-violet-blue'
+                        : 'border-lavander bg-white text-deep-violet-blue/80 hover:bg-cream'
+                    }`}
                   >
-                    End date <span className="text-[10px]">{sortMark('period_end')}</span>
+                    End date
+                    <span className="text-[8px] leading-none">{sortMark('period_end')}</span>
                   </button>
                 </th>
-                <th className="px-2.5 py-2">Recurrence</th>
-                <th className="px-2.5 py-2">Retailer scope</th>
-                <th className="px-2.5 py-2">Status</th>
+                <th className="px-1.5 py-2">
+                  <HeaderFilter
+                    id="recurrence"
+                    label="Recurrence"
+                    value={recurrenceFilter}
+                    allLabel="All recurrences"
+                    options={RECURRENCE_OPTIONS.map((option) => ({
+                      value: option.value,
+                      label: option.label,
+                    }))}
+                    openId={openFilter}
+                    setOpenId={setOpenFilter}
+                    onChange={setRecurrenceFilter}
+                  />
+                </th>
+                <th className="px-1.5 py-2">
+                  <HeaderFilter
+                    id="retailer"
+                    label="Retailer"
+                    value={retailerFilter}
+                    allLabel="All retailers"
+                    options={retailerOptions.map((name) => ({ value: name, label: name }))}
+                    openId={openFilter}
+                    setOpenId={setOpenFilter}
+                    onChange={setRetailerFilter}
+                  />
+                </th>
+                <th className="px-1.5 py-2">
+                  <HeaderFilter
+                    id="status"
+                    label="Status"
+                    value={statusFilter}
+                    allLabel="All statuses"
+                    options={PROMOTION_STATUSES.map((status) => ({
+                      value: status.value,
+                      label: status.label,
+                    }))}
+                    openId={openFilter}
+                    setOpenId={setOpenFilter}
+                    onChange={setStatusFilter}
+                  />
+                </th>
               </tr>
             </thead>
             <tbody>
+              {visible.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="px-2.5 py-3 text-deep-violet-blue/80">
+                    No promotions match these filters.
+                  </td>
+                </tr>
+              )}
               {visible.map((promotion) => {
                 const isNew = highlighted.has(promotion.promotion_id);
                 const isOpen = expandedId === promotion.promotion_id;
@@ -333,12 +543,11 @@ export default function PromotionList({
                         <span className="mr-1.5 inline-block w-2 text-[10px] text-deep-violet-blue/50">
                           {isOpen ? '▾' : '▸'}
                         </span>
-                        {promotionEventName(promotion)}
-                        <span className="mt-0.5 block pl-3.5 text-[10px] font-normal text-deep-violet-blue/55">
-                          {promotion.store_name || '—'}
-                          {promotion.store_code != null ? ` (${promotion.store_code})` : ''}
-                        </span>
+                        {promotion.store_name || '—'}
                       </td>
+                      <td className="px-2.5 py-2">{promotion.period_label || '—'}</td>
+                      <td className="px-2.5 py-2">{promoTypeLabel(promotion.promo_type)}</td>
+                      <td className="px-2.5 py-2">{promotion.promotion_mechanic || '—'}</td>
                       <td className="px-2.5 py-2">{formatPromoDate(promotion.period_start)}</td>
                       <td className="px-2.5 py-2">{formatPromoDate(promotion.period_end)}</td>
                       <td className="px-2.5 py-2 text-deep-violet-blue/80">
@@ -355,13 +564,11 @@ export default function PromotionList({
                     </tr>
                     {isOpen && (
                       <tr className="border-b border-lavander/80">
-                        <td colSpan={6} className="bg-cream/50 px-2.5 py-1.5 text-[11px] text-deep-violet-blue">
+                        <td colSpan={9} className="bg-cream/50 px-2.5 py-1.5 text-[11px] text-deep-violet-blue">
                           <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4 xl:grid-cols-7">
                             <DetailTile
                               label="Store"
-                              value={`${promotion.store_name || '—'}${
-                                promotion.store_code != null ? ` (${promotion.store_code})` : ''
-                              }`}
+                              value={promotion.store_name || '—'}
                             />
                             <DetailTile
                               label="Format"
@@ -408,6 +615,7 @@ export default function PromotionList({
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </section>

@@ -59,6 +59,44 @@ export function promotionEventName(promotion) {
 }
 
 /**
+ * Identity of one create-form combination: retailer, store, period,
+ * promo type, and mechanic. Voucher / SKU changes do not make a new event.
+ *
+ * @param {object} promotion
+ * @returns {string}
+ */
+export function promotionCombinationKey(promotion) {
+  return [
+    String(promotion.retailer || '').trim().toLowerCase(),
+    String(promotion.store_code ?? '').trim(),
+    formatPromoDate(promotion.period_start),
+    formatPromoDate(promotion.period_end),
+    String(promotion.promo_type || ''),
+    String(promotion.promotion_mechanic || '').trim(),
+  ].join('|');
+}
+
+/**
+ * Keep one row per input combination, preferring the newest promotion_id.
+ *
+ * @param {object[]} promotions
+ * @returns {object[]}
+ */
+export function dedupePromotions(promotions) {
+  const newest = new Map();
+
+  for (const item of promotions || []) {
+    const key = promotionCombinationKey(item);
+    const current = newest.get(key);
+    if (!current || Number(item.promotion_id || 0) > Number(current.promotion_id || 0)) {
+      newest.set(key, item);
+    }
+  }
+
+  return [...newest.values()];
+}
+
+/**
  * Recurrence map kept in localStorage until the backend has a column.
  *
  * @returns {Record<string, string>}
@@ -193,47 +231,74 @@ export function uniquePromotionPeriods(promotions) {
 }
 
 /**
- * Unique stores from loaded promotion rows. Optionally limited to one retailer.
+ * Unique store names from loaded promotion rows.
  *
  * @param {object[]} promotions
- * @param {string} [retailer]
- * @returns {Array<{ store_code: string, store_name: string }>}
+ * @returns {string[]}
  */
-export function uniquePromotionStores(promotions, retailer = '') {
-  const seen = new Map();
-
-  for (const item of promotions || []) {
-    if (retailer && item.retailer !== retailer) continue;
-    const code = item.store_code == null ? '' : String(item.store_code);
-    const name = String(item.store_name || '').trim();
-    const key = code || name;
-    if (!key || seen.has(key)) continue;
-    seen.set(key, { store_code: code, store_name: name || code });
-  }
-
-  return [...seen.values()].sort((left, right) =>
-    left.store_name.localeCompare(right.store_name),
+export function uniquePromotionStoreNames(promotions) {
+  return [...new Set((promotions || []).map((item) => item.store_name).filter(Boolean))].sort(
+    (left, right) => left.localeCompare(right),
   );
 }
 
 /**
- * Apply retailer, store, status, and period filters. Overlapping rows are kept.
+ * Unique promo_type values.
  *
  * @param {object[]} promotions
- * @param {{ retailer: string, store: string, status: string, period: string }} filters
+ * @returns {string[]}
+ */
+export function uniquePromotionTypes(promotions) {
+  return [...new Set((promotions || []).map((item) => item.promo_type).filter(Boolean))].sort();
+}
+
+/**
+ * Unique promotion_mechanic values.
+ *
+ * @param {object[]} promotions
+ * @returns {string[]}
+ */
+export function uniquePromotionMechanics(promotions) {
+  return [
+    ...new Set((promotions || []).map((item) => item.promotion_mechanic).filter(Boolean)),
+  ].sort((left, right) => left.localeCompare(right));
+}
+
+/**
+ * Apply column filters. Overlapping different combinations stay listed.
+ *
+ * @param {object[]} promotions
+ * @param {{
+ *   storeName?: string,
+ *   period?: string,
+ *   promoType?: string,
+ *   mechanic?: string,
+ *   recurrence?: string,
+ *   retailer?: string,
+ *   status?: string,
+ * }} filters
+ * @param {Record<string, string>} [recurrenceMap]
  * @returns {object[]}
  */
-export function filterPromotions(promotions, filters) {
-  const retailer = filters.retailer || '';
-  const store = filters.store || '';
-  const status = filters.status || '';
+export function filterPromotions(promotions, filters, recurrenceMap = {}) {
+  const storeName = filters.storeName || '';
   const period = filters.period || '';
+  const promoType = filters.promoType || '';
+  const mechanic = filters.mechanic || '';
+  const recurrence = filters.recurrence || '';
+  const retailer = filters.retailer || '';
+  const status = filters.status || '';
 
   return (promotions || []).filter((promotion) => {
-    if (retailer && promotion.retailer !== retailer) return false;
-    if (store && String(promotion.store_code ?? '') !== store) return false;
-    if (status && promotionStatus(promotion) !== status) return false;
+    if (storeName && promotion.store_name !== storeName) return false;
     if (period && promotion.period_label !== period) return false;
+    if (promoType && promotion.promo_type !== promoType) return false;
+    if (mechanic && promotion.promotion_mechanic !== mechanic) return false;
+    if (recurrence && recurrenceForPromotion(promotion, recurrenceMap) !== recurrence) {
+      return false;
+    }
+    if (retailer && promotion.retailer !== retailer) return false;
+    if (status && promotionStatus(promotion) !== status) return false;
     return true;
   });
 }

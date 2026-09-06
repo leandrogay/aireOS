@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import PromotionForm, { blankPromotionForm } from '@/components/promotions/PromotionForm';
 import PromotionList from '@/components/promotions/PromotionList';
 import {
-  createPromotionsForRetailersAndStores,
+  createPromotionPairs,
   getPromotions,
   getRetailers,
   getStores,
@@ -18,7 +18,10 @@ import {
   storeCatalogOptions,
   validatePromotionForm,
 } from '@/app/utils/promotionForm';
-import { rememberPromotionRecurrence } from '@/app/utils/promotionOverview';
+import {
+  promotionCombinationKey,
+  rememberPromotionRecurrence,
+} from '@/app/utils/promotionOverview';
 
 /**
  * Promotions page for AO4-1 create and AO4-2 overview.
@@ -149,14 +152,46 @@ export default function PromotionsPage() {
     const retailerNames = resolveRetailerTargets(form, retailers);
     const selectedStores = resolveSelectedStores(form, storeCatalogOptions(stores));
     const sharedPayload = buildPromotionPayload(form, selectedStores[0]);
+    const existingKeys = new Set(promotions.map((item) => promotionCombinationKey(item)));
+    const newStoresByRetailer = [];
+    const skipped = [];
+
+    for (const retailer of retailerNames) {
+      for (const store of selectedStores) {
+        const key = promotionCombinationKey({
+          retailer,
+          store_code: store.store_code,
+          period_start: sharedPayload.period_start,
+          period_end: sharedPayload.period_end,
+          promo_type: sharedPayload.promo_type,
+          promotion_mechanic: sharedPayload.promotion_mechanic,
+        });
+
+        if (existingKeys.has(key)) {
+          skipped.push(`${retailer} / ${store.store_name}`);
+          continue;
+        }
+
+        existingKeys.add(key);
+        newStoresByRetailer.push({ retailer, store });
+      }
+    }
+
+    if (!newStoresByRetailer.length) {
+      setSubmitError(
+        skipped.length
+          ? `This combination already exists for ${skipped.join('; ')}.`
+          : 'This promotion combination already exists.',
+      );
+      return;
+    }
 
     setIsSubmitting(true);
 
     try {
-      const { created, failed } = await createPromotionsForRetailersAndStores(
+      const { created, failed } = await createPromotionPairs(
         sharedPayload,
-        retailerNames,
-        selectedStores,
+        newStoresByRetailer,
       );
 
       const createdIds = created
@@ -167,10 +202,13 @@ export default function PromotionsPage() {
       setHighlightIds(createdIds);
 
       if (created.length && !failed.length) {
+        const skipNote = skipped.length
+          ? ` Skipped existing combinations: ${skipped.join('; ')}.`
+          : '';
         setSubmitMessage(
-          created.length === 1
+          (created.length === 1
             ? 'Promotion created. It now appears in the overview.'
-            : `${created.length} promotions created (${retailerNames.length} retailers × ${selectedStores.length} stores).`,
+            : `${created.length} promotions created.`) + skipNote,
         );
         setForm({ ...blankPromotionForm(), offerKind: 'monthly' });
         setErrors({});

@@ -204,26 +204,41 @@ export async function createPromotionsForRetailersAndStores(
   retailerNames,
   stores,
 ) {
+  const pairs = [];
+  for (const retailer of retailerNames) {
+    for (const store of stores) {
+      pairs.push({ retailer, store });
+    }
+  }
+  return createPromotionPairs(sharedPayload, pairs);
+}
+
+/**
+ * POST one promotion per retailer / store pair.
+ *
+ * @param {object} sharedPayload
+ * @param {Array<{ retailer: string, store: { store_name: string, store_code: string } }>} pairs
+ * @returns {Promise<{ created: object[], failed: { retailer: string, store: string, error: string }[] }>}
+ */
+export async function createPromotionPairs(sharedPayload, pairs) {
   const created = [];
   const failed = [];
 
-  for (const retailer of retailerNames) {
-    for (const store of stores) {
-      try {
-        const promotion = await createPromotion({
-          ...sharedPayload,
-          retailer,
-          store_name: store.store_name,
-          store_code: String(store.store_code),
-        });
-        created.push(promotion);
-      } catch (error) {
-        failed.push({
-          retailer,
-          store: store.store_name,
-          error: error.message || 'Failed to create promotion',
-        });
-      }
+  for (const { retailer, store } of pairs) {
+    try {
+      const promotion = await createPromotion({
+        ...sharedPayload,
+        retailer,
+        store_name: store.store_name,
+        store_code: String(store.store_code),
+      });
+      created.push(promotion);
+    } catch (error) {
+      failed.push({
+        retailer,
+        store: store.store_name,
+        error: error.message || 'Failed to create promotion',
+      });
     }
   }
 
