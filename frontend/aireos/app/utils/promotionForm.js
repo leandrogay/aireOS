@@ -7,16 +7,6 @@ export const PROMO_TYPES = [
 
 export const STORE_FORMATS = ['Hyper', 'Super', 'Finest', 'Unity'];
 
-/**
- * Recurrence is UI-only until the promotions table has a column for it.
- */
-export const RECURRENCE_OPTIONS = [
-  { value: 'none', label: 'Does not repeat' },
-  { value: 'weekly', label: 'Weekly' },
-  { value: 'monthly', label: 'Monthly' },
-  { value: 'yearly', label: 'Yearly' },
-];
-
 export const SKU_RANGES = ['Flagship', 'Ultra Pants', 'Ultra Tape'];
 
 export const PROMO_MECHANICS = [
@@ -58,7 +48,8 @@ export const EMPTY_PROMOTION_FORM = {
   selectedRetailerIds: [],
   selectedStoreCodes: [],
   storeFormats: [],
-  recurrence: 'none',
+  periodMonths: [defaultMonth],
+  periodYears: [defaultYear],
   periodMonth: defaultMonth,
   periodYear: defaultYear,
   promoType: 'regular',
@@ -182,6 +173,40 @@ export function formatMonthlyPeriodLabel(month, year) {
 }
 
 /**
+ * Every ticked month × year becomes its own stored period.
+ *
+ * Example: Jan + Mar and 2026 + 2027 → Jan-2026, Mar-2026, Jan-2027, Mar-2027.
+ *
+ * @param {typeof EMPTY_PROMOTION_FORM} form
+ * @returns {Array<{ month: string, year: number, periodStart: string, periodEnd: string, periodLabel: string }>}
+ */
+export function resolveSelectedPeriods(form) {
+  const months = [...new Set((form.periodMonths || []).map(String).filter(Boolean))].sort(
+    (left, right) => Number(left) - Number(right),
+  );
+  const years = [...new Set((form.periodYears || []).map(Number).filter(Boolean))].sort(
+    (left, right) => left - right,
+  );
+  const periods = [];
+
+  for (const year of years) {
+    for (const month of months) {
+      const { periodStart, periodEnd } = monthPeriodBounds(month, year);
+      if (!periodStart || !periodEnd) continue;
+      periods.push({
+        month,
+        year,
+        periodStart,
+        periodEnd,
+        periodLabel: formatMonthlyPeriodLabel(month, year),
+      });
+    }
+  }
+
+  return periods;
+}
+
+/**
  * Build the voucher string "$8 off $80" from the two amount inputs.
  *
  * @param {string | number} offAmount
@@ -193,6 +218,60 @@ export function formatVoucher(offAmount, onAmount) {
   const on = String(onAmount ?? '').trim();
   if (!off && !on) return null;
   return `$${off} off $${on}`;
+}
+
+/**
+ * Split a stored voucher string like "$8 off $80" back into the two inputs.
+ *
+ * @param {string | null | undefined} value
+ * @returns {{ off: string, on: string }}
+ */
+export function parseVoucher(value) {
+  const match = String(value || '').match(/\$?\s*([\d.]+)\s*off\s*\$?\s*([\d.]+)/i);
+  return match ? { off: match[1], on: match[2] } : { off: '', on: '' };
+}
+
+/**
+ * Prefill the create/edit form from one GET /api/promotions row.
+ *
+ * @param {object} promotion
+ * @param {Array<{ retailer_id: number, retailer_name: string }>} retailers
+ * @returns {typeof EMPTY_PROMOTION_FORM}
+ */
+export function formFromPromotion(promotion, retailers = []) {
+  const start = formatPromoDate(promotion.period_start);
+  const [year, month] = start.split('-');
+  const retailer = retailerDropdownOptions(retailers).find(
+    (item) => item.retailer_name === promotion.retailer,
+  );
+  const voucher = parseVoucher(promotion.voucher);
+  const formats = String(promotion.store_format || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const skuRanges = (promotion.skus || [])
+    .map((item) => item.sku_range || item.sku)
+    .filter(Boolean);
+
+  return {
+    ...EMPTY_PROMOTION_FORM,
+    offerKind: 'monthly',
+    selectedRetailerIds: retailer ? [String(retailer.retailer_id)] : [],
+    selectedStoreCodes: promotion.store_code != null ? [String(promotion.store_code)] : [],
+    storeFormats: formats.length ? formats : [],
+    periodMonth: month ? String(Number(month)) : EMPTY_PROMOTION_FORM.periodMonth,
+    periodYear: year && YEAR_OPTIONS.includes(Number(year)) ? Number(year) : EMPTY_PROMOTION_FORM.periodYear,
+    periodMonths: month ? [String(Number(month))] : [...EMPTY_PROMOTION_FORM.periodMonths],
+    periodYears:
+      year && YEAR_OPTIONS.includes(Number(year))
+        ? [Number(year)]
+        : [...EMPTY_PROMOTION_FORM.periodYears],
+    promoType: promotion.promo_type || 'regular',
+    promotionMechanic: promotion.promotion_mechanic || PROMO_MECHANICS[0],
+    voucherOff: voucher.off,
+    voucherOn: voucher.on,
+    skuRanges: skuRanges.length ? skuRanges : [],
+  };
 }
 
 /**
@@ -355,10 +434,12 @@ export function formatStoreFormats(selected) {
  * @param {typeof EMPTY_PROMOTION_FORM} form
  * @param {Array<{ retailer_id: number, retailer_name: string }>} retailers
  * @param {object[]} stores
+ * @param {{ mode?: 'create' | 'edit' }} [options]
  * @returns {Record<string, string>}
  */
-export function validatePromotionForm(form, retailers, stores = []) {
+export function validatePromotionForm(form, retailers, stores = [], options = {}) {
   const errors = {};
+  const mode = options.mode || 'create';
 
   if (!form.offerKind) {
     errors.offerKind = 'Choose monthly promotions or weekly side offers.';
@@ -380,20 +461,29 @@ export function validatePromotionForm(form, retailers, stores = []) {
 
   const retailerNames = resolveRetailerTargets(form, retailers);
   if (retailerNames.length === 0) {
-    errors.retailerScope = 'Select at least one retailer.';
+    errors.retailerScope = mode === 'edit' ? 'Select a retailer.' : 'Select at least one retailer.';
+  } else if (mode === 'edit' && retailerNames.length !== 1) {
+    errors.retailerScope = 'Select one retailer.';
   }
 
   const storeOptions = storeCatalogOptions(stores);
-  if (!resolveSelectedStores(form, storeOptions).length) {
-    errors.storeName = 'Select at least one store.';
+  const selectedStores = resolveSelectedStores(form, storeOptions);
+  if (!selectedStores.length) {
+    errors.storeName = mode === 'edit' ? 'Select a store.' : 'Select at least one store.';
+  } else if (mode === 'edit' && selectedStores.length !== 1) {
+    errors.storeName = 'Select one store.';
   }
 
-  if (!(form.storeFormats || []).length) {
+  if (!(form.storeFormats || []).length && mode !== 'edit') {
     errors.storeFormats = 'Select at least one store format.';
   }
 
-  if (!form.periodMonth || !form.periodYear) {
-    errors.periodLabel = 'Select a month and year.';
+  if (mode === 'edit') {
+    if (!form.periodMonth || !form.periodYear) {
+      errors.periodLabel = 'Select a month and year.';
+    }
+  } else if (!resolveSelectedPeriods(form).length) {
+    errors.periodLabel = 'Select at least one month and one year.';
   }
 
   if (!form.promoType) {
@@ -410,7 +500,7 @@ export function validatePromotionForm(form, retailers, stores = []) {
     errors.voucher = 'Enter both voucher amounts, or leave both blank.';
   }
 
-  if (!form.skuRanges.length) {
+  if (!form.skuRanges.length && mode !== 'edit') {
     errors.skuRanges = 'Select at least one SKU range.';
   }
 
@@ -427,18 +517,23 @@ export function validatePromotionForm(form, retailers, stores = []) {
  *
  * @param {typeof EMPTY_PROMOTION_FORM} form
  * @param {{ store_name: string, store_code: string }} store
+ * @param {{ month?: string, year?: number, periodStart?: string, periodEnd?: string, periodLabel?: string }} [period]
  * @returns {object}
  */
-export function buildPromotionPayload(form, store) {
-  const { periodStart, periodEnd } = monthPeriodBounds(form.periodMonth, form.periodYear);
+export function buildPromotionPayload(form, store, period) {
+  const month = period?.month ?? form.periodMonth;
+  const year = period?.year ?? form.periodYear;
+  const bounds = period?.periodStart
+    ? { periodStart: period.periodStart, periodEnd: period.periodEnd }
+    : monthPeriodBounds(month, year);
 
   return {
     store_name: String(store.store_name || '').trim(),
     store_code: String(store.store_code || '').trim(),
     store_format: formatStoreFormats(form.storeFormats),
-    period_start: periodStart,
-    period_end: periodEnd,
-    period_label: formatMonthlyPeriodLabel(form.periodMonth, form.periodYear) || null,
+    period_start: bounds.periodStart,
+    period_end: bounds.periodEnd,
+    period_label: period?.periodLabel || formatMonthlyPeriodLabel(month, year) || null,
     promo_type: form.promoType,
     promotion_mechanic: form.promotionMechanic || null,
     voucher: formatVoucher(form.voucherOff, form.voucherOn),
@@ -447,4 +542,37 @@ export function buildPromotionPayload(form, store) {
       sku_range: range,
     })),
   };
+}
+
+/**
+ * PUT /api/promotions/{id} body. Same shape as create, plus retailer.
+ * Format, voucher, and SKUs stay on the payload even when the edit
+ * form does not show those fields, so the backend replace does not wipe them.
+ *
+ * @param {typeof EMPTY_PROMOTION_FORM} form
+ * @param {{ store_name: string, store_code: string }} store
+ * @param {string} retailer
+ * @param {object} [original]
+ * @returns {object}
+ */
+export function buildUpdatePayload(form, store, retailer, original = {}) {
+  const payload = {
+    ...buildPromotionPayload(form, store),
+    retailer,
+  };
+
+  if (!payload.store_format && original.store_format) {
+    payload.store_format = original.store_format;
+  }
+
+  if (!payload.skus.length && Array.isArray(original.skus) && original.skus.length) {
+    payload.skus = original.skus
+      .map((item) => ({
+        sku: item.sku || item.sku_range,
+        sku_range: item.sku_range || item.sku || null,
+      }))
+      .filter((item) => item.sku);
+  }
+
+  return payload;
 }

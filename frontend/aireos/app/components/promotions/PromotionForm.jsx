@@ -7,7 +7,6 @@ import {
   MONTH_OPTIONS,
   PROMO_MECHANICS,
   PROMO_TYPES,
-  RECURRENCE_OPTIONS,
   SKU_RANGES,
   STORE_FORMATS,
   YEAR_OPTIONS,
@@ -18,6 +17,7 @@ import {
   formatMonthlyPeriodLabel,
   getThursdayWeeksInMonth,
   monthPeriodBounds,
+  resolveSelectedPeriods,
   retailerDropdownOptions,
   storeCatalogOptions,
 } from '@/app/utils/promotionForm';
@@ -47,7 +47,8 @@ function FieldError({ message }) {
  * Monthly is the default view. Retailers, stores, and store formats are
  * independent checkbox lists. A store such as Sun Plaza (355) can be
  * saved under FairPrice Offline, FairPrice Online, or NHG depending on
- * which retailers are ticked. Recurrence stays on the page only.
+ * which retailers are ticked. Multiple months and years expand into
+ * one stored row per month × year.
  *
  * @param {object} props
  */
@@ -63,7 +64,10 @@ export default function PromotionForm({
   isSubmitting = false,
   errors = {},
   onSubmit,
+  mode = 'create',
+  onCancel,
 }) {
+  const isEdit = mode === 'edit';
   const retailerOptions = retailerDropdownOptions(retailers);
   const storeOptions = storeCatalogOptions(stores);
   const allRetailersSelected = areAllRetailersSelected(
@@ -73,6 +77,18 @@ export default function PromotionForm({
   const allStoresSelected = areAllStoresSelected(form.selectedStoreCodes, storeOptions);
   const allStoreFormatsSelected = areAllStoreFormatsSelected(form.storeFormats);
   const { periodStart, periodEnd } = monthPeriodBounds(form.periodMonth, form.periodYear);
+  const selectedPeriods = resolveSelectedPeriods(form);
+  const monthSummary = MONTH_OPTIONS.filter((month) =>
+    (form.periodMonths || []).map(String).includes(month.value),
+  )
+    .map((month) => month.label)
+    .join(', ');
+  const yearSummary = YEAR_OPTIONS.filter((year) =>
+    (form.periodYears || []).map(Number).includes(Number(year)),
+  ).join(', ');
+  const periodHint = selectedPeriods.length
+    ? selectedPeriods.map((period) => period.periodLabel).join(', ')
+    : 'Select at least one month and one year';
   const weeklyWeeks = getThursdayWeeksInMonth(
     Number(form.weeklyYear),
     Number(form.weeklyMonth),
@@ -200,6 +216,34 @@ export default function PromotionForm({
   };
 
   /**
+   * Tick or untick one create-form month. There is no Select all.
+   *
+   * @param {string} month
+   */
+  const togglePeriodMonth = (month) => {
+    const value = String(month);
+    const selected = (form.periodMonths || []).map(String);
+    const next = selected.includes(value)
+      ? selected.filter((item) => item !== value)
+      : [...selected, value];
+    patchForm({ periodMonths: next });
+  };
+
+  /**
+   * Tick or untick one create-form year. There is no Select all.
+   *
+   * @param {number} year
+   */
+  const togglePeriodYear = (year) => {
+    const value = Number(year);
+    const selected = (form.periodYears || []).map(Number);
+    const next = selected.includes(value)
+      ? selected.filter((item) => item !== value)
+      : [...selected, value];
+    patchForm({ periodYears: next });
+  };
+
+  /**
    * Toggle a SKU range checkbox. More than one range can be selected.
    *
    * @param {string} range
@@ -231,12 +275,22 @@ export default function PromotionForm({
       className="rounded-lg border border-lavander bg-white p-3 shadow-sm"
     >
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-serif text-xl text-deep-violet-blue">Create promotion</h2>
+        <h2 className="font-serif text-xl text-deep-violet-blue">
+          {isEdit ? 'Edit promotion' : 'Create promotion'}
+        </h2>
         <p className="text-xs text-deep-violet-blue/70">
           Required fields <span className="text-red-700">*</span>
         </p>
       </div>
 
+      {isEdit && (
+        <p className="mb-2 rounded-md border border-violet bg-lavander px-3 py-2 text-xs text-deep-violet-blue">
+          Store name, period, promo type, mechanic, retailer, and voucher can be changed.
+          Store format and SKU stay as stored.
+        </p>
+      )}
+
+      {!isEdit && (
       <Tabs
         value={form.offerKind}
         onValueChange={setOfferKind}
@@ -251,8 +305,173 @@ export default function PromotionForm({
           </TabsTrigger>
         </TabsList>
       </Tabs>
+      )}
 
-      {form.offerKind === 'monthly' && (
+      {isEdit && (
+        <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
+          <label>
+            <span className={labelClass}>
+              Retailer <span className="text-red-700">*</span>
+            </span>
+            <select
+              value={form.selectedRetailerIds[0] || ''}
+              onChange={(event) =>
+                patchForm({
+                  selectedRetailerIds: event.target.value ? [event.target.value] : [],
+                })
+              }
+              className={inputClass}
+              disabled={isLoadingRetailers}
+            >
+              <option value="">
+                {isLoadingRetailers ? 'Loading retailers…' : 'Select retailer'}
+              </option>
+              {retailerOptions.map((retailer) => (
+                <option key={retailer.retailer_id} value={String(retailer.retailer_id)}>
+                  {retailer.retailer_name}
+                </option>
+              ))}
+            </select>
+            {retailersError && <p className={errorClass}>{retailersError}</p>}
+            <FieldError message={errors.retailerScope} />
+          </label>
+
+          <label>
+            <span className={labelClass}>
+              Store name <span className="text-red-700">*</span>
+            </span>
+            <select
+              value={form.selectedStoreCodes[0] || ''}
+              onChange={(event) =>
+                patchForm({
+                  selectedStoreCodes: event.target.value ? [event.target.value] : [],
+                })
+              }
+              className={inputClass}
+              disabled={isLoadingStores}
+            >
+              <option value="">
+                {isLoadingStores ? 'Loading stores…' : 'Select store'}
+              </option>
+              {storeOptions.map((store) => (
+                <option key={store.store_code} value={String(store.store_code)}>
+                  {store.store_name}
+                </option>
+              ))}
+            </select>
+            {storesError && <p className={errorClass}>{storesError}</p>}
+            <FieldError message={errors.storeName} />
+          </label>
+
+          <label>
+            <span className={labelClass}>
+              Month <span className="text-red-700">*</span>
+            </span>
+            <select
+              value={form.periodMonth}
+              onChange={(event) => patchForm({ periodMonth: event.target.value })}
+              className={inputClass}
+            >
+              {MONTH_OPTIONS.map((month) => (
+                <option key={month.value} value={month.value}>
+                  {month.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            <span className={labelClass}>
+              Year <span className="text-red-700">*</span>
+            </span>
+            <select
+              value={form.periodYear}
+              onChange={(event) => patchForm({ periodYear: event.target.value })}
+              className={inputClass}
+            >
+              {YEAR_OPTIONS.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
+            <p className="mt-0.5 text-[10px] leading-tight text-deep-violet-blue/55">
+              {periodStart && periodEnd
+                ? `${formatMonthlyPeriodLabel(form.periodMonth, form.periodYear)} · ${periodStart} to ${periodEnd}`
+                : 'Saved as MMM-YYYY'}
+            </p>
+            <FieldError message={errors.periodLabel} />
+          </label>
+
+          <label>
+            <span className={labelClass}>
+              Promo type <span className="text-red-700">*</span>
+            </span>
+            <select
+              value={form.promoType}
+              onChange={(event) => patchForm({ promoType: event.target.value })}
+              className={inputClass}
+            >
+              {PROMO_TYPES.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <FieldError message={errors.promoType} />
+          </label>
+
+          <label>
+            <span className={labelClass}>
+              Promo mechanic <span className="text-red-700">*</span>
+            </span>
+            <select
+              value={form.promotionMechanic}
+              onChange={(event) => patchForm({ promotionMechanic: event.target.value })}
+              className={inputClass}
+            >
+              {PROMO_MECHANICS.map((mechanic) => (
+                <option key={mechanic} value={mechanic}>
+                  {mechanic}
+                </option>
+              ))}
+            </select>
+            <FieldError message={errors.promotionMechanic} />
+          </label>
+
+          <div>
+            <span className={labelClass}>Voucher</span>
+            <div className="flex items-center gap-1.5 text-sm text-deep-violet-blue">
+              <span>$</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.voucherOff}
+                onChange={(event) => patchForm({ voucherOff: event.target.value })}
+                className={`${inputClass} min-w-0`}
+                placeholder="8"
+              />
+              <span className="shrink-0">off $</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.voucherOn}
+                onChange={(event) => patchForm({ voucherOn: event.target.value })}
+                className={`${inputClass} min-w-0`}
+                placeholder="80"
+              />
+            </div>
+            <p className="mt-0.5 text-[10px] leading-tight text-deep-violet-blue/55">
+              Leave both blank to remove a stored voucher.
+            </p>
+            <FieldError message={errors.voucher} />
+          </div>
+        </div>
+      )}
+
+      {!isEdit && form.offerKind === 'monthly' && (
         <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
           <fieldset className="sm:col-span-2">
             <legend className={labelClass}>
@@ -370,63 +589,47 @@ export default function PromotionForm({
             <FieldError message={errors.storeFormats} />
           </fieldset>
 
-          <label>
-            <span className={labelClass}>Recurrence</span>
-            <select
-              value={form.recurrence}
-              onChange={(event) => patchForm({ recurrence: event.target.value })}
-              className={inputClass}
-            >
-              {RECURRENCE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            <p className="mt-0.5 text-[10px] leading-tight text-deep-violet-blue/55">
-              Frontend only until the backend stores recurrence.
-            </p>
-          </label>
-
-          <label>
-            <span className={labelClass}>
+          <fieldset>
+            <legend className={labelClass}>
               Month <span className="text-red-700">*</span>
-            </span>
-            <select
-              value={form.periodMonth}
-              onChange={(event) => patchForm({ periodMonth: event.target.value })}
-              className={inputClass}
-            >
+            </legend>
+            <CheckboxDropdown summary={monthSummary} placeholder="Select months">
               {MONTH_OPTIONS.map((month) => (
-                <option key={month.value} value={month.value}>
+                <label key={month.value} className={checkRowClass}>
+                  <input
+                    type="checkbox"
+                    checked={(form.periodMonths || []).map(String).includes(month.value)}
+                    onChange={() => togglePeriodMonth(month.value)}
+                    className="size-3.5 accent-deep-violet-blue"
+                  />
                   {month.label}
-                </option>
+                </label>
               ))}
-            </select>
-          </label>
+            </CheckboxDropdown>
+          </fieldset>
 
-          <label>
-            <span className={labelClass}>
+          <fieldset>
+            <legend className={labelClass}>
               Year <span className="text-red-700">*</span>
-            </span>
-            <select
-              value={form.periodYear}
-              onChange={(event) => patchForm({ periodYear: event.target.value })}
-              className={inputClass}
-            >
+            </legend>
+            <CheckboxDropdown summary={yearSummary} placeholder="Select years">
               {YEAR_OPTIONS.map((year) => (
-                <option key={year} value={year}>
+                <label key={year} className={checkRowClass}>
+                  <input
+                    type="checkbox"
+                    checked={(form.periodYears || []).map(Number).includes(Number(year))}
+                    onChange={() => togglePeriodYear(year)}
+                    className="size-3.5 accent-deep-violet-blue"
+                  />
                   {year}
-                </option>
+                </label>
               ))}
-            </select>
+            </CheckboxDropdown>
             <p className="mt-0.5 text-[10px] leading-tight text-deep-violet-blue/55">
-              {periodStart && periodEnd
-                ? `${formatMonthlyPeriodLabel(form.periodMonth, form.periodYear)} · ${periodStart} to ${periodEnd}`
-                : 'Saved as MMM-YYYY'}
+              {periodHint}. Each month × year is saved as its own promotion.
             </p>
             <FieldError message={errors.periodLabel} />
-          </label>
+          </fieldset>
 
           <label>
             <span className={labelClass}>
@@ -522,7 +725,7 @@ export default function PromotionForm({
         </div>
       )}
 
-      {form.offerKind === 'weekly' && (
+      {!isEdit && form.offerKind === 'weekly' && (
         <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
           <p className="sm:col-span-2 lg:col-span-4 rounded-md border border-violet bg-lavander px-3 py-2 text-xs text-deep-violet-blue">
             Weekly side offers are collected here only. They are not saved until the weekly backend table exists.
@@ -619,8 +822,8 @@ export default function PromotionForm({
         </div>
       )}
 
-      {form.offerKind && (
-        <div className="mt-2.5">
+      {(isEdit || form.offerKind) && (
+        <div className="mt-2.5 flex flex-wrap items-center gap-2">
           <button
             type="submit"
             disabled={isSubmitting}
@@ -628,10 +831,22 @@ export default function PromotionForm({
           >
             {isSubmitting
               ? 'Saving…'
-              : form.offerKind === 'weekly'
-                ? 'Record weekly offer (UI only)'
-                : 'Create monthly promotion'}
+              : isEdit
+                ? 'Save changes'
+                : form.offerKind === 'weekly'
+                  ? 'Record weekly offer (UI only)'
+                  : 'Create monthly promotion'}
           </button>
+          {isEdit && (
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={isSubmitting}
+              className="rounded-md border border-deep-violet-blue/30 bg-white px-4 py-1.5 text-sm font-medium text-deep-violet-blue transition hover:bg-cream disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Cancel
+            </button>
+          )}
         </div>
       )}
     </form>
@@ -649,6 +864,8 @@ export function blankPromotionForm() {
     selectedRetailerIds: [],
     selectedStoreCodes: [],
     storeFormats: [],
+    periodMonths: [...EMPTY_PROMOTION_FORM.periodMonths],
+    periodYears: [...EMPTY_PROMOTION_FORM.periodYears],
     skuRanges: [],
   };
 }

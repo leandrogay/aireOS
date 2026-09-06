@@ -3,17 +3,13 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { RECURRENCE_OPTIONS, formatPromoDate, promoTypeLabel } from '@/app/utils/promotionForm';
+import { formatPromoDate, promoTypeLabel } from '@/app/utils/promotionForm';
 import {
   PROMOTION_STATUSES,
   dedupePromotions,
   filterPromotions,
-  promotionOccurrences,
-  promotionRecurrenceLabel,
   promotionStatus,
   promotionStatusLabel,
-  readStoredRecurrenceMap,
-  recurrenceForPromotion,
   sortPromotions,
   uniquePromotionMechanics,
   uniquePromotionPeriods,
@@ -209,6 +205,8 @@ export default function PromotionList({
   isLoading = false,
   error = '',
   highlightIds = [],
+  editingId = null,
+  onEdit,
   onRefresh,
 }) {
   const highlighted = new Set(highlightIds);
@@ -216,17 +214,12 @@ export default function PromotionList({
   const [periodFilter, setPeriodFilter] = useState('');
   const [promoTypeFilter, setPromoTypeFilter] = useState('');
   const [mechanicFilter, setMechanicFilter] = useState('');
-  const [recurrenceFilter, setRecurrenceFilter] = useState('');
   const [retailerFilter, setRetailerFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [sortField, setSortField] = useState('period_start');
   const [sortDirection, setSortDirection] = useState('desc');
   const [expandedId, setExpandedId] = useState(null);
   const [openFilter, setOpenFilter] = useState(null);
-  const recurrenceMap = useMemo(
-    () => readStoredRecurrenceMap(),
-    [promotions, highlightIds],
-  );
 
   const uniquePromotions = useMemo(
     () => dedupePromotions(promotions),
@@ -261,11 +254,9 @@ export default function PromotionList({
         period: periodFilter,
         promoType: promoTypeFilter,
         mechanic: mechanicFilter,
-        recurrence: recurrenceFilter,
         retailer: retailerFilter,
         status: statusFilter,
       },
-      recurrenceMap,
     );
     return sortPromotions(filtered, sortField, sortDirection);
   }, [
@@ -274,10 +265,8 @@ export default function PromotionList({
     periodFilter,
     promoTypeFilter,
     mechanicFilter,
-    recurrenceFilter,
     retailerFilter,
     statusFilter,
-    recurrenceMap,
     sortField,
     sortDirection,
   ]);
@@ -312,7 +301,6 @@ export default function PromotionList({
     setPeriodFilter('');
     setPromoTypeFilter('');
     setMechanicFilter('');
-    setRecurrenceFilter('');
     setRetailerFilter('');
     setStatusFilter('');
   };
@@ -322,7 +310,6 @@ export default function PromotionList({
       periodFilter ||
       promoTypeFilter ||
       mechanicFilter ||
-      recurrenceFilter ||
       retailerFilter ||
       statusFilter,
   );
@@ -459,21 +446,6 @@ export default function PromotionList({
                 </th>
                 <th className="px-1.5 py-2">
                   <HeaderFilter
-                    id="recurrence"
-                    label="Recurrence"
-                    value={recurrenceFilter}
-                    allLabel="All recurrences"
-                    options={RECURRENCE_OPTIONS.map((option) => ({
-                      value: option.value,
-                      label: option.label,
-                    }))}
-                    openId={openFilter}
-                    setOpenId={setOpenFilter}
-                    onChange={setRecurrenceFilter}
-                  />
-                </th>
-                <th className="px-1.5 py-2">
-                  <HeaderFilter
                     id="retailer"
                     label="Retailer"
                     value={retailerFilter}
@@ -499,6 +471,11 @@ export default function PromotionList({
                     onChange={setStatusFilter}
                   />
                 </th>
+                <th className="px-1.5 py-2">
+                  <span className="px-1 text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">
+                    Edit
+                  </span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -511,18 +488,19 @@ export default function PromotionList({
               )}
               {visible.map((promotion) => {
                 const isNew = highlighted.has(promotion.promotion_id);
+                const isEditing = editingId === promotion.promotion_id;
                 const isOpen = expandedId === promotion.promotion_id;
                 const status = promotionStatus(promotion);
                 const skuLabels = Array.isArray(promotion.skus)
                   ? promotion.skus.map((item) => item.sku_range || item.sku).filter(Boolean)
                   : [];
-                const recurrence = recurrenceForPromotion(promotion, recurrenceMap);
-                const occurrences = promotionOccurrences(promotion, recurrence);
-                const rowClass = isNew
-                  ? 'bg-lavander/70'
-                  : isOpen
-                    ? 'bg-cream/80'
-                    : 'bg-white hover:bg-cream/50';
+                const rowClass = isEditing
+                  ? 'bg-lavander/90'
+                  : isNew
+                    ? 'bg-lavander/70'
+                    : isOpen
+                      ? 'bg-cream/80'
+                      : 'bg-white hover:bg-cream/50';
 
                 return (
                   <Fragment key={promotion.promotion_id}>
@@ -550,9 +528,6 @@ export default function PromotionList({
                       <td className="px-2.5 py-2">{promotion.promotion_mechanic || '—'}</td>
                       <td className="px-2.5 py-2">{formatPromoDate(promotion.period_start)}</td>
                       <td className="px-2.5 py-2">{formatPromoDate(promotion.period_end)}</td>
-                      <td className="px-2.5 py-2 text-deep-violet-blue/80">
-                        {promotionRecurrenceLabel(recurrence)}
-                      </td>
                       <td className="px-2.5 py-2 font-medium">{promotion.retailer || '—'}</td>
                       <td className="px-2.5 py-2">
                         <span
@@ -561,11 +536,27 @@ export default function PromotionList({
                           {promotionStatusLabel(status)}
                         </span>
                       </td>
+                      <td className="px-2.5 py-2">
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onEdit?.(promotion);
+                          }}
+                          className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                            isEditing
+                              ? 'border-deep-violet-blue bg-deep-violet-blue text-white'
+                              : 'border-deep-violet-blue bg-white text-deep-violet-blue hover:bg-cream'
+                          }`}
+                        >
+                          {isEditing ? 'Editing' : 'Edit'}
+                        </button>
+                      </td>
                     </tr>
                     {isOpen && (
                       <tr className="border-b border-lavander/80">
                         <td colSpan={9} className="bg-cream/50 px-2.5 py-1.5 text-[11px] text-deep-violet-blue">
-                          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4 xl:grid-cols-7">
+                          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 xl:grid-cols-6">
                             <DetailTile
                               label="Store"
                               value={promotion.store_name || '—'}
@@ -590,22 +581,6 @@ export default function PromotionList({
                               label="SKU range"
                               value={skuLabels.length ? skuLabels.join(', ') : '—'}
                             />
-                            <DetailTile
-                              label="Recurrence"
-                              value={promotionRecurrenceLabel(recurrence)}
-                            >
-                              {recurrence !== 'none' && occurrences.length > 1 && (
-                                <p className="mt-0.5 text-[10px] leading-snug text-deep-violet-blue/70">
-                                  {occurrences
-                                    .slice(1, 3)
-                                    .map((occurrence) => `${occurrence.start} – ${occurrence.end}`)
-                                    .join(' · ')}
-                                  {occurrences.length > 3
-                                    ? ` · +${occurrences.length - 3} more`
-                                    : ''}
-                                </p>
-                              )}
-                            </DetailTile>
                           </div>
                         </td>
                       </tr>

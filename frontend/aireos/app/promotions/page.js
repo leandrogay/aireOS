@@ -9,19 +9,20 @@ import {
   getPromotions,
   getRetailers,
   getStores,
+  updatePromotion,
 } from '@/app/services/promotionsApi';
 import {
   buildPromotionPayload,
+  buildUpdatePayload,
+  formFromPromotion,
   getThursdayWeeksInMonth,
   resolveRetailerTargets,
+  resolveSelectedPeriods,
   resolveSelectedStores,
   storeCatalogOptions,
   validatePromotionForm,
 } from '@/app/utils/promotionForm';
-import {
-  promotionCombinationKey,
-  rememberPromotionRecurrence,
-} from '@/app/utils/promotionOverview';
+import { promotionCombinationKey } from '@/app/utils/promotionOverview';
 
 /**
  * Promotions page for AO4-1 create and AO4-2 overview.
@@ -46,6 +47,7 @@ export default function PromotionsPage() {
   const [submitMessage, setSubmitMessage] = useState('');
   const [submitError, setSubmitError] = useState('');
   const [highlightIds, setHighlightIds] = useState([]);
+  const [editingPromotion, setEditingPromotion] = useState(null);
 
   /**
    * Load retailers for All / Specific scope from GET /api/promotions/retailers.
@@ -85,20 +87,43 @@ export default function PromotionsPage() {
   }, []);
 
   /**
-   * Load the monthly promotion overview from GET /api/promotions.
+   * Apply a saved promotion to the overview immediately so staff do not
+   * wait on GET /api/promotions or the Refresh button.
+   *
+   * @param {object | object[]} next
    */
-  const loadPromotions = useCallback(async () => {
-    setIsLoadingList(true);
+  const applyPromotionsToOverview = (next) => {
+    const rows = (Array.isArray(next) ? next : [next]).filter(
+      (item) => item && item.promotion_id != null,
+    );
+    if (!rows.length) return;
+
+    setPromotions((current) => {
+      const byId = new Map(current.map((item) => [item.promotion_id, item]));
+      for (const item of rows) {
+        byId.set(item.promotion_id, item);
+      }
+      return [...byId.values()];
+    });
+  };
+
+  /**
+   * Load the monthly promotion overview from GET /api/promotions.
+   *
+   * @param {{ silent?: boolean }} [options]
+   */
+  const loadPromotions = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setIsLoadingList(true);
     setListError('');
 
     try {
       const data = await getPromotions();
       setPromotions(data);
     } catch (error) {
-      setPromotions([]);
+      if (!silent) setPromotions([]);
       setListError(error.message || 'Failed to load promotions.');
     } finally {
-      setIsLoadingList(false);
+      if (!silent) setIsLoadingList(false);
     }
   }, []);
 
@@ -107,6 +132,21 @@ export default function PromotionsPage() {
     loadStores();
     loadPromotions();
   }, [loadRetailers, loadStores, loadPromotions]);
+
+  useEffect(() => {
+    if (!editingPromotion || !retailers.length) return;
+
+    const prefilled = formFromPromotion(editingPromotion, retailers);
+    if (!prefilled.selectedRetailerIds.length) return;
+
+    setForm((current) => {
+      if (current.selectedRetailerIds.length) return current;
+      return {
+        ...current,
+        selectedRetailerIds: prefilled.selectedRetailerIds,
+      };
+    });
+  }, [editingPromotion, retailers]);
 
   /**
    * Update the form. After a failed submit, re-validate so a filled
@@ -118,8 +158,35 @@ export default function PromotionsPage() {
     setForm(nextForm);
     setErrors((current) => {
       if (Object.keys(current).length === 0) return current;
-      return validatePromotionForm(nextForm, retailers, stores);
+      return validatePromotionForm(nextForm, retailers, stores, {
+        mode: editingPromotion ? 'edit' : 'create',
+      });
     });
+  };
+
+  /**
+   * Open the pre-filled edit form for one overview row.
+   *
+   * @param {object} promotion
+   */
+  const handleEdit = (promotion) => {
+    setEditingPromotion(promotion);
+    setForm(formFromPromotion(promotion, retailers));
+    setErrors({});
+    setSubmitMessage('');
+    setSubmitError('');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  /**
+   * Leave edit mode and restore a blank create form.
+   */
+  const handleCancelEdit = () => {
+    setEditingPromotion(null);
+    setForm({ ...blankPromotionForm(), offerKind: 'monthly' });
+    setErrors({});
+    setSubmitMessage('');
+    setSubmitError('');
   };
 
   /**
@@ -133,10 +200,63 @@ export default function PromotionsPage() {
     setSubmitMessage('');
     setSubmitError('');
 
-    const nextErrors = validatePromotionForm(form, retailers, stores);
+    const nextErrors = validatePromotionForm(form, retailers, stores, {
+      mode: editingPromotion ? 'edit' : 'create',
+    });
     setErrors(nextErrors);
 
     if (Object.keys(nextErrors).length > 0) {
+      return;
+    }
+
+    if (editingPromotion) {
+      const retailerNames = resolveRetailerTargets(form, retailers);
+      const selectedStores = resolveSelectedStores(form, storeCatalogOptions(stores));
+
+      if (retailerNames.length !== 1 || selectedStores.length !== 1) {
+        setSubmitError('Choose one retailer and one store.');
+        return;
+      }
+
+      const payload = buildUpdatePayload(
+        form,
+        selectedStores[0],
+        retailerNames[0],
+        editingPromotion,
+      );
+      const nextKey = promotionCombinationKey(payload);
+      const clash = promotions.find(
+        (item) =>
+          item.promotion_id !== editingPromotion.promotion_id &&
+          promotionCombinationKey(item) === nextKey,
+      );
+
+      if (clash) {
+        setSubmitError(
+          `This combination already exists for ${clash.retailer} / ${clash.store_name}.`,
+        );
+        return;
+      }
+
+      setIsSubmitting(true);
+
+      try {
+        const updated = await updatePromotion(editingPromotion.promotion_id, payload);
+        applyPromotionsToOverview(updated);
+        setHighlightIds(
+          updated?.promotion_id != null ? [updated.promotion_id] : [editingPromotion.promotion_id],
+        );
+        setEditingPromotion(null);
+        setForm({ ...blankPromotionForm(), offerKind: 'monthly' });
+        setErrors({});
+        setSubmitMessage('Promotion updated. The overview now shows the new details.');
+        await loadPromotions({ silent: true });
+      } catch (error) {
+        setSubmitError(error.message || 'Failed to update promotion.');
+      } finally {
+        setIsSubmitting(false);
+      }
+
       return;
     }
 
@@ -151,29 +271,33 @@ export default function PromotionsPage() {
 
     const retailerNames = resolveRetailerTargets(form, retailers);
     const selectedStores = resolveSelectedStores(form, storeCatalogOptions(stores));
-    const sharedPayload = buildPromotionPayload(form, selectedStores[0]);
+    const selectedPeriods = resolveSelectedPeriods(form);
     const existingKeys = new Set(promotions.map((item) => promotionCombinationKey(item)));
     const newStoresByRetailer = [];
     const skipped = [];
 
-    for (const retailer of retailerNames) {
-      for (const store of selectedStores) {
-        const key = promotionCombinationKey({
-          retailer,
-          store_code: store.store_code,
-          period_start: sharedPayload.period_start,
-          period_end: sharedPayload.period_end,
-          promo_type: sharedPayload.promo_type,
-          promotion_mechanic: sharedPayload.promotion_mechanic,
-        });
+    for (const period of selectedPeriods) {
+      const periodPayload = buildPromotionPayload(form, selectedStores[0], period);
 
-        if (existingKeys.has(key)) {
-          skipped.push(`${retailer} / ${store.store_name}`);
-          continue;
+      for (const retailer of retailerNames) {
+        for (const store of selectedStores) {
+          const key = promotionCombinationKey({
+            retailer,
+            store_code: store.store_code,
+            period_start: periodPayload.period_start,
+            period_end: periodPayload.period_end,
+            promo_type: periodPayload.promo_type,
+            promotion_mechanic: periodPayload.promotion_mechanic,
+          });
+
+          if (existingKeys.has(key)) {
+            skipped.push(`${retailer} / ${store.store_name} / ${period.periodLabel}`);
+            continue;
+          }
+
+          existingKeys.add(key);
+          newStoresByRetailer.push({ retailer, store, payload: periodPayload });
         }
-
-        existingKeys.add(key);
-        newStoresByRetailer.push({ retailer, store });
       }
     }
 
@@ -190,7 +314,7 @@ export default function PromotionsPage() {
 
     try {
       const { created, failed } = await createPromotionPairs(
-        sharedPayload,
+        {},
         newStoresByRetailer,
       );
 
@@ -198,7 +322,7 @@ export default function PromotionsPage() {
         .map((promotion) => promotion.promotion_id)
         .filter((id) => id != null);
 
-      rememberPromotionRecurrence(createdIds, form.recurrence);
+      applyPromotionsToOverview(created);
       setHighlightIds(createdIds);
 
       if (created.length && !failed.length) {
@@ -215,17 +339,21 @@ export default function PromotionsPage() {
       } else if (created.length && failed.length) {
         setSubmitError(
           `Created ${created.length}, but ${failed.length} failed: ${failed
-            .map((item) => `${item.retailer} / ${item.store} (${item.error})`)
+            .map((item) => `${item.retailer} / ${item.store}${item.period ? ` / ${item.period}` : ''} (${item.error})`)
             .join('; ')}`,
         );
       } else {
         setSubmitError(
-          failed.map((item) => `${item.retailer} / ${item.store}: ${item.error}`).join(' ') ||
+          failed.map((item) => `${item.retailer} / ${item.store}${item.period ? ` / ${item.period}` : ''}: ${item.error}`).join(' ') ||
             'Failed to create promotion.',
         );
       }
 
-      await Promise.all([loadPromotions(), loadRetailers(), loadStores()]);
+      await Promise.all([
+        loadPromotions({ silent: true }),
+        loadRetailers(),
+        loadStores(),
+      ]);
     } catch (error) {
       setSubmitError(error.message || 'Failed to create promotion.');
     } finally {
@@ -239,7 +367,9 @@ export default function PromotionsPage() {
         <header>
           <h1 className="font-serif text-2xl text-deep-violet-blue">Promotions</h1>
           <p className="text-xs text-deep-violet-blue/80">
-            Register a monthly promotion or a weekly side offer.
+            {editingPromotion
+              ? `Editing promotion ${editingPromotion.promotion_id} (${editingPromotion.store_name || 'store'}).`
+              : 'Register a monthly promotion or a weekly side offer.'}
           </p>
         </header>
 
@@ -267,6 +397,8 @@ export default function PromotionsPage() {
           isSubmitting={isSubmitting}
           errors={errors}
           onSubmit={handleSubmit}
+          mode={editingPromotion ? 'edit' : 'create'}
+          onCancel={handleCancelEdit}
         />
 
         <PromotionList
@@ -274,6 +406,8 @@ export default function PromotionsPage() {
           isLoading={isLoadingList}
           error={listError}
           highlightIds={highlightIds}
+          editingId={editingPromotion?.promotion_id}
+          onEdit={handleEdit}
           onRefresh={loadPromotions}
         />
       </div>

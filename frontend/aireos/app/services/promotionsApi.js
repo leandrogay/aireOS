@@ -1,8 +1,7 @@
 // ============================================================
 // Backend communication for AO4-1 promotion events.
 // Each exported function is annotated with its HTTP method + endpoint.
-// Event name and recurrence are collected in the UI but are not sent yet —
-// the current API has no columns for them.
+// Each ticked month × year is sent as its own POST /api/promotions row.
 // ============================================================
 
 /**
@@ -73,6 +72,7 @@ async function request(path, { method = 'GET', body } = {}) {
   try {
     const response = await fetch(url, {
       method,
+      cache: 'no-store',
       headers: body ? { 'Content-Type': 'application/json' } : undefined,
       body: body ? JSON.stringify(body) : undefined,
     });
@@ -185,6 +185,24 @@ export async function createPromotion(payload) {
 }
 
 /**
+ * PUT /api/promotions/{promotion_id}
+ *
+ * Replaces the stored promotion with the same body shape as create.
+ * The backend also replaces promotion_skus, so voucher and skus from
+ * the existing row must be sent even when the edit form hides them.
+ *
+ * @param {number} promotionId
+ * @param {object} payload
+ * @returns {Promise<object>}
+ */
+export async function updatePromotion(promotionId, payload) {
+  return request(`/api/promotions/${encodeURIComponent(promotionId)}`, {
+    method: 'PUT',
+    body: payload,
+  });
+}
+
+/**
  * Create one promotion row per retailer × store pair.
  *
  * The backend stores each promotion against a single retailer and store,
@@ -214,20 +232,21 @@ export async function createPromotionsForRetailersAndStores(
 }
 
 /**
- * POST one promotion per retailer / store pair.
+ * POST one promotion per retailer / store / period pair.
  *
  * @param {object} sharedPayload
- * @param {Array<{ retailer: string, store: { store_name: string, store_code: string } }>} pairs
- * @returns {Promise<{ created: object[], failed: { retailer: string, store: string, error: string }[] }>}
+ * @param {Array<{ retailer: string, store: { store_name: string, store_code: string }, payload?: object }>} pairs
+ * @returns {Promise<{ created: object[], failed: { retailer: string, store: string, period?: string, error: string }[] }>}
  */
 export async function createPromotionPairs(sharedPayload, pairs) {
   const created = [];
   const failed = [];
 
-  for (const { retailer, store } of pairs) {
+  for (const { retailer, store, payload } of pairs) {
+    const body = payload || sharedPayload;
     try {
       const promotion = await createPromotion({
-        ...sharedPayload,
+        ...body,
         retailer,
         store_name: store.store_name,
         store_code: String(store.store_code),
@@ -237,6 +256,7 @@ export async function createPromotionPairs(sharedPayload, pairs) {
       failed.push({
         retailer,
         store: store.store_name,
+        period: body.period_label,
         error: error.message || 'Failed to create promotion',
       });
     }

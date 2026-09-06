@@ -1,9 +1,15 @@
 import {
-  RECURRENCE_OPTIONS,
   formatPromoDate,
   formatYmd,
   promoTypeLabel,
 } from '@/app/utils/promotionForm';
+
+const RECURRENCE_OPTIONS = [
+  { value: 'none', label: 'Does not repeat' },
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'monthly', label: 'Monthly' },
+  { value: 'yearly', label: 'Yearly' },
+];
 
 const RECURRENCE_STORAGE_KEY = 'aireos.promotionRecurrence';
 
