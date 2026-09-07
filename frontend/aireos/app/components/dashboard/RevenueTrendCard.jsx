@@ -97,9 +97,7 @@ const MAX_BAR_SIZE = 56
 
 // Custom tooltip for the stacked-by-format chart: same visual shell as the
 // shared ChartTooltipContent, but with an added Total row summing every
-// format segment for that bar — the shared component has no way to inject
-// a computed row via props, so this is a small standalone component instead
-// of a shared-component change.
+// format segment for that bar.
 function StackedTotalTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null
   const total = payload.reduce((sum, item) => sum + (typeof item.value === "number" ? item.value : 0), 0)
@@ -122,12 +120,14 @@ function StackedTotalTooltip({ active, payload, label }) {
             </span>
           </div>
         ))}
-        <div className="mt-0.5 flex w-full items-center justify-between gap-2 border-t border-lavander pt-1">
-          <span className="font-medium text-deep-violet-blue">Total</span>
-          <span className="font-mono font-semibold text-deep-violet-blue tabular-nums">
-            ${total.toLocaleString()}
-          </span>
-        </div>
+        {payload.length > 1 && (
+          <div className="mt-0.5 flex w-full items-center justify-between gap-2 border-t border-lavander pt-1">
+            <span className="font-medium text-deep-violet-blue">Total</span>
+            <span className="font-mono font-semibold text-deep-violet-blue tabular-nums">
+              ${total.toLocaleString()}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -273,7 +273,7 @@ function ComparisonTrend({ result, comparisonType }) {
           <CartesianGrid vertical={false} />
           <XAxis dataKey="label" interval={0} tick={{ fontSize: 10 }} />
           <YAxis tickFormatter={formatAxisCurrency} width={50} tick={{ fontSize: 10 }} />
-          <ChartTooltip content={<ChartTooltipContent />} />
+          <ChartTooltip content={<StackedTotalTooltip />} />
           {/* Each category only ever has one of current/previous set (the
               other is null) — without a shared stackId, Recharts still
               reserves a same-size side-by-side "slot" for both series in
@@ -285,6 +285,7 @@ function ComparisonTrend({ result, comparisonType }) {
               present at a time. */}
           <Bar
             dataKey="previous"
+            name="Previous"
             stackId="comparison"
             fill="var(--color-previous)"
             radius={4}
@@ -293,6 +294,7 @@ function ComparisonTrend({ result, comparisonType }) {
           />
           <Bar
             dataKey="current"
+            name="Current"
             stackId="comparison"
             fill="var(--color-current)"
             radius={4}
