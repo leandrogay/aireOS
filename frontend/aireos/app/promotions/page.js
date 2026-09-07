@@ -6,6 +6,7 @@ import PromotionForm, { blankPromotionForm } from '@/components/promotions/Promo
 import PromotionList from '@/components/promotions/PromotionList';
 import {
   createPromotionPairs,
+  deletePromotion,
   getPromotions,
   getRetailers,
   getStores,
@@ -187,6 +188,40 @@ export default function PromotionsPage() {
     setErrors({});
     setSubmitMessage('');
     setSubmitError('');
+  };
+
+  /**
+   * DELETE /api/promotions/{id} for one overview row. The confirm dialog
+   * in the list is the only path that reaches this handler.
+   *
+   * @param {object} promotion
+   */
+  const handleDelete = async (promotion) => {
+    setSubmitMessage('');
+    setSubmitError('');
+
+    try {
+      await deletePromotion(promotion.promotion_id);
+
+      setPromotions((current) =>
+        current.filter((item) => item.promotion_id !== promotion.promotion_id),
+      );
+      setHighlightIds((current) =>
+        current.filter((id) => id !== promotion.promotion_id),
+      );
+
+      if (editingPromotion?.promotion_id === promotion.promotion_id) {
+        setEditingPromotion(null);
+        setForm({ ...blankPromotionForm(), offerKind: 'monthly' });
+        setErrors({});
+      }
+
+      setSubmitMessage('Promotion deleted. It is no longer in the overview.');
+      await loadPromotions({ silent: true });
+    } catch (error) {
+      setSubmitError(error.message || 'Failed to delete promotion.');
+      throw error;
+    }
   };
 
   /**
@@ -408,6 +443,7 @@ export default function PromotionsPage() {
           highlightIds={highlightIds}
           editingId={editingPromotion?.promotion_id}
           onEdit={handleEdit}
+          onDelete={handleDelete}
           onRefresh={loadPromotions}
         />
       </div>

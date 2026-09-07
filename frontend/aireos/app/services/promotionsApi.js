@@ -203,6 +203,21 @@ export async function updatePromotion(promotionId, payload) {
 }
 
 /**
+ * DELETE /api/promotions/{promotion_id}
+ *
+ * Removes the promotion row and its promotion_skus links.
+ * Retailer, store, and sku master data are left in place.
+ *
+ * @param {number} promotionId
+ * @returns {Promise<{ status: string, message: string, promotion_id: number }>}
+ */
+export async function deletePromotion(promotionId) {
+  return request(`/api/promotions/${encodeURIComponent(promotionId)}`, {
+    method: 'DELETE',
+  });
+}
+
+/**
  * Create one promotion row per retailer × store pair.
  *
  * The backend stores each promotion against a single retailer and store,

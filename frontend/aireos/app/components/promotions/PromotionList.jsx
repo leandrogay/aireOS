@@ -20,21 +20,23 @@ import {
 
 const pillClass =
   'inline-flex w-max max-w-[11rem] items-center gap-1 whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide transition';
+const actionButtonClass =
+  'inline-flex min-w-[4rem] items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium shadow-sm transition';
 
 /**
- * Vibrant status pills so Upcoming / Active / Past read at a glance.
+ * Soft status pills that sit with the cream / lavender page, not neon chips.
  *
  * @param {'upcoming' | 'active' | 'past'} status
  * @returns {string}
  */
 function statusBadgeClass(status) {
   if (status === 'active') {
-    return 'bg-emerald-500 text-white';
+    return 'border border-emerald-200 bg-emerald-50 text-emerald-800';
   }
   if (status === 'upcoming') {
-    return 'bg-amber-400 text-amber-950';
+    return 'border border-violet/40 bg-lavander text-deep-violet-blue';
   }
-  return 'bg-stone-400 text-white';
+  return 'border border-lavander bg-cream text-deep-violet-blue/70';
 }
 
 /**
@@ -53,6 +55,65 @@ function DetailTile({ label, value, children }) {
       ) : null}
       {children}
     </div>
+  );
+}
+
+/**
+ * Confirm before DELETE /api/promotions/{id} so a row click cannot
+ * remove a promotion by accident.
+ *
+ * @param {object} props
+ */
+function ConfirmDeleteDialog({ promotion, isDeleting, onCancel, onConfirm }) {
+  if (!promotion || typeof document === 'undefined') return null;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-deep-violet-blue/40 px-4"
+      onClick={() => {
+        if (!isDeleting) onCancel();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="delete-promotion-title"
+        className="w-full max-w-md rounded-lg border border-lavander bg-white p-4 shadow-lg"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h3
+          id="delete-promotion-title"
+          className="font-serif text-lg text-deep-violet-blue"
+        >
+          Delete this promotion?
+        </h3>
+        <p className="mt-2 text-sm text-deep-violet-blue/80">
+          This cannot be undone. The overview will drop{' '}
+          <span className="font-medium">{promotion.store_name || 'this store'}</span>
+          {promotion.period_label ? ` · ${promotion.period_label}` : ''}
+          {promotion.retailer ? ` · ${promotion.retailer}` : ''}.
+        </p>
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={isDeleting}
+            className="rounded-md border border-deep-violet-blue/30 bg-white px-3 py-1.5 text-sm font-medium text-deep-violet-blue hover:bg-cream disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={isDeleting}
+            className="rounded-md border border-red-700 bg-red-700 px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isDeleting ? 'Deleting…' : 'Confirm delete'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -207,6 +268,7 @@ export default function PromotionList({
   highlightIds = [],
   editingId = null,
   onEdit,
+  onDelete,
   onRefresh,
 }) {
   const highlighted = new Set(highlightIds);
@@ -220,6 +282,8 @@ export default function PromotionList({
   const [sortDirection, setSortDirection] = useState('desc');
   const [expandedId, setExpandedId] = useState(null);
   const [openFilter, setOpenFilter] = useState(null);
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const uniquePromotions = useMemo(
     () => dedupePromotions(promotions),
@@ -313,6 +377,42 @@ export default function PromotionList({
       retailerFilter ||
       statusFilter,
   );
+
+  /**
+   * Close the confirm dialog unless a delete request is already in flight.
+   */
+  const cancelDelete = () => {
+    if (isDeleting) return;
+    setPendingDelete(null);
+  };
+
+  /**
+   * Call DELETE only after Confirm delete. Cancel never hits the API.
+   */
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    setIsDeleting(true);
+    try {
+      await onDelete?.(pendingDelete);
+      setPendingDelete(null);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!pendingDelete) return;
+
+    /**
+     * @param {KeyboardEvent} event
+     */
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') cancelDelete();
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [pendingDelete, isDeleting]);
 
   return (
     <section className="rounded-lg border border-lavander bg-white p-3 shadow-sm">
@@ -472,8 +572,10 @@ export default function PromotionList({
                   />
                 </th>
                 <th className="px-1.5 py-2">
-                  <span className="px-1 text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">
-                    Edit
+                  <span
+                    className={`${pillClass} cursor-default border-lavander bg-white text-deep-violet-blue/70`}
+                  >
+                    Actions
                   </span>
                 </th>
               </tr>
@@ -531,26 +633,38 @@ export default function PromotionList({
                       <td className="px-2.5 py-2 font-medium">{promotion.retailer || '—'}</td>
                       <td className="px-2.5 py-2">
                         <span
-                          className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide ${statusBadgeClass(status)}`}
+                          className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-medium tracking-wide ${statusBadgeClass(status)}`}
                         >
                           {promotionStatusLabel(status)}
                         </span>
                       </td>
                       <td className="px-2.5 py-2">
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onEdit?.(promotion);
-                          }}
-                          className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                            isEditing
-                              ? 'border-deep-violet-blue bg-deep-violet-blue text-white'
-                              : 'border-deep-violet-blue bg-white text-deep-violet-blue hover:bg-cream'
-                          }`}
-                        >
-                          {isEditing ? 'Editing' : 'Edit'}
-                        </button>
+                        <div className="inline-flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onEdit?.(promotion);
+                            }}
+                            className={`${actionButtonClass} ${
+                              isEditing
+                                ? 'bg-violet text-deep-violet-blue'
+                                : 'bg-deep-violet-blue text-white hover:opacity-90'
+                            }`}
+                          >
+                            {isEditing ? 'Editing' : 'Edit'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setPendingDelete(promotion);
+                            }}
+                            className={`${actionButtonClass} border border-deep-violet-blue/25 bg-white text-deep-violet-blue hover:bg-lavander`}
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </td>
                     </tr>
                     {isOpen && (
@@ -593,6 +707,12 @@ export default function PromotionList({
           </div>
         </div>
       )}
+      <ConfirmDeleteDialog
+        promotion={pendingDelete}
+        isDeleting={isDeleting}
+        onCancel={cancelDelete}
+        onConfirm={confirmDelete}
+      />
     </section>
   );
 }
