@@ -1,6 +1,8 @@
 // ============================================================
 // Backend communication for AO4-1 promotion events.
 // Each exported function is annotated with its HTTP method + endpoint.
+// Promotions live under /api/promotions; the retailer and store
+// lookups they depend on come from the catalog router at /api/catalog.
 // Each ticked month × year is sent as its own POST /api/promotions row.
 // ============================================================
 
@@ -122,7 +124,7 @@ export async function checkPromotionsDb() {
 }
 
 /**
- * GET /api/promotions/retailers
+ * GET /api/catalog/retailers
  *
  * Returns every retailer currently stored, with a store_count. The
  * retailer-scope picker uses this list for "All retailers" and for
@@ -131,7 +133,7 @@ export async function checkPromotionsDb() {
  * @returns {Promise<Array<{ retailer_id: number, retailer_name: string, store_count: number }>>}
  */
 export async function getRetailers() {
-  const data = await request('/api/promotions/retailers');
+  const data = await request('/api/catalog/retailers');
   return Array.isArray(data) ? data : [];
 }
 
@@ -149,7 +151,7 @@ export async function getPromotions() {
 }
 
 /**
- * GET /api/promotions/stores
+ * GET /api/catalog/stores
  *
  * Returns stores, optionally filtered to one retailer. Used to populate
  * the store-name dropdown and to fill store_code from the selected row
@@ -163,7 +165,7 @@ export async function getStores(retailerId) {
     retailerId != null && Number(retailerId) > 0
       ? `?retailer_id=${encodeURIComponent(retailerId)}`
       : '';
-  const data = await request(`/api/promotions/stores${query}`);
+  const data = await request(`/api/catalog/stores${query}`);
   return Array.isArray(data) ? data : [];
 }
 

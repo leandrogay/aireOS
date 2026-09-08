@@ -297,7 +297,7 @@ export function formatPromoDate(value) {
 }
 
 /**
- * Retailer checkboxes from GET /api/promotions/retailers only.
+ * Retailer checkboxes from GET /api/catalog/retailers only.
  *
  * @param {Array<{ retailer_id: number, retailer_name: string }>} retailers
  * @returns {Array<{ retailer_id: number, retailer_name: string }>}
@@ -354,7 +354,7 @@ export function areAllSkuRangesSelected(selected) {
 }
 
 /**
- * Unique store-code list from GET /api/promotions/stores.
+ * Unique store-code list from GET /api/catalog/stores.
  *
  * The same code exists under each retailer (51 × 3). The checkbox
  * shows each code once; submit attaches it to the ticked retailers.

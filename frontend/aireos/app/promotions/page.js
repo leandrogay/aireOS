@@ -51,7 +51,7 @@ export default function PromotionsPage() {
   const [editingPromotion, setEditingPromotion] = useState(null);
 
   /**
-   * Load retailers for All / Specific scope from GET /api/promotions/retailers.
+   * Load retailers for All / Specific scope from GET /api/catalog/retailers.
    */
   const loadRetailers = useCallback(async () => {
     setIsLoadingRetailers(true);
