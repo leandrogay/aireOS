@@ -100,11 +100,6 @@ class SkuItem(_Base):
         max_length=255,
     )
 
-    product_category: str | None = Field(
-        default=None,
-        max_length=255,
-    )
-
     size: str | None = Field(
         default=None,
         max_length=100,
