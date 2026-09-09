@@ -158,7 +158,7 @@ export async function getPromotions() {
  * instead of asking the staff member to type it.
  *
  * @param {number | null} [retailerId]
- * @returns {Promise<Array<{ store_id: number, store_code: string, store_name: string, retailer_id: number, retailer_name: string }>>}
+ * @returns {Promise<Array<{ store_id: number, store_code: string, store_name: string, store_format: string | null, retailer_id: number, retailer_name: string }>>}
  */
 export async function getStores(retailerId) {
   const query =
@@ -170,11 +170,28 @@ export async function getStores(retailerId) {
 }
 
 /**
+ * GET /api/catalog/sku-ranges
+ *
+ * Distinct sku_range values already stored on the skus catalog.
+ * The create/edit SKU checkboxes use this list.
+ *
+ * @returns {Promise<string[]>}
+ */
+export async function getSkuRanges() {
+  const data = await request('/api/catalog/sku-ranges');
+  return Array.isArray(data)
+    ? data.map((item) => String(item || '').trim()).filter(Boolean)
+    : [];
+}
+
+/**
  * POST /api/promotions
  *
  * Creates one store-level promotion. The current schema requires retailer,
  * store_name, store_code, period_start, period_end, and promo_type.
- * Optional: store_format, period_label, promotion_mechanic, voucher, skus.
+ * Optional: period_label, promotion_mechanic, voucher, skus.
+ * store_format is not sent; it already lives on the stores catalog.
+ * The backend links `skus` into promotion_skus.
  *
  * @param {object} payload
  * @returns {Promise<object>} the created promotion
@@ -222,9 +239,8 @@ export async function deletePromotion(promotionId) {
 /**
  * Create one promotion row per retailer × store pair.
  *
- * The backend stores each promotion against a single retailer and store,
- * and get-or-creates the store under that retailer. Multi-select therefore
- * expands into one POST /api/promotions per pair. Recurrence is not sent.
+ * The backend stores each promotion against a single retailer and store.
+ * Multi-select therefore expands into one POST /api/promotions per pair.
  *
  * Does not stop on the first failure: remaining pairs are still attempted
  * so a single constraint error does not drop the whole batch.

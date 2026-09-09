@@ -7,12 +7,9 @@ import {
   MONTH_OPTIONS,
   PROMO_MECHANICS,
   PROMO_TYPES,
-  SKU_RANGES,
-  STORE_FORMATS,
   YEAR_OPTIONS,
   areAllRetailersSelected,
   areAllSkuRangesSelected,
-  areAllStoreFormatsSelected,
   areAllStoresSelected,
   formatMonthlyPeriodLabel,
   getThursdayWeeksInMonth,
@@ -20,11 +17,17 @@ import {
   resolveSelectedPeriods,
   retailerDropdownOptions,
   storeCatalogOptions,
+  storesForRetailerIds,
 } from '@/app/utils/promotionForm';
 
 const inputClass =
   'w-full rounded-md border border-lavander bg-cream px-2.5 py-1 text-sm text-deep-violet-blue focus:border-violet focus:outline-none';
+const numberInputClass =
+  'w-16 min-w-0 rounded-md border border-lavander bg-cream px-2 py-1 text-sm text-deep-violet-blue focus:border-violet focus:outline-none';
+const lockedInputClass =
+  'w-full cursor-default rounded-md border border-lavander bg-lavander/70 px-2.5 py-1 text-sm text-deep-violet-blue/80';
 const labelClass = 'mb-0.5 block text-xs font-medium text-deep-violet-blue';
+const gridClass = 'grid grid-cols-2 gap-x-3 gap-y-2 md:grid-cols-4';
 const errorClass = 'mt-0.5 text-xs text-red-700';
 const checkRowClass =
   'flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-sm text-deep-violet-blue hover:bg-cream';
@@ -42,13 +45,17 @@ function FieldError({ message }) {
 }
 
 /**
- * Compact AO4-1 create form.
+ * Compact AO4-1 create / edit form.
  *
- * Monthly is the default view. Retailers, stores, and store formats are
- * independent checkbox lists. A store such as Sun Plaza (355) can be
- * saved under FairPrice Offline, FairPrice Online, or NHG depending on
- * which retailers are ticked. Multiple months and years expand into
- * one stored row per month × year.
+ * Monthly is the default view. Retailers and stores are independent
+ * checkbox lists. A store such as Sun Plaza (355) can be saved under
+ * FairPrice Offline, FairPrice Online, or NHG depending on which
+ * retailers are ticked. Store format stays on the stores catalog.
+ * SKU ranges come from GET /api/catalog/sku-ranges. Multiple months
+ * and years expand into one stored row per month × year.
+ *
+ * Edit locks retailer and store, and allows period, type, mechanic,
+ * voucher, and SKU.
  *
  * @param {object} props
  */
@@ -57,10 +64,13 @@ export default function PromotionForm({
   onChange,
   retailers = [],
   stores = [],
+  skuRangeOptions = [],
   retailersError = '',
   storesError = '',
+  skuRangesError = '',
   isLoadingRetailers = false,
   isLoadingStores = false,
+  isLoadingSkuRanges = false,
   isSubmitting = false,
   errors = {},
   onSubmit,
@@ -69,13 +79,17 @@ export default function PromotionForm({
 }) {
   const isEdit = mode === 'edit';
   const retailerOptions = retailerDropdownOptions(retailers);
-  const storeOptions = storeCatalogOptions(stores);
+  const scopedStores = isEdit
+    ? stores
+    : storesForRetailerIds(stores, form.selectedRetailerIds);
+  const storeOptions = storeCatalogOptions(scopedStores);
+  const storesNeedRetailer = !isEdit && !(form.selectedRetailerIds || []).length;
   const allRetailersSelected = areAllRetailersSelected(
     form.selectedRetailerIds,
     retailerOptions,
   );
   const allStoresSelected = areAllStoresSelected(form.selectedStoreCodes, storeOptions);
-  const allStoreFormatsSelected = areAllStoreFormatsSelected(form.storeFormats);
+  const allSkuRangesSelected = areAllSkuRangesSelected(form.skuRanges, skuRangeOptions);
   const { periodStart, periodEnd } = monthPeriodBounds(form.periodMonth, form.periodYear);
   const selectedPeriods = resolveSelectedPeriods(form);
   const monthSummary = MONTH_OPTIONS.filter((month) =>
@@ -110,11 +124,15 @@ export default function PromotionForm({
         )
         .map((store) => store.store_name)
         .join(', ');
-  const storeFormatSummary = allStoreFormatsSelected
-    ? 'All store formats'
-    : (form.storeFormats || []).join(', ');
-  const allSkuRangesSelected = areAllSkuRangesSelected(form.skuRanges);
   const skuSummary = allSkuRangesSelected ? 'All SKU ranges' : form.skuRanges.join(', ');
+  const lockedRetailerName =
+    retailerOptions.find((retailer) =>
+      (form.selectedRetailerIds || []).map(String).includes(String(retailer.retailer_id)),
+    )?.retailer_name || '';
+  const lockedStoreName =
+    storeOptions.find((store) =>
+      (form.selectedStoreCodes || []).map(String).includes(String(store.store_code)),
+    )?.store_name || form.selectedStoreCodes?.[0] || '';
 
   /**
    * Patch one or more form fields.
@@ -141,7 +159,10 @@ export default function PromotionForm({
       ? selected.filter((item) => item !== id)
       : [...selected, id];
 
-    patchForm({ selectedRetailerIds: next });
+    patchForm({
+      selectedRetailerIds: next,
+      selectedStoreCodes: storeCodesAllowedForRetailers(next),
+    });
   };
 
   /**
@@ -150,15 +171,34 @@ export default function PromotionForm({
    * @param {boolean} checked
    */
   const toggleAllRetailers = (checked) => {
+    const next = checked
+      ? retailerOptions.map((retailer) => String(retailer.retailer_id))
+      : [];
     patchForm({
-      selectedRetailerIds: checked
-        ? retailerOptions.map((retailer) => String(retailer.retailer_id))
-        : [],
+      selectedRetailerIds: next,
+      selectedStoreCodes: storeCodesAllowedForRetailers(next),
     });
   };
 
   /**
-   * Tick or untick one store. Stores stay independent of the retailer list.
+   * Keep only store codes that belong to the given retailer ids.
+   *
+   * @param {string[]} retailerIds
+   * @returns {string[]}
+   */
+  const storeCodesAllowedForRetailers = (retailerIds) => {
+    const allowed = new Set(
+      storeCatalogOptions(storesForRetailerIds(stores, retailerIds)).map((store) =>
+        String(store.store_code),
+      ),
+    );
+    return (form.selectedStoreCodes || [])
+      .map(String)
+      .filter((code) => allowed.has(code));
+  };
+
+  /**
+   * Tick or untick one store among the current retailer's catalog.
    *
    * @param {string} storeCode
    */
@@ -185,34 +225,12 @@ export default function PromotionForm({
   };
 
   /**
-   * Tick or untick one store format (Hyper / Super / Finest / Unity).
-   *
-   * @param {string} format
-   */
-  const toggleStoreFormat = (format) => {
-    const selected = form.storeFormats || [];
-    const next = selected.includes(format)
-      ? selected.filter((item) => item !== format)
-      : [...selected, format];
-    patchForm({ storeFormats: next });
-  };
-
-  /**
-   * Tick every store-format checkbox, or clear them all.
-   *
-   * @param {boolean} checked
-   */
-  const toggleAllStoreFormats = (checked) => {
-    patchForm({ storeFormats: checked ? [...STORE_FORMATS] : [] });
-  };
-
-  /**
    * Tick every SKU range, or clear them all.
    *
    * @param {boolean} checked
    */
   const toggleAllSkuRanges = (checked) => {
-    patchForm({ skuRanges: checked ? [...SKU_RANGES] : [] });
+    patchForm({ skuRanges: checked ? [...skuRangeOptions] : [] });
   };
 
   /**
@@ -284,9 +302,8 @@ export default function PromotionForm({
       </div>
 
       {isEdit && (
-        <p className="mb-2 rounded-md border border-violet bg-lavander px-3 py-2 text-xs text-deep-violet-blue">
-          Store name, period, promo type, mechanic, retailer, and voucher can be changed.
-          Store format and SKU stay as stored.
+        <p className="mb-2 text-[11px] leading-tight text-deep-violet-blue/70">
+          Retailer and store cannot be changed. Period, type, mechanic, voucher, and SKU can.
         </p>
       )}
 
@@ -308,58 +325,26 @@ export default function PromotionForm({
       )}
 
       {isEdit && (
-        <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className={gridClass}>
           <label>
-            <span className={labelClass}>
-              Retailer <span className="text-red-700">*</span>
-            </span>
-            <select
-              value={form.selectedRetailerIds[0] || ''}
-              onChange={(event) =>
-                patchForm({
-                  selectedRetailerIds: event.target.value ? [event.target.value] : [],
-                })
-              }
-              className={inputClass}
-              disabled={isLoadingRetailers}
-            >
-              <option value="">
-                {isLoadingRetailers ? 'Loading retailers…' : 'Select retailer'}
-              </option>
-              {retailerOptions.map((retailer) => (
-                <option key={retailer.retailer_id} value={String(retailer.retailer_id)}>
-                  {retailer.retailer_name}
-                </option>
-              ))}
-            </select>
-            {retailersError && <p className={errorClass}>{retailersError}</p>}
+            <span className={labelClass}>Retailer</span>
+            <input
+              readOnly
+              value={lockedRetailerName}
+              className={lockedInputClass}
+              aria-readonly="true"
+            />
             <FieldError message={errors.retailerScope} />
           </label>
 
           <label>
-            <span className={labelClass}>
-              Store name <span className="text-red-700">*</span>
-            </span>
-            <select
-              value={form.selectedStoreCodes[0] || ''}
-              onChange={(event) =>
-                patchForm({
-                  selectedStoreCodes: event.target.value ? [event.target.value] : [],
-                })
-              }
-              className={inputClass}
-              disabled={isLoadingStores}
-            >
-              <option value="">
-                {isLoadingStores ? 'Loading stores…' : 'Select store'}
-              </option>
-              {storeOptions.map((store) => (
-                <option key={store.store_code} value={String(store.store_code)}>
-                  {store.store_name}
-                </option>
-              ))}
-            </select>
-            {storesError && <p className={errorClass}>{storesError}</p>}
+            <span className={labelClass}>Store</span>
+            <input
+              readOnly
+              value={lockedStoreName}
+              className={lockedInputClass}
+              aria-readonly="true"
+            />
             <FieldError message={errors.storeName} />
           </label>
 
@@ -397,8 +382,8 @@ export default function PromotionForm({
             </select>
             <p className="mt-0.5 text-[10px] leading-tight text-deep-violet-blue/55">
               {periodStart && periodEnd
-                ? `${formatMonthlyPeriodLabel(form.periodMonth, form.periodYear)} · ${periodStart} to ${periodEnd}`
-                : 'Saved as MMM-YYYY'}
+                ? `${formatMonthlyPeriodLabel(form.periodMonth, form.periodYear)}`
+                : 'MMM-YYYY'}
             </p>
             <FieldError message={errors.periodLabel} />
           </label>
@@ -423,7 +408,7 @@ export default function PromotionForm({
 
           <label>
             <span className={labelClass}>
-              Promo mechanic <span className="text-red-700">*</span>
+              Mechanic <span className="text-red-700">*</span>
             </span>
             <select
               value={form.promotionMechanic}
@@ -441,7 +426,7 @@ export default function PromotionForm({
 
           <div>
             <span className={labelClass}>Voucher</span>
-            <div className="flex items-center gap-1.5 text-sm text-deep-violet-blue">
+            <div className="flex items-center gap-1 text-sm text-deep-violet-blue">
               <span>$</span>
               <input
                 type="number"
@@ -449,7 +434,7 @@ export default function PromotionForm({
                 step="0.01"
                 value={form.voucherOff}
                 onChange={(event) => patchForm({ voucherOff: event.target.value })}
-                className={`${inputClass} min-w-0`}
+                className={numberInputClass}
                 placeholder="8"
               />
               <span className="shrink-0">off $</span>
@@ -459,21 +444,57 @@ export default function PromotionForm({
                 step="0.01"
                 value={form.voucherOn}
                 onChange={(event) => patchForm({ voucherOn: event.target.value })}
-                className={`${inputClass} min-w-0`}
+                className={numberInputClass}
                 placeholder="80"
               />
             </div>
-            <p className="mt-0.5 text-[10px] leading-tight text-deep-violet-blue/55">
-              Leave both blank to remove a stored voucher.
-            </p>
             <FieldError message={errors.voucher} />
           </div>
+
+          <fieldset>
+            <legend className={labelClass}>
+              SKU range <span className="text-red-700">*</span>
+            </legend>
+            <CheckboxDropdown
+              summary={skuSummary}
+              placeholder={
+                isLoadingSkuRanges ? 'Loading SKU ranges…' : 'Select SKU ranges'
+              }
+              disabled={isLoadingSkuRanges || skuRangeOptions.length === 0}
+            >
+              <label className={`${checkRowClass} font-medium`}>
+                <input
+                  type="checkbox"
+                  checked={allSkuRangesSelected}
+                  onChange={(event) => toggleAllSkuRanges(event.target.checked)}
+                  className="size-3.5 accent-deep-violet-blue"
+                />
+                All SKU ranges
+              </label>
+              {skuRangeOptions.map((range) => (
+                <label key={range} className={checkRowClass}>
+                  <input
+                    type="checkbox"
+                    checked={form.skuRanges.includes(range)}
+                    onChange={() => toggleSkuRange(range)}
+                    className="size-3.5 accent-deep-violet-blue"
+                  />
+                  {range}
+                </label>
+              ))}
+            </CheckboxDropdown>
+            <FieldError message={errors.skuRanges} />
+            {skuRangesError && <p className={errorClass}>{skuRangesError}</p>}
+            {!isLoadingSkuRanges && !skuRangesError && skuRangeOptions.length === 0 && (
+              <p className="mt-0.5 text-[10px] text-deep-violet-blue/60">No SKU ranges yet.</p>
+            )}
+          </fieldset>
         </div>
       )}
 
       {!isEdit && form.offerKind === 'monthly' && (
-        <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
-          <fieldset className="sm:col-span-2">
+        <div className={gridClass}>
+          <fieldset>
             <legend className={labelClass}>
               Retailers <span className="text-red-700">*</span>
             </legend>
@@ -510,83 +531,89 @@ export default function PromotionForm({
             {retailersError && <p className={errorClass}>{retailersError}</p>}
             {!isLoadingRetailers && !retailersError && retailerOptions.length === 0 && (
               <p className="mt-0.5 text-[11px] text-deep-violet-blue/60">
-                No retailers from GET /retailers yet.
+                No retailers yet.
               </p>
             )}
             <FieldError message={errors.retailerScope} />
           </fieldset>
 
-          <fieldset className="sm:col-span-2">
+          <fieldset>
             <legend className={labelClass}>
               Stores <span className="text-red-700">*</span>
             </legend>
             <CheckboxDropdown
               summary={storeSummary}
-              placeholder={isLoadingStores ? 'Loading stores…' : 'Select stores'}
-              disabled={isLoadingStores || storeOptions.length === 0}
+              placeholder={
+                isLoadingStores
+                  ? 'Loading stores…'
+                  : storesNeedRetailer
+                    ? 'Select a retailer first'
+                    : 'Select stores'
+              }
+              disabled={
+                isLoadingStores || storesNeedRetailer || storeOptions.length === 0
+              }
+              searchable
+              searchPlaceholder="Search stores…"
             >
-              <label className={`${checkRowClass} font-medium`}>
-                <input
-                  type="checkbox"
-                  checked={allStoresSelected}
-                  onChange={(event) => toggleAllStores(event.target.checked)}
-                  className="size-3.5 accent-deep-violet-blue"
-                />
-                All stores
-              </label>
-              {storeOptions.map((store) => (
-                <label key={store.store_code} className={checkRowClass}>
-                  <input
-                    type="checkbox"
-                    checked={(form.selectedStoreCodes || [])
-                      .map(String)
-                      .includes(String(store.store_code))}
-                    onChange={() => toggleStore(store.store_code)}
-                    className="size-3.5 accent-deep-violet-blue"
-                  />
-                  {store.store_name}
-                  <span className="ml-auto font-mono text-[10px] text-deep-violet-blue/60">
-                    {store.store_code}
-                  </span>
-                </label>
-              ))}
+              {(query) => {
+                const needle = query.trim().toLowerCase();
+                const visibleStores = needle
+                  ? storeOptions.filter((store) => {
+                      const name = String(store.store_name || '').toLowerCase();
+                      const code = String(store.store_code || '').toLowerCase();
+                      return name.includes(needle) || code.includes(needle);
+                    })
+                  : storeOptions;
+
+                return (
+                  <>
+                    <label className={`${checkRowClass} font-medium`}>
+                      <input
+                        type="checkbox"
+                        checked={allStoresSelected}
+                        onChange={(event) => toggleAllStores(event.target.checked)}
+                        className="size-3.5 accent-deep-violet-blue"
+                      />
+                      All stores
+                    </label>
+                    {visibleStores.map((store) => (
+                      <label key={store.store_code} className={checkRowClass}>
+                        <input
+                          type="checkbox"
+                          checked={(form.selectedStoreCodes || [])
+                            .map(String)
+                            .includes(String(store.store_code))}
+                          onChange={() => toggleStore(store.store_code)}
+                          className="size-3.5 accent-deep-violet-blue"
+                        />
+                        {store.store_name}
+                        <span className="ml-auto font-mono text-[10px] text-deep-violet-blue/60">
+                          {store.store_code}
+                        </span>
+                      </label>
+                    ))}
+                    {needle && visibleStores.length === 0 && (
+                      <p className="px-2 py-1 text-xs text-deep-violet-blue/60">
+                        No stores match.
+                      </p>
+                    )}
+                  </>
+                );
+              }}
             </CheckboxDropdown>
             {storesError && <p className={errorClass}>{storesError}</p>}
-            {!isLoadingStores && !storesError && storeOptions.length === 0 && (
-              <p className="mt-0.5 text-[11px] text-deep-violet-blue/60">
-                No stores from GET /stores yet.
+            {!isLoadingStores && !storesError && storesNeedRetailer && (
+              <p className="mt-0.5 text-[10px] text-deep-violet-blue/60">
+                Stores appear after you pick a retailer.
+              </p>
+            )}
+            {!isLoadingStores && !storesError && !storesNeedRetailer && storeOptions.length === 0 && (
+              <p className="mt-0.5 text-[10px] text-deep-violet-blue/60">
+                No stores for this retailer.
               </p>
             )}
             <FieldError message={errors.storeName} />
-          </fieldset>
-
-          <fieldset>
-            <legend className={labelClass}>
-              Store format <span className="text-red-700">*</span>
-            </legend>
-            <CheckboxDropdown summary={storeFormatSummary} placeholder="Select store formats">
-              <label className={`${checkRowClass} font-medium`}>
-                <input
-                  type="checkbox"
-                  checked={allStoreFormatsSelected}
-                  onChange={(event) => toggleAllStoreFormats(event.target.checked)}
-                  className="size-3.5 accent-deep-violet-blue"
-                />
-                All store formats
-              </label>
-              {STORE_FORMATS.map((format) => (
-                <label key={format} className={checkRowClass}>
-                  <input
-                    type="checkbox"
-                    checked={(form.storeFormats || []).includes(format)}
-                    onChange={() => toggleStoreFormat(format)}
-                    className="size-3.5 accent-deep-violet-blue"
-                  />
-                  {format}
-                </label>
-              ))}
-            </CheckboxDropdown>
-            <FieldError message={errors.storeFormats} />
           </fieldset>
 
           <fieldset>
@@ -626,7 +653,7 @@ export default function PromotionForm({
               ))}
             </CheckboxDropdown>
             <p className="mt-0.5 text-[10px] leading-tight text-deep-violet-blue/55">
-              {periodHint}. Each month × year is saved as its own promotion.
+              {periodHint}
             </p>
             <FieldError message={errors.periodLabel} />
           </fieldset>
@@ -651,7 +678,7 @@ export default function PromotionForm({
 
           <label>
             <span className={labelClass}>
-              Promo mechanic <span className="text-red-700">*</span>
+              Mechanic <span className="text-red-700">*</span>
             </span>
             <select
               value={form.promotionMechanic}
@@ -669,7 +696,7 @@ export default function PromotionForm({
 
           <div>
             <span className={labelClass}>Voucher</span>
-            <div className="flex items-center gap-1.5 text-sm text-deep-violet-blue">
+            <div className="flex items-center gap-1 text-sm text-deep-violet-blue">
               <span>$</span>
               <input
                 type="number"
@@ -677,7 +704,7 @@ export default function PromotionForm({
                 step="0.01"
                 value={form.voucherOff}
                 onChange={(event) => patchForm({ voucherOff: event.target.value })}
-                className={`${inputClass} min-w-0`}
+                className={numberInputClass}
                 placeholder="8"
               />
               <span className="shrink-0">off $</span>
@@ -687,7 +714,7 @@ export default function PromotionForm({
                 step="0.01"
                 value={form.voucherOn}
                 onChange={(event) => patchForm({ voucherOn: event.target.value })}
-                className={`${inputClass} min-w-0`}
+                className={numberInputClass}
                 placeholder="80"
               />
             </div>
@@ -698,7 +725,13 @@ export default function PromotionForm({
             <legend className={labelClass}>
               SKU range <span className="text-red-700">*</span>
             </legend>
-            <CheckboxDropdown summary={skuSummary} placeholder="Select SKU ranges">
+            <CheckboxDropdown
+              summary={skuSummary}
+              placeholder={
+                isLoadingSkuRanges ? 'Loading SKU ranges…' : 'Select SKU ranges'
+              }
+              disabled={isLoadingSkuRanges || skuRangeOptions.length === 0}
+            >
               <label className={`${checkRowClass} font-medium`}>
                 <input
                   type="checkbox"
@@ -708,7 +741,7 @@ export default function PromotionForm({
                 />
                 All SKU ranges
               </label>
-              {SKU_RANGES.map((range) => (
+              {skuRangeOptions.map((range) => (
                 <label key={range} className={checkRowClass}>
                   <input
                     type="checkbox"
@@ -721,14 +754,18 @@ export default function PromotionForm({
               ))}
             </CheckboxDropdown>
             <FieldError message={errors.skuRanges} />
+            {skuRangesError && <p className={errorClass}>{skuRangesError}</p>}
+            {!isLoadingSkuRanges && !skuRangesError && skuRangeOptions.length === 0 && (
+              <p className="mt-0.5 text-[10px] text-deep-violet-blue/60">No SKU ranges yet.</p>
+            )}
           </fieldset>
         </div>
       )}
 
       {!isEdit && form.offerKind === 'weekly' && (
-        <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
-          <p className="sm:col-span-2 lg:col-span-4 rounded-md border border-violet bg-lavander px-3 py-2 text-xs text-deep-violet-blue">
-            Weekly side offers are collected here only. They are not saved until the weekly backend table exists.
+        <div className={gridClass}>
+          <p className="sm:col-span-2 lg:col-span-4 text-[11px] leading-tight text-deep-violet-blue/70">
+            Weekly side offers are UI-only until a weekly backend exists.
           </p>
 
           <label>
@@ -766,7 +803,7 @@ export default function PromotionForm({
             </select>
           </label>
 
-          <label className="sm:col-span-2">
+          <label>
             <span className={labelClass}>
               Week <span className="text-red-700">*</span>
             </span>
@@ -791,11 +828,17 @@ export default function PromotionForm({
             <FieldError message={errors.weeklyWeek} />
           </label>
 
-          <fieldset className="sm:col-span-2">
+          <fieldset>
             <legend className={labelClass}>
               SKU range <span className="text-red-700">*</span>
             </legend>
-            <CheckboxDropdown summary={skuSummary} placeholder="Select SKU ranges">
+            <CheckboxDropdown
+              summary={skuSummary}
+              placeholder={
+                isLoadingSkuRanges ? 'Loading SKU ranges…' : 'Select SKU ranges'
+              }
+              disabled={isLoadingSkuRanges || skuRangeOptions.length === 0}
+            >
               <label className={`${checkRowClass} font-medium`}>
                 <input
                   type="checkbox"
@@ -805,7 +848,7 @@ export default function PromotionForm({
                 />
                 All SKU ranges
               </label>
-              {SKU_RANGES.map((range) => (
+              {skuRangeOptions.map((range) => (
                 <label key={range} className={checkRowClass}>
                   <input
                     type="checkbox"
@@ -818,6 +861,10 @@ export default function PromotionForm({
               ))}
             </CheckboxDropdown>
             <FieldError message={errors.skuRanges} />
+            {skuRangesError && <p className={errorClass}>{skuRangesError}</p>}
+            {!isLoadingSkuRanges && !skuRangesError && skuRangeOptions.length === 0 && (
+              <p className="mt-0.5 text-[10px] text-deep-violet-blue/60">No SKU ranges yet.</p>
+            )}
           </fieldset>
         </div>
       )}
@@ -863,7 +910,6 @@ export function blankPromotionForm() {
     ...EMPTY_PROMOTION_FORM,
     selectedRetailerIds: [],
     selectedStoreCodes: [],
-    storeFormats: [],
     periodMonths: [...EMPTY_PROMOTION_FORM.periodMonths],
     periodYears: [...EMPTY_PROMOTION_FORM.periodYears],
     skuRanges: [],

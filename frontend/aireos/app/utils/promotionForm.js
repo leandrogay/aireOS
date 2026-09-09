@@ -5,10 +5,6 @@ export const PROMO_TYPES = [
   { value: 'bundle', label: 'Bundle' },
 ];
 
-export const STORE_FORMATS = ['Hyper', 'Super', 'Finest', 'Unity'];
-
-export const SKU_RANGES = ['Flagship', 'Ultra Pants', 'Ultra Tape'];
-
 export const PROMO_MECHANICS = [
   'Buy 2 Get 25% Off',
   'Buy 2 Get 30% Off',
@@ -47,7 +43,6 @@ export const EMPTY_PROMOTION_FORM = {
   offerKind: 'monthly',
   selectedRetailerIds: [],
   selectedStoreCodes: [],
-  storeFormats: [],
   periodMonths: [defaultMonth],
   periodYears: [defaultYear],
   periodMonth: defaultMonth,
@@ -245,10 +240,6 @@ export function formFromPromotion(promotion, retailers = []) {
     (item) => item.retailer_name === promotion.retailer,
   );
   const voucher = parseVoucher(promotion.voucher);
-  const formats = String(promotion.store_format || '')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
   const skuRanges = (promotion.skus || [])
     .map((item) => item.sku_range || item.sku)
     .filter(Boolean);
@@ -258,7 +249,6 @@ export function formFromPromotion(promotion, retailers = []) {
     offerKind: 'monthly',
     selectedRetailerIds: retailer ? [String(retailer.retailer_id)] : [],
     selectedStoreCodes: promotion.store_code != null ? [String(promotion.store_code)] : [],
-    storeFormats: formats.length ? formats : [],
     periodMonth: month ? String(Number(month)) : EMPTY_PROMOTION_FORM.periodMonth,
     periodYear: year && YEAR_OPTIONS.includes(Number(year)) ? Number(year) : EMPTY_PROMOTION_FORM.periodYear,
     periodMonths: month ? [String(Number(month))] : [...EMPTY_PROMOTION_FORM.periodMonths],
@@ -345,22 +335,37 @@ export function areAllRetailersSelected(selectedIds, options) {
  * Whether every SKU range checkbox is currently ticked.
  *
  * @param {string[]} selected
+ * @param {string[]} options
  * @returns {boolean}
  */
-export function areAllSkuRangesSelected(selected) {
-  if (!SKU_RANGES.length) return false;
+export function areAllSkuRangesSelected(selected, options = []) {
+  if (!options.length) return false;
   const picked = new Set(selected || []);
-  return SKU_RANGES.every((range) => picked.has(range));
+  return options.every((range) => picked.has(range));
 }
 
 /**
- * Unique store-code list from GET /api/catalog/stores.
+ * Catalog stores that belong to the ticked retailer ids.
  *
- * The same code exists under each retailer (51 × 3). The checkbox
- * shows each code once; submit attaches it to the ticked retailers.
+ * Each stores row has retailer_id. An empty id list means no stores,
+ * so the dropdown stays empty until a retailer is chosen.
  *
- * @param {Array<{ store_code?: string, store_name?: string }>} apiStores
- * @returns {Array<{ store_code: string, store_name: string }>}
+ * @param {Array<{ retailer_id?: number }>} apiStores
+ * @param {Array<number | string>} retailerIds
+ * @returns {object[]}
+ */
+export function storesForRetailerIds(apiStores = [], retailerIds = []) {
+  const ids = new Set((retailerIds || []).map(String).filter((id) => id && id !== 'undefined'));
+  if (!ids.size) return [];
+  return (apiStores || []).filter((store) => ids.has(String(store.retailer_id)));
+}
+
+/**
+ * Unique store-code list from GET /api/catalog/stores, optionally already
+ * filtered to one or more retailers. Store format stays on the catalog.
+ *
+ * @param {Array<{ store_code?: string, store_name?: string, store_format?: string }>} apiStores
+ * @returns {Array<{ store_code: string, store_name: string, store_format: string | null }>}
  */
 export function storeCatalogOptions(apiStores = []) {
   const unique = new Map();
@@ -368,8 +373,18 @@ export function storeCatalogOptions(apiStores = []) {
   for (const store of apiStores) {
     const code = store?.store_code == null ? '' : String(store.store_code).trim();
     const name = String(store?.store_name || '').trim();
-    if (code && !unique.has(code)) {
-      unique.set(code, { store_code: code, store_name: name || code });
+    const format = String(store?.store_format || '').trim() || null;
+    if (!code) continue;
+
+    const existing = unique.get(code);
+    if (!existing) {
+      unique.set(code, {
+        store_code: code,
+        store_name: name || code,
+        store_format: format,
+      });
+    } else if (!existing.store_format && format) {
+      existing.store_format = format;
     }
   }
 
@@ -392,23 +407,11 @@ export function areAllStoresSelected(selectedCodes, options) {
 }
 
 /**
- * Whether every store-format checkbox is currently ticked.
- *
- * @param {string[]} selected
- * @returns {boolean}
- */
-export function areAllStoreFormatsSelected(selected) {
-  if (!STORE_FORMATS.length) return false;
-  const picked = new Set(selected || []);
-  return STORE_FORMATS.every((format) => picked.has(format));
-}
-
-/**
  * Resolve ticked store codes to catalog rows.
  *
  * @param {object} form
- * @param {Array<{ store_code: string, store_name: string }>} storeOptions
- * @returns {Array<{ store_code: string, store_name: string }>}
+ * @param {Array<{ store_code: string, store_name: string, store_format?: string | null }>} storeOptions
+ * @returns {Array<{ store_code: string, store_name: string, store_format: string | null }>}
  */
 export function resolveSelectedStores(form, storeOptions) {
   const selected = new Set((form.selectedStoreCodes || []).map(String));
@@ -416,14 +419,43 @@ export function resolveSelectedStores(form, storeOptions) {
 }
 
 /**
- * Join ticked store formats for stores.store_format (one varchar).
+ * Create POST pairs: only retailer × store rows that exist in the catalog.
  *
- * @param {string[]} selected
- * @returns {string | null}
+ * A ticked store is skipped for a retailer that does not own that
+ * store_code, so create cannot insert a new stores row.
+ *
+ * @param {object} form
+ * @param {Array<{ retailer_id: number, retailer_name: string }>} retailers
+ * @param {object[]} apiStores
+ * @returns {Array<{ retailer: string, store: { store_name: string, store_code: string, store_format: string | null } }>}
  */
-export function formatStoreFormats(selected) {
-  const values = (selected || []).filter(Boolean);
-  return values.length ? values.join(', ') : null;
+export function resolvePromotionCreatePairs(form, retailers, apiStores = []) {
+  const selectedCodes = new Set((form.selectedStoreCodes || []).map(String));
+  const pairs = [];
+
+  for (const retailerName of resolveRetailerTargets(form, retailers)) {
+    const retailer = retailerDropdownOptions(retailers).find(
+      (item) => item.retailer_name === retailerName,
+    );
+    if (!retailer) continue;
+
+    for (const store of apiStores) {
+      if (String(store.retailer_id) !== String(retailer.retailer_id)) continue;
+      const code = store.store_code == null ? '' : String(store.store_code).trim();
+      if (!code || !selectedCodes.has(code)) continue;
+
+      pairs.push({
+        retailer: retailerName,
+        store: {
+          store_code: code,
+          store_name: String(store.store_name || '').trim() || code,
+          store_format: String(store.store_format || '').trim() || null,
+        },
+      });
+    }
+  }
+
+  return pairs;
 }
 
 /**
@@ -466,16 +498,22 @@ export function validatePromotionForm(form, retailers, stores = [], options = {}
     errors.retailerScope = 'Select one retailer.';
   }
 
-  const storeOptions = storeCatalogOptions(stores);
+  const storeOptions = storeCatalogOptions(
+    mode === 'edit' ? stores : storesForRetailerIds(stores, form.selectedRetailerIds),
+  );
   const selectedStores = resolveSelectedStores(form, storeOptions);
-  if (!selectedStores.length) {
-    errors.storeName = mode === 'edit' ? 'Select a store.' : 'Select at least one store.';
-  } else if (mode === 'edit' && selectedStores.length !== 1) {
-    errors.storeName = 'Select one store.';
-  }
-
-  if (!(form.storeFormats || []).length && mode !== 'edit') {
-    errors.storeFormats = 'Select at least one store format.';
+  if (mode === 'edit') {
+    if (!selectedStores.length) {
+      errors.storeName = 'Select a store.';
+    } else if (selectedStores.length !== 1) {
+      errors.storeName = 'Select one store.';
+    }
+  } else if ((form.selectedRetailerIds || []).length) {
+    if (!storeOptions.length) {
+      errors.storeName = 'No stores for the selected retailer.';
+    } else if (!selectedStores.length) {
+      errors.storeName = 'Select at least one store.';
+    }
   }
 
   if (mode === 'edit') {
@@ -500,7 +538,7 @@ export function validatePromotionForm(form, retailers, stores = [], options = {}
     errors.voucher = 'Enter both voucher amounts, or leave both blank.';
   }
 
-  if (!form.skuRanges.length && mode !== 'edit') {
+  if (!form.skuRanges.length) {
     errors.skuRanges = 'Select at least one SKU range.';
   }
 
@@ -512,11 +550,11 @@ export function validatePromotionForm(form, retailers, stores = [], options = {}
  *
  * Month + year are expanded to period_start (first day) and period_end
  * (last day). store_code is a string. Ticked SKU ranges are sent as sku
- * rows whose `sku` equals the range name. Weekly side offers must not
- * call this.
+ * rows whose `sku` equals the range name. The backend writes
+ * promotion_skus from that list. Weekly side offers must not call this.
  *
  * @param {typeof EMPTY_PROMOTION_FORM} form
- * @param {{ store_name: string, store_code: string }} store
+ * @param {{ store_name: string, store_code: string, store_format?: string | null }} store
  * @param {{ month?: string, year?: number, periodStart?: string, periodEnd?: string, periodLabel?: string }} [period]
  * @returns {object}
  */
@@ -530,7 +568,6 @@ export function buildPromotionPayload(form, store, period) {
   return {
     store_name: String(store.store_name || '').trim(),
     store_code: String(store.store_code || '').trim(),
-    store_format: formatStoreFormats(form.storeFormats),
     period_start: bounds.periodStart,
     period_end: bounds.periodEnd,
     period_label: period?.periodLabel || formatMonthlyPeriodLabel(month, year) || null,
@@ -546,8 +583,9 @@ export function buildPromotionPayload(form, store, period) {
 
 /**
  * PUT /api/promotions/{id} body. Same shape as create, plus retailer.
- * Format, voucher, and SKUs stay on the payload even when the edit
- * form does not show those fields, so the backend replace does not wipe them.
+ * Retailer and store stay on the original row. Format is not sent;
+ * it already lives on stores. Period, type, mechanic, voucher, and
+ * SKUs come from the form.
  *
  * @param {typeof EMPTY_PROMOTION_FORM} form
  * @param {{ store_name: string, store_code: string }} store
@@ -558,21 +596,11 @@ export function buildPromotionPayload(form, store, period) {
 export function buildUpdatePayload(form, store, retailer, original = {}) {
   const payload = {
     ...buildPromotionPayload(form, store),
-    retailer,
+    retailer: original.retailer || retailer,
   };
 
-  if (!payload.store_format && original.store_format) {
-    payload.store_format = original.store_format;
-  }
-
-  if (!payload.skus.length && Array.isArray(original.skus) && original.skus.length) {
-    payload.skus = original.skus
-      .map((item) => ({
-        sku: item.sku || item.sku_range,
-        sku_range: item.sku_range || item.sku || null,
-      }))
-      .filter((item) => item.sku);
-  }
+  payload.store_name = String(original.store_name || store.store_name || '').trim();
+  payload.store_code = String(original.store_code ?? store.store_code ?? '').trim();
 
   return payload;
 }

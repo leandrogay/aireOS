@@ -9,6 +9,7 @@ import {
   deletePromotion,
   getPromotions,
   getRetailers,
+  getSkuRanges,
   getStores,
   updatePromotion,
 } from '@/app/services/promotionsApi';
@@ -17,10 +18,8 @@ import {
   buildUpdatePayload,
   formFromPromotion,
   getThursdayWeeksInMonth,
-  resolveRetailerTargets,
+  resolvePromotionCreatePairs,
   resolveSelectedPeriods,
-  resolveSelectedStores,
-  storeCatalogOptions,
   validatePromotionForm,
 } from '@/app/utils/promotionForm';
 import { promotionCombinationKey } from '@/app/utils/promotionOverview';
@@ -39,8 +38,11 @@ export default function PromotionsPage() {
   const [stores, setStores] = useState([]);
   const [retailersError, setRetailersError] = useState('');
   const [storesError, setStoresError] = useState('');
+  const [skuRangeOptions, setSkuRangeOptions] = useState([]);
+  const [skuRangesError, setSkuRangesError] = useState('');
   const [isLoadingRetailers, setIsLoadingRetailers] = useState(false);
   const [isLoadingStores, setIsLoadingStores] = useState(false);
+  const [isLoadingSkuRanges, setIsLoadingSkuRanges] = useState(false);
   const [promotions, setPromotions] = useState([]);
   const [listError, setListError] = useState('');
   const [isLoadingList, setIsLoadingList] = useState(false);
@@ -88,6 +90,24 @@ export default function PromotionsPage() {
   }, []);
 
   /**
+   * Load distinct SKU ranges from GET /api/catalog/sku-ranges.
+   */
+  const loadSkuRanges = useCallback(async () => {
+    setIsLoadingSkuRanges(true);
+    setSkuRangesError('');
+
+    try {
+      const data = await getSkuRanges();
+      setSkuRangeOptions(data);
+    } catch (error) {
+      setSkuRangeOptions([]);
+      setSkuRangesError(error.message || 'Failed to load SKU ranges.');
+    } finally {
+      setIsLoadingSkuRanges(false);
+    }
+  }, []);
+
+  /**
    * Apply a saved promotion to the overview immediately so staff do not
    * wait on GET /api/promotions or the Refresh button.
    *
@@ -131,8 +151,9 @@ export default function PromotionsPage() {
   useEffect(() => {
     loadRetailers();
     loadStores();
+    loadSkuRanges();
     loadPromotions();
-  }, [loadRetailers, loadStores, loadPromotions]);
+  }, [loadRetailers, loadStores, loadSkuRanges, loadPromotions]);
 
   useEffect(() => {
     if (!editingPromotion || !retailers.length) return;
@@ -245,18 +266,13 @@ export default function PromotionsPage() {
     }
 
     if (editingPromotion) {
-      const retailerNames = resolveRetailerTargets(form, retailers);
-      const selectedStores = resolveSelectedStores(form, storeCatalogOptions(stores));
-
-      if (retailerNames.length !== 1 || selectedStores.length !== 1) {
-        setSubmitError('Choose one retailer and one store.');
-        return;
-      }
-
       const payload = buildUpdatePayload(
         form,
-        selectedStores[0],
-        retailerNames[0],
+        {
+          store_name: editingPromotion.store_name,
+          store_code: String(editingPromotion.store_code ?? ''),
+        },
+        editingPromotion.retailer,
         editingPromotion,
       );
       const nextKey = promotionCombinationKey(payload);
@@ -304,35 +320,36 @@ export default function PromotionsPage() {
       return;
     }
 
-    const retailerNames = resolveRetailerTargets(form, retailers);
-    const selectedStores = resolveSelectedStores(form, storeCatalogOptions(stores));
+    const createPairs = resolvePromotionCreatePairs(form, retailers, stores);
     const selectedPeriods = resolveSelectedPeriods(form);
     const existingKeys = new Set(promotions.map((item) => promotionCombinationKey(item)));
     const newStoresByRetailer = [];
     const skipped = [];
 
+    if (!createPairs.length) {
+      setSubmitError('Choose stores that belong to the selected retailer.');
+      return;
+    }
+
     for (const period of selectedPeriods) {
-      const periodPayload = buildPromotionPayload(form, selectedStores[0], period);
+      for (const { retailer, store } of createPairs) {
+        const periodPayload = buildPromotionPayload(form, store, period);
+        const key = promotionCombinationKey({
+          retailer,
+          store_code: store.store_code,
+          period_start: periodPayload.period_start,
+          period_end: periodPayload.period_end,
+          promo_type: periodPayload.promo_type,
+          promotion_mechanic: periodPayload.promotion_mechanic,
+        });
 
-      for (const retailer of retailerNames) {
-        for (const store of selectedStores) {
-          const key = promotionCombinationKey({
-            retailer,
-            store_code: store.store_code,
-            period_start: periodPayload.period_start,
-            period_end: periodPayload.period_end,
-            promo_type: periodPayload.promo_type,
-            promotion_mechanic: periodPayload.promotion_mechanic,
-          });
-
-          if (existingKeys.has(key)) {
-            skipped.push(`${retailer} / ${store.store_name} / ${period.periodLabel}`);
-            continue;
-          }
-
-          existingKeys.add(key);
-          newStoresByRetailer.push({ retailer, store, payload: periodPayload });
+        if (existingKeys.has(key)) {
+          skipped.push(`${retailer} / ${store.store_name} / ${period.periodLabel}`);
+          continue;
         }
+
+        existingKeys.add(key);
+        newStoresByRetailer.push({ retailer, store, payload: periodPayload });
       }
     }
 
@@ -425,10 +442,13 @@ export default function PromotionsPage() {
           onChange={handleFormChange}
           retailers={retailers}
           stores={stores}
+          skuRangeOptions={skuRangeOptions}
           retailersError={retailersError}
           storesError={storesError}
+          skuRangesError={skuRangesError}
           isLoadingRetailers={isLoadingRetailers}
           isLoadingStores={isLoadingStores}
+          isLoadingSkuRanges={isLoadingSkuRanges}
           isSubmitting={isSubmitting}
           errors={errors}
           onSubmit={handleSubmit}
