@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 from sqlalchemy.exc import IntegrityError
 
 from app.services import catalog_service
-from app.schemas.promotions import (
+from app.schemas.catalog import (
     RetailerCreate,
     RetailerUpdate,
     StoreCreate,
