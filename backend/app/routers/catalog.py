@@ -330,3 +330,23 @@ def delete_store(store_id: int):
                 f"{type(e).__name__}: {e}"
             ),
         )
+
+
+# ============================================================
+# SKU LOOKUPS
+# ============================================================
+
+
+@router.get("/sku-ranges")
+def get_sku_ranges():
+    try:
+        return catalog_service.get_sku_ranges()
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Failed to retrieve sku ranges: "
+                f"{type(e).__name__}: {e}"
+            ),
+        )

@@ -702,3 +702,36 @@ def delete_store(
 
         return True
 
+
+
+# ============================================================
+# SKU READ DISTINCT RANGES
+#
+# sku_range is nullable on skus, so NULLs are filtered out
+# rather than surfaced as a null option. Values are already
+# whitespace-stripped on write by the schema layer.
+# ============================================================
+
+
+def get_sku_ranges() -> list[str]:
+    query = text(
+        """
+        SELECT DISTINCT
+            sku_range
+
+        FROM skus
+
+        WHERE
+            sku_range IS NOT NULL
+
+        ORDER BY
+            sku_range ASC
+        """
+    )
+
+    with _get_engine().connect() as conn:
+        results = conn.execute(
+            query
+        ).scalars().all()
+
+    return list(results)
