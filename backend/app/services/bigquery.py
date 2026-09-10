@@ -1,6 +1,7 @@
 import os
 import re
 from datetime import datetime
+from functools import lru_cache
 import pandas as pd
 from google.cloud import bigquery
 
@@ -15,7 +16,11 @@ DEFAULT_CUSTOMER = "fairprice" # Fallback when no customer is supplied
 # Read-only reference data
 BQFairprice_TABLE = os.environ.get("BQ_FAIRPRICESELLOUT_TABLE", "aire-data.Aire_Data.aireOS_fairprice")
 
+@lru_cache(maxsize=1)
 def get_bigquery_client(project="aire-data") -> bigquery.Client:
+    # Cached so every filter change reuses one client (and its underlying
+    # HTTP session/credentials) instead of paying client-construction cost
+    # on every request — same pattern as storage.get_storage_client().
     return bigquery.Client(project=project)
 
 
