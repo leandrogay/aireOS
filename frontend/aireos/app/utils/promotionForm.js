@@ -6,15 +6,15 @@ export const PROMO_TYPES = [
 ];
 
 export const PROMO_MECHANICS = [
+  'No Promo',
+  '27% Off',
+  '25% Off',
+  '20% Off',
+  '30% Off',
+  '33% Off',
   'Buy 2 Get 25% Off',
   'Buy 2 Get 30% Off',
   'Buy 2 Get 1 Free',
-  '30% Off',
-  '25% Off',
-  '20% Off',
-  'No Promo',
-  '27% Off',
-  '33% Off',
 ];
 
 export const EMPTY_PROMOTION_FORM = {
