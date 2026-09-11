@@ -31,9 +31,6 @@ class RetailerUpdate(_Base):
 
 # ============================================================
 # STORE
-#
-# store_code is VARCHAR(100) in the schema, not an integer.
-# It is only unique within a retailer.
 # ============================================================
 
 
@@ -66,11 +63,6 @@ class StoreUpdate(StoreBase):
 
 # ============================================================
 # SKU
-#
-# Everything except `sku` is optional so a partially known
-# product can still be recorded. quantity_units is a property
-# of the SKU *within this promotion*, not of the SKU itself,
-# and is stored on promotion_skus.
 # ============================================================
 
 
