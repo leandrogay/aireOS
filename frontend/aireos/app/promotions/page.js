@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-
+import AppShell from '@/components/layout/AppShell';
 import PromotionForm, { blankPromotionForm } from '@/components/promotions/PromotionForm';
 import PromotionList from '@/components/promotions/PromotionList';
 import {
@@ -387,7 +387,7 @@ export default function PromotionsPage() {
       } else {
         setSubmitError(
           failed.map((item) => `${item.retailer} / ${item.store}${item.period ? ` / ${item.period}` : ''}: ${item.error}`).join(' ') ||
-            'Failed to create promotion.',
+          'Failed to create promotion.',
         );
       }
 
@@ -404,59 +404,63 @@ export default function PromotionsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-cream px-4 py-3 font-sans">
-      <div className="mx-auto flex max-w-6xl flex-col gap-2.5">
-        <header>
-          <h1 className="font-serif text-2xl text-deep-violet-blue">Promotions</h1>
-          <p className="text-xs text-deep-violet-blue/80">
-            {editingPromotion
-              ? `Editing promotion ${editingPromotion.promotion_id} (${editingPromotion.store_name || 'store'}).`
-              : 'Register a promotion.'}
-          </p>
-        </header>
+    <AppShell>
+      <main>
+        <div className="min-h-screen bg-cream px-4 py-3 font-sans">
+          <div className="mx-auto flex max-w-6xl flex-col gap-2.5">
+            <header>
+              <h1 className="font-serif text-2xl text-deep-violet-blue">Promotions</h1>
+              <p className="text-xs text-deep-violet-blue/80">
+                {editingPromotion
+                  ? `Editing promotion ${editingPromotion.promotion_id} (${editingPromotion.store_name || 'store'}).`
+                  : 'Register a promotion.'}
+              </p>
+            </header>
 
-        {submitMessage && (
-          <p className="rounded-md border border-violet bg-lavander p-2 text-sm text-deep-violet-blue">
-            {submitMessage}
-          </p>
-        )}
+            {submitMessage && (
+              <p className="rounded-md border border-violet bg-lavander p-2 text-sm text-deep-violet-blue">
+                {submitMessage}
+              </p>
+            )}
 
-        {submitError && (
-          <p className="rounded-md border border-red-200 bg-red-50 p-2 text-sm text-red-700">
-            {submitError}
-          </p>
-        )}
+            {submitError && (
+              <p className="rounded-md border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+                {submitError}
+              </p>
+            )}
 
-        <PromotionForm
-          form={form}
-          onChange={handleFormChange}
-          retailers={retailers}
-          stores={stores}
-          skuRangeOptions={skuRangeOptions}
-          retailersError={retailersError}
-          storesError={storesError}
-          skuRangesError={skuRangesError}
-          isLoadingRetailers={isLoadingRetailers}
-          isLoadingStores={isLoadingStores}
-          isLoadingSkuRanges={isLoadingSkuRanges}
-          isSubmitting={isSubmitting}
-          errors={errors}
-          onSubmit={handleSubmit}
-          mode={editingPromotion ? 'edit' : 'create'}
-          onCancel={handleCancelEdit}
-        />
+            <PromotionForm
+              form={form}
+              onChange={handleFormChange}
+              retailers={retailers}
+              stores={stores}
+              skuRangeOptions={skuRangeOptions}
+              retailersError={retailersError}
+              storesError={storesError}
+              skuRangesError={skuRangesError}
+              isLoadingRetailers={isLoadingRetailers}
+              isLoadingStores={isLoadingStores}
+              isLoadingSkuRanges={isLoadingSkuRanges}
+              isSubmitting={isSubmitting}
+              errors={errors}
+              onSubmit={handleSubmit}
+              mode={editingPromotion ? 'edit' : 'create'}
+              onCancel={handleCancelEdit}
+            />
 
-        <PromotionList
-          promotions={promotions}
-          isLoading={isLoadingList}
-          error={listError}
-          highlightIds={highlightIds}
-          editingId={editingPromotion?.promotion_id}
-          onEdit={handleEdit}
-          onDelete={handleDelete}
-          onRefresh={loadPromotions}
-        />
-      </div>
-    </div>
+            <PromotionList
+              promotions={promotions}
+              isLoading={isLoadingList}
+              error={listError}
+              highlightIds={highlightIds}
+              editingId={editingPromotion?.promotion_id}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+              onRefresh={loadPromotions}
+            />
+          </div>
+        </div>
+      </main>
+    </AppShell>
   );
 }
