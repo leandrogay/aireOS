@@ -82,49 +82,115 @@ def to_snake_case(col: str) -> str:
     return s.strip("_")
 
 
+# A period column embeds the reporting range in its own name (a week number,
+# a DD-MM-YYYY or YYYY-MM-DD date), so two files from the same retailer
+# template fingerprint as different layouts the moment the range moves on.
+# Collapsing those tokens to a placeholder before hashing keeps the
+# fingerprint tied to the template's shape rather than one snapshot of it.
+#
+# Operates on the underscore-split tokens rather than a regex with \b: after
+# to_snake_case every separator is already "_", and \b does not fire between
+# two underscore-joined word characters (underscore counts as \w), so a
+# boundary-based regex silently never matches here.
+def _is_date_triplet(a: str, b: str, c: str) -> bool:
+    if not (a.isdigit() and b.isdigit() and c.isdigit()):
+        return False
+    if len(c) == 4 and len(a) <= 2 and len(b) <= 2:
+        return True  # DD_MM_YYYY
+    if len(a) == 4 and len(b) <= 2 and len(c) <= 2:
+        return True  # YYYY_MM_DD
+    return False
+
+
+def _canonicalize_period_tokens(normalized: str) -> str:
+    parts = normalized.split("_")
+    canonical: list[str] = []
+    i = 0
+    while i < len(parts):
+        if parts[i] in ("week", "month") and i + 1 < len(parts) and parts[i + 1].isdigit():
+            canonical.extend([parts[i], "n"])
+            i += 2
+            continue
+        if i + 2 < len(parts) and _is_date_triplet(parts[i], parts[i + 1], parts[i + 2]):
+            canonical.append("date")
+            i += 3
+            continue
+        canonical.append(parts[i])
+        i += 1
+    return "_".join(canonical)
+
+
 # ---- Reading headers out of the uploaded bytes ------------------------------
 
-def read_header_columns(filename: str, data: bytes) -> list[str]:
+def _read_header_dataframe(filename: str, data: bytes) -> pd.DataFrame:
     """
-    Pull the column headers out of an uploaded file's bytes.
+    Parse just the first few rows of an uploaded file's bytes.
 
     Takes bytes rather than a path because the router has already consumed the
-    UploadFile stream — re-reading it would yield nothing. Only the first few
-    rows are parsed; we just need the header row.
-
-    Column names are returned exactly as they appear in the file, because the
-    contract's identity_mapping keys and melt_groups column lists have to match
-    the real dataframe columns when apply_contract() runs.
+    UploadFile stream — re-reading it would yield nothing. dtype=str so a
+    sample cell reads back as the same text a person would see in the file,
+    not a pandas-inferred float (e.g. "100" rather than "100.0").
     """
     ext = Path(filename).suffix.lower()
     bio = io.BytesIO(data)
 
     try:
         if ext in (".xlsx", ".xlsm"):
-            df = pd.read_excel(bio, nrows=5)
+            return pd.read_excel(bio, nrows=5, dtype=str)
         elif ext == ".csv":
-            df = pd.read_csv(bio, nrows=5)
+            return pd.read_csv(bio, nrows=5, dtype=str)
         else:
             # .txt — sniff the delimiter instead of assuming tab. The python
             # engine is required for sep=None.
-            df = pd.read_csv(bio, sep=None, engine="python", nrows=5)
+            return pd.read_csv(bio, sep=None, engine="python", nrows=5, dtype=str)
     except Exception as e:
         raise UnreadableSourceFileError(f"Could not read headers from {filename!r}: {e}")
 
+
+def read_header_columns(filename: str, data: bytes) -> list[str]:
+    """
+    Pull the column headers out of an uploaded file's bytes.
+
+    Column names are returned exactly as they appear in the file, because the
+    contract's identity_mapping keys and melt_groups column lists have to match
+    the real dataframe columns when apply_contract() runs.
+    """
+    df = _read_header_dataframe(filename, data)
     return [str(c) for c in df.columns]
+
+
+def read_sample_row(filename: str, data: bytes) -> dict[str, str]:
+    """
+    First non-blank value per column, kept alongside a proposed contract so
+    the review screen can show a real example next to each mapping rule
+    instead of just the column name. Best-effort: a column with no non-blank
+    value in the first few rows is simply left out.
+    """
+    df = _read_header_dataframe(filename, data)
+    sample: dict[str, str] = {}
+    for column in df.columns:
+        values = df[column].dropna()
+        values = values[values.str.strip() != ""] if not values.empty else values
+        if not values.empty:
+            sample[str(column)] = str(values.iloc[0])
+    return sample
 
 
 def fingerprint(columns: list[str]) -> str:
     """
     Stable identifier for a set of column headers.
 
-    Normalised and sorted, so the same layout fingerprints identically even if
-    the columns arrive in a different order or with cosmetic punctuation
-    differences. That's safe because the contract addresses columns by name,
-    never by position.
+    Normalised, deduplicated after collapsing period tokens (week number,
+    embedded date), and sorted — so the same layout fingerprints identically
+    whether the columns arrive in a different order, with cosmetic
+    punctuation differences, or covering a different date range with a
+    different number of period columns. That's safe because contract
+    application (see apply_contract) resolves melt-group membership by
+    re-matching each group's own period_extract_regex against the file at
+    hand rather than trusting the literal column list frozen at confirm time.
     """
-    normalized = sorted(to_snake_case(c) for c in columns)
-    joined = "\x1f".join(normalized)
+    canonical = sorted({_canonicalize_period_tokens(to_snake_case(c)) for c in columns})
+    joined = "\x1f".join(canonical)
     return hashlib.sha256(joined.encode("utf-8")).hexdigest()[:16]
 
 
@@ -155,7 +221,14 @@ Your task:
      (e.g. "revenue", "quantity_units")
    - "columns": the exact list of raw column names in this group
    - "period_extract_regex": a Python regex with ONE capture group that
-     extracts the date substring from each column name in this group
+     extracts the date substring from each column name in this group.
+     This contract gets reused later against other files covering different
+     date ranges, matched by re-running this regex against whatever columns
+     that future file has — so it must include enough of the metric's own
+     label (not just the date) that it CANNOT also match a sibling group's
+     columns. Two groups differing only by metric name (e.g. "Sales Week 1"
+     vs "Qty Week 1") must get regexes anchored to "Sales" and "Qty"
+     respectively, not a shared pattern like the date alone.
    - "date_format": the strptime format string matching that date substring
      (e.g. "%d-%m-%Y", "%Y-%m-%d", "%m/%d/%Y")
 2. Map any remaining columns that clearly correspond to ONE target schema
@@ -288,6 +361,27 @@ def validate_contract(contract: dict, raw_columns: list[str], target_schema: lis
     if unmapped:
         warnings.append(f"{len(unmapped)} column(s) left unmapped: {unmapped[:5]}")
 
+    # apply_contract re-matches each group's period_extract_regex against
+    # whatever columns a future file actually has, rather than trusting this
+    # exact column list forever (see apply_contract.py) -- that only stays
+    # correct if each group's regex is scoped to just its own columns. A
+    # regex broad enough to also match a sibling group's columns works fine
+    # today (this file's literal columns disambiguate it) but would silently
+    # misclassify data the next time this same contract is reused.
+    for group in clean_groups:
+        sibling_columns = {
+            c for g in clean_groups if g is not group for c in g["columns"]
+        }
+        compiled = re.compile(group["period_extract_regex"])
+        ambiguous = [c for c in sibling_columns if compiled.search(c)]
+        if ambiguous:
+            warnings.append(
+                f"period_extract_regex for {group['target_field']!r} also matches "
+                f"another group's column(s) ({ambiguous[:3]}) — it should be scoped "
+                f"tighter or this contract may misclassify columns when reused "
+                f"against a future file."
+            )
+
     return {
         "identity_mapping": clean_identity,
         "melt_groups": clean_groups,
@@ -297,7 +391,12 @@ def validate_contract(contract: dict, raw_columns: list[str], target_schema: lis
 
 # ---- The one function the router calls ---------------------------------------
 
-def resolve_mapping(filename: str, data: bytes, uploaded_to: str | None = None) -> dict:
+def resolve_mapping(
+    filename: str,
+    data: bytes,
+    uploaded_to: str | None = None,
+    force_regenerate: bool = False,
+) -> dict:
     """
     Work out the mapping contract for an uploaded file.
 
@@ -306,21 +405,30 @@ def resolve_mapping(filename: str, data: bytes, uploaded_to: str | None = None) 
     generated, parked under mappings/pending/, and returned for the user to
     review.
 
+    force_regenerate skips the cache lookup even when a confirmed contract
+    exists for this fingerprint. The fingerprint now matches on the file's
+    structural shape (see fingerprint()), not its literal column text, so a
+    cache hit can point at a contract whose identity columns use different
+    raw casing than this file actually has. The caller sets this after such
+    a contract fails to apply, to get one regenerated against this file's
+    real columns instead of failing the upload over a stale cache entry.
+
     This is a blocking function (network I/O to both Anthropic and GCS) — the
     router runs it in a thread.
     """
     columns = read_header_columns(filename, data)
     fp = fingerprint(columns)
 
-    confirmed = storage.download_json(storage.confirmed_mapping_path(fp))
-    if confirmed:
-        return {
-            "status": "mapped",
-            "fingerprint": fp,
-            "contract": confirmed.get("contract", {}),
-            "source": "cache",
-            "confirmed_at": confirmed.get("confirmed_at"),
-        }
+    if not force_regenerate:
+        confirmed = storage.download_json(storage.confirmed_mapping_path(fp))
+        if confirmed:
+            return {
+                "status": "mapped",
+                "fingerprint": fp,
+                "contract": confirmed.get("contract", {}),
+                "source": "cache",
+                "confirmed_at": confirmed.get("confirmed_at"),
+            }
 
     contract = generate_mapping_contract(columns, TARGET_SCHEMA)
 
@@ -331,6 +439,9 @@ def resolve_mapping(filename: str, data: bytes, uploaded_to: str | None = None) 
         "raw_columns": columns,
         "target_schema": TARGET_SCHEMA,
         "contract": contract,
+        # A real example value per column, so the review screen can show what
+        # this rule actually produces instead of just the column name.
+        "sample_row": read_sample_row(filename, data),
         "example_file": uploaded_to,
         "model": MODEL,
         "proposed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
