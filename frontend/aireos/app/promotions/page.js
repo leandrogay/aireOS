@@ -28,8 +28,6 @@ import {
 } from '@/app/utils/promotionOverview';
 
 /**
- * Promotions page for AO4-1 create and AO4-2 overview.
- *
  * One promotion spans many stores, so create is a single POST to
  * /api/promotions with every ticked retailer/store in `stores`.
  * Retailers, stores, and the overview list come from GET after
@@ -55,6 +53,9 @@ export default function PromotionsPage() {
   const [submitError, setSubmitError] = useState('');
   const [highlightIds, setHighlightIds] = useState([]);
   const [editingPromotion, setEditingPromotion] = useState(null);
+  // Bumped on every Edit click so the form re-plays its flash, even when
+  // switching straight from one promotion to another.
+  const [editFlashKey, setEditFlashKey] = useState(0);
 
   /**
    * Load retailers for All / Specific scope from GET /api/catalog/retailers.
@@ -195,6 +196,7 @@ export default function PromotionsPage() {
    */
   const handleEdit = (promotion) => {
     setEditingPromotion(promotion);
+    setEditFlashKey((key) => key + 1);
     setForm(formFromPromotion(promotion, retailers));
     setErrors({});
     setSubmitMessage('');
@@ -415,6 +417,7 @@ export default function PromotionsPage() {
               errors={errors}
               onSubmit={handleSubmit}
               mode={editingPromotion ? 'edit' : 'create'}
+              flashKey={editFlashKey}
               onCancel={handleCancelEdit}
             />
 
