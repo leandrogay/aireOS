@@ -222,17 +222,6 @@ def confirmed_mapping_path(fingerprint: str) -> str:
     return f"{MAPPING_PREFIX}confirmed/{fingerprint}.json"
 
 
-def builtin_sample_path() -> str:
-    """
-    Where the builtin FairPrice mapping's example row lives.
-
-    Unlike a contract, the builtin mapping isn't keyed by fingerprint --
-    there's exactly one of it -- so this is a single fixed blob rather than
-    one per hash, refreshed by scripts/refresh_builtin_sample.py.
-    """
-    return f"{MAPPING_PREFIX}builtin/sample.json"
-
-
 def _blob(path: str):
     return get_storage_client().bucket(BUCKET_NAME).blob(path)
 
