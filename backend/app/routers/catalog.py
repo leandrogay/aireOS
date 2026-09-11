@@ -10,10 +10,7 @@ from app.schemas.catalog import (
 )
 
 
-# Retailers and stores are the catalog that promotions are
-# written against, but they are their own resource: they live
-# under /api/catalog rather than sharing the /api/promotions
-# prefix, so nothing here competes with /{promotion_id}.
+# Retailers and stores are under /api/catalog
 router = APIRouter(
     prefix="/api/catalog",
     tags=["catalog"],
@@ -333,7 +330,7 @@ def delete_store(store_id: int):
 
 
 # ============================================================
-# SKU LOOKUPS
+# SKU RANGE LOOKUPS
 # ============================================================
 
 
