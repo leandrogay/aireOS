@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import AppShell from '../components/layout/AppShell';
 import FileUpload from '../components/upload/FileUpload';
-import { MappingReview } from '../components/upload/MappingReview';
+import { MappingReview } from '../mappings/MappingReview';
 
 const REQUIRED_TARGET_FIELDS = ['sku', 'quantity_units', 'revenue', 'period_start'];
 
