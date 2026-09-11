@@ -11,6 +11,7 @@ import {
   areAllSkuRangesSelected,
   areAllStoresSelected,
   retailerDropdownOptions,
+  retailerLabel,
   storeCatalogOptions,
   storesForRetailerIds,
 } from '@/app/utils/promotionForm';
@@ -135,7 +136,7 @@ export default function PromotionForm({
         .filter((retailer) =>
           (form.selectedRetailerIds || []).map(String).includes(String(retailer.retailer_id)),
         )
-        .map((retailer) => retailer.retailer_name)
+        .map((retailer) => retailerLabel(retailer.retailer_name))
         .join(', ');
   const storeSummary = allStoresSelected
     ? 'All stores'
@@ -310,7 +311,7 @@ export default function PromotionForm({
                   onChange={() => toggleRetailer(retailer.retailer_id)}
                   className="size-3.5 accent-deep-violet-blue"
                 />
-                <span className="min-w-0 truncate">{retailer.retailer_name}</span>
+                <span className="min-w-0 truncate">{retailerLabel(retailer.retailer_name)}</span>
               </label>
             ))}
           </CheckboxDropdown>

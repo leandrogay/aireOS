@@ -3,7 +3,12 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { formatPromoDate, promoTypeLabel, uniqueSkuRangeLabels } from '@/app/utils/promotionForm';
+import {
+  formatPromoDate,
+  promoTypeLabel,
+  retailerLabel,
+  uniqueSkuRangeLabels,
+} from '@/app/utils/promotionForm';
 import {
   PROMOTION_STATUSES,
   dedupePromotions,
@@ -100,7 +105,7 @@ function ConfirmDeleteDialog({ promotion, isDeleting, onCancel, onConfirm }) {
           </span>
           {promotion.period_label ? ` · ${promotion.period_label}` : ''}
           {promotionRetailerNames(promotion).length
-            ? ` · ${promotionRetailerNames(promotion).join(', ')}`
+            ? ` · ${promotionRetailerNames(promotion).map(retailerLabel).join(', ')}`
             : ''}
           .
         </p>
@@ -573,7 +578,10 @@ export default function PromotionList({
                     label="Retailer"
                     value={retailerFilter}
                     allLabel="All retailers"
-                    options={retailerOptions.map((name) => ({ value: name, label: name }))}
+                    options={retailerOptions.map((name) => ({
+                      value: name,
+                      label: retailerLabel(name),
+                    }))}
                     openId={openFilter}
                     setOpenId={setOpenFilter}
                     onChange={setRetailerFilter}
@@ -619,7 +627,7 @@ export default function PromotionList({
                 const status = promotionStatus(promotion);
                 const skuLabels = uniqueSkuRangeLabels(promotion.skus);
                 const storeNames = promotionStoreNames(promotion);
-                const retailerNames = promotionRetailerNames(promotion);
+                const retailerNames = promotionRetailerNames(promotion).map(retailerLabel);
                 const linkedStores = promotionStores(promotion);
                 const rowClass = isEditing
                   ? 'bg-lavander/90'

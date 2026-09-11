@@ -157,6 +157,23 @@ export function promoTypeLabel(value) {
 }
 
 /**
+ * Display label for a stored retailer_name slug, e.g. `fairprice_online`
+ * → `Fairprice Online`. The raw slug stays the identity used for matching
+ * and API payloads; only call this at render time.
+ *
+ * @param {string | null | undefined} value
+ * @returns {string}
+ */
+export function retailerLabel(value) {
+  if (!value) return '';
+  return String(value)
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}
+
+/**
  * Format a backend date value for the overview list.
  *
  * @param {string | Date | null | undefined} value
