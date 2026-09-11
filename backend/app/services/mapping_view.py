@@ -37,6 +37,7 @@ def _rule(
     transform: Optional[str],
     status: str,
     editable: bool,
+    sample: Optional[Any] = None,
 ) -> Dict[str, Any]:
     return {
         "targetField": target_field,
@@ -45,17 +46,21 @@ def _rule(
         "transform": transform,
         "status": status,
         "editable": editable,
+        "sample": sample,
     }
 
 
-def contract_to_rules(contract: Dict[str, Any]) -> List[Dict[str, Any]]:
+def contract_to_rules(
+    contract: Dict[str, Any], sample_row: Optional[Dict[str, str]] = None
+) -> List[Dict[str, Any]]:
     """Flatten an LLM contract into one rule per target field."""
+    sample_row = sample_row or {}
     rules = []
 
     # identity_mapping is {source: target}; the review reads target-first.
     for source, target in (contract.get("identity_mapping") or {}).items():
         rules.append(
-            _rule(target, [source], source, None, "mapped", editable=True)
+            _rule(target, [source], source, None, "mapped", editable=True, sample=sample_row.get(source))
         )
 
     for group in contract.get("melt_groups") or []:
@@ -76,8 +81,11 @@ def contract_to_rules(contract: Dict[str, Any]) -> List[Dict[str, Any]]:
             f"period from /{group.get('period_extract_regex')}/ "
             f"parsed as {group.get('date_format')}"
         )
+        # A representative value from the first period column -- every column
+        # in the group holds the same kind of value, just a different period.
+        sample = sample_row.get(columns[0]) if columns else None
         rules.append(
-            _rule(target, columns, display, transform, "derived", editable=False)
+            _rule(target, columns, display, transform, "derived", editable=False, sample=sample)
         )
 
     return rules
@@ -130,13 +138,21 @@ def _meta(rules: List[Dict[str, Any]], columns: List[str]) -> Dict[str, Any]:
     }
 
 
-def builtin_packet() -> Dict[str, Any]:
+def builtin_packet(sample_row: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """The AO1-2 FairPrice mapping, presented as a read-only rule set.
 
     Every rule here is executed by hardcoded Python in apply_existing_mapping,
     so repointing a source column in the UI would change the display and not
     the behaviour. The whole packet is therefore locked.
+
+    sample_row, when given, is a real *output* row (keyed by target field,
+    e.g. {"size": "L"}) from actually running this mapping against a
+    recognised file -- unlike a contract's rules, several of these (size,
+    retailer, period_start...) are regex/lookup transforms with no single
+    source column a raw value could stand in for, so the sample has to be
+    the transform's real output rather than an input cell.
     """
+    sample_row = sample_row or {}
     rules = [
         _rule(
             rule["targetField"],
@@ -145,6 +161,7 @@ def builtin_packet() -> Dict[str, Any]:
             rule["transform"],
             rule["status"],
             editable=False,
+            sample=sample_row.get(rule["targetField"]),
         )
         for rule in build_fairprice_wide_rules()
     ]
@@ -173,7 +190,7 @@ def envelope_to_packet(
     """Normalise a stored contract envelope into the review shape."""
     contract = envelope.get("contract") or {}
     columns = envelope.get("raw_columns") or []
-    rules = contract_to_rules(contract)
+    rules = contract_to_rules(contract, envelope.get("sample_row"))
 
     # Keep each melt group attached to its rule so rules_to_contract can put it
     # back untouched when the user saves an edit to some other row.
