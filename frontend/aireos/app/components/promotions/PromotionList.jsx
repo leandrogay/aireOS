@@ -3,14 +3,23 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { formatPromoDate, promoTypeLabel, uniqueSkuRangeLabels } from '@/app/utils/promotionForm';
+import {
+  formatPromoDate,
+  promoTypeLabel,
+  retailerLabel,
+  uniqueSkuRangeLabels,
+} from '@/app/utils/promotionForm';
 import {
   PROMOTION_STATUSES,
   dedupePromotions,
   filterPromotions,
+  promotionRetailerNames,
   promotionStatus,
   promotionStatusLabel,
+  promotionStoreNames,
+  promotionStores,
   sortPromotions,
+  summariseNames,
   uniquePromotionMechanics,
   uniquePromotionPeriods,
   uniquePromotionRetailers,
@@ -91,9 +100,14 @@ function ConfirmDeleteDialog({ promotion, isDeleting, onCancel, onConfirm }) {
         </h3>
         <p className="mt-2 text-sm text-deep-violet-blue/80">
           This cannot be undone. The overview will drop{' '}
-          <span className="font-medium">{promotion.store_name || 'this store'}</span>
+          <span className="font-medium">
+            {summariseNames(promotionStoreNames(promotion), 'this promotion')}
+          </span>
           {promotion.period_label ? ` · ${promotion.period_label}` : ''}
-          {promotion.retailer ? ` · ${promotion.retailer}` : ''}.
+          {promotionRetailerNames(promotion).length
+            ? ` · ${promotionRetailerNames(promotion).map(retailerLabel).join(', ')}`
+            : ''}
+          .
         </p>
         <div className="mt-4 flex justify-end gap-2">
           <button
@@ -479,7 +493,7 @@ export default function PromotionList({
                 <th className="px-1.5 py-2">
                   <HeaderFilter
                     id="store"
-                    label="Store name"
+                    label="Stores"
                     value={storeFilter}
                     allLabel="All stores"
                     options={storeOptions.map((name) => ({ value: name, label: name }))}
@@ -564,7 +578,10 @@ export default function PromotionList({
                     label="Retailer"
                     value={retailerFilter}
                     allLabel="All retailers"
-                    options={retailerOptions.map((name) => ({ value: name, label: name }))}
+                    options={retailerOptions.map((name) => ({
+                      value: name,
+                      label: retailerLabel(name),
+                    }))}
                     openId={openFilter}
                     setOpenId={setOpenFilter}
                     onChange={setRetailerFilter}
@@ -609,6 +626,9 @@ export default function PromotionList({
                 const isOpen = expandedId === promotion.promotion_id;
                 const status = promotionStatus(promotion);
                 const skuLabels = uniqueSkuRangeLabels(promotion.skus);
+                const storeNames = promotionStoreNames(promotion);
+                const retailerNames = promotionRetailerNames(promotion).map(retailerLabel);
+                const linkedStores = promotionStores(promotion);
                 const rowClass = isEditing
                   ? 'bg-lavander/90'
                   : isNew
@@ -632,11 +652,14 @@ export default function PromotionList({
                       }}
                       tabIndex={0}
                     >
-                      <td className="px-2.5 py-2 font-medium">
+                      <td
+                        className="max-w-0 truncate px-2.5 py-2 font-medium"
+                        title={storeNames.join(', ') || undefined}
+                      >
                         <span className="mr-1.5 inline-block w-2 text-[10px] text-deep-violet-blue/50">
                           {isOpen ? '▾' : '▸'}
                         </span>
-                        {promotion.store_name || '—'}
+                        {summariseNames(storeNames)}
                       </td>
                       <td className="px-2.5 py-2">{promotion.period_label || '—'}</td>
                       <td className="px-2.5 py-2">{promoTypeLabel(promotion.promo_type)}</td>
@@ -645,9 +668,9 @@ export default function PromotionList({
                       <td className="px-2.5 py-2">{formatPromoDate(promotion.period_end)}</td>
                       <td
                         className="max-w-0 truncate px-2.5 py-2 font-medium"
-                        title={promotion.retailer || undefined}
+                        title={retailerNames.join(', ') || undefined}
                       >
-                        {promotion.retailer || '—'}
+                        {summariseNames(retailerNames)}
                       </td>
                       <td className="px-2.5 py-2">
                         <span
@@ -689,10 +712,31 @@ export default function PromotionList({
                       <tr className="border-b border-lavander/80">
                         <td colSpan={9} className="bg-cream/50 px-2.5 py-1.5 text-[11px] text-deep-violet-blue">
                           <div className="grid grid-cols-3 gap-1.5 [&>*]:min-w-0">
-                            <DetailTile
-                              label="Format"
-                              value={promotion.store_format || '—'}
-                            />
+                            <DetailTile label={`Stores (${linkedStores.length})`}>
+                              {linkedStores.length ? (
+                                <ul className="mt-0.5 min-w-0 list-inside list-disc font-medium leading-snug text-deep-violet-blue">
+                                  {linkedStores.map((store) => {
+                                    const parts = [
+                                      store.store_name || store.store_code,
+                                      store.retailer,
+                                      store.store_format,
+                                    ].filter(Boolean);
+                                    const label = parts.join(' · ');
+                                    return (
+                                      <li
+                                        key={store.store_id ?? `${store.retailer}|${store.store_code}`}
+                                        title={label}
+                                        className="min-w-0 truncate whitespace-nowrap"
+                                      >
+                                        {label}
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                              ) : (
+                                <p className="mt-0.5 font-medium text-deep-violet-blue">—</p>
+                              )}
+                            </DetailTile>
                             <DetailTile
                               label="Voucher"
                               value={promotion.voucher || '—'}

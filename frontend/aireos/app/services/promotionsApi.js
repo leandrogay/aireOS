@@ -3,7 +3,8 @@
 // Each exported function is annotated with its HTTP method + endpoint.
 // Promotions live under /api/promotions; the retailer and store
 // lookups they depend on come from the catalog router at /api/catalog.
-// Each ticked month × year is sent as its own POST /api/promotions row.
+// One promotion spans many stores (promotion_stores), so a create is
+// a single POST carrying every ticked retailer/store in `stores`.
 // ============================================================
 
 /**
@@ -187,16 +188,17 @@ export async function getSkuRanges() {
 /**
  * POST /api/promotions
  *
- * Creates one store-level promotion. The current schema requires retailer,
- * store_name, store_code, period_start, period_end, and promo_type.
- * Optional: period_label, promotion_mechanic, voucher, skus.
- * store_format is not sent; it already lives on the stores catalog.
- * `skus` names catalog sku_range values. The backend maps those to
- * existing skus rows and writes promotion_skus. The frontend does
- * not insert into skus, stores, or promotion_skus.
+ * Creates one promotion linked to every store in `stores`. The schema
+ * requires stores (at least one `{ retailer, store_name, store_code }`),
+ * period_start, period_end, and promo_type. Optional: period_label,
+ * promotion_mechanic, voucher, skus, and store_format per store.
+ * `skus` names catalog sku_range values. The backend resolves each
+ * store through the catalog, writes promotion_stores, maps the SKU
+ * ranges to existing skus rows, and writes promotion_skus. The
+ * frontend does not insert into skus, stores, or the link tables.
  *
  * @param {object} payload
- * @returns {Promise<object>} the created promotion
+ * @returns {Promise<object>} the created promotion, with `stores` and `skus`
  */
 export async function createPromotion(payload) {
   return request('/api/promotions', {
@@ -209,8 +211,9 @@ export async function createPromotion(payload) {
  * PUT /api/promotions/{promotion_id}
  *
  * Replaces the stored promotion with the same body shape as create.
- * The backend replaces promotion_skus from the ticked SKU ranges
- * (catalog SKUs only). Voucher and SKU ranges must still be sent.
+ * The backend replaces promotion_stores from `stores` and
+ * promotion_skus from the ticked SKU ranges (catalog rows only), so
+ * the full store list, voucher, and SKU ranges must still be sent.
  *
  * @param {number} promotionId
  * @param {object} payload
@@ -226,8 +229,8 @@ export async function updatePromotion(promotionId, payload) {
 /**
  * DELETE /api/promotions/{promotion_id}
  *
- * Removes the promotion row and its promotion_skus links.
- * Retailer, store, and sku master data are left in place.
+ * Removes the promotion row and its promotion_stores / promotion_skus
+ * links. Retailer, store, and sku master data are left in place.
  *
  * @param {number} promotionId
  * @returns {Promise<{ status: string, message: string, promotion_id: number }>}
@@ -236,66 +239,4 @@ export async function deletePromotion(promotionId) {
   return request(`/api/promotions/${encodeURIComponent(promotionId)}`, {
     method: 'DELETE',
   });
-}
-
-/**
- * Create one promotion row per retailer × store pair.
- *
- * The backend stores each promotion against a single retailer and store.
- * Multi-select therefore expands into one POST /api/promotions per pair.
- *
- * Does not stop on the first failure: remaining pairs are still attempted
- * so a single constraint error does not drop the whole batch.
- *
- * @param {object} sharedPayload fields shared across rows, without retailer/store
- * @param {string[]} retailerNames
- * @param {Array<{ store_name: string, store_code: string }>} stores
- * @returns {Promise<{ created: object[], failed: { retailer: string, store: string, error: string }[] }>}
- */
-export async function createPromotionsForRetailersAndStores(
-  sharedPayload,
-  retailerNames,
-  stores,
-) {
-  const pairs = [];
-  for (const retailer of retailerNames) {
-    for (const store of stores) {
-      pairs.push({ retailer, store });
-    }
-  }
-  return createPromotionPairs(sharedPayload, pairs);
-}
-
-/**
- * POST one promotion per retailer / store / period pair.
- *
- * @param {object} sharedPayload
- * @param {Array<{ retailer: string, store: { store_name: string, store_code: string }, payload?: object }>} pairs
- * @returns {Promise<{ created: object[], failed: { retailer: string, store: string, period?: string, error: string }[] }>}
- */
-export async function createPromotionPairs(sharedPayload, pairs) {
-  const created = [];
-  const failed = [];
-
-  for (const { retailer, store, payload } of pairs) {
-    const body = payload || sharedPayload;
-    try {
-      const promotion = await createPromotion({
-        ...body,
-        retailer,
-        store_name: store.store_name,
-        store_code: String(store.store_code),
-      });
-      created.push(promotion);
-    } catch (error) {
-      failed.push({
-        retailer,
-        store: store.store_name,
-        period: body.period_label,
-        error: error.message || 'Failed to create promotion',
-      });
-    }
-  }
-
-  return { created, failed };
 }

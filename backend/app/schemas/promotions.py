@@ -18,11 +18,16 @@ PromoType = Literal[
 
 
 # ============================================================
-# PROMOTION
+# PROMOTION STORE
+#
+# One promotion runs in many stores. Each entry names a store
+# the same way the catalog does (retailer + store_code), so
+# the service can resolve it through get_or_create_store and
+# link it via promotion_stores.
 # ============================================================
 
 
-class PromotionBase(_Base):
+class PromotionStoreRef(_Base):
     retailer: str = Field(
         min_length=1,
         max_length=255,
@@ -42,6 +47,15 @@ class PromotionBase(_Base):
         default=None,
         max_length=100,
     )
+
+
+# ============================================================
+# PROMOTION
+# ============================================================
+
+
+class PromotionBase(_Base):
+    stores: list[PromotionStoreRef] = Field(min_length=1)
 
     period_start: date
     period_end: date
@@ -67,6 +81,30 @@ class PromotionBase(_Base):
         if self.period_end < self.period_start:
             raise ValueError(
                 "period_end cannot be earlier than period_start"
+            )
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_unique_stores(self):
+        # (retailer, store_code) is the stores natural key, so
+        # the same pair twice would collapse to one
+        # promotion_stores row and silently drop the duplicate.
+        keys = [
+            (item.retailer, item.store_code)
+            for item in self.stores
+        ]
+
+        duplicates = {
+            f"{retailer}/{store_code}"
+            for retailer, store_code in keys
+            if keys.count((retailer, store_code)) > 1
+        }
+
+        if duplicates:
+            raise ValueError(
+                "duplicate stores in payload: "
+                + ", ".join(sorted(duplicates))
             )
 
         return self

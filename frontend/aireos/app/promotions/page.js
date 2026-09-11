@@ -1,11 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import AppShell from '@/components/layout/AppShell';
+import PageLayout from '@/components/layout/PageLayout';
 import PromotionForm, { blankPromotionForm } from '@/components/promotions/PromotionForm';
 import PromotionList from '@/components/promotions/PromotionList';
 import {
-  createPromotionPairs,
+  createPromotion,
   deletePromotion,
   getPromotions,
   getRetailers,
@@ -15,19 +15,23 @@ import {
 } from '@/app/services/promotionsApi';
 import {
   buildPromotionPayload,
-  buildUpdatePayload,
   formFromPromotion,
-  resolvePromotionCreatePairs,
+  resolvePromotionStores,
   resolveSelectedPeriods,
   validatePromotionForm,
 } from '@/app/utils/promotionForm';
-import { promotionCombinationKey } from '@/app/utils/promotionOverview';
+import {
+  promotionStoreKey,
+  storesCoveredByEvent,
+  summariseNames,
+  promotionStoreNames,
+} from '@/app/utils/promotionOverview';
 
 /**
- * Promotions page for AO4-1 create and AO4-2 overview.
- *
- * Promotions POST to /api/promotions. Retailers, stores,
- * and the overview list come from GET after Cloud SQL ingest.
+ * One promotion spans many stores, so create is a single POST to
+ * /api/promotions with every ticked retailer/store in `stores`.
+ * Retailers, stores, and the overview list come from GET after
+ * Cloud SQL ingest.
  */
 export default function PromotionsPage() {
   const [form, setForm] = useState(blankPromotionForm);
@@ -49,6 +53,9 @@ export default function PromotionsPage() {
   const [submitError, setSubmitError] = useState('');
   const [highlightIds, setHighlightIds] = useState([]);
   const [editingPromotion, setEditingPromotion] = useState(null);
+  // Bumped on every Edit click so the form re-plays its flash, even when
+  // switching straight from one promotion to another.
+  const [editFlashKey, setEditFlashKey] = useState(0);
 
   /**
    * Load retailers for All / Specific scope from GET /api/catalog/retailers.
@@ -178,9 +185,7 @@ export default function PromotionsPage() {
     setForm(nextForm);
     setErrors((current) => {
       if (Object.keys(current).length === 0) return current;
-      return validatePromotionForm(nextForm, retailers, stores, {
-        mode: editingPromotion ? 'edit' : 'create',
-      });
+      return validatePromotionForm(nextForm, retailers, stores);
     });
   };
 
@@ -191,6 +196,7 @@ export default function PromotionsPage() {
    */
   const handleEdit = (promotion) => {
     setEditingPromotion(promotion);
+    setEditFlashKey((key) => key + 1);
     setForm(formFromPromotion(promotion, retailers));
     setErrors({});
     setSubmitMessage('');
@@ -244,7 +250,8 @@ export default function PromotionsPage() {
   };
 
   /**
-   * Validate, then POST promotions. Invalid forms never call the API.
+   * Validate, then POST or PUT one promotion. Invalid forms never call
+   * the API.
    *
    * @param {React.FormEvent<HTMLFormElement>} event
    */
@@ -253,35 +260,34 @@ export default function PromotionsPage() {
     setSubmitMessage('');
     setSubmitError('');
 
-    const nextErrors = validatePromotionForm(form, retailers, stores, {
-      mode: editingPromotion ? 'edit' : 'create',
-    });
+    const nextErrors = validatePromotionForm(form, retailers, stores);
     setErrors(nextErrors);
 
     if (Object.keys(nextErrors).length > 0) {
       return;
     }
 
-    if (editingPromotion) {
-      const payload = buildUpdatePayload(
-        form,
-        {
-          store_name: editingPromotion.store_name,
-          store_code: String(editingPromotion.store_code ?? ''),
-        },
-        editingPromotion.retailer,
-        editingPromotion,
-      );
-      const nextKey = promotionCombinationKey(payload);
-      const clash = promotions.find(
-        (item) =>
-          item.promotion_id !== editingPromotion.promotion_id &&
-          promotionCombinationKey(item) === nextKey,
-      );
+    const storeRefs = resolvePromotionStores(form, retailers, stores);
 
-      if (clash) {
+    if (!storeRefs.length) {
+      setSubmitError('Choose stores that belong to the selected retailers.');
+      return;
+    }
+
+    if (editingPromotion) {
+      const payload = buildPromotionPayload(form, storeRefs);
+      const covered = storesCoveredByEvent(
+        promotions,
+        payload,
+        editingPromotion.promotion_id,
+      );
+      const clashes = payload.stores.filter((store) => covered.has(promotionStoreKey(store)));
+
+      if (clashes.length) {
         setSubmitError(
-          `This combination already exists for ${clash.retailer} / ${clash.store_name}.`,
+          `This combination already exists for ${clashes
+            .map((store) => `${store.retailer} / ${store.store_name}`)
+            .join('; ')}.`,
         );
         return;
       }
@@ -308,42 +314,24 @@ export default function PromotionsPage() {
       return;
     }
 
-    const createPairs = resolvePromotionCreatePairs(form, retailers, stores);
-    const selectedPeriods = resolveSelectedPeriods(form);
-    const existingKeys = new Set(promotions.map((item) => promotionCombinationKey(item)));
-    const newStoresByRetailer = [];
+    const [period] = resolveSelectedPeriods(form);
+    const payload = buildPromotionPayload(form, storeRefs, period);
+
+    // Stores already running this exact event (period, type, mechanic)
+    // are dropped from the request rather than duplicated.
+    const covered = storesCoveredByEvent(promotions, payload);
     const skipped = [];
+    const newStores = [];
 
-    if (!createPairs.length) {
-      setSubmitError('Choose stores that belong to the selected retailer.');
-      return;
-    }
-
-    for (const period of selectedPeriods) {
-      for (const { retailer, store } of createPairs) {
-        const periodPayload = buildPromotionPayload(form, store, period);
-        const key = promotionCombinationKey({
-          retailer,
-          store_code: store.store_code,
-          period_start: periodPayload.period_start,
-          period_end: periodPayload.period_end,
-          promo_type: periodPayload.promo_type,
-          promotion_mechanic: periodPayload.promotion_mechanic,
-        });
-
-        if (existingKeys.has(key)) {
-          skipped.push(
-            `${retailer} / ${store.store_name} / ${periodPayload.period_start}–${periodPayload.period_end}`,
-          );
-          continue;
-        }
-
-        existingKeys.add(key);
-        newStoresByRetailer.push({ retailer, store, payload: periodPayload });
+    for (const store of payload.stores) {
+      if (covered.has(promotionStoreKey(store))) {
+        skipped.push(`${store.retailer} / ${store.store_name}`);
+        continue;
       }
+      newStores.push(store);
     }
 
-    if (!newStoresByRetailer.length) {
+    if (!newStores.length) {
       setSubmitError(
         skipped.length
           ? `This combination already exists for ${skipped.join('; ')}.`
@@ -355,41 +343,22 @@ export default function PromotionsPage() {
     setIsSubmitting(true);
 
     try {
-      const { created, failed } = await createPromotionPairs(
-        {},
-        newStoresByRetailer,
-      );
-
-      const createdIds = created
-        .map((promotion) => promotion.promotion_id)
-        .filter((id) => id != null);
+      const created = await createPromotion({ ...payload, stores: newStores });
 
       applyPromotionsToOverview(created);
-      setHighlightIds(createdIds);
+      setHighlightIds(created?.promotion_id != null ? [created.promotion_id] : []);
 
-      if (created.length && !failed.length) {
-        const skipNote = skipped.length
-          ? ` Skipped existing combinations: ${skipped.join('; ')}.`
-          : '';
-        setSubmitMessage(
-          (created.length === 1
-            ? 'Promotion created. It now appears in the overview.'
-            : `${created.length} promotions created.`) + skipNote,
-        );
-        setForm(blankPromotionForm());
-        setErrors({});
-      } else if (created.length && failed.length) {
-        setSubmitError(
-          `Created ${created.length}, but ${failed.length} failed: ${failed
-            .map((item) => `${item.retailer} / ${item.store}${item.period ? ` / ${item.period}` : ''} (${item.error})`)
-            .join('; ')}`,
-        );
-      } else {
-        setSubmitError(
-          failed.map((item) => `${item.retailer} / ${item.store}${item.period ? ` / ${item.period}` : ''}: ${item.error}`).join(' ') ||
-          'Failed to create promotion.',
-        );
-      }
+      const storeCount = promotionStoreNames(created).length || newStores.length;
+      const skipNote = skipped.length
+        ? ` Skipped stores already running this promotion: ${skipped.join('; ')}.`
+        : '';
+      setSubmitMessage(
+        (storeCount === 1
+          ? 'Promotion created. It now appears in the overview.'
+          : `Promotion created across ${storeCount} stores.`) + skipNote,
+      );
+      setForm(blankPromotionForm());
+      setErrors({});
 
       await Promise.all([
         loadPromotions({ silent: true }),
@@ -404,63 +373,51 @@ export default function PromotionsPage() {
   };
 
   return (
-    <AppShell>
-      <main>
-        <div className="min-h-screen bg-cream px-4 py-3 font-sans">
-          <div className="mx-auto flex max-w-6xl flex-col gap-2.5">
-            <header>
-              <h1 className="font-serif text-2xl text-deep-violet-blue">Promotions</h1>
-              <p className="text-xs text-deep-violet-blue/80">
-                {editingPromotion
-                  ? `Editing promotion ${editingPromotion.promotion_id} (${editingPromotion.store_name || 'store'}).`
-                  : 'Register a promotion.'}
-              </p>
-            </header>
+    <PageLayout title="Promotions">
+      <div className="flex flex-col gap-2.5">
+        {submitMessage && (
+          <p className="rounded-md border border-violet bg-lavander p-2 text-sm text-deep-violet-blue">
+            {submitMessage}
+          </p>
+        )}
 
-            {submitMessage && (
-              <p className="rounded-md border border-violet bg-lavander p-2 text-sm text-deep-violet-blue">
-                {submitMessage}
-              </p>
-            )}
+        {submitError && (
+          <p className="rounded-md border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+            {submitError}
+          </p>
+        )}
 
-            {submitError && (
-              <p className="rounded-md border border-red-200 bg-red-50 p-2 text-sm text-red-700">
-                {submitError}
-              </p>
-            )}
+        <PromotionForm
+          form={form}
+          onChange={handleFormChange}
+          retailers={retailers}
+          stores={stores}
+          skuRangeOptions={skuRangeOptions}
+          retailersError={retailersError}
+          storesError={storesError}
+          skuRangesError={skuRangesError}
+          isLoadingRetailers={isLoadingRetailers}
+          isLoadingStores={isLoadingStores}
+          isLoadingSkuRanges={isLoadingSkuRanges}
+          isSubmitting={isSubmitting}
+          errors={errors}
+          onSubmit={handleSubmit}
+          mode={editingPromotion ? 'edit' : 'create'}
+          flashKey={editFlashKey}
+          onCancel={handleCancelEdit}
+        />
 
-            <PromotionForm
-              form={form}
-              onChange={handleFormChange}
-              retailers={retailers}
-              stores={stores}
-              skuRangeOptions={skuRangeOptions}
-              retailersError={retailersError}
-              storesError={storesError}
-              skuRangesError={skuRangesError}
-              isLoadingRetailers={isLoadingRetailers}
-              isLoadingStores={isLoadingStores}
-              isLoadingSkuRanges={isLoadingSkuRanges}
-              isSubmitting={isSubmitting}
-              errors={errors}
-              onSubmit={handleSubmit}
-              mode={editingPromotion ? 'edit' : 'create'}
-              onCancel={handleCancelEdit}
-            />
-
-            <PromotionList
-              promotions={promotions}
-              isLoading={isLoadingList}
-              error={listError}
-              highlightIds={highlightIds}
-              editingId={editingPromotion?.promotion_id}
-              onEdit={handleEdit}
-              onDelete={handleDelete}
-              onRefresh={loadPromotions}
-            />
-          </div>
-        </div>
-      </main>
-    </AppShell>
+        <PromotionList
+          promotions={promotions}
+          isLoading={isLoadingList}
+          error={listError}
+          highlightIds={highlightIds}
+          editingId={editingPromotion?.promotion_id}
+          onEdit={handleEdit}
+          onDelete={handleDelete}
+          onRefresh={loadPromotions}
+        />
+      </div>
+    </PageLayout>
   );
 }

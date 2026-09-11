@@ -108,27 +108,40 @@ export function uniqueSkuRangeLabels(skus = []) {
 /**
  * Prefill the create/edit form from one GET /api/promotions row.
  *
+ * A promotion carries a `stores` array (promotion_stores), so the
+ * retailer and store pickers are seeded from every linked store.
+ *
  * @param {object} promotion
  * @param {Array<{ retailer_id: number, retailer_name: string }>} retailers
  * @returns {typeof EMPTY_PROMOTION_FORM}
  */
 export function formFromPromotion(promotion, retailers = []) {
-  const retailer = retailerDropdownOptions(retailers).find(
-    (item) => item.retailer_name === promotion.retailer,
-  );
-  const skuRanges = uniqueSkuRangeLabels(promotion.skus);
+  const linkedStores = Array.isArray(promotion?.stores) ? promotion.stores : [];
+  const options = retailerDropdownOptions(retailers);
+  const retailerIds = new Set();
+  const storeCodes = new Set();
+
+  for (const store of linkedStores) {
+    const retailer =
+      options.find((item) => String(item.retailer_id) === String(store.retailer_id)) ||
+      options.find((item) => item.retailer_name === store.retailer);
+    if (retailer) retailerIds.add(String(retailer.retailer_id));
+
+    const code = store.store_code == null ? '' : String(store.store_code).trim();
+    if (code) storeCodes.add(code);
+  }
 
   return {
     ...EMPTY_PROMOTION_FORM,
-    selectedRetailerIds: retailer ? [String(retailer.retailer_id)] : [],
-    selectedStoreCodes: promotion.store_code != null ? [String(promotion.store_code)] : [],
+    selectedRetailerIds: [...retailerIds],
+    selectedStoreCodes: [...storeCodes],
     periodStart: promotion.period_start ? String(promotion.period_start).slice(0, 10) : '',
     periodEnd: promotion.period_end ? String(promotion.period_end).slice(0, 10) : '',
     periodLabel: promotion.period_label ? String(promotion.period_label) : '',
     promoType: promotion.promo_type || 'regular',
     promotionMechanic: promotion.promotion_mechanic || PROMO_MECHANICS[0],
     voucher: promotion.voucher ? String(promotion.voucher) : '',
-    skuRanges: skuRanges,
+    skuRanges: uniqueSkuRangeLabels(promotion.skus),
   };
 }
 
@@ -141,6 +154,23 @@ export function formFromPromotion(promotion, retailers = []) {
 export function promoTypeLabel(value) {
   const match = PROMO_TYPES.find((item) => item.value === value);
   return match ? match.label : value || '—';
+}
+
+/**
+ * Display label for a stored retailer_name slug, e.g. `fairprice_online`
+ * → `Fairprice Online`. The raw slug stays the identity used for matching
+ * and API payloads; only call this at render time.
+ *
+ * @param {string | null | undefined} value
+ * @returns {string}
+ */
+export function retailerLabel(value) {
+  if (!value) return '';
+  return String(value)
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
 }
 
 /**
@@ -287,19 +317,21 @@ export function resolveSelectedStores(form, storeOptions) {
 }
 
 /**
- * Create POST pairs: only retailer × store rows that exist in the catalog.
+ * Store refs for the `stores` array of POST / PUT /api/promotions:
+ * only retailer × store rows that exist in the catalog.
  *
  * A ticked store is skipped for a retailer that does not own that
- * store_code, so create cannot insert a new stores row.
+ * store_code, so a promotion write cannot insert a new stores row.
  *
  * @param {object} form
  * @param {Array<{ retailer_id: number, retailer_name: string }>} retailers
  * @param {object[]} apiStores
- * @returns {Array<{ retailer: string, store: { store_name: string, store_code: string, store_format: string | null } }>}
+ * @returns {Array<{ retailer: string, store_name: string, store_code: string, store_format: string | null }>}
  */
-export function resolvePromotionCreatePairs(form, retailers, apiStores = []) {
+export function resolvePromotionStores(form, retailers, apiStores = []) {
   const selectedCodes = new Set((form.selectedStoreCodes || []).map(String));
-  const pairs = [];
+  const refs = [];
+  const seen = new Set();
 
   for (const retailerName of resolveRetailerTargets(form, retailers)) {
     const retailer = retailerDropdownOptions(retailers).find(
@@ -312,54 +344,49 @@ export function resolvePromotionCreatePairs(form, retailers, apiStores = []) {
       const code = store.store_code == null ? '' : String(store.store_code).trim();
       if (!code || !selectedCodes.has(code)) continue;
 
-      pairs.push({
+      const key = `${retailerName}|${code}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      refs.push({
         retailer: retailerName,
-        store: {
-          store_code: code,
-          store_name: String(store.store_name || '').trim() || code,
-          store_format: String(store.store_format || '').trim() || null,
-        },
+        store_name: String(store.store_name || '').trim() || code,
+        store_code: code,
+        store_format: String(store.store_format || '').trim() || null,
       });
     }
   }
 
-  return pairs;
+  return refs;
 }
 
 /**
- * Validate the monthly create/edit form against POST /api/promotions
- * (retailer, store, period_start/end, promo_type).
+ * Validate the create/edit form against POST / PUT /api/promotions
+ * (stores, period_start/end, promo_type).
+ *
+ * Create and edit share the same rules: a promotion links one or more
+ * stores under one or more retailers.
  *
  * @param {typeof EMPTY_PROMOTION_FORM} form
  * @param {Array<{ retailer_id: number, retailer_name: string }>} retailers
  * @param {object[]} stores
- * @param {{ mode?: 'create' | 'edit' }} [options]
  * @returns {Record<string, string>}
  */
-export function validatePromotionForm(form, retailers, stores = [], options = {}) {
+export function validatePromotionForm(form, retailers, stores = []) {
   const errors = {};
-  const mode = options.mode || 'create';
 
   const retailerNames = resolveRetailerTargets(form, retailers);
   if (retailerNames.length === 0) {
-    errors.retailerScope = mode === 'edit' ? 'Select a retailer.' : 'Select at least one retailer.';
-  } else if (mode === 'edit' && retailerNames.length !== 1) {
-    errors.retailerScope = 'Select one retailer.';
+    errors.retailerScope = 'Select at least one retailer.';
   }
 
   const storeOptions = storeCatalogOptions(
-    mode === 'edit' ? stores : storesForRetailerIds(stores, form.selectedRetailerIds),
+    storesForRetailerIds(stores, form.selectedRetailerIds),
   );
   const selectedStores = resolveSelectedStores(form, storeOptions);
-  if (mode === 'edit') {
-    if (!selectedStores.length) {
-      errors.storeName = 'Select a store.';
-    } else if (selectedStores.length !== 1) {
-      errors.storeName = 'Select one store.';
-    }
-  } else if ((form.selectedRetailerIds || []).length) {
+  if ((form.selectedRetailerIds || []).length) {
     if (!storeOptions.length) {
-      errors.storeName = 'No stores for the selected retailer.';
+      errors.storeName = 'No stores for the selected retailers.';
     } else if (!selectedStores.length) {
       errors.storeName = 'Select at least one store.';
     }
@@ -398,26 +425,33 @@ export function validatePromotionForm(form, retailers, stores = [], options = {}
 }
 
 /**
- * Build the JSON body POST /api/promotions currently accepts.
+ * Build the JSON body POST /api/promotions and PUT /api/promotions/{id}
+ * accept. Both share one shape.
  *
- * Dates are promotions.period_start and promotions.period_end.
- * period_label is optional free text. store_code is a string. Ticked
+ * `stores` is the full set of retailer/store refs the promotion runs
+ * in; the backend resolves each to a catalog store and writes
+ * promotion_stores. Dates are promotions.period_start and
+ * promotions.period_end. period_label is optional free text. Ticked
  * SKU ranges are sent so the backend can map existing catalog SKUs
- * into promotion_skus. This does not insert into skus or
+ * into promotion_skus. This does not insert into skus, stores, or
  * promotion_skus from the frontend.
  *
  * @param {typeof EMPTY_PROMOTION_FORM} form
- * @param {{ store_name: string, store_code: string, store_format?: string | null }} store
+ * @param {Array<{ retailer: string, store_name: string, store_code: string, store_format?: string | null }>} storeRefs
  * @param {{ periodStart?: string, periodEnd?: string, periodLabel?: string | null }} [period]
  * @returns {object}
  */
-export function buildPromotionPayload(form, store, period) {
+export function buildPromotionPayload(form, storeRefs, period) {
   const periodStart = period?.periodStart || String(form.periodStart || '').trim();
   const periodEnd = period?.periodEnd || String(form.periodEnd || '').trim();
 
   return {
-    store_name: String(store.store_name || '').trim(),
-    store_code: String(store.store_code || '').trim(),
+    stores: (storeRefs || []).map((store) => ({
+      retailer: String(store.retailer || '').trim(),
+      store_name: String(store.store_name || '').trim(),
+      store_code: String(store.store_code || '').trim(),
+      store_format: String(store.store_format || '').trim() || null,
+    })),
     period_start: periodStart,
     period_end: periodEnd,
     period_label:
@@ -432,28 +466,4 @@ export function buildPromotionPayload(form, store, period) {
       sku_range: range,
     })),
   };
-}
-
-/**
- * PUT /api/promotions/{id} body. Same shape as create, plus retailer.
- * Retailer and store stay on the original row. Format is not sent;
- * it already lives on stores. Period, type, mechanic, voucher, and
- * SKUs come from the form.
- *
- * @param {typeof EMPTY_PROMOTION_FORM} form
- * @param {{ store_name: string, store_code: string }} store
- * @param {string} retailer
- * @param {object} [original]
- * @returns {object}
- */
-export function buildUpdatePayload(form, store, retailer, original = {}) {
-  const payload = {
-    ...buildPromotionPayload(form, store),
-    retailer: original.retailer || retailer,
-  };
-
-  payload.store_name = String(original.store_name || store.store_name || '').trim();
-  payload.store_code = String(original.store_code ?? store.store_code ?? '').trim();
-
-  return payload;
 }

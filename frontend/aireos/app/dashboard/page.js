@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useState } from "react";
-import AppShell from "@/components/layout/AppShell";
+import PageLayout from "@/components/layout/PageLayout";
 import SkuRanking from "@/components/dashboard/SkuRanking";
 import RevenueTrendCard from "@/components/dashboard/RevenueTrendCard";
 import RevenueSummaryCards from "@/components/dashboard/RevenueSummaryCards";
@@ -153,92 +153,88 @@ export default function DashboardPage() {
   ].filter(Boolean);
 
   return (
-    <AppShell>
-      <main className="min-h-screen bg-cream px-4 py-4">
-        <div className="max-w-6xl mx-auto">
-          <div className="flex flex-wrap items-center gap-3 mb-3">
-            <h1 className="font-serif text-2xl text-deep-violet-blue">Sales Dashboard</h1>
-            <CustomerSelector
-              value={customer}
-              onChange={handleCustomerChange}
-              options={customerOptions}
-              loading={customerOptionsLoading}
-              error={customerOptionsError}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 gap-1 lg:grid-cols-3">
-            <div className="lg:col-span-2">
-              <RevenueTrendCard
-                summaryByMode={summary.summaryByMode}
-                loading={summary.loading}
-                refreshing={summary.refreshing}
-                error={summary.error}
-                freshnessRefreshing={refreshing}
-                lastUpdated={lastUpdated}
-                mode={mode}
-                onModeChange={setMode}
-                comparisonActive={comparison.active}
-                comparisonType={comparison.comparisonType}
-                comparisonResult={comparison.result}
-                comparisonLoading={comparison.loading}
-              />
-            </div>
-            <div>
-              <DashboardFilters
-                sku={sku}
-                onSkuChange={handleSkuChange}
-                customer={customer}
-                store={store}
-                onStoreChange={handleStoreChange}
-                startDate={startDate}
-                endDate={endDate}
-                onDateRangeChange={handleDateRangeChange}
-                effectiveStartDate={effectiveStartDate}
-                effectiveEndDate={effectiveEndDate}
-                defaultWeekRange={defaultWeekRange}
-                defaultMonthRange={defaultMonthRange}
-                defaultSixMonthRange={defaultSixMonthRange}
-                defaultYearRange={defaultYearRange}
-                comparisonType={comparison.comparisonType}
-                onComparisonTypeChange={comparison.setComparisonType}
-                dataVersion={dataVersion}
-                activeFilters={badges.length > 0 && badges}
-                onClearFilters={clearAllFilters}
-              />
-            </div>
-
-            <div>
-              <PeriodComparisonDetail
-                result={comparison.result}
-                loading={comparison.loading}
-                error={comparison.error}
-                active={comparison.active}
-              />
-            </div>
-            <div className="lg:col-span-2">
-              <RevenueSummaryCards
-                summaryByMode={summary.summaryByMode}
-                loading={summary.loading}
-                error={summary.error}
-                mode={mode}
-              />
-            </div>
-
-            <div className="lg:col-span-3">
-              <SkuRanking
-                dataVersion={dataVersion}
-                sku={sku}
-                mode={mode}
-                customer={customer}
-                store={store}
-                startDate={effectiveStartDate}
-                endDate={effectiveEndDate}
-              />
-            </div>
-          </div>
+    <PageLayout
+      title="Sales Dashboard"
+      headerExtra={
+        <CustomerSelector
+          value={customer}
+          onChange={handleCustomerChange}
+          options={customerOptions}
+          loading={customerOptionsLoading}
+          error={customerOptionsError}
+        />
+      }
+    >
+      <div className="grid grid-cols-1 gap-1 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <RevenueTrendCard
+            summaryByMode={summary.summaryByMode}
+            loading={summary.loading}
+            refreshing={summary.refreshing}
+            error={summary.error}
+            freshnessRefreshing={refreshing}
+            lastUpdated={lastUpdated}
+            mode={mode}
+            onModeChange={setMode}
+            comparisonActive={comparison.active}
+            comparisonType={comparison.comparisonType}
+            comparisonResult={comparison.result}
+            comparisonLoading={comparison.loading}
+          />
         </div>
-      </main>
-    </AppShell>
+        <div>
+          <DashboardFilters
+            sku={sku}
+            onSkuChange={handleSkuChange}
+            customer={customer}
+            store={store}
+            onStoreChange={handleStoreChange}
+            startDate={startDate}
+            endDate={endDate}
+            onDateRangeChange={handleDateRangeChange}
+            effectiveStartDate={effectiveStartDate}
+            effectiveEndDate={effectiveEndDate}
+            defaultWeekRange={defaultWeekRange}
+            defaultMonthRange={defaultMonthRange}
+            defaultSixMonthRange={defaultSixMonthRange}
+            defaultYearRange={defaultYearRange}
+            comparisonType={comparison.comparisonType}
+            onComparisonTypeChange={comparison.setComparisonType}
+            dataVersion={dataVersion}
+            activeFilters={badges.length > 0 && badges}
+            onClearFilters={clearAllFilters}
+          />
+        </div>
+
+        <div>
+          <PeriodComparisonDetail
+            result={comparison.result}
+            loading={comparison.loading}
+            error={comparison.error}
+            active={comparison.active}
+          />
+        </div>
+        <div className="lg:col-span-2">
+          <RevenueSummaryCards
+            summaryByMode={summary.summaryByMode}
+            loading={summary.loading}
+            error={summary.error}
+            mode={mode}
+          />
+        </div>
+
+        <div className="lg:col-span-3">
+          <SkuRanking
+            dataVersion={dataVersion}
+            sku={sku}
+            mode={mode}
+            customer={customer}
+            store={store}
+            startDate={effectiveStartDate}
+            endDate={effectiveEndDate}
+          />
+        </div>
+      </div>
+    </PageLayout>
   );
 }
