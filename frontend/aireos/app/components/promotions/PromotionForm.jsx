@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import DateRangePicker from '@/components/ui/DateRangePicker';
 import CheckboxDropdown from '@/components/promotions/CheckboxDropdown';
 import {
@@ -87,6 +88,10 @@ function PeriodLabelField({ value, onChange, error }) {
  * promotion whose `stores` array holds every valid retailer × store
  * pair; edit sends the same shape and replaces the store set.
  *
+ * `flashKey` is a counter the parent increments when Edit is pressed;
+ * each change plays a brief highlight so the user's eye lands on the
+ * form after the page scrolls to it.
+ *
  * @param {object} props
  */
 export default function PromotionForm({
@@ -105,9 +110,14 @@ export default function PromotionForm({
   errors = {},
   onSubmit,
   mode = 'create',
+  flashKey = 0,
   onCancel,
 }) {
   const isEdit = mode === 'edit';
+  // The flash plays while the parent's flashKey is one we haven't finished
+  // animating yet; onAnimationEnd marks it seen so the next bump restarts it.
+  const [seenFlashKey, setSeenFlashKey] = useState(flashKey);
+  const isFlashing = flashKey !== seenFlashKey;
   const retailerOptions = retailerDropdownOptions(retailers);
   const storeOptions = storeCatalogOptions(
     storesForRetailerIds(stores, form.selectedRetailerIds),
@@ -252,7 +262,13 @@ export default function PromotionForm({
     <form
       noValidate
       onSubmit={onSubmit}
-      className="rounded-lg border border-lavander bg-white p-3 shadow-sm"
+      className={`rounded-lg border border-lavander bg-white p-3 shadow-sm ${
+        isFlashing ? 'animate-edit-flash' : ''
+      }`}
+      onAnimationEnd={(event) => {
+        // Child widgets have their own animations; only react to ours.
+        if (event.animationName === 'edit-flash') setSeenFlashKey(flashKey);
+      }}
     >
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-serif text-xl text-deep-violet-blue">
