@@ -94,9 +94,6 @@ def get_promotions():
 
 # ============================================================
 # PROMOTION READ ONE
-#
-# Keep dynamic promotion routes LAST so any future static
-# /api/promotions path is not mistaken for a promotion ID.
 # ============================================================
 
 
