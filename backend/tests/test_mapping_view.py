@@ -89,3 +89,43 @@ def test_builtin_is_locked_end_to_end():
     assert not any(rule["editable"] for rule in builtin["rules"])
     assert builtin["requiredMissing"] == []
     assert builtin["fingerprint"] is None
+
+
+def test_builtin_sample_row_is_keyed_by_target_field_not_source_column():
+    # Unlike a contract's rules, several builtin fields (size, retailer,
+    # period_start...) are transform outputs with no single source column --
+    # the sample has to be looked up by target field, using the real output
+    # of actually running the mapping, not an input cell.
+    builtin = mv.builtin_packet({"size": "L", "sku": "13255045", "retailer": "fairprice_offline"})
+    rules_by_field = {rule["targetField"]: rule for rule in builtin["rules"]}
+
+    assert rules_by_field["size"]["sample"] == "L"
+    assert rules_by_field["sku"]["sample"] == "13255045"
+    assert rules_by_field["retailer"]["sample"] == "fairprice_offline"
+    # Fields absent from the given sample row degrade to no sample, not an error.
+    assert rules_by_field["brand"]["sample"] is None
+
+
+def test_sample_row_attaches_an_example_value_per_rule():
+    envelope = {
+        **ENVELOPE,
+        "sample_row": {
+            "SKU No.": "13255043",
+            "Brand": "AIRE",
+            "SALES | Week 1 | 01-01-2026": "125.50",
+        },
+    }
+    packet = mv.envelope_to_packet("abc123", envelope, "pending")
+    rules_by_field = {rule["targetField"]: rule for rule in packet["rules"]}
+
+    assert rules_by_field["sku"]["sample"] == "13255043"
+    assert rules_by_field["brand"]["sample"] == "AIRE"
+    # A melt group's sample comes from its first period column.
+    assert rules_by_field["revenue"]["sample"] == "125.50"
+
+
+def test_missing_sample_row_leaves_sample_absent_not_an_error():
+    packet = mv.envelope_to_packet("abc123", ENVELOPE, "pending")
+
+    assert all(rule["sample"] is None for rule in packet["rules"])
+    assert all(rule["sample"] is None for rule in mv.builtin_packet()["rules"])

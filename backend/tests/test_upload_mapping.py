@@ -133,13 +133,16 @@ def test_confirmed_contract_is_applied_deterministically(monkeypatch):
             {
                 "target_field": "revenue",
                 "columns": ["Sales | Week 1 | 01-01-2026"],
-                "period_extract_regex": r"(\d{2}-\d{2}-\d{4})$",
+                # Scoped to its own prefix, matching what Claude actually
+                # produces (see tests/test_apply_contract.py) -- a regex
+                # shared across groups would ambiguously match both.
+                "period_extract_regex": r"Sales \| Week \d+ \| (\d{2}-\d{2}-\d{4})$",
                 "date_format": "%d-%m-%Y",
             },
             {
                 "target_field": "quantity_units",
                 "columns": ["Qty | Week 1 | 01-01-2026"],
-                "period_extract_regex": r"(\d{2}-\d{2}-\d{4})$",
+                "period_extract_regex": r"Qty \| Week \d+ \| (\d{2}-\d{2}-\d{4})$",
                 "date_format": "%d-%m-%Y",
             },
         ],
@@ -167,6 +170,70 @@ def test_confirmed_contract_is_applied_deterministically(monkeypatch):
     assert preview["period_type"] == "week"
     assert preview["revenue"] == "12.50"
     assert preview["quantity_units"] == "2"
+
+
+def test_stale_cache_hit_falls_back_to_regeneration_instead_of_failing(monkeypatch):
+    # The fingerprint now matches on structural shape, so a cache hit can
+    # point at a contract whose identity columns were confirmed with
+    # different raw casing than this file actually has -- apply_contract
+    # raises on that. The upload should recover by regenerating a contract
+    # against this file's real columns rather than surfacing "mapping_failed".
+    dataframe = pd.DataFrame(
+        {
+            "sku_no": ["A1"],
+            "sales_week_1_01_01_2026": ["12.50"],
+            "qty_in_ea_week_1_01_01_2026": ["2"],
+        }
+    )
+    stale_contract = {
+        "identity_mapping": {"SKU No.": "sku"},  # different raw casing
+        "melt_groups": [
+            {
+                "target_field": "revenue",
+                "columns": ["sales_week_1_01_01_2026"],
+                "period_extract_regex": r"sales_week_\d+_(\d{2}_\d{2}_\d{4})$",
+                "date_format": "%d_%m_%Y",
+            },
+            {
+                "target_field": "quantity_units",
+                "columns": ["qty_in_ea_week_1_01_01_2026"],
+                "period_extract_regex": r"qty_in_ea_week_\d+_(\d{2}_\d{2}_\d{4})$",
+                "date_format": "%d_%m_%Y",
+            },
+        ],
+    }
+    fresh_contract = {
+        "identity_mapping": {"sku_no": "sku"},
+        "melt_groups": stale_contract["melt_groups"],
+    }
+    calls = []
+
+    def fake_resolve_mapping(filename, data, uploaded_to=None, force_regenerate=False):
+        calls.append(force_regenerate)
+        if force_regenerate:
+            return {
+                "status": "mapped",
+                "fingerprint": "shape123",
+                "contract": fresh_contract,
+                "source": "generated",
+            }
+        return {
+            "status": "mapped",
+            "fingerprint": "shape123",
+            "contract": stale_contract,
+            "source": "cache",
+        }
+
+    monkeypatch.setattr(uploads.generate_mapping, "resolve_mapping", fake_resolve_mapping)
+
+    result = uploads.resolve_and_apply_mapping(
+        "vendor.txt", _as_txt_bytes(dataframe), "gs://bucket/vendor.txt"
+    )
+
+    assert calls == [False, True]
+    assert result["source"] == "generated"
+    assert result["processing"]["rows_mapped"] == 1
+    assert result["processing"]["preview"][0]["revenue"] == "12.50"
 
 
 def test_signature_contains_exact_source_headers():

@@ -1,6 +1,7 @@
 """Deterministically apply an approved mapping contract to uploaded data."""
 
 import io
+import re
 from pathlib import Path
 from typing import Any
 
@@ -63,34 +64,71 @@ def apply_contract(
             f"Identity source columns are missing: {missing_identity}"
         )
 
-    melt_columns = {
-        column
-        for group in melt_groups
-        for column in (group.get("columns") or [])
-    }
-    missing_melt = sorted(melt_columns - set(dataframe.columns))
-    if missing_melt:
-        raise ContractApplicationError(
-            f"Melt source columns are missing: {missing_melt}"
-        )
-
-    if id_vars is None:
-        id_vars = [column for column in dataframe.columns if column not in melt_columns]
-
-    if not melt_groups:
-        return dataframe[id_vars].rename(columns=identity_mapping).copy()
-
-    melted_tables = []
+    # A confirmed contract is commonly reapplied to a later file covering a
+    # different reporting range -- same header shape, new or additional
+    # dates -- so the literal columns recorded at confirm time can be a
+    # strict subset of what this file actually has. Re-matching each group's
+    # own period_extract_regex against the current columns (rather than
+    # trusting the frozen list) is what lets a newly-added week's column get
+    # melted in too instead of silently dropped; the regex was written with
+    # a capture group precisely so it generalises across date values.
+    resolved_groups = []
     for group in melt_groups:
         target_field = group.get("target_field")
-        columns = group.get("columns") or []
+        stored_columns = group.get("columns") or []
         pattern = group.get("period_extract_regex")
         date_format = group.get("date_format")
-        if not target_field or not columns or not pattern or not date_format:
+        if not target_field or not stored_columns or not pattern or not date_format:
             raise ContractApplicationError(
                 "Each melt group requires target_field, columns, "
                 "period_extract_regex and date_format."
             )
+
+        compiled = re.compile(pattern)
+        columns = [c for c in dataframe.columns if compiled.search(str(c))]
+        if not columns:
+            raise ContractApplicationError(
+                f"No columns in this file match the stored period pattern "
+                f"for {target_field!r}."
+            )
+
+        resolved_groups.append({**group, "columns": columns})
+
+    # Two groups' regexes can each validly match their own literal columns at
+    # confirm time yet still overlap once re-matched against a differently
+    # dated file (validate_contract only warns about this, since it can't
+    # know in advance whether a future file will actually trigger it). Left
+    # unchecked, an overlapping column gets melted into both groups and the
+    # merge below silently cross-multiplies rows -- wrong values, not just a
+    # missing row. Fail loudly instead: the caller falls back to regenerating
+    # a properly scoped contract rather than trusting corrupted output.
+    column_owner: dict[str, str] = {}
+    for group in resolved_groups:
+        for column in group["columns"]:
+            owner = column_owner.get(column)
+            if owner and owner != group["target_field"]:
+                raise ContractApplicationError(
+                    f"Column {column!r} matches the period pattern for both "
+                    f"{owner!r} and {group['target_field']!r} -- this contract's "
+                    f"period_extract_regex values are not scoped tightly enough "
+                    f"to reuse safely against this file."
+                )
+            column_owner[column] = group["target_field"]
+
+    melt_columns = {column for group in resolved_groups for column in group["columns"]}
+
+    if id_vars is None:
+        id_vars = [column for column in dataframe.columns if column not in melt_columns]
+
+    if not resolved_groups:
+        return dataframe[id_vars].rename(columns=identity_mapping).copy()
+
+    melted_tables = []
+    for group in resolved_groups:
+        target_field = group["target_field"]
+        columns = group["columns"]
+        pattern = group["period_extract_regex"]
+        date_format = group["date_format"]
 
         melted = pd.melt(
             dataframe,

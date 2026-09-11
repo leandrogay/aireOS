@@ -9,6 +9,7 @@ import { useState } from 'react';
 // nothing is blocked off.
 const NAV_ITEMS = [
   { label: 'Upload', href: '/upload' },
+  { label: 'Mappings', href: '/mappings' },
   { label: 'Dashboard', href: '/dashboard' },
   { label: 'Forecast', href: '/forecast' },
   { label: 'Promotions', href: '/promotions' },
