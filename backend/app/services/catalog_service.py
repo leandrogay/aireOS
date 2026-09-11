@@ -411,15 +411,15 @@ def _fetch_store(
             r.retailer_id,
             r.retailer_name,
 
-            COUNT(p.promotion_id) AS promotion_count
+            COUNT(pst.promotion_id) AS promotion_count
 
         FROM stores s
 
         JOIN retailers r
             ON r.retailer_id = s.retailer_id
 
-        LEFT JOIN promotions p
-            ON p.store_id = s.store_id
+        LEFT JOIN promotion_stores pst
+            ON pst.store_id = s.store_id
 
         WHERE
             s.store_id = :store_id
@@ -515,15 +515,15 @@ def get_stores(
             r.retailer_id,
             r.retailer_name,
 
-            COUNT(p.promotion_id) AS promotion_count
+            COUNT(pst.promotion_id) AS promotion_count
 
         FROM stores s
 
         JOIN retailers r
             ON r.retailer_id = s.retailer_id
 
-        LEFT JOIN promotions p
-            ON p.store_id = s.store_id
+        LEFT JOIN promotion_stores pst
+            ON pst.store_id = s.store_id
 
         WHERE
             (
@@ -670,7 +670,7 @@ def delete_store(
                 SELECT EXISTS (
                     SELECT 1
 
-                    FROM promotions
+                    FROM promotion_stores
 
                     WHERE store_id = :store_id
                 )
