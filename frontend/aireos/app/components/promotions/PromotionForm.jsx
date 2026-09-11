@@ -1,18 +1,14 @@
 'use client';
 
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import DateRangePicker from '@/components/ui/DateRangePicker';
 import CheckboxDropdown from '@/components/promotions/CheckboxDropdown';
 import {
   EMPTY_PROMOTION_FORM,
-  MONTH_OPTIONS,
   PROMO_MECHANICS,
   PROMO_TYPES,
-  YEAR_OPTIONS,
   areAllRetailersSelected,
   areAllSkuRangesSelected,
   areAllStoresSelected,
-  getThursdayWeeksInMonth,
   retailerDropdownOptions,
   storeCatalogOptions,
   storesForRetailerIds,
@@ -28,8 +24,6 @@ const gridClass =
 const errorClass = 'mt-0.5 text-xs text-red-700';
 const checkRowClass =
   'flex min-w-0 cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2 py-1 text-sm text-deep-violet-blue hover:bg-cream';
-const segmentTriggerClass =
-  'rounded-full px-3 py-0.5 text-xs text-deep-violet-blue/55 data-active:border data-active:border-deep-violet-blue/25 data-active:bg-white data-active:text-deep-violet-blue data-active:shadow-sm';
 
 /**
  * Inline validation message under a field after a failed submit.
@@ -89,11 +83,10 @@ function PeriodLabelField({ value, onChange, error }) {
 /**
  * Compact AO4-1 create / edit form.
  *
- * Monthly is the default view. Stores are scoped to the ticked
- * retailer. Start and end dates map to period_start / period_end.
- * period_label is optional free text. SKU ranges come from
- * GET /api/catalog/sku-ranges. Create posts one row per valid
- * retailer × store pair for the chosen date range.
+ * Stores are scoped to the ticked retailer. Start and end dates map
+ * to period_start / period_end. period_label is optional free text.
+ * SKU ranges come from GET /api/catalog/sku-ranges. Create posts one
+ * row per valid retailer × store pair for the chosen date range.
  *
  * Edit locks retailer and store, and allows period, type, mechanic,
  * voucher, and SKU.
@@ -131,11 +124,6 @@ export default function PromotionForm({
   );
   const allStoresSelected = areAllStoresSelected(form.selectedStoreCodes, storeOptions);
   const allSkuRangesSelected = areAllSkuRangesSelected(form.skuRanges, skuRangeOptions);
-  const weeklyWeeks = getThursdayWeeksInMonth(
-    Number(form.weeklyYear),
-    Number(form.weeklyMonth),
-  );
-  const selectedWeek = weeklyWeeks.find((week) => week.weekStart === form.weeklyWeekStart);
   const retailerSummary = allRetailersSelected
     ? 'All retailers'
     : retailerOptions
@@ -273,19 +261,6 @@ export default function PromotionForm({
     patchForm({ skuRanges: selected });
   };
 
-  /**
-   * Switch between monthly (saved) and weekly (UI-only) without looking
-   * like two equal halves of the form.
-   *
-   * @param {'monthly' | 'weekly'} offerKind
-   */
-  const setOfferKind = (offerKind) => {
-    patchForm({
-      offerKind,
-      promoType: offerKind === 'weekly' ? 'side_offer' : 'regular',
-    });
-  };
-
   return (
     <form
       noValidate
@@ -305,23 +280,6 @@ export default function PromotionForm({
         <p className="mb-2 text-[11px] leading-tight text-deep-violet-blue/70">
           Retailer and store cannot be changed. Period, type, mechanic, voucher, and SKU can.
         </p>
-      )}
-
-      {!isEdit && (
-      <Tabs
-        value={form.offerKind}
-        onValueChange={setOfferKind}
-        className="mb-2"
-      >
-        <TabsList className="h-8 rounded-full bg-lavander p-0.5">
-          <TabsTrigger value="monthly" className={segmentTriggerClass}>
-            Monthly promotion
-          </TabsTrigger>
-          <TabsTrigger value="weekly" className={segmentTriggerClass}>
-            Weekly side offers
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
       )}
 
       {isEdit && (
@@ -448,7 +406,7 @@ export default function PromotionForm({
         </div>
       )}
 
-      {!isEdit && form.offerKind === 'monthly' && (
+      {!isEdit && (
         <div className={gridClass}>
           <fieldset>
             <legend className={labelClass}>
@@ -672,140 +630,29 @@ export default function PromotionForm({
         </div>
       )}
 
-      {!isEdit && form.offerKind === 'weekly' && (
-        <div className={gridClass}>
-          <p className="sm:col-span-2 lg:col-span-4 text-[11px] leading-tight text-deep-violet-blue/70">
-            Weekly side offers are UI-only until a weekly backend exists.
-          </p>
-
-          <label>
-            <span className={labelClass}>
-              Month <span className="text-red-700">*</span>
-            </span>
-            <select
-              value={form.weeklyMonth}
-              onChange={(event) => patchForm({ weeklyMonth: event.target.value, weeklyWeekStart: '' })}
-              className={inputClass}
-            >
-              {MONTH_OPTIONS.map((month) => (
-                <option key={month.value} value={month.value}>
-                  {month.label}
-                </option>
-              ))}
-            </select>
-            <FieldError message={errors.weeklyMonth} />
-          </label>
-
-          <label>
-            <span className={labelClass}>
-              Year <span className="text-red-700">*</span>
-            </span>
-            <select
-              value={form.weeklyYear}
-              onChange={(event) => patchForm({ weeklyYear: event.target.value, weeklyWeekStart: '' })}
-              className={inputClass}
-            >
-              {YEAR_OPTIONS.map((year) => (
-                <option key={year} value={year}>
-                  {year}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            <span className={labelClass}>
-              Week <span className="text-red-700">*</span>
-            </span>
-            <select
-              value={form.weeklyWeekStart}
-              onChange={(event) => patchForm({ weeklyWeekStart: event.target.value })}
-              className={inputClass}
-              disabled={!weeklyWeeks.length}
-            >
-              <option value="">{weeklyWeeks.length ? 'Select week' : 'Pick month and year first'}</option>
-              {weeklyWeeks.map((week) => (
-                <option key={week.weekStart} value={week.weekStart}>
-                  {week.optionLabel}
-                </option>
-              ))}
-            </select>
-            {selectedWeek && (
-              <p className="mt-0.5 text-[11px] text-deep-violet-blue/60">
-                Stored later as {selectedWeek.periodLabel} ({selectedWeek.weekStart} – {selectedWeek.weekEnd})
-              </p>
-            )}
-            <FieldError message={errors.weeklyWeek} />
-          </label>
-
-          <fieldset>
-            <legend className={labelClass}>
-              SKU range <span className="text-red-700">*</span>
-            </legend>
-            <CheckboxDropdown
-              summary={skuSummary}
-              placeholder={
-                isLoadingSkuRanges ? 'Loading SKU ranges…' : 'Select SKU ranges'
-              }
-              disabled={isLoadingSkuRanges || skuRangeOptions.length === 0}
-            >
-              <label className={`${checkRowClass} font-medium`}>
-                <input
-                  type="checkbox"
-                  checked={allSkuRangesSelected}
-                  onChange={(event) => toggleAllSkuRanges(event.target.checked)}
-                  className="size-3.5 accent-deep-violet-blue"
-                />
-                All SKU ranges
-              </label>
-              {skuRangeOptions.map((range) => (
-                <label key={range} className={checkRowClass}>
-                  <input
-                    type="checkbox"
-                    checked={form.skuRanges.includes(range)}
-                    onChange={() => toggleSkuRange(range)}
-                    className="size-3.5 accent-deep-violet-blue"
-                  />
-                  <span className="min-w-0 truncate">{range}</span>
-                </label>
-              ))}
-            </CheckboxDropdown>
-            <FieldError message={errors.skuRanges} />
-            {skuRangesError && <p className={errorClass}>{skuRangesError}</p>}
-            {!isLoadingSkuRanges && !skuRangesError && skuRangeOptions.length === 0 && (
-              <p className="mt-0.5 text-[10px] text-deep-violet-blue/60">No SKU ranges yet.</p>
-            )}
-          </fieldset>
-        </div>
-      )}
-
-      {(isEdit || form.offerKind) && (
-        <div className="mt-2.5 flex flex-wrap items-center gap-2">
+      <div className="mt-2.5 flex flex-wrap items-center gap-2">
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className="rounded-md border border-deep-violet-blue bg-deep-violet-blue px-4 py-1.5 text-sm font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {isSubmitting
+            ? 'Saving…'
+            : isEdit
+              ? 'Save changes'
+              : 'Create promotion'}
+        </button>
+        {isEdit && (
           <button
-            type="submit"
+            type="button"
+            onClick={onCancel}
             disabled={isSubmitting}
-            className="rounded-md border border-deep-violet-blue bg-deep-violet-blue px-4 py-1.5 text-sm font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-md border border-deep-violet-blue/30 bg-white px-4 py-1.5 text-sm font-medium text-deep-violet-blue transition hover:bg-cream disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {isSubmitting
-              ? 'Saving…'
-              : isEdit
-                ? 'Save changes'
-                : form.offerKind === 'weekly'
-                  ? 'Record weekly offer (UI only)'
-                  : 'Create monthly promotion'}
+            Cancel
           </button>
-          {isEdit && (
-            <button
-              type="button"
-              onClick={onCancel}
-              disabled={isSubmitting}
-              className="rounded-md border border-deep-violet-blue/30 bg-white px-4 py-1.5 text-sm font-medium text-deep-violet-blue transition hover:bg-cream disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Cancel
-            </button>
-          )}
-        </div>
-      )}
+        )}
+      </div>
     </form>
   );
 }

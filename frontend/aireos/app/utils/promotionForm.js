@@ -17,30 +17,7 @@ export const PROMO_MECHANICS = [
   '33% Off',
 ];
 
-export const MONTH_OPTIONS = [
-  { value: '1', label: 'Jan' },
-  { value: '2', label: 'Feb' },
-  { value: '3', label: 'Mar' },
-  { value: '4', label: 'Apr' },
-  { value: '5', label: 'May' },
-  { value: '6', label: 'Jun' },
-  { value: '7', label: 'Jul' },
-  { value: '8', label: 'Aug' },
-  { value: '9', label: 'Sep' },
-  { value: '10', label: 'Oct' },
-  { value: '11', label: 'Nov' },
-  { value: '12', label: 'Dec' },
-];
-
-export const YEAR_OPTIONS = [2025, 2026, 2027, 2028];
-
-const defaultMonth = String(new Date().getMonth() + 1);
-const defaultYear = YEAR_OPTIONS.includes(new Date().getFullYear())
-  ? new Date().getFullYear()
-  : YEAR_OPTIONS[0];
-
 export const EMPTY_PROMOTION_FORM = {
-  offerKind: 'monthly',
   selectedRetailerIds: [],
   selectedStoreCodes: [],
   periodStart: '',
@@ -50,9 +27,6 @@ export const EMPTY_PROMOTION_FORM = {
   promotionMechanic: PROMO_MECHANICS[0],
   voucher: '',
   skuRanges: [],
-  weeklyMonth: defaultMonth,
-  weeklyYear: defaultYear,
-  weeklyWeekStart: '',
 };
 
 /**
@@ -66,63 +40,6 @@ export function formatYmd(date) {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
-}
-
-/**
- * First Thursday of a calendar year.
- *
- * Weekly side offers run Thursday–Wednesday, matching the client calendar
- * (not ISO Monday–Sunday weeks).
- *
- * @param {number} year
- * @returns {Date}
- */
-export function firstThursdayOfYear(year) {
-  const date = new Date(year, 0, 1);
-  const offset = (4 - date.getDay() + 7) % 7;
-  date.setDate(1 + offset);
-  return date;
-}
-
-/**
- * Thursday–Wednesday weeks whose Thursday start falls in the given month.
- *
- * Week 1 of the year is the first Thursday of that year. Labels include
- * the start and end dates so staff can pick "Week 1 / 2 / 3 / 4 / 5".
- *
- * @param {number} year
- * @param {number} month 1–12
- * @returns {Array<{ weekNumber: number, weekStart: string, weekEnd: string, optionLabel: string, periodLabel: string }>}
- */
-export function getThursdayWeeksInMonth(year, month) {
-  if (!year || !month) return [];
-
-  const weeks = [];
-  const start = firstThursdayOfYear(year);
-  let weekNumber = 1;
-
-  while (start.getFullYear() === year) {
-    const end = new Date(start);
-    end.setDate(start.getDate() + 6);
-
-    if (start.getMonth() + 1 === Number(month)) {
-      const weekStart = formatYmd(start);
-      const weekEnd = formatYmd(end);
-      weeks.push({
-        weekNumber,
-        weekStart,
-        weekEnd,
-        optionLabel: `Week ${weeks.length + 1} (${weekStart} – ${weekEnd})`,
-        periodLabel: `W${weekNumber}-${year}`,
-      });
-    }
-
-    start.setDate(start.getDate() + 7);
-    weekNumber += 1;
-    if (weekNumber > 54) break;
-  }
-
-  return weeks;
 }
 
 /**
@@ -203,7 +120,6 @@ export function formFromPromotion(promotion, retailers = []) {
 
   return {
     ...EMPTY_PROMOTION_FORM,
-    offerKind: 'monthly',
     selectedRetailerIds: retailer ? [String(retailer.retailer_id)] : [],
     selectedStoreCodes: promotion.store_code != null ? [String(promotion.store_code)] : [],
     periodStart: promotion.period_start ? String(promotion.period_start).slice(0, 10) : '',
@@ -411,9 +327,8 @@ export function resolvePromotionCreatePairs(form, retailers, apiStores = []) {
 }
 
 /**
- * Validate the create form. Weekly side offers are UI-only and never hit
- * the API; monthly promotions must satisfy the current POST /api/promotions
- * body (retailer, store, period_start/end, promo_type).
+ * Validate the monthly create/edit form against POST /api/promotions
+ * (retailer, store, period_start/end, promo_type).
  *
  * @param {typeof EMPTY_PROMOTION_FORM} form
  * @param {Array<{ retailer_id: number, retailer_name: string }>} retailers
@@ -424,24 +339,6 @@ export function resolvePromotionCreatePairs(form, retailers, apiStores = []) {
 export function validatePromotionForm(form, retailers, stores = [], options = {}) {
   const errors = {};
   const mode = options.mode || 'create';
-
-  if (!form.offerKind) {
-    errors.offerKind = 'Choose monthly promotions or weekly side offers.';
-    return errors;
-  }
-
-  if (form.offerKind === 'weekly') {
-    if (!form.weeklyYear || !form.weeklyMonth) {
-      errors.weeklyMonth = 'Select a month and year.';
-    }
-    if (!form.weeklyWeekStart) {
-      errors.weeklyWeek = 'Select a week.';
-    }
-    if (!form.skuRanges.length) {
-      errors.skuRanges = 'Select at least one SKU range.';
-    }
-    return errors;
-  }
 
   const retailerNames = resolveRetailerTargets(form, retailers);
   if (retailerNames.length === 0) {
@@ -507,8 +404,7 @@ export function validatePromotionForm(form, retailers, stores = [], options = {}
  * period_label is optional free text. store_code is a string. Ticked
  * SKU ranges are sent so the backend can map existing catalog SKUs
  * into promotion_skus. This does not insert into skus or
- * promotion_skus from the frontend. Weekly side offers must not
- * call this.
+ * promotion_skus from the frontend.
  *
  * @param {typeof EMPTY_PROMOTION_FORM} form
  * @param {{ store_name: string, store_code: string, store_format?: string | null }} store

@@ -17,7 +17,6 @@ import {
   buildPromotionPayload,
   buildUpdatePayload,
   formFromPromotion,
-  getThursdayWeeksInMonth,
   resolvePromotionCreatePairs,
   resolveSelectedPeriods,
   validatePromotionForm,
@@ -27,9 +26,8 @@ import { promotionCombinationKey } from '@/app/utils/promotionOverview';
 /**
  * Promotions page for AO4-1 create and AO4-2 overview.
  *
- * Monthly promotions POST to the existing /api/promotions routes. Weekly
- * side offers are validated on the page only until a weekly backend exists.
- * Retailers, stores, and the overview list come from GET after Cloud SQL ingest.
+ * Promotions POST to /api/promotions. Retailers, stores,
+ * and the overview list come from GET after Cloud SQL ingest.
  */
 export default function PromotionsPage() {
   const [form, setForm] = useState(blankPromotionForm);
@@ -129,7 +127,7 @@ export default function PromotionsPage() {
   };
 
   /**
-   * Load the monthly promotion overview from GET /api/promotions.
+   * Load the promotion overview from GET /api/promotions.
    *
    * @param {{ silent?: boolean }} [options]
    */
@@ -205,7 +203,7 @@ export default function PromotionsPage() {
    */
   const handleCancelEdit = () => {
     setEditingPromotion(null);
-    setForm({ ...blankPromotionForm(), offerKind: 'monthly' });
+    setForm(blankPromotionForm());
     setErrors({});
     setSubmitMessage('');
     setSubmitError('');
@@ -233,7 +231,7 @@ export default function PromotionsPage() {
 
       if (editingPromotion?.promotion_id === promotion.promotion_id) {
         setEditingPromotion(null);
-        setForm({ ...blankPromotionForm(), offerKind: 'monthly' });
+        setForm(blankPromotionForm());
         setErrors({});
       }
 
@@ -246,8 +244,7 @@ export default function PromotionsPage() {
   };
 
   /**
-   * Validate, then either POST monthly promotions or acknowledge a weekly
-   * UI-only draft. Invalid forms never call the API.
+   * Validate, then POST promotions. Invalid forms never call the API.
    *
    * @param {React.FormEvent<HTMLFormElement>} event
    */
@@ -298,7 +295,7 @@ export default function PromotionsPage() {
           updated?.promotion_id != null ? [updated.promotion_id] : [editingPromotion.promotion_id],
         );
         setEditingPromotion(null);
-        setForm({ ...blankPromotionForm(), offerKind: 'monthly' });
+        setForm(blankPromotionForm());
         setErrors({});
         setSubmitMessage('Promotion updated. The overview now shows the new details.');
         await loadPromotions({ silent: true });
@@ -308,15 +305,6 @@ export default function PromotionsPage() {
         setIsSubmitting(false);
       }
 
-      return;
-    }
-
-    if (form.offerKind === 'weekly') {
-      const weeks = getThursdayWeeksInMonth(Number(form.weeklyYear), Number(form.weeklyMonth));
-      const week = weeks.find((item) => item.weekStart === form.weeklyWeekStart);
-      setSubmitMessage(
-        `Weekly side offer captured on the page only (${week?.periodLabel || 'week'}, ${form.skuRanges.join(', ')}). It is not stored until the weekly backend exists.`,
-      );
       return;
     }
 
@@ -388,7 +376,7 @@ export default function PromotionsPage() {
             ? 'Promotion created. It now appears in the overview.'
             : `${created.length} promotions created.`) + skipNote,
         );
-        setForm({ ...blankPromotionForm(), offerKind: 'monthly' });
+        setForm(blankPromotionForm());
         setErrors({});
       } else if (created.length && failed.length) {
         setSubmitError(
@@ -423,7 +411,7 @@ export default function PromotionsPage() {
           <p className="text-xs text-deep-violet-blue/80">
             {editingPromotion
               ? `Editing promotion ${editingPromotion.promotion_id} (${editingPromotion.store_name || 'store'}).`
-              : 'Register a monthly promotion or a weekly side offer.'}
+              : 'Register a promotion.'}
           </p>
         </header>
 
