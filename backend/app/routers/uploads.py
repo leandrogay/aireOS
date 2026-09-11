@@ -63,28 +63,9 @@ def resolve_and_apply_mapping(
     if resolved.get("status") != "mapped":
         return resolved
 
-    try:
-        normalized = contract_application.apply_contract(
-            dataframe, resolved.get("contract") or {}
-        )
-    except contract_application.ContractApplicationError:
-        if resolved.get("source") != "cache":
-            raise
-        # The fingerprint matched this file's structural column shape, but
-        # the cached contract doesn't actually fit it -- most likely its
-        # identity columns carry different raw casing than the file that
-        # confirmed it. A stale cache hit shouldn't fail the upload: treat
-        # this file as unrecognised and let Claude produce a contract that
-        # does fit, same as any other new layout.
-        resolved = generate_mapping.resolve_mapping(
-            filename, data, uploaded_to, force_regenerate=True
-        )
-        if resolved.get("status") != "mapped":
-            return resolved
-        normalized = contract_application.apply_contract(
-            dataframe, resolved.get("contract") or {}
-        )
-
+    normalized = contract_application.apply_contract(
+        dataframe, resolved.get("contract") or {}
+    )
     if "source_file" in generate_mapping.TARGET_SCHEMA:
         normalized["source_file"] = filename
 
@@ -184,8 +165,7 @@ async def list_mappings():
     """
 
     def collect() -> list[dict]:
-        builtin_sample = storage.download_json(storage.builtin_sample_path()) or {}
-        packets = [mapping_view.builtin_packet(builtin_sample.get("sample_row"))]
+        packets = [mapping_view.builtin_packet()]
 
         for state in ("confirmed", "pending"):
             path_for = (
