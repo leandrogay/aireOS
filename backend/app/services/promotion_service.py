@@ -107,45 +107,11 @@ _PROMOTION_JOINS = """
 # ============================================================
 # SKU HELPERS
 #
-# `sku` is the natural primary key of the skus table, so
-# there is no surrogate id and no lookup join needed.
+# `skus` is catalog master data. Promotion writes must not
+# insert or rewrite those rows. A ticked range is resolved to
+# the product SKUs already stored for that sku_range, then
+# linked through promotion_skus only.
 # ============================================================
-
-
-_UPSERT_SKU = text(
-    """
-    INSERT INTO skus (
-        sku,
-        sku_range,
-        product_name,
-        size,
-        brand,
-        uom,
-        pack_size,
-        price
-    )
-    VALUES (
-        :sku,
-        :sku_range,
-        :product_name,
-        :size,
-        :brand,
-        :uom,
-        :pack_size,
-        :price
-    )
-
-    ON CONFLICT (sku)
-    DO UPDATE SET
-        sku_range        = COALESCE(EXCLUDED.sku_range,        skus.sku_range),
-        product_name     = COALESCE(EXCLUDED.product_name,     skus.product_name),
-        size             = COALESCE(EXCLUDED.size,             skus.size),
-        brand            = COALESCE(EXCLUDED.brand,            skus.brand),
-        uom              = COALESCE(EXCLUDED.uom,              skus.uom),
-        pack_size        = COALESCE(EXCLUDED.pack_size,        skus.pack_size),
-        price            = COALESCE(EXCLUDED.price,            skus.price)
-    """
-)
 
 
 _UPSERT_PROMOTION_SKU = text(
@@ -171,60 +137,97 @@ _UPSERT_PROMOTION_SKU = text(
 )
 
 
+def _catalog_skus_for_items(
+    conn: Connection,
+    sku_items: list,
+) -> list[str]:
+    # Prefer sku_range so a form tick like "Aire Adult Diaper
+    # Pants" maps to every catalog product in that range, not
+    # to a fake skus row whose pk equals the range name.
+    codes: list[str] = []
+    seen: set[str] = set()
+
+    for item in sku_items:
+        range_name = (item.sku_range or "").strip() or None
+        sku_code = (item.sku or "").strip() or None
+        found: list[str] = []
+
+        if range_name:
+            found = list(
+                conn.execute(
+                    text(
+                        """
+                        SELECT sku
+
+                        FROM skus
+
+                        WHERE
+                            sku_range = :sku_range
+                            AND sku IS DISTINCT FROM :sku_range
+
+                        ORDER BY
+                            sku
+                        """
+                    ),
+                    {
+                        "sku_range": range_name,
+                    },
+                ).scalars().all()
+            )
+
+        if not found and sku_code:
+            existing = conn.execute(
+                text(
+                    """
+                    SELECT sku
+
+                    FROM skus
+
+                    WHERE
+                        sku = :sku
+                    """
+                ),
+                {
+                    "sku": sku_code,
+                },
+            ).scalar()
+
+            if existing:
+                found = [existing]
+
+        for sku in found:
+            if sku in seen:
+                continue
+            seen.add(sku)
+            codes.append(sku)
+
+    return codes
+
+
 def _add_skus_to_promotion(
     conn: Connection,
     promotion_id: int,
     sku_items: list,
 ) -> None:
-    # De-duplicate by code, keeping the last occurrence, then
-    # sort. Sorting makes concurrent transactions lock rows in
-    # the same order, which avoids deadlocks on overlapping
-    # SKU sets.
-    by_code = {
-        item.sku: item
-        for item in sku_items
-        if item.sku
-    }
-
-    if not by_code:
+    if not sku_items:
         return
 
-    ordered = [
-        by_code[code]
-        for code in sorted(by_code)
-    ]
+    codes = _catalog_skus_for_items(conn, sku_items)
 
-    # A non-null incoming value updates the master record; a
-    # null one leaves what is already there. This is the
-    # opposite of the store policy, because SKU attributes are
-    # scraped facts that should track the source, whereas a
-    # store name is an identity a promotion must not rewrite.
-    conn.execute(
-        _UPSERT_SKU,
-        [
-            {
-                "sku": item.sku,
-                "sku_range": item.sku_range,
-                "product_name": item.product_name,
-                "size": item.size,
-                "brand": item.brand,
-                "uom": item.uom,
-                "pack_size": item.pack_size,
-                "price": item.price,
-            }
-            for item in ordered
-        ],
-    )
+    if not codes:
+        raise ValueError(
+            "No catalog SKUs match the selected SKU ranges."
+        )
 
     conn.execute(
         _UPSERT_PROMOTION_SKU,
         [
             {
                 "promotion_id": promotion_id,
-                "sku": item.sku,
-                "quantity_units": item.quantity_units,
+                "sku": sku,
+                "quantity_units": None,
             }
-            for item in ordered
+            for sku in codes
         ],
     )
 

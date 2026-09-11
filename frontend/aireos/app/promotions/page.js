@@ -344,7 +344,9 @@ export default function PromotionsPage() {
         });
 
         if (existingKeys.has(key)) {
-          skipped.push(`${retailer} / ${store.store_name} / ${period.periodLabel}`);
+          skipped.push(
+            `${retailer} / ${store.store_name} / ${periodPayload.period_start}–${periodPayload.period_end}`,
+          );
           continue;
         }
 

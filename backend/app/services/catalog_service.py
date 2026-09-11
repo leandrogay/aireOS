@@ -708,8 +708,9 @@ def delete_store(
 # SKU READ DISTINCT RANGES
 #
 # sku_range is nullable on skus, so NULLs are filtered out
-# rather than surfaced as a null option. Values are already
-# whitespace-stripped on write by the schema layer.
+# rather than surfaced as a null option. Rows whose sku equals
+# sku_range are leftover range-name inserts, not catalog
+# products, so they are excluded.
 # ============================================================
 
 
@@ -723,6 +724,7 @@ def get_sku_ranges() -> list[str]:
 
         WHERE
             sku_range IS NOT NULL
+            AND sku IS DISTINCT FROM sku_range
 
         ORDER BY
             sku_range ASC

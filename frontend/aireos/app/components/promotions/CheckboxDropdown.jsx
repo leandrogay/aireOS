@@ -70,11 +70,12 @@ export default function CheckboxDropdown({
   const content = typeof children === 'function' ? children(query) : children;
 
   return (
-    <div ref={rootRef} className="relative">
+    <div ref={rootRef} className="relative w-full min-w-0 max-w-full">
       <button
         type="button"
         disabled={disabled}
         aria-expanded={open}
+        title={summary || undefined}
         onClick={() => {
           if (open) {
             close();
@@ -82,17 +83,17 @@ export default function CheckboxDropdown({
           }
           setOpen(true);
         }}
-        className="flex w-full min-w-0 items-center justify-between rounded-md border border-lavander bg-cream px-2.5 py-1 text-left text-sm text-deep-violet-blue focus:border-violet focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+        className="flex w-full min-w-0 max-w-full items-center justify-between overflow-hidden rounded-md border border-lavander bg-cream px-2.5 py-1 text-left text-sm text-deep-violet-blue focus:border-violet focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
       >
-        <span className={`min-w-0 truncate ${summary ? '' : 'text-deep-violet-blue/50'}`}>
+        <span className={`min-w-0 flex-1 truncate ${summary ? '' : 'text-deep-violet-blue/50'}`}>
           {summary || placeholder}
         </span>
-        <span className="ml-2 text-[10px] text-deep-violet-blue/50" aria-hidden="true">
+        <span className="ml-2 shrink-0 text-[10px] text-deep-violet-blue/50" aria-hidden="true">
           {open ? '▲' : '▼'}
         </span>
       </button>
       {open && (
-        <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-md border border-lavander bg-white shadow-md">
+        <div className="absolute left-0 right-0 z-20 mt-1 overflow-hidden rounded-md border border-lavander bg-white shadow-md">
           {searchable && (
             <div className="border-b border-lavander p-2">
               <input

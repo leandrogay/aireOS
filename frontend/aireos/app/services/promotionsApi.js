@@ -191,7 +191,9 @@ export async function getSkuRanges() {
  * store_name, store_code, period_start, period_end, and promo_type.
  * Optional: period_label, promotion_mechanic, voucher, skus.
  * store_format is not sent; it already lives on the stores catalog.
- * The backend links `skus` into promotion_skus.
+ * `skus` names catalog sku_range values. The backend maps those to
+ * existing skus rows and writes promotion_skus. The frontend does
+ * not insert into skus, stores, or promotion_skus.
  *
  * @param {object} payload
  * @returns {Promise<object>} the created promotion
@@ -207,8 +209,8 @@ export async function createPromotion(payload) {
  * PUT /api/promotions/{promotion_id}
  *
  * Replaces the stored promotion with the same body shape as create.
- * The backend also replaces promotion_skus, so voucher and skus from
- * the existing row must be sent even when the edit form hides them.
+ * The backend replaces promotion_skus from the ticked SKU ranges
+ * (catalog SKUs only). Voucher and SKU ranges must still be sent.
  *
  * @param {number} promotionId
  * @param {object} payload

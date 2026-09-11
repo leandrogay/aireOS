@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { formatPromoDate, promoTypeLabel } from '@/app/utils/promotionForm';
+import { formatPromoDate, promoTypeLabel, uniqueSkuRangeLabels } from '@/app/utils/promotionForm';
 import {
   PROMOTION_STATUSES,
   dedupePromotions,
@@ -44,14 +44,16 @@ function statusBadgeClass(status) {
  *
  * @param {{ label: string, value?: string, children?: import('react').ReactNode }} props
  */
-function DetailTile({ label, value, children }) {
+function DetailTile({ label, value, children, className = '' }) {
   return (
-    <div className="rounded-md border border-lavander/80 bg-white px-2 py-1">
+    <div
+      className={`min-w-0 overflow-hidden rounded-md border border-lavander/80 bg-white px-2 py-1 ${className}`}
+    >
       <p className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/50">
         {label}
       </p>
       {value ? (
-        <p className="mt-0.5 font-medium leading-snug text-deep-violet-blue">{value}</p>
+        <p className="mt-0.5 break-words font-medium leading-snug text-deep-violet-blue">{value}</p>
       ) : null}
       {children}
     </div>
@@ -131,6 +133,7 @@ function HeaderFilter({
   openId,
   setOpenId,
   onChange,
+  className = '',
 }) {
   const open = openId === id;
   const selected = options.find((option) => option.value === value);
@@ -197,7 +200,7 @@ function HeaderFilter({
         type="button"
         aria-expanded={open}
         onClick={() => setOpenId(open ? null : id)}
-        className={`${pillClass} ${
+        className={`${pillClass} ${className} ${
           value
             ? 'border-deep-violet-blue bg-deep-violet-blue text-white'
             : 'border-lavander bg-white text-deep-violet-blue hover:bg-cream'
@@ -367,6 +370,7 @@ export default function PromotionList({
     setMechanicFilter('');
     setRetailerFilter('');
     setStatusFilter('');
+    setOpenFilter(null);
   };
 
   const hasFilters = Boolean(
@@ -425,16 +429,15 @@ export default function PromotionList({
               : `${visible.length} of ${uniquePromotions.length} shown. Matching input combinations are listed once.`}
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          {hasFilters && (
-            <button
-              type="button"
-              onClick={clearFilters}
-              className="text-[11px] font-medium text-deep-violet-blue underline-offset-2 hover:underline"
-            >
-              Clear filters
-            </button>
-          )}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={clearFilters}
+            disabled={!hasFilters}
+            className="rounded-md border border-deep-violet-blue/30 bg-white px-3 py-1 text-xs font-medium text-deep-violet-blue transition hover:bg-cream disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Clear filters
+          </button>
           <button
             type="button"
             onClick={onRefresh}
@@ -459,7 +462,18 @@ export default function PromotionList({
       {uniquePromotions.length > 0 && (
         <div className="overflow-x-auto rounded-md border border-lavander">
           <div className="max-h-[28rem] overflow-y-auto">
-          <table className="min-w-full text-left text-xs text-deep-violet-blue">
+          <table className="w-full table-fixed text-left text-xs text-deep-violet-blue">
+            <colgroup>
+              <col className="w-[14%]" />
+              <col className="w-[11%]" />
+              <col className="w-[10%]" />
+              <col className="w-[12%]" />
+              <col className="w-[9%]" />
+              <col className="w-[9%]" />
+              <col className="w-[11%]" />
+              <col className="w-[8%]" />
+              <col className="w-[16%]" />
+            </colgroup>
             <thead className="sticky top-0 z-10 bg-cream">
               <tr className="border-b border-lavander">
                 <th className="px-1.5 py-2">
@@ -544,7 +558,7 @@ export default function PromotionList({
                     <span className="text-[8px] leading-none">{sortMark('period_end')}</span>
                   </button>
                 </th>
-                <th className="px-1.5 py-2">
+                <th className="overflow-hidden px-1.5 py-2">
                   <HeaderFilter
                     id="retailer"
                     label="Retailer"
@@ -554,6 +568,7 @@ export default function PromotionList({
                     openId={openFilter}
                     setOpenId={setOpenFilter}
                     onChange={setRetailerFilter}
+                    className="!max-w-full"
                   />
                 </th>
                 <th className="px-1.5 py-2">
@@ -593,9 +608,7 @@ export default function PromotionList({
                 const isEditing = editingId === promotion.promotion_id;
                 const isOpen = expandedId === promotion.promotion_id;
                 const status = promotionStatus(promotion);
-                const skuLabels = Array.isArray(promotion.skus)
-                  ? promotion.skus.map((item) => item.sku_range || item.sku).filter(Boolean)
-                  : [];
+                const skuLabels = uniqueSkuRangeLabels(promotion.skus);
                 const rowClass = isEditing
                   ? 'bg-lavander/90'
                   : isNew
@@ -630,7 +643,12 @@ export default function PromotionList({
                       <td className="px-2.5 py-2">{promotion.promotion_mechanic || '—'}</td>
                       <td className="px-2.5 py-2">{formatPromoDate(promotion.period_start)}</td>
                       <td className="px-2.5 py-2">{formatPromoDate(promotion.period_end)}</td>
-                      <td className="px-2.5 py-2 font-medium">{promotion.retailer || '—'}</td>
+                      <td
+                        className="max-w-0 truncate px-2.5 py-2 font-medium"
+                        title={promotion.retailer || undefined}
+                      >
+                        {promotion.retailer || '—'}
+                      </td>
                       <td className="px-2.5 py-2">
                         <span
                           className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-medium tracking-wide ${statusBadgeClass(status)}`}
@@ -638,7 +656,7 @@ export default function PromotionList({
                           {promotionStatusLabel(status)}
                         </span>
                       </td>
-                      <td className="px-2.5 py-2">
+                      <td className="whitespace-nowrap px-2.5 py-2">
                         <div className="inline-flex items-center gap-1.5">
                           <button
                             type="button"
@@ -670,31 +688,32 @@ export default function PromotionList({
                     {isOpen && (
                       <tr className="border-b border-lavander/80">
                         <td colSpan={9} className="bg-cream/50 px-2.5 py-1.5 text-[11px] text-deep-violet-blue">
-                          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 xl:grid-cols-6">
-                            <DetailTile
-                              label="Store"
-                              value={promotion.store_name || '—'}
-                            />
+                          <div className="grid grid-cols-3 gap-1.5 [&>*]:min-w-0">
                             <DetailTile
                               label="Format"
                               value={promotion.store_format || '—'}
                             />
                             <DetailTile
-                              label="Type"
-                              value={promoTypeLabel(promotion.promo_type)}
-                            />
-                            <DetailTile
-                              label="Mechanic"
-                              value={promotion.promotion_mechanic || '—'}
-                            />
-                            <DetailTile
                               label="Voucher"
                               value={promotion.voucher || '—'}
                             />
-                            <DetailTile
-                              label="SKU range"
-                              value={skuLabels.length ? skuLabels.join(', ') : '—'}
-                            />
+                            <DetailTile label="SKU range">
+                              {skuLabels.length ? (
+                                <ul className="mt-0.5 min-w-0 list-inside list-disc font-medium leading-snug text-deep-violet-blue">
+                                  {skuLabels.map((label) => (
+                                    <li
+                                      key={label}
+                                      title={label}
+                                      className="min-w-0 truncate whitespace-nowrap"
+                                    >
+                                      {label}
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : (
+                                <p className="mt-0.5 font-medium text-deep-violet-blue">—</p>
+                              )}
+                            </DetailTile>
                           </div>
                         </td>
                       </tr>

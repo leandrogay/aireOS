@@ -56,6 +56,12 @@ def create_promotion(
             ),
         )
 
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )
+
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -157,6 +163,12 @@ def update_promotion(
             detail=(
                 f"Database constraint error: {e.orig}"
             ),
+        )
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
         )
 
     except Exception as e:

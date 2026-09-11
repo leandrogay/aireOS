@@ -43,14 +43,12 @@ export const EMPTY_PROMOTION_FORM = {
   offerKind: 'monthly',
   selectedRetailerIds: [],
   selectedStoreCodes: [],
-  periodMonths: [defaultMonth],
-  periodYears: [defaultYear],
-  periodMonth: defaultMonth,
-  periodYear: defaultYear,
+  periodStart: '',
+  periodEnd: '',
+  periodLabel: '',
   promoType: 'regular',
   promotionMechanic: PROMO_MECHANICS[0],
-  voucherOff: '',
-  voucherOn: '',
+  voucher: '',
   skuRanges: [],
   weeklyMonth: defaultMonth,
   weeklyYear: defaultYear,
@@ -128,102 +126,66 @@ export function getThursdayWeeksInMonth(year, month) {
 }
 
 /**
- * First and last calendar day of a month, as YYYY-MM-DD.
- *
- * These map to promotions.period_start and promotions.period_end.
- * Example: January 2026 → 2026-01-01 and 2026-01-31.
- *
- * @param {string | number} month 1–12
- * @param {string | number} year
- * @returns {{ periodStart: string, periodEnd: string }}
- */
-export function monthPeriodBounds(month, year) {
-  const monthNumber = Number(month);
-  const yearNumber = Number(year);
-
-  if (!monthNumber || !yearNumber) {
-    return { periodStart: '', periodEnd: '' };
-  }
-
-  const start = new Date(yearNumber, monthNumber - 1, 1);
-  const end = new Date(yearNumber, monthNumber, 0);
-
-  return {
-    periodStart: formatYmd(start),
-    periodEnd: formatYmd(end),
-  };
-}
-
-/**
- * Build the monthly period_label as MMM-YYYY, e.g. Jan-2026.
- *
- * @param {string | number} month 1–12
- * @param {string | number} year
- * @returns {string}
- */
-export function formatMonthlyPeriodLabel(month, year) {
-  const match = MONTH_OPTIONS.find((item) => item.value === String(month));
-  if (!match || !year) return '';
-  return `${match.label}-${year}`;
-}
-
-/**
- * Every ticked month × year becomes its own stored period.
- *
- * Example: Jan + Mar and 2026 + 2027 → Jan-2026, Mar-2026, Jan-2027, Mar-2027.
- *
- * @param {typeof EMPTY_PROMOTION_FORM} form
- * @returns {Array<{ month: string, year: number, periodStart: string, periodEnd: string, periodLabel: string }>}
- */
-export function resolveSelectedPeriods(form) {
-  const months = [...new Set((form.periodMonths || []).map(String).filter(Boolean))].sort(
-    (left, right) => Number(left) - Number(right),
-  );
-  const years = [...new Set((form.periodYears || []).map(Number).filter(Boolean))].sort(
-    (left, right) => left - right,
-  );
-  const periods = [];
-
-  for (const year of years) {
-    for (const month of months) {
-      const { periodStart, periodEnd } = monthPeriodBounds(month, year);
-      if (!periodStart || !periodEnd) continue;
-      periods.push({
-        month,
-        year,
-        periodStart,
-        periodEnd,
-        periodLabel: formatMonthlyPeriodLabel(month, year),
-      });
-    }
-  }
-
-  return periods;
-}
-
-/**
- * Build the voucher string "$8 off $80" from the two amount inputs.
- *
- * @param {string | number} offAmount
- * @param {string | number} onAmount
- * @returns {string | null}
- */
-export function formatVoucher(offAmount, onAmount) {
-  const off = String(offAmount ?? '').trim();
-  const on = String(onAmount ?? '').trim();
-  if (!off && !on) return null;
-  return `$${off} off $${on}`;
-}
-
-/**
- * Split a stored voucher string like "$8 off $80" back into the two inputs.
+ * Trim period_label for the API. Blank becomes null.
  *
  * @param {string | null | undefined} value
- * @returns {{ off: string, on: string }}
+ * @returns {string | null}
  */
-export function parseVoucher(value) {
-  const match = String(value || '').match(/\$?\s*([\d.]+)\s*off\s*\$?\s*([\d.]+)/i);
-  return match ? { off: match[1], on: match[2] } : { off: '', on: '' };
+export function formatPeriodLabel(value) {
+  const text = String(value ?? '').trim();
+  return text || null;
+}
+
+/**
+ * The one start/end range from the form, if both dates are valid.
+ *
+ * Maps to promotions.period_start and promotions.period_end. End must
+ * be on or after start. period_label is optional free text.
+ *
+ * @param {typeof EMPTY_PROMOTION_FORM} form
+ * @returns {Array<{ periodStart: string, periodEnd: string, periodLabel: string | null }>}
+ */
+export function resolveSelectedPeriods(form) {
+  const periodStart = String(form.periodStart || '').trim();
+  const periodEnd = String(form.periodEnd || '').trim();
+  if (!periodStart || !periodEnd || periodEnd < periodStart) return [];
+
+  return [
+    {
+      periodStart,
+      periodEnd,
+      periodLabel: formatPeriodLabel(form.periodLabel),
+    },
+  ];
+}
+
+/**
+ * Trim voucher text for the API. Blank becomes null.
+ *
+ * @param {string | null | undefined} value
+ * @returns {string | null}
+ */
+export function formatVoucher(value) {
+  const text = String(value ?? '').trim();
+  return text || null;
+}
+
+/**
+ * Distinct sku_range labels from GET /api/promotions.skus.
+ * A promotion links many product SKUs in a range, so the UI
+ * shows each range once.
+ *
+ * @param {Array<{ sku?: string, sku_range?: string }>} skus
+ * @returns {string[]}
+ */
+export function uniqueSkuRangeLabels(skus = []) {
+  return [
+    ...new Set(
+      (skus || [])
+        .map((item) => String(item?.sku_range || item?.sku || '').trim())
+        .filter(Boolean),
+    ),
+  ];
 }
 
 /**
@@ -234,33 +196,23 @@ export function parseVoucher(value) {
  * @returns {typeof EMPTY_PROMOTION_FORM}
  */
 export function formFromPromotion(promotion, retailers = []) {
-  const start = formatPromoDate(promotion.period_start);
-  const [year, month] = start.split('-');
   const retailer = retailerDropdownOptions(retailers).find(
     (item) => item.retailer_name === promotion.retailer,
   );
-  const voucher = parseVoucher(promotion.voucher);
-  const skuRanges = (promotion.skus || [])
-    .map((item) => item.sku_range || item.sku)
-    .filter(Boolean);
+  const skuRanges = uniqueSkuRangeLabels(promotion.skus);
 
   return {
     ...EMPTY_PROMOTION_FORM,
     offerKind: 'monthly',
     selectedRetailerIds: retailer ? [String(retailer.retailer_id)] : [],
     selectedStoreCodes: promotion.store_code != null ? [String(promotion.store_code)] : [],
-    periodMonth: month ? String(Number(month)) : EMPTY_PROMOTION_FORM.periodMonth,
-    periodYear: year && YEAR_OPTIONS.includes(Number(year)) ? Number(year) : EMPTY_PROMOTION_FORM.periodYear,
-    periodMonths: month ? [String(Number(month))] : [...EMPTY_PROMOTION_FORM.periodMonths],
-    periodYears:
-      year && YEAR_OPTIONS.includes(Number(year))
-        ? [Number(year)]
-        : [...EMPTY_PROMOTION_FORM.periodYears],
+    periodStart: promotion.period_start ? String(promotion.period_start).slice(0, 10) : '',
+    periodEnd: promotion.period_end ? String(promotion.period_end).slice(0, 10) : '',
+    periodLabel: promotion.period_label ? String(promotion.period_label) : '',
     promoType: promotion.promo_type || 'regular',
     promotionMechanic: promotion.promotion_mechanic || PROMO_MECHANICS[0],
-    voucherOff: voucher.off,
-    voucherOn: voucher.on,
-    skuRanges: skuRanges.length ? skuRanges : [],
+    voucher: promotion.voucher ? String(promotion.voucher) : '',
+    skuRanges: skuRanges,
   };
 }
 
@@ -516,12 +468,17 @@ export function validatePromotionForm(form, retailers, stores = [], options = {}
     }
   }
 
-  if (mode === 'edit') {
-    if (!form.periodMonth || !form.periodYear) {
-      errors.periodLabel = 'Select a month and year.';
-    }
-  } else if (!resolveSelectedPeriods(form).length) {
-    errors.periodLabel = 'Select at least one month and one year.';
+  if (!form.periodStart) {
+    errors.periodStart = 'Select a start date.';
+  }
+  if (!form.periodEnd) {
+    errors.periodEnd = 'Select an end date.';
+  } else if (form.periodStart && form.periodEnd < form.periodStart) {
+    errors.periodEnd = 'End date cannot be earlier than the start date.';
+  }
+
+  if (String(form.periodLabel ?? '').trim().length > 100) {
+    errors.periodLabel = 'Period label must be 100 characters or fewer.';
   }
 
   if (!form.promoType) {
@@ -532,10 +489,8 @@ export function validatePromotionForm(form, retailers, stores = [], options = {}
     errors.promotionMechanic = 'Select a promo mechanic.';
   }
 
-  const off = String(form.voucherOff ?? '').trim();
-  const on = String(form.voucherOn ?? '').trim();
-  if ((off && !on) || (!off && on)) {
-    errors.voucher = 'Enter both voucher amounts, or leave both blank.';
+  if (String(form.voucher ?? '').trim().length > 255) {
+    errors.voucher = 'Voucher must be 255 characters or fewer.';
   }
 
   if (!form.skuRanges.length) {
@@ -548,32 +503,34 @@ export function validatePromotionForm(form, retailers, stores = [], options = {}
 /**
  * Build the JSON body POST /api/promotions currently accepts.
  *
- * Month + year are expanded to period_start (first day) and period_end
- * (last day). store_code is a string. Ticked SKU ranges are sent as sku
- * rows whose `sku` equals the range name. The backend writes
- * promotion_skus from that list. Weekly side offers must not call this.
+ * Dates are promotions.period_start and promotions.period_end.
+ * period_label is optional free text. store_code is a string. Ticked
+ * SKU ranges are sent so the backend can map existing catalog SKUs
+ * into promotion_skus. This does not insert into skus or
+ * promotion_skus from the frontend. Weekly side offers must not
+ * call this.
  *
  * @param {typeof EMPTY_PROMOTION_FORM} form
  * @param {{ store_name: string, store_code: string, store_format?: string | null }} store
- * @param {{ month?: string, year?: number, periodStart?: string, periodEnd?: string, periodLabel?: string }} [period]
+ * @param {{ periodStart?: string, periodEnd?: string, periodLabel?: string | null }} [period]
  * @returns {object}
  */
 export function buildPromotionPayload(form, store, period) {
-  const month = period?.month ?? form.periodMonth;
-  const year = period?.year ?? form.periodYear;
-  const bounds = period?.periodStart
-    ? { periodStart: period.periodStart, periodEnd: period.periodEnd }
-    : monthPeriodBounds(month, year);
+  const periodStart = period?.periodStart || String(form.periodStart || '').trim();
+  const periodEnd = period?.periodEnd || String(form.periodEnd || '').trim();
 
   return {
     store_name: String(store.store_name || '').trim(),
     store_code: String(store.store_code || '').trim(),
-    period_start: bounds.periodStart,
-    period_end: bounds.periodEnd,
-    period_label: period?.periodLabel || formatMonthlyPeriodLabel(month, year) || null,
+    period_start: periodStart,
+    period_end: periodEnd,
+    period_label:
+      period && Object.prototype.hasOwnProperty.call(period, 'periodLabel')
+        ? period.periodLabel
+        : formatPeriodLabel(form.periodLabel),
     promo_type: form.promoType,
     promotion_mechanic: form.promotionMechanic || null,
-    voucher: formatVoucher(form.voucherOff, form.voucherOn),
+    voucher: formatVoucher(form.voucher),
     skus: form.skuRanges.map((range) => ({
       sku: range,
       sku_range: range,
