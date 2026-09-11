@@ -1,7 +1,10 @@
-### Backend setup
+# Backend
+
+## Setup
 
 ```bash
 cd backend
+
 # Windows
 python -m venv venv
 
@@ -25,7 +28,11 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
-### Serving the Backend
+### Environment variables
+
+Create a `.env.local` file in `backend/` with the required environment variables, and place your GCP service account credentials at `backend/gcp-key.json`.
+
+## Serving the backend
 
 **Terminal 1 — Backend:**
 
@@ -37,13 +44,32 @@ uvicorn app.main:app --reload
 
 Runs at [http://localhost:8000](http://localhost:8000)
 
-## Backend Structure
+## Running tests
+
 ```bash
-backend/
-    ├── app/
-    │   ├── routers/
-    │   ├── services/
-    │   └── main.py
-    ├── venv/
-    └── README.md
+cd backend
+venv\Scripts\activate   # or: source venv/bin/activate
+pytest
 ```
+
+Test configuration lives in `pytest.ini`; tests live in `tests/`.
+
+## Backend structure
+
+```
+backend/
+├── app/
+│   ├── routers/       # API route definitions
+│   ├── schemas/        # Pydantic request/response models
+│   ├── services/       # Business logic
+│   └── main.py          # FastAPI app entrypoint
+├── tests/                # Test suite
+├── venv/                 # Virtual environment (not committed)
+├── .env.local            # Local environment variables (not committed)
+├── gcp-key.json           # GCP service account key (not committed)
+├── pytest.ini
+├── requirements.txt
+└── README.md
+```
+
+> `.env.local` and `gcp-key.json` contain secrets — make sure they're in `.gitignore` and never committed.
