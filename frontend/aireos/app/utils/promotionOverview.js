@@ -65,21 +65,117 @@ export function promotionEventName(promotion) {
 }
 
 /**
- * Identity of one create-form combination: retailer, store, period,
- * promo type, and mechanic. Voucher / SKU changes do not make a new event.
+ * Linked stores of one GET /api/promotions row (promotion_stores).
+ *
+ * @param {object} promotion
+ * @returns {Array<{ store_id?: number, store_name?: string, store_code?: string, store_format?: string | null, retailer_id?: number, retailer?: string }>}
+ */
+export function promotionStores(promotion) {
+  return Array.isArray(promotion?.stores) ? promotion.stores : [];
+}
+
+/**
+ * Identity of one store link: retailer + store_code, matching the
+ * stores natural key on the catalog.
+ *
+ * @param {{ retailer?: string, store_code?: string | number }} store
+ * @returns {string}
+ */
+export function promotionStoreKey(store) {
+  return [
+    String(store?.retailer || '').trim().toLowerCase(),
+    String(store?.store_code ?? '').trim(),
+  ].join('|');
+}
+
+/**
+ * Identity of the event itself: period, promo type, and mechanic.
+ * Voucher / SKU changes do not make a new event.
  *
  * @param {object} promotion
  * @returns {string}
  */
-export function promotionCombinationKey(promotion) {
+export function promotionEventKey(promotion) {
   return [
-    String(promotion.retailer || '').trim().toLowerCase(),
-    String(promotion.store_code ?? '').trim(),
     formatPromoDate(promotion.period_start),
     formatPromoDate(promotion.period_end),
     String(promotion.promo_type || ''),
     String(promotion.promotion_mechanic || '').trim(),
   ].join('|');
+}
+
+/**
+ * Identity of one full promotion: the event plus its store set.
+ *
+ * @param {object} promotion
+ * @returns {string}
+ */
+export function promotionCombinationKey(promotion) {
+  const storeKeys = [...new Set(promotionStores(promotion).map(promotionStoreKey))].sort();
+  return `${promotionEventKey(promotion)}||${storeKeys.join(',')}`;
+}
+
+/**
+ * Stores already covered by an existing promotion with the same event
+ * (period, type, mechanic), keyed by promotionStoreKey.
+ *
+ * @param {object[]} promotions existing rows
+ * @param {object} candidate the row being created or edited
+ * @param {number | string | null} [excludeId] promotion_id to ignore (edit)
+ * @returns {Map<string, object>} store key -> the promotion covering it
+ */
+export function storesCoveredByEvent(promotions, candidate, excludeId = null) {
+  const eventKey = promotionEventKey(candidate);
+  const covered = new Map();
+
+  for (const item of promotions || []) {
+    if (excludeId != null && String(item.promotion_id) === String(excludeId)) continue;
+    if (promotionEventKey(item) !== eventKey) continue;
+    for (const store of promotionStores(item)) {
+      const key = promotionStoreKey(store);
+      if (!covered.has(key)) covered.set(key, item);
+    }
+  }
+
+  return covered;
+}
+
+/**
+ * Unique retailer names linked to one promotion.
+ *
+ * @param {object} promotion
+ * @returns {string[]}
+ */
+export function promotionRetailerNames(promotion) {
+  return [
+    ...new Set(promotionStores(promotion).map((store) => store.retailer).filter(Boolean)),
+  ].sort((left, right) => left.localeCompare(right));
+}
+
+/**
+ * Unique store names linked to one promotion.
+ *
+ * @param {object} promotion
+ * @returns {string[]}
+ */
+export function promotionStoreNames(promotion) {
+  return [
+    ...new Set(promotionStores(promotion).map((store) => store.store_name).filter(Boolean)),
+  ].sort((left, right) => left.localeCompare(right));
+}
+
+/**
+ * Short label for a list of names: the first one, plus "+N" when there
+ * are more. Used for the store and retailer columns.
+ *
+ * @param {string[]} names
+ * @param {string} [empty]
+ * @returns {string}
+ */
+export function summariseNames(names, empty = '—') {
+  if (!names.length) return empty;
+  if (names.length === 1) return names[0];
+  return `${names[0]} +${names.length - 1}`;
 }
 
 /**
@@ -215,15 +311,15 @@ export function promotionOccurrences(promotion, recurrence = 'none') {
 }
 
 /**
- * Unique retailer names from the loaded promotion rows.
+ * Unique retailer names across every linked store of the loaded rows.
  *
  * @param {object[]} promotions
  * @returns {string[]}
  */
 export function uniquePromotionRetailers(promotions) {
-  return [...new Set((promotions || []).map((item) => item.retailer).filter(Boolean))].sort(
-    (left, right) => left.localeCompare(right),
-  );
+  return [
+    ...new Set((promotions || []).flatMap((item) => promotionRetailerNames(item))),
+  ].sort((left, right) => left.localeCompare(right));
 }
 
 /**
@@ -237,15 +333,15 @@ export function uniquePromotionPeriods(promotions) {
 }
 
 /**
- * Unique store names from loaded promotion rows.
+ * Unique store names across every linked store of the loaded rows.
  *
  * @param {object[]} promotions
  * @returns {string[]}
  */
 export function uniquePromotionStoreNames(promotions) {
-  return [...new Set((promotions || []).map((item) => item.store_name).filter(Boolean))].sort(
-    (left, right) => left.localeCompare(right),
-  );
+  return [
+    ...new Set((promotions || []).flatMap((item) => promotionStoreNames(item))),
+  ].sort((left, right) => left.localeCompare(right));
 }
 
 /**
@@ -271,7 +367,8 @@ export function uniquePromotionMechanics(promotions) {
 }
 
 /**
- * Apply column filters. Overlapping different combinations stay listed.
+ * Apply column filters. Store and retailer match when any linked store
+ * matches. Overlapping different combinations stay listed.
  *
  * @param {object[]} promotions
  * @param {{
@@ -296,14 +393,14 @@ export function filterPromotions(promotions, filters, recurrenceMap = {}) {
   const status = filters.status || '';
 
   return (promotions || []).filter((promotion) => {
-    if (storeName && promotion.store_name !== storeName) return false;
+    if (storeName && !promotionStoreNames(promotion).includes(storeName)) return false;
     if (period && promotion.period_label !== period) return false;
     if (promoType && promotion.promo_type !== promoType) return false;
     if (mechanic && promotion.promotion_mechanic !== mechanic) return false;
     if (recurrence && recurrenceForPromotion(promotion, recurrenceMap) !== recurrence) {
       return false;
     }
-    if (retailer && promotion.retailer !== retailer) return false;
+    if (retailer && !promotionRetailerNames(promotion).includes(retailer)) return false;
     if (status && promotionStatus(promotion) !== status) return false;
     return true;
   });

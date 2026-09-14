@@ -46,20 +46,46 @@ def check_db_connection() -> int:
 _PROMOTION_COLUMNS = """
     p.promotion_id,
 
-    r.retailer_id,
-    r.retailer_name AS retailer,
-
-    s.store_id,
-    s.store_name,
-    s.store_code,
-    s.store_format,
-
     p.period_start,
     p.period_end,
     p.period_label,
     p.promo_type,
     p.promotion_mechanic,
     p.voucher,
+
+    COALESCE(
+        (
+            SELECT json_agg(
+                store
+                ORDER BY
+                    store.retailer,
+                    store.store_name,
+                    store.store_id
+            )
+
+            FROM (
+                SELECT
+                    s.store_id,
+                    s.store_name,
+                    s.store_code,
+                    s.store_format,
+                    r.retailer_id,
+                    r.retailer_name AS retailer
+
+                FROM promotion_stores pst
+
+                JOIN stores s
+                    ON s.store_id = pst.store_id
+
+                JOIN retailers r
+                    ON r.retailer_id = s.retailer_id
+
+                WHERE
+                    pst.promotion_id = p.promotion_id
+            ) AS store
+        ),
+        '[]'::json
+    ) AS stores,
 
     COALESCE(
         (
@@ -95,13 +121,91 @@ _PROMOTION_COLUMNS = """
 
 _PROMOTION_JOINS = """
     FROM promotions p
-
-    JOIN stores s
-        ON s.store_id = p.store_id
-
-    JOIN retailers r
-        ON r.retailer_id = s.retailer_id
 """
+
+
+# ============================================================
+# STORE HELPERS
+#
+# A promotion is decoupled from stores: promotions carries no
+# store_id, and the set of stores it runs in lives in
+# promotion_stores. Each store ref is resolved through the
+# catalog get_or_create seams so the row exists before the
+# link is written.
+# ============================================================
+
+
+_INSERT_PROMOTION_STORE = text(
+    """
+    INSERT INTO promotion_stores (
+        promotion_id,
+        store_id
+    )
+    VALUES (
+        :promotion_id,
+        :store_id
+    )
+
+    ON CONFLICT (
+        promotion_id,
+        store_id
+    )
+    DO NOTHING
+    """
+)
+
+
+def _resolve_store_ids(
+    conn: Connection,
+    store_refs: list,
+) -> list[int]:
+    store_ids: list[int] = []
+    seen: set[int] = set()
+
+    for ref in store_refs:
+        retailer_id = get_or_create_retailer(
+            conn,
+            ref.retailer,
+        )
+
+        store_id = get_or_create_store(
+            conn,
+            retailer_id,
+            ref.store_name,
+            ref.store_code,
+            ref.store_format,
+        )
+
+        if store_id in seen:
+            continue
+        seen.add(store_id)
+        store_ids.append(store_id)
+
+    return store_ids
+
+
+def _add_stores_to_promotion(
+    conn: Connection,
+    promotion_id: int,
+    store_refs: list,
+) -> None:
+    store_ids = _resolve_store_ids(conn, store_refs)
+
+    if not store_ids:
+        raise ValueError(
+            "A promotion must be linked to at least one store."
+        )
+
+    conn.execute(
+        _INSERT_PROMOTION_STORE,
+        [
+            {
+                "promotion_id": promotion_id,
+                "store_id": store_id,
+            }
+            for store_id in store_ids
+        ],
+    )
 
 
 # ============================================================
@@ -275,24 +379,10 @@ def create_promotion(
     promotion,
 ) -> dict:
     with _get_engine().begin() as conn:
-        retailer_id = get_or_create_retailer(
-            conn,
-            promotion.retailer,
-        )
-
-        store_id = get_or_create_store(
-            conn,
-            retailer_id,
-            promotion.store_name,
-            promotion.store_code,
-            promotion.store_format,
-        )
-
         promotion_id = conn.execute(
             text(
                 """
                 INSERT INTO promotions (
-                    store_id,
                     period_start,
                     period_end,
                     period_label,
@@ -301,7 +391,6 @@ def create_promotion(
                     voucher
                 )
                 VALUES (
-                    :store_id,
                     :period_start,
                     :period_end,
                     :period_label,
@@ -317,7 +406,6 @@ def create_promotion(
                 """
             ),
             {
-                "store_id": store_id,
                 "period_start": promotion.period_start,
                 "period_end": promotion.period_end,
                 "period_label": promotion.period_label,
@@ -326,6 +414,12 @@ def create_promotion(
                 "voucher": promotion.voucher,
             },
         ).scalar_one()
+
+        _add_stores_to_promotion(
+            conn,
+            promotion_id,
+            promotion.stores,
+        )
 
         _add_skus_to_promotion(
             conn,
@@ -413,19 +507,6 @@ def update_promotion(
         if existing is None:
             return None
 
-        retailer_id = get_or_create_retailer(
-            conn,
-            promotion.retailer,
-        )
-
-        store_id = get_or_create_store(
-            conn,
-            retailer_id,
-            promotion.store_name,
-            promotion.store_code,
-            promotion.store_format,
-        )
-
         # updated_at is set by the trg_promotions_updated_at
         # trigger, so it is not listed here.
         conn.execute(
@@ -434,7 +515,6 @@ def update_promotion(
                 UPDATE promotions
 
                 SET
-                    store_id = :store_id,
                     period_start = :period_start,
                     period_end = :period_end,
                     period_label = :period_label,
@@ -455,7 +535,6 @@ def update_promotion(
             ),
             {
                 "promotion_id": promotion_id,
-                "store_id": store_id,
                 "period_start": promotion.period_start,
                 "period_end": promotion.period_end,
                 "period_label": promotion.period_label,
@@ -463,6 +542,29 @@ def update_promotion(
                 "promotion_mechanic": promotion.promotion_mechanic,
                 "voucher": promotion.voucher,
             },
+        )
+
+        # Replace the store links with the set supplied by the
+        # request. Rows in `stores` and `retailers` are master
+        # data and are deliberately left in place.
+        conn.execute(
+            text(
+                """
+                DELETE FROM promotion_stores
+
+                WHERE
+                    promotion_id = :promotion_id
+                """
+            ),
+            {
+                "promotion_id": promotion_id,
+            },
+        )
+
+        _add_stores_to_promotion(
+            conn,
+            promotion_id,
+            promotion.stores,
         )
 
         # Replace all current SKU mappings with the new list
@@ -522,9 +624,23 @@ def delete_promotion(
         if existing is None:
             return False
 
-        # promotion_skus has ON DELETE CASCADE, but this is
-        # kept explicit so the behaviour does not depend on
-        # the constraint being present.
+        # promotion_skus has ON DELETE CASCADE, but the link
+        # deletes are kept explicit so the behaviour does not
+        # depend on the constraints being present.
+        conn.execute(
+            text(
+                """
+                DELETE FROM promotion_stores
+
+                WHERE
+                    promotion_id = :promotion_id
+                """
+            ),
+            {
+                "promotion_id": promotion_id,
+            },
+        )
+
         conn.execute(
             text(
                 """
