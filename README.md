@@ -29,7 +29,7 @@ Clone the repo, then set up each side separately.
 Frontend and Backend specific instructions are located in the respective folder READMEs.
 
 ### Environment variables
-Download the `.env.local file` from the Google Drive and place it in frontend\aireos\
+Download the `.env.frontend` file from Google Drive and place it in `frontend\aireos\`.
 
 ## Mapping Workflow
 
