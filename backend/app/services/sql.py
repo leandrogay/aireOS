@@ -1,17 +1,15 @@
 import os
-from pathlib import Path
 from threading import Lock
 
 import pg8000
 import sqlalchemy
-from dotenv import load_dotenv
 from google.cloud.sql.connector import Connector, IPTypes
 from google.oauth2 import service_account
 from sqlalchemy.engine import Engine
 
+from app.config import load_backend_env
 
-ENV_PATH = Path(__file__).resolve().parents[2]
-load_dotenv(ENV_PATH)
+load_backend_env()
 
 
 _engine: Engine | None = None

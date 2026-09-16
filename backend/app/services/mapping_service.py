@@ -3,16 +3,12 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
+from app.schemas.sellout import BUSINESS_COLUMNS
+
 
 # The 19 business fields produced by AO1-2. Pipeline/audit fields such as
 # loaded_at, data_source, entered_by and entered_at are deliberately excluded.
-TARGET_SCHEMA = [
-    "period_start", "period_end", "period_type", "retailer",
-    "store_code", "store_name", "store_format", "sku",
-    "product_name", "sku_range", "size", "brand",
-    "product_category", "uom", "pack_size", "quantity_units",
-    "revenue", "source_file", "period_label",
-]
+TARGET_SCHEMA = BUSINESS_COLUMNS
 
 FAIRPRICE_DIMENSION_HEADERS = [
     "Vendor Code", "Vendor Name", "Dept Code", "Dept Description",

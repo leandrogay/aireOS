@@ -4,16 +4,13 @@ import datetime
 from pathlib import Path
 from functools import lru_cache
 
-from dotenv import load_dotenv
+from app.config import load_backend_env
 
 from google.cloud import storage
 from google.oauth2 import service_account
 from google.api_core import exceptions as gcloud_exceptions
 
-# Resolve .env.local from the project root rather than the current working
-# directory, so the app behaves the same however it is launched.
-ENV_PATH = Path(__file__).resolve().parents[2] / ".env.backend"
-load_dotenv(ENV_PATH)
+load_backend_env()
 
 SERVICE_ACCOUNT_KEY_PATH = os.environ.get("SERVICE_ACCOUNT_KEY_PATH")
 PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "PASTE_YOUR_GCP_PROJECT_ID_HERE")

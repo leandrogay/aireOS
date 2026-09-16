@@ -8,9 +8,10 @@ from pydantic import BaseModel
 from app.services import storage
 from app.services import generate_mapping
 from app.services import mapping_view
+from app.services import sellout_service
 from app.services import apply_contract as contract_application
 from app.services.mapping_service import extract_header_signature, find_matching_mapping
-from app.services.validation_service import process_and_validate
+from app.services.validation_service import process_and_validate, validate_mapped_dataframe
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 
@@ -34,7 +35,10 @@ def _preview(dataframe, limit: int = 3) -> list[dict]:
 
 
 def resolve_and_apply_mapping(
-    filename: str, data: bytes, uploaded_to: str | None = None
+    filename: str,
+    data: bytes,
+    uploaded_to: str | None = None,
+    replace_source: bool = False,
 ) -> dict:
     """Resolve one mapping and immediately apply it when it is recognised."""
     dataframe = contract_application.read_source_dataframe(filename, data)
@@ -45,43 +49,46 @@ def resolve_and_apply_mapping(
     builtin = find_matching_mapping(headers)
     if builtin:
         validated = process_and_validate(dataframe, builtin, filename)
-        return {
+        resolved = {
             "status": "mapped",
             "mapping_id": builtin["mapping_id"],
             "source": "builtin",
-            "processing": {
-                "rows_total": validated["total_rows"],
-                "rows_mapped": validated["rows_ingested"],
-                "rows_rejected": validated["total_rejected"],
-                "rejection_summary": validated["rejection_summary"],
-                "columns": list(validated["valid_df"].columns),
-                "preview": _preview(validated["valid_df"]),
-            },
         }
-
-    resolved = generate_mapping.resolve_mapping(filename, data, uploaded_to)
-    if resolved.get("status") != "mapped":
-        return resolved
-
-    normalized = contract_application.apply_contract(
-        dataframe, resolved.get("contract") or {}
-    )
-    if "source_file" in generate_mapping.TARGET_SCHEMA:
+    else:
+        resolved = generate_mapping.resolve_mapping(filename, data, uploaded_to)
+        if resolved.get("status") != "mapped":
+            return resolved
+        normalized = contract_application.apply_contract(
+            dataframe, resolved.get("contract") or {}
+        )
         normalized["source_file"] = filename
+        validated = validate_mapped_dataframe(normalized)
 
-    target_columns = [
-        column for column in generate_mapping.TARGET_SCHEMA if column in normalized
-    ]
-    normalized = normalized[target_columns]
+    valid_rows = validated["valid_df"]
     resolved["processing"] = {
-        "rows_total": len(normalized),
-        "rows_mapped": len(normalized),
-        "rows_rejected": 0,
-        "rejection_summary": "",
-        "columns": target_columns,
-        "preview": _preview(normalized),
+        "rows_total": validated["total_rows"],
+        "rows_mapped": validated["rows_ingested"],
+        "rows_rejected": validated["total_rejected"],
+        "rejection_summary": validated["rejection_summary"],
+        "columns": list(valid_rows.columns),
+        "preview": _preview(valid_rows),
+        **_store_valid_rows(valid_rows, replace_source),
     }
     return resolved
+
+
+def _store_valid_rows(dataframe, replace_source: bool) -> dict:
+    """Persist valid facts to Cloud SQL, the source for Datastream CDC."""
+    if not sellout_service.cloud_sql_loading_enabled():
+        return {
+            "rows_stored": 0,
+            "storage_status": "disabled",
+        }
+
+    return sellout_service.load_clean_rows(
+        dataframe,
+        replace_source=replace_source,
+    )
 
 
 @router.post("")
@@ -130,6 +137,7 @@ async def upload_files(files: List[UploadFile] = File(...), force: bool = Form(F
                 filename,
                 data,
                 uploaded.get("destination"),
+                force,
             )
         except generate_mapping.UnreadableSourceFileError as e:
             return {"status": "mapping_failed", "reason": "unreadable_file", "error": str(e)}
@@ -139,6 +147,8 @@ async def upload_files(files: List[UploadFile] = File(...), force: bool = Form(F
             return {"status": "mapping_failed", "reason": "bad_llm_output", "error": str(e)}
         except contract_application.ContractApplicationError as e:
             return {"status": "mapping_failed", "reason": "application", "error": str(e)}
+        except sellout_service.SelloutLoadError as e:
+            return {"status": "mapping_failed", "reason": "cloud_sql", "error": str(e)}
         except Exception as e:
             return {"status": "mapping_failed", "reason": "unexpected", "error": str(e)}
 

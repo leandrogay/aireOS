@@ -24,22 +24,17 @@ import hashlib
 import datetime
 import pandas as pd
 from pathlib import Path
-from dotenv import load_dotenv
 from anthropic import Anthropic
 
+from app.config import load_backend_env
+from app.schemas.sellout import BUSINESS_COLUMNS
 from app.services import storage
 
-ENV_PATH = Path(__file__).resolve().parents[2] / ".env.local"
-load_dotenv(ENV_PATH)
+load_backend_env()
 
 MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 
-TARGET_SCHEMA = [
-    "retailer", "period_start", "period_end", "period_type", "store_code",
-    "store_name", "store_format", "sku", "product_name", "sku_range",
-    "size", "brand", "product_category", "uom", "pack_size",
-    "quantity_units", "revenue", "source_file", "loaded_at", "data_source",
-]
+TARGET_SCHEMA = BUSINESS_COLUMNS
 
 
 class MappingConfigError(Exception):

@@ -1,11 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from dotenv import load_dotenv
-from pathlib import Path
+from app.config import load_backend_env
+
+load_backend_env()
 
 from app.routers import sales, uploads, promotions, catalog
-
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 app = FastAPI()
 
