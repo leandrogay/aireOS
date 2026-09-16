@@ -58,17 +58,17 @@ def connect_with_connector() -> Engine:
 
 def connect_with_connector_autocommit() -> Engine:
     """
-    Returns a shared SQLAlchemy Engine whose connections run in
+    Returns a shared SQLAlchemy Engine whose connections use
     AUTOCOMMIT mode. Intended for single-SELECT read paths only.
 
-    A plain connection costs an implicit BEGIN, a ROLLBACK on close
-    and a pool reset on return. Against a remote Cloud SQL instance
-    each of those is a full network round trip, so a read path pays
-    ~4x the latency of the query itself. AUTOCOMMIT drops them.
+    For read-only queries against a remote Cloud SQL instance,
+    AUTOCOMMIT avoids unnecessary transaction management around
+    individual statements, reducing network round trips and
+    connection overhead.
 
-    This has to be its own engine: setting the isolation level per
-    connection via execution_options() makes SQLAlchemy reset it on
-    every checkin, which costs more round trips than it saves.
+    A dedicated engine is used so that the read path consistently
+    uses AUTOCOMMIT without repeatedly changing the connection's
+    isolation level.
     """
 
     global _read_engine
