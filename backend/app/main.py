@@ -1,8 +1,5 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
-# Imported first so settings are loaded before any router pulls in a service
-# that reads them at module scope.
 from app import config  # noqa: F401
 from app.routers import sales, uploads, promotions, catalog
 

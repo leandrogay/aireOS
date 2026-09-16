@@ -17,7 +17,6 @@ comes from and what happens on the way.
 """
 
 from typing import Any, Dict, List, Optional
-
 from app.services.mapping_service import (
     FAIRPRICE_SOURCE_COLUMNS,
     FAIRPRICE_UNMAPPED_HEADERS,

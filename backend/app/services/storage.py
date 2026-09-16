@@ -2,11 +2,9 @@ import json
 import datetime
 from pathlib import Path
 from functools import lru_cache
-
 from google.cloud import storage
 from google.oauth2 import service_account
 from google.api_core import exceptions as gcloud_exceptions
-
 from app import config
 
 PROJECT_ID = config.GCP_PROJECT_ID

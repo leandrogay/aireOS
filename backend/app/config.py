@@ -20,14 +20,10 @@ Two rules keep that from recurring:
 
 import os
 from pathlib import Path
-
 from dotenv import load_dotenv
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 ENV_PATH = BACKEND_DIR / ".env.backend"
-
-# Records whether the file was actually found, so `require()` can tell a missing
-# env file apart from a set-but-empty variable.
 ENV_FILE_LOADED = load_dotenv(ENV_PATH)
 
 

@@ -1,11 +1,9 @@
 from threading import Lock
-
 import pg8000
 import sqlalchemy
 from google.cloud.sql.connector import Connector, IPTypes
 from google.oauth2 import service_account
 from sqlalchemy.engine import Engine
-
 from app import config
 
 

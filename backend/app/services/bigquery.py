@@ -2,7 +2,6 @@ import re
 from datetime import datetime
 import pandas as pd
 from google.cloud import bigquery
-
 from app import config
 
 SKU_RANKING_METRICS = ("volume", "value")

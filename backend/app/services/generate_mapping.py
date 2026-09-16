@@ -24,7 +24,6 @@ import datetime
 import pandas as pd
 from pathlib import Path
 from anthropic import Anthropic
-
 from app import config
 from app.services import storage
 
