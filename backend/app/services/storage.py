@@ -1,25 +1,18 @@
-import os
 import json
 import datetime
 from pathlib import Path
 from functools import lru_cache
 
-from dotenv import load_dotenv
-
 from google.cloud import storage
 from google.oauth2 import service_account
 from google.api_core import exceptions as gcloud_exceptions
 
-# Resolve .env.local from the project root rather than the current working
-# directory, so the app behaves the same however it is launched.
-ENV_PATH = Path(__file__).resolve().parents[2] / ".env.backend"
-load_dotenv(ENV_PATH)
+from app import config
 
-SERVICE_ACCOUNT_KEY_PATH = os.environ.get("SERVICE_ACCOUNT_KEY_PATH")
-PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "PASTE_YOUR_GCP_PROJECT_ID_HERE")
-BUCKET_NAME = os.environ.get("GCS_BUCKET_NAME", "PASTE_YOUR_BUCKET_NAME_HERE")
-DESTINATION_PREFIX = os.environ.get("GCS_DESTINATION_PREFIX", "uploads/")
-MAPPING_PREFIX = os.environ.get("GCS_DESTINATION_PREFIX_MAPPING", "mappings/")
+PROJECT_ID = config.GCP_PROJECT_ID
+BUCKET_NAME = config.GCS_BUCKET_NAME
+DESTINATION_PREFIX = config.GCS_DESTINATION_PREFIX
+MAPPING_PREFIX = config.GCS_DESTINATION_PREFIX_MAPPING
 
 ALLOWED_EXTENSIONS = {".xlsx", ".xlsm", ".csv", ".txt"}
 CONTENT_TYPES = {
@@ -58,17 +51,14 @@ def get_storage_client() -> storage.Client:
     client (and re-reading the key file) on every call is wasted work. The
     client is safe to share across threads.
     """
-    if not SERVICE_ACCOUNT_KEY_PATH:
-        raise GCSConfigError("SERVICE_ACCOUNT_KEY_PATH is not set or missing")
-    if not os.path.exists(SERVICE_ACCOUNT_KEY_PATH):
-        raise GCSConfigError(
-            f"Service account key file not found at: {SERVICE_ACCOUNT_KEY_PATH}"
-        )
+    try:
+        key_path = config.require_file("SERVICE_ACCOUNT_KEY_PATH")
+        project_id = config.require("GCP_PROJECT_ID")
+    except config.ConfigError as e:
+        raise GCSConfigError(str(e)) from e
 
-    credentials = service_account.Credentials.from_service_account_file(
-        SERVICE_ACCOUNT_KEY_PATH
-    )
-    return storage.Client(project=PROJECT_ID, credentials=credentials)
+    credentials = service_account.Credentials.from_service_account_file(key_path)
+    return storage.Client(project=project_id, credentials=credentials)
 
 
 # ---- Duplicate detection -----------------------------------------------------

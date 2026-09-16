@@ -1,11 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from dotenv import load_dotenv
-from pathlib import Path
 
+# Imported first so settings are loaded before any router pulls in a service
+# that reads them at module scope.
+from app import config  # noqa: F401
 from app.routers import sales, uploads, promotions, catalog
-
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 app = FastAPI()
 

@@ -1,8 +1,9 @@
-import os
 import re
 from datetime import datetime
 import pandas as pd
 from google.cloud import bigquery
+
+from app import config
 
 SKU_RANKING_METRICS = ("volume", "value")
 SKU_RANKING_COLUMNS = ["sku", "product_name", "volume", "value", "rank"]
@@ -13,7 +14,7 @@ DASHBOARD_GRANULARITIES = ("week", "month")
 DEFAULT_CUSTOMER = "fairprice" # Fallback when no customer is supplied 
 
 # Read-only reference data
-BQFairprice_TABLE = os.environ.get("BQ_FAIRPRICESELLOUT_TABLE", "aire-data.Aire_Data.aireOS_fairprice")
+BQFairprice_TABLE = config.BQ_FAIRPRICESELLOUT_TABLE
 
 def get_bigquery_client(project="aire-data") -> bigquery.Client:
     return bigquery.Client(project=project)

@@ -1,17 +1,12 @@
-import os
-from pathlib import Path
 from threading import Lock
 
 import pg8000
 import sqlalchemy
-from dotenv import load_dotenv
 from google.cloud.sql.connector import Connector, IPTypes
 from google.oauth2 import service_account
 from sqlalchemy.engine import Engine
 
-
-ENV_PATH = Path(__file__).resolve().parents[2]
-load_dotenv(ENV_PATH)
+from app import config
 
 
 _engine: Engine | None = None
@@ -40,7 +35,7 @@ def connect_with_connector() -> Engine:
             return _engine
 
         credentials = service_account.Credentials.from_service_account_file(
-            os.environ["GOOGLE_APPLICATION_CREDENTIALS"],
+            config.require_file("GOOGLE_APPLICATION_CREDENTIALS"),
             scopes=[
                 "https://www.googleapis.com/auth/sqlservice.admin"
             ],
@@ -96,12 +91,12 @@ def _create_engine(**engine_kwargs) -> Engine:
     Must be called with _connector already initialised.
     """
 
-    instance_connection_name = os.environ[
+    instance_connection_name = config.require(
         "POSTGRESQL_INSTANCE_CONNECTION_NAME"
-    ]
+    )
 
-    db_iam_user = os.environ["DB_IAM_USER"]
-    db_name = os.environ["DB_NAME"]
+    db_iam_user = config.require("DB_IAM_USER")
+    db_name = config.require("DB_NAME")
 
     def getconn() -> pg8000.dbapi.Connection:
         return _connector.connect(

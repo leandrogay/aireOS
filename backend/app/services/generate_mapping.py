@@ -16,7 +16,6 @@ file with the same headers reuses the already-approved contract instead of
 paying for another Claude call.
 """
 
-import os
 import io
 import re
 import json
@@ -24,15 +23,12 @@ import hashlib
 import datetime
 import pandas as pd
 from pathlib import Path
-from dotenv import load_dotenv
 from anthropic import Anthropic
 
+from app import config
 from app.services import storage
 
-ENV_PATH = Path(__file__).resolve().parents[2] / ".env.local"
-load_dotenv(ENV_PATH)
-
-MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+MODEL = config.ANTHROPIC_MODEL
 
 TARGET_SCHEMA = [
     "retailer", "period_start", "period_end", "period_type", "store_code",
@@ -67,9 +63,10 @@ def get_client() -> Anthropic:
     """
     global _client
     if _client is None:
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
-        if not api_key:
-            raise MappingConfigError("ANTHROPIC_API_KEY is not set")
+        try:
+            api_key = config.require("ANTHROPIC_API_KEY")
+        except config.ConfigError as e:
+            raise MappingConfigError(str(e)) from e
         _client = Anthropic(api_key=api_key)
     return _client
 
