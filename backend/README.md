@@ -30,7 +30,7 @@ pip install -r requirements.txt
 
 ### Environment variables
 
-Create a `.env.local` file in `backend/` with the required environment variables, and place your GCP service account credentials at `backend/gcp-key.json`.
+Create a `.env.backend` file in `backend/` with the required environment variables, and place your GCP service account credentials at `backend/gcp-key.json`.
 
 ## Serving the backend
 
@@ -65,11 +65,11 @@ backend/
 │   └── main.py          # FastAPI app entrypoint
 ├── tests/                # Test suite
 ├── venv/                 # Virtual environment (not committed)
-├── .env.local            # Local environment variables (not committed)
+├── .env.backend           # Local environment variables (not committed)
 ├── gcp-key.json           # GCP service account key (not committed)
 ├── pytest.ini
 ├── requirements.txt
 └── README.md
 ```
 
-> `.env.local` and `gcp-key.json` contain secrets — make sure they're in `.gitignore` and never committed.
+> `.env.backend` and `gcp-key.json` contain secrets — make sure they're in `.gitignore` and never committed.
