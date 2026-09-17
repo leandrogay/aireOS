@@ -30,7 +30,7 @@ PromoType = Literal[
 #
 # One promotion runs in many stores. Each entry names a store
 # the same way the catalog does (retailer + store_code), so
-# the service can resolve it through get_or_create_store and
+# the service can resolve it through get_or_create_stores and
 # link it via promotion_stores.
 # ============================================================
 

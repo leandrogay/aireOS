@@ -111,7 +111,7 @@ No test runner is installed on the frontend; linting (`npm run lint`) is the fro
 Invariants that cross domains:
 - Mapping never writes to BigQuery. Ingestion into BigQuery is out of band.
 - Promotion writes never insert/update `skus`, `stores`, `retailers` **except** through the
-  `get_or_create_retailer/store` seams (a promotion may name a new store as free text).
+  `get_or_create_retailers/stores` seams (a promotion may name a new store as free text).
 - `TARGET_SCHEMA` is defined twice (`mapping_service.py`, `generate_mapping.py`) — keep them in sync.
 
 ---
@@ -175,7 +175,7 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
    period_end, period_label, promo_type, promotion_mechanic, voucher, skus:[{sku, sku_range}] }`.
 3. `POST /api/promotions` → Pydantic `PromotionCreate` (date order, unique stores, unique skus)
    → `promotion_service.create_promotion` in **one transaction**: insert `promotions` →
-   `get_or_create_retailer/store` per ref → insert `promotion_stores` → resolve `sku_range` to
+   `get_or_create_retailers/stores` for the whole batch → insert `promotion_stores` → resolve `sku_range` to
    catalog `skus` → upsert `promotion_skus` → `_fetch_promotion` returns the row with nested
    `stores[]` / `skus[]` via `json_agg`.
 4. `PUT` replaces link rows wholesale; `DELETE` removes links then the promotion.

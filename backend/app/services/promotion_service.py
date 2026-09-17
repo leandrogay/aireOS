@@ -5,8 +5,8 @@ from sqlalchemy.engine import Connection, Engine
 
 from app.services import sql
 from app.services.catalog_service import (
-    get_or_create_retailer,
-    get_or_create_store,
+    get_or_create_retailers,
+    get_or_create_stores,
 )
 
 
@@ -129,22 +129,32 @@ _PROMOTION_JOINS = """
 #
 # A promotion is decoupled from stores: promotions carries no
 # store_id, and the set of stores it runs in lives in
-# promotion_stores. Each store ref is resolved through the
-# catalog get_or_create seams so the row exists before the
-# link is written.
+# promotion_stores. The refs are resolved through the catalog
+# get_or_create seams so the rows exist before the links are
+# written.
+#
+# Everything here is batched: a request with N stores costs
+# three round trips (retailers, stores, links), not 3N. At
+# ~200ms per round trip to Cloud SQL that is what keeps an
+# "all stores" promotion under a second.
 # ============================================================
 
 
-_INSERT_PROMOTION_STORE = text(
+# pg8000 sends a list-of-dicts as one statement per row, so
+# the links are inserted from unnest()ed arrays instead.
+_INSERT_PROMOTION_STORES = text(
     """
     INSERT INTO promotion_stores (
         promotion_id,
         store_id
     )
-    VALUES (
+    SELECT
         :promotion_id,
-        :store_id
-    )
+        store_id
+
+    FROM unnest(
+        CAST(:store_ids AS integer[])
+    ) AS input(store_id)
 
     ON CONFLICT (
         promotion_id,
@@ -159,29 +169,29 @@ def _resolve_store_ids(
     conn: Connection,
     store_refs: list,
 ) -> list[int]:
-    store_ids: list[int] = []
-    seen: set[int] = set()
+    if not store_refs:
+        return []
 
-    for ref in store_refs:
-        retailer_id = get_or_create_retailer(
-            conn,
-            ref.retailer,
-        )
+    retailer_ids = get_or_create_retailers(
+        conn,
+        [ref.retailer for ref in store_refs],
+    )
 
-        store_id = get_or_create_store(
-            conn,
-            retailer_id,
-            ref.store_name,
-            ref.store_code,
-            ref.store_format,
-        )
+    store_ids = get_or_create_stores(
+        conn,
+        [
+            {
+                "retailer_id": retailer_ids[ref.retailer],
+                "store_code": ref.store_code,
+                "store_name": ref.store_name,
+                "store_format": ref.store_format,
+            }
+            for ref in store_refs
+        ],
+    )
 
-        if store_id in seen:
-            continue
-        seen.add(store_id)
-        store_ids.append(store_id)
-
-    return store_ids
+    # dict.fromkeys drops duplicates while keeping order.
+    return list(dict.fromkeys(store_ids))
 
 
 def _add_stores_to_promotion(
@@ -197,14 +207,11 @@ def _add_stores_to_promotion(
         )
 
     conn.execute(
-        _INSERT_PROMOTION_STORE,
-        [
-            {
-                "promotion_id": promotion_id,
-                "store_id": store_id,
-            }
-            for store_id in store_ids
-        ],
+        _INSERT_PROMOTION_STORES,
+        {
+            "promotion_id": promotion_id,
+            "store_ids": store_ids,
+        },
     )
 
 
@@ -218,18 +225,21 @@ def _add_stores_to_promotion(
 # ============================================================
 
 
-_UPSERT_PROMOTION_SKU = text(
+_UPSERT_PROMOTION_SKUS = text(
     """
     INSERT INTO promotion_skus (
         promotion_id,
         sku,
         quantity_units
     )
-    VALUES (
+    SELECT
         :promotion_id,
-        :sku,
-        :quantity_units
-    )
+        sku,
+        NULL
+
+    FROM unnest(
+        CAST(:skus AS text[])
+    ) AS input(sku)
 
     ON CONFLICT (
         promotion_id,
@@ -241,63 +251,109 @@ _UPSERT_PROMOTION_SKU = text(
 )
 
 
+def _skus_by_range(
+    conn: Connection,
+    range_names: list[str],
+) -> dict[str, list[str]]:
+    # Rows whose sku equals sku_range are leftover range-name
+    # inserts, not catalog products, so they are excluded.
+    if not range_names:
+        return {}
+
+    rows = conn.execute(
+        text(
+            """
+            SELECT
+                sku_range,
+                sku
+
+            FROM skus
+
+            WHERE
+                sku_range = ANY(CAST(:sku_ranges AS text[]))
+                AND sku IS DISTINCT FROM sku_range
+
+            ORDER BY
+                sku
+            """
+        ),
+        {
+            "sku_ranges": range_names,
+        },
+    ).all()
+
+    found: dict[str, list[str]] = {}
+
+    for sku_range, sku in rows:
+        found.setdefault(sku_range, []).append(sku)
+
+    return found
+
+
+def _existing_skus(
+    conn: Connection,
+    sku_codes: list[str],
+) -> set[str]:
+    if not sku_codes:
+        return set()
+
+    rows = conn.execute(
+        text(
+            """
+            SELECT
+                sku
+
+            FROM skus
+
+            WHERE
+                sku = ANY(CAST(:skus AS text[]))
+            """
+        ),
+        {
+            "skus": sku_codes,
+        },
+    ).scalars().all()
+
+    return set(rows)
+
+
 def _catalog_skus_for_items(
     conn: Connection,
     sku_items: list,
 ) -> list[str]:
     # Prefer sku_range so a form tick like "Aire Adult Diaper
     # Pants" maps to every catalog product in that range, not
-    # to a fake skus row whose pk equals the range name.
+    # to a fake skus row whose pk equals the range name. Only
+    # items whose range matched nothing fall back to an exact
+    # sku lookup, so the whole list costs at most two queries.
+    range_names = [
+        name
+        for item in sku_items
+        if (name := (item.sku_range or "").strip())
+    ]
+
+    by_range = _skus_by_range(conn, range_names)
+
+    fallback_codes = [
+        code
+        for item in sku_items
+        if not by_range.get((item.sku_range or "").strip())
+        and (code := (item.sku or "").strip())
+    ]
+
+    existing = _existing_skus(conn, fallback_codes)
+
     codes: list[str] = []
     seen: set[str] = set()
 
     for item in sku_items:
-        range_name = (item.sku_range or "").strip() or None
-        sku_code = (item.sku or "").strip() or None
-        found: list[str] = []
+        range_name = (item.sku_range or "").strip()
+        sku_code = (item.sku or "").strip()
 
-        if range_name:
-            found = list(
-                conn.execute(
-                    text(
-                        """
-                        SELECT sku
+        found = by_range.get(range_name, [])
 
-                        FROM skus
-
-                        WHERE
-                            sku_range = :sku_range
-                            AND sku IS DISTINCT FROM :sku_range
-
-                        ORDER BY
-                            sku
-                        """
-                    ),
-                    {
-                        "sku_range": range_name,
-                    },
-                ).scalars().all()
-            )
-
-        if not found and sku_code:
-            existing = conn.execute(
-                text(
-                    """
-                    SELECT sku
-
-                    FROM skus
-
-                    WHERE
-                        sku = :sku
-                    """
-                ),
-                {
-                    "sku": sku_code,
-                },
-            ).scalar()
-
-            if existing:
-                found = [existing]
+        if not found and sku_code in existing:
+            found = [sku_code]
 
         for sku in found:
             if sku in seen:
@@ -324,15 +380,11 @@ def _add_skus_to_promotion(
         )
 
     conn.execute(
-        _UPSERT_PROMOTION_SKU,
-        [
-            {
-                "promotion_id": promotion_id,
-                "sku": sku,
-                "quantity_units": None,
-            }
-            for sku in codes
-        ],
+        _UPSERT_PROMOTION_SKUS,
+        {
+            "promotion_id": promotion_id,
+            "skus": codes,
+        },
     )
 
 
