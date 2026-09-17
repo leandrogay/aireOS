@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import DateRangePicker from '@/components/ui/DateRangePicker';
 import CheckboxDropdown from '@/components/promotions/CheckboxDropdown';
 import { cn } from '@/lib/utils';
@@ -251,11 +252,14 @@ export default function PromotionForm({
   const errorCount = Object.values(errors).filter(Boolean).length;
 
   /**
-   * Patch one or more form fields.
+   * Patch one or more form fields. Ignored while a submit is in flight:
+   * the payload has already been built from `form`, and a change that
+   * landed mid-request would be silently lost when the form resets.
    *
    * @param {object} patch
    */
   const patchForm = (patch) => {
+    if (isSubmitting) return;
     onChange({
       ...form,
       ...patch,
@@ -366,7 +370,7 @@ export default function PromotionForm({
       noValidate
       onSubmit={onSubmit}
       className={cn(
-        'rounded-lg border border-lavander bg-white shadow-sm',
+        'relative rounded-lg border border-lavander bg-white shadow-sm',
         isFlashing && 'animate-edit-flash',
       )}
       onAnimationEnd={(event) => {
@@ -374,6 +378,17 @@ export default function PromotionForm({
         if (event.animationName === 'edit-flash') setSeenFlashKey(flashKey);
       }}
     >
+      {/* Sits above the disabled fieldset while the request is in flight. */}
+      {isSubmitting && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-lg bg-white/70 text-deep-violet-blue/70 backdrop-blur-[1px]"
+        >
+          <Loader2 className="h-6 w-6 animate-spin" />
+          <p className="text-sm">{isEdit ? 'Saving changes…' : 'Creating promotion…'}</p>
+        </div>
+      )}
       {/* ==== Header ==== */}
       <div className="flex flex-wrap items-end justify-between gap-2 border-b border-lavander px-4 py-3">
         <div>
@@ -391,7 +406,13 @@ export default function PromotionForm({
         )}
       </div>
 
-      <div className="divide-y divide-lavander">
+      {/* A disabled fieldset locks every native control inside it, so the
+          values cannot change between building the payload and the reset. */}
+      <fieldset
+        disabled={isSubmitting}
+        aria-busy={isSubmitting}
+        className="min-w-0 divide-y divide-lavander"
+      >
         {/* ==== 1. Where ==== */}
         <FormSection
           step={1}
@@ -542,6 +563,7 @@ export default function PromotionForm({
               onStartChange={(periodStart) => patchForm({ periodStart })}
               onEndChange={(periodEnd) => patchForm({ periodEnd })}
               required
+              disabled={isSubmitting}
               startError={errors.periodStart}
               endError={errors.periodEnd}
               labelClassName={labelClass}
@@ -681,7 +703,7 @@ export default function PromotionForm({
             <FieldError message={errors.skuRanges} />
           </fieldset>
         </FormSection>
-      </div>
+      </fieldset>
 
       {/* ==== Actions ==== */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-b-lg border-t border-lavander bg-cream/40 px-4 py-3">
