@@ -9,11 +9,19 @@ from pydantic import Field, model_validator
 from app.schemas.catalog import SkuItem, _Base
 
 
+# Mirrors promo_type_enum in Postgres. Pack vs carton is not
+# a separate column: a carton promotion is the base type with
+# a "carton_" prefix, and the frontend splits/joins it (see
+# splitPromoType / composePromoType in utils/promotionForm.js).
 PromoType = Literal[
-    "Monthy",
+    "monthly",
     "side_offer",
-    "carton",
     "bundle",
+    "others",
+    "carton_monthly",
+    "carton_side_offer",
+    "carton_bundle",
+    "carton_others",
 ]
 
 

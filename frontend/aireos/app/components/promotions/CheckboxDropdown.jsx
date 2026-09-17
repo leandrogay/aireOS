@@ -9,8 +9,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * the panel; clicking outside closes it. Selection stays in the parent —
  * this component only controls open/close.
  *
- * When searchable, children may be a function `(query) => nodes` so the
- * parent can filter its checkbox rows. The query is cleared on close.
+ * Children may be a function `(query, close) => nodes` so the parent can
+ * filter its rows by the search text, or close the panel after a
+ * single-select pick. The query is cleared on close.
  *
  * @param {object} props
  * @param {string} props.summary text shown on the closed button
@@ -18,7 +19,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * @param {boolean} [props.disabled]
  * @param {boolean} [props.searchable]
  * @param {string} [props.searchPlaceholder]
- * @param {React.ReactNode | ((query: string) => React.ReactNode)} props.children
+ * @param {React.ReactNode | ((query: string, close: () => void) => React.ReactNode)} props.children
  */
 export default function CheckboxDropdown({
   summary,
@@ -67,7 +68,7 @@ export default function CheckboxDropdown({
     }
   }, [open, searchable]);
 
-  const content = typeof children === 'function' ? children(query) : children;
+  const content = typeof children === 'function' ? children(query, close) : children;
 
   return (
     <div ref={rootRef} className="relative w-full min-w-0 max-w-full">

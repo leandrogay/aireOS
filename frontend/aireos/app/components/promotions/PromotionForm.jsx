@@ -5,10 +5,12 @@ import DateRangePicker from '@/components/ui/DateRangePicker';
 import CheckboxDropdown from '@/components/promotions/CheckboxDropdown';
 import {
   EMPTY_PROMOTION_FORM,
+  PACK_TYPES,
   PROMO_TYPES,
   areAllRetailersSelected,
   areAllSkuRangesSelected,
   areAllStoresSelected,
+  promoTypeLabel,
   retailerDropdownOptions,
   retailerLabel,
   storeCatalogOptions,
@@ -439,23 +441,57 @@ export default function PromotionForm({
           error={errors.periodLabel}
         />
 
-        <label>
-          <span className={labelClass}>
+        <fieldset>
+          <legend className={labelClass}>
             Promo type <span className="text-red-700">*</span>
-          </span>
-          <select
-            value={form.promoType}
-            onChange={(event) => patchForm({ promoType: event.target.value })}
-            className={inputClass}
-          >
-            {PROMO_TYPES.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+          </legend>
+          <CheckboxDropdown summary={promoTypeLabel(form.promoType)} placeholder="Select promo type">
+            {(_query, close) =>
+              PROMO_TYPES.map((option) => (
+                <label key={option.value} className={checkRowClass}>
+                  <input
+                    type="radio"
+                    name="promoType"
+                    value={option.value}
+                    checked={form.promoType === option.value}
+                    onChange={() => {
+                      patchForm({ promoType: option.value });
+                      close();
+                    }}
+                    className="size-3.5 accent-deep-violet-blue"
+                  />
+                  <span className="min-w-0 truncate">{option.label}</span>
+                </label>
+              ))
+            }
+          </CheckboxDropdown>
           <FieldError message={errors.promoType} />
-        </label>
+        </fieldset>
+
+        <fieldset>
+          <legend className={labelClass}>
+            Pack type <span className="text-red-700">*</span>
+          </legend>
+          <div className="flex items-center gap-4 py-1">
+            {PACK_TYPES.map((option) => (
+              <label
+                key={option.value}
+                className="flex cursor-pointer items-center gap-1.5 text-sm text-deep-violet-blue"
+              >
+                <input
+                  type="radio"
+                  name="packType"
+                  value={option.value}
+                  checked={form.packType === option.value}
+                  onChange={() => patchForm({ packType: option.value })}
+                  className="size-3.5 accent-deep-violet-blue"
+                />
+                {option.label}
+              </label>
+            ))}
+          </div>
+          <FieldError message={errors.packType} />
+        </fieldset>
 
         <PromotionMechanicField
           value={form.promotionMechanic}
