@@ -485,24 +485,10 @@ export default function PromotionList({
       {uniquePromotions.length > 0 && (
         <div className="overflow-x-auto rounded-md border border-lavander">
           <div className="max-h-[28rem] overflow-y-auto">
-          <table className="w-full table-fixed text-left text-xs text-deep-violet-blue">
-            {/* Columns follow the form's sections: where (retailer, stores),
-                when (start, end, label), what (type, mechanic), then the
-                list-only status and actions. */}
-            <colgroup>
-              <col className="w-[10%]" />
-              <col className="w-[14%]" />
-              <col className="w-[9%]" />
-              <col className="w-[9%]" />
-              <col className="w-[10%]" />
-              <col className="w-[10%]" />
-              <col className="w-[12%]" />
-              <col className="w-[10%]" />
-              <col className="w-[16%]" />
-            </colgroup>
+          <table className="w-full whitespace-nowrap text-left text-xs text-deep-violet-blue [&_td]:align-middle [&_th]:align-middle">
             <thead className="sticky top-0 z-10 bg-cream">
               <tr className="border-b border-lavander">
-                <th className="overflow-hidden px-1.5 py-2">
+                <th className="px-1.5 py-2">
                   <HeaderFilter
                     id="retailer"
                     label="Retailer"
@@ -515,7 +501,6 @@ export default function PromotionList({
                     openId={openFilter}
                     setOpenId={setOpenFilter}
                     onChange={setRetailerFilter}
-                    className="!max-w-full"
                   />
                 </th>
                 <th className="px-1.5 py-2">
@@ -665,28 +650,40 @@ export default function PromotionList({
                       tabIndex={0}
                     >
                       <td
-                        className="max-w-0 truncate px-2.5 py-2 font-medium"
+                        className="px-2.5 py-2 font-medium"
                         title={retailerNames.join(', ') || undefined}
                       >
-                        <span className="mr-1.5 inline-block w-2 text-[10px] text-deep-violet-blue/50">
-                          {isOpen ? '▾' : '▸'}
+                        <span className="inline-flex items-center gap-1.5">
+                          <span
+                            aria-hidden="true"
+                            className="inline-flex w-2.5 justify-center text-[18px] leading-none text-deep-violet-blue/50"
+                          >
+                            {isOpen ? '▾' : '▸'}
+                          </span>
+                          {summariseNames(retailerNames)}
                         </span>
-                        {summariseNames(retailerNames)}
                       </td>
-                      <td
-                        className="max-w-0 truncate px-2.5 py-2 font-medium"
-                        title={storeNames.join(', ') || undefined}
-                      >
-                        {summariseNames(storeNames)}
+                      <td className="px-2.5 py-2 font-medium" title={storeNames.join(', ') || undefined}>
+                        <span className="block max-w-[14rem] truncate">
+                          {summariseNames(storeNames)}
+                        </span>
                       </td>
                       <td className="px-2.5 py-2">{formatPromoDate(promotion.period_start)}</td>
                       <td className="px-2.5 py-2">{formatPromoDate(promotion.period_end)}</td>
-                      <td className="px-2.5 py-2">{promotion.period_label || '—'}</td>
+                      <td className="px-2.5 py-2" title={promotion.period_label || undefined}>
+                        <span className="block max-w-[12rem] truncate">
+                          {promotion.period_label || '-'}
+                        </span>
+                      </td>
                       <td className="px-2.5 py-2">{promoTypeLabel(promotion.promo_type)}</td>
-                      <td className="px-2.5 py-2">{promotion.promotion_mechanic || '—'}</td>
+                      <td className="px-2.5 py-2" title={promotion.promotion_mechanic || undefined}>
+                        <span className="block max-w-[12rem] truncate">
+                          {promotion.promotion_mechanic || '-'}
+                        </span>
+                      </td>
                       <td className="px-2.5 py-2">
                         <span
-                          className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-medium tracking-wide ${statusBadgeClass(status)}`}
+                          className={`inline-flex items-center align-middle rounded-full px-2.5 py-0.5 text-[10px] font-medium tracking-wide ${statusBadgeClass(status)}`}
                         >
                           {promotionStatusLabel(status)}
                         </span>
@@ -722,54 +719,66 @@ export default function PromotionList({
                     </tr>
                     {isOpen && (
                       <tr className="border-b border-lavander/80">
-                        <td colSpan={9} className="bg-cream/50 px-2.5 py-1.5 text-[11px] text-deep-violet-blue">
-                          <div className="grid grid-cols-3 gap-1.5 [&>*]:min-w-0">
+                        <td colSpan={9} className="whitespace-normal bg-cream/50 px-2.5 py-1.5 text-[11px] text-deep-violet-blue">
+                          <div className="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] [&>*]:min-w-0">
                             <DetailTile label={`Stores (${linkedStores.length})`}>
                               {linkedStores.length ? (
-                                <ul className="mt-0.5 min-w-0 list-inside list-disc font-medium leading-snug text-deep-violet-blue">
+                                <ul className="mt-1 flex max-h-48 flex-wrap gap-1 overflow-y-auto">
                                   {linkedStores.map((store) => {
+                                    const name = store.store_name || store.store_code;
                                     const parts = [
-                                      store.store_name || store.store_code,
-                                      store.retailer,
+                                      retailerNames.length > 1 ? store.retailer : null,
+                                      name,
                                       store.store_format,
                                     ].filter(Boolean);
-                                    const label = parts.join(' · ');
                                     return (
                                       <li
                                         key={store.store_id ?? `${store.retailer}|${store.store_code}`}
-                                        title={label}
-                                        className="min-w-0 truncate whitespace-nowrap"
+                                        title={parts.join(' · ')}
+                                        className="max-w-full truncate rounded-full border border-lavander bg-cream/70 px-2 py-0.5 font-medium leading-snug text-deep-violet-blue"
                                       >
-                                        {label}
+                                        {retailerNames.length > 1 && (
+                                          <span className="text-deep-violet-blue/60">
+                                            {retailerLabel(store.retailer)} ·{' '}
+                                          </span>
+                                        )}
+                                        {name}
+                                        {store.store_format && (
+                                          <span className="text-deep-violet-blue/60">
+                                            {' '}· {store.store_format}
+                                          </span>
+                                        )}
                                       </li>
                                     );
                                   })}
                                 </ul>
                               ) : (
-                                <p className="mt-0.5 font-medium text-deep-violet-blue">—</p>
+                                <p className="mt-0.5 font-medium text-deep-violet-blue">-</p>
                               )}
                             </DetailTile>
-                            <DetailTile
-                              label="Voucher"
-                              value={promotion.voucher || '—'}
-                            />
-                            <DetailTile label="SKU range">
-                              {skuLabels.length ? (
-                                <ul className="mt-0.5 min-w-0 list-inside list-disc font-medium leading-snug text-deep-violet-blue">
-                                  {skuLabels.map((label) => (
-                                    <li
-                                      key={label}
-                                      title={label}
-                                      className="min-w-0 truncate whitespace-nowrap"
-                                    >
-                                      {label}
-                                    </li>
-                                  ))}
-                                </ul>
-                              ) : (
-                                <p className="mt-0.5 font-medium text-deep-violet-blue">—</p>
-                              )}
-                            </DetailTile>
+                            <div className="flex min-w-0 flex-col gap-1.5">
+                              <DetailTile
+                                label="Voucher"
+                                value={promotion.voucher || '-'}
+                              />
+                              <DetailTile label="SKU range">
+                                {skuLabels.length ? (
+                                  <ul className="mt-0.5 min-w-0 list-inside list-disc font-medium leading-snug text-deep-violet-blue">
+                                    {skuLabels.map((label) => (
+                                      <li
+                                        key={label}
+                                        title={label}
+                                        className="min-w-0 truncate whitespace-nowrap"
+                                      >
+                                        {label}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                ) : (
+                                  <p className="mt-0.5 font-medium text-deep-violet-blue">-</p>
+                                )}
+                              </DetailTile>
+                            </div>
                           </div>
                         </td>
                       </tr>
