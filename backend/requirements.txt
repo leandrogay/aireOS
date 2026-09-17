@@ -1,4 +1,4 @@
-anthropic
+anthropic==1.2.0
 cloud-sql-python-connector[pg8000]
 db-dtypes
 fastapi
@@ -6,9 +6,12 @@ google-api-core
 google-auth
 google-cloud-bigquery
 google-cloud-storage
+google-genai==2.23.0
 openpyxl
 pandas
 python-dotenv
 python-multipart
+python-pptx==1.0.2
+reportlab==5.0.1
 sqlalchemy
 uvicorn
