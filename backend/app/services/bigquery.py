@@ -574,6 +574,6 @@ def get_period_comparison(
             "end": prev_end.strftime("%Y-%m-%d"),
             "revenue": _num(row["previous_revenue"]) if row is not None else 0.0,
             "units": _num(row["previous_units"]) if row is not None else 0.0,
-            "available": bool(row["previous_row_count"] > 0) if row is not None else False,
+            "available": _num(row["previous_row_count"]) > 0 if row is not None else False,
         },
     }

@@ -242,6 +242,32 @@ def test_period_comparison_reports_unavailable_when_previous_has_no_rows(monkeyp
     assert result["previous"]["available"] is False
 
 
+def test_period_comparison_handles_null_previous_row_count(monkeypatch):
+    # Regression: BigQuery's SUM(IF(...)) returns NULL (not 0) when a
+    # scoped query -- e.g. compare_periods filtered to one store with no
+    # prior-period sales at all -- matches zero rows. pandas surfaces that
+    # as a nullable NA, and `bool(NA > 0)` raises TypeError ("boolean value
+    # of NA is ambiguous") rather than evaluating to False.
+    _fix_anchor(monkeypatch, "2026-08-17")
+    df = pd.DataFrame(
+        [
+            {
+                "current_revenue": 100.0,
+                "current_units": 5.0,
+                "previous_revenue": pd.NA,
+                "previous_units": pd.NA,
+                "previous_row_count": pd.NA,
+            }
+        ]
+    )
+    _install_fake_bq_client(monkeypatch, df)
+
+    result = bigquery.get_period_comparison(comparison_type="wow", mode="offline", store="S999")
+
+    assert result["previous"]["available"] is False
+    assert result["previous"]["revenue"] == 0.0
+
+
 def test_period_comparison_custom_dates_default_previous_to_one_month_back(monkeypatch):
     _install_fake_bq_client(monkeypatch, _totals_row())
 
