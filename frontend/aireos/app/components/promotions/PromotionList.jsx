@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import {
@@ -153,26 +153,35 @@ function HeaderFilter({
   const selected = options.find((option) => option.value === value);
   const buttonRef = useRef(null);
   const menuRef = useRef(null);
-  const [menuPos, setMenuPos] = useState({ top: 0, left: 0, maxHeight: 256 });
+  const [menuPos, setMenuPos] = useState({
+    top: undefined,
+    bottom: undefined,
+    left: 0,
+    maxHeight: 256,
+  });
 
-  useEffect(() => {
+  // Layout effect so the menu is measured and placed before it is
+  // painted; a plain effect would flash it at (0, 0) for one frame.
+  useLayoutEffect(() => {
     if (!open || !buttonRef.current) return;
 
-    /**
-     * Pin the menu to the header button, flipping up if the table would clip it.
-     */
     const placeMenu = () => {
       const rect = buttonRef.current.getBoundingClientRect();
+      const gap = 6;
+      const edge = 12;
       const maxHeight = 256;
-      const spaceBelow = window.innerHeight - rect.bottom - 12;
-      const spaceAbove = rect.top - 12;
-      const openUp = spaceBelow < 160 && spaceAbove > spaceBelow;
-      const height = Math.max(120, Math.min(maxHeight, openUp ? spaceAbove : spaceBelow));
+      const contentHeight = menuRef.current?.scrollHeight ?? maxHeight;
+      const needed = Math.min(contentHeight, maxHeight);
+      const spaceBelow = window.innerHeight - rect.bottom - gap - edge;
+      const spaceAbove = rect.top - gap - edge;
+      const openUp = spaceBelow < needed && spaceAbove > spaceBelow;
+      const available = openUp ? spaceAbove : spaceBelow;
 
       setMenuPos({
-        top: openUp ? rect.top - height - 6 : rect.bottom + 6,
+        top: openUp ? undefined : rect.bottom + gap,
+        bottom: openUp ? window.innerHeight - rect.top + gap : undefined,
         left: Math.min(rect.left, window.innerWidth - 220),
-        maxHeight: height,
+        maxHeight: Math.max(80, Math.min(maxHeight, available)),
       });
     };
 
@@ -231,6 +240,7 @@ function HeaderFilter({
             ref={menuRef}
             style={{
               top: menuPos.top,
+              bottom: menuPos.bottom,
               left: menuPos.left,
               maxHeight: menuPos.maxHeight,
             }}
@@ -481,14 +491,14 @@ export default function PromotionList({
                 when (start, end, label), what (type, mechanic), then the
                 list-only status and actions. */}
             <colgroup>
-              <col className="w-[11%]" />
+              <col className="w-[10%]" />
               <col className="w-[14%]" />
               <col className="w-[9%]" />
               <col className="w-[9%]" />
-              <col className="w-[11%]" />
+              <col className="w-[10%]" />
               <col className="w-[10%]" />
               <col className="w-[12%]" />
-              <col className="w-[8%]" />
+              <col className="w-[10%]" />
               <col className="w-[16%]" />
             </colgroup>
             <thead className="sticky top-0 z-10 bg-cream">
