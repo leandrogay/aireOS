@@ -146,7 +146,7 @@ function VoucherField({ value, onChange, error }) {
         onChange={(event) => onChange(event.target.value)}
         className={cn(inputClass, error && invalidInputClass)}
         aria-invalid={Boolean(error)}
-        placeholder="e.g. $5 off $50"
+        placeholder="e.g. AIRE25"
         maxLength={255}
       />
       <FieldError message={error} />
@@ -239,14 +239,12 @@ export default function PromotionForm({
         )
         .map((retailer) => retailerLabel(retailer.retailer_name))
         .join(', ');
+  const selectedStores = storeOptions.filter((store) =>
+    (form.selectedStoreCodes || []).map(String).includes(String(store.store_code)),
+  );
   const storeSummary = allStoresSelected
     ? 'All stores'
-    : storeOptions
-        .filter((store) =>
-          (form.selectedStoreCodes || []).map(String).includes(String(store.store_code)),
-        )
-        .map((store) => store.store_name)
-        .join(', ');
+    : selectedStores.map((store) => store.store_name).join(', ');
   const skuSummary = allSkuRangesSelected ? 'All SKU ranges' : form.skuRanges.join(', ');
   // Inline messages sit next to each field; the footer repeats the count so
   // the user standing at the submit button knows to scroll up.
@@ -522,7 +520,7 @@ export default function PromotionForm({
                     ? 'Stores appear after you pick retailers.'
                     : storeOptions.length === 0
                       ? 'No stores for the selected retailers.'
-                      : `${storeOptions.length} ${storeOptions.length === 1 ? 'store' : 'stores'} available.`}
+                      : `${selectedStores.length} of ${storeOptions.length} ${storeOptions.length === 1 ? 'store' : 'stores'} selected.`}
                 </p>
               )}
               <FieldError message={errors.storeName} />
