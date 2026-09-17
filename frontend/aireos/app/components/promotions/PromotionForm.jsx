@@ -5,7 +5,6 @@ import DateRangePicker from '@/components/ui/DateRangePicker';
 import CheckboxDropdown from '@/components/promotions/CheckboxDropdown';
 import {
   EMPTY_PROMOTION_FORM,
-  PROMO_MECHANICS,
   PROMO_TYPES,
   areAllRetailersSelected,
   areAllSkuRangesSelected,
@@ -41,6 +40,26 @@ function FieldError({ message }) {
  *
  * @param {{ value: string, onChange: (value: string) => void, error?: string }} props
  */
+function PromotionMechanicField({ value, onChange, error }) {
+  return (
+    <label>
+      <span className={labelClass}>
+        Mechanic <span className="text-red-700">*</span>
+      </span>
+      <input
+        type="text"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className={inputClass}
+        placeholder="e.g. 25% Off"
+        maxLength={255}
+        required
+      />
+      <FieldError message={error} />
+    </label>
+  );
+}
+
 function VoucherField({ value, onChange, error }) {
   return (
     <label>
@@ -438,23 +457,11 @@ export default function PromotionForm({
           <FieldError message={errors.promoType} />
         </label>
 
-        <label>
-          <span className={labelClass}>
-            Mechanic <span className="text-red-700">*</span>
-          </span>
-          <select
-            value={form.promotionMechanic}
-            onChange={(event) => patchForm({ promotionMechanic: event.target.value })}
-            className={inputClass}
-          >
-            {PROMO_MECHANICS.map((mechanic) => (
-              <option key={mechanic} value={mechanic}>
-                {mechanic}
-              </option>
-            ))}
-          </select>
-          <FieldError message={errors.promotionMechanic} />
-        </label>
+        <PromotionMechanicField
+          value={form.promotionMechanic}
+          onChange={(promotionMechanic) => patchForm({ promotionMechanic })}
+          error={errors.promotionMechanic}
+        />
 
         <VoucherField
           value={form.voucher}

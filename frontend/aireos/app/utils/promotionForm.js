@@ -5,18 +5,6 @@ export const PROMO_TYPES = [
   { value: 'bundle', label: 'Bundle' },
 ];
 
-export const PROMO_MECHANICS = [
-  'No Promo',
-  '27% Off',
-  '25% Off',
-  '20% Off',
-  '30% Off',
-  '33% Off',
-  'Buy 2 Get 25% Off',
-  'Buy 2 Get 30% Off',
-  'Buy 2 Get 1 Free',
-];
-
 export const EMPTY_PROMOTION_FORM = {
   selectedRetailerIds: [],
   selectedStoreCodes: [],
@@ -24,7 +12,7 @@ export const EMPTY_PROMOTION_FORM = {
   periodEnd: '',
   periodLabel: '',
   promoType: 'regular',
-  promotionMechanic: PROMO_MECHANICS[0],
+  promotionMechanic: '',
   voucher: '',
   skuRanges: [],
 };
@@ -88,6 +76,17 @@ export function formatVoucher(value) {
 }
 
 /**
+ * Trim promotion_mechanic text for the API. Blank becomes null.
+ *
+ * @param {string | null | undefined} value
+ * @returns {string | null}
+ */
+export function formatPromotionMechanic(value) {
+  const text = String(value ?? '').trim();
+  return text || null;
+}
+
+/**
  * Distinct sku_range labels from GET /api/promotions.skus.
  * A promotion links many product SKUs in a range, so the UI
  * shows each range once.
@@ -139,7 +138,7 @@ export function formFromPromotion(promotion, retailers = []) {
     periodEnd: promotion.period_end ? String(promotion.period_end).slice(0, 10) : '',
     periodLabel: promotion.period_label ? String(promotion.period_label) : '',
     promoType: promotion.promo_type || 'regular',
-    promotionMechanic: promotion.promotion_mechanic || PROMO_MECHANICS[0],
+    promotionMechanic: promotion.promotion_mechanic ? String(promotion.promotion_mechanic) : '',
     voucher: promotion.voucher ? String(promotion.voucher) : '',
     skuRanges: uniqueSkuRangeLabels(promotion.skus),
   };
@@ -409,8 +408,11 @@ export function validatePromotionForm(form, retailers, stores = []) {
     errors.promoType = 'Promo type is required.';
   }
 
-  if (!form.promotionMechanic) {
-    errors.promotionMechanic = 'Select a promo mechanic.';
+  const promotionMechanic = String(form.promotionMechanic ?? '').trim();
+  if (!promotionMechanic) {
+    errors.promotionMechanic = 'Enter a promo mechanic.';
+  } else if (promotionMechanic.length > 255) {
+    errors.promotionMechanic = 'Promo mechanic must be 255 characters or fewer.';
   }
 
   if (String(form.voucher ?? '').trim().length > 255) {
@@ -459,7 +461,7 @@ export function buildPromotionPayload(form, storeRefs, period) {
         ? period.periodLabel
         : formatPeriodLabel(form.periodLabel),
     promo_type: form.promoType,
-    promotion_mechanic: form.promotionMechanic || null,
+    promotion_mechanic: formatPromotionMechanic(form.promotionMechanic),
     voucher: formatVoucher(form.voucher),
     skus: form.skuRanges.map((range) => ({
       sku: range,

@@ -10,7 +10,7 @@ from app.schemas.catalog import SkuItem, _Base
 
 
 PromoType = Literal[
-    "regular",
+    "Monthy",
     "side_offer",
     "carton",
     "bundle",
@@ -67,7 +67,12 @@ class PromotionBase(_Base):
 
     promo_type: PromoType
 
-    promotion_mechanic: str | None = None
+    # Free text typed by the user (e.g. "25% Off"), not an
+    # enum. Same cap as voucher; the column itself is text.
+    promotion_mechanic: str | None = Field(
+        default=None,
+        max_length=255,
+    )
 
     voucher: str | None = Field(
         default=None,
