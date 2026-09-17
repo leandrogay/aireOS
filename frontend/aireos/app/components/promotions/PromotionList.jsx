@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import RefreshButton from '@/components/ui/RefreshButton';
 import {
   formatPromoDate,
   promoTypeLabel,
@@ -462,14 +463,12 @@ export default function PromotionList({
           >
             Clear filters
           </button>
-          <button
-            type="button"
+          <RefreshButton
             onClick={onRefresh}
-            disabled={isLoading}
-            className="rounded-md border border-deep-violet-blue bg-deep-violet-blue px-3 py-1 text-xs font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isLoading ? 'Loading…' : 'Refresh'}
-          </button>
+            isRefreshing={isLoading}
+            label="Refresh promotions"
+            className="rounded-md border-deep-violet-blue/30 bg-white text-deep-violet-blue hover:bg-cream"
+          />
         </div>
       </div>
 
