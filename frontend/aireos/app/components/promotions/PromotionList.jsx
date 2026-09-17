@@ -477,19 +477,38 @@ export default function PromotionList({
         <div className="overflow-x-auto rounded-md border border-lavander">
           <div className="max-h-[28rem] overflow-y-auto">
           <table className="w-full table-fixed text-left text-xs text-deep-violet-blue">
+            {/* Columns follow the form's sections: where (retailer, stores),
+                when (start, end, label), what (type, mechanic), then the
+                list-only status and actions. */}
             <colgroup>
+              <col className="w-[11%]" />
               <col className="w-[14%]" />
+              <col className="w-[9%]" />
+              <col className="w-[9%]" />
               <col className="w-[11%]" />
               <col className="w-[10%]" />
               <col className="w-[12%]" />
-              <col className="w-[9%]" />
-              <col className="w-[9%]" />
-              <col className="w-[11%]" />
               <col className="w-[8%]" />
               <col className="w-[16%]" />
             </colgroup>
             <thead className="sticky top-0 z-10 bg-cream">
               <tr className="border-b border-lavander">
+                <th className="overflow-hidden px-1.5 py-2">
+                  <HeaderFilter
+                    id="retailer"
+                    label="Retailer"
+                    value={retailerFilter}
+                    allLabel="All retailers"
+                    options={retailerOptions.map((name) => ({
+                      value: name,
+                      label: retailerLabel(name),
+                    }))}
+                    openId={openFilter}
+                    setOpenId={setOpenFilter}
+                    onChange={setRetailerFilter}
+                    className="!max-w-full"
+                  />
+                </th>
                 <th className="px-1.5 py-2">
                   <HeaderFilter
                     id="store"
@@ -501,6 +520,34 @@ export default function PromotionList({
                     setOpenId={setOpenFilter}
                     onChange={setStoreFilter}
                   />
+                </th>
+                <th className="px-1.5 py-2">
+                  <button
+                    type="button"
+                    onClick={() => handleSort('period_start')}
+                    className={`${pillClass} ${
+                      sortField === 'period_start'
+                        ? 'border-deep-violet-blue bg-white text-deep-violet-blue'
+                        : 'border-lavander bg-white text-deep-violet-blue/80 hover:bg-cream'
+                    }`}
+                  >
+                    Start date
+                    <span className="text-[8px] leading-none">{sortMark('period_start')}</span>
+                  </button>
+                </th>
+                <th className="px-1.5 py-2">
+                  <button
+                    type="button"
+                    onClick={() => handleSort('period_end')}
+                    className={`${pillClass} ${
+                      sortField === 'period_end'
+                        ? 'border-deep-violet-blue bg-white text-deep-violet-blue'
+                        : 'border-lavander bg-white text-deep-violet-blue/80 hover:bg-cream'
+                    }`}
+                  >
+                    End date
+                    <span className="text-[8px] leading-none">{sortMark('period_end')}</span>
+                  </button>
                 </th>
                 <th className="px-1.5 py-2">
                   <HeaderFilter
@@ -542,50 +589,6 @@ export default function PromotionList({
                     openId={openFilter}
                     setOpenId={setOpenFilter}
                     onChange={setMechanicFilter}
-                  />
-                </th>
-                <th className="px-1.5 py-2">
-                  <button
-                    type="button"
-                    onClick={() => handleSort('period_start')}
-                    className={`${pillClass} ${
-                      sortField === 'period_start'
-                        ? 'border-deep-violet-blue bg-white text-deep-violet-blue'
-                        : 'border-lavander bg-white text-deep-violet-blue/80 hover:bg-cream'
-                    }`}
-                  >
-                    Start date
-                    <span className="text-[8px] leading-none">{sortMark('period_start')}</span>
-                  </button>
-                </th>
-                <th className="px-1.5 py-2">
-                  <button
-                    type="button"
-                    onClick={() => handleSort('period_end')}
-                    className={`${pillClass} ${
-                      sortField === 'period_end'
-                        ? 'border-deep-violet-blue bg-white text-deep-violet-blue'
-                        : 'border-lavander bg-white text-deep-violet-blue/80 hover:bg-cream'
-                    }`}
-                  >
-                    End date
-                    <span className="text-[8px] leading-none">{sortMark('period_end')}</span>
-                  </button>
-                </th>
-                <th className="overflow-hidden px-1.5 py-2">
-                  <HeaderFilter
-                    id="retailer"
-                    label="Retailer"
-                    value={retailerFilter}
-                    allLabel="All retailers"
-                    options={retailerOptions.map((name) => ({
-                      value: name,
-                      label: retailerLabel(name),
-                    }))}
-                    openId={openFilter}
-                    setOpenId={setOpenFilter}
-                    onChange={setRetailerFilter}
-                    className="!max-w-full"
                   />
                 </th>
                 <th className="px-1.5 py-2">
@@ -654,24 +657,24 @@ export default function PromotionList({
                     >
                       <td
                         className="max-w-0 truncate px-2.5 py-2 font-medium"
-                        title={storeNames.join(', ') || undefined}
+                        title={retailerNames.join(', ') || undefined}
                       >
                         <span className="mr-1.5 inline-block w-2 text-[10px] text-deep-violet-blue/50">
                           {isOpen ? '▾' : '▸'}
                         </span>
+                        {summariseNames(retailerNames)}
+                      </td>
+                      <td
+                        className="max-w-0 truncate px-2.5 py-2 font-medium"
+                        title={storeNames.join(', ') || undefined}
+                      >
                         {summariseNames(storeNames)}
                       </td>
+                      <td className="px-2.5 py-2">{formatPromoDate(promotion.period_start)}</td>
+                      <td className="px-2.5 py-2">{formatPromoDate(promotion.period_end)}</td>
                       <td className="px-2.5 py-2">{promotion.period_label || '—'}</td>
                       <td className="px-2.5 py-2">{promoTypeLabel(promotion.promo_type)}</td>
                       <td className="px-2.5 py-2">{promotion.promotion_mechanic || '—'}</td>
-                      <td className="px-2.5 py-2">{formatPromoDate(promotion.period_start)}</td>
-                      <td className="px-2.5 py-2">{formatPromoDate(promotion.period_end)}</td>
-                      <td
-                        className="max-w-0 truncate px-2.5 py-2 font-medium"
-                        title={retailerNames.join(', ') || undefined}
-                      >
-                        {summariseNames(retailerNames)}
-                      </td>
                       <td className="px-2.5 py-2">
                         <span
                           className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-medium tracking-wide ${statusBadgeClass(status)}`}
