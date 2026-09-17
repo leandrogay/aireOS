@@ -72,6 +72,20 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* One lavender pulse on the promotion form when Edit is pressed. */
+  --animate-edit-flash: edit-flash 0.9s ease-in-out;
+  @keyframes edit-flash {
+    0%,
+    100% {
+      background-color: var(--color-white);
+      box-shadow: 0 0 0 0 transparent;
+    }
+    75% {
+      background-color: var(--aire-lavender);
+      box-shadow: 0 0 0 4px var(--aire-violet);
+    }
+  }
 }
 
 :root {
