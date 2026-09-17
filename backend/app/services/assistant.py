@@ -50,7 +50,7 @@ from openpyxl import Workbook
 from openpyxl.chart import BarChart as XlsxBarChart, Reference
 from openpyxl.styles import Font as XlsxFont, Alignment as XlsxAlignment
 
-from app.services import bigquery
+from app.services import bigquery, promotion_service
 
 ENV_PATH = Path(__file__).resolve().parents[2] / ".env.backend"
 load_dotenv(ENV_PATH)
@@ -184,6 +184,27 @@ _FUNCTION_SCHEMAS = [
             "additionalProperties": False,
         },
     },
+    {
+        "name": "get_promotions",
+        "description": (
+            "Looks up promotion records (retailer/store(s), date range, promo type, "
+            "mechanic/discount, which SKUs were included) from the promotions catalog -- "
+            "a SEPARATE system from sales figures, no revenue numbers here. Use this to "
+            "answer direct questions about promotions, AND whenever reasoning about WHY "
+            "sales rose or fell in a period -- check here for an actual promotion before "
+            "speculating about generic causes."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "customer": {"type": "string", "description": "Retailer name, e.g. 'fairprice'. Matches substrings, case-insensitive. Defaults to the current page's customer if omitted."},
+                "start_date": {"type": "string", "description": "YYYY-MM-DD. Returns promotions whose period overlaps [start_date, end_date] at all."},
+                "end_date": {"type": "string", "description": "YYYY-MM-DD."},
+                "sku": {"type": "string", "description": "Optional SKU code or product name substring to scope to promotions covering that product."},
+            },
+            "additionalProperties": False,
+        },
+    },
 ]
 
 # Gemini rejects mixing custom function tools with Google
@@ -207,11 +228,11 @@ _BUSINESS_TOOLS = [
 
 _SEARCH_TOOLS = [types.Tool(google_search=types.GoogleSearch())]
 
-# Tool -> which bigquery.py function it wraps, and how to shape that
-# function's raw return value into something chartable. Only these three
-# produce numeric results worth visualizing; the list_* lookups and
-# web_search never populate chart/table.
-_CHARTABLE_TOOLS = {"get_sales_summary", "compare_periods", "rank_skus"}
+# Tools whose raw results feed _build_chart -- despite the name, not all of
+# these produce a bar/line chart (rank_skus and get_promotions only ever
+# produce a table). The list_* lookups and web_search never populate
+# chart/table at all.
+_CHARTABLE_TOOLS = {"get_sales_summary", "compare_periods", "rank_skus", "get_promotions"}
 
 
 # ---- Executing a tool call -----------------------------------------------
@@ -275,6 +296,22 @@ def _run_business_tool(name: str, tool_input: dict, default_customer: str):
             result = bigquery.get_store_options(customer=customer)
         elif name == "list_skus":
             result = bigquery.get_sku_options(customer=customer)
+        elif name == "get_promotions":
+            # Cloud SQL/Postgres, not BigQuery -- a genuinely different
+            # failure domain than the exceptions caught below, so it gets
+            # its own broad catch rather than being narrowed to a specific
+            # exception type.
+            try:
+                promotions = promotion_service.get_promotions()
+            except Exception as e:
+                return (f"Unable to reach the promotions database: {e}", True, None)
+            result = _filter_promotions(
+                promotions,
+                customer=customer,
+                start_date=tool_input.get("start_date"),
+                end_date=tool_input.get("end_date"),
+                sku=tool_input.get("sku"),
+            )
         else:
             return (f"Unknown tool: {name}", True, None)
     except ValueError as e:
@@ -285,6 +322,84 @@ def _run_business_tool(name: str, tool_input: dict, default_customer: str):
         return (f"Unable to reach BigQuery: {e.message}", True, None)
 
     return (json.dumps(result, default=str), False, result)
+
+
+# ---- Promotions filtering (Postgres has no filter params on get_promotions,
+# so this happens in Python -- a smaller, safer change than adding SQL
+# filters to an unfamiliar file for what's realistically a small table).
+# A promotion can run at MORE THAN ONE store (a real many-to-many via
+# promotion_stores -- confirmed against the live data, not assumed), so
+# `stores` is a list, not a single retailer/store pair. ---------------------
+
+def _promotion_matches_customer(promo: dict, customer: str | None) -> bool:
+    if not customer:
+        return True
+    needle = customer.lower()
+    return any(needle in (store.get("retailer") or "").lower() for store in (promo.get("stores") or []))
+
+
+def _promotion_overlaps_range(promo: dict, start_date: str | None, end_date: str | None) -> bool:
+    if not start_date and not end_date:
+        return True
+    promo_start, promo_end = promo.get("period_start"), promo.get("period_end")
+    if promo_start is None or promo_end is None:
+        return True
+    try:
+        if start_date:
+            start = start_date if isinstance(start_date, datetime.date) else datetime.date.fromisoformat(start_date)
+            if promo_end < start:
+                return False
+        if end_date:
+            end = end_date if isinstance(end_date, datetime.date) else datetime.date.fromisoformat(end_date)
+            if promo_start > end:
+                return False
+    except ValueError:
+        return True
+    return True
+
+
+def _promotion_matches_sku(promo: dict, sku: str | None) -> bool:
+    if not sku:
+        return True
+    needle = sku.lower()
+    return any(
+        needle in (line.get("sku") or "").lower() or needle in (line.get("product_name") or "").lower()
+        for line in promo.get("skus") or []
+    )
+
+
+def _trim_promotion(promo: dict) -> dict:
+    """
+    Chat-friendly shape -- drops store_id/store_code/store_format/retailer_id
+    and sku price/uom/pack_size/created_at/updated_at, which are
+    dashboard-detail noise the model doesn't need to reason about promotion
+    timing/mechanics/scope.
+    """
+    return {
+        "stores": [
+            {"retailer": store.get("retailer"), "store_name": store.get("store_name")}
+            for store in (promo.get("stores") or [])
+        ],
+        "period_label": promo.get("period_label"),
+        "period_start": promo.get("period_start"),
+        "period_end": promo.get("period_end"),
+        "promo_type": promo.get("promo_type"),
+        "promotion_mechanic": promo.get("promotion_mechanic"),
+        "voucher": promo.get("voucher"),
+        "skus": [f"{line.get('sku_range', '')} {line.get('product_name', '')}".strip() for line in (promo.get("skus") or [])],
+    }
+
+
+def _filter_promotions(
+    promotions: list[dict], customer: str | None, start_date: str | None, end_date: str | None, sku: str | None
+) -> list[dict]:
+    matches = [
+        promo for promo in promotions
+        if _promotion_matches_customer(promo, customer)
+        and _promotion_overlaps_range(promo, start_date, end_date)
+        and _promotion_matches_sku(promo, sku)
+    ]
+    return [_trim_promotion(promo) for promo in matches]
 
 
 def _sales_summary_periods(raw_result) -> list[dict]:
@@ -516,6 +631,28 @@ def _build_chart(chart_sources: list[tuple[str, dict, object]], customer: str) -
                 "table_rows": [
                     [str(r.get("rank", "")), str(r.get("product_name", "")), str(r.get("volume", "")), str(r.get("value", ""))]
                     for r in rows[:10]
+                ],
+            }
+
+    promotion_results = [raw for name, tool_input, raw in chart_sources if name == "get_promotions"]
+    if promotion_results:
+        rows = promotion_results[-1] or []
+        if rows:
+            return {
+                "has_chart": False,
+                "chart_type": "none",
+                "chart_categories": [],
+                "chart_series": [],
+                "has_table": True,
+                "table_columns": ["stores", "period", "type", "mechanic"],
+                "table_rows": [
+                    [
+                        "; ".join(f"{s.get('retailer', '')} - {s.get('store_name', '')}" for s in (p.get("stores") or [])) or "—",
+                        str(p.get("period_label", "")),
+                        str(p.get("promo_type", "")),
+                        str(p.get("promotion_mechanic", "")),
+                    ]
+                    for p in rows[:10]
                 ],
             }
 
@@ -1378,8 +1515,10 @@ never return results from unrelated industries (e.g. networking, IT,
 consumer electronics) even if they rank highly in a generic search.
 
 You have read-only tools over the company's own sales data (get_sales_summary,
-compare_periods, rank_skus, and lookups to resolve names to exact IDs) and
-Google Search grounding for general market/competitor information.
+compare_periods, rank_skus, and lookups to resolve names to exact IDs), a
+separate promotions catalog (get_promotions -- retailer/store(s)/dates/type/
+mechanic/SKUs for actual promotions run, no revenue figures), and Google
+Search grounding for general market/competitor information.
 
 Rules:
 - Only state figures that came back from a tool call. Never estimate,
@@ -1405,15 +1544,21 @@ Rules:
   questions a tool could actually answer.
   BEFORE reasoning, call the relevant data tool(s) first (get_sales_summary/
   compare_periods for the trend shape over the period in question, rank_skus
-  for what's driving it) so you can see what ACTUALLY happened -- which
-  weeks/months were notably higher or lower than the rest, which SKUs or
-  channels moved the most. Anchor every insight to one of those specific,
-  observed data points (e.g. "the dip in Week 21 lines up with Widget A's
-  volume dropping 40% that week") instead of a generic list of possible
-  causes ("seasonality, promotions, economic conditions") that could apply
-  to any business and isn't actually tied to what the data shows. If you
-  genuinely can't find a data-backed pattern to explain something, say that
-  plainly rather than filling the gap with boilerplate reasoning.
+  for what's driving it, get_promotions for the SAME date range to check
+  whether an actual promotion explains a spike or dip) so you can see what
+  ACTUALLY happened -- which weeks/months were notably higher or lower than
+  the rest, which SKUs or channels moved the most, whether a real promotion
+  was running. Anchor every insight to one of those specific, observed data
+  points (e.g. "the spike in April lines up with a 20% off promotion at
+  FairPrice that month" -- a real get_promotions result, not a guess; or
+  "the dip in Week 21 lines up with Widget A's volume dropping 40% that
+  week") instead of a generic list of possible causes ("seasonality,
+  economic conditions") that could apply to any business and isn't
+  actually tied to what the data shows. If get_promotions found nothing
+  for that period, say so plainly rather than still guessing a promotion
+  might have happened. If you genuinely can't find a data-backed pattern
+  to explain something, say that plainly rather than filling the gap with
+  boilerplate reasoning.
 - Keep your answer concise -- it's for a business user skimming on their
   phone, not an analyst reading a report: 1-3 sentences, no bullet lists,
   no exhaustive breakdowns. Lead with the single number/insight that

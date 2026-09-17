@@ -495,8 +495,14 @@ def get_period_comparison(
     # week for the given customer/channel; otherwise current_start/current_end
     # and previous_start/previous_end are used directly, each pair defaulting
     # to the latest week / one calendar month before the current range when
-    # left unset. comparison_type wins if both are somehow supplied — the
-    # frontend only ever sends one or the other.
+    # left unset. Explicit current_start/current_end win if both are somehow
+    # supplied alongside comparison_type -- the dashboard frontend only ever
+    # sends one or the other, but the AI assistant's tool schema documents
+    # comparison_type as something to omit when explicit dates are given, so
+    # a caller (or a model) that sends both gets the dates it actually
+    # specified rather than a silently-substituted preset range (observed
+    # live: "mom" alongside explicit June dates silently produced whatever
+    # the current date's month-to-date happened to be instead of June).
     if comparison_type is not None and comparison_type not in PERIOD_COMPARISON_TYPES:
         raise ValueError(f"comparison_type must be one of {PERIOD_COMPARISON_TYPES}")
     if mode is not None and mode not in DASHBOARD_MODES:
@@ -504,21 +510,10 @@ def get_period_comparison(
 
     retailer = _retailer_for(customer, mode) if mode else None
 
-    if comparison_type:
-        resolved = _resolve_preset_range(comparison_type, retailer)
-        if resolved is None:
-            return _empty_period_comparison()
-        cur_start, cur_end, prev_start, prev_end = resolved
-    else:
-        if current_start and current_end:
-            _validate_date(current_start, "current_start")
-            _validate_date(current_end, "current_end")
-            cur_start, cur_end = pd.Timestamp(current_start), pd.Timestamp(current_end)
-        else:
-            anchor = _latest_week_start(retailer)
-            if anchor is None:
-                return _empty_period_comparison()
-            cur_start, cur_end = anchor, anchor + pd.Timedelta(days=6)
+    if current_start and current_end:
+        _validate_date(current_start, "current_start")
+        _validate_date(current_end, "current_end")
+        cur_start, cur_end = pd.Timestamp(current_start), pd.Timestamp(current_end)
 
         if previous_start and previous_end:
             _validate_date(previous_start, "previous_start")
@@ -527,6 +522,18 @@ def get_period_comparison(
         else:
             prev_start = cur_start - pd.DateOffset(months=1)
             prev_end = cur_end - pd.DateOffset(months=1)
+    elif comparison_type:
+        resolved = _resolve_preset_range(comparison_type, retailer)
+        if resolved is None:
+            return _empty_period_comparison()
+        cur_start, cur_end, prev_start, prev_end = resolved
+    else:
+        anchor = _latest_week_start(retailer)
+        if anchor is None:
+            return _empty_period_comparison()
+        cur_start, cur_end = anchor, anchor + pd.Timedelta(days=6)
+        prev_start = cur_start - pd.DateOffset(months=1)
+        prev_end = cur_end - pd.DateOffset(months=1)
 
     overall_start = min(cur_start, prev_start)
     overall_end = max(cur_end, prev_end)

@@ -1,10 +1,11 @@
 import json
 import base64
+import datetime
 
 import pandas as pd
 import pytest
 
-from app.services import assistant, bigquery
+from app.services import assistant, bigquery, promotion_service
 
 
 # ---- Fakes mirroring just the SDK response shape assistant.py reads --------
@@ -1824,3 +1825,170 @@ def test_export_pdf_with_line_chart_type_still_produces_valid_pdf(monkeypatch):
     assert result["chart_type"] == "line"
     decoded = base64.b64decode(result["download_base64"])
     assert decoded[:4] == b"%PDF"
+
+
+# ---- get_promotions: filtering helpers --------------------------------------
+# A promotion can run at more than one store (a real many-to-many via
+# promotion_stores, confirmed against live data -- 3 of 5 real promotions in
+# the dev DB link to 2 stores each), so `stores` is a list per promotion.
+
+def _sample_promotion(**overrides):
+    promo = {
+        "promotion_id": 1,
+        "period_start": datetime.date(2026, 4, 1),
+        "period_end": datetime.date(2026, 4, 30),
+        "period_label": "Apr 2026",
+        "promo_type": "regular",
+        "promotion_mechanic": "20% off",
+        "voucher": None,
+        "stores": [
+            {"store_id": 1, "store_name": "FairPrice Jurong Point", "store_code": "JP01", "store_format": "Hypermarket", "retailer_id": 1, "retailer": "FairPrice"},
+        ],
+        "skus": [
+            {"sku": "AP-SM-001", "sku_range": "Aire Adult Pants", "product_name": "Aire Adult Pants S/M", "size": "S/M", "brand": "Aire", "uom": "pack", "pack_size": 10, "price": 12.90, "quantity_units": None},
+        ],
+        "created_at": datetime.datetime(2026, 3, 1, 9, 0, 0),
+        "updated_at": datetime.datetime(2026, 3, 1, 9, 0, 0),
+    }
+    promo.update(overrides)
+    return promo
+
+
+def test_promotion_matches_customer_checks_any_linked_store():
+    promo = _sample_promotion(stores=[
+        {"retailer": "FairPrice", "store_name": "Jurong Point"},
+        {"retailer": "ColdStorage", "store_name": "Orchard"},
+    ])
+    assert assistant._promotion_matches_customer(promo, "fairprice") is True
+    assert assistant._promotion_matches_customer(promo, "COLD") is True
+    assert assistant._promotion_matches_customer(promo, "sheng siong") is False
+    assert assistant._promotion_matches_customer(promo, None) is True
+
+
+def test_promotion_overlaps_range():
+    promo = _sample_promotion(period_start=datetime.date(2026, 4, 1), period_end=datetime.date(2026, 4, 30))
+    assert assistant._promotion_overlaps_range(promo, "2026-04-15", "2026-04-20") is True  # fully inside
+    assert assistant._promotion_overlaps_range(promo, "2026-03-01", "2026-04-05") is True  # overlaps start
+    assert assistant._promotion_overlaps_range(promo, "2026-04-25", "2026-05-10") is True  # overlaps end
+    assert assistant._promotion_overlaps_range(promo, "2026-05-01", "2026-05-31") is False  # entirely after
+    assert assistant._promotion_overlaps_range(promo, "2026-01-01", "2026-01-31") is False  # entirely before
+    assert assistant._promotion_overlaps_range(promo, None, None) is True
+
+
+def test_promotion_matches_sku_checks_code_and_product_name():
+    promo = _sample_promotion(skus=[{"sku": "AP-SM-001", "product_name": "Aire Adult Pants S/M"}])
+    assert assistant._promotion_matches_sku(promo, "AP-SM-001") is True
+    assert assistant._promotion_matches_sku(promo, "adult pants") is True
+    assert assistant._promotion_matches_sku(promo, "widget") is False
+    assert assistant._promotion_matches_sku(promo, None) is True
+
+
+def test_trim_promotion_drops_dashboard_detail_noise_and_keeps_all_stores():
+    trimmed = assistant._trim_promotion(_sample_promotion(stores=[
+        {"store_id": 1, "store_code": "JP01", "store_format": "Hypermarket", "retailer_id": 1, "retailer": "FairPrice", "store_name": "Jurong Point"},
+        {"store_id": 2, "store_code": "OR02", "store_format": "Supermarket", "retailer_id": 1, "retailer": "FairPrice", "store_name": "Orchard"},
+    ]))
+    assert "price" not in json.dumps(trimmed, default=str)
+    assert "created_at" not in trimmed
+    assert "updated_at" not in trimmed
+    assert trimmed["stores"] == [
+        {"retailer": "FairPrice", "store_name": "Jurong Point"},
+        {"retailer": "FairPrice", "store_name": "Orchard"},
+    ]
+    assert "store_id" not in trimmed["stores"][0]
+    assert trimmed["skus"] == ["Aire Adult Pants Aire Adult Pants S/M"]
+    assert trimmed["promotion_mechanic"] == "20% off"
+
+
+# ---- get_promotions: ask() integration --------------------------------------
+
+def test_get_promotions_tool_filters_by_customer_and_date_range(monkeypatch):
+    promotions = [
+        _sample_promotion(period_label="Apr 2026", period_start=datetime.date(2026, 4, 1), period_end=datetime.date(2026, 4, 30), stores=[{"retailer": "FairPrice", "store_name": "Jurong Point"}]),
+        _sample_promotion(period_label="Apr 2026", period_start=datetime.date(2026, 4, 1), period_end=datetime.date(2026, 4, 30), stores=[{"retailer": "ColdStorage", "store_name": "Orchard"}]),
+        _sample_promotion(period_label="Jan 2026", period_start=datetime.date(2026, 1, 1), period_end=datetime.date(2026, 1, 31), stores=[{"retailer": "FairPrice", "store_name": "Jurong Point"}]),
+    ]
+    monkeypatch.setattr(promotion_service, "get_promotions", lambda: promotions)
+
+    tool_call = _tool_call_response(("tu_1", "get_promotions", {"customer": "fairprice", "start_date": "2026-04-01", "end_date": "2026-04-30"}))
+    fake_client = _install_fake_client(monkeypatch, [tool_call, _final_answer(text="FairPrice ran a 20% off promotion in April 2026.")])
+
+    result = assistant.ask("what promotions did fairprice run in april 2026?", history=None, customer="fairprice")
+
+    tool_result_message = _dump(fake_client.models.calls[1]["contents"][-1])
+    function_response = json.loads(tool_result_message["parts"][0]["function_response"]["response"]["result"])
+    assert len(function_response) == 1
+    assert function_response[0]["stores"][0]["retailer"] == "FairPrice"
+    assert function_response[0]["period_label"] == "Apr 2026"
+    assert result["has_table"] is True
+    assert result["table_columns"] == ["stores", "period", "type", "mechanic"]
+
+
+def test_get_promotions_tool_empty_result_still_answers(monkeypatch):
+    monkeypatch.setattr(promotion_service, "get_promotions", lambda: [])
+
+    tool_call = _tool_call_response(("tu_1", "get_promotions", {"customer": "fairprice"}))
+    _install_fake_client(monkeypatch, [tool_call, _final_answer(text="No promotions found for FairPrice.")])
+
+    result = assistant.ask("what promotions has fairprice run?", history=None, customer="fairprice")
+
+    assert result["answer"] == "No promotions found for FairPrice."
+    assert result["has_table"] is False
+
+
+def test_get_promotions_tool_db_failure_degrades_gracefully(monkeypatch):
+    def _raise():
+        raise RuntimeError("connection refused")
+    monkeypatch.setattr(promotion_service, "get_promotions", _raise)
+
+    tool_call = _tool_call_response(("tu_1", "get_promotions", {"customer": "fairprice"}))
+    fake_client = _install_fake_client(
+        monkeypatch,
+        [tool_call, _final_answer(grounded=True, data_source="none", text="I couldn't reach the promotions database.")],
+    )
+
+    result = assistant.ask("what promotions has fairprice run?", history=None, customer="fairprice")
+
+    tool_result_message = _dump(fake_client.models.calls[1]["contents"][-1])
+    function_response = tool_result_message["parts"][0]["function_response"]
+    assert "error" in function_response["response"]
+    assert result["answer"] == "I couldn't reach the promotions database."
+
+
+def test_get_promotions_builds_table_with_multiple_stores_joined(monkeypatch):
+    promotions = [_sample_promotion(
+        promo_type="side_offer",
+        promotion_mechanic="Buy 1 Get 1",
+        stores=[
+            {"retailer": "FairPrice", "store_name": "Jurong Point"},
+            {"retailer": "FairPrice", "store_name": "Orchard"},
+        ],
+    )]
+    monkeypatch.setattr(promotion_service, "get_promotions", lambda: promotions)
+
+    tool_call = _tool_call_response(("tu_1", "get_promotions", {"customer": "fairprice"}))
+    _install_fake_client(monkeypatch, [tool_call, _final_answer()])
+
+    result = assistant.ask("what promotions has fairprice run?", history=None, customer="fairprice")
+
+    assert result["has_chart"] is False
+    assert result["has_table"] is True
+    assert result["table_rows"][0] == ["FairPrice - Jurong Point; FairPrice - Orchard", "Apr 2026", "side_offer", "Buy 1 Get 1"]
+
+
+def test_get_promotions_tool_scoped_by_sku(monkeypatch):
+    promotions = [
+        _sample_promotion(skus=[{"sku": "AP-SM-001", "product_name": "Aire Adult Pants S/M"}]),
+        _sample_promotion(skus=[{"sku": "AP-XL-001", "product_name": "Aire Adult Pants XL"}]),
+    ]
+    monkeypatch.setattr(promotion_service, "get_promotions", lambda: promotions)
+
+    tool_call = _tool_call_response(("tu_1", "get_promotions", {"customer": "fairprice", "sku": "XL"}))
+    fake_client = _install_fake_client(monkeypatch, [tool_call, _final_answer()])
+
+    assistant.ask("was the XL pants sku ever on promotion?", history=None, customer="fairprice")
+
+    tool_result_message = _dump(fake_client.models.calls[1]["contents"][-1])
+    function_response = json.loads(tool_result_message["parts"][0]["function_response"]["response"]["result"])
+    assert len(function_response) == 1
+    assert "XL" in function_response[0]["skus"][0]

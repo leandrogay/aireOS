@@ -290,3 +290,27 @@ def test_period_comparison_custom_dates_used_verbatim_when_both_given(monkeypatc
     assert result["current"] == {"start": "2026-08-01", "end": "2026-08-19", "revenue": 0.0, "units": 0.0}
     assert result["previous"]["start"] == "2025-01-01"
     assert result["previous"]["end"] == "2025-01-19"
+
+
+def test_period_comparison_explicit_dates_win_over_comparison_type(monkeypatch):
+    # Regression: the AI assistant's tool schema documents comparison_type
+    # as something to omit when giving explicit dates, but nothing stops a
+    # model from sending both -- observed live, "mom" alongside explicit
+    # June dates silently substituted the auto-derived "month so far" range
+    # (whatever today's date happened to be) instead of June. The dashboard
+    # frontend never sends both (so this doesn't change its behavior), but
+    # a caller that does must get the dates it actually asked for.
+    _fix_anchor(monkeypatch, "2026-08-17")  # if comparison_type won, this anchor would leak into the result
+    _install_fake_bq_client(monkeypatch, _totals_row(current_revenue=33203.84, current_units=3470))
+
+    result = bigquery.get_period_comparison(
+        comparison_type="mom",
+        current_start="2026-06-01",
+        current_end="2026-06-30",
+        mode="offline",
+    )
+
+    assert result["current"]["start"] == "2026-06-01"
+    assert result["current"]["end"] == "2026-06-30"
+    assert result["previous"]["start"] == "2026-05-01"
+    assert result["previous"]["end"] == "2026-05-30"
