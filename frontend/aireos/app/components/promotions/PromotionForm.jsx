@@ -146,7 +146,7 @@ function VoucherField({ value, onChange, error }) {
         onChange={(event) => onChange(event.target.value)}
         className={cn(inputClass, error && invalidInputClass)}
         aria-invalid={Boolean(error)}
-        placeholder="e.g. AIRE25"
+        placeholder="e.g. $3 off $30"
         maxLength={255}
       />
       <FieldError message={error} />

@@ -440,7 +440,7 @@ export default function PromotionList({
           <p className="mt-0.5 text-xs text-deep-violet-blue/70">
             {isLoading
               ? 'Loading promotions…'
-              : `${visible.length} of ${uniquePromotions.length} shown. Matching input combinations are listed once.`}
+              : `${visible.length} of ${uniquePromotions.length} shown.`}
           </p>
         </div>
         <div className="flex items-center gap-2">
