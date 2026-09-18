@@ -1372,6 +1372,32 @@ def test_last_chart_carried_forward_when_no_tool_call_this_turn(monkeypatch):
     assert result["chart_style"]["color"] == "#DC2626"
 
 
+def test_last_chart_not_carried_forward_for_an_off_topic_refusal(monkeypatch):
+    # Regression (found via live testing): "what should I eat for lunch"
+    # also makes no tool call, same as a styling follow-up -- but unlike
+    # "make it red", it has nothing to do with the previous chart, so
+    # carrying it forward showed a misleading graph under an answer that
+    # was actually just a refusal.
+    last_chart = {
+        "has_chart": True, "chart_type": "bar", "chart_categories": ["May 2026"],
+        "chart_series": [{"label": "Revenue", "values": [5473.15]}],
+        "has_table": False, "table_columns": [], "table_rows": [],
+    }
+    _install_fake_client(
+        monkeypatch,
+        [_final_answer(
+            text="I can't help with that -- I can only answer questions about AireOS's sales data.",
+            grounded=True,
+            data_source="none",
+        )],
+    )
+
+    result = assistant.ask("what should i eat for lunch", history=None, customer="fairprice", last_chart=last_chart)
+
+    assert result["has_chart"] is False
+    assert result["chart_categories"] == []
+
+
 def test_last_chart_style_seeds_the_system_prompt(monkeypatch):
     fake_client = _install_fake_client(monkeypatch, [_final_answer()])
 
@@ -1992,3 +2018,166 @@ def test_get_promotions_tool_scoped_by_sku(monkeypatch):
     function_response = json.loads(tool_result_message["parts"][0]["function_response"]["response"]["result"])
     assert len(function_response) == 1
     assert "XL" in function_response[0]["skus"][0]
+
+
+# ---- generate_digest: pure helpers -------------------------------------------
+
+def test_rank_movers_picks_top_n_by_absolute_delta():
+    current = [
+        {"sku": "A", "product_name": "Widget A", "rank": 1},
+        {"sku": "B", "product_name": "Widget B", "rank": 2},
+        {"sku": "C", "product_name": "Widget C", "rank": 3},
+        {"sku": "D", "product_name": "Widget D", "rank": 4},
+    ]
+    previous = [
+        {"sku": "A", "rank": 1},   # no change -- excluded
+        {"sku": "B", "rank": 5},   # moved up 3
+        {"sku": "C", "rank": 2},   # moved down 1
+        {"sku": "D", "rank": 10},  # moved up 6 -- biggest mover
+    ]
+
+    movers = assistant._rank_movers(current, previous, limit=2)
+
+    assert [m["sku"] for m in movers] == ["D", "B"]
+    assert movers[0]["delta"] == 6
+    assert movers[0]["previous_rank"] == 10
+    assert movers[0]["current_rank"] == 4
+
+
+def test_rank_movers_skips_skus_missing_from_either_period():
+    current = [{"sku": "A", "product_name": "Widget A", "rank": 1}]
+    previous = [{"sku": "B", "rank": 1}]  # different SKU entirely
+
+    assert assistant._rank_movers(current, previous) == []
+
+
+def test_promotions_starting_or_ending_soon_windows_by_date_and_customer():
+    today = datetime.date.today()
+    promos = [
+        _sample_promotion(  # starts in 3 days -- within window
+            period_start=today + datetime.timedelta(days=3),
+            period_end=today + datetime.timedelta(days=30),
+            stores=[{"retailer": "FairPrice", "store_name": "Jurong Point"}],
+        ),
+        _sample_promotion(  # ends in 5 days -- within window
+            period_start=today - datetime.timedelta(days=20),
+            period_end=today + datetime.timedelta(days=5),
+            stores=[{"retailer": "FairPrice", "store_name": "Orchard"}],
+        ),
+        _sample_promotion(  # far in the future -- outside the 7-day window
+            period_start=today + datetime.timedelta(days=60),
+            period_end=today + datetime.timedelta(days=90),
+            stores=[{"retailer": "FairPrice", "store_name": "Bedok"}],
+        ),
+        _sample_promotion(  # in window but wrong retailer
+            period_start=today + datetime.timedelta(days=1),
+            period_end=today + datetime.timedelta(days=10),
+            stores=[{"retailer": "ColdStorage", "store_name": "Somewhere"}],
+        ),
+    ]
+
+    result = assistant._promotions_starting_or_ending_soon(promos, "fairprice", days=7)
+
+    stores_seen = {s["store_name"] for p in result for s in p["stores"]}
+    assert stores_seen == {"Jurong Point", "Orchard"}
+
+
+# ---- generate_digest: end-to-end ---------------------------------------------
+
+def _digest_answer(text="- Revenue trend was strong.", follow_ups=None):
+    payload = {
+        "answer": text,
+        "follow_up_prompts": follow_ups or ["What drove this?", "Show me last month too?"],
+    }
+    return FakeResponse(
+        text=json.dumps(payload),
+        content={"role": "model", "parts": [{"text": json.dumps(payload)}]},
+    )
+
+
+def test_generate_digest_builds_chart_from_wow_comparison(monkeypatch):
+    trend = {
+        "current": {"start": "2026-09-08", "end": "2026-09-14", "revenue": 12000.0, "units": 900.0},
+        "previous": {"start": "2026-09-01", "end": "2026-09-07", "revenue": 10000.0, "units": 800.0, "available": True},
+    }
+    monkeypatch.setattr(bigquery, "get_period_comparison", lambda **kwargs: trend)
+    monkeypatch.setattr(bigquery, "get_sku_ranking", lambda **kwargs: pd.DataFrame([]))
+    monkeypatch.setattr(promotion_service, "get_promotions", lambda: [])
+    _install_fake_client(monkeypatch, [_digest_answer()])
+
+    result = assistant.generate_digest(customer="fairprice")
+
+    assert result["has_chart"] is True
+    assert result["chart_categories"] == ["Previous", "Current"]
+    assert result["chart_series"] == [{"label": "Revenue", "values": [10000.0, 12000.0]}]
+    assert result["grounded"] is True
+    assert result["data_source"] == "aire_data"
+    assert result["answer"] == "- Revenue trend was strong."
+
+
+def test_generate_digest_includes_rank_movers_and_promotions_in_facts_sent_to_model(monkeypatch):
+    trend = {
+        "current": {"start": "2026-09-08", "end": "2026-09-14", "revenue": 12000.0, "units": 900.0},
+        "previous": {"start": "2026-09-01", "end": "2026-09-07", "revenue": 10000.0, "units": 800.0, "available": True},
+    }
+    monkeypatch.setattr(bigquery, "get_period_comparison", lambda **kwargs: trend)
+
+    def fake_ranking(**kwargs):
+        if kwargs.get("start_date") == "2026-09-08":
+            return pd.DataFrame([{"sku": "A", "product_name": "Widget A", "rank": 1}])
+        return pd.DataFrame([{"sku": "A", "product_name": "Widget A", "rank": 5}])
+
+    monkeypatch.setattr(bigquery, "get_sku_ranking", fake_ranking)
+
+    today = datetime.date.today()
+    promos = [_sample_promotion(
+        period_start=today + datetime.timedelta(days=1),
+        period_end=today + datetime.timedelta(days=10),
+        promotion_mechanic="20% off",
+        stores=[{"retailer": "FairPrice", "store_name": "Jurong Point"}],
+    )]
+    monkeypatch.setattr(promotion_service, "get_promotions", lambda: promos)
+
+    fake_client = _install_fake_client(monkeypatch, [_digest_answer()])
+
+    assistant.generate_digest(customer="fairprice")
+
+    facts_sent = fake_client.models.calls[0]["contents"][0]["parts"][0]["text"]
+    assert "Widget A" in facts_sent
+    assert "rank 5 -> 1" in facts_sent
+    assert "20% off" in facts_sent
+
+
+def test_generate_digest_promotions_db_failure_degrades_gracefully(monkeypatch):
+    trend = {
+        "current": {"start": None, "end": None, "revenue": 0.0, "units": 0.0},
+        "previous": {"start": None, "end": None, "revenue": 0.0, "units": 0.0, "available": False},
+    }
+    monkeypatch.setattr(bigquery, "get_period_comparison", lambda **kwargs: trend)
+
+    def _raise():
+        raise RuntimeError("connection refused")
+    monkeypatch.setattr(promotion_service, "get_promotions", _raise)
+    _install_fake_client(monkeypatch, [_digest_answer()])
+
+    result = assistant.generate_digest(customer="fairprice")
+
+    assert result["answer"] == "- Revenue trend was strong."
+    assert result["has_chart"] is False
+
+
+def test_generate_digest_refusal_still_returns_a_usable_response(monkeypatch):
+    trend = {
+        "current": {"start": "2026-09-08", "end": "2026-09-14", "revenue": 12000.0, "units": 900.0},
+        "previous": {"start": "2026-09-01", "end": "2026-09-07", "revenue": 10000.0, "units": 800.0, "available": True},
+    }
+    monkeypatch.setattr(bigquery, "get_period_comparison", lambda **kwargs: trend)
+    monkeypatch.setattr(bigquery, "get_sku_ranking", lambda **kwargs: pd.DataFrame([]))
+    monkeypatch.setattr(promotion_service, "get_promotions", lambda: [])
+    blocked = FakeResponse(finish_reason="SAFETY", content={"role": "model", "parts": []})
+    _install_fake_client(monkeypatch, [blocked])
+
+    result = assistant.generate_digest(customer="fairprice")
+
+    assert result["answer"]
+    assert result["has_chart"] is True  # the chart is still built from real data regardless
