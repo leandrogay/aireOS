@@ -17,6 +17,32 @@ import { useCallback, useState } from 'react';
  * a fresh conversation. The widget itself is mounted in app/layout.js (not
  * a page), so this state survives client-side navigation between pages.
  */
+// Shared by askQuestion and askDigest -- both endpoints return the same
+// response shape (see assistant.ask()/generate_digest() in the backend),
+// so both build the same UI-facing message object from it.
+function assistantMessageFromResponse(data) {
+  return {
+    role: 'assistant',
+    text: data.answer,
+    grounded: data.grounded,
+    dataSource: data.data_source,
+    hasChart: data.has_chart,
+    chartType: data.chart_type,
+    chartCategories: data.chart_categories,
+    chartSeries: data.chart_series,
+    hasTable: data.has_table,
+    tableColumns: data.table_columns,
+    tableRows: data.table_rows,
+    followUpPrompts: data.follow_up_prompts || [],
+    hasDownload: data.has_download,
+    downloadFilename: data.download_filename,
+    downloadMimeType: data.download_mime_type,
+    downloadBase64: data.download_base64,
+    chartStyle: data.chart_style,
+    chartTrendValues: data.chart_trend_values || [],
+  };
+}
+
 export default function useAssistant() {
   const [messages, setMessages] = useState([]);
   const [history, setHistory] = useState([]);
@@ -61,29 +87,7 @@ export default function useAssistant() {
         if (!res.ok) throw new Error(data.detail || 'Failed to get an answer');
 
         setHistory(data.messages || []);
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: 'assistant',
-            text: data.answer,
-            grounded: data.grounded,
-            dataSource: data.data_source,
-            hasChart: data.has_chart,
-            chartType: data.chart_type,
-            chartCategories: data.chart_categories,
-            chartSeries: data.chart_series,
-            hasTable: data.has_table,
-            tableColumns: data.table_columns,
-            tableRows: data.table_rows,
-            followUpPrompts: data.follow_up_prompts || [],
-            hasDownload: data.has_download,
-            downloadFilename: data.download_filename,
-            downloadMimeType: data.download_mime_type,
-            downloadBase64: data.download_base64,
-            chartStyle: data.chart_style,
-            chartTrendValues: data.chart_trend_values || [],
-          },
-        ]);
+        setMessages((prev) => [...prev, assistantMessageFromResponse(data)]);
       } catch (err) {
         setError(err.message);
       } finally {
@@ -93,5 +97,31 @@ export default function useAssistant() {
     [history, loading, messages]
   );
 
-  return { messages, askQuestion, loading, error };
+  // Deterministic "what's changed" summary -- unlike askQuestion, there's no
+  // user question to show, and it always starts a fresh conversation (it
+  // doesn't take `history`, matching generate_digest()'s signature backend-side).
+  const askDigest = useCallback(async () => {
+    if (loading) return;
+    setLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/assistant/digest`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Failed to get the digest');
+
+      setHistory(data.messages || []);
+      setMessages((prev) => [...prev, assistantMessageFromResponse(data)]);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [loading]);
+
+  return { messages, askQuestion, askDigest, loading, error };
 }
