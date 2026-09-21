@@ -363,7 +363,7 @@ export default function AssistantWidget() {
                   disabled={loading}
                   className="rounded-full border border-violet bg-white px-2 py-1 text-[11px] text-deep-violet-blue hover:bg-lavander disabled:opacity-50"
                 >
-                  📊 What&apos;s changed?
+                  What&apos;s changed?
                 </button>
               </div>
             )}
