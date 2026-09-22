@@ -21,7 +21,7 @@ for retail sales ingestion, dashboards, and promotion planning, backed by Google
    `_catalog_skus_for_items` are the model).
 3. **Reuse before you write.** Check for an existing helper, hook, primitive, or schema before
    adding one. Existing seams to reuse:
-   - Backend: `_Base` in `app/schemas/catalog.py`, `get_or_create_retailer/store` in
+   - Backend: `_Base` in `app/schemas/catalog.py`, `get_or_create_retailers/stores` in
      `catalog_service.py`, `sql.connect_with_connector*()`, `storage.upload_json/download_json`,
      `_validate_date` in `bigquery.py`.
    - Frontend: `request()`/`parseApiError()` in `app/services/promotionsApi.js`, `cn()` in

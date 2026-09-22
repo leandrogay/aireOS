@@ -1,21 +1,19 @@
+// Base promo types shown in the dropdown. The API's PromoType
+// Literal (backend schemas/promotions.py) is these four plus a
+// `carton_` prefixed copy of each; see composePromoType.
 export const PROMO_TYPES = [
-  { value: 'regular', label: 'Regular' },
-  { value: 'side_offer', label: 'Side offer' },
-  { value: 'carton', label: 'Carton' },
+  { value: 'monthly', label: 'Monthly' },
+  { value: 'side_offer', label: 'Side Offer' },
   { value: 'bundle', label: 'Bundle' },
+  { value: 'others', label: 'Others' },
 ];
 
-export const PROMO_MECHANICS = [
-  'No Promo',
-  '27% Off',
-  '25% Off',
-  '20% Off',
-  '30% Off',
-  '33% Off',
-  'Buy 2 Get 25% Off',
-  'Buy 2 Get 30% Off',
-  'Buy 2 Get 1 Free',
+export const PACK_TYPES = [
+  { value: 'pack', label: 'Pack' },
+  { value: 'carton', label: 'Carton' },
 ];
+
+const CARTON_PREFIX = 'carton_';
 
 export const EMPTY_PROMOTION_FORM = {
   selectedRetailerIds: [],
@@ -23,8 +21,9 @@ export const EMPTY_PROMOTION_FORM = {
   periodStart: '',
   periodEnd: '',
   periodLabel: '',
-  promoType: 'regular',
-  promotionMechanic: PROMO_MECHANICS[0],
+  promoType: 'monthly',
+  packType: 'pack',
+  promotionMechanic: '',
   voucher: '',
   skuRanges: [],
 };
@@ -88,6 +87,17 @@ export function formatVoucher(value) {
 }
 
 /**
+ * Trim promotion_mechanic text for the API. Blank becomes null.
+ *
+ * @param {string | null | undefined} value
+ * @returns {string | null}
+ */
+export function formatPromotionMechanic(value) {
+  const text = String(value ?? '').trim();
+  return text || null;
+}
+
+/**
  * Distinct sku_range labels from GET /api/promotions.skus.
  * A promotion links many product SKUs in a range, so the UI
  * shows each range once.
@@ -138,22 +148,58 @@ export function formFromPromotion(promotion, retailers = []) {
     periodStart: promotion.period_start ? String(promotion.period_start).slice(0, 10) : '',
     periodEnd: promotion.period_end ? String(promotion.period_end).slice(0, 10) : '',
     periodLabel: promotion.period_label ? String(promotion.period_label) : '',
-    promoType: promotion.promo_type || 'regular',
-    promotionMechanic: promotion.promotion_mechanic || PROMO_MECHANICS[0],
+    ...splitPromoType(promotion.promo_type),
+    promotionMechanic: promotion.promotion_mechanic ? String(promotion.promotion_mechanic) : '',
     voucher: promotion.voucher ? String(promotion.voucher) : '',
     skuRanges: uniqueSkuRangeLabels(promotion.skus),
   };
 }
 
 /**
- * Human-readable label for a stored promo_type enum value.
+ * Join the form's base type and pack type into the API's promo_type
+ * value: `monthly` for a pack, `carton_monthly` for a carton.
+ *
+ * @param {string} promoType one of PROMO_TYPES
+ * @param {string} packType one of PACK_TYPES
+ * @returns {string}
+ */
+export function composePromoType(promoType, packType) {
+  if (!promoType) return '';
+  return packType === 'carton' ? `${CARTON_PREFIX}${promoType}` : promoType;
+}
+
+/**
+ * Split a stored promo_type back into the form's two fields.
+ * Unknown values fall back to the blank-form defaults.
+ *
+ * @param {string | null | undefined} value
+ * @returns {{ promoType: string, packType: string }}
+ */
+export function splitPromoType(value) {
+  const raw = String(value || '');
+  const isCarton = raw.startsWith(CARTON_PREFIX);
+  const base = isCarton ? raw.slice(CARTON_PREFIX.length) : raw;
+  const known = PROMO_TYPES.some((item) => item.value === base);
+  return {
+    promoType: known ? base : EMPTY_PROMOTION_FORM.promoType,
+    packType: isCarton ? 'carton' : EMPTY_PROMOTION_FORM.packType,
+  };
+}
+
+/**
+ * Human-readable label for a stored promo_type enum value, e.g.
+ * `carton_side_offer` → `Carton Side Offer`.
  *
  * @param {string | null | undefined} value
  * @returns {string}
  */
 export function promoTypeLabel(value) {
-  const match = PROMO_TYPES.find((item) => item.value === value);
-  return match ? match.label : value || '—';
+  const raw = String(value || '');
+  const isCarton = raw.startsWith(CARTON_PREFIX);
+  const base = isCarton ? raw.slice(CARTON_PREFIX.length) : raw;
+  const match = PROMO_TYPES.find((item) => item.value === base);
+  if (!match) return raw || '—';
+  return isCarton ? `Carton ${match.label}` : match.label;
 }
 
 /**
@@ -405,12 +451,18 @@ export function validatePromotionForm(form, retailers, stores = []) {
     errors.periodLabel = 'Period label must be 100 characters or fewer.';
   }
 
-  if (!form.promoType) {
+  if (!PROMO_TYPES.some((item) => item.value === form.promoType)) {
     errors.promoType = 'Promo type is required.';
   }
+  if (!PACK_TYPES.some((item) => item.value === form.packType)) {
+    errors.packType = 'Choose pack or carton.';
+  }
 
-  if (!form.promotionMechanic) {
-    errors.promotionMechanic = 'Select a promo mechanic.';
+  const promotionMechanic = String(form.promotionMechanic ?? '').trim();
+  if (!promotionMechanic) {
+    errors.promotionMechanic = 'Enter a promo mechanic.';
+  } else if (promotionMechanic.length > 255) {
+    errors.promotionMechanic = 'Promo mechanic must be 255 characters or fewer.';
   }
 
   if (String(form.voucher ?? '').trim().length > 255) {
@@ -458,8 +510,8 @@ export function buildPromotionPayload(form, storeRefs, period) {
       period && Object.prototype.hasOwnProperty.call(period, 'periodLabel')
         ? period.periodLabel
         : formatPeriodLabel(form.periodLabel),
-    promo_type: form.promoType,
-    promotion_mechanic: form.promotionMechanic || null,
+    promo_type: composePromoType(form.promoType, form.packType),
+    promotion_mechanic: formatPromotionMechanic(form.promotionMechanic),
     voucher: formatVoucher(form.voucher),
     skus: form.skuRanges.map((range) => ({
       sku: range,

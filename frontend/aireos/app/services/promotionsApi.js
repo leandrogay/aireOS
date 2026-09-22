@@ -1,14 +1,4 @@
-// ============================================================
-// Backend communication for AO4-1 promotion events.
-// Each exported function is annotated with its HTTP method + endpoint.
-// Promotions live under /api/promotions; the retailer and store
-// lookups they depend on come from the catalog router at /api/catalog.
-// One promotion spans many stores (promotion_stores), so a create is
-// a single POST carrying every ticked retailer/store in `stores`.
-// ============================================================
-
 /**
- * Turn a FastAPI error body into a short string the form can show.
  *
  * FastAPI 422 validation errors return `detail` as an array of
  * `{ loc, msg }` objects. Other failures return `detail` as a string.
