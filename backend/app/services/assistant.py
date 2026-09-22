@@ -402,6 +402,51 @@ def _filter_promotions(
     return [_trim_promotion(promo) for promo in matches]
 
 
+def _promotions_starting_or_ending_soon(promotions: list[dict], customer: str | None, days: int = 7) -> list[dict]:
+    """Used by generate_digest -- promotions worth flagging as upcoming/wrapping up soon."""
+    today = datetime.date.today()
+    horizon = today + datetime.timedelta(days=days)
+    matches = []
+    for promo in promotions:
+        if not _promotion_matches_customer(promo, customer):
+            continue
+        start, end = promo.get("period_start"), promo.get("period_end")
+        if start is None or end is None:
+            continue
+        if (today <= start <= horizon) or (today <= end <= horizon):
+            matches.append(promo)
+    return [_trim_promotion(promo) for promo in matches]
+
+
+def _rank_movers(current_ranks: list[dict], previous_ranks: list[dict], limit: int = 3) -> list[dict]:
+    """
+    Top SKUs by absolute rank change between two rank_skus snapshots for
+    generate_digest, matched by sku code. A SKU present in only one period
+    has no rank delta to compute and is skipped -- a deliberate v1
+    simplification (new/discontinued SKUs aren't flagged as "movers"), not
+    a silent drop.
+    """
+    previous_by_sku = {row.get("sku"): row for row in previous_ranks}
+    movers = []
+    for row in current_ranks:
+        sku = row.get("sku")
+        previous_row = previous_by_sku.get(sku)
+        if previous_row is None:
+            continue
+        delta = previous_row.get("rank", 0) - row.get("rank", 0)
+        if delta == 0:
+            continue
+        movers.append({
+            "sku": sku,
+            "product_name": row.get("product_name"),
+            "current_rank": row.get("rank"),
+            "previous_rank": previous_row.get("rank"),
+            "delta": delta,
+        })
+    movers.sort(key=lambda m: abs(m["delta"]), reverse=True)
+    return movers[:limit]
+
+
 def _sales_summary_periods(raw_result) -> list[dict]:
     """
     Combined (offline + online) revenue per period.
@@ -1619,6 +1664,138 @@ def _serialize_contents(contents: list) -> list[dict]:
     return [c.model_dump(exclude_none=True, mode="json") if hasattr(c, "model_dump") else c for c in contents]
 
 
+# ---- "What's changed?" digest -----------------------------------------------
+
+_DIGEST_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "answer": {"type": "string", "description": "The natural-language summary to show the user."},
+        "follow_up_prompts": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Exactly 2 or 3 short, contextual follow-up questions the user might ask next.",
+        },
+    },
+    "required": ["answer", "follow_up_prompts"],
+    "additionalProperties": False,
+}
+
+
+def _digest_system_prompt() -> str:
+    return """You are summarizing a fixed set of ALREADY-VERIFIED facts about AireOS's
+business (adult incontinence / hygiene care products) for a busy manager
+skimming on their phone.
+
+Rules:
+- State ONLY the figures/facts given in the message below -- never estimate,
+  guess, or add a number that isn't there.
+- One short bullet line per fact, each starting with "- ". 2-4 bullets total.
+  Lead each bullet with the headline number/fact, not a preamble.
+- If a section says there's nothing notable, skip that bullet entirely
+  rather than forcing a mention of "nothing changed."
+- No greeting, no closing sentence -- just the bullets.
+"""
+
+
+def _digest_facts_text(trend: dict, movers: list[dict], upcoming_promotions: list[dict]) -> str:
+    lines = ["Summarize these already-verified facts for the user:"]
+
+    current, previous = trend.get("current") or {}, trend.get("previous") or {}
+    if current.get("start") and previous.get("available"):
+        lines.append(
+            f"- Revenue trend: {current['start']} to {current['end']} was ${current['revenue']:,.2f}, "
+            f"vs {previous['start']} to {previous['end']}'s ${previous['revenue']:,.2f}."
+        )
+    else:
+        lines.append("- Revenue trend: not enough data yet to compare this week to last week.")
+
+    if movers:
+        lines.append("- Biggest SKU rank movers this week vs last week:")
+        for m in movers:
+            direction = "up" if m["delta"] > 0 else "down"
+            lines.append(
+                f"  - {m['product_name']} ({m['sku']}) moved {direction}, "
+                f"rank {m['previous_rank']} -> {m['current_rank']}."
+            )
+    else:
+        lines.append("- No notable SKU rank changes this week vs last week.")
+
+    if upcoming_promotions:
+        lines.append("- Promotions starting or ending within the next 7 days:")
+        for p in upcoming_promotions:
+            stores = ", ".join(f"{s['retailer']} - {s['store_name']}" for s in p.get("stores") or [])
+            lines.append(
+                f"  - {p.get('period_label')} ({p.get('promo_type')}, {p.get('promotion_mechanic')}) "
+                f"at {stores}: {p.get('period_start')} to {p.get('period_end')}."
+            )
+    else:
+        lines.append("- No promotions starting or ending in the next 7 days.")
+
+    return "\n".join(lines)
+
+
+def generate_digest(customer: str) -> dict:
+    """
+    Deterministic "what's changed" summary -- see the module comment above
+    this section for why this deliberately has no tool-calling loop. Returns
+    the same response shape ask() does, so it becomes valid `history` for a
+    natural follow-up question in the same conversation, and the frontend
+    renders it with the components it already has.
+    """
+    client = get_client()
+
+    trend = bigquery.get_period_comparison(comparison_type="wow", customer=customer)
+    trend_chart = _build_chart([("compare_periods", {"comparison_type": "wow"}, trend)], customer)
+
+    movers: list[dict] = []
+    current, previous = trend.get("current") or {}, trend.get("previous") or {}
+    if current.get("start") and previous.get("start"):
+        current_ranks = bigquery.get_sku_ranking(
+            customer=customer, start_date=current["start"], end_date=current["end"]
+        ).to_dict(orient="records")
+        previous_ranks = bigquery.get_sku_ranking(
+            customer=customer, start_date=previous["start"], end_date=previous["end"]
+        ).to_dict(orient="records")
+        movers = _rank_movers(current_ranks, previous_ranks)
+
+    try:
+        promotions = promotion_service.get_promotions()
+        upcoming_promotions = _promotions_starting_or_ending_soon(promotions, customer)
+    except Exception:
+        upcoming_promotions = []
+
+    contents: list = [{"role": "user", "parts": [{"text": _digest_facts_text(trend, movers, upcoming_promotions)}]}]
+    config = types.GenerateContentConfig(
+        system_instruction=_digest_system_prompt(),
+        response_mime_type="application/json",
+        response_json_schema=_DIGEST_SCHEMA,
+    )
+    response = client.models.generate_content(model=MODEL, contents=contents, config=config)
+    candidate = response.candidates[0]
+    contents.append(candidate.content)
+
+    if candidate.finish_reason in _REFUSAL_FINISH_REASONS:
+        parsed = {"answer": "Here's what's changed, though I couldn't fully summarize it this time.", "follow_up_prompts": []}
+    else:
+        try:
+            parsed = json.loads(response.text)
+        except (json.JSONDecodeError, TypeError):
+            parsed = {"answer": "Here's what's changed, though I couldn't fully summarize it this time.", "follow_up_prompts": []}
+
+    return {
+        "answer": parsed.get("answer", ""),
+        "grounded": True,
+        "data_source": "aire_data",
+        "follow_up_prompts": parsed.get("follow_up_prompts") or [],
+        "export_format": "none",
+        "chart_style": dict(_DEFAULT_CHART_STYLE),
+        **trend_chart,
+        "chart_trend_values": [],
+        **_empty_download(),
+        "messages": _serialize_contents(contents),
+    }
+
+
 def ask(
     question: str,
     history: list[dict] | None,
@@ -1716,8 +1893,16 @@ def ask(
                 if reshaped.get("grounded"):
                     parsed = reshaped
 
-    chart = _resolve_last_chart(_build_chart(chart_sources, customer), last_chart)
+    chart = _build_chart(chart_sources, customer)
     parsed = _verify_and_maybe_correct(client, contents, config, parsed, chart, chart_sources)
+
+    # Carrying forward the previous chart is only correct when this turn's
+    # answer is actually about that context (a styling tweak, "why is
+    # that") -- an off-topic refusal ("what should I eat for lunch") also
+    # makes no tool call, but has nothing to do with the old chart, so
+    # showing it there would be actively misleading rather than helpful.
+    if parsed.get("data_source") != "none":
+        chart = _resolve_last_chart(chart, last_chart)
 
     chart_style = _sanitize_chart_style(parsed.get("chart_style"))
     chart = _resolve_chart_type(chart, chart_style)

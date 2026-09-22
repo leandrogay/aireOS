@@ -16,6 +16,10 @@ class AskRequest(BaseModel):
     last_chart_style: dict = {}
 
 
+class DigestRequest(BaseModel):
+    customer: str = bigquery.DEFAULT_CUSTOMER
+
+
 class ExportRequest(BaseModel):
     """
     The always-available PDF/PowerPoint button under any chart/table answer --
@@ -50,6 +54,22 @@ def ask(payload: AskRequest):
         raise HTTPException(status_code=503, detail=str(e))
     except assistant.AssistantLoopError as e:
         raise HTTPException(status_code=502, detail=str(e))
+    except GoogleAPICallError as e:
+        raise HTTPException(status_code=503, detail=f"Unable to reach BigQuery: {e.message}")
+    except genai_errors.ClientError as e:
+        raise HTTPException(status_code=502, detail=f"AI service error: {e.message}")
+    except genai_errors.ServerError as e:
+        raise HTTPException(status_code=503, detail=f"AI service is unavailable right now: {e.message}")
+    except genai_errors.APIError as e:
+        raise HTTPException(status_code=502, detail=f"AI service error: {e.message}")
+
+
+@router.post("/digest")
+def digest(payload: DigestRequest):
+    try:
+        return assistant.generate_digest(customer=payload.customer)
+    except assistant.AssistantConfigError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except GoogleAPICallError as e:
         raise HTTPException(status_code=503, detail=f"Unable to reach BigQuery: {e.message}")
     except genai_errors.ClientError as e:

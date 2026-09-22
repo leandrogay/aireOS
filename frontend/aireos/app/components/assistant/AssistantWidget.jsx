@@ -317,7 +317,7 @@ function AssistantMessage({ message, onFollowUp }) {
 export default function AssistantWidget() {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
-  const { messages, askQuestion, loading, error } = useAssistant();
+  const { messages, askQuestion, askDigest, loading, error } = useAssistant();
   const scrollRef = useRef(null);
 
   useEffect(() => {
@@ -352,10 +352,20 @@ export default function AssistantWidget() {
 
           <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
             {messages.length === 0 && (
-              <p className="text-xs text-deep-violet-blue/60">
-                Ask a plain-English question about your sales data, e.g. &quot;How did revenue do last
-                week?&quot;
-              </p>
+              <div className="space-y-2">
+                <p className="text-xs text-deep-violet-blue/60">
+                  Ask a plain-English question about your sales data, e.g. &quot;How did revenue do last
+                  week?&quot;
+                </p>
+                <button
+                  type="button"
+                  onClick={askDigest}
+                  disabled={loading}
+                  className="rounded-full border border-violet bg-white px-2 py-1 text-[11px] text-deep-violet-blue hover:bg-lavander disabled:opacity-50"
+                >
+                  What&apos;s changed?
+                </button>
+              </div>
             )}
             {messages.map((message, i) => (
               <AssistantMessage key={i} message={message} onFollowUp={askQuestion} />
