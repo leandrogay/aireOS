@@ -21,6 +21,7 @@ app.include_router(mappings.router)
 app.include_router(sales.router)
 app.include_router(catalog.router)
 app.include_router(promotions.router)
+app.include_router(assistant.router)
 
 
 @app.get("/")

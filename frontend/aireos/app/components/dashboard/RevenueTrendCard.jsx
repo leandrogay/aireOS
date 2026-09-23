@@ -1,5 +1,6 @@
 "use client"
 
+import { Loader2 } from "lucide-react"
 import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
@@ -133,6 +134,17 @@ function StackedTotalTooltip({ active, payload, label }) {
   )
 }
 
+// Fixed-height so the card doesn't jump when loading gives way to the chart
+// — matches the chart's own h-[220px].
+function ChartLoading({ label }) {
+  return (
+    <div className="flex h-[220px] w-full flex-col items-center justify-center gap-2 text-deep-violet-blue/60">
+      <Loader2 className="h-6 w-6 animate-spin" />
+      <p className="text-sm">{label}</p>
+    </div>
+  )
+}
+
 // Labels one side of a comparison by whatever unit that comparison type is
 // actually comparing — a WoW bar is one specific week, so it gets that
 // week's real date range; MoM compares whole months, so it gets the month
@@ -231,7 +243,7 @@ export default function RevenueTrendCard({
 
       {comparisonActive ? (
         <>
-          {comparisonLoading && <p className="text-deep-violet-blue/70 text-sm">Loading comparison...</p>}
+          {comparisonLoading && <ChartLoading label="Loading comparison..." />}
           {!comparisonLoading && comparisonResult && (
             <div>
               <ComparisonTrend result={comparisonResult} comparisonType={comparisonType} />
@@ -243,7 +255,7 @@ export default function RevenueTrendCard({
         </>
       ) : (
         <>
-          {loading && <p className="text-deep-violet-blue/70 text-sm">Loading dashboard...</p>}
+          {loading && <ChartLoading label="Loading dashboard..." />}
           {error && <p className="text-red-600 text-sm">{error}</p>}
           {!loading && !error && salesData && (
             <div>

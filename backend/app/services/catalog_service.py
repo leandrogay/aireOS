@@ -52,16 +52,30 @@ def _read_connection() -> Connection:
 # ============================================================
 # RETAILER HELPERS
 #
-# get_or_create_retailer is the seam promotion_service uses:
-# a promotion write names its retailer as free text, so the
-# row has to be created on demand inside that transaction.
+# get_or_create_retailers is the seam promotion_service uses:
+# a promotion write names its retailers as free text, so the
+# rows have to be created on demand inside that transaction.
+#
+# It takes the whole batch at once. Every round trip to Cloud
+# SQL costs ~200ms, so one UPSERT over an unnest()ed array is
+# the difference between one round trip and one per store.
 # ============================================================
 
 
-def get_or_create_retailer(
+def get_or_create_retailers(
     conn: Connection,
-    retailer_name: str,
-) -> int:
+    retailer_names: list[str],
+) -> dict[str, int]:
+    """
+    Upsert every distinct retailer name in one statement and
+    return a name -> retailer_id map for the caller to join on.
+    """
+
+    names = list(dict.fromkeys(retailer_names))
+
+    if not names:
+        return {}
+
     # The DO UPDATE is a deliberate no-op: it exists only so
     # that RETURNING yields a row on conflict. DO NOTHING
     # would return nothing at all.
@@ -70,24 +84,34 @@ def get_or_create_retailer(
         INSERT INTO retailers (
             retailer_name
         )
-        VALUES (
-            :retailer_name
-        )
+        SELECT
+            name
+
+        FROM unnest(
+            CAST(:retailer_names AS text[])
+        ) AS input(name)
 
         ON CONFLICT (retailer_name)
         DO UPDATE SET
             retailer_name = retailers.retailer_name
 
-        RETURNING retailer_id
+        RETURNING
+            retailer_name,
+            retailer_id
         """
     )
 
-    return conn.execute(
+    rows = conn.execute(
         query,
         {
-            "retailer_name": retailer_name,
+            "retailer_names": names,
         },
-    ).scalar_one()
+    ).all()
+
+    return {
+        retailer_name: retailer_id
+        for retailer_name, retailer_id in rows
+    }
 
 
 def _fetch_retailer(
@@ -322,7 +346,7 @@ def delete_retailer(
 # ============================================================
 # STORE HELPERS
 #
-# get_or_create_store is the matching seam for promotion
+# get_or_create_stores is the matching seam for promotion
 # writes; the rest stay private to this module.
 # ============================================================
 
@@ -352,13 +376,24 @@ def _ensure_retailer_exists(
         )
 
 
-def get_or_create_store(
+def get_or_create_stores(
     conn: Connection,
-    retailer_id: int,
-    store_name: str,
-    store_code: str,
-    store_format: str | None = None,
-) -> int:
+    stores: list[dict],
+) -> list[int]:
+    """
+    Upsert a batch of stores in one statement and return their
+    store_ids in the same order as the input.
+
+    Each item is {retailer_id, store_code, store_name,
+    store_format}. The (retailer_id, store_code) pairs must be
+    unique within the batch: Postgres rejects an INSERT that
+    hits the same conflict row twice in one statement, and the
+    request schema already enforces that.
+    """
+
+    if not stores:
+        return []
+
     # On conflict the existing store_name is preserved: a
     # promotion write must not silently rename a store that
     # other promotions also point at.
@@ -367,6 +402,10 @@ def get_or_create_store(
     # fill a gap on a store that has none, but can never
     # overwrite a format already recorded. Use the /stores
     # endpoints to change either field deliberately.
+    #
+    # RETURNING rows are not guaranteed to come back in input
+    # order, so the natural key is returned too and the ids
+    # are re-ordered in Python.
     query = text(
         """
         INSERT INTO stores (
@@ -375,11 +414,22 @@ def get_or_create_store(
             store_name,
             store_format
         )
-        VALUES (
-            :retailer_id,
-            :store_code,
-            :store_name,
-            :store_format
+        SELECT
+            retailer_id,
+            store_code,
+            store_name,
+            store_format
+
+        FROM unnest(
+            CAST(:retailer_ids AS integer[]),
+            CAST(:store_codes AS text[]),
+            CAST(:store_names AS text[]),
+            CAST(:store_formats AS text[])
+        ) AS input(
+            retailer_id,
+            store_code,
+            store_name,
+            store_format
         )
 
         ON CONFLICT (
@@ -393,19 +443,32 @@ def get_or_create_store(
                 EXCLUDED.store_format
             )
 
-        RETURNING store_id
+        RETURNING
+            retailer_id,
+            store_code,
+            store_id
         """
     )
 
-    return conn.execute(
+    rows = conn.execute(
         query,
         {
-            "retailer_id": retailer_id,
-            "store_code": store_code,
-            "store_name": store_name,
-            "store_format": store_format,
+            "retailer_ids": [item["retailer_id"] for item in stores],
+            "store_codes": [item["store_code"] for item in stores],
+            "store_names": [item["store_name"] for item in stores],
+            "store_formats": [item["store_format"] for item in stores],
         },
-    ).scalar_one()
+    ).all()
+
+    id_by_key = {
+        (retailer_id, store_code): store_id
+        for retailer_id, store_code, store_id in rows
+    }
+
+    return [
+        id_by_key[(item["retailer_id"], item["store_code"])]
+        for item in stores
+    ]
 
 
 def _fetch_store(
