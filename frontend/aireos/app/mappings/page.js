@@ -43,7 +43,7 @@ export default function MappingsPage() {
       // A backend that accepts the connection but never answers — a dead uvicorn
       // worker still holding its listen socket, say — would otherwise leave this
       // spinning with nothing on screen to explain it.
-      const response = await fetch(`${backendApiUrl}/api/uploads/mappings`, {
+      const response = await fetch(`${backendApiUrl}/api/mappings`, {
         signal: AbortSignal.timeout(MAPPING_LOAD_TIMEOUT_MS),
       });
       const data = await response.json().catch(() => null);
@@ -112,12 +112,15 @@ export default function MappingsPage() {
 
     try {
       const response = await fetch(
-        `${backendApiUrl}/api/uploads/mappings/${target.fingerprint}/confirm`,
+        `${backendApiUrl}/api/mappings/${target.fingerprint}/confirm`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           // Rules go up, not a contract: the server owns the contract shape and
-          // re-validates it before anything is stored.
+          // re-validates it before anything is stored. Name and vendor are
+          // inherited from the stored mapping — an amendment does not rename
+          // what it amends, and a first approval happens on the review page,
+          // which asks for them.
           body: JSON.stringify({ rules: target.rules }),
         },
       );
@@ -151,7 +154,7 @@ export default function MappingsPage() {
 
     try {
       const response = await fetch(
-        `${backendApiUrl}/api/uploads/mappings/${target.fingerprint}/pending`,
+        `${backendApiUrl}/api/mappings/${target.fingerprint}/pending`,
         { method: 'DELETE' },
       );
       if (!response.ok) {

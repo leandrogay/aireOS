@@ -9,6 +9,7 @@ import { useState } from 'react';
 // nothing is blocked off.
 const NAV_ITEMS = [
   { label: 'Upload', href: '/upload' },
+  { label: 'Mappings', href: '/mappings' },
   { label: 'Dashboard', href: '/dashboard' },
   { label: 'Forecast', href: '/forecast' },
   { label: 'Promotions', href: '/promotions' },
@@ -38,7 +39,9 @@ export default function Sidebar() {
       {!collapsed && (
         <ul className="space-y-1">
           {NAV_ITEMS.map((item) => {
-            const isActive = pathname === item.href;
+            // A detail route (/mappings/abc123) still belongs to its tab.
+            const isActive =
+              pathname === item.href || pathname?.startsWith(`${item.href}/`);
             return (
               <li key={item.label}>
                 <Link

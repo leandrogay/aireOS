@@ -65,45 +65,66 @@ export async function uploadFiles(baseUrl, files, onLog) {
 
 // ========================================
 // API CALL
-// POST /api/uploads/mappings/:fingerprint/confirm
-// Approves a pending mapping. Body is {} to accept as-is, or { contract } to
-// approve an edited contract.
+// GET /api/mappings
+// Every stored mapping in the review shape: the builtin rule set, then
+// confirmed contracts, then proposals awaiting approval.
 // ========================================
-export async function confirmMapping(baseUrl, fingerprint, body, onLog) {
-  return request(
-    baseUrl,
-    `/api/uploads/mappings/${encodeURIComponent(fingerprint)}/confirm`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body || {}),
-      onLog,
-    },
-  );
+export async function listMappings(baseUrl, onLog) {
+  return request(baseUrl, '/api/mappings', { onLog });
 }
 
 // ========================================
 // API CALL
-// DELETE /api/uploads/mappings/:fingerprint/pending
+// POST /api/mappings/:fingerprint/confirm
+// Approves a mapping and saves it for reuse. Body takes { rules } (what the
+// review screen edits), and { name, vendor }, which are required the first
+// time a mapping is approved.
+// ========================================
+export async function confirmMapping(baseUrl, fingerprint, body, onLog) {
+  return request(baseUrl, `/api/mappings/${encodeURIComponent(fingerprint)}/confirm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+    onLog,
+  });
+}
+
+// ========================================
+// API CALL
+// DELETE /api/mappings/:fingerprint/pending
 // Discards a pending proposal so the next upload regenerates it.
 // ========================================
 export async function discardMapping(baseUrl, fingerprint, onLog) {
-  return request(
-    baseUrl,
-    `/api/uploads/mappings/${encodeURIComponent(fingerprint)}/pending`,
-    { method: 'DELETE', onLog },
-  );
+  return request(baseUrl, `/api/mappings/${encodeURIComponent(fingerprint)}/pending`, {
+    method: 'DELETE',
+    onLog,
+  });
 }
 
 // ========================================
 // API CALL
-// GET /api/uploads/mappings/:fingerprint
-// Looks up a stored mapping (confirmed or pending) by fingerprint.
+// GET /api/mappings/:fingerprint
+// One stored mapping (confirmed or pending) in the review shape, plus the raw
+// `contract` it was built from.
 // ========================================
 export async function lookupMapping(baseUrl, fingerprint, onLog) {
-  return request(
-    baseUrl,
-    `/api/uploads/mappings/${encodeURIComponent(fingerprint)}`,
-    { method: 'GET', onLog },
-  );
+  return request(baseUrl, `/api/mappings/${encodeURIComponent(fingerprint)}`, {
+    method: 'GET',
+    onLog,
+  });
+}
+
+// ========================================
+// API CALL
+// POST /api/mappings/:fingerprint/preview
+// Runs the mapping's example file through a set of rules and returns a few
+// output rows. Pass the edited rules to see a change before approving it.
+// ========================================
+export async function previewMapping(baseUrl, fingerprint, body, onLog) {
+  return request(baseUrl, `/api/mappings/${encodeURIComponent(fingerprint)}/preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+    onLog,
+  });
 }
