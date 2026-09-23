@@ -1,12 +1,12 @@
 // ============================================================
-// All backend communication for the mapping harness lives here.
+// All backend communication for the mapping review screens lives here.
 // Each exported function is annotated with its HTTP method + endpoint.
 // ============================================================
 
-// Shared fetch wrapper — mirrors the harness's api() helper: logs the request,
-// parses the body as JSON when possible, and throws an Error carrying
-// { status, data } so callers can surface server-provided detail. `onLog` is
-// the log callback from MappingHarness (kind: 'req' | 'res' | 'er').
+// Shared fetch wrapper: parses the body as JSON when possible, and throws an
+// Error carrying { status, data } so callers can surface server-provided
+// detail. `onLog`, when passed, is called with (kind, text) where kind is
+// 'req' | 'res' | 'er'.
 async function request(baseUrl, path, { method = 'GET', body, headers, onLog } = {}) {
   const url = `${baseUrl}${path}`;
   onLog?.('req', `${method} ${url}`);
@@ -50,17 +50,6 @@ async function request(baseUrl, path, { method = 'GET', body, headers, onLog } =
     }
     throw error;
   }
-}
-
-// ========================================
-// API CALL
-// POST /api/uploads
-// Uploads one or more source files as multipart/form-data (field name "files").
-// ========================================
-export async function uploadFiles(baseUrl, files, onLog) {
-  const formData = new FormData();
-  files.forEach((file) => formData.append('files', file));
-  return request(baseUrl, '/api/uploads', { method: 'POST', body: formData, onLog });
 }
 
 // ========================================
