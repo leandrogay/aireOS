@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app import config  # noqa: F401
-from app.routers import sales, uploads, mappings, promotions, catalog
+from app.routers import sales, uploads, mappings, promotions, catalog, assistant
 
 app = FastAPI()
 
