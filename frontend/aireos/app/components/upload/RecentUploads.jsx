@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import RefreshButton from '@/components/ui/RefreshButton';
 import StatusBadge from '../ui/StatusBadge';
 
 // The mapping status recorded on each blob at upload time, as something a
@@ -27,15 +28,12 @@ export default function RecentUploads({ uploads, isLoading, error, onRefresh }) 
     <section className="rounded-xl border border-lavander bg-white p-6 shadow-sm">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h2 className="font-serif text-xl text-deep-violet-blue">Recent uploads</h2>
-        <button
-          type="button"
+        <RefreshButton
           onClick={onRefresh}
-          disabled={isLoading}
-          className="rounded-md border border-violet bg-white px-3 py-1.5 text-xs font-medium text-deep-violet-blue transition hover:bg-lavander disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {isLoading ? 'Loading…' : 'Refresh'}
-        </button> 
-        {/* change with the new incoming refresh button in main */}
+          isRefreshing={isLoading}
+          label="Refresh uploads"
+          className="rounded-md border-violet bg-white text-deep-violet-blue hover:bg-lavander"
+        />
       </div>
 
       {error && (
