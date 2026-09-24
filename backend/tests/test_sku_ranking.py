@@ -3,7 +3,26 @@ import datetime
 import pandas as pd
 import pytest
 
-from app.services import bigquery
+from app.services import bigquery, sellout_lookup
+
+
+@pytest.fixture(autouse=True)
+def _fake_catalog(monkeypatch):
+    # The table only has ids/codes; serve a tiny in-memory catalog so nothing
+    # reaches Cloud SQL (55/57 are the real fairprice online/offline ids).
+    sellout_lookup.reset_cache()
+    monkeypatch.setattr(
+        sellout_lookup,
+        "_load",
+        lambda: {
+            "retailer_ids": {"fairprice_online": 55, "fairprice_offline": 57},
+            "retailer_names": {55: "fairprice_online", 57: "fairprice_offline"},
+            "stores": {},
+            "skus": {"A": {"product_name": "Aire Adult Pants S/M", "sku_range": None, "size": None}},
+        },
+    )
+    yield
+    sellout_lookup.reset_cache()
 
 
 class FakeQueryJob:
@@ -141,10 +160,11 @@ def test_mode_filter_scopes_to_single_retailer(monkeypatch):
 
     bigquery.get_sku_ranking(mode="offline", customer="fairprice")
 
-    assert "retailer = @retailer" in fake_client.last_query
-    assert "UNNEST" not in fake_client.last_query
+    # The table stores retailer_id, so the channel name is resolved to its id
+    # (57 = fairprice_offline in the fake catalog) before querying.
+    assert "retailer_id IN UNNEST(@retailer_ids)" in fake_client.last_query
     params = _params_by_name(fake_client.last_job_config)
-    assert params["retailer"].value == "fairprice_offline"
+    assert list(params["retailer_ids"].values) == [57]
 
 
 def test_no_mode_scopes_to_both_channels(monkeypatch):
@@ -153,9 +173,28 @@ def test_no_mode_scopes_to_both_channels(monkeypatch):
 
     bigquery.get_sku_ranking(mode=None, customer="fairprice")
 
-    assert "retailer IN UNNEST(@retailers)" in fake_client.last_query
+    assert "retailer_id IN UNNEST(@retailer_ids)" in fake_client.last_query
     params = _params_by_name(fake_client.last_job_config)
-    assert set(params["retailers"].values) == {"fairprice_offline", "fairprice_online"}
+    assert set(params["retailer_ids"].values) == {55, 57}
+
+
+def test_unknown_customer_matches_no_retailer_ids(monkeypatch):
+    fake_client = _install_fake_client(monkeypatch, pd.DataFrame(columns=["sku", "volume", "value"]))
+
+    bigquery.get_sku_ranking(mode=None, customer="not-a-customer")
+
+    params = _params_by_name(fake_client.last_job_config)
+    assert list(params["retailer_ids"].values) == []
+
+
+def test_product_name_comes_from_the_catalog_not_the_table(monkeypatch):
+    # The table only has sku codes; "A" is in the fake catalog, "ZZZ" is not.
+    df = pd.DataFrame({"sku": ["A", "ZZZ"], "volume": [10, 5], "value": [100.0, 50.0]})
+    _install_fake_client(monkeypatch, df)
+
+    result = bigquery.get_sku_ranking()
+
+    assert list(result["product_name"]) == ["Aire Adult Pants S/M", "ZZZ"]  # unknown sku falls back to its code
 
 
 def test_store_filter_adds_equality_parameter(monkeypatch):

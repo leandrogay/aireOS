@@ -5,7 +5,7 @@ import datetime
 import pandas as pd
 import pytest
 
-from app.services import assistant, bigquery, promotion_service
+from app.services import assistant, bigquery, promotion_service, sellout_lookup
 
 
 # ---- Fakes mirroring just the SDK response shape assistant.py reads --------
@@ -2181,3 +2181,27 @@ def test_generate_digest_refusal_still_returns_a_usable_response(monkeypatch):
 
     assert result["answer"]
     assert result["has_chart"] is True  # the chart is still built from real data regardless
+
+
+# ---- catalog outage inside a sales tool --------------------------------------------
+
+def test_sales_tool_catalog_outage_becomes_a_tool_error_not_a_crash(monkeypatch):
+    # Sell-out rows are labelled from the Cloud SQL catalog, so an outage there
+    # can now fail a sales tool -- the model should be told, like any other
+    # tool failure, and the turn should still produce an answer.
+    def _outage(**kwargs):
+        raise sellout_lookup.CatalogUnavailableError("OperationalError: connection refused")
+
+    monkeypatch.setattr(bigquery, "get_dashboard_summary", _outage)
+
+    tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"granularity": "week"}))
+    fake_client = _install_fake_client(
+        monkeypatch,
+        [tool_call, _final_answer(grounded=True, data_source="none", text="I couldn't load the sales data right now.")],
+    )
+
+    result = assistant.ask("how is revenue trending?", history=None, customer="fairprice")
+
+    function_response = _dump(fake_client.models.calls[1]["contents"][-1])["parts"][0]["function_response"]
+    assert "catalog" in function_response["response"]["error"]
+    assert result["answer"] == "I couldn't load the sales data right now."
