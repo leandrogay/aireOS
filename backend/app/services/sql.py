@@ -10,7 +10,7 @@ from google.oauth2 import service_account
 from sqlalchemy.engine import Engine
 
 
-ENV_PATH = Path(__file__).resolve().parents[2]
+ENV_PATH = Path(__file__).resolve().parents[2] / ".env.backend"
 load_dotenv(ENV_PATH)
 
 

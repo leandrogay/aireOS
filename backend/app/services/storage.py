@@ -10,7 +10,7 @@ from google.cloud import storage
 from google.oauth2 import service_account
 from google.api_core import exceptions as gcloud_exceptions
 
-# Resolve .env.local from the project root rather than the current working
+# Resolve .env.backend from the backend folder rather than the current working
 # directory, so the app behaves the same however it is launched.
 ENV_PATH = Path(__file__).resolve().parents[2] / ".env.backend"
 load_dotenv(ENV_PATH)
