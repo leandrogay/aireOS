@@ -242,6 +242,32 @@ def test_period_comparison_reports_unavailable_when_previous_has_no_rows(monkeyp
     assert result["previous"]["available"] is False
 
 
+def test_period_comparison_handles_null_previous_row_count(monkeypatch):
+    # Regression: BigQuery's SUM(IF(...)) returns NULL (not 0) when a
+    # scoped query -- e.g. compare_periods filtered to one store with no
+    # prior-period sales at all -- matches zero rows. pandas surfaces that
+    # as a nullable NA, and `bool(NA > 0)` raises TypeError ("boolean value
+    # of NA is ambiguous") rather than evaluating to False.
+    _fix_anchor(monkeypatch, "2026-08-17")
+    df = pd.DataFrame(
+        [
+            {
+                "current_revenue": 100.0,
+                "current_units": 5.0,
+                "previous_revenue": pd.NA,
+                "previous_units": pd.NA,
+                "previous_row_count": pd.NA,
+            }
+        ]
+    )
+    _install_fake_bq_client(monkeypatch, df)
+
+    result = bigquery.get_period_comparison(comparison_type="wow", mode="offline", store="S999")
+
+    assert result["previous"]["available"] is False
+    assert result["previous"]["revenue"] == 0.0
+
+
 def test_period_comparison_custom_dates_default_previous_to_one_month_back(monkeypatch):
     _install_fake_bq_client(monkeypatch, _totals_row())
 
@@ -264,3 +290,27 @@ def test_period_comparison_custom_dates_used_verbatim_when_both_given(monkeypatc
     assert result["current"] == {"start": "2026-08-01", "end": "2026-08-19", "revenue": 0.0, "units": 0.0}
     assert result["previous"]["start"] == "2025-01-01"
     assert result["previous"]["end"] == "2025-01-19"
+
+
+def test_period_comparison_explicit_dates_win_over_comparison_type(monkeypatch):
+    # Regression: the AI assistant's tool schema documents comparison_type
+    # as something to omit when giving explicit dates, but nothing stops a
+    # model from sending both -- observed live, "mom" alongside explicit
+    # June dates silently substituted the auto-derived "month so far" range
+    # (whatever today's date happened to be) instead of June. The dashboard
+    # frontend never sends both (so this doesn't change its behavior), but
+    # a caller that does must get the dates it actually asked for.
+    _fix_anchor(monkeypatch, "2026-08-17")  # if comparison_type won, this anchor would leak into the result
+    _install_fake_bq_client(monkeypatch, _totals_row(current_revenue=33203.84, current_units=3470))
+
+    result = bigquery.get_period_comparison(
+        comparison_type="mom",
+        current_start="2026-06-01",
+        current_end="2026-06-30",
+        mode="offline",
+    )
+
+    assert result["current"]["start"] == "2026-06-01"
+    assert result["current"]["end"] == "2026-06-30"
+    assert result["previous"]["start"] == "2026-05-01"
+    assert result["previous"]["end"] == "2026-05-30"

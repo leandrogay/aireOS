@@ -15,9 +15,11 @@ new UI consistent with what's already here.
 ## 1. Use the primitives instead of hand-rolled Tailwind
 
 Reusable UI primitives already exist in `app/components/ui/`: `Button`, `Card`
-(+ `CardHeader`/`CardTitle`/`CardContent`/etc.), `Tabs`, `Chart`. Use these
-instead of writing a new `<button className="...">` or `<div className="bg-white
-border rounded-lg p-5">` by hand.
+(+ `CardHeader`/`CardTitle`/`CardContent`/etc.), `Tabs`, `Chart`,
+`DateRangePicker`, `RefreshButton` (spinning reload icon — pass the page's
+loading flag as `isRefreshing`). Use these instead of writing a new
+`<button className="...">` or `<div className="bg-white border rounded-lg p-5">`
+by hand.
 
 ```jsx
 // Don't
