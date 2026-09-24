@@ -4,9 +4,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 
-// Every tab links to a real (currently placeholder, for Forecast/Promotions/
-// Inventory — see app/forecast, app/promotions, app/inventory) page, so
-// nothing is blocked off.
+// Every tab links to a real page so nothing is blocked off. Promotions and
+// Inventory are still placeholders (app/promotions, app/inventory).
 const NAV_ITEMS = [
   { label: 'Upload', href: '/upload' },
   { label: 'Dashboard', href: '/dashboard' },

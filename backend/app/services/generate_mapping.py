@@ -29,7 +29,7 @@ from anthropic import Anthropic
 
 from app.services import storage
 
-ENV_PATH = Path(__file__).resolve().parents[2] / ".env.local"
+ENV_PATH = Path(__file__).resolve().parents[2] / ".env.backend"
 load_dotenv(ENV_PATH)
 
 MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")

@@ -14,6 +14,26 @@ DEFAULT_CUSTOMER = "fairprice" # Fallback when no customer is supplied
 
 # Read-only reference data
 BQFairprice_TABLE = os.environ.get("BQ_FAIRPRICESELLOUT_TABLE", "aire-data.Aire_Data.aireOS_fairprice")
+BQ_FORECAST_TABLE = os.environ.get(
+    "BQ_FORECAST_TABLE",
+    "aire-data.Aire_Data.forecasting_output_xianhui_mock",
+)
+
+FORECAST_COLUMNS = [
+    "month_year",
+    "forecast_generated_at",
+    "customer_id",
+    "customer_name",
+    "product_name",
+    "promo_type",
+    "promotion_mechanic",
+    "period_label",
+    "voucher",
+    "quantity_units",
+    "predicted_quantity_units",
+    "revenue",
+    "predicted_revenue",
+]
 
 def get_bigquery_client(project="aire-data") -> bigquery.Client:
     return bigquery.Client(project=project)
@@ -576,4 +596,129 @@ def get_period_comparison(
             "units": _num(row["previous_units"]) if row is not None else 0.0,
             "available": bool(row["previous_row_count"] > 0) if row is not None else False,
         },
+    }
+
+
+def _iso_date(value) -> str | None:
+    if value is None or pd.isna(value):
+        return None
+    if hasattr(value, "strftime"):
+        return value.strftime("%Y-%m-%d")
+    return str(value)[:10]
+
+
+def _json_number(value):
+    if value is None or pd.isna(value):
+        return None
+    return float(value)
+
+
+def _json_int(value):
+    if value is None or pd.isna(value):
+        return None
+    return int(value)
+
+
+def _json_str(value):
+    if value is None or pd.isna(value):
+        return None
+    text = str(value).strip()
+    if not text or text.lower() == "nan":
+        return None
+    return text
+
+
+def _forecast_row(record: dict) -> dict:
+    return {
+        "month_year": _iso_date(record.get("month_year")),
+        "forecast_generated_at": _iso_date(record.get("forecast_generated_at")),
+        "customer_id": _json_int(record.get("customer_id")),
+        "customer_name": record.get("customer_name"),
+        "product_name": record.get("product_name"),
+        "promo_type": _json_str(record.get("promo_type")),
+        "promotion_mechanic": _json_str(record.get("promotion_mechanic")),
+        "period_label": _json_str(record.get("period_label")),
+        "voucher": _json_str(record.get("voucher")),
+        "quantity_units": _json_number(record.get("quantity_units")),
+        "predicted_quantity_units": _json_number(record.get("predicted_quantity_units")),
+        "revenue": _json_number(record.get("revenue")),
+        "predicted_revenue": _json_number(record.get("predicted_revenue")),
+    }
+
+
+def get_forecast_rows(
+    product_name: str | None = None,
+    customer_name: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> list[dict]:
+    _validate_date(start_date, "start_date")
+    _validate_date(end_date, "end_date")
+
+    where_clauses = ["1 = 1"]
+    query_parameters = []
+    if product_name:
+        where_clauses.append("product_name = @product_name")
+        query_parameters.append(
+            bigquery.ScalarQueryParameter("product_name", "STRING", product_name)
+        )
+    if customer_name:
+        where_clauses.append("customer_name = @customer_name")
+        query_parameters.append(
+            bigquery.ScalarQueryParameter("customer_name", "STRING", customer_name)
+        )
+    if start_date:
+        where_clauses.append("month_year >= @start_date")
+        query_parameters.append(
+            bigquery.ScalarQueryParameter("start_date", "DATE", start_date)
+        )
+    if end_date:
+        where_clauses.append("month_year <= @end_date")
+        query_parameters.append(
+            bigquery.ScalarQueryParameter("end_date", "DATE", end_date)
+        )
+
+    query = f"""
+        SELECT
+          {", ".join(FORECAST_COLUMNS)}
+        FROM `{BQ_FORECAST_TABLE}`
+        WHERE {" AND ".join(where_clauses)}
+        ORDER BY customer_name, product_name, month_year, forecast_generated_at
+    """
+    job_config = bigquery.QueryJobConfig(query_parameters=query_parameters)
+    client = get_bigquery_client()
+    df = client.query(query, job_config=job_config).result().to_dataframe()
+    if df.empty:
+        return []
+    return [_forecast_row(record) for record in df.to_dict(orient="records")]
+
+
+def get_forecast_options() -> dict:
+    query = f"""
+        SELECT
+          product_name,
+          customer_name,
+          month_year
+        FROM `{BQ_FORECAST_TABLE}`
+    """
+    client = get_bigquery_client()
+    df = client.query(query).result().to_dataframe()
+    if df.empty:
+        return {
+            "products": [],
+            "customers": [],
+            "start_date": None,
+            "end_date": None,
+        }
+
+    months = df["month_year"].dropna()
+    return {
+        "products": sorted(
+            {name for name in df["product_name"].dropna().tolist() if name}
+        ),
+        "customers": sorted(
+            {name for name in df["customer_name"].dropna().tolist() if name}
+        ),
+        "start_date": _iso_date(months.min()) if not months.empty else None,
+        "end_date": _iso_date(months.max()) if not months.empty else None,
     }

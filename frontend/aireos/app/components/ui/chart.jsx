@@ -108,6 +108,8 @@ function ChartTooltipContent({
   labelFormatter,
   labelClassName,
   formatter,
+  valueFormatter,
+  footer,
   color,
   nameKey,
   labelKey
@@ -204,7 +206,7 @@ function ChartTooltipContent({
                     )}
                     <div
                       className={cn(
-                        "flex flex-1 justify-between leading-none",
+                        "flex flex-1 justify-between gap-3 leading-none",
                         nestLabel ? "items-end" : "items-center"
                       )}>
                       <div className="grid gap-1.5">
@@ -215,9 +217,11 @@ function ChartTooltipContent({
                       </div>
                       {item.value != null && (
                         <span className="font-mono font-medium text-foreground tabular-nums">
-                          {typeof item.value === "number"
-                            ? item.value.toLocaleString()
-                            : String(item.value)}
+                          {valueFormatter
+                            ? valueFormatter(item.value, item, payload)
+                            : typeof item.value === "number"
+                              ? item.value.toLocaleString()
+                              : String(item.value)}
                         </span>
                       )}
                     </div>
@@ -227,6 +231,7 @@ function ChartTooltipContent({
             );
           })}
       </div>
+      {footer ? (typeof footer === "function" ? footer(payload) : footer) : null}
     </div>
   );
 }
