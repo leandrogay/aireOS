@@ -54,7 +54,7 @@ export function validateInventoryForm(form, { isEdit = false, now = new Date() }
   if (!/^\d{4}-\d{2}$/.test(form.month)) {
     errors.month = 'Choose a month.';
   } else if (form.month >= currentMonthInput(now)) {
-    errors.month = 'That month has not ended yet. Use Shipped so far for sell-in already sent this month.';
+    errors.month = 'That month has not ended yet. Use Temporary sell-in for sell-in already sent this month.';
   }
   if (!isQuantity(form.sellIn)) {
     errors.sellIn = 'Enter sell-in as a whole number of 0 or more.';
@@ -98,20 +98,21 @@ export function formFromRow(row) {
 }
 
 // ============================================================
-// Shipped so far form
+// Temporary sell-in form
 // ============================================================
 
 export const EMPTY_SHIPPED_FORM = { customerIds: [], sku: '', month: '', shippedSoFar: '' };
 
 /**
- * Shipped so far is for the month in progress or later, so a month that has
- * already ended is refused here (it belongs in the actuals form).
+ * Temporary sell-in is for a month that has no actuals yet. That is decided by
+ * the data, not the calendar: a month can be over and still have no actuals
+ * entered (August, with actuals only to July), so it is still allowed here. The
+ * server refuses a month that already has actuals for the SKU.
  *
  * @param {typeof EMPTY_SHIPPED_FORM} form
- * @param {{ now?: Date }} [options]
  * @returns {Record<string, string>} field name -> message; empty when valid
  */
-export function validateShippedForm(form, { now = new Date() } = {}) {
+export function validateShippedForm(form) {
   const errors = {};
 
   if (form.customerIds.length === 0) {
@@ -122,11 +123,9 @@ export function validateShippedForm(form, { now = new Date() } = {}) {
   }
   if (!/^\d{4}-\d{2}$/.test(form.month)) {
     errors.month = 'Choose a month.';
-  } else if (form.month < currentMonthInput(now)) {
-    errors.month = 'That month has already ended. Enter its real sell-in and sell-out under Create or Edit.';
   }
   if (!isQuantity(form.shippedSoFar)) {
-    errors.shippedSoFar = 'Enter the units shipped so far as a whole number of 0 or more.';
+    errors.shippedSoFar = 'Enter the temporary sell-in as a whole number of 0 or more.';
   }
 
   return errors;

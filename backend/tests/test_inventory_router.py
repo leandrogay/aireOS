@@ -97,8 +97,8 @@ def test_an_unexpected_failure_is_a_500_that_names_the_cause(monkeypatch, url, f
 def test_sell_in_plan_passes_the_month_count_to_the_service(monkeypatch):
     seen = {}
 
-    def fake(customer_id, months):
-        seen.update(customer_id=customer_id, months=months)
+    def fake(customer_id, months, skus):
+        seen.update(customer_id=customer_id, months=months, skus=skus)
         return {"rows": []}
 
     monkeypatch.setattr(inventory_service, "get_sell_in_plan", fake)
@@ -106,7 +106,7 @@ def test_sell_in_plan_passes_the_month_count_to_the_service(monkeypatch):
     response = client.get("/api/inventory/customers/1/sell-in-plan?months=3")
 
     assert response.status_code == 200
-    assert seen == {"customer_id": 1, "months": 3}
+    assert seen == {"customer_id": 1, "months": 3, "skus": None}
 
 
 @pytest.mark.parametrize("months", [0, 13, "abc"])
@@ -454,3 +454,16 @@ def test_sell_out_is_not_something_a_record_can_carry(monkeypatch):
 
     assert "sell_out_base" not in seen["fields"]
     assert "sell_out_building_blocks" not in seen["fields"]
+
+
+def test_sell_in_plan_passes_the_chosen_skus_to_the_service(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(
+        inventory_service,
+        "get_sell_in_plan",
+        lambda customer_id, months, skus: seen.update(skus=skus) or {"rows": []},
+    )
+
+    client.get("/api/inventory/customers/1/sell-in-plan?sku=A1&sku=B2")
+
+    assert seen["skus"] == ["A1", "B2"]

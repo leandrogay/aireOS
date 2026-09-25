@@ -144,7 +144,7 @@ export default function InventoryRecordForm({ mode, initialForm, customers, skus
           <option value="">Select a SKU…</option>
           {skus.map((s) => (
             <option key={s.sku} value={s.sku}>
-              {s.product_name} ({s.sku})
+              {s.product_name}
             </option>
           ))}
         </select>
@@ -166,11 +166,11 @@ export default function InventoryRecordForm({ mode, initialForm, customers, skus
         {errors.month ? (
           <p className={errorClass} role="alert">{errors.month}</p>
         ) : (
-          <p className={hintClass}>Finished months only. For this month use Shipped so far.</p>
+          <p className={hintClass}>Finished months only. For this month use Temporary sell-in.</p>
         )}
       </label>
 
-      {numberField('sellIn', 'Sell-in (units received)', {
+      {numberField('sellIn', 'Sell-in (units received for the full month)', {
         hint: 'The total for the whole month, including any shipped mid-month.',
       })}
       {numberField('openingInventory', 'Opening inventory', {

@@ -63,7 +63,7 @@ class InventoryRecordUpdate(InventoryRecordBase):
 
 
 # ============================================================
-# SHIPPED SO FAR
+# TEMPORARY SELL-IN (field name shipped_so_far)
 #
 # Sell-in already sent in a month that has not ended. Used only by the
 # sell-in plan; the finished month's actuals go through InventoryRecord*.

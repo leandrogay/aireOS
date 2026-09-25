@@ -62,7 +62,7 @@ export default function ShippedSoFarForm({ customers, skus, onSaved }) {
     setSubmitting(true);
     try {
       await setShippedSoFar(buildShippedPayload(form));
-      onSaved('Shipped so far saved. The sell-in plan now counts it.');
+      onSaved('Temporary sell-in saved. The sell-in plan now counts it.');
     } catch (err) {
       setSubmitError(err.message);
     } finally {
@@ -110,7 +110,7 @@ export default function ShippedSoFarForm({ customers, skus, onSaved }) {
           <option value="">Select a SKU…</option>
           {skus.map((s) => (
             <option key={s.sku} value={s.sku}>
-              {s.product_name} ({s.sku})
+              {s.product_name}
             </option>
           ))}
         </select>
@@ -133,7 +133,7 @@ export default function ShippedSoFarForm({ customers, skus, onSaved }) {
 
       <label>
         <span className={labelClass}>
-          Shipped so far (units)<span className="text-red-700"> *</span>
+          Temporary sell-in (units)<span className="text-red-700"> *</span>
         </span>
         <input
           type="text"
@@ -158,7 +158,7 @@ export default function ShippedSoFarForm({ customers, skus, onSaved }) {
 
       <div className="sm:col-span-2">
         <Button type="submit" disabled={submitting}>
-          {submitting ? 'Saving…' : 'Save shipped so far'}
+          {submitting ? 'Saving…' : 'Save temporary sell-in'}
         </Button>
       </div>
     </form>

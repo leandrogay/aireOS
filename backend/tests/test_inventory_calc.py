@@ -1,3 +1,4 @@
+import pytest
 from datetime import date
 
 from app.services import inventory_calc as calc
@@ -227,42 +228,45 @@ def test_status_is_none_without_a_doh():
 
 # ---- sell-in plan -----------------------------------------------------------------
 
-# Aug (31d) 310, Sep (30d) 300, Oct (31d) 310: 920 units over 92 days = 10 a day.
-FORECAST = {D(2026, 8): 310.0, D(2026, 9): 300.0, D(2026, 10): 310.0}
+# Aug 310, Sep 300 (30d), Oct 310 (31d), Nov 300 (30d): Sep-Nov is 910 units over 91 days = 10 a day.
+FORECAST = {D(2026, 8): 310.0, D(2026, 9): 300.0, D(2026, 10): 310.0, D(2026, 11): 300.0}
 
 
-def _plan(opening, forecast=FORECAST, months=3, target=31, first=D(2026, 8), shipped=None):
-    return calc.build_sell_in_plan(opening, first, months, forecast, lambda month: target, shipped)
+def _plan(opening, forecast=FORECAST, months=3, target=10, first=D(2026, 8), shipped=None, pack_size=1):
+    return calc.build_sell_in_plan(
+        opening, first, months, forecast, lambda month: target, shipped, pack_size=pack_size
+    )
 
 
-def test_the_daily_rate_includes_the_month_being_planned():
-    assert calc.forecast_daily_from(FORECAST, D(2026, 8)) == 10  # Aug + Sep + Oct
-    assert calc.forecast_daily_from(FORECAST, D(2026, 9)) == (300 + 310) / 61  # Sep + Oct only
+def test_the_daily_rate_looks_at_the_months_after_the_one_being_planned():
+    assert calc.forward_forecast_daily(FORECAST, D(2026, 8)) == 10  # Sep + Oct + Nov, not August
 
 
 def test_the_daily_rate_ignores_months_with_no_forecast():
-    assert calc.forecast_daily_from({D(2026, 8): 310.0}, D(2026, 8)) == 10
+    assert calc.forward_forecast_daily(FORECAST, D(2026, 10)) == 300 / 30  # only November follows
+
+
+def test_the_last_forecast_month_uses_its_own_rate():
+    assert calc.forward_forecast_daily({D(2026, 8): 310.0}, D(2026, 8)) == 10
 
 
 def test_no_forecast_means_no_daily_rate():
-    assert calc.forecast_daily_from({}, D(2026, 8)) is None
+    assert calc.forward_forecast_daily({}, D(2026, 8)) is None
 
 
-def test_sell_in_tops_stock_up_to_the_target_days_from_the_start_of_the_month():
-    # 31 days x 10 a day = 310 needed; 50 in hand -> sell in 260.
+def test_sell_in_covers_the_months_sales_and_leaves_the_stock_needed_at_month_end():
+    # 310 to sell in August, 10 days x 10 a day = 100 to hold at the end; 50 in hand.
     august = _plan(50)[0]
 
-    assert august["stock_needed"] == 310
-    assert august["recommended_sell_in"] == 260
-    assert august["stock_after_sell_in"] == 310
-    assert august["doh_before_sell_in"] == 5  # 50 units at 10 a day, before the sell-in arrives
+    assert august["stock_needed"] == 100
+    assert august["recommended_sell_in"] == 360  # 310 + 100 - 50
+    assert august["projected_ending_stock"] == 100
 
 
-def test_the_month_end_stock_is_what_is_left_after_the_months_sales():
+def test_days_of_holding_after_sell_in_is_measured_at_month_end():
     august = _plan(50)[0]
 
-    assert august["projected_ending_stock"] == 0  # 310 in stock, 310 forecast to sell
-    assert august["shortfall"] == 0
+    assert august["doh_after_sell_in"] == 10  # the 100 left at month end, at 10 a day
 
 
 def test_stock_already_above_the_need_recommends_zero_and_keeps_the_surplus():
@@ -270,6 +274,7 @@ def test_stock_already_above_the_need_recommends_zero_and_keeps_the_surplus():
 
     assert august["recommended_sell_in"] == 0
     assert august["projected_ending_stock"] == 690
+    assert august["doh_after_sell_in"] == 69
 
 
 def test_recommended_sell_in_is_never_negative():
@@ -277,26 +282,15 @@ def test_recommended_sell_in_is_never_negative():
 
 
 def test_recommended_sell_in_is_rounded_up_to_whole_units():
-    forecast = {D(2026, 8): 310.5, D(2026, 9): 300.0, D(2026, 10): 310.0}
+    forecast = {**FORECAST, D(2026, 8): 310.5}
 
     august = _plan(50, forecast)[0]
 
-    assert august["recommended_sell_in"] == 261  # 31 x 10.0054 = 310.17, less 50 = 260.17
+    assert august["recommended_sell_in"] == 361  # 310.5 + 100 - 50 = 360.5
 
 
-def test_a_target_shorter_than_the_month_leaves_a_shortfall_not_negative_stock():
-    # 10 days of stock (100) cannot cover a 310-unit month.
-    august = _plan(0, target=10)[0]
-
-    assert august["recommended_sell_in"] == 100
-    assert august["projected_ending_stock"] == 0
-    assert august["shortfall"] == 210
-
-
-def test_a_shortfall_is_not_carried_into_the_next_month():
-    rows = _plan(0, target=10)
-
-    assert rows[1]["opening_stock"] == 0
+def test_a_month_never_projects_negative_stock():
+    assert all(row["projected_ending_stock"] >= 0 for row in _plan(0))
 
 
 def test_each_month_opens_at_the_previous_projected_ending_stock():
@@ -330,27 +324,27 @@ def test_no_forecast_at_all_gives_an_empty_plan():
     assert _plan(100, {}) == []
 
 
-# ---- sell-in plan: shipped so far -----------------------------------------------------
+# ---- sell-in plan: temporary sell-in --------------------------------------------------
 
 
-def test_sell_in_already_shipped_is_taken_off_what_is_still_recommended():
+def test_sell_in_already_sent_is_taken_off_what_is_recommended():
     august = _plan(50, shipped={D(2026, 8): 60.0})[0]
 
     assert august["shipped_so_far"] == 60
-    assert august["recommended_sell_in"] == 200  # 310 needed - 50 in hand - 60 already sent
+    assert august["recommended_sell_in"] == 300  # 360 needed in total, 60 already sent
 
 
-def test_shipped_units_count_towards_the_stock_after_sell_in():
+def test_temporary_sell_in_counts_towards_the_projected_ending_stock():
     august = _plan(50, shipped={D(2026, 8): 60.0})[0]
 
-    assert august["stock_after_sell_in"] == 310  # 50 + 60 + 200, still on target
+    assert august["projected_ending_stock"] == 100  # 50 + 60 + 300 - 310, still on target
 
 
-def test_more_shipped_than_needed_recommends_zero_and_keeps_the_surplus():
+def test_more_sent_than_needed_recommends_zero_and_keeps_the_surplus():
     august = _plan(50, shipped={D(2026, 8): 500.0})[0]
 
     assert august["recommended_sell_in"] == 0
-    assert august["projected_ending_stock"] == 240  # 550 in stock, 310 sold
+    assert august["projected_ending_stock"] == 240  # 50 + 500 - 310
 
 
 def test_a_shipment_in_one_month_carries_into_the_next_months_opening():
@@ -359,19 +353,63 @@ def test_a_shipment_in_one_month_carries_into_the_next_months_opening():
     assert rows[1]["opening_stock"] == 240
 
 
-def test_without_shipments_the_plan_is_unchanged():
+def test_without_temporary_sell_in_the_plan_is_unchanged():
     assert _plan(50, shipped={}) == _plan(50)
     assert _plan(50)[0]["shipped_so_far"] == 0
 
 
-def test_days_of_cover_before_sell_in_counts_what_is_already_shipped():
-    august = _plan(50, shipped={D(2026, 8): 60.0})[0]
-
-    assert august["doh_before_sell_in"] == 11  # (50 + 60) units at 10 a day
+# ---- sell-in plan: whole cartons --------------------------------------------------------
 
 
-def test_days_of_cover_before_sell_in_can_be_above_the_target():
-    august = _plan(1000)[0]
+@pytest.mark.parametrize(
+    "product, sku_range, expected",
+    [
+        ("Aire Adult Pants L", "Aire Adult Diaper Pants", 8),
+        ("Aire Ultra Pants XL", "Aire Adult Diaper Ultra Pants", 8),
+        ("Aire Ultra Tape S/M", "Aire Adult Diaper Ultra Tape", 12),
+        ("Aire Ultra Tape XL", None, 12),
+        ("Aire Wipes", None, 1),
+    ],
+)
+def test_pack_size_follows_the_product_type(product, sku_range, expected):
+    assert calc.pack_size_for(product, sku_range) == expected
 
-    assert august["doh_before_sell_in"] == 100
-    assert august["recommended_sell_in"] == 0
+
+def test_recommended_sell_in_is_rounded_up_to_a_multiple_of_the_pack_size():
+    # 310 + 100 - 51 = 359 needed; the next multiple of 8 is 360.
+    august = _plan(51, pack_size=8)[0]
+
+    assert august["recommended_sell_in"] == 360
+    assert august["recommended_sell_in"] % 8 == 0
+
+
+def test_tape_rounds_up_to_twelves():
+    # 310 + 100 - 53 = 357 needed; the next multiple of 12 is 360.
+    august = _plan(53, pack_size=12)[0]
+
+    assert august["recommended_sell_in"] == 360
+
+
+def test_a_quantity_already_on_a_multiple_is_not_rounded_further():
+    assert _plan(50, pack_size=8)[0]["recommended_sell_in"] == 360  # 360 needed, 45 cartons of 8
+
+
+def test_rounding_up_leaves_the_month_slightly_above_the_target():
+    august = _plan(53, pack_size=12)[0]
+
+    assert august["projected_ending_stock"] == 103  # 53 + 360 - 310, against 100 needed
+
+
+def test_no_sell_in_stays_zero_when_stock_is_enough():
+    assert _plan(1000, pack_size=8)[0]["recommended_sell_in"] == 0
+
+
+def test_the_plan_reports_the_pack_size_it_used():
+    assert _plan(50, pack_size=12)[0]["pack_size"] == 12
+
+
+def test_temporary_sell_in_is_taken_off_before_rounding():
+    # 360 needed - 60 sent = 300; the next multiple of 8 is 304.
+    august = _plan(50, shipped={D(2026, 8): 60.0}, pack_size=8)[0]
+
+    assert august["recommended_sell_in"] == 304

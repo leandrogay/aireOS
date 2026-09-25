@@ -181,9 +181,10 @@ def get_customer_view(
 def get_sell_in_plan(
     customer_id: int,
     months: int = Query(default=6, ge=1, le=12),
+    sku: list[str] | None = Query(default=None),
 ):
     try:
-        return inventory_service.get_sell_in_plan(customer_id, months=months)
+        return inventory_service.get_sell_in_plan(customer_id, months=months, skus=sku)
 
     except inventory_service.CustomerNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -282,7 +283,7 @@ def set_shipped_so_far(update: ShippedSoFarUpdate):
         raise HTTPException(
             status_code=500,
             detail=(
-                f"Failed to save shipped so far: "
+                f"Failed to save temporary sell-in: "
                 f"{type(e).__name__}: {e}"
             ),
         )

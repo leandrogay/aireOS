@@ -1,9 +1,9 @@
 'use client';
 
-import CheckboxDropdown from '@/app/components/promotions/CheckboxDropdown';
 import { Button } from '@/components/ui/button';
 
-import { checkRowClass, inputClass, labelClass } from './formStyles';
+import SkuDropdown from './SkuDropdown';
+import { inputClass, labelClass } from './formStyles';
 
 /**
  * SKU multi-select and month range shared by the overview and the customer
@@ -42,36 +42,9 @@ export default function InventoryFilters({
 }) {
   const hasFilters = skus.length > 0 || startMonth || endMonth || status || atRiskOnly;
 
-  function toggleSku(sku) {
-    onSkusChange(skus.includes(sku) ? skus.filter((s) => s !== sku) : [...skus, sku]);
-  }
-
   return (
     <div className="mb-3 flex flex-wrap items-end gap-3">
-      <div className="w-56">
-        <span className={labelClass}>SKU</span>
-        <CheckboxDropdown
-          summary={skus.length ? `${skus.length} selected` : 'All SKUs'}
-          searchable
-          searchPlaceholder="Search SKUs…"
-        >
-          {(query) =>
-            skuOptions
-              .filter((o) => `${o.product_name} ${o.sku}`.toLowerCase().includes(query.toLowerCase()))
-              .map((option) => (
-                <label key={option.sku} className={checkRowClass}>
-                  <input
-                    type="checkbox"
-                    checked={skus.includes(option.sku)}
-                    onChange={() => toggleSku(option.sku)}
-                    className="size-3.5 accent-deep-violet-blue"
-                  />
-                  <span className="min-w-0 truncate">{option.product_name}</span>
-                </label>
-              ))
-          }
-        </CheckboxDropdown>
-      </div>
+      <SkuDropdown skuOptions={skuOptions} skus={skus} onChange={onSkusChange} />
 
       <label className="w-40">
         <span className={labelClass}>From month</span>

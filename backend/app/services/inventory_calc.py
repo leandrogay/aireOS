@@ -17,6 +17,11 @@ DOH_WINDOW_MONTHS = 3
 # How many future months the sell-in plan covers by default.
 SELL_IN_PLAN_MONTHS = 6
 
+# Sell-in goes out in whole cartons: pants (adult and ultra) come 8 to a carton
+# and tape 12 to a carton, so the plan recommends multiples of these.
+PACK_SIZE_PANTS = 8
+PACK_SIZE_TAPE = 12
+
 DOH_STATUS_BELOW_MIN = "below_min"
 DOH_STATUS_WITHIN = "within"
 DOH_STATUS_ABOVE_MAX = "above_max"
@@ -200,42 +205,63 @@ def threshold_status(doh: float | None, target: float) -> str | None:
 # ============================================================
 # Sell-in plan
 #
-# Works out how much sell-in each month needs so the customer holds the
-# target DOH from the start of that month, counting the month itself:
+# Works out how much sell-in each month needs. The sell-in lands during the
+# month it is shown against, and the month is left holding the target DOH:
 #
-#   daily rate      = forecast units of months m, m+1, m+2 / days in those months
-#   stock needed    = target DOH x daily rate
-#   sell-in (m)     = max(0, round up(stock needed - opening(m) - shipped so far))
-#   ending stock(m) = max(0, opening(m) + shipped + sell-in - forecast(m))
+#   daily rate      = forecast units of months m+1, m+2, m+3 / days in those months
+#   stock needed    = target DOH x daily rate          (stock to hold at the END of m)
+#   sell-in (m)     = max(0, forecast(m) + stock needed - opening(m)
+#                                - temporary sell-in), rounded UP to whole cartons
+#   ending stock(m) = opening(m) + temporary sell-in + sell-in - forecast(m)
 #   opening(m+1)    = ending stock(m)
 #
-# "Shipped so far" is sell-in already sent in a month that has not ended
-# yet, so the recommendation is what is left to send. Stock cannot go
-# below zero: forecast sales the stock cannot cover are reported as a
-# shortfall and are not carried into the next month.
+# forecast(m) is in the sell-in because month m's own sales use up stock
+# before the month ends. "Temporary sell-in" (shipped_so_far) is sell-in
+# already sent in a month that has not ended yet, so the recommendation is
+# what is left to send. A month that already holds enough recommends 0 and
+# simply ends above the target.
 # ============================================================
 
 
-def forecast_daily_from(
+def pack_size_for(product_name: str, sku_range: str | None = None) -> int:
+    """
+    Units per carton for a product, from its name or range: tape is 12, pants
+    (adult or ultra) are 8. A product that is neither is not rounded (1).
+    """
+
+    text = f"{sku_range or ''} {product_name}".lower()
+    if "tape" in text:
+        return PACK_SIZE_TAPE
+    if "pants" in text:
+        return PACK_SIZE_PANTS
+    return 1
+
+
+def forward_forecast_daily(
     forecast_by_month: dict[date, float],
     month: date,
     window: int = DOH_WINDOW_MONTHS,
 ) -> float | None:
     """
-    Forecast units per day over `month` and the `window - 1` months after it
-    (months with no forecast are left out of both the units and the day
-    count). None when none of them is forecast.
+    Forecast units per day over the `window` months after `month`. When none
+    of those months is forecast, the month's own forecast rate is used instead
+    so the last forecast month can still be planned. None when there is no
+    forecast for the month or the months after it.
     """
 
     units = 0.0
     days = 0
-    for offset in range(window):
+    for offset in range(1, window + 1):
         target = add_months(month, offset)
         if target in forecast_by_month:
             units += forecast_by_month[target]
             days += days_in_month(target)
 
-    return units / days if days else None
+    if days > 0:
+        return units / days
+    if month in forecast_by_month:
+        return forecast_by_month[month] / days_in_month(month)
+    return None
 
 
 def build_sell_in_plan(
@@ -245,15 +271,18 @@ def build_sell_in_plan(
     forecast_by_month: dict[date, float],
     target_doh_for_month,
     shipped_by_month: dict[date, float] | None = None,
+    pack_size: int = 1,
 ) -> list[dict]:
     """
     Month-by-month plan for one SKU starting at `first_month` with
     `opening_stock` (its last actual ending stock). `target_doh_for_month`
     is called with each month and returns that month's target DOH.
-    `shipped_by_month` holds sell-in already sent for months that have not
-    ended; it counts towards the month's stock and is taken off what is
-    still recommended. The plan stops at the first month with no forecast,
-    since nothing can be projected past it.
+    `shipped_by_month` holds temporary sell-in: units already sent for months
+    that have not ended, counted towards the month's stock and taken off the
+    recommendation. The recommendation is rounded up to a multiple of
+    `pack_size` (units per carton), so the month can end a little above the
+    target. The plan stops at the first month with no forecast, since nothing
+    can be projected past it.
     """
 
     shipped_by_month = shipped_by_month or {}
@@ -266,14 +295,15 @@ def build_sell_in_plan(
             break
 
         forecast = forecast_by_month[month]
-        daily = forecast_daily_from(forecast_by_month, month)
+        daily = forward_forecast_daily(forecast_by_month, month)
         target = target_doh_for_month(month)
         stock_needed = target * daily
 
         shipped = shipped_by_month.get(month, 0.0)
-        recommended = max(0, ceil(stock_needed - opening - shipped - 1e-9))
+        needed_units = forecast + stock_needed - opening - shipped
+        recommended = max(0, ceil(needed_units / pack_size - 1e-9)) * pack_size
         stock_after = opening + shipped + recommended
-        ending = max(0.0, stock_after - forecast)
+        ending = stock_after - forecast
 
         rows.append(
             {
@@ -283,12 +313,12 @@ def build_sell_in_plan(
                 "shipped_so_far": round(shipped, 2),
                 "stock_needed": round(stock_needed, 2),
                 "recommended_sell_in": recommended,
+                "pack_size": pack_size,
                 "stock_after_sell_in": round(stock_after, 2),
                 "projected_ending_stock": round(ending, 2),
-                "shortfall": round(max(0.0, forecast - stock_after), 2),
-                # Days of cover the customer has at the start of the month, before
-                # this month's recommended sell-in (anything already shipped counts).
-                "doh_before_sell_in": None if not daily else round((opening + shipped) / daily, 1),
+                # Days of cover left at the end of the month, once the sell-in has
+                # arrived and the month's sales are done.
+                "doh_after_sell_in": None if not daily else round(ending / daily, 1),
                 "target_doh": target,
             }
         )

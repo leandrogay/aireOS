@@ -95,7 +95,9 @@ export default function InventoryTabs() {
 
       {tab === 'risk' && <AtRiskView customers={options.customers} refreshKey={refreshKey} />}
 
-      {tab === 'plan' && <SellInPlanView customers={options.customers} refreshKey={refreshKey} />}
+      {tab === 'plan' && (
+        <SellInPlanView customers={options.customers} skuOptions={skuOptions} refreshKey={refreshKey} />
+      )}
 
       {tab === 'manage' && (
         <InventoryDataManager

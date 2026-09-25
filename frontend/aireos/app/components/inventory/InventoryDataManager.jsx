@@ -16,8 +16,8 @@ import ShippedSoFarForm from './ShippedSoFarForm';
 import { cardClass, checkRowClass, errorClass, inputClass, labelClass } from './formStyles';
 
 /**
- * Create or edit inventory data, or record what has been shipped so far this
- * month (Shipped so far: sell-in already sent for a month that has not ended,
+ * Create or edit inventory data, or record temporary sell-in for this month
+ * (Temporary sell-in: sell-in already sent for a month that has not ended,
  * used only by the sell-in plan). Create and Edit are for finished months. Edit starts either from a table row (its
  * Edit button passes `editRow`) or from a picker here: choose the customer,
  * SKU and month, and the existing record is loaded into the form.
@@ -64,7 +64,7 @@ export default function InventoryDataManager({ customers, skus, editRow, onSaved
           Edit
         </Button>
         <Button variant={mode === 'shipped' ? 'default' : 'outline'} size="sm" onClick={() => switchMode('shipped')}>
-          Shipped so far
+          Temporary Sell-in
         </Button>
       </div>
 
@@ -196,7 +196,7 @@ function RecordPicker({ customers, skus, onLoaded }) {
           <option value="">Select…</option>
           {skus.map((s) => (
             <option key={s.sku} value={s.sku}>
-              {s.product_name} ({s.sku})
+              {s.product_name}
             </option>
           ))}
         </select>

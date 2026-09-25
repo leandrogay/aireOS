@@ -30,7 +30,7 @@ export default function InventoryToast({ toast, onDismiss }) {
       role="status"
       aria-live="polite"
       className={cn(
-        'fixed bottom-4 right-4 z-50 max-w-sm rounded-lg border px-4 py-3 text-sm shadow-lg',
+        'fixed right-4 top-4 z-50 max-w-sm rounded-lg border px-4 py-3 text-sm shadow-lg',
         toast.type === 'error'
           ? 'border-red-300 bg-red-50 text-red-800'
           : 'border-deep-violet-blue bg-deep-violet-blue text-white',

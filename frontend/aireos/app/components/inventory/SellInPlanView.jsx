@@ -7,6 +7,7 @@ import { formatDoh, formatMonth, formatUnits } from '@/app/utils/inventoryForm';
 
 import SellInDetailTable from './SellInPlanTable';
 import SellInPlanChart from './SellInPlanChart';
+import SkuDropdown from './SkuDropdown';
 import { cardClass, inputClass, labelClass } from './formStyles';
 
 const MONTH_CHOICES = [3, 6, 12];
@@ -43,11 +44,13 @@ function startsFromText(lastActualBySku) {
  *
  * @param {object} props
  * @param {Array<{ customer_id: number, customer_name: string }>} props.customers
+ * @param {Array<{ sku: string, product_name: string }>} props.skuOptions
  * @param {number} props.refreshKey bumped after a create/edit or threshold change
  */
-export default function SellInPlanView({ customers, refreshKey }) {
+export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
   const [customerId, setCustomerId] = useState(null);
   const [months, setMonths] = useState(6);
+  const [skus, setSkus] = useState([]);
 
   // Adjust state during render: pick the first customer once the list arrives,
   // so the view is never empty by default. Runs only while nothing is chosen.
@@ -55,7 +58,7 @@ export default function SellInPlanView({ customers, refreshKey }) {
     setCustomerId(customers[0].customer_id);
   }
 
-  const { data, loading, error } = useSellInPlan({ customerId, months, refreshKey });
+  const { data, loading, error } = useSellInPlan({ customerId, months, skus, refreshKey });
   const grandTotal = data ? data.monthly_totals.reduce((sum, t) => sum + t.recommended_sell_in, 0) : 0;
 
   return (
@@ -75,6 +78,8 @@ export default function SellInPlanView({ customers, refreshKey }) {
             ))}
           </select>
         </label>
+
+        <SkuDropdown skuOptions={skuOptions} skus={skus} onChange={setSkus} />
 
         <label className="w-40">
           <span className={labelClass}>Months ahead</span>
@@ -110,9 +115,10 @@ export default function SellInPlanView({ customers, refreshKey }) {
               Recommended sell-in: {formatUnits(grandTotal)} units over {data.monthly_totals.length} months
             </h2>
             <p className="mb-2 text-xs text-deep-violet-blue/60">
-              Tops each SKU up to the stock needed for the target DOH from the start of the month, counting that month
-              and the next two, minus the stock on hand and anything already shipped. Sent stock mid-month? Record it
-              under Enter / edit data, then Shipped so far.
+              Each month&apos;s sell-in covers that month&apos;s forecast sales and leaves the stock needed for the target DOH
+              at the end of the month, minus the stock on hand and any temporary sell-in. Recommended sell-in is rounded
+              up to whole cartons: multiples of 8 for pants and 12 for tape. Sent stock mid-month? Record it
+              under Enter / edit data, then Temporary sell-in.
             </p>
             <SellInPlanChart totals={data.monthly_totals} />
           </section>

@@ -157,7 +157,7 @@ def list_skus() -> list[dict]:
 # and any manual entries). Reads take one value per customer, SKU,
 # month and metric: a manual entry beats the workbook, then the
 # newest as_of_date, then the newest load. A sell_in row marked
-# manual_plan is "shipped so far" (see the sell-in plan below), not an
+# manual_plan is "temporary sell-in" (see the sell-in plan below), not an
 # actual, so it is left out of every actuals read.
 # ============================================================
 
@@ -922,8 +922,8 @@ def get_at_risk(
 # SELL-IN PLAN (one customer)
 #
 # Projects each SKU forward from its last actual ending stock using the
-# forecast sell-out, and recommends the sell-in that gives the customer the
-# target DOH from the start of each month, counting that month (rule in
+# forecast sell-out, and recommends the sell-in that leaves the customer at
+# the target DOH at the end of each month (rule in
 # inventory_calc.build_sell_in_plan).
 # ============================================================
 
@@ -932,14 +932,17 @@ def get_sell_in_plan(
     customer_id: int,
     months: int = inventory_calc.SELL_IN_PLAN_MONTHS,
     today: date | None = None,
+    skus: list[str] | None = None,
 ) -> dict:
     """
-    Recommended sell-in per SKU and future month for one customer, with the
+    Recommended sell-in per SKU and future month for one customer (in whole
+    cartons: 8 for pants, 12 for tape), with the
     totals per month and per SKU that an order to the factory is built from.
     Each SKU plans `months` months from the month after its own last actual
     month, on that SKU's own ending stock, so entering actuals for only some
     SKUs moves only those. A SKU with no forecast for its start month cannot be
-    planned and is listed in skus_without_forecast instead.
+    planned and is listed in skus_without_forecast instead. `skus` narrows the
+    plan to those SKUs; the monthly totals then cover only them.
     """
 
     today = today or date.today()
@@ -979,6 +982,7 @@ def get_sell_in_plan(
     rows = []
     without_forecast = []
     for sku, (last_month, ending_stock) in last_actual.items():
+        sku_cols = _sku_columns(sku, details)
         plan = inventory_calc.build_sell_in_plan(
             ending_stock,
             inventory_calc.add_months(last_month, 1),
@@ -986,13 +990,17 @@ def get_sell_in_plan(
             forecast.get(sku, {}),
             target_for,
             shipped.get(sku, {}),
+            pack_size=inventory_calc.pack_size_for(sku_cols["product_name"], sku_cols["sku_range"]),
         )
-        sku_cols = _sku_columns(sku, details)
         if not plan:
             without_forecast.append(sku_cols)
             continue
         for row in plan:
             rows.append({**sku_cols, **row, "month": _iso(row["month"])})
+
+    if skus:
+        rows = [row for row in rows if row["sku"] in skus]
+        without_forecast = [cols for cols in without_forecast if cols["sku"] in skus]
 
     rows.sort(key=lambda r: (r["month"], r["product_name"]))
 
@@ -1021,14 +1029,12 @@ def _sum_by(rows: list[dict], key: str) -> list[dict]:
                 "shipped_so_far": 0.0,
                 "recommended_sell_in": 0,
                 "projected_ending_stock": 0.0,
-                "shortfall": 0.0,
             },
         )
         entry["forecast_sell_out"] += row["forecast_sell_out"]
         entry["shipped_so_far"] += row["shipped_so_far"]
         entry["recommended_sell_in"] += row["recommended_sell_in"]
         entry["projected_ending_stock"] += row["projected_ending_stock"]
-        entry["shortfall"] += row["shortfall"]
 
     return [
         {
@@ -1036,7 +1042,6 @@ def _sum_by(rows: list[dict], key: str) -> list[dict]:
             "forecast_sell_out": round(entry["forecast_sell_out"], 2),
             "shipped_so_far": round(entry["shipped_so_far"], 2),
             "projected_ending_stock": round(entry["projected_ending_stock"], 2),
-            "shortfall": round(entry["shortfall"], 2),
         }
         for entry in sorted(totals.values(), key=lambda e: e[key])
     ]
@@ -1218,25 +1223,34 @@ def _require_sellout_coverage(conn: Connection, record) -> None:
             )
 
 
+def _product_name(conn: Connection, sku: str) -> str:
+    """The catalog's product name for a SKU code, for messages people read."""
+
+    row = conn.execute(text("SELECT product_name FROM skus WHERE sku = :sku"), {"sku": sku}).first()
+    if row is None:
+        raise SkuNotFoundError(f"SKU {sku} is not in the catalog.")
+    return row[0] or sku
+
+
 def _validate_record_target(
     conn: Connection, record, customers: dict[int, str], today: date
-) -> set[int]:
-    """Checks shared by create and edit; returns the customers that already have this month."""
+) -> tuple[set[int], str]:
+    """
+    Checks shared by create and edit; returns the customers that already have
+    this month and the product's name for messages.
+    """
 
     _require_customers(customers, record.customer_ids)
 
     if _month_end(record.month) >= today:
         raise ValueError(
             f"{record.month:%B %Y} has not ended yet, and actuals can only be entered for a "
-            "finished month. Use Shipped so far to record sell-in already sent this month."
+            "finished month. Use Temporary sell-in to record sell-in already sent this month."
         )
 
     _require_sellout_coverage(conn, record)
 
-    if conn.execute(
-        text("SELECT 1 FROM skus WHERE sku = :sku"), {"sku": record.sku}
-    ).first() is None:
-        raise SkuNotFoundError(f"SKU {record.sku} is not in the catalog.")
+    product = _product_name(conn, record.sku)
 
     params = {
         "customer_ids": record.customer_ids,
@@ -1252,7 +1266,8 @@ def _validate_record_target(
                 "later months take their opening stock from the previous month's ending stock."
             )
 
-    return {row[0] for row in conn.execute(text(_CUSTOMERS_WITH_MONTH_SQL), params).all()}
+    existing = {row[0] for row in conn.execute(text(_CUSTOMERS_WITH_MONTH_SQL), params).all()}
+    return existing, product
 
 
 def _names(customers: dict[int, str], ids) -> str:
@@ -1263,10 +1278,10 @@ def create_records(record, today: date | None = None) -> dict:
     today = today or date.today()
     with _get_engine().begin() as conn:
         customers = _fetch_customers(conn)
-        existing = _validate_record_target(conn, record, customers, today)
+        existing, product = _validate_record_target(conn, record, customers, today)
         if existing:
             raise InventoryConflictError(
-                f"Inventory for {record.sku} in {record.month:%Y-%m} already exists for "
+                f"Inventory for {product} in {record.month:%Y-%m} already exists for "
                 f"{_names(customers, existing)}. Use edit to change it."
             )
         written = _write_record(conn, record, today)
@@ -1278,11 +1293,11 @@ def update_records(record, today: date | None = None) -> dict:
     today = today or date.today()
     with _get_engine().begin() as conn:
         customers = _fetch_customers(conn)
-        existing = _validate_record_target(conn, record, customers, today)
+        existing, product = _validate_record_target(conn, record, customers, today)
         missing = set(record.customer_ids) - existing
         if missing:
             raise InventoryNotFoundError(
-                f"No inventory for {record.sku} in {record.month:%Y-%m} exists for "
+                f"No inventory for {product} in {record.month:%Y-%m} exists for "
                 f"{_names(customers, missing)}. Use create to add it."
             )
         written = _write_record(conn, record, today)
@@ -1300,7 +1315,7 @@ def _write_summary(record, written: int) -> dict:
 
 
 # ============================================================
-# SHIPPED SO FAR
+# TEMPORARY SELL-IN (stored and exposed as shipped_so_far)
 #
 # Sell-in already sent in a month that has not ended, per customer, SKU and
 # month. It is stored as a sell_in row marked manual_plan (never an actual),
@@ -1339,10 +1354,7 @@ def set_shipped_so_far(record, today: date | None = None) -> dict:
         customers = _fetch_customers(conn)
         _require_customers(customers, record.customer_ids)
 
-        if conn.execute(
-            text("SELECT 1 FROM skus WHERE sku = :sku"), {"sku": record.sku}
-        ).first() is None:
-            raise SkuNotFoundError(f"SKU {record.sku} is not in the catalog.")
+        product = _product_name(conn, record.sku)
 
         latest = dict(
             conn.execute(
@@ -1353,8 +1365,8 @@ def set_shipped_so_far(record, today: date | None = None) -> dict:
         already_actual = [c for c in record.customer_ids if latest.get(c) and record.month <= latest[c]]
         if already_actual:
             raise ValueError(
-                f"{record.month:%B %Y} already has actual data for {record.sku} for "
-                f"{_names(customers, already_actual)}. Shipped so far is only for months after "
+                f"{record.month:%B %Y} already has actual data for {product} for "
+                f"{_names(customers, already_actual)}. Temporary sell-in is only for months after "
                 "the SKU's latest actuals; change actuals with Edit."
             )
 

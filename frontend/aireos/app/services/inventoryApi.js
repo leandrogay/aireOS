@@ -109,12 +109,12 @@ export async function getCustomerInventory(customerId, { skus, startMonth, endMo
  * (what to order, by item) and `skus_without_forecast`.
  *
  * @param {number} customerId
- * @param {{ months?: number }} [options] how many months ahead, 1 to 12 (default 6)
+ * @param {{ months?: number, skus?: string[] }} [options] how many months ahead, 1 to 12 (default 6), and the SKUs to plan (default all)
  * @returns {Promise<{ customer: object, threshold: object, actuals_through: string | null, rows: object[], monthly_totals: object[], sku_totals: object[], skus_without_forecast: object[] }>}
  */
-export async function getSellInPlan(customerId, { months } = {}) {
+export async function getSellInPlan(customerId, { months, skus } = {}) {
   return request(
-    `/api/inventory/customers/${encodeURIComponent(customerId)}/sell-in-plan${toQuery({ months })}`,
+    `/api/inventory/customers/${encodeURIComponent(customerId)}/sell-in-plan${toQuery({ months, sku: skus })}`,
   );
 }
 

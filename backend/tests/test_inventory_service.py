@@ -303,7 +303,7 @@ def _write_router(existing=(), earlier=(), sku_exists=True, latest=None):
         if "FROM customers" in sql:
             return _customers("fairprice", "giant")
         if "FROM skus" in sql:
-            return [(1,)] if sku_exists else []
+            return [("Pants A",)] if sku_exists else []
         if "MAX(period_start)" in sql:
             return list((latest or {}).items())
         if "period_start < :month" in sql:
@@ -604,14 +604,15 @@ def test_the_plan_opens_at_the_skus_last_actual_ending_stock(monkeypatch):
     assert plan["rows"][0]["opening_stock"] == 20
 
 
-def test_the_recommendation_tops_stock_up_to_the_target_days_from_the_start_of_the_month(monkeypatch):
-    # March 310 + April 300 = 610 units over 61 days = 10 a day; 10 days = 100 needed; 20 in hand -> sell in 80.
+def test_the_recommendation_covers_the_months_sales_and_leaves_the_stock_needed_at_month_end(monkeypatch):
+    # March sells 310. April (300 over 30 days) is the only later month, so 10 a day; 10 days = 100 to hold at
+    # the end of March. 20 in hand -> 310 + 100 - 20 = 390, rounded up to 392 (whole cartons of 8 for pants).
     plan = _plan_view(monkeypatch, _PLAN_FORECAST)
 
     march = plan["rows"][0]
     assert march["stock_needed"] == 100
-    assert march["recommended_sell_in"] == 80
-    assert march["stock_after_sell_in"] == 100
+    assert march["recommended_sell_in"] == 392
+    assert march["projected_ending_stock"] == 102
     assert march["target_doh"] == 10
 
 
@@ -626,7 +627,7 @@ def test_totals_are_summed_per_month_and_per_sku(monkeypatch):
     plan = _plan_view(monkeypatch, _PLAN_FORECAST)
 
     assert [t["month"] for t in plan["monthly_totals"]] == ["2026-03-01", "2026-04-01"]
-    assert plan["monthly_totals"][0]["recommended_sell_in"] == 80
+    assert plan["monthly_totals"][0]["recommended_sell_in"] == 392
     assert plan["sku_totals"][0]["sku"] == "A1"
     assert plan["sku_totals"][0]["recommended_sell_in"] == sum(r["recommended_sell_in"] for r in plan["rows"])
 
@@ -794,8 +795,8 @@ def test_the_plan_takes_shipped_so_far_off_what_is_still_to_send(monkeypatch):
 
     march = plan["rows"][0]
     assert march["shipped_so_far"] == 50
-    assert march["recommended_sell_in"] == 30  # 80 without the shipment
-    assert march["stock_after_sell_in"] == 100
+    assert march["recommended_sell_in"] == 344  # 340 needed after the shipment, rounded up to cartons of 8
+    assert march["projected_ending_stock"] == 104
     assert plan["monthly_totals"][0]["shipped_so_far"] == 50
 
 
@@ -1086,3 +1087,100 @@ def test_the_overview_shows_every_sku_when_the_filter_is_off(monkeypatch):
     overview = inventory_service.get_overview()
 
     assert {r["sku"] for r in overview["skus"]} == {"A1", "B2", "C3"}
+
+
+# ---- sell-in plan: cartons by product type ------------------------------------------
+
+
+def _carton_plan(monkeypatch, product_name, sku_range):
+    feb = date(2026, 2, 1)
+    metrics = [_metric(1, "A1", feb, "sell_in", 20)]
+    _install(monkeypatch, _router(_customers("fairprice"), metrics, [_target(target=10.0)]))
+    monkeypatch.setattr(
+        catalog_service,
+        "get_skus",
+        lambda: [{"sku": "A1", "sku_range": sku_range, "product_name": product_name, "size": "L"}],
+    )
+    forecast = {product_name: {date(2026, 3, 1): 310.0, date(2026, 4, 1): 300.0}}
+    monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: forecast)
+    return inventory_service.get_sell_in_plan(1, months=1, today=TODAY)["rows"][0]
+
+
+def test_pants_are_recommended_in_multiples_of_eight(monkeypatch):
+    row = _carton_plan(monkeypatch, "Aire Ultra Pants L", "Aire Adult Diaper Ultra Pants")
+
+    assert row["pack_size"] == 8
+    assert row["recommended_sell_in"] % 8 == 0
+
+
+def test_tape_is_recommended_in_multiples_of_twelve(monkeypatch):
+    row = _carton_plan(monkeypatch, "Aire Ultra Tape L", "Aire Adult Diaper Ultra Tape")
+
+    assert row["pack_size"] == 12
+    assert row["recommended_sell_in"] % 12 == 0
+
+
+def test_a_product_that_is_neither_is_not_rounded(monkeypatch):
+    row = _carton_plan(monkeypatch, "Aire Wipes", None)
+
+    assert row["pack_size"] == 1
+
+
+# ---- sell-in plan: SKU filter ------------------------------------------------------
+
+
+def test_the_plan_can_be_narrowed_to_chosen_skus(monkeypatch):
+    jan = date(2026, 1, 1)
+    metrics = [_metric(1, "A1", jan, "sell_in", 20), _metric(1, "B2", jan, "sell_in", 20)]
+    _install(monkeypatch, _router(_customers("fairprice"), metrics, [_target(target=10.0)]))
+    forecast = {
+        "Pants A": {date(2026, 2, 1): 310.0, date(2026, 3, 1): 300.0},
+        "Pants B": {date(2026, 2, 1): 310.0, date(2026, 3, 1): 300.0},
+    }
+    monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: forecast)
+
+    everything = inventory_service.get_sell_in_plan(1, months=1, today=TODAY)
+    only_a1 = inventory_service.get_sell_in_plan(1, months=1, today=TODAY, skus=["A1"])
+
+    assert {r["sku"] for r in everything["rows"]} == {"A1", "B2"}
+    assert {r["sku"] for r in only_a1["rows"]} == {"A1"}
+    assert only_a1["monthly_totals"][0]["recommended_sell_in"] == everything["rows"][0]["recommended_sell_in"]
+    assert [t["sku"] for t in only_a1["sku_totals"]] == ["A1"]
+
+
+def test_a_sku_filter_also_limits_the_no_forecast_note(monkeypatch):
+    plan = _two_sku_plan(monkeypatch)
+    assert [s["sku"] for s in plan["skus_without_forecast"]] == []  # both SKUs have a forecast here
+
+    jan = date(2026, 1, 1)
+    metrics = [_metric(1, "A1", jan, "sell_in", 20), _metric(1, "B2", jan, "sell_in", 20)]
+    _install(monkeypatch, _router(_customers("fairprice"), metrics, [_target(target=10.0)]))
+    monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: {})
+
+    narrowed = inventory_service.get_sell_in_plan(1, months=1, today=TODAY, skus=["B2"])
+
+    assert [s["sku"] for s in narrowed["skus_without_forecast"]] == ["B2"]
+
+
+# ---- messages name the product, not the SKU code ---------------------------------------
+
+
+def test_the_create_conflict_names_the_product(monkeypatch):
+    _install(monkeypatch, _write_router(existing=[1]))
+
+    with pytest.raises(inventory_service.InventoryConflictError, match="Inventory for Pants A in 2026-08"):
+        inventory_service.create_records(_record(), today=TODAY)
+
+
+def test_the_edit_not_found_message_names_the_product(monkeypatch):
+    _install(monkeypatch, _write_router(existing=[]))
+
+    with pytest.raises(inventory_service.InventoryNotFoundError, match="No inventory for Pants A"):
+        inventory_service.update_records(_record(InventoryRecordUpdate), today=TODAY)
+
+
+def test_the_temporary_sell_in_refusal_names_the_product(monkeypatch):
+    _install(monkeypatch, _write_router(latest={1: date(2026, 7, 1)}))
+
+    with pytest.raises(ValueError, match="already has actual data for Pants A for fairprice"):
+        inventory_service.set_shipped_so_far(_shipped(month="2026-04-01"), today=TODAY)
