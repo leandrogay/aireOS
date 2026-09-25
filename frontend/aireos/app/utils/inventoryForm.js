@@ -1,0 +1,245 @@
+// Pure helpers for the inventory forms and views: validation, payloads and
+// display formatting. No React in here. Field names in the payloads mirror the
+// backend schemas in app/schemas/inventory.py (InventoryRecordBase,
+// DohThresholdUpdate); change them together.
+
+// ============================================================
+// Inventory record form
+// ============================================================
+
+export const EMPTY_INVENTORY_FORM = {
+  customerIds: [],
+  sku: '',
+  month: '', // 'YYYY-MM', straight from <input type="month">
+  sellIn: '',
+  openingInventory: '',
+};
+
+// A quantity is a plain non-negative number: digits with an optional decimal part.
+const QUANTITY_PATTERN = /^\d+(\.\d+)?$/;
+
+/**
+ * @param {string} value
+ * @returns {boolean} true for '0', '12', '3.5'; false for '', '-1', '1e3', 'abc'
+ */
+function isQuantity(value) {
+  return QUANTITY_PATTERN.test(String(value).trim());
+}
+
+/**
+ * The month the wall clock is in, as 'YYYY-MM'. Actuals can only be entered
+ * for months before this one (the backend refuses an unfinished month too).
+ *
+ * @param {Date} [now]
+ * @returns {string}
+ */
+export function currentMonthInput(now = new Date()) {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/**
+ * @param {typeof EMPTY_INVENTORY_FORM} form
+ * @param {{ isEdit?: boolean, now?: Date }} [options]
+ * @returns {Record<string, string>} field name -> message; empty when valid
+ */
+export function validateInventoryForm(form, { isEdit = false, now = new Date() } = {}) {
+  const errors = {};
+
+  if (!isEdit && form.customerIds.length === 0) {
+    errors.customerIds = 'Choose at least one customer.';
+  }
+  if (!form.sku) {
+    errors.sku = 'Choose a SKU.';
+  }
+  if (!/^\d{4}-\d{2}$/.test(form.month)) {
+    errors.month = 'Choose a month.';
+  } else if (form.month >= currentMonthInput(now)) {
+    errors.month = 'That month has not ended yet. Use Shipped so far for sell-in already sent this month.';
+  }
+  if (!isQuantity(form.sellIn)) {
+    errors.sellIn = 'Enter sell-in as a number of 0 or more.';
+  }
+  if (form.openingInventory !== '' && !isQuantity(form.openingInventory)) {
+    errors.openingInventory = 'Opening inventory must be a number of 0 or more.';
+  }
+
+  return errors;
+}
+
+/**
+ * @param {typeof EMPTY_INVENTORY_FORM} form a form that passed validateInventoryForm
+ * @returns {{ customer_ids: number[], sku: string, month: string, sell_in: number, opening_inventory: number | null }}
+ */
+export function buildInventoryPayload(form) {
+  return {
+    customer_ids: form.customerIds,
+    sku: form.sku,
+    month: `${form.month}-01`,
+    sell_in: Number(form.sellIn),
+    opening_inventory: form.openingInventory === '' ? null : Number(form.openingInventory),
+  };
+}
+
+/**
+ * Pre-fills the edit form from a table row of the overview / customer view
+ * (see backend inventory_service._stock_row).
+ *
+ * @param {{ customer_id: number, sku: string, month: string, sell_in: number }} row
+ * @returns {typeof EMPTY_INVENTORY_FORM}
+ */
+export function formFromRow(row) {
+  return {
+    customerIds: [row.customer_id],
+    sku: row.sku,
+    month: row.month.slice(0, 7),
+    sellIn: String(row.sell_in),
+    openingInventory: '',
+  };
+}
+
+// ============================================================
+// Shipped so far form
+// ============================================================
+
+export const EMPTY_SHIPPED_FORM = { customerIds: [], sku: '', month: '', shippedSoFar: '' };
+
+/**
+ * Shipped so far is for the month in progress or later, so a month that has
+ * already ended is refused here (it belongs in the actuals form).
+ *
+ * @param {typeof EMPTY_SHIPPED_FORM} form
+ * @param {{ now?: Date }} [options]
+ * @returns {Record<string, string>} field name -> message; empty when valid
+ */
+export function validateShippedForm(form, { now = new Date() } = {}) {
+  const errors = {};
+
+  if (form.customerIds.length === 0) {
+    errors.customerIds = 'Choose at least one customer.';
+  }
+  if (!form.sku) {
+    errors.sku = 'Choose a SKU.';
+  }
+  if (!/^\d{4}-\d{2}$/.test(form.month)) {
+    errors.month = 'Choose a month.';
+  } else if (form.month < currentMonthInput(now)) {
+    errors.month = 'That month has already ended. Enter its real sell-in and sell-out under Create or Edit.';
+  }
+  if (!isQuantity(form.shippedSoFar)) {
+    errors.shippedSoFar = 'Enter the units shipped so far as a number of 0 or more.';
+  }
+
+  return errors;
+}
+
+/**
+ * @param {typeof EMPTY_SHIPPED_FORM} form a form that passed validateShippedForm
+ * @returns {{ customer_ids: number[], sku: string, month: string, shipped_so_far: number }}
+ */
+export function buildShippedPayload(form) {
+  return {
+    customer_ids: form.customerIds,
+    sku: form.sku,
+    month: `${form.month}-01`,
+    shipped_so_far: Number(form.shippedSoFar),
+  };
+}
+
+// ============================================================
+// DOH threshold form
+// ============================================================
+
+/**
+ * @param {{ customerIds: number[], targetDoh: string }} form
+ * @returns {Record<string, string>} field name -> message; empty when valid
+ */
+export function validateThresholdForm(form) {
+  const errors = {};
+
+  if (form.customerIds.length === 0) {
+    errors.customerIds = 'Choose at least one customer.';
+  }
+  if (!/^\d+$/.test(form.targetDoh.trim()) || Number(form.targetDoh) < 1) {
+    errors.targetDoh = 'Target DOH must be a whole number of 1 or more.';
+  }
+
+  return errors;
+}
+
+/**
+ * @param {{ customerIds: number[], targetDoh: string }} form a form that passed validateThresholdForm
+ * @returns {{ customer_ids: number[], target_doh: number }}
+ */
+export function buildThresholdPayload(form) {
+  return { customer_ids: form.customerIds, target_doh: Number(form.targetDoh) };
+}
+
+// ============================================================
+// Display formatting
+// ============================================================
+
+/**
+ * @param {string} monthValue 'YYYY-MM' from <input type="month"> or ''
+ * @returns {string} 'YYYY-MM-01' for the API, or ''
+ */
+export function monthInputToDate(monthValue) {
+  return monthValue ? `${monthValue}-01` : '';
+}
+
+const MONTH_FORMAT = new Intl.DateTimeFormat('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+
+/**
+ * @param {string} isoDate 'YYYY-MM-DD'
+ * @returns {string} e.g. 'Jul 2026'
+ */
+export function formatMonth(isoDate) {
+  return MONTH_FORMAT.format(new Date(`${isoDate.slice(0, 7)}-01T00:00:00Z`));
+}
+
+/**
+ * @param {number | null | undefined} value
+ * @returns {string} whole units with thousands separators, or a dash
+ */
+export function formatUnits(value) {
+  if (value === null || value === undefined) return '—';
+  return Math.round(value).toLocaleString('en-GB');
+}
+
+/**
+ * @param {number | null | undefined} value
+ * @returns {string} one decimal place, or a dash when DOH could not be measured
+ */
+export function formatDoh(value) {
+  if (value === null || value === undefined) return '—';
+  return value.toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+
+/**
+ * @param {number | null | undefined} value
+ * @returns {string} signed one-decimal gap such as '+2.5' or '-8.5', or a dash
+ */
+export function formatGap(value) {
+  if (value === null || value === undefined) return '—';
+  return `${value > 0 ? '+' : ''}${formatDoh(value)}`;
+}
+
+/**
+ * @param {string | null} isoTimestamp
+ * @returns {string} e.g. '24 Sep 2026, 00:50', or a dash
+ */
+export function formatTimestamp(isoTimestamp) {
+  if (!isoTimestamp) return '—';
+  return new Date(isoTimestamp).toLocaleString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+export const DOH_STATUS_LABELS = {
+  below_min: 'Below min',
+  within: 'Within range',
+  above_max: 'Above max',
+};
