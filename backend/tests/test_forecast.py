@@ -66,6 +66,8 @@ def test_get_forecast_rows_filters_and_serializes(monkeypatch):
             {
                 "month_year": datetime.date(2026, 8, 1),
                 "forecast_generated_at": datetime.date(2026, 7, 31),
+                "run_type": "yearly",
+                "tier": 1,
                 "customer_id": 1,
                 "customer_name": "fairprice",
                 "product_name": "Aire Ultra Tape L",
@@ -117,12 +119,62 @@ def test_get_forecast_rows_filters_and_serializes(monkeypatch):
     assert rows[0]["predicted_quantity_units"] is None
     assert rows[0]["period_label"] == "2026-M07"
     assert rows[0]["voucher"] == "B2G1"
+    # Row 0's fixture has no run_type column at all (pre-migration shape) --
+    # defaults to 'rolling' just like pl_forecast.normalise_rows does.
+    assert rows[0]["run_type"] == "rolling"
+    # Row 0/2's fixtures have no tier column at all -- defaults to 0.
+    assert rows[0]["tier"] == 0
+    assert rows[2]["tier"] == 0
     assert rows[1]["promo_type"] is None
     assert rows[1]["period_label"] is None
     assert rows[1]["voucher"] is None
+    assert rows[1]["run_type"] == "yearly"
+    assert rows[1]["tier"] == 1
     assert rows[2]["forecast_generated_at"] == "2026-08-31"
     assert rows[2]["predicted_revenue"] == 9800.0
     assert rows[2]["period_label"] == "2026-M09"
+
+
+def test_get_inventory_position_rows_rejects_bad_dates(monkeypatch):
+    _install_fake_client(monkeypatch, pd.DataFrame())
+    with pytest.raises(ValueError, match="start_date"):
+        bigquery.get_inventory_position_rows(start_date="01-01-2026")
+
+
+def test_get_inventory_position_rows_filters_and_serializes(monkeypatch):
+    df = pd.DataFrame([
+        {
+            "month_year": datetime.date(2026, 6, 1),
+            "customer_id": 1,
+            "customer_name": "fairprice",
+            "product_name": "Widget",
+            "opening_inventory": 100.0,
+            "actual_sell_in": 50.0,
+            "recommended_sell_in": pd.NA,
+            "actual_sell_out": 40.0,
+            "forecast_sell_out": pd.NA,
+            "actual_closing_inventory": 110.0,
+            "predicted_closing_inventory": pd.NA,
+            "inventory_position": 110.0,
+            "inventory_variance": pd.NA,
+        },
+    ])
+    fake = _install_fake_client(monkeypatch, df)
+
+    rows = bigquery.get_inventory_position_rows(
+        product_name="Widget", customer_name="fairprice",
+        start_date="2026-01-01", end_date="2026-12-31",
+    )
+
+    assert bigquery.BQ_INVENTORY_POSITION_TABLE in fake.last_query
+    params = _params_by_name(fake.last_job_config)
+    assert params["product_name"].value == "Widget"
+    assert params["customer_name"].value == "fairprice"
+
+    assert rows[0]["month_year"] == "2026-06-01"
+    assert rows[0]["actual_closing_inventory"] == 110.0
+    assert rows[0]["predicted_closing_inventory"] is None
+    assert rows[0]["recommended_sell_in"] is None
 
 
 def test_get_forecast_options(monkeypatch):

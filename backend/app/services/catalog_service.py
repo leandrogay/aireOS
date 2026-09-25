@@ -814,3 +814,79 @@ def get_sku_ranges() -> list[str]:
         ).scalars().all()
 
     return list(results)
+
+
+# ============================================================
+# SKU CODE -> PRODUCT NAME
+#
+# Bridges an external sku code (e.g. from the BigQuery
+# inventory_metrics table) to this catalog's product_name, so
+# other services can join on product_name without knowing the
+# skus table's shape.
+# ============================================================
+
+
+def get_product_names_for_skus(sku_codes: list[str]) -> dict[str, str]:
+    codes = list(dict.fromkeys(sku_codes))
+
+    if not codes:
+        return {}
+
+    query = text(
+        """
+        SELECT
+            sku,
+            product_name
+
+        FROM skus
+
+        WHERE
+            sku = ANY(CAST(:skus AS text[]))
+        """
+    )
+
+    with _read_connection() as conn:
+        rows = conn.execute(
+            query,
+            {
+                "skus": codes,
+            },
+        ).all()
+
+    return {
+        sku: product_name
+        for sku, product_name in rows
+    }
+
+
+# ============================================================
+# PRODUCT PRICES
+#
+# Sell-out forecast revenue (see forecast_service.refresh_forecast)
+# is priced from this catalog's own skus.price rather than a
+# separate BigQuery price table, so there's one price per product
+# instead of two that could drift apart.
+# ============================================================
+
+
+def get_product_prices() -> dict[str, float]:
+    query = text(
+        """
+        SELECT
+            product_name,
+            price
+
+        FROM skus
+
+        WHERE
+            price IS NOT NULL
+        """
+    )
+
+    with _read_connection() as conn:
+        rows = conn.execute(query).all()
+
+    return {
+        product_name: float(price)
+        for product_name, price in rows
+    }
