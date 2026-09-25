@@ -1,8 +1,6 @@
 from functools import lru_cache
-
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
-
 from app.services import sql
 from app.services.catalog_service import (
     get_or_create_retailers,

@@ -1,9 +1,9 @@
-import os
 import re
 from datetime import datetime
 from functools import lru_cache
 import pandas as pd
 from google.cloud import bigquery
+from app import config
 
 from app.services import sellout_lookup
 
