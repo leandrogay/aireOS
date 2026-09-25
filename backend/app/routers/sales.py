@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from google.api_core.exceptions import GoogleAPICallError
 from google.auth.exceptions import DefaultCredentialsError
-from app.services import bigquery
+from app.services import bigquery, sellout_lookup
 
 router = APIRouter(prefix="/api/sales", tags=["sales"])
 
@@ -9,6 +9,13 @@ _CREDENTIALS_DETAIL = (
     "BigQuery credentials are not configured. Set "
     "GOOGLE_APPLICATION_CREDENTIALS in backend/.env.backend to a service "
     "account key with BigQuery Data Viewer + Job User access."
+)
+
+# Sell-out rows carry only ids/codes; store, product and retailer names come
+# from the Cloud SQL catalog, so an outage there fails these endpoints too.
+_CATALOG_DETAIL = (
+    "The store/product catalog (Cloud SQL) is unreachable, so sales data "
+    "can't be labelled right now. Check the Cloud SQL connection settings."
 )
 
 
@@ -40,6 +47,8 @@ def get_sku_ranking(
         raise HTTPException(status_code=503, detail=_CREDENTIALS_DETAIL)
     except GoogleAPICallError as e:
         raise HTTPException(status_code=503, detail=f"Unable to reach BigQuery: {e.message}")
+    except sellout_lookup.CatalogUnavailableError as e:
+        raise HTTPException(status_code=503, detail=f"{_CATALOG_DETAIL} ({e})")
 
     return {
         "metric": metric,
@@ -61,6 +70,8 @@ def get_sku_options(customer: str = bigquery.DEFAULT_CUSTOMER):
         raise HTTPException(status_code=503, detail=_CREDENTIALS_DETAIL)
     except GoogleAPICallError as e:
         raise HTTPException(status_code=503, detail=f"Unable to reach BigQuery: {e.message}")
+    except sellout_lookup.CatalogUnavailableError as e:
+        raise HTTPException(status_code=503, detail=f"{_CATALOG_DETAIL} ({e})")
 
     return {"options": options}
 
@@ -72,6 +83,8 @@ def get_store_options(customer: str = bigquery.DEFAULT_CUSTOMER):
         raise HTTPException(status_code=503, detail=_CREDENTIALS_DETAIL)
     except GoogleAPICallError as e:
         raise HTTPException(status_code=503, detail=f"Unable to reach BigQuery: {e.message}")
+    except sellout_lookup.CatalogUnavailableError as e:
+        raise HTTPException(status_code=503, detail=f"{_CATALOG_DETAIL} ({e})")
 
     return {"options": options}
 
@@ -84,6 +97,8 @@ def get_customer_options():
         raise HTTPException(status_code=503, detail=_CREDENTIALS_DETAIL)
     except GoogleAPICallError as e:
         raise HTTPException(status_code=503, detail=f"Unable to reach BigQuery: {e.message}")
+    except sellout_lookup.CatalogUnavailableError as e:
+        raise HTTPException(status_code=503, detail=f"{_CATALOG_DETAIL} ({e})")
 
     return {"options": options}
 
@@ -111,6 +126,8 @@ def get_dashboard_summary(
         raise HTTPException(status_code=503, detail=_CREDENTIALS_DETAIL)
     except GoogleAPICallError as e:
         raise HTTPException(status_code=503, detail=f"Unable to reach BigQuery: {e.message}")
+    except sellout_lookup.CatalogUnavailableError as e:
+        raise HTTPException(status_code=503, detail=f"{_CATALOG_DETAIL} ({e})")
 
 @router.get("/period-comparison")
 def get_period_comparison(
@@ -142,6 +159,8 @@ def get_period_comparison(
         raise HTTPException(status_code=503, detail=_CREDENTIALS_DETAIL)
     except GoogleAPICallError as e:
         raise HTTPException(status_code=503, detail=f"Unable to reach BigQuery: {e.message}")
+    except sellout_lookup.CatalogUnavailableError as e:
+        raise HTTPException(status_code=503, detail=f"{_CATALOG_DETAIL} ({e})")
 
 
 @router.get("/default-date-range")
@@ -156,6 +175,8 @@ def get_default_date_range(
         raise HTTPException(status_code=503, detail=_CREDENTIALS_DETAIL)
     except GoogleAPICallError as e:
         raise HTTPException(status_code=503, detail=f"Unable to reach BigQuery: {e.message}")
+    except sellout_lookup.CatalogUnavailableError as e:
+        raise HTTPException(status_code=503, detail=f"{_CATALOG_DETAIL} ({e})")
 
 
 @router.get("/last-updated")
@@ -167,3 +188,5 @@ def get_last_updated():
         raise HTTPException(status_code=503, detail=_CREDENTIALS_DETAIL)
     except GoogleAPICallError as e:
         raise HTTPException(status_code=503, detail=f"Unable to reach BigQuery: {e.message}")
+    except sellout_lookup.CatalogUnavailableError as e:
+        raise HTTPException(status_code=503, detail=f"{_CATALOG_DETAIL} ({e})")

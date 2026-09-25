@@ -5,6 +5,8 @@ import pandas as pd
 from google.cloud import bigquery
 from app import config
 
+from app.services import sellout_lookup
+
 SKU_RANKING_METRICS = ("volume", "value")
 SKU_RANKING_COLUMNS = ["sku", "product_name", "volume", "value", "rank"]
 DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -13,8 +15,10 @@ DASHBOARD_MODES = ("offline", "online")
 DASHBOARD_GRANULARITIES = ("week", "month")
 DEFAULT_CUSTOMER = "fairprice" # Fallback when no customer is supplied 
 
-# Read-only reference data
-BQFairprice_TABLE = config.BQ_FAIRPRICESELLOUT_TABLE
+# Read-only reference data: weekly sell-out, normalized. Rows carry retailer_id,
+# store_code and sku only -- names and store format are resolved from the Cloud
+# SQL catalog by sellout_lookup after each query.
+SELLOUT_TABLE = config.BQ_SELLOUT_TABLE
 
 @lru_cache(maxsize=1)
 def get_bigquery_client(project="aire-data") -> bigquery.Client:
@@ -73,21 +77,14 @@ def get_sku_ranking(
     _validate_date(end_date, "end_date")
 
     sql_order = "ASC" if order == "asc" else "DESC"
-    where_clauses = ["sku IS NOT NULL", "period_type = 'week'"]
-    query_parameters = []
+    where_clauses = ["sku IS NOT NULL", "period_type = 'week'", "retailer_id IN UNNEST(@retailer_ids)"]
+    retailer_names = [_retailer_for(customer, mode)] if mode else _customer_retailers(customer)
+    query_parameters = [
+        bigquery.ArrayQueryParameter("retailer_ids", "INT64", sellout_lookup.retailer_ids(retailer_names))
+    ]
     if sku:
         where_clauses.append("sku = @sku")
         query_parameters.append(bigquery.ScalarQueryParameter("sku", "STRING", sku))
-    if mode:
-        where_clauses.append("retailer = @retailer")
-        query_parameters.append(
-            bigquery.ScalarQueryParameter("retailer", "STRING", _retailer_for(customer, mode))
-        )
-    else:
-        where_clauses.append("retailer IN UNNEST(@retailers)")
-        query_parameters.append(
-            bigquery.ArrayQueryParameter("retailers", "STRING", _customer_retailers(customer))
-        )
     if store:
         where_clauses.append("store_code = @store")
         query_parameters.append(bigquery.ScalarQueryParameter("store", "STRING", store))
@@ -101,10 +98,9 @@ def get_sku_ranking(
     query = f"""
         SELECT
           sku,
-          ANY_VALUE(product_name) AS product_name,
           IFNULL(SUM(quantity_units), 0) AS volume,
           IFNULL(SUM(revenue), 0) AS value
-        FROM `{BQFairprice_TABLE}`
+        FROM `{SELLOUT_TABLE}`
         WHERE {' AND '.join(where_clauses)}
         GROUP BY sku
         ORDER BY {metric} {sql_order}
@@ -117,6 +113,8 @@ def get_sku_ranking(
     if ranked.empty:
         return pd.DataFrame(columns=SKU_RANKING_COLUMNS)
 
+    sku_names = sellout_lookup.sku_details()
+    ranked["product_name"] = ranked["sku"].map(lambda code: (sku_names.get(code) or {}).get("product_name") or code)
     ranked["value"] = ranked["value"].round(2)
     ranked = ranked.reset_index(drop=True)
     ranked["rank"] = ranked.index + 1
@@ -138,28 +136,39 @@ def get_sku_options(customer: str = DEFAULT_CUSTOMER) -> list[dict]:
     # "...Ultra Pants" vs "...Ultra Tape") then by size smallest-to-largest,
     # so the dropdown groups "Aire Adult Pants S/M, L, XL", then the Ultra
     # Pants sizes, then the Ultra Tape sizes, rather than sku-code order.
+    #
+    # The table only carries sku codes, so product_name / sku_range / size come
+    # from the Cloud SQL catalog (sellout_lookup) and the ordering above is
+    # applied here in Python rather than in SQL.
     query = f"""
-        SELECT
-          sku,
-          ANY_VALUE(product_name) AS product_name,
-          ANY_VALUE(sku_range) AS sku_range,
-          CASE ANY_VALUE(size)
-            WHEN 'S/M' THEN 0
-            WHEN 'L' THEN 1
-            WHEN 'XL' THEN 2
-            ELSE 3
-          END AS size_order
-        FROM `{BQFairprice_TABLE}`
-        WHERE sku IS NOT NULL AND period_type = 'week' AND retailer IN UNNEST(@retailers)
-        GROUP BY sku
-        ORDER BY sku_range, size_order
+        SELECT DISTINCT sku
+        FROM `{SELLOUT_TABLE}`
+        WHERE sku IS NOT NULL AND period_type = 'week' AND retailer_id IN UNNEST(@retailer_ids)
     """
     job_config = bigquery.QueryJobConfig(
-        query_parameters=[bigquery.ArrayQueryParameter("retailers", "STRING", _customer_retailers(customer))]
+        query_parameters=[
+            bigquery.ArrayQueryParameter(
+                "retailer_ids", "INT64", sellout_lookup.retailer_ids(_customer_retailers(customer))
+            )
+        ]
     )
     client = get_bigquery_client()
     df = client.query(query, job_config=job_config).result().to_dataframe()
-    return df[["sku", "product_name"]].to_dict(orient="records") if not df.empty else []
+    if df.empty:
+        return []
+
+    size_order = {"S/M": 0, "L": 1, "XL": 2}
+    catalog = sellout_lookup.sku_details()
+    options = []
+    for sku in df["sku"]:
+        details = catalog.get(sku) or {}
+        options.append({
+            "sku": sku,
+            "product_name": details.get("product_name") or sku,
+            "_sort": (details.get("sku_range") or "", size_order.get(details.get("size"), 3)),
+        })
+    options.sort(key=lambda option: option["_sort"])
+    return [{"sku": option["sku"], "product_name": option["product_name"]} for option in options]
 
 
 def get_store_options(customer: str = DEFAULT_CUSTOMER) -> list[dict]:
@@ -168,19 +177,34 @@ def get_store_options(customer: str = DEFAULT_CUSTOMER) -> list[dict]:
     # per-branch identifier. Scoped to the selected customer's two channels,
     # since different customers (retailer families) have their own store
     # chains.
+    #
+    # store_name comes from the Cloud SQL catalog (sellout_lookup), keyed on
+    # (retailer_id, store_code); a code shared by both channels shows once.
     query = f"""
-        SELECT store_code, ANY_VALUE(store_name) AS store_name
-        FROM `{BQFairprice_TABLE}`
-        WHERE store_code IS NOT NULL AND period_type = 'week' AND retailer IN UNNEST(@retailers)
-        GROUP BY store_code
-        ORDER BY store_name
+        SELECT DISTINCT retailer_id, store_code
+        FROM `{SELLOUT_TABLE}`
+        WHERE store_code IS NOT NULL AND period_type = 'week' AND retailer_id IN UNNEST(@retailer_ids)
     """
     job_config = bigquery.QueryJobConfig(
-        query_parameters=[bigquery.ArrayQueryParameter("retailers", "STRING", _customer_retailers(customer))]
+        query_parameters=[
+            bigquery.ArrayQueryParameter(
+                "retailer_ids", "INT64", sellout_lookup.retailer_ids(_customer_retailers(customer))
+            )
+        ]
     )
     client = get_bigquery_client()
     df = client.query(query, job_config=job_config).result().to_dataframe()
-    return df[["store_code", "store_name"]].to_dict(orient="records") if not df.empty else []
+    if df.empty:
+        return []
+
+    catalog = sellout_lookup.store_details()
+    by_code: dict[str, str | None] = {}
+    for _, row in df.iterrows():
+        name = (catalog.get((row["retailer_id"], row["store_code"])) or {}).get("store_name")
+        by_code[row["store_code"]] = by_code.get(row["store_code"]) or name
+    # A code the catalog doesn't know falls back to showing the code itself.
+    stores = [{"store_code": code, "store_name": name or code} for code, name in by_code.items()]
+    return sorted(stores, key=lambda store: store["store_name"])
 
 
 def get_customer_options() -> list[dict]:
@@ -192,16 +216,21 @@ def get_customer_options() -> list[dict]:
     # "{family}_offline" or "{family}_online" (see
     # mapping_service.apply_existing_mapping); stripping that known channel
     # suffix recovers the family.
+    #
+    # The table stores retailer_id, so the ids present are mapped to names via
+    # the Cloud SQL catalog (sellout_lookup) first; an id the catalog doesn't
+    # know can't be named and is left out.
     query = f"""
-        SELECT DISTINCT retailer
-        FROM `{BQFairprice_TABLE}`
-        WHERE retailer IS NOT NULL
+        SELECT DISTINCT retailer_id
+        FROM `{SELLOUT_TABLE}`
+        WHERE retailer_id IS NOT NULL
     """
     client = get_bigquery_client()
     df = client.query(query).result().to_dataframe()
     if df.empty:
         return []
-    families = sorted({_retailer_family(r) for r in df["retailer"]})
+    names = sellout_lookup.retailer_names()
+    families = sorted({_retailer_family(names[i]) for i in df["retailer_id"] if i in names})
     return [{"value": family, "label": family.title()} for family in families]
 
 
@@ -226,21 +255,27 @@ def get_data_freshness() -> dict:
     the page-header Customer selector before that selector even has a value
     to scope by. Keyed by the raw retailer string (e.g. "fairprice_offline")
     rather than a mode, since the set of retailers is now open-ended; callers
-    look up `f"{customer}_{mode}"` themselves.
+    look up `f"{customer}_{mode}"` themselves. The table stores retailer_id, so
+    ids are mapped back to those names via the Cloud SQL catalog.
     """
     query = f"""
         SELECT
-          retailer,
+          retailer_id,
           MAX(loaded_at) AS loaded_at
-        FROM `{BQFairprice_TABLE}`
-        WHERE retailer IS NOT NULL
-        GROUP BY retailer
+        FROM `{SELLOUT_TABLE}`
+        WHERE retailer_id IS NOT NULL
+        GROUP BY retailer_id
     """
     client = get_bigquery_client()
     df = client.query(query).result().to_dataframe()
     if df.empty:
         return {}
-    return {row["retailer"]: _format_last_updated(row["loaded_at"]) for _, row in df.iterrows()}
+    names = sellout_lookup.retailer_names()
+    return {
+        names[row["retailer_id"]]: _format_last_updated(row["loaded_at"])
+        for _, row in df.iterrows()
+        if row["retailer_id"] in names
+    }
 
 
 def get_dashboard_summary(
@@ -263,13 +298,11 @@ def get_dashboard_summary(
     _validate_date(start_date, "start_date")
     _validate_date(end_date, "end_date")
 
-    period_key_expr = (
-        "FORMAT_DATE('%Y-%m', period_start)" if granularity == "month" else "period_label"
-    )
-
-    where_clauses = ["period_type = 'week'", "retailer IN UNNEST(@retailers)"]
+    where_clauses = ["period_type = 'week'", "retailer_id IN UNNEST(@retailer_ids)"]
     query_parameters = [
-        bigquery.ArrayQueryParameter("retailers", "STRING", _customer_retailers(customer))
+        bigquery.ArrayQueryParameter(
+            "retailer_ids", "INT64", sellout_lookup.retailer_ids(_customer_retailers(customer))
+        )
     ]
     if sku:
         where_clauses.append("sku = @sku")
@@ -284,18 +317,19 @@ def get_dashboard_summary(
         where_clauses.append("period_start <= @end_date")
         query_parameters.append(bigquery.ScalarQueryParameter("end_date", "DATE", end_date))
 
+    # One row per store per week -- store_format and the week label aren't in
+    # the table, so _dashboard_rows derives them and rolls the rows back up to
+    # the per-format-per-period shape the dashboard renders.
     query = f"""
         SELECT
-          retailer,
-          store_format AS format,
-          {period_key_expr} AS period_key,
-          MIN(period_start) AS period_start,
+          retailer_id,
+          store_code,
+          period_start,
           SUM(revenue) AS revenue,
           SUM(quantity_units) AS units
-        FROM `{BQFairprice_TABLE}`
+        FROM `{SELLOUT_TABLE}`
         WHERE {' AND '.join(where_clauses)}
-        GROUP BY retailer, format, period_key
-        ORDER BY period_start
+        GROUP BY retailer_id, store_code, period_start
     """
     job_config = bigquery.QueryJobConfig(query_parameters=query_parameters)
 
@@ -303,16 +337,57 @@ def get_dashboard_summary(
     df = client.query(query, job_config=job_config).result().to_dataframe()
 
     if not df.empty:
-        df["revenue"] = df["revenue"].round(2)
-        df["period_label"] = (
-            df["period_key"].apply(lambda m: datetime.strptime(m, "%Y-%m").strftime("%B %Y"))
-            if granularity == "month"
-            else df["period_key"]
-        )
+        df = _dashboard_rows(df, granularity)
 
     return {
         mode: _dashboard_mode_summary(df, _retailer_for(customer, mode)) for mode in DASHBOARD_MODES
     }
+
+
+def _week_label(period_start) -> str:
+    # e.g. "Week 19 (07-05-2026)": ISO week number plus the week's start date,
+    # the same label the previous sell-out table stored on every 2026 row.
+    ts = pd.Timestamp(period_start)
+    return f"Week {ts.isocalendar().week} ({ts.strftime('%d-%m-%Y')})"
+
+
+def _dashboard_rows(df: pd.DataFrame, granularity: str) -> pd.DataFrame:
+    # Turns per-store-per-week rows (retailer_id, store_code, period_start) into
+    # the per-retailer-per-format-per-period rows _dashboard_mode_summary
+    # expects: retailer name and store format come from the Cloud SQL catalog
+    # (sellout_lookup), the period label is derived from period_start.
+    # A store the catalog doesn't know is grouped under "UNKNOWN" rather than
+    # dropped, so its revenue still counts toward the totals.
+    retailer_names = sellout_lookup.retailer_names()
+    stores = sellout_lookup.store_details()
+
+    df = df.copy()
+    df["retailer"] = df["retailer_id"].map(retailer_names)
+    df = df.dropna(subset=["retailer"])
+    if df.empty:
+        return df
+
+    df["format"] = [
+        (stores.get((retailer_id, store_code)) or {}).get("store_format") or "UNKNOWN"
+        for retailer_id, store_code in zip(df["retailer_id"], df["store_code"])
+    ]
+    starts = pd.to_datetime(df["period_start"].astype(object))
+    df["period_key"] = (
+        starts.dt.strftime("%Y-%m") if granularity == "month" else [_week_label(s) for s in starts]
+    )
+
+    rolled_up = df.groupby(["retailer", "format", "period_key"], as_index=False).agg(
+        period_start=("period_start", "min"),
+        revenue=("revenue", "sum"),
+        units=("units", "sum"),
+    )
+    rolled_up["revenue"] = rolled_up["revenue"].round(2)
+    rolled_up["period_label"] = (
+        rolled_up["period_key"].apply(lambda m: datetime.strptime(m, "%Y-%m").strftime("%B %Y"))
+        if granularity == "month"
+        else rolled_up["period_key"]
+    )
+    return rolled_up.sort_values("period_start").reset_index(drop=True)
 
 def _dashboard_mode_summary(df: pd.DataFrame, retailer: str) -> dict:
     # Splits the pre-aggregated per-period-by-format rows down to one retailer,
@@ -360,12 +435,14 @@ def _latest_week_start(retailer: str | None) -> pd.Timestamp | None:
     where_clauses = ["period_type = 'week'"]
     query_parameters = []
     if retailer:
-        where_clauses.append("retailer = @retailer")
-        query_parameters.append(bigquery.ScalarQueryParameter("retailer", "STRING", retailer))
+        where_clauses.append("retailer_id IN UNNEST(@retailer_ids)")
+        query_parameters.append(
+            bigquery.ArrayQueryParameter("retailer_ids", "INT64", sellout_lookup.retailer_ids([retailer]))
+        )
 
     query = f"""
         SELECT period_start
-        FROM `{BQFairprice_TABLE}`
+        FROM `{SELLOUT_TABLE}`
         WHERE {' AND '.join(where_clauses)}
         ORDER BY period_start DESC
         LIMIT 1
@@ -547,8 +624,10 @@ def get_period_comparison(
         bigquery.ScalarQueryParameter("prev_end", "DATE", prev_end.strftime("%Y-%m-%d")),
     ]
     if retailer:
-        where_clauses.append("retailer = @retailer")
-        query_parameters.append(bigquery.ScalarQueryParameter("retailer", "STRING", retailer))
+        where_clauses.append("retailer_id IN UNNEST(@retailer_ids)")
+        query_parameters.append(
+            bigquery.ArrayQueryParameter("retailer_ids", "INT64", sellout_lookup.retailer_ids([retailer]))
+        )
     if sku:
         where_clauses.append("sku = @sku")
         query_parameters.append(bigquery.ScalarQueryParameter("sku", "STRING", sku))
@@ -563,7 +642,7 @@ def get_period_comparison(
           SUM(IF(period_start BETWEEN @prev_start AND @prev_end, revenue, 0)) AS previous_revenue,
           SUM(IF(period_start BETWEEN @prev_start AND @prev_end, quantity_units, 0)) AS previous_units,
           SUM(IF(period_start BETWEEN @prev_start AND @prev_end, 1, 0)) AS previous_row_count
-        FROM `{BQFairprice_TABLE}`
+        FROM `{SELLOUT_TABLE}`
         WHERE {' AND '.join(where_clauses)}
     """
     job_config = bigquery.QueryJobConfig(query_parameters=query_parameters)

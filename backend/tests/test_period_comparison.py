@@ -1,7 +1,26 @@
 import pandas as pd
 import pytest
 
-from app.services import bigquery
+from app.services import bigquery, sellout_lookup
+
+
+@pytest.fixture(autouse=True)
+def _fake_catalog(monkeypatch):
+    # Only retailer ids matter here (55/57 are the real fairprice online/offline
+    # ids); serve them from memory so nothing reaches Cloud SQL.
+    sellout_lookup.reset_cache()
+    monkeypatch.setattr(
+        sellout_lookup,
+        "_load",
+        lambda: {
+            "retailer_ids": {"fairprice_online": 55, "fairprice_offline": 57},
+            "retailer_names": {55: "fairprice_online", 57: "fairprice_offline"},
+            "stores": {},
+            "skus": {},
+        },
+    )
+    yield
+    sellout_lookup.reset_cache()
 
 
 class FakeQueryJob:
@@ -314,3 +333,35 @@ def test_period_comparison_explicit_dates_win_over_comparison_type(monkeypatch):
     assert result["current"]["end"] == "2026-06-30"
     assert result["previous"]["start"] == "2026-05-01"
     assert result["previous"]["end"] == "2026-05-30"
+
+
+# ---- retailer scoping: the table stores retailer_id ------------------------------
+
+def test_period_comparison_mode_scopes_to_that_channels_retailer_id(monkeypatch):
+    _fix_anchor(monkeypatch, "2026-08-17")
+    fake_client = _install_fake_bq_client(monkeypatch, _totals_row())
+
+    bigquery.get_period_comparison(comparison_type="wow", mode="offline")
+
+    params = {p.name: p for p in fake_client.last_job_config.query_parameters}
+    assert "retailer_id IN UNNEST(@retailer_ids)" in fake_client.last_query
+    assert list(params["retailer_ids"].values) == [57]  # fairprice_offline
+
+
+def test_period_comparison_without_mode_has_no_retailer_filter(monkeypatch):
+    _fix_anchor(monkeypatch, "2026-08-17")
+    fake_client = _install_fake_bq_client(monkeypatch, _totals_row())
+
+    bigquery.get_period_comparison(comparison_type="wow")
+
+    assert "retailer_id" not in fake_client.last_query
+
+
+def test_latest_week_start_scopes_to_the_retailer_id(monkeypatch):
+    fake_client = _install_fake_bq_client(monkeypatch, pd.DataFrame({"period_start": [pd.Timestamp("2026-08-13")]}))
+
+    result = bigquery._latest_week_start("fairprice_online")
+
+    params = {p.name: p for p in fake_client.last_job_config.query_parameters}
+    assert list(params["retailer_ids"].values) == [55]
+    assert result == pd.Timestamp("2026-08-13")
