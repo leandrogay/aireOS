@@ -51,10 +51,19 @@ class FakeStorageClient:
         return FakeBucket(self)
 
 
-def _existing_blob(safe_name, uploaded_at=None):
+def _existing_blob(safe_name, uploaded_at=None, content=None):
+    """
+    A blob already in the bucket. `content` seeds the stored content hash the
+    way a real upload would; leaving it out models a blob written before
+    content hashing existed, which must still dedupe by filename.
+    """
+    metadata = {storage.ORIGINAL_FILENAME_METADATA_KEY: safe_name}
+    if content is not None:
+        metadata[storage.CONTENT_HASH_METADATA_KEY] = storage.content_digest(content)
+
     return FakeBlob(
         name=f"uploads/2026-08-01_120000_{safe_name}",
-        metadata={storage.ORIGINAL_FILENAME_METADATA_KEY: safe_name},
+        metadata=metadata,
         time_created=uploaded_at or datetime.datetime(2026, 8, 1, 12, 0, 0),
     )
 
@@ -76,6 +85,7 @@ def test_exact_filename_reupload_is_rejected_without_force(monkeypatch):
     assert result["success"] is False
     assert result["duplicate"] is True
     assert result["reason"] == "duplicate"
+    assert result["duplicate_of"] == "filename"
     assert result["existing_destination"] == f"gs://{storage.BUCKET_NAME}/{existing.name}"
     assert result["existing_uploaded_at"] == existing.time_created.isoformat()
 
@@ -105,30 +115,81 @@ def test_force_upload_writes_new_blob_rather_than_overwriting_the_old_one(monkey
     assert existing.uploaded_data is None
 
 
-def test_duplicate_check_is_case_sensitive(monkeypatch):
-    # Documents a real gap: "Sales.csv" and "sales.csv" are NOT deduped
-    # against each other, since matching is a plain string equality on the
-    # stored original_filename metadata.
-    existing = _existing_blob("Sales.csv")
-    _install_fake_client(monkeypatch, [existing])
+def test_filename_check_is_case_sensitive_but_content_still_catches_it(monkeypatch):
+    # Filename matching is a plain string equality on the stored metadata, so
+    # "Sales.csv" and "sales.csv" are not the same name. The content hash is
+    # what actually stops the re-upload.
+    _install_fake_client(monkeypatch, [_existing_blob("Sales.csv", content=b"same bytes")])
 
-    result = storage.upload_file_bytes("sales.csv", b"new bytes", force=False)
+    renamed = storage.upload_file_bytes("sales.csv", b"same bytes", force=False)
+    edited = storage.upload_file_bytes("sales.csv", b"different bytes", force=False)
 
-    assert result["success"] is True
-    assert "duplicate" not in result
+    assert renamed["duplicate"] is True
+    assert renamed["duplicate_of"] == "content"
+    assert edited["success"] is True
 
 
-def test_different_filename_same_content_is_not_caught(monkeypatch):
-    # Documents another gap: dedup is filename-only, so the same bytes
-    # uploaded under a different name is never flagged.
-    existing = _existing_blob("sales_aug.csv")
+def test_different_filename_same_content_is_caught_by_hash(monkeypatch):
+    # The expensive mistake: the same export saved under a new name would
+    # double-count the period if it went in.
+    existing = _existing_blob("sales_aug.csv", content=b"identical content")
     fake_client = _install_fake_client(monkeypatch, [existing])
-    existing.uploaded_data = b"identical content"
 
     result = storage.upload_file_bytes("sales_aug_v2.csv", b"identical content", force=False)
 
+    assert result["success"] is False
+    assert result["duplicate_of"] == "content"
+    assert result["existing_filename"] == "sales_aug.csv"
+    assert len([b for b in fake_client.blobs if not b.deleted]) == 1
+
+
+def test_content_match_wins_over_a_filename_match(monkeypatch):
+    # Both checks fire: same name as one blob, same bytes as another. The
+    # content match is the certain one, so it is the one reported.
+    _install_fake_client(monkeypatch, [
+        _existing_blob("sales_aug.csv", content=b"old bytes"),
+        _existing_blob("archive.csv", content=b"new bytes"),
+    ])
+
+    result = storage.upload_file_bytes("sales_aug.csv", b"new bytes", force=False)
+
+    assert result["duplicate_of"] == "content"
+    assert result["existing_filename"] == "archive.csv"
+
+
+def test_blob_uploaded_before_hashing_still_dedupes_by_filename(monkeypatch):
+    # No content_hash metadata at all — the hash check must not match it, and
+    # must not crash on its absence.
+    _install_fake_client(monkeypatch, [_existing_blob("legacy.csv")])
+
+    result = storage.upload_file_bytes("legacy.csv", b"whatever", force=False)
+
+    assert result["duplicate_of"] == "filename"
+
+
+def test_successful_upload_stores_the_content_hash(monkeypatch):
+    fake_client = _install_fake_client(monkeypatch, [])
+
+    result = storage.upload_file_bytes("first.csv", b"payload", force=False)
+    written = fake_client.blobs[-1]
+
+    assert result["content_hash"] == storage.content_digest(b"payload")
+    assert written.metadata[storage.CONTENT_HASH_METADATA_KEY] == result["content_hash"]
+
+
+def test_keep_duplicate_keeps_both_copies(monkeypatch):
+    # The reviewer decided the match is a false positive, so neither file is
+    # removed -- unlike force, which replaces.
+    existing = _existing_blob("sales_aug.csv", content=b"same bytes")
+    fake_client = _install_fake_client(monkeypatch, [existing])
+
+    result = storage.upload_file_bytes(
+        "sales_aug.csv", b"same bytes", force=False, keep_duplicate=True
+    )
+
     assert result["success"] is True
-    assert "duplicate" not in result
+    assert result["replaced"] is False
+    assert existing.deleted is False
     assert len([b for b in fake_client.blobs if not b.deleted]) == 2
 
 
