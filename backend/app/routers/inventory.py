@@ -77,6 +77,7 @@ def get_overview(
     sku: list[str] | None = Query(default=None),
     start_month: date | None = None,
     end_month: date | None = None,
+    at_risk_only: bool = False,
 ):
     try:
         return inventory_service.get_overview(
@@ -84,6 +85,16 @@ def get_overview(
             skus=sku,
             start_month=_first_of_month(start_month),
             end_month=_first_of_month(end_month),
+            at_risk_only=at_risk_only,
+        )
+
+    except DefaultCredentialsError:
+        raise HTTPException(status_code=503, detail=_CREDENTIALS_DETAIL)
+
+    except GoogleAPICallError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Unable to reach BigQuery for the forecast: {e.message}",
         )
 
     except Exception as e:
@@ -91,6 +102,39 @@ def get_overview(
             status_code=500,
             detail=(
                 f"Failed to retrieve the inventory overview: "
+                f"{type(e).__name__}: {e}"
+            ),
+        )
+
+
+@router.get("/at-risk")
+def get_at_risk(
+    customer_id: list[int] | None = Query(default=None),
+    risk: str | None = None,
+):
+    try:
+        return inventory_service.get_at_risk(customer_ids=customer_id, risk=risk)
+
+    except inventory_service.CustomerNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    except DefaultCredentialsError:
+        raise HTTPException(status_code=503, detail=_CREDENTIALS_DETAIL)
+
+    except GoogleAPICallError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Unable to reach BigQuery for the forecast: {e.message}",
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Failed to retrieve the at-risk list: "
                 f"{type(e).__name__}: {e}"
             ),
         )

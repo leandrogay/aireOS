@@ -12,12 +12,17 @@ import {
 
 import { formatDoh, formatMonth } from '@/app/utils/inventoryForm';
 
+import { labelledTooltipRow } from './chartTooltip';
+
 const chartConfig = {
   doh: { label: 'DOH', color: 'var(--aire-deep-blue)' },
   target_doh: { label: 'Target', color: 'var(--aire-violet)' },
   min_doh: { label: 'Min', color: 'var(--aire-celest)' },
   max_doh: { label: 'Max', color: 'var(--aire-celest)' },
 };
+
+// Tooltip order: the measured DOH first, then the target and its band.
+const TOOLTIP_ORDER = ['doh', 'target_doh', 'max_doh', 'min_doh'];
 
 /**
  * Days of holding per month for one customer, against that month's target and
@@ -39,7 +44,14 @@ export default function DohTrendChart({ trend }) {
         <CartesianGrid vertical={false} />
         <XAxis dataKey="label" tick={{ fontSize: 10 }} />
         <YAxis width={40} tick={{ fontSize: 10 }} />
-        <ChartTooltip content={<ChartTooltipContent formatter={(value) => `${formatDoh(value)} days`} />} />
+        <ChartTooltip
+          itemSorter={(item) => TOOLTIP_ORDER.indexOf(item.dataKey)}
+          content={
+            <ChartTooltipContent
+              formatter={labelledTooltipRow(chartConfig, (value) => `${formatDoh(value)} days`)}
+            />
+          }
+        />
         <ChartLegend content={<ChartLegendContent />} />
         <Line dataKey="max_doh" stroke="var(--color-max_doh)" strokeDasharray="2 4" dot={false} isAnimationActive={false} />
         <Line dataKey="min_doh" stroke="var(--color-min_doh)" strokeDasharray="2 4" dot={false} isAnimationActive={false} />

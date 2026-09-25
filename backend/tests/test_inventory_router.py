@@ -42,6 +42,7 @@ def test_overview_passes_the_filters_to_the_service(monkeypatch):
         "skus": ["A1", "B2"],
         "start_month": date(2026, 3, 1),
         "end_month": date(2026, 5, 1),
+        "at_risk_only": False,
     }
 
 
@@ -132,6 +133,100 @@ def test_sell_in_plan_maps_a_bigquery_outage_to_503(monkeypatch):
 
     assert response.status_code == 503
     assert "forecast" in response.json()["detail"].lower()
+
+
+# ---- at risk -----------------------------------------------------------------------
+
+
+def test_at_risk_passes_the_filters_to_the_service(monkeypatch):
+    seen = {}
+
+    def fake(customer_ids, risk):
+        seen.update(customer_ids=customer_ids, risk=risk)
+        return {"items": []}
+
+    monkeypatch.setattr(inventory_service, "get_at_risk", fake)
+
+    response = client.get("/api/inventory/at-risk?customer_id=1&customer_id=2&risk=below_min")
+
+    assert response.status_code == 200
+    assert seen == {"customer_ids": [1, 2], "risk": "below_min"}
+
+
+def test_at_risk_defaults_to_every_customer_and_both_kinds(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(
+        inventory_service, "get_at_risk", lambda customer_ids, risk: seen.update(c=customer_ids, r=risk) or {}
+    )
+
+    client.get("/api/inventory/at-risk")
+
+    assert seen == {"c": None, "r": None}
+
+
+def test_at_risk_with_an_unknown_risk_kind_is_400(monkeypatch):
+    monkeypatch.setattr(inventory_service, "get_at_risk", _raises(ValueError("risk must be one of ...")))
+
+    assert client.get("/api/inventory/at-risk?risk=fine").status_code == 400
+
+
+def test_at_risk_for_an_unknown_customer_is_404(monkeypatch):
+    monkeypatch.setattr(
+        inventory_service, "get_at_risk", _raises(inventory_service.CustomerNotFoundError("nope"))
+    )
+
+    assert client.get("/api/inventory/at-risk?customer_id=9").status_code == 404
+
+
+def test_at_risk_maps_a_bigquery_outage_to_503(monkeypatch):
+    monkeypatch.setattr(inventory_service, "get_at_risk", _raises(ServiceUnavailable("down")))
+
+    response = client.get("/api/inventory/at-risk")
+
+    assert response.status_code == 503
+    assert "forecast" in response.json()["detail"].lower()
+
+
+def test_overview_at_risk_only_reaches_the_service(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(
+        inventory_service, "get_overview", lambda **kwargs: seen.update(kwargs) or {"skus": []}
+    )
+
+    client.get("/api/inventory/overview?at_risk_only=true")
+
+    assert seen["at_risk_only"] is True
+
+
+def test_overview_maps_a_bigquery_outage_to_503_when_filtering_by_risk(monkeypatch):
+    monkeypatch.setattr(inventory_service, "get_overview", _raises(ServiceUnavailable("down")))
+
+    assert client.get("/api/inventory/overview?at_risk_only=true").status_code == 503
+
+
+# ---- whole-number quantities -------------------------------------------------------
+
+
+@pytest.mark.parametrize("body", [{"sell_in": 3.5}, {"opening_inventory": 2.5}])
+def test_a_record_quantity_with_a_fraction_is_rejected(monkeypatch, body):
+    monkeypatch.setattr(inventory_service, "create_records", _raises(AssertionError("service was called")))
+
+    assert client.post("/api/inventory/records", json={**RECORD, **body}).status_code == 422
+
+
+def test_a_shipped_so_far_quantity_with_a_fraction_is_rejected(monkeypatch):
+    monkeypatch.setattr(inventory_service, "set_shipped_so_far", _raises(AssertionError("service was called")))
+    body = {"customer_ids": [1], "sku": "A1", "month": "2026-10-01", "shipped_so_far": 1.5}
+
+    assert client.put("/api/inventory/shipped-so-far", json=body).status_code == 422
+
+
+def test_whole_number_quantities_are_accepted(monkeypatch):
+    monkeypatch.setattr(inventory_service, "create_records", lambda record: {"records_written": 1})
+
+    response = client.post("/api/inventory/records", json={**RECORD, "sell_in": 120, "opening_inventory": 0})
+
+    assert response.status_code == 201
 
 
 # ---- create / edit -----------------------------------------------------------------

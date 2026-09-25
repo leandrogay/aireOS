@@ -34,12 +34,12 @@ class InventoryRecordBase(_Base):
     month: date
 
     # Sell-in is the only quantity entered: sell-out comes from the sales
-    # dashboard's data, so it is not accepted here.
-    sell_in: float = Field(ge=0)
+    # dashboard's data, so it is not accepted here. Units are whole numbers.
+    sell_in: int = Field(ge=0)
 
     # Only used to seed a SKU's very first month; later months
     # derive their opening stock from the previous ending stock.
-    opening_inventory: float | None = Field(default=None, ge=0)
+    opening_inventory: int | None = Field(default=None, ge=0)
 
     @field_validator("customer_ids")
     @classmethod
@@ -81,7 +81,7 @@ class ShippedSoFarUpdate(_Base):
     # First day of the month the units were shipped for (YYYY-MM-01).
     month: date
 
-    shipped_so_far: float = Field(ge=0)
+    shipped_so_far: int = Field(ge=0)
 
     @field_validator("customer_ids")
     @classmethod

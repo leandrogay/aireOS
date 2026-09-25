@@ -12,6 +12,8 @@ import {
 
 import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
 
+import { labelledTooltipRow } from './chartTooltip';
+
 // AIRE palette, one colour per customer in the order they appear.
 const CUSTOMER_COLORS = [
   'var(--aire-deep-blue)',
@@ -71,7 +73,11 @@ export default function EndingStockChart({ monthly }) {
         <XAxis dataKey="label" tick={{ fontSize: 10 }} />
         <YAxis tickFormatter={formatUnits} width={56} tick={{ fontSize: 10 }} />
         <ChartTooltip
-          content={<ChartTooltipContent formatter={(value) => `${formatUnits(value)} units`} />}
+          content={
+            <ChartTooltipContent
+              formatter={labelledTooltipRow(config, (value) => `${formatUnits(value)} units`)}
+            />
+          }
         />
         <ChartLegend content={<ChartLegendContent />} />
         {customers.map(([id]) => (

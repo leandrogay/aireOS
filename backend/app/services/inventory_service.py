@@ -372,10 +372,12 @@ def get_overview(
     skus: list[str] | None = None,
     start_month: date | None = None,
     end_month: date | None = None,
+    at_risk_only: bool = False,
 ) -> dict:
     """
     Ending stock for every customer: monthly totals per customer for the
     bar graph, and one row per customer, SKU and month for the table.
+    `at_risk_only` keeps only the SKUs that are on the at-risk list now.
     Each SKU's stock is chained from its first month, then the SKU and
     date filters are applied to what is shown, so a filter never changes
     a figure.
@@ -385,11 +387,19 @@ def get_overview(
         customers = _fetch_customers(conn)
         metrics = _fetch_actuals(conn, customer_ids)
 
+    at_risk = (
+        {(item["customer_id"], item["sku"]) for item in get_at_risk(customer_ids)["items"]}
+        if at_risk_only
+        else None
+    )
+
     details = _sku_details()
     latest = _latest_month_by_customer(metrics)
     table = []
     for (customer_id, sku), months in metrics.items():
         if customer_id not in customers or (skus and sku not in skus):
+            continue
+        if at_risk is not None and (customer_id, sku) not in at_risk:
             continue
         sku_cols = _sku_columns(sku, details)
         for row in inventory_calc.build_monthly_series(months, through=latest[customer_id]):
@@ -698,6 +708,49 @@ def get_doh_history(customer_id: int) -> list[dict]:
 # ============================================================
 
 
+def _customer_table(
+    customer_id: int,
+    customer_name: str,
+    metrics: dict[tuple[int, str], dict[date, dict[str, float]]],
+    targets: list[dict],
+    details: dict[str, dict],
+    forecast: dict[str, dict[date, float]],
+    skus: list[str] | None = None,
+    start_month: date | None = None,
+    end_month: date | None = None,
+) -> list[dict]:
+    """
+    One customer's SKU-by-month rows with stock, DOH, target, gap and status,
+    oldest month first. Each SKU's stock is chained from its first month, then
+    the SKU and month filters choose what is returned.
+    """
+
+    latest = _latest_month_by_customer(metrics)
+    table = []
+    for (_, sku), months in metrics.items():
+        if skus and sku not in skus:
+            continue
+        sku_cols = _sku_columns(sku, details)
+        series = inventory_calc.add_doh(
+            inventory_calc.build_monthly_series(months, through=latest[customer_id]),
+            forecast.get(sku, {}),
+        )
+        for row in series:
+            if not _in_range(row["month"], start_month, end_month):
+                continue
+            table.append(
+                {
+                    **_stock_row(customer_id, customer_name, sku_cols, row),
+                    "doh": row["doh"],
+                    "daily_sell_out": row["daily_sell_out"],
+                    **_target_columns(targets, row["month"], row["doh"]),
+                }
+            )
+
+    table.sort(key=lambda r: (r["month"], r["sku"]))
+    return table
+
+
 def get_customer_view(
     customer_id: int,
     skus: list[str] | None = None,
@@ -722,29 +775,17 @@ def get_customer_view(
     details = _sku_details()
     forecast = _forecast_by_sku(customer_id, details)
 
-    latest = _latest_month_by_customer(metrics)
-    table = []
-    for (_, sku), months in metrics.items():
-        if skus and sku not in skus:
-            continue
-        sku_cols = _sku_columns(sku, details)
-        series = inventory_calc.add_doh(
-            inventory_calc.build_monthly_series(months, through=latest[customer_id]),
-            forecast.get(sku, {}),
-        )
-        for row in series:
-            if not _in_range(row["month"], start_month, end_month):
-                continue
-            table.append(
-                {
-                    **_stock_row(customer_id, customers[customer_id], sku_cols, row),
-                    "doh": row["doh"],
-                    "daily_sell_out": row["daily_sell_out"],
-                    **_target_columns(targets, row["month"], row["doh"]),
-                }
-            )
-
-    table.sort(key=lambda r: (r["month"], r["sku"]))
+    table = _customer_table(
+        customer_id,
+        customers[customer_id],
+        metrics,
+        targets,
+        details,
+        forecast,
+        skus=skus,
+        start_month=start_month,
+        end_month=end_month,
+    )
 
     by_month: dict[str, list[dict]] = {}
     for row in table:
@@ -784,6 +825,96 @@ def _target_columns(targets: list[dict], month: date, doh: float | None) -> dict
         "max_doh": maximum,
         "doh_vs_target": None if doh is None else round(doh - target, 1),
         "doh_status": inventory_calc.threshold_status(doh, target),
+    }
+
+
+# ============================================================
+# AT RISK (all customers)
+#
+# A SKU is at risk when its days of holding, in the customer's latest month
+# of actuals, is outside the customer's min-max band: below min (low stock)
+# or above max (overstock). The list is recalculated on every request, so a
+# SKU drops off it as soon as a new month brings its DOH back inside the band.
+# ============================================================
+
+AT_RISK_STATUSES = (inventory_calc.DOH_STATUS_BELOW_MIN, inventory_calc.DOH_STATUS_ABOVE_MAX)
+
+
+def _at_risk_item(row: dict) -> dict:
+    """An at-risk SKU row with how far its DOH sits outside the band, in days."""
+
+    outside = (
+        row["min_doh"] - row["doh"]
+        if row["doh_status"] == inventory_calc.DOH_STATUS_BELOW_MIN
+        else row["doh"] - row["max_doh"]
+    )
+    return {
+        "customer_id": row["customer_id"],
+        "customer_name": row["customer_name"],
+        "sku": row["sku"],
+        "product_name": row["product_name"],
+        "sku_range": row["sku_range"],
+        "size": row["size"],
+        "month": row["month"],
+        "ending_stock": row["ending_stock"],
+        "doh": row["doh"],
+        "target_doh": row["target_doh"],
+        "min_doh": row["min_doh"],
+        "max_doh": row["max_doh"],
+        "doh_status": row["doh_status"],
+        "days_outside_band": round(outside, 1),
+    }
+
+
+def get_at_risk(
+    customer_ids: list[int] | None = None,
+    risk: str | None = None,
+) -> dict:
+    """
+    Every at-risk SKU across the chosen customers (all by default) in one list,
+    most severe first (furthest outside its band). `risk` narrows the list to
+    below_min or above_max; the counts always cover both so the page can show
+    the split. `as_of` is the latest month of actuals the list is judged on.
+    """
+
+    if risk is not None and risk not in AT_RISK_STATUSES:
+        raise ValueError(f"risk must be one of {AT_RISK_STATUSES}")
+
+    with _read_connection() as conn:
+        customers = _fetch_customers(conn)
+        chosen = customer_ids or list(customers)
+        _require_customers(customers, chosen)
+        metrics = _fetch_actuals(conn, chosen)
+        all_targets = _fetch_targets(conn)
+
+    details = _sku_details()
+    latest = _latest_month_by_customer(metrics)
+
+    items = []
+    for customer_id in chosen:
+        if customer_id not in latest:
+            continue
+        table = _customer_table(
+            customer_id,
+            customers[customer_id],
+            {key: months for key, months in metrics.items() if key[0] == customer_id},
+            [t for t in all_targets if t["customer_id"] == customer_id],
+            details,
+            _forecast_by_sku(customer_id, details),
+            start_month=latest[customer_id],
+            end_month=latest[customer_id],
+        )
+        items.extend(_at_risk_item(row) for row in table if row["doh_status"] in AT_RISK_STATUSES)
+
+    counts = {status: sum(1 for item in items if item["doh_status"] == status) for status in AT_RISK_STATUSES}
+    if risk is not None:
+        items = [item for item in items if item["doh_status"] == risk]
+    items.sort(key=lambda item: (-item["days_outside_band"], item["customer_name"], item["product_name"]))
+
+    return {
+        "as_of": _iso(max(latest.values())) if latest else None,
+        "counts": counts,
+        "items": items,
     }
 
 

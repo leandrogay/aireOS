@@ -21,6 +21,8 @@ import { checkRowClass, inputClass, labelClass } from './formStyles';
  * @param {string} [props.status] '' or a doh_status value
  * @param {(value: string) => void} [props.onStatusChange]
  * @param {Array<{ value: string, label: string }>} [props.statusOptions]
+ * @param {boolean} [props.atRiskOnly] show only SKUs on the at-risk list
+ * @param {(value: boolean) => void} [props.onAtRiskChange] adds the "At risk only" checkbox
  * @param {() => void} props.onClear
  */
 export default function InventoryFilters({
@@ -34,9 +36,11 @@ export default function InventoryFilters({
   status = '',
   onStatusChange,
   statusOptions,
+  atRiskOnly = false,
+  onAtRiskChange,
   onClear,
 }) {
-  const hasFilters = skus.length > 0 || startMonth || endMonth || status;
+  const hasFilters = skus.length > 0 || startMonth || endMonth || status || atRiskOnly;
 
   function toggleSku(sku) {
     onSkusChange(skus.includes(sku) ? skus.filter((s) => s !== sku) : [...skus, sku]);
@@ -102,6 +106,18 @@ export default function InventoryFilters({
               </option>
             ))}
           </select>
+        </label>
+      )}
+
+      {onAtRiskChange && (
+        <label className="flex items-center gap-2 pb-1.5 text-sm text-deep-violet-blue">
+          <input
+            type="checkbox"
+            checked={atRiskOnly}
+            onChange={(e) => onAtRiskChange(e.target.checked)}
+            className="size-3.5 accent-deep-violet-blue"
+          />
+          At risk only
         </label>
       )}
 

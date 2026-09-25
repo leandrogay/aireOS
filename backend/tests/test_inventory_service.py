@@ -966,3 +966,123 @@ def test_actuals_are_accepted_when_the_dashboard_data_covers_the_month(monkeypat
     inventory_service.create_records(_record(month="2026-08-01"), today=TODAY)
 
     assert len(conn.sql_containing("INSERT INTO inventory_metrics")) == 1
+
+
+# ---- at risk ------------------------------------------------------------------------
+
+
+# A1 ends February on 20 units, B2 on 1,030; both sell about 10 a day going forward, so
+# A1 has 2.0 days of cover (low) and B2 103 days (overstock). C3 has no forecast, so no DOH.
+_RISK_FORECAST = {
+    "Pants A": {date(2026, 3, 1): 310.0, date(2026, 4, 1): 300.0, date(2026, 5, 1): 310.0},
+    "Pants B": {date(2026, 3, 1): 310.0, date(2026, 4, 1): 300.0, date(2026, 5, 1): 310.0},
+}
+
+
+def _risk_view(monkeypatch, target=30.0, **kwargs):
+    jan, feb = date(2026, 1, 1), date(2026, 2, 1)
+    metrics = [
+        _metric(1, "A1", jan, "sell_in", 400),
+        _metric(1, "A1", jan, "sell_out_base", 100),
+        _metric(1, "A1", feb, "sell_in", 0),
+        _metric(1, "A1", feb, "sell_out_base", 280),
+        _metric(1, "B2", jan, "sell_in", 50),
+        _metric(1, "B2", jan, "sell_out_base", 20),
+        _metric(1, "B2", feb, "sell_in", 1000),
+        _metric(1, "C3", jan, "sell_in", 5),
+        _metric(1, "C3", feb, "sell_in", 5),
+    ]
+    _install(monkeypatch, _router(_customers("fairprice"), metrics, [_target(target=target)]))
+    monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: _RISK_FORECAST)
+    return inventory_service.get_at_risk(**kwargs)
+
+
+def test_skus_outside_their_band_are_on_the_at_risk_list(monkeypatch):
+    risk = _risk_view(monkeypatch)
+
+    by_sku = {item["sku"]: item for item in risk["items"]}
+    assert by_sku["A1"]["doh_status"] == "below_min"
+    assert by_sku["B2"]["doh_status"] == "above_max"
+
+
+def test_the_list_carries_stock_doh_and_the_band(monkeypatch):
+    item = next(i for i in _risk_view(monkeypatch)["items"] if i["sku"] == "A1")
+
+    assert item["customer_name"] == "fairprice"
+    assert item["product_name"] == "Pants A"
+    assert item["month"] == "2026-02-01"
+    assert item["ending_stock"] == 20
+    assert (item["doh"], item["target_doh"], item["min_doh"], item["max_doh"]) == (2.0, 30, 25, 35)
+
+
+def test_days_outside_the_band_is_measured_from_the_nearest_edge(monkeypatch):
+    by_sku = {i["sku"]: i for i in _risk_view(monkeypatch)["items"]}
+
+    assert by_sku["A1"]["days_outside_band"] == 23  # 2.0 against a min of 25
+    assert by_sku["B2"]["days_outside_band"] == 68  # 103.0 against a max of 35
+
+
+def test_the_most_severe_sku_is_listed_first(monkeypatch):
+    assert [i["sku"] for i in _risk_view(monkeypatch)["items"]] == ["B2", "A1"]
+
+
+def test_a_sku_with_no_doh_is_not_flagged(monkeypatch):
+    assert "C3" not in {i["sku"] for i in _risk_view(monkeypatch)["items"]}
+
+
+def test_a_sku_back_inside_its_band_drops_off_the_list(monkeypatch):
+    # With a target of 2 days the band is -3 to 7, so A1's 2.0 days is fine.
+    risk = _risk_view(monkeypatch, target=2.0)
+
+    assert "A1" not in {i["sku"] for i in risk["items"]}
+
+
+def test_the_list_can_be_narrowed_to_one_kind_of_risk(monkeypatch):
+    risk = _risk_view(monkeypatch, risk="below_min")
+
+    assert [i["sku"] for i in risk["items"]] == ["A1"]
+
+
+def test_the_counts_cover_both_kinds_even_when_the_list_is_narrowed(monkeypatch):
+    risk = _risk_view(monkeypatch, risk="below_min")
+
+    assert risk["counts"] == {"below_min": 1, "above_max": 1}
+
+
+def test_the_list_says_which_month_it_is_judged_on(monkeypatch):
+    assert _risk_view(monkeypatch)["as_of"] == "2026-02-01"
+
+
+def test_an_unknown_risk_kind_is_refused(monkeypatch):
+    with pytest.raises(ValueError, match="risk must be one of"):
+        _risk_view(monkeypatch, risk="fine")
+
+
+def test_at_risk_rejects_an_unknown_customer(monkeypatch):
+    with pytest.raises(inventory_service.CustomerNotFoundError):
+        _risk_view(monkeypatch, customer_ids=[99])
+
+
+def test_at_risk_only_reads_the_chosen_customers(monkeypatch):
+    conn = _install(monkeypatch, _router(_customers("fairprice", "giant")))
+    monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: {})
+
+    inventory_service.get_at_risk(customer_ids=[2])
+
+    assert conn.sql_containing("DISTINCT ON")[0][1]["customer_ids"] == [2]
+
+
+def test_the_overview_can_be_limited_to_sku_that_are_at_risk(monkeypatch):
+    _risk_view(monkeypatch)  # installs the fixtures
+
+    overview = inventory_service.get_overview(at_risk_only=True)
+
+    assert {r["sku"] for r in overview["skus"]} == {"A1", "B2"}  # C3 has no DOH, so it is left out
+
+
+def test_the_overview_shows_every_sku_when_the_filter_is_off(monkeypatch):
+    _risk_view(monkeypatch)
+
+    overview = inventory_service.get_overview()
+
+    assert {r["sku"] for r in overview["skus"]} == {"A1", "B2", "C3"}

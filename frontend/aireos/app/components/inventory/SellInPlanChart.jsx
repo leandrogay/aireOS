@@ -12,6 +12,8 @@ import {
 
 import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
 
+import { labelledTooltipRow } from './chartTooltip';
+
 const chartConfig = {
   forecast_sell_out: { label: 'Forecast sell-out', color: 'var(--aire-violet)' },
   recommended_sell_in: { label: 'Recommended sell-in', color: 'var(--aire-deep-blue)' },
@@ -40,7 +42,11 @@ export default function SellInPlanChart({ totals }) {
         <XAxis dataKey="label" tick={{ fontSize: 10 }} />
         <YAxis tickFormatter={formatUnits} width={56} tick={{ fontSize: 10 }} />
         <ChartTooltip
-          content={<ChartTooltipContent formatter={(value) => `${formatUnits(value)} units`} />}
+          content={
+            <ChartTooltipContent
+              formatter={labelledTooltipRow(chartConfig, (value) => `${formatUnits(value)} units`)}
+            />
+          }
         />
         <ChartLegend content={<ChartLegendContent />} />
         <Bar

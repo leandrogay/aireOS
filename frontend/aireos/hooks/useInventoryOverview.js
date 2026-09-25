@@ -10,7 +10,7 @@ import { getInventoryOverview } from '@/app/services/inventoryApi';
  * so the dependency list stays honest even when a filter is an array.
  * `refreshKey` is bumped by the page after a create/edit to refetch.
  *
- * @param {{ customerIds?: number[], skus?: string[], startMonth?: string, endMonth?: string, refreshKey?: number }} [options]
+ * @param {{ customerIds?: number[], skus?: string[], startMonth?: string, endMonth?: string, atRiskOnly?: boolean, refreshKey?: number }} [options]
  * @returns {{ data: { customers: object[], monthly: object[], skus: object[] } | null, loading: boolean, error: string | null }}
  */
 export default function useInventoryOverview({
@@ -18,12 +18,13 @@ export default function useInventoryOverview({
   skus = [],
   startMonth = '',
   endMonth = '',
+  atRiskOnly = false,
   refreshKey = 0,
 } = {}) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const filterKey = JSON.stringify({ customerIds, skus, startMonth, endMonth });
+  const filterKey = JSON.stringify({ customerIds, skus, startMonth, endMonth, atRiskOnly });
 
   useEffect(() => {
     let cancelled = false;

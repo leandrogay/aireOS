@@ -15,12 +15,12 @@ export const EMPTY_INVENTORY_FORM = {
   openingInventory: '',
 };
 
-// A quantity is a plain non-negative number: digits with an optional decimal part.
-const QUANTITY_PATTERN = /^\d+(\.\d+)?$/;
+// A quantity is a whole number of units: digits only, so 0 or more with no decimals.
+const QUANTITY_PATTERN = /^\d+$/;
 
 /**
  * @param {string} value
- * @returns {boolean} true for '0', '12', '3.5'; false for '', '-1', '1e3', 'abc'
+ * @returns {boolean} true for '0', '12'; false for '', '-1', '3.5', '1e3', 'abc'
  */
 function isQuantity(value) {
   return QUANTITY_PATTERN.test(String(value).trim());
@@ -57,10 +57,10 @@ export function validateInventoryForm(form, { isEdit = false, now = new Date() }
     errors.month = 'That month has not ended yet. Use Shipped so far for sell-in already sent this month.';
   }
   if (!isQuantity(form.sellIn)) {
-    errors.sellIn = 'Enter sell-in as a number of 0 or more.';
+    errors.sellIn = 'Enter sell-in as a whole number of 0 or more.';
   }
   if (form.openingInventory !== '' && !isQuantity(form.openingInventory)) {
-    errors.openingInventory = 'Opening inventory must be a number of 0 or more.';
+    errors.openingInventory = 'Opening inventory must be a whole number of 0 or more.';
   }
 
   return errors;
@@ -126,7 +126,7 @@ export function validateShippedForm(form, { now = new Date() } = {}) {
     errors.month = 'That month has already ended. Enter its real sell-in and sell-out under Create or Edit.';
   }
   if (!isQuantity(form.shippedSoFar)) {
-    errors.shippedSoFar = 'Enter the units shipped so far as a number of 0 or more.';
+    errors.shippedSoFar = 'Enter the units shipped so far as a whole number of 0 or more.';
   }
 
   return errors;

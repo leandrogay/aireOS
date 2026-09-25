@@ -36,8 +36,9 @@ import {
  * @param {Array<{ sku: string, product_name: string, sku_range: string | null }>} props.skus
  * @param {(message: string) => void} props.onSaved called with the confirmation text
  * @param {() => void} [props.onCancel]
+ * @param {string} [props.notice] a note shown above the buttons (edit: what several customers will receive)
  */
-export default function InventoryRecordForm({ mode, initialForm, customers, skus, onSaved, onCancel }) {
+export default function InventoryRecordForm({ mode, initialForm, customers, skus, onSaved, onCancel, notice }) {
   const isEdit = mode === 'edit';
   const [form, setForm] = useState(initialForm);
   const [errors, setErrors] = useState({});
@@ -86,7 +87,7 @@ export default function InventoryRecordForm({ mode, initialForm, customers, skus
         </span>
         <input
           type="text"
-          inputMode="decimal"
+          inputMode="numeric"
           value={form[name]}
           onChange={(e) => setField(name, e.target.value)}
           aria-invalid={Boolean(errors[name])}
@@ -97,17 +98,20 @@ export default function InventoryRecordForm({ mode, initialForm, customers, skus
     );
   }
 
-  const selectedCustomer = customers.find((c) => c.customer_id === form.customerIds[0]);
+  const selectedNames = customers
+    .filter((c) => form.customerIds.includes(c.customer_id))
+    .map((c) => c.customer_name)
+    .join(', ');
 
   return (
     <form onSubmit={handleSubmit} noValidate className="grid gap-3 sm:grid-cols-2">
       <fieldset className="sm:col-span-2">
         <legend className={labelClass}>
-          Customer{!isEdit && 's'}
+          Customer{(!isEdit || form.customerIds.length > 1) && 's'}
           <span className="text-red-700"> *</span>
         </legend>
         {isEdit ? (
-          <p className="text-sm text-deep-violet-blue">{selectedCustomer?.customer_name ?? '—'}</p>
+          <p className="text-sm text-deep-violet-blue">{selectedNames || '—'}</p>
         ) : (
           <div className="flex flex-wrap gap-x-4">
             {customers.map((customer) => (
@@ -178,6 +182,12 @@ export default function InventoryRecordForm({ mode, initialForm, customers, skus
         Sell-out is not entered here. It comes from the sales dashboard&apos;s data for the month, so the two always
         agree.
       </p>
+
+      {notice && (
+        <p className="rounded-md border border-violet bg-lavander px-3 py-2 text-sm text-deep-violet-blue sm:col-span-2">
+          {notice}
+        </p>
+      )}
 
       {submitError && (
         <p className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800 sm:col-span-2" role="alert">

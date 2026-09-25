@@ -137,7 +137,7 @@ export default function ShippedSoFarForm({ customers, skus, onSaved }) {
         </span>
         <input
           type="text"
-          inputMode="decimal"
+          inputMode="numeric"
           value={form.shippedSoFar}
           onChange={(e) => setField('shippedSoFar', e.target.value)}
           aria-invalid={Boolean(errors.shippedSoFar)}

@@ -5,6 +5,7 @@ import { useCallback, useState } from 'react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import useInventoryOptions from '@/hooks/useInventoryOptions';
 
+import AtRiskView from './AtRiskView';
 import CustomerInventoryView from './CustomerInventoryView';
 import DohThresholdsPanel from './DohThresholdsPanel';
 import InventoryDataManager from './InventoryDataManager';
@@ -18,6 +19,7 @@ const TAB_TRIGGER_CLASS =
 const TABS = [
   { value: 'overview', label: 'Overview' },
   { value: 'customer', label: 'By customer' },
+  { value: 'risk', label: 'At risk' },
   { value: 'plan', label: 'Sell-in plan' },
   { value: 'manage', label: 'Enter / edit data' },
   { value: 'thresholds', label: 'DOH thresholds' },
@@ -25,7 +27,7 @@ const TABS = [
 
 /**
  * The inventory page: overall view for all customers, one customer with DOH,
- * the sell-in plan, the create/edit form, and DOH thresholds. Only the active tab is mounted, so
+ * the at-risk list, the sell-in plan, the create/edit form, and DOH thresholds. Only the active tab is mounted, so
  * switching tabs refetches, and `refreshKey` (bumped after any write) makes the
  * mounted views refetch too. Table rows' Edit buttons jump to the form.
  */
@@ -90,6 +92,8 @@ export default function InventoryTabs() {
           onEditRow={handleEditRow}
         />
       )}
+
+      {tab === 'risk' && <AtRiskView customers={options.customers} refreshKey={refreshKey} />}
 
       {tab === 'plan' && <SellInPlanView customers={options.customers} refreshKey={refreshKey} />}
 

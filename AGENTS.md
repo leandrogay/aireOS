@@ -26,7 +26,7 @@ aireOS/
 │   │   │   ├── uploads.py         /api/uploads        file ingest + mapping review (async)
 │   │   │   ├── sales.py           /api/sales          BigQuery dashboard reads
 │   │   │   ├── catalog.py         /api/catalog        retailer/store CRUD, sku-range lookup
-│   │   │   ├── inventory.py       /api/inventory      overview, per-customer DOH, sell-in plan, record create/edit, shipped so far, DOH thresholds
+│   │   │   ├── inventory.py       /api/inventory      overview, per-customer DOH, at-risk list, sell-in plan, record create/edit, shipped so far, DOH thresholds
 │   │   │   └── promotions.py      /api/promotions     promotion CRUD + /health/db
 │   │   ├── schemas/               Pydantic v2 request models (only catalog + promotions today)
 │   │   │   ├── catalog.py         _Base, RetailerCreate/Update, StoreCreate/Update, SkuItem
@@ -64,7 +64,7 @@ aireOS/
     │   ├── dashboard/page.js      Sales dashboard: customer/sku/store/date filters, trend chart, ranking
     │   ├── promotions/page.js     Promotion create/edit/delete + overview list
     │   ├── forecast/page.js       Placeholder
-    │   ├── inventory/page.js      Inventory: overview, by-customer DOH, sell-in plan, enter/edit data, DOH thresholds (components/inventory)
+    │   ├── inventory/page.js      Inventory: overview, by-customer DOH, at-risk list, sell-in plan, enter/edit data, DOH thresholds (components/inventory)
     │   ├── components/
     │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column), Sidebar (NAV_ITEMS)
     │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, DateRangePicker

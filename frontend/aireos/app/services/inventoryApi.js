@@ -50,18 +50,35 @@ export async function getInventorySkus() {
  * month, for the bar chart) and `skus` (one row per customer, SKU and
  * month, for the table). Months are 'YYYY-MM-01' strings.
  *
- * @param {{ customerIds?: number[], skus?: string[], startMonth?: string, endMonth?: string }} [filters]
+ * `atRiskOnly` keeps only the SKUs that are on the at-risk list now.
+ *
+ * @param {{ customerIds?: number[], skus?: string[], startMonth?: string, endMonth?: string, atRiskOnly?: boolean }} [filters]
  * @returns {Promise<{ customers: object[], monthly: object[], skus: object[] }>}
  */
-export async function getInventoryOverview({ customerIds, skus, startMonth, endMonth } = {}) {
+export async function getInventoryOverview({ customerIds, skus, startMonth, endMonth, atRiskOnly } = {}) {
   return request(
     `/api/inventory/overview${toQuery({
       customer_id: customerIds,
       sku: skus,
       start_month: startMonth,
       end_month: endMonth,
+      at_risk_only: atRiskOnly ? 'true' : '',
     })}`,
   );
+}
+
+/**
+ * GET /api/inventory/at-risk
+ *
+ * Every SKU whose days of holding is outside its customer's min-max band in the
+ * latest month of actuals, across all customers by default, most severe first.
+ * `counts` always covers both kinds; `risk` narrows `items`.
+ *
+ * @param {{ customerIds?: number[], risk?: 'below_min' | 'above_max' | '' }} [filters]
+ * @returns {Promise<{ as_of: string | null, counts: { below_min: number, above_max: number }, items: object[] }>}
+ */
+export async function getAtRisk({ customerIds, risk } = {}) {
+  return request(`/api/inventory/at-risk${toQuery({ customer_id: customerIds, risk })}`);
 }
 
 /**
