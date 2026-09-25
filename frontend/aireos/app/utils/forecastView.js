@@ -2,7 +2,11 @@ export const DEFAULT_PRODUCT_NAME = 'Aire Ultra Tape L';
 
 export const FORECAST_SERIES = [
   { key: 'actual', label: 'Actual', color: '#3A4369', dash: undefined, shape: 'circle' },
-  { key: 'initial', label: 'Initial', color: '#E8922A', dash: '2 4', shape: 'square' },
+  // A frozen Jan-Dec baseline per calendar year -- generated once from prior-year
+  // data only and never recomputed, unlike previous/current below which are
+  // "rolling" 12-month-ahead runs regenerated monthly. See
+  // pl_forecast.next_yearly_run / runs_to_compute for what "frozen" means here.
+  { key: 'initial', label: 'Initial Yearly Forecast', color: '#E8922A', dash: '2 4', shape: 'square' },
   { key: 'previous', label: 'Previous', color: '#7C3AED', dash: '8 3', shape: 'triangle' },
   { key: 'current', label: 'Current', color: '#0D9488', dash: '3 3', shape: 'diamond' },
 ];
@@ -91,10 +95,44 @@ function predictedValue(row, metric) {
   return row.predicted_quantity_units;
 }
 
+// Resolves which row wins per forecast cell for the selected tier, so
+// buildMonthlyPoints never has to know tiers exist at all. Tier 0 is this
+// app's own model (see backend pl_forecast.py) and is always fully
+// populated. Tier 1 is a teammate's separate model (see backend
+// forecasting_output_schema.sql) -- when selected, a cell shows its Tier 1
+// value if one exists, else falls back to Tier 0. Simple presence fallback,
+// no accuracy comparison.
+export function resolveTier(rows, tier) {
+  if (tier !== 1) {
+    return rows.filter((row) => row.forecast_generated_at == null || (row.tier ?? 0) === 0);
+  }
+
+  const actuals = rows.filter((row) => row.forecast_generated_at == null);
+  const byCell = new Map();
+  for (const row of rows) {
+    if (row.forecast_generated_at == null) continue;
+    const cellKey = [row.run_type, row.forecast_generated_at, row.product_name, row.customer_name, row.month_year]
+      .join('|');
+    const rowTier = row.tier ?? 0;
+    const current = byCell.get(cellKey);
+    if (!current || rowTier > current.tier) {
+      byCell.set(cellKey, { row, tier: rowTier });
+    }
+  }
+  return [...actuals, ...[...byCell.values()].map((entry) => entry.row)];
+}
+
 export function getRunDates(rows) {
-  const dates = [...new Set(rows.map((row) => row.forecast_generated_at).filter(Boolean))].sort();
+  // Yearly baselines are excluded here -- they can share a date with a
+  // rolling run (see backend forecasting_output_schema.sql) and aren't part
+  // of the previous/current rotation at all (they're shown as "Initial
+  // Yearly Forecast" instead -- see buildMonthlyPoints).
+  const dates = [
+    ...new Set(
+      rows.filter((row) => row.run_type !== 'yearly').map((row) => row.forecast_generated_at).filter(Boolean)
+    ),
+  ].sort();
   return {
-    initial: dates[0] ?? null,
     previous: dates.length >= 3 ? dates.at(-2) : null,
     current: dates.at(-1) ?? null,
   };
@@ -143,7 +181,7 @@ function applyPromoToPoint(point, row) {
 }
 
 export function buildMonthlyPoints(rows, metric = 'units') {
-  const { initial, previous, current } = getRunDates(rows);
+  const { previous, current } = getRunDates(rows);
   const byMonth = new Map();
 
   function pointFor(monthYear) {
@@ -174,6 +212,15 @@ export function buildMonthlyPoints(rows, metric = 'units') {
       continue;
     }
 
+    if (row.run_type === 'yearly') {
+      // The frozen yearly baseline is shown as "Initial Yearly Forecast" --
+      // at most one yearly-run row ever covers a given month, so this just
+      // accumulates, no previous/current-style date matching needed.
+      const value = predictedValue(row, metric);
+      if (value != null) point.initial = (point.initial ?? 0) + value;
+      continue;
+    }
+
     const value = predictedValue(row, metric);
     if (value == null) continue;
 
@@ -186,9 +233,6 @@ export function buildMonthlyPoints(rows, metric = 'units') {
       if (!point.promotion_mechanic && row.promotion_mechanic) {
         point.promotion_mechanic = row.promotion_mechanic;
       }
-    }
-    if (row.forecast_generated_at === initial) {
-      point.initial = (point.initial ?? 0) + value;
     }
   }
 
@@ -221,6 +265,22 @@ export function emptyMonthlyPoint(monthYear) {
     promo_type: null,
     promoTypes: [],
     promoByType: {},
+  };
+}
+
+// Default date range for the Forecast page: the current calendar year only,
+// clamped to whatever data actually exists (so a bound of '' or a range that
+// doesn't reach this year still returns something sane). Past years (2024,
+// 2025, ...) only show once the user explicitly widens the date filter --
+// ISO 'YYYY-MM-DD' strings compare lexicographically the same as
+// chronologically, so plain string comparison is enough here.
+export function currentYearDateRange(bounds = {}) {
+  const year = new Date().getFullYear();
+  const yearStart = `${year}-01-01`;
+  const yearEnd = `${year}-12-31`;
+  return {
+    start: bounds.start && bounds.start > yearStart ? bounds.start : yearStart,
+    end: bounds.end && bounds.end < yearEnd ? bounds.end : yearEnd,
   };
 }
 

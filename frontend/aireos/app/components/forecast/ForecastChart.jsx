@@ -160,6 +160,23 @@ export default function ForecastChart({
   const overlayDividers = overlayMonthDividers(chartPoints, promoType);
   const ticks = plotData.map((point) => point.x);
 
+  // Recharts' default Y-domain fits ALL series at once, so a line with modest
+  // variation (e.g. a frozen Initial/Yearly baseline) reads as nearly flat
+  // whenever another visible line has a much wider range. Fit the domain to
+  // only the currently-visible series' actual values instead, with a little
+  // padding so lines aren't flush against the chart edges.
+  const visibleKeys = FORECAST_SERIES.filter((series) => visibleSeries[series.key]).map((series) => series.key);
+  const visibleValues = chartData.flatMap((point) =>
+    visibleKeys.map((key) => point[key]).filter((value) => typeof value === 'number')
+  );
+  let yDomain = ['auto', 'auto'];
+  if (visibleValues.length) {
+    const dataMin = Math.min(...visibleValues);
+    const dataMax = Math.max(...visibleValues);
+    const padding = (dataMax - dataMin) * 0.1 || Math.abs(dataMax) * 0.1 || 1;
+    yDomain = [dataMin - padding, dataMax + padding];
+  }
+
   return (
     <Card size="sm" className="overflow-visible border border-violet/40 bg-white text-deep-violet-blue ring-0">
       <CardHeader className="flex flex-row items-start justify-between gap-3 pb-1">
@@ -223,6 +240,8 @@ export default function ForecastChart({
                   />
                   <YAxis
                     width={36}
+                    domain={yDomain}
+                    allowDataOverflow
                     tick={{ fontSize: 10, fill: '#3A4369' }}
                     tickFormatter={(value) => formatAxisValue(value, metric)}
                   />

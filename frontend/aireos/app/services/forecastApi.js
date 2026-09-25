@@ -36,3 +36,19 @@ export async function getForecastRows({
   const data = await request(`/api/forecast/${query ? `?${query}` : ''}`);
   return data.rows ?? [];
 }
+
+export async function getInventoryPosition({
+  productName = '',
+  customerName = '',
+  startDate = '',
+  endDate = '',
+} = {}) {
+  const params = new URLSearchParams();
+  if (productName) params.set('product_name', productName);
+  if (customerName) params.set('customer_name', customerName);
+  if (startDate) params.set('start_date', startDate);
+  if (endDate) params.set('end_date', endDate);
+  const query = params.toString();
+  const data = await request(`/api/forecast/inventory${query ? `?${query}` : ''}`);
+  return data.rows ?? [];
+}

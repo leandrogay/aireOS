@@ -39,16 +39,13 @@ export default function ForecastFilters({
   minDate,
   maxDate,
   onClearFilters,
+  canClearFilters,
   horizonTotal,
   metric,
   generatedAtLabel,
   tier,
   onTierChange,
 }) {
-  const canClearFilters = Boolean(
-    productName || customerName || startDate !== minDate || endDate !== maxDate
-  );
-
   return (
     <Card size="sm" className="border border-violet/40 text-deep-violet-blue ring-0">
       <CardContent className="space-y-2">
