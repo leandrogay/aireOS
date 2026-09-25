@@ -817,49 +817,6 @@ def get_sku_ranges() -> list[str]:
 
 
 # ============================================================
-# SKU CODE -> PRODUCT NAME
-#
-# Bridges an external sku code (e.g. from the BigQuery
-# inventory_metrics table) to this catalog's product_name, so
-# other services can join on product_name without knowing the
-# skus table's shape.
-# ============================================================
-
-
-def get_product_names_for_skus(sku_codes: list[str]) -> dict[str, str]:
-    codes = list(dict.fromkeys(sku_codes))
-
-    if not codes:
-        return {}
-
-    query = text(
-        """
-        SELECT
-            sku,
-            product_name
-
-        FROM skus
-
-        WHERE
-            sku = ANY(CAST(:skus AS text[]))
-        """
-    )
-
-    with _read_connection() as conn:
-        rows = conn.execute(
-            query,
-            {
-                "skus": codes,
-            },
-        ).all()
-
-    return {
-        sku: product_name
-        for sku, product_name in rows
-    }
-
-
-# ============================================================
 # PRODUCT PRICES
 #
 # Sell-out forecast revenue (see forecast_service.refresh_forecast)

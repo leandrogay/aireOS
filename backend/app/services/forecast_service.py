@@ -26,14 +26,10 @@ import uuid
 import pandas as pd
 from google.cloud import bigquery
 
-from app.services import catalog_service, customer_service, inventory_forecast, pl_forecast
+from app.services import catalog_service, pl_forecast
 from app.services.bigquery import BQFairprice_TABLE, get_bigquery_client
 
 FORECAST_TABLE = os.environ.get("BQ_FORECAST_TABLE", "aire-data.Aire_Data.forecasting_output_xianhui_mock")
-INVENTORY_METRICS_TABLE = os.environ.get("BQ_INVENTORY_METRICS_TABLE", "aire-data.Aire_Data.inventory_metrics")
-INVENTORY_POSITION_TABLE = os.environ.get(
-    "BQ_INVENTORY_POSITION_TABLE", "aire-data.Aire_Data.forecasting_inventory_position"
-)
 
 
 # ============================================================
@@ -83,16 +79,6 @@ def get_sellout_weeks(customers: list[str]) -> pd.DataFrame:
     client = get_bigquery_client()
     query = _SELLOUT_WEEKS_QUERY.format(sellout_table=BQFairprice_TABLE)
     return client.query(query, job_config=job_config).result().to_dataframe()
-
-
-def get_inventory_metrics_rows() -> pd.DataFrame:
-    """Every row of the externally-ingested inventory_metrics table, read-only.
-
-    Small EAV table (see app/services/inventory_forecast.py for the shape),
-    so an unfiltered read is simplest -- same style as get_forecast_table_rows().
-    """
-    client = get_bigquery_client()
-    return client.query(f"SELECT * FROM `{INVENTORY_METRICS_TABLE}`").result().to_dataframe()
 
 
 # ============================================================
@@ -163,58 +149,6 @@ _ACTUALS_SCHEMA = [
     bigquery.SchemaField("revenue", "FLOAT"),
 ]
 
-_MERGE_INVENTORY = """
-    MERGE `{target}` t
-    USING `{staging}` s
-    ON  t.month_year = s.month_year
-    AND t.customer_name = s.customer_name
-    AND t.product_name = s.product_name
-    WHEN MATCHED THEN UPDATE SET
-      customer_id = s.customer_id,
-      opening_inventory = s.opening_inventory,
-      actual_sell_in = s.actual_sell_in,
-      recommended_sell_in = s.recommended_sell_in,
-      actual_sell_out = s.actual_sell_out,
-      forecast_sell_out = s.forecast_sell_out,
-      actual_closing_inventory = s.actual_closing_inventory,
-      predicted_closing_inventory = s.predicted_closing_inventory,
-      inventory_position = s.inventory_position,
-      -- Captured once, the moment an actual first arrives (t.predicted_closing_inventory
-      -- is still whatever the previous refresh predicted). Every refresh after that,
-      -- predicted_closing_inventory is already NULL on t for that month, so this falls
-      -- through to ELSE and the frozen variance is never overwritten.
-      inventory_variance = CASE
-        WHEN s.actual_closing_inventory IS NOT NULL AND t.predicted_closing_inventory IS NOT NULL
-          THEN s.actual_closing_inventory - t.predicted_closing_inventory
-        ELSE t.inventory_variance
-      END
-    WHEN NOT MATCHED THEN INSERT
-      (month_year, customer_id, customer_name, product_name, opening_inventory,
-       actual_sell_in, recommended_sell_in, actual_sell_out, forecast_sell_out,
-       actual_closing_inventory, predicted_closing_inventory, inventory_position,
-       inventory_variance)
-    VALUES
-      (s.month_year, s.customer_id, s.customer_name, s.product_name, s.opening_inventory,
-       s.actual_sell_in, s.recommended_sell_in, s.actual_sell_out, s.forecast_sell_out,
-       s.actual_closing_inventory, s.predicted_closing_inventory, s.inventory_position,
-       NULL)
-"""
-
-_INVENTORY_SCHEMA = [
-    bigquery.SchemaField("month_year", "DATE"),
-    bigquery.SchemaField("customer_id", "INTEGER"),
-    bigquery.SchemaField("customer_name", "STRING"),
-    bigquery.SchemaField("product_name", "STRING"),
-    bigquery.SchemaField("opening_inventory", "FLOAT"),
-    bigquery.SchemaField("actual_sell_in", "FLOAT"),
-    bigquery.SchemaField("recommended_sell_in", "FLOAT"),
-    bigquery.SchemaField("actual_sell_out", "FLOAT"),
-    bigquery.SchemaField("forecast_sell_out", "FLOAT"),
-    bigquery.SchemaField("actual_closing_inventory", "FLOAT"),
-    bigquery.SchemaField("predicted_closing_inventory", "FLOAT"),
-    bigquery.SchemaField("inventory_position", "FLOAT"),
-]
-
 _FORECAST_SCHEMA = [
     bigquery.SchemaField("month_year", "DATE"),
     bigquery.SchemaField("forecast_generated_at", "DATE"),
@@ -264,12 +198,6 @@ def merge_actual_rows(changes: pd.DataFrame) -> int:
 
 def merge_forecast_rows(forecast: pd.DataFrame) -> int:
     return _merge_via_staging(forecast, _FORECAST_SCHEMA, _MERGE_FORECAST)
-
-
-def merge_inventory_rows(positions: pd.DataFrame, name_to_customer_id: dict[str, int]) -> int:
-    frame = positions.copy()
-    frame["customer_id"] = frame["customer_name"].map(name_to_customer_id)
-    return _merge_via_staging(frame, _INVENTORY_SCHEMA, _MERGE_INVENTORY)
 
 
 # ============================================================
@@ -373,90 +301,3 @@ def refresh_forecast(
         "written": written,
         "notes": notes,
     }
-
-
-# ============================================================
-# INVENTORY POSITION
-#
-# Reuses the sell-out actuals + model already maintained by
-# refresh_forecast() above (via BQ_FORECAST_TABLE), instead of
-# re-deriving a second sell-out forecast from inventory_metrics --
-# one sell-out forecast, not two that could quietly disagree.
-# ============================================================
-
-
-def _sellout_forecast_by_group(
-    actuals: pd.DataFrame,
-    uplifts: dict[str, float],
-    params: pl_forecast.ForecastParams,
-    horizon_months: int,
-) -> dict[tuple, dict]:
-    forecasts = {}
-    for group, history in actuals.groupby(pl_forecast.GROUP_KEY):
-        history = history.set_index("month_year").sort_index()
-        last_actual = history.index.max()
-        months = list(pd.period_range(last_actual + 1, last_actual + horizon_months, freq="M"))
-        forecast = pl_forecast.forecast_sku(history, {}, months, uplifts, params)
-        forecasts[group] = dict(zip(forecast["month_year"], forecast["total_sell_out"]))
-    return forecasts
-
-
-def refresh_inventory_position(
-    write: bool = False,
-    inventory_params: inventory_forecast.InventoryParams | None = None,
-    forecast_params: pl_forecast.ForecastParams | None = None,
-) -> dict:
-    """Recompute actual/predicted closing inventory and recommended sell-in from
-    inventory_metrics and, when write=True, MERGE it into INVENTORY_POSITION_TABLE.
-
-    Safe to re-run like refresh_forecast(): predicted values are recomputed every
-    time, actual values (once they exist) simply get re-confirmed, and
-    inventory_variance is only ever set once by the MERGE itself (see
-    _MERGE_INVENTORY).
-    """
-    inventory_params = inventory_params or inventory_forecast.InventoryParams()
-    forecast_params = forecast_params or pl_forecast.ForecastParams()
-    notes = []
-
-    inv_rows = get_inventory_metrics_rows()
-    if inv_rows.empty:
-        notes.append(f"no rows in {INVENTORY_METRICS_TABLE}")
-        return {"positions": pd.DataFrame(), "written": {"inventory_rows": 0}, "notes": notes}
-
-    skus = sorted(inv_rows["sku"].dropna().unique())
-    customer_ids = sorted(int(c) for c in inv_rows["customer_id"].dropna().unique())
-    sku_to_product = catalog_service.get_product_names_for_skus(skus)
-    customer_to_name = customer_service.get_customer_names(customer_ids)
-    notes.append(
-        f"resolved {len(sku_to_product)}/{len(skus)} skus, "
-        f"{len(customer_to_name)}/{len(customer_ids)} customers"
-    )
-
-    pivoted = inventory_forecast.pivot_inventory_metrics(inv_rows, sku_to_product, customer_to_name)
-    if pivoted.empty:
-        notes.append("no inventory_metrics rows resolved to a known sku/customer")
-        return {"positions": pd.DataFrame(), "written": {"inventory_rows": 0}, "notes": notes}
-
-    forecast_rows = pl_forecast.normalise_rows(get_forecast_table_rows())
-    actuals, ignored = pl_forecast.usable_actuals(forecast_rows, forecast_params, exclude_months=set())
-    uplifts = pl_forecast.estimate_uplifts(actuals, forecast_params)
-    # A little extra horizon beyond what build_all_inventory_positions needs so a
-    # month it rolls into is never missing a forecast purely from an off-by-a-bit
-    # misalignment between inventory_metrics' latest month and the sell-out actuals'.
-    sellout_forecast = _sellout_forecast_by_group(
-        actuals, uplifts, forecast_params, inventory_params.horizon_months + 3
-    )
-    notes.append(f"sell-out forecast built for {len(sellout_forecast)} product/customer groups; "
-                 f"ignored months: {ignored or 'none'}")
-
-    positions = inventory_forecast.build_all_inventory_positions(pivoted, sellout_forecast, inventory_params)
-    group_count = positions[pl_forecast.GROUP_KEY].drop_duplicates().shape[0] if not positions.empty else 0
-    notes.append(f"built inventory positions for {group_count} product/customer groups, {len(positions)} rows")
-
-    written = {"inventory_rows": 0}
-    if write and not positions.empty:
-        name_to_customer_id = {name: customer_id for customer_id, name in customer_to_name.items()}
-        written["inventory_rows"] = merge_inventory_rows(positions, name_to_customer_id)
-        notes.append(f"wrote {written['inventory_rows']} rows to {INVENTORY_POSITION_TABLE}")
-
-    return {"positions": positions, "written": written, "notes": notes}

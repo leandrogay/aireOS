@@ -10,12 +10,9 @@ already recognises:
                     + (1 - ly_weight) x (3-month run-rate)                  P&L: =X58
     Building Blocks = Base x uplift for that month's promo_type             P&L: 'Building Blocks'!
 
-Inventory (opening stock, sell-in, DOH) is read-only reference data in
-BigQuery's inventory_metrics table, not owned by this module -- see
-inventory_forecast.py for the rolling actual/predicted closing-inventory and
-recommended-sell-in model built on top of this one's sell-out forecast.
-Postgres owns only the sku/customer identity mapping used to bridge that
-table's sku/customer_id columns to this module's product_name/customer_name.
+Sell-out forecasting is self-contained: it only ever needs historical
+quantity_units/revenue actuals (see get_sellout_weeks in forecast_service.py),
+never inventory/sell-in/stock data of any kind.
 forecast_service.py does the BigQuery reads and writes around these functions,
 so everything here can be tested with a few inline DataFrame rows.
 """

@@ -268,22 +268,6 @@ export function emptyMonthlyPoint(monthYear) {
   };
 }
 
-// Default date range for the Forecast page: the current calendar year only,
-// clamped to whatever data actually exists (so a bound of '' or a range that
-// doesn't reach this year still returns something sane). Past years (2024,
-// 2025, ...) only show once the user explicitly widens the date filter --
-// ISO 'YYYY-MM-DD' strings compare lexicographically the same as
-// chronologically, so plain string comparison is enough here.
-export function currentYearDateRange(bounds = {}) {
-  const year = new Date().getFullYear();
-  const yearStart = `${year}-01-01`;
-  const yearEnd = `${year}-12-31`;
-  return {
-    start: bounds.start && bounds.start > yearStart ? bounds.start : yearStart,
-    end: bounds.end && bounds.end < yearEnd ? bounds.end : yearEnd,
-  };
-}
-
 export function monthsInRange(startDate, endDate) {
   if (!startDate || !endDate) return [];
   const months = [];

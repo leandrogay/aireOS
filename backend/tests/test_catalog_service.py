@@ -91,34 +91,10 @@ def test_no_stores_skips_the_query():
     assert conn.calls == []
 
 
-# ---- get_product_names_for_skus -----------------------------------------------
-
-
 def _install_fake_read_engine(monkeypatch, respond):
     engine = FakeEngine(FakeConnection(respond))
     monkeypatch.setattr(catalog_service, "_get_read_engine", lambda: engine)
     return engine
-
-
-def test_looks_up_product_names_for_given_skus(monkeypatch):
-    engine = _install_fake_read_engine(
-        monkeypatch, lambda sql, params: [("111", "Widget"), ("222", "Gadget")]
-    )
-
-    names = catalog_service.get_product_names_for_skus(["111", "222", "111"])
-
-    assert names == {"111": "Widget", "222": "Gadget"}
-    sql, params = engine.conn.calls[0]
-    assert "sku = ANY" in sql
-    # Duplicates are collapsed before they reach Postgres.
-    assert params == {"skus": ["111", "222"]}
-
-
-def test_no_skus_skips_the_query(monkeypatch):
-    engine = _install_fake_read_engine(monkeypatch, lambda sql, params: [])
-
-    assert catalog_service.get_product_names_for_skus([]) == {}
-    assert engine.conn.calls == []
 
 
 # ---- get_product_prices ---------------------------------------------------------

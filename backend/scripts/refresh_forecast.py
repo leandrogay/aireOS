@@ -9,9 +9,6 @@ one-time backfill against years of existing history adds all of them at
 once, not one per run), and fills predicted_quantity_units / predicted_revenue
 for both (see app/services/pl_forecast.py for the formulas -- a yearly
 baseline, once computed, is never recomputed by a later run of this script).
-Then, unless --skip-inventory, also recomputes actual/predicted closing inventory and
-recommended sell-in from inventory_metrics into BQ_INVENTORY_POSITION_TABLE
-(see app/services/inventory_forecast.py).
 Without --write it only previews: nothing in BigQuery changes and the
 results are saved as CSVs under scripts/out/.
 
@@ -70,18 +67,6 @@ def _save_preview(result: dict) -> None:
     print(f"\nPreview CSVs saved in {OUT_DIR}")
 
 
-def _save_inventory_preview(result: dict) -> None:
-    positions = result["positions"]
-    if positions.empty:
-        return
-    OUT_DIR.mkdir(exist_ok=True)
-    positions.to_csv(OUT_DIR / "inventory_position.csv", index=False)
-    print("\nInventory position (latest known + horizon months):")
-    print(positions[["product_name", "customer_name", "month_year", "inventory_position",
-                     "recommended_sell_in"]].to_string(index=False))
-    print(f"\nPreview CSV saved in {OUT_DIR}")
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--write", action="store_true", help="MERGE the results into BigQuery")
@@ -95,8 +80,6 @@ def main() -> None:
                         help="override a promo uplift, e.g. --uplift bundle=0.25")
     parser.add_argument("--exclude-months", default="", metavar="YYYY-MM,...",
                         help="actual months the model should ignore")
-    parser.add_argument("--skip-inventory", action="store_true",
-                        help="don't refresh actual/predicted closing inventory or recommended sell-in")
     args = parser.parse_args()
 
     result = forecast_service.refresh_forecast(
@@ -109,11 +92,6 @@ def main() -> None:
     )
     print("\n".join(result["notes"]))
     _save_preview(result)
-
-    if not args.skip_inventory:
-        inventory_result = forecast_service.refresh_inventory_position(write=args.write)
-        print("\n" + "\n".join(inventory_result["notes"]))
-        _save_inventory_preview(inventory_result)
 
     if not args.write:
         print("\nPreview only -- add --write to update BigQuery.")

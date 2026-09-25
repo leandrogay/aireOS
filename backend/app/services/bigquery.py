@@ -19,10 +19,6 @@ BQ_FORECAST_TABLE = os.environ.get(
     "BQ_FORECAST_TABLE",
     "aire-data.Aire_Data.forecasting_output_xianhui_mock",
 )
-BQ_INVENTORY_POSITION_TABLE = os.environ.get(
-    "BQ_INVENTORY_POSITION_TABLE",
-    "aire-data.Aire_Data.forecasting_inventory_position",
-)
 
 FORECAST_COLUMNS = [
     "month_year",
@@ -40,22 +36,6 @@ FORECAST_COLUMNS = [
     "predicted_quantity_units",
     "revenue",
     "predicted_revenue",
-]
-
-INVENTORY_POSITION_COLUMNS = [
-    "month_year",
-    "customer_id",
-    "customer_name",
-    "product_name",
-    "opening_inventory",
-    "actual_sell_in",
-    "recommended_sell_in",
-    "actual_sell_out",
-    "forecast_sell_out",
-    "actual_closing_inventory",
-    "predicted_closing_inventory",
-    "inventory_position",
-    "inventory_variance",
 ]
 
 @lru_cache(maxsize=1)
@@ -684,71 +664,6 @@ def _forecast_row(record: dict) -> dict:
         "revenue": _json_number(record.get("revenue")),
         "predicted_revenue": _json_number(record.get("predicted_revenue")),
     }
-
-
-def _inventory_position_row(record: dict) -> dict:
-    return {
-        "month_year": _iso_date(record.get("month_year")),
-        "customer_id": _json_int(record.get("customer_id")),
-        "customer_name": record.get("customer_name"),
-        "product_name": record.get("product_name"),
-        "opening_inventory": _json_number(record.get("opening_inventory")),
-        "actual_sell_in": _json_number(record.get("actual_sell_in")),
-        "recommended_sell_in": _json_number(record.get("recommended_sell_in")),
-        "actual_sell_out": _json_number(record.get("actual_sell_out")),
-        "forecast_sell_out": _json_number(record.get("forecast_sell_out")),
-        "actual_closing_inventory": _json_number(record.get("actual_closing_inventory")),
-        "predicted_closing_inventory": _json_number(record.get("predicted_closing_inventory")),
-        "inventory_position": _json_number(record.get("inventory_position")),
-        "inventory_variance": _json_number(record.get("inventory_variance")),
-    }
-
-
-def get_inventory_position_rows(
-    product_name: str | None = None,
-    customer_name: str | None = None,
-    start_date: str | None = None,
-    end_date: str | None = None,
-) -> list[dict]:
-    _validate_date(start_date, "start_date")
-    _validate_date(end_date, "end_date")
-
-    where_clauses = ["1 = 1"]
-    query_parameters = []
-    if product_name:
-        where_clauses.append("product_name = @product_name")
-        query_parameters.append(
-            bigquery.ScalarQueryParameter("product_name", "STRING", product_name)
-        )
-    if customer_name:
-        where_clauses.append("customer_name = @customer_name")
-        query_parameters.append(
-            bigquery.ScalarQueryParameter("customer_name", "STRING", customer_name)
-        )
-    if start_date:
-        where_clauses.append("month_year >= @start_date")
-        query_parameters.append(
-            bigquery.ScalarQueryParameter("start_date", "DATE", start_date)
-        )
-    if end_date:
-        where_clauses.append("month_year <= @end_date")
-        query_parameters.append(
-            bigquery.ScalarQueryParameter("end_date", "DATE", end_date)
-        )
-
-    query = f"""
-        SELECT
-          {", ".join(INVENTORY_POSITION_COLUMNS)}
-        FROM `{BQ_INVENTORY_POSITION_TABLE}`
-        WHERE {" AND ".join(where_clauses)}
-        ORDER BY customer_name, product_name, month_year
-    """
-    job_config = bigquery.QueryJobConfig(query_parameters=query_parameters)
-    client = get_bigquery_client()
-    df = client.query(query, job_config=job_config).result().to_dataframe()
-    if df.empty:
-        return []
-    return [_inventory_position_row(record) for record in df.to_dict(orient="records")]
 
 
 def get_forecast_rows(

@@ -5,21 +5,19 @@ import { useEffect, useMemo, useState } from 'react';
 import PageLayout from '@/components/layout/PageLayout';
 import ForecastChart from '@/components/forecast/ForecastChart';
 import ForecastFilters from '@/components/forecast/ForecastFilters';
-import InventoryTable from '@/components/forecast/InventoryTable';
-import { getForecastOptions, getForecastRows, getInventoryPosition } from '@/app/services/forecastApi';
+import { getForecastOptions, getForecastRows } from '@/app/services/forecastApi';
 import { retailerLabel } from '@/app/utils/promotionForm';
+import { currentYearDateRange } from '@/app/utils/dateRange';
 import {
   ALL_SERIES_VISIBLE,
   DEFAULT_FORECAST_TIER,
   buildMonthlyPoints,
-  currentYearDateRange,
   formatGeneratedAt,
   getRunDates,
   resolveTier,
   sumHorizonForecast,
   toggleSeriesVisibility,
 } from '@/app/utils/forecastView';
-import { buildInventoryPoints } from '@/app/utils/inventoryView';
 
 export default function ForecastPage() {
   const [productName, setProductName] = useState('');
@@ -37,9 +35,6 @@ export default function ForecastPage() {
   const [ready, setReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [inventoryRows, setInventoryRows] = useState([]);
-  const [inventoryLoading, setInventoryLoading] = useState(true);
-  const [inventoryError, setInventoryError] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -108,40 +103,10 @@ export default function ForecastPage() {
     };
   }, [ready, productName, customerName, startDate, endDate]);
 
-  useEffect(() => {
-    if (!ready) return undefined;
-    let cancelled = false;
-
-    async function loadInventory() {
-      setInventoryLoading(true);
-      try {
-        const nextRows = await getInventoryPosition({
-          productName,
-          customerName,
-          startDate,
-          endDate,
-        });
-        if (cancelled) return;
-        setInventoryRows(nextRows);
-        setInventoryError(null);
-      } catch (err) {
-        if (!cancelled) setInventoryError(err.message);
-      } finally {
-        if (!cancelled) setInventoryLoading(false);
-      }
-    }
-
-    loadInventory();
-    return () => {
-      cancelled = true;
-    };
-  }, [ready, productName, customerName, startDate, endDate]);
-
   const resolvedRows = useMemo(() => resolveTier(rows, tier), [rows, tier]);
   const points = useMemo(() => buildMonthlyPoints(resolvedRows, metric), [resolvedRows, metric]);
   const { current } = getRunDates(resolvedRows);
   const horizonTotal = sumHorizonForecast(points);
-  const inventoryPoints = useMemo(() => buildInventoryPoints(inventoryRows), [inventoryRows]);
 
   const scopeTags = [
     { label: 'SKU', value: productName || 'All SKUs' },
@@ -209,22 +174,6 @@ export default function ForecastPage() {
           visibleSeries={visibleSeries}
           onToggleSeries={(key) => setVisibleSeries((current) => toggleSeriesVisibility(current, key))}
         />
-
-        {inventoryError && (
-          <p className="rounded-md border border-violet bg-lavander/50 px-3 py-2 text-sm text-deep-violet-blue">
-            {inventoryError}
-          </p>
-        )}
-        {inventoryLoading && !inventoryError && (
-          <p className="text-xs text-muted-foreground">Loading inventory position…</p>
-        )}
-        {!inventoryLoading && !inventoryError && inventoryPoints.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            No inventory position yet for this selection.
-          </p>
-        ) : (
-          <InventoryTable points={inventoryPoints} />
-        )}
       </div>
     </PageLayout>
   );
