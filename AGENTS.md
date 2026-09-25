@@ -5,9 +5,8 @@ you know which folder owns a concern, how data moves, and which "hat" to wear.
 
 aireOS (Team WIP × Aire, final-year project) is an internal operations tool for a diaper/
 personal-care brand selling through retailers (FairPrice first). It ingests retailer sellout
-spreadsheets, shows a sales dashboard, manages promotion events, and forecasts sell-out and
-inventory position. Inventory is still a placeholder route on the frontend (the underlying
-inventory-position data model lives under the Forecast page instead, see §2).
+spreadsheets, shows a sales dashboard, manages promotion events, and forecasts sell-out.
+Inventory is a placeholder route on the frontend with no backend behind it yet.
 
 ---
 
@@ -29,14 +28,13 @@ aireOS/
 │   │   │   ├── sales.py           /api/sales          BigQuery dashboard reads
 │   │   │   ├── catalog.py         /api/catalog        retailer/store CRUD, sku-range lookup
 │   │   │   ├── promotions.py      /api/promotions     promotion CRUD + /health/db
-│   │   │   └── forecast.py        /api/forecast       sell-out forecast rows + inventory position
+│   │   │   └── forecast.py        /api/forecast       sell-out forecast rows
 │   │   ├── schemas/               Pydantic v2 request models (only catalog + promotions today)
 │   │   │   ├── catalog.py         _Base, RetailerCreate/Update, StoreCreate/Update, SkuItem
 │   │   │   └── promotions.py      PromoType Literal, PromotionStoreRef, PromotionBase/Create/Update
 │   │   └── services/              All logic + all external I/O. Never imports fastapi.
 │   │       ├── sql.py             Cloud SQL connector → SQLAlchemy Engine singletons (rw + autocommit read)
 │   │       ├── catalog_service.py retailers/stores/skus tables; get_or_create_* seams; domain exceptions
-│   │       ├── customer_service.py customers table (fixed P&L customer_id enumeration); read-only
 │   │       ├── promotion_service.py promotions + promotion_stores + promotion_skus, raw SQL, one txn per write
 │   │       ├── bigquery.py        SKU ranking, dashboard summary, period comparison, options, freshness
 │   │       ├── storage.py         GCS: upload files (duplicate detection), mapping JSON packets
@@ -46,8 +44,7 @@ aireOS/
 │   │       ├── apply_contract.py  Applies a confirmed contract (identity_mapping + melt_groups) to a DataFrame
 │   │       ├── validation_service.py Row-level validation against TARGET_SCHEMA after mapping
 │   │       ├── pl_forecast.py     Pure P&L sell-out forecast (base + building blocks), no I/O
-│   │       ├── inventory_forecast.py Pure actual/predicted closing inventory + recommended sell-in, no I/O
-│   │       └── forecast_service.py BigQuery reads/MERGEs for forecast + inventory position tables, refresh_*()
+│   │       └── forecast_service.py BigQuery reads/MERGEs for the forecast table, refresh_forecast()
 │   ├── tests/                     pytest; fakes for BigQuery/GCS clients; no network
 │   ├── pytest.ini                 pythonpath=. testpaths=tests
 │   ├── requirements.txt           fastapi, uvicorn, pandas, openpyxl, sqlalchemy, cloud-sql-python-connector[pg8000],
@@ -64,7 +61,7 @@ aireOS/
     │   ├── upload2/page.js        Developer "mapping harness" (uses components/upload2, manual API base URL)
     │   ├── dashboard/page.js      Sales dashboard: customer/sku/store/date filters, trend chart, ranking
     │   ├── promotions/page.js     Promotion create/edit/delete + overview list
-    │   ├── forecast/page.js       Sell-out forecast chart/table + inventory position table
+    │   ├── forecast/page.js       Sell-out forecast chart/table, default view = current year only
     │   ├── inventory/page.js      Placeholder
     │   ├── components/
     │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column), Sidebar (NAV_ITEMS)
@@ -72,18 +69,18 @@ aireOS/
     │   │   ├── dashboard/         DashboardFilters, CustomerSelector, RevenueTrendCard, RevenueSummaryCards,
     │   │   │                      SkuRanking, PeriodComparisonDetail, FilterBadge
     │   │   ├── promotions/        PromotionForm, PromotionList, CheckboxDropdown
-    │   │   ├── forecast/          ForecastChart/Filters/Table, InventoryTable, HeaderCheckboxFilter (shared)
+    │   │   ├── forecast/          ForecastChart/Filters/Table, HeaderCheckboxFilter (shared)
     │   │   ├── upload/            FileUpload (925 lines), MappingReview, FileUploadSummary (empty)
     │   │   └── upload2/           Harness pieces: MappingDiv, UploadPanel, ResultsPanel, ContractView, RequestLog…
     │   ├── services/              Backend API wrappers
     │   │   ├── promotionsApi.js   request() + parseApiError() + one fn per /api/promotions & /api/catalog endpoint
-    │   │   ├── forecastApi.js     getForecastRows/Options + getInventoryPosition, own request() (no baseUrl arg)
+    │   │   ├── forecastApi.js     getForecastRows/Options, own request() (no baseUrl arg)
     │   │   └── mappingApi.js      /api/uploads wrappers taking an explicit baseUrl (harness style)
     │   └── utils/                 Pure, React-free helpers
     │       ├── promotionForm.js   PROMO_TYPES, EMPTY_PROMOTION_FORM, validate/build/formFrom helpers
     │       ├── promotionOverview.js list grouping/filter helpers
-    │       ├── forecastView.js    Sell-out run series (Initial/Previous/Current), monthly point builders
-    │       ├── inventoryView.js   Inventory position point builder; actual-vs-predicted cell pickers
+    │       ├── forecastView.js    Sell-out run series (Initial Yearly Forecast/Previous/Current), tier resolution
+    │       ├── dateRange.js       currentYearDateRange() -- shared default-date-range helper
     │       └── mappingHelpers.js
     ├── hooks/                     Data-fetching hooks for the dashboard (inline fetch, cancel-flag pattern)
     │   ├── useDataFreshness.js    polls /api/sales/last-updated → { channels, dataVersion, refreshing }
@@ -117,7 +114,7 @@ No test runner is installed on the frontend; linting (`npm run lint`) is the fro
 | Sales dashboard | `sales.py` | `bigquery` | **BigQuery** `aire-data.Aire_Data.aireOS_fairprice` (read-only, weekly rows, retailer = `{customer}_{offline|online}`) | `app/dashboard`, `hooks/use*.js` |
 | Catalog | `catalog.py` | `catalog_service` | **Cloud SQL Postgres**: `retailers`, `stores`, `skus` | `services/promotionsApi.js` (getRetailers/getStores/getSkuRanges) |
 | Promotions | `promotions.py` | `promotion_service` (+ `catalog_service` seams) | **Cloud SQL Postgres**: `promotions`, `promotion_stores`, `promotion_skus`; enum `promo_type_enum`; trigger `trg_promotions_updated_at` | `app/promotions`, `services/promotionsApi.js` |
-| Forecast (P&L) | `forecast.py` (`/api/forecast`, read-only; writes are out of band via `scripts/refresh_forecast.py`) | `pl_forecast` (pure), `inventory_forecast` (pure), `forecast_service`, `catalog_service` (sku→product_name, product prices), `customer_service` (customer_id→customer_name) | **BigQuery** reads `aireOS_fairprice` + `inventory_metrics` (read-only); MERGEs into `BQ_FORECAST_TABLE` + `forecasting_inventory_position`. **Cloud SQL Postgres**: `skus.price` prices sell-out revenue; `customers` bridges inventory_metrics' customer_id | `app/forecast` |
+| Forecast (P&L) | `forecast.py` (`/api/forecast`, read-only; writes are out of band via `scripts/refresh_forecast.py`) | `pl_forecast` (pure), `forecast_service`, `catalog_service` (product prices) | **BigQuery** reads `aireOS_fairprice` (read-only); MERGEs into `BQ_FORECAST_TABLE`. **Cloud SQL Postgres**: `skus.price` prices sell-out revenue | `app/forecast` |
 | AI mapping | (inside uploads) | `generate_mapping` | **Anthropic API** (`ANTHROPIC_MODEL`, default `claude-sonnet-4-6`) | — |
 
 Invariants that cross domains:
