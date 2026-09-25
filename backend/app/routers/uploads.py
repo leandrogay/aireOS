@@ -1,9 +1,7 @@
 import asyncio
-import datetime
 from typing import List
 
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query
 
 from app.services import storage
 from app.services import generate_mapping
@@ -14,23 +12,41 @@ from app.services.validation_service import process_and_validate
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 
-
-class ConfirmRequest(BaseModel):
-    # Only present if the user edited the proposed contract before approving.
-    # When omitted, the pending contract is confirmed unchanged.
-    contract: dict | None = None
-    # The review screen edits rules, not raw contracts. Sending those instead
-    # keeps the contract shape -- and its validation -- on the server.
-    rules: list[dict] | None = None
-
-
 def _preview(dataframe, limit: int = 3) -> list[dict]:
-    """Return a small JSON-safe preview without exposing the full upload."""
-    preview = dataframe.head(limit).copy()
-    for column in preview.select_dtypes(include=["datetime", "datetimetz"]).columns:
-        preview[column] = preview[column].dt.strftime("%Y-%m-%d")
-    preview = preview.astype(object).where(preview.notna(), None)
-    return preview.to_dict(orient="records")
+    """Small JSON-safe preview of mapped output. See apply_contract."""
+    return contract_application.preview_rows(dataframe, limit)
+
+
+def _mapping_annotations(mapping: dict | None) -> dict[str, str]:
+    """
+    The bits of a mapping outcome worth writing back onto the uploaded blob.
+
+    Only what the history listing shows, and only when it has a value — GCS
+    custom metadata is a flat string map, so a None would be stored as the
+    string "None" and read back as one.
+    """
+    if not mapping:
+        return {}
+
+    status = mapping.get("status")
+
+    # Only record a fingerprint that addresses a mapping someone can open. A
+    # partial match stores no contract -- its fingerprint is the new layout's,
+    # which nothing is filed under -- so recording it would give the history a
+    # "View mapping" link that 404s.
+    addressable = status in ("mapped", "pending_confirmation")
+
+    fields = {
+        storage.MAPPING_STATUS_METADATA_KEY: status,
+        storage.MAPPING_FINGERPRINT_METADATA_KEY: (
+            mapping.get("fingerprint") or mapping.get("mapping_id")
+            if addressable
+            else None
+        ),
+        storage.MAPPING_NAME_METADATA_KEY: mapping.get("name"),
+        storage.VENDOR_METADATA_KEY: mapping.get("vendor"),
+    }
+    return {key: str(value) for key, value in fields.items() if value}
 
 
 def resolve_and_apply_mapping(
@@ -48,6 +64,8 @@ def resolve_and_apply_mapping(
         return {
             "status": "mapped",
             "mapping_id": builtin["mapping_id"],
+            "name": mapping_view.BUILTIN_MAPPING_NAME,
+            "vendor": mapping_view.BUILTIN_MAPPING_VENDOR,
             "source": "builtin",
             "processing": {
                 "rows_total": validated["total_rows"],
@@ -85,23 +103,31 @@ def resolve_and_apply_mapping(
 
 
 @router.post("")
-async def upload_files(files: List[UploadFile] = File(...), force: bool = Form(False)):
+async def upload_files(
+    files: List[UploadFile] = File(...),
+    force: bool = Form(False),
+    keep_duplicate: bool = Form(False),
+):
     """
     Accept one or many files, upload them all, and propose a mapping contract
     for each.
 
-    Files that duplicate a previously uploaded filename are skipped (with a
-    "duplicate" result) unless `force` is set, in which case the previous
-    upload for that filename is replaced. A duplicate is not uploaded, so it
-    never reaches mapping resolution below.
+    Files that duplicate a previous upload — by content hash, or failing that
+    by original filename — are skipped (with a "duplicate" result) unless
+    `force` replaces the previous upload, or `keep_duplicate` keeps both. A
+    skipped duplicate is not uploaded, so it never reaches mapping resolution
+    below.
 
     Returns HTTP 200 with a per-file result list even when some files fail, so a
     single bad file doesn't discard the successful ones. Check the "failed"
     count in the response rather than relying on the status code alone.
 
-    Each successful upload gains a "mapping" key with one of three statuses:
+    Each successful upload gains a "mapping" key with one of four statuses:
       - "mapped"                a confirmed contract already existed for these
                                 headers; nothing to approve
+      - "partial_match"         the layout nearly matches a confirmed mapping.
+                                Nothing was applied — a person decides whether
+                                it is the same layout with a column added
       - "pending_confirmation"  a fresh contract was generated and parked in
                                 mappings/pending/ — POST to the confirm
                                 endpoint with the fingerprint to keep it
@@ -118,7 +144,9 @@ async def upload_files(files: List[UploadFile] = File(...), force: bool = Form(F
     ]
 
     # storage.upload_many is blocking (network I/O), so keep it off the event loop.
-    res = await asyncio.to_thread(storage.upload_many, payload, force=force)
+    res = await asyncio.to_thread(
+        storage.upload_many, payload, force=force, keep_duplicate=keep_duplicate
+    )
 
     async def resolve(entry: tuple[str, bytes], uploaded: dict):
         if not uploaded.get("success"):
@@ -152,149 +180,51 @@ async def upload_files(files: List[UploadFile] = File(...), force: bool = Form(F
         if mapping is not None:
             uploaded["mapping"] = mapping
 
+    # Record the outcome on the blob itself so the history listing can say what
+    # each file was mapped through without re-reading and re-fingerprinting
+    # every file in the bucket.
+    await asyncio.gather(
+        *[
+            asyncio.to_thread(storage.annotate_upload, result["blob_path"], annotations)
+            for result in res["results"]
+            if result.get("success")
+            and (annotations := _mapping_annotations(result.get("mapping")))
+        ]
+    )
+
+    # =========================================================================
+    # TRIGGER THE DATA TRANSFORMATION HERE, for the files in res["results"]
+    # whose mapping came back with status "mapped".
+    #
+    # Those matched a contract that is already confirmed, so nothing is waiting
+    # on a person and they can be loaded straight away. Files whose mapping is
+    # still a proposal are deliberately not ready here -- they get picked up
+    # when someone approves it, in routers/mappings.py, which is the other
+    # place this belongs.
+    #
+    # Each such result carries "blob_path" (where the file landed) and
+    # mapping["fingerprint"] or mapping["mapping_id"] (the contract it matched).
+    # resolve_and_apply_mapping above has already applied the contract to build
+    # the preview, so mapping["processing"] shows the shape the rows come out
+    # in -- but nothing is persisted anywhere yet.
+    # =========================================================================
+
     return res
 
 
-@router.get("/mappings")
-async def list_mappings():
+@router.get("/history")
+async def upload_history(limit: int = Query(default=50, ge=1, le=200)):
     """
-    Every mapping the review screen can show, in one shape.
+    Recent uploads, newest first — filename, vendor, date, and the mapping the
+    file was run through.
 
-    That is the builtin FairPrice rule set plus each contract in the bucket --
-    confirmed ones first, then proposals still awaiting approval.
+    Read straight from the bucket listing: the blobs are the record of what has
+    been uploaded, so there is nothing else that could go stale against them.
     """
-
-    def collect() -> list[dict]:
-        packets = [mapping_view.builtin_packet()]
-
-        for state in ("confirmed", "pending"):
-            path_for = (
-                storage.confirmed_mapping_path
-                if state == "confirmed"
-                else storage.pending_mapping_path
-            )
-            for fingerprint in storage.list_mapping_fingerprints(state):
-                envelope = storage.download_json(path_for(fingerprint))
-                if envelope:
-                    packets.append(
-                        mapping_view.envelope_to_packet(fingerprint, envelope, state)
-                    )
-
-        return packets
-
     try:
-        return {"mappings": await asyncio.to_thread(collect)}
+        return {"uploads": await asyncio.to_thread(storage.list_uploads, limit)}
     except Exception as exc:
         raise HTTPException(
-            status_code=503, detail=f"Unable to read stored mappings: {exc}"
+            status_code=503, detail=f"Unable to read upload history: {exc}"
         )
 
-
-@router.get("/mappings/{fingerprint}")
-async def get_mapping(fingerprint: str):
-    """
-    Fetch a contract by fingerprint — the confirmed one if it exists, otherwise
-    the pending proposal. Lets a review screen reload without re-uploading.
-    """
-    confirmed = await asyncio.to_thread(
-        storage.download_json, storage.confirmed_mapping_path(fingerprint)
-    )
-    if confirmed:
-        return {"state": "confirmed", **confirmed}
-
-    pending = await asyncio.to_thread(
-        storage.download_json, storage.pending_mapping_path(fingerprint)
-    )
-    if pending:
-        return {"state": "pending", **pending}
-
-    raise HTTPException(status_code=404, detail="No mapping found for that fingerprint.")
-
-
-@router.post("/mappings/{fingerprint}/confirm")
-async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
-    """
-    Approve a pending contract and promote it to mappings/confirmed/.
-
-    The contract is re-validated here rather than trusted as sent, because this
-    is the last gate before it becomes the contract every future file with
-    these headers gets run through.
-    """
-    envelope_before = await asyncio.to_thread(
-        storage.download_json, storage.pending_mapping_path(fingerprint)
-    )
-    # A confirmed contract can be amended again, and by then its pending blob
-    # has been cleaned up -- so fall back to the confirmed one.
-    if not envelope_before:
-        envelope_before = await asyncio.to_thread(
-            storage.download_json, storage.confirmed_mapping_path(fingerprint)
-        )
-    if not envelope_before:
-        raise HTTPException(
-            status_code=404, detail="No mapping found for that fingerprint."
-        )
-
-    pending = envelope_before
-
-    if body.rules is not None:
-        proposed = mapping_view.rules_to_contract(body.rules)
-    elif body.contract is not None:
-        proposed = body.contract
-    else:
-        proposed = pending["contract"]
-
-    contract = generate_mapping.validate_contract(
-        proposed,
-        pending["raw_columns"],
-        pending.get("target_schema", generate_mapping.TARGET_SCHEMA),
-    )
-
-    if not contract["identity_mapping"] and not contract["melt_groups"]:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "message": "Contract is empty after validation — nothing to store.",
-                "warnings": contract["warnings"],
-            },
-        )
-
-    envelope = {
-        **pending,
-        "contract": contract,
-        "edited_by_user": body.contract is not None or body.rules is not None,
-        "confirmed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-    }
-
-    stored_at = await asyncio.to_thread(
-        storage.upload_json, storage.confirmed_mapping_path(fingerprint), envelope
-    )
-
-    # Best effort — a leftover pending blob is harmless, and the confirmed
-    # contract now takes precedence on lookup either way.
-    try:
-        await asyncio.to_thread(
-            storage.delete_blob, storage.pending_mapping_path(fingerprint)
-        )
-    except Exception:
-        pass
-
-    return {
-        "success": True,
-        "fingerprint": fingerprint,
-        "stored_at": stored_at,
-        "contract": contract,
-        "warnings": contract["warnings"],
-    }
-
-
-@router.delete("/mappings/{fingerprint}/pending")
-async def discard_pending_mapping(fingerprint: str):
-    """Throw away a proposal the user rejected, so the next upload regenerates it."""
-    deleted = await asyncio.to_thread(
-        storage.delete_blob, storage.pending_mapping_path(fingerprint)
-    )
-    if not deleted:
-        raise HTTPException(
-            status_code=404, detail="No pending mapping for that fingerprint."
-        )
-    return {"success": True, "fingerprint": fingerprint}

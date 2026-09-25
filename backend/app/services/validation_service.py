@@ -1,7 +1,5 @@
 from typing import Any, Dict
-
 import pandas as pd
-
 from app.services.mapping_service import TARGET_SCHEMA, apply_existing_mapping
 
 

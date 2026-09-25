@@ -7,7 +7,7 @@ router = APIRouter(prefix="/api/sales", tags=["sales"])
 
 _CREDENTIALS_DETAIL = (
     "BigQuery credentials are not configured. Set "
-    "GOOGLE_APPLICATION_CREDENTIALS in backend/.env to a service "
+    "GOOGLE_APPLICATION_CREDENTIALS in backend/.env.backend to a service "
     "account key with BigQuery Data Viewer + Job User access."
 )
 

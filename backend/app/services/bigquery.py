@@ -1,9 +1,9 @@
-import os
 import re
 from datetime import datetime
 from functools import lru_cache
 import pandas as pd
 from google.cloud import bigquery
+from app import config
 
 from app.services import sellout_lookup
 
@@ -18,7 +18,7 @@ DEFAULT_CUSTOMER = "fairprice" # Fallback when no customer is supplied
 # Read-only reference data: weekly sell-out, normalized. Rows carry retailer_id,
 # store_code and sku only -- names and store format are resolved from the Cloud
 # SQL catalog by sellout_lookup after each query.
-SELLOUT_TABLE = os.environ.get("BQ_SELLOUT_TABLE", "aire-data.Aire_Data.public_sellout")
+SELLOUT_TABLE = config.BQ_SELLOUT_TABLE
 
 @lru_cache(maxsize=1)
 def get_bigquery_client(project="aire-data") -> bigquery.Client:
