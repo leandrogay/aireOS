@@ -100,7 +100,7 @@ aireOS/
     │   ├── useDraftDateRange.js   local draft state for the picker
     │   ├── useDohSettings.js      /api/settings/doh (+ replaceRow for the row a write returns)
     │   └── useToast.js            { toast, notify, dismissToast } for components/ui/Toast
-    ├── lib/                       cn() (clsx + tailwind-merge), formatDateRange
+    ├── lib/                       cn() (clsx + tailwind-merge), formatDateRange, formatDate/formatDateTime (shared date display)
     ├── public/                    create-next-app SVGs
     ├── CONTRIBUTING.md            Frontend UI conventions (primitives, tokens, cn(), lucide) — binding
     ├── CLAUDE.md → @AGENTS.md     Next.js auto-generated notice: read node_modules/next/dist/docs before Next APIs
