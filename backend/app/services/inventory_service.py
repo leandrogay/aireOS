@@ -1,5 +1,5 @@
 from calendar import monthrange
-from datetime import date, timedelta
+from datetime import date
 from functools import lru_cache
 
 from sqlalchemy import text
@@ -51,8 +51,6 @@ _VALUE_TYPES = {
     "opening_inventory": "actual",
     "sell_in": "actual",
 }
-
-DOH_SOURCE_APP = "set via aireOS"
 
 
 # ============================================================
@@ -438,9 +436,8 @@ def get_overview(
 # ============================================================
 # DOH THRESHOLDS
 #
-# customer_doh_targets is effective-dated: a change closes the old
-# row and opens a new one, so the table doubles as the audit trail
-# (old value, new value, timestamps). Min and max are not stored;
+# customer_doh_targets is effective-dated and only read here; nothing in
+# the app writes it. Min and max are not stored;
 # they are always the target -/+ inventory_calc.DOH_BAND_DAYS.
 # A customer with no row falls back to the global default.
 # ============================================================
@@ -506,201 +503,6 @@ def _threshold_view(customer_id: int, customer_name: str, targets: list[dict], o
         "last_updated": target_row["created_at"].isoformat() if target_row else None,
         "source": target_row["source"] if target_row else None,
     }
-
-
-def get_doh_thresholds(today: date | None = None) -> list[dict]:
-    today = today or date.today()
-    with _read_connection() as conn:
-        customers = _fetch_customers(conn)
-        targets = _fetch_targets(conn)
-
-    return [
-        _threshold_view(
-            customer_id,
-            name,
-            [t for t in targets if t["customer_id"] == customer_id],
-            today,
-        )
-        for customer_id, name in customers.items()
-    ]
-
-
-def _set_target(conn: Connection, customer_id: int, target_doh: int, today: date) -> None:
-    active = _target_in_effect(_fetch_targets(conn, customer_id), today)
-
-    if active is not None and active["target_doh"] == target_doh:
-        return
-
-    if active is not None and active["effective_from"] == today:
-        # The primary key is (customer_id, effective_from), so a second row
-        # for the same day is impossible: correct the open row in place.
-        conn.execute(
-            text(
-                """
-                UPDATE customer_doh_targets
-
-                SET
-                    target_doh = :target_doh,
-                    source = :source,
-                    created_at = CURRENT_TIMESTAMP
-
-                WHERE
-                    customer_id = :customer_id
-                    AND effective_from = :effective_from
-                """
-            ),
-            {
-                "customer_id": customer_id,
-                "effective_from": today,
-                "target_doh": float(target_doh),
-                "source": DOH_SOURCE_APP,
-            },
-        )
-        return
-
-    if active is not None:
-        _close_target(conn, active, today)
-
-    conn.execute(
-        text(
-            """
-            INSERT INTO customer_doh_targets (
-                customer_id,
-                effective_from,
-                effective_to,
-                target_doh,
-                source
-            )
-            VALUES (
-                :customer_id,
-                :effective_from,
-                NULL,
-                :target_doh,
-                :source
-            )
-            """
-        ),
-        {
-            "customer_id": customer_id,
-            "effective_from": today,
-            "target_doh": float(target_doh),
-            "source": DOH_SOURCE_APP,
-        },
-    )
-
-
-def _close_target(conn: Connection, target: dict, today: date) -> None:
-    conn.execute(
-        text(
-            """
-            UPDATE customer_doh_targets
-
-            SET
-                effective_to = :effective_to
-
-            WHERE
-                customer_id = :customer_id
-                AND effective_from = :effective_from
-            """
-        ),
-        {
-            "customer_id": target["customer_id"],
-            "effective_from": target["effective_from"],
-            "effective_to": today - timedelta(days=1),
-        },
-    )
-
-
-def set_doh_thresholds(
-    customer_ids: list[int],
-    target_doh: int,
-    today: date | None = None,
-) -> list[dict]:
-    """Set the target for every named customer in one transaction."""
-
-    today = today or date.today()
-    with _get_engine().begin() as conn:
-        customers = _fetch_customers(conn)
-        _require_customers(customers, customer_ids)
-
-        for customer_id in customer_ids:
-            _set_target(conn, customer_id, target_doh, today)
-
-        targets = _fetch_targets(conn)
-
-    return [
-        _threshold_view(
-            customer_id,
-            customers[customer_id],
-            [t for t in targets if t["customer_id"] == customer_id],
-            today,
-        )
-        for customer_id in customer_ids
-    ]
-
-
-def reset_doh_threshold(customer_id: int, today: date | None = None) -> dict:
-    """
-    Drop a customer's custom target so the global default applies from
-    today. A row opened today is deleted (it never had a day of effect
-    worth keeping); an older one is closed yesterday and stays as history.
-    """
-
-    today = today or date.today()
-    with _get_engine().begin() as conn:
-        customers = _fetch_customers(conn)
-        _require_customers(customers, [customer_id])
-
-        active = _target_in_effect(_fetch_targets(conn, customer_id), today)
-        if active is not None and active["effective_from"] == today:
-            conn.execute(
-                text(
-                    """
-                    DELETE FROM customer_doh_targets
-
-                    WHERE
-                        customer_id = :customer_id
-                        AND effective_from = :effective_from
-                    """
-                ),
-                {"customer_id": customer_id, "effective_from": today},
-            )
-        elif active is not None:
-            _close_target(conn, active, today)
-
-        targets = _fetch_targets(conn, customer_id)
-
-    return _threshold_view(customer_id, customers[customer_id], targets, today)
-
-
-def get_doh_history(customer_id: int) -> list[dict]:
-    """
-    Every target a customer has had, newest first, each with the value it
-    replaced (previous_target_doh) and when that replaced value began.
-    """
-
-    with _read_connection() as conn:
-        customers = _fetch_customers(conn)
-        _require_customers(customers, [customer_id])
-        targets = _fetch_targets(conn, customer_id)
-
-    history = []
-    for index, target in enumerate(targets):
-        older = targets[index + 1] if index + 1 < len(targets) else None
-        history.append(
-            {
-                "customer_id": customer_id,
-                "customer_name": customers[customer_id],
-                "target_doh": target["target_doh"],
-                "effective_from": _iso(target["effective_from"]),
-                "effective_to": _iso(target["effective_to"]),
-                "recorded_at": target["created_at"].isoformat(),
-                "source": target["source"],
-                "previous_target_doh": older["target_doh"] if older else None,
-                "previous_effective_from": _iso(older["effective_from"]) if older else None,
-            }
-        )
-    return history
 
 
 # ============================================================

@@ -45,7 +45,7 @@ function startsFromText(lastActualBySku) {
  * @param {object} props
  * @param {Array<{ customer_id: number, customer_name: string }>} props.customers
  * @param {Array<{ sku: string, product_name: string }>} props.skuOptions
- * @param {number} props.refreshKey bumped after a create/edit or threshold change
+ * @param {number} props.refreshKey bumped after a create/edit
  */
 export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
   const [customerId, setCustomerId] = useState(null);

@@ -94,22 +94,3 @@ class ShippedSoFarUpdate(_Base):
         if value.day != 1:
             raise ValueError("month must be the first day of a month (YYYY-MM-01)")
         return value
-
-
-# ============================================================
-# DOH THRESHOLD
-#
-# Only the target is stored; min and max are derived from it.
-# ============================================================
-
-
-class DohThresholdUpdate(_Base):
-    customer_ids: list[int] = Field(min_length=1)
-
-    # Whole days, at least 1 (the database also requires > 0).
-    target_doh: int = Field(ge=1)
-
-    @field_validator("customer_ids")
-    @classmethod
-    def _customers_must_be_positive_and_unique(cls, ids):
-        return _check_customer_ids(ids)

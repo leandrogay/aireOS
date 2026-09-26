@@ -1,7 +1,7 @@
 // Pure helpers for the inventory forms and views: validation, payloads and
 // display formatting. No React in here. Field names in the payloads mirror the
 // backend schemas in app/schemas/inventory.py (InventoryRecordBase,
-// DohThresholdUpdate); change them together.
+// ShippedSoFarUpdate); change them together.
 
 // ============================================================
 // Inventory record form
@@ -145,35 +145,6 @@ export function buildShippedPayload(form) {
 }
 
 // ============================================================
-// DOH threshold form
-// ============================================================
-
-/**
- * @param {{ customerIds: number[], targetDoh: string }} form
- * @returns {Record<string, string>} field name -> message; empty when valid
- */
-export function validateThresholdForm(form) {
-  const errors = {};
-
-  if (form.customerIds.length === 0) {
-    errors.customerIds = 'Choose at least one customer.';
-  }
-  if (!/^\d+$/.test(form.targetDoh.trim()) || Number(form.targetDoh) < 1) {
-    errors.targetDoh = 'Target DOH must be a whole number of 1 or more.';
-  }
-
-  return errors;
-}
-
-/**
- * @param {{ customerIds: number[], targetDoh: string }} form a form that passed validateThresholdForm
- * @returns {{ customer_ids: number[], target_doh: number }}
- */
-export function buildThresholdPayload(form) {
-  return { customer_ids: form.customerIds, target_doh: Number(form.targetDoh) };
-}
-
-// ============================================================
 // Display formatting
 // ============================================================
 
@@ -220,21 +191,6 @@ export function formatDoh(value) {
 export function formatGap(value) {
   if (value === null || value === undefined) return '—';
   return `${value > 0 ? '+' : ''}${formatDoh(value)}`;
-}
-
-/**
- * @param {string | null} isoTimestamp
- * @returns {string} e.g. '24 Sep 2026, 00:50', or a dash
- */
-export function formatTimestamp(isoTimestamp) {
-  if (!isoTimestamp) return '—';
-  return new Date(isoTimestamp).toLocaleString('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 }
 
 export const DOH_STATUS_LABELS = {

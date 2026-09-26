@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 const DISMISS_AFTER_MS = 4000;
 
 /**
- * Small self-dismissing confirmation, e.g. "Thresholds updated successfully".
+ * Small self-dismissing confirmation, e.g. "Inventory data saved".
  * The parent owns the toast: `{ id, type: 'success' | 'error', message }` or
  * null. A new `id` restarts the timer, so two saves in a row each get their
  * full time on screen.

@@ -7,7 +7,7 @@ import { getSellInPlan } from '@/app/services/inventoryApi';
 /**
  * Recommended sell-in for one customer (backend inventory_service.get_sell_in_plan).
  * Does nothing until a customer is chosen. `refreshKey` is bumped after a
- * create/edit or threshold change, since both move the plan.
+ * create/edit, since that moves the plan.
  *
  * @param {{ customerId?: number | null, months?: number, skus?: string[], refreshKey?: number }} [options]
  * @returns {{ data: object | null, loading: boolean, error: string | null }}

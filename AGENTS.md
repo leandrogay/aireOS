@@ -26,16 +26,16 @@ aireOS/
 │   │   │   ├── uploads.py         /api/uploads        file ingest + mapping review (async)
 │   │   │   ├── sales.py           /api/sales          BigQuery dashboard reads
 │   │   │   ├── catalog.py         /api/catalog        retailer/store CRUD, sku-range lookup
-│   │   │   ├── inventory.py       /api/inventory      overview, per-customer DOH, at-risk list, sell-in plan, record create/edit, temporary sell-in, DOH thresholds
+│   │   │   ├── inventory.py       /api/inventory      overview, per-customer DOH, at-risk list, sell-in plan, record create/edit, temporary sell-in
 │   │   │   └── promotions.py      /api/promotions     promotion CRUD + /health/db
 │   │   ├── schemas/               Pydantic v2 request models (only catalog + promotions today)
 │   │   │   ├── catalog.py         _Base, RetailerCreate/Update, StoreCreate/Update, SkuItem
-│   │   │   ├── inventory.py       InventoryRecordCreate/Update, ShippedSoFarUpdate, DohThresholdUpdate
+│   │   │   ├── inventory.py       InventoryRecordCreate/Update, ShippedSoFarUpdate
 │   │   │   └── promotions.py      PromoType Literal, PromotionStoreRef, PromotionBase/Create/Update
 │   │   └── services/              All logic + all external I/O. Never imports fastapi.
 │   │       ├── sql.py             Cloud SQL connector → SQLAlchemy Engine singletons (rw + autocommit read)
 │   │       ├── inventory_calc.py  PURE: ending-stock chain, DOH, DOH threshold band/status, sell-in plan
-│   │       ├── inventory_service.py inventory_metrics + customer_doh_targets reads/writes (raw SQL, one txn per write)
+│   │       ├── inventory_service.py inventory_metrics reads/writes + customer_doh_targets reads (raw SQL, one txn per write)
 │   │       ├── sellout_units.py   read-only BigQuery monthly sell-out per SKU (same weekly data as the dashboard)
 │   │       ├── forecast_units.py  read-only BigQuery forecast units per product/month, newest run only
 │   │       ├── catalog_service.py retailers/stores/skus tables; get_or_create_* seams; domain exceptions
@@ -64,7 +64,7 @@ aireOS/
     │   ├── dashboard/page.js      Sales dashboard: customer/sku/store/date filters, trend chart, ranking
     │   ├── promotions/page.js     Promotion create/edit/delete + overview list
     │   ├── forecast/page.js       Placeholder
-    │   ├── inventory/page.js      Inventory: overview, by-customer DOH, at-risk list, sell-in plan, enter/edit data, DOH thresholds (components/inventory)
+    │   ├── inventory/page.js      Inventory: overview, by-customer DOH, at-risk list, sell-in plan, enter/edit data (components/inventory)
     │   ├── components/
     │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column), Sidebar (NAV_ITEMS)
     │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, DateRangePicker
@@ -111,7 +111,7 @@ No test runner is installed on the frontend; linting (`npm run lint`) is the fro
 | Upload & mapping | `uploads.py` | `storage`, `mapping_service`, `generate_mapping`, `mapping_view`, `apply_contract`, `validation_service` | **GCS** bucket: `uploads/` files, `mappings/pending/<fp>.json`, `mappings/confirmed/<fp>.json` | `app/upload`, `app/upload2`, `services/mappingApi.js` |
 | Sales dashboard | `sales.py` | `bigquery` | **BigQuery** `aire-data.Aire_Data.aireOS_fairprice` (read-only, weekly rows, retailer = `{customer}_{offline|online}`) | `app/dashboard`, `hooks/use*.js` |
 | Catalog | `catalog.py` | `catalog_service` | **Cloud SQL Postgres**: `retailers`, `stores`, `skus` | `services/promotionsApi.js` (getRetailers/getStores/getSkuRanges) |
-| Inventory | `inventory.py` | `inventory_service`, `inventory_calc`, `sellout_units`, `forecast_units` | **Cloud SQL Postgres**: `customers`, `customer_retailers`, `inventory_metrics` (long format; app writes carry `data_source='manual_entry'`; only sell-in and a first-month opening are read; workbook rows are never changed), `customer_doh_targets` (effective-dated, doubles as the audit trail); **BigQuery** (read-only): weekly sell-out (`BQ_SELLOUT_TABLE`, default `public_sellout`) and the forecast table. Ending stock, DOH and the plan are computed, never stored | `app/inventory`, `services/inventoryApi.js` |
+| Inventory | `inventory.py` | `inventory_service`, `inventory_calc`, `sellout_units`, `forecast_units` | **Cloud SQL Postgres**: `customers`, `customer_retailers`, `inventory_metrics` (long format; app writes carry `data_source='manual_entry'`; only sell-in and a first-month opening are read; workbook rows are never changed), `customer_doh_targets` (effective-dated, read-only from the app); **BigQuery** (read-only): weekly sell-out (`BQ_SELLOUT_TABLE`, default `public_sellout`) and the forecast table. Ending stock, DOH and the plan are computed, never stored | `app/inventory`, `services/inventoryApi.js` |
 | Promotions | `promotions.py` | `promotion_service` (+ `catalog_service` seams) | **Cloud SQL Postgres**: `promotions`, `promotion_stores`, `promotion_skus`; enum `promo_type_enum`; trigger `trg_promotions_updated_at` | `app/promotions`, `services/promotionsApi.js` |
 | AI mapping | (inside uploads) | `generate_mapping` | **Anthropic API** (`ANTHROPIC_MODEL`, default `claude-sonnet-4-6`) | — |
 

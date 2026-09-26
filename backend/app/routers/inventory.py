@@ -5,7 +5,6 @@ from google.api_core.exceptions import GoogleAPICallError
 from google.auth.exceptions import DefaultCredentialsError
 
 from app.schemas.inventory import (
-    DohThresholdUpdate,
     InventoryRecordCreate,
     InventoryRecordUpdate,
     ShippedSoFarUpdate,
@@ -13,7 +12,7 @@ from app.schemas.inventory import (
 from app.services import inventory_service
 
 
-# Inventory views, records and DOH thresholds are under /api/inventory
+# Inventory views and records are under /api/inventory
 router = APIRouter(
     prefix="/api/inventory",
     tags=["inventory"],
@@ -284,83 +283,6 @@ def set_shipped_so_far(update: ShippedSoFarUpdate):
             status_code=500,
             detail=(
                 f"Failed to save temporary sell-in: "
-                f"{type(e).__name__}: {e}"
-            ),
-        )
-
-
-# ============================================================
-# DOH THRESHOLDS
-# ============================================================
-
-
-@router.get("/doh-thresholds")
-def get_doh_thresholds():
-    try:
-        return inventory_service.get_doh_thresholds()
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                f"Failed to retrieve DOH thresholds: "
-                f"{type(e).__name__}: {e}"
-            ),
-        )
-
-
-@router.put("/doh-thresholds")
-def set_doh_thresholds(update: DohThresholdUpdate):
-    try:
-        return inventory_service.set_doh_thresholds(
-            update.customer_ids,
-            update.target_doh,
-        )
-
-    except inventory_service.CustomerNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                f"Failed to update DOH thresholds: "
-                f"{type(e).__name__}: {e}"
-            ),
-        )
-
-
-@router.delete("/doh-thresholds/{customer_id}")
-def reset_doh_threshold(customer_id: int):
-    try:
-        return inventory_service.reset_doh_threshold(customer_id)
-
-    except inventory_service.CustomerNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                f"Failed to reset the DOH threshold: "
-                f"{type(e).__name__}: {e}"
-            ),
-        )
-
-
-@router.get("/doh-thresholds/{customer_id}/history")
-def get_doh_history(customer_id: int):
-    try:
-        return inventory_service.get_doh_history(customer_id)
-
-    except inventory_service.CustomerNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                f"Failed to retrieve the DOH threshold history: "
                 f"{type(e).__name__}: {e}"
             ),
         )

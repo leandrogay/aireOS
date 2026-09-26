@@ -23,7 +23,7 @@ const numClass = 'text-right tabular-nums';
  *
  * @param {object} props
  * @param {Array<{ customer_id: number, customer_name: string }>} props.customers
- * @param {number} props.refreshKey bumped after a create/edit or threshold change
+ * @param {number} props.refreshKey bumped after a create/edit
  */
 export default function AtRiskView({ customers, refreshKey }) {
   const [customerId, setCustomerId] = useState('');

@@ -7,7 +7,6 @@ import useInventoryOptions from '@/hooks/useInventoryOptions';
 
 import AtRiskView from './AtRiskView';
 import CustomerInventoryView from './CustomerInventoryView';
-import DohThresholdsPanel from './DohThresholdsPanel';
 import InventoryDataManager from './InventoryDataManager';
 import InventoryOverview from './InventoryOverview';
 import InventoryToast from './InventoryToast';
@@ -22,12 +21,11 @@ const TABS = [
   { value: 'risk', label: 'At risk' },
   { value: 'plan', label: 'Sell-in plan' },
   { value: 'manage', label: 'Enter / edit data' },
-  { value: 'thresholds', label: 'DOH thresholds' },
 ];
 
 /**
  * The inventory page: overall view for all customers, one customer with DOH,
- * the at-risk list, the sell-in plan, the create/edit form, and DOH thresholds. Only the active tab is mounted, so
+ * the at-risk list, the sell-in plan, and the create/edit form. Only the active tab is mounted, so
  * switching tabs refetches, and `refreshKey` (bumped after any write) makes the
  * mounted views refetch too. Table rows' Edit buttons jump to the form.
  */
@@ -106,15 +104,6 @@ export default function InventoryTabs() {
           skus={options.skus}
           editRow={editRow}
           onSaved={handleRecordSaved}
-        />
-      )}
-
-      {tab === 'thresholds' && (
-        <DohThresholdsPanel
-          customers={options.customers}
-          refreshKey={refreshKey}
-          onChanged={() => setRefreshKey((key) => key + 1)}
-          onNotify={notify}
         />
       )}
 

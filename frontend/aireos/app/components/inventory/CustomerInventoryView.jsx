@@ -22,7 +22,7 @@ const STATUS_OPTIONS = Object.entries(DOH_STATUS_LABELS).map(([value, label]) =>
  * @param {object} props
  * @param {Array<{ customer_id: number, customer_name: string }>} props.customers
  * @param {Array<{ sku: string, product_name: string }>} props.skuOptions
- * @param {number} props.refreshKey bumped after a create/edit or threshold change
+ * @param {number} props.refreshKey bumped after a create/edit
  * @param {(row: object) => void} props.onEditRow
  */
 export default function CustomerInventoryView({ customers, skuOptions, refreshKey, onEditRow }) {

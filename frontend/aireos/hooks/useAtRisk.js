@@ -7,7 +7,7 @@ import { getAtRisk } from '@/app/services/inventoryApi';
 /**
  * The at-risk list (backend inventory_service.get_at_risk). Recalculated on
  * every fetch, so a SKU leaves the list once new data brings it back inside its
- * band. `refreshKey` is bumped after a create/edit or threshold change.
+ * band. `refreshKey` is bumped after a create/edit.
  *
  * @param {{ customerIds?: number[], risk?: string, refreshKey?: number }} [options]
  * @returns {{ data: { as_of: string | null, counts: { below_min: number, above_max: number }, items: object[] } | null, loading: boolean, error: string | null }}

@@ -7,7 +7,7 @@ import { getCustomerInventory } from '@/app/services/inventoryApi';
 /**
  * One customer's stock with DOH (backend inventory_service.get_customer_view).
  * Does nothing until a customer is chosen. `refreshKey` is bumped by the page
- * after a create/edit or a threshold change to refetch.
+ * after a create/edit to refetch.
  *
  * @param {{ customerId?: number | null, skus?: string[], startMonth?: string, endMonth?: string, refreshKey?: number }} [options]
  * @returns {{ data: { customer: object, threshold: object, trend: object[], skus: object[] } | null, loading: boolean, error: string | null }}

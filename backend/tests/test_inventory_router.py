@@ -82,7 +82,6 @@ def test_customer_view_maps_a_bigquery_outage_to_503(monkeypatch):
         ("/api/inventory/overview", "get_overview"),
         ("/api/inventory/customers/1", "get_customer_view"),
         ("/api/inventory/customers/1/sell-in-plan", "get_sell_in_plan"),
-        ("/api/inventory/doh-thresholds", "get_doh_thresholds"),
     ],
 )
 def test_an_unexpected_failure_is_a_500_that_names_the_cause(monkeypatch, url, function_name):
@@ -368,77 +367,11 @@ def test_invalid_shipped_so_far_input_is_rejected_before_reaching_the_service(mo
 # ---- DOH thresholds ----------------------------------------------------------------
 
 
-def test_setting_thresholds_passes_customers_and_target(monkeypatch):
-    seen = {}
-
-    def fake(customer_ids, target_doh):
-        seen.update(customer_ids=customer_ids, target_doh=target_doh)
-        return []
-
-    monkeypatch.setattr(inventory_service, "set_doh_thresholds", fake)
-
-    response = client.put("/api/inventory/doh-thresholds", json={"customer_ids": [1, 2], "target_doh": 28})
-
-    assert response.status_code == 200
-    assert seen == {"customer_ids": [1, 2], "target_doh": 28}
-
-
-@pytest.mark.parametrize("target", [0, -5, 2.5, "abc", None])
-def test_only_positive_whole_number_targets_are_accepted(monkeypatch, target):
-    monkeypatch.setattr(inventory_service, "set_doh_thresholds", _raises(AssertionError("service was called")))
-
-    response = client.put("/api/inventory/doh-thresholds", json={"customer_ids": [1], "target_doh": target})
-
-    assert response.status_code == 422
-
-
-def test_setting_thresholds_needs_at_least_one_customer(monkeypatch):
-    monkeypatch.setattr(inventory_service, "set_doh_thresholds", _raises(AssertionError("service was called")))
-
-    response = client.put("/api/inventory/doh-thresholds", json={"customer_ids": [], "target_doh": 30})
-
-    assert response.status_code == 422
-
-
-def test_setting_thresholds_for_an_unknown_customer_is_404(monkeypatch):
-    monkeypatch.setattr(
-        inventory_service,
-        "set_doh_thresholds",
-        _raises(inventory_service.CustomerNotFoundError("nope")),
-    )
-
-    response = client.put("/api/inventory/doh-thresholds", json={"customer_ids": [9], "target_doh": 30})
-
-    assert response.status_code == 404
-
-
-def test_reset_returns_the_customers_threshold(monkeypatch):
-    monkeypatch.setattr(inventory_service, "reset_doh_threshold", lambda customer_id: {"customer_id": customer_id})
-
-    response = client.delete("/api/inventory/doh-thresholds/1")
-
-    assert response.status_code == 200
-    assert response.json() == {"customer_id": 1}
-
-
-def test_reset_for_an_unknown_customer_is_404(monkeypatch):
-    monkeypatch.setattr(
-        inventory_service,
-        "reset_doh_threshold",
-        _raises(inventory_service.CustomerNotFoundError("nope")),
-    )
-
-    assert client.delete("/api/inventory/doh-thresholds/9").status_code == 404
-
-
-def test_history_for_an_unknown_customer_is_404(monkeypatch):
-    monkeypatch.setattr(
-        inventory_service,
-        "get_doh_history",
-        _raises(inventory_service.CustomerNotFoundError("nope")),
-    )
-
-    assert client.get("/api/inventory/doh-thresholds/9/history").status_code == 404
+def test_the_doh_threshold_endpoints_are_gone():
+    assert client.get("/api/inventory/doh-thresholds").status_code == 404
+    assert client.put("/api/inventory/doh-thresholds", json={}).status_code == 404
+    assert client.delete("/api/inventory/doh-thresholds/1").status_code == 404
+    assert client.get("/api/inventory/doh-thresholds/1/history").status_code == 404
 
 
 def test_sell_out_is_not_something_a_record_can_carry(monkeypatch):
