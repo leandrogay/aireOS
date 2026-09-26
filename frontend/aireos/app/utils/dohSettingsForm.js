@@ -128,18 +128,3 @@ export function formatDohDays(value) {
   if (value === null || value === undefined) return '—';
   return value.toLocaleString('en-GB', { maximumFractionDigits: 2 });
 }
-
-/**
- * @param {string | null} isoTimestamp
- * @returns {string} e.g. '24 Sep 2026, 00:50', or a dash
- */
-export function formatTimestamp(isoTimestamp) {
-  if (!isoTimestamp) return '—';
-  return new Date(isoTimestamp).toLocaleString('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}

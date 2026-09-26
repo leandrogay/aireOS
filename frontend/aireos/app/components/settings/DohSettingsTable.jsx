@@ -2,7 +2,8 @@
 
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import { formatDohDays, formatTimestamp } from '@/app/utils/dohSettingsForm';
+import { formatDohDays } from '@/app/utils/dohSettingsForm';
+import { formatDateTime } from '@/lib/formatDate';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
@@ -73,7 +74,7 @@ export default function DohSettingsTable({ rows, editingId, pendingAlerts, onEdi
                 <td className={cn(tdClass, numClass)}>{formatDohDays(row.min_doh)}</td>
                 <td className={cn(tdClass, numClass)}>{formatDohDays(row.target_doh)}</td>
                 <td className={cn(tdClass, numClass)}>{formatDohDays(row.max_doh)}</td>
-                <td className={cn(tdClass, 'whitespace-nowrap')}>{formatTimestamp(row.thresholds_updated_at)}</td>
+                <td className={cn(tdClass, 'whitespace-nowrap')}>{formatDateTime(row.thresholds_updated_at)}</td>
                 <td className={tdClass}>
                   <div className="inline-flex items-center gap-2">
                     <Switch
