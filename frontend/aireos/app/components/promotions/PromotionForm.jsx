@@ -14,10 +14,10 @@ import {
   areAllStoresSelected,
   promoTypeLabel,
   retailerDropdownOptions,
-  retailerLabel,
   storeCatalogOptions,
   storesForRetailerIds,
 } from '@/app/utils/promotionForm';
+import { retailerLabel } from '@/app/utils/retailerLabel';
 
 const inputClass =
   'w-full min-w-0 max-w-full rounded-md border border-lavander bg-cream px-2.5 py-1.5 text-sm text-deep-violet-blue placeholder:text-deep-violet-blue/45 focus:border-violet focus:outline-none';

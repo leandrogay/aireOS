@@ -7,9 +7,9 @@ import RefreshButton from '@/components/ui/RefreshButton';
 import {
   formatPromoDate,
   promoTypeLabel,
-  retailerLabel,
   uniqueSkuRangeLabels,
 } from '@/app/utils/promotionForm';
+import { retailerLabel } from '@/app/utils/retailerLabel';
 import {
   PROMOTION_STATUSES,
   dedupePromotions,
