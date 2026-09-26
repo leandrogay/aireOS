@@ -39,6 +39,30 @@ export function formFromDohSettings(settings) {
   };
 }
 
+/** The form filled with the global default, for "Restore defaults". */
+export const DEFAULT_DOH_THRESHOLD_FORM = {
+  minDoh: String(GLOBAL_DEFAULT_DOH.min),
+  targetDoh: String(GLOBAL_DEFAULT_DOH.target),
+  maxDoh: String(GLOBAL_DEFAULT_DOH.max),
+};
+
+/**
+ * True when both forms hold the same numbers ('30' and ' 30.0 ' match), so
+ * "Restore defaults" can tell whether there is anything to restore.
+ *
+ * @param {{ minDoh: string, targetDoh: string, maxDoh: string }} a
+ * @param {{ minDoh: string, targetDoh: string, maxDoh: string }} b
+ * @returns {boolean}
+ */
+export function isSameDohThresholdForm(a, b) {
+  return DOH_THRESHOLD_FIELDS.every(({ name }) => {
+    const left = a[name].trim();
+    const right = b[name].trim();
+    if (left === '' || right === '') return left === right;
+    return Number(left) === Number(right);
+  });
+}
+
 /**
  * @param {string} value
  * @returns {string | null} the message for one field on its own, or null when it is fine

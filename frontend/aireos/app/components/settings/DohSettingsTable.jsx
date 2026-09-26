@@ -3,6 +3,7 @@
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { formatDohDays, formatTimestamp } from '@/app/utils/dohSettingsForm';
+import { retailerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
 const thClass = 'bg-lavander px-2 py-1.5 text-left text-xs font-semibold text-deep-violet-blue';
@@ -13,34 +14,28 @@ const numClass = 'text-right tabular-nums';
 // same override InventoryTabs uses for its active tab.
 const switchClass = 'data-checked:bg-deep-violet-blue data-unchecked:bg-lavander';
 
+// Same look as the promotions list's Edit button (PromotionList.jsx
+// actionButtonClass): filled deep violet, and violet "Editing" on the row
+// whose form is open. Applied to the shared Button primitive.
+const editButtonClass =
+  'h-auto min-w-[4rem] rounded-md px-3 py-1.5 text-xs font-medium shadow-sm transition';
+const editIdleClass = 'bg-deep-violet-blue text-white hover:bg-deep-violet-blue hover:opacity-90';
+const editActiveClass = 'bg-violet text-deep-violet-blue hover:bg-violet';
+
 /**
  * One row per customer: min / target / max DOH, when the thresholds were last
- * saved, the alert toggle, and Edit / Reset actions. Rows on the global
- * default are badged and have no Reset. Holds no state of its own; the parent
- * (DohSettingsView) owns editing, confirmation and pending requests.
+ * saved, the alert toggle, and Edit. Rows on the global default are badged.
+ * Reset to default lives in the edit form (DohThresholdForm). Holds no state
+ * of its own; the parent (DohSettingsView) owns editing and pending requests.
  *
  * @param {object} props
  * @param {object[]} props.rows settings rows from getDohSettings
  * @param {number | null} props.editingId customer whose form is open
  * @param {Record<number, boolean>} props.pendingAlerts customer_id -> value being saved
- * @param {number | null} props.confirmingResetId customer asked to confirm a reset
- * @param {number | null} props.resettingId customer whose reset is in flight
  * @param {(row: object) => void} props.onEdit
  * @param {(row: object, enabled: boolean) => void} props.onToggleAlert
- * @param {(row: object | null) => void} props.onAskReset null cancels
- * @param {(row: object) => void} props.onConfirmReset
  */
-export default function DohSettingsTable({
-  rows,
-  editingId,
-  pendingAlerts,
-  confirmingResetId,
-  resettingId,
-  onEdit,
-  onToggleAlert,
-  onAskReset,
-  onConfirmReset,
-}) {
+export default function DohSettingsTable({ rows, editingId, pendingAlerts, onEdit, onToggleAlert }) {
   return (
     <div className="overflow-auto rounded-md border border-lavander">
       <table className="w-full border-collapse">
@@ -61,7 +56,6 @@ export default function DohSettingsTable({
           {rows.map((row) => {
             const alertPending = row.customer_id in pendingAlerts;
             const alertOn = alertPending ? pendingAlerts[row.customer_id] : row.doh_alert_enabled;
-            const resetting = resettingId === row.customer_id;
 
             return (
               <tr
@@ -69,7 +63,7 @@ export default function DohSettingsTable({
                 className={cn('border-t border-lavander', editingId === row.customer_id && 'bg-cream')}
               >
                 <td className={tdClass}>
-                  <span className="font-medium">{row.customer_name}</span>
+                  <span className="font-medium">{retailerLabel(row.customer_name)}</span>
                   {row.is_global_default && (
                     <span className="ml-2 whitespace-nowrap rounded-full border border-violet bg-lavander px-2 py-0.5 text-[11px]">
                       Global Default
@@ -86,7 +80,7 @@ export default function DohSettingsTable({
                       checked={alertOn}
                       disabled={alertPending}
                       onCheckedChange={(checked) => onToggleAlert(row, checked)}
-                      aria-label={`DOH alerts for ${row.customer_name}`}
+                      aria-label={`DOH alerts for ${retailerLabel(row.customer_name)}`}
                       className={switchClass}
                     />
                     <span className="text-xs" aria-hidden="true">
@@ -95,30 +89,14 @@ export default function DohSettingsTable({
                   </div>
                 </td>
                 <td className={tdClass}>
-                  <div className="flex justify-end gap-1">
-                    <Button variant="outline" size="xs" onClick={() => onEdit(row)}>
-                      Edit
+                  <div className="flex justify-end">
+                    <Button
+                      size="sm"
+                      onClick={() => onEdit(row)}
+                      className={cn(editButtonClass, editingId === row.customer_id ? editActiveClass : editIdleClass)}
+                    >
+                      {editingId === row.customer_id ? 'Editing' : 'Edit'}
                     </Button>
-                    {!row.is_global_default &&
-                      (confirmingResetId === row.customer_id ? (
-                        <>
-                          <Button
-                            variant="destructive"
-                            size="xs"
-                            disabled={resetting}
-                            onClick={() => onConfirmReset(row)}
-                          >
-                            {resetting ? 'Resetting…' : 'Confirm reset'}
-                          </Button>
-                          <Button variant="outline" size="xs" disabled={resetting} onClick={() => onAskReset(null)}>
-                            Cancel
-                          </Button>
-                        </>
-                      ) : (
-                        <Button variant="outline" size="xs" onClick={() => onAskReset(row)}>
-                          Reset to default
-                        </Button>
-                      ))}
                   </div>
                 </td>
               </tr>
