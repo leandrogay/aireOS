@@ -1,4 +1,5 @@
 from datetime import date, datetime, timezone
+from decimal import Decimal
 
 import pytest
 from conftest import FakeConnection, FakeEngine
@@ -30,15 +31,26 @@ def _metric(customer_id, sku, month, name, value):
     }
 
 
-def _target(customer_id=1, target=30.0, effective_from=date(2026, 1, 1), effective_to=None):
+# Saved before any month the fixtures hold, so it covers them all.
+BEFORE_ACTUALS = datetime(2025, 12, 1, tzinfo=timezone.utc)
+
+
+def _version(min_doh=25, target_doh=30, max_doh=35, updated_at=BEFORE_ACTUALS, setting_id=1, customer_id=1):
+    """A doh_settings row as the database returns it (NUMERIC -> Decimal)."""
+
     return {
         "customer_id": customer_id,
-        "effective_from": effective_from,
-        "effective_to": effective_to,
-        "target_doh": target,
-        "source": "test",
-        "created_at": STAMP,
+        "setting_id": setting_id,
+        "min_doh": Decimal(min_doh),
+        "target_doh": Decimal(target_doh),
+        "max_doh": Decimal(max_doh),
+        "updated_at": updated_at,
+        "updated_by": "planner",
     }
+
+
+def _versions_newest_first(*versions):
+    return sorted(versions, key=lambda v: (v["updated_at"], v["setting_id"]), reverse=True)
 
 
 FAR_FUTURE = date(2099, 12, 31)
@@ -67,7 +79,7 @@ def _sales_units(metric_rows):
     return units
 
 
-def _router(customers=None, metrics=None, targets=None, shipped=None, **others):
+def _router(customers=None, metrics=None, versions=None, shipped=None, **others):
     """respond() that answers by the table each statement reads."""
 
     def respond(sql, params):
@@ -82,8 +94,8 @@ def _router(customers=None, metrics=None, targets=None, shipped=None, **others):
             return shipped or []
         if "FROM inventory_metrics" in sql and "DISTINCT ON" in sql:
             return metrics or []
-        if "FROM customer_doh_targets" in sql:
-            return targets or []
+        if "FROM doh_settings" in sql:
+            return _versions_newest_first(*(versions or []))
         return []
 
     respond.sellout_units = _sales_units(metrics)
@@ -220,7 +232,7 @@ def test_an_unknown_sku_code_is_shown_by_its_code(monkeypatch):
 # ---- customer view --------------------------------------------------------------
 
 
-def _customer_view(monkeypatch, forecast=None, targets=None):
+def _customer_view(monkeypatch, forecast=None, versions=None):
     jan, feb = date(2026, 1, 1), date(2026, 2, 1)
     metrics = [
         _metric(1, "A1", jan, "sell_in", 400),
@@ -228,9 +240,9 @@ def _customer_view(monkeypatch, forecast=None, targets=None):
         _metric(1, "A1", feb, "sell_in", 0),
         _metric(1, "A1", feb, "sell_out_base", 280),
     ]
-    _install(monkeypatch, _router(_customers("fairprice"), metrics, targets or [_target()]))
+    _install(monkeypatch, _router(_customers("fairprice"), metrics, [_version()] if versions is None else versions))
     monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: forecast or {})
-    return inventory_service.get_customer_view(1, today=TODAY)
+    return inventory_service.get_customer_view(1)
 
 
 def test_customer_view_computes_doh_from_forecast_when_actuals_run_out(monkeypatch):
@@ -251,16 +263,57 @@ def test_customer_view_measures_doh_against_the_months_target(monkeypatch):
     assert feb["doh_status"] == "below_min"
 
 
-def test_customer_view_uses_the_target_in_effect_at_month_end(monkeypatch):
-    targets = [
-        _target(target=40.0, effective_from=date(2026, 2, 1)),
-        _target(target=20.0, effective_from=date(2026, 1, 1), effective_to=date(2026, 1, 31)),
+def test_customer_view_takes_the_band_from_the_doh_settings(monkeypatch):
+    view = _customer_view(monkeypatch, versions=[_version(min_doh=20, target_doh=30, max_doh=45)])
+
+    feb = next(r for r in view["skus"] if r["month"] == "2026-02-01")
+    assert (feb["min_doh"], feb["target_doh"], feb["max_doh"]) == (20.0, 30.0, 45.0)
+
+
+def test_a_closed_month_is_judged_against_the_version_in_effect_at_its_end(monkeypatch):
+    versions = [
+        _version(target_doh=20, setting_id=1),
+        _version(target_doh=40, setting_id=2, updated_at=datetime(2026, 2, 10, tzinfo=timezone.utc)),
     ]
 
-    view = _customer_view(monkeypatch, targets=targets)
+    view = _customer_view(monkeypatch, versions=versions)
+
+    assert view["trend"][0]["month"] == "2026-01-01"
+    assert view["trend"][0]["target_doh"] == 20.0
+
+
+def test_the_latest_month_is_judged_against_the_current_version(monkeypatch):
+    # Saved after February ended, but February is the newest stock position.
+    versions = [
+        _version(target_doh=20, setting_id=1),
+        _version(target_doh=40, setting_id=2, updated_at=datetime(2026, 9, 20, tzinfo=timezone.utc)),
+    ]
+
+    view = _customer_view(monkeypatch, versions=versions)
 
     by_month = {r["month"]: r["target_doh"] for r in view["trend"]}
     assert by_month == {"2026-01-01": 20.0, "2026-02-01": 40.0}
+
+
+def test_a_month_before_the_first_version_is_on_the_global_default(monkeypatch):
+    versions = [_version(min_doh=10, target_doh=12, max_doh=14, updated_at=datetime(2026, 2, 5, tzinfo=timezone.utc))]
+
+    view = _customer_view(monkeypatch, versions=versions)
+
+    jan = view["trend"][0]
+    assert (jan["min_doh"], jan["target_doh"], jan["max_doh"]) == (25.0, 30.0, 35.0)
+
+
+def test_a_version_saved_late_on_a_months_last_day_in_singapore_counts_for_that_month(monkeypatch):
+    # 31 Jan 20:00 UTC is 1 Feb 04:00 in Singapore, so January still uses the older version.
+    versions = [
+        _version(target_doh=20, setting_id=1),
+        _version(target_doh=40, setting_id=2, updated_at=datetime(2026, 1, 31, 20, 0, tzinfo=timezone.utc)),
+    ]
+
+    view = _customer_view(monkeypatch, versions=versions)
+
+    assert view["trend"][0]["target_doh"] == 20.0
 
 
 def test_customer_view_trend_has_one_row_per_month(monkeypatch):
@@ -271,10 +324,30 @@ def test_customer_view_trend_has_one_row_per_month(monkeypatch):
 
 
 def test_customer_view_reports_the_current_threshold(monkeypatch):
-    view = _customer_view(monkeypatch)
+    view = _customer_view(monkeypatch, versions=[_version(min_doh=20, target_doh=28, max_doh=40)])
 
-    assert view["threshold"]["target_doh"] == 30
-    assert view["threshold"]["is_global_default"] is False
+    threshold = view["threshold"]
+    assert (threshold["min_doh"], threshold["target_doh"], threshold["max_doh"]) == (20.0, 28.0, 40.0)
+    assert threshold["is_global_default"] is False
+    assert threshold["updated_by"] == "planner"
+
+
+def test_a_customer_with_no_doh_settings_is_on_the_global_default(monkeypatch):
+    view = _customer_view(monkeypatch, versions=[])
+
+    threshold = view["threshold"]
+    assert (threshold["min_doh"], threshold["target_doh"], threshold["max_doh"]) == (25.0, 30.0, 35.0)
+    assert threshold["is_global_default"] is True
+    assert threshold["last_updated"] is None
+
+
+def test_customer_view_reads_only_that_customers_doh_settings(monkeypatch):
+    conn = _install(monkeypatch, _router(_customers("fairprice")))
+    monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: {})
+
+    inventory_service.get_customer_view(1)
+
+    assert conn.sql_containing("FROM doh_settings")[0][1] == {"customer_ids": [1]}
 
 
 def test_customer_view_rejects_an_unknown_customer(monkeypatch):
@@ -419,7 +492,7 @@ def test_edit_of_several_customers_fails_if_any_has_no_data(monkeypatch):
 # ---- sell-in plan ------------------------------------------------------------------
 
 
-def _plan_view(monkeypatch, forecast, targets=None, months=2):
+def _plan_view(monkeypatch, forecast, versions=None, months=2):
     jan, feb = date(2026, 1, 1), date(2026, 2, 1)
     metrics = [
         _metric(1, "A1", jan, "sell_in", 400),
@@ -429,9 +502,9 @@ def _plan_view(monkeypatch, forecast, targets=None, months=2):
         _metric(1, "B2", jan, "sell_in", 50),
         _metric(1, "B2", jan, "sell_out_base", 20),
     ]
-    _install(monkeypatch, _router(_customers("fairprice"), metrics, targets or [_target(target=10.0)]))
+    _install(monkeypatch, _router(_customers("fairprice"), metrics, versions or [_version(5, 10, 15)]))
     monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: forecast)
-    return inventory_service.get_sell_in_plan(1, months=months, today=TODAY)
+    return inventory_service.get_sell_in_plan(1, months=months)
 
 
 # March 310 (31d) and April 300 (30d): 610 units over 61 days = 10 a day.
@@ -464,6 +537,18 @@ def test_the_recommendation_covers_the_months_sales_and_leaves_the_stock_needed_
     assert march["target_doh"] == 10
 
 
+def test_the_plan_aims_at_the_current_target_even_for_months_before_it_was_saved(monkeypatch):
+    versions = [
+        _version(5, 10, 15, setting_id=1),
+        _version(15, 20, 25, setting_id=2, updated_at=datetime(2026, 9, 20, tzinfo=timezone.utc)),
+    ]
+
+    plan = _plan_view(monkeypatch, _PLAN_FORECAST, versions=versions)
+
+    assert [r["target_doh"] for r in plan["rows"]] == [20.0, 20.0]
+    assert plan["threshold"]["target_doh"] == 20.0
+
+
 def test_a_sku_with_no_forecast_is_listed_rather_than_planned(monkeypatch):
     plan = _plan_view(monkeypatch, _PLAN_FORECAST)
 
@@ -490,7 +575,7 @@ def test_a_customer_with_no_inventory_gets_an_empty_plan(monkeypatch):
     _install(monkeypatch, _router(_customers("fairprice")))
     monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: _PLAN_FORECAST)
 
-    plan = inventory_service.get_sell_in_plan(1, today=TODAY)
+    plan = inventory_service.get_sell_in_plan(1)
 
     assert plan["rows"] == []
     assert plan["actuals_through"] is None
@@ -500,7 +585,7 @@ def test_the_plan_rejects_an_unknown_customer(monkeypatch):
     _install(monkeypatch, _router(_customers("fairprice")))
 
     with pytest.raises(inventory_service.CustomerNotFoundError):
-        inventory_service.get_sell_in_plan(99, today=TODAY)
+        inventory_service.get_sell_in_plan(99)
 
 
 # ---- actuals only for finished months ----------------------------------------------
@@ -636,10 +721,10 @@ def test_the_plan_takes_shipped_so_far_off_what_is_still_to_send(monkeypatch):
         _metric(1, "A1", feb, "sell_out_base", 280),
     ]
     shipped = [{"sku": "A1", "period_start": date(2026, 3, 1), "metric_value": 50.0}]
-    _install(monkeypatch, _router(_customers("fairprice"), metrics, [_target(target=10.0)], shipped))
+    _install(monkeypatch, _router(_customers("fairprice"), metrics, [_version(5, 10, 15)], shipped))
     monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: _PLAN_FORECAST)
 
-    plan = inventory_service.get_sell_in_plan(1, months=2, today=TODAY)
+    plan = inventory_service.get_sell_in_plan(1, months=2)
 
     march = plan["rows"][0]
     assert march["shipped_so_far"] == 50
@@ -670,9 +755,9 @@ def _two_sku_plan(monkeypatch, months=2):
             date(2026, 5, 1): 310.0,
         },
     }
-    _install(monkeypatch, _router(_customers("fairprice"), metrics, [_target(target=10.0)]))
+    _install(monkeypatch, _router(_customers("fairprice"), metrics, [_version(5, 10, 15)]))
     monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: forecast)
-    return inventory_service.get_sell_in_plan(1, months=months, today=TODAY)
+    return inventory_service.get_sell_in_plan(1, months=months)
 
 
 def test_each_sku_plans_from_the_month_after_its_own_last_actual(monkeypatch):
@@ -828,7 +913,7 @@ _RISK_FORECAST = {
 }
 
 
-def _risk_view(monkeypatch, target=30.0, **kwargs):
+def _risk_view(monkeypatch, versions=None, **kwargs):
     jan, feb = date(2026, 1, 1), date(2026, 2, 1)
     metrics = [
         _metric(1, "A1", jan, "sell_in", 400),
@@ -841,7 +926,7 @@ def _risk_view(monkeypatch, target=30.0, **kwargs):
         _metric(1, "C3", jan, "sell_in", 5),
         _metric(1, "C3", feb, "sell_in", 5),
     ]
-    _install(monkeypatch, _router(_customers("fairprice"), metrics, [_target(target=target)]))
+    _install(monkeypatch, _router(_customers("fairprice"), metrics, versions or [_version()]))
     monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: _RISK_FORECAST)
     return inventory_service.get_at_risk(**kwargs)
 
@@ -880,10 +965,29 @@ def test_a_sku_with_no_doh_is_not_flagged(monkeypatch):
 
 
 def test_a_sku_back_inside_its_band_drops_off_the_list(monkeypatch):
-    # With a target of 2 days the band is -3 to 7, so A1's 2.0 days is fine.
-    risk = _risk_view(monkeypatch, target=2.0)
+    # With a band of 1 to 7 days, A1's 2.0 days is fine.
+    risk = _risk_view(monkeypatch, versions=[_version(1, 2, 7)])
 
     assert "A1" not in {i["sku"] for i in risk["items"]}
+
+
+def test_a_settings_change_moves_the_list_straight_away(monkeypatch):
+    # Saved long after February (the month judged): a max of 110 days clears B2's 103.
+    versions = [
+        _version(setting_id=1),
+        _version(25, 30, 110, setting_id=2, updated_at=datetime(2026, 9, 20, tzinfo=timezone.utc)),
+    ]
+
+    risk = _risk_view(monkeypatch, versions=versions)
+
+    assert [i["sku"] for i in risk["items"]] == ["A1"]
+
+
+def test_each_customer_is_judged_against_its_own_settings(monkeypatch):
+    risk = _risk_view(monkeypatch, versions=[_version(1, 2, 7, customer_id=2)])
+
+    by_sku = {i["sku"]: i for i in risk["items"]}
+    assert (by_sku["A1"]["min_doh"], by_sku["A1"]["max_doh"]) == (25.0, 35.0)
 
 
 def test_the_list_can_be_narrowed_to_one_kind_of_risk(monkeypatch):
@@ -919,6 +1023,7 @@ def test_at_risk_only_reads_the_chosen_customers(monkeypatch):
     inventory_service.get_at_risk(customer_ids=[2])
 
     assert conn.sql_containing("DISTINCT ON")[0][1]["customer_ids"] == [2]
+    assert conn.sql_containing("FROM doh_settings")[0][1] == {"customer_ids": [2]}
 
 
 def test_the_overview_can_be_limited_to_sku_that_are_at_risk(monkeypatch):
@@ -943,7 +1048,7 @@ def test_the_overview_shows_every_sku_when_the_filter_is_off(monkeypatch):
 def _carton_plan(monkeypatch, product_name, sku_range):
     feb = date(2026, 2, 1)
     metrics = [_metric(1, "A1", feb, "sell_in", 20)]
-    _install(monkeypatch, _router(_customers("fairprice"), metrics, [_target(target=10.0)]))
+    _install(monkeypatch, _router(_customers("fairprice"), metrics, [_version(5, 10, 15)]))
     monkeypatch.setattr(
         catalog_service,
         "get_skus",
@@ -951,7 +1056,7 @@ def _carton_plan(monkeypatch, product_name, sku_range):
     )
     forecast = {product_name: {date(2026, 3, 1): 310.0, date(2026, 4, 1): 300.0}}
     monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: forecast)
-    return inventory_service.get_sell_in_plan(1, months=1, today=TODAY)["rows"][0]
+    return inventory_service.get_sell_in_plan(1, months=1)["rows"][0]
 
 
 def test_pants_are_recommended_in_multiples_of_eight(monkeypatch):
@@ -980,15 +1085,15 @@ def test_a_product_that_is_neither_is_not_rounded(monkeypatch):
 def test_the_plan_can_be_narrowed_to_chosen_skus(monkeypatch):
     jan = date(2026, 1, 1)
     metrics = [_metric(1, "A1", jan, "sell_in", 20), _metric(1, "B2", jan, "sell_in", 20)]
-    _install(monkeypatch, _router(_customers("fairprice"), metrics, [_target(target=10.0)]))
+    _install(monkeypatch, _router(_customers("fairprice"), metrics, [_version(5, 10, 15)]))
     forecast = {
         "Pants A": {date(2026, 2, 1): 310.0, date(2026, 3, 1): 300.0},
         "Pants B": {date(2026, 2, 1): 310.0, date(2026, 3, 1): 300.0},
     }
     monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: forecast)
 
-    everything = inventory_service.get_sell_in_plan(1, months=1, today=TODAY)
-    only_a1 = inventory_service.get_sell_in_plan(1, months=1, today=TODAY, skus=["A1"])
+    everything = inventory_service.get_sell_in_plan(1, months=1)
+    only_a1 = inventory_service.get_sell_in_plan(1, months=1, skus=["A1"])
 
     assert {r["sku"] for r in everything["rows"]} == {"A1", "B2"}
     assert {r["sku"] for r in only_a1["rows"]} == {"A1"}
@@ -1002,10 +1107,10 @@ def test_a_sku_filter_also_limits_the_no_forecast_note(monkeypatch):
 
     jan = date(2026, 1, 1)
     metrics = [_metric(1, "A1", jan, "sell_in", 20), _metric(1, "B2", jan, "sell_in", 20)]
-    _install(monkeypatch, _router(_customers("fairprice"), metrics, [_target(target=10.0)]))
+    _install(monkeypatch, _router(_customers("fairprice"), metrics, [_version(5, 10, 15)]))
     monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: {})
 
-    narrowed = inventory_service.get_sell_in_plan(1, months=1, today=TODAY, skus=["B2"])
+    narrowed = inventory_service.get_sell_in_plan(1, months=1, skus=["B2"])
 
     assert [s["sku"] for s in narrowed["skus_without_forecast"]] == ["B2"]
 

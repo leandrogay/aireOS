@@ -6,6 +6,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
 from app.services import catalog_service, forecast_units, inventory_calc, sellout_units, sql
+from app.services.settings import doh as doh_settings
 
 
 # ============================================================
@@ -436,72 +437,39 @@ def get_overview(
 # ============================================================
 # DOH THRESHOLDS
 #
-# customer_doh_targets is effective-dated and only read here; nothing in
-# the app writes it. Min and max are not stored;
-# they are always the target -/+ inventory_calc.DOH_BAND_DAYS.
-# A customer with no row falls back to the global default.
+# Min, target and max come from the DOH settings (settings/doh.py), which
+# keep every version. A closed month is judged against the version in effect
+# on its last day, so changing a setting never rewrites history. A customer's
+# latest month of actuals is its stock position now, so it is judged against
+# the current version, the same one the at-risk list, the threshold card and
+# the sell-in plan use; a change shows up there straight away.
 # ============================================================
 
-_TARGET_COLUMNS = """
-    customer_id,
-    effective_from,
-    effective_to,
-    target_doh,
-    source,
-    created_at
-"""
+
+def _band(thresholds: dict) -> dict:
+    # NUMERIC columns come back as Decimal; DOH is calculated as float.
+    return {
+        "target_doh": float(thresholds["target_doh"]),
+        "min_doh": float(thresholds["min_doh"]),
+        "max_doh": float(thresholds["max_doh"]),
+    }
 
 
-def _fetch_targets(conn: Connection, customer_id: int | None = None) -> list[dict]:
-    rows = conn.execute(
-        text(
-            f"""
-            SELECT
-                {_TARGET_COLUMNS}
-
-            FROM customer_doh_targets
-
-            WHERE
-                (
-                    CAST(:customer_id AS integer) IS NULL
-                    OR customer_id = CAST(:customer_id AS integer)
-                )
-
-            ORDER BY
-                customer_id ASC,
-                effective_from DESC
-            """
-        ),
-        {"customer_id": customer_id},
-    ).mappings().all()
-
-    return [dict(row) for row in rows]
+def _band_for_month(versions: list[dict], month: date, latest: date) -> dict:
+    if month >= latest:
+        return _band(doh_settings.current_thresholds(versions))
+    return _band(doh_settings.thresholds_on(versions, _month_end(month)))
 
 
-def _target_in_effect(targets: list[dict], on: date) -> dict | None:
-    for target in targets:
-        if target["effective_from"] <= on and (
-            target["effective_to"] is None or target["effective_to"] >= on
-        ):
-            return target
-    return None
-
-
-def _threshold_view(customer_id: int, customer_name: str, targets: list[dict], on: date) -> dict:
-    target_row = _target_in_effect(targets, on)
-    target = (
-        target_row["target_doh"] if target_row else float(inventory_calc.DEFAULT_TARGET_DOH)
-    )
-    minimum, maximum = inventory_calc.threshold_band(target)
+def _threshold_view(customer_id: int, customer_name: str, versions: list[dict]) -> dict:
+    current = doh_settings.current_thresholds(versions)
     return {
         "customer_id": customer_id,
         "customer_name": customer_name,
-        "min_doh": minimum,
-        "target_doh": target,
-        "max_doh": maximum,
-        "is_global_default": target_row is None,
-        "last_updated": target_row["created_at"].isoformat() if target_row else None,
-        "source": target_row["source"] if target_row else None,
+        **_band(current),
+        "is_global_default": current["is_global_default"],
+        "last_updated": current["updated_at"],
+        "updated_by": current["updated_by"],
     }
 
 
@@ -514,7 +482,7 @@ def _customer_table(
     customer_id: int,
     customer_name: str,
     metrics: dict[tuple[int, str], dict[date, dict[str, float]]],
-    targets: list[dict],
+    versions: list[dict],
     details: dict[str, dict],
     forecast: dict[str, dict[date, float]],
     skus: list[str] | None = None,
@@ -545,7 +513,9 @@ def _customer_table(
                     **_stock_row(customer_id, customer_name, sku_cols, row),
                     "doh": row["doh"],
                     "daily_sell_out": row["daily_sell_out"],
-                    **_target_columns(targets, row["month"], row["doh"]),
+                    **_target_columns(
+                        _band_for_month(versions, row["month"], latest[customer_id]), row["doh"]
+                    ),
                 }
             )
 
@@ -558,21 +528,20 @@ def get_customer_view(
     skus: list[str] | None = None,
     start_month: date | None = None,
     end_month: date | None = None,
-    today: date | None = None,
 ) -> dict:
     """
     One customer's stock with DOH: a trend row per month (combined DOH
     against that month's target and band) and one table row per SKU and
-    month with the gap to target. Each month is measured against the
-    target that was in effect at the end of that month.
+    month with the gap to target. Each closed month is measured against the
+    DOH settings in effect at its end, the latest month against the current
+    ones (see DOH THRESHOLDS).
     """
 
-    today = today or date.today()
     with _read_connection() as conn:
         customers = _fetch_customers(conn)
         _require_customers(customers, [customer_id])
         metrics = _fetch_actuals(conn, [customer_id])
-        targets = _fetch_targets(conn, customer_id)
+        versions = doh_settings.fetch_versions(conn, [customer_id]).get(customer_id, [])
 
     details = _sku_details()
     forecast = _forecast_by_sku(customer_id, details)
@@ -581,7 +550,7 @@ def get_customer_view(
         customer_id,
         customers[customer_id],
         metrics,
-        targets,
+        versions,
         details,
         forecast,
         skus=skus,
@@ -593,6 +562,7 @@ def get_customer_view(
     for row in table:
         by_month.setdefault(row["month"], []).append(row)
 
+    latest = _latest_month_by_customer(metrics).get(customer_id)
     trend = []
     for month, rows in by_month.items():
         doh = inventory_calc.combined_doh(rows)
@@ -601,32 +571,25 @@ def get_customer_view(
                 "month": month,
                 "ending_stock": round(sum(r["ending_stock"] for r in rows), 2),
                 "doh": doh,
-                **_target_columns(targets, date.fromisoformat(month), doh),
+                **_target_columns(_band_for_month(versions, date.fromisoformat(month), latest), doh),
             }
         )
 
     return {
         "customer": {"customer_id": customer_id, "customer_name": customers[customer_id]},
-        "threshold": _threshold_view(customer_id, customers[customer_id], targets, today),
+        "threshold": _threshold_view(customer_id, customers[customer_id], versions),
         "trend": trend,
         "skus": table,
     }
 
 
-def _target_columns(targets: list[dict], month: date, doh: float | None) -> dict:
-    """Target, band, gap and status for a month, judged at the month's end."""
+def _target_columns(band: dict, doh: float | None) -> dict:
+    """Target, band, gap and status for a DOH against one month's band (see _band_for_month)."""
 
-    target_row = _target_in_effect(targets, _month_end(month))
-    target = (
-        target_row["target_doh"] if target_row else float(inventory_calc.DEFAULT_TARGET_DOH)
-    )
-    minimum, maximum = inventory_calc.threshold_band(target)
     return {
-        "target_doh": target,
-        "min_doh": minimum,
-        "max_doh": maximum,
-        "doh_vs_target": None if doh is None else round(doh - target, 1),
-        "doh_status": inventory_calc.threshold_status(doh, target),
+        **band,
+        "doh_vs_target": None if doh is None else round(doh - band["target_doh"], 1),
+        "doh_status": inventory_calc.threshold_status(doh, band["min_doh"], band["max_doh"]),
     }
 
 
@@ -634,7 +597,7 @@ def _target_columns(targets: list[dict], month: date, doh: float | None) -> dict
 # AT RISK (all customers)
 #
 # A SKU is at risk when its days of holding, in the customer's latest month
-# of actuals, is outside the customer's min-max band: below min (low stock)
+# of actuals, is outside the customer's current min-max band: below min (low stock)
 # or above max (overstock). The list is recalculated on every request, so a
 # SKU drops off it as soon as a new month brings its DOH back inside the band.
 # ============================================================
@@ -687,7 +650,7 @@ def get_at_risk(
         chosen = customer_ids or list(customers)
         _require_customers(customers, chosen)
         metrics = _fetch_actuals(conn, chosen)
-        all_targets = _fetch_targets(conn)
+        versions = doh_settings.fetch_versions(conn, chosen)
 
     details = _sku_details()
     latest = _latest_month_by_customer(metrics)
@@ -700,7 +663,7 @@ def get_at_risk(
             customer_id,
             customers[customer_id],
             {key: months for key, months in metrics.items() if key[0] == customer_id},
-            [t for t in all_targets if t["customer_id"] == customer_id],
+            versions.get(customer_id, []),
             details,
             _forecast_by_sku(customer_id, details),
             start_month=latest[customer_id],
@@ -733,7 +696,6 @@ def get_at_risk(
 def get_sell_in_plan(
     customer_id: int,
     months: int = inventory_calc.SELL_IN_PLAN_MONTHS,
-    today: date | None = None,
     skus: list[str] | None = None,
 ) -> dict:
     """
@@ -747,15 +709,14 @@ def get_sell_in_plan(
     plan to those SKUs; the monthly totals then cover only them.
     """
 
-    today = today or date.today()
     with _read_connection() as conn:
         customers = _fetch_customers(conn)
         _require_customers(customers, [customer_id])
         metrics = _fetch_actuals(conn, [customer_id])
-        targets = _fetch_targets(conn, customer_id)
+        versions = doh_settings.fetch_versions(conn, [customer_id]).get(customer_id, [])
         shipped = _fetch_shipped(conn, customer_id)
 
-    threshold = _threshold_view(customer_id, customers[customer_id], targets, today)
+    threshold = _threshold_view(customer_id, customers[customer_id], versions)
     customer = {"customer_id": customer_id, "customer_name": customers[customer_id]}
     if not metrics:
         return {
@@ -772,8 +733,10 @@ def get_sell_in_plan(
     details = _sku_details()
     forecast = _forecast_by_sku(customer_id, details)
 
+    # A plan is what to send from now on, so every month aims at the current
+    # target, even when a SKU's last actual month is some way back.
     def target_for(month: date) -> float:
-        return _target_columns(targets, month, None)["target_doh"]
+        return threshold["target_doh"]
 
     # Each SKU's own last actual month and the stock it ended that month with.
     last_actual = {}

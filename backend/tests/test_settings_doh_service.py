@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -445,3 +445,79 @@ def test_revert_for_an_unknown_customer_raises(monkeypatch):
 
     with pytest.raises(common.CustomerNotFoundError):
         doh_service.revert_to_version(9, 1)
+
+
+# ---- thresholds over time (read by inventory) ------------------------------------
+
+
+def _row(setting_id, target_doh, updated_at, min_doh="20", max_doh="40"):
+    return {
+        "customer_id": 1,
+        "setting_id": setting_id,
+        "min_doh": Decimal(min_doh),
+        "target_doh": Decimal(target_doh),
+        "max_doh": Decimal(max_doh),
+        "updated_at": updated_at,
+        "updated_by": None,
+    }
+
+
+# Newest first, as fetch_versions returns them.
+_VERSIONS = [
+    _row(2, "40", datetime(2026, 3, 10, tzinfo=timezone.utc)),
+    _row(1, "20", datetime(2026, 1, 15, tzinfo=timezone.utc)),
+]
+
+
+def test_the_version_in_effect_on_a_day_is_the_newest_saved_by_then():
+    assert doh_service.thresholds_on(_VERSIONS, date(2026, 2, 28))["target_doh"] == Decimal("20")
+    assert doh_service.thresholds_on(_VERSIONS, date(2026, 3, 31))["target_doh"] == Decimal("40")
+
+
+def test_a_version_is_in_effect_on_the_day_it_was_saved():
+    assert doh_service.thresholds_on(_VERSIONS, date(2026, 3, 10))["setting_id"] == 2
+
+
+def test_the_day_a_version_was_saved_is_read_in_singapore_time():
+    # 16:30 UTC on 31 March is already 1 April in Singapore.
+    versions = [_row(3, "50", datetime(2026, 3, 31, 16, 30, tzinfo=timezone.utc)), *_VERSIONS]
+
+    assert doh_service.thresholds_on(versions, date(2026, 3, 31))["setting_id"] == 2
+    assert doh_service.thresholds_on(versions, date(2026, 4, 1))["setting_id"] == 3
+
+
+def test_before_the_first_version_a_customer_is_on_the_global_default():
+    thresholds = doh_service.thresholds_on(_VERSIONS, date(2026, 1, 14))
+
+    assert (thresholds["min_doh"], thresholds["target_doh"], thresholds["max_doh"]) == (25, 30, 35)
+    assert thresholds["is_global_default"] is True
+    assert thresholds["setting_id"] is None
+
+
+def test_the_current_thresholds_are_the_newest_version():
+    thresholds = doh_service.current_thresholds(_VERSIONS)
+
+    assert thresholds["setting_id"] == 2
+    assert thresholds["is_global_default"] is False
+    assert thresholds["updated_at"] == "2026-03-10T00:00:00+00:00"
+
+
+def test_a_customer_with_no_versions_is_currently_on_the_global_default():
+    assert doh_service.current_thresholds([])["is_global_default"] is True
+
+
+def test_versions_are_fetched_newest_first_and_grouped_by_customer():
+    rows = [
+        {**_VERSIONS[0], "customer_id": 1},
+        {**_VERSIONS[1], "customer_id": 1},
+        {**_VERSIONS[1], "customer_id": 2, "setting_id": 7},
+    ]
+    conn = FakeConnection(lambda sql, params: rows)
+
+    by_customer = doh_service.fetch_versions(conn, [1, 2])
+
+    assert [v["setting_id"] for v in by_customer[1]] == [2, 1]
+    assert [v["setting_id"] for v in by_customer[2]] == [7]
+    sql, params = conn.calls[0]
+    assert "ORDER BY customer_id ASC, updated_at DESC, setting_id DESC" in sql
+    assert params == {"customer_ids": [1, 2]}

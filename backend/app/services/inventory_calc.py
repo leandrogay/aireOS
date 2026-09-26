@@ -7,10 +7,6 @@ from math import ceil
 # Constants
 # ============================================================
 
-DEFAULT_TARGET_DOH = 30
-# There is nowhere to store a per-customer min/max, so both are always
-# the target moved by this many days.
-DOH_BAND_DAYS = 5
 # DOH looks forward this many months from the month being measured.
 DOH_WINDOW_MONTHS = 3
 
@@ -187,14 +183,11 @@ def combined_doh(rows: list[dict]) -> float | None:
 # ============================================================
 
 
-def threshold_band(target: float) -> tuple[float, float]:
-    return target - DOH_BAND_DAYS, target + DOH_BAND_DAYS
+def threshold_status(doh: float | None, minimum: float, maximum: float) -> str | None:
+    """Where a DOH sits against a customer's min-max band (from its DOH settings); both edges are within."""
 
-
-def threshold_status(doh: float | None, target: float) -> str | None:
     if doh is None:
         return None
-    minimum, maximum = threshold_band(target)
     if doh < minimum:
         return DOH_STATUS_BELOW_MIN
     if doh > maximum:

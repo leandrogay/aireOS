@@ -1,3 +1,4 @@
+from datetime import date, timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy import text
@@ -133,6 +134,95 @@ def get_settings(customer_id: int) -> dict:
     if row is None:
         raise CustomerNotFoundError(f"Customer {customer_id} does not exist.")
     return _settings_view(row)
+
+
+# ============================================================
+# THRESHOLDS OVER TIME
+#
+# Read by the inventory DOH calculations. Versions are append-only and
+# each one is in effect from its updated_at until the next one, so "the
+# version in effect on a day" is simply the newest one saved on or before
+# it; no effective_to is stored or derived. A customer is on the global
+# default before its first version.
+# ============================================================
+
+# Singapore has no daylight saving, so a fixed offset gives the calendar day
+# a version was saved on whatever timezone the server runs in.
+_BUSINESS_TZ = timezone(timedelta(hours=8))
+
+
+def fetch_versions(conn: Connection, customer_ids: list[int] | None = None) -> dict[int, list[dict]]:
+    """
+    Every threshold version per customer (all customers when `customer_ids`
+    is None), newest first in the same order current_settings uses. Takes the
+    caller's connection so it runs inside that caller's read.
+    """
+
+    rows = conn.execute(
+        text(
+            """
+            SELECT
+                customer_id,
+                setting_id,
+                min_doh,
+                target_doh,
+                max_doh,
+                updated_at,
+                updated_by
+
+            FROM doh_settings
+
+            WHERE
+                CAST(:customer_ids AS integer[]) IS NULL
+                OR customer_id = ANY(CAST(:customer_ids AS integer[]))
+
+            ORDER BY
+                customer_id ASC,
+                updated_at DESC,
+                setting_id DESC
+            """
+        ),
+        {"customer_ids": customer_ids},
+    ).mappings().all()
+
+    by_customer: dict[int, list[dict]] = {}
+    for row in rows:
+        by_customer.setdefault(row["customer_id"], []).append(dict(row))
+    return by_customer
+
+
+def _thresholds(version: dict | None) -> dict:
+    if version is None:
+        min_doh = GLOBAL_DEFAULT_MIN_DOH
+        target_doh = GLOBAL_DEFAULT_TARGET_DOH
+        max_doh = GLOBAL_DEFAULT_MAX_DOH
+    else:
+        min_doh, target_doh, max_doh = version["min_doh"], version["target_doh"], version["max_doh"]
+
+    return {
+        "setting_id": version["setting_id"] if version else None,
+        "min_doh": min_doh,
+        "target_doh": target_doh,
+        "max_doh": max_doh,
+        "is_global_default": _is_global_default(min_doh, target_doh, max_doh),
+        "updated_at": common.iso(version["updated_at"]) if version else None,
+        "updated_by": version["updated_by"] if version else None,
+    }
+
+
+def current_thresholds(versions: list[dict]) -> dict:
+    """The newest of a customer's versions (from fetch_versions): what the settings page shows."""
+
+    return _thresholds(versions[0] if versions else None)
+
+
+def thresholds_on(versions: list[dict], day: date) -> dict:
+    """The version in effect at the end of `day` (a Singapore calendar day)."""
+
+    for version in versions:
+        if version["updated_at"].astimezone(_BUSINESS_TZ).date() <= day:
+            return _thresholds(version)
+    return _thresholds(None)
 
 
 # ============================================================

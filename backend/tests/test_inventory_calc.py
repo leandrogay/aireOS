@@ -208,22 +208,23 @@ def test_combined_doh_is_none_when_nothing_is_measurable():
 # ---- thresholds -------------------------------------------------------------------
 
 
-def test_band_is_target_minus_and_plus_five():
-    assert calc.threshold_band(30) == (25, 35)
-
-
 def test_status_is_within_at_both_band_edges():
-    assert calc.threshold_status(25, 30) == "within"
-    assert calc.threshold_status(35, 30) == "within"
+    assert calc.threshold_status(20, 20, 45) == "within"
+    assert calc.threshold_status(45, 20, 45) == "within"
 
 
 def test_status_flags_below_min_and_above_max():
-    assert calc.threshold_status(24.9, 30) == "below_min"
-    assert calc.threshold_status(35.1, 30) == "above_max"
+    assert calc.threshold_status(19.9, 20, 45) == "below_min"
+    assert calc.threshold_status(45.1, 20, 45) == "above_max"
+
+
+def test_status_uses_the_band_it_is_given_not_one_around_the_target():
+    # 40 is more than 5 days above a target of 30, but inside this customer's max.
+    assert calc.threshold_status(40, 25, 45) == "within"
 
 
 def test_status_is_none_without_a_doh():
-    assert calc.threshold_status(None, 30) is None
+    assert calc.threshold_status(None, 20, 45) is None
 
 
 # ---- sell-in plan -----------------------------------------------------------------
