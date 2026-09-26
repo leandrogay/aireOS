@@ -1,11 +1,12 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 
-import InventoryToast from '@/components/inventory/InventoryToast';
 import { cardClass } from '@/components/inventory/formStyles';
 import RefreshButton from '@/components/ui/RefreshButton';
+import Toast from '@/components/ui/Toast';
 import useDohSettings from '@/hooks/useDohSettings';
+import useToast from '@/hooks/useToast';
 import { setDohAlert } from '@/app/services/settingsApi';
 import { GLOBAL_DEFAULT_DOH } from '@/app/utils/dohSettingsForm';
 import { retailerLabel } from '@/app/utils/retailerLabel';
@@ -25,14 +26,7 @@ export default function DohSettingsView() {
   const { data, loading, error, replaceRow } = useDohSettings({ refreshKey });
   const [editingId, setEditingId] = useState(null);
   const [pendingAlerts, setPendingAlerts] = useState({});
-  const [toast, setToast] = useState(null);
-
-  // InventoryToast lists onDismiss in its effect, so it needs a stable identity.
-  const dismissToast = useCallback(() => setToast(null), []);
-
-  function notify(type, message) {
-    setToast({ id: Date.now(), type, message });
-  }
+  const { toast, notify, dismissToast } = useToast();
 
   function handleEdit(row) {
     setEditingId(row.customer_id);
@@ -117,7 +111,7 @@ export default function DohSettingsView() {
         />
       )}
 
-      <InventoryToast toast={toast} onDismiss={dismissToast} />
+      <Toast toast={toast} onDismiss={dismissToast} />
     </div>
   );
 }

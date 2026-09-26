@@ -1,15 +1,16 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import Toast from '@/components/ui/Toast';
 import useInventoryOptions from '@/hooks/useInventoryOptions';
+import useToast from '@/hooks/useToast';
 
 import AtRiskView from './AtRiskView';
 import CustomerInventoryView from './CustomerInventoryView';
 import InventoryDataManager from './InventoryDataManager';
 import InventoryOverview from './InventoryOverview';
-import InventoryToast from './InventoryToast';
 import SellInPlanView from './SellInPlanView';
 
 const TAB_TRIGGER_CLASS =
@@ -34,13 +35,7 @@ export default function InventoryTabs() {
   const [tab, setTab] = useState('overview');
   const [refreshKey, setRefreshKey] = useState(0);
   const [editRow, setEditRow] = useState(null);
-  const [toast, setToast] = useState(null);
-
-  const dismissToast = useCallback(() => setToast(null), []);
-
-  function notify(type, message) {
-    setToast({ id: Date.now(), type, message });
-  }
+  const { toast, notify, dismissToast } = useToast();
 
   function handleTabChange(value) {
     setTab(value);
@@ -107,7 +102,7 @@ export default function InventoryTabs() {
         />
       )}
 
-      <InventoryToast toast={toast} onDismiss={dismissToast} />
+      <Toast toast={toast} onDismiss={dismissToast} />
     </div>
   );
 }
