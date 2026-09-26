@@ -7,14 +7,22 @@ import { cn } from '@/lib/utils';
 const DISMISS_AFTER_MS = 4000;
 
 /**
- * Small self-dismissing confirmation, e.g. "Inventory data saved".
- * The parent owns the toast: `{ id, type: 'success' | 'error', message }` or
- * null. A new `id` restarts the timer, so two saves in a row each get their
- * full time on screen.
+ * Small self-dismissing confirmation in the top-right corner, e.g.
+ * "Thresholds updated successfully". Pair it with hooks/useToast, which owns
+ * the state:
+ *
+ *   const { toast, notify, dismissToast } = useToast();
+ *   notify('success', 'Saved');
+ *   <Toast toast={toast} onDismiss={dismissToast} />
+ *
+ * `toast` is `{ id, type: 'success' | 'error', message }` or null. A new `id`
+ * restarts the timer, so two saves in a row each get their full time on
+ * screen. `onDismiss` must keep a stable identity (useToast's does), since the
+ * timer effect depends on it.
  *
  * @param {{ toast: { id: number, type: 'success' | 'error', message: string } | null, onDismiss: () => void }} props
  */
-export default function InventoryToast({ toast, onDismiss }) {
+export default function Toast({ toast, onDismiss }) {
   const toastId = toast?.id;
 
   useEffect(() => {

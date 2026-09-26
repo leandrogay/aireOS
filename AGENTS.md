@@ -74,7 +74,7 @@ aireOS/
     │   ├── inventory/page.js      Inventory: overview, by-customer DOH, at-risk list, sell-in plan, enter/edit data (components/inventory)
     │   ├── components/
     │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column), Sidebar (NAV_ITEMS)
-    │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, DateRangePicker
+    │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, DateRangePicker; Toast (+ hooks/useToast)
     │   │   ├── dashboard/         DashboardFilters, CustomerSelector, RevenueTrendCard, RevenueSummaryCards,
     │   │   │                      SkuRanking, PeriodComparisonDetail, FilterBadge
     │   │   ├── promotions/        PromotionForm, PromotionList, CheckboxDropdown
@@ -98,7 +98,8 @@ aireOS/
     │   ├── usePeriodComparison.js /api/sales/period-comparison
     │   ├── useDefaultDateRange.js /api/sales/default-date-range
     │   ├── useDraftDateRange.js   local draft state for the picker
-    │   └── useDohSettings.js      /api/settings/doh (+ replaceRow for the row a write returns)
+    │   ├── useDohSettings.js      /api/settings/doh (+ replaceRow for the row a write returns)
+    │   └── useToast.js            { toast, notify, dismissToast } for components/ui/Toast
     ├── lib/                       cn() (clsx + tailwind-merge), formatDateRange
     ├── public/                    create-next-app SVGs
     ├── CONTRIBUTING.md            Frontend UI conventions (primitives, tokens, cn(), lucide) — binding
