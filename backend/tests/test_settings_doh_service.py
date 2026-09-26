@@ -144,14 +144,43 @@ def test_settings_are_read_from_the_current_settings_view(monkeypatch):
     assert conn.sql_containing("FROM doh_settings") == []
 
 
-def test_a_customer_without_thresholds_has_null_threshold_fields(monkeypatch):
+def test_a_customer_without_thresholds_gets_the_global_default(monkeypatch):
     _install(monkeypatch, FakeDohDatabase({2: "giant"}))
 
     settings = doh_service.get_settings(2)
 
     assert settings["setting_id"] is None
-    assert (settings["min_doh"], settings["target_doh"], settings["max_doh"]) == (None, None, None)
+    assert (settings["min_doh"], settings["target_doh"], settings["max_doh"]) == (
+        Decimal("25"),
+        Decimal("30"),
+        Decimal("35"),
+    )
+    assert settings["is_global_default"] is True
+    assert settings["thresholds_updated_at"] is None
     assert settings["doh_alert_enabled"] is True
+
+
+def test_a_customer_with_its_own_thresholds_is_not_on_the_global_default(monkeypatch):
+    db = FakeDohDatabase()
+    db.add_version(1, "20", "28", "40")
+    _install(monkeypatch, db)
+
+    settings = doh_service.get_settings(1)
+
+    assert (settings["min_doh"], settings["target_doh"], settings["max_doh"]) == (
+        Decimal("20"),
+        Decimal("28"),
+        Decimal("40"),
+    )
+    assert settings["is_global_default"] is False
+
+
+def test_saved_values_equal_to_the_defaults_count_as_the_global_default(monkeypatch):
+    db = FakeDohDatabase()
+    db.add_version(1, "25.00", "30.00", "35.00")
+    _install(monkeypatch, db)
+
+    assert doh_service.get_settings(1)["is_global_default"] is True
 
 
 def test_timestamps_keep_their_timezone(monkeypatch):
@@ -316,6 +345,57 @@ def test_history_of_an_unknown_customer_raises(monkeypatch):
 
     with pytest.raises(common.CustomerNotFoundError):
         doh_service.get_history(9, limit=20, offset=0)
+
+
+# ---- reset to global default -------------------------------------------------------
+
+
+def test_reset_saves_the_global_defaults_as_a_new_version(monkeypatch):
+    db = FakeDohDatabase()
+    db.add_version(1, "20", "28", "40", updated_at=STAMP - timedelta(days=1))
+    before = [dict(row) for row in db.settings]
+    _install(monkeypatch, db)
+
+    result = doh_service.reset_to_default(1, updated_by="ops@aire")
+
+    assert result["changed"] is True
+    assert db.settings[:1] == before
+    new = db.settings[1]
+    assert (new["min_doh"], new["target_doh"], new["max_doh"]) == (Decimal("25"), Decimal("30"), Decimal("35"))
+    assert new["updated_by"] == "ops@aire"
+    assert result["settings"]["is_global_default"] is True
+    assert result["settings"]["setting_id"] == 2
+
+
+def test_reset_of_a_customer_with_no_version_writes_nothing(monkeypatch):
+    db = FakeDohDatabase()
+    conn = _install(monkeypatch, db)
+
+    result = doh_service.reset_to_default(1)
+
+    assert result["changed"] is False
+    assert result["settings"]["is_global_default"] is True
+    assert conn.sql_containing("INSERT INTO doh_settings") == []
+
+
+def test_reset_of_a_customer_already_on_the_defaults_writes_nothing(monkeypatch):
+    db = FakeDohDatabase()
+    db.add_version(1, "25", "30", "35")
+    _install(monkeypatch, db)
+
+    result = doh_service.reset_to_default(1)
+
+    assert result["changed"] is False
+    assert len(db.settings) == 1
+
+
+def test_reset_for_an_unknown_customer_writes_nothing(monkeypatch):
+    conn = _install(monkeypatch, FakeDohDatabase())
+
+    with pytest.raises(common.CustomerNotFoundError):
+        doh_service.reset_to_default(9)
+
+    assert conn.sql_containing("INSERT INTO doh_settings") == []
 
 
 # ---- revert ----------------------------------------------------------------------

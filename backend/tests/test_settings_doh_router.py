@@ -183,6 +183,37 @@ def test_revert_to_a_version_of_another_customer_is_404(monkeypatch):
     assert "Setting version 3" in response.json()["detail"]
 
 
+# ---- reset to global default -------------------------------------------------------
+
+
+def test_reset_is_201_when_a_version_is_saved_and_needs_no_body(monkeypatch):
+    seen = {}
+
+    def fake(customer_id, updated_by):
+        seen.update(customer_id=customer_id, updated_by=updated_by)
+        return {"changed": True, "settings": SETTINGS}
+
+    monkeypatch.setattr(doh_service, "reset_to_default", fake)
+
+    response = client.post("/api/settings/doh/1/reset")
+
+    assert response.status_code == 201
+    assert seen == {"customer_id": 1, "updated_by": None}
+
+
+def test_reset_of_a_customer_already_on_the_default_is_200(monkeypatch):
+    monkeypatch.setattr(
+        doh_service,
+        "reset_to_default",
+        lambda *args: {"changed": False, "settings": SETTINGS},
+    )
+
+    response = client.post("/api/settings/doh/1/reset", json={"updated_by": "ops@aire"})
+
+    assert response.status_code == 200
+    assert response.json()["changed"] is False
+
+
 # ---- alert and history -------------------------------------------------------------
 
 
@@ -238,6 +269,7 @@ def test_history_paging_out_of_range_is_422(monkeypatch, query):
         ("put", "/api/settings/doh/9/alert", {"doh_alert_enabled": False}, "set_alert"),
         ("get", "/api/settings/doh/9/history", None, "get_history"),
         ("post", "/api/settings/doh/9/history/1/revert", None, "revert_to_version"),
+        ("post", "/api/settings/doh/9/reset", None, "reset_to_default"),
     ],
 )
 def test_an_unknown_customer_is_404(monkeypatch, method, url, body, function_name):

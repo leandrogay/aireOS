@@ -28,20 +28,20 @@ aireOS/
 │   │   │   ├── catalog.py         /api/catalog        retailer/store CRUD, sku-range lookup
 │   │   │   ├── inventory.py       /api/inventory      overview, per-customer DOH, at-risk list, sell-in plan, record create/edit, temporary sell-in
 │   │   │   ├── settings/          /api/settings       customer-level settings; __init__.py mounts one sub-router per kind
-│   │   │   │   └── doh.py         /api/settings/doh   DOH thresholds (versioned, revert, history) + alert toggle
+│   │   │   │   └── doh.py         /api/settings/doh   DOH thresholds (versioned, revert, history, reset to global default) + alert toggle
 │   │   │   └── promotions.py      /api/promotions     promotion CRUD + /health/db
 │   │   ├── schemas/               Pydantic v2 request models (only catalog + promotions today)
 │   │   │   ├── catalog.py         _Base, RetailerCreate/Update, StoreCreate/Update, SkuItem
 │   │   │   ├── inventory.py       InventoryRecordCreate/Update, ShippedSoFarUpdate
 │   │   │   ├── settings/common.py SettingsChangeBase (optional updated_by), shared by every kind of setting
-│   │   │   ├── settings/doh.py    DohThresholdsUpdate (min <= target <= max, NUMERIC(6,2)), DohAlertUpdate, DohRevert
+│   │   │   ├── settings/doh.py    DohThresholdsUpdate (min <= target <= max, NUMERIC(6,2)), DohAlertUpdate, DohRevert, DohReset
 │   │   │   └── promotions.py      PromoType Literal, PromotionStoreRef, PromotionBase/Create/Update
 │   │   └── services/              All logic + all external I/O. Never imports fastapi.
 │   │       ├── sql.py             Cloud SQL connector → SQLAlchemy Engine singletons (rw + autocommit read)
 │   │       ├── inventory_calc.py  PURE: ending-stock chain, DOH, DOH threshold band/status, sell-in plan
 │   │       ├── inventory_service.py inventory_metrics reads/writes + customer_doh_targets reads (raw SQL, one txn per write)
 │   │       ├── settings/common.py shared by every kind of setting: engines, CustomerNotFoundError, lock_customer
-│   │       ├── settings/doh.py    doh_settings (append-only versions) + customers alert columns; reads via the current_settings view
+│   │       ├── settings/doh.py    doh_settings (append-only versions) + customers alert columns; reads via the current_settings view; GLOBAL_DEFAULT_*_DOH 25/30/35
 │   │       ├── sellout_units.py   read-only BigQuery monthly sell-out per SKU (same weekly data as the dashboard)
 │   │       ├── forecast_units.py  read-only BigQuery forecast units per product/month, newest run only
 │   │       ├── catalog_service.py retailers/stores/skus tables; get_or_create_* seams; domain exceptions
@@ -70,14 +70,15 @@ aireOS/
     │   ├── dashboard/page.js      Sales dashboard: customer/sku/store/date filters, trend chart, ranking
     │   ├── promotions/page.js     Promotion create/edit/delete + overview list
     │   ├── forecast/page.js       Placeholder
-    │   ├── doh/page.js            DOH Settings (layout only so far; API in services/settingsApi.js)
+    │   ├── doh/page.js            DOH Settings: per-customer thresholds, alert toggle, edit, reset to global default (components/settings)
     │   ├── inventory/page.js      Inventory: overview, by-customer DOH, at-risk list, sell-in plan, enter/edit data (components/inventory)
     │   ├── components/
     │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column), Sidebar (NAV_ITEMS)
-    │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, DateRangePicker
+    │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, DateRangePicker
     │   │   ├── dashboard/         DashboardFilters, CustomerSelector, RevenueTrendCard, RevenueSummaryCards,
     │   │   │                      SkuRanking, PeriodComparisonDetail, FilterBadge
     │   │   ├── promotions/        PromotionForm, PromotionList, CheckboxDropdown
+    │   │   ├── settings/          DohSettingsView (state), DohSettingsTable, DohThresholdForm
     │   │   ├── upload/            FileUpload (925 lines), MappingReview, FileUploadSummary (empty)
     │   │   └── upload2/           Harness pieces: MappingDiv, UploadPanel, ResultsPanel, ContractView, RequestLog…
     │   ├── services/              Backend API wrappers
@@ -87,6 +88,7 @@ aireOS/
     │   └── utils/                 Pure, React-free helpers
     │       ├── promotionForm.js   PROMO_TYPES, EMPTY_PROMOTION_FORM, validate/build/formFrom helpers
     │       ├── promotionOverview.js list grouping/filter helpers
+    │       ├── dohSettingsForm.js validate/build/formFrom helpers for the DOH threshold form, GLOBAL_DEFAULT_DOH
     │       └── mappingHelpers.js
     ├── hooks/                     Data-fetching hooks for the dashboard (inline fetch, cancel-flag pattern)
     │   ├── useDataFreshness.js    polls /api/sales/last-updated → { channels, dataVersion, refreshing }
@@ -94,7 +96,8 @@ aireOS/
     │   ├── useDashboardSummary.js /api/sales/dashboard-summary (silent refresh on dataVersion)
     │   ├── usePeriodComparison.js /api/sales/period-comparison
     │   ├── useDefaultDateRange.js /api/sales/default-date-range
-    │   └── useDraftDateRange.js   local draft state for the picker
+    │   ├── useDraftDateRange.js   local draft state for the picker
+    │   └── useDohSettings.js      /api/settings/doh (+ replaceRow for the row a write returns)
     ├── lib/                       cn() (clsx + tailwind-merge), formatDateRange
     ├── public/                    create-next-app SVGs
     ├── CONTRIBUTING.md            Frontend UI conventions (primitives, tokens, cn(), lucide) — binding
@@ -207,6 +210,8 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | `sales.py` query-param names (`start_date`, `granularity`, `comparison_type` …) | `URLSearchParams` keys in `hooks/*.js` |
 | `mapping_view` packet/rule keys (`targetField`, `sourceColumn`, `editable`, `requiredMissing`) | `MappingReview.jsx`, `upload2/ContractView.jsx` |
 | `uploads.py` per-file `mapping.status` values (`mapped`, `pending_confirmation`, `mapping_failed`) | `FileUpload.jsx` result rendering |
+| `settings/doh._settings_view` keys, `GLOBAL_DEFAULT_*_DOH` | `DohSettingsTable.jsx`, `dohSettingsForm.js` (`GLOBAL_DEFAULT_DOH`) |
+| `DohThresholdsUpdate` field names | `buildDohThresholdPayload` |
 | `HTTPException.detail` shapes | `parseApiError()` |
 
 When you change the left column, grep the right column in the same PR.

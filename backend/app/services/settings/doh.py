@@ -22,11 +22,25 @@ class SettingVersionNotFoundError(Exception):
 
 
 # ============================================================
+# Constants
+# ============================================================
+
+# The system-wide thresholds, in days. A customer with no version of its
+# own is held to these, and "reset to global default" saves them as a new
+# version. A customer whose current values equal them is reported as on the
+# global default either way (the append-only table cannot mark it otherwise).
+GLOBAL_DEFAULT_MIN_DOH = Decimal("25")
+GLOBAL_DEFAULT_TARGET_DOH = Decimal("30")
+GLOBAL_DEFAULT_MAX_DOH = Decimal("35")
+
+
+# ============================================================
 # CURRENT SETTINGS
 #
 # current_settings has one row per customer (LEFT JOIN LATERAL onto the
 # newest doh_settings row), so the "latest version" rule lives in the
-# view, not here. A customer with no thresholds has NULL threshold fields.
+# view, not here. A customer with no thresholds gets the global defaults
+# (setting_id and thresholds_updated_* stay NULL).
 # ============================================================
 
 _CURRENT_SETTINGS_SQL = """
@@ -46,16 +60,33 @@ _CURRENT_SETTINGS_SQL = """
 """
 
 
+def _is_global_default(min_doh: Decimal, target_doh: Decimal, max_doh: Decimal) -> bool:
+    # Decimal compares by value, so the stored 25.00 equals the default 25.
+    return (min_doh, target_doh, max_doh) == (
+        GLOBAL_DEFAULT_MIN_DOH,
+        GLOBAL_DEFAULT_TARGET_DOH,
+        GLOBAL_DEFAULT_MAX_DOH,
+    )
+
+
 def _settings_view(row: dict) -> dict:
+    if row["setting_id"] is None:
+        min_doh = GLOBAL_DEFAULT_MIN_DOH
+        target_doh = GLOBAL_DEFAULT_TARGET_DOH
+        max_doh = GLOBAL_DEFAULT_MAX_DOH
+    else:
+        min_doh, target_doh, max_doh = row["min_doh"], row["target_doh"], row["max_doh"]
+
     return {
         "customer_id": row["customer_id"],
         "customer_name": row["customer_name"],
         "doh_alert_enabled": row["doh_alert_enabled"],
         "doh_alert_updated_at": common.iso(row["doh_alert_updated_at"]),
         "setting_id": row["setting_id"],
-        "min_doh": row["min_doh"],
-        "target_doh": row["target_doh"],
-        "max_doh": row["max_doh"],
+        "min_doh": min_doh,
+        "target_doh": target_doh,
+        "max_doh": max_doh,
+        "is_global_default": _is_global_default(min_doh, target_doh, max_doh),
         "thresholds_updated_at": common.iso(row["thresholds_updated_at"]),
         "thresholds_updated_by": row["thresholds_updated_by"],
     }
@@ -251,6 +282,32 @@ def revert_to_version(customer_id: int, setting_id: int, updated_by: str | None 
             version["max_doh"],
             updated_by,
         )
+        current = _fetch_current(conn, customer_id)
+
+    return {"changed": changed, "settings": _settings_view(current)}
+
+
+def reset_to_default(customer_id: int, updated_by: str | None = None) -> dict:
+    """
+    Put a customer back on the global default thresholds by saving them as a
+    new version (doh_settings is append-only, so the custom versions stay as
+    history). Nothing is written when the customer has no version yet or is
+    already on the default values (`changed` False).
+    """
+
+    with common.get_engine().begin() as conn:
+        common.lock_customer(conn, customer_id)
+
+        changed = False
+        if _fetch_current(conn, customer_id)["setting_id"] is not None:
+            changed = _insert_version(
+                conn,
+                customer_id,
+                GLOBAL_DEFAULT_MIN_DOH,
+                GLOBAL_DEFAULT_TARGET_DOH,
+                GLOBAL_DEFAULT_MAX_DOH,
+                updated_by,
+            )
         current = _fetch_current(conn, customer_id)
 
     return {"changed": changed, "settings": _settings_view(current)}

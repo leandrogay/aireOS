@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query, Response
 
-from app.schemas.settings.doh import DohAlertUpdate, DohRevert, DohThresholdsUpdate
+from app.schemas.settings.doh import DohAlertUpdate, DohReset, DohRevert, DohThresholdsUpdate
 from app.services.settings import doh as doh_service
 from app.services.settings.common import CustomerNotFoundError
 
@@ -135,6 +135,32 @@ def revert_to_version(
             status_code=500,
             detail=(
                 f"Failed to revert the DOH thresholds: "
+                f"{type(e).__name__}: {e}"
+            ),
+        )
+
+
+@router.post("/{customer_id}/reset")
+def reset_to_default(
+    customer_id: int,
+    response: Response,
+    body: DohReset | None = None,
+):
+    try:
+        result = doh_service.reset_to_default(
+            customer_id,
+            body.updated_by if body is not None else None,
+        )
+        return _version_status(response, result)
+
+    except CustomerNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Failed to reset the DOH thresholds: "
                 f"{type(e).__name__}: {e}"
             ),
         )

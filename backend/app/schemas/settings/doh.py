@@ -37,5 +37,9 @@ class DohRevert(SettingsChangeBase):
     pass
 
 
+class DohReset(SettingsChangeBase):
+    pass
+
+
 class DohAlertUpdate(_Base):
     doh_alert_enabled: bool
