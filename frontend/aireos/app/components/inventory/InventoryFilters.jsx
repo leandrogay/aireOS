@@ -16,6 +16,7 @@ import { inputClass, labelClass } from './formStyles';
  * @param {(skus: string[]) => void} props.onSkusChange
  * @param {string} props.startMonth 'YYYY-MM' or ''
  * @param {string} props.endMonth 'YYYY-MM' or ''
+ * @param {string} [props.defaultMonth] the month both pickers open on; "Clear filters" shows once they differ
  * @param {(value: string) => void} props.onStartMonthChange
  * @param {(value: string) => void} props.onEndMonthChange
  * @param {string} [props.status] '' or a doh_status value
@@ -31,6 +32,7 @@ export default function InventoryFilters({
   onSkusChange,
   startMonth,
   endMonth,
+  defaultMonth = '',
   onStartMonthChange,
   onEndMonthChange,
   status = '',
@@ -40,7 +42,7 @@ export default function InventoryFilters({
   onAtRiskChange,
   onClear,
 }) {
-  const hasFilters = skus.length > 0 || startMonth || endMonth || status || atRiskOnly;
+  const hasFilters = skus.length > 0 || startMonth !== defaultMonth || endMonth !== defaultMonth || status || atRiskOnly;
 
   return (
     <div className="mb-3 flex flex-wrap items-end gap-3">

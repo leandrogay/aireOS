@@ -3,7 +3,7 @@
 import { useState } from 'react';
 
 import useInventoryOverview from '@/hooks/useInventoryOverview';
-import { monthInputToDate } from '@/app/utils/inventoryForm';
+import { filterMonthRange, latestMonthInput } from '@/app/utils/inventoryForm';
 
 import EndingStockChart from './EndingStockChart';
 import InventoryFilters from './InventoryFilters';
@@ -22,24 +22,31 @@ import { cardClass } from './formStyles';
  */
 export default function InventoryOverview({ skuOptions, refreshKey, onEditRow }) {
   const [skus, setSkus] = useState([]);
-  const [startMonth, setStartMonth] = useState('');
-  const [endMonth, setEndMonth] = useState('');
+  // null = the user has not touched the range, so it shows the newest month of data. Editing
+  // either picker (even to blank) makes the range theirs; "Clear filters" returns it to null.
+  const [startMonth, setStartMonth] = useState(null);
+  const [endMonth, setEndMonth] = useState(null);
   const [atRiskOnly, setAtRiskOnly] = useState(false);
-
   const { data, loading, error } = useInventoryOverview({
     skus,
-    startMonth: monthInputToDate(startMonth),
-    endMonth: monthInputToDate(endMonth),
     atRiskOnly,
     refreshKey,
   });
 
+  // The API returns the full history. The table is narrowed to the range (the newest month until
+  // the user picks one); the chart keeps the whole history until the range is edited.
+  const defaultMonth = data ? latestMonthInput(data.skus) : '';
+  const shownStart = startMonth ?? defaultMonth;
+  const shownEnd = endMonth ?? defaultMonth;
+  const rangeEdited = startMonth !== null || endMonth !== null;
+  const tableRows = data ? filterMonthRange(data.skus, shownStart, shownEnd) : [];
+  const chartRows = data && rangeEdited ? filterMonthRange(data.monthly, shownStart, shownEnd) : data?.monthly;
   const atRiskSkuCount = data ? new Set(data.skus.map((row) => `${row.customer_id}-${row.sku}`)).size : 0;
 
   function clearFilters() {
     setSkus([]);
-    setStartMonth('');
-    setEndMonth('');
+    setStartMonth(null);
+    setEndMonth(null);
     setAtRiskOnly(false);
   }
 
@@ -49,8 +56,9 @@ export default function InventoryOverview({ skuOptions, refreshKey, onEditRow })
         skuOptions={skuOptions}
         skus={skus}
         onSkusChange={setSkus}
-        startMonth={startMonth}
-        endMonth={endMonth}
+        startMonth={shownStart}
+        endMonth={shownEnd}
+        defaultMonth={defaultMonth}
         onStartMonthChange={setStartMonth}
         onEndMonthChange={setEndMonth}
         atRiskOnly={atRiskOnly}
@@ -74,7 +82,7 @@ export default function InventoryOverview({ skuOptions, refreshKey, onEditRow })
           {loading && !data ? (
             <p className="text-sm text-deep-violet-blue/70">Loading inventory…</p>
           ) : (
-            data && <EndingStockChart monthly={data.monthly} />
+            data && <EndingStockChart monthly={chartRows} />
           )}
         </section>
 
@@ -83,7 +91,7 @@ export default function InventoryOverview({ skuOptions, refreshKey, onEditRow })
           {loading && !data ? (
             <p className="text-sm text-deep-violet-blue/70">Loading inventory…</p>
           ) : (
-            data && <InventorySkuTable rows={data.skus} onEdit={onEditRow} />
+            data && <InventorySkuTable rows={tableRows} onEdit={onEditRow} />
           )}
         </section>
       </div>

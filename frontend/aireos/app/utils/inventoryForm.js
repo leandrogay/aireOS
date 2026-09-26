@@ -156,6 +156,34 @@ export function monthInputToDate(monthValue) {
   return monthValue ? `${monthValue}-01` : '';
 }
 
+/**
+ * The newest month among rows, used as the month range the tables open on.
+ *
+ * @param {Array<{ month: string }>} rows rows from the API ('YYYY-MM-DD' months)
+ * @returns {string} 'YYYY-MM' for <input type="month">, or '' when there are no rows
+ */
+export function latestMonthInput(rows) {
+  return rows.reduce((latest, row) => (row.month.slice(0, 7) > latest ? row.month.slice(0, 7) : latest), '');
+}
+
+/**
+ * Keeps the rows whose month falls inside the range. The backend returns the
+ * full history and the range is applied here, so the charts can keep the whole
+ * history while the tables narrow to the range.
+ *
+ * @template {{ month: string }} T
+ * @param {T[]} rows
+ * @param {string} startMonth 'YYYY-MM' or '' (no lower bound)
+ * @param {string} endMonth 'YYYY-MM' or '' (no upper bound)
+ * @returns {T[]}
+ */
+export function filterMonthRange(rows, startMonth, endMonth) {
+  return rows.filter((row) => {
+    const month = row.month.slice(0, 7);
+    return (!startMonth || month >= startMonth) && (!endMonth || month <= endMonth);
+  });
+}
+
 const MONTH_FORMAT = new Intl.DateTimeFormat('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' });
 
 /**

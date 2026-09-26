@@ -3,7 +3,7 @@
 import { useState } from 'react';
 
 import useCustomerInventory from '@/hooks/useCustomerInventory';
-import { DOH_STATUS_LABELS, formatDoh, monthInputToDate } from '@/app/utils/inventoryForm';
+import { DOH_STATUS_LABELS, formatDoh, filterMonthRange, latestMonthInput } from '@/app/utils/inventoryForm';
 
 import DohTrendChart from './DohTrendChart';
 import InventoryFilters from './InventoryFilters';
@@ -28,8 +28,10 @@ const STATUS_OPTIONS = Object.entries(DOH_STATUS_LABELS).map(([value, label]) =>
 export default function CustomerInventoryView({ customers, skuOptions, refreshKey, onEditRow }) {
   const [customerId, setCustomerId] = useState(null);
   const [skus, setSkus] = useState([]);
-  const [startMonth, setStartMonth] = useState('');
-  const [endMonth, setEndMonth] = useState('');
+  // null = the user has not touched the range, so it shows the newest month of data. Editing
+  // either picker (even to blank) makes the range theirs; "Clear filters" returns it to null.
+  const [startMonth, setStartMonth] = useState(null);
+  const [endMonth, setEndMonth] = useState(null);
   const [status, setStatus] = useState('');
 
   // Adjust state during render: pick the first customer once the list arrives,
@@ -41,19 +43,27 @@ export default function CustomerInventoryView({ customers, skuOptions, refreshKe
   const { data, loading, error } = useCustomerInventory({
     customerId,
     skus,
-    startMonth: monthInputToDate(startMonth),
-    endMonth: monthInputToDate(endMonth),
     refreshKey,
   });
 
+  // The API returns the full history. The table is narrowed to the range (the newest month until
+  // the user picks one); the DOH trend keeps the whole history until the range is edited.
+  const defaultMonth = data ? latestMonthInput(data.skus) : '';
+  const shownStart = startMonth ?? defaultMonth;
+  const shownEnd = endMonth ?? defaultMonth;
+  const rangeEdited = startMonth !== null || endMonth !== null;
+  const trend = data && rangeEdited ? filterMonthRange(data.trend, shownStart, shownEnd) : data?.trend;
+
   function clearFilters() {
     setSkus([]);
-    setStartMonth('');
-    setEndMonth('');
+    setStartMonth(null);
+    setEndMonth(null);
     setStatus('');
   }
 
-  const rows = data ? data.skus.filter((row) => !status || row.doh_status === status) : [];
+  const rows = data
+    ? filterMonthRange(data.skus, shownStart, shownEnd).filter((row) => !status || row.doh_status === status)
+    : [];
   const threshold = data?.threshold;
 
   return (
@@ -91,8 +101,9 @@ export default function CustomerInventoryView({ customers, skuOptions, refreshKe
         skuOptions={skuOptions}
         skus={skus}
         onSkusChange={setSkus}
-        startMonth={startMonth}
-        endMonth={endMonth}
+        startMonth={shownStart}
+        endMonth={shownEnd}
+        defaultMonth={defaultMonth}
         onStartMonthChange={setStartMonth}
         onEndMonthChange={setEndMonth}
         status={status}
@@ -109,7 +120,7 @@ export default function CustomerInventoryView({ customers, skuOptions, refreshKe
           {loading && !data ? (
             <p className="text-sm text-deep-violet-blue/70">Loading inventory…</p>
           ) : (
-            data && <DohTrendChart trend={data.trend} />
+            data && <DohTrendChart trend={trend} />
           )}
         </section>
 
