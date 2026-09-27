@@ -1,24 +1,24 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { CartesianGrid, Line, LineChart, ReferenceArea, ReferenceLine, XAxis, YAxis } from 'recharts';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ForecastLineToggle from '@/components/forecast/ForecastLineToggle';
+import ForecastPromoPanel from '@/components/forecast/ForecastPromoPanel';
 import ForecastPromoToggle from '@/components/forecast/ForecastPromoToggle';
 import ForecastTable from '@/components/forecast/ForecastTable';
-import { promoTypeLabel } from '@/app/utils/promotionForm';
+import LastUpdatedStamp from '@/components/ui/LastUpdatedStamp';
 import {
   FORECAST_SERIES,
-  monthHasPromoType,
-  overlayBandsForPromo,
-  overlayMonthDividers,
+  buildPromoOverlayBands,
   formatMonthLabel,
   nextMonthYear,
   padMonthlyPoints,
-  promoOverlayStyle,
+  promoPeriodDividerXs,
+  promosOverlappingMonth,
 } from '@/app/utils/forecastView';
 
 const chartConfig = Object.fromEntries(
@@ -39,6 +39,21 @@ function formatAxisValue(value, metric) {
   return `${value}`;
 }
 
+function niceYDomain(values) {
+  const dataMin = Math.min(...values);
+  const dataMax = Math.max(...values);
+  const span = dataMax - dataMin;
+  const padding = span * 0.1 || Math.abs(dataMax) * 0.1 || 1;
+  let low = dataMin - padding;
+  let high = dataMax + padding;
+  if (low < 0 && dataMin >= 0) low = 0;
+  const rawStep = (high - low) / 4;
+  const magnitude = 10 ** Math.floor(Math.log10(rawStep || 1));
+  const residual = rawStep / magnitude;
+  const step = residual >= 5 ? 10 * magnitude : residual >= 2 ? 5 * magnitude : 2 * magnitude;
+  return [Math.floor(low / step) * step, Math.ceil(high / step) * step];
+}
+
 function formatTooltipValue(value, metric) {
   if (typeof value !== 'number') return value;
   if (metric === 'revenue') {
@@ -50,36 +65,32 @@ function formatTooltipValue(value, metric) {
   return Math.round(value).toLocaleString('en-US');
 }
 
-function PromoTooltipDetails({ point, overlayType }) {
-  if (!overlayType || !point || !monthHasPromoType(point, overlayType)) return null;
-  const details = point.promoByType?.[overlayType] ?? {};
-  const skuNames = details.productNames ?? [];
-  const rows = [
-    ['Type', promoTypeLabel(overlayType)],
-    ['Mechanic', details.promotion_mechanic],
-    ['Period', details.period_label],
-    ['Voucher', details.voucher],
-  ].filter(([, value]) => value);
-  if (!rows.length && skuNames.length <= 1) return null;
+function OverlayDefs({ bands }) {
   return (
-    <div className="mt-1.5 grid max-w-[16rem] gap-0.5 border-t border-border/50 pt-1.5 text-[11px] text-muted-foreground">
-      {rows.map(([label, value]) => (
-        <div key={label} className="flex justify-between gap-3">
-          <span>{label}</span>
-          <span className="font-medium text-foreground">{value}</span>
-        </div>
-      ))}
-      {skuNames.length > 1 ? (
-        <div className="mt-0.5">
-          <p>SKUs</p>
-          <ul className="mt-0.5 space-y-0.5 font-medium text-foreground">
-            {skuNames.map((name) => (
-              <li key={name}>{name}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-    </div>
+    <defs>
+      {bands
+        .filter((band) => band.colors.length > 1)
+        .map((band) => (
+          <linearGradient
+            key={band.key}
+            id={band.key}
+            x1="0"
+            y1="0"
+            x2="0"
+            y2="1"
+            gradientUnits="objectBoundingBox"
+          >
+            {band.colors.flatMap((color, index) => {
+              const start = (index / band.colors.length) * 100;
+              const end = ((index + 1) / band.colors.length) * 100;
+              return [
+                <stop key={`${band.key}-${index}-start`} offset={`${start}%`} stopColor={color} />,
+                <stop key={`${band.key}-${index}-end`} offset={`${end}%`} stopColor={color} />,
+              ];
+            })}
+          </linearGradient>
+        ))}
+    </defs>
   );
 }
 
@@ -120,6 +131,16 @@ function ScopeTag({ label, value }) {
   );
 }
 
+const PROMO_PANEL_WIDTH = 304;
+const PROMO_PANEL_EDGE = 8;
+
+// Sit to the right of the cursor; clamp if it would run off the chart.
+function promoPanelLeft(originX, wrapWidth) {
+  let left = originX + 12;
+  const maxLeft = wrapWidth ? wrapWidth - PROMO_PANEL_WIDTH - PROMO_PANEL_EDGE : left;
+  return Math.max(PROMO_PANEL_EDGE, Math.min(left, maxLeft));
+}
+
 export default function ForecastChart({
   points,
   startDate,
@@ -127,13 +148,28 @@ export default function ForecastChart({
   metric,
   onMetricChange,
   scopeTags,
-  promoType,
-  onPromoTypeChange,
+  promotions,
+  selectedPromoTypes,
+  onTogglePromoType,
+  selectedPackTypes,
+  onTogglePackType,
   visibleSeries,
   onToggleSeries,
+  freshnessItems,
 }) {
+  const chartWrapRef = useRef(null);
+  const overPanelRef = useRef(false);
+  const lastPointerXRef = useRef(0);
+  const hoverMonthRef = useRef(null);
+  const [hoverMonth, setHoverMonth] = useState(null);
+  const [openPromoId, setOpenPromoId] = useState(null);
+  const [panelX, setPanelX] = useState(0);
+  const [wrapWidth, setWrapWidth] = useState(0);
+
+  const visibleKeys = FORECAST_SERIES.filter((series) => visibleSeries[series.key]).map((series) => series.key);
+  const hasVisibleLine = visibleKeys.length > 0;
   const hasData = points.some((point) =>
-    FORECAST_SERIES.some((series) => visibleSeries[series.key] && point[series.key] != null)
+    visibleKeys.some((key) => point[key] != null)
   );
   const chartPoints = useMemo(
     () => padMonthlyPoints(points, startDate, endDate),
@@ -142,6 +178,19 @@ export default function ForecastChart({
   const chartData = chartPoints.map((point, index) => ({ ...point, x: index }));
   const lastIndex = Math.max(chartData.length - 1, 0);
   const trailingMonth = chartData.length ? nextMonthYear(chartData.at(-1).month_year) : '';
+  const monthYears = chartPoints.map((point) => point.month_year);
+  const overlayBands = buildPromoOverlayBands(
+    promotions,
+    selectedPromoTypes,
+    selectedPackTypes,
+    monthYears
+  );
+  const dividerXs = promoPeriodDividerXs(
+    promotions,
+    selectedPromoTypes,
+    selectedPackTypes,
+    monthYears
+  );
   const plotData = chartData.length
     ? [
         ...chartData,
@@ -149,32 +198,96 @@ export default function ForecastChart({
           x: lastIndex + 1,
           label: formatMonthLabel(trailingMonth),
           month_year: trailingMonth,
-          promoTypes: [],
-          promoByType: {},
           axisOnly: true,
         },
       ]
     : chartData;
-  const overlayStyle = promoOverlayStyle(promoType);
-  const overlayBands = overlayBandsForPromo(chartPoints, promoType);
-  const overlayDividers = overlayMonthDividers(chartPoints, promoType);
   const ticks = plotData.map((point) => point.x);
 
-  // Recharts' default Y-domain fits ALL series at once, so a line with modest
-  // variation (e.g. a frozen Initial/Yearly baseline) reads as nearly flat
-  // whenever another visible line has a much wider range. Fit the domain to
-  // only the currently-visible series' actual values instead, with a little
-  // padding so lines aren't flush against the chart edges.
-  const visibleKeys = FORECAST_SERIES.filter((series) => visibleSeries[series.key]).map((series) => series.key);
   const visibleValues = chartData.flatMap((point) =>
     visibleKeys.map((key) => point[key]).filter((value) => typeof value === 'number')
   );
-  let yDomain = ['auto', 'auto'];
-  if (visibleValues.length) {
-    const dataMin = Math.min(...visibleValues);
-    const dataMax = Math.max(...visibleValues);
-    const padding = (dataMax - dataMin) * 0.1 || Math.abs(dataMax) * 0.1 || 1;
-    yDomain = [dataMin - padding, dataMax + padding];
+  const yDomain = visibleValues.length ? niceYDomain(visibleValues) : [0, 1];
+  const hoverPoint = chartPoints.find((point) => point.month_year === hoverMonth);
+  const hoverPromos = promosOverlappingMonth(
+    promotions,
+    hoverMonth,
+    selectedPromoTypes,
+    selectedPackTypes
+  );
+  const panelLeft = promoPanelLeft(panelX, wrapWidth);
+  const seriesValues = FORECAST_SERIES.filter((series) => visibleSeries[series.key]).map((series) => ({
+    key: series.key,
+    label: series.label,
+    color: series.color,
+    value: hoverPoint?.[series.key],
+  }));
+
+  function axisXFromClientX(clientX) {
+    if (!chartWrapRef.current || !chartPoints.length) return null;
+    const ticks = [...chartWrapRef.current.querySelectorAll('.recharts-xAxis .recharts-cartesian-axis-tick')];
+    const mids = ticks.map((tick) => {
+      const box = tick.getBoundingClientRect();
+      return box.x + box.width / 2;
+    });
+    if (mids.length < 2) {
+      const wrap = chartWrapRef.current.getBoundingClientRect();
+      const yAxisWidth = metric === 'revenue' ? 52 : 40;
+      const ratio = (clientX - wrap.left - yAxisWidth) / Math.max(wrap.width - yAxisWidth - 18, 1);
+      return Math.max(0, Math.min(lastIndex + 1, ratio * (lastIndex + 1)));
+    }
+    if (clientX <= mids[0]) return 0;
+    if (clientX >= mids[mids.length - 1]) return lastIndex + 1;
+    for (let i = 0; i < mids.length - 1; i += 1) {
+      if (clientX <= mids[i + 1]) {
+        const span = mids[i + 1] - mids[i] || 1;
+        return i + (clientX - mids[i]) / span;
+      }
+    }
+    return lastIndex + 1;
+  }
+
+  function monthFromPointer(clientX) {
+    const axisX = axisXFromClientX(clientX);
+    if (axisX == null) return null;
+    const covering = overlayBands.filter((band) => axisX >= band.x1 && axisX <= band.x2);
+    if (covering.length) {
+      const capped = Math.min(axisX, ...covering.map((band) => band.x2 - 1e-6));
+      const index = Math.max(0, Math.min(lastIndex, Math.floor(capped)));
+      return chartPoints[index]?.month_year ?? null;
+    }
+    if (axisX >= lastIndex + 1) return null;
+    const index = Math.max(0, Math.min(lastIndex, Math.floor(axisX)));
+    return chartPoints[index]?.month_year ?? null;
+  }
+
+  function rememberPointerX(event) {
+    if (!chartWrapRef.current) return;
+    const width = chartWrapRef.current.clientWidth;
+    if (width && width !== wrapWidth) setWrapWidth(width);
+    if (event.target.closest('[data-promo-panel]')) {
+      overPanelRef.current = true;
+      return;
+    }
+    overPanelRef.current = false;
+    lastPointerXRef.current = event.clientX - chartWrapRef.current.getBoundingClientRect().left;
+    setHoverFromChart(monthFromPointer(event.clientX));
+  }
+
+  function setHoverFromChart(monthYear) {
+    if (!monthYear || overPanelRef.current) return;
+    if (hoverMonthRef.current === monthYear) return;
+    hoverMonthRef.current = monthYear;
+    setPanelX(lastPointerXRef.current);
+    setOpenPromoId(null);
+    setHoverMonth(monthYear);
+  }
+
+  function clearHover() {
+    overPanelRef.current = false;
+    hoverMonthRef.current = null;
+    setHoverMonth(null);
+    setOpenPromoId(null);
   }
 
   return (
@@ -196,7 +309,7 @@ export default function ForecastChart({
               value="units"
               className="h-6 px-2.5 text-[11px] text-deep-violet-blue/70 hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white"
             >
-              Units
+              Carton units
             </TabsTrigger>
             <TabsTrigger
               value="revenue"
@@ -210,20 +323,37 @@ export default function ForecastChart({
       <CardContent className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-lavander bg-white px-3 py-2">
           <ForecastLineToggle visible={visibleSeries} onToggle={onToggleSeries} />
-          <ForecastPromoToggle value={promoType} onChange={onPromoTypeChange} />
+          <ForecastPromoToggle
+            selectedTypes={selectedPromoTypes}
+            onToggleType={onTogglePromoType}
+            selectedPacks={selectedPackTypes}
+            onTogglePack={onTogglePackType}
+          />
         </div>
 
-        {!hasData ? (
+        {!hasVisibleLine ? (
+          <p className="text-sm text-muted-foreground">No lines selected. Turn a line on to plot values.</p>
+        ) : !hasData ? (
           <p className="text-sm text-muted-foreground">No forecast data matches these filters.</p>
         ) : (
           <>
-            <div className="rounded-xl border border-lavander bg-white pl-1 pr-3 pt-2">
+            <div
+              ref={chartWrapRef}
+              className="relative z-20 overflow-visible rounded-xl border border-lavander bg-white pl-1 pr-3 pt-2"
+              onMouseMoveCapture={rememberPointerX}
+              onMouseLeave={(event) => {
+                const next = event.relatedTarget;
+                if (next instanceof Node && chartWrapRef.current?.contains(next)) return;
+                clearHover();
+              }}
+            >
               <ChartContainer config={chartConfig} className="aspect-auto h-[34vh] min-h-[220px] w-full">
                 <LineChart
                   accessibilityLayer
                   data={plotData}
                   margin={{ top: 8, right: 18, left: 0, bottom: 28 }}
                 >
+                  <OverlayDefs bands={overlayBands} />
                   <CartesianGrid vertical={false} stroke="var(--aire-lavender)" />
                   <XAxis
                     dataKey="x"
@@ -239,57 +369,54 @@ export default function ForecastChart({
                     tickMargin={8}
                   />
                   <YAxis
-                    width={36}
+                    width={metric === 'revenue' ? 52 : 40}
                     domain={yDomain}
+                    ticks={
+                      yDomain[0] === yDomain[1]
+                        ? undefined
+                        : [0, 1, 2, 3, 4].map((i) => yDomain[0] + ((yDomain[1] - yDomain[0]) / 4) * i)
+                    }
                     allowDataOverflow
                     tick={{ fontSize: 10, fill: '#3A4369' }}
                     tickFormatter={(value) => formatAxisValue(value, metric)}
                   />
                   <ChartTooltip
+                    wrapperStyle={{ zIndex: 30, pointerEvents: 'none' }}
                     content={(props) => {
-                      if (!props.payload?.[0]?.payload?.label || props.payload[0].payload.axisOnly) {
-                        return null;
-                      }
+                      const point = props.payload?.[0]?.payload;
+                      if (hoverPromos.length) return null;
+                      if (!props.active || !point?.label || point.axisOnly) return null;
                       return (
                         <ChartTooltipContent
                           {...props}
+                          className="border-violet/40 bg-white"
                           labelFormatter={(_value, payload) => payload?.[0]?.payload?.label ?? ''}
                           valueFormatter={(value) => formatTooltipValue(value, metric)}
-                          footer={(payload) => (
-                            <PromoTooltipDetails
-                              point={payload?.[0]?.payload}
-                              overlayType={promoType}
-                            />
-                          )}
                         />
                       );
                     }}
                   />
-                  {overlayStyle
-                    ? overlayBands.map((band) => (
-                        <ReferenceArea
-                          key={`${band.x1}-${band.x2}`}
-                          x1={band.x1}
-                          x2={band.x2}
-                          fill={overlayStyle.fill}
-                          fillOpacity={overlayStyle.fillOpacity}
-                          stroke="none"
-                          ifOverflow="visible"
-                        />
-                      ))
-                    : null}
-                  {overlayStyle
-                    ? overlayDividers.map((x) => (
-                        <ReferenceLine
-                          key={`overlay-month-${x}`}
-                          x={x}
-                          stroke={overlayStyle.stroke}
-                          strokeOpacity={overlayStyle.strokeOpacity}
-                          strokeWidth={0.8}
-                          ifOverflow="visible"
-                        />
-                      ))
-                    : null}
+                  {overlayBands.map((band) => (
+                    <ReferenceArea
+                      key={band.key}
+                      x1={band.x1}
+                      x2={band.x2}
+                      fill={band.colors.length > 1 ? `url(#${band.key})` : band.colors[0]}
+                      fillOpacity={band.fillOpacity}
+                      stroke="none"
+                      ifOverflow="visible"
+                    />
+                  ))}
+                  {dividerXs.map((x) => (
+                    <ReferenceLine
+                      key={`promo-divider-${x}`}
+                      x={x}
+                      stroke="#3A4369"
+                      strokeOpacity={0.16}
+                      strokeWidth={1}
+                      ifOverflow="visible"
+                    />
+                  ))}
                   {FORECAST_SERIES.filter((series) => visibleSeries[series.key]).map((series) => (
                     <Line
                       key={series.key}
@@ -314,12 +441,36 @@ export default function ForecastChart({
                   ))}
                 </LineChart>
               </ChartContainer>
+              {hoverPromos.length ? (
+                <div
+                  data-promo-panel="true"
+                  className="absolute z-50"
+                  style={{ top: 86, left: panelLeft }}
+                  onMouseEnter={() => {
+                    overPanelRef.current = true;
+                  }}
+                  onMouseLeave={() => {
+                    overPanelRef.current = false;
+                  }}
+                >
+                  <ForecastPromoPanel
+                    monthLabel={hoverPoint?.label ?? formatMonthLabel(hoverMonth)}
+                    seriesValues={seriesValues}
+                    formatValue={(value) => formatTooltipValue(value, metric)}
+                    promos={hoverPromos}
+                    openPromoId={openPromoId}
+                    onTogglePromo={(key) =>
+                      setOpenPromoId((current) => (current === key ? null : key))
+                    }
+                  />
+                </div>
+              ) : null}
             </div>
+            <LastUpdatedStamp items={freshnessItems} className="justify-center pt-0.5" />
 
             <ForecastTable
               points={points}
               metric={metric}
-              promoType={promoType}
               visibleSeries={visibleSeries}
             />
           </>

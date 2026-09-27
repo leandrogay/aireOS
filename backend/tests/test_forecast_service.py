@@ -281,3 +281,87 @@ def test_a_tier_1_row_is_never_recomputed_or_overwritten(monkeypatch):
     _, staged = fake.loads[-1]
     assert set(staged["tier"]) == {0}
     assert str(staged["tier"].dtype) == "Int64"
+
+
+# ---- Forecast page read ----
+
+
+def test_get_forecast_view_combines_rows_actuals_and_promos(monkeypatch):
+    captured = {}
+
+    def _rows(**kwargs):
+        captured["rows"] = kwargs
+        return [{"month_year": "2026-08-01", "predicted_quantity_units": 100.0}]
+
+    def _actuals(**kwargs):
+        captured["actuals"] = kwargs
+        return [{"month_year": "2026-08-01", "quantity_cartons": 209.0, "revenue": 2173.31}]
+
+    def _promos(**kwargs):
+        captured["promotions"] = kwargs
+        return [{"promo_type": "bundle", "period_start": "2026-08-03"}]
+
+    def _freshness(**kwargs):
+        captured["freshness"] = kwargs
+        return {
+            "forecast_by_tier": {"0": "2026-08-31", "1": "2026-08-31"},
+            "latest_sales_loaded_at": "2026-09-27T06:32:01Z",
+        }
+
+    monkeypatch.setattr(forecast_service.bigquery_service, "get_forecast_rows", _rows)
+    monkeypatch.setattr(forecast_service.bigquery_service, "get_forecast_actuals", _actuals)
+    monkeypatch.setattr(forecast_service.promotion_service, "list_forecast_promotions", _promos)
+    monkeypatch.setattr(forecast_service.bigquery_service, "get_forecast_freshness", _freshness)
+
+    result = forecast_service.get_forecast_view(
+        product_name="",
+        customer_name="fairprice",
+        start_date="2026-01-01",
+        end_date="2026-12-01",
+    )
+
+    expected = {
+        "product_name": None,
+        "customer_name": "fairprice",
+        "start_date": "2026-01-01",
+        "end_date": "2026-12-01",
+    }
+    assert captured["rows"] == {**expected, "tier": None}
+    assert captured["actuals"] == expected
+    assert captured["promotions"] == expected
+    assert captured["freshness"] == {"customer_name": "fairprice"}
+    assert result["rows"][0]["predicted_quantity_units"] == 100.0
+    assert result["actuals"][0]["quantity_cartons"] == 209.0
+    assert result["promotions"][0]["promo_type"] == "bundle"
+    assert result["freshness"]["latest_sales_loaded_at"] == "2026-09-27T06:32:01Z"
+
+
+def test_get_forecast_view_forwards_tier_only_to_forecast_rows(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(
+        forecast_service.bigquery_service,
+        "get_forecast_rows",
+        lambda **kwargs: captured.setdefault("rows", kwargs) or [],
+    )
+    monkeypatch.setattr(
+        forecast_service.bigquery_service,
+        "get_forecast_actuals",
+        lambda **kwargs: captured.setdefault("actuals", kwargs) or [],
+    )
+    monkeypatch.setattr(
+        forecast_service.promotion_service,
+        "list_forecast_promotions",
+        lambda **kwargs: captured.setdefault("promotions", kwargs) or [],
+    )
+    monkeypatch.setattr(
+        forecast_service.bigquery_service,
+        "get_forecast_freshness",
+        lambda **kwargs: {"forecast_by_tier": {}, "latest_sales_loaded_at": None},
+    )
+
+    forecast_service.get_forecast_view(customer_name="fairprice", tier=1)
+
+    assert captured["rows"]["tier"] == 1
+    assert "tier" not in captured["actuals"]
+    assert "tier" not in captured["promotions"]

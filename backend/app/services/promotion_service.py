@@ -1,3 +1,5 @@
+import json
+from datetime import date, datetime
 from functools import lru_cache
 
 from sqlalchemy import text
@@ -483,6 +485,149 @@ def create_promotion(
             conn,
             promotion_id,
         )
+
+
+# ============================================================
+# FORECAST PAGE PROMOS
+#
+# The forecast table no longer stores promo columns. The page
+# reads overlapping events from promotions / promotion_skus /
+# promotion_stores and matches fairprice to channel retailers.
+# ============================================================
+
+
+def _iso_date(value) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    return str(value)[:10]
+
+
+def _as_sku_list(value) -> list[dict]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        value = json.loads(value)
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
+def _forecast_promo_row(record: dict) -> dict:
+    return {
+        "promotion_id": record.get("promotion_id"),
+        "period_start": _iso_date(record.get("period_start")),
+        "period_end": _iso_date(record.get("period_end")),
+        "period_label": record.get("period_label"),
+        "promo_type": record.get("promo_type"),
+        "promotion_mechanic": record.get("promotion_mechanic"),
+        "voucher": record.get("voucher"),
+        "skus": _as_sku_list(record.get("skus")),
+    }
+
+
+def list_forecast_promotions(
+    product_name: str | None = None,
+    customer_name: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> list[dict]:
+    """Promos that apply to the Forecast page for one customer x SKU window.
+
+    A promo is included when its dates overlap the requested range, it is
+    linked to the chosen product_name (or any product when that filter is
+    empty), and it has at least one store on {customer}_offline or
+    {customer}_online. Forecast customer is the family name (fairprice),
+    not the channel.
+    """
+    where_clauses = ["1 = 1"]
+    params: dict = {}
+
+    if start_date:
+        where_clauses.append("p.period_end >= :start_date")
+        params["start_date"] = start_date
+    if end_date:
+        where_clauses.append("p.period_start <= :end_date")
+        params["end_date"] = end_date
+    if product_name:
+        where_clauses.append(
+            """
+            EXISTS (
+                SELECT 1
+                FROM promotion_skus ps
+                JOIN skus sk
+                    ON sk.sku = ps.sku
+                WHERE
+                    ps.promotion_id = p.promotion_id
+                    AND sk.product_name = :product_name
+            )
+            """
+        )
+        params["product_name"] = product_name
+    if customer_name:
+        where_clauses.append(
+            """
+            EXISTS (
+                SELECT 1
+                FROM promotion_stores pst
+                JOIN stores s
+                    ON s.store_id = pst.store_id
+                JOIN retailers r
+                    ON r.retailer_id = s.retailer_id
+                WHERE
+                    pst.promotion_id = p.promotion_id
+                    AND r.retailer_name IN (
+                        :customer_offline,
+                        :customer_online
+                    )
+            )
+            """
+        )
+        params["customer_offline"] = f"{customer_name}_offline"
+        params["customer_online"] = f"{customer_name}_online"
+
+    query = text(
+        f"""
+        SELECT
+            p.promotion_id,
+            p.period_start,
+            p.period_end,
+            p.period_label,
+            p.promo_type,
+            p.promotion_mechanic,
+            p.voucher,
+            COALESCE(
+                (
+                    SELECT json_agg(line ORDER BY line.sku)
+                    FROM (
+                        SELECT
+                            sk.sku,
+                            sk.sku_range,
+                            sk.product_name
+                        FROM promotion_skus ps
+                        JOIN skus sk
+                            ON sk.sku = ps.sku
+                        WHERE
+                            ps.promotion_id = p.promotion_id
+                    ) AS line
+                ),
+                '[]'::json
+            ) AS skus
+        {_PROMOTION_JOINS}
+        WHERE {" AND ".join(where_clauses)}
+        ORDER BY
+            p.period_start,
+            p.promotion_id
+        """
+    )
+
+    with _get_engine().connect() as conn:
+        results = conn.execute(query, params).mappings().all()
+
+    return [_forecast_promo_row(dict(row)) for row in results]
 
 
 # ============================================================

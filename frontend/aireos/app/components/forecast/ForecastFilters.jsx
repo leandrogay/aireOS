@@ -13,7 +13,7 @@ function formatMetricValue(value, metric) {
   if (metric === 'revenue') {
     return `$${Math.round(value).toLocaleString()}`;
   }
-  return `${Math.round(value).toLocaleString()} units`;
+  return `${Math.round(value).toLocaleString()} carton units`;
 }
 
 function StatTag({ label, value }) {
@@ -42,7 +42,6 @@ export default function ForecastFilters({
   canClearFilters,
   horizonTotal,
   metric,
-  generatedAtLabel,
   tier,
   onTierChange,
 }) {
@@ -63,7 +62,6 @@ export default function ForecastFilters({
           </div>
           <div className="flex flex-wrap items-center justify-end gap-1.5">
             <StatTag label="Next 12 mo" value={formatMetricValue(horizonTotal, metric)} />
-            <StatTag label="Generated" value={generatedAtLabel} />
             <div className="inline-flex items-center gap-1 rounded-full border border-lavander bg-white p-0.5">
               <span className="pl-2 text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/45">
                 Tier

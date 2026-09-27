@@ -1,3 +1,5 @@
+import { splitPromoType } from '@/app/utils/promotionForm';
+
 export const DEFAULT_PRODUCT_NAME = 'Aire Ultra Tape L';
 
 export const FORECAST_SERIES = [
@@ -24,46 +26,77 @@ export const DEFAULT_FORECAST_TIER = 1;
 
 const DEFAULT_PROMO_BADGE_CLASS = 'border-lavander bg-cream text-deep-violet-blue/70';
 
+// Base types only. Pack vs carton is a second filter; stored values are
+// `monthly` or `carton_monthly` (see splitPromoType in promotionForm.js).
 export const PROMO_OVERLAY_TYPES = [
   {
-    value: 'regular',
-    label: 'Regular',
+    value: 'monthly',
+    label: 'Monthly',
     color: '#DFE4F7',
     swatch: '#3A4369',
+    selectedBg: '#3A4369',
+    selectedFg: '#FFFFFF',
     strokeColor: '#3A4369',
-    fillOpacity: 0.55,
+    fillOpacity: 0.45,
     strokeOpacity: 0.16,
     badgeClass: 'border-deep-violet-blue/20 bg-lavander text-deep-violet-blue',
-  },
-  {
-    value: 'bundle',
-    label: 'Bundle',
-    color: '#A29BCC',
-    swatch: '#A29BCC',
-    fillOpacity: 0.18,
-    strokeOpacity: 0.22,
-    badgeClass: 'border-violet/40 bg-violet/15 text-deep-violet-blue',
   },
   {
     value: 'side_offer',
     label: 'Side offer',
     color: '#A7D2F2',
     swatch: '#A7D2F2',
-    fillOpacity: 0.22,
+    selectedBg: '#2E7BA6',
+    selectedFg: '#FFFFFF',
+    fillOpacity: 0.28,
     strokeOpacity: 0.24,
     badgeClass: 'border-celest/50 bg-celest/20 text-deep-violet-blue',
   },
   {
-    value: 'carton',
-    label: 'Carton',
+    value: 'bundle',
+    label: 'Bundle',
+    color: '#A29BCC',
+    swatch: '#A29BCC',
+    selectedBg: '#5C5299',
+    selectedFg: '#FFFFFF',
+    fillOpacity: 0.22,
+    strokeOpacity: 0.22,
+    badgeClass: 'border-violet/40 bg-violet/15 text-deep-violet-blue',
+  },
+  {
+    value: 'others',
+    label: 'Others',
     color: '#EAE4DE',
     swatch: '#C4B6A6',
+    selectedBg: '#8A7460',
+    selectedFg: '#FFFFFF',
     strokeColor: '#C4B6A6',
-    fillOpacity: 0.85,
+    fillOpacity: 0.4,
     strokeOpacity: 0.28,
     badgeClass: 'border-violet/30 bg-cream text-deep-violet-blue',
   },
 ];
+
+// Unused by line series or overlay pills: burnt orange + olive.
+export const PACK_OVERLAY_TYPES = [
+  {
+    value: 'pack',
+    label: 'Pack',
+    swatch: '#C45C26',
+    selectedBg: '#C45C26',
+    selectedFg: '#FFFFFF',
+  },
+  {
+    value: 'carton',
+    label: 'Carton',
+    swatch: '#4F7A3A',
+    selectedBg: '#4F7A3A',
+    selectedFg: '#FFFFFF',
+  },
+];
+
+export const ALL_PROMO_TYPE_VALUES = PROMO_OVERLAY_TYPES.map((item) => item.value);
+export const ALL_PACK_TYPE_VALUES = PACK_OVERLAY_TYPES.map((item) => item.value);
 
 export function promoOverlayStyle(promoType) {
   const promo = PROMO_OVERLAY_TYPES.find((item) => item.value === promoType);
@@ -87,39 +120,12 @@ function actualValue(row, metric) {
   if (metric === 'revenue') {
     return row.revenue == null ? null : row.revenue;
   }
-  return row.quantity_units == null ? null : row.quantity_units;
+  return row.quantity_cartons == null ? null : row.quantity_cartons;
 }
 
 function predictedValue(row, metric) {
   if (metric === 'revenue') return row.predicted_revenue;
   return row.predicted_quantity_units;
-}
-
-// Resolves which row wins per forecast cell for the selected tier, so
-// buildMonthlyPoints never has to know tiers exist at all. Tier 0 is this
-// app's own model (see backend pl_forecast.py) and is always fully
-// populated. Tier 1 is a teammate's separate model (see backend
-// forecasting_output_schema.sql) -- when selected, a cell shows its Tier 1
-// value if one exists, else falls back to Tier 0. Simple presence fallback,
-// no accuracy comparison.
-export function resolveTier(rows, tier) {
-  if (tier !== 1) {
-    return rows.filter((row) => row.forecast_generated_at == null || (row.tier ?? 0) === 0);
-  }
-
-  const actuals = rows.filter((row) => row.forecast_generated_at == null);
-  const byCell = new Map();
-  for (const row of rows) {
-    if (row.forecast_generated_at == null) continue;
-    const cellKey = [row.run_type, row.forecast_generated_at, row.product_name, row.customer_name, row.month_year]
-      .join('|');
-    const rowTier = row.tier ?? 0;
-    const current = byCell.get(cellKey);
-    if (!current || rowTier > current.tier) {
-      byCell.set(cellKey, { row, tier: rowTier });
-    }
-  }
-  return [...actuals, ...[...byCell.values()].map((entry) => entry.row)];
 }
 
 export function getRunDates(rows) {
@@ -155,32 +161,27 @@ export function formatGeneratedAt(isoDate) {
   });
 }
 
-function applyPromoToPoint(point, row) {
-  if (row.period_label && !point.period_label) point.period_label = row.period_label;
-  if (row.voucher && !point.voucher) point.voucher = row.voucher;
-  if (!row.promo_type) return;
-  if (!point.promoByType[row.promo_type]) {
-    point.promoByType[row.promo_type] = {
-      promotion_mechanic: row.promotion_mechanic || null,
-      period_label: row.period_label || null,
-      voucher: row.voucher || null,
-      productNames: new Set(),
-    };
+export function formatTimestamp(value) {
+  if (!value) return '—';
+  const hasTime = /T\d{2}:\d{2}/.test(value);
+  if (!hasTime) {
+    return formatGeneratedAt(String(value).slice(0, 10));
   }
-  if (row.product_name) {
-    point.promoByType[row.promo_type].productNames.add(row.product_name);
-  }
-  point.promo_types.add(row.promo_type);
-  if (point.promo_types.size === 1) {
-    point.promo_type = row.promo_type;
-    if (row.promotion_mechanic) point.promotion_mechanic = row.promotion_mechanic;
-  } else {
-    point.promo_type = 'Mixed';
-    point.promotion_mechanic = null;
-  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString('en-GB', {
+    timeZone: 'Asia/Singapore',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
 }
 
-export function buildMonthlyPoints(rows, metric = 'units') {
+export function buildMonthlyPoints(rows, actuals = [], metric = 'units') {
   const { previous, current } = getRunDates(rows);
   const byMonth = new Map();
 
@@ -193,24 +194,21 @@ export function buildMonthlyPoints(rows, metric = 'units') {
         initial: null,
         previous: null,
         current: null,
-        promotion_mechanic: null,
-        promo_type: null,
-        promo_types: new Set(),
-        promoByType: {},
       });
     }
     return byMonth.get(monthYear);
   }
 
+  for (const row of actuals) {
+    if (!row.month_year) continue;
+    const value = actualValue(row, metric);
+    if (value == null) continue;
+    const point = pointFor(row.month_year);
+    point.actual = (point.actual ?? 0) + value;
+  }
+
   for (const row of rows) {
     const point = pointFor(row.month_year);
-    applyPromoToPoint(point, row);
-
-    if (row.forecast_generated_at == null) {
-      const value = actualValue(row, metric);
-      if (value != null) point.actual = (point.actual ?? 0) + value;
-      continue;
-    }
 
     if (row.run_type === 'yearly') {
       // The frozen yearly baseline is shown as "Initial Yearly Forecast" --
@@ -226,31 +224,13 @@ export function buildMonthlyPoints(rows, metric = 'units') {
 
     if (row.forecast_generated_at === current) {
       point.current = (point.current ?? 0) + value;
-      if (row.promotion_mechanic) point.promotion_mechanic = row.promotion_mechanic;
     }
     if (row.forecast_generated_at === previous) {
       point.previous = (point.previous ?? 0) + value;
-      if (!point.promotion_mechanic && row.promotion_mechanic) {
-        point.promotion_mechanic = row.promotion_mechanic;
-      }
     }
   }
 
-  return [...byMonth.values()]
-    .sort((a, b) => a.month_year.localeCompare(b.month_year))
-    .map(({ promo_types, promoByType, ...point }) => ({
-      ...point,
-      promoTypes: [...promo_types],
-      promoByType: Object.fromEntries(
-        Object.entries(promoByType).map(([type, details]) => [
-          type,
-          {
-            ...details,
-            productNames: [...(details.productNames ?? [])].sort(),
-          },
-        ])
-      ),
-    }));
+  return [...byMonth.values()].sort((a, b) => a.month_year.localeCompare(b.month_year));
 }
 
 export function emptyMonthlyPoint(monthYear) {
@@ -261,10 +241,6 @@ export function emptyMonthlyPoint(monthYear) {
     initial: null,
     previous: null,
     current: null,
-    promotion_mechanic: null,
-    promo_type: null,
-    promoTypes: [],
-    promoByType: {},
   };
 }
 
@@ -301,39 +277,132 @@ export function padMonthlyPoints(points, startDate, endDate) {
   return months.map((monthYear) => byMonth.get(monthYear) ?? emptyMonthlyPoint(monthYear));
 }
 
-export function monthHasPromoType(point, promoType) {
-  if (!promoType || !point) return false;
-  return point.promoTypes?.includes(promoType) || point.promo_type === promoType;
+export function toggleSelectedValue(selected, value) {
+  if (selected.includes(value)) {
+    return selected.filter((item) => item !== value);
+  }
+  return [...selected, value];
 }
 
-export function overlayBandsForPromo(points, promoType) {
-  if (!promoType || !points.length) return [];
-
-  const runs = [];
-  for (let index = 0; index < points.length; index += 1) {
-    if (!monthHasPromoType(points[index], promoType)) continue;
-    const currentRun = runs.at(-1);
-    if (currentRun && index === currentRun.endIndex + 1) {
-      currentRun.endIndex = index;
-      continue;
-    }
-    runs.push({ startIndex: index, endIndex: index });
-  }
-
-  return runs.map((run) => ({
-    x1: run.startIndex,
-    x2: run.endIndex + 1,
-  }));
+export function promoMatchesOverlay(promo, selectedTypes, selectedPacks) {
+  const { promoType, packType } = splitPromoType(promo?.promo_type);
+  return Boolean(selectedTypes?.includes(promoType) && selectedPacks?.includes(packType));
 }
 
-export function overlayMonthDividers(points, promoType) {
-  const xs = new Set();
-  for (const band of overlayBandsForPromo(points, promoType)) {
-    for (let x = band.x1; x <= band.x2; x += 1) {
-      xs.add(x);
-    }
+function daysInMonth(year, month) {
+  return new Date(year, month, 0).getDate();
+}
+
+function lastDayOfMonth(monthYear) {
+  const year = Number(monthYear.slice(0, 4));
+  const month = Number(monthYear.slice(5, 7));
+  const day = daysInMonth(year, month);
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function bandColors(group) {
+  return [
+    ...new Set(
+      group
+        .map((promo) => promoOverlayStyle(splitPromoType(promo.promo_type).promoType)?.fill)
+        .filter(Boolean)
+    ),
+  ];
+}
+
+function dateToAxisX(isoDate, months, edge) {
+  if (!isoDate || !months.length) return 0;
+  if (isoDate < months[0]) return 0;
+  const lastMonth = months.at(-1);
+  if (isoDate > lastDayOfMonth(lastMonth)) return months.length;
+
+  const year = Number(isoDate.slice(0, 4));
+  const month = Number(isoDate.slice(5, 7));
+  const day = Number(isoDate.slice(8, 10));
+  const monthKey = `${year}-${String(month).padStart(2, '0')}-01`;
+  const index = months.indexOf(monthKey);
+  if (index < 0) return edge === 'end' ? months.length : 0;
+  const dim = daysInMonth(year, month);
+  return edge === 'end' ? index + day / dim : index + (day - 1) / dim;
+}
+
+export function buildPromoOverlayBands(promotions, selectedTypes, selectedPacks, months) {
+  if (!months.length) return [];
+  const visible = (promotions || []).filter((promo) =>
+    promoMatchesOverlay(promo, selectedTypes, selectedPacks)
+  );
+  const groups = new Map();
+  for (const promo of visible) {
+    const key = `${promo.period_start}|${promo.period_end}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(promo);
   }
-  return [...xs].sort((a, b) => a - b);
+
+  const chartStart = months[0];
+  const chartEnd = lastDayOfMonth(months.at(-1));
+  return [...groups.entries()].flatMap(([key, group], index) => {
+    const start = group[0].period_start;
+    const end = group[0].period_end;
+    if (!start || !end || end < chartStart || start > chartEnd) return [];
+    const x1 = dateToAxisX(start, months, 'start');
+    const x2 = dateToAxisX(end, months, 'end');
+    if (!(x2 > x1)) return [];
+    const colors = bandColors(group);
+    return [
+      {
+        key: `promo-${start}-${end}-${index}`.replace(/[^a-zA-Z0-9-]/g, '-'),
+        x1,
+        x2,
+        colors,
+        fillOpacity: colors.length > 1 ? 0.5 : promoOverlayStyle(splitPromoType(group[0].promo_type).promoType)?.fillOpacity ?? 0.28,
+        promos: group,
+      },
+    ];
+  });
+}
+
+export function promosOverlappingMonth(promotions, monthYear, selectedTypes, selectedPacks) {
+  if (!monthYear) return [];
+  const monthStart = monthYear;
+  const monthEnd = lastDayOfMonth(monthYear);
+  return (promotions || []).filter((promo) => {
+    if (!promo.period_start || !promo.period_end) return false;
+    if (!promoMatchesOverlay(promo, selectedTypes, selectedPacks)) return false;
+    return promo.period_start <= monthEnd && promo.period_end >= monthStart;
+  });
+}
+
+export function promoIdentity(promo) {
+  return promo.promotion_id ?? `${promo.promo_type}|${promo.period_start}|${promo.period_end}|${promo.promotion_mechanic}`;
+}
+
+function promoIdSet(promotions, monthYear, selectedTypes, selectedPacks) {
+  return new Set(
+    promosOverlappingMonth(promotions, monthYear, selectedTypes, selectedPacks).map(promoIdentity)
+  );
+}
+
+function promoSetsDiffer(previous, next) {
+  if (previous.size !== next.size) return true;
+  for (const id of previous) {
+    if (!next.has(id)) return true;
+  }
+  return false;
+}
+
+// Vertical hairline at the month tick where the selected overlay set changes
+// (e.g. Jan–Feb promo then Feb–Mar promo → line at February).
+export function promoPeriodDividerXs(promotions, selectedTypes, selectedPacks, months) {
+  const xs = [];
+  let previous = new Set();
+  months.forEach((monthYear, index) => {
+    const next = promoIdSet(promotions, monthYear, selectedTypes, selectedPacks);
+    if (index > 0 && (previous.size || next.size) && promoSetsDiffer(previous, next)) {
+      xs.push(index);
+    }
+    previous = next;
+  });
+  return xs;
 }
 
 export function sumHorizonForecast(points) {
@@ -350,9 +419,7 @@ export function pickDefaultProduct(products) {
 }
 
 export function toggleSeriesVisibility(visible, key) {
-  const next = { ...visible, [key]: !visible[key] };
-  if (!Object.values(next).some(Boolean)) return visible;
-  return next;
+  return { ...visible, [key]: !visible[key] };
 }
 
 export function uniqueMonthOptions(points) {
@@ -369,8 +436,3 @@ export function uniqueMonthOptions(points) {
   });
 }
 
-export function uniquePromoOptions(points) {
-  return [
-    ...new Set(points.flatMap((point) => point.promoTypes ?? []).filter(Boolean)),
-  ].sort();
-}

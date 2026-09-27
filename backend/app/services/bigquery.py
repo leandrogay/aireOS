@@ -1,6 +1,6 @@
 import os
 import re
-from datetime import datetime
+from datetime import date, datetime, timezone
 from functools import lru_cache
 import pandas as pd
 from google.cloud import bigquery
@@ -19,6 +19,14 @@ BQ_FORECAST_TABLE = os.environ.get(
     "BQ_FORECAST_TABLE",
     "aire-data.Aire_Data.forecasting_output_xianhui_mock",
 )
+# Closed monthly sell-out. Forecast actuals are read here, not from
+# BQ_FORECAST_TABLE -- that table is model output only.
+BQ_MONTHLY_SALES_VIEW = os.environ.get(
+    "BQ_MONTHLY_SALES_VIEW",
+    "aire-data.Aire_Data_Analytics.v_customer_monthly_sales",
+)
+
+FORECAST_TIERS = (0, 1)
 
 FORECAST_COLUMNS = [
     "month_year",
@@ -28,13 +36,7 @@ FORECAST_COLUMNS = [
     "customer_id",
     "customer_name",
     "product_name",
-    "promo_type",
-    "promotion_mechanic",
-    "period_label",
-    "voucher",
-    "quantity_units",
     "predicted_quantity_units",
-    "revenue",
     "predicted_revenue",
 ]
 
@@ -621,6 +623,24 @@ def _iso_date(value) -> str | None:
     return str(value)[:10]
 
 
+def _iso_stamp(value) -> str | None:
+    """DATE stays YYYY-MM-DD; a DATETIME/TIMESTAMP keeps the clock time."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.strftime("%Y-%m-%dT%H:%M:%SZ")
+        return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if isinstance(value, date):
+        return value.strftime("%Y-%m-%d")
+    ts = pd.to_datetime(value, utc=True)
+    if pd.isna(ts):
+        return None
+    if ts.hour or ts.minute or ts.second or getattr(ts, "nanosecond", 0):
+        return ts.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return ts.strftime("%Y-%m-%d")
+
+
 def _json_number(value):
     if value is None or pd.isna(value):
         return None
@@ -649,29 +669,35 @@ def _forecast_row(record: dict) -> dict:
         # Pre-migration rows have run_type NULL; treated as 'rolling' here too,
         # matching pl_forecast.normalise_rows's default on the write side.
         "run_type": _json_str(record.get("run_type")) or "rolling",
-        # Pre-migration/actual rows have tier NULL; treated as 0 (this app's
-        # own model) here too, matching pl_forecast.normalise_rows.
+        # Pre-migration rows have tier NULL; treated as 0 (this app's own
+        # model) here too, matching pl_forecast.normalise_rows.
         "tier": _json_int(record.get("tier")) or 0,
         "customer_id": _json_int(record.get("customer_id")),
         "customer_name": record.get("customer_name"),
         "product_name": record.get("product_name"),
-        "promo_type": _json_str(record.get("promo_type")),
-        "promotion_mechanic": _json_str(record.get("promotion_mechanic")),
-        "period_label": _json_str(record.get("period_label")),
-        "voucher": _json_str(record.get("voucher")),
-        "quantity_units": _json_number(record.get("quantity_units")),
         "predicted_quantity_units": _json_number(record.get("predicted_quantity_units")),
-        "revenue": _json_number(record.get("revenue")),
         "predicted_revenue": _json_number(record.get("predicted_revenue")),
     }
 
 
-def get_forecast_rows(
-    product_name: str | None = None,
-    customer_name: str | None = None,
-    start_date: str | None = None,
-    end_date: str | None = None,
-) -> list[dict]:
+def _actual_row(record: dict) -> dict:
+    return {
+        "month_year": _iso_date(record.get("month_year")),
+        "customer_id": _json_int(record.get("customer_id")),
+        "customer_name": record.get("customer_name"),
+        "product_name": record.get("product_name"),
+        "quantity_cartons": _json_number(record.get("quantity_cartons")),
+        "revenue": _json_number(record.get("revenue")),
+    }
+
+
+def _name_and_date_filters(
+    product_name: str | None,
+    customer_name: str | None,
+    start_date: str | None,
+    end_date: str | None,
+    date_column: str,
+) -> tuple[list[str], list]:
     _validate_date(start_date, "start_date")
     _validate_date(end_date, "end_date")
 
@@ -688,15 +714,34 @@ def get_forecast_rows(
             bigquery.ScalarQueryParameter("customer_name", "STRING", customer_name)
         )
     if start_date:
-        where_clauses.append("month_year >= @start_date")
+        where_clauses.append(f"{date_column} >= @start_date")
         query_parameters.append(
             bigquery.ScalarQueryParameter("start_date", "DATE", start_date)
         )
     if end_date:
-        where_clauses.append("month_year <= @end_date")
+        where_clauses.append(f"{date_column} <= @end_date")
         query_parameters.append(
             bigquery.ScalarQueryParameter("end_date", "DATE", end_date)
         )
+    return where_clauses, query_parameters
+
+
+def get_forecast_rows(
+    product_name: str | None = None,
+    customer_name: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    tier: int | None = None,
+) -> list[dict]:
+    if tier is not None and tier not in FORECAST_TIERS:
+        raise ValueError(f"tier must be one of {FORECAST_TIERS}")
+
+    where_clauses, query_parameters = _name_and_date_filters(
+        product_name, customer_name, start_date, end_date, "month_year"
+    )
+    if tier is not None:
+        where_clauses.append("COALESCE(tier, 0) = @tier")
+        query_parameters.append(bigquery.ScalarQueryParameter("tier", "INT64", tier))
 
     query = f"""
         SELECT
@@ -713,13 +758,54 @@ def get_forecast_rows(
     return [_forecast_row(record) for record in df.to_dict(orient="records")]
 
 
+def get_forecast_actuals(
+    product_name: str | None = None,
+    customer_name: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> list[dict]:
+    # period_start is the first of the month in v_customer_monthly_sales,
+    # so it lines up with forecast month_year after we alias it.
+    where_clauses, query_parameters = _name_and_date_filters(
+        product_name, customer_name, start_date, end_date, "period_start"
+    )
+
+    query = f"""
+        SELECT
+          customer_id,
+          customer_name,
+          product_name,
+          period_start AS month_year,
+          quantity_cartons,
+          revenue
+        FROM `{BQ_MONTHLY_SALES_VIEW}`
+        WHERE {" AND ".join(where_clauses)}
+        ORDER BY customer_name, product_name, period_start
+    """
+    job_config = bigquery.QueryJobConfig(query_parameters=query_parameters)
+    client = get_bigquery_client()
+    df = client.query(query, job_config=job_config).result().to_dataframe()
+    if df.empty:
+        return []
+    return [_actual_row(record) for record in df.to_dict(orient="records")]
+
+
 def get_forecast_options() -> dict:
+    # Product/customer lists and the picker bounds come from both model
+    # output and actuals, so a year that only exists on one side is still
+    # selectable (e.g. 2024 actuals before the first forecast month).
     query = f"""
         SELECT
           product_name,
           customer_name,
           month_year
         FROM `{BQ_FORECAST_TABLE}`
+        UNION ALL
+        SELECT
+          product_name,
+          customer_name,
+          period_start AS month_year
+        FROM `{BQ_MONTHLY_SALES_VIEW}`
     """
     client = get_bigquery_client()
     df = client.query(query).result().to_dataframe()
@@ -741,4 +827,58 @@ def get_forecast_options() -> dict:
         ),
         "start_date": _iso_date(months.min()) if not months.empty else None,
         "end_date": _iso_date(months.max()) if not months.empty else None,
+    }
+
+
+def get_forecast_freshness(customer_name: str | None = None) -> dict:
+    """Latest forecast_generated_at per tier, and latest sales load for the customer.
+
+    forecast_generated_at is DATE today; when ingest starts writing a clock
+    time the same query still works and _iso_stamp keeps the time. Sales
+    latest_sales_loaded_at already has a time. An empty customer_name means
+    every customer (the Forecast "All customers" filter).
+    """
+    customer_name = customer_name or None
+    where_clauses = ["1 = 1"]
+    query_parameters = []
+    if customer_name:
+        where_clauses.append("customer_name = @customer_name")
+        query_parameters.append(
+            bigquery.ScalarQueryParameter("customer_name", "STRING", customer_name)
+        )
+    where_sql = " AND ".join(where_clauses)
+    job_config = bigquery.QueryJobConfig(query_parameters=query_parameters)
+    client = get_bigquery_client()
+
+    forecast_query = f"""
+        SELECT
+          COALESCE(tier, 0) AS tier,
+          MAX(forecast_generated_at) AS forecast_generated_at
+        FROM `{BQ_FORECAST_TABLE}`
+        WHERE {where_sql}
+          AND forecast_generated_at IS NOT NULL
+        GROUP BY tier
+    """
+    forecast_df = client.query(forecast_query, job_config=job_config).result().to_dataframe()
+    forecast_by_tier = {"0": None, "1": None}
+    if not forecast_df.empty:
+        for record in forecast_df.to_dict(orient="records"):
+            raw_tier = record.get("tier")
+            tier_key = str(int(raw_tier) if raw_tier is not None and not pd.isna(raw_tier) else 0)
+            if tier_key in forecast_by_tier:
+                forecast_by_tier[tier_key] = _iso_stamp(record.get("forecast_generated_at"))
+
+    sales_query = f"""
+        SELECT MAX(latest_sales_loaded_at) AS latest_sales_loaded_at
+        FROM `{BQ_MONTHLY_SALES_VIEW}`
+        WHERE {where_sql}
+    """
+    sales_df = client.query(sales_query, job_config=job_config).result().to_dataframe()
+    sales_stamp = None
+    if not sales_df.empty:
+        sales_stamp = _iso_stamp(sales_df.iloc[0]["latest_sales_loaded_at"])
+
+    return {
+        "forecast_by_tier": forecast_by_tier,
+        "latest_sales_loaded_at": sales_stamp,
     }

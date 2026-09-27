@@ -1,10 +1,11 @@
 """
 BigQuery reads/writes for the P&L forecast, and the refresh entrypoint.
 
-The Forecast page reads BQ_FORECAST_TABLE (actual rows have
-forecast_generated_at NULL; forecast rows carry the run date and a run_type
-of 'rolling' or 'yearly' -- see pl_forecast.py's FORECAST RUNS section for
-what those mean). This module:
+The Forecast page reads model rows from BQ_FORECAST_TABLE, monthly
+actuals from v_customer_monthly_sales, and overlapping promos from
+Postgres. Forecast rows carry the run date and a run_type of 'rolling'
+or 'yearly' -- see pl_forecast.py's FORECAST RUNS section for what
+those mean. This module also:
 
   1. rebuilds the actual rows from the FairPrice sell-out table
      (BQFairprice_TABLE, read-only) -- complete months only,
@@ -26,7 +27,8 @@ import uuid
 import pandas as pd
 from google.cloud import bigquery
 
-from app.services import catalog_service, pl_forecast
+from app.services import catalog_service, pl_forecast, promotion_service
+from app.services import bigquery as bigquery_service
 from app.services.bigquery import BQFairprice_TABLE, get_bigquery_client
 
 FORECAST_TABLE = os.environ.get("BQ_FORECAST_TABLE", "aire-data.Aire_Data.forecasting_output_xianhui_mock")
@@ -79,6 +81,55 @@ def get_sellout_weeks(customers: list[str]) -> pd.DataFrame:
     client = get_bigquery_client()
     query = _SELLOUT_WEEKS_QUERY.format(sellout_table=BQFairprice_TABLE)
     return client.query(query, job_config=job_config).result().to_dataframe()
+
+
+def get_forecast_view(
+    product_name: str | None = None,
+    customer_name: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    tier: int | None = None,
+) -> dict:
+    """One Forecast-page payload: model rows, monthly actuals, and overlapping promos.
+
+    Forecast rows come from BQ_FORECAST_TABLE (predictions only), scoped
+    to the selected tier when one is passed -- no fallback to the other
+    tier. Actuals come from v_customer_monthly_sales. Promos come from
+    Postgres and are not stored on forecast rows.
+    """
+    product_name = product_name or None
+    customer_name = customer_name or None
+    start_date = start_date or None
+    end_date = end_date or None
+
+    return {
+        "product_name": product_name,
+        "customer_name": customer_name,
+        "start_date": start_date,
+        "end_date": end_date,
+        "rows": bigquery_service.get_forecast_rows(
+            product_name=product_name,
+            customer_name=customer_name,
+            start_date=start_date,
+            end_date=end_date,
+            tier=tier,
+        ),
+        "actuals": bigquery_service.get_forecast_actuals(
+            product_name=product_name,
+            customer_name=customer_name,
+            start_date=start_date,
+            end_date=end_date,
+        ),
+        "promotions": promotion_service.list_forecast_promotions(
+            product_name=product_name,
+            customer_name=customer_name,
+            start_date=start_date,
+            end_date=end_date,
+        ),
+        "freshness": bigquery_service.get_forecast_freshness(
+            customer_name=customer_name,
+        ),
+    }
 
 
 # ============================================================

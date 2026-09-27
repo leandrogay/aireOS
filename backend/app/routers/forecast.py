@@ -1,8 +1,9 @@
 from fastapi import APIRouter, HTTPException
 from google.api_core.exceptions import GoogleAPICallError
 from google.auth.exceptions import DefaultCredentialsError
+from sqlalchemy.exc import SQLAlchemyError
 
-from app.services import bigquery
+from app.services import bigquery, forecast_service
 
 router = APIRouter(prefix="/api/forecast", tags=["forecast"])
 
@@ -19,13 +20,15 @@ def get_forecast(
     customer_name: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
+    tier: int | None = None,
 ):
     try:
-        rows = bigquery.get_forecast_rows(
+        return forecast_service.get_forecast_view(
             product_name=product_name,
             customer_name=customer_name,
             start_date=start_date,
             end_date=end_date,
+            tier=tier,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -33,14 +36,11 @@ def get_forecast(
         raise HTTPException(status_code=503, detail=_CREDENTIALS_DETAIL)
     except GoogleAPICallError as e:
         raise HTTPException(status_code=503, detail=f"Unable to reach BigQuery: {e.message}")
-
-    return {
-        "product_name": product_name,
-        "customer_name": customer_name,
-        "start_date": start_date,
-        "end_date": end_date,
-        "rows": rows,
-    }
+    except SQLAlchemyError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Unable to reach the promotions database: {type(e).__name__}: {e}",
+        )
 
 
 @router.get("/options")

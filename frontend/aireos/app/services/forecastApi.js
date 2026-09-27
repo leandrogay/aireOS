@@ -21,18 +21,34 @@ export async function getForecastOptions() {
   return request('/api/forecast/options');
 }
 
-export async function getForecastRows({
+/**
+ * GET /api/forecast
+ * Model rows for the selected tier (no fallback), monthly actuals (cartons),
+ * overlapping Postgres promos, and freshness stamps (forecast_generated_at
+ * per tier + sales loaded_at).
+ */
+export async function getForecastView({
   productName = '',
   customerName = '',
   startDate = '',
   endDate = '',
+  tier,
 } = {}) {
   const params = new URLSearchParams();
   if (productName) params.set('product_name', productName);
   if (customerName) params.set('customer_name', customerName);
   if (startDate) params.set('start_date', startDate);
   if (endDate) params.set('end_date', endDate);
+  if (tier === 0 || tier === 1) params.set('tier', String(tier));
   const query = params.toString();
   const data = await request(`/api/forecast/${query ? `?${query}` : ''}`);
-  return data.rows ?? [];
+  return {
+    rows: data.rows ?? [],
+    actuals: data.actuals ?? [],
+    promotions: data.promotions ?? [],
+    freshness: data.freshness ?? {
+      forecast_by_tier: {},
+      latest_sales_loaded_at: null,
+    },
+  };
 }

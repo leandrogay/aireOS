@@ -1,3 +1,5 @@
+import datetime
+
 import pytest
 from conftest import FakeConnection, FakeEngine
 
@@ -167,6 +169,87 @@ def test_no_matching_skus_raises(monkeypatch):
         promotion_service.create_promotion(
             _payload(skus=[{"sku": "Nope", "sku_range": "Nope"}])
         )
+
+
+# ---- forecast page promo list -----------------------------------------------
+
+
+def test_list_forecast_promotions_filters_product_customer_and_overlap(monkeypatch):
+    def respond(sql, params):
+        assert "sk.product_name = :product_name" in sql
+        assert ":customer_offline" in sql
+        assert "p.period_end >= :start_date" in sql
+        assert "p.period_start <= :end_date" in sql
+        return [
+            {
+                "promotion_id": 7,
+                "period_start": datetime.date(2026, 6, 3),
+                "period_end": datetime.date(2026, 6, 9),
+                "period_label": "Jun week 1",
+                "promo_type": "carton_bundle",
+                "promotion_mechanic": "Buy 2 Get 1 Free",
+                "voucher": "B2G1",
+                "skus": [
+                    {
+                        "sku": "13255044",
+                        "sku_range": "Aire Adult Diaper Pants",
+                        "product_name": "Aire Adult Pants S/M",
+                    }
+                ],
+            }
+        ]
+
+    conn = FakeConnection(respond)
+    monkeypatch.setattr(promotion_service, "_get_engine", lambda: FakeEngine(conn))
+
+    rows = promotion_service.list_forecast_promotions(
+        product_name="Aire Adult Pants S/M",
+        customer_name="fairprice",
+        start_date="2026-01-01",
+        end_date="2026-12-31",
+    )
+
+    [(sql, params)] = conn.calls
+    assert params == {
+        "product_name": "Aire Adult Pants S/M",
+        "start_date": "2026-01-01",
+        "end_date": "2026-12-31",
+        "customer_offline": "fairprice_offline",
+        "customer_online": "fairprice_online",
+    }
+    assert "json_agg" in sql
+    assert rows == [
+        {
+            "promotion_id": 7,
+            "period_start": "2026-06-03",
+            "period_end": "2026-06-09",
+            "period_label": "Jun week 1",
+            "promo_type": "carton_bundle",
+            "promotion_mechanic": "Buy 2 Get 1 Free",
+            "voucher": "B2G1",
+            "skus": [
+                {
+                    "sku": "13255044",
+                    "sku_range": "Aire Adult Diaper Pants",
+                    "product_name": "Aire Adult Pants S/M",
+                }
+            ],
+        }
+    ]
+
+
+def test_list_forecast_promotions_skips_optional_filters(monkeypatch):
+    def respond(sql, params):
+        assert ":product_name" not in sql
+        assert ":customer_offline" not in sql
+        return []
+
+    conn = FakeConnection(respond)
+    monkeypatch.setattr(promotion_service, "_get_engine", lambda: FakeEngine(conn))
+
+    assert promotion_service.list_forecast_promotions() == []
+    [(_, params)] = conn.calls
+    assert params == {}
 
 
 def test_no_sku_items_skips_sku_queries(monkeypatch):
