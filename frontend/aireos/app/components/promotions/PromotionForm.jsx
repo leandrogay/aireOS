@@ -2,9 +2,10 @@
 
 import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
-import DateRangePicker, { isoToDmy } from '@/components/ui/DateRangePicker';
+import DateRangePicker from '@/components/ui/DateRangePicker';
 import CheckboxDropdown from '@/components/promotions/CheckboxDropdown';
 import MonthPicker from '@/components/promotions/MonthPicker';
+import { formatDate } from '@/lib/formatDate';
 import { cn } from '@/lib/utils';
 import {
   EMPTY_PROMOTION_FORM,
@@ -654,7 +655,7 @@ export default function PromotionForm({
                 />
                 {form.periodStart && form.periodEnd && (
                   <p className={hintClass}>
-                    {isoToDmy(form.periodStart)} – {isoToDmy(form.periodEnd)}
+                    {formatDate(form.periodStart)} – {formatDate(form.periodEnd)}
                   </p>
                 )}
                 <FieldError message={errors.periodStart} />
