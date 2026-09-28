@@ -15,6 +15,27 @@ export const PACK_TYPES = [
 
 const CARTON_PREFIX = 'carton_';
 
+// Monthly promotions always run for one whole calendar month, so the form
+// swaps the start/end date fields for a month picker.
+export const MONTHLY_PROMO_TYPE = 'monthly';
+
+export const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+const ISO_YMD = /^(\d{4})-(\d{2})-(\d{2})$/;
+
 export const EMPTY_PROMOTION_FORM = {
   selectedRetailerIds: [],
   selectedStoreCodes: [],
@@ -39,6 +60,77 @@ export function formatYmd(date) {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+/**
+ * Year and zero-based month of a YYYY-MM-DD string, or null when the
+ * value is blank or not a date.
+ *
+ * @param {string | null | undefined} value
+ * @returns {{ year: number, monthIndex: number } | null}
+ */
+export function yearMonthFromYmd(value) {
+  const match = ISO_YMD.exec(String(value || '').slice(0, 10));
+  if (!match) return null;
+  const monthIndex = Number(match[2]) - 1;
+  if (monthIndex < 0 || monthIndex > 11) return null;
+  return { year: Number(match[1]), monthIndex };
+}
+
+/**
+ * First and last day of one calendar month, as the form's periodStart /
+ * periodEnd. Day 0 of the next month is the last day of this one, so
+ * leap years and 30/31-day months need no special case.
+ *
+ * @param {number} year
+ * @param {number} monthIndex 0 = January
+ * @returns {{ periodStart: string, periodEnd: string }}
+ */
+export function monthPeriod(year, monthIndex) {
+  return {
+    periodStart: formatYmd(new Date(year, monthIndex, 1)),
+    periodEnd: formatYmd(new Date(year, monthIndex + 1, 0)),
+  };
+}
+
+/**
+ * Stretch a date range to the whole month of its start date (or its end
+ * date when only that is set). Blank dates stay blank.
+ *
+ * @param {string} periodStart
+ * @param {string} periodEnd
+ * @returns {{ periodStart: string, periodEnd: string }}
+ */
+export function snapPeriodToMonth(periodStart, periodEnd) {
+  const anchor = yearMonthFromYmd(periodStart) || yearMonthFromYmd(periodEnd);
+  if (!anchor) return { periodStart, periodEnd };
+  return monthPeriod(anchor.year, anchor.monthIndex);
+}
+
+/**
+ * Month picker label for a YYYY-MM-DD value, e.g. `August 2026`.
+ *
+ * @param {string | null | undefined} value
+ * @returns {string}
+ */
+export function formatMonthLabel(value) {
+  const parts = yearMonthFromYmd(value);
+  if (!parts) return '';
+  return `${MONTH_NAMES[parts.monthIndex]} ${parts.year}`;
+}
+
+/**
+ * Form fields to patch when a promo type is picked. Choosing Monthly
+ * snaps any dates already entered to the start date's whole month;
+ * other types keep the dates as they are.
+ *
+ * @param {typeof EMPTY_PROMOTION_FORM} form
+ * @param {string} promoType one of PROMO_TYPES
+ * @returns {object}
+ */
+export function promoTypePatch(form, promoType) {
+  if (promoType !== MONTHLY_PROMO_TYPE) return { promoType };
+  return { promoType, ...snapPeriodToMonth(form.periodStart, form.periodEnd) };
 }
 
 /**
@@ -141,14 +233,25 @@ export function formFromPromotion(promotion, retailers = []) {
     if (code) storeCodes.add(code);
   }
 
+  const { promoType, packType } = splitPromoType(promotion.promo_type);
+  const storedStart = promotion.period_start ? String(promotion.period_start).slice(0, 10) : '';
+  const storedEnd = promotion.period_end ? String(promotion.period_end).slice(0, 10) : '';
+  // Older Monthly rows may not span a whole month; the month picker can
+  // only show whole months, so snap to the start date's month.
+  const period =
+    promoType === MONTHLY_PROMO_TYPE
+      ? snapPeriodToMonth(storedStart, storedEnd)
+      : { periodStart: storedStart, periodEnd: storedEnd };
+
   return {
     ...EMPTY_PROMOTION_FORM,
     selectedRetailerIds: [...retailerIds],
     selectedStoreCodes: [...storeCodes],
-    periodStart: promotion.period_start ? String(promotion.period_start).slice(0, 10) : '',
-    periodEnd: promotion.period_end ? String(promotion.period_end).slice(0, 10) : '',
+    periodStart: period.periodStart,
+    periodEnd: period.periodEnd,
     periodLabel: promotion.period_label ? String(promotion.period_label) : '',
-    ...splitPromoType(promotion.promo_type),
+    promoType,
+    packType,
     promotionMechanic: promotion.promotion_mechanic ? String(promotion.promotion_mechanic) : '',
     voucher: promotion.voucher ? String(promotion.voucher) : '',
     skuRanges: uniqueSkuRangeLabels(promotion.skus),
@@ -438,13 +541,20 @@ export function validatePromotionForm(form, retailers, stores = []) {
     }
   }
 
-  if (!form.periodStart) {
-    errors.periodStart = 'Select a start date.';
-  }
-  if (!form.periodEnd) {
-    errors.periodEnd = 'Select an end date.';
-  } else if (form.periodStart && form.periodEnd < form.periodStart) {
-    errors.periodEnd = 'End date cannot be earlier than the start date.';
+  if (form.promoType === MONTHLY_PROMO_TYPE) {
+    // One month picker fills both dates, so it gets one message.
+    if (!form.periodStart || !form.periodEnd) {
+      errors.periodStart = 'Select a month.';
+    }
+  } else {
+    if (!form.periodStart) {
+      errors.periodStart = 'Select a start date.';
+    }
+    if (!form.periodEnd) {
+      errors.periodEnd = 'Select an end date.';
+    } else if (form.periodStart && form.periodEnd < form.periodStart) {
+      errors.periodEnd = 'End date cannot be earlier than the start date.';
+    }
   }
 
   if (String(form.periodLabel ?? '').trim().length > 100) {
