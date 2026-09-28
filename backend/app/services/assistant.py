@@ -50,7 +50,7 @@ from openpyxl import Workbook
 from openpyxl.chart import BarChart as XlsxBarChart, Reference
 from openpyxl.styles import Font as XlsxFont, Alignment as XlsxAlignment
 
-from app.services import bigquery, promotion_service
+from app.services import bigquery, inventory_service, promotion_service
 
 ENV_PATH = Path(__file__).resolve().parents[2] / ".env.backend"
 load_dotenv(ENV_PATH)
@@ -205,6 +205,117 @@ _FUNCTION_SCHEMAS = [
             "additionalProperties": False,
         },
     },
+    {
+        "name": "list_inventory_skus",
+        "description": (
+            "Lists SKUs tracked in inventory (code, product name, size, pack). "
+            "Use to resolve a product name the user typed into the exact SKU "
+            "code the other inventory tools take, before calling one of them "
+            "with a `skus` filter."
+        ),
+        "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+    },
+    {
+        "name": "get_inventory_overview",
+        "description": (
+            "Ending stock (units on hand) per month across customers, with "
+            "each SKU's opening stock, sell-in, sell-out and ending stock -- "
+            "INVENTORY/stock data, a SEPARATE system from sales revenue. Use "
+            "for \"how much stock/inventory do we have\", \"ending stock "
+            "trend\" questions, never for revenue or units sold. ONLY covers "
+            "months with actuals already recorded -- for a future month with "
+            "no actuals yet (e.g. \"will we have enough stock next month\"), "
+            "use get_sell_in_plan instead, which projects forward from the "
+            "sell-out forecast; this tool will simply omit that month, not "
+            "tell you there's a shortfall. Omit customer to cover every "
+            "customer at once. Set at_risk_only=true to restrict to SKUs "
+            "currently outside their DOH band."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "customer": {"type": "string", "description": "Optional retailer name to scope to one customer. Omit to cover every customer."},
+                "skus": {"type": "array", "items": {"type": "string"}, "description": "Exact SKU codes. Call list_inventory_skus first if the user named a product rather than a code."},
+                "start_month": {"type": "string", "description": "YYYY-MM-01, inclusive."},
+                "end_month": {"type": "string", "description": "YYYY-MM-01, inclusive."},
+                "at_risk_only": {"type": "boolean", "description": "Keep only SKUs currently at risk (below min or above max DOH). Defaults to false."},
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "get_customer_inventory",
+        "description": (
+            "One customer's stock position with Days of Holding (DOH): each "
+            "SKU's ending stock, DOH, its target DOH band (min/max) and "
+            "whether it's below min (low stock), within range, or above max "
+            "(overstock). Use for \"what is our DOH for X\", \"is Y's stock "
+            "healthy\" questions. ONLY covers months with actuals already "
+            "recorded -- for a future month with no actuals yet, use "
+            "get_sell_in_plan instead, which projects forward from the "
+            "sell-out forecast."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "customer": {"type": "string", "description": "Retailer/customer name. Defaults to the current page's customer if omitted."},
+                "skus": {"type": "array", "items": {"type": "string"}, "description": "Exact SKU codes. Call list_inventory_skus first if the user named a product rather than a code."},
+                "start_month": {"type": "string", "description": "YYYY-MM-01, inclusive."},
+                "end_month": {"type": "string", "description": "YYYY-MM-01, inclusive."},
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "get_at_risk_inventory",
+        "description": (
+            "Cross-customer list of SKUs currently at risk -- below the min "
+            "DOH band (low stock, may run out) or above the max (overstock, "
+            "tying up cash) -- sorted by how far outside the band each one "
+            "is, most severe first. Use for \"what's at risk\", \"what's low "
+            "on stock\", \"what's overstocked\" questions."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "customer": {"type": "string", "description": "Optional retailer name to scope to one customer. Omit to cover every customer."},
+                "risk": {"type": "string", "enum": ["below_min", "above_max"], "description": "Restrict to one kind of risk. Omit for both."},
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "get_sell_in_plan",
+        "description": (
+            "Projects each SKU forward, month by month from its last actual "
+            "month, using the sell-out forecast: recommended sell-in "
+            "quantities per SKU (in whole cartons) plus, per SKU and month, "
+            "opening_stock, shipped_so_far (already-committed temporary "
+            "sell-in), forecast_sell_out, stock_needed, recommended_sell_in, "
+            "projected_ending_stock and doh_after_sell_in. THE tool for any "
+            "question about a FUTURE month with no actuals yet -- \"will we "
+            "have enough stock/inventory for [month]\", \"will we run out\", "
+            "\"how much should we sell in/ship next month\", \"replenishment "
+            "plan\". To judge whether stock is already enough for a given "
+            "month without further shipment, look at that SKU-month's "
+            "recommended_sell_in: 0 means yes (opening_stock plus "
+            "shipped_so_far already covers the forecast at the target DOH); "
+            "above 0 is the shortfall still needed to reach target -- state "
+            "that number rather than a bare yes/no. A SKU with no forecast "
+            "for its start month is listed in skus_without_forecast instead "
+            "of rows, meaning it genuinely can't be projected -- say that "
+            "plainly rather than treating it as \"enough\"."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "customer": {"type": "string", "description": "Retailer/customer name. Defaults to the current page's customer if omitted."},
+                "months": {"type": "integer", "description": "How many months ahead to plan, counted from the month after the last actual month (given back as actuals_through). Defaults to 6 -- pass a larger value if the month the user asked about is further out than that, so it's actually included in the returned rows."},
+                "skus": {"type": "array", "items": {"type": "string"}, "description": "Exact SKU codes to scope the plan to. Call list_inventory_skus first if the user named a product rather than a code."},
+            },
+            "additionalProperties": False,
+        },
+    },
 ]
 
 # Gemini rejects mixing custom function tools with Google
@@ -229,10 +340,86 @@ _BUSINESS_TOOLS = [
 _SEARCH_TOOLS = [types.Tool(google_search=types.GoogleSearch())]
 
 # Tools whose raw results feed _build_chart -- despite the name, not all of
-# these produce a bar/line chart (rank_skus and get_promotions only ever
-# produce a table). The list_* lookups and web_search never populate
-# chart/table at all.
-_CHARTABLE_TOOLS = {"get_sales_summary", "compare_periods", "rank_skus", "get_promotions"}
+# these produce a bar/line chart (rank_skus, get_promotions and every
+# inventory tool below only ever produce a table). The list_* lookups and
+# web_search never populate chart/table at all.
+_CHARTABLE_TOOLS = {
+    "get_sales_summary", "compare_periods", "rank_skus", "get_promotions",
+    "get_inventory_overview", "get_customer_inventory", "get_at_risk_inventory", "get_sell_in_plan",
+}
+
+
+# ---- Inventory tools (a separate system: Cloud SQL stock/DOH data, no
+# revenue) -- resolving a retailer name to inventory_service's customer_id
+# mirrors _promotion_matches_customer below, and get_inventory_overview/
+# get_at_risk_inventory deliberately do NOT fall back to default_customer
+# (they're cross-customer views by default, unlike every sales tool and the
+# single-customer get_customer_inventory/get_sell_in_plan). ---------------
+
+_INVENTORY_TOOLS = {
+    "list_inventory_skus", "get_inventory_overview", "get_customer_inventory",
+    "get_at_risk_inventory", "get_sell_in_plan",
+}
+
+
+def _resolve_inventory_customer_id(customer_name: str) -> int:
+    customers = inventory_service.list_customers()
+    if not customers:
+        raise ValueError("No customers are set up in inventory yet.")
+    needle = customer_name.lower()
+    matches = [c for c in customers if needle in c["customer_name"].lower()]
+    known = ", ".join(c["customer_name"] for c in customers)
+    if not matches:
+        raise ValueError(f"Unknown inventory customer '{customer_name}'. Known customers: {known}.")
+    if len(matches) > 1:
+        raise ValueError(f"'{customer_name}' matches more than one customer ({known}); be more specific.")
+    return matches[0]["customer_id"]
+
+
+def _parse_month(value: str | None) -> datetime.date | None:
+    if not value:
+        return None
+    try:
+        return datetime.date.fromisoformat(value)
+    except ValueError:
+        raise ValueError(f"'{value}' is not a valid YYYY-MM-DD date.")
+
+
+def _call_inventory_tool(name: str, tool_input: dict, default_customer: str):
+    if name == "list_inventory_skus":
+        return inventory_service.list_skus()
+
+    if name == "get_inventory_overview":
+        customer_ids = [_resolve_inventory_customer_id(tool_input["customer"])] if tool_input.get("customer") else None
+        return inventory_service.get_overview(
+            customer_ids=customer_ids,
+            skus=tool_input.get("skus"),
+            start_month=_parse_month(tool_input.get("start_month")),
+            end_month=_parse_month(tool_input.get("end_month")),
+            at_risk_only=bool(tool_input.get("at_risk_only", False)),
+        )
+
+    if name == "get_customer_inventory":
+        customer_id = _resolve_inventory_customer_id(tool_input.get("customer") or default_customer)
+        return inventory_service.get_customer_view(
+            customer_id=customer_id,
+            skus=tool_input.get("skus"),
+            start_month=_parse_month(tool_input.get("start_month")),
+            end_month=_parse_month(tool_input.get("end_month")),
+        )
+
+    if name == "get_at_risk_inventory":
+        customer_ids = [_resolve_inventory_customer_id(tool_input["customer"])] if tool_input.get("customer") else None
+        return inventory_service.get_at_risk(customer_ids=customer_ids, risk=tool_input.get("risk"))
+
+    if name == "get_sell_in_plan":
+        customer_id = _resolve_inventory_customer_id(tool_input.get("customer") or default_customer)
+        kwargs = {"customer_id": customer_id, "skus": tool_input.get("skus")}
+        if tool_input.get("months"):
+            kwargs["months"] = tool_input["months"]
+        return inventory_service.get_sell_in_plan(**kwargs)
+
+    raise ValueError(f"Unknown inventory tool: {name}")
 
 
 # ---- Executing a tool call -----------------------------------------------
@@ -312,6 +499,16 @@ def _run_business_tool(name: str, tool_input: dict, default_customer: str):
                 end_date=tool_input.get("end_date"),
                 sku=tool_input.get("sku"),
             )
+        elif name in _INVENTORY_TOOLS:
+            # Cloud SQL/Postgres, same broad-catch reasoning as get_promotions
+            # above -- a genuinely different failure domain than the
+            # BigQuery-specific exceptions caught below.
+            try:
+                result = _call_inventory_tool(name, tool_input, default_customer)
+            except (inventory_service.CustomerNotFoundError, ValueError) as e:
+                return (f"Invalid arguments: {e}", True, None)
+            except Exception as e:
+                return (f"Unable to reach the inventory database: {e}", True, None)
         else:
             return (f"Unknown tool: {name}", True, None)
     except ValueError as e:
@@ -607,17 +804,34 @@ def _range_total_breakdown_chart(compare_calls: list[tuple[dict, object]], custo
     }
 
 
+_DOH_STATUS_LABELS = {"below_min": "Below min", "within": "Within range", "above_max": "Above max"}
+
+
+def _doh_status_label(value: str | None) -> str:
+    return _DOH_STATUS_LABELS.get(value, "—" if value is None else str(value))
+
+
+def _table_cell(value) -> str:
+    """A table cell's text -- None (e.g. a DOH that couldn't be measured, no
+    forward sell-out to divide by) renders as an em dash, not the literal
+    string 'None'."""
+    return "—" if value is None else str(value)
+
+
 def _build_chart(chart_sources: list[tuple[str, dict, object]], customer: str) -> dict:
     """
     Deterministic, backend-owned shaping -- the model never sees or produces
     these numbers, it only narrates what's already here.
 
-    Priority is fixed (compare_periods > get_sales_summary > rank_skus), not
-    "whichever tool was called last": a comparison question's headline
-    figure is the ALL-CHANNEL total, which get_sales_summary's per-channel
-    numbers don't directly match -- see _compare_periods_totals and
-    _sales_summary_periods for how each tool's own calls get reconciled
-    into a single combined total before it's ever compared across tools.
+    Priority is fixed (compare_periods > get_sales_summary > rank_skus >
+    get_promotions > the inventory tools), not "whichever tool was called
+    last": a comparison question's headline figure is the ALL-CHANNEL total,
+    which get_sales_summary's per-channel numbers don't directly match -- see
+    _compare_periods_totals and _sales_summary_periods for how each tool's
+    own calls get reconciled into a single combined total before it's ever
+    compared across tools. The inventory tools sit last since inventory
+    (stock/DOH) and sales (revenue/units) are never both relevant to the
+    same question.
     """
     if not chart_sources:
         return _empty_chart()
@@ -698,6 +912,99 @@ def _build_chart(chart_sources: list[tuple[str, dict, object]], customer: str) -
                         str(p.get("promotion_mechanic", "")),
                     ]
                     for p in rows[:10]
+                ],
+            }
+
+    overview_results = [raw for name, tool_input, raw in chart_sources if name == "get_inventory_overview"]
+    if overview_results:
+        rows = (overview_results[-1] or {}).get("skus") or []
+        if rows:
+            return {
+                "has_chart": False,
+                "chart_type": "none",
+                "chart_categories": [],
+                "chart_series": [],
+                "has_table": True,
+                "table_columns": ["month", "customer", "product", "ending_stock"],
+                "table_rows": [
+                    [
+                        str(row.get("month", "")),
+                        str(row.get("customer_name", "")),
+                        str(row.get("product_name", "")),
+                        _table_cell(row.get("ending_stock")),
+                    ]
+                    for row in rows[:10]
+                ],
+            }
+
+    customer_inventory_results = [raw for name, tool_input, raw in chart_sources if name == "get_customer_inventory"]
+    if customer_inventory_results:
+        rows = (customer_inventory_results[-1] or {}).get("skus") or []
+        if rows:
+            return {
+                "has_chart": False,
+                "chart_type": "none",
+                "chart_categories": [],
+                "chart_series": [],
+                "has_table": True,
+                "table_columns": ["month", "product", "ending_stock", "doh", "target_doh", "status"],
+                "table_rows": [
+                    [
+                        str(row.get("month", "")),
+                        str(row.get("product_name", "")),
+                        _table_cell(row.get("ending_stock")),
+                        _table_cell(row.get("doh")),
+                        _table_cell(row.get("target_doh")),
+                        _doh_status_label(row.get("doh_status")),
+                    ]
+                    for row in rows[:10]
+                ],
+            }
+
+    at_risk_results = [raw for name, tool_input, raw in chart_sources if name == "get_at_risk_inventory"]
+    if at_risk_results:
+        rows = (at_risk_results[-1] or {}).get("items") or []
+        if rows:
+            return {
+                "has_chart": False,
+                "chart_type": "none",
+                "chart_categories": [],
+                "chart_series": [],
+                "has_table": True,
+                "table_columns": ["customer", "product", "doh", "target_doh", "status", "days_outside_band"],
+                "table_rows": [
+                    [
+                        str(row.get("customer_name", "")),
+                        str(row.get("product_name", "")),
+                        _table_cell(row.get("doh")),
+                        _table_cell(row.get("target_doh")),
+                        _doh_status_label(row.get("doh_status")),
+                        _table_cell(row.get("days_outside_band")),
+                    ]
+                    for row in rows[:10]
+                ],
+            }
+
+    sell_in_plan_results = [raw for name, tool_input, raw in chart_sources if name == "get_sell_in_plan"]
+    if sell_in_plan_results:
+        rows = (sell_in_plan_results[-1] or {}).get("rows") or []
+        if rows:
+            return {
+                "has_chart": False,
+                "chart_type": "none",
+                "chart_categories": [],
+                "chart_series": [],
+                "has_table": True,
+                "table_columns": ["month", "product", "forecast_sell_out", "recommended_sell_in", "projected_ending_stock"],
+                "table_rows": [
+                    [
+                        str(row.get("month", "")),
+                        str(row.get("product_name", "")),
+                        _table_cell(row.get("forecast_sell_out")),
+                        _table_cell(row.get("recommended_sell_in")),
+                        _table_cell(row.get("projected_ending_stock")),
+                    ]
+                    for row in rows[:10]
                 ],
             }
 
@@ -1562,10 +1869,31 @@ consumer electronics) even if they rank highly in a generic search.
 You have read-only tools over the company's own sales data (get_sales_summary,
 compare_periods, rank_skus, and lookups to resolve names to exact IDs), a
 separate promotions catalog (get_promotions -- retailer/store(s)/dates/type/
-mechanic/SKUs for actual promotions run, no revenue figures), and Google
-Search grounding for general market/competitor information.
+mechanic/SKUs for actual promotions run, no revenue figures), a separate
+inventory system (get_inventory_overview, get_customer_inventory,
+get_at_risk_inventory, get_sell_in_plan, list_inventory_skus -- ending stock,
+days of holding (DOH) against a min/max target band, at-risk SKUs and
+recommended sell-in quantities, no revenue figures either), and Google Search
+grounding for general market/competitor information.
 
 Rules:
+- Inventory questions ("stock"/"ending stock", "DOH"/"days of holding",
+  "at risk"/"low stock"/"overstock", "sell-in"/"replenishment plan") use the
+  inventory tools, never the sales tools -- these are stock-position
+  concepts, distinct from revenue or units sold, even though both mention
+  the same SKUs. get_inventory_overview and get_at_risk_inventory cover
+  every customer unless the question names one; get_customer_inventory and
+  get_sell_in_plan default to the page's current customer, like the sales
+  tools do. Call list_inventory_skus first if the user names a product
+  rather than a SKU code.
+- get_inventory_overview and get_customer_inventory only cover months with
+  actuals already recorded -- they simply have no row for a future month,
+  which is NOT the same as there being a shortfall. Any question about a
+  future month ("will we have enough stock/inventory for [month]", "will we
+  run out", "stockout risk") is a get_sell_in_plan question: it projects
+  that month forward from the sell-out forecast. Never answer "I don't have
+  enough data" for a future-month stock question without having tried
+  get_sell_in_plan first.
 - Only state figures that came back from a tool call. Never estimate,
   guess, or use outside knowledge for anything a tool could have answered.
 - Never manually add up multiple rows from get_sales_summary (or any other
