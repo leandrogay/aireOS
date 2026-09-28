@@ -4,8 +4,9 @@ import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 
 import { createPortal } from 'react-dom';
 
 import RefreshButton from '@/components/ui/RefreshButton';
+import { formatDate } from '@/lib/formatDate';
+import { cn } from '@/lib/utils';
 import {
-  formatPromoDate,
   promoTypeLabel,
   retailerLabel,
   uniqueSkuRangeLabels,
@@ -28,10 +29,13 @@ import {
   uniquePromotionTypes,
 } from '@/app/utils/promotionOverview';
 
+// Header pills fill their cell (arrow pinned right, like a select). min-w-max
+// stops a tight table from truncating the label; the label span in
+// HeaderFilter caps a long selected value instead.
 const pillClass =
-  'inline-flex w-max max-w-[11rem] items-center gap-1 whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide transition';
+  'flex w-full min-w-max items-center justify-between gap-1 whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide transition';
 const actionButtonClass =
-  'inline-flex min-w-[4rem] items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium shadow-sm transition';
+  'inline-flex min-w-[4rem] items-center justify-center rounded-md px-3 py-1 text-xs font-medium shadow-sm transition';
 
 /**
  * Soft status pills that sit with the cream / lavender page, not neon chips.
@@ -224,13 +228,15 @@ function HeaderFilter({
         type="button"
         aria-expanded={open}
         onClick={() => setOpenId(open ? null : id)}
-        className={`${pillClass} ${className} ${
+        className={cn(
+          pillClass,
+          className,
           value
             ? 'border-deep-violet-blue bg-deep-violet-blue text-white'
-            : 'border-lavander bg-white text-deep-violet-blue hover:bg-cream'
-        }`}
+            : 'border-lavander bg-white text-deep-violet-blue hover:bg-cream',
+        )}
       >
-        <span className="truncate">{selected ? selected.label : label}</span>
+        <span className="max-w-[9rem] truncate">{selected ? selected.label : label}</span>
         <span className="text-[8px] leading-none" aria-hidden="true">
           {open ? '▲' : '▼'}
         </span>
@@ -488,7 +494,7 @@ export default function PromotionList({
           <table className="w-full whitespace-nowrap text-left text-xs text-deep-violet-blue [&_td]:align-middle [&_th]:align-middle">
             <thead className="sticky top-0 z-10 bg-cream">
               <tr className="border-b border-lavander">
-                <th className="px-1.5 py-2">
+                <th className="px-2.5 py-2">
                   <HeaderFilter
                     id="retailer"
                     label="Retailer"
@@ -503,7 +509,7 @@ export default function PromotionList({
                     onChange={setRetailerFilter}
                   />
                 </th>
-                <th className="px-1.5 py-2">
+                <th className="px-2.5 py-2">
                   <HeaderFilter
                     id="store"
                     label="Stores"
@@ -515,37 +521,47 @@ export default function PromotionList({
                     onChange={setStoreFilter}
                   />
                 </th>
-                <th className="px-1.5 py-2">
+                {/* Start and end share one fixed width so the two date
+                    columns match. w-32 on the th keeps them out of the
+                    spare-space share on wide screens; the pill's own width
+                    (w-32 minus the th padding) holds it when the table is
+                    narrow and every column shrinks to its content. */}
+                <th className="w-32 px-2.5 py-2">
                   <button
                     type="button"
                     onClick={() => handleSort('period_start')}
-                    className={`${pillClass} ${
+                    className={cn(
+                      pillClass,
+                      'w-[6.75rem] justify-center',
                       sortField === 'period_start'
                         ? 'border-deep-violet-blue bg-white text-deep-violet-blue'
-                        : 'border-lavander bg-white text-deep-violet-blue/80 hover:bg-cream'
-                    }`}
+                        : 'border-lavander bg-white text-deep-violet-blue/80 hover:bg-cream',
+                    )}
                   >
                     Start date
                     <span className="text-[8px] leading-none">{sortMark('period_start')}</span>
                   </button>
                 </th>
-                <th className="px-1.5 py-2">
+                <th className="w-32 px-2.5 py-2">
                   <button
                     type="button"
                     onClick={() => handleSort('period_end')}
-                    className={`${pillClass} ${
+                    className={cn(
+                      pillClass,
+                      'w-[6.75rem] justify-center',
                       sortField === 'period_end'
                         ? 'border-deep-violet-blue bg-white text-deep-violet-blue'
-                        : 'border-lavander bg-white text-deep-violet-blue/80 hover:bg-cream'
-                    }`}
+                        : 'border-lavander bg-white text-deep-violet-blue/80 hover:bg-cream',
+                    )}
                   >
                     End date
                     <span className="text-[8px] leading-none">{sortMark('period_end')}</span>
                   </button>
                 </th>
-                <th className="px-1.5 py-2">
+                <th className="px-2.5 py-2">
                   <HeaderFilter
                     id="period"
+                    className="justify-center"
                     label="Period"
                     value={periodFilter}
                     allLabel="All periods"
@@ -555,9 +571,10 @@ export default function PromotionList({
                     onChange={setPeriodFilter}
                   />
                 </th>
-                <th className="px-1.5 py-2">
+                <th className="px-2.5 py-2">
                   <HeaderFilter
                     id="promoType"
+                    className="justify-center"
                     label="Promo type"
                     value={promoTypeFilter}
                     allLabel="All types"
@@ -570,9 +587,10 @@ export default function PromotionList({
                     onChange={setPromoTypeFilter}
                   />
                 </th>
-                <th className="px-1.5 py-2">
+                <th className="px-2.5 py-2">
                   <HeaderFilter
                     id="mechanic"
+                    className="justify-center"
                     label="Mechanic"
                     value={mechanicFilter}
                     allLabel="All mechanics"
@@ -585,9 +603,10 @@ export default function PromotionList({
                     onChange={setMechanicFilter}
                   />
                 </th>
-                <th className="px-1.5 py-2">
+                <th className="px-2.5 py-2">
                   <HeaderFilter
                     id="status"
+                    className="justify-center"
                     label="Status"
                     value={statusFilter}
                     allLabel="All statuses"
@@ -600,9 +619,17 @@ export default function PromotionList({
                     onChange={setStatusFilter}
                   />
                 </th>
-                <th className="px-1.5 py-2">
+                {/* w-px shrinks the column to the Edit + Delete buttons, so
+                    this full-width pill spans exactly that pair and its
+                    centred label sits over the gap between them. Muted and
+                    cursor-default because, unlike the others, it is not a
+                    filter or sort control. */}
+                <th className="w-px px-2.5 py-2">
                   <span
-                    className={`${pillClass} cursor-default border-lavander bg-white text-deep-violet-blue/70`}
+                    className={cn(
+                      pillClass,
+                      'cursor-default justify-center border-lavander bg-white text-deep-violet-blue/70',
+                    )}
                   >
                     Actions
                   </span>
@@ -668,20 +695,32 @@ export default function PromotionList({
                           {summariseNames(storeNames)}
                         </span>
                       </td>
-                      <td className="px-2.5 py-2">{formatPromoDate(promotion.period_start)}</td>
-                      <td className="px-2.5 py-2">{formatPromoDate(promotion.period_end)}</td>
-                      <td className="px-2.5 py-2" title={promotion.period_label || undefined}>
-                        <span className="block max-w-[12rem] truncate">
-                          {promotion.period_label || '-'}
+                      <td className="px-2.5 py-2 text-center tabular-nums">{formatDate(promotion.period_start)}</td>
+                      <td className="px-2.5 py-2 text-center tabular-nums">{formatDate(promotion.period_end)}</td>
+                      {/* Multi-week labels ("W20-2025, W21-2025, W22-2025") wrap
+                          instead of stretching the column for every short
+                          "Dec-2026" row and pushing Actions off the edge.
+                          Each word is nowrap so lines break only at spaces,
+                          never after the hyphen in "W21-2025". */}
+                      <td className="px-2.5 py-2 text-center" title={promotion.period_label || undefined}>
+                        <span className="mx-auto block max-w-[6rem] overflow-hidden whitespace-normal leading-snug">
+                          {promotion.period_label
+                            ? promotion.period_label.split(' ').map((word, index) => (
+                                <Fragment key={index}>
+                                  {index > 0 && ' '}
+                                  <span className="whitespace-nowrap">{word}</span>
+                                </Fragment>
+                              ))
+                            : '-'}
                         </span>
                       </td>
-                      <td className="px-2.5 py-2">{promoTypeLabel(promotion.promo_type)}</td>
-                      <td className="px-2.5 py-2" title={promotion.promotion_mechanic || undefined}>
-                        <span className="block max-w-[12rem] truncate">
+                      <td className="px-2.5 py-2 text-center">{promoTypeLabel(promotion.promo_type)}</td>
+                      <td className="px-2.5 py-2 text-center" title={promotion.promotion_mechanic || undefined}>
+                        <span className="mx-auto block max-w-[9rem] truncate">
                           {promotion.promotion_mechanic || '-'}
                         </span>
                       </td>
-                      <td className="px-2.5 py-2">
+                      <td className="px-2.5 py-2 text-center">
                         <span
                           className={`inline-flex items-center align-middle rounded-full px-2.5 py-0.5 text-[10px] font-medium tracking-wide ${statusBadgeClass(status)}`}
                         >

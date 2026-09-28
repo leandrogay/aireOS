@@ -4,15 +4,19 @@ import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import DateRangePicker from '@/components/ui/DateRangePicker';
 import CheckboxDropdown from '@/components/promotions/CheckboxDropdown';
+import MonthPicker from '@/components/promotions/MonthPicker';
+import { formatDate } from '@/lib/formatDate';
 import { cn } from '@/lib/utils';
 import {
   EMPTY_PROMOTION_FORM,
+  MONTHLY_PROMO_TYPE,
   PACK_TYPES,
   PROMO_TYPES,
   areAllRetailersSelected,
   areAllSkuRangesSelected,
   areAllStoresSelected,
   promoTypeLabel,
+  promoTypePatch,
   retailerDropdownOptions,
   retailerLabel,
   storeCatalogOptions,
@@ -186,7 +190,9 @@ function PeriodLabelField({ value, onChange, error }) {
  * order a planner fills them in: where, when, what, which products.
  *
  * Stores are scoped to the ticked retailers. Start and end dates map
- * to period_start / period_end. period_label is optional free text.
+ * to period_start / period_end; for Monthly promotions a month picker
+ * fills them with that month's first and last day. period_label is
+ * optional free text.
  * SKU ranges come from GET /api/catalog/sku-ranges. Create posts one
  * promotion whose `stores` array holds every valid retailer × store
  * pair; edit sends the same shape and replaces the store set.
@@ -247,6 +253,8 @@ export default function PromotionForm({
     ? 'All stores'
     : selectedStores.map((store) => store.store_name).join(', ');
   const skuSummary = allSkuRangesSelected ? 'All SKU ranges' : form.skuRanges.join(', ');
+  // Pack and carton Monthly both run for a whole calendar month.
+  const isMonthly = form.promoType === MONTHLY_PROMO_TYPE;
   // Inline messages sit next to each field; the footer repeats the count so
   // the user standing at the submit button knows to scroll up.
   const errorCount = Object.values(errors).filter(Boolean).length;
@@ -549,38 +557,9 @@ export default function PromotionForm({
           </div>
         </FormSection>
 
-        {/* ==== 2. When ==== */}
-        <FormSection
-          step={2}
-          title="Period"
-          hint="The dates the promotion runs. The label is a name for your own reference."
-        >
-          <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-3 [&>*]:min-w-0">
-            <DateRangePicker
-              className="contents"
-              start={form.periodStart}
-              end={form.periodEnd}
-              onStartChange={(periodStart) => patchForm({ periodStart })}
-              onEndChange={(periodEnd) => patchForm({ periodEnd })}
-              required
-              disabled={isSubmitting}
-              startError={errors.periodStart}
-              endError={errors.periodEnd}
-              labelClassName={labelClass}
-              inputClassName="py-1.5"
-            />
-
-            <PeriodLabelField
-              value={form.periodLabel}
-              onChange={(periodLabel) => patchForm({ periodLabel })}
-              error={errors.periodLabel}
-            />
-          </div>
-        </FormSection>
-
         {/* ==== 3. What ==== */}
         <FormSection
-          step={3}
+          step={2}
           title="Offer"
           hint="The kind of promotion and what the shopper gets."
         >
@@ -604,7 +583,7 @@ export default function PromotionForm({
                         value={option.value}
                         checked={form.promoType === option.value}
                         onChange={() => {
-                          patchForm({ promoType: option.value });
+                          patchForm(promoTypePatch(form, option.value));
                           close();
                         }}
                         className="size-3.5 accent-deep-violet-blue"
@@ -652,6 +631,55 @@ export default function PromotionForm({
               value={form.voucher}
               onChange={(voucher) => patchForm({ voucher })}
               error={errors.voucher}
+            />
+          </div>
+        </FormSection>
+
+        {/* ==== 3. When ==== */}
+        <FormSection
+          step={3}
+          title="Period"
+          hint="The dates the promotion runs. The label is a name for your own reference."
+        >
+          <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-3 [&>*]:min-w-0">
+            {isMonthly ? (
+              <fieldset>
+                <legend className={labelClass}>
+                  Month
+                  <RequiredMark />
+                </legend>
+                <MonthPicker
+                  value={form.periodStart}
+                  onChange={(period) => patchForm(period)}
+                  invalid={Boolean(errors.periodStart)}
+                />
+                {form.periodStart && form.periodEnd && (
+                  <p className={hintClass}>
+                    {formatDate(form.periodStart)} – {formatDate(form.periodEnd)}
+                  </p>
+                )}
+                <FieldError message={errors.periodStart} />
+              </fieldset>
+            ) : (
+              <DateRangePicker
+                className="contents"
+                start={form.periodStart}
+                end={form.periodEnd}
+                onStartChange={(periodStart) => patchForm({ periodStart })}
+                onEndChange={(periodEnd) => patchForm({ periodEnd })}
+                required
+                disabled={isSubmitting}
+                startError={errors.periodStart}
+                endError={errors.periodEnd}
+                labelClassName={labelClass}
+                inputClassName="py-1.5"
+              />
+            )}
+
+            <PeriodLabelField
+              value={form.periodLabel}
+              onChange={(periodLabel) => patchForm({ periodLabel })}
+              error={errors.periodLabel}
             />
           </div>
         </FormSection>
