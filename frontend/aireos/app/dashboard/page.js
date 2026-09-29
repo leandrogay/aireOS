@@ -265,7 +265,6 @@ export default function DashboardPage() {
           <PeriodComparisonDetail
             active={Boolean(baseline)}
             periodNames={periodNames}
-            current={{ start: effectiveStartDate, end: effectiveEndDate }}
             baseline={baseline}
             currentTotals={sumPeriodTotals(currentTotals)}
             baselineTotals={sumPeriodTotals(baselineTotals)}
