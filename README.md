@@ -1,6 +1,10 @@
 # aireOS
 Team WIP x Aire - FYP
 
+## Project documentation
+
+- [Sales, inventory, promotions, and BigQuery pipeline](docs/data-pipeline-implementation-notes.md)
+
 ## Tech Stack
 
 - **Frontend:** Next.js, JavaScript, React, Tailwind CSS
@@ -29,7 +33,7 @@ Clone the repo, then set up each side separately.
 Frontend and Backend specific instructions are located in the respective folder READMEs.
 
 ### Environment variables
-Download the `.env.local file` from the Google Drive and place it in frontend\aireos\
+Download the `.env.frontend` file from Google Drive and place it in `frontend\aireos\`.
 
 ## Mapping Workflow
 

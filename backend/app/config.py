@@ -19,12 +19,21 @@ Two rules keep that from recurring:
 """
 
 import os
+from functools import lru_cache
 from pathlib import Path
 from dotenv import load_dotenv
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 ENV_PATH = BACKEND_DIR / ".env.backend"
-ENV_FILE_LOADED = load_dotenv(ENV_PATH)
+
+
+@lru_cache(maxsize=1)
+def load_backend_env() -> bool:
+    """Load the backend env file once while preserving process overrides."""
+    return load_dotenv(ENV_PATH)
+
+
+ENV_FILE_LOADED = load_backend_env()
 
 
 class ConfigError(Exception):
@@ -88,6 +97,16 @@ POSTGRESQL_INSTANCE_CONNECTION_NAME = os.environ.get(
 )
 DB_IAM_USER = os.environ.get("DB_IAM_USER")
 DB_NAME = os.environ.get("DB_NAME")
+
+
+def cloud_sql_loading_enabled() -> bool:
+    """Return whether validated uploads should be persisted to Cloud SQL."""
+    return os.environ.get("CLOUD_SQL_LOAD_ENABLED", "false").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 # ---- Anthropic --------------------------------------------------------------
 
