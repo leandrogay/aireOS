@@ -1,6 +1,10 @@
 # aireOS
 Team WIP x Aire - FYP
 
+## Project documentation
+
+- [Sales, inventory, promotions, and BigQuery pipeline](docs/data-pipeline-implementation-notes.md)
+
 ## Tech Stack
 
 - **Frontend:** Next.js, JavaScript, React, Tailwind CSS

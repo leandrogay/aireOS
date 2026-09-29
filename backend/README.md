@@ -46,30 +46,37 @@ Normal uploads upsert the business key `(retailer_id, store_code, sku,
 period_start, period_type)`. Forced filename replacement deletes the previous
 facts for that `source_file` and inserts the new valid facts in one transaction.
 
-The current fact schema does not retain sales UOM. Quantities are already
-measured in EA; CAR and EA rows sharing a business key have their quantities
-and revenue summed without another pack-size conversion. Separating them
-requires a future coordinated schema and primary-key migration.
+The current fact schema does not retain sales UOM. FairPrice labels the source
+measure `Qty (in EA)`, while the established downstream forecasting contract
+currently treats the values as cartons. The pipeline performs no numeric unit
+conversion. Source rows sharing a business key have their quantities and
+revenue summed without another pack-size conversion. Any future unit-contract
+change requires coordinated schema and consumer updates.
 
 ## Clean sell-out data in BigQuery
 
 The API writes facts to Cloud SQL, not directly to BigQuery. Datastream
-replicates `public.sellout` into `aire-data.Aire_Data.public_sellout`.
+replicates the normalized sales, inventory, promotion, and catalog tables into
+`aire-data.Aire_Data_Analytics`.
 
 ```text
-Stream: aireos-sellout-to-bigquery
+Stream: aireos-to-analytics
 Region: us-central1
 Publication: aireos_sellout_pub
-Replication slot: aireos_sellout_slot
-Source object: public.sellout
-Destination: aire-data.Aire_Data
+Replication slot: aireos_analytics_slot
+Source objects: 12 public-schema tables
+Destination: aire-data.Aire_Data_Analytics
 Write mode: Merge
 Maximum staleness: 15 minutes
 ```
 
-Datastream backfills existing facts and replicates subsequent inserts,
-updates, and deletes. The sales dashboard still queries its legacy table;
-switching it to the replicated facts is a separate integration step.
+The replicated objects are `sellout`, `customers`, `customer_retailers`,
+`customer_doh_targets`, `inventory_metric_types`, `inventory_metrics`,
+`promotions`, `promotion_skus`, `promotion_stores`, `retailers`, `stores`, and
+`skus`. Datastream backfills existing facts and replicates subsequent inserts,
+updates, and deletes. See the repository's
+[pipeline implementation notes](../docs/data-pipeline-implementation-notes.md)
+for verified counts and the remaining analytics work.
 
 ## Running tests
 
