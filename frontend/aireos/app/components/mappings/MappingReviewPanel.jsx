@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
-import Link from 'next/link';
+import BackLink from '@/components/ui/BackLink';
 import { AlertTriangle, EyeOff } from 'lucide-react';
 import StatusBadge from '../ui/StatusBadge';
 import ColumnMappingRow from './ColumnMappingRow';
@@ -315,14 +315,9 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
           </ul>
         )}
 
-        <div className="mt-5 flex flex-wrap gap-3">
-          <Link href="/upload" className={primary}>
-            Back to uploads
-          </Link>
-          <Link href="/mappings" className={secondary}>
-            All mappings
-          </Link>
-        </div>
+        <BackLink href="/upload" className="mt-5">
+          Back to Upload
+        </BackLink>
       </section>
     );
   }
@@ -346,9 +341,6 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
               </p>
             )}
           </div>
-          <Link href="/mappings" className={secondary}>
-            All mappings
-          </Link>
         </div>
 
         {readOnly && (

@@ -1,8 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
 import PageLayout from '@/components/layout/PageLayout';
+import BackLink from '@/components/ui/BackLink';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import RefreshButton from '@/components/ui/RefreshButton';
 import { MappingReview } from '@/components/mappings/MappingReview';
@@ -195,12 +195,7 @@ export default function MappingsPage() {
       title="Stored mappings"
       headerExtra={
         <div className="ml-auto flex items-center gap-2">
-          <Link
-            href="/upload"
-            className="rounded-md border border-violet bg-white px-3 py-1.5 text-xs font-medium text-deep-violet-blue transition hover:bg-lavander"
-          >
-            Back to Upload
-          </Link>
+          <BackLink href="/upload">Back to Upload</BackLink>
           <RefreshButton
             onClick={loadMappings}
             isRefreshing={isLoadingMappings}
