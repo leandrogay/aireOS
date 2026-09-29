@@ -50,7 +50,7 @@ from openpyxl import Workbook
 from openpyxl.chart import BarChart as XlsxBarChart, Reference
 from openpyxl.styles import Font as XlsxFont, Alignment as XlsxAlignment
 
-from app.services import bigquery, promotion_service
+from app.services import bigquery, promotion_service, sellout_lookup
 
 ENV_PATH = Path(__file__).resolve().parents[2] / ".env.backend"
 load_dotenv(ENV_PATH)
@@ -320,6 +320,8 @@ def _run_business_tool(name: str, tool_input: dict, default_customer: str):
         return ("BigQuery credentials are not configured on the server.", True, None)
     except GoogleAPICallError as e:
         return (f"Unable to reach BigQuery: {e.message}", True, None)
+    except sellout_lookup.CatalogUnavailableError as e:
+        return (f"Unable to reach the store/product catalog needed to label sales data: {e}", True, None)
 
     return (json.dumps(result, default=str), False, result)
 
