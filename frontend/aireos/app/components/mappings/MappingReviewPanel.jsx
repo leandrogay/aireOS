@@ -2,9 +2,10 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import BackLink from '@/components/ui/BackLink';
-import { AlertTriangle, EyeOff } from 'lucide-react';
+import { AlertTriangle, EyeOff, Trash2 } from 'lucide-react';
 import StatusBadge from '../ui/StatusBadge';
 import ColumnMappingRow from './ColumnMappingRow';
+import ConfirmDiscardDialog from './ConfirmDiscardDialog';
 import FieldCoverage from './FieldCoverage';
 import {
   toColumnRows,
@@ -17,6 +18,7 @@ const button =
   'rounded-md border px-4 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-deep-violet-blue focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60';
 const primary = `${button} border-deep-violet-blue bg-deep-violet-blue text-white hover:opacity-90`;
 const secondary = `${button} border-violet bg-white text-deep-violet-blue hover:bg-lavander`;
+const destructive = `${button} border-red-300 bg-white text-red-700 hover:bg-red-50`;
 
 const STATE_BADGE = {
   builtin: { tone: 'neutral', label: 'Built-in mapping' },
@@ -107,8 +109,13 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
   const [approved, setApproved] = useState(null);
   const [preview, setPreview] = useState(null);
   const [previewError, setPreviewError] = useState('');
+  const [isConfirmingDiscard, setIsConfirmingDiscard] = useState(false);
+  const [discardError, setDiscardError] = useState('');
 
   const readOnly = mapping.editable === false;
+  // Only a proposal can be discarded — the backend has no delete for a
+  // confirmed mapping (DELETE /api/mappings/{fp}/pending only).
+  const canDiscard = !!onDiscard && mapping.state === 'pending';
   const issues = useMemo(
     () => reviewIssues(mapping, rows, confirmedColumns, mapping.requiredFields),
     [mapping, rows, confirmedColumns],
@@ -262,13 +269,16 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
     }
   }, [mapping, name, onApprove, rows, vendor]);
 
+  // Discard only runs from the confirm dialog. On success the page navigates
+  // away; on failure the dialog closes so the error beside the button shows.
   const handleDiscard = useCallback(async () => {
     setBusy('discard');
-    setMessage('');
+    setDiscardError('');
     try {
       await onDiscard();
     } catch (error) {
-      setMessage(error.message);
+      setIsConfirmingDiscard(false);
+      setDiscardError(error.message);
     } finally {
       setBusy(null);
     }
@@ -341,7 +351,31 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
               </p>
             )}
           </div>
+
+          {/* Up here rather than beside Approve: discarding throws the whole
+              proposal away, so it sits apart from the save flow and is
+              reachable without scrolling past every column. */}
+          {canDiscard && (
+            <button
+              type="button"
+              onClick={() => {
+                setDiscardError('');
+                setIsConfirmingDiscard(true);
+              }}
+              disabled={busy !== null}
+              className={`${destructive} inline-flex items-center gap-2`}
+            >
+              <Trash2 aria-hidden="true" className="size-4" />
+              Discard proposal
+            </button>
+          )}
         </div>
+
+        {discardError && (
+          <p className="mb-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            {discardError}
+          </p>
+        )}
 
         {readOnly && (
           <p className="rounded-lg border border-violet bg-lavander/50 p-3 text-sm text-deep-violet-blue">
@@ -490,16 +524,6 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
           )}
 
           <div className="mt-5 flex flex-wrap items-center justify-end gap-3">
-            {onDiscard && mapping.state === 'pending' && (
-              <button
-                type="button"
-                onClick={handleDiscard}
-                disabled={busy !== null}
-                className={`${button} border-red-300 bg-white text-red-700 hover:bg-red-50`}
-              >
-                {busy === 'discard' ? 'Discarding…' : 'Discard proposal'}
-              </button>
-            )}
             <button
               type="button"
               onClick={handleApprove}
@@ -511,6 +535,13 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
           </div>
         </section>
       )}
+
+      <ConfirmDiscardDialog
+        mapping={isConfirmingDiscard ? mapping : null}
+        isDiscarding={busy === 'discard'}
+        onCancel={() => setIsConfirmingDiscard(false)}
+        onConfirm={handleDiscard}
+      />
     </div>
   );
 }

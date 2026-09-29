@@ -241,22 +241,3 @@ export function reviewIssues(mapping, rows, confirmedColumns, requiredFields) {
     ignoredColumns: rows.filter((row) => !row.fields.length).map((row) => row.column),
   };
 }
-
-// The fields a mapping cannot be confirmed without.
-export const REQUIRED_TARGET_FIELDS = ['sku', 'quantity_units', 'revenue', 'period_start'];
-
-/**
- * Recomputes a mapping's `unmapped` and `requiredMissing` after its rules
- * change. A rule set is indexed by target field: a required field is missing
- * when its rule has no source, and a column is unread when no rule points at it.
- */
-export function computeRuleMeta(mapping, rules) {
-  const read = new Set(rules.flatMap((rule) => rule.sourceColumns || []).filter(Boolean));
-
-  return {
-    unmapped: (mapping.columns || []).filter((column) => !read.has(column)),
-    requiredMissing: REQUIRED_TARGET_FIELDS.filter(
-      (field) => !rules.some((rule) => rule.targetField === field && rule.sourceColumn),
-    ),
-  };
-}
