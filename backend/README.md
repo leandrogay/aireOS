@@ -13,10 +13,20 @@ On macOS/Linux, use `python3 -m venv venv` and `source venv/bin/activate`.
 
 ### Environment variables
 
-Copy `.env.example` to `.env.backend` and fill in the local values. Set the
-credential paths to your GCP service account key. Never commit `.env.backend`
-or credential files. Environment variables already set by the process take
-precedence over the local file.
+Copy `.env.example` to `.env.backend` in `backend/` and fill in the values, then place your GCP service account credentials at `backend/gcp-key.json`.
+
+```bash
+cd backend
+cp .env.example .env.backend
+```
+
+All settings are read once by `app/config.py`, which is the only module that
+touches `os.environ` or loads the env file. Add new settings there rather than
+calling `os.environ.get` from a service.
+
+Path-valued settings (`SERVICE_ACCOUNT_KEY_PATH`, `GOOGLE_APPLICATION_CREDENTIALS`)
+are resolved relative to `backend/`, so `./gcp-key.json` works no matter which
+directory you launch the app from.
 
 ## Serving the backend
 
@@ -92,18 +102,21 @@ services rather than uploading data to live infrastructure.
 
 ```text
 backend/
-|-- app/
-|   |-- config.py          # Shared local environment loading
-|   |-- routers/           # API routes
-|   |-- schemas/           # Request models and ingestion fields
-|   `-- main.py            # FastAPI entrypoint
-|-- migrations/           # Reviewed database setup scripts
-|-- tests/
-|-- venv/                 # Local virtual environment (not committed)
-|-- .env.backend          # Local secrets (not committed)
-|-- .env.example          # Safe configuration template
-|-- gcp-key.json          # Service account key (not committed)
-|-- pytest.ini
-|-- requirements.txt
-`-- README.md
+├── app/
+│   ├── routers/       # API route definitions
+│   ├── schemas/        # Pydantic request/response models
+│   ├── services/       # Business logic
+│   ├── config.py        # Central settings; the only reader of .env.backend
+│   └── main.py          # FastAPI app entrypoint
+├── migrations/           # Reviewed database setup scripts
+├── tests/                # Test suite
+├── venv/                 # Virtual environment (not committed)
+├── .env.example          # Template for .env.backend (committed)
+├── .env.backend          # Local environment variables (not committed)
+├── gcp-key.json           # GCP service account key (not committed)
+├── pytest.ini
+├── requirements.txt
+└── README.md
 ```
+
+> `.env.backend` and `gcp-key.json` contain secrets — make sure they're in `.gitignore` and never committed.

@@ -1,7 +1,26 @@
 import pandas as pd
 import pytest
 
-from app.services import bigquery
+from app.services import bigquery, sellout_lookup
+
+
+@pytest.fixture(autouse=True)
+def _fake_catalog(monkeypatch):
+    # Only retailer ids matter here (55/57 are the real fairprice online/offline
+    # ids); serve them from memory so nothing reaches Cloud SQL.
+    sellout_lookup.reset_cache()
+    monkeypatch.setattr(
+        sellout_lookup,
+        "_load",
+        lambda: {
+            "retailer_ids": {"fairprice_online": 55, "fairprice_offline": 57},
+            "retailer_names": {55: "fairprice_online", 57: "fairprice_offline"},
+            "stores": {},
+            "skus": {},
+        },
+    )
+    yield
+    sellout_lookup.reset_cache()
 
 
 class FakeQueryJob:
@@ -242,6 +261,32 @@ def test_period_comparison_reports_unavailable_when_previous_has_no_rows(monkeyp
     assert result["previous"]["available"] is False
 
 
+def test_period_comparison_handles_null_previous_row_count(monkeypatch):
+    # Regression: BigQuery's SUM(IF(...)) returns NULL (not 0) when a
+    # scoped query -- e.g. compare_periods filtered to one store with no
+    # prior-period sales at all -- matches zero rows. pandas surfaces that
+    # as a nullable NA, and `bool(NA > 0)` raises TypeError ("boolean value
+    # of NA is ambiguous") rather than evaluating to False.
+    _fix_anchor(monkeypatch, "2026-08-17")
+    df = pd.DataFrame(
+        [
+            {
+                "current_revenue": 100.0,
+                "current_units": 5.0,
+                "previous_revenue": pd.NA,
+                "previous_units": pd.NA,
+                "previous_row_count": pd.NA,
+            }
+        ]
+    )
+    _install_fake_bq_client(monkeypatch, df)
+
+    result = bigquery.get_period_comparison(comparison_type="wow", mode="offline", store="S999")
+
+    assert result["previous"]["available"] is False
+    assert result["previous"]["revenue"] == 0.0
+
+
 def test_period_comparison_custom_dates_default_previous_to_one_month_back(monkeypatch):
     _install_fake_bq_client(monkeypatch, _totals_row())
 
@@ -264,3 +309,59 @@ def test_period_comparison_custom_dates_used_verbatim_when_both_given(monkeypatc
     assert result["current"] == {"start": "2026-08-01", "end": "2026-08-19", "revenue": 0.0, "units": 0.0}
     assert result["previous"]["start"] == "2025-01-01"
     assert result["previous"]["end"] == "2025-01-19"
+
+
+def test_period_comparison_explicit_dates_win_over_comparison_type(monkeypatch):
+    # Regression: the AI assistant's tool schema documents comparison_type
+    # as something to omit when giving explicit dates, but nothing stops a
+    # model from sending both -- observed live, "mom" alongside explicit
+    # June dates silently substituted the auto-derived "month so far" range
+    # (whatever today's date happened to be) instead of June. The dashboard
+    # frontend never sends both (so this doesn't change its behavior), but
+    # a caller that does must get the dates it actually asked for.
+    _fix_anchor(monkeypatch, "2026-08-17")  # if comparison_type won, this anchor would leak into the result
+    _install_fake_bq_client(monkeypatch, _totals_row(current_revenue=33203.84, current_units=3470))
+
+    result = bigquery.get_period_comparison(
+        comparison_type="mom",
+        current_start="2026-06-01",
+        current_end="2026-06-30",
+        mode="offline",
+    )
+
+    assert result["current"]["start"] == "2026-06-01"
+    assert result["current"]["end"] == "2026-06-30"
+    assert result["previous"]["start"] == "2026-05-01"
+    assert result["previous"]["end"] == "2026-05-30"
+
+
+# ---- retailer scoping: the table stores retailer_id ------------------------------
+
+def test_period_comparison_mode_scopes_to_that_channels_retailer_id(monkeypatch):
+    _fix_anchor(monkeypatch, "2026-08-17")
+    fake_client = _install_fake_bq_client(monkeypatch, _totals_row())
+
+    bigquery.get_period_comparison(comparison_type="wow", mode="offline")
+
+    params = {p.name: p for p in fake_client.last_job_config.query_parameters}
+    assert "retailer_id IN UNNEST(@retailer_ids)" in fake_client.last_query
+    assert list(params["retailer_ids"].values) == [57]  # fairprice_offline
+
+
+def test_period_comparison_without_mode_has_no_retailer_filter(monkeypatch):
+    _fix_anchor(monkeypatch, "2026-08-17")
+    fake_client = _install_fake_bq_client(monkeypatch, _totals_row())
+
+    bigquery.get_period_comparison(comparison_type="wow")
+
+    assert "retailer_id" not in fake_client.last_query
+
+
+def test_latest_week_start_scopes_to_the_retailer_id(monkeypatch):
+    fake_client = _install_fake_bq_client(monkeypatch, pd.DataFrame({"period_start": [pd.Timestamp("2026-08-13")]}))
+
+    result = bigquery._latest_week_start("fairprice_online")
+
+    params = {p.name: p for p in fake_client.last_job_config.query_parameters}
+    assert list(params["retailer_ids"].values) == [55]
+    assert result == pd.Timestamp("2026-08-13")

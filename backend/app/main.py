@@ -1,10 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.config import load_backend_env
-
-load_backend_env()
-
-from app.routers import sales, uploads, promotions, catalog
+from app import config  # noqa: F401
+from app.routers import sales, uploads, mappings, promotions, catalog, assistant
 
 app = FastAPI()
 
@@ -20,9 +17,11 @@ app.add_middleware(
 )
 
 app.include_router(uploads.router)
+app.include_router(mappings.router)
 app.include_router(sales.router)
 app.include_router(catalog.router)
 app.include_router(promotions.router)
+app.include_router(assistant.router)
 
 
 @app.get("/")

@@ -52,8 +52,11 @@ def _fake_database():
 
     def execute(statement, parameters=None):
         result = MagicMock()
-        if "RETURNING retailer_id" in str(statement):
-            result.scalar_one.return_value = 7
+        sql = str(statement)
+        if "RETURNING" in sql and "retailer_name" in sql:
+            result.all.return_value = [("fairprice_offline", 7)]
+        elif "RETURNING" in sql and "store_code" in sql:
+            result.all.return_value = [(7, "420", 42)]
         return result
 
     connection.execute.side_effect = execute
@@ -97,16 +100,34 @@ def test_load_clean_rows_reuses_master_rows_and_upserts_each_fact():
 
 
 def test_master_references_delegate_to_shared_catalog_helpers(monkeypatch):
-    retailer_helper = MagicMock(return_value=7)
-    store_helper = MagicMock(return_value=42)
-    monkeypatch.setattr(sellout_service.catalog_service, "get_or_create_retailer", retailer_helper)
-    monkeypatch.setattr(sellout_service.catalog_service, "get_or_create_store", store_helper)
+    retailer_helper = MagicMock(return_value={"fairprice_offline": 7})
+    store_helper = MagicMock(return_value=[42])
+    monkeypatch.setattr(
+        sellout_service.catalog_service,
+        "get_or_create_retailers",
+        retailer_helper,
+    )
+    monkeypatch.setattr(
+        sellout_service.catalog_service,
+        "get_or_create_stores",
+        store_helper,
+    )
     engine, connection = _fake_database()
 
     sellout_service.load_clean_rows(_dataframe(), engine=engine)
 
-    retailer_helper.assert_called_once_with(connection, "fairprice_offline")
-    store_helper.assert_called_once_with(connection, 7, "AMK Hypermart", "420", "HYPER")
+    retailer_helper.assert_called_once_with(connection, ["fairprice_offline"])
+    store_helper.assert_called_once_with(
+        connection,
+        [
+            {
+                "retailer_id": 7,
+                "store_code": "420",
+                "store_name": "AMK Hypermart",
+                "store_format": "HYPER",
+            }
+        ],
+    )
 
 
 def test_replacement_deletes_old_source_rows_inside_same_transaction():

@@ -1,18 +1,14 @@
-import os
 from threading import Lock
-
 import pg8000
 import sqlalchemy
 from google.cloud.sql.connector import Connector, IPTypes
 from google.oauth2 import service_account
 from sqlalchemy.engine import Engine
-
-from app.config import load_backend_env
-
-load_backend_env()
+from app import config
 
 
 _engine: Engine | None = None
+_read_engine: Engine | None = None
 _connector: Connector | None = None
 _lock = Lock()
 
@@ -36,15 +32,8 @@ def connect_with_connector() -> Engine:
         if _engine is not None:
             return _engine
 
-        instance_connection_name = os.environ[
-            "POSTGRESQL_INSTANCE_CONNECTION_NAME"
-        ]
-
-        db_iam_user = os.environ["DB_IAM_USER"]
-        db_name = os.environ["DB_NAME"]
-
         credentials = service_account.Credentials.from_service_account_file(
-            os.environ["GOOGLE_APPLICATION_CREDENTIALS"],
+            config.require_file("GOOGLE_APPLICATION_CREDENTIALS"),
             scopes=[
                 "https://www.googleapis.com/auth/sqlservice.admin"
             ],
@@ -55,32 +44,84 @@ def connect_with_connector() -> Engine:
             refresh_strategy="LAZY",
         )
 
-        def getconn() -> pg8000.dbapi.Connection:
-            return _connector.connect(
-                instance_connection_name,
-                "pg8000",
-                user=db_iam_user,
-                db=db_name,
-                ip_type=IPTypes.PUBLIC,
-                enable_iam_auth=True,
-            )
-
-        _engine = sqlalchemy.create_engine(
-            "postgresql+pg8000://",
-            creator=getconn,
-
-            # Check connections before giving them to the application.
-            pool_pre_ping=True,
-
-            # Prevent keeping old Cloud SQL connections forever.
-            pool_recycle=1800,
-
-            # Example pool settings.
-            pool_size=5,
-            max_overflow=10,
-        )
+        _engine = _create_engine()
 
         return _engine
+
+
+def connect_with_connector_autocommit() -> Engine:
+    """
+    Returns a shared SQLAlchemy Engine whose connections use
+    AUTOCOMMIT mode. Intended for single-SELECT read paths only.
+
+    For read-only queries against a remote Cloud SQL instance,
+    AUTOCOMMIT avoids unnecessary transaction management around
+    individual statements, reducing network round trips and
+    connection overhead.
+
+    A dedicated engine is used so that the read path consistently
+    uses AUTOCOMMIT without repeatedly changing the connection's
+    isolation level.
+    """
+
+    global _read_engine
+
+    if _read_engine is not None:
+        return _read_engine
+
+    # Reuse the connector (and its cached IAM token / certificate).
+    connect_with_connector()
+
+    with _lock:
+        if _read_engine is not None:
+            return _read_engine
+
+        _read_engine = _create_engine(
+            isolation_level="AUTOCOMMIT",
+        )
+
+        return _read_engine
+
+
+def _create_engine(**engine_kwargs) -> Engine:
+    """
+    Builds an Engine on top of the shared Cloud SQL Connector.
+    Must be called with _connector already initialised.
+    """
+
+    instance_connection_name = config.require(
+        "POSTGRESQL_INSTANCE_CONNECTION_NAME"
+    )
+
+    db_iam_user = config.require("DB_IAM_USER")
+    db_name = config.require("DB_NAME")
+
+    def getconn() -> pg8000.dbapi.Connection:
+        return _connector.connect(
+            instance_connection_name,
+            "pg8000",
+            user=db_iam_user,
+            db=db_name,
+            ip_type=IPTypes.PUBLIC,
+            enable_iam_auth=True,
+        )
+
+    return sqlalchemy.create_engine(
+        "postgresql+pg8000://",
+        creator=getconn,
+
+        # Check connections before giving them to the application.
+        pool_pre_ping=True,
+
+        # Prevent keeping old Cloud SQL connections forever.
+        pool_recycle=1800,
+
+        # Example pool settings.
+        pool_size=5,
+        max_overflow=10,
+
+        **engine_kwargs,
+    )
 
 
 def close_database() -> None:
@@ -89,7 +130,12 @@ def close_database() -> None:
     """
 
     global _engine
+    global _read_engine
     global _connector
+
+    if _read_engine is not None:
+        _read_engine.dispose()
+        _read_engine = None
 
     if _engine is not None:
         _engine.dispose()

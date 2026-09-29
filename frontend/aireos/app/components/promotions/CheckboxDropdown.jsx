@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { cn } from '@/lib/utils';
+
 /**
  * Closed-by-default dropdown whose menu is a checkbox list.
  *
@@ -9,21 +11,24 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * the panel; clicking outside closes it. Selection stays in the parent —
  * this component only controls open/close.
  *
- * When searchable, children may be a function `(query) => nodes` so the
- * parent can filter its checkbox rows. The query is cleared on close.
+ * Children may be a function `(query, close) => nodes` so the parent can
+ * filter its rows by the search text, or close the panel after a
+ * single-select pick. The query is cleared on close.
  *
  * @param {object} props
  * @param {string} props.summary text shown on the closed button
  * @param {string} [props.placeholder]
  * @param {boolean} [props.disabled]
+ * @param {boolean} [props.invalid] red border after a failed submit
  * @param {boolean} [props.searchable]
  * @param {string} [props.searchPlaceholder]
- * @param {React.ReactNode | ((query: string) => React.ReactNode)} props.children
+ * @param {React.ReactNode | ((query: string, close: () => void) => React.ReactNode)} props.children
  */
 export default function CheckboxDropdown({
   summary,
   placeholder = 'Select…',
   disabled = false,
+  invalid = false,
   searchable = false,
   searchPlaceholder = 'Search…',
   children,
@@ -67,7 +72,7 @@ export default function CheckboxDropdown({
     }
   }, [open, searchable]);
 
-  const content = typeof children === 'function' ? children(query) : children;
+  const content = typeof children === 'function' ? children(query, close) : children;
 
   return (
     <div ref={rootRef} className="relative w-full min-w-0 max-w-full">
@@ -83,7 +88,10 @@ export default function CheckboxDropdown({
           }
           setOpen(true);
         }}
-        className="flex w-full min-w-0 max-w-full items-center justify-between overflow-hidden rounded-md border border-lavander bg-cream px-2.5 py-1 text-left text-sm text-deep-violet-blue focus:border-violet focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+        className={cn(
+          'flex w-full min-w-0 max-w-full items-center justify-between overflow-hidden rounded-md border border-lavander bg-cream px-2.5 py-1.5 text-left text-sm text-deep-violet-blue focus:border-violet focus:outline-none disabled:cursor-not-allowed disabled:opacity-60',
+          invalid && 'border-red-400 focus:border-red-500',
+        )}
       >
         <span className={`min-w-0 flex-1 truncate ${summary ? '' : 'text-deep-violet-blue/50'}`}>
           {summary || placeholder}

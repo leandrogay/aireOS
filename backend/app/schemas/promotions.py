@@ -9,11 +9,19 @@ from pydantic import Field, model_validator
 from app.schemas.catalog import SkuItem, _Base
 
 
+# Mirrors promo_type_enum in Postgres. Pack vs carton is not
+# a separate column: a carton promotion is the base type with
+# a "carton_" prefix, and the frontend splits/joins it (see
+# splitPromoType / composePromoType in utils/promotionForm.js).
 PromoType = Literal[
-    "regular",
+    "monthly",
     "side_offer",
-    "carton",
     "bundle",
+    "others",
+    "carton_monthly",
+    "carton_side_offer",
+    "carton_bundle",
+    "carton_others",
 ]
 
 
@@ -22,7 +30,7 @@ PromoType = Literal[
 #
 # One promotion runs in many stores. Each entry names a store
 # the same way the catalog does (retailer + store_code), so
-# the service can resolve it through get_or_create_store and
+# the service can resolve it through get_or_create_stores and
 # link it via promotion_stores.
 # ============================================================
 
@@ -67,7 +75,12 @@ class PromotionBase(_Base):
 
     promo_type: PromoType
 
-    promotion_mechanic: str | None = None
+    # Free text typed by the user (e.g. "25% Off"), not an
+    # enum. Same cap as voucher; the column itself is text.
+    promotion_mechanic: str | None = Field(
+        default=None,
+        max_length=255,
+    )
 
     voucher: str | None = Field(
         default=None,

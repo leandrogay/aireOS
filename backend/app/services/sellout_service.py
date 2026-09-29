@@ -1,13 +1,13 @@
 """Persist validated sell-out rows to the normalised Cloud SQL schema."""
 
 import datetime
-import os
 from collections import Counter
 
 import pandas as pd
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
+from app import config
 from app.services import catalog_service, sql
 
 
@@ -113,9 +113,7 @@ def summarize_clean_rows(dataframe: pd.DataFrame) -> dict:
 
 
 def cloud_sql_loading_enabled() -> bool:
-    return os.environ.get("CLOUD_SQL_LOAD_ENABLED", "false").strip().lower() in {
-        "1", "true", "yes", "on",
-    }
+    return config.cloud_sql_loading_enabled()
 
 
 def _insert_missing_sku(connection: Connection, row: dict) -> None:
@@ -246,28 +244,40 @@ def load_clean_rows(
                         {"source_file": source_file},
                     )
 
-            retailer_ids: dict[str, int] = {}
-            stores_seen: set[tuple[int, str]] = set()
+            retailer_names = list(
+                dict.fromkeys(str(row["retailer"]) for row in records)
+            )
+            retailer_ids = catalog_service.get_or_create_retailers(
+                connection,
+                retailer_names,
+            )
+
+            stores_by_key: dict[tuple[int, str], dict] = {}
+            for row in records:
+                retailer_id = retailer_ids[str(row["retailer"])]
+                store_code = str(row["store_code"])
+                store_key = (retailer_id, store_code)
+                stores_by_key.setdefault(
+                    store_key,
+                    {
+                        "retailer_id": retailer_id,
+                        "store_code": store_code,
+                        "store_name": row.get("store_name") or store_code,
+                        "store_format": row.get("store_format"),
+                    },
+                )
+
+            catalog_service.get_or_create_stores(
+                connection,
+                list(stores_by_key.values()),
+            )
+
             skus_seen: set[str] = set()
             facts: list[dict] = []
 
             for row in records:
                 retailer = str(row["retailer"])
-                retailer_id = retailer_ids.get(retailer)
-                if retailer_id is None:
-                    retailer_id = catalog_service.get_or_create_retailer(connection, retailer)
-                    retailer_ids[retailer] = retailer_id
-
-                store_key = (retailer_id, str(row["store_code"]))
-                if store_key not in stores_seen:
-                    catalog_service.get_or_create_store(
-                        connection,
-                        retailer_id,
-                        row.get("store_name") or row["store_code"],
-                        row["store_code"],
-                        row.get("store_format"),
-                    )
-                    stores_seen.add(store_key)
+                retailer_id = retailer_ids[retailer]
 
                 sku = str(row["sku"])
                 if sku not in skus_seen:

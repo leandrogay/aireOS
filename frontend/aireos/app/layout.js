@@ -1,5 +1,6 @@
 import { Geist_Mono, DM_Sans, DM_Serif_Display } from "next/font/google";
 import "./globals.css";
+import AssistantWidget from "./components/assistant/AssistantWidget";
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
@@ -30,7 +31,10 @@ export default function RootLayout({ children }) {
       lang="en"
       className={`${dmSans.variable} ${dmSerif.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col font-sans">{children}</body>
+      <body className="min-h-full flex flex-col font-sans">
+        {children}
+        <AssistantWidget />
+      </body>
     </html>
   );
 }

@@ -1,21 +1,40 @@
+// Base promo types shown in the dropdown. The API's PromoType
+// Literal (backend schemas/promotions.py) is these four plus a
+// `carton_` prefixed copy of each; see composePromoType.
 export const PROMO_TYPES = [
-  { value: 'regular', label: 'Regular' },
-  { value: 'side_offer', label: 'Side offer' },
-  { value: 'carton', label: 'Carton' },
+  { value: 'monthly', label: 'Monthly' },
+  { value: 'side_offer', label: 'Side Offer' },
   { value: 'bundle', label: 'Bundle' },
+  { value: 'others', label: 'Others' },
 ];
 
-export const PROMO_MECHANICS = [
-  'No Promo',
-  '27% Off',
-  '25% Off',
-  '20% Off',
-  '30% Off',
-  '33% Off',
-  'Buy 2 Get 25% Off',
-  'Buy 2 Get 30% Off',
-  'Buy 2 Get 1 Free',
+export const PACK_TYPES = [
+  { value: 'pack', label: 'Pack' },
+  { value: 'carton', label: 'Carton' },
 ];
+
+const CARTON_PREFIX = 'carton_';
+
+// Monthly promotions always run for one whole calendar month, so the form
+// swaps the start/end date fields for a month picker.
+export const MONTHLY_PROMO_TYPE = 'monthly';
+
+export const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+const ISO_YMD = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export const EMPTY_PROMOTION_FORM = {
   selectedRetailerIds: [],
@@ -23,8 +42,9 @@ export const EMPTY_PROMOTION_FORM = {
   periodStart: '',
   periodEnd: '',
   periodLabel: '',
-  promoType: 'regular',
-  promotionMechanic: PROMO_MECHANICS[0],
+  promoType: 'monthly',
+  packType: 'pack',
+  promotionMechanic: '',
   voucher: '',
   skuRanges: [],
 };
@@ -40,6 +60,77 @@ export function formatYmd(date) {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+/**
+ * Year and zero-based month of a YYYY-MM-DD string, or null when the
+ * value is blank or not a date.
+ *
+ * @param {string | null | undefined} value
+ * @returns {{ year: number, monthIndex: number } | null}
+ */
+export function yearMonthFromYmd(value) {
+  const match = ISO_YMD.exec(String(value || '').slice(0, 10));
+  if (!match) return null;
+  const monthIndex = Number(match[2]) - 1;
+  if (monthIndex < 0 || monthIndex > 11) return null;
+  return { year: Number(match[1]), monthIndex };
+}
+
+/**
+ * First and last day of one calendar month, as the form's periodStart /
+ * periodEnd. Day 0 of the next month is the last day of this one, so
+ * leap years and 30/31-day months need no special case.
+ *
+ * @param {number} year
+ * @param {number} monthIndex 0 = January
+ * @returns {{ periodStart: string, periodEnd: string }}
+ */
+export function monthPeriod(year, monthIndex) {
+  return {
+    periodStart: formatYmd(new Date(year, monthIndex, 1)),
+    periodEnd: formatYmd(new Date(year, monthIndex + 1, 0)),
+  };
+}
+
+/**
+ * Stretch a date range to the whole month of its start date (or its end
+ * date when only that is set). Blank dates stay blank.
+ *
+ * @param {string} periodStart
+ * @param {string} periodEnd
+ * @returns {{ periodStart: string, periodEnd: string }}
+ */
+export function snapPeriodToMonth(periodStart, periodEnd) {
+  const anchor = yearMonthFromYmd(periodStart) || yearMonthFromYmd(periodEnd);
+  if (!anchor) return { periodStart, periodEnd };
+  return monthPeriod(anchor.year, anchor.monthIndex);
+}
+
+/**
+ * Month picker label for a YYYY-MM-DD value, e.g. `August 2026`.
+ *
+ * @param {string | null | undefined} value
+ * @returns {string}
+ */
+export function formatMonthLabel(value) {
+  const parts = yearMonthFromYmd(value);
+  if (!parts) return '';
+  return `${MONTH_NAMES[parts.monthIndex]} ${parts.year}`;
+}
+
+/**
+ * Form fields to patch when a promo type is picked. Choosing Monthly
+ * snaps any dates already entered to the start date's whole month;
+ * other types keep the dates as they are.
+ *
+ * @param {typeof EMPTY_PROMOTION_FORM} form
+ * @param {string} promoType one of PROMO_TYPES
+ * @returns {object}
+ */
+export function promoTypePatch(form, promoType) {
+  if (promoType !== MONTHLY_PROMO_TYPE) return { promoType };
+  return { promoType, ...snapPeriodToMonth(form.periodStart, form.periodEnd) };
 }
 
 /**
@@ -88,6 +179,17 @@ export function formatVoucher(value) {
 }
 
 /**
+ * Trim promotion_mechanic text for the API. Blank becomes null.
+ *
+ * @param {string | null | undefined} value
+ * @returns {string | null}
+ */
+export function formatPromotionMechanic(value) {
+  const text = String(value ?? '').trim();
+  return text || null;
+}
+
+/**
  * Distinct sku_range labels from GET /api/promotions.skus.
  * A promotion links many product SKUs in a range, so the UI
  * shows each range once.
@@ -131,29 +233,76 @@ export function formFromPromotion(promotion, retailers = []) {
     if (code) storeCodes.add(code);
   }
 
+  const { promoType, packType } = splitPromoType(promotion.promo_type);
+  const storedStart = promotion.period_start ? String(promotion.period_start).slice(0, 10) : '';
+  const storedEnd = promotion.period_end ? String(promotion.period_end).slice(0, 10) : '';
+  // Older Monthly rows may not span a whole month; the month picker can
+  // only show whole months, so snap to the start date's month.
+  const period =
+    promoType === MONTHLY_PROMO_TYPE
+      ? snapPeriodToMonth(storedStart, storedEnd)
+      : { periodStart: storedStart, periodEnd: storedEnd };
+
   return {
     ...EMPTY_PROMOTION_FORM,
     selectedRetailerIds: [...retailerIds],
     selectedStoreCodes: [...storeCodes],
-    periodStart: promotion.period_start ? String(promotion.period_start).slice(0, 10) : '',
-    periodEnd: promotion.period_end ? String(promotion.period_end).slice(0, 10) : '',
+    periodStart: period.periodStart,
+    periodEnd: period.periodEnd,
     periodLabel: promotion.period_label ? String(promotion.period_label) : '',
-    promoType: promotion.promo_type || 'regular',
-    promotionMechanic: promotion.promotion_mechanic || PROMO_MECHANICS[0],
+    promoType,
+    packType,
+    promotionMechanic: promotion.promotion_mechanic ? String(promotion.promotion_mechanic) : '',
     voucher: promotion.voucher ? String(promotion.voucher) : '',
     skuRanges: uniqueSkuRangeLabels(promotion.skus),
   };
 }
 
 /**
- * Human-readable label for a stored promo_type enum value.
+ * Join the form's base type and pack type into the API's promo_type
+ * value: `monthly` for a pack, `carton_monthly` for a carton.
+ *
+ * @param {string} promoType one of PROMO_TYPES
+ * @param {string} packType one of PACK_TYPES
+ * @returns {string}
+ */
+export function composePromoType(promoType, packType) {
+  if (!promoType) return '';
+  return packType === 'carton' ? `${CARTON_PREFIX}${promoType}` : promoType;
+}
+
+/**
+ * Split a stored promo_type back into the form's two fields.
+ * Unknown values fall back to the blank-form defaults.
+ *
+ * @param {string | null | undefined} value
+ * @returns {{ promoType: string, packType: string }}
+ */
+export function splitPromoType(value) {
+  const raw = String(value || '');
+  const isCarton = raw.startsWith(CARTON_PREFIX);
+  const base = isCarton ? raw.slice(CARTON_PREFIX.length) : raw;
+  const known = PROMO_TYPES.some((item) => item.value === base);
+  return {
+    promoType: known ? base : EMPTY_PROMOTION_FORM.promoType,
+    packType: isCarton ? 'carton' : EMPTY_PROMOTION_FORM.packType,
+  };
+}
+
+/**
+ * Human-readable label for a stored promo_type enum value, e.g.
+ * `carton_side_offer` → `Carton Side Offer`.
  *
  * @param {string | null | undefined} value
  * @returns {string}
  */
 export function promoTypeLabel(value) {
-  const match = PROMO_TYPES.find((item) => item.value === value);
-  return match ? match.label : value || '—';
+  const raw = String(value || '');
+  const isCarton = raw.startsWith(CARTON_PREFIX);
+  const base = isCarton ? raw.slice(CARTON_PREFIX.length) : raw;
+  const match = PROMO_TYPES.find((item) => item.value === base);
+  if (!match) return raw || '—';
+  return isCarton ? `Carton ${match.label}` : match.label;
 }
 
 /**
@@ -392,25 +541,38 @@ export function validatePromotionForm(form, retailers, stores = []) {
     }
   }
 
-  if (!form.periodStart) {
-    errors.periodStart = 'Select a start date.';
-  }
-  if (!form.periodEnd) {
-    errors.periodEnd = 'Select an end date.';
-  } else if (form.periodStart && form.periodEnd < form.periodStart) {
-    errors.periodEnd = 'End date cannot be earlier than the start date.';
+  if (form.promoType === MONTHLY_PROMO_TYPE) {
+    // One month picker fills both dates, so it gets one message.
+    if (!form.periodStart || !form.periodEnd) {
+      errors.periodStart = 'Select a month.';
+    }
+  } else {
+    if (!form.periodStart) {
+      errors.periodStart = 'Select a start date.';
+    }
+    if (!form.periodEnd) {
+      errors.periodEnd = 'Select an end date.';
+    } else if (form.periodStart && form.periodEnd < form.periodStart) {
+      errors.periodEnd = 'End date cannot be earlier than the start date.';
+    }
   }
 
   if (String(form.periodLabel ?? '').trim().length > 100) {
     errors.periodLabel = 'Period label must be 100 characters or fewer.';
   }
 
-  if (!form.promoType) {
+  if (!PROMO_TYPES.some((item) => item.value === form.promoType)) {
     errors.promoType = 'Promo type is required.';
   }
+  if (!PACK_TYPES.some((item) => item.value === form.packType)) {
+    errors.packType = 'Choose pack or carton.';
+  }
 
-  if (!form.promotionMechanic) {
-    errors.promotionMechanic = 'Select a promo mechanic.';
+  const promotionMechanic = String(form.promotionMechanic ?? '').trim();
+  if (!promotionMechanic) {
+    errors.promotionMechanic = 'Enter a promo mechanic.';
+  } else if (promotionMechanic.length > 255) {
+    errors.promotionMechanic = 'Promo mechanic must be 255 characters or fewer.';
   }
 
   if (String(form.voucher ?? '').trim().length > 255) {
@@ -458,8 +620,8 @@ export function buildPromotionPayload(form, storeRefs, period) {
       period && Object.prototype.hasOwnProperty.call(period, 'periodLabel')
         ? period.periodLabel
         : formatPeriodLabel(form.periodLabel),
-    promo_type: form.promoType,
-    promotion_mechanic: form.promotionMechanic || null,
+    promo_type: composePromoType(form.promoType, form.packType),
+    promotion_mechanic: formatPromotionMechanic(form.promotionMechanic),
     voucher: formatVoucher(form.voucher),
     skus: form.skuRanges.map((range) => ({
       sku: range,

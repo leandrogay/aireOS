@@ -1,6 +1,5 @@
 import re
 from typing import Any, Dict, List, Optional
-
 import pandas as pd
 
 from app.schemas.sellout import BUSINESS_COLUMNS

@@ -1,5 +1,7 @@
 'use client';
 
+import Link from 'next/link';
+
 const btn =
   'rounded-md border px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60';
 
@@ -39,7 +41,14 @@ export const MappingReview = ({
           <div className="mb-2 inline-flex rounded-full border border-deep-violet-blue/20 bg-lavander px-3 py-1 text-xs font-semibold uppercase tracking-wide text-deep-violet-blue">
             {STATE_LABEL[mapping.state] || mapping.state}
           </div>
-          <h2 className="font-serif text-xl text-deep-violet-blue">Mapping Rules</h2>
+          <h2 className="font-serif text-xl text-deep-violet-blue">
+            {mapping.name || 'Unnamed mapping'}
+          </h2>
+          {mapping.vendor && (
+            <p className="text-sm text-deep-violet-blue/80">
+              Vendor: <span className="font-medium">{mapping.vendor}</span>
+            </p>
+          )}
           {mapping.filename && (
             <p className="text-sm text-deep-violet-blue/80">
               From: <span className="font-medium">{mapping.filename}</span>
@@ -142,6 +151,13 @@ export const MappingReview = ({
         </p>
 
         <div className="flex items-center gap-3">
+          <Link
+            href={`/mappings/${mapping.mappingId}`}
+            className={`${btn} border-violet bg-white text-deep-violet-blue hover:bg-lavander`}
+          >
+            {isPending ? 'Review and approve' : 'Open full review'}
+          </Link>
+
           {!isBuiltin && !isEditing && onStartEdit && (
             <button
               type="button"
@@ -175,14 +191,17 @@ export const MappingReview = ({
             </button>
           )}
 
-          {!isBuiltin && (isEditing || isPending) && (
+          {/* A first approval needs a name and a vendor, which the full review
+              collects — so only an amendment to an already-named mapping can
+              be saved from here. */}
+          {!isBuiltin && isEditing && !isPending && (
             <button
               type="button"
               onClick={() => onConfirm(mapping.mappingId)}
               disabled={disabled}
               className={`${btn} border-deep-violet-blue bg-deep-violet-blue text-white hover:opacity-90`}
             >
-              {isPending ? 'Confirm mapping' : 'Save amendments'}
+              Save amendments
             </button>
           )}
         </div>
