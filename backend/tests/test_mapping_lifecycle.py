@@ -182,6 +182,18 @@ def test_history_reports_the_mapping_name_once_there_is_one(monkeypatch):
     assert row["mapping_fingerprint"] == "abc123"
 
 
+def test_history_skips_the_folder_placeholder_object(monkeypatch):
+    # Creating the uploads/ folder in the Cloud Console stores a zero-byte
+    # object named "uploads/". It is not a file, and listed as one it showed up
+    # as a nameless upload with an "Unknown" status in an otherwise empty bucket.
+    placeholder = FakeBlob(storage.DESTINATION_PREFIX)
+    _install(monkeypatch, [placeholder, _upload_blob("week01.txt", "abc123", "mapped")])
+
+    rows = storage.list_uploads()
+
+    assert [row["filename"] for row in rows] == ["week01.txt"]
+
+
 # ---- what gets recorded on the upload in the first place ---------------------
 
 def test_a_partial_match_records_no_fingerprint_to_link_to():

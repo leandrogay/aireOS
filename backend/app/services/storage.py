@@ -386,6 +386,10 @@ def list_uploads(limit: int = 50) -> list[dict]:
     except Exception as e:
         raise GCSUploadError(f"Failed listing {DESTINATION_PREFIX}: {e}")
 
+    # A name ending in "/" is a folder placeholder -- the zero-byte object the
+    # Cloud Console writes when a folder is created -- not an uploaded file.
+    blobs = [blob for blob in blobs if not blob.name.endswith("/")]
+
     blobs.sort(key=lambda blob: blob.time_created or datetime.datetime.min, reverse=True)
 
     uploads = []
