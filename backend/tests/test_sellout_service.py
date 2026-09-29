@@ -92,6 +92,7 @@ def test_load_clean_rows_reuses_master_rows_and_upserts_each_fact():
     )
     assert len(fact_call.args[1]) == 2
     assert all(fact["loaded_at"] == timestamp for fact in fact_call.args[1])
+    assert all(fact["data_source"] == "aireos_upload" for fact in fact_call.args[1])
     assert not any("DELETE FROM sellout" in sql for sql in sql_calls)
 
 
@@ -170,3 +171,71 @@ def test_same_business_key_is_summed_instead_of_overwritten():
     assert sellout_call.args[1][0]["quantity_units"] == 31.0
     assert sellout_call.args[1][0]["revenue"] == 290.18
     assert sku_call.args[1]["uom"] == "EA"
+
+
+def test_dry_run_summary_matches_database_consolidation():
+    dataframe = _dataframe().iloc[[0]].copy()
+    carton = dataframe.iloc[0].to_dict()
+    carton.update({"uom": "CAR", "quantity_units": 16.0, "revenue": 148.44})
+    each = dataframe.iloc[0].to_dict()
+    each.update({"uom": "EA", "quantity_units": 15.0, "revenue": 141.74})
+
+    summary = sellout_service.summarize_clean_rows(pd.DataFrame([carton, each]))
+
+    assert summary == {
+        "rows_input": 2,
+        "rows_stored": 1,
+        "rows_consolidated": 1,
+        "retailers": {"fairprice_offline": 1},
+        "sku_count": 1,
+        "first_period": datetime.date(2026, 1, 1),
+        "last_period": datetime.date(2026, 1, 1),
+    }
+
+
+def test_historical_import_can_preserve_source_lineage():
+    engine, connection = _fake_database()
+
+    sellout_service.load_clean_rows(
+        _dataframe(),
+        data_source="pipeline",
+        engine=engine,
+    )
+
+    fact_call = next(
+        call for call in connection.execute.call_args_list
+        if "INSERT INTO sellout" in str(call.args[0])
+    )
+    assert all(fact["data_source"] == "pipeline" for fact in fact_call.args[1])
+
+
+def test_large_loads_use_batched_multi_row_upserts():
+    connection = MagicMock()
+    timestamp = datetime.datetime(2026, 9, 24, tzinfo=datetime.timezone.utc)
+    records = [
+        {
+            "retailer_id": 57,
+            "period_start": datetime.date(2026, 1, 1),
+            "period_end": datetime.date(2026, 1, 31),
+            "period_type": "month",
+            "store_code": str(index),
+            "sku": "13255043",
+            "quantity_units": float(index),
+            "revenue": float(index * 10),
+            "source_file": "history.xlsx",
+            "loaded_at": timestamp,
+            "data_source": "pipeline",
+        }
+        for index in range(501)
+    ]
+
+    sellout_service._upsert_sellout(connection, records)
+
+    assert connection.execute.call_count == 2
+    first_sql = str(connection.execute.call_args_list[0].args[0])
+    first_parameters = connection.execute.call_args_list[0].args[1]
+    second_parameters = connection.execute.call_args_list[1].args[1]
+    assert ":retailer_id_0" in first_sql
+    assert ":retailer_id_499" in first_sql
+    assert first_parameters["store_code_499"] == "499"
+    assert second_parameters["store_code_0"] == "500"

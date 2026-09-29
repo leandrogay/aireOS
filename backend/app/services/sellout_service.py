@@ -2,6 +2,7 @@
 
 import datetime
 import os
+from collections import Counter
 
 import pandas as pd
 from sqlalchemy import text
@@ -15,6 +16,21 @@ class SelloutLoadError(RuntimeError):
 
 
 BUSINESS_KEY = ("retailer", "store_code", "sku", "period_start", "period_type")
+SELLOUT_COLUMNS = (
+    "retailer_id",
+    "period_start",
+    "period_end",
+    "period_type",
+    "store_code",
+    "sku",
+    "quantity_units",
+    "revenue",
+    "source_file",
+    "loaded_at",
+    "data_source",
+)
+_BULK_UPSERT_THRESHOLD = 100
+_BULK_UPSERT_BATCH_SIZE = 500
 
 
 def _consolidate_records(records: list[dict]) -> list[dict]:
@@ -47,6 +63,53 @@ def _consolidate_records(records: list[dict]) -> list[dict]:
             current["uom"] = row["uom"]
 
     return list(consolidated.values())
+
+
+def _prepare_records(dataframe: pd.DataFrame) -> tuple[list[dict], int]:
+    """Normalise types and consolidate rows exactly as the database load will."""
+    input_records = (
+        dataframe.astype(object)
+        .where(dataframe.notna(), None)
+        .to_dict("records")
+    )
+    records = _consolidate_records(input_records)
+    for row in records:
+        for field in ("period_start", "period_end"):
+            value = row.get(field)
+            if isinstance(value, str):
+                row[field] = datetime.date.fromisoformat(value)
+        if row.get("pack_size") is not None:
+            row["pack_size"] = int(row["pack_size"])
+        for field in ("quantity_units", "revenue"):
+            if row.get(field) is not None:
+                row[field] = float(row[field])
+    return records, len(input_records) - len(records)
+
+
+def summarize_clean_rows(dataframe: pd.DataFrame) -> dict:
+    """Return the exact dry-run counts that ``load_clean_rows`` will use."""
+    if dataframe.empty:
+        return {
+            "rows_input": 0,
+            "rows_stored": 0,
+            "rows_consolidated": 0,
+            "retailers": {},
+            "sku_count": 0,
+            "first_period": None,
+            "last_period": None,
+        }
+
+    records, rows_consolidated = _prepare_records(dataframe)
+    periods = [row["period_start"] for row in records]
+    return {
+        "rows_input": len(dataframe),
+        "rows_stored": len(records),
+        "rows_consolidated": rows_consolidated,
+        "retailers": dict(sorted(Counter(row["retailer"] for row in records).items())),
+        "sku_count": len({str(row["sku"]) for row in records}),
+        "first_period": min(periods),
+        "last_period": max(periods),
+    }
 
 
 def cloud_sql_loading_enabled() -> bool:
@@ -83,6 +146,10 @@ def _insert_missing_sku(connection: Connection, row: dict) -> None:
 
 
 def _upsert_sellout(connection: Connection, records: list[dict]) -> None:
+    if len(records) > _BULK_UPSERT_THRESHOLD:
+        _upsert_sellout_in_batches(connection, records)
+        return
+
     connection.execute(
         text(
             """
@@ -110,10 +177,47 @@ def _upsert_sellout(connection: Connection, records: list[dict]) -> None:
     )
 
 
+def _upsert_sellout_in_batches(connection: Connection, records: list[dict]) -> None:
+    """Use multi-row statements so large imports are not sent row by row."""
+    columns_sql = ", ".join(SELLOUT_COLUMNS)
+    for batch_start in range(0, len(records), _BULK_UPSERT_BATCH_SIZE):
+        batch_end = batch_start + _BULK_UPSERT_BATCH_SIZE
+        batch = records[batch_start:batch_end]
+        parameters = {}
+        value_rows = []
+        for index, record in enumerate(batch):
+            placeholders = []
+            for column in SELLOUT_COLUMNS:
+                parameter = f"{column}_{index}"
+                placeholders.append(f":{parameter}")
+                parameters[parameter] = record[column]
+            value_rows.append(f"({', '.join(placeholders)})")
+
+        connection.execute(
+            text(
+                f"""
+                INSERT INTO sellout ({columns_sql})
+                VALUES {', '.join(value_rows)}
+                ON CONFLICT (
+                    retailer_id, store_code, sku, period_start, period_type
+                ) DO UPDATE SET
+                    period_end = EXCLUDED.period_end,
+                    quantity_units = EXCLUDED.quantity_units,
+                    revenue = EXCLUDED.revenue,
+                    source_file = EXCLUDED.source_file,
+                    loaded_at = EXCLUDED.loaded_at,
+                    data_source = EXCLUDED.data_source
+                """
+            ),
+            parameters,
+        )
+
+
 def load_clean_rows(
     dataframe: pd.DataFrame,
     *,
     replace_source: bool = False,
+    data_source: str = "aireos_upload",
     engine: Engine | None = None,
     loaded_at: datetime.datetime | None = None,
 ) -> dict:
@@ -125,20 +229,12 @@ def load_clean_rows(
             "storage_status": "completed",
         }
 
+    if not data_source.strip():
+        raise ValueError("data_source must not be blank")
+
     database = engine or sql.connect_with_connector()
     timestamp = loaded_at or datetime.datetime.now(datetime.timezone.utc)
-    input_records = dataframe.astype(object).where(dataframe.notna(), None).to_dict("records")
-    records = _consolidate_records(input_records)
-    for row in records:
-        for field in ("period_start", "period_end"):
-            value = row.get(field)
-            if isinstance(value, str):
-                row[field] = datetime.date.fromisoformat(value)
-        if row.get("pack_size") is not None:
-            row["pack_size"] = int(row["pack_size"])
-        for field in ("quantity_units", "revenue"):
-            if row.get(field) is not None:
-                row[field] = float(row[field])
+    records, rows_consolidated = _prepare_records(dataframe)
 
     try:
         with database.begin() as connection:
@@ -189,7 +285,7 @@ def load_clean_rows(
                     "revenue": row.get("revenue"),
                     "source_file": row.get("source_file"),
                     "loaded_at": timestamp,
-                    "data_source": "aireos_upload",
+                    "data_source": data_source,
                 }
                 facts.append(fact_record)
 
@@ -199,6 +295,6 @@ def load_clean_rows(
 
     return {
         "rows_stored": len(records),
-        "rows_consolidated": len(input_records) - len(records),
+        "rows_consolidated": rows_consolidated,
         "storage_status": "completed",
     }
