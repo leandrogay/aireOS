@@ -1,5 +1,6 @@
 'use client';
 
+import { Info } from 'lucide-react';
 import { changePct, formatChangePct, parseIso } from '@/app/utils/periodComparison';
 import { formatDateRange } from '@/lib/formatDateRange';
 
@@ -7,10 +8,28 @@ function formatDayMonth(iso) {
   return parseIso(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
-function Side({ title, range, totals, available = true }) {
+function weeksLabel(count) {
+  return `${count} sales ${count === 1 ? 'week' : 'weeks'}`;
+}
+
+// Neutral context, not a warning: explains why the numbers are shaped the
+// way they are before anyone reads the delta.
+function StatusPill({ children }) {
+  return (
+    <p className="mb-2 flex items-start gap-1.5 rounded-md bg-lavander/60 px-2 py-1 text-xs text-deep-violet-blue">
+      <Info className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+      <span>{children}</span>
+    </p>
+  );
+}
+
+function Side({ title, note, range, totals, available = true }) {
   return (
     <div className="sm:flex-[2]">
-      <p className="text-xs font-medium text-deep-violet-blue">{title}</p>
+      <p className="text-xs font-medium text-deep-violet-blue">
+        {title}
+        {note && <span className="font-normal text-deep-violet-blue/60"> ({note})</span>}
+      </p>
       <p className="text-xs text-deep-violet-blue/60">{formatDateRange(range.start, range.end)}</p>
       {available ? (
         <>
@@ -25,10 +44,16 @@ function Side({ title, range, totals, available = true }) {
 }
 
 /**
- * This period vs the "Compare to" baseline: both sides' dates, revenue and
- * units, and the % change, plus a note whenever the comparison isn't a
- * plain full-period one — trimmed to the data loaded so far, or (custom
- * baselines) a different number of sales weeks on each side.
+ * This period vs the "Compare to" baseline. Both sides show the dates that
+ * were actually counted, so the user can see it's a matched window:
+ *
+ * - Partial period (this period runs past the latest data): this side is
+ *   shown "to date" and the baseline is already cut to the same number of
+ *   sales weeks (see comparisonRange), so the change is a fair like-for-like
+ *   figure and keeps its green/red.
+ * - Uneven lengths (e.g. a 5-week July vs a 4-week June): part of the
+ *   change is just the extra week, so it's shown in a neutral colour rather
+ *   than as good/bad performance.
  *
  * @param {{
  *   active: boolean,
@@ -55,8 +80,20 @@ export default function PeriodComparisonDetail({
   loading = false,
   error = null,
 }) {
+  const partial = Boolean(baseline?.trimmedTo);
+  const uneven = Boolean(weekCounts) && weekCounts.current !== weekCounts.baseline;
+  const countedCurrent = partial ? { start: current.start, end: baseline.trimmedTo } : current;
+
   const pct = baselineAvailable ? changePct(currentTotals.revenue, baselineTotals.revenue) : null;
-  const changeColorClass = pct > 0 ? 'text-green-600' : pct < 0 ? 'text-red-600' : 'text-deep-violet-blue';
+  const toneClass = uneven || pct === null || pct === 0
+    ? 'text-deep-violet-blue/70'
+    : pct > 0
+      ? 'text-green-600'
+      : 'text-red-600';
+
+  let caption = null;
+  if (uneven) caption = `${weeksLabel(weekCounts.current)} vs ${weekCounts.baseline} — not like-for-like`;
+  else if (weekCounts) caption = `Like-for-like · ${weeksLabel(weekCounts.current)} each`;
 
   return (
     <div className="bg-white rounded-lg border border-lavander shadow-sm p-3 h-full">
@@ -73,31 +110,43 @@ export default function PeriodComparisonDetail({
 
       {active && !loading && !error && baseline && (
         <>
+          {partial && (
+            <StatusPill>
+              Partial period: {periodNames.current} has data to {formatDayMonth(baseline.trimmedTo)}, so it&rsquo;s
+              compared with the same {weekCounts ? weeksLabel(weekCounts.current) : 'weeks'} of {periodNames.baseline}.
+            </StatusPill>
+          )}
+          {uneven && (
+            <StatusPill>
+              Uneven lengths: {periodNames.current} has {weeksLabel(weekCounts.current)}, {periodNames.baseline} has{' '}
+              {weekCounts.baseline}. Part of the change comes from that difference.
+            </StatusPill>
+          )}
+
           <div className="flex flex-col gap-2 sm:flex-row">
-            <Side title={periodNames.current} range={current} totals={currentTotals} />
-            <Side title={periodNames.baseline} range={baseline} totals={baselineTotals} available={baselineAvailable} />
+            <Side
+              title={periodNames.current}
+              note={partial ? 'to date' : null}
+              range={countedCurrent}
+              totals={currentTotals}
+            />
+            <Side
+              title={periodNames.baseline}
+              note={partial ? 'same weeks' : null}
+              range={baseline}
+              totals={baselineTotals}
+              available={baselineAvailable}
+            />
             <div className="sm:flex-1">
               <p className="text-xs font-medium text-deep-violet-blue">Change</p>
-              <p className={`flex items-center gap-1 text-base font-semibold ${changeColorClass}`}>
+              <p className={`flex items-center gap-1 text-base font-semibold ${toneClass}`}>
                 {pct > 0 && <span aria-hidden="true">▲</span>}
                 {pct < 0 && <span aria-hidden="true">▼</span>}
                 {formatChangePct(pct)}
               </p>
+              {caption && <p className="text-xs text-deep-violet-blue/60">{caption}</p>}
             </div>
           </div>
-
-          {baseline.trimmedTo && (
-            <p className="mt-2 text-xs text-amber-700">
-              Like-for-like: this period only has data to {formatDayMonth(baseline.trimmedTo)}, so the comparison
-              stops at the same point.
-            </p>
-          )}
-          {weekCounts && weekCounts.current !== weekCounts.baseline && (
-            <p className="mt-2 text-xs text-amber-700">
-              Different lengths: {weekCounts.current} sales {weekCounts.current === 1 ? 'week' : 'weeks'} vs{' '}
-              {weekCounts.baseline} — totals aren&rsquo;t like-for-like.
-            </p>
-          )}
         </>
       )}
     </div>

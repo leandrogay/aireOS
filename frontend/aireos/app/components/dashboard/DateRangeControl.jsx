@@ -7,6 +7,7 @@ import RangeCalendar from '@/components/dashboard/RangeCalendar';
 import { cn } from '@/lib/utils';
 import { formatDateRange } from '@/lib/formatDateRange';
 import { findPreset } from '@/app/utils/dateRangePresets';
+import { addDays } from '@/app/utils/periodComparison';
 
 const actionButtonClass =
   'rounded-md px-3 py-1 text-xs font-medium transition-colors disabled:opacity-50';
@@ -31,6 +32,11 @@ export default function DateRangeControl({ start, end, presets, latestWeekStart,
   const [draft, setDraft] = useState({ start, end });
 
   const activePreset = findPreset(presets, start, end);
+  // Show only the dates that have data: MTD is Aug 1 – 31 underneath (so it
+  // compares month for month and grows as weeks load), but with data to
+  // 19 Aug the button reads Aug 1 – 19, matching the comparison card.
+  const latestWeekEnd = latestWeekStart ? addDays(latestWeekStart, 6) : '';
+  const displayEnd = latestWeekEnd && end > latestWeekEnd && start <= latestWeekEnd ? latestWeekEnd : end;
 
   function handleOpenChange(nextOpen) {
     // Each opening starts from what the dashboard is showing, not a
@@ -57,7 +63,7 @@ export default function DateRangeControl({ start, end, presets, latestWeekStart,
       >
         <CalendarDays className="size-3.5" />
         <span className="font-semibold">{activePreset ? activePreset.label : 'Custom'}</span>
-        <span className="text-deep-violet-blue/70">· {formatDateRange(start, end) ?? 'Loading…'}</span>
+        <span className="text-deep-violet-blue/70">· {formatDateRange(start, displayEnd) ?? 'Loading…'}</span>
         <ChevronDown className="size-3.5" />
       </PopoverTrigger>
       <PopoverContent align="end" className="w-auto max-w-[calc(100vw-2rem)] bg-white p-3">

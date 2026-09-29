@@ -150,32 +150,40 @@ function StackedTotalTooltip({ active, payload, label, granularity }) {
   )
 }
 
-// Tooltip for the side-by-side comparison: each side's own period label,
-// its revenue, and the change between them.
-function ComparisonTooltip({ active, payload, baselineName }) {
+// Tooltip for the side-by-side comparison: each row is named after its
+// period (the legend names, e.g. "Aug 2026" / "Aug 2025") with its revenue.
+// The comparison bar is often a different week than the axis shows (Aug 7 –
+// 13 last year, or a whole other week for "previous period"), so its own
+// dates sit underneath in small print.
+function ComparisonTooltip({ active, payload, names }) {
   if (!active || !payload?.length) return null
   const row = payload[0].payload
+  const sides = [
+    { key: "current", name: names.current, value: row.current, dates: null },
+    { key: "baseline", name: names.baseline, value: row.baseline, dates: row.baselineLabel },
+  ]
 
   return (
-    <div className="grid min-w-40 gap-1 rounded-lg border border-lavander bg-white px-2.5 py-1.5 text-xs text-deep-violet-blue shadow-xl">
-      {[
-        { key: "current", label: row.currentLabel, value: row.current },
-        { key: "baseline", label: row.baselineLabel, value: row.baseline },
-      ].map((side) => (
-        <div key={side.key} className="flex items-center justify-between gap-3">
-          <span className="flex items-center gap-1.5 text-deep-violet-blue/70">
-            <span
-              className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
-              style={{ backgroundColor: comparisonChartConfig[side.key].color }}
-            />
-            {side.label ?? "No data"}
-          </span>
-          <span className="font-mono font-medium tabular-nums">
-            {side.value === null ? "—" : `$${side.value.toLocaleString()}`}
-          </span>
+    <div className="grid min-w-44 gap-1 rounded-lg border border-lavander bg-white px-2.5 py-1.5 text-xs text-deep-violet-blue shadow-xl">
+      <div className="text-deep-violet-blue/60">{row.axisLabel}</div>
+      {sides.map((side) => (
+        <div key={side.key}>
+          <div className="flex items-center justify-between gap-3">
+            <span className="flex items-center gap-1.5 font-medium">
+              <span
+                className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+                style={{ backgroundColor: comparisonChartConfig[side.key].color }}
+              />
+              {side.name}
+            </span>
+            <span className="font-mono font-medium tabular-nums">
+              {side.value === null ? "No data" : `$${side.value.toLocaleString()}`}
+            </span>
+          </div>
+          {side.dates && <div className="pl-4 text-deep-violet-blue/50">{side.dates}</div>}
         </div>
       ))}
-      <ChangeText pct={row.current !== null ? changePct(row.current, row.baseline) : null} suffix={`vs ${baselineName}`} />
+      <ChangeText pct={row.current !== null ? changePct(row.current, row.baseline) : null} suffix={`vs ${names.baseline}`} />
     </div>
   )
 }
@@ -290,7 +298,6 @@ function ComparisonTrend({ rows, periodNames }) {
     axisLabel: row.current
       ? displayLabelFor(row.current.period_label, row.current.period_start)
       : `#${row.index + 1}`,
-    currentLabel: row.current ? displayLabelFor(row.current.period_label, row.current.period_start) : null,
     baselineLabel: row.baseline ? baselineLabelFor(row.baseline) : null,
     current: row.current?.revenue ?? null,
     baseline: row.baseline?.revenue ?? null,
@@ -302,7 +309,9 @@ function ComparisonTrend({ rows, periodNames }) {
         <CartesianGrid vertical={false} />
         <XAxis dataKey="axisLabel" />
         <YAxis tickFormatter={formatAxisCurrency} width={50} tick={{ fontSize: 10 }} />
-        <ChartTooltip content={<ComparisonTooltip baselineName={chartConfig.baseline.label} />} />
+        <ChartTooltip
+          content={<ComparisonTooltip names={{ current: chartConfig.current.label, baseline: chartConfig.baseline.label }} />}
+        />
         <ChartLegend content={<ChartLegendContent />} />
         <Bar dataKey="baseline" fill="var(--color-baseline)" radius={[4, 4, 0, 0]} maxBarSize={MAX_BAR_SIZE} isAnimationActive={false} />
         <Bar dataKey="current" fill="var(--color-current)" radius={[4, 4, 0, 0]} maxBarSize={MAX_BAR_SIZE} isAnimationActive={false} />
