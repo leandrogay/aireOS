@@ -6,10 +6,10 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   ChartContainer,
   ChartTooltip,
-  ChartTooltipContent,
   ChartLegend,
   ChartLegendContent,
 } from "@/components/ui/chart"
+import { changePct, formatChangePct, formatWeekRange } from "@/app/utils/periodComparison"
 
 // AIRE palette assigned per store format. Reused across offline (4 series)
 // and online (1 series) since only one mode's chart is ever on screen at once
@@ -28,25 +28,25 @@ const fallbackChartConfig = {
   revenue: { label: "Revenue", color: "var(--aire-deep-blue)" },
 }
 
+// Labels are filled in per render with the two periods' names
+// ("Aug 2026" / "Aug 2025") — see ComparisonTrend.
 const comparisonChartConfig = {
-  current: { label: "Current", color: "var(--aire-deep-blue)" },
-  previous: { label: "Previous", color: "var(--aire-lavender)" },
+  current: { label: "This period", color: "var(--aire-deep-blue)" },
+  baseline: { label: "Comparison", color: "var(--aire-lavender)" },
 }
 
-// Formats a week's period_start as its actual calendar date range, e.g.
-// "Sep 3 – Sep 9".
-function formatWeekRange(periodStart) {
-  if (!periodStart) return ""
-  const start = new Date(`${periodStart}T00:00:00`)
-  const end = new Date(start)
-  end.setDate(end.getDate() + 6)
-  const opts = { month: "short", day: "numeric" }
-  return `${start.toLocaleDateString("en-US", opts)} – ${end.toLocaleDateString("en-US", opts)}`
-}
+const tabTriggerClass =
+  "text-deep-violet-blue/70 hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white"
 
 function displayLabelFor(periodLabel, periodStart) {
   if (!periodLabel.startsWith("Week ")) return periodLabel
   return formatWeekRange(periodStart)
+}
+
+// Baseline weeks are often last year's, so their label carries the year.
+function baselineLabelFor(row) {
+  const label = displayLabelFor(row.period_label, row.period_start)
+  return row.period_label.startsWith("Week ") ? `${label}, ${row.period_start.slice(0, 4)}` : label
 }
 
 function formatAxisCurrency(value) {
@@ -57,11 +57,22 @@ function formatAxisCurrency(value) {
   return `$${value}`
 }
 
+function ChangeText({ pct, suffix }) {
+  if (pct === null || pct === undefined) return null
+  const color = pct > 0 ? "text-green-600" : pct < 0 ? "text-red-600" : "text-deep-violet-blue"
+  return (
+    <div className={`mt-0.5 border-t border-lavander pt-1 font-medium ${color}`}>
+      {pct > 0 ? "▲ " : pct < 0 ? "▼ " : ""}
+      {formatChangePct(pct)} {suffix}
+    </div>
+  )
+}
+
 // Reshapes the flat [{ period_label, period_start, format, revenue }] rows
 // the API returns into one row per period with a column per format, which
-// is the shape Recharts needs for a stacked bar. Pure reshape — no
-// sums/percentages.
-function pivotByFormat(periodByFormat) {
+// is the shape Recharts needs for a stacked bar, plus each period's % change
+// vs the one before it (from `periodTotal`) for the tooltip.
+function pivotByFormat(periodByFormat, periodTotal) {
   const byPeriod = new Map()
   for (const row of periodByFormat) {
     if (!byPeriod.has(row.period_label)) {
@@ -72,6 +83,10 @@ function pivotByFormat(periodByFormat) {
     }
     byPeriod.get(row.period_label)[row.format] = row.revenue
   }
+  periodTotal.forEach((row, index) => {
+    const period = byPeriod.get(row.period_label)
+    if (period && index > 0) period.changePct = changePct(row.revenue, periodTotal[index - 1].revenue)
+  })
   return [...byPeriod.values()]
 }
 
@@ -97,9 +112,9 @@ function sortFormatsByTotalDesc(periodByFormat) {
 const MAX_BAR_SIZE = 56
 
 // Custom tooltip for the stacked-by-format chart: same visual shell as the
-// shared ChartTooltipContent, but with an added Total row summing every
-// format segment for that bar.
-function StackedTotalTooltip({ active, payload, label }) {
+// shared ChartTooltipContent, with an added Total row summing every format
+// segment and the % change vs the previous bar.
+function StackedTotalTooltip({ active, payload, label, granularity }) {
   if (!active || !payload?.length) return null
   const total = payload.reduce((sum, item) => sum + (typeof item.value === "number" ? item.value : 0), 0)
 
@@ -129,7 +144,38 @@ function StackedTotalTooltip({ active, payload, label }) {
             </span>
           </div>
         )}
+        <ChangeText pct={payload[0].payload.changePct} suffix={`vs previous ${granularity}`} />
       </div>
+    </div>
+  )
+}
+
+// Tooltip for the side-by-side comparison: each side's own period label,
+// its revenue, and the change between them.
+function ComparisonTooltip({ active, payload, baselineName }) {
+  if (!active || !payload?.length) return null
+  const row = payload[0].payload
+
+  return (
+    <div className="grid min-w-40 gap-1 rounded-lg border border-lavander bg-white px-2.5 py-1.5 text-xs text-deep-violet-blue shadow-xl">
+      {[
+        { key: "current", label: row.currentLabel, value: row.current },
+        { key: "baseline", label: row.baselineLabel, value: row.baseline },
+      ].map((side) => (
+        <div key={side.key} className="flex items-center justify-between gap-3">
+          <span className="flex items-center gap-1.5 text-deep-violet-blue/70">
+            <span
+              className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+              style={{ backgroundColor: comparisonChartConfig[side.key].color }}
+            />
+            {side.label ?? "No data"}
+          </span>
+          <span className="font-mono font-medium tabular-nums">
+            {side.value === null ? "—" : `$${side.value.toLocaleString()}`}
+          </span>
+        </div>
+      ))}
+      <ChangeText pct={row.current !== null ? changePct(row.current, row.baseline) : null} suffix={`vs ${baselineName}`} />
     </div>
   )
 }
@@ -145,60 +191,18 @@ function ChartLoading({ label }) {
   )
 }
 
-// Labels one side of a comparison by whatever unit that comparison type is
-// actually comparing — a WoW bar is one specific week, so it gets that
-// week's real date range; MoM compares whole months, so it gets the month
-// name; YoY compares whole years, so it gets just the year. Each of these
-// reads directly off the period's own start date (get_period_comparison
-// always returns current/previous start as the *first* day of that week,
-// month, or year respectively, even when the period itself is truncated to
-// however much data is actually available).
-function comparisonLabel(comparisonType, isoDate) {
-  if (!isoDate) return ""
-  const date = new Date(`${isoDate}T00:00:00`)
-  if (comparisonType === "yoy") return `${date.getFullYear()}`
-  if (comparisonType === "mom") return date.toLocaleDateString("en-US", { month: "long", year: "numeric" })
-  return formatWeekRange(isoDate)
-}
-
-// One bar per side, each its own x-axis category (not a shared tick) — see
-// comparisonLabel — so hovering or reading the axis under a given bar
-// always describes that exact bar, current and previous are never
-// ambiguously overlaid on one tick the way a grouped pair would be.
-// Previous (the older period) comes first/left, current (the more recent
-// one) second/right, reading left-to-right in chronological order.
-function buildComparisonBars(result, comparisonType) {
-  const previousAvailable = Boolean(result.previous?.available)
-  return [
-    {
-      label: previousAvailable ? comparisonLabel(comparisonType, result.previous.start) : "No data",
-      current: null,
-      previous: previousAvailable ? result.previous.revenue : null,
-    },
-    {
-      label: comparisonLabel(comparisonType, result.current.start),
-      current: result.current.revenue,
-      previous: null,
-    },
-  ]
-}
-
 /**
- * Revenue trend card: offline/online mode switch and the weekly revenue
- * trend chart. Data comes from the shared useDashboardSummary hook (called
- * once in page.js) so this and RevenueSummaryCards don't each fetch the
- * same data independently. When no explicit Date Range filter is active,
- * page.js already scopes that shared fetch to the current calendar month
- * (see hooks/useDefaultDateRange.js) — this component just renders whatever it's
- * given, no client-side truncation.
+ * Revenue trend card: offline/online mode switch, an optional `headerExtra`
+ * slot beside it (page.js puts the Period and Compare to controls there, so
+ * the timeframe is read before the chart), a By week / By month switch, and
+ * the revenue chart. Data comes from the shared useDashboardSummary hook
+ * (called in page.js) so this and RevenueSummaryCards don't each fetch the
+ * same data independently.
  *
- * While a Period Comparison is active (see usePeriodComparison), the chart
- * switches to a single current-vs-previous total view driven directly by
- * `comparisonResult` (the same aggregate the Period Comparison box below
- * shows) rather than the weekly summary data — WoW's "current"/"previous"
- * are each one week, but MoM/YoY compare whole months/years, so there's
- * nothing to break down week-by-week for those. The per-store-format
- * breakdown (the normal stacked view) is dropped in this mode.
+ * With no comparison the chart is the per-store-format stacked view. With a
+ * comparison it shows this period's total beside the baseline's, bucket by
+ * bucket — `comparisonRows` comes pre-aligned from alignComparisonBuckets
+ * (week 1 with week 1), so the chart only renders.
  */
 export default function RevenueTrendCard({
   summaryByMode = {},
@@ -209,146 +213,113 @@ export default function RevenueTrendCard({
   lastUpdated = null,
   mode = "offline",
   onModeChange = () => {},
-  comparisonActive = false,
-  comparisonType = null,
-  comparisonResult = null,
+  headerExtra = null,
+  granularity = "week",
+  onGranularityChange = () => {},
+  comparisonRows = null,
   comparisonLoading = false,
+  periodNames = null,
 }) {
   const salesData = summaryByMode[mode]
+  const busy = loading || (comparisonRows !== null && comparisonLoading)
 
   return (
     <div className="bg-white rounded-lg border border-lavander shadow-sm p-3 h-full">
-      <div className="flex flex-wrap items-center gap-3 mb-2">
+      <div className="flex flex-wrap items-end gap-3 mb-2">
         <Tabs value={mode} onValueChange={onModeChange}>
           <TabsList className="bg-lavander">
-            <TabsTrigger
-              value="offline"
-              className="text-deep-violet-blue/70 hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white"
-            >
+            <TabsTrigger value="offline" className={tabTriggerClass}>
               Offline
             </TabsTrigger>
-            <TabsTrigger
-              value="online"
-              className="text-deep-violet-blue/70 hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white"
-            >
+            <TabsTrigger value="online" className={tabTriggerClass}>
               Online
             </TabsTrigger>
           </TabsList>
         </Tabs>
 
-        {(refreshing || freshnessRefreshing) && (
-          <p className="text-xs text-deep-violet-blue/60">Refreshing latest data…</p>
-        )}
+        {headerExtra && <div className="ml-auto">{headerExtra}</div>}
       </div>
 
-      {comparisonActive ? (
-        <>
-          {comparisonLoading && <ChartLoading label="Loading comparison..." />}
-          {!comparisonLoading && comparisonResult && (
-            <div>
-              <ComparisonTrend result={comparisonResult} comparisonType={comparisonType} />
-              <p className="mt-1 text-right text-xs text-deep-violet-blue/60">
-                Last Updated: {lastUpdated || "—"}
-              </p>
-            </div>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <p className="text-xs text-deep-violet-blue/60">
+          {(refreshing || freshnessRefreshing) && "Refreshing latest data…"}
+        </p>
+        <Tabs value={granularity} onValueChange={onGranularityChange}>
+          <TabsList className="h-7 bg-lavander">
+            <TabsTrigger value="week" className={`text-xs ${tabTriggerClass}`}>
+              By week
+            </TabsTrigger>
+            <TabsTrigger value="month" className={`text-xs ${tabTriggerClass}`}>
+              By month
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
+
+      {busy && <ChartLoading label="Loading dashboard..." />}
+      {error && <p className="text-red-600 text-sm">{error}</p>}
+      {!busy && !error && salesData && (
+        <div>
+          {comparisonRows ? (
+            <ComparisonTrend rows={comparisonRows} periodNames={periodNames} />
+          ) : (
+            <RevenueTrend
+              periodByFormat={salesData.periodByFormat}
+              periodTotal={salesData.periodTotal}
+              granularity={granularity}
+            />
           )}
-        </>
-      ) : (
-        <>
-          {loading && <ChartLoading label="Loading dashboard..." />}
-          {error && <p className="text-red-600 text-sm">{error}</p>}
-          {!loading && !error && salesData && (
-            <div>
-              <RevenueTrend periodByFormat={salesData.periodByFormat} periodTotal={salesData.periodTotal} />
-              <p className="mt-1 text-right text-xs text-deep-violet-blue/60">
-                Last Updated: {lastUpdated || "—"}
-              </p>
-            </div>
-          )}
-        </>
+          <p className="mt-1 text-right text-xs text-deep-violet-blue/60">
+            Last Updated: {lastUpdated || "—"}
+          </p>
+        </div>
       )}
     </div>
   )
 }
 
-// Current-vs-previous total, shown while a Period Comparison is active.
-// Each side is its own bar at its own x-axis category (see
-// buildComparisonBars) rather than a grouped pair sharing one tick, so the
-// label under each bar always describes that exact bar.
-function ComparisonTrend({ result, comparisonType }) {
-  const chartData = buildComparisonBars(result, comparisonType)
+// This period vs the comparison, one pair of bars per aligned bucket. The
+// legend names the two periods, the x-axis this period's bucket, and the
+// tooltip both sides' buckets.
+function ComparisonTrend({ rows, periodNames }) {
+  const chartConfig = {
+    current: { ...comparisonChartConfig.current, label: periodNames?.current || comparisonChartConfig.current.label },
+    baseline: { ...comparisonChartConfig.baseline, label: periodNames?.baseline || comparisonChartConfig.baseline.label },
+  }
+  const chartData = rows.map((row) => ({
+    axisLabel: row.current
+      ? displayLabelFor(row.current.period_label, row.current.period_start)
+      : `#${row.index + 1}`,
+    currentLabel: row.current ? displayLabelFor(row.current.period_label, row.current.period_start) : null,
+    baselineLabel: row.baseline ? baselineLabelFor(row.baseline) : null,
+    current: row.current?.revenue ?? null,
+    baseline: row.baseline?.revenue ?? null,
+  }))
 
   return (
-    <div>
-      <ChartContainer config={comparisonChartConfig} className="h-[220px] w-full">
-        <BarChart accessibilityLayer data={chartData} margin={{ bottom: 8 }}>
-          <CartesianGrid vertical={false} />
-          <XAxis dataKey="label" interval={0} tick={{ fontSize: 10 }} />
-          <YAxis tickFormatter={formatAxisCurrency} width={50} tick={{ fontSize: 10 }} />
-          <ChartTooltip content={<StackedTotalTooltip />} />
-          {/* Each category only ever has one of current/previous set (the
-              other is null) — without a shared stackId, Recharts still
-              reserves a same-size side-by-side "slot" for both series in
-              every category, so the one bar that actually has a value ends
-              up drawn off to one side of its own tick instead of centered
-              under it. Stacking two mutually-exclusive values just draws
-              whichever one is non-null centered on its category, with no
-              visual stacking effect since there's never more than one
-              present at a time. */}
-          <Bar
-            dataKey="previous"
-            name="Previous"
-            stackId="comparison"
-            fill="var(--color-previous)"
-            radius={4}
-            maxBarSize={MAX_BAR_SIZE}
-            isAnimationActive={false}
-          />
-          <Bar
-            dataKey="current"
-            name="Current"
-            stackId="comparison"
-            fill="var(--color-current)"
-            radius={4}
-            maxBarSize={MAX_BAR_SIZE}
-            isAnimationActive={false}
-          />
-        </BarChart>
-      </ChartContainer>
-      {/* Manual legend, not Recharts' <Legend> — a stacked BarChart's
-          auto-generated legend order follows Recharts' own internal stack
-          bookkeeping rather than <Bar> JSX order or an explicit payload
-          override (both were tried and didn't change it), so there's no
-          reliable way to make the built-in legend read left-to-right in
-          the same previous-then-current order as the bars below it. */}
-      <div className="flex items-center justify-center gap-4 pt-3 text-xs text-deep-violet-blue/70">
-        <div className="flex items-center gap-1.5">
-          <div
-            className="h-2 w-2 shrink-0 rounded-[2px]"
-            style={{ backgroundColor: comparisonChartConfig.previous.color }}
-          />
-          Previous
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div
-            className="h-2 w-2 shrink-0 rounded-[2px]"
-            style={{ backgroundColor: comparisonChartConfig.current.color }}
-          />
-          Current
-        </div>
-      </div>
-    </div>
+    <ChartContainer config={chartConfig} className="h-[220px] w-full">
+      <BarChart accessibilityLayer data={chartData} margin={{ bottom: 8 }}>
+        <CartesianGrid vertical={false} />
+        <XAxis dataKey="axisLabel" />
+        <YAxis tickFormatter={formatAxisCurrency} width={50} tick={{ fontSize: 10 }} />
+        <ChartTooltip content={<ComparisonTooltip baselineName={chartConfig.baseline.label} />} />
+        <ChartLegend content={<ChartLegendContent />} />
+        <Bar dataKey="baseline" fill="var(--color-baseline)" radius={[4, 4, 0, 0]} maxBarSize={MAX_BAR_SIZE} isAnimationActive={false} />
+        <Bar dataKey="current" fill="var(--color-current)" radius={[4, 4, 0, 0]} maxBarSize={MAX_BAR_SIZE} isAnimationActive={false} />
+      </BarChart>
+    </ChartContainer>
   )
 }
 
 // FALLBACK: renders a single-series line while periodByFormat is empty (e.g.
 // online mode currently has no per-format breakdown), otherwise the real
-// stacked-bar-per-format view. Only used outside comparison mode.
-function RevenueTrend({ periodByFormat, periodTotal }) {
+// stacked-bar-per-format view.
+function RevenueTrend({ periodByFormat, periodTotal, granularity }) {
   if (periodByFormat.length === 0) {
-    const lineData = periodTotal.map((row) => ({
+    const lineData = periodTotal.map((row, index) => ({
       ...row,
       displayLabel: displayLabelFor(row.period_label, row.period_start),
+      changePct: index > 0 ? changePct(row.revenue, periodTotal[index - 1].revenue) : null,
     }))
     return (
       <ChartContainer config={fallbackChartConfig} className="h-[220px] w-full">
@@ -356,9 +327,10 @@ function RevenueTrend({ periodByFormat, periodTotal }) {
           <CartesianGrid vertical={false} />
           <XAxis dataKey="displayLabel" />
           <YAxis tickFormatter={formatAxisCurrency} width={50} tick={{ fontSize: 10 }} />
-          <ChartTooltip content={<ChartTooltipContent />} />
+          <ChartTooltip content={<StackedTotalTooltip granularity={granularity} />} />
           <Line
             dataKey="revenue"
+            name="Revenue"
             stroke="var(--color-revenue)"
             strokeWidth={2}
             dot={false}
@@ -373,7 +345,7 @@ function RevenueTrend({ periodByFormat, periodTotal }) {
   const chartConfig = Object.fromEntries(
     formats.map((format) => [format, { label: format, color: FORMAT_COLORS[format] }])
   )
-  const chartData = pivotByFormat(periodByFormat)
+  const chartData = pivotByFormat(periodByFormat, periodTotal)
 
   return (
     <ChartContainer config={chartConfig} className="h-[220px] w-full">
@@ -381,7 +353,7 @@ function RevenueTrend({ periodByFormat, periodTotal }) {
         <CartesianGrid vertical={false} />
         <XAxis dataKey="displayLabel" />
         <YAxis tickFormatter={formatAxisCurrency} width={50} tick={{ fontSize: 10 }} />
-        <ChartTooltip content={<StackedTotalTooltip />} />
+        <ChartTooltip content={<StackedTotalTooltip granularity={granularity} />} />
         <ChartLegend content={<ChartLegendContent />} />
         {formats.map((format, index) => (
           <Bar

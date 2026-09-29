@@ -5,12 +5,9 @@ import { useEffect, useState } from 'react';
 /**
  * Week or month bounds anchored to the latest available week for the given
  * channel (not the wall-clock date) — see backend get_default_date_range.
- * The month variant is used as the dashboard's default *fetch* scope
- * (chart, revenue summary, SKU ranking) when no explicit Date Range filter
- * is active — that usage never shows as an active filter (no badge, no
- * pre-filled Date Range inputs). Both variants are also used by the Filter
- * panel's "This Week"/"This Month" quick buttons, which DO apply an
- * explicit filter (and highlight themselves) when clicked.
+ * The dashboard only asks for the week variant: that latest loaded week is
+ * the anchor every date preset (and the MTD default) is built from — see
+ * app/utils/dateRangePresets.js.
  */
 export default function useDefaultDateRange({
   customer = '',

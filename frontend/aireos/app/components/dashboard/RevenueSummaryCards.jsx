@@ -1,21 +1,46 @@
 "use client"
 
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
+import { changePct, formatChangePct } from "@/app/utils/periodComparison"
+
+function sumFormats(storeFormats = []) {
+  return storeFormats.reduce(
+    (acc, format) => ({ revenue: acc.revenue + format.revenue, units: acc.units + format.units }),
+    { revenue: 0, units: 0 }
+  )
+}
+
+// "▲ +12.1% vs last year" under a card's figures; nothing without a comparison.
+function CardChange({ current, baseline, compareShort }) {
+  if (baseline === null) return null
+  const pct = changePct(current, baseline)
+  const color = pct > 0 ? "text-green-600" : pct < 0 ? "text-red-600" : "text-deep-violet-blue/60"
+  return (
+    <div className={`text-xs font-medium ${color}`}>
+      {pct > 0 ? "▲ " : pct < 0 ? "▼ " : ""}
+      {formatChangePct(pct)} {compareShort}
+    </div>
+  )
+}
 
 // Per-store-format revenue/units cards, split out of the old combined
 // SalesOverview so it can sit in its own grid cell. Reads from the same
 // useDashboardSummary data as RevenueTrendCard (passed down from page.js)
-// rather than fetching independently.
+// rather than fetching independently. With a "Compare to" baseline, each
+// card also shows its revenue change vs the same format in the baseline.
 export default function RevenueSummaryCards({
   summaryByMode = {},
+  baselineSummaryByMode = null,
+  compareShort = "",
   loading = false,
   error = null,
   mode = "offline",
 }) {
   const salesData = summaryByMode[mode]
-  const total = salesData?.storeFormats.reduce(
-    (acc, format) => ({ revenue: acc.revenue + format.revenue, units: acc.units + format.units }),
-    { revenue: 0, units: 0 }
+  const baselineData = baselineSummaryByMode?.[mode] ?? null
+  const total = sumFormats(salesData?.storeFormats)
+  const baselineRevenueByFormat = new Map(
+    (baselineData?.storeFormats ?? []).map((format) => [format.format, format.revenue])
   )
 
   return (
@@ -34,6 +59,11 @@ export default function RevenueSummaryCards({
             <CardContent className="space-y-0.5">
               <div>Revenue: ${total.revenue.toLocaleString()}</div>
               <div>Units: {total.units.toLocaleString()}</div>
+              <CardChange
+                current={total.revenue}
+                baseline={baselineData ? sumFormats(baselineData.storeFormats).revenue : null}
+                compareShort={compareShort}
+              />
             </CardContent>
           </Card>
           {salesData.storeFormats.map((format) => (
@@ -44,6 +74,11 @@ export default function RevenueSummaryCards({
               <CardContent className="space-y-0.5">
                 <div>Revenue: ${format.revenue.toLocaleString()}</div>
                 <div>Units: {format.units.toLocaleString()}</div>
+                <CardChange
+                  current={format.revenue}
+                  baseline={baselineData ? (baselineRevenueByFormat.get(format.format) ?? 0) : null}
+                  compareShort={compareShort}
+                />
               </CardContent>
             </Card>
           ))}
