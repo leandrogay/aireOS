@@ -10,19 +10,7 @@ import {
   ChartLegendContent,
 } from "@/components/ui/chart"
 import { changePct, formatChangePct, formatWeekRange } from "@/app/utils/periodComparison"
-
-// AIRE palette assigned per store format. Reused across offline (4 series)
-// and online (1 series) since only one mode's chart is ever on screen at once
-// — safe to reuse HYPER's color for FPON since they never render together.
-// FPON previously used --aire-cream, which is nearly invisible against the
-// white card/cream page background.
-const FORMAT_COLORS = {
-  HYPER: "var(--aire-deep-blue)",
-  SUPER: "var(--aire-violet)",
-  FINEST: "var(--aire-celest)",
-  UNITY: "var(--aire-lavender)",
-  FPON: "var(--aire-deep-blue)",
-}
+import { FORMAT_COLORS } from "@/app/utils/storeFormats"
 
 const fallbackChartConfig = {
   revenue: { label: "Revenue", color: "var(--aire-deep-blue)" },
