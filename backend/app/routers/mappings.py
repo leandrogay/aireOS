@@ -68,8 +68,8 @@ async def list_mappings():
     """
 
     def collect() -> list[dict]:
-        packets = [mapping_view.builtin_packet()]
-
+        # packets = [mapping_view.builtin_packet()] # Comment out the builtin FairPrice hardcoded mapping
+        packets = []
         for state in ("confirmed", "pending"):
             path_for = (
                 storage.confirmed_mapping_path
