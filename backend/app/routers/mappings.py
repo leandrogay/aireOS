@@ -70,13 +70,19 @@ async def list_mappings():
     def collect() -> list[dict]:
         # packets = [mapping_view.builtin_packet()] # Comment out the builtin FairPrice hardcoded mapping
         packets = []
-        for state in ("confirmed", "pending"):
-            path_for = (
-                storage.confirmed_mapping_path
-                if state == "confirmed"
-                else storage.pending_mapping_path
-            )
-            for fingerprint in storage.list_mapping_fingerprints(state):
+        confirmed = storage.list_mapping_fingerprints("confirmed")
+        # A pending copy whose cleanup failed at approval is superseded by its
+        # confirmed one; listing both would show the mapping twice.
+        pending = [
+            fingerprint
+            for fingerprint in storage.list_mapping_fingerprints("pending")
+            if fingerprint not in confirmed
+        ]
+        for state, fingerprints, path_for in (
+            ("confirmed", confirmed, storage.confirmed_mapping_path),
+            ("pending", pending, storage.pending_mapping_path),
+        ):
+            for fingerprint in fingerprints:
                 envelope = storage.download_json(path_for(fingerprint))
                 if envelope:
                     packets.append(
@@ -199,15 +205,9 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
     is the last gate before it becomes the contract every future file with
     these headers gets run through.
     """
-    envelope_before = await asyncio.to_thread(
-        storage.download_json, storage.pending_mapping_path(fingerprint)
-    )
-    # A confirmed contract can be amended again, and by then its pending blob
-    # has been cleaned up -- so fall back to the confirmed one.
-    if not envelope_before:
-        envelope_before = await asyncio.to_thread(
-            storage.download_json, storage.confirmed_mapping_path(fingerprint)
-        )
+    # Confirmed first, as every other lookup does: a pending copy whose cleanup
+    # failed must not become the base of an amendment.
+    envelope_before, _ = await asyncio.to_thread(_load_envelope, fingerprint)
     if not envelope_before:
         raise HTTPException(
             status_code=404, detail="No mapping found for that fingerprint."

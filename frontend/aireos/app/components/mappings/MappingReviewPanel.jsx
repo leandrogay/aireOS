@@ -345,8 +345,8 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
             {approved.pending_removed === false && (
               <span className="text-amber-900">
                 {' '}
-                — the pending copy could not be removed; it is ignored on lookup, but
-                worth clearing up.
+                — the old pending copy could not be deleted and is still in the bucket.
+                The confirmed copy takes precedence everywhere, but it is worth clearing up.
               </span>
             )}
           </li>

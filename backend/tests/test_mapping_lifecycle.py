@@ -105,12 +105,13 @@ def test_approval_writes_confirmed_and_removes_pending(monkeypatch):
 
 def test_approval_succeeds_when_there_was_no_pending_blob(monkeypatch):
     # Amending an already-confirmed mapping: its pending copy was cleaned up
-    # the first time round, and its absence is not a failure.
+    # the first time round. It is gone, so the review screen must not be told
+    # the cleanup failed.
     _install(monkeypatch)
 
     result = storage.move_pending_mapping_to_confirmed("abc123", {"contract": {}})
 
-    assert result["removed_pending"] is False
+    assert result["removed_pending"] is True
     assert result["pending_error"] is None
     assert result["stored_at"].endswith("mappings/confirmed/abc123.json")
 

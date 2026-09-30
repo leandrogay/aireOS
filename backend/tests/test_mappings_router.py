@@ -87,3 +87,49 @@ def test_confirm_stores_a_reviewed_low_confidence_field_as_reviewed(monkeypatch)
     assert response.status_code == 200
     brand = stored["envelope"]["contract"]["annotations"]["brand"]
     assert brand == {"confidence": "low", "rationale": "", "reviewed": True}
+
+
+# ---- A pending copy left behind after approval --------------------------------
+
+STALE_PENDING = {**ENVELOPE, "name": None, "vendor": None}
+
+
+def _serve(monkeypatch, blobs):
+    monkeypatch.setattr(storage, "download_json", lambda path: blobs.get(path))
+
+
+def test_amending_builds_on_the_confirmed_copy_not_a_stale_pending_one(monkeypatch):
+    stored = _stub_storage(monkeypatch)
+    _serve(
+        monkeypatch,
+        {
+            storage.pending_mapping_path("fp"): STALE_PENDING,
+            storage.confirmed_mapping_path("fp"): ENVELOPE,
+        },
+    )
+    rules = [_rule("sku", "SKU No.", "high", False)]
+
+    # No name or vendor sent: an amendment inherits them from what is confirmed.
+    response = client.post("/api/mappings/fp/confirm", json={"rules": rules})
+
+    assert response.status_code == 200
+    assert stored["envelope"]["name"] == "Vendor weekly"
+    assert stored["envelope"]["vendor"] == "XEL"
+
+
+def test_listing_leaves_out_a_pending_copy_that_has_been_confirmed(monkeypatch):
+    fingerprints = {"confirmed": ["fp"], "pending": ["fp", "new"]}
+    monkeypatch.setattr(storage, "list_mapping_fingerprints", lambda state: fingerprints[state])
+    _serve(
+        monkeypatch,
+        {
+            storage.confirmed_mapping_path("fp"): ENVELOPE,
+            storage.pending_mapping_path("fp"): STALE_PENDING,
+            storage.pending_mapping_path("new"): ENVELOPE,
+        },
+    )
+
+    response = client.get("/api/mappings")
+
+    listed = [(m["fingerprint"], m["state"]) for m in response.json()["mappings"]]
+    assert listed == [("fp", "confirmed"), ("new", "pending")]

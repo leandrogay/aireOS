@@ -331,7 +331,10 @@ def move_pending_mapping_to_confirmed(fingerprint: str, envelope: dict) -> dict:
     stored_at = upload_json(confirmed_path, envelope)
 
     try:
-        removed_pending = delete_blob(pending_path)
+        # delete_blob's False means there was nothing to delete, which happens
+        # on every amendment of a confirmed mapping. Either way it is gone.
+        delete_blob(pending_path)
+        removed_pending = True
         pending_error = None
     except (GCSPermissionError, GCSUploadError) as exc:
         removed_pending = False
