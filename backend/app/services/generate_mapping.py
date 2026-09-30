@@ -299,13 +299,18 @@ def normalize_targets(value) -> list[str]:
     return []
 
 
-def _clean_annotation(source: dict | None) -> dict:
+def _clean_annotation(source: dict | None, trust_review: bool = False) -> dict:
     """
-    Normalise one column's confidence + rationale.
+    Normalise one column's confidence, rationale and review flag.
 
     Anything the model omitted, misspelled or invented becomes "low" with no
     rationale. Treating an unreadable confidence as high would let a guess
     through the review gate on a formatting mistake.
+
+    "reviewed" records that a person looked at the row and stood by it. It is
+    kept apart from confidence so the stored contract still says what the
+    proposal was unsure of. Only a reviewer's own submission may set it -- a
+    model that wrote "reviewed": true would be approving its own guess.
     """
     raw = source or {}
     level = str(raw.get("confidence") or "").strip().lower()
@@ -314,10 +319,36 @@ def _clean_annotation(source: dict | None) -> dict:
     return {
         "confidence": level if level in CONFIDENCE_LEVELS else "low",
         "rationale": rationale,
+        "reviewed": trust_review and raw.get("reviewed") is True,
     }
 
 
-def validate_contract(contract: dict, raw_columns: list[str], target_schema: list[str]) -> dict:
+def unreviewed_low_confidence(contract: dict) -> list[str]:
+    """
+    Target fields the proposal was unsure of that no reviewer has confirmed.
+
+    The review screen will not approve while any exist, but that is the
+    browser's word. This lets the confirm endpoint hold the same line.
+    """
+    identity = [
+        target
+        for target, annotation in (contract.get("annotations") or {}).items()
+        if annotation.get("confidence") == "low" and not annotation.get("reviewed")
+    ]
+    melted = [
+        group["target_field"]
+        for group in contract.get("melt_groups") or []
+        if group.get("confidence") == "low" and not group.get("reviewed")
+    ]
+    return identity + melted
+
+
+def validate_contract(
+    contract: dict,
+    raw_columns: list[str],
+    target_schema: list[str],
+    trust_review: bool = False,
+) -> dict:
     """
     Defensive checks before trusting the contract. Anything that fails
     validation gets dropped rather than silently applied.
@@ -325,6 +356,10 @@ def validate_contract(contract: dict, raw_columns: list[str], target_schema: lis
     Every drop is collected into a "warnings" list on the returned contract
     instead of being printed, because a person now reviews this output before
     approving it — they need to see what was discarded, not the server logs.
+
+    trust_review is True only on the confirm path, where the contract came
+    from a reviewer; a freshly generated contract has every "reviewed" flag
+    cleared.
     """
     raw_set = set(raw_columns)
     warnings: list[str] = []
@@ -364,7 +399,7 @@ def validate_contract(contract: dict, raw_columns: list[str], target_schema: lis
             # thing for one of them and a guess for the other. Older contracts
             # keyed them by source column, so fall back to that.
             clean_annotations[tgt] = _clean_annotation(
-                annotations_in.get(tgt) or annotations_in.get(src)
+                annotations_in.get(tgt) or annotations_in.get(src), trust_review
             )
 
         if kept:
@@ -436,7 +471,7 @@ def validate_contract(contract: dict, raw_columns: list[str], target_schema: lis
             continue
 
         claimed[tgt] = f"melt group over {len(cols)} column(s)"
-        annotation = _clean_annotation(group)
+        annotation = _clean_annotation(group, trust_review)
         clean_groups.append({
             "target_field": tgt,
             "columns": cols,

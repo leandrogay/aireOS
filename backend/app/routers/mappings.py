@@ -236,6 +236,7 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
         proposed,
         pending["raw_columns"],
         pending.get("target_schema", generate_mapping.TARGET_SCHEMA),
+        trust_review=True,
     )
 
     if not contract["identity_mapping"] and not contract["melt_groups"]:
@@ -243,6 +244,19 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
             status_code=422,
             detail={
                 "message": "Contract is empty after validation — nothing to store.",
+                "warnings": contract["warnings"],
+            },
+        )
+
+    unreviewed = generate_mapping.unreviewed_low_confidence(contract)
+    if unreviewed:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": (
+                    "Confirm every low-confidence field before approving: "
+                    + ", ".join(unreviewed)
+                ),
                 "warnings": contract["warnings"],
             },
         )

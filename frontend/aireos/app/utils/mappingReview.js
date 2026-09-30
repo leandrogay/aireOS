@@ -32,6 +32,20 @@ function weakestConfidence(fields) {
 }
 
 /**
+ * Whether a row still waits on the reviewer: one of its fields was a
+ * low-confidence guess nobody has confirmed. The server holds the same rule
+ * (see backend unreviewed_low_confidence), so approval cannot skip it.
+ */
+export function needsReview(row) {
+  return row.fields.some((field) => field.confidence === 'low' && !field.reviewed);
+}
+
+/** Every field on the row marked as signed off, or not. */
+export function withReviewed(row, reviewed) {
+  return { ...row, fields: row.fields.map((field) => ({ ...field, reviewed })) };
+}
+
+/**
  * One row per source column, least certain first.
  *
  * A column no rule reads still gets a row, with no fields on it: a column
@@ -72,6 +86,7 @@ export function toColumnRows(mapping) {
       targetField: rule.targetField,
       confidence: rule.confidence || 'low',
       rationale: rule.rationale || '',
+      reviewed: rule.reviewed === true,
     }));
 
     return [
@@ -90,9 +105,16 @@ export function toColumnRows(mapping) {
     ];
   });
 
+  // A guess someone already signed off is settled, so it sorts with the sure
+  // things rather than above them. Sorted once, on load: re-sorting as rows
+  // are confirmed would move the next row out from under the reviewer's cursor.
+  const sortKey = (row) =>
+    row.fields.length && !needsReview(row) && row.confidence === 'low'
+      ? CONFIDENCE_ORDER.high
+      : CONFIDENCE_ORDER[row.confidence ?? 'null'];
+
   return rows.sort((a, b) => {
-    const byConfidence =
-      CONFIDENCE_ORDER[a.confidence ?? 'null'] - CONFIDENCE_ORDER[b.confidence ?? 'null'];
+    const byConfidence = sortKey(a) - sortKey(b);
     return byConfidence !== 0 ? byConfidence : a.originalIndex - b.originalIndex;
   });
 }
@@ -111,7 +133,10 @@ export function toRules(mapping, rows) {
     .filter(({ rule }) => rule.editable === false)
     .map(({ rule, index }) => {
       const edited = rows.find((row) => row.ruleIndex === index && row.meltGroup);
-      return edited ? { ...rule, meltGroup: edited.meltGroup } : rule;
+      if (!edited) return rule;
+      // The melt group is stored verbatim, so the sign-off has to ride on it.
+      const reviewed = edited.fields.every((field) => field.reviewed);
+      return { ...rule, reviewed, meltGroup: { ...edited.meltGroup, reviewed } };
     });
 
   const editableRules = rows
@@ -126,6 +151,7 @@ export function toRules(mapping, rows) {
         editable: true,
         confidence: field.confidence,
         rationale: field.rationale,
+        reviewed: field.reviewed === true,
       })),
     );
 
@@ -207,7 +233,7 @@ export function computeCoverage(mapping, rows) {
  * needs, recomputed here against the edited rows rather than read off the
  * mapping, which describes the version that was loaded.
  */
-export function reviewIssues(mapping, rows, confirmedColumns, requiredFields) {
+export function reviewIssues(mapping, rows, requiredFields) {
   // One column may fill several fields. One field may not be filled by several
   // columns -- both would be renamed to the same name and which survived would
   // be luck -- so that is the clash worth reporting.
@@ -233,9 +259,7 @@ export function reviewIssues(mapping, rows, confirmedColumns, requiredFields) {
   }
 
   return {
-    unconfirmedLowConfidence: rows.filter(
-      (row) => row.confidence === 'low' && !confirmedColumns.has(row.column),
-    ),
+    unconfirmedLowConfidence: rows.filter(needsReview),
     duplicateTargets: [...duplicated],
     missingRequired: (requiredFields || []).filter((field) => !filled.has(field)),
     ignoredColumns: rows.filter((row) => !row.fields.length).map((row) => row.column),

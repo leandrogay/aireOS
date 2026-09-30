@@ -12,6 +12,7 @@ import {
   toRules,
   reviewIssues,
   computeCoverage,
+  withReviewed,
 } from '../../utils/mappingReview';
 
 const button =
@@ -100,8 +101,16 @@ function OutputPreview({ preview, isLoading, error, onRefresh, disabled }) {
  * }} props
  */
 export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPreview }) {
+  // Each field carries its own `reviewed` flag, saved with the mapping, so a
+  // row confirmed once stays confirmed when the mapping is opened again.
   const [rows, setRows] = useState(() => toColumnRows(mapping));
-  const [confirmedColumns, setConfirmedColumns] = useState(() => new Set());
+  // Columns confirmed by a click on this visit -- the only sign-offs offered
+  // an Undo. One loaded already reviewed is a settled decision; reopening it is
+  // done by changing its fields, not by withdrawing it from a link.
+  const [undoableColumns, setUndoableColumns] = useState(() => new Set());
+  // The column whose review was just undone, so its Confirm button takes
+  // focus back instead of dropping the keyboard user at the top of the page.
+  const [justUndoneColumn, setJustUndoneColumn] = useState(null);
   const [name, setName] = useState(mapping.name || '');
   const [vendor, setVendor] = useState(mapping.vendor || '');
   const [busy, setBusy] = useState(null); // null | 'approve' | 'discard' | 'preview'
@@ -117,8 +126,8 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
   // confirmed mapping (DELETE /api/mappings/{fp}/pending only).
   const canDiscard = !!onDiscard && mapping.state === 'pending';
   const issues = useMemo(
-    () => reviewIssues(mapping, rows, confirmedColumns, mapping.requiredFields),
-    [mapping, rows, confirmedColumns],
+    () => reviewIssues(mapping, rows, mapping.requiredFields),
+    [mapping, rows],
   );
   const coverage = useMemo(() => computeCoverage(mapping, rows), [mapping, rows]);
 
@@ -135,52 +144,92 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
     return taken;
   }, [rows]);
 
+  // Undo only ever reverses a Confirm click. Once the row has been edited the
+  // edit is the decision, and an Undo that cleared the sign-off but kept the
+  // edit would not be undoing anything the reviewer just did.
+  const forgetUndo = useCallback((column) => {
+    setUndoableColumns((prev) => {
+      if (!prev.has(column)) return prev;
+      const next = new Set(prev);
+      next.delete(column);
+      return next;
+    });
+  }, []);
+
   // A column can fill several fields, so adding one appends rather than
   // replacing what is there. A field moved off another column is taken off it,
   // since two columns cannot fill the same field.
   const handleAddField = useCallback((column, targetField) => {
     setMessage('');
+    forgetUndo(column);
     setRows((prev) =>
       prev.map((row) => {
         if (row.locked) return row;
 
         if (row.column === column) {
           if (row.fields.some((field) => field.targetField === targetField)) return row;
-          return {
-            ...row,
-            fields: [
-              ...row.fields,
-              // The reviewer chose it, so it is not a guess -- but the
-              // rationale says whose decision it was.
-              { targetField, confidence: 'high', rationale: 'Chosen by the reviewer.' },
-            ],
-          };
+          // Editing a row is the reviewer taking responsibility for it, which
+          // is exactly what confirming it means. The proposal's confidence on
+          // the fields already there is left as it was.
+          return withReviewed(
+            {
+              ...row,
+              fields: [
+                ...row.fields,
+                // The reviewer chose it, so it is not a guess -- but the
+                // rationale says whose decision it was.
+                { targetField, confidence: 'high', rationale: 'Chosen by the reviewer.' },
+              ],
+            },
+            true,
+          );
         }
 
         const without = row.fields.filter((field) => field.targetField !== targetField);
         return without.length === row.fields.length ? row : { ...row, fields: without };
       }),
     );
-    // Editing a row is the reviewer taking responsibility for it, which is
-    // exactly what confirming it means.
-    setConfirmedColumns((prev) => new Set(prev).add(column));
-  }, []);
+  }, [forgetUndo]);
 
   const handleRemoveField = useCallback((column, targetField) => {
     setMessage('');
+    forgetUndo(column);
     setRows((prev) =>
       prev.map((row) =>
         row.column === column && !row.locked
-          ? { ...row, fields: row.fields.filter((f) => f.targetField !== targetField) }
+          ? withReviewed(
+              { ...row, fields: row.fields.filter((f) => f.targetField !== targetField) },
+              true,
+            )
           : row,
       ),
     );
-    setConfirmedColumns((prev) => new Set(prev).add(column));
+  }, [forgetUndo]);
+
+  const setRowReviewed = useCallback((column, reviewed) => {
+    setRows((prev) =>
+      prev.map((row) => (row.column === column ? withReviewed(row, reviewed) : row)),
+    );
   }, []);
 
-  const handleConfirmRow = useCallback((column) => {
-    setConfirmedColumns((prev) => new Set(prev).add(column));
-  }, []);
+  const handleConfirmRow = useCallback(
+    (column) => {
+      setRowReviewed(column, true);
+      setUndoableColumns((prev) => new Set(prev).add(column));
+      setJustUndoneColumn(null);
+    },
+    [setRowReviewed],
+  );
+
+  // A mis-click on Confirm is otherwise only undone by discarding the page.
+  const handleUndoReview = useCallback(
+    (column) => {
+      setRowReviewed(column, false);
+      forgetUndo(column);
+      setJustUndoneColumn(column);
+    },
+    [setRowReviewed, forgetUndo],
+  );
 
   // The coverage panel reaches the same edit from the other end: pick the
   // field first, then the column that holds it.
@@ -217,15 +266,11 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
   }, []);
 
   const acceptAllHighConfidence = useCallback(() => {
-    setConfirmedColumns((prev) => {
-      const next = new Set(prev);
-      rows.forEach((row) => {
-        if (row.confidence === 'high') next.add(row.column);
-      });
-      return next;
-    });
+    setRows((prev) =>
+      prev.map((row) => (row.confidence === 'high' ? withReviewed(row, true) : row)),
+    );
     setMessage('High-confidence rows accepted. Low-confidence rows still need confirming.');
-  }, [rows]);
+  }, []);
 
   const runPreview = useCallback(async () => {
     setBusy('preview');
@@ -457,10 +502,12 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
                   row={row}
                   targetFields={mapping.targetFields || []}
                   takenFields={takenFields}
-                  confirmed={confirmedColumns.has(row.column)}
                   onAddField={handleAddField}
                   onRemoveField={handleRemoveField}
+                  canUndoReview={undoableColumns.has(row.column)}
+                  focusConfirm={justUndoneColumn === row.column}
                   onConfirm={handleConfirmRow}
+                  onUndoReview={handleUndoReview}
                   onMeltGroupChange={handleMeltGroupChange}
                   readOnly={readOnly}
                   disabled={readOnly || busy !== null}
