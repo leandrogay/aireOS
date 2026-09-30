@@ -219,15 +219,17 @@ def _meta(rules: List[Dict[str, Any]], columns: List[str]) -> Dict[str, Any]:
         for column in rule.get("sourceColumns") or []
         if column
     }
+    filled = {
+        rule["targetField"] for rule in rules if rule.get("sourceColumn")
+    }
+    # A melt group fills the period fields from its column headers, so no rule
+    # names them. Same rule as reviewIssues in the frontend's mappingReview.js.
+    if any(rule.get("status") == "derived" for rule in rules):
+        filled.update(PERIOD_DERIVED_FIELDS)
     return {
         "unmapped": [column for column in columns if column not in read],
         "requiredMissing": [
-            field
-            for field in REQUIRED_TARGET_FIELDS
-            if not any(
-                rule["targetField"] == field and rule.get("sourceColumn")
-                for rule in rules
-            )
+            field for field in REQUIRED_TARGET_FIELDS if field not in filled
         ],
     }
 
