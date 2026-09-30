@@ -315,6 +315,50 @@ def test_a_missing_quantity_is_rejected(monkeypatch):
     assert client.post("/api/inventory/records", json=body).status_code == 422
 
 
+# ---- shipped so far: current value --------------------------------------------------
+
+
+def test_get_shipped_so_far_passes_the_filters_to_the_service(monkeypatch):
+    seen = {}
+
+    def fake(customer_ids, sku, month):
+        seen.update(customer_ids=customer_ids, sku=sku, month=month)
+        return [{"customer_id": 1, "customer_name": "fairprice", "shipped_so_far": 50}]
+
+    monkeypatch.setattr(inventory_service, "get_shipped_so_far", fake)
+
+    response = client.get("/api/inventory/shipped-so-far?customer_id=1&customer_id=2&sku=A1&month=2026-10-15")
+
+    assert response.status_code == 200
+    assert seen == {"customer_ids": [1, 2], "sku": "A1", "month": date(2026, 10, 1)}
+    assert response.json() == [{"customer_id": 1, "customer_name": "fairprice", "shipped_so_far": 50}]
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "sku=A1&month=2026-10-01",  # no customer_id
+        "customer_id=1&month=2026-10-01",  # no sku
+        "customer_id=1&sku=A1",  # no month
+    ],
+)
+def test_get_shipped_so_far_returns_nothing_when_a_filter_is_missing(monkeypatch, query):
+    monkeypatch.setattr(inventory_service, "get_shipped_so_far", _raises(AssertionError("service was called")))
+
+    response = client.get(f"/api/inventory/shipped-so-far?{query}")
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_get_shipped_so_far_for_an_unknown_customer_is_404(monkeypatch):
+    monkeypatch.setattr(inventory_service, "get_shipped_so_far", _raises(inventory_service.CustomerNotFoundError("nope")))
+
+    response = client.get("/api/inventory/shipped-so-far?customer_id=9&sku=A1&month=2026-10-01")
+
+    assert response.status_code == 404
+
+
 # ---- shipped so far ----------------------------------------------------------------
 
 SHIPPED = {"customer_ids": [1], "sku": "A1", "month": "2026-10-01", "shipped_so_far": 500}

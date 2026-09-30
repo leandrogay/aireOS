@@ -264,6 +264,31 @@ def update_records(record: InventoryRecordUpdate):
         )
 
 
+@router.get("/shipped-so-far")
+def get_shipped_so_far(
+    customer_id: list[int] = Query(default=[]),
+    sku: str = Query(default=""),
+    month: date | None = None,
+):
+    if not customer_id or not sku or month is None:
+        return []
+
+    try:
+        return inventory_service.get_shipped_so_far(customer_id, sku, _first_of_month(month))
+
+    except inventory_service.CustomerNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Failed to retrieve the current temporary sell-in: "
+                f"{type(e).__name__}: {e}"
+            ),
+        )
+
+
 @router.put("/shipped-so-far")
 def set_shipped_so_far(update: ShippedSoFarUpdate):
     try:

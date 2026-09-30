@@ -3,10 +3,12 @@
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import useShippedSoFar from '@/hooks/useShippedSoFar';
 import { setShippedSoFar } from '@/app/services/inventoryApi';
 import {
   EMPTY_SHIPPED_FORM,
   buildShippedPayload,
+  monthInputToDate,
   validateShippedForm,
 } from '@/app/utils/inventoryForm';
 import { cn } from '@/lib/utils';
@@ -38,6 +40,47 @@ export default function ShippedSoFarForm({ customers, skus, onSaved }) {
   const [errors, setErrors] = useState({});
   const [submitError, setSubmitError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  // What is already saved for this exact customer(s)/SKU/month, so the user can
+  // see the current number before overwriting it. Empty until all three are chosen.
+  const allChosen = form.customerIds.length > 0 && Boolean(form.sku) && Boolean(form.month);
+  const { data: current, loading: loadingCurrent } = useShippedSoFar({
+    customerIds: form.customerIds,
+    sku: form.sku,
+    month: monthInputToDate(form.month),
+  });
+  // Gated on allChosen, not just `current`: the hook does not reset `data` when a
+  // filter is cleared (see useShippedSoFar), so without this a stale value fetched
+  // for an earlier, complete selection could leak into an incomplete one.
+  const activeCurrent = allChosen ? current : null;
+  // The lookup is a plain Cloud SQL read, usually fast, but the very first one in a
+  // while (a cold Cloud SQL Connector handshake) can take a few seconds -- without
+  // this, the field just sits blank with no sign anything is happening.
+  const checkingCurrent = allChosen && loadingCurrent && !activeCurrent;
+
+  // Fills the field with the current value the first time it resolves for a given
+  // selection. Adjust state during render, not an effect: `appliedFor` tracks the
+  // `current` array this was already applied for (a fresh array each fetch), so the
+  // guard is false again as soon as the customer(s)/SKU/month change and a new fetch
+  // resolves, but stays false on every other render (e.g. the user editing the field).
+  const [appliedFor, setAppliedFor] = useState(null);
+  if (activeCurrent && activeCurrent !== appliedFor) {
+    setAppliedFor(activeCurrent);
+    if (activeCurrent.length > 0) {
+      setForm((f) => ({ ...f, shippedSoFar: String(activeCurrent[0].shipped_so_far) }));
+    }
+  }
+
+  const currentNote = (() => {
+    const current = activeCurrent;
+    if (!current || current.length === 0) return '';
+    if (current.length === 1) {
+      return `Current temporary sell-in for ${current[0].customer_name}: ${current[0].shipped_so_far} units.`;
+    }
+    const differs = current.some((c) => c.shipped_so_far !== current[0].shipped_so_far);
+    const perCustomer = current.map((c) => `${c.customer_name} ${c.shipped_so_far}`).join(', ');
+    return `Current temporary sell-in: ${perCustomer} units.${differs ? ' The value you save replaces all of them.' : ''}`;
+  })();
 
   function setField(name, value) {
     setForm((current) => ({ ...current, [name]: value }));
@@ -146,7 +189,11 @@ export default function ShippedSoFarForm({ customers, skus, onSaved }) {
         {errors.shippedSoFar ? (
           <p className={errorClass} role="alert">{errors.shippedSoFar}</p>
         ) : (
-          <p className={hintClass}>The total sent so far for the month. Saving again replaces it; 0 clears it.</p>
+          <p className={hintClass}>
+            {checkingCurrent
+              ? 'Checking the current value…'
+              : currentNote || 'The total sent so far for the month. Saving again replaces it; 0 clears it.'}
+          </p>
         )}
       </label>
 

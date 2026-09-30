@@ -247,7 +247,7 @@ def _customer_view(monkeypatch, forecast=None, versions=None):
 
 def test_customer_view_computes_doh_from_forecast_when_actuals_run_out(monkeypatch):
     # Feb ending stock is 20; March forecast 310 over 31 days = 10/day -> DOH 2.
-    view = _customer_view(monkeypatch, forecast={"Pants A": {date(2026, 3, 1): 310.0}})
+    view = _customer_view(monkeypatch, forecast={"A1": {date(2026, 3, 1): 310.0}})
 
     feb = next(r for r in view["skus"] if r["month"] == "2026-02-01")
     assert feb["ending_stock"] == 20
@@ -255,7 +255,7 @@ def test_customer_view_computes_doh_from_forecast_when_actuals_run_out(monkeypat
 
 
 def test_customer_view_measures_doh_against_the_months_target(monkeypatch):
-    view = _customer_view(monkeypatch, forecast={"Pants A": {date(2026, 3, 1): 310.0}})
+    view = _customer_view(monkeypatch, forecast={"A1": {date(2026, 3, 1): 310.0}})
 
     feb = next(r for r in view["skus"] if r["month"] == "2026-02-01")
     assert feb["target_doh"] == 30
@@ -508,7 +508,7 @@ def _plan_view(monkeypatch, forecast, versions=None, months=2):
 
 
 # March 310 (31d) and April 300 (30d): 610 units over 61 days = 10 a day.
-_PLAN_FORECAST = {"Pants A": {date(2026, 3, 1): 310.0, date(2026, 4, 1): 300.0}}
+_PLAN_FORECAST = {"A1": {date(2026, 3, 1): 310.0, date(2026, 4, 1): 300.0}}
 
 
 def test_the_plan_starts_the_month_after_the_latest_actual_data(monkeypatch):
@@ -641,6 +641,44 @@ def test_shipped_so_far_rows_are_left_out_of_every_actuals_read():
         assert "NOT (metric_name = 'sell_in' AND value_type = 'manual_plan')" in sql
 
 
+# ---- shipped so far: reading the current value ---------------------------------
+
+
+def test_get_shipped_so_far_reads_the_current_value_per_customer(monkeypatch):
+    shipped = [{"sku": "A1", "period_start": date(2026, 10, 1), "metric_value": 50.0}]
+    _install(monkeypatch, _router(_customers("fairprice", "giant"), shipped=shipped))
+
+    result = inventory_service.get_shipped_so_far([1, 2], "A1", date(2026, 10, 1))
+
+    assert result == [
+        {"customer_id": 1, "customer_name": "fairprice", "shipped_so_far": 50},
+        {"customer_id": 2, "customer_name": "giant", "shipped_so_far": 50},
+    ]
+
+
+def test_get_shipped_so_far_reads_zero_when_nothing_was_ever_saved(monkeypatch):
+    _install(monkeypatch, _router(_customers("fairprice")))
+
+    result = inventory_service.get_shipped_so_far([1], "A1", date(2026, 10, 1))
+
+    assert result == [{"customer_id": 1, "customer_name": "fairprice", "shipped_so_far": 0}]
+
+
+def test_get_shipped_so_far_ignores_a_different_sku_or_month(monkeypatch):
+    shipped = [{"sku": "A1", "period_start": date(2026, 10, 1), "metric_value": 50.0}]
+    _install(monkeypatch, _router(_customers("fairprice"), shipped=shipped))
+
+    assert inventory_service.get_shipped_so_far([1], "B2", date(2026, 10, 1))[0]["shipped_so_far"] == 0
+    assert inventory_service.get_shipped_so_far([1], "A1", date(2026, 11, 1))[0]["shipped_so_far"] == 0
+
+
+def test_get_shipped_so_far_rejects_an_unknown_customer(monkeypatch):
+    _install(monkeypatch, _router(_customers("fairprice")))
+
+    with pytest.raises(inventory_service.CustomerNotFoundError):
+        inventory_service.get_shipped_so_far([9], "A1", date(2026, 10, 1))
+
+
 # ---- shipped so far: writing -------------------------------------------------------
 
 
@@ -747,8 +785,8 @@ def _two_sku_plan(monkeypatch, months=2):
         _metric(1, "B2", jan, "sell_out_base", 20),
     ]
     forecast = {
-        "Pants A": {date(2026, 3, 1): 310.0, date(2026, 4, 1): 300.0, date(2026, 5, 1): 310.0},
-        "Pants B": {
+        "A1": {date(2026, 3, 1): 310.0, date(2026, 4, 1): 300.0, date(2026, 5, 1): 310.0},
+        "B2": {
             date(2026, 2, 1): 280.0,
             date(2026, 3, 1): 310.0,
             date(2026, 4, 1): 300.0,
@@ -908,8 +946,8 @@ def test_actuals_are_accepted_when_the_dashboard_data_covers_the_month(monkeypat
 # A1 ends February on 20 units, B2 on 1,030; both sell about 10 a day going forward, so
 # A1 has 2.0 days of cover (low) and B2 103 days (overstock). C3 has no forecast, so no DOH.
 _RISK_FORECAST = {
-    "Pants A": {date(2026, 3, 1): 310.0, date(2026, 4, 1): 300.0, date(2026, 5, 1): 310.0},
-    "Pants B": {date(2026, 3, 1): 310.0, date(2026, 4, 1): 300.0, date(2026, 5, 1): 310.0},
+    "A1": {date(2026, 3, 1): 310.0, date(2026, 4, 1): 300.0, date(2026, 5, 1): 310.0},
+    "B2": {date(2026, 3, 1): 310.0, date(2026, 4, 1): 300.0, date(2026, 5, 1): 310.0},
 }
 
 
@@ -1054,7 +1092,7 @@ def _carton_plan(monkeypatch, product_name, sku_range):
         "get_skus",
         lambda: [{"sku": "A1", "sku_range": sku_range, "product_name": product_name, "size": "L"}],
     )
-    forecast = {product_name: {date(2026, 3, 1): 310.0, date(2026, 4, 1): 300.0}}
+    forecast = {"A1": {date(2026, 3, 1): 310.0, date(2026, 4, 1): 300.0}}
     monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: forecast)
     return inventory_service.get_sell_in_plan(1, months=1)["rows"][0]
 
@@ -1087,8 +1125,8 @@ def test_the_plan_can_be_narrowed_to_chosen_skus(monkeypatch):
     metrics = [_metric(1, "A1", jan, "sell_in", 20), _metric(1, "B2", jan, "sell_in", 20)]
     _install(monkeypatch, _router(_customers("fairprice"), metrics, [_version(5, 10, 15)]))
     forecast = {
-        "Pants A": {date(2026, 2, 1): 310.0, date(2026, 3, 1): 300.0},
-        "Pants B": {date(2026, 2, 1): 310.0, date(2026, 3, 1): 300.0},
+        "A1": {date(2026, 2, 1): 310.0, date(2026, 3, 1): 300.0},
+        "B2": {date(2026, 2, 1): 310.0, date(2026, 3, 1): 300.0},
     }
     monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: forecast)
 

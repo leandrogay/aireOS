@@ -334,15 +334,14 @@ def _sku_columns(sku: str, details: dict[str, dict]) -> dict:
 
 
 def _forecast_by_sku(customer_id: int, details: dict[str, dict]) -> dict[str, dict[date, float]]:
-    """Predicted units keyed by SKU code; a product the catalog cannot map is skipped."""
+    """Predicted units keyed by SKU code; a forecast row for a SKU our own catalog
+    doesn't know is skipped."""
 
-    sku_by_name = {info["product_name"]: sku for sku, info in details.items()}
-    by_sku: dict[str, dict[date, float]] = {}
-    for product_name, months in forecast_units.get_forecast_units(customer_id).items():
-        sku = sku_by_name.get(product_name)
-        if sku is not None:
-            by_sku[sku] = months
-    return by_sku
+    return {
+        sku: months
+        for sku, months in forecast_units.get_forecast_units(customer_id).items()
+        if sku in details
+    }
 
 
 # ============================================================
@@ -1105,6 +1104,28 @@ _LATEST_ACTUAL_MONTH_SQL = """
     GROUP BY
         customer_id
 """
+
+
+def get_shipped_so_far(customer_ids: list[int], sku: str, month: date) -> list[dict]:
+    """
+    Current temporary sell-in for one SKU and month, per customer -- what
+    saving again on that form would overwrite. A customer with no entry reads
+    as 0, the same value saving 0 means (it clears the entry), so there is no
+    separate "nothing entered yet" state to show.
+    """
+
+    month = inventory_calc.month_start(month)
+    with _read_connection() as conn:
+        customers = _fetch_customers(conn)
+        _require_customers(customers, customer_ids)
+        return [
+            {
+                "customer_id": customer_id,
+                "customer_name": customers[customer_id],
+                "shipped_so_far": int(_fetch_shipped(conn, customer_id).get(sku, {}).get(month, 0.0)),
+            }
+            for customer_id in customer_ids
+        ]
 
 
 def set_shipped_so_far(record, today: date | None = None) -> dict:

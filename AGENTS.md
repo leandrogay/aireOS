@@ -43,7 +43,7 @@ aireOS/
 │   │       ├── settings/common.py shared by every kind of setting: engines, CustomerNotFoundError, lock_customer
 │   │       ├── settings/doh.py    doh_settings (append-only versions) + customers alert columns; reads via the current_settings view; GLOBAL_DEFAULT_*_DOH 25/30/35
 │   │       ├── sellout_units.py   read-only BigQuery monthly sell-out per SKU (same weekly data as the dashboard)
-│   │       ├── forecast_units.py  read-only BigQuery forecast units per product/month, newest run only
+│   │       ├── forecast_units.py  read-only BigQuery forecast units per SKU/month, from the aire_forecasting_output view (BQ_FORECAST_OUTPUT_VIEW)
 │   │       ├── catalog_service.py retailers/stores/skus tables; get_or_create_* seams; domain exceptions
 │   │       ├── promotion_service.py promotions + promotion_stores + promotion_skus, raw SQL, one txn per write
 │   │       ├── bigquery.py        SKU ranking, dashboard summary, period comparison, options, freshness
@@ -238,7 +238,7 @@ to one `load_dotenv` in `main.py` and update the README.
 
 Backend variables: `GOOGLE_APPLICATION_CREDENTIALS`, `SERVICE_ACCOUNT_KEY_PATH`, `GCP_PROJECT_ID`,
 `GCS_BUCKET_NAME`, `GCS_DESTINATION_PREFIX`, `GCS_DESTINATION_PREFIX_MAPPING`,
-`BQ_FAIRPRICESELLOUT_TABLE`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`,
+`BQ_FAIRPRICESELLOUT_TABLE`, `BQ_FORECAST_OUTPUT_VIEW`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`,
 `POSTGRESQL_INSTANCE_CONNECTION_NAME`, `DB_IAM_USER`, `DB_NAME`.
 
 Frontend variables: `NEXT_PUBLIC_API_URL` (browser-visible, used everywhere), `BACKEND_API_URL`

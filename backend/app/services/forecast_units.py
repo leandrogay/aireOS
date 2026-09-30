@@ -1,55 +1,35 @@
-import os
 from datetime import date
 
 from google.cloud import bigquery as bq
 
+from app import config
 from app.services import bigquery
 
-
-# Read-only. Predicted sell-out units per customer, product and month. The
-# table keeps every forecast run (forecast_generated_at) and consecutive runs
-# overlap, so a month is forecast once per run that covers it. Only the newest
-# run's value for each product-month is read; adding the runs together would
-# count the same month two or three times.
-FORECAST_UNITS_TABLE = os.environ.get(
-    "BQ_FORECAST_UNITS_TABLE", "aire-data.Aire_Data.forecasting_output_xianhui_mock"
-)
+# Read-only. One row per customer x SKU x month already, maintained by the
+# BigQuery procedure run_monthly_forecast_pipeline
+FORECAST_OUTPUT_VIEW = config.BQ_FORECAST_OUTPUT_VIEW
 
 
 def get_forecast_units(customer_id: int) -> dict[str, dict[date, float]]:
     """
-    Predicted units for one customer as {product_name: {month: units}}, taken
-    from the most recent forecast run that covers each month. Only rows that
-    carry a prediction are read: the actuals in the same table are already in
-    the inventory data. The caller maps product names to SKUs through the
-    catalog.
+    Predicted sell-out units (cartons) for one customer as {sku: {month: units}}.
+    Only rows that carry a forecast are read: a missing month is not the same
+    as a forecast of zero, so it is simply absent from the result rather than
+    filled in.
     """
 
     query = f"""
         SELECT
-          product_name,
+          sku,
           month_year,
-          predicted_units
+          forecast_current
 
-        FROM (
-          SELECT
-            product_name,
-            month_year,
-            forecast_generated_at,
-            SUM(predicted_quantity_units) AS predicted_units
+        FROM `{FORECAST_OUTPUT_VIEW}`
 
-          FROM `{FORECAST_UNITS_TABLE}`
+        WHERE customer_id = @customer_id
+          AND forecast_current IS NOT NULL
 
-          WHERE customer_id = @customer_id
-            AND predicted_quantity_units IS NOT NULL
-
-          GROUP BY product_name, month_year, forecast_generated_at
-        )
-
-        QUALIFY ROW_NUMBER() OVER (
-          PARTITION BY product_name, month_year
-          ORDER BY forecast_generated_at DESC
-        ) = 1
+        ORDER BY sku, month_year
     """
     job_config = bq.QueryJobConfig(
         query_parameters=[bq.ScalarQueryParameter("customer_id", "INT64", customer_id)]
@@ -60,7 +40,5 @@ def get_forecast_units(customer_id: int) -> dict[str, dict[date, float]]:
     for row in df.to_dict(orient="records"):
         month = row["month_year"]
         month = month.date() if hasattr(month, "date") else month
-        forecast.setdefault(row["product_name"], {})[month.replace(day=1)] = float(
-            row["predicted_units"]
-        )
+        forecast.setdefault(row["sku"], {})[month.replace(day=1)] = float(row["forecast_current"])
     return forecast

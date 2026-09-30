@@ -144,6 +144,21 @@ export async function updateInventoryRecord(payload) {
 }
 
 /**
+ * GET /api/inventory/shipped-so-far
+ *
+ * The current temporary sell-in for one SKU and month, per customer -- what
+ * setShippedSoFar would overwrite. A customer with no entry reads as 0.
+ * Returns [] if any filter is missing.
+ *
+ * @param {{ customerIds?: number[], sku?: string, month?: string }} [filters]
+ * @returns {Promise<Array<{ customer_id: number, customer_name: string, shipped_so_far: number }>>}
+ */
+export async function getShippedSoFar({ customerIds, sku, month } = {}) {
+  if (!customerIds?.length || !sku || !month) return [];
+  return request(`/api/inventory/shipped-so-far${toQuery({ customer_id: customerIds, sku, month })}`);
+}
+
+/**
  * PUT /api/inventory/shipped-so-far
  *
  * Sell-in already sent for a month that has not ended, per SKU. Used only by

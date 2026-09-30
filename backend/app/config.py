@@ -75,6 +75,14 @@ BQ_FAIRPRICESELLOUT_TABLE = os.environ.get(
     "BQ_FAIRPRICESELLOUT_TABLE", "aire-data.Aire_Data.aireOS_fairprice"
 )
 
+# Final forecast the Forecast page reads: one row per customer x SKU x month
+# with the initial / previous / current lines, cartons only. Read-only; written
+# by the BigQuery procedure run_monthly_forecast_pipeline.
+BQ_FORECAST_OUTPUT_VIEW = os.environ.get(
+    "BQ_FORECAST_OUTPUT_VIEW",
+    "aire-data.Aire_Data_Analytics.aire_forecasting_output",
+)
+
 # ---- Cloud SQL --------------------------------------------------------------
 
 POSTGRESQL_INSTANCE_CONNECTION_NAME = os.environ.get(
@@ -106,7 +114,6 @@ def require(name: str) -> str:
     if not ENV_FILE_LOADED:
         raise ConfigError(
             f"{name} is not set: no env file found at {ENV_PATH}. "
-            f"Copy .env.example to .env.backend and fill it in."
         )
 
     raise ConfigError(f"{name} is not set in {ENV_PATH}")
