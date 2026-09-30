@@ -7,8 +7,8 @@ Postgres. Forecast rows carry the run date and a run_type of 'rolling'
 or 'yearly' -- see pl_forecast.py's FORECAST RUNS section for what
 those mean. This module also:
 
-  1. rebuilds the actual rows from the FairPrice sell-out table
-     (BQFairprice_TABLE, read-only) -- complete months only,
+  1. rebuilds the actual rows from weekly sell-out in v_sales_enriched
+     (SALES_ENRICHED_VIEW, read-only) -- complete months only,
   2. adds the next 12-month rolling run once a newer complete month exists,
   3. adds the next calendar year's frozen yearly baseline once its prior
      December is a complete actual month,
@@ -28,42 +28,39 @@ from google.cloud import bigquery
 
 from app.services import catalog_service, pl_forecast, promotion_service
 from app.services import bigquery as bigquery_service
-from app.services.bigquery import BQFairprice_TABLE, get_bigquery_client
+from app import config
+from app.services.bigquery import get_bigquery_client
 
 FORECAST_TABLE = bigquery_service.BQ_FORECAST_TABLE
+SALES_ENRICHED_VIEW = config.BQ_SALES_ENRICHED_VIEW
 
 
 # ============================================================
 # READS
 # ============================================================
 
-# Weekly sell-out per customer x SKU. The sell-out table has two kinds of
-# duplicates that would double the numbers if summed as-is:
-#   - the 2024 and 2025 files were each loaded twice (identical rows),
-#   - the 2026 files overlap (Jan-Aug and Jan-Sep), so for every retailer-week
-#     only the most recently loaded file is kept.
-# Rows that differ only by uom are real and are summed.
+# Weekly sell-out per customer x SKU, online + offline summed. The view sits
+# on the Datastream replica of Cloud SQL sellout, which is already unique on
+# (retailer_id, store_code, sku, period_start, period_type) -- so, unlike the
+# legacy aireOS_fairprice table, nothing needs de-duplicating here. Customers
+# are resolved through the same bridge v_customer_monthly_sales uses, so the
+# model's history and the page's Actual line agree on customer names.
 _SELLOUT_WEEKS_QUERY = """
-    WITH deduplicated AS (
-      SELECT DISTINCT period_start, retailer, store_code, sku, uom, product_name,
-                      quantity_units, revenue, source_file, loaded_at
-      FROM `{sellout_table}`
-      WHERE period_type = 'week'
-        AND product_name IS NOT NULL
-        AND REGEXP_EXTRACT(retailer, r'^(.*)_(?:offline|online)$') IN UNNEST(@customers)
-    ),
-    latest_file AS (
-      SELECT * FROM deduplicated
-      QUALIFY loaded_at = MAX(loaded_at) OVER (PARTITION BY retailer, period_start)
-    )
     SELECT
-      period_start,
-      REGEXP_EXTRACT(retailer, r'^(.*)_(?:offline|online)$') AS customer_name,
-      product_name,
-      SUM(quantity_units) AS quantity_units,
-      ROUND(SUM(revenue), 2) AS revenue
-    FROM latest_file
-    GROUP BY period_start, customer_name, product_name
+      sales.period_start,
+      customer.customer_name,
+      sales.product_name,
+      SUM(sales.quantity_units) AS quantity_units,
+      ROUND(SUM(sales.revenue), 2) AS revenue
+    FROM `{sales_view}` AS sales
+    JOIN `{dataset}.public_customer_retailers` AS bridge
+      ON bridge.retailer_id = sales.retailer_id
+    JOIN `{dataset}.public_customers` AS customer
+      ON customer.customer_id = bridge.customer_id
+    WHERE sales.period_type = 'week'
+      AND sales.product_name IS NOT NULL
+      AND customer.customer_name IN UNNEST(@customers)
+    GROUP BY sales.period_start, customer.customer_name, sales.product_name
 """
 
 
@@ -73,12 +70,14 @@ def get_forecast_table_rows() -> pd.DataFrame:
 
 
 def get_sellout_weeks(customers: list[str]) -> pd.DataFrame:
-    """Deduplicated weekly sell-out for the given customers (online + offline summed)."""
+    """Weekly sell-out for the given customers (online + offline summed)."""
     job_config = bigquery.QueryJobConfig(
         query_parameters=[bigquery.ArrayQueryParameter("customers", "STRING", customers)]
     )
     client = get_bigquery_client()
-    query = _SELLOUT_WEEKS_QUERY.format(sellout_table=BQFairprice_TABLE)
+    # The bridge tables live in the same dataset as the view.
+    dataset = SALES_ENRICHED_VIEW.rsplit(".", 1)[0]
+    query = _SELLOUT_WEEKS_QUERY.format(sales_view=SALES_ENRICHED_VIEW, dataset=dataset)
     return client.query(query, job_config=job_config).result().to_dataframe()
 
 
@@ -283,7 +282,7 @@ def refresh_forecast(
         monthly = pl_forecast.complete_months(get_sellout_weeks(customers))
         actual_changes = pl_forecast.diff_actuals(rows, monthly)
         rows = pl_forecast.apply_actual_changes(rows, actual_changes)
-        notes.append(f"actuals: {len(monthly)} complete SKU-months in {BQFairprice_TABLE}, "
+        notes.append(f"actuals: {len(monthly)} complete SKU-months in {SALES_ENRICHED_VIEW}, "
                      f"{len(actual_changes)} changed or new")
 
     actuals, ignored = pl_forecast.usable_actuals(rows, params, exclude_months)

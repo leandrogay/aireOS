@@ -1,8 +1,8 @@
 """
 Refresh the P&L forecast shown on the Forecast page.
 
-Rebuilds the actual rows in BQ_FORECAST_TABLE from the FairPrice sell-out
-table, adds the next 12-month rolling run when a newer month is complete,
+Rebuilds the actual rows in BQ_FORECAST_TABLE from weekly sell-out in
+Aire_Data_Analytics.v_sales_enriched (BQ_SALES_ENRICHED_VIEW), adds the next 12-month rolling run when a newer month is complete,
 adds a frozen yearly baseline for every calendar year whose prior December
 is complete and doesn't have one yet (all eligible years in one run -- so a
 one-time backfill against years of existing history adds all of them at

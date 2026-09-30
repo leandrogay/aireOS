@@ -90,6 +90,13 @@ BQ_SELLOUT_TABLE = os.environ.get(
     "BQ_SELLOUT_TABLE", "aire-data.Aire_Data.public_sellout"
 )
 
+# Weekly sell-out with catalog names joined on (built on the Datastream
+# replica of Cloud SQL sellout). The forecast model learns from this.
+BQ_SALES_ENRICHED_VIEW = os.environ.get(
+    "BQ_SALES_ENRICHED_VIEW",
+    "aire-data.Aire_Data_Analytics.v_sales_enriched",
+)
+
 # Forecast model output (predictions only; written out of band by
 # scripts/refresh_forecast.py).
 BQ_FORECAST_TABLE = os.environ.get(

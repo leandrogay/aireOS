@@ -113,7 +113,7 @@ def test_negative_uplift_raises_without_querying(monkeypatch):
 
 # ---- Reads -------------------------------------------------------------------
 
-def test_sellout_query_binds_customers_and_deduplicates(monkeypatch):
+def test_sellout_query_reads_enriched_view_and_binds_customers(monkeypatch):
     fake = _install_fake_client(monkeypatch)
 
     forecast_service.get_sellout_weeks(["fairprice"])
@@ -121,8 +121,11 @@ def test_sellout_query_binds_customers_and_deduplicates(monkeypatch):
     query, job_config = fake.queries[-1]
     params = {p.name: p for p in job_config.query_parameters}
     assert params["customers"].values == ["fairprice"]
-    assert "SELECT DISTINCT" in query
-    assert "QUALIFY loaded_at = MAX(loaded_at)" in query
+    assert forecast_service.SALES_ENRICHED_VIEW in query
+    assert "aireOS_fairprice" not in query
+    # Customer comes from the same bridge v_customer_monthly_sales uses, so
+    # model history and the page's Actual line agree on who "fairprice" is.
+    assert "public_customer_retailers" in query
     assert "period_type = 'week'" in query
 
 

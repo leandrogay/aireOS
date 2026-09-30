@@ -19,7 +19,6 @@ DEFAULT_CUSTOMER = "fairprice" # Fallback when no customer is supplied
 # store_code and sku only -- names and store format are resolved from the Cloud
 # SQL catalog by sellout_lookup after each query.
 SELLOUT_TABLE = config.BQ_SELLOUT_TABLE
-BQFairprice_TABLE = config.BQ_FAIRPRICESELLOUT_TABLE
 BQ_FORECAST_TABLE = config.BQ_FORECAST_TABLE
 # Closed monthly sell-out. Forecast actuals are read here, not from
 # BQ_FORECAST_TABLE -- that table is model output only.
