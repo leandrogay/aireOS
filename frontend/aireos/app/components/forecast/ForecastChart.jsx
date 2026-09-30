@@ -1,12 +1,13 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
-import { CartesianGrid, Line, LineChart, ReferenceArea, ReferenceLine, XAxis, YAxis } from 'recharts';
+import { Area, CartesianGrid, ComposedChart, Line, ReferenceArea, ReferenceLine, XAxis, YAxis } from 'recharts';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ForecastLineToggle from '@/components/forecast/ForecastLineToggle';
+import ForecastPointDetails from '@/components/forecast/ForecastPointDetails';
 import ForecastPromoPanel from '@/components/forecast/ForecastPromoPanel';
 import ForecastPromoToggle from '@/components/forecast/ForecastPromoToggle';
 import ForecastTable from '@/components/forecast/ForecastTable';
@@ -14,6 +15,7 @@ import LastUpdatedStamp from '@/components/ui/LastUpdatedStamp';
 import {
   FORECAST_SERIES,
   buildPromoOverlayBands,
+  forecastPointDetails,
   formatMonthLabel,
   nextMonthYear,
   padMonthlyPoints,
@@ -147,6 +149,7 @@ export default function ForecastChart({
   endDate,
   metric,
   onMetricChange,
+  singleSeries,
   scopeTags,
   promotions,
   selectedPromoTypes,
@@ -204,9 +207,12 @@ export default function ForecastChart({
     : chartData;
   const ticks = plotData.map((point) => point.x);
 
-  const visibleValues = chartData.flatMap((point) =>
-    visibleKeys.map((key) => point[key]).filter((value) => typeof value === 'number')
-  );
+  const showRange = Boolean(visibleSeries.current) && chartData.some((point) => point.range);
+  const visibleValues = chartData.flatMap((point) => [
+    ...visibleKeys.map((key) => point[key]),
+    ...(showRange && point.range ? point.range : []),
+  ]).filter((value) => typeof value === 'number');
+  const initialIsEmpty = Boolean(visibleSeries.initial) && !points.some((point) => point.initial != null);
   const yDomain = visibleValues.length ? niceYDomain(visibleValues) : [0, 1];
   const hoverPoint = chartPoints.find((point) => point.month_year === hoverMonth);
   const hoverPromos = promosOverlappingMonth(
@@ -222,6 +228,7 @@ export default function ForecastChart({
     color: series.color,
     value: hoverPoint?.[series.key],
   }));
+  const formatValue = (value) => formatTooltipValue(value, metric);
 
   function axisXFromClientX(clientX) {
     if (!chartWrapRef.current || !chartPoints.length) return null;
@@ -331,6 +338,19 @@ export default function ForecastChart({
           />
         </div>
 
+        {initialIsEmpty || (visibleSeries.current && !singleSeries) ? (
+          <div className="space-y-0.5 text-[11px] text-deep-violet-blue/60">
+            {initialIsEmpty ? (
+              <p>
+                Initial Yearly Forecast is frozen each December for the next year; the first one covers 2027.
+              </p>
+            ) : null}
+            {visibleSeries.current && !singleSeries ? (
+              <p>Pick one SKU and customer to see the 80% range and each month&apos;s confidence.</p>
+            ) : null}
+          </div>
+        ) : null}
+
         {!hasVisibleLine ? (
           <p className="text-sm text-muted-foreground">No lines selected. Turn a line on to plot values.</p>
         ) : !hasData ? (
@@ -348,7 +368,7 @@ export default function ForecastChart({
               }}
             >
               <ChartContainer config={chartConfig} className="aspect-auto h-[34vh] min-h-[220px] w-full">
-                <LineChart
+                <ComposedChart
                   accessibilityLayer
                   data={plotData}
                   margin={{ top: 8, right: 18, left: 0, bottom: 28 }}
@@ -391,7 +411,13 @@ export default function ForecastChart({
                           {...props}
                           className="border-violet/40 bg-white"
                           labelFormatter={(_value, payload) => payload?.[0]?.payload?.label ?? ''}
-                          valueFormatter={(value) => formatTooltipValue(value, metric)}
+                          valueFormatter={formatValue}
+                          footer={
+                            <ForecastPointDetails
+                              details={forecastPointDetails(point, metric, formatValue)}
+                              className="mt-1 border-t border-lavander pt-1.5"
+                            />
+                          }
                         />
                       );
                     }}
@@ -417,6 +443,20 @@ export default function ForecastChart({
                       ifOverflow="visible"
                     />
                   ))}
+                  {showRange ? (
+                    <Area
+                      dataKey="range"
+                      name="80% range"
+                      type="monotone"
+                      stroke="none"
+                      fill={chartConfig.current.color}
+                      fillOpacity={0.14}
+                      tooltipType="none"
+                      legendType="none"
+                      activeDot={false}
+                      isAnimationActive={false}
+                    />
+                  ) : null}
                   {FORECAST_SERIES.filter((series) => visibleSeries[series.key]).map((series) => (
                     <Line
                       key={series.key}
@@ -439,7 +479,7 @@ export default function ForecastChart({
                       isAnimationActive={false}
                     />
                   ))}
-                </LineChart>
+                </ComposedChart>
               </ChartContainer>
               {hoverPromos.length ? (
                 <div
@@ -456,7 +496,8 @@ export default function ForecastChart({
                   <ForecastPromoPanel
                     monthLabel={hoverPoint?.label ?? formatMonthLabel(hoverMonth)}
                     seriesValues={seriesValues}
-                    formatValue={(value) => formatTooltipValue(value, metric)}
+                    details={forecastPointDetails(hoverPoint, metric, formatValue)}
+                    formatValue={formatValue}
                     promos={hoverPromos}
                     openPromoId={openPromoId}
                     onTogglePromo={(key) =>

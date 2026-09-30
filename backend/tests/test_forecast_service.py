@@ -294,7 +294,11 @@ def test_get_forecast_view_combines_rows_actuals_and_promos(monkeypatch):
 
     def _rows(**kwargs):
         captured["rows"] = kwargs
-        return [{"month_year": "2026-08-01", "predicted_quantity_units": 100.0}]
+        return [{"customer_id": 1, "sku": "13271338", "month_year": "2026-08-01", "forecast_current": 100.0}]
+
+    def _prices(**kwargs):
+        captured["prices"] = kwargs
+        return {(1, "13271338"): 8.22}
 
     def _actuals(**kwargs):
         captured["actuals"] = kwargs
@@ -306,12 +310,10 @@ def test_get_forecast_view_combines_rows_actuals_and_promos(monkeypatch):
 
     def _freshness(**kwargs):
         captured["freshness"] = kwargs
-        return {
-            "forecast_by_tier": {"0": "2026-08-31", "1": "2026-08-31"},
-            "latest_sales_loaded_at": "2026-09-27T06:32:01Z",
-        }
+        return {"current_generated_at": "2026-09-30T16:28:11Z", "latest_sales_loaded_at": "2026-09-27T06:32:01Z"}
 
-    monkeypatch.setattr(forecast_service.bigquery_service, "get_forecast_rows", _rows)
+    monkeypatch.setattr(forecast_service.bigquery_service, "get_forecast_output_rows", _rows)
+    monkeypatch.setattr(forecast_service.bigquery_service, "get_realised_prices", _prices)
     monkeypatch.setattr(forecast_service.bigquery_service, "get_forecast_actuals", _actuals)
     monkeypatch.setattr(forecast_service.promotion_service, "list_forecast_promotions", _promos)
     monkeypatch.setattr(forecast_service.bigquery_service, "get_forecast_freshness", _freshness)
@@ -329,42 +331,50 @@ def test_get_forecast_view_combines_rows_actuals_and_promos(monkeypatch):
         "start_date": "2026-01-01",
         "end_date": "2026-12-01",
     }
-    assert captured["rows"] == {**expected, "tier": None}
+    assert captured["rows"] == expected
+    assert captured["prices"] == {"product_name": None, "customer_name": "fairprice"}
     assert captured["actuals"] == expected
     assert captured["promotions"] == expected
     assert captured["freshness"] == {"customer_name": "fairprice"}
-    assert result["rows"][0]["predicted_quantity_units"] == 100.0
+    assert result["rows"][0]["forecast_current"] == 100.0
+    assert result["rows"][0]["forecast_current_revenue"] == 822.0
     assert result["actuals"][0]["quantity_cartons"] == 209.0
     assert result["promotions"][0]["promo_type"] == "bundle"
-    assert result["freshness"]["latest_sales_loaded_at"] == "2026-09-27T06:32:01Z"
+    assert result["freshness"]["current_generated_at"] == "2026-09-30T16:28:11Z"
 
 
-def test_get_forecast_view_forwards_tier_only_to_forecast_rows(monkeypatch):
-    captured = {}
+# ---- Forecast revenue at realised price ----
 
-    monkeypatch.setattr(
-        forecast_service.bigquery_service,
-        "get_forecast_rows",
-        lambda **kwargs: captured.setdefault("rows", kwargs) or [],
-    )
-    monkeypatch.setattr(
-        forecast_service.bigquery_service,
-        "get_forecast_actuals",
-        lambda **kwargs: captured.setdefault("actuals", kwargs) or [],
-    )
-    monkeypatch.setattr(
-        forecast_service.promotion_service,
-        "list_forecast_promotions",
-        lambda **kwargs: captured.setdefault("promotions", kwargs) or [],
-    )
-    monkeypatch.setattr(
-        forecast_service.bigquery_service,
-        "get_forecast_freshness",
-        lambda **kwargs: {"forecast_by_tier": {}, "latest_sales_loaded_at": None},
-    )
 
-    forecast_service.get_forecast_view(customer_name="fairprice", tier=1)
+def test_revenue_is_cartons_times_each_skus_own_price():
+    rows = [
+        {"customer_id": 1, "sku": "A", "forecast_current": 100.0, "current_low_80": 80.0, "current_high_80": 130.0},
+        {"customer_id": 1, "sku": "B", "forecast_current": 10.0},
+    ]
 
-    assert captured["rows"]["tier"] == 1
-    assert "tier" not in captured["actuals"]
-    assert "tier" not in captured["promotions"]
+    priced = forecast_service.add_forecast_revenue(rows, {(1, "A"): 8.22, (1, "B"): 16.66})
+
+    assert priced[0]["realised_price"] == 8.22
+    assert priced[0]["forecast_current_revenue"] == 822.0
+    assert priced[0]["current_low_80_revenue"] == 657.6
+    assert priced[0]["current_high_80_revenue"] == 1068.6
+    assert priced[1]["forecast_current_revenue"] == 166.6
+
+
+def test_blank_forecast_line_stays_blank_revenue():
+    rows = [{"customer_id": 1, "sku": "A", "forecast_current": 100.0, "forecast_initial": None}]
+
+    priced = forecast_service.add_forecast_revenue(rows, {(1, "A"): 8.22})
+
+    assert priced[0]["forecast_initial_revenue"] is None
+    assert priced[0]["forecast_previous_revenue"] is None
+
+
+def test_sku_without_a_price_gets_blank_revenue_not_zero():
+    rows = [{"customer_id": 1, "sku": "NEW", "forecast_current": 40.0}]
+
+    priced = forecast_service.add_forecast_revenue(rows, {})
+
+    assert priced[0]["realised_price"] is None
+    assert priced[0]["forecast_current_revenue"] is None
+    assert priced[0]["forecast_current"] == 40.0

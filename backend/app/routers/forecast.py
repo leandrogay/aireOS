@@ -20,7 +20,6 @@ def get_forecast(
     customer_name: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
-    tier: int | None = None,
 ):
     try:
         return forecast_service.get_forecast_view(
@@ -28,7 +27,6 @@ def get_forecast(
             customer_name=customer_name,
             start_date=start_date,
             end_date=end_date,
-            tier=tier,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

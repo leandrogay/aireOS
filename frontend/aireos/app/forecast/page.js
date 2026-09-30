@@ -1,19 +1,17 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import PageLayout from '@/components/layout/PageLayout';
 import ForecastChart from '@/components/forecast/ForecastChart';
 import ForecastFilters from '@/components/forecast/ForecastFilters';
-import { getForecastOptions, getForecastView } from '@/app/services/forecastApi';
+import { EMPTY_FORECAST_FRESHNESS, getForecastOptions, getForecastView } from '@/app/services/forecastApi';
 import { retailerLabel } from '@/app/utils/promotionForm';
 import { currentYearDateRange, readForecastDateSession, writeForecastDateSession } from '@/app/utils/dateRange';
 import {
   ALL_PACK_TYPE_VALUES,
   ALL_PROMO_TYPE_VALUES,
   ALL_SERIES_VISIBLE,
-  DEFAULT_FORECAST_TIER,
-  FORECAST_TIERS,
   buildMonthlyPoints,
   formatTimestamp,
   sumHorizonForecast,
@@ -27,7 +25,6 @@ export default function ForecastPage() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [metric, setMetric] = useState('units');
-  const [tier, setTier] = useState(DEFAULT_FORECAST_TIER);
   const [selectedPromoTypes, setSelectedPromoTypes] = useState(ALL_PROMO_TYPE_VALUES);
   const [selectedPackTypes, setSelectedPackTypes] = useState(ALL_PACK_TYPE_VALUES);
   const [visibleSeries, setVisibleSeries] = useState(ALL_SERIES_VISIBLE);
@@ -37,10 +34,7 @@ export default function ForecastPage() {
   const [rows, setRows] = useState([]);
   const [actuals, setActuals] = useState([]);
   const [promotions, setPromotions] = useState([]);
-  const [freshness, setFreshness] = useState({
-    forecast_by_tier: {},
-    latest_sales_loaded_at: null,
-  });
+  const [freshness, setFreshness] = useState(EMPTY_FORECAST_FRESHNESS);
   const [ready, setReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -96,22 +90,12 @@ export default function ForecastPage() {
           customerName,
           startDate,
           endDate,
-          tier,
         });
         if (cancelled) return;
-        // The mock table may have no Tier 1 rows. Bounce the toggle to
-        // Tier 0 so the user sees that model's results instead of an
-        // empty chart -- the effect re-runs with tier=0.
-        if (tier === 1 && !(payload.rows ?? []).length) {
-          setTier(0);
-          return;
-        }
         setRows(payload.rows);
         setActuals(payload.actuals);
         setPromotions(payload.promotions);
-        setFreshness(
-          payload.freshness ?? { forecast_by_tier: {}, latest_sales_loaded_at: null }
-        );
+        setFreshness(payload.freshness ?? EMPTY_FORECAST_FRESHNESS);
         setError(null);
       } catch (err) {
         if (!cancelled) setError(err.message);
@@ -124,23 +108,21 @@ export default function ForecastPage() {
     return () => {
       cancelled = true;
     };
-  }, [ready, productName, customerName, startDate, endDate, tier]);
+  }, [ready, productName, customerName, startDate, endDate]);
 
   useEffect(() => {
     if (!ready || !startDate || !endDate) return;
     writeForecastDateSession(startDate, endDate);
   }, [ready, startDate, endDate]);
 
-  const points = useMemo(
-    () => buildMonthlyPoints(rows, actuals, metric),
-    [rows, actuals, metric]
-  );
+  // The 80% range, confidence and promo situation describe one series, so
+  // they only show once a single customer and SKU are picked.
+  const singleSeries = Boolean(productName && customerName);
+  const points = buildMonthlyPoints(rows, actuals, metric, { singleSeries });
   const horizonTotal = sumHorizonForecast(points);
   const freshnessItems = [
-    ...FORECAST_TIERS.map((option) => ({
-      label: `${option.label} forecast`,
-      value: formatTimestamp(freshness.forecast_by_tier?.[String(option.value)]),
-    })),
+    { label: 'Current forecast', value: formatTimestamp(freshness.current_generated_at) },
+    { label: 'Previous forecast', value: formatTimestamp(freshness.previous_generated_at) },
     {
       label: customerName ? `${retailerLabel(customerName)} sales` : 'All customers sales',
       value: formatTimestamp(freshness.latest_sales_loaded_at),
@@ -196,8 +178,6 @@ export default function ForecastPage() {
           canClearFilters={canClearFilters}
           horizonTotal={horizonTotal}
           metric={metric}
-          tier={tier}
-          onTierChange={setTier}
         />
 
         <ForecastChart
@@ -206,6 +186,7 @@ export default function ForecastPage() {
           endDate={endDate}
           metric={metric}
           onMetricChange={setMetric}
+          singleSeries={singleSeries}
           scopeTags={scopeTags}
           promotions={promotions}
           selectedPromoTypes={selectedPromoTypes}

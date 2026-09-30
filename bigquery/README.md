@@ -50,7 +50,7 @@ procedure.
 | Object | Kind | Purpose |
 | --- | --- | --- |
 | `fc_tier0_forecasts` | View (`views/010_…`) | The formula recomputed from every past month as a cut-off: latest cut-off = live forecast, 3 months back = holdout, earlier = past errors |
-| `run_tier0_legacy(run_ts)` | Procedure (`procedures/run_tier0_legacy.sql`) | Writes Tier 0's holdout score to `model_quality_log` and its 13-month forecast with an 80% range to `aire_forecasting_runs`, as `tier0_legacy` |
+| `run_tier0_legacy(run_ts)` | Procedure (`procedures/run_tier0_legacy.sql`) | Writes Tier 0's holdout score to `fc_model_quality_log` and its 13-month forecast with an 80% range to `aire_forecasting_runs`, as `tier0_legacy` |
 
 It reads only `fc_training_input` and `fc_future_input`, and writes only the
 pipeline's own tables. To deploy: run `views/010_create_tier0_legacy_forecasts_view.sql`,

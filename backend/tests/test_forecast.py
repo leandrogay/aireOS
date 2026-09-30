@@ -39,87 +39,127 @@ def _install_fake_client(monkeypatch, df):
     return fake_client
 
 
-# ---- forecast rows (model output only) ----
+# ---- forecast rows (aire_forecasting_output) ----
 
 
-def test_get_forecast_rows_rejects_bad_dates(monkeypatch):
-    _install_fake_client(monkeypatch, pd.DataFrame())
+def _output_record(**overrides):
+    record = {
+        "customer_id": 1,
+        "customer_name": "fairprice",
+        "sku": "13271338",
+        "product_name": "Aire Ultra Tape L",
+        "month_year": datetime.date(2026, 8, 1),
+        "forecast_initial": None,
+        "initial_source_model": None,
+        "initial_generated_at": pd.NaT,
+        "forecast_previous": None,
+        "previous_source_model": None,
+        "previous_generated_at": pd.NaT,
+        "forecast_current": 540.0,
+        "current_source_model": "tier0_legacy",
+        "current_generated_at": pd.Timestamp("2026-09-30 16:28:11", tz="UTC"),
+        "current_low_80": 410.0,
+        "current_high_80": 690.0,
+        "current_backtest_smape": 75.6,
+        "current_confidence_band": "low",
+        "promo_mix": "monthly_only",
+    }
+    record.update(overrides)
+    return record
+
+
+def test_forecast_output_rows_reject_bad_dates_without_querying(monkeypatch):
+    def _no_client_allowed():
+        raise AssertionError("BigQuery should not be queried for a bad date")
+
+    monkeypatch.setattr(bigquery, "get_bigquery_client", _no_client_allowed)
     with pytest.raises(ValueError, match="start_date"):
-        bigquery.get_forecast_rows(start_date="01-01-2026")
+        bigquery.get_forecast_output_rows(start_date="01-01-2026")
 
 
-def test_get_forecast_rows_filters_and_serializes(monkeypatch):
+def test_forecast_output_rows_bind_filters_as_parameters(monkeypatch):
+    fake = _install_fake_client(monkeypatch, pd.DataFrame())
+
+    bigquery.get_forecast_output_rows(
+        product_name="Aire Ultra Tape L",
+        customer_name="fairprice",
+        start_date="2026-08-01",
+        end_date="2027-07-01",
+    )
+
+    assert bigquery.BQ_FORECAST_OUTPUT_VIEW in fake.last_query
+    assert "public_customers" in fake.last_query
+    assert "public_skus" in fake.last_query
+    assert "Aire Ultra Tape L" not in fake.last_query
+    params = _params_by_name(fake.last_job_config)
+    assert params["product_name"].value == "Aire Ultra Tape L"
+    assert params["customer_name"].value == "fairprice"
+    assert str(params["start_date"].value) == "2026-08-01"
+    assert str(params["end_date"].value) == "2027-07-01"
+
+
+def test_forecast_output_rows_select_named_columns_only(monkeypatch):
+    fake = _install_fake_client(monkeypatch, pd.DataFrame())
+
+    bigquery.get_forecast_output_rows()
+
+    outer_select = fake.last_query.split("FROM output_with_names")[0].split("SELECT")[-1]
+    for column in bigquery.FORECAST_OUTPUT_COLUMNS:
+        assert column in outer_select
+    assert "*" not in outer_select
+
+
+def test_forecast_output_row_keeps_blank_lines_as_none(monkeypatch):
+    _install_fake_client(monkeypatch, pd.DataFrame([_output_record()]))
+
+    rows = bigquery.get_forecast_output_rows()
+
+    assert rows == [
+        {
+            "customer_id": 1,
+            "customer_name": "fairprice",
+            "sku": "13271338",
+            "product_name": "Aire Ultra Tape L",
+            "month_year": "2026-08-01",
+            "forecast_initial": None,
+            "initial_source_model": None,
+            "initial_generated_at": None,
+            "forecast_previous": None,
+            "previous_source_model": None,
+            "previous_generated_at": None,
+            "forecast_current": 540.0,
+            "current_source_model": "tier0_legacy",
+            "current_generated_at": "2026-09-30T16:28:11Z",
+            "current_low_80": 410.0,
+            "current_high_80": 690.0,
+            "current_backtest_smape": 75.6,
+            "current_confidence_band": "low",
+            "promo_mix": "monthly_only",
+        }
+    ]
+
+
+# ---- realised prices from v_customer_monthly_sales ----
+
+
+def test_realised_prices_average_latest_months_per_sku(monkeypatch):
     df = pd.DataFrame(
         [
-            {
-                "month_year": datetime.date(2026, 8, 1),
-                "forecast_generated_at": datetime.date(2026, 7, 31),
-                "run_type": "yearly",
-                "tier": 1,
-                "customer_id": 1,
-                "customer_name": "fairprice",
-                "product_name": "Aire Ultra Tape L",
-                "predicted_quantity_units": 680.0,
-                "predicted_revenue": 9520.0,
-            },
-            {
-                "month_year": datetime.date(2026, 9, 1),
-                "forecast_generated_at": datetime.date(2026, 8, 31),
-                "customer_id": 1,
-                "customer_name": "fairprice",
-                "product_name": "Aire Ultra Tape L",
-                "predicted_quantity_units": 700.0,
-                "predicted_revenue": 9800.0,
-            },
+            {"customer_id": 1, "sku": "13271338", "realised_price": 8.22},
+            {"customer_id": 1, "sku": "13255044", "realised_price": None},
         ]
     )
     fake = _install_fake_client(monkeypatch, df)
 
-    rows = bigquery.get_forecast_rows(
-        product_name="Aire Ultra Tape L",
-        customer_name="fairprice",
-        start_date="2026-07-01",
-        end_date="2027-08-01",
-    )
+    prices = bigquery.get_realised_prices(customer_name="fairprice")
 
-    assert bigquery.BQ_FORECAST_TABLE in fake.last_query
-    assert "promo_type" not in fake.last_query
-    assert "quantity_cartons" not in fake.last_query
+    assert bigquery.BQ_MONTHLY_SALES_VIEW in fake.last_query
+    assert "SUM(revenue), SUM(quantity_cartons)" in fake.last_query
     params = _params_by_name(fake.last_job_config)
-    assert params["product_name"].value == "Aire Ultra Tape L"
     assert params["customer_name"].value == "fairprice"
-    assert str(params["start_date"].value) == "2026-07-01"
-    assert str(params["end_date"].value) == "2027-08-01"
-
-    assert rows[0]["run_type"] == "yearly"
-    assert rows[0]["tier"] == 1
-    assert rows[0]["predicted_quantity_units"] == 680.0
-    assert rows[1]["forecast_generated_at"] == "2026-08-31"
-    assert rows[1]["run_type"] == "rolling"
-    assert rows[1]["tier"] == 0
-    assert rows[1]["predicted_revenue"] == 9800.0
-    assert "promo_type" not in rows[0]
-    assert "quantity_units" not in rows[0]
-
-
-def test_invalid_tier_raises_without_querying(monkeypatch):
-    def _no_client_allowed():
-        raise AssertionError("BigQuery should not be queried for a bad tier")
-
-    monkeypatch.setattr(bigquery, "get_bigquery_client", _no_client_allowed)
-    with pytest.raises(ValueError, match="tier"):
-        bigquery.get_forecast_rows(tier=2)
-
-
-def test_get_forecast_rows_filters_by_tier(monkeypatch):
-    fake = _install_fake_client(monkeypatch, pd.DataFrame())
-
-    bigquery.get_forecast_rows(customer_name="fairprice", tier=1)
-
-    assert "COALESCE(tier, 0) = @tier" in fake.last_query
-    params = _params_by_name(fake.last_job_config)
-    assert params["tier"].value == 1
-    assert params["customer_name"].value == "fairprice"
+    assert params["price_months"].value == bigquery.REALISED_PRICE_MONTHS
+    # A SKU whose price can't be worked out is left out, not priced at 0.
+    assert prices == {(1, "13271338"): 8.22}
 
 
 # ---- actuals from v_customer_monthly_sales ----
@@ -193,7 +233,7 @@ def test_get_forecast_options(monkeypatch):
 
     options = bigquery.get_forecast_options()
 
-    assert bigquery.BQ_FORECAST_TABLE in fake.last_query
+    assert bigquery.BQ_FORECAST_OUTPUT_VIEW in fake.last_query
     assert bigquery.BQ_MONTHLY_SALES_VIEW in fake.last_query
     assert "UNION ALL" in fake.last_query
     assert options["customers"] == ["fairprice"]
@@ -202,7 +242,7 @@ def test_get_forecast_options(monkeypatch):
     assert options["end_date"] == "2027-08-01"
 
 
-# ---- forecast freshness (per-tier generated_at + sales loaded_at) ----
+# ---- forecast freshness (generated_at per line + sales loaded_at) ----
 
 
 class FakeFreshnessClient:
@@ -220,11 +260,14 @@ class FakeFreshnessClient:
         return FakeQueryJob(self.forecast_df)
 
 
-def test_get_forecast_freshness_per_tier_and_customer(monkeypatch):
+def test_forecast_freshness_stamps_each_line_for_the_customer(monkeypatch):
     forecast_df = pd.DataFrame(
         [
-            {"tier": 0, "forecast_generated_at": datetime.date(2026, 7, 31)},
-            {"tier": 1, "forecast_generated_at": datetime.datetime(2026, 8, 31, 14, 32, 1)},
+            {
+                "current_generated_at": pd.Timestamp("2026-09-30 16:28:11", tz="UTC"),
+                "previous_generated_at": pd.NaT,
+                "initial_generated_at": pd.NaT,
+            }
         ]
     )
     sales_df = pd.DataFrame(
@@ -235,21 +278,30 @@ def test_get_forecast_freshness_per_tier_and_customer(monkeypatch):
 
     freshness = bigquery.get_forecast_freshness(customer_name="fairprice")
 
-    assert bigquery.BQ_FORECAST_TABLE in fake.queries[0]
-    assert "MAX(forecast_generated_at)" in fake.queries[0]
-    assert "GROUP BY tier" in fake.queries[0]
+    assert bigquery.BQ_FORECAST_OUTPUT_VIEW in fake.queries[0]
+    assert "MAX(current_generated_at)" in fake.queries[0]
     assert bigquery.BQ_MONTHLY_SALES_VIEW in fake.queries[1]
-    assert "MAX(latest_sales_loaded_at)" in fake.queries[1]
     params = _params_by_name(fake.job_configs[0])
     assert params["customer_name"].value == "fairprice"
-    assert freshness["forecast_by_tier"]["0"] == "2026-07-31"
-    assert freshness["forecast_by_tier"]["1"] == "2026-08-31T14:32:01Z"
-    assert freshness["latest_sales_loaded_at"] == "2026-09-27T06:32:01Z"
+    assert freshness == {
+        "current_generated_at": "2026-09-30T16:28:11Z",
+        "previous_generated_at": None,
+        "initial_generated_at": None,
+        "latest_sales_loaded_at": "2026-09-27T06:32:01Z",
+    }
 
 
-def test_get_forecast_freshness_all_customers_omits_customer_param(monkeypatch):
+def test_forecast_freshness_all_customers_omits_customer_param(monkeypatch):
     fake = FakeFreshnessClient(
-        pd.DataFrame([{"tier": 1, "forecast_generated_at": datetime.date(2026, 8, 31)}]),
+        pd.DataFrame(
+            [
+                {
+                    "current_generated_at": pd.NaT,
+                    "previous_generated_at": pd.NaT,
+                    "initial_generated_at": pd.NaT,
+                }
+            ]
+        ),
         pd.DataFrame([{"latest_sales_loaded_at": None}]),
     )
     monkeypatch.setattr(bigquery, "get_bigquery_client", lambda: fake)
@@ -258,8 +310,7 @@ def test_get_forecast_freshness_all_customers_omits_customer_param(monkeypatch):
 
     params = _params_by_name(fake.job_configs[0])
     assert "customer_name" not in params
-    assert freshness["forecast_by_tier"]["0"] is None
-    assert freshness["forecast_by_tier"]["1"] == "2026-08-31"
+    assert freshness["current_generated_at"] is None
     assert freshness["latest_sales_loaded_at"] is None
 
 
@@ -267,3 +318,9 @@ def test_iso_stamp_keeps_date_or_clock_time():
     assert bigquery._iso_stamp(datetime.date(2026, 8, 31)) == "2026-08-31"
     assert bigquery._iso_stamp(datetime.datetime(2026, 8, 31, 14, 32, 1)) == "2026-08-31T14:32:01Z"
     assert bigquery._iso_stamp(None) is None
+
+
+def test_iso_stamp_treats_nat_as_blank():
+    # An all-NULL TIMESTAMP column (previous / initial before they exist)
+    # comes back from BigQuery as NaT, which used to crash on strftime.
+    assert bigquery._iso_stamp(pd.NaT) is None

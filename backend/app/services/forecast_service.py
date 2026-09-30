@@ -1,11 +1,14 @@
 """
-BigQuery reads/writes for the P&L forecast, and the refresh entrypoint.
+BigQuery reads/writes for the forecast, and the legacy refresh entrypoint.
 
-The Forecast page reads model rows from BQ_FORECAST_TABLE, monthly
-actuals from v_customer_monthly_sales, and overlapping promos from
-Postgres. Forecast rows carry the run date and a run_type of 'rolling'
-or 'yearly' -- see pl_forecast.py's FORECAST RUNS section for what
-those mean. This module also:
+The Forecast page reads forecast rows from aire_forecasting_output (written
+by the BigQuery pipeline), monthly actuals and realised prices from
+v_customer_monthly_sales, and overlapping promos from Postgres.
+
+The WRITES and REFRESH sections are the legacy P&L path, kept until the
+old mock table is retired. It writes BQ_FORECAST_TABLE, whose rows carry the run
+date and a run_type of 'rolling' or 'yearly' -- see pl_forecast.py's
+FORECAST RUNS section for what those mean. It also:
 
   1. rebuilds the actual rows from weekly sell-out in v_sales_enriched
      (SALES_ENRICHED_VIEW, read-only) -- complete months only,
@@ -81,37 +84,71 @@ def get_sellout_weeks(customers: list[str]) -> pd.DataFrame:
     return client.query(query, job_config=job_config).result().to_dataframe()
 
 
+# Carton columns on an output row -> the revenue column each one prices into.
+_REVENUE_COLUMNS = {
+    "forecast_initial": "forecast_initial_revenue",
+    "forecast_previous": "forecast_previous_revenue",
+    "forecast_current": "forecast_current_revenue",
+    "current_low_80": "current_low_80_revenue",
+    "current_high_80": "current_high_80_revenue",
+}
+
+
+def add_forecast_revenue(rows: list[dict], prices: dict[tuple[int, str], float]) -> list[dict]:
+    """Price each row's cartons at its own customer x SKU realised price.
+
+    Done per row, before the page sums SKUs, so "All SKUs" revenue weights
+    every SKU by its own price. A missing price or a blank carton value
+    leaves the revenue blank (None), never 0.
+    """
+    priced = []
+    for row in rows:
+        price = prices.get((row.get("customer_id"), row.get("sku")))
+        revenue = {}
+        for cartons_key, revenue_key in _REVENUE_COLUMNS.items():
+            cartons = row.get(cartons_key)
+            revenue[revenue_key] = (
+                round(cartons * price, 2) if cartons is not None and price is not None else None
+            )
+        priced.append({**row, "realised_price": price, **revenue})
+    return priced
+
+
 def get_forecast_view(
     product_name: str | None = None,
     customer_name: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
-    tier: int | None = None,
 ) -> dict:
-    """One Forecast-page payload: model rows, monthly actuals, and overlapping promos.
+    """One Forecast-page payload: forecast rows, monthly actuals, and overlapping promos.
 
-    Forecast rows come from BQ_FORECAST_TABLE (predictions only), scoped
-    to the selected tier when one is passed -- no fallback to the other
-    tier. Actuals come from v_customer_monthly_sales. Promos come from
-    Postgres and are not stored on forecast rows.
+    Forecast rows come from aire_forecasting_output (the BigQuery pipeline
+    has already picked the initial / previous / current lines and the model
+    per month) and are priced here at realised price. Actuals come from
+    v_customer_monthly_sales. Promos come from Postgres.
     """
     product_name = product_name or None
     customer_name = customer_name or None
     start_date = start_date or None
     end_date = end_date or None
 
+    rows = bigquery_service.get_forecast_output_rows(
+        product_name=product_name,
+        customer_name=customer_name,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    prices = bigquery_service.get_realised_prices(
+        product_name=product_name,
+        customer_name=customer_name,
+    )
+
     return {
         "product_name": product_name,
         "customer_name": customer_name,
         "start_date": start_date,
         "end_date": end_date,
-        "rows": bigquery_service.get_forecast_rows(
-            product_name=product_name,
-            customer_name=customer_name,
-            start_date=start_date,
-            end_date=end_date,
-            tier=tier,
-        ),
+        "rows": add_forecast_revenue(rows, prices),
         "actuals": bigquery_service.get_forecast_actuals(
             product_name=product_name,
             customer_name=customer_name,

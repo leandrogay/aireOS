@@ -17,38 +17,48 @@ async function request(path) {
   return data;
 }
 
+/**
+ * GET /api/forecast/options
+ * Product and customer names plus the date-picker bounds, across both the
+ * forecast output and monthly actuals.
+ */
 export async function getForecastOptions() {
   return request('/api/forecast/options');
 }
 
+export const EMPTY_FORECAST_FRESHNESS = {
+  current_generated_at: null,
+  previous_generated_at: null,
+  initial_generated_at: null,
+  latest_sales_loaded_at: null,
+};
+
 /**
  * GET /api/forecast
- * Model rows for the selected tier (no fallback), monthly actuals (cartons),
- * overlapping Postgres promos, and freshness stamps (forecast_generated_at
- * per tier + sales loaded_at).
+ * Forecast rows from aire_forecasting_output (one per customer x SKU x month,
+ * with forecast_initial / forecast_previous / forecast_current, the model per
+ * month, and *_revenue at realised price), monthly actuals (cartons +
+ * revenue), overlapping Postgres promos, and freshness stamps (when each
+ * forecast line was generated + sales loaded_at).
+ * See backend forecast_service.get_forecast_view.
  */
 export async function getForecastView({
   productName = '',
   customerName = '',
   startDate = '',
   endDate = '',
-  tier,
 } = {}) {
   const params = new URLSearchParams();
   if (productName) params.set('product_name', productName);
   if (customerName) params.set('customer_name', customerName);
   if (startDate) params.set('start_date', startDate);
   if (endDate) params.set('end_date', endDate);
-  if (tier === 0 || tier === 1) params.set('tier', String(tier));
   const query = params.toString();
   const data = await request(`/api/forecast/${query ? `?${query}` : ''}`);
   return {
     rows: data.rows ?? [],
     actuals: data.actuals ?? [],
     promotions: data.promotions ?? [],
-    freshness: data.freshness ?? {
-      forecast_by_tier: {},
-      latest_sales_loaded_at: null,
-    },
+    freshness: data.freshness ?? EMPTY_FORECAST_FRESHNESS,
   };
 }

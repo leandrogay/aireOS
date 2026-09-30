@@ -3,6 +3,7 @@
 import { ChevronDown } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
+import ForecastPointDetails from '@/components/forecast/ForecastPointDetails';
 import { PACK_TYPES, promoTypeLabel, splitPromoType } from '@/app/utils/promotionForm';
 import { promoIdentity, promoOverlayStyle } from '@/app/utils/forecastView';
 
@@ -47,6 +48,7 @@ function DetailRow({ label, value }) {
 export default function ForecastPromoPanel({
   monthLabel,
   seriesValues,
+  details,
   formatValue,
   promos,
   openPromoId,
@@ -81,6 +83,7 @@ export default function ForecastPromoPanel({
             ))}
           </ul>
         ) : null}
+        <ForecastPointDetails details={details} className="mt-2 border-t border-lavander pt-2" />
       </div>
       <div className="border-b border-lavander px-3 py-1.5">
         <p className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/45">

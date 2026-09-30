@@ -3,7 +3,6 @@
 import { Card, CardContent } from '@/components/ui/card';
 import DateRangePicker from '@/components/ui/DateRangePicker';
 import { retailerLabel } from '@/app/utils/promotionForm';
-import { FORECAST_TIERS } from '@/app/utils/forecastView';
 
 const selectClass =
   'h-8 w-full px-2 text-xs rounded-md border bg-white text-deep-violet-blue border-violet disabled:opacity-50';
@@ -42,8 +41,6 @@ export default function ForecastFilters({
   canClearFilters,
   horizonTotal,
   metric,
-  tier,
-  onTierChange,
 }) {
   return (
     <Card size="sm" className="border border-violet/40 text-deep-violet-blue ring-0">
@@ -62,29 +59,6 @@ export default function ForecastFilters({
           </div>
           <div className="flex flex-wrap items-center justify-end gap-1.5">
             <StatTag label="Next 12 mo" value={formatMetricValue(horizonTotal, metric)} />
-            <div className="inline-flex items-center gap-1 rounded-full border border-lavander bg-white p-0.5">
-              <span className="pl-2 text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/45">
-                Tier
-              </span>
-              {FORECAST_TIERS.map((option) => {
-                const isActive = tier === option.value;
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    aria-pressed={isActive}
-                    onClick={() => onTierChange(option.value)}
-                    className={
-                      isActive
-                        ? 'rounded-full bg-deep-violet-blue px-2 py-0.5 text-[11px] font-medium text-white'
-                        : 'rounded-full px-2 py-0.5 text-[11px] text-deep-violet-blue/70 hover:bg-cream'
-                    }
-                  >
-                    {option.label}
-                  </button>
-                );
-              })}
-            </div>
           </div>
         </div>
 

@@ -2,14 +2,17 @@ import { splitPromoType } from '@/app/utils/promotionForm';
 
 export const DEFAULT_PRODUCT_NAME = 'Aire Ultra Tape L';
 
+// Each forecast line is one column of aire_forecasting_output (see backend
+// bigquery.FORECAST_OUTPUT_COLUMNS); the BigQuery pipeline picks the best
+// model per month, so the page only sums and draws them.
 export const FORECAST_SERIES = [
   { key: 'actual', label: 'Actual', color: '#3A4369', dash: undefined, shape: 'circle' },
-  // A frozen Jan-Dec baseline per calendar year -- generated once from prior-year
-  // data only and never recomputed, unlike previous/current below which are
-  // "rolling" 12-month-ahead runs regenerated monthly. See
-  // pl_forecast.next_yearly_run / runs_to_compute for what "frozen" means here.
+  // Frozen Jan-Dec best line, snapshotted each December for the next year
+  // (aire_forecasting_initial); the first one is for 2027.
   { key: 'initial', label: 'Initial Yearly Forecast', color: '#E8922A', dash: '2 4', shape: 'square' },
+  // The run before the latest; blank for a month that just entered the window.
   { key: 'previous', label: 'Previous', color: '#7C3AED', dash: '8 3', shape: 'triangle' },
+  // The latest run, 12 months after the newest sales month.
   { key: 'current', label: 'Current', color: '#0D9488', dash: '3 3', shape: 'diamond' },
 ];
 
@@ -17,12 +20,37 @@ export const ALL_SERIES_VISIBLE = Object.fromEntries(
   FORECAST_SERIES.map((series) => [series.key, true])
 );
 
-export const FORECAST_TIERS = [
-  { value: 1, label: 'Tier 1' },
-  { value: 0, label: 'Tier 0' },
-];
+// source_model values written by run_monthly_forecast_pipeline /
+// run_tier0_legacy in BigQuery. Keep in sync with those procedures. Both
+// ARIMA models (with and without promo input) show as one Tier 1 label;
+// which of the two won a month isn't a distinction the page needs.
+export const SOURCE_MODEL_LABELS = {
+  tier1_arima: 'Tier 1 advanced',
+  tier1_arimax: 'Tier 1 advanced',
+  tier0_legacy: 'Tier 0 baseline',
+};
 
-export const DEFAULT_FORECAST_TIER = 1;
+// promo_mix values from fc_future_input. no_promos also means "nothing
+// entered yet" for future months.
+export const PROMO_MIX_LABELS = {
+  both_promos: 'Monthly + weekly offer',
+  monthly_only: 'Monthly promo',
+  weekly_only: 'Weekly offer only',
+  no_promos: 'None entered',
+};
+
+export function sourceModelLabel(model) {
+  if (!model) return '';
+  return SOURCE_MODEL_LABELS[model] ?? model;
+}
+
+// Carton column on an output row per series, and the revenue column the
+// backend priced it into (forecast_service.add_forecast_revenue).
+const SERIES_COLUMNS = {
+  initial: 'forecast_initial',
+  previous: 'forecast_previous',
+  current: 'forecast_current',
+};
 
 const DEFAULT_PROMO_BADGE_CLASS = 'border-lavander bg-cream text-deep-violet-blue/70';
 
@@ -123,25 +151,9 @@ function actualValue(row, metric) {
   return row.quantity_cartons == null ? null : row.quantity_cartons;
 }
 
-function predictedValue(row, metric) {
-  if (metric === 'revenue') return row.predicted_revenue;
-  return row.predicted_quantity_units;
-}
-
-export function getRunDates(rows) {
-  // Yearly baselines are excluded here -- they can share a date with a
-  // rolling run (see backend forecasting_output_schema.sql) and aren't part
-  // of the previous/current rotation at all (they're shown as "Initial
-  // Yearly Forecast" instead -- see buildMonthlyPoints).
-  const dates = [
-    ...new Set(
-      rows.filter((row) => row.run_type !== 'yearly').map((row) => row.forecast_generated_at).filter(Boolean)
-    ),
-  ].sort();
-  return {
-    previous: dates.length >= 3 ? dates.at(-2) : null,
-    current: dates.at(-1) ?? null,
-  };
+function columnValue(row, column, metric) {
+  const key = metric === 'revenue' ? `${column}_revenue` : column;
+  return row[key] ?? null;
 }
 
 export function formatMonthLabel(monthYear) {
@@ -181,20 +193,25 @@ export function formatTimestamp(value) {
   });
 }
 
-export function buildMonthlyPoints(rows, actuals = [], metric = 'units') {
-  const { previous, current } = getRunDates(rows);
+/**
+ * One chart/table point per month: Actual plus the three forecast lines,
+ * summed across the SKUs in scope.
+ *
+ * The 80% range, confidence and promo situation belong to one series, so
+ * they are only filled when `singleSeries` is true (one customer + one SKU).
+ * Adding per-SKU bounds does not give an 80% range for the total.
+ *
+ * @param {object[]} rows forecast rows from GET /api/forecast
+ * @param {object[]} actuals monthly actuals from GET /api/forecast
+ * @param {'units'|'revenue'} metric
+ * @param {{ singleSeries?: boolean }} options
+ */
+export function buildMonthlyPoints(rows, actuals = [], metric = 'units', { singleSeries = false } = {}) {
   const byMonth = new Map();
 
   function pointFor(monthYear) {
     if (!byMonth.has(monthYear)) {
-      byMonth.set(monthYear, {
-        month_year: monthYear,
-        label: formatMonthLabel(monthYear),
-        actual: null,
-        initial: null,
-        previous: null,
-        current: null,
-      });
+      byMonth.set(monthYear, emptyMonthlyPoint(monthYear));
     }
     return byMonth.get(monthYear);
   }
@@ -208,29 +225,80 @@ export function buildMonthlyPoints(rows, actuals = [], metric = 'units') {
   }
 
   for (const row of rows) {
+    if (!row.month_year) continue;
     const point = pointFor(row.month_year);
 
-    if (row.run_type === 'yearly') {
-      // The frozen yearly baseline is shown as "Initial Yearly Forecast" --
-      // at most one yearly-run row ever covers a given month, so this just
-      // accumulates, no previous/current-style date matching needed.
-      const value = predictedValue(row, metric);
-      if (value != null) point.initial = (point.initial ?? 0) + value;
-      continue;
+    for (const [seriesKey, column] of Object.entries(SERIES_COLUMNS)) {
+      const value = columnValue(row, column, metric);
+      if (value != null) point[seriesKey] = (point[seriesKey] ?? 0) + value;
     }
 
-    const value = predictedValue(row, metric);
-    if (value == null) continue;
-
-    if (row.forecast_generated_at === current) {
-      point.current = (point.current ?? 0) + value;
+    if (row.current_source_model) {
+      point.currentModels[row.current_source_model] =
+        (point.currentModels[row.current_source_model] ?? 0) + 1;
     }
-    if (row.forecast_generated_at === previous) {
-      point.previous = (point.previous ?? 0) + value;
+
+    if (singleSeries) {
+      const low = columnValue(row, 'current_low_80', metric);
+      const high = columnValue(row, 'current_high_80', metric);
+      point.range = low != null && high != null ? [low, high] : null;
+      point.confidenceBand = row.current_confidence_band;
+      point.backtestSmape = row.current_backtest_smape;
+      point.promoMix = row.promo_mix;
+      point.realisedPrice = row.realised_price;
     }
   }
 
   return [...byMonth.values()].sort((a, b) => a.month_year.localeCompare(b.month_year));
+}
+
+/**
+ * "Tier 1 advanced" for one SKU, or "Tier 1 advanced ×7 · Tier 0 baseline ×2"
+ * when a month's total mixes SKUs forecast by different tiers. Counts are
+ * grouped by label, so the two Tier 1 models add up to one entry.
+ */
+export function formatModelMix(currentModels) {
+  const countsByLabel = {};
+  for (const [model, count] of Object.entries(currentModels ?? {})) {
+    const label = sourceModelLabel(model);
+    countsByLabel[label] = (countsByLabel[label] ?? 0) + count;
+  }
+  const entries = Object.entries(countsByLabel);
+  if (!entries.length) return '';
+  if (entries.length === 1 && entries[0][1] === 1) return entries[0][0];
+  return entries
+    .sort((a, b) => b[1] - a[1])
+    .map(([label, count]) => `${label} ×${count}`)
+    .join(' · ');
+}
+
+/**
+ * The "why" behind a month's Current value, for the tooltip and promo panel:
+ * which model produced it, how accurate that model was in its backtest, and
+ * what it assumed about promotions.
+ */
+export function forecastPointDetails(point, metric, formatValue) {
+  if (!point) return [];
+  const details = [];
+  const models = formatModelMix(point.currentModels);
+  if (models) details.push({ label: 'Model', value: models });
+  if (point.range) {
+    details.push({
+      label: '80% range',
+      value: `${formatValue(point.range[0])} – ${formatValue(point.range[1])}`,
+    });
+  }
+  if (point.confidenceBand) {
+    const smape = point.backtestSmape == null ? '' : ` (sMAPE ${point.backtestSmape.toFixed(1)})`;
+    details.push({ label: 'Confidence', value: `${point.confidenceBand}${smape}` });
+  }
+  if (point.promoMix) {
+    details.push({ label: 'Promo', value: PROMO_MIX_LABELS[point.promoMix] ?? point.promoMix });
+  }
+  if (metric === 'revenue' && point.realisedPrice != null) {
+    details.push({ label: 'Price', value: `$${point.realisedPrice.toFixed(2)} / carton` });
+  }
+  return details;
 }
 
 export function emptyMonthlyPoint(monthYear) {
@@ -241,6 +309,12 @@ export function emptyMonthlyPoint(monthYear) {
     initial: null,
     previous: null,
     current: null,
+    range: null,
+    currentModels: {},
+    confidenceBand: null,
+    backtestSmape: null,
+    promoMix: null,
+    realisedPrice: null,
   };
 }
 
@@ -405,9 +479,12 @@ export function promoPeriodDividerXs(promotions, selectedTypes, selectedPacks, m
   return xs;
 }
 
+// The Current line only ever covers the 12 months after the newest sales
+// month, so its sum is the 12-month total. (A partly loaded month can have
+// both an actual and a forecast; the forecast still counts.)
 export function sumHorizonForecast(points) {
   return points.reduce((total, point) => {
-    if (point.actual != null || point.current == null) return total;
+    if (point.current == null) return total;
     return total + point.current;
   }, 0);
 }
