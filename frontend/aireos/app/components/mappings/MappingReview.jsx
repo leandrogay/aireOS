@@ -124,7 +124,7 @@ export const MappingReview = ({ mapping }) => {
         <div className="flex items-center gap-3">
           <Link
             href={`/mappings/${mapping.mappingId}`}
-            className={`${btn} border-violet bg-white text-deep-violet-blue hover:bg-lavander`}
+            className={`${btn} border-deep-violet-blue bg-deep-violet-blue text-white hover:opacity-90`}
           >
             {isPending
               ? 'Review and approve'
