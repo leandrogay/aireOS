@@ -35,7 +35,6 @@ export default function MappingSummaryTable({ mappings, onOpen }) {
             <th className="px-3 py-2 font-medium">Mapping</th>
             <th className="px-3 py-2 font-medium">Vendor</th>
             <th className="px-3 py-2 font-medium">Status</th>
-            <th className="px-3 py-2 font-medium">Rules</th>
             <th className="px-3 py-2 font-medium">Issues</th>
           </tr>
         </thead>
@@ -78,7 +77,6 @@ export default function MappingSummaryTable({ mappings, onOpen }) {
                     <StatusBadge tone="neutral">{mapping.state || 'Unknown'}</StatusBadge>
                   )}
                 </td>
-                <td className="px-3 py-2">{mapping.rules?.length || 0}</td>
                 <td className="px-3 py-2">
                   {issues ? (
                     <span className="text-amber-900">{issues}</span>
