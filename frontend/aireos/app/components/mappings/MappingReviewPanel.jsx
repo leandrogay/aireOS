@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { Fragment, useCallback, useMemo, useState } from 'react';
 import BackLink from '@/components/ui/BackLink';
 import { AlertTriangle, EyeOff, Trash2 } from 'lucide-react';
 import StatusBadge from '../ui/StatusBadge';
@@ -14,6 +14,7 @@ import {
   reviewIssues,
   computeCoverage,
   reviewProgress,
+  splitWarning,
   withReviewed,
 } from '../../utils/mappingReview';
 
@@ -449,9 +450,19 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
         )}
 
         {!!mapping.warnings?.length && (
-          <ul className="mt-3 list-disc space-y-1 rounded-lg border border-amber-200 bg-amber-50 p-3 pl-7 text-sm text-amber-900">
+          <ul className="mt-3 flex items-start gap-2 rounded-lg border border-lavander bg-cream p-3 text-sm text-deep-violet-blue">
             {mapping.warnings.map((warning, index) => (
-              <li key={index}>{warning}</li>
+              <li key={index}>
+                {splitWarning(warning).map((part, partIndex) =>
+                  part.code ? (
+                    <span key={partIndex} className="font-mono text-xs">
+                      {part.text}
+                    </span>
+                  ) : (
+                    <Fragment key={partIndex}>{part.text}</Fragment>
+                  ),
+                )}
+              </li>
             ))}
           </ul>
         )}

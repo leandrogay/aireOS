@@ -480,10 +480,10 @@ def validate_contract(
             **annotation,
         })
 
-    mapped = set(clean_identity) | {c for g in clean_groups for c in g["columns"]}
-    unmapped = [c for c in raw_columns if c not in mapped]
-    if unmapped:
-        warnings.append(f"{len(unmapped)} column(s) left unmapped: {unmapped[:5]}")
+    # Columns nothing reads are deliberately not a warning. A warning is
+    # frozen into the stored contract, so it would go on naming a column after
+    # the reviewer had mapped it; the review screen and mapping_view._meta
+    # work the unread columns out from the current rules instead.
 
     return {
         "identity_mapping": clean_identity,

@@ -275,3 +275,41 @@ export function reviewIssues(mapping, rows, requiredFields) {
     ignoredColumns: rows.filter((row) => !row.fields.length).map((row) => row.column),
   };
 }
+
+// A Python repr'd string, as the backend's warnings quote them: single-quoted
+// unless the value holds an apostrophe, then double-quoted.
+const QUOTED = `'[^']*'|"[^"]*"`;
+
+// A quoted value, or a list of them, standing on its own -- not the apostrophe
+// in "didn't", which has a letter on one side.
+const QUOTED_VALUE = new RegExp(
+  String.raw`(?<!\w)(\[(?:${QUOTED})(?:, (?:${QUOTED}))*\]|${QUOTED})(?!\w)`,
+  'g',
+);
+
+/**
+ * Split a validation warning into prose and the values it names, so the
+ * names can be set in code type like everywhere else on the page.
+ *
+ * The warnings are sentences built in Python (see backend validate_contract)
+ * with column and field names repr'd into them: 'VName', or
+ * ['VName', 'Dept Code'] for a list. The quotes and brackets are dropped and a
+ * list reads as "VName, Dept Code", matching how the page lists columns
+ * elsewhere.
+ *
+ * @returns {{ text: string, code: boolean }[]}
+ */
+export function splitWarning(warning) {
+  const parts = [];
+  let last = 0;
+
+  for (const match of warning.matchAll(QUOTED_VALUE)) {
+    if (match.index > last) parts.push({ text: warning.slice(last, match.index), code: false });
+    const values = match[0].match(new RegExp(QUOTED, 'g')).map((value) => value.slice(1, -1));
+    parts.push({ text: values.join(', '), code: true });
+    last = match.index + match[0].length;
+  }
+
+  if (last < warning.length) parts.push({ text: warning.slice(last), code: false });
+  return parts;
+}
