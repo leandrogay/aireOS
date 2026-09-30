@@ -40,6 +40,16 @@ export function needsReview(row) {
   return row.fields.some((field) => field.confidence === 'low' && !field.reviewed);
 }
 
+/**
+ * How far through the review the reviewer is: of the columns the proposal was
+ * unsure of, how many still wait on them. The only rows approval depends on,
+ * so the only ones worth counting.
+ */
+export function reviewProgress(rows) {
+  const guessed = rows.filter((row) => row.fields.some((field) => field.confidence === 'low'));
+  return { total: guessed.length, remaining: guessed.filter(needsReview).length };
+}
+
 /** Every field on the row marked as signed off, or not. */
 export function withReviewed(row, reviewed) {
   return { ...row, fields: row.fields.map((field) => ({ ...field, reviewed })) };

@@ -7,11 +7,13 @@ import StatusBadge from '../ui/StatusBadge';
 import ColumnMappingRow from './ColumnMappingRow';
 import ConfirmDiscardDialog from './ConfirmDiscardDialog';
 import FieldCoverage from './FieldCoverage';
+import ReviewProgress from './ReviewProgress';
 import {
   toColumnRows,
   toRules,
   reviewIssues,
   computeCoverage,
+  reviewProgress,
   withReviewed,
 } from '../../utils/mappingReview';
 
@@ -130,6 +132,7 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
     [mapping, rows],
   );
   const coverage = useMemo(() => computeCoverage(mapping, rows), [mapping, rows]);
+  const progress = reviewProgress(rows);
 
   // Which column already fills each field, so a row does not offer a field
   // another column has taken. A column filling several fields is fine; a field
@@ -263,13 +266,6 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
           : row,
       );
     });
-  }, []);
-
-  const acceptAllHighConfidence = useCallback(() => {
-    setRows((prev) =>
-      prev.map((row) => (row.confidence === 'high' ? withReviewed(row, true) : row)),
-    );
-    setMessage('High-confidence rows accepted. Low-confidence rows still need confirming.');
   }, []);
 
   const runPreview = useCallback(async () => {
@@ -477,11 +473,7 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
               Least certain first — those are the ones worth your time.
             </p>
           </div>
-          {!readOnly && (
-            <button type="button" onClick={acceptAllHighConfidence} className={secondary}>
-              Accept all high-confidence
-            </button>
-          )}
+          {!readOnly && <ReviewProgress {...progress} />}
         </div>
 
         <div className="overflow-x-auto rounded-lg border border-lavander">
