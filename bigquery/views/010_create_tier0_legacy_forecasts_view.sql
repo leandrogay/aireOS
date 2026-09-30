@@ -1,16 +1,23 @@
--- Tier 0 legacy baseline: the P&L sell-out formula, for every forecast origin.
+-- Tier 0 legacy baseline: the P&L sell-out base, for every forecast origin.
 --
 -- Project: aire-data
 -- Dataset: Aire_Data_Analytics
 -- Grain: origin month + customer + SKU + target month
 -- history_months = months of sales the series had at that origin.
 --
--- SQL port of backend/app/services/pl_forecast.py (forecast_sku, estimate_uplifts):
+-- The P&L's "Forecast with Build" sheet sets each future Sell-out Base by hand
+-- from two habits: same month last year x a growth factor (=M58*1.2,
+-- =L104*1.05) or a recent month carried forward (=X58, =W104). This automates
+-- both, as in backend/app/services/pl_forecast.py (forecast_sku):
 --
---   predicted = Base + Building Blocks
---   Base      = 0.5 x (same month last year x YoY growth) + 0.5 x (3-month run-rate)
+--   predicted = 0.5 x (same month last year x YoY growth) + 0.5 x (3-month run-rate)
 --               (run-rate only when last year or the growth window is missing)
---   Building  = Base x uplift for the month's promo_mix
+--
+-- No promotion uplift. The P&L's Sell-out Building Blocks are hand-entered
+-- activity cartons (AO, display, expansion, promoter sampling) that the
+-- database doesn't hold, and FairPrice ran a monthly promotion every month
+-- since Jan 2025, so the history the base learns from already carries it.
+-- Promotion effects are modelled by Tier 1 XREG (promo_mix).
 --
 -- Every month in fc_training_input is also used as an origin: the formula is
 -- recomputed from only the history up to that month. One view therefore
@@ -19,27 +26,19 @@
 --   - the origin 3 months back -> the holdout score, same cut-off as Tier 1
 --   - every earlier origin     -> past errors, which give the 80% range
 --
--- promo_mix 'no_promos' is "no promotion"; every other value is a promotion.
--- An uplift is the median of (promo month / average of neighbouring
--- no-promotion months) - 1 across all series, capped to [0, 1], and 0 until a
--- promo_mix has 3 such comparisons. FairPrice had a monthly promotion in every
--- month since Jan 2025, so today no comparison exists and every uplift is 0.
---
 -- Tuning values match pl_forecast.ForecastParams; change them in `params` only.
 -- Safe to rerun: this script only creates or replaces a BigQuery view.
 
 CREATE OR REPLACE VIEW `aire-data.Aire_Data_Analytics.fc_tier0_forecasts` AS
 WITH params AS (
   SELECT
-    0.5  AS ly_weight,        -- share of Base from last year x growth
+    0.5  AS ly_weight,        -- share of the forecast from last year x growth
     0.85 AS growth_floor,     -- YoY growth is clipped to [floor, cap]
     1.25 AS growth_cap,
-    1.0  AS uplift_cap,       -- no promotion more than doubles sell-out
-    3    AS min_uplift_obs,   -- fewer comparisons than this -> uplift 0
     13   AS horizon_months    -- same horizon as the Tier 1 models
 ),
 history AS (
-  SELECT customer_id, sku, month_year, quantity_cartons, promo_mix
+  SELECT customer_id, sku, month_year, quantity_cartons
   FROM `aire-data.Aire_Data_Analytics.fc_training_input`
 ),
 last AS (
@@ -48,92 +47,16 @@ last AS (
 origins AS (
   SELECT DISTINCT month_year AS origin_month FROM history
 ),
-
--- ---- Uplift per origin + promo_mix ------------------------------------------
-promo_neighbours AS (
-  -- Each promotion month with its no-promotion neighbours (NULL when the
-  -- neighbour is missing or had a promotion too).
-  SELECT
-    h.customer_id,
-    h.sku,
-    h.month_year,
-    h.promo_mix,
-    h.quantity_cartons,
-    prev.quantity_cartons AS prev_quantity,
-    next.quantity_cartons AS next_quantity,
-    next.month_year AS next_month
-  FROM history h
-  LEFT JOIN history prev
-    ON prev.customer_id = h.customer_id
-   AND prev.sku = h.sku
-   AND prev.month_year = DATE_SUB(h.month_year, INTERVAL 1 MONTH)
-   AND prev.promo_mix = 'no_promos'
-  LEFT JOIN history next
-    ON next.customer_id = h.customer_id
-   AND next.sku = h.sku
-   AND next.month_year = DATE_ADD(h.month_year, INTERVAL 1 MONTH)
-   AND next.promo_mix = 'no_promos'
-  WHERE h.promo_mix <> 'no_promos'
-),
-promo_neighbours_known AS (
-  -- The following month only counts once the origin has reached it.
-  SELECT
-    o.origin_month,
-    n.promo_mix,
-    n.quantity_cartons,
-    IF(n.prev_quantity IS NOT NULL, 1, 0)
-      + IF(n.next_month <= o.origin_month, 1, 0) AS neighbour_count,
-    COALESCE(n.prev_quantity, 0)
-      + IF(n.next_month <= o.origin_month, n.next_quantity, 0) AS neighbour_sum
-  FROM origins o
-  JOIN promo_neighbours n
-    ON n.month_year <= o.origin_month
-),
-promo_ratios AS (
-  SELECT
-    origin_month,
-    promo_mix,
-    quantity_cartons / (neighbour_sum / neighbour_count) AS ratio
-  FROM promo_neighbours_known
-  WHERE neighbour_count > 0
-    AND neighbour_sum > 0
-),
-promo_medians AS (
-  SELECT DISTINCT
-    origin_month,
-    promo_mix,
-    COUNT(*) OVER (PARTITION BY origin_month, promo_mix) AS observations,
-    PERCENTILE_CONT(ratio, 0.5) OVER (PARTITION BY origin_month, promo_mix) AS median_ratio
-  FROM promo_ratios
-),
-uplifts AS (
-  SELECT
-    m.origin_month,
-    m.promo_mix,
-    IF(m.observations < p.min_uplift_obs, 0.0,
-       LEAST(GREATEST(m.median_ratio - 1, 0.0), p.uplift_cap)) AS uplift
-  FROM promo_medians m
-  CROSS JOIN params p
-),
-
--- ---- Base history per origin (past promotion uplift taken back out) --------
-base_history AS (
-  SELECT
-    o.origin_month,
-    h.customer_id,
-    h.sku,
-    h.month_year,
-    h.quantity_cartons / (1 + COALESCE(u.uplift, 0.0)) AS base
+known_history AS (
+  -- What each origin could see: every month up to and including it.
+  SELECT o.origin_month, h.customer_id, h.sku, h.month_year, h.quantity_cartons
   FROM origins o
   JOIN history h
     ON h.month_year <= o.origin_month
-  LEFT JOIN uplifts u
-    ON u.origin_month = o.origin_month
-   AND u.promo_mix = h.promo_mix
 ),
 series_latest AS (
   SELECT origin_month, customer_id, sku, MAX(month_year) AS latest_month
-  FROM base_history
+  FROM known_history
   GROUP BY origin_month, customer_id, sku
 ),
 series_rates AS (
@@ -145,25 +68,25 @@ series_rates AS (
     l.sku,
     l.latest_month,
     COUNT(*) AS history_months,
-    AVG(IF(b.month_year > DATE_SUB(l.latest_month, INTERVAL 3 MONTH), b.base, NULL)) AS run_rate,
-    COUNTIF(b.month_year > DATE_SUB(l.latest_month, INTERVAL 3 MONTH)) AS recent_months,
-    SUM(IF(b.month_year > DATE_SUB(l.latest_month, INTERVAL 3 MONTH), b.base, 0)) AS recent_base,
-    COUNTIF(b.month_year > DATE_SUB(l.latest_month, INTERVAL 15 MONTH)
-        AND b.month_year <= DATE_SUB(l.latest_month, INTERVAL 12 MONTH)) AS last_year_months,
-    SUM(IF(b.month_year > DATE_SUB(l.latest_month, INTERVAL 15 MONTH)
-       AND b.month_year <= DATE_SUB(l.latest_month, INTERVAL 12 MONTH), b.base, 0)) AS last_year_base
+    AVG(IF(k.month_year > DATE_SUB(l.latest_month, INTERVAL 3 MONTH), k.quantity_cartons, NULL)) AS run_rate,
+    COUNTIF(k.month_year > DATE_SUB(l.latest_month, INTERVAL 3 MONTH)) AS recent_months,
+    SUM(IF(k.month_year > DATE_SUB(l.latest_month, INTERVAL 3 MONTH), k.quantity_cartons, 0)) AS recent_total,
+    COUNTIF(k.month_year > DATE_SUB(l.latest_month, INTERVAL 15 MONTH)
+        AND k.month_year <= DATE_SUB(l.latest_month, INTERVAL 12 MONTH)) AS last_year_months,
+    SUM(IF(k.month_year > DATE_SUB(l.latest_month, INTERVAL 15 MONTH)
+       AND k.month_year <= DATE_SUB(l.latest_month, INTERVAL 12 MONTH), k.quantity_cartons, 0)) AS last_year_total
   FROM series_latest l
-  JOIN base_history b
-    ON b.origin_month = l.origin_month
-   AND b.customer_id = l.customer_id
-   AND b.sku = l.sku
+  JOIN known_history k
+    ON k.origin_month = l.origin_month
+   AND k.customer_id = l.customer_id
+   AND k.sku = l.sku
   GROUP BY l.origin_month, l.customer_id, l.sku, l.latest_month
 ),
 series_growth AS (
   SELECT
     r.*,
-    IF(r.recent_months = 3 AND r.last_year_months = 3 AND r.last_year_base > 0,
-       LEAST(GREATEST(r.recent_base / r.last_year_base, p.growth_floor), p.growth_cap),
+    IF(r.recent_months = 3 AND r.last_year_months = 3 AND r.last_year_total > 0,
+       LEAST(GREATEST(r.recent_total / r.last_year_total, p.growth_floor), p.growth_cap),
        NULL) AS growth
   FROM series_rates r
   CROSS JOIN params p
@@ -190,12 +113,11 @@ targets AS (
     DATE_ADD(g.origin_month, INTERVAL p.horizon_months MONTH),
     INTERVAL 1 MONTH)) AS target_month
 ),
-labelled_targets AS (
+kept_targets AS (
   -- Past origins keep only months with actual sales (to score against);
   -- the latest origin keeps the months fc_future_input asks for.
   SELECT
     t.*,
-    COALESCE(a.promo_mix, f.promo_mix, 'no_promos') AS promo_mix,
     a.quantity_cartons AS actual_quantity_cartons
   FROM targets t
   CROSS JOIN last
@@ -209,22 +131,18 @@ labelled_targets AS (
 forecast AS (
   SELECT
     t.*,
-    IF(t.growth IS NOT NULL AND ly.base IS NOT NULL,
-       p.ly_weight * ly.base * t.growth + (1 - p.ly_weight) * t.run_rate,
+    IF(t.growth IS NOT NULL AND ly.quantity_cartons IS NOT NULL,
+       p.ly_weight * ly.quantity_cartons * t.growth + (1 - p.ly_weight) * t.run_rate,
        t.run_rate) AS sell_out_base,
-    IF(t.growth IS NOT NULL AND ly.base IS NOT NULL,
-       'ly_x_growth+runrate', 'runrate') AS base_method,
-    IF(t.promo_mix = 'no_promos', 0.0, COALESCE(u.uplift, 0.0)) AS uplift
-  FROM labelled_targets t
+    IF(t.growth IS NOT NULL AND ly.quantity_cartons IS NOT NULL,
+       'ly_x_growth+runrate', 'runrate') AS base_method
+  FROM kept_targets t
   CROSS JOIN params p
-  LEFT JOIN base_history ly
+  LEFT JOIN known_history ly
     ON ly.origin_month = t.origin_month
    AND ly.customer_id = t.customer_id
    AND ly.sku = t.sku
    AND ly.month_year = DATE_SUB(t.target_month, INTERVAL 12 MONTH)
-  LEFT JOIN uplifts u
-    ON u.origin_month = t.origin_month
-   AND u.promo_mix = t.promo_mix
 )
 SELECT
   origin_month,
@@ -233,10 +151,8 @@ SELECT
   target_month AS month_year,
   horizon,
   history_months,
-  promo_mix,
   base_method,
   sell_out_base,
-  sell_out_base * uplift AS sell_out_building_blocks,
-  ROUND(sell_out_base * (1 + uplift)) AS predicted_quantity_cartons,
+  ROUND(sell_out_base) AS predicted_quantity_cartons,
   actual_quantity_cartons
 FROM forecast;

@@ -59,8 +59,11 @@ then `procedures/run_tier0_legacy.sql`, then apply the two edits in
 
 Before deploying a change to the formula, run
 `python scripts/check_tier0_parity.py` from `backend/`. It runs the view's
-query read-only and checks it against `pl_forecast.py`, on live data and on a
-made-up history that exercises the promotion uplift.
+query read-only and checks it against `pl_forecast.py` on live data.
+
+Tier 0 has no promotion uplift. The P&L's Sell-out Building Blocks are
+hand-entered activity cartons (AO, display, expansion, promoter sampling) that
+the database doesn't hold; promotion effects come from Tier 1 XREG.
 
 ## Important grain decisions
 
