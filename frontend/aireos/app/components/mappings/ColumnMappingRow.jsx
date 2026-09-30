@@ -199,8 +199,7 @@ export default function ColumnMappingRow({
           <p className="mt-2 text-[11px] text-deep-violet-blue/70">{row.transform}</p>
         ) : row.fields.length > 1 ? (
           <p className="mt-2 text-[11px] text-amber-800">
-            Each field gets this column&rsquo;s value as-is until a transformation is
-            built for it.
+            Each field gets this column&rsquo;s value as-is until transformation executes
           </p>
         ) : null}
       </td>
