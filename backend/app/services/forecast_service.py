@@ -21,7 +21,6 @@ when write=True. They are meant to be triggered out of band
 (scripts/refresh_forecast.py), not from a request path.
 """
 
-import os
 import uuid
 
 import pandas as pd
@@ -31,7 +30,7 @@ from app.services import catalog_service, pl_forecast, promotion_service
 from app.services import bigquery as bigquery_service
 from app.services.bigquery import BQFairprice_TABLE, get_bigquery_client
 
-FORECAST_TABLE = os.environ.get("BQ_FORECAST_TABLE", "aire-data.Aire_Data.forecasting_output_xianhui_mock")
+FORECAST_TABLE = bigquery_service.BQ_FORECAST_TABLE
 
 
 # ============================================================

@@ -16,7 +16,6 @@ file with the same headers reuses the already-approved contract instead of
 paying for another Claude call.
 """
 
-import os
 import io
 import re
 import json
@@ -24,22 +23,26 @@ import hashlib
 import datetime
 import pandas as pd
 from pathlib import Path
-from dotenv import load_dotenv
 from anthropic import Anthropic
-
+from app import config
+from app.schemas.sellout import BUSINESS_COLUMNS
 from app.services import storage
 
-ENV_PATH = Path(__file__).resolve().parents[2] / ".env.backend"
-load_dotenv(ENV_PATH)
+MODEL = config.ANTHROPIC_MODEL
 
-MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+TARGET_SCHEMA = BUSINESS_COLUMNS
 
-TARGET_SCHEMA = [
-    "retailer", "period_start", "period_end", "period_type", "store_code",
-    "store_name", "store_format", "sku", "product_name", "sku_range",
-    "size", "brand", "product_category", "uom", "pack_size",
-    "quantity_units", "revenue", "source_file", "loaded_at", "data_source",
-]
+
+# How confident the proposal is in one column's mapping. A reviewer is asked to
+# confirm every "low" row by hand before a contract can be approved, so an
+# unrecognised or absent value is treated as "low" rather than waved through.
+CONFIDENCE_LEVELS = ("high", "medium", "low")
+
+# Below this share of shared columns a stored mapping is a different layout,
+# not a drifted one, and proposing it would be noise. Above it -- but short of
+# an exact fingerprint -- the file is close enough to a mapping we already hold
+# that a person should look rather than have it applied silently.
+PARTIAL_MATCH_THRESHOLD = 0.6
 
 
 class MappingConfigError(Exception):
@@ -67,9 +70,10 @@ def get_client() -> Anthropic:
     """
     global _client
     if _client is None:
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
-        if not api_key:
-            raise MappingConfigError("ANTHROPIC_API_KEY is not set")
+        try:
+            api_key = config.require("ANTHROPIC_API_KEY")
+        except config.ConfigError as e:
+            raise MappingConfigError(str(e)) from e
         _client = Anthropic(api_key=api_key)
     return _client
 
@@ -82,67 +86,28 @@ def to_snake_case(col: str) -> str:
     return s.strip("_")
 
 
-# A period column embeds the reporting range in its own name (a week number,
-# a DD-MM-YYYY or YYYY-MM-DD date), so two files from the same retailer
-# template fingerprint as different layouts the moment the range moves on.
-# Collapsing those tokens to a placeholder before hashing keeps the
-# fingerprint tied to the template's shape rather than one snapshot of it.
-#
-# Operates on the underscore-split tokens rather than a regex with \b: after
-# to_snake_case every separator is already "_", and \b does not fire between
-# two underscore-joined word characters (underscore counts as \w), so a
-# boundary-based regex silently never matches here.
-def _is_date_triplet(a: str, b: str, c: str) -> bool:
-    if not (a.isdigit() and b.isdigit() and c.isdigit()):
-        return False
-    if len(c) == 4 and len(a) <= 2 and len(b) <= 2:
-        return True  # DD_MM_YYYY
-    if len(a) == 4 and len(b) <= 2 and len(c) <= 2:
-        return True  # YYYY_MM_DD
-    return False
-
-
-def _canonicalize_period_tokens(normalized: str) -> str:
-    parts = normalized.split("_")
-    canonical: list[str] = []
-    i = 0
-    while i < len(parts):
-        if parts[i] in ("week", "month") and i + 1 < len(parts) and parts[i + 1].isdigit():
-            canonical.extend([parts[i], "n"])
-            i += 2
-            continue
-        if i + 2 < len(parts) and _is_date_triplet(parts[i], parts[i + 1], parts[i + 2]):
-            canonical.append("date")
-            i += 3
-            continue
-        canonical.append(parts[i])
-        i += 1
-    return "_".join(canonical)
-
-
 # ---- Reading headers out of the uploaded bytes ------------------------------
 
-def _read_header_dataframe(filename: str, data: bytes) -> pd.DataFrame:
+def read_header_frame(filename: str, data: bytes, nrows: int = 20) -> pd.DataFrame:
     """
-    Parse just the first few rows of an uploaded file's bytes.
+    Read the top of an uploaded file — headers plus a few rows.
 
     Takes bytes rather than a path because the router has already consumed the
-    UploadFile stream — re-reading it would yield nothing. dtype=str so a
-    sample cell reads back as the same text a person would see in the file,
-    not a pandas-inferred float (e.g. "100" rather than "100.0").
+    UploadFile stream — re-reading it would yield nothing. Only the first rows
+    are parsed: enough for the header row and a handful of sample values per
+    column, not the whole upload.
     """
     ext = Path(filename).suffix.lower()
     bio = io.BytesIO(data)
 
     try:
         if ext in (".xlsx", ".xlsm"):
-            return pd.read_excel(bio, nrows=5, dtype=str)
-        elif ext == ".csv":
-            return pd.read_csv(bio, nrows=5, dtype=str)
-        else:
-            # .txt — sniff the delimiter instead of assuming tab. The python
-            # engine is required for sep=None.
-            return pd.read_csv(bio, sep=None, engine="python", nrows=5, dtype=str)
+            return pd.read_excel(bio, nrows=nrows)
+        if ext == ".csv":
+            return pd.read_csv(bio, nrows=nrows)
+        # .txt — sniff the delimiter instead of assuming tab. The python
+        # engine is required for sep=None.
+        return pd.read_csv(bio, sep=None, engine="python", nrows=nrows)
     except Exception as e:
         raise UnreadableSourceFileError(f"Could not read headers from {filename!r}: {e}")
 
@@ -155,52 +120,67 @@ def read_header_columns(filename: str, data: bytes) -> list[str]:
     contract's identity_mapping keys and melt_groups column lists have to match
     the real dataframe columns when apply_contract() runs.
     """
-    df = _read_header_dataframe(filename, data)
-    return [str(c) for c in df.columns]
+    return [str(c) for c in read_header_frame(filename, data, nrows=5).columns]
 
 
-def read_sample_row(filename: str, data: bytes) -> dict[str, str]:
+def column_samples(dataframe: pd.DataFrame, limit: int = 5) -> dict[str, list[str]]:
     """
-    First non-blank value per column, kept alongside a proposed contract so
-    the review screen can show a real example next to each mapping rule
-    instead of just the column name. Best-effort: a column with no non-blank
-    value in the first few rows is simply left out.
+    A few real values per source column, for the review screen.
+
+    A reviewer cannot judge whether "Article Description" is a product name or
+    a category from the header alone — the values decide it. Blanks are skipped
+    rather than padded, so a column that samples empty is visibly empty.
     """
-    df = _read_header_dataframe(filename, data)
-    sample: dict[str, str] = {}
-    for column in df.columns:
-        values = df[column].dropna()
-        values = values[values.str.strip() != ""] if not values.empty else values
-        if not values.empty:
-            sample[str(column)] = str(values.iloc[0])
-    return sample
+    samples: dict[str, list[str]] = {}
+
+    for column in dataframe.columns:
+        values = dataframe[column].dropna().astype(str).str.strip()
+        values = values[values != ""].head(limit)
+        samples[str(column)] = values.tolist()
+
+    return samples
 
 
 def fingerprint(columns: list[str]) -> str:
     """
     Stable identifier for a set of column headers.
 
-    Normalised, deduplicated after collapsing period tokens (week number,
-    embedded date), and sorted — so the same layout fingerprints identically
-    whether the columns arrive in a different order, with cosmetic
-    punctuation differences, or covering a different date range with a
-    different number of period columns. That's safe because contract
-    application (see apply_contract) resolves melt-group membership by
-    re-matching each group's own period_extract_regex against the file at
-    hand rather than trusting the literal column list frozen at confirm time.
+    Normalised and sorted, so the same layout fingerprints identically even if
+    the columns arrive in a different order or with cosmetic punctuation
+    differences. That's safe because the contract addresses columns by name,
+    never by position.
     """
-    canonical = sorted({_canonicalize_period_tokens(to_snake_case(c)) for c in columns})
-    joined = "\x1f".join(canonical)
+    normalized = sorted(to_snake_case(c) for c in columns)
+    joined = "\x1f".join(normalized)
     return hashlib.sha256(joined.encode("utf-8")).hexdigest()[:16]
 
 
 # ---- Asking Claude for a contract -------------------------------------------
 
-def generate_mapping_contract(raw_columns: list[str], target_schema: list[str]) -> dict:
+def generate_mapping_contract(
+    raw_columns: list[str],
+    target_schema: list[str],
+    samples: dict[str, list[str]] | None = None,
+) -> dict:
     """
     Calls Claude once, asking it to classify every source column and
-    return a two-part contract: identity_mapping + melt_groups.
+    return a two-part contract: identity_mapping + melt_groups, plus a
+    confidence level and one-line rationale per decision.
+
+    `samples` — a few real values per column — is passed through when
+    available. Headers alone are often ambiguous ("Size" could be a pack size
+    or a garment size); the values usually settle it, and a proposal made
+    without them is guessing where it need not.
     """
+    sample_block = (
+        f"""
+Sample values from the file (up to 5 per column):
+{json.dumps(samples, indent=2, default=str)}
+"""
+        if samples
+        else ""
+    )
+
     prompt = f"""You are analyzing a spreadsheet's column headers to prepare a
 reshape+rename plan. Some columns are one-off identity fields. Others are
 part of a REPEATING GROUP — the same metric measured across many periods
@@ -212,7 +192,7 @@ Target schema (only use these exact field names):
 
 Raw source columns (in original order):
 {json.dumps(raw_columns, indent=2)}
-
+{sample_block}
 Your task:
 1. Group any columns that repeat per time period (same metric, different
    dates/weeks/months in the column name) into "melt_groups". Each group
@@ -221,32 +201,61 @@ Your task:
      (e.g. "revenue", "quantity_units")
    - "columns": the exact list of raw column names in this group
    - "period_extract_regex": a Python regex with ONE capture group that
-     extracts the date substring from each column name in this group.
-     This contract gets reused later against other files covering different
-     date ranges, matched by re-running this regex against whatever columns
-     that future file has — so it must include enough of the metric's own
-     label (not just the date) that it CANNOT also match a sibling group's
-     columns. Two groups differing only by metric name (e.g. "Sales Week 1"
-     vs "Qty Week 1") must get regexes anchored to "Sales" and "Qty"
-     respectively, not a shared pattern like the date alone.
+     extracts the date substring from each column name in this group
    - "date_format": the strptime format string matching that date substring
      (e.g. "%d-%m-%Y", "%Y-%m-%d", "%m/%d/%Y")
-2. Map any remaining columns that clearly correspond to ONE target schema
-   field into "identity_mapping" as {{"raw_column_name": "target_field"}}.
+2. Map any remaining columns into "identity_mapping" as
+   {{"raw_column_name": "target_field"}}.
+   A column that carries MORE THAN ONE target field's worth of information
+   maps to a list instead: {{"raw_column_name": ["field_a", "field_b"]}}.
+   An article description reading "VEXA ADULT PANTS XL 10S" holds the
+   product name, the size and the pack size all at once, so map it to every
+   field it carries rather than picking one and losing the rest. A later
+   step pulls each field out of the value; your job is to say which fields
+   are in there.
+   Two different columns may not map to the same target field.
 3. Leave out any column that has no clear match — do not force a mapping.
+   A reviewer is shown every field you left unfilled and can assign it by
+   hand, so an honest gap costs them one click. A confident wrong answer
+   costs them finding it first.
 4. Do not invent target fields outside the schema list.
+5. These fields matter most, so check the columns against them before you
+   decide a column has no home: sku, store_code, store_name, store_format,
+   brand, uom, pack_size, product_name, product_category, sku_range, size,
+   retailer. Note that period_start, period_end and period_type are NOT
+   mapped from columns — they are read out of the melt groups' own column
+   headers, so never map a column to them.
+6. For EVERY target field you filled, add an entry to "annotations" keyed by
+   that TARGET FIELD (not the source column — one column feeding two fields
+   can be certain about one and guessing at the other), giving:
+   - "confidence": "high" if the header (and its values) leave no real doubt,
+     "medium" if the mapping is likely but a reviewer should glance at it,
+     "low" if you are guessing between plausible target fields. Be honest —
+     a person reviews every "low" row by hand, and a wrong "high" is worse
+     than an admitted "low".
+   - "rationale": one short sentence saying what the decision rests on.
+     Cite the sample values where they are what decided it.
+   Give each melt group the same two keys directly on the group object.
 
 Respond with ONLY raw JSON in this exact shape, no markdown fences, no explanation:
 {{
-  "identity_mapping": {{"raw_col": "target_field", ...}},
+  "identity_mapping": {{
+    "raw_col": "target_field",
+    "another_raw_col": ["target_field_a", "target_field_b"]
+  }},
   "melt_groups": [
     {{
       "target_field": "...",
       "columns": ["...", "..."],
       "period_extract_regex": "...",
-      "date_format": "..."
+      "date_format": "...",
+      "confidence": "high|medium|low",
+      "rationale": "..."
     }}
-  ]
+  ],
+  "annotations": {{
+    "target_field": {{"confidence": "high|medium|low", "rationale": "..."}}
+  }}
 }}
 """
 
@@ -267,6 +276,43 @@ Respond with ONLY raw JSON in this exact shape, no markdown fences, no explanati
     return validate_contract(contract, raw_columns, target_schema)
 
 
+def normalize_targets(value) -> list[str]:
+    """
+    Read one identity_mapping entry as the list of target fields it fills.
+
+    A source column can feed more than one field -- an article description
+    carries both the product name and the size buried in it -- so an entry's
+    value is either a single target field or a list of them. One target stays
+    a plain string so existing contracts are unchanged and stay readable; the
+    list form only appears where it is actually needed.
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, (list, tuple)):
+        return [str(item) for item in value if item]
+    return []
+
+
+def _clean_annotation(source: dict | None) -> dict:
+    """
+    Normalise one column's confidence + rationale.
+
+    Anything the model omitted, misspelled or invented becomes "low" with no
+    rationale. Treating an unreadable confidence as high would let a guess
+    through the review gate on a formatting mistake.
+    """
+    raw = source or {}
+    level = str(raw.get("confidence") or "").strip().lower()
+    rationale = str(raw.get("rationale") or "").strip()
+
+    return {
+        "confidence": level if level in CONFIDENCE_LEVELS else "low",
+        "rationale": rationale,
+    }
+
+
 def validate_contract(contract: dict, raw_columns: list[str], target_schema: list[str]) -> dict:
     """
     Defensive checks before trusting the contract. Anything that fails
@@ -278,17 +324,47 @@ def validate_contract(contract: dict, raw_columns: list[str], target_schema: lis
     """
     raw_set = set(raw_columns)
     warnings: list[str] = []
+    annotations_in = contract.get("annotations") or {}
 
-    # 1. Validate identity_mapping: source must exist, target must be in schema
+    # Which source is already filling each target field. A column may feed
+    # several fields, but a field can only come from one place -- two sources
+    # writing the same target would produce two columns of the same name and
+    # whichever won would be luck.
+    claimed: dict[str, str] = {}
+
+    # 1. Validate identity_mapping: source must exist, targets must be in
+    #    schema and not already taken.
     clean_identity = {}
-    for src, tgt in (contract.get("identity_mapping") or {}).items():
+    clean_annotations = {}
+    for src, value in (contract.get("identity_mapping") or {}).items():
         if src not in raw_set:
             warnings.append(f"Dropped identity mapping — source column not found: {src!r}")
             continue
-        if tgt not in target_schema:
-            warnings.append(f"Dropped identity mapping — target not in schema: {tgt!r}")
-            continue
-        clean_identity[src] = tgt
+
+        kept = []
+        for tgt in normalize_targets(value):
+            if tgt not in target_schema:
+                warnings.append(f"Dropped identity mapping — target not in schema: {tgt!r}")
+                continue
+            if tgt in claimed:
+                warnings.append(
+                    f"Dropped identity mapping — {tgt!r} is already filled by "
+                    f"{claimed[tgt]!r}, so {src!r} cannot also fill it"
+                )
+                continue
+
+            claimed[tgt] = src
+            kept.append(tgt)
+            # Annotations are keyed by target field, since that is what a
+            # confidence is about: one column can feed two fields and be a sure
+            # thing for one of them and a guess for the other. Older contracts
+            # keyed them by source column, so fall back to that.
+            clean_annotations[tgt] = _clean_annotation(
+                annotations_in.get(tgt) or annotations_in.get(src)
+            )
+
+        if kept:
+            clean_identity[src] = kept[0] if len(kept) == 1 else kept
 
     # 2. Validate melt_groups: columns must exist, regex must compile and
     #    actually match every column in its group, target must be in schema
@@ -301,6 +377,12 @@ def validate_contract(contract: dict, raw_columns: list[str], target_schema: lis
 
         if tgt not in target_schema:
             warnings.append(f"Dropped melt group — target not in schema: {tgt!r}")
+            continue
+
+        if tgt in claimed:
+            warnings.append(
+                f"Dropped melt group — {tgt!r} is already filled by {claimed[tgt]!r}"
+            )
             continue
 
         if not cols:
@@ -349,11 +431,14 @@ def validate_contract(contract: dict, raw_columns: list[str], target_schema: lis
             )
             continue
 
+        claimed[tgt] = f"melt group over {len(cols)} column(s)"
+        annotation = _clean_annotation(group)
         clean_groups.append({
             "target_field": tgt,
             "columns": cols,
             "period_extract_regex": pattern,
             "date_format": date_fmt,
+            **annotation,
         })
 
     mapped = set(clean_identity) | {c for g in clean_groups for c in g["columns"]}
@@ -361,88 +446,124 @@ def validate_contract(contract: dict, raw_columns: list[str], target_schema: lis
     if unmapped:
         warnings.append(f"{len(unmapped)} column(s) left unmapped: {unmapped[:5]}")
 
-    # apply_contract re-matches each group's period_extract_regex against
-    # whatever columns a future file actually has, rather than trusting this
-    # exact column list forever (see apply_contract.py) -- that only stays
-    # correct if each group's regex is scoped to just its own columns. A
-    # regex broad enough to also match a sibling group's columns works fine
-    # today (this file's literal columns disambiguate it) but would silently
-    # misclassify data the next time this same contract is reused.
-    for group in clean_groups:
-        sibling_columns = {
-            c for g in clean_groups if g is not group for c in g["columns"]
-        }
-        compiled = re.compile(group["period_extract_regex"])
-        ambiguous = [c for c in sibling_columns if compiled.search(c)]
-        if ambiguous:
-            warnings.append(
-                f"period_extract_regex for {group['target_field']!r} also matches "
-                f"another group's column(s) ({ambiguous[:3]}) — it should be scoped "
-                f"tighter or this contract may misclassify columns when reused "
-                f"against a future file."
-            )
-
     return {
         "identity_mapping": clean_identity,
         "melt_groups": clean_groups,
+        "annotations": clean_annotations,
         "warnings": warnings,
     }
 
 
+def find_partial_match(columns: list[str]) -> dict | None:
+    """
+    Find the confirmed mapping whose columns most nearly match this file's.
+
+    A fingerprint is all-or-nothing: one added column and a file that is
+    plainly last month's layout looks brand new. This catches that case — the
+    retailer added a column, dropped one, or renamed a header — and reports how
+    far apart the two layouts are so a person can decide. Nothing is applied on
+    a partial match; the point is that applying it silently would be wrong.
+
+    Comparison is on the same normalised, unordered column names the
+    fingerprint uses, so it agrees with the exact-match path about what "the
+    same column" means. Returns None when nothing clears
+    PARTIAL_MATCH_THRESHOLD.
+    """
+    normalized = {to_snake_case(column) for column in columns}
+    if not normalized:
+        return None
+
+    best = None
+
+    for candidate_fp in storage.list_mapping_fingerprints("confirmed"):
+        envelope = storage.download_json(storage.confirmed_mapping_path(candidate_fp))
+        if not envelope:
+            continue
+
+        stored_columns = envelope.get("raw_columns") or []
+        stored = {to_snake_case(column) for column in stored_columns}
+        if not stored:
+            continue
+
+        # Jaccard, so a mapping that happens to list many more columns does not
+        # win just by covering more of a small file.
+        ratio = len(normalized & stored) / len(normalized | stored)
+        if ratio < PARTIAL_MATCH_THRESHOLD or (best and ratio <= best["match_ratio"]):
+            continue
+
+        by_normal = {to_snake_case(column): column for column in stored_columns}
+        best = {
+            "fingerprint": candidate_fp,
+            "name": envelope.get("name"),
+            "vendor": envelope.get("vendor"),
+            "match_ratio": round(ratio, 3),
+            "missing_columns": sorted(
+                by_normal[key] for key in stored - normalized
+            ),
+            "extra_columns": sorted(
+                column for column in columns if to_snake_case(column) not in stored
+            ),
+        }
+
+    return best
+
+
 # ---- The one function the router calls ---------------------------------------
 
-def resolve_mapping(
-    filename: str,
-    data: bytes,
-    uploaded_to: str | None = None,
-    force_regenerate: bool = False,
-) -> dict:
+def resolve_mapping(filename: str, data: bytes, uploaded_to: str | None = None) -> dict:
     """
     Work out the mapping contract for an uploaded file.
 
-    If a confirmed contract already exists for this column layout, it is
-    returned as-is and no Claude call is made. Otherwise a fresh contract is
-    generated, parked under mappings/pending/, and returned for the user to
-    review.
+    Three outcomes, cheapest first:
 
-    force_regenerate skips the cache lookup even when a confirmed contract
-    exists for this fingerprint. The fingerprint now matches on the file's
-    structural shape (see fingerprint()), not its literal column text, so a
-    cache hit can point at a contract whose identity columns use different
-    raw casing than this file actually has. The caller sets this after such
-    a contract fails to apply, to get one regenerated against this file's
-    real columns instead of failing the upload over a stale cache entry.
+      - a confirmed contract exists for this exact column layout: returned
+        as-is, no Claude call
+      - the layout nearly matches a confirmed mapping: returned as a partial
+        match for review, no Claude call and nothing applied
+      - the layout is new: a fresh contract is generated, parked under
+        mappings/pending/, and returned for the user to review
 
     This is a blocking function (network I/O to both Anthropic and GCS) — the
     router runs it in a thread.
     """
-    columns = read_header_columns(filename, data)
+    frame = read_header_frame(filename, data)
+    columns = [str(column) for column in frame.columns]
+    samples = column_samples(frame)
     fp = fingerprint(columns)
 
-    if not force_regenerate:
-        confirmed = storage.download_json(storage.confirmed_mapping_path(fp))
-        if confirmed:
-            return {
-                "status": "mapped",
-                "fingerprint": fp,
-                "contract": confirmed.get("contract", {}),
-                "source": "cache",
-                "confirmed_at": confirmed.get("confirmed_at"),
-            }
+    confirmed = storage.download_json(storage.confirmed_mapping_path(fp))
+    if confirmed:
+        return {
+            "status": "mapped",
+            "fingerprint": fp,
+            "contract": confirmed.get("contract", {}),
+            "name": confirmed.get("name"),
+            "vendor": confirmed.get("vendor"),
+            "source": "cache",
+            "confirmed_at": confirmed.get("confirmed_at"),
+        }
 
-    contract = generate_mapping_contract(columns, TARGET_SCHEMA)
+    partial = find_partial_match(columns)
+    if partial:
+        return {
+            "status": "partial_match",
+            "fingerprint": fp,
+            "source": "partial",
+            "matched": partial,
+        }
+
+    contract = generate_mapping_contract(columns, TARGET_SCHEMA, samples)
 
     envelope = {
         "fingerprint": fp,
         # Kept so the contract can be re-validated against the real headers on
         # confirmation, even if the user edits it in between.
         "raw_columns": columns,
+        "column_samples": samples,
         "target_schema": TARGET_SCHEMA,
         "contract": contract,
-        # A real example value per column, so the review screen can show what
-        # this rule actually produces instead of just the column name.
-        "sample_row": read_sample_row(filename, data),
         "example_file": uploaded_to,
+        "source_filename": filename,
         "model": MODEL,
         "proposed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }

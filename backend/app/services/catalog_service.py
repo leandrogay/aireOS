@@ -1,8 +1,6 @@
 from functools import lru_cache
-
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
-
 from app.services import sql
 
 
@@ -814,6 +812,43 @@ def get_sku_ranges() -> list[str]:
         ).scalars().all()
 
     return list(results)
+
+
+# ============================================================
+# SKU READ ALL
+#
+# Full catalog rows, used by sellout_lookup to turn the bare sku
+# codes in the BigQuery sell-out table into product names.
+# Same exclusion as get_sku_ranges: rows whose sku equals
+# sku_range are leftover range-name inserts, not products.
+# ============================================================
+
+
+def get_skus() -> list[dict]:
+    query = text(
+        """
+        SELECT
+            sku,
+            sku_range,
+            product_name,
+            size
+
+        FROM skus
+
+        WHERE
+            sku IS DISTINCT FROM sku_range
+        """
+    )
+
+    with _read_connection() as conn:
+        results = conn.execute(
+            query
+        ).mappings().all()
+
+    return [
+        dict(row)
+        for row in results
+    ]
 
 
 # ============================================================

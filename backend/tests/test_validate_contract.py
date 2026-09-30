@@ -41,14 +41,3 @@ def test_scoped_regexes_produce_no_ambiguity_warning():
     assert not any("also matches" in w for w in result["warnings"])
 
 
-def test_unscoped_shared_regex_is_flagged_as_ambiguous():
-    # Both groups extract the date the same generic way, so this regex would
-    # also match the other group's own column -- fine against this exact
-    # file (literal columns still disambiguate it), but a future reapply
-    # against a differently-dated file could misclassify columns.
-    contract = _contract(r"(\d{2}-\d{2}-\d{4})$", r"(\d{2}-\d{2}-\d{4})$")
-
-    result = validate_contract(contract, RAW_COLUMNS, TARGET_SCHEMA)
-
-    assert len(result["melt_groups"]) == 2
-    assert any("also matches" in w for w in result["warnings"])

@@ -1,10 +1,8 @@
 """Deterministically apply an approved mapping contract to uploaded data."""
 
 import io
-import re
 from pathlib import Path
 from typing import Any
-
 import pandas as pd
 
 
@@ -32,6 +30,75 @@ def read_source_dataframe(filename: str, data: bytes) -> pd.DataFrame:
     raise ContractApplicationError(
         f"Unsupported file format for mapping: {extension or '(none)'}"
     )
+
+
+def preview_rows(dataframe: pd.DataFrame, limit: int = 3) -> list[dict[str, Any]]:
+    """
+    Return a small JSON-safe sample of mapped output without exposing the
+    whole upload.
+
+    Dates are rendered as strings and NaN as null, because the caller is JSON
+    and neither survives the trip otherwise.
+    """
+    preview = dataframe.head(limit).copy()
+    for column in preview.select_dtypes(include=["datetime", "datetimetz"]).columns:
+        preview[column] = preview[column].dt.strftime("%Y-%m-%d")
+    preview = preview.astype(object).where(preview.notna(), None)
+    return preview.to_dict(orient="records")
+
+
+def _apply_identity_mapping(
+    frame: pd.DataFrame, identity_mapping: dict[str, Any]
+) -> pd.DataFrame:
+    """
+    Rename each source column to the target field it fills.
+
+    One column may fill several fields: an article description carries the
+    product name and the size in the same string. A rename cannot express
+    that -- it moves a column, it does not copy one -- so the first target is
+    renamed and every further target gets its own copy of the column.
+
+    =========================================================================
+    THE PER-FIELD TRANSFORMATION GOES HERE.
+
+    Every field a column fills currently receives that column's value
+    verbatim. For a column that fills one field that is usually right. For a
+    column that fills several it is right for at most one of them: mapping
+    "Article Description" to both product_name and size puts the whole
+    string "VEXA ADULT PANTS XL 10S" into both, when size should read "XL".
+
+    So this is the seam. Each (source column, target field) pair is the unit
+    a transform applies to, and the loop below is where one would run --
+    cleaning the product name for product_name, pulling the size token out
+    for size, leaving a straight copy where no transform is configured.
+
+    Where the transform itself should be recorded is open: alongside the
+    target in the contract is the obvious place, and mapping_view already
+    carries a per-rule "transform" field through to the review screen, so the
+    UI has somewhere to put one. mapping_service.clean_product_name,
+    extract_size and title_case are existing implementations of exactly the
+    three transforms this file's own FairPrice mapping needs.
+    =========================================================================
+    """
+    from app.services.generate_mapping import normalize_targets
+
+    renames: dict[str, str] = {}
+    copies: list[tuple[str, str]] = []
+
+    for source, value in identity_mapping.items():
+        targets = normalize_targets(value)
+        if not targets:
+            continue
+        renames[source] = targets[0]
+        copies.extend((targets[0], extra) for extra in targets[1:])
+
+    result = frame.rename(columns=renames)
+
+    for filled, extra in copies:
+        # Untransformed on purpose -- see above.
+        result[extra] = result[filled]
+
+    return result
 
 
 def _period_type(group: dict[str, Any]) -> str | None:
@@ -64,71 +131,34 @@ def apply_contract(
             f"Identity source columns are missing: {missing_identity}"
         )
 
-    # A confirmed contract is commonly reapplied to a later file covering a
-    # different reporting range -- same header shape, new or additional
-    # dates -- so the literal columns recorded at confirm time can be a
-    # strict subset of what this file actually has. Re-matching each group's
-    # own period_extract_regex against the current columns (rather than
-    # trusting the frozen list) is what lets a newly-added week's column get
-    # melted in too instead of silently dropped; the regex was written with
-    # a capture group precisely so it generalises across date values.
-    resolved_groups = []
-    for group in melt_groups:
-        target_field = group.get("target_field")
-        stored_columns = group.get("columns") or []
-        pattern = group.get("period_extract_regex")
-        date_format = group.get("date_format")
-        if not target_field or not stored_columns or not pattern or not date_format:
-            raise ContractApplicationError(
-                "Each melt group requires target_field, columns, "
-                "period_extract_regex and date_format."
-            )
-
-        compiled = re.compile(pattern)
-        columns = [c for c in dataframe.columns if compiled.search(str(c))]
-        if not columns:
-            raise ContractApplicationError(
-                f"No columns in this file match the stored period pattern "
-                f"for {target_field!r}."
-            )
-
-        resolved_groups.append({**group, "columns": columns})
-
-    # Two groups' regexes can each validly match their own literal columns at
-    # confirm time yet still overlap once re-matched against a differently
-    # dated file (validate_contract only warns about this, since it can't
-    # know in advance whether a future file will actually trigger it). Left
-    # unchecked, an overlapping column gets melted into both groups and the
-    # merge below silently cross-multiplies rows -- wrong values, not just a
-    # missing row. Fail loudly instead: the caller falls back to regenerating
-    # a properly scoped contract rather than trusting corrupted output.
-    column_owner: dict[str, str] = {}
-    for group in resolved_groups:
-        for column in group["columns"]:
-            owner = column_owner.get(column)
-            if owner and owner != group["target_field"]:
-                raise ContractApplicationError(
-                    f"Column {column!r} matches the period pattern for both "
-                    f"{owner!r} and {group['target_field']!r} -- this contract's "
-                    f"period_extract_regex values are not scoped tightly enough "
-                    f"to reuse safely against this file."
-                )
-            column_owner[column] = group["target_field"]
-
-    melt_columns = {column for group in resolved_groups for column in group["columns"]}
+    melt_columns = {
+        column
+        for group in melt_groups
+        for column in (group.get("columns") or [])
+    }
+    missing_melt = sorted(melt_columns - set(dataframe.columns))
+    if missing_melt:
+        raise ContractApplicationError(
+            f"Melt source columns are missing: {missing_melt}"
+        )
 
     if id_vars is None:
         id_vars = [column for column in dataframe.columns if column not in melt_columns]
 
-    if not resolved_groups:
-        return dataframe[id_vars].rename(columns=identity_mapping).copy()
+    if not melt_groups:
+        return _apply_identity_mapping(dataframe[id_vars].copy(), identity_mapping)
 
     melted_tables = []
-    for group in resolved_groups:
-        target_field = group["target_field"]
-        columns = group["columns"]
-        pattern = group["period_extract_regex"]
-        date_format = group["date_format"]
+    for group in melt_groups:
+        target_field = group.get("target_field")
+        columns = group.get("columns") or []
+        pattern = group.get("period_extract_regex")
+        date_format = group.get("date_format")
+        if not target_field or not columns or not pattern or not date_format:
+            raise ContractApplicationError(
+                "Each melt group requires target_field, columns, "
+                "period_extract_regex and date_format."
+            )
 
         melted = pd.melt(
             dataframe,
@@ -169,4 +199,4 @@ def apply_contract(
         result.loc[monthly, "period_start"] + pd.offsets.MonthEnd(0)
     )
 
-    return result.rename(columns=identity_mapping)
+    return _apply_identity_mapping(result, identity_mapping)
