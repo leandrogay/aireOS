@@ -97,7 +97,7 @@ aireOS/
     ├── jsconfig.json              @/components/* → app/components/*, @/* → ./*
     ├── next.config.mjs            reactCompiler: true
     ├── eslint.config.mjs          eslint-config-next/core-web-vitals
-    └── .env.local                 (gitignored) NEXT_PUBLIC_API_URL, BACKEND_API_URL
+    └── .env.frontend              (gitignored, required) NEXT_PUBLIC_API_URL — loaded by next.config.mjs, see §4
 ```
 
 Key dependencies: `@base-ui/react`, `shadcn`, `class-variance-authority`, `clsx`,
@@ -208,19 +208,20 @@ When you change the left column, grep the right column in the same PR.
 
 ## 4. Configuration and environment (know the quirks)
 
-Backend env files are loaded in **four places** and not consistently:
+One env file per side, each loaded in exactly one place:
 
-| Module | Loads |
-| --- | --- |
-| `app/main.py` | `backend/.env` |
-| `app/services/storage.py` | `backend/.env.backend` ← **the file that actually exists** |
-| `app/services/generate_mapping.py` | `backend/.env.local` |
-| `app/services/sql.py` | `load_dotenv(backend/)` (a directory — effectively a no-op) |
+| Side | File (gitignored) | Loaded by |
+| --- | --- | --- |
+| Backend | `backend/.env.backend` (template: `backend/.env.example`) | `app/config.py` — the only module that reads it; services import settings from `config` |
+| Frontend | `frontend/aireos/.env.frontend` | `next.config.mjs` via `process.loadEnvFile` |
 
-`backend/README.md` says `.env.local`; reality is `.env.backend`. Because `load_dotenv` never
-overrides an already-set variable and `storage.py` is imported by `uploads.py` at startup, the
-`.env.backend` values win in practice. Do not add a fifth loader — if you touch this, consolidate
-to one `load_dotenv` in `main.py` and update the README.
+Quirks:
+- `next.config.mjs` loads `.env.frontend` unconditionally, so `next dev` fails with
+  `ENOENT ... .env.frontend` if the file is missing. (Next.js still auto-loads a `.env.local` if
+  one exists, but `.env.frontend` is the team's file.)
+  Branches cut before `main`'s AO1-9 merge (`206949a`) still read `.env.local` instead.
+- `app/services/assistant.py` still calls `load_dotenv` itself — the one leftover; don't copy it.
+- Add new backend settings to `config.py`, not `os.environ.get` in a service.
 
 Backend variables: `GOOGLE_APPLICATION_CREDENTIALS`, `SERVICE_ACCOUNT_KEY_PATH`, `GCP_PROJECT_ID`,
 `GCS_BUCKET_NAME`, `GCS_DESTINATION_PREFIX`, `GCS_DESTINATION_PREFIX_MAPPING`,
@@ -280,7 +281,7 @@ half first (it defines the contract), then the frontend half, then update §3.4 
 
 ### Repo root, `.github/`, READMEs — Maintainer
 - Keep `README.md`, `backend/README.md`, `frontend/aireos/README.md` truthful when structure
-  changes (the backend README's env-file name is already wrong — see §4).
+  changes.
 - CI must stay green and credential-free.
 - Conventional Commits; branch `feat/AO<n>-<m>-desc`, `fix/…`, `refactor/…`; PRs to `main`.
 - Never commit `gcp-key.json`, `.env*`, or anything under `node_modules/`, `venv/`, `.next/`.
@@ -293,6 +294,5 @@ half first (it defines the contract), then the frontend half, then update §3.4 
 - `FileUpload.jsx` and `PromotionList.jsx` are oversized; extract when already editing them.
 - Two fetch-wrapper styles (`promotionsApi.request` vs `mappingApi.request(baseUrl, …)`) and
   raw `fetch` in dashboard hooks. New code uses the `promotionsApi` style.
-- Inconsistent dotenv loading (§4).
-- Backend README lists; actual file is `.env.backend`.
+- `assistant.py` still loads the env file itself instead of going through `config.py` (§4).
 - CI covers backend only.

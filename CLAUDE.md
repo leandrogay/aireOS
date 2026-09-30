@@ -183,7 +183,7 @@ Every error the client can see is `HTTPException(status_code=..., detail=...)`. 
 
 ### 3.3 API fetching
 
-- Base URL is always `process.env.NEXT_PUBLIC_API_URL` (set in `frontend/aireos/.env.local`).
+- Base URL is always `process.env.NEXT_PUBLIC_API_URL` (set in `frontend/aireos/.env.frontend`, loaded by `next.config.mjs`).
   Never hard-code `localhost:8000`.
 - **Preferred pattern:** one wrapper module per backend domain in `app/services/<domain>Api.js`
   exporting named async functions, one per endpoint, each with a JSDoc block naming the HTTP

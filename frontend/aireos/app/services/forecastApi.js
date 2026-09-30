@@ -5,7 +5,7 @@ function apiBaseUrl() {
 async function request(path) {
   const baseUrl = apiBaseUrl();
   if (!baseUrl) {
-    throw new Error('NEXT_PUBLIC_API_URL is not set. Add it to frontend/aireos/.env.local.');
+    throw new Error('NEXT_PUBLIC_API_URL is not set. Add it to frontend/aireos/.env.frontend.');
   }
 
   const response = await fetch(`${baseUrl}${path}`, { cache: 'no-store' });
