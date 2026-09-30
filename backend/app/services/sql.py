@@ -140,3 +140,7 @@ def close_database() -> None:
     if _engine is not None:
         _engine.dispose()
         _engine = None
+
+    if _connector is not None:
+        _connector.close()
+        _connector = None

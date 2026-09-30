@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from google.api_core.exceptions import GoogleAPICallError
 from google.genai import errors as genai_errors
 
-from app.services import assistant, bigquery
+from app.services import assistant, bigquery, sellout_lookup
 
 router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 
@@ -72,6 +72,11 @@ def digest(payload: DigestRequest):
         raise HTTPException(status_code=503, detail=str(e))
     except GoogleAPICallError as e:
         raise HTTPException(status_code=503, detail=f"Unable to reach BigQuery: {e.message}")
+    except sellout_lookup.CatalogUnavailableError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"The store/product catalog (Cloud SQL) is unreachable, so the digest can't be built right now. ({e})",
+        )
     except genai_errors.ClientError as e:
         raise HTTPException(status_code=502, detail=f"AI service error: {e.message}")
     except genai_errors.ServerError as e:

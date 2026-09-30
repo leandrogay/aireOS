@@ -1,6 +1,7 @@
 import io
 
 import pandas as pd
+import pytest
 
 from app.routers import uploads
 from app.services.mapping_service import (
@@ -29,6 +30,12 @@ BASE_ROW = {
     "Store Name": "AMK HYPERMART",
     "Store Format": "HYPER",
 }
+
+
+@pytest.fixture(autouse=True)
+def disable_live_cloud_sql(monkeypatch):
+    """Unit tests must never inherit a developer's live-write setting."""
+    monkeypatch.setenv("CLOUD_SQL_LOAD_ENABLED", "false")
 
 
 def _fairprice_df(period_type="Month", periods=2):
@@ -123,12 +130,18 @@ def test_confirmed_contract_is_applied_deterministically(monkeypatch):
     dataframe = pd.DataFrame(
         {
             "SKU": ["A1"],
+            "Retailer": ["fairprice_online"],
+            "Store Code": ["FPON"],
             "Sales | Week 1 | 01-01-2026": ["12.50"],
             "Qty | Week 1 | 01-01-2026": ["2"],
         }
     )
     contract = {
-        "identity_mapping": {"SKU": "sku"},
+        "identity_mapping": {
+            "SKU": "sku",
+            "Retailer": "retailer",
+            "Store Code": "store_code",
+        },
         "melt_groups": [
             {
                 "target_field": "revenue",
@@ -165,8 +178,8 @@ def test_confirmed_contract_is_applied_deterministically(monkeypatch):
     assert preview["period_start"] == "2026-01-01"
     assert preview["period_end"] == "2026-01-07"
     assert preview["period_type"] == "week"
-    assert preview["revenue"] == "12.50"
-    assert preview["quantity_units"] == "2"
+    assert preview["revenue"] == 12.5
+    assert preview["quantity_units"] == 2
 
 
 def test_signature_contains_exact_source_headers():
@@ -175,3 +188,34 @@ def test_signature_contains_exact_source_headers():
 
     assert signature[:16] == FAIRPRICE_DIMENSION_HEADERS
     assert find_matching_mapping(signature)["mapping_id"] == "fairprice_wide_v1"
+
+
+def test_upload_reports_cloud_sql_disabled_by_default():
+    result = uploads.resolve_and_apply_mapping(
+        "monthly.txt", _as_txt_bytes(_fairprice_df(periods=1))
+    )
+
+    assert result["processing"]["rows_stored"] == 0
+    assert result["processing"]["storage_status"] == "disabled"
+
+
+def test_upload_stores_valid_rows_when_cloud_sql_is_enabled(monkeypatch):
+    monkeypatch.setenv("CLOUD_SQL_LOAD_ENABLED", "true")
+    captured = {}
+
+    def fake_load(dataframe, *, replace_source=False):
+        captured["rows"] = len(dataframe)
+        captured["replace_source"] = replace_source
+        return {"rows_stored": len(dataframe), "storage_status": "completed"}
+
+    monkeypatch.setattr(uploads.sellout_service, "load_clean_rows", fake_load)
+
+    result = uploads.resolve_and_apply_mapping(
+        "monthly.txt",
+        _as_txt_bytes(_fairprice_df(periods=1)),
+        replace_source=True,
+    )
+
+    assert captured == {"rows": 1, "replace_source": True}
+    assert result["processing"]["rows_stored"] == 1
+    assert result["processing"]["storage_status"] == "completed"
