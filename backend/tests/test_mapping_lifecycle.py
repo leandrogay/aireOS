@@ -216,19 +216,19 @@ def test_a_pending_proposal_records_the_fingerprint_it_is_stored_under():
     assert annotations[storage.MAPPING_FINGERPRINT_METADATA_KEY] == "abc123"
 
 
-def test_a_builtin_match_records_its_mapping_id_name_and_vendor():
+def test_a_confirmed_gcs_match_records_its_fingerprint_name_and_vendor():
     annotations = uploads_router._mapping_annotations(
         {
             "status": "mapped",
-            "mapping_id": mv.BUILTIN_MAPPING_ID,
-            "name": mv.BUILTIN_MAPPING_NAME,
-            "vendor": mv.BUILTIN_MAPPING_VENDOR,
+            "fingerprint": "abc123",
+            "name": "FairPrice monthly",
+            "vendor": "FairPrice",
         }
     )
 
-    assert annotations[storage.MAPPING_FINGERPRINT_METADATA_KEY] == mv.BUILTIN_MAPPING_ID
-    assert annotations[storage.MAPPING_NAME_METADATA_KEY] == mv.BUILTIN_MAPPING_NAME
-    assert annotations[storage.VENDOR_METADATA_KEY] == mv.BUILTIN_MAPPING_VENDOR
+    assert annotations[storage.MAPPING_FINGERPRINT_METADATA_KEY] == "abc123"
+    assert annotations[storage.MAPPING_NAME_METADATA_KEY] == "FairPrice monthly"
+    assert annotations[storage.VENDOR_METADATA_KEY] == "FairPrice"
 
 
 # ---- the coverage checklist ---------------------------------------------------
@@ -241,7 +241,6 @@ def test_every_coverage_field_is_a_field_a_contract_can_actually_fill():
 
     for field in mv.CORE_TARGET_FIELDS:
         assert field in generate_mapping.TARGET_SCHEMA
-        assert field in mv.BUILTIN_TARGET_SCHEMA
 
 
 def test_period_fields_are_declared_as_filled_without_a_column():
@@ -249,16 +248,14 @@ def test_period_fields_are_declared_as_filled_without_a_column():
     assert mv.PERIOD_DERIVED_FIELDS == ["period_start", "period_end", "period_type"]
 
 
-def test_both_packets_carry_the_same_checklist():
+def test_stored_packets_carry_the_review_checklist():
     envelope = {
         "contract": {"identity_mapping": {"SKU": "sku"}, "melt_groups": []},
         "raw_columns": ["SKU"],
         "target_schema": ["sku"],
     }
 
-    builtin = mv.builtin_packet()
     stored = mv.envelope_to_packet("abc123", envelope, "pending")
 
-    assert builtin["coverageFields"] == mv.CORE_TARGET_FIELDS
     assert stored["coverageFields"] == mv.CORE_TARGET_FIELDS
-    assert builtin["periodDerivedFields"] == stored["periodDerivedFields"]
+    assert stored["periodDerivedFields"] == mv.PERIOD_DERIVED_FIELDS

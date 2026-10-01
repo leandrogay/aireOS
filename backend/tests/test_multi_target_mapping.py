@@ -12,6 +12,7 @@ that a reviewer edits it in.
 """
 
 import pandas as pd
+import pytest
 
 from app.services import apply_contract
 from app.services import generate_mapping as gm
@@ -124,6 +125,40 @@ def test_those_two_rules_rebuild_into_one_multi_target_entry():
     assert rebuilt["annotations"]["size"]["confidence"] == "low"
 
 
+def test_transformations_survive_validation_and_review_round_trip():
+    proposed = {
+        **MULTI,
+        "transformations": {
+            "size": {
+                "type": "regex_extract",
+                "pattern": r"\b(S/M|XL|L|M|S)\b",
+                "group": 1,
+            }
+        },
+    }
+
+    validated = gm.validate_contract(proposed, RAW_COLUMNS, gm.TARGET_SCHEMA)
+    rebuilt = mv.rules_to_contract(mv.contract_to_rules(validated))
+
+    assert rebuilt["transformations"] == proposed["transformations"]
+
+
+def test_invalid_or_unmapped_transformations_are_dropped_with_warnings():
+    proposed = {
+        **MULTI,
+        "transformations": {
+            "size": {"type": "regex_extract", "pattern": "no capture", "group": 1},
+            "retailer": {"type": "value_map", "values": {"FPON": "fairprice_online"}},
+        },
+    }
+
+    contract = gm.validate_contract(proposed, RAW_COLUMNS, gm.TARGET_SCHEMA)
+
+    assert contract["transformations"] == {}
+    assert any("regex needs a capture group" in warning for warning in contract["warnings"])
+    assert any("not identity-mapped" in warning for warning in contract["warnings"])
+
+
 def test_a_reviewer_adding_a_field_to_a_column_round_trips():
     # What the review screen does when someone maps sku_range onto a column
     # that already fills two other fields.
@@ -194,10 +229,86 @@ def test_extra_fields_get_the_untransformed_value_for_now():
     assert result["size"].iloc[0] == "VEXA ADULT PANTS XL 10S"
 
 
+def test_regex_extract_transformation_derives_size():
+    proposed = {
+        **MULTI,
+        "transformations": {
+            "size": {
+                "type": "regex_extract",
+                "pattern": r"\b(S/M|XL|L|M|S)\b",
+                "group": 1,
+            }
+        },
+    }
+    contract = gm.validate_contract(proposed, RAW_COLUMNS, gm.TARGET_SCHEMA)
+
+    result = apply_contract.apply_contract(_frame(), contract)
+
+    assert result["size"].tolist() == ["XL", "S/M"]
+    assert result["product_name"].iloc[0] == "VEXA ADULT PANTS XL 10S"
+
+
+def test_value_map_transformation_derives_retailer_with_a_default():
+    columns = ["Store Format"]
+    proposed = {
+        "identity_mapping": {"Store Format": ["store_format", "retailer"]},
+        "melt_groups": [],
+        "transformations": {
+            "retailer": {
+                "type": "value_map",
+                "values": {"FPON": "fairprice_online"},
+                "default": "fairprice_offline",
+                "case_sensitive": False,
+            }
+        },
+    }
+    contract = gm.validate_contract(proposed, columns, gm.TARGET_SCHEMA)
+    frame = pd.DataFrame({"Store Format": ["FPON", "HYPER", "super"]})
+
+    result = apply_contract.apply_contract(frame, contract)
+
+    assert result["store_format"].tolist() == ["FPON", "HYPER", "super"]
+    assert result["retailer"].tolist() == [
+        "fairprice_online",
+        "fairprice_offline",
+        "fairprice_offline",
+    ]
+
+
+def test_transform_fails_closed_when_a_value_cannot_be_derived():
+    columns = ["Store Format"]
+    contract = gm.validate_contract(
+        {
+            "identity_mapping": {"Store Format": "retailer"},
+            "melt_groups": [],
+            "transformations": {
+                "retailer": {
+                    "type": "value_map",
+                    "values": {"FPON": "fairprice_online"},
+                }
+            },
+        },
+        columns,
+        gm.TARGET_SCHEMA,
+    )
+
+    with pytest.raises(apply_contract.ContractApplicationError, match="no mapping or default"):
+        apply_contract.apply_contract(
+            pd.DataFrame({"Store Format": ["UNKNOWN"]}), contract
+        )
+
+
 def test_multi_target_survives_a_melt():
     contract = gm.validate_contract(
         {
             "identity_mapping": {"Article Description": ["product_name", "size"]},
+            "transformations": {
+                "size": {
+                    "type": "regex_extract",
+                    "pattern": r"\b(S/M|XL|L|M|S)\b",
+                    "group": 1,
+                }
+            },
             "melt_groups": [
                 {
                     "target_field": "revenue",
@@ -214,7 +325,7 @@ def test_multi_target_survives_a_melt():
     result = apply_contract.apply_contract(_frame(), contract)
 
     assert {"product_name", "size", "revenue", "period_start"} <= set(result.columns)
-    assert result["size"].tolist() == result["product_name"].tolist()
+    assert result["size"].tolist() == ["XL", "S/M"]
 
 
 def test_a_single_target_contract_applies_exactly_as_before():

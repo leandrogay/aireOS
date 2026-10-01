@@ -5,10 +5,7 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query
 
 from app.services import storage
 from app.services import generate_mapping
-from app.services import mapping_view
 from app.services import apply_contract as contract_application
-from app.services.mapping_service import extract_header_signature, find_matching_mapping
-from app.services.validation_service import process_and_validate
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 
@@ -39,9 +36,7 @@ def _mapping_annotations(mapping: dict | None) -> dict[str, str]:
     fields = {
         storage.MAPPING_STATUS_METADATA_KEY: status,
         storage.MAPPING_FINGERPRINT_METADATA_KEY: (
-            mapping.get("fingerprint") or mapping.get("mapping_id")
-            if addressable
-            else None
+            mapping.get("fingerprint") if addressable else None
         ),
         storage.MAPPING_NAME_METADATA_KEY: mapping.get("name"),
         storage.VENDOR_METADATA_KEY: mapping.get("vendor"),
@@ -52,31 +47,8 @@ def _mapping_annotations(mapping: dict | None) -> dict[str, str]:
 def resolve_and_apply_mapping(
     filename: str, data: bytes, uploaded_to: str | None = None
 ) -> dict:
-    """Resolve one mapping and immediately apply it when it is recognised."""
+    """Resolve one GCS-backed mapping and apply it when it is confirmed."""
     dataframe = contract_application.read_source_dataframe(filename, data)
-    headers = extract_header_signature(dataframe)
-
-    # AO1-2's approved FairPrice mapping is built into the application. It is
-    # checked before AO1-3 proposal generation so recognised files never call AI.
-    builtin = find_matching_mapping(headers)
-    if builtin:
-        validated = process_and_validate(dataframe, builtin, filename)
-        return {
-            "status": "mapped",
-            "mapping_id": builtin["mapping_id"],
-            "name": mapping_view.BUILTIN_MAPPING_NAME,
-            "vendor": mapping_view.BUILTIN_MAPPING_VENDOR,
-            "source": "builtin",
-            "processing": {
-                "rows_total": validated["total_rows"],
-                "rows_mapped": validated["rows_ingested"],
-                "rows_rejected": validated["total_rejected"],
-                "rejection_summary": validated["rejection_summary"],
-                "columns": list(validated["valid_df"].columns),
-                "preview": _preview(validated["valid_df"]),
-            },
-        }
-
     resolved = generate_mapping.resolve_mapping(filename, data, uploaded_to)
     if resolved.get("status") != "mapped":
         return resolved
@@ -203,7 +175,7 @@ async def upload_files(
     # place this belongs.
     #
     # Each such result carries "blob_path" (where the file landed) and
-    # mapping["fingerprint"] or mapping["mapping_id"] (the contract it matched).
+    # mapping["fingerprint"] (the GCS contract it matched).
     # resolve_and_apply_mapping above has already applied the contract to build
     # the preview, so mapping["processing"] shows the shape the rows come out
     # in -- but nothing is persisted anywhere yet.

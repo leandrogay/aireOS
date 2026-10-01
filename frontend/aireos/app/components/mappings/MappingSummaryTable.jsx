@@ -5,7 +5,6 @@ import StatusBadge from '../ui/StatusBadge';
 // Mapping state as something a person reads. Anything unrecognised falls
 // through to the raw value rather than being hidden.
 const STATE_LABELS = {
-  builtin: { tone: 'neutral', label: 'Built-in' },
   confirmed: { tone: 'ready', label: 'Confirmed' },
   pending: { tone: 'review', label: 'Needs review' },
 };

@@ -1,37 +1,7 @@
-"""
-One shape for two kinds of mapping.
+"""Present GCS mapping contracts in the shape used by the review screen."""
 
-The app has two sources of mapping truth that look nothing alike:
-
-  - AO1-2's deterministic FairPrice mapping, written as Python in
-    mapping_service.apply_existing_mapping and described declaratively by
-    FAIRPRICE_WIDE_FIELD_MAP.
-  - AO1-3's LLM contracts, a JSON packet of identity_mapping + melt_groups
-    stored in the bucket and keyed by header fingerprint.
-
-Neither converts cleanly into the other -- a contract cannot express "retailer
-is FPON mapped to fairprice_online", and a Python transform cannot be melted by
-a regex. So instead of forcing one into the other, both are normalised here
-into the same review shape: one rule per target field, saying where that field
-comes from and what happens on the way.
-"""
-
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 from app.services.generate_mapping import normalize_targets
-from app.services.mapping_service import (
-    FAIRPRICE_SOURCE_COLUMNS,
-    FAIRPRICE_UNMAPPED_HEADERS,
-    TARGET_SCHEMA as BUILTIN_TARGET_SCHEMA,
-    build_fairprice_wide_rules,
-)
-
-BUILTIN_MAPPING_ID = "fairprice_wide_v1"
-
-# What the builtin mapping is called wherever a mapping is named -- the review
-# screen, the upload result, the history table. One string, so the three cannot
-# drift into three different names for the same rule set.
-BUILTIN_MAPPING_NAME = "FairPrice wide (built-in)"
-BUILTIN_MAPPING_VENDOR = "Fairprice"
 
 # The fields a mapping must fill for the ingest step to have anything to load.
 REQUIRED_TARGET_FIELDS = ["sku", "quantity_units", "revenue", "period_start"]
@@ -72,7 +42,7 @@ def _rule(
     target_field: str,
     source_columns: List[str],
     display: str,
-    transform: Optional[str],
+    transform: Any,
     status: str,
     editable: bool,
     confidence: str = "high",
@@ -104,6 +74,7 @@ def contract_to_rules(
     """
     rules = []
     annotations = contract.get("annotations") or {}
+    transformations = contract.get("transformations") or {}
 
     # identity_mapping is {source: target-or-targets}; the review reads
     # target-first, so a column filling two fields becomes two rules pointing
@@ -118,7 +89,7 @@ def contract_to_rules(
                     target,
                     [source],
                     source,
-                    None,
+                    transformations.get(target),
                     "mapped",
                     editable=True,
                     # A contract stored before confidence existed annotates
@@ -173,6 +144,7 @@ def rules_to_contract(rules: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     by_source: Dict[str, List[str]] = {}
     annotations: Dict[str, Dict[str, str]] = {}
+    transformations: Dict[str, Dict[str, Any]] = {}
     melt_groups: List[Dict[str, Any]] = []
 
     for rule in rules:
@@ -191,6 +163,8 @@ def rules_to_contract(rules: List[Dict[str, Any]]) -> Dict[str, Any]:
                     "rationale": rule.get("rationale") or "",
                     "reviewed": rule.get("reviewed") is True,
                 }
+                if isinstance(rule.get("transform"), dict):
+                    transformations[target] = rule["transform"]
             continue
 
         group = rule.get("meltGroup")
@@ -209,6 +183,7 @@ def rules_to_contract(rules: List[Dict[str, Any]]) -> Dict[str, Any]:
         "identity_mapping": identity_mapping,
         "melt_groups": melt_groups,
         "annotations": annotations,
+        "transformations": transformations,
     }
 
 
@@ -231,55 +206,6 @@ def _meta(rules: List[Dict[str, Any]], columns: List[str]) -> Dict[str, Any]:
         "requiredMissing": [
             field for field in REQUIRED_TARGET_FIELDS if field not in filled
         ],
-    }
-
-
-def builtin_packet() -> Dict[str, Any]:
-    """The AO1-2 FairPrice mapping, presented as a read-only rule set.
-
-    Every rule here is executed by hardcoded Python in apply_existing_mapping,
-    so repointing a source column in the UI would change the display and not
-    the behaviour. The whole packet is therefore locked.
-    """
-    rules = [
-        _rule(
-            rule["targetField"],
-            [part.strip() for part in rule["sourceColumn"].split(" + ")],
-            rule["sourceColumn"],
-            rule["transform"],
-            rule["status"],
-            editable=False,
-            # Nothing here was inferred: these rules are hand-written Python
-            # matched by an exact header recogniser.
-            confidence="high",
-            rationale="Built-in rule, matched on the exact FairPrice header layout.",
-            reviewed=True,
-        )
-        for rule in build_fairprice_wide_rules()
-    ]
-
-    return {
-        "mappingId": BUILTIN_MAPPING_ID,
-        "fingerprint": None,
-        "kind": "catalog",
-        "state": "builtin",
-        "name": BUILTIN_MAPPING_NAME,
-        "vendor": BUILTIN_MAPPING_VENDOR,
-        "filename": None,
-        "retailerFamily": "fairprice",
-        "columns": FAIRPRICE_SOURCE_COLUMNS,
-        "columnSamples": {},
-        "targetFields": BUILTIN_TARGET_SCHEMA,
-        "requiredFields": REQUIRED_TARGET_FIELDS,
-        "coverageFields": CORE_TARGET_FIELDS,
-        "periodDerivedFields": PERIOD_DERIVED_FIELDS,
-        "rules": rules,
-        "unmapped": FAIRPRICE_UNMAPPED_HEADERS,
-        "requiredMissing": [],
-        "warnings": [],
-        "editable": False,
-        "validated": True,
-        "validatedAt": None,
     }
 
 

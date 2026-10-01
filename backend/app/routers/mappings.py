@@ -63,12 +63,10 @@ async def list_mappings():
     """
     Every mapping the review screen can show, in one shape.
 
-    That is the builtin FairPrice rule set plus each contract in the bucket --
-    confirmed ones first, then proposals still awaiting approval.
+    Confirmed GCS contracts first, then proposals still awaiting approval.
     """
 
     def collect() -> list[dict]:
-        # packets = [mapping_view.builtin_packet()] # Comment out the builtin FairPrice hardcoded mapping
         packets = []
         confirmed = storage.list_mapping_fingerprints("confirmed")
         # A pending copy whose cleanup failed at approval is superseded by its
@@ -107,9 +105,6 @@ async def get_mapping(fingerprint: str):
     listing uses, so the review screen can load a single mapping directly
     instead of fetching every mapping to find one.
     """
-    if fingerprint == mapping_view.BUILTIN_MAPPING_ID:
-        return mapping_view.builtin_packet()
-
     envelope, state = await asyncio.to_thread(_load_envelope, fingerprint)
     if not envelope:
         raise HTTPException(
@@ -287,27 +282,6 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
             storage.VENDOR_METADATA_KEY: vendor,
         },
     )
-
-    # =========================================================================
-    # TRIGGER THE DATA TRANSFORMATION HERE.
-    #
-    # This is the moment for it: the contract is confirmed, and every file in
-    # uploads["matched"] was uploaded against it while it was still a proposal,
-    # so they have been waiting for exactly this.
-    #
-    # To hand: storage.download_bytes(blob_path) for the file,
-    # contract_application.read_source_dataframe() to parse it,
-    # contract_application.apply_contract(df, contract) to map it, and
-    # validation_service.process_and_validate() to reject bad rows.
-    #
-    # Worth deciding before you write it: this runs inside a request, so a
-    # large file probably belongs on a queue rather than making the browser
-    # wait; and a file can reach here twice if the mapping is amended and
-    # re-confirmed, which would double-count its sales.
-    #
-    # The other moment is in routers/uploads.py, where a file arrives and
-    # matches a contract that is already confirmed.
-    # =========================================================================
 
     return {
         "success": True,

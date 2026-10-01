@@ -9,7 +9,10 @@ This asks Claude to classify each column as either:
   (b) part of a repeating metric group -> needs melting, with a regex
       to extract the period date from the column name
 
-Returns a validated JSON contract ready for apply_contract().
+Returns a validated JSON contract ready for apply_contract(). Contracts may
+also declare small, allowlisted per-target transformations. The transformation
+configuration is data stored in GCS; Python only supplies the generic
+operations.
 
 Contracts are keyed by a fingerprint of the file's column headers, so a second
 file with the same headers reuses the already-approved contract instead of
@@ -168,8 +171,8 @@ def generate_mapping_contract(
 ) -> dict:
     """
     Calls Claude once, asking it to classify every source column and
-    return a two-part contract: identity_mapping + melt_groups, plus a
-    confidence level and one-line rationale per decision.
+    return an identity_mapping + melt_groups contract, optional per-target
+    transformations, and a confidence level plus rationale per decision.
 
     `samples` — a few real values per column — is passed through when
     available. Headers alone are often ambiguous ("Size" could be a pack size
@@ -240,6 +243,21 @@ Your task:
    - "rationale": one short sentence saying what the decision rests on.
      Cite the sample values where they are what decided it.
    Give each melt group the same two keys directly on the group object.
+7. When a target cannot use the source value verbatim, add a "transformations"
+   entry keyed by that TARGET FIELD. Only these generic operations exist:
+   - regex_extract: extract one capture group from text. Shape:
+     {{"type":"regex_extract", "pattern":"...", "group":1}}
+   - value_map: translate exact source values, optionally case-insensitively,
+     and use a default for everything else. Shape:
+     {{"type":"value_map", "values":{{"CODE":"output"}},
+       "default":"fallback", "case_sensitive":false}}
+   Use regex_extract when a field such as size is embedded in a description.
+   Use value_map when a channel/category code encodes another target, such as
+   an online store-format code versus physical-store formats. A source column
+   may map to both its direct target and a transformed target. When retailer
+   family and online/offline channel are clear from the samples, normalise the
+   retailer to lower-case "<family>_online" or "<family>_offline". Do not add
+   a transformation when the required values cannot be justified by the data.
 
 Respond with ONLY raw JSON in this exact shape, no markdown fences, no explanation:
 {{
@@ -259,6 +277,15 @@ Respond with ONLY raw JSON in this exact shape, no markdown fences, no explanati
   ],
   "annotations": {{
     "target_field": {{"confidence": "high|medium|low", "rationale": "..."}}
+  }},
+  "transformations": {{
+    "target_field": {{"type": "regex_extract", "pattern": "...", "group": 1}},
+    "another_target": {{
+      "type": "value_map",
+      "values": {{"source value": "target value"}},
+      "default": "fallback target value",
+      "case_sensitive": false
+    }}
   }}
 }}
 """
@@ -343,6 +370,92 @@ def unreviewed_low_confidence(contract: dict) -> list[str]:
     return identity + melted
 
 
+def _validate_transformations(
+    proposed: dict,
+    claimed: dict[str, str],
+    warnings: list[str],
+) -> dict[str, dict]:
+    """Keep only safe transformations attached to identity-mapped targets."""
+    clean: dict[str, dict] = {}
+
+    for target, raw in (proposed or {}).items():
+        if target not in claimed:
+            warnings.append(
+                f"Dropped transformation for {target!r} — the target is not identity-mapped"
+            )
+            continue
+        if not isinstance(raw, dict):
+            warnings.append(
+                f"Dropped transformation for {target!r} — configuration must be an object"
+            )
+            continue
+
+        operation = str(raw.get("type") or "").strip().lower()
+        if operation == "regex_extract":
+            pattern = raw.get("pattern")
+            group = raw.get("group", 1)
+            try:
+                compiled = re.compile(pattern or "")
+            except (re.error, TypeError) as exc:
+                warnings.append(
+                    f"Dropped transformation for {target!r} — invalid regex: {exc}"
+                )
+                continue
+            if not pattern or compiled.groups < 1:
+                warnings.append(
+                    f"Dropped transformation for {target!r} — regex needs a capture group"
+                )
+                continue
+            if (
+                not isinstance(group, int)
+                or isinstance(group, bool)
+                or not 1 <= group <= compiled.groups
+            ):
+                warnings.append(
+                    f"Dropped transformation for {target!r} — group must identify an existing capture group"
+                )
+                continue
+            clean[target] = {
+                "type": operation,
+                "pattern": pattern,
+                "group": group,
+            }
+            continue
+
+        if operation == "value_map":
+            values = raw.get("values")
+            if not isinstance(values, dict) or not values:
+                warnings.append(
+                    f"Dropped transformation for {target!r} — value_map needs at least one value"
+                )
+                continue
+            cleaned_values = {
+                str(source).strip(): str(output).strip()
+                for source, output in values.items()
+                if str(source).strip() and str(output).strip()
+            }
+            if not cleaned_values:
+                warnings.append(
+                    f"Dropped transformation for {target!r} — value_map has no usable values"
+                )
+                continue
+            transform = {
+                "type": operation,
+                "values": cleaned_values,
+                "case_sensitive": bool(raw.get("case_sensitive", False)),
+            }
+            if "default" in raw and str(raw.get("default") or "").strip():
+                transform["default"] = str(raw["default"]).strip()
+            clean[target] = transform
+            continue
+
+        warnings.append(
+            f"Dropped transformation for {target!r} — unsupported type: {operation!r}"
+        )
+
+    return clean
+
+
 def validate_contract(
     contract: dict,
     raw_columns: list[str],
@@ -404,6 +517,10 @@ def validate_contract(
 
         if kept:
             clean_identity[src] = kept[0] if len(kept) == 1 else kept
+
+    clean_transformations = _validate_transformations(
+        contract.get("transformations") or {}, claimed, warnings
+    )
 
     # 2. Validate melt_groups: columns must exist, regex must compile and
     #    actually match every column in its group, target must be in schema
@@ -489,6 +606,7 @@ def validate_contract(
         "identity_mapping": clean_identity,
         "melt_groups": clean_groups,
         "annotations": clean_annotations,
+        "transformations": clean_transformations,
         "warnings": warnings,
     }
 

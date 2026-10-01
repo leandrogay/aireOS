@@ -9,6 +9,7 @@ import {
   X,
 } from 'lucide-react';
 import { CONFIDENCE_LABELS, needsReview } from '../../utils/mappingReview';
+import FieldTransformationEditor from './FieldTransformationEditor';
 
 const CONFIDENCE_STYLES = {
   high: { Icon: CheckCircle2, className: 'text-green-700' },
@@ -49,6 +50,7 @@ function ConfidenceLabel({ level, reviewed = false, compact = false }) {
  *   onConfirm: (column: string) => void,
  *   onUndoReview: (column: string) => void,
  *   onMeltGroupChange: (column: string, changes: object) => void,
+ *   onTransformChange: (column: string, targetField: string, transform: object|null) => void,
  *   disabled?: boolean,
  *   readOnly?: boolean,
  * }} props
@@ -64,6 +66,7 @@ export default function ColumnMappingRow({
   onConfirm,
   onUndoReview,
   onMeltGroupChange,
+  onTransformChange,
   disabled = false,
   readOnly = false,
 }) {
@@ -166,8 +169,7 @@ export default function ColumnMappingRow({
         )}
 
         {/* The melt group's period settings are part of the mapping, so they
-            are editable here. Per-field transformations are not built yet —
-            see _apply_identity_mapping in the backend. */}
+            remain editable alongside the per-field transformation controls. */}
         {row.meltGroup ? (
           <div className="mt-2 space-y-1.5">
             <label className="block text-[11px] text-deep-violet-blue/70">
@@ -197,11 +199,20 @@ export default function ColumnMappingRow({
           </div>
         ) : row.transform ? (
           <p className="mt-2 text-[11px] text-deep-violet-blue/70">{row.transform}</p>
-        ) : row.fields.length > 1 ? (
-          <p className="mt-2 text-[11px] text-amber-800">
-            Each field gets this column&rsquo;s value as-is until transformation executes
-          </p>
         ) : null}
+
+        {!row.locked &&
+          row.fields.map((field) => (
+            <FieldTransformationEditor
+              key={field.targetField}
+              targetField={field.targetField}
+              transform={field.transform}
+              onChange={(transform) =>
+                onTransformChange(row.column, field.targetField, transform)
+              }
+              disabled={disabled}
+            />
+          ))}
       </td>
 
       <td className="px-3 py-3">

@@ -25,7 +25,6 @@ const secondary = `${button} border-violet bg-white text-deep-violet-blue hover:
 const destructive = `${button} border-red-300 bg-white text-red-700 hover:bg-red-50`;
 
 const STATE_BADGE = {
-  builtin: { tone: 'neutral', label: 'Built-in mapping' },
   confirmed: { tone: 'ready', label: 'Confirmed mapping' },
   pending: { tone: 'review', label: 'Awaiting approval' },
 };
@@ -182,7 +181,13 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
                 ...row.fields,
                 // The reviewer chose it, so it is not a guess -- but the
                 // rationale says whose decision it was.
-                { targetField, confidence: 'high', rationale: 'Chosen by the reviewer.' },
+                {
+                  targetField,
+                  confidence: 'high',
+                  rationale: 'Chosen by the reviewer.',
+                  reviewed: true,
+                  transform: null,
+                },
               ],
             },
             true,
@@ -268,6 +273,26 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
       );
     });
   }, []);
+
+  const handleTransformChange = useCallback((column, targetField, transform) => {
+    setMessage('');
+    forgetUndo(column);
+    setRows((prev) =>
+      prev.map((row) =>
+        row.column === column && !row.locked
+          ? withReviewed(
+              {
+                ...row,
+                fields: row.fields.map((field) =>
+                  field.targetField === targetField ? { ...field, transform } : field,
+                ),
+              },
+              true,
+            )
+          : row,
+      ),
+    );
+  }, [forgetUndo]);
 
   const runPreview = useCallback(async () => {
     setBusy('preview');
@@ -512,6 +537,7 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
                   onConfirm={handleConfirmRow}
                   onUndoReview={handleUndoReview}
                   onMeltGroupChange={handleMeltGroupChange}
+                  onTransformChange={handleTransformChange}
                   readOnly={readOnly}
                   disabled={readOnly || busy !== null}
                 />
