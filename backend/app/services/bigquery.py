@@ -757,8 +757,9 @@ def _json_str(value):
 
 
 def _forecast_output_row(record: dict) -> dict:
-    # NULL stays None throughout: a blank forecast line (no initial before
-    # 2027, no previous after the first run) must not be charted as zero.
+    # NULL stays None throughout: a blank forecast line (no initial for a
+    # SKU or year without a snapshot, no previous after the first run) must
+    # not be charted as zero.
     return {
         "customer_id": _json_int(record.get("customer_id")),
         "customer_name": _json_str(record.get("customer_name")),
@@ -1005,13 +1006,13 @@ def get_forecast_options() -> dict:
     }
 
 
-def get_forecast_freshness(customer_name: str | None = None) -> dict:
-    """When each forecast line was produced, and the latest sales load, for the customer.
+def get_sales_loaded_at(customer_name: str | None = None) -> str | None:
+    """When the customer's sales last loaded into v_customer_monthly_sales.
 
-    The three stamps are the pipeline runs behind the current, previous and
-    initial lines (TIMESTAMPs, so _iso_stamp keeps the clock time). Previous
-    is blank after the first run and initial until the first December
-    snapshot. An empty customer_name means every customer (the Forecast
+    The forecast-line stamps (current / previous / initial generated_at)
+    are not queried here: forecast_service takes them from the forecast
+    rows it already fetched, so the slow output view is read once per page
+    load. An empty customer_name means every customer (the Forecast
     "All customers" filter).
     """
     customer_name = customer_name or None
@@ -1022,43 +1023,14 @@ def get_forecast_freshness(customer_name: str | None = None) -> dict:
         query_parameters.append(
             bigquery.ScalarQueryParameter("customer_name", "STRING", customer_name)
         )
-    where_sql = " AND ".join(where_clauses)
-    job_config = bigquery.QueryJobConfig(query_parameters=query_parameters)
-    client = get_bigquery_client()
-
-    source = _FORECAST_OUTPUT_WITH_NAMES.format(
-        view=BQ_FORECAST_OUTPUT_VIEW, dataset=_catalog_dataset()
-    )
-    forecast_query = f"""
-        SELECT
-          MAX(current_generated_at) AS current_generated_at,
-          MAX(previous_generated_at) AS previous_generated_at,
-          MAX(initial_generated_at) AS initial_generated_at
-        FROM ({source})
-        WHERE {where_sql}
-    """
-    forecast_df = client.query(forecast_query, job_config=job_config).result().to_dataframe()
-    forecast_stamps = {
-        "current_generated_at": None,
-        "previous_generated_at": None,
-        "initial_generated_at": None,
-    }
-    if not forecast_df.empty:
-        first = forecast_df.iloc[0]
-        for key in forecast_stamps:
-            forecast_stamps[key] = _iso_stamp(first[key])
-
-    sales_query = f"""
+    query = f"""
         SELECT MAX(latest_sales_loaded_at) AS latest_sales_loaded_at
         FROM `{BQ_MONTHLY_SALES_VIEW}`
-        WHERE {where_sql}
+        WHERE {" AND ".join(where_clauses)}
     """
-    sales_df = client.query(sales_query, job_config=job_config).result().to_dataframe()
-    sales_stamp = None
-    if not sales_df.empty:
-        sales_stamp = _iso_stamp(sales_df.iloc[0]["latest_sales_loaded_at"])
-
-    return {
-        **forecast_stamps,
-        "latest_sales_loaded_at": sales_stamp,
-    }
+    job_config = bigquery.QueryJobConfig(query_parameters=query_parameters)
+    client = get_bigquery_client()
+    df = client.query(query, job_config=job_config).result().to_dataframe()
+    if df.empty:
+        return None
+    return _iso_stamp(df.iloc[0]["latest_sales_loaded_at"])

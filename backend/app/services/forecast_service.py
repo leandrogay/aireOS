@@ -25,6 +25,7 @@ when write=True. They are meant to be triggered out of band
 """
 
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
 import pandas as pd
 from google.cloud import bigquery
@@ -114,6 +115,26 @@ def add_forecast_revenue(rows: list[dict], prices: dict[tuple[int, str], float])
     return priced
 
 
+# Stamp column on an output row per forecast line.
+_GENERATED_AT_COLUMNS = ("current_generated_at", "previous_generated_at", "initial_generated_at")
+
+
+def forecast_stamps_from_rows(rows: list[dict]) -> dict:
+    """Latest pipeline run behind each forecast line, from rows already fetched.
+
+    Same answer as MAX(<line>_generated_at) over the output view for the
+    customer, without a second read of that slow view: every month of one
+    customer's run carries the same stamp. The stamps are uniform
+    YYYY-MM-DDTHH:MM:SSZ strings (bigquery._iso_stamp), so max() on the
+    strings is the latest time. A line with no rows in scope stays None.
+    """
+    stamps = {}
+    for column in _GENERATED_AT_COLUMNS:
+        values = [row[column] for row in rows if row.get(column)]
+        stamps[column] = max(values) if values else None
+    return stamps
+
+
 def get_forecast_view(
     product_name: str | None = None,
     customer_name: str | None = None,
@@ -132,38 +153,46 @@ def get_forecast_view(
     start_date = start_date or None
     end_date = end_date or None
 
-    rows = bigquery_service.get_forecast_output_rows(
-        product_name=product_name,
-        customer_name=customer_name,
-        start_date=start_date,
-        end_date=end_date,
-    )
-    prices = bigquery_service.get_realised_prices(
-        product_name=product_name,
-        customer_name=customer_name,
-    )
-
-    return {
+    filters = {
         "product_name": product_name,
         "customer_name": customer_name,
         "start_date": start_date,
         "end_date": end_date,
+    }
+
+    # The reads are independent and each one mostly waits on BigQuery or
+    # Postgres, so they run side by side: the page waits for the slowest
+    # read instead of the sum of all of them. Both clients are process-wide
+    # singletons that are safe to share across threads. .result() re-raises
+    # a worker's exception here, so the router's error mapping is unchanged.
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        rows_job = pool.submit(bigquery_service.get_forecast_output_rows, **filters)
+        prices_job = pool.submit(
+            bigquery_service.get_realised_prices,
+            product_name=product_name,
+            customer_name=customer_name,
+        )
+        actuals_job = pool.submit(bigquery_service.get_forecast_actuals, **filters)
+        promotions_job = pool.submit(promotion_service.list_forecast_promotions, **filters)
+        sales_loaded_job = pool.submit(
+            bigquery_service.get_sales_loaded_at,
+            customer_name=customer_name,
+        )
+        rows = rows_job.result()
+        prices = prices_job.result()
+        actuals = actuals_job.result()
+        promotions = promotions_job.result()
+        sales_loaded_at = sales_loaded_job.result()
+
+    return {
+        **filters,
         "rows": add_forecast_revenue(rows, prices),
-        "actuals": bigquery_service.get_forecast_actuals(
-            product_name=product_name,
-            customer_name=customer_name,
-            start_date=start_date,
-            end_date=end_date,
-        ),
-        "promotions": promotion_service.list_forecast_promotions(
-            product_name=product_name,
-            customer_name=customer_name,
-            start_date=start_date,
-            end_date=end_date,
-        ),
-        "freshness": bigquery_service.get_forecast_freshness(
-            customer_name=customer_name,
-        ),
+        "actuals": actuals,
+        "promotions": promotions,
+        "freshness": {
+            **forecast_stamps_from_rows(rows),
+            "latest_sales_loaded_at": sales_loaded_at,
+        },
     }
 
 

@@ -11,7 +11,7 @@ import ForecastPointDetails from '@/components/forecast/ForecastPointDetails';
 import ForecastPromoPanel from '@/components/forecast/ForecastPromoPanel';
 import ForecastPromoToggle from '@/components/forecast/ForecastPromoToggle';
 import ForecastTable from '@/components/forecast/ForecastTable';
-import LastUpdatedStamp from '@/components/ui/LastUpdatedStamp';
+import ForecastLegendFooter from '@/components/forecast/ForecastLegendFooter';
 import {
   FORECAST_SERIES,
   buildPromoOverlayBands,
@@ -158,7 +158,10 @@ export default function ForecastChart({
   onTogglePackType,
   visibleSeries,
   onToggleSeries,
-  freshnessItems,
+  lastRun,
+  salesLabel,
+  salesLoadedAt,
+  confidence,
 }) {
   const chartWrapRef = useRef(null);
   const overPanelRef = useRef(false);
@@ -212,7 +215,25 @@ export default function ForecastChart({
     ...visibleKeys.map((key) => point[key]),
     ...(showRange && point.range ? point.range : []),
   ]).filter((value) => typeof value === 'number');
-  const initialIsEmpty = Boolean(visibleSeries.initial) && !points.some((point) => point.initial != null);
+  // Hover text for the line pills, so the explanations don't crowd the chart.
+  // One SKU with no Initial values in range gets its own reason; today the
+  // only cause is the 6-month history minimum (Ultra Tape in the 2026
+  // backfill). The Ultra Tape sentence is data-specific: the backfill skipped
+  // it, so an All SKUs Initial total leaves it out while Current includes it.
+  // Drop that sentence once 2026 is out of view.
+  const initialMissingForSku = singleSeries && !points.some((point) => point.initial != null);
+  const lineHints = {
+    initial: initialMissingForSku
+      ? "No Initial Yearly Forecast for this SKU in this period: it had under 6 months of sales history when the year's plan was frozen."
+      : 'Initial Yearly Forecast: the plan for the year, frozen each December from data up to that point. ' +
+        '2026 was backfilled using data up to Dec 2025.' +
+        (singleSeries
+          ? ''
+          : ' Ultra Tape has no 2026 Initial (under 6 months of history), so the All SKUs Initial total excludes it.'),
+    current: singleSeries
+      ? null
+      : 'Pick one SKU and customer to see the 80% range and the forecast confidence.',
+  };
   const yDomain = visibleValues.length ? niceYDomain(visibleValues) : [0, 1];
   const hoverPoint = chartPoints.find((point) => point.month_year === hoverMonth);
   const hoverPromos = promosOverlappingMonth(
@@ -329,7 +350,7 @@ export default function ForecastChart({
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-lavander bg-white px-3 py-2">
-          <ForecastLineToggle visible={visibleSeries} onToggle={onToggleSeries} />
+          <ForecastLineToggle visible={visibleSeries} onToggle={onToggleSeries} hints={lineHints} />
           <ForecastPromoToggle
             selectedTypes={selectedPromoTypes}
             onToggleType={onTogglePromoType}
@@ -337,19 +358,6 @@ export default function ForecastChart({
             onTogglePack={onTogglePackType}
           />
         </div>
-
-        {initialIsEmpty || (visibleSeries.current && !singleSeries) ? (
-          <div className="space-y-0.5 text-[11px] text-deep-violet-blue/60">
-            {initialIsEmpty ? (
-              <p>
-                Initial Yearly Forecast is frozen each December for the next year; the first one covers 2027.
-              </p>
-            ) : null}
-            {visibleSeries.current && !singleSeries ? (
-              <p>Pick one SKU and customer to see the 80% range and each month&apos;s confidence.</p>
-            ) : null}
-          </div>
-        ) : null}
 
         {!hasVisibleLine ? (
           <p className="text-sm text-muted-foreground">No lines selected. Turn a line on to plot values.</p>
@@ -475,7 +483,7 @@ export default function ForecastChart({
                         />
                       )}
                       activeDot={{ r: 5, fill: series.color }}
-                      connectNulls
+                      connectNulls={series.connectNulls ?? true}
                       isAnimationActive={false}
                     />
                   ))}
@@ -507,7 +515,12 @@ export default function ForecastChart({
                 </div>
               ) : null}
             </div>
-            <LastUpdatedStamp items={freshnessItems} className="justify-center pt-0.5" />
+            <ForecastLegendFooter
+              lastRun={lastRun}
+              salesLabel={salesLabel}
+              salesLoadedAt={salesLoadedAt}
+              confidence={confidence}
+            />
 
             <ForecastTable
               points={points}

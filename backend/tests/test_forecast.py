@@ -242,76 +242,44 @@ def test_get_forecast_options(monkeypatch):
     assert options["end_date"] == "2027-08-01"
 
 
-# ---- forecast freshness (generated_at per line + sales loaded_at) ----
+# ---- sales freshness (latest sales loaded_at) ----
 
 
-class FakeFreshnessClient:
-    def __init__(self, forecast_df, sales_df):
-        self.forecast_df = forecast_df
-        self.sales_df = sales_df
+class FakeSalesLoadedClient:
+    def __init__(self, df):
+        self.df = df
         self.queries = []
         self.job_configs = []
 
     def query(self, query, job_config=None):
         self.queries.append(query)
         self.job_configs.append(job_config)
-        if "latest_sales_loaded_at" in query:
-            return FakeQueryJob(self.sales_df)
-        return FakeQueryJob(self.forecast_df)
+        return FakeQueryJob(self.df)
 
 
-def test_forecast_freshness_stamps_each_line_for_the_customer(monkeypatch):
-    forecast_df = pd.DataFrame(
-        [
-            {
-                "current_generated_at": pd.Timestamp("2026-09-30 16:28:11", tz="UTC"),
-                "previous_generated_at": pd.NaT,
-                "initial_generated_at": pd.NaT,
-            }
-        ]
-    )
-    sales_df = pd.DataFrame(
-        [{"latest_sales_loaded_at": datetime.datetime(2026, 9, 27, 6, 32, 1)}]
-    )
-    fake = FakeFreshnessClient(forecast_df, sales_df)
-    monkeypatch.setattr(bigquery, "get_bigquery_client", lambda: fake)
-
-    freshness = bigquery.get_forecast_freshness(customer_name="fairprice")
-
-    assert bigquery.BQ_FORECAST_OUTPUT_VIEW in fake.queries[0]
-    assert "MAX(current_generated_at)" in fake.queries[0]
-    assert bigquery.BQ_MONTHLY_SALES_VIEW in fake.queries[1]
-    params = _params_by_name(fake.job_configs[0])
-    assert params["customer_name"].value == "fairprice"
-    assert freshness == {
-        "current_generated_at": "2026-09-30T16:28:11Z",
-        "previous_generated_at": None,
-        "initial_generated_at": None,
-        "latest_sales_loaded_at": "2026-09-27T06:32:01Z",
-    }
-
-
-def test_forecast_freshness_all_customers_omits_customer_param(monkeypatch):
-    fake = FakeFreshnessClient(
-        pd.DataFrame(
-            [
-                {
-                    "current_generated_at": pd.NaT,
-                    "previous_generated_at": pd.NaT,
-                    "initial_generated_at": pd.NaT,
-                }
-            ]
-        ),
-        pd.DataFrame([{"latest_sales_loaded_at": None}]),
+def test_sales_loaded_at_reads_monthly_sales_for_the_customer(monkeypatch):
+    fake = FakeSalesLoadedClient(
+        pd.DataFrame([{"latest_sales_loaded_at": datetime.datetime(2026, 9, 27, 6, 32, 1)}])
     )
     monkeypatch.setattr(bigquery, "get_bigquery_client", lambda: fake)
 
-    freshness = bigquery.get_forecast_freshness(customer_name=None)
+    loaded_at = bigquery.get_sales_loaded_at(customer_name="fairprice")
 
-    params = _params_by_name(fake.job_configs[0])
-    assert "customer_name" not in params
-    assert freshness["current_generated_at"] is None
-    assert freshness["latest_sales_loaded_at"] is None
+    assert len(fake.queries) == 1
+    assert bigquery.BQ_MONTHLY_SALES_VIEW in fake.queries[0]
+    assert bigquery.BQ_FORECAST_OUTPUT_VIEW not in fake.queries[0]
+    assert _params_by_name(fake.job_configs[0])["customer_name"].value == "fairprice"
+    assert loaded_at == "2026-09-27T06:32:01Z"
+
+
+def test_sales_loaded_at_all_customers_omits_customer_param(monkeypatch):
+    fake = FakeSalesLoadedClient(pd.DataFrame([{"latest_sales_loaded_at": None}]))
+    monkeypatch.setattr(bigquery, "get_bigquery_client", lambda: fake)
+
+    loaded_at = bigquery.get_sales_loaded_at(customer_name=None)
+
+    assert "customer_name" not in _params_by_name(fake.job_configs[0])
+    assert loaded_at is None
 
 
 def test_iso_stamp_keeps_date_or_clock_time():

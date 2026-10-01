@@ -13,7 +13,7 @@ import {
   ALL_PROMO_TYPE_VALUES,
   ALL_SERIES_VISIBLE,
   buildMonthlyPoints,
-  formatTimestamp,
+  forecastConfidence,
   sumHorizonForecast,
   toggleSelectedValue,
   toggleSeriesVisibility,
@@ -120,14 +120,14 @@ export default function ForecastPage() {
   const singleSeries = Boolean(productName && customerName);
   const points = buildMonthlyPoints(rows, actuals, metric, { singleSeries });
   const horizonTotal = sumHorizonForecast(points);
-  const freshnessItems = [
-    { label: 'Current forecast', value: formatTimestamp(freshness.current_generated_at) },
-    { label: 'Previous forecast', value: formatTimestamp(freshness.previous_generated_at) },
-    {
-      label: customerName ? `${retailerLabel(customerName)} sales` : 'All customers sales',
-      value: formatTimestamp(freshness.latest_sales_loaded_at),
-    },
-  ];
+  // When the pipeline produced the Current line for this customer
+  // (MAX(current_generated_at) over the fetched rows, see backend
+  // forecast_service.forecast_stamps_from_rows).
+  // previous_generated_at is archived with the Previous line; it still
+  // arrives in `freshness` for when that line comes back.
+  const lastRun = freshness.current_generated_at;
+  const salesLabel = customerName ? `${retailerLabel(customerName)} sales` : 'All customers sales';
+  const confidence = singleSeries ? forecastConfidence(rows) : null;
 
   const scopeTags = [
     { label: 'SKU', value: productName || 'All SKUs' },
@@ -150,7 +150,7 @@ export default function ForecastPage() {
   }
 
   return (
-    <PageLayout title="Forecast">
+    <PageLayout title="Sell-Out Forecast">
       <div className="space-y-2">
         {error && (
           <p className="rounded-md border border-violet bg-lavander/50 px-3 py-2 text-sm text-deep-violet-blue">
@@ -199,7 +199,10 @@ export default function ForecastPage() {
           }
           visibleSeries={visibleSeries}
           onToggleSeries={(key) => setVisibleSeries((current) => toggleSeriesVisibility(current, key))}
-          freshnessItems={freshnessItems}
+          lastRun={lastRun}
+          salesLabel={salesLabel}
+          salesLoadedAt={freshness.latest_sales_loaded_at}
+          confidence={confidence}
         />
       </div>
     </PageLayout>

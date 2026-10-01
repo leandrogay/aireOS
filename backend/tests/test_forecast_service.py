@@ -294,7 +294,15 @@ def test_get_forecast_view_combines_rows_actuals_and_promos(monkeypatch):
 
     def _rows(**kwargs):
         captured["rows"] = kwargs
-        return [{"customer_id": 1, "sku": "13271338", "month_year": "2026-08-01", "forecast_current": 100.0}]
+        return [
+            {
+                "customer_id": 1,
+                "sku": "13271338",
+                "month_year": "2026-08-01",
+                "forecast_current": 100.0,
+                "current_generated_at": "2026-09-30T16:28:11Z",
+            }
+        ]
 
     def _prices(**kwargs):
         captured["prices"] = kwargs
@@ -308,15 +316,15 @@ def test_get_forecast_view_combines_rows_actuals_and_promos(monkeypatch):
         captured["promotions"] = kwargs
         return [{"promo_type": "bundle", "period_start": "2026-08-03"}]
 
-    def _freshness(**kwargs):
-        captured["freshness"] = kwargs
-        return {"current_generated_at": "2026-09-30T16:28:11Z", "latest_sales_loaded_at": "2026-09-27T06:32:01Z"}
+    def _sales_loaded_at(**kwargs):
+        captured["sales_loaded_at"] = kwargs
+        return "2026-09-27T06:32:01Z"
 
     monkeypatch.setattr(forecast_service.bigquery_service, "get_forecast_output_rows", _rows)
     monkeypatch.setattr(forecast_service.bigquery_service, "get_realised_prices", _prices)
     monkeypatch.setattr(forecast_service.bigquery_service, "get_forecast_actuals", _actuals)
     monkeypatch.setattr(forecast_service.promotion_service, "list_forecast_promotions", _promos)
-    monkeypatch.setattr(forecast_service.bigquery_service, "get_forecast_freshness", _freshness)
+    monkeypatch.setattr(forecast_service.bigquery_service, "get_sales_loaded_at", _sales_loaded_at)
 
     result = forecast_service.get_forecast_view(
         product_name="",
@@ -335,12 +343,57 @@ def test_get_forecast_view_combines_rows_actuals_and_promos(monkeypatch):
     assert captured["prices"] == {"product_name": None, "customer_name": "fairprice"}
     assert captured["actuals"] == expected
     assert captured["promotions"] == expected
-    assert captured["freshness"] == {"customer_name": "fairprice"}
+    assert captured["sales_loaded_at"] == {"customer_name": "fairprice"}
     assert result["rows"][0]["forecast_current"] == 100.0
     assert result["rows"][0]["forecast_current_revenue"] == 822.0
     assert result["actuals"][0]["quantity_cartons"] == 209.0
     assert result["promotions"][0]["promo_type"] == "bundle"
-    assert result["freshness"]["current_generated_at"] == "2026-09-30T16:28:11Z"
+    assert result["freshness"] == {
+        "current_generated_at": "2026-09-30T16:28:11Z",
+        "previous_generated_at": None,
+        "initial_generated_at": None,
+        "latest_sales_loaded_at": "2026-09-27T06:32:01Z",
+    }
+
+
+def test_get_forecast_view_surfaces_a_failed_read(monkeypatch):
+    def _boom(**_kwargs):
+        raise ValueError("start_date must be YYYY-MM-DD")
+
+    monkeypatch.setattr(forecast_service.bigquery_service, "get_forecast_output_rows", _boom)
+    monkeypatch.setattr(forecast_service.bigquery_service, "get_realised_prices", lambda **_k: {})
+    monkeypatch.setattr(forecast_service.bigquery_service, "get_forecast_actuals", lambda **_k: [])
+    monkeypatch.setattr(forecast_service.promotion_service, "list_forecast_promotions", lambda **_k: [])
+    monkeypatch.setattr(forecast_service.bigquery_service, "get_sales_loaded_at", lambda **_k: None)
+
+    with pytest.raises(ValueError, match="start_date"):
+        forecast_service.get_forecast_view(start_date="bad")
+
+
+# ---- Forecast stamps from rows ----
+
+
+def test_forecast_stamps_take_the_latest_run_per_line():
+    rows = [
+        {"current_generated_at": "2026-09-30T16:28:11Z", "initial_generated_at": "2026-10-01T02:00:00Z"},
+        {"current_generated_at": "2026-10-01T03:15:00Z", "initial_generated_at": None},
+    ]
+
+    stamps = forecast_service.forecast_stamps_from_rows(rows)
+
+    assert stamps == {
+        "current_generated_at": "2026-10-01T03:15:00Z",
+        "previous_generated_at": None,
+        "initial_generated_at": "2026-10-01T02:00:00Z",
+    }
+
+
+def test_forecast_stamps_are_blank_without_rows():
+    assert forecast_service.forecast_stamps_from_rows([]) == {
+        "current_generated_at": None,
+        "previous_generated_at": None,
+        "initial_generated_at": None,
+    }
 
 
 # ---- Forecast revenue at realised price ----
