@@ -11,6 +11,7 @@ import { addDays } from '@/app/utils/periodComparison';
 
 const actionButtonClass =
   'rounded-md px-3 py-1 text-xs font-medium transition-colors disabled:opacity-50';
+const sectionLabelClass = 'text-[11px] font-medium uppercase tracking-wide text-deep-violet-blue/60';
 
 /**
  * The dashboard's Period control, above the trend chart. The trigger
@@ -18,6 +19,10 @@ const actionButtonClass =
  * (e.g. "MTD") or "Custom" — so there is never a highlighted preset next to
  * blank inputs. The popover lists presets on the left (applied at once) and
  * a range calendar on the right (see RangeCalendar), applied on Apply.
+ * Both sides carry a small header, and every preset is drawn as an
+ * outlined button rather than plain text, so the options above the
+ * highlighted default (e.g. "Latest week" above MTD) read as clickable
+ * instead of as a label for the active one.
  *
  * @param {{
  *   start: string,
@@ -66,24 +71,32 @@ export default function DateRangeControl({ start, end, presets, latestWeekStart,
         <span className="text-deep-violet-blue/70">· {formatDateRange(start, displayEnd) ?? 'Loading…'}</span>
         <ChevronDown className="size-3.5" />
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-auto max-w-[calc(100vw-2rem)] bg-white p-3">
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <div className="flex flex-row flex-wrap gap-1 sm:w-32 sm:flex-col sm:border-r sm:border-lavander sm:pr-3">
-            {presets.map((preset) => (
-              <button
-                key={preset.id}
-                type="button"
-                onClick={() => applyPreset(preset)}
-                className={cn(
-                  'rounded-md px-2 py-1 text-left text-xs text-deep-violet-blue hover:bg-lavander',
-                  activePreset?.id === preset.id && 'bg-deep-violet-blue text-white hover:bg-deep-violet-blue',
-                )}
-              >
-                {preset.label}
-              </button>
-            ))}
+      {/* Start-aligned: Period is the left-hand control, so the popover has
+          room to open rightwards instead of over the sidebar. */}
+      <PopoverContent align="start" className="w-auto max-w-[calc(100vw-2rem)] bg-white p-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:gap-5">
+          <div className="flex flex-col gap-2 sm:w-36 sm:border-r sm:border-lavander sm:pr-5">
+            <p className={sectionLabelClass}>Presets</p>
+            <div className="flex flex-row flex-wrap gap-1 sm:flex-col">
+              {presets.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => applyPreset(preset)}
+                  aria-pressed={activePreset?.id === preset.id}
+                  className={cn(
+                    'rounded-md border border-lavander bg-white px-2 py-1 text-left text-xs text-deep-violet-blue transition-colors hover:border-violet hover:bg-lavander focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet',
+                    activePreset?.id === preset.id &&
+                      'border-deep-violet-blue bg-deep-violet-blue text-white hover:border-deep-violet-blue hover:bg-deep-violet-blue',
+                  )}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="flex flex-col gap-2">
+            <p className={sectionLabelClass}>Custom range</p>
             <RangeCalendar
               draft={draft}
               onDraftChange={setDraft}
