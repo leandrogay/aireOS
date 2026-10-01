@@ -38,7 +38,7 @@ export function parseApiError(data, status) {
 }
 
 /**
- * Shared fetch wrapper for promotion endpoints.
+ * Shared fetch wrapper for the backend API (promotions, catalog, inventory).
  *
  * Parses JSON when possible and throws an Error carrying `{ status, data }`
  * so callers can surface the server-provided detail. Network failures
@@ -49,7 +49,7 @@ export function parseApiError(data, status) {
  * @param {{ method?: string, body?: unknown }} [options]
  * @returns {Promise<unknown>}
  */
-async function request(path, { method = 'GET', body } = {}) {
+export async function request(path, { method = 'GET', body } = {}) {
   const baseUrl = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
 
   if (!baseUrl) {
@@ -92,7 +92,7 @@ async function request(path, { method = 'GET', body } = {}) {
       const wrapped = new Error(
         error.message?.includes('NEXT_PUBLIC_API_URL')
           ? error.message
-          : 'Unable to reach the promotions API. Check NEXT_PUBLIC_API_URL and that the backend is running.',
+          : 'Unable to reach the API. Check NEXT_PUBLIC_API_URL and that the backend is running.',
       );
       wrapped.status = 0;
       throw wrapped;

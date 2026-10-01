@@ -17,7 +17,10 @@ const NAV_ITEMS = [
   { label: 'Dashboard', href: '/dashboard' },
   { label: 'Forecast', href: '/forecast' },
   { label: 'Promotions', href: '/promotions' },
-  { label: 'Inventory', href: '/inventory' },
+  { label: 'Inventory', 
+    href: '/inventory',
+    children: [{ label: 'DOH Settings', href: '/doh' }],
+  },
 ];
 
 // A detail route (/mappings/abc123) still belongs to its tab.

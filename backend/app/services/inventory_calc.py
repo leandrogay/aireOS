@@ -1,0 +1,299 @@
+from calendar import monthrange
+from datetime import date
+from math import ceil
+
+
+# ============================================================
+# Constants
+# ============================================================
+
+# DOH looks forward this many months from the month being measured.
+DOH_WINDOW_MONTHS = 3
+
+# How many future months the sell-in plan covers by default.
+SELL_IN_PLAN_MONTHS = 6
+
+DOH_STATUS_BELOW_MIN = "below_min"
+DOH_STATUS_WITHIN = "within"
+DOH_STATUS_ABOVE_MAX = "above_max"
+
+
+# ============================================================
+# Month helpers
+# ============================================================
+
+
+def month_start(value: date) -> date:
+    return value.replace(day=1)
+
+
+def add_months(value: date, months: int) -> date:
+    index = value.year * 12 + (value.month - 1) + months
+    return date(index // 12, index % 12 + 1, 1)
+
+
+def days_in_month(value: date) -> int:
+    return monthrange(value.year, value.month)[1]
+
+
+# ============================================================
+# Ending stock
+#
+# Ending stock is never stored. It is rebuilt from the first month
+# forward every time, so editing one month's sell-in or sell-out
+# flows through to every later month without rewriting any rows.
+# ============================================================
+
+
+def build_monthly_series(
+    metrics_by_month: dict[date, dict[str, float]],
+    through: date | None = None,
+) -> list[dict]:
+    """
+    Turn one SKU's per-month metric values into a month-by-month stock
+    series: ending stock = previous month's ending stock + sell-in -
+    sell-out, where sell-out is base plus building blocks.
+
+    The first month is seeded from its own opening_inventory (0 if it has
+    none). An opening_inventory on any later month is ignored: it is a
+    derived value the chain already reproduces. A month with no data
+    between the first and last month is filled with zero movement and
+    flagged has_data=False. `through` extends the series past the SKU's
+    own last month the same way, so a SKU with no recent rows keeps
+    showing the stock it still holds.
+    """
+
+    if not metrics_by_month:
+        return []
+
+    months = sorted(month_start(m) for m in metrics_by_month)
+    last_month = max(months[-1], month_start(through)) if through else months[-1]
+    by_month = {month_start(m): values for m, values in metrics_by_month.items()}
+
+    series = []
+    month = months[0]
+    opening = by_month[month].get("opening_inventory") or 0.0
+
+    while month <= last_month:
+        values = by_month.get(month)
+        sell_in = (values or {}).get("sell_in") or 0.0
+        sell_out_base = (values or {}).get("sell_out_base") or 0.0
+        building_blocks = (values or {}).get("sell_out_building_blocks") or 0.0
+        sell_out = sell_out_base + building_blocks
+        ending = opening + sell_in - sell_out
+
+        series.append(
+            {
+                "month": month,
+                "opening_stock": round(opening, 2),
+                "sell_in": round(sell_in, 2),
+                "sell_out": round(sell_out, 2),
+                # The two parts of sell_out, kept so an edit form can show them.
+                "sell_out_base": round(sell_out_base, 2),
+                "sell_out_building_blocks": round(building_blocks, 2),
+                "ending_stock": round(ending, 2),
+                "has_data": values is not None,
+            }
+        )
+
+        opening = ending
+        month = add_months(month, 1)
+
+    return series
+
+
+# ============================================================
+# Days of holding (DOH)
+# ============================================================
+
+
+def forward_daily_sell_out(
+    series: list[dict],
+    index: int,
+    forecast_by_month: dict[date, float],
+    window: int = DOH_WINDOW_MONTHS,
+) -> float | None:
+    """
+    Average units sold per day over the `window` months after series[index].
+    A month uses its real sell-out when it has data and the forecast
+    otherwise; a month with neither is left out of both the units and the
+    day count. Returns None when no month in the window has a value, or
+    when the total is zero (a DOH cannot be measured against no sales).
+    """
+
+    by_month = {row["month"]: row for row in series}
+    month = series[index]["month"]
+
+    units = 0.0
+    days = 0
+    for offset in range(1, window + 1):
+        target = add_months(month, offset)
+        row = by_month.get(target)
+        if row is not None and row["has_data"]:
+            units += row["sell_out"]
+        elif target in forecast_by_month:
+            units += forecast_by_month[target]
+        else:
+            continue
+        days += days_in_month(target)
+
+    if days == 0 or units <= 0:
+        return None
+    return units / days
+
+
+def add_doh(series: list[dict], forecast_by_month: dict[date, float]) -> list[dict]:
+    """Copy of the series with daily_sell_out and doh added to every month."""
+
+    rows = []
+    for index, row in enumerate(series):
+        daily = forward_daily_sell_out(series, index, forecast_by_month)
+        rows.append(
+            {
+                **row,
+                "daily_sell_out": None if daily is None else round(daily, 4),
+                "doh": None if daily is None else round(row["ending_stock"] / daily, 1),
+            }
+        )
+    return rows
+
+
+def combined_doh(rows: list[dict]) -> float | None:
+    """
+    One DOH across several SKUs: total ending stock over total daily
+    sell-out, counting only SKUs that have a daily rate so a SKU with no
+    forward data does not drag the stock total up on its own.
+    """
+
+    measurable = [r for r in rows if r.get("daily_sell_out")]
+    if not measurable:
+        return None
+    stock = sum(r["ending_stock"] for r in measurable)
+    daily = sum(r["daily_sell_out"] for r in measurable)
+    return round(stock / daily, 1)
+
+
+# ============================================================
+# Thresholds
+# ============================================================
+
+
+def threshold_status(doh: float | None, minimum: float, maximum: float) -> str | None:
+    """Where a DOH sits against a customer's min-max band (from its DOH settings); both edges are within."""
+
+    if doh is None:
+        return None
+    if doh < minimum:
+        return DOH_STATUS_BELOW_MIN
+    if doh > maximum:
+        return DOH_STATUS_ABOVE_MAX
+    return DOH_STATUS_WITHIN
+
+
+# ============================================================
+# Sell-in plan
+#
+# Works out how much sell-in each month needs. The sell-in lands during the
+# month it is shown against, and the month is left holding the target DOH:
+#
+#   daily rate      = forecast units of months m+1, m+2, m+3 / days in those months
+#   stock needed    = target DOH x daily rate          (stock to hold at the END of m)
+#   sell-in (m)     = max(0, forecast(m) + stock needed - opening(m)
+#                                - temporary sell-in), rounded UP to whole cartons
+#   ending stock(m) = opening(m) + temporary sell-in + sell-in - forecast(m)
+#   opening(m+1)    = ending stock(m)
+#
+# forecast(m) is in the sell-in because month m's own sales use up stock
+# before the month ends. "Temporary sell-in" (shipped_so_far) is sell-in
+# already sent in a month that has not ended yet, so the recommendation is
+# what is left to send. A month that already holds enough recommends 0 and
+# simply ends above the target.
+# ============================================================
+
+
+def forward_forecast_daily(
+    forecast_by_month: dict[date, float],
+    month: date,
+    window: int = DOH_WINDOW_MONTHS,
+) -> float | None:
+    """
+    Forecast units per day over the `window` months after `month`. When none
+    of those months is forecast, the month's own forecast rate is used instead
+    so the last forecast month can still be planned. None when there is no
+    forecast for the month or the months after it.
+    """
+
+    units = 0.0
+    days = 0
+    for offset in range(1, window + 1):
+        target = add_months(month, offset)
+        if target in forecast_by_month:
+            units += forecast_by_month[target]
+            days += days_in_month(target)
+
+    if days > 0:
+        return units / days
+    if month in forecast_by_month:
+        return forecast_by_month[month] / days_in_month(month)
+    return None
+
+
+def build_sell_in_plan(
+    opening_stock: float,
+    first_month: date,
+    months: int,
+    forecast_by_month: dict[date, float],
+    target_doh_for_month,
+    shipped_by_month: dict[date, float] | None = None,
+) -> list[dict]:
+    """
+    Month-by-month plan for one SKU starting at `first_month` with
+    `opening_stock` (its last actual ending stock) -- opening stock, sell-in
+    and the forecast are all already whole-carton counts, so the
+    recommendation is simply rounded up to the next whole carton, not to a
+    pack size. `target_doh_for_month` is called with each month and returns
+    that month's target DOH. `shipped_by_month` holds temporary sell-in:
+    units already sent for months that have not ended, counted towards the
+    month's stock and taken off the recommendation. The plan stops at the
+    first month with no forecast, since nothing can be projected past it.
+    """
+
+    shipped_by_month = shipped_by_month or {}
+    rows = []
+    opening = opening_stock
+
+    for offset in range(months):
+        month = add_months(first_month, offset)
+        if month not in forecast_by_month:
+            break
+
+        forecast = forecast_by_month[month]
+        daily = forward_forecast_daily(forecast_by_month, month)
+        target = target_doh_for_month(month)
+        stock_needed = target * daily
+
+        shipped = shipped_by_month.get(month, 0.0)
+        needed_units = forecast + stock_needed - opening - shipped
+        recommended = max(0, ceil(needed_units - 1e-9))
+        stock_after = opening + shipped + recommended
+        ending = stock_after - forecast
+
+        rows.append(
+            {
+                "month": month,
+                "forecast_sell_out": round(forecast, 2),
+                "opening_stock": round(opening, 2),
+                "shipped_so_far": round(shipped, 2),
+                "stock_needed": round(stock_needed, 2),
+                "recommended_sell_in": recommended,
+                "stock_after_sell_in": round(stock_after, 2),
+                "projected_ending_stock": round(ending, 2),
+                # Days of cover left at the end of the month, once the sell-in has
+                # arrived and the month's sales are done.
+                "doh_after_sell_in": None if not daily else round(ending / daily, 1),
+                "target_doh": target,
+            }
+        )
+        opening = ending
+
+    return rows

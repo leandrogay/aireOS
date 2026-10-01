@@ -90,6 +90,14 @@ BQ_SELLOUT_TABLE = os.environ.get(
     "BQ_SELLOUT_TABLE", "aire-data.Aire_Data.public_sellout"
 )
 
+# Final forecast the Forecast page reads: one row per customer x SKU x month
+# with the initial / previous / current lines, cartons only. Read-only; written
+# by the BigQuery procedure run_monthly_forecast_pipeline.
+BQ_FORECAST_OUTPUT_VIEW = os.environ.get(
+    "BQ_FORECAST_OUTPUT_VIEW",
+    "aire-data.Aire_Data_Analytics.aire_forecasting_output",
+)
+
 # ---- Cloud SQL --------------------------------------------------------------
 
 POSTGRESQL_INSTANCE_CONNECTION_NAME = os.environ.get(

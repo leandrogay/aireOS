@@ -8,9 +8,9 @@ import { formatDate } from '@/lib/formatDate';
 import { cn } from '@/lib/utils';
 import {
   promoTypeLabel,
-  retailerLabel,
   uniqueSkuRangeLabels,
 } from '@/app/utils/promotionForm';
+import { retailerLabel } from '@/app/utils/retailerLabel';
 import {
   PROMOTION_STATUSES,
   dedupePromotions,

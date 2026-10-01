@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from google.api_core.exceptions import GoogleAPICallError
 from google.genai import errors as genai_errors
 
-from app.services import assistant, bigquery, sellout_lookup
+from app.services import assistant, bigquery, sellout_lookup, promotion_service, inventory_service
 
 router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 

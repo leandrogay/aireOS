@@ -5,7 +5,9 @@ import datetime
 import pandas as pd
 import pytest
 
-from app.services import assistant, bigquery, promotion_service, sellout_lookup
+from google.api_core.exceptions import ServiceUnavailable
+
+from app.services import assistant, bigquery, inventory_service, promotion_service, sellout_lookup
 
 
 # ---- Fakes mirroring just the SDK response shape assistant.py reads --------
@@ -645,6 +647,198 @@ def test_rank_skus_builds_table_not_chart(monkeypatch):
     assert result["has_table"] is True
     assert result["table_columns"] == ["rank", "product_name", "volume", "value"]
     assert result["table_rows"][0] == ["1", "Widget", "10", "100.0"]
+
+
+# ---- ask(): inventory tools --------------------------------------------------
+
+def test_inventory_overview_builds_table_not_chart(monkeypatch):
+    overview = {
+        "customers": [{"customer_id": 1, "customer_name": "fairprice"}],
+        "monthly": [{"customer_id": 1, "customer_name": "fairprice", "month": "2026-07-01", "ending_stock": 663}],
+        "skus": [
+            {"customer_id": 1, "customer_name": "fairprice", "sku": "S1", "product_name": "Adult Pants L",
+             "month": "2026-07-01", "ending_stock": 663},
+        ],
+    }
+    monkeypatch.setattr(inventory_service, "get_overview", lambda **kwargs: overview)
+
+    tool_call = _tool_call_response(("tu_1", "get_inventory_overview", {}))
+    _install_fake_client(monkeypatch, [tool_call, _final_answer(text="Ending stock is 663 units.")])
+
+    result = assistant.ask("how much stock do we have?", history=None, customer="fairprice")
+
+    assert result["has_chart"] is False
+    assert result["has_table"] is True
+    assert result["table_columns"] == ["month", "customer", "product", "ending_stock"]
+    assert result["table_rows"][0] == ["2026-07-01", "fairprice", "Adult Pants L", "663"]
+
+
+def test_inventory_overview_omits_customer_filter_when_not_named(monkeypatch):
+    # Overview is a cross-customer view by default -- unlike the sales
+    # tools, it must NOT silently fall back to the page's current customer.
+    captured = {}
+
+    def _fake_overview(**kwargs):
+        captured.update(kwargs)
+        return {"customers": [], "monthly": [], "skus": []}
+
+    monkeypatch.setattr(inventory_service, "get_overview", _fake_overview)
+
+    tool_call = _tool_call_response(("tu_1", "get_inventory_overview", {}))
+    _install_fake_client(monkeypatch, [tool_call, _final_answer(grounded=False, data_source="none"), _search_answer("n/a"), _final_answer(grounded=False, data_source="none")])
+
+    assistant.ask("how much stock do we have across all customers?", history=None, customer="fairprice")
+
+    assert captured["customer_ids"] is None
+
+
+def test_customer_inventory_resolves_name_and_builds_table(monkeypatch):
+    monkeypatch.setattr(inventory_service, "list_customers", lambda: [{"customer_id": 1, "customer_name": "fairprice"}])
+
+    captured = {}
+
+    def _fake_customer_view(**kwargs):
+        captured.update(kwargs)
+        return {
+            "customer": {"customer_id": 1, "customer_name": "fairprice"},
+            "threshold": {"target_doh": 30.0, "min_doh": 25.0, "max_doh": 35.0, "is_global_default": True},
+            "trend": [],
+            "skus": [
+                {"sku": "S1", "product_name": "Adult Pants L", "month": "2026-07-01", "ending_stock": 663,
+                 "doh": 39.8, "target_doh": 30.0, "doh_status": "above_max"},
+            ],
+        }
+
+    monkeypatch.setattr(inventory_service, "get_customer_view", _fake_customer_view)
+
+    tool_call = _tool_call_response(("tu_1", "get_customer_inventory", {"customer": "fairprice"}))
+    _install_fake_client(monkeypatch, [tool_call, _final_answer(text="FairPrice's Adult Pants L is above max at 39.8 days.")])
+
+    result = assistant.ask("what's fairprice's DOH?", history=None, customer="fairprice")
+
+    assert captured["customer_id"] == 1
+    assert result["table_columns"] == ["month", "product", "ending_stock", "doh", "target_doh", "status"]
+    assert result["table_rows"][0] == ["2026-07-01", "Adult Pants L", "663", "39.8", "30.0", "Above max"]
+
+
+def test_customer_inventory_unknown_name_is_reported_as_tool_error(monkeypatch):
+    monkeypatch.setattr(inventory_service, "list_customers", lambda: [{"customer_id": 1, "customer_name": "fairprice"}])
+
+    tool_call = _tool_call_response(("tu_1", "get_customer_inventory", {"customer": "cold storage"}))
+    fake_client = _install_fake_client(
+        monkeypatch,
+        [tool_call, _final_answer(grounded=False, data_source="none"), _search_answer("n/a"), _final_answer(grounded=False, data_source="none")],
+    )
+
+    assistant.ask("what's cold storage's DOH?", history=None, customer="fairprice")
+
+    second_call_contents = fake_client.models.calls[1]["contents"]
+    function_response = _dump(second_call_contents[-1])["parts"][0]["function_response"]["response"]
+    assert "error" in function_response
+    assert "Unknown inventory customer" in function_response["error"]
+
+
+def test_at_risk_inventory_builds_table_sorted_by_severity(monkeypatch):
+    at_risk = {
+        "as_of": "2026-07-01",
+        "counts": {"below_min": 0, "above_max": 1},
+        "items": [
+            {"customer_name": "fairprice", "product_name": "Adult Pants L", "doh": 39.8, "target_doh": 30.0,
+             "doh_status": "above_max", "days_outside_band": 4.8},
+        ],
+    }
+    monkeypatch.setattr(inventory_service, "get_at_risk", lambda **kwargs: at_risk)
+
+    tool_call = _tool_call_response(("tu_1", "get_at_risk_inventory", {}))
+    _install_fake_client(monkeypatch, [tool_call, _final_answer(text="Adult Pants L is overstocked.")])
+
+    result = assistant.ask("what's at risk?", history=None, customer="fairprice")
+
+    assert result["table_columns"] == ["customer", "product", "doh", "target_doh", "status", "days_outside_band"]
+    assert result["table_rows"][0] == ["fairprice", "Adult Pants L", "39.8", "30.0", "Above max", "4.8"]
+
+
+def test_sell_in_plan_builds_table(monkeypatch):
+    monkeypatch.setattr(inventory_service, "list_customers", lambda: [{"customer_id": 1, "customer_name": "fairprice"}])
+    plan = {
+        "customer": {"customer_id": 1, "customer_name": "fairprice"},
+        "threshold": {"target_doh": 30.0, "min_doh": 25.0, "max_doh": 35.0},
+        "actuals_through": "2026-07-01",
+        "actuals_through_by_sku": {},
+        "rows": [
+            {"month": "2026-08-01", "product_name": "Adult Pants L", "forecast_sell_out": 620.0,
+             "recommended_sell_in": 376, "projected_ending_stock": 419.0},
+        ],
+        "monthly_totals": [],
+        "sku_totals": [],
+        "skus_without_forecast": [],
+    }
+    monkeypatch.setattr(inventory_service, "get_sell_in_plan", lambda **kwargs: plan)
+
+    tool_call = _tool_call_response(("tu_1", "get_sell_in_plan", {"customer": "fairprice"}))
+    _install_fake_client(monkeypatch, [tool_call, _final_answer(text="Recommended sell-in for August is 376 units.")])
+
+    result = assistant.ask("how much should we sell in next month?", history=None, customer="fairprice")
+
+    assert result["table_columns"] == ["month", "product", "forecast_sell_out", "recommended_sell_in", "projected_ending_stock"]
+    assert result["table_rows"][0] == ["2026-08-01", "Adult Pants L", "620.0", "376", "419.0"]
+
+
+def test_list_inventory_skus_lookup(monkeypatch):
+    monkeypatch.setattr(inventory_service, "list_skus", lambda: [{"sku": "S1", "product_name": "Adult Pants L"}])
+
+    tool_call = _tool_call_response(("tu_1", "list_inventory_skus", {}))
+    fake_client = _install_fake_client(monkeypatch, [tool_call, _final_answer()])
+
+    assistant.ask("what SKUs do we track?", history=None, customer="fairprice")
+
+    second_call_contents = fake_client.models.calls[1]["contents"]
+    function_response = _dump(second_call_contents[-1])["parts"][0]["function_response"]["response"]
+    assert json.loads(function_response["result"]) == [{"sku": "S1", "product_name": "Adult Pants L"}]
+
+
+def test_inventory_database_error_is_reported_as_tool_error_not_raised(monkeypatch):
+    def _boom(**kwargs):
+        raise RuntimeError("connection refused")
+
+    monkeypatch.setattr(inventory_service, "get_at_risk", _boom)
+
+    tool_call = _tool_call_response(("tu_1", "get_at_risk_inventory", {}))
+    fake_client = _install_fake_client(
+        monkeypatch,
+        [tool_call, _final_answer(grounded=False, data_source="none"), _search_answer("n/a"), _final_answer(grounded=False, data_source="none")],
+    )
+
+    assistant.ask("what's at risk?", history=None, customer="fairprice")
+
+    second_call_contents = fake_client.models.calls[1]["contents"]
+    function_response = _dump(second_call_contents[-1])["parts"][0]["function_response"]["response"]
+    assert "Unable to reach the inventory database" in function_response["error"]
+
+
+def test_a_bigquery_outage_inside_an_inventory_tool_is_also_a_tool_error_not_a_crash(monkeypatch):
+    # get_customer_view and get_sell_in_plan both call BigQuery internally (the
+    # sell-out/forecast lookups) -- a GoogleAPICallError from there must be
+    # caught by the inventory branch's own broad except, not left to propagate
+    # past it to the generic sales-tool GoogleAPICallError handler further out,
+    # which would give a less specific "Unable to reach BigQuery" answer with
+    # no inventory framing.
+    def _boom(**kwargs):
+        raise ServiceUnavailable("BigQuery is down")
+
+    monkeypatch.setattr(inventory_service, "get_customer_view", _boom)
+
+    tool_call = _tool_call_response(("tu_1", "get_customer_inventory", {"customer": "fairprice"}))
+    fake_client = _install_fake_client(
+        monkeypatch,
+        [tool_call, _final_answer(grounded=False, data_source="none"), _search_answer("n/a"), _final_answer(grounded=False, data_source="none")],
+    )
+
+    assistant.ask("what's fairprice's DOH?", history=None, customer="fairprice")
+
+    second_call_contents = fake_client.models.calls[1]["contents"]
+    function_response = _dump(second_call_contents[-1])["parts"][0]["function_response"]["response"]
+    assert "Unable to reach the inventory database" in function_response["error"]
 
 
 # ---- ask(): search fallback --------------------------------------------------
