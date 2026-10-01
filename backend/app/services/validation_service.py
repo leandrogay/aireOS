@@ -63,6 +63,8 @@ def validate_mapped_dataframe(mapped: pd.DataFrame) -> dict[str, Any]:
             rejection_reasons.append(f"{count} rows with invalid numeric {field}")
         mapped[field] = parsed.mask(invalid)
 
+    # Cloud SQL and BigQuery both define pack_size as an integer. Pandas needs
+    # its nullable integer dtype so missing values stay null.
     mapped["pack_size"] = mapped["pack_size"].astype("Int64")
 
     valid_df = mapped.drop(index=list(failed_indices)).reset_index(drop=True)

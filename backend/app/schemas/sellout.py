@@ -19,6 +19,7 @@ BUSINESS_COLUMNS = [
     "quantity_units",
     "revenue",
     "source_file",
+    "period_label",
 ]
 
 REQUIRED_COLUMNS = [

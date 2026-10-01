@@ -28,16 +28,12 @@ import pandas as pd
 from pathlib import Path
 from anthropic import Anthropic
 from app import config
+from app.schemas.sellout import BUSINESS_COLUMNS
 from app.services import storage
 
 MODEL = config.ANTHROPIC_MODEL
 
-TARGET_SCHEMA = [
-    "retailer", "period_start", "period_end", "period_type", "store_code",
-    "store_name", "store_format", "sku", "product_name", "sku_range",
-    "size", "brand", "product_category", "uom", "pack_size",
-    "quantity_units", "revenue", "source_file", "loaded_at", "data_source",
-]
+TARGET_SCHEMA = BUSINESS_COLUMNS
 
 
 # How confident the proposal is in one column's mapping. A reviewer is asked to

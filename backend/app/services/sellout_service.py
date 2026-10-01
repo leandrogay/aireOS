@@ -34,7 +34,13 @@ _BULK_UPSERT_BATCH_SIZE = 500
 
 
 def _consolidate_records(records: list[dict]) -> list[dict]:
-    """Combine source rows that resolve to the same sell-out business key."""
+    """Combine source rows that map to the same sell-out business record.
+
+    FairPrice can report the same product/store/period under both CAR and EA
+    sales UOMs. quantity_units is already supplied in EA, so when UOM is not
+    part of the agreed fact schema the lossless representation is one row with
+    additive quantity and revenue.
+    """
     consolidated: dict[tuple, dict] = {}
     for row in records:
         key = tuple(row[field] for field in BUSINESS_KEY)
@@ -51,6 +57,8 @@ def _consolidate_records(records: list[dict]) -> list[dict]:
             elif right is not None:
                 current[metric] = left + right
 
+        # The SKU master has one UOM. Prefer EA when the source supplies both
+        # EA and CAR for a quantity that is explicitly measured in EA.
         if str(row.get("uom") or "").upper() == "EA":
             current["uom"] = row["uom"]
 
@@ -58,9 +66,11 @@ def _consolidate_records(records: list[dict]) -> list[dict]:
 
 
 def _prepare_records(dataframe: pd.DataFrame) -> tuple[list[dict], int]:
-    """Normalise types and consolidate rows exactly as the load will."""
+    """Normalise types and consolidate rows exactly as the database load will."""
     input_records = (
-        dataframe.astype(object).where(dataframe.notna(), None).to_dict("records")
+        dataframe.astype(object)
+        .where(dataframe.notna(), None)
+        .to_dict("records")
     )
     records = _consolidate_records(input_records)
     for row in records:
@@ -109,7 +119,7 @@ def cloud_sql_loading_enabled() -> bool:
 
 
 def _insert_missing_sku(connection: Connection, row: dict) -> None:
-    """Add a new SKU without ever changing an existing master record."""
+    """Add a new SKU without changing an existing master record."""
     connection.execute(
         text(
             """
@@ -172,7 +182,8 @@ def _upsert_sellout_in_batches(connection: Connection, records: list[dict]) -> N
     """Use multi-row statements so large imports are not sent row by row."""
     columns_sql = ", ".join(SELLOUT_COLUMNS)
     for batch_start in range(0, len(records), _BULK_UPSERT_BATCH_SIZE):
-        batch = records[batch_start : batch_start + _BULK_UPSERT_BATCH_SIZE]
+        batch_end = batch_start + _BULK_UPSERT_BATCH_SIZE
+        batch = records[batch_start:batch_end]
         parameters = {}
         value_rows = []
         for index, record in enumerate(batch):
@@ -211,7 +222,7 @@ def load_clean_rows(
     engine: Engine | None = None,
     loaded_at: datetime.datetime | None = None,
 ) -> dict:
-    """Add missing catalogue rows and upsert sell-out facts atomically."""
+    """Reuse catalog references, add missing SKUs, and upsert facts atomically."""
     if dataframe.empty:
         return {
             "rows_stored": 0,
@@ -246,15 +257,17 @@ def load_clean_rows(
                 dict.fromkeys(str(row["retailer"]) for row in records)
             )
             retailer_ids = catalog_service.get_or_create_retailers(
-                connection, retailer_names
+                connection,
+                retailer_names,
             )
 
             stores_by_key: dict[tuple[int, str], dict] = {}
             for row in records:
                 retailer_id = retailer_ids[str(row["retailer"])]
                 store_code = str(row["store_code"])
+                store_key = (retailer_id, store_code)
                 stores_by_key.setdefault(
-                    (retailer_id, store_code),
+                    store_key,
                     {
                         "retailer_id": retailer_id,
                         "store_code": store_code,
@@ -264,13 +277,16 @@ def load_clean_rows(
                 )
 
             catalog_service.get_or_create_stores(
-                connection, list(stores_by_key.values())
+                connection,
+                list(stores_by_key.values()),
             )
 
             skus_seen: set[str] = set()
             facts: list[dict] = []
+
             for row in records:
-                retailer_id = retailer_ids[str(row["retailer"])]
+                retailer = str(row["retailer"])
+                retailer_id = retailer_ids[retailer]
                 sku = str(row["sku"])
                 if sku not in skus_seen:
                     _insert_missing_sku(connection, row)

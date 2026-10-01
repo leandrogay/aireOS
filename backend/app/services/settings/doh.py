@@ -1,0 +1,516 @@
+from datetime import date, timedelta, timezone
+from decimal import Decimal
+
+from sqlalchemy import text
+from sqlalchemy.engine import Connection
+
+from app.services.settings import common
+from app.services.settings.common import CustomerNotFoundError
+
+
+# DOH settings for one customer: versioned thresholds (doh_settings) and
+# the alert toggle (customers.doh_alert_*). Customer lookups, locking and
+# the engines are shared with other kinds of settings in common.py.
+
+
+# ============================================================
+# Custom Exceptions
+# ============================================================
+
+
+class SettingVersionNotFoundError(Exception):
+    pass
+
+
+# ============================================================
+# Constants
+# ============================================================
+
+# The system-wide thresholds, in days. A customer with no version of its
+# own is held to these, and "reset to global default" saves them as a new
+# version. A customer whose current values equal them is reported as on the
+# global default either way (the append-only table cannot mark it otherwise).
+GLOBAL_DEFAULT_MIN_DOH = Decimal("25")
+GLOBAL_DEFAULT_TARGET_DOH = Decimal("30")
+GLOBAL_DEFAULT_MAX_DOH = Decimal("35")
+
+
+# ============================================================
+# CURRENT SETTINGS
+#
+# current_settings has one row per customer (LEFT JOIN LATERAL onto the
+# newest doh_settings row), so the "latest version" rule lives in the
+# view, not here. A customer with no thresholds gets the global defaults
+# (setting_id and thresholds_updated_* stay NULL).
+# ============================================================
+
+_CURRENT_SETTINGS_SQL = """
+    SELECT
+        customer_id,
+        customer_name,
+        doh_alert_enabled,
+        doh_alert_updated_at,
+        setting_id,
+        min_doh,
+        target_doh,
+        max_doh,
+        thresholds_updated_at,
+        thresholds_updated_by
+
+    FROM current_settings
+"""
+
+
+def _is_global_default(min_doh: Decimal, target_doh: Decimal, max_doh: Decimal) -> bool:
+    # Decimal compares by value, so the stored 25.00 equals the default 25.
+    return (min_doh, target_doh, max_doh) == (
+        GLOBAL_DEFAULT_MIN_DOH,
+        GLOBAL_DEFAULT_TARGET_DOH,
+        GLOBAL_DEFAULT_MAX_DOH,
+    )
+
+
+def _settings_view(row: dict) -> dict:
+    if row["setting_id"] is None:
+        min_doh = GLOBAL_DEFAULT_MIN_DOH
+        target_doh = GLOBAL_DEFAULT_TARGET_DOH
+        max_doh = GLOBAL_DEFAULT_MAX_DOH
+    else:
+        min_doh, target_doh, max_doh = row["min_doh"], row["target_doh"], row["max_doh"]
+
+    return {
+        "customer_id": row["customer_id"],
+        "customer_name": row["customer_name"],
+        "doh_alert_enabled": row["doh_alert_enabled"],
+        "doh_alert_updated_at": common.iso(row["doh_alert_updated_at"]),
+        "setting_id": row["setting_id"],
+        "min_doh": min_doh,
+        "target_doh": target_doh,
+        "max_doh": max_doh,
+        "is_global_default": _is_global_default(min_doh, target_doh, max_doh),
+        "thresholds_updated_at": common.iso(row["thresholds_updated_at"]),
+        "thresholds_updated_by": row["thresholds_updated_by"],
+    }
+
+
+def _fetch_current(conn: Connection, customer_id: int) -> dict | None:
+    row = conn.execute(
+        text(
+            f"""
+            {_CURRENT_SETTINGS_SQL}
+
+            WHERE
+                customer_id = :customer_id
+            """
+        ),
+        {"customer_id": customer_id},
+    ).mappings().first()
+
+    return dict(row) if row is not None else None
+
+
+def list_settings() -> list[dict]:
+    """Every customer's alert flag and current thresholds, by customer name."""
+
+    with common.read_connection() as conn:
+        rows = conn.execute(
+            text(
+                f"""
+                {_CURRENT_SETTINGS_SQL}
+
+                ORDER BY
+                    customer_name ASC
+                """
+            )
+        ).mappings().all()
+
+    return [_settings_view(dict(row)) for row in rows]
+
+
+def get_settings(customer_id: int) -> dict:
+    with common.read_connection() as conn:
+        row = _fetch_current(conn, customer_id)
+
+    if row is None:
+        raise CustomerNotFoundError(f"Customer {customer_id} does not exist.")
+    return _settings_view(row)
+
+
+# ============================================================
+# THRESHOLDS OVER TIME
+#
+# Read by the inventory DOH calculations. Versions are append-only and
+# each one is in effect from its updated_at until the next one, so "the
+# version in effect on a day" is simply the newest one saved on or before
+# it; no effective_to is stored or derived. A customer is on the global
+# default before its first version.
+# ============================================================
+
+# Singapore has no daylight saving, so a fixed offset gives the calendar day
+# a version was saved on whatever timezone the server runs in.
+_BUSINESS_TZ = timezone(timedelta(hours=8))
+
+
+def fetch_versions(conn: Connection, customer_ids: list[int] | None = None) -> dict[int, list[dict]]:
+    """
+    Every threshold version per customer (all customers when `customer_ids`
+    is None), newest first in the same order current_settings uses. Takes the
+    caller's connection so it runs inside that caller's read.
+    """
+
+    rows = conn.execute(
+        text(
+            """
+            SELECT
+                customer_id,
+                setting_id,
+                min_doh,
+                target_doh,
+                max_doh,
+                updated_at,
+                updated_by
+
+            FROM doh_settings
+
+            WHERE
+                CAST(:customer_ids AS integer[]) IS NULL
+                OR customer_id = ANY(CAST(:customer_ids AS integer[]))
+
+            ORDER BY
+                customer_id ASC,
+                updated_at DESC,
+                setting_id DESC
+            """
+        ),
+        {"customer_ids": customer_ids},
+    ).mappings().all()
+
+    by_customer: dict[int, list[dict]] = {}
+    for row in rows:
+        by_customer.setdefault(row["customer_id"], []).append(dict(row))
+    return by_customer
+
+
+def _thresholds(version: dict | None) -> dict:
+    if version is None:
+        min_doh = GLOBAL_DEFAULT_MIN_DOH
+        target_doh = GLOBAL_DEFAULT_TARGET_DOH
+        max_doh = GLOBAL_DEFAULT_MAX_DOH
+    else:
+        min_doh, target_doh, max_doh = version["min_doh"], version["target_doh"], version["max_doh"]
+
+    return {
+        "setting_id": version["setting_id"] if version else None,
+        "min_doh": min_doh,
+        "target_doh": target_doh,
+        "max_doh": max_doh,
+        "is_global_default": _is_global_default(min_doh, target_doh, max_doh),
+        "updated_at": common.iso(version["updated_at"]) if version else None,
+        "updated_by": version["updated_by"] if version else None,
+    }
+
+
+def current_thresholds(versions: list[dict]) -> dict:
+    """The newest of a customer's versions (from fetch_versions): what the settings page shows."""
+
+    return _thresholds(versions[0] if versions else None)
+
+
+def thresholds_on(versions: list[dict], day: date) -> dict:
+    """The version in effect at the end of `day` (a Singapore calendar day)."""
+
+    for version in versions:
+        if version["updated_at"].astimezone(_BUSINESS_TZ).date() <= day:
+            return _thresholds(version)
+    return _thresholds(None)
+
+
+# ============================================================
+# THRESHOLD VERSIONS
+#
+# doh_settings is append-only: a change is always an INSERT, never an
+# UPDATE or DELETE, and the newest row per customer (updated_at DESC,
+# setting_id DESC) is the current setting. The insert only happens when
+# min/target/max differ from the current version, and that check runs in
+# the database, so "no row returned" means nothing changed.
+# ============================================================
+
+# Values are cast to the column type so the comparison with the stored
+# NUMERIC(6,2) values is exact (the schemas already limit input to 2 dp).
+_INSERT_VERSION_SQL = """
+    INSERT INTO doh_settings (
+        customer_id,
+        min_doh,
+        target_doh,
+        max_doh,
+        updated_by
+    )
+    SELECT
+        CAST(:customer_id AS integer),
+        CAST(:min_doh AS numeric(6, 2)),
+        CAST(:target_doh AS numeric(6, 2)),
+        CAST(:max_doh AS numeric(6, 2)),
+        CAST(:updated_by AS text)
+
+    WHERE NOT EXISTS (
+        SELECT 1
+
+        FROM (
+            SELECT
+                min_doh,
+                target_doh,
+                max_doh
+
+            FROM doh_settings
+
+            WHERE
+                customer_id = CAST(:customer_id AS integer)
+
+            ORDER BY
+                updated_at DESC,
+                setting_id DESC
+
+            LIMIT 1
+        ) cur
+
+        WHERE
+            (cur.min_doh, cur.target_doh, cur.max_doh) = (
+                CAST(:min_doh AS numeric(6, 2)),
+                CAST(:target_doh AS numeric(6, 2)),
+                CAST(:max_doh AS numeric(6, 2))
+            )
+    )
+
+    RETURNING setting_id
+"""
+
+
+def _insert_version(
+    conn: Connection,
+    customer_id: int,
+    min_doh: Decimal,
+    target_doh: Decimal,
+    max_doh: Decimal,
+    updated_by: str | None,
+) -> bool:
+    """Append a version unless it equals the current one; True when a row was written."""
+
+    row = conn.execute(
+        text(_INSERT_VERSION_SQL),
+        {
+            "customer_id": customer_id,
+            "min_doh": min_doh,
+            "target_doh": target_doh,
+            "max_doh": max_doh,
+            "updated_by": updated_by,
+        },
+    ).first()
+
+    return row is not None
+
+
+def save_thresholds(
+    customer_id: int,
+    min_doh: Decimal,
+    target_doh: Decimal,
+    max_doh: Decimal,
+    updated_by: str | None = None,
+) -> dict:
+    """
+    Save a customer's thresholds as a new version, in one transaction.
+    `changed` is False when the values equal the current version, in which
+    case nothing is written.
+    """
+
+    with common.get_engine().begin() as conn:
+        common.lock_customer(conn, customer_id)
+        changed = _insert_version(conn, customer_id, min_doh, target_doh, max_doh, updated_by)
+        current = _fetch_current(conn, customer_id)
+
+    return {"changed": changed, "settings": _settings_view(current)}
+
+
+def revert_to_version(customer_id: int, setting_id: int, updated_by: str | None = None) -> dict:
+    """
+    Make an older version current again by inserting a copy of its values as
+    a new version; the old row is left as it is. Goes through the same
+    conditional insert, so reverting to values that are already current
+    writes nothing (`changed` False).
+    """
+
+    with common.get_engine().begin() as conn:
+        common.lock_customer(conn, customer_id)
+
+        version = conn.execute(
+            text(
+                """
+                SELECT
+                    min_doh,
+                    target_doh,
+                    max_doh
+
+                FROM doh_settings
+
+                WHERE
+                    setting_id = :setting_id
+                    AND customer_id = :customer_id
+                """
+            ),
+            {"setting_id": setting_id, "customer_id": customer_id},
+        ).mappings().first()
+
+        if version is None:
+            raise SettingVersionNotFoundError(
+                f"Setting version {setting_id} does not exist for customer {customer_id}."
+            )
+
+        changed = _insert_version(
+            conn,
+            customer_id,
+            version["min_doh"],
+            version["target_doh"],
+            version["max_doh"],
+            updated_by,
+        )
+        current = _fetch_current(conn, customer_id)
+
+    return {"changed": changed, "settings": _settings_view(current)}
+
+
+def reset_to_default(customer_id: int, updated_by: str | None = None) -> dict:
+    """
+    Put a customer back on the global default thresholds by saving them as a
+    new version (doh_settings is append-only, so the custom versions stay as
+    history). Nothing is written when the customer has no version yet or is
+    already on the default values (`changed` False).
+    """
+
+    with common.get_engine().begin() as conn:
+        common.lock_customer(conn, customer_id)
+
+        changed = False
+        if _fetch_current(conn, customer_id)["setting_id"] is not None:
+            changed = _insert_version(
+                conn,
+                customer_id,
+                GLOBAL_DEFAULT_MIN_DOH,
+                GLOBAL_DEFAULT_TARGET_DOH,
+                GLOBAL_DEFAULT_MAX_DOH,
+                updated_by,
+            )
+        current = _fetch_current(conn, customer_id)
+
+    return {"changed": changed, "settings": _settings_view(current)}
+
+
+def get_history(customer_id: int, limit: int, offset: int) -> dict:
+    """
+    One page of a customer's threshold versions, newest first, with the total
+    count for paging. `is_current` marks the version the view reports as
+    current.
+    """
+
+    with common.read_connection() as conn:
+        current = _fetch_current(conn, customer_id)
+        if current is None:
+            raise CustomerNotFoundError(f"Customer {customer_id} does not exist.")
+
+        total = conn.execute(
+            text(
+                """
+                SELECT
+                    COUNT(*) AS total
+
+                FROM doh_settings
+
+                WHERE
+                    customer_id = :customer_id
+                """
+            ),
+            {"customer_id": customer_id},
+        ).mappings().first()["total"]
+
+        rows = conn.execute(
+            text(
+                """
+                SELECT
+                    setting_id,
+                    min_doh,
+                    target_doh,
+                    max_doh,
+                    updated_at,
+                    updated_by
+
+                FROM doh_settings
+
+                WHERE
+                    customer_id = :customer_id
+
+                ORDER BY
+                    updated_at DESC,
+                    setting_id DESC
+
+                LIMIT :limit
+                OFFSET :offset
+                """
+            ),
+            {"customer_id": customer_id, "limit": limit, "offset": offset},
+        ).mappings().all()
+
+    items = [
+        {
+            "setting_id": row["setting_id"],
+            "min_doh": row["min_doh"],
+            "target_doh": row["target_doh"],
+            "max_doh": row["max_doh"],
+            "updated_at": common.iso(row["updated_at"]),
+            "updated_by": row["updated_by"],
+            "is_current": row["setting_id"] == current["setting_id"],
+        }
+        for row in rows
+    ]
+
+    return {
+        "customer_id": customer_id,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "items": items,
+    }
+
+
+# ============================================================
+# DOH ALERT
+#
+# The alert flag lives on customers and is changed in place; it never
+# creates a doh_settings version. doh_alert_updated_at only moves when the
+# value actually changes (the WHERE skips an unchanged row).
+# ============================================================
+
+
+def set_alert(customer_id: int, enabled: bool) -> dict:
+    with common.get_engine().begin() as conn:
+        common.lock_customer(conn, customer_id)
+
+        row = conn.execute(
+            text(
+                """
+                UPDATE customers
+
+                SET
+                    doh_alert_enabled = CAST(:enabled AS boolean),
+                    doh_alert_updated_at = now()
+
+                WHERE
+                    customer_id = :customer_id
+                    AND doh_alert_enabled IS DISTINCT FROM CAST(:enabled AS boolean)
+
+                RETURNING customer_id
+                """
+            ),
+            {"customer_id": customer_id, "enabled": enabled},
+        ).first()
+
+        current = _fetch_current(conn, customer_id)
+
+    return {"changed": row is not None, "settings": _settings_view(current)}

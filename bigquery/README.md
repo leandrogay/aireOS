@@ -1,0 +1,60 @@
+# BigQuery analytics views
+
+These scripts build reusable analytics views in
+`aire-data.Aire_Data_Analytics` on top of the Cloud SQL tables replicated by
+the replacement Datastream stream into the same dataset. This keeps the whole
+new pipeline isolated from legacy objects in `aire-data.Aire_Data`.
+
+They do not copy, update, or delete raw data. `CREATE OR REPLACE VIEW` only
+stores query definitions.
+
+## Views
+
+| View | Grain | Purpose |
+| --- | --- | --- |
+| `v_inventory_history` | Customer + SKU + month | Selects the latest historical metric snapshot and chains monthly opening/ending inventory |
+| `v_sales_enriched` | Sell-out business key | Adds retailer, store, and SKU descriptions to sales |
+| `v_customer_monthly_sales` | Customer + SKU + month | Combines retailer channels for customer-level inventory analysis while retaining the channel split |
+| `v_promotion_events_enriched` | Promotion + store + SKU | Retains every promotion field and relationship |
+| `v_promotion_features_monthly` | Customer + SKU + month | Safely aggregates overlapping promotion events before a sales join |
+| `v_forecasting_foundation_monthly` | Customer + SKU + month | Preserves sales, promotions, inventory, and target DOH as nested records |
+
+`v_forecasting_foundation_monthly` is a reusable data foundation, not a final
+model contract. Forecast-specific flat views can select only the fields needed
+by a particular model without rebuilding or discarding the source detail.
+
+## Run
+
+Open the BigQuery query editor in project `aire-data`, paste
+`views/000_create_inventory_history_view.sql`, and run it first. Then run
+`views/001_create_forecasting_foundation_views.sql`. Both are safe to rerun
+because every view statement uses
+`CREATE OR REPLACE VIEW`.
+
+Then run `views/002_validate_forecasting_foundation_views.sql`. The first
+comparison should show matching raw/enriched sell-out counts, every duplicate
+count should be zero, expected/actual promotion event counts should match, and
+the raw/monthly quantity and revenue totals should match.
+
+The foundation script expects `v_inventory_history` to expose
+`customer_id`, `sku`, and `period_start`; its opening assertion stops the run
+if that prerequisite is missing.
+
+## Important grain decisions
+
+- FairPrice sales and promotions remain separated in the raw tables as
+  `fairprice_online` and `fairprice_offline`.
+- Monthly sales retain the established forecasting field names
+  `quantity_cartons`, `online_quantity_cartons`, and
+  `offline_quantity_cartons`. The retailer export labels the source measure
+  `Qty (in EA)` and the ingestion pipeline does not perform a numeric unit
+  conversion; any future unit-contract change must be coordinated with the
+  forecasting consumers.
+- Inventory is supplied at combined customer level, so the monthly foundation
+  combines both channels through `public_customer_retailers`.
+- Weekly sales are assigned to the month containing `period_start`. This is
+  stated explicitly in the view and can be replaced with a proration rule if
+  the forecasting team later requires it.
+- Promotion events are aggregated before they meet monthly sales. This prevents
+  multiple stores or overlapping promotions from multiplying quantity and
+  revenue.

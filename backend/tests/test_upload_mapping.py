@@ -54,9 +54,7 @@ def _as_txt_bytes(dataframe):
 
 def test_column_samples_use_distinct_values_instead_of_repeating_first_rows():
     dataframe = pd.DataFrame(
-        {
-            "Store Format": ["FPON", "FPON", "HYPER", "SUPER", "HYPER"],
-        }
+        {"Store Format": ["FPON", "FPON", "HYPER", "SUPER", "HYPER"]}
     )
 
     assert uploads.generate_mapping.column_samples(dataframe) == {
@@ -79,7 +77,9 @@ def test_fairprice_shaped_file_uses_gcs_resolution(monkeypatch):
     monkeypatch.setattr(uploads.generate_mapping, "resolve_mapping", resolve)
 
     result = uploads.resolve_and_apply_mapping(
-        "fairprice.txt", _as_txt_bytes(_fairprice_df()), "gs://bucket/fairprice.txt"
+        "fairprice.txt",
+        _as_txt_bytes(_fairprice_df()),
+        "gs://bucket/fairprice.txt",
     )
 
     assert result == pending
@@ -93,10 +93,16 @@ def test_unrecognised_file_continues_to_proposal_flow(monkeypatch):
         "fingerprint": "abc123",
         "contract": {"identity_mapping": {}, "melt_groups": []},
     }
-    monkeypatch.setattr(uploads.generate_mapping, "resolve_mapping", lambda *_: pending)
+    monkeypatch.setattr(
+        uploads.generate_mapping,
+        "resolve_mapping",
+        lambda *_: pending,
+    )
 
     result = uploads.resolve_and_apply_mapping(
-        "unknown.txt", _as_txt_bytes(dataframe), "gs://bucket/unknown.txt"
+        "unknown.txt",
+        _as_txt_bytes(dataframe),
+        "gs://bucket/unknown.txt",
     )
 
     assert result == pending
@@ -146,7 +152,9 @@ def test_confirmed_contract_is_applied_deterministically(monkeypatch):
     )
 
     result = uploads.resolve_and_apply_mapping(
-        "vendor.txt", _as_txt_bytes(dataframe), "gs://bucket/vendor.txt"
+        "vendor.txt",
+        _as_txt_bytes(dataframe),
+        "gs://bucket/vendor.txt",
     )
 
     preview = result["processing"]["preview"][0]
@@ -214,7 +222,11 @@ def test_confirmed_contract_stores_valid_rows_when_enabled(monkeypatch):
             "storage_status": "completed",
         }
 
-    monkeypatch.setattr(uploads.sellout_ingestion.sellout_service, "load_clean_rows", load)
+    monkeypatch.setattr(
+        uploads.sellout_ingestion.sellout_service,
+        "load_clean_rows",
+        load,
+    )
 
     result = uploads.resolve_and_apply_mapping(
         "august.txt",

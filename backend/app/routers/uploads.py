@@ -12,24 +12,12 @@ router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 
 
 def _mapping_annotations(mapping: dict | None) -> dict[str, str]:
-    """
-    The bits of a mapping outcome worth writing back onto the uploaded blob.
-
-    Only what the history listing shows, and only when it has a value — GCS
-    custom metadata is a flat string map, so a None would be stored as the
-    string "None" and read back as one.
-    """
+    """Return the mapping outcome fields stored on an uploaded GCS blob."""
     if not mapping:
         return {}
 
     status = mapping.get("status")
-
-    # Only record a fingerprint that addresses a mapping someone can open. A
-    # partial match stores no contract -- its fingerprint is the new layout's,
-    # which nothing is filed under -- so recording it would give the history a
-    # "View mapping" link that 404s.
     addressable = status in ("mapped", "pending_confirmation")
-
     fields = {
         storage.MAPPING_STATUS_METADATA_KEY: status,
         storage.MAPPING_FINGERPRINT_METADATA_KEY: (
@@ -92,44 +80,19 @@ async def upload_files(
     force: bool = Form(False),
     keep_duplicate: bool = Form(False),
 ):
-    """
-    Accept one or many files, upload them all, and propose a mapping contract
-    for each.
-
-    Files that duplicate a previous upload — by content hash, or failing that
-    by original filename — are skipped (with a "duplicate" result) unless
-    `force` replaces the previous upload, or `keep_duplicate` keeps both. A
-    skipped duplicate is not uploaded, so it never reaches mapping resolution
-    below.
-
-    Returns HTTP 200 with a per-file result list even when some files fail, so a
-    single bad file doesn't discard the successful ones. Check the "failed"
-    count in the response rather than relying on the status code alone.
-
-    Each successful upload gains a "mapping" key with one of four statuses:
-      - "mapped"                a confirmed contract already existed for these
-                                headers; nothing to approve
-      - "partial_match"         the layout nearly matches a confirmed mapping.
-                                Nothing was applied — a person decides whether
-                                it is the same layout with a column added
-      - "pending_confirmation"  a fresh contract was generated and parked in
-                                mappings/pending/ — POST to the confirm
-                                endpoint with the fingerprint to keep it
-      - "mapping_failed"        the file uploaded fine but the contract could
-                                not be produced
-    """
+    """Upload files and resolve each one through a GCS mapping contract."""
     if not files:
         raise HTTPException(status_code=400, detail="No files were sent.")
 
-    # Read every stream exactly once. Anything downstream that needs the file
-    # contents gets these bytes — the UploadFile objects are drained after this.
     payload: list[tuple[str, bytes]] = [
-        (f.filename or "unnamed", await f.read()) for f in files
+        (file.filename or "unnamed", await file.read()) for file in files
     ]
 
-    # storage.upload_many is blocking (network I/O), so keep it off the event loop.
     res = await asyncio.to_thread(
-        storage.upload_many, payload, force=force, keep_duplicate=keep_duplicate
+        storage.upload_many,
+        payload,
+        force=force,
+        keep_duplicate=keep_duplicate,
     )
 
     async def resolve(entry: tuple[str, bytes], uploaded: dict):
@@ -144,35 +107,61 @@ async def upload_files(
                 uploaded.get("destination"),
                 force,
             )
-        except generate_mapping.UnreadableSourceFileError as e:
-            return {"status": "mapping_failed", "reason": "unreadable_file", "error": str(e)}
-        except generate_mapping.MappingConfigError as e:
-            return {"status": "mapping_failed", "reason": "config", "error": str(e)}
-        except generate_mapping.MappingGenerationError as e:
-            return {"status": "mapping_failed", "reason": "bad_llm_output", "error": str(e)}
-        except contract_application.ContractApplicationError as e:
-            return {"status": "mapping_failed", "reason": "application", "error": str(e)}
-        except sellout_service.SelloutLoadError as e:
-            return {"status": "mapping_failed", "reason": "cloud_sql", "error": str(e)}
-        except Exception as e:
-            return {"status": "mapping_failed", "reason": "unexpected", "error": str(e)}
+        except generate_mapping.UnreadableSourceFileError as exc:
+            return {
+                "status": "mapping_failed",
+                "reason": "unreadable_file",
+                "error": str(exc),
+            }
+        except generate_mapping.MappingConfigError as exc:
+            return {
+                "status": "mapping_failed",
+                "reason": "config",
+                "error": str(exc),
+            }
+        except generate_mapping.MappingGenerationError as exc:
+            return {
+                "status": "mapping_failed",
+                "reason": "bad_llm_output",
+                "error": str(exc),
+            }
+        except contract_application.ContractApplicationError as exc:
+            return {
+                "status": "mapping_failed",
+                "reason": "application",
+                "error": str(exc),
+            }
+        except sellout_service.SelloutLoadError as exc:
+            return {
+                "status": "mapping_failed",
+                "reason": "cloud_sql",
+                "error": str(exc),
+            }
+        except Exception as exc:
+            return {
+                "status": "mapping_failed",
+                "reason": "unexpected",
+                "error": str(exc),
+            }
 
-    # upload_many preserves input order, so results pair back to payload by index.
-    # gather runs the per-file Claude calls concurrently instead of end to end.
     mappings = await asyncio.gather(
-        *[resolve(entry, uploaded) for entry, uploaded in zip(payload, res["results"])]
+        *[
+            resolve(entry, uploaded)
+            for entry, uploaded in zip(payload, res["results"])
+        ]
     )
 
     for uploaded, mapping in zip(res["results"], mappings):
         if mapping is not None:
             uploaded["mapping"] = mapping
 
-    # Record the outcome on the blob itself so the history listing can say what
-    # each file was mapped through without re-reading and re-fingerprinting
-    # every file in the bucket.
     await asyncio.gather(
         *[
-            asyncio.to_thread(storage.annotate_upload, result["blob_path"], annotations)
+            asyncio.to_thread(
+                storage.annotate_upload,
+                result["blob_path"],
+                annotations,
+            )
             for result in res["results"]
             if result.get("success")
             and (annotations := _mapping_annotations(result.get("mapping")))
@@ -184,17 +173,11 @@ async def upload_files(
 
 @router.get("/history")
 async def upload_history(limit: int = Query(default=50, ge=1, le=200)):
-    """
-    Recent uploads, newest first — filename, vendor, date, and the mapping the
-    file was run through.
-
-    Read straight from the bucket listing: the blobs are the record of what has
-    been uploaded, so there is nothing else that could go stale against them.
-    """
+    """Return recent GCS uploads with only live mapping references."""
     try:
         return {"uploads": await asyncio.to_thread(_list_upload_history, limit)}
     except Exception as exc:
         raise HTTPException(
-            status_code=503, detail=f"Unable to read upload history: {exc}"
+            status_code=503,
+            detail=f"Unable to read upload history: {exc}",
         )
-

@@ -1,12 +1,13 @@
 import pandas as pd
 
-from app.services import validation_service
+from app.schemas.sellout import BUSINESS_COLUMNS
+from app.services.validation_service import validate_mapped_dataframe
 
 
 def _row(**changes):
-    row = {
-        "period_start": "2026-08-01",
-        "period_end": "2026-08-31",
+    return {
+        "period_start": "2026-01-01",
+        "period_end": "2026-01-31",
         "period_type": "month",
         "retailer": "fairprice_offline",
         "store_code": "420",
@@ -14,35 +15,65 @@ def _row(**changes):
         "pack_size": "8",
         "quantity_units": "10",
         "revenue": "100.50",
-        "source_file": "august.xlsx",
+        "source_file": "monthly.xlsx",
+        **changes,
     }
-    row.update(changes)
-    return row
 
 
 def test_validation_converts_dates_and_numbers_for_storage():
-    result = validation_service.validate_mapped_dataframe(pd.DataFrame([_row()]))
+    result = validate_mapped_dataframe(pd.DataFrame([_row()]))
     row = result["valid_df"].iloc[0]
 
     assert result["rows_ingested"] == 1
-    assert row["period_start"] == "2026-08-01"
+    assert row["period_start"] == "2026-01-01"
     assert row["pack_size"] == 8
     assert row["quantity_units"] == 10
     assert row["revenue"] == 100.5
 
 
 def test_validation_rejects_a_row_with_missing_keys_or_bad_numbers():
-    dataframe = pd.DataFrame(
-        [
-            _row(),
-            _row(store_code="", quantity_units="not-a-number"),
-        ]
+    rows = pd.DataFrame(
+        [_row(), _row(store_code="", quantity_units="not-a-number")]
     )
 
-    result = validation_service.validate_mapped_dataframe(dataframe)
+    result = validate_mapped_dataframe(rows)
 
     assert result["total_rows"] == 2
     assert result["rows_ingested"] == 1
     assert result["total_rejected"] == 1
     assert "missing store_code" in result["rejection_summary"]
     assert "invalid numeric quantity_units" in result["rejection_summary"]
+
+
+def test_invalid_row_does_not_reject_valid_row_with_same_dataframe_index():
+    rows = pd.DataFrame([_row(), _row(revenue="invalid")], index=[0, 0])
+
+    result = validate_mapped_dataframe(rows)
+
+    assert result["rows_ingested"] == 1
+    assert result["total_rejected"] == 1
+    assert result["valid_df"].iloc[0]["revenue"] == 100.50
+
+
+def test_validation_fills_optional_fields_and_standardises_valid_values():
+    rows = pd.DataFrame([_row(sku=" 13255043 ")])
+
+    result = validate_mapped_dataframe(rows)
+    valid = result["valid_df"]
+
+    assert list(valid.columns) == BUSINESS_COLUMNS
+    assert valid.iloc[0]["sku"] == "13255043"
+    assert valid.iloc[0]["period_start"] == "2026-01-01"
+    assert valid.iloc[0]["pack_size"] == 8
+    assert str(valid["pack_size"].dtype) == "Int64"
+    assert pd.isna(valid.iloc[0]["product_name"])
+
+
+def test_fractional_pack_size_rejects_only_invalid_row():
+    rows = pd.DataFrame([_row(), _row(pack_size="8.5")])
+
+    result = validate_mapped_dataframe(rows)
+
+    assert result["rows_ingested"] == 1
+    assert result["total_rejected"] == 1
+    assert "invalid numeric pack_size" in result["rejection_summary"]
