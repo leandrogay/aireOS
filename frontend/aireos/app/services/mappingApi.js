@@ -6,13 +6,13 @@
 // Shared fetch wrapper: parses the body as JSON when possible, and throws an
 // Error carrying { status, data } so callers can surface server-provided
 // detail. `onLog`, when passed, is called with (kind, text) where kind is
-// 'req' | 'res' | 'er'.
-async function request(baseUrl, path, { method = 'GET', body, headers, onLog } = {}) {
+// 'req' | 'res' | 'er'. `signal` is handed straight to fetch.
+async function request(baseUrl, path, { method = 'GET', body, headers, signal, onLog } = {}) {
   const url = `${baseUrl}${path}`;
   onLog?.('req', `${method} ${url}`);
 
   try {
-    const response = await fetch(url, { method, body, headers });
+    const response = await fetch(url, { method, body, headers, signal });
     const text = await response.text();
 
     let data;
@@ -27,8 +27,14 @@ async function request(baseUrl, path, { method = 'GET', body, headers, onLog } =
         'er',
         `${response.status} ${typeof data === 'string' ? data : JSON.stringify(data)}`,
       );
+      // A dict detail ({ message, warnings } from confirm_mapping) reads better
+      // as its message than as JSON.
       const error = new Error(
-        typeof data === 'string' ? data : JSON.stringify(data?.detail ?? data),
+        typeof data === 'string'
+          ? data
+          : typeof data?.detail?.message === 'string'
+            ? data.detail.message
+            : JSON.stringify(data?.detail ?? data),
       );
       error.status = response.status;
       error.data = data;
@@ -58,8 +64,8 @@ async function request(baseUrl, path, { method = 'GET', body, headers, onLog } =
 // Every stored mapping in the review shape: the builtin rule set, then
 // confirmed contracts, then proposals awaiting approval.
 // ========================================
-export async function listMappings(baseUrl, onLog) {
-  return request(baseUrl, '/api/mappings', { onLog });
+export async function listMappings(baseUrl, { signal, onLog } = {}) {
+  return request(baseUrl, '/api/mappings', { signal, onLog });
 }
 
 // ========================================

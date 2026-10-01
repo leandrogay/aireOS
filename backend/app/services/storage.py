@@ -331,7 +331,10 @@ def move_pending_mapping_to_confirmed(fingerprint: str, envelope: dict) -> dict:
     stored_at = upload_json(confirmed_path, envelope)
 
     try:
-        removed_pending = delete_blob(pending_path)
+        # delete_blob's False means there was nothing to delete, which happens
+        # on every amendment of a confirmed mapping. Either way it is gone.
+        delete_blob(pending_path)
+        removed_pending = True
         pending_error = None
     except (GCSPermissionError, GCSUploadError) as exc:
         removed_pending = False
@@ -385,6 +388,10 @@ def list_uploads(limit: int = 50) -> list[dict]:
         return []
     except Exception as e:
         raise GCSUploadError(f"Failed listing {DESTINATION_PREFIX}: {e}")
+
+    # A name ending in "/" is a folder placeholder -- the zero-byte object the
+    # Cloud Console writes when a folder is created -- not an uploaded file.
+    blobs = [blob for blob in blobs if not blob.name.endswith("/")]
 
     blobs.sort(key=lambda blob: blob.time_created or datetime.datetime.min, reverse=True)
 

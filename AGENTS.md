@@ -5,8 +5,8 @@ you know which folder owns a concern, how data moves, and which "hat" to wear.
 
 aireOS (Team WIP × Aire, final-year project) is an internal operations tool for a diaper/
 personal-care brand selling through retailers (FairPrice first). It ingests retailer sellout
-spreadsheets, shows a sales dashboard, and manages promotion events. Forecast and Inventory
-are placeholder routes.
+spreadsheets, shows a sales dashboard, manages promotion events, and tracks inventory (ending
+stock, days of holding, DOH thresholds, a sell-in plan). Forecast is a placeholder route.
 
 ---
 
@@ -26,12 +26,24 @@ aireOS/
 │   │   │   ├── uploads.py         /api/uploads        file ingest + mapping review (async)
 │   │   │   ├── sales.py           /api/sales          BigQuery dashboard reads
 │   │   │   ├── catalog.py         /api/catalog        retailer/store CRUD, sku-range lookup
+│   │   │   ├── inventory.py       /api/inventory      overview, per-customer DOH, at-risk list, sell-in plan, record create/edit, temporary sell-in
+│   │   │   ├── settings/          /api/settings       customer-level settings; __init__.py mounts one sub-router per kind
+│   │   │   │   └── doh.py         /api/settings/doh   DOH thresholds (versioned, revert, history, reset to global default) + alert toggle
 │   │   │   └── promotions.py      /api/promotions     promotion CRUD + /health/db
 │   │   ├── schemas/               Pydantic v2 request models (only catalog + promotions today)
 │   │   │   ├── catalog.py         _Base, RetailerCreate/Update, StoreCreate/Update, SkuItem
+│   │   │   ├── inventory.py       InventoryRecordCreate/Update, ShippedSoFarUpdate
+│   │   │   ├── settings/common.py SettingsChangeBase (optional updated_by), shared by every kind of setting
+│   │   │   ├── settings/doh.py    DohThresholdsUpdate (min <= target <= max, NUMERIC(6,2)), DohAlertUpdate, DohRevert, DohReset
 │   │   │   └── promotions.py      PromoType Literal, PromotionStoreRef, PromotionBase/Create/Update
 │   │   └── services/              All logic + all external I/O. Never imports fastapi.
 │   │       ├── sql.py             Cloud SQL connector → SQLAlchemy Engine singletons (rw + autocommit read)
+│   │       ├── inventory_calc.py  PURE: ending-stock chain, DOH, DOH threshold status (band from DOH settings), sell-in plan
+│   │       ├── inventory_service.py inventory_metrics reads/writes + DOH thresholds via settings/doh (history by month) (raw SQL, one txn per write)
+│   │       ├── settings/common.py shared by every kind of setting: engines, CustomerNotFoundError, lock_customer
+│   │       ├── settings/doh.py    doh_settings (append-only versions) + customers alert columns; reads via the current_settings view; GLOBAL_DEFAULT_*_DOH 25/30/35
+│   │       ├── sellout_units.py   read-only BigQuery monthly sell-out per SKU (same weekly data as the dashboard)
+│   │       ├── forecast_units.py  read-only BigQuery forecast units per SKU/month, from the aire_forecasting_output view (BQ_FORECAST_OUTPUT_VIEW)
 │   │       ├── catalog_service.py retailers/stores/skus tables; get_or_create_* seams; domain exceptions
 │   │       ├── promotion_service.py promotions + promotion_stores + promotion_skus, raw SQL, one txn per write
 │   │       ├── bigquery.py        SKU ranking, dashboard summary, period comparison, options, freshness
@@ -59,21 +71,24 @@ aireOS/
     │   ├── dashboard/page.js      Sales dashboard: customer/sku/store/date filters, trend chart, ranking
     │   ├── promotions/page.js     Promotion create/edit/delete + overview list
     │   ├── forecast/page.js       Placeholder
-    │   ├── inventory/page.js      Placeholder
+    │   ├── doh/page.js            DOH Settings: per-customer thresholds, alert toggle, edit, reset to global default (components/settings)
+    │   ├── inventory/page.js      Inventory: overview, by-customer DOH, at-risk list, sell-in plan, enter/edit data (components/inventory)
     │   ├── components/
     │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column), Sidebar (NAV_ITEMS)
-    │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, DateRangePicker
+    │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, DateRangePicker; Toast (+ hooks/useToast)
     │   │   ├── dashboard/         DashboardFilters, CustomerSelector, FilterBadge, PeriodControls (Period /
     │   │   │                      Compare to: DateRangeControl, CompareControl, RangeCalendar),
     │   │   │                      RevenueTrendCard (Total / By format switch) → TrendChart, ComparisonTotalChart,
     │   │   │                      ComparisonMixChart; PeriodTexture (hatched "past period" fills), TooltipChange,
     │   │   │                      PeriodComparisonDetail, RevenueSummaryCards + FormatMixBar, SkuRanking
     │   │   ├── promotions/        PromotionForm, PromotionList, CheckboxDropdown
+    │   │   ├── settings/          DohSettingsView (state), DohSettingsTable, DohThresholdForm
     │   │   ├── upload/            FileUpload (925 lines), MappingReview, FileUploadSummary (empty)
     │   │   └── upload2/           Harness pieces: MappingDiv, UploadPanel, ResultsPanel, ContractView, RequestLog…
     │   ├── services/              Backend API wrappers
     │   │   ├── promotionsApi.js   request() (exported, shared) + parseApiError() + one fn per /api/promotions & /api/catalog endpoint
     │   │   ├── salesApi.js        /api/sales wrappers via request() (getSkuSales so far)
+    │   │   ├── settingsApi.js     /api/settings/* wrappers, one section per kind (reuses promotionsApi.request)
     │   │   └── mappingApi.js      /api/uploads wrappers taking an explicit baseUrl (harness style)
     │   └── utils/                 Pure, React-free helpers
     │       ├── promotionForm.js   PROMO_TYPES, EMPTY_PROMOTION_FORM, validate/build/formFrom helpers
@@ -83,6 +98,8 @@ aireOS/
     │       ├── trendChart.js      Trend chart labels, x-axis setup, bar sizing, format stack order
     │       ├── priceMix.js        Avg-price change split into SKU price vs product mix
     │       ├── storeFormats.js    FORMAT_COLORS + formatColor() per store format
+    │       ├── dohSettingsForm.js validate/build/formFrom helpers for the DOH threshold form, GLOBAL_DEFAULT_DOH
+    │       ├── retailerLabel.js   shared display label for retailer/customer slugs (fairprice_online → Fairprice Online)
     │       └── mappingHelpers.js
     ├── hooks/                     Data-fetching hooks for the dashboard (inline fetch, cancel-flag pattern)
     │   ├── useDataFreshness.js    polls /api/sales/last-updated → { channels, dataVersion, refreshing }
@@ -92,8 +109,10 @@ aireOS/
     │   ├── useDefaultDateRange.js /api/sales/default-date-range
     │   ├── useSkuSales.js     /api/sales/skus via salesApi.getSkuSales
     │   ├── usePriceMix.js     useSkuSales × 2 (this period + comparison) → priceMixEffects
-    │   └── useDraftDateRange.js   local draft state for the picker
-    ├── lib/                       cn() (clsx + tailwind-merge), formatDateRange
+    │   ├── useDraftDateRange.js   local draft state for the picker
+    │   ├── useDohSettings.js      /api/settings/doh (+ replaceRow for the row a write returns)
+    │   └── useToast.js            { toast, notify, dismissToast } for components/ui/Toast
+    ├── lib/                       cn() (clsx + tailwind-merge), formatDateRange, formatDate/formatDateTime (shared date display)
     ├── public/                    create-next-app SVGs
     ├── CONTRIBUTING.md            Frontend UI conventions (primitives, tokens, cn(), lucide) — binding
     ├── CLAUDE.md → @AGENTS.md     Next.js auto-generated notice: read node_modules/next/dist/docs before Next APIs
@@ -117,6 +136,8 @@ No test runner is installed on the frontend; linting (`npm run lint`) is the fro
 | Upload & mapping | `uploads.py` | `storage`, `mapping_service`, `generate_mapping`, `mapping_view`, `apply_contract`, `validation_service` | **GCS** bucket: `uploads/` files, `mappings/pending/<fp>.json`, `mappings/confirmed/<fp>.json` | `app/upload`, `app/upload2`, `services/mappingApi.js` |
 | Sales dashboard | `sales.py` | `bigquery`, `sellout_lookup` | **BigQuery** `aire-data.Aire_Data_Analytics.public_sellout` (`BQ_SELLOUT_TABLE`; read-only Datastream replica of Cloud SQL `sellout`, weekly rows keyed by `retailer_id`/`store_code`/`sku`). **Cloud SQL Postgres**: `retailers`/`stores`/`skus` resolve those keys to names (retailer name = `{customer}_{offline|online}`) | `app/dashboard`, `hooks/use*.js` |
 | Catalog | `catalog.py` | `catalog_service` | **Cloud SQL Postgres**: `retailers`, `stores`, `skus` | `services/promotionsApi.js` (getRetailers/getStores/getSkuRanges) |
+| Inventory | `inventory.py` | `inventory_service`, `inventory_calc`, `sellout_units`, `forecast_units` | **Cloud SQL Postgres**: `customers`, `customer_retailers`, `inventory_metrics` (long format; app writes carry `data_source='manual_entry'`; only sell-in, a first-month opening and building blocks (stock used outside sell-out) are read; workbook rows are never changed), `doh_settings` (read via `settings/doh.fetch_versions`; closed months use the version in effect at month end, the latest month, at-risk list and sell-in plan use the current one); **BigQuery** (read-only): weekly sell-out (`BQ_SELLOUT_TABLE`, default `public_sellout`) and the forecast table. Ending stock, DOH and the plan are computed, never stored | `app/inventory`, `services/inventoryApi.js` |
+| Settings (DOH) | `settings/doh.py` | `settings/doh`, `settings/common` | **Cloud SQL Postgres**: `doh_settings` (append-only: a change is an INSERT only when min/target/max differ from the newest row; newest by `updated_at DESC, setting_id DESC`; never UPDATE/DELETE), view `current_settings` (one row per customer), `customers.doh_alert_enabled` / `doh_alert_updated_at` (in-place toggle, no version). Also read by the inventory DOH calculations (`fetch_versions`, `thresholds_on`, `current_thresholds`) | `app/doh`, `services/settingsApi.js` |
 | Promotions | `promotions.py` | `promotion_service` (+ `catalog_service` seams) | **Cloud SQL Postgres**: `promotions`, `promotion_stores`, `promotion_skus`; enum `promo_type_enum`; trigger `trg_promotions_updated_at` | `app/promotions`, `services/promotionsApi.js` |
 | AI mapping | (inside uploads) | `generate_mapping` | **Anthropic API** (`ANTHROPIC_MODEL`, default `claude-sonnet-4-6`) | — |
 
@@ -206,6 +227,8 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | `sales.py` query-param names (`start_date`, `granularity`, `comparison_type` …) | `URLSearchParams` keys in `hooks/*.js` |
 | `mapping_view` packet/rule keys (`targetField`, `sourceColumn`, `editable`, `requiredMissing`) | `MappingReview.jsx`, `upload2/ContractView.jsx` |
 | `uploads.py` per-file `mapping.status` values (`mapped`, `pending_confirmation`, `mapping_failed`) | `FileUpload.jsx` result rendering |
+| `settings/doh._settings_view` keys, `GLOBAL_DEFAULT_*_DOH` | `DohSettingsTable.jsx`, `dohSettingsForm.js` (`GLOBAL_DEFAULT_DOH`) |
+| `DohThresholdsUpdate` field names | `buildDohThresholdPayload` |
 | `HTTPException.detail` shapes | `parseApiError()` |
 
 When you change the left column, grep the right column in the same PR.
@@ -230,7 +253,7 @@ to one `load_dotenv` in `main.py` and update the README.
 
 Backend variables: `GOOGLE_APPLICATION_CREDENTIALS`, `SERVICE_ACCOUNT_KEY_PATH`, `GCP_PROJECT_ID`,
 `GCS_BUCKET_NAME`, `GCS_DESTINATION_PREFIX`, `GCS_DESTINATION_PREFIX_MAPPING`,
-`BQ_SELLOUT_TABLE`, `BQ_FAIRPRICESELLOUT_TABLE` (legacy, unused), `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`,
+`BQ_SELLOUT_TABLE`, `BQ_FAIRPRICESELLOUT_TABLE` (legacy, unused), `BQ_FORECAST_OUTPUT_VIEW`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`,
 `POSTGRESQL_INSTANCE_CONNECTION_NAME`, `DB_IAM_USER`, `DB_NAME`.
 
 Frontend variables: `NEXT_PUBLIC_API_URL` (browser-visible, used everywhere), `BACKEND_API_URL`

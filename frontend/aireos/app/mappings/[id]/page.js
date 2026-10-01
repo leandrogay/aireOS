@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import Link from 'next/link';
 import PageLayout from '@/components/layout/PageLayout';
+import BackLink from '@/components/ui/BackLink';
 import MappingReviewPanel from '../../components/mappings/MappingReviewPanel';
 import { normalizeBaseUrl } from '../../utils/mappingHelpers';
 import {
@@ -24,6 +24,9 @@ export default function MappingReviewPage() {
   const [mapping, setMapping] = useState(null);
   const [loadError, setLoadError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  // Once approved, the panel's own "Back to Upload" is the only way on, so
+  // the header's "Back to Mappings" steps aside.
+  const [isApproved, setIsApproved] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -62,7 +65,11 @@ export default function MappingReviewPage() {
   // were re-stamped — so the response is handed back rather than swallowed by
   // a redirect.
   const handleApprove = useCallback(
-    ({ rules, name, vendor }) => confirmMapping(baseUrl, id, { rules, name, vendor }),
+    async ({ rules, name, vendor }) => {
+      const result = await confirmMapping(baseUrl, id, { rules, name, vendor });
+      setIsApproved(true);
+      return result;
+    },
     [baseUrl, id],
   );
 
@@ -72,7 +79,16 @@ export default function MappingReviewPage() {
   }, [baseUrl, id, router]);
 
   return (
-    <PageLayout title="Review mapping">
+    <PageLayout
+      title="Review mapping"
+      headerExtra={
+        !isApproved && (
+          <div className="ml-auto flex items-center gap-2">
+            <BackLink href="/mappings">Back to Mappings</BackLink>
+          </div>
+        )
+      }
+    >
       {isLoading && (
         <p className="text-sm text-deep-violet-blue/70">Loading mapping…</p>
       )}
@@ -80,12 +96,6 @@ export default function MappingReviewPage() {
       {loadError && (
         <div className="rounded-xl border border-red-200 bg-red-50 p-6">
           <p className="text-sm text-red-700">{loadError}</p>
-          <Link
-            href="/mappings"
-            className="mt-4 inline-block rounded-md border border-violet bg-white px-4 py-2 text-sm font-medium text-deep-violet-blue transition hover:bg-lavander"
-          >
-            All mappings
-          </Link>
         </div>
       )}
 

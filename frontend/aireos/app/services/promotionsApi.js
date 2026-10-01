@@ -38,7 +38,7 @@ export function parseApiError(data, status) {
 }
 
 /**
- * Shared fetch wrapper for backend endpoints (promotions, catalog, and the
+ * Shared fetch wrapper for the backend API (promotions, catalog, inventory, and the
  * sales calls in salesApi.js).
  *
  * Parses JSON when possible and throws an Error carrying `{ status, data }`

@@ -354,8 +354,8 @@ export default function AssistantWidget() {
             {messages.length === 0 && (
               <div className="space-y-2">
                 <p className="text-xs text-deep-violet-blue/60">
-                  Ask a plain-English question about your sales data, e.g. &quot;How did revenue do last
-                  week?&quot;
+                  Ask a plain-English question about your sales or inventory data, e.g. &quot;How did
+                  revenue do last week?&quot; or &quot;What SKUs are at risk right now?&quot;
                 </p>
                 <button
                   type="button"

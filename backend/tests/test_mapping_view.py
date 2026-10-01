@@ -66,9 +66,27 @@ def test_packet_reports_unread_columns_and_missing_requirements():
     packet = mv.envelope_to_packet("abc123", ENVELOPE, "pending")
 
     assert packet["unmapped"] == ["Vendor Code"]
-    # This contract fills neither, so both must be flagged for the reviewer.
-    assert set(packet["requiredMissing"]) == {"quantity_units", "period_start"}
+    # Nothing fills quantity_units, so the reviewer must be told.
+    assert packet["requiredMissing"] == ["quantity_units"]
     assert packet["warnings"] == CONTRACT["warnings"]
+
+
+# ---- Period fields -----------------------------------------------------------
+
+def test_a_melt_group_fills_the_period_fields():
+    # apply_contract reads period_start out of each period column's header, so
+    # no rule names it -- it must not be reported missing.
+    packet = mv.envelope_to_packet("abc123", ENVELOPE, "confirmed")
+
+    assert "period_start" not in packet["requiredMissing"]
+
+
+def test_without_a_melt_group_period_start_is_missing():
+    envelope = {**ENVELOPE, "contract": {**CONTRACT, "melt_groups": []}}
+
+    packet = mv.envelope_to_packet("abc123", envelope, "confirmed")
+
+    assert "period_start" in packet["requiredMissing"]
 
 
 def test_state_drives_kind_and_confirmation():

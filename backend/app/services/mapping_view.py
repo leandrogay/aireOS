@@ -77,6 +77,7 @@ def _rule(
     editable: bool,
     confidence: str = "high",
     rationale: str = "",
+    reviewed: bool = False,
 ) -> Dict[str, Any]:
     return {
         "targetField": target_field,
@@ -87,11 +88,20 @@ def _rule(
         "editable": editable,
         "confidence": confidence,
         "rationale": rationale,
+        "reviewed": reviewed,
     }
 
 
-def contract_to_rules(contract: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Flatten an LLM contract into one rule per target field."""
+def contract_to_rules(
+    contract: Dict[str, Any], reviewed_default: bool = False
+) -> List[Dict[str, Any]]:
+    """Flatten an LLM contract into one rule per target field.
+
+    reviewed_default fills in "reviewed" for contracts stored before the flag
+    existed. A mapping that was already approved passes True: someone signed
+    it off, and asking them to re-confirm rows they already confirmed is the
+    bug the flag was added to fix.
+    """
     rules = []
     annotations = contract.get("annotations") or {}
 
@@ -116,6 +126,7 @@ def contract_to_rules(contract: Dict[str, Any]) -> List[Dict[str, Any]]:
                     # quietly presenting a year-old guess as certain.
                     confidence=annotation.get("confidence", "low"),
                     rationale=annotation.get("rationale", ""),
+                    reviewed=annotation.get("reviewed", reviewed_default),
                 )
             )
 
@@ -147,6 +158,7 @@ def contract_to_rules(contract: Dict[str, Any]) -> List[Dict[str, Any]]:
                 editable=False,
                 confidence=group.get("confidence", "low"),
                 rationale=group.get("rationale", ""),
+                reviewed=group.get("reviewed", reviewed_default),
             )
         )
 
@@ -177,6 +189,7 @@ def rules_to_contract(rules: List[Dict[str, Any]]) -> Dict[str, Any]:
                 annotations[target] = {
                     "confidence": rule.get("confidence") or "low",
                     "rationale": rule.get("rationale") or "",
+                    "reviewed": rule.get("reviewed") is True,
                 }
             continue
 
@@ -206,15 +219,17 @@ def _meta(rules: List[Dict[str, Any]], columns: List[str]) -> Dict[str, Any]:
         for column in rule.get("sourceColumns") or []
         if column
     }
+    filled = {
+        rule["targetField"] for rule in rules if rule.get("sourceColumn")
+    }
+    # A melt group fills the period fields from its column headers, so no rule
+    # names them. Same rule as reviewIssues in the frontend's mappingReview.js.
+    if any(rule.get("status") == "derived" for rule in rules):
+        filled.update(PERIOD_DERIVED_FIELDS)
     return {
         "unmapped": [column for column in columns if column not in read],
         "requiredMissing": [
-            field
-            for field in REQUIRED_TARGET_FIELDS
-            if not any(
-                rule["targetField"] == field and rule.get("sourceColumn")
-                for rule in rules
-            )
+            field for field in REQUIRED_TARGET_FIELDS if field not in filled
         ],
     }
 
@@ -238,6 +253,7 @@ def builtin_packet() -> Dict[str, Any]:
             # matched by an exact header recogniser.
             confidence="high",
             rationale="Built-in rule, matched on the exact FairPrice header layout.",
+            reviewed=True,
         )
         for rule in build_fairprice_wide_rules()
     ]
@@ -273,7 +289,8 @@ def envelope_to_packet(
     """Normalise a stored contract envelope into the review shape."""
     contract = envelope.get("contract") or {}
     columns = envelope.get("raw_columns") or []
-    rules = contract_to_rules(contract)
+    confirmed = state == "confirmed"
+    rules = contract_to_rules(contract, reviewed_default=confirmed)
 
     # Keep each melt group attached to its rule so rules_to_contract can put it
     # back untouched when the user saves an edit to some other row.
@@ -281,8 +298,6 @@ def envelope_to_packet(
     for rule in rules:
         if not rule["editable"]:
             rule["meltGroup"] = next(groups, None)
-
-    confirmed = state == "confirmed"
 
     return {
         "mappingId": fingerprint,

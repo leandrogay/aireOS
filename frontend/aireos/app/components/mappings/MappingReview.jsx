@@ -11,26 +11,11 @@ const STATE_LABEL = {
   pending: 'Proposed mapping',
 };
 
-// A rule may read a column the packet does not otherwise declare -- a composite
-// like "Brand + MCH", or a value from outside the sheet entirely. Offer those
-// alongside the declared columns so editing cannot silently drop one.
-const sourceOptionsFor = (mapping) => {
-  const declared = mapping.columns || [];
-  const inUse = (mapping.rules || []).map((rule) => rule.sourceColumn).filter(Boolean);
-  return Array.from(new Set([...declared, ...inUse]));
-};
-
-export const MappingReview = ({
-  mapping,
-  isEditing = false,
-  onStartEdit,
-  onCancelEdit,
-  onSourceChange,
-  onConfirm,
-  onDiscard,
-  disabled = false,
-}) => {
-  const sourceOptions = sourceOptionsFor(mapping);
+// A read-only summary of a mapping's rules. Every change — editing, approving,
+// discarding — happens on the full review page (/mappings/[id]), which alone
+// can show samples and confidence, preview the output, and collect the name
+// and vendor a first approval needs.
+export const MappingReview = ({ mapping }) => {
   const isPending = mapping.state === 'pending';
   const isBuiltin = mapping.state === 'builtin';
 
@@ -101,21 +86,7 @@ export const MappingReview = ({
               <tr key={`${mapping.mappingId}-${rule.targetField}-${index}`}>
                 <td className="px-3 py-2 font-mono text-zinc-900">{rule.targetField}</td>
                 <td className="px-3 py-2">
-                  {isEditing && rule.editable !== false ? (
-                    <select
-                      value={rule.sourceColumn || ''}
-                      onChange={(event) => onSourceChange(mapping.mappingId, index, event.target.value)}
-                      disabled={disabled}
-                      className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm text-zinc-900 focus:border-deep-violet-blue focus:outline-none"
-                    >
-                      <option value="">Select source column</option>
-                      {sourceOptions.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                  ) : rule.sourceColumn ? (
+                  {rule.sourceColumn ? (
                     <span className="text-zinc-900">{rule.sourceColumn}</span>
                   ) : (
                     <span className="text-zinc-400">No source</span>
@@ -153,57 +124,14 @@ export const MappingReview = ({
         <div className="flex items-center gap-3">
           <Link
             href={`/mappings/${mapping.mappingId}`}
-            className={`${btn} border-violet bg-white text-deep-violet-blue hover:bg-lavander`}
+            className={`${btn} border-deep-violet-blue bg-deep-violet-blue text-white hover:opacity-90`}
           >
-            {isPending ? 'Review and approve' : 'Open full review'}
+            {isPending
+              ? 'Review and approve'
+              : mapping.editable === false
+                ? 'Open full review'
+                : 'Review and edit'}
           </Link>
-
-          {!isBuiltin && !isEditing && onStartEdit && (
-            <button
-              type="button"
-              onClick={() => onStartEdit(mapping.mappingId)}
-              disabled={disabled}
-              className={`${btn} border-deep-violet-blue bg-white text-deep-violet-blue hover:bg-lavander`}
-            >
-              Edit mapping
-            </button>
-          )}
-
-          {isEditing && onCancelEdit && (
-            <button
-              type="button"
-              onClick={() => onCancelEdit(mapping.mappingId)}
-              disabled={disabled}
-              className={`${btn} border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50`}
-            >
-              Cancel
-            </button>
-          )}
-
-          {isPending && onDiscard && (
-            <button
-              type="button"
-              onClick={() => onDiscard(mapping.mappingId)}
-              disabled={disabled}
-              className={`${btn} border-red-300 bg-white text-red-700 hover:bg-red-50`}
-            >
-              Discard
-            </button>
-          )}
-
-          {/* A first approval needs a name and a vendor, which the full review
-              collects — so only an amendment to an already-named mapping can
-              be saved from here. */}
-          {!isBuiltin && isEditing && !isPending && (
-            <button
-              type="button"
-              onClick={() => onConfirm(mapping.mappingId)}
-              disabled={disabled}
-              className={`${btn} border-deep-violet-blue bg-deep-violet-blue text-white hover:opacity-90`}
-            >
-              Save amendments
-            </button>
-          )}
         </div>
       </div>
     </section>
