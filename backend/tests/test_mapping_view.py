@@ -64,8 +64,12 @@ def test_packet_reports_unread_columns_and_missing_requirements():
     packet = mv.envelope_to_packet("abc123", ENVELOPE, "pending")
 
     assert packet["unmapped"] == ["Vendor Code"]
-    # Nothing fills quantity_units, so the reviewer must be told.
-    assert packet["requiredMissing"] == ["quantity_units"]
+    # These fields are required by the Cloud SQL sell-out fact load.
+    assert packet["requiredMissing"] == [
+        "retailer",
+        "store_code",
+        "quantity_units",
+    ]
     assert packet["warnings"] == CONTRACT["warnings"]
 
 

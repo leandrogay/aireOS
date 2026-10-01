@@ -9,7 +9,6 @@ import {
   X,
 } from 'lucide-react';
 import { CONFIDENCE_LABELS, needsReview } from '../../utils/mappingReview';
-import FieldTransformationEditor from './FieldTransformationEditor';
 
 const CONFIDENCE_STYLES = {
   high: { Icon: CheckCircle2, className: 'text-green-700' },
@@ -50,7 +49,6 @@ function ConfidenceLabel({ level, reviewed = false, compact = false }) {
  *   onConfirm: (column: string) => void,
  *   onUndoReview: (column: string) => void,
  *   onMeltGroupChange: (column: string, changes: object) => void,
- *   onTransformChange: (column: string, targetField: string, transform: object|null) => void,
  *   disabled?: boolean,
  *   readOnly?: boolean,
  * }} props
@@ -66,7 +64,6 @@ export default function ColumnMappingRow({
   onConfirm,
   onUndoReview,
   onMeltGroupChange,
-  onTransformChange,
   disabled = false,
   readOnly = false,
 }) {
@@ -201,18 +198,6 @@ export default function ColumnMappingRow({
           <p className="mt-2 text-[11px] text-deep-violet-blue/70">{row.transform}</p>
         ) : null}
 
-        {!row.locked &&
-          row.fields.map((field) => (
-            <FieldTransformationEditor
-              key={field.targetField}
-              targetField={field.targetField}
-              transform={field.transform}
-              onChange={(transform) =>
-                onTransformChange(row.column, field.targetField, transform)
-              }
-              disabled={disabled}
-            />
-          ))}
       </td>
 
       <td className="px-3 py-3">

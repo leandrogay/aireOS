@@ -275,6 +275,89 @@ def test_value_map_transformation_derives_retailer_with_a_default():
     ]
 
 
+def test_value_map_keys_must_belong_to_the_selected_source_column():
+    proposed = {
+        "identity_mapping": {"Vendor Name": "retailer"},
+        "melt_groups": [],
+        "transformations": {
+            "retailer": {
+                "type": "value_map",
+                "values": {"FPON": "fairprice_online"},
+                "default": "fairprice_offline",
+                "case_sensitive": False,
+            }
+        },
+    }
+
+    contract = gm.validate_contract(
+        proposed,
+        ["Vendor Name"],
+        gm.TARGET_SCHEMA,
+        samples={"Vendor Name": ["XEL LIFECARE PTE LTD"]},
+    )
+
+    assert "Vendor Name" not in contract["identity_mapping"]
+    assert "retailer" not in contract["transformations"]
+    assert any("none of its value_map keys occur" in item for item in contract["warnings"])
+
+
+def test_value_map_is_kept_when_a_key_occurs_in_its_source_samples():
+    proposed = {
+        "identity_mapping": {"Store Format": ["store_format", "retailer"]},
+        "melt_groups": [],
+        "transformations": {
+            "retailer": {
+                "type": "value_map",
+                "values": {"FPON": "fairprice_online"},
+                "default": "fairprice_offline",
+                "case_sensitive": False,
+            }
+        },
+    }
+
+    contract = gm.validate_contract(
+        proposed,
+        ["Store Format"],
+        gm.TARGET_SCHEMA,
+        samples={"Store Format": ["FPON", "SUPER", "HYPER"]},
+    )
+
+    assert contract["identity_mapping"]["Store Format"] == [
+        "store_format",
+        "retailer",
+    ]
+    assert contract["transformations"]["retailer"]["default"] == "fairprice_offline"
+
+
+def test_regex_cannot_extract_only_one_side_of_a_compound_value():
+    proposed = {
+        **MULTI,
+        "transformations": {
+            "size": {
+                "type": "regex_extract",
+                "pattern": r"\b(S|M|L|XL)\b",
+                "group": 1,
+            }
+        },
+    }
+
+    contract = gm.validate_contract(
+        proposed,
+        RAW_COLUMNS,
+        gm.TARGET_SCHEMA,
+        samples={
+            "Article Description": [
+                "VEXA ADULT PANTS XL 10S",
+                "VEXA ADULT PANTS S/M 10S",
+            ]
+        },
+    )
+
+    assert contract["identity_mapping"]["Article Description"] == "product_name"
+    assert "size" not in contract["transformations"]
+    assert any("complete value" in item for item in contract["warnings"])
+
+
 def test_transform_fails_closed_when_a_value_cannot_be_derived():
     columns = ["Store Format"]
     contract = gm.validate_contract(

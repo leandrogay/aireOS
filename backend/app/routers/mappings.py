@@ -18,6 +18,7 @@ from app.services import storage
 from app.services import generate_mapping
 from app.services import mapping_view
 from app.services import apply_contract as contract_application
+from app.services import sellout_ingestion
 
 router = APIRouter(prefix="/api/mappings", tags=["mappings"])
 
@@ -56,6 +57,42 @@ def _load_envelope(fingerprint: str):
         return pending, "pending"
 
     return None, None
+
+
+def _ingest_waiting_uploads(blob_paths: list[str], contract: dict) -> list[dict]:
+    """Process files that were waiting for this mapping to be approved."""
+    results = []
+    for blob_path in blob_paths:
+        try:
+            upload = storage.download_upload(blob_path)
+            if upload is None:
+                raise FileNotFoundError(blob_path)
+            filename, data = upload
+            processing = sellout_ingestion.process_confirmed_upload(
+                filename,
+                data,
+                contract,
+                # Re-approval may change a business key. Replacing this
+                # source prevents stale rows from the old mapping remaining.
+                replace_source=True,
+            )
+            results.append(
+                {
+                    "success": True,
+                    "blob_path": blob_path,
+                    "filename": filename,
+                    "processing": processing,
+                }
+            )
+        except Exception as exc:
+            results.append(
+                {
+                    "success": False,
+                    "blob_path": blob_path,
+                    "error": str(exc),
+                }
+            )
+    return results
 
 
 @router.get("")
@@ -232,6 +269,7 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
         pending["raw_columns"],
         pending.get("target_schema", generate_mapping.TARGET_SCHEMA),
         trust_review=True,
+        samples=pending.get("column_samples") or {},
     )
 
     if not contract["identity_mapping"] and not contract["melt_groups"]:
@@ -239,6 +277,19 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
             status_code=422,
             detail={
                 "message": "Contract is empty after validation — nothing to store.",
+                "warnings": contract["warnings"],
+            },
+        )
+
+    required_missing = mapping_view.required_missing_fields(contract)
+    if required_missing:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": (
+                    "Required ingest fields are missing: "
+                    + ", ".join(required_missing)
+                ),
                 "warnings": contract["warnings"],
             },
         )
@@ -283,6 +334,14 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
         },
     )
 
+    # Files uploaded before approval were intentionally held back. Apply the
+    # now-confirmed contract and load them without requiring a second upload.
+    ingestion = await asyncio.to_thread(
+        _ingest_waiting_uploads,
+        uploads.get("matched", []),
+        contract,
+    )
+
     return {
         "success": True,
         "fingerprint": fingerprint,
@@ -293,6 +352,9 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
         "moved_to": move["confirmed_path"],
         "pending_removed": move["removed_pending"],
         "uploads_updated": len(uploads["updated"]),
+        "uploads_processed": sum(item["success"] for item in ingestion),
+        "uploads_failed": sum(not item["success"] for item in ingestion),
+        "processing": ingestion,
         "contract": contract,
         "warnings": contract["warnings"],
     }

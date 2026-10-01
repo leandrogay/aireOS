@@ -6,12 +6,9 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query
 from app.services import storage
 from app.services import generate_mapping
 from app.services import apply_contract as contract_application
+from app.services import sellout_ingestion, sellout_service
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
-
-def _preview(dataframe, limit: int = 3) -> list[dict]:
-    """Small JSON-safe preview of mapped output. See apply_contract."""
-    return contract_application.preview_rows(dataframe, limit)
 
 
 def _mapping_annotations(mapping: dict | None) -> dict[str, str]:
@@ -45,33 +42,48 @@ def _mapping_annotations(mapping: dict | None) -> dict[str, str]:
 
 
 def resolve_and_apply_mapping(
-    filename: str, data: bytes, uploaded_to: str | None = None
+    filename: str,
+    data: bytes,
+    uploaded_to: str | None = None,
+    replace_source: bool = False,
 ) -> dict:
-    """Resolve one GCS-backed mapping and apply it when it is confirmed."""
-    dataframe = contract_application.read_source_dataframe(filename, data)
+    """Resolve one GCS mapping, then validate and store confirmed output."""
     resolved = generate_mapping.resolve_mapping(filename, data, uploaded_to)
     if resolved.get("status") != "mapped":
         return resolved
 
-    normalized = contract_application.apply_contract(
-        dataframe, resolved.get("contract") or {}
+    resolved["processing"] = sellout_ingestion.process_confirmed_upload(
+        filename,
+        data,
+        resolved.get("contract") or {},
+        replace_source=replace_source,
     )
-    if "source_file" in generate_mapping.TARGET_SCHEMA:
-        normalized["source_file"] = filename
-
-    target_columns = [
-        column for column in generate_mapping.TARGET_SCHEMA if column in normalized
-    ]
-    normalized = normalized[target_columns]
-    resolved["processing"] = {
-        "rows_total": len(normalized),
-        "rows_mapped": len(normalized),
-        "rows_rejected": 0,
-        "rejection_summary": "",
-        "columns": target_columns,
-        "preview": _preview(normalized),
-    }
     return resolved
+
+
+def _list_upload_history(limit: int) -> list[dict]:
+    """Return uploads whose referenced mapping still exists.
+
+    Older blobs can still contain metadata from the removed built-in mapper,
+    such as ``fairprice_wide_v1``. That identifier has no corresponding GCS
+    contract, so the stale history entry is omitted rather than presented as
+    an addressable mapping or as a new review state.
+    """
+    uploads = storage.list_uploads(limit)
+    available_fingerprints = {
+        *storage.list_mapping_fingerprints("confirmed"),
+        *storage.list_mapping_fingerprints("pending"),
+    }
+
+    return [
+        {
+            **upload,
+            "mapping_available": bool(upload.get("mapping_fingerprint")),
+        }
+        for upload in uploads
+        if not upload.get("mapping_fingerprint")
+        or upload["mapping_fingerprint"] in available_fingerprints
+    ]
 
 
 @router.post("")
@@ -130,6 +142,7 @@ async def upload_files(
                 filename,
                 data,
                 uploaded.get("destination"),
+                force,
             )
         except generate_mapping.UnreadableSourceFileError as e:
             return {"status": "mapping_failed", "reason": "unreadable_file", "error": str(e)}
@@ -139,6 +152,8 @@ async def upload_files(
             return {"status": "mapping_failed", "reason": "bad_llm_output", "error": str(e)}
         except contract_application.ContractApplicationError as e:
             return {"status": "mapping_failed", "reason": "application", "error": str(e)}
+        except sellout_service.SelloutLoadError as e:
+            return {"status": "mapping_failed", "reason": "cloud_sql", "error": str(e)}
         except Exception as e:
             return {"status": "mapping_failed", "reason": "unexpected", "error": str(e)}
 
@@ -164,23 +179,6 @@ async def upload_files(
         ]
     )
 
-    # =========================================================================
-    # TRIGGER THE DATA TRANSFORMATION HERE, for the files in res["results"]
-    # whose mapping came back with status "mapped".
-    #
-    # Those matched a contract that is already confirmed, so nothing is waiting
-    # on a person and they can be loaded straight away. Files whose mapping is
-    # still a proposal are deliberately not ready here -- they get picked up
-    # when someone approves it, in routers/mappings.py, which is the other
-    # place this belongs.
-    #
-    # Each such result carries "blob_path" (where the file landed) and
-    # mapping["fingerprint"] (the GCS contract it matched).
-    # resolve_and_apply_mapping above has already applied the contract to build
-    # the preview, so mapping["processing"] shows the shape the rows come out
-    # in -- but nothing is persisted anywhere yet.
-    # =========================================================================
-
     return res
 
 
@@ -194,7 +192,7 @@ async def upload_history(limit: int = Query(default=50, ge=1, le=200)):
     been uploaded, so there is nothing else that could go stale against them.
     """
     try:
-        return {"uploads": await asyncio.to_thread(storage.list_uploads, limit)}
+        return {"uploads": await asyncio.to_thread(_list_upload_history, limit)}
     except Exception as exc:
         raise HTTPException(
             status_code=503, detail=f"Unable to read upload history: {exc}"

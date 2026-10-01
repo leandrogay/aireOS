@@ -4,7 +4,16 @@ from typing import Any, Dict, List
 from app.services.generate_mapping import normalize_targets
 
 # The fields a mapping must fill for the ingest step to have anything to load.
-REQUIRED_TARGET_FIELDS = ["sku", "quantity_units", "revenue", "period_start"]
+REQUIRED_TARGET_FIELDS = [
+    "retailer",
+    "period_start",
+    "period_end",
+    "period_type",
+    "store_code",
+    "sku",
+    "quantity_units",
+    "revenue",
+]
 
 # The business fields a reviewer is asked to account for, in the order the
 # review screen lists them.
@@ -207,6 +216,11 @@ def _meta(rules: List[Dict[str, Any]], columns: List[str]) -> Dict[str, Any]:
             field for field in REQUIRED_TARGET_FIELDS if field not in filled
         ],
     }
+
+
+def required_missing_fields(contract: Dict[str, Any]) -> List[str]:
+    """Required ingest targets a validated contract still cannot produce."""
+    return _meta(contract_to_rules(contract), [])["requiredMissing"]
 
 
 def envelope_to_packet(

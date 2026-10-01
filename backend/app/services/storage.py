@@ -473,6 +473,26 @@ def download_bytes(path: str) -> bytes | None:
         raise GCSUploadError(f"Failed reading {path}: {e}")
 
 
+def download_upload(path: str) -> tuple[str, bytes] | None:
+    """Read an uploaded blob together with its original client filename."""
+    try:
+        blob = _blob(path)
+        if not blob.exists():
+            return None
+        # ``bucket.blob(path)`` creates a lightweight reference. Reload it so
+        # custom metadata such as the original client filename is available.
+        if hasattr(blob, "reload"):
+            blob.reload()
+        filename = (blob.metadata or {}).get(ORIGINAL_FILENAME_METADATA_KEY)
+        if not filename:
+            filename = blob.name[len(DESTINATION_PREFIX) :]
+        return filename, blob.download_as_bytes()
+    except gcloud_exceptions.Forbidden as e:
+        raise GCSPermissionError(f"Read denied on {path}. Details: {e}")
+    except Exception as e:
+        raise GCSUploadError(f"Failed reading {path}: {e}")
+
+
 def download_json(path: str) -> dict | None:
     """Read a JSON object from the bucket. Returns None if the blob is absent."""
     try:

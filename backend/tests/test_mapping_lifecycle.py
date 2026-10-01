@@ -183,6 +183,36 @@ def test_history_reports_the_mapping_name_once_there_is_one(monkeypatch):
     assert row["mapping_fingerprint"] == "abc123"
 
 
+def test_upload_history_links_only_to_mappings_that_exist_in_gcs(monkeypatch):
+    uploads = [
+        {
+            "filename": "legacy.txt",
+            "mapping_fingerprint": "fairprice_wide_v1",
+        },
+        {"filename": "confirmed.txt", "mapping_fingerprint": "confirmed123"},
+        {"filename": "pending.txt", "mapping_fingerprint": "pending123"},
+        {"filename": "unmapped.txt", "mapping_fingerprint": None},
+    ]
+    monkeypatch.setattr(storage, "list_uploads", lambda limit: uploads)
+    monkeypatch.setattr(
+        storage,
+        "list_mapping_fingerprints",
+        lambda state: {
+            "confirmed": ["confirmed123"],
+            "pending": ["pending123"],
+        }[state],
+    )
+
+    rows = uploads_router._list_upload_history(50)
+
+    assert [row["filename"] for row in rows] == [
+        "confirmed.txt",
+        "pending.txt",
+        "unmapped.txt",
+    ]
+    assert [row["mapping_available"] for row in rows] == [True, True, False]
+
+
 def test_history_skips_the_folder_placeholder_object(monkeypatch):
     # Creating the uploads/ folder in the Cloud Console stores a zero-byte
     # object named "uploads/". It is not a file, and listed as one it showed up
@@ -193,6 +223,16 @@ def test_history_skips_the_folder_placeholder_object(monkeypatch):
     rows = storage.list_uploads()
 
     assert [row["filename"] for row in rows] == ["week01.txt"]
+
+
+def test_download_upload_preserves_original_filename(monkeypatch):
+    blob = _upload_blob("monthly-sales.xlsx", "abc123", "mapped")
+    blob.data = b"workbook bytes"
+    _install(monkeypatch, [blob])
+
+    result = storage.download_upload(blob.name)
+
+    assert result == ("monthly-sales.xlsx", b"workbook bytes")
 
 
 # ---- what gets recorded on the upload in the first place ---------------------

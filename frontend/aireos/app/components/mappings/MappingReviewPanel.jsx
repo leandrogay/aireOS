@@ -274,26 +274,6 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
     });
   }, []);
 
-  const handleTransformChange = useCallback((column, targetField, transform) => {
-    setMessage('');
-    forgetUndo(column);
-    setRows((prev) =>
-      prev.map((row) =>
-        row.column === column && !row.locked
-          ? withReviewed(
-              {
-                ...row,
-                fields: row.fields.map((field) =>
-                  field.targetField === targetField ? { ...field, transform } : field,
-                ),
-              },
-              true,
-            )
-          : row,
-      ),
-    );
-  }, [forgetUndo]);
-
   const runPreview = useCallback(async () => {
     setBusy('preview');
     setPreviewError('');
@@ -308,6 +288,10 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
   }, [mapping, onPreview, rows]);
 
   const blockers = [
+    issues.missingRequired.length &&
+      `${issues.missingRequired.length} required field${
+        issues.missingRequired.length === 1 ? '' : 's'
+      } still missing`,
     issues.unconfirmedLowConfidence.length &&
       `${issues.unconfirmedLowConfidence.length} low-confidence column${
         issues.unconfirmedLowConfidence.length === 1 ? '' : 's'
@@ -382,7 +366,31 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
                 } now shown as mapped.`
               : 'No earlier uploads were waiting on this mapping.'}
           </li>
+          {approved.uploads_processed > 0 && (
+            <li>
+              {approved.uploads_processed} waiting upload
+              {approved.uploads_processed === 1 ? '' : 's'} transformed and processed.
+            </li>
+          )}
         </ul>
+
+        {approved.uploads_failed > 0 && (
+          <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            <p className="font-medium">
+              The mapping was saved, but {approved.uploads_failed} waiting upload
+              {approved.uploads_failed === 1 ? '' : 's'} could not be processed.
+            </p>
+            <ul className="mt-1 list-disc space-y-1 pl-5">
+              {(approved.processing || [])
+                .filter((item) => !item.success)
+                .map((item) => (
+                  <li key={item.blob_path}>
+                    <span className="font-mono text-xs">{item.blob_path}</span>: {item.error}
+                  </li>
+                ))}
+            </ul>
+          </div>
+        )}
 
         {!!approved.warnings?.length && (
           <ul className="mt-3 list-disc space-y-1 rounded-lg border border-amber-200 bg-amber-50 p-3 pl-7 text-sm text-amber-900">
@@ -537,7 +545,6 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
                   onConfirm={handleConfirmRow}
                   onUndoReview={handleUndoReview}
                   onMeltGroupChange={handleMeltGroupChange}
-                  onTransformChange={handleTransformChange}
                   readOnly={readOnly}
                   disabled={readOnly || busy !== null}
                 />

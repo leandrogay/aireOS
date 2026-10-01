@@ -95,7 +95,7 @@ def to_snake_case(col: str) -> str:
 
 # ---- Reading headers out of the uploaded bytes ------------------------------
 
-def read_header_frame(filename: str, data: bytes, nrows: int = 20) -> pd.DataFrame:
+def read_header_frame(filename: str, data: bytes, nrows: int = 200) -> pd.DataFrame:
     """
     Read the top of an uploaded file — headers plus a few rows.
 
@@ -142,7 +142,7 @@ def column_samples(dataframe: pd.DataFrame, limit: int = 5) -> dict[str, list[st
 
     for column in dataframe.columns:
         values = dataframe[column].dropna().astype(str).str.strip()
-        values = values[values != ""].head(limit)
+        values = values[values != ""].drop_duplicates().head(limit)
         samples[str(column)] = values.tolist()
 
     return samples
@@ -258,6 +258,15 @@ Your task:
    family and online/offline channel are clear from the samples, normalise the
    retailer to lower-case "<family>_online" or "<family>_offline". Do not add
    a transformation when the required values cannot be justified by the data.
+   Every value_map key MUST be an observed sample value from the exact source
+   column mapped to that target. Never attach store/channel-code keys to a
+   supplier or vendor-name column. A supplier/vendor is not a retailer; when
+   the retailer channel is encoded by a store-format/name column, map that
+   column to retailer as an additional target and transform that copy.
+   A regex_extract must preserve a complete value. Compound tokens containing
+   separators, such as "S/M", must be captured whole; put compound/longer
+   alternatives before their shorter parts so the regex cannot return only
+   "S" from "S/M".
 
 Respond with ONLY raw JSON in this exact shape, no markdown fences, no explanation:
 {{
@@ -304,7 +313,7 @@ Respond with ONLY raw JSON in this exact shape, no markdown fences, no explanati
     except json.JSONDecodeError as e:
         raise MappingGenerationError(f"Claude did not return valid JSON: {e}")
 
-    return validate_contract(contract, raw_columns, target_schema)
+    return validate_contract(contract, raw_columns, target_schema, samples=samples)
 
 
 def normalize_targets(value) -> list[str]:
@@ -374,9 +383,22 @@ def _validate_transformations(
     proposed: dict,
     claimed: dict[str, str],
     warnings: list[str],
-) -> dict[str, dict]:
-    """Keep only safe transformations attached to identity-mapped targets."""
+    samples: dict[str, list[str]] | None = None,
+) -> tuple[dict[str, dict], set[str]]:
+    """Keep only transformations that are safe for their selected source.
+
+    ``invalid_targets`` identifies fields whose source value cannot safely be
+    used without the rejected transformation. The caller removes those field
+    mappings rather than silently passing the untransformed source through.
+    """
     clean: dict[str, dict] = {}
+    invalid_targets: set[str] = set()
+    source_samples = samples or {}
+
+    def reject(target: str, message: str) -> None:
+        warnings.append(message)
+        if target in claimed:
+            invalid_targets.add(target)
 
     for target, raw in (proposed or {}).items():
         if target not in claimed:
@@ -385,8 +407,9 @@ def _validate_transformations(
             )
             continue
         if not isinstance(raw, dict):
-            warnings.append(
-                f"Dropped transformation for {target!r} — configuration must be an object"
+            reject(
+                target,
+                f"Dropped transformation for {target!r} — configuration must be an object",
             )
             continue
 
@@ -397,13 +420,15 @@ def _validate_transformations(
             try:
                 compiled = re.compile(pattern or "")
             except (re.error, TypeError) as exc:
-                warnings.append(
-                    f"Dropped transformation for {target!r} — invalid regex: {exc}"
+                reject(
+                    target,
+                    f"Dropped transformation for {target!r} — invalid regex: {exc}",
                 )
                 continue
             if not pattern or compiled.groups < 1:
-                warnings.append(
-                    f"Dropped transformation for {target!r} — regex needs a capture group"
+                reject(
+                    target,
+                    f"Dropped transformation for {target!r} — regex needs a capture group",
                 )
                 continue
             if (
@@ -411,10 +436,35 @@ def _validate_transformations(
                 or isinstance(group, bool)
                 or not 1 <= group <= compiled.groups
             ):
-                warnings.append(
-                    f"Dropped transformation for {target!r} — group must identify an existing capture group"
+                reject(
+                    target,
+                    f"Dropped transformation for {target!r} — group must identify an existing capture group",
                 )
                 continue
+
+            sample_values = source_samples.get(claimed[target], [])
+            bad_samples = []
+            for sample in sample_values:
+                text = str(sample)
+                match = compiled.search(text)
+                if not match:
+                    bad_samples.append(text)
+                    continue
+                start, end = match.span(group)
+                if (
+                    (start > 0 and text[start - 1] == "/")
+                    or (end < len(text) and text[end] == "/")
+                ):
+                    bad_samples.append(text)
+
+            if bad_samples:
+                reject(
+                    target,
+                    f"Dropped transformation for {target!r} — regex does not "
+                    f"extract a complete value from source samples: {bad_samples[:3]}",
+                )
+                continue
+
             clean[target] = {
                 "type": operation,
                 "pattern": pattern,
@@ -425,8 +475,9 @@ def _validate_transformations(
         if operation == "value_map":
             values = raw.get("values")
             if not isinstance(values, dict) or not values:
-                warnings.append(
-                    f"Dropped transformation for {target!r} — value_map needs at least one value"
+                reject(
+                    target,
+                    f"Dropped transformation for {target!r} — value_map needs at least one value",
                 )
                 continue
             cleaned_values = {
@@ -435,25 +486,42 @@ def _validate_transformations(
                 if str(source).strip() and str(output).strip()
             }
             if not cleaned_values:
-                warnings.append(
-                    f"Dropped transformation for {target!r} — value_map has no usable values"
+                reject(
+                    target,
+                    f"Dropped transformation for {target!r} — value_map has no usable values",
                 )
                 continue
+
+            case_sensitive = bool(raw.get("case_sensitive", False))
+            sample_values = source_samples.get(claimed[target], [])
+            if sample_values:
+                normalize = (lambda value: value) if case_sensitive else str.casefold
+                observed = {normalize(str(value).strip()) for value in sample_values}
+                configured = {normalize(value) for value in cleaned_values}
+                if observed.isdisjoint(configured):
+                    reject(
+                        target,
+                        f"Dropped transformation for {target!r} — none of its "
+                        f"value_map keys occur in source column {claimed[target]!r}",
+                    )
+                    continue
+
             transform = {
                 "type": operation,
                 "values": cleaned_values,
-                "case_sensitive": bool(raw.get("case_sensitive", False)),
+                "case_sensitive": case_sensitive,
             }
             if "default" in raw and str(raw.get("default") or "").strip():
                 transform["default"] = str(raw["default"]).strip()
             clean[target] = transform
             continue
 
-        warnings.append(
-            f"Dropped transformation for {target!r} — unsupported type: {operation!r}"
+        reject(
+            target,
+            f"Dropped transformation for {target!r} — unsupported type: {operation!r}",
         )
 
-    return clean
+    return clean, invalid_targets
 
 
 def validate_contract(
@@ -461,6 +529,7 @@ def validate_contract(
     raw_columns: list[str],
     target_schema: list[str],
     trust_review: bool = False,
+    samples: dict[str, list[str]] | None = None,
 ) -> dict:
     """
     Defensive checks before trusting the contract. Anything that fails
@@ -518,9 +587,28 @@ def validate_contract(
         if kept:
             clean_identity[src] = kept[0] if len(kept) == 1 else kept
 
-    clean_transformations = _validate_transformations(
-        contract.get("transformations") or {}, claimed, warnings
+    clean_transformations, invalid_targets = _validate_transformations(
+        contract.get("transformations") or {}, claimed, warnings, samples
     )
+
+    # If a field needs a transformation but that transformation is invalid,
+    # passing the raw source through would be a different mapping. Remove only
+    # that target (preserving any sibling targets from the same source) so a
+    # required field becomes an explicit review blocker.
+    if invalid_targets:
+        for src, value in list(clean_identity.items()):
+            kept = [
+                target
+                for target in normalize_targets(value)
+                if target not in invalid_targets
+            ]
+            if kept:
+                clean_identity[src] = kept[0] if len(kept) == 1 else kept
+            else:
+                del clean_identity[src]
+        for target in invalid_targets:
+            clean_annotations.pop(target, None)
+            claimed.pop(target, None)
 
     # 2. Validate melt_groups: columns must exist, regex must compile and
     #    actually match every column in its group, target must be in schema

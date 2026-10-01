@@ -89,6 +89,16 @@ POSTGRESQL_INSTANCE_CONNECTION_NAME = os.environ.get(
 DB_IAM_USER = os.environ.get("DB_IAM_USER")
 DB_NAME = os.environ.get("DB_NAME")
 
+
+def cloud_sql_loading_enabled() -> bool:
+    """Return whether validated uploads should be persisted to Cloud SQL."""
+    return os.environ.get("CLOUD_SQL_LOAD_ENABLED", "false").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
 # ---- Anthropic --------------------------------------------------------------
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
