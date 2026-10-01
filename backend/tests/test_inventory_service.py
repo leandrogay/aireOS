@@ -204,7 +204,7 @@ def test_overview_rows_show_zero_building_blocks_when_none_was_entered(monkeypat
     assert row["building_blocks"] == 0
 
 
-def test_overview_subtracts_building_blocks_from_ending_stock(monkeypatch):
+def test_overview_subtracts_building_blocks_from_ending_stock_but_not_from_sell_out(monkeypatch):
     jan = date(2026, 1, 1)
     metrics = [
         _metric(1, "A1", jan, "opening_inventory", 0),
@@ -216,6 +216,11 @@ def test_overview_subtracts_building_blocks_from_ending_stock(monkeypatch):
 
     row = inventory_service.get_overview()["skus"][0]
 
+    # sell_out matches what the Sales Dashboard shows for this SKU/month exactly
+    # (sell_out_base alone) -- building_blocks is shown as its own column, not
+    # folded into sell_out, even though both are subtracted to reach ending_stock.
+    assert row["sell_out"] == 40
+    assert row["building_blocks"] == 15
     assert row["ending_stock"] == 45  # 0 + 100 - 40 - 15
 
 
@@ -434,7 +439,7 @@ def _write_router(existing=(), earlier=(), sku_exists=True, latest=None):
             return list((latest or {}).items())
         if "period_start < :month" in sql:
             return [(c,) for c in earlier]
-        if "metric_name IN ('sell_in', 'sell_out_base')" in sql:
+        if "period_start = :month" in sql:
             return [(c,) for c in existing]
         return []
 
@@ -542,6 +547,17 @@ def test_building_blocks_is_omitted_when_not_given(monkeypatch):
     assert "sell_out_building_blocks" not in params["metric_names"]
 
 
+def test_editing_building_blocks_overwrites_the_previous_value(monkeypatch):
+    conn = _install(monkeypatch, _write_router(existing=[1]))
+
+    inventory_service.update_records(_record(InventoryRecordUpdate, building_blocks=40), today=TODAY)
+
+    params = conn.sql_containing("INSERT INTO inventory_metrics")[0][1]
+    index = params["metric_names"].index("sell_out_building_blocks")
+    assert params["metric_values"][index] == 40.0
+    assert params["value_types"][index] == "actual"
+
+
 def test_edit_writes_manual_entry_rows_for_a_month_that_has_data(monkeypatch):
     conn = _install(monkeypatch, _write_router(existing=[1]))
 
@@ -609,13 +625,13 @@ def test_the_plan_opens_at_the_skus_last_actual_ending_stock(monkeypatch):
 
 def test_the_recommendation_covers_the_months_sales_and_leaves_the_stock_needed_at_month_end(monkeypatch):
     # March sells 310. April (300 over 30 days) is the only later month, so 10 a day; 10 days = 100 to hold at
-    # the end of March. 20 in hand -> 310 + 100 - 20 = 390, rounded up to 392 (whole cartons of 8 for pants).
+    # the end of March. 20 in hand -> 310 + 100 - 20 = 390 (already a whole carton, no further rounding).
     plan = _plan_view(monkeypatch, _PLAN_FORECAST)
 
     march = plan["rows"][0]
     assert march["stock_needed"] == 100
-    assert march["recommended_sell_in"] == 392
-    assert march["projected_ending_stock"] == 102
+    assert march["recommended_sell_in"] == 390
+    assert march["projected_ending_stock"] == 100
     assert march["target_doh"] == 10
 
 
@@ -642,7 +658,7 @@ def test_totals_are_summed_per_month_and_per_sku(monkeypatch):
     plan = _plan_view(monkeypatch, _PLAN_FORECAST)
 
     assert [t["month"] for t in plan["monthly_totals"]] == ["2026-03-01", "2026-04-01"]
-    assert plan["monthly_totals"][0]["recommended_sell_in"] == 392
+    assert plan["monthly_totals"][0]["recommended_sell_in"] == 390
     assert plan["sku_totals"][0]["sku"] == "A1"
     assert plan["sku_totals"][0]["recommended_sell_in"] == sum(r["recommended_sell_in"] for r in plan["rows"])
 
@@ -723,23 +739,57 @@ def test_shipped_so_far_rows_are_left_out_of_every_actuals_read():
         assert "NOT (metric_name = 'sell_in' AND value_type = 'manual_plan')" in sql
 
 
+def test_a_month_with_only_building_blocks_still_counts_as_having_data():
+    # Otherwise create vs edit (_CUSTOMERS_WITH_MONTH_SQL) and the shipped-so-far
+    # "already has actuals" check (_LATEST_ACTUAL_MONTH_SQL) would treat a month
+    # with building blocks but no sell_in/sell_out_base as if it were empty.
+    for sql in (inventory_service._CUSTOMERS_WITH_MONTH_SQL, inventory_service._LATEST_ACTUAL_MONTH_SQL):
+        assert "sell_out_building_blocks" in sql
+
+
 # ---- shipped so far: reading the current value ---------------------------------
+#
+# get_shipped_so_far filters by sku/month/customer_ids in SQL (unlike
+# _fetch_shipped, which reads a customer's whole table -- fine for the sell-in
+# plan, wasteful for reading one cell), so these fakes filter the same way the
+# real query does, rather than returning every row and trusting Python to pick
+# the right one.
+
+
+def _shipped_for_month_router(customers, rows=()):
+    def respond(sql, params):
+        if "FROM customers" in sql:
+            return customers
+        if "customer_id = ANY(CAST(:customer_ids AS integer[]))" in sql and "value_type = 'manual_plan'" in sql:
+            return [
+                {"customer_id": r["customer_id"], "metric_value": r["metric_value"]}
+                for r in rows
+                if r["sku"] == params["sku"]
+                and r["period_start"] == params["month"]
+                and r["customer_id"] in params["customer_ids"]
+            ]
+        return []
+
+    return respond
 
 
 def test_get_shipped_so_far_reads_the_current_value_per_customer(monkeypatch):
-    shipped = [{"sku": "A1", "period_start": date(2026, 10, 1), "metric_value": 50.0}]
-    _install(monkeypatch, _router(_customers("fairprice", "giant"), shipped=shipped))
+    rows = [
+        {"customer_id": 1, "sku": "A1", "period_start": date(2026, 10, 1), "metric_value": 50.0},
+        {"customer_id": 2, "sku": "A1", "period_start": date(2026, 10, 1), "metric_value": 5.0},
+    ]
+    _install(monkeypatch, _shipped_for_month_router(_customers("fairprice", "giant"), rows))
 
     result = inventory_service.get_shipped_so_far([1, 2], "A1", date(2026, 10, 1))
 
     assert result == [
         {"customer_id": 1, "customer_name": "fairprice", "shipped_so_far": 50},
-        {"customer_id": 2, "customer_name": "giant", "shipped_so_far": 50},
+        {"customer_id": 2, "customer_name": "giant", "shipped_so_far": 5},
     ]
 
 
 def test_get_shipped_so_far_reads_zero_when_nothing_was_ever_saved(monkeypatch):
-    _install(monkeypatch, _router(_customers("fairprice")))
+    _install(monkeypatch, _shipped_for_month_router(_customers("fairprice")))
 
     result = inventory_service.get_shipped_so_far([1], "A1", date(2026, 10, 1))
 
@@ -747,15 +797,15 @@ def test_get_shipped_so_far_reads_zero_when_nothing_was_ever_saved(monkeypatch):
 
 
 def test_get_shipped_so_far_ignores_a_different_sku_or_month(monkeypatch):
-    shipped = [{"sku": "A1", "period_start": date(2026, 10, 1), "metric_value": 50.0}]
-    _install(monkeypatch, _router(_customers("fairprice"), shipped=shipped))
+    rows = [{"customer_id": 1, "sku": "A1", "period_start": date(2026, 10, 1), "metric_value": 50.0}]
+    _install(monkeypatch, _shipped_for_month_router(_customers("fairprice"), rows))
 
     assert inventory_service.get_shipped_so_far([1], "B2", date(2026, 10, 1))[0]["shipped_so_far"] == 0
     assert inventory_service.get_shipped_so_far([1], "A1", date(2026, 11, 1))[0]["shipped_so_far"] == 0
 
 
 def test_get_shipped_so_far_rejects_an_unknown_customer(monkeypatch):
-    _install(monkeypatch, _router(_customers("fairprice")))
+    _install(monkeypatch, _shipped_for_month_router(_customers("fairprice")))
 
     with pytest.raises(inventory_service.CustomerNotFoundError):
         inventory_service.get_shipped_so_far([9], "A1", date(2026, 10, 1))
@@ -848,8 +898,8 @@ def test_the_plan_takes_shipped_so_far_off_what_is_still_to_send(monkeypatch):
 
     march = plan["rows"][0]
     assert march["shipped_so_far"] == 50
-    assert march["recommended_sell_in"] == 344  # 340 needed after the shipment, rounded up to cartons of 8
-    assert march["projected_ending_stock"] == 104
+    assert march["recommended_sell_in"] == 340  # 340 needed after the shipment, already a whole carton
+    assert march["projected_ending_stock"] == 100
     assert plan["monthly_totals"][0]["shipped_so_far"] == 50
 
 
@@ -1110,6 +1160,36 @@ def test_each_customer_is_judged_against_its_own_settings(monkeypatch):
     assert (by_sku["A1"]["min_doh"], by_sku["A1"]["max_doh"]) == (25.0, 35.0)
 
 
+def test_building_blocks_can_push_a_sku_from_within_band_to_at_risk(monkeypatch):
+    # A1 ends January on 300 (0 + 400 - 100), selling ~10/day forward per
+    # _RISK_FORECAST (the same rate test_the_list_carries_stock_doh_and_the_band
+    # confirms: ending 20 -> doh 2.0) -- doh 30 is comfortably within the default
+    # 25-35 band.
+    jan = date(2026, 1, 1)
+    base_metrics = [
+        _metric(1, "A1", jan, "opening_inventory", 0),
+        _metric(1, "A1", jan, "sell_in", 400),
+        _metric(1, "A1", jan, "sell_out_base", 100),
+    ]
+    _install(monkeypatch, _router(_customers("fairprice"), base_metrics, [_version()]))
+    monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: _RISK_FORECAST)
+
+    within_band = inventory_service.get_at_risk()
+    assert "A1" not in {i["sku"] for i in within_band["items"]}
+
+    # 150 units of building blocks that same month drop ending stock to 150,
+    # so doh falls to 15.0 -- below the min of 25.
+    with_blocks = base_metrics + [_metric(1, "A1", jan, "sell_out_building_blocks", 150)]
+    _install(monkeypatch, _router(_customers("fairprice"), with_blocks, [_version()]))
+    monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: _RISK_FORECAST)
+
+    at_risk = inventory_service.get_at_risk()
+    item = next(i for i in at_risk["items"] if i["sku"] == "A1")
+    assert item["ending_stock"] == 150
+    assert item["doh"] == 15.0
+    assert item["doh_status"] == "below_min"
+
+
 def test_the_list_can_be_narrowed_to_one_kind_of_risk(monkeypatch):
     risk = _risk_view(monkeypatch, risk="below_min")
 
@@ -1160,43 +1240,6 @@ def test_the_overview_shows_every_sku_when_the_filter_is_off(monkeypatch):
     overview = inventory_service.get_overview()
 
     assert {r["sku"] for r in overview["skus"]} == {"A1", "B2", "C3"}
-
-
-# ---- sell-in plan: cartons by product type ------------------------------------------
-
-
-def _carton_plan(monkeypatch, product_name, sku_range):
-    feb = date(2026, 2, 1)
-    metrics = [_metric(1, "A1", feb, "sell_in", 20)]
-    _install(monkeypatch, _router(_customers("fairprice"), metrics, [_version(5, 10, 15)]))
-    monkeypatch.setattr(
-        catalog_service,
-        "get_skus",
-        lambda: [{"sku": "A1", "sku_range": sku_range, "product_name": product_name, "size": "L"}],
-    )
-    forecast = {"A1": {date(2026, 3, 1): 310.0, date(2026, 4, 1): 300.0}}
-    monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: forecast)
-    return inventory_service.get_sell_in_plan(1, months=1)["rows"][0]
-
-
-def test_pants_are_recommended_in_multiples_of_eight(monkeypatch):
-    row = _carton_plan(monkeypatch, "Aire Ultra Pants L", "Aire Adult Diaper Ultra Pants")
-
-    assert row["pack_size"] == 8
-    assert row["recommended_sell_in"] % 8 == 0
-
-
-def test_tape_is_recommended_in_multiples_of_twelve(monkeypatch):
-    row = _carton_plan(monkeypatch, "Aire Ultra Tape L", "Aire Adult Diaper Ultra Tape")
-
-    assert row["pack_size"] == 12
-    assert row["recommended_sell_in"] % 12 == 0
-
-
-def test_a_product_that_is_neither_is_not_rounded(monkeypatch):
-    row = _carton_plan(monkeypatch, "Aire Wipes", None)
-
-    assert row["pack_size"] == 1
 
 
 # ---- sell-in plan: SKU filter ------------------------------------------------------

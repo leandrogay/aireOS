@@ -139,6 +139,7 @@ def require(name: str) -> str:
     if not ENV_FILE_LOADED:
         raise ConfigError(
             f"{name} is not set: no env file found at {ENV_PATH}. "
+            f"Copy .env.example to .env.backend and fill it in."
         )
 
     raise ConfigError(f"{name} is not set in {ENV_PATH}")

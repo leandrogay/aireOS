@@ -283,7 +283,7 @@ def get_shipped_so_far(
         raise HTTPException(
             status_code=500,
             detail=(
-                f"Failed to retrieve the current temporary sell-in: "
+                f"Failed to retrieve: "
                 f"{type(e).__name__}: {e}"
             ),
         )
@@ -307,7 +307,7 @@ def set_shipped_so_far(update: ShippedSoFarUpdate):
         raise HTTPException(
             status_code=500,
             detail=(
-                f"Failed to save temporary sell-in: "
+                f"Failed to save: "
                 f"{type(e).__name__}: {e}"
             ),
         )

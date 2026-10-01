@@ -362,7 +362,13 @@ def _stock_row(customer_id: int, customer_name: str, sku_cols: dict, row: dict) 
         "month": _iso(row["month"]),
         "opening_stock": row["opening_stock"],
         "sell_in": row["sell_in"],
-        "sell_out": row["sell_out"],
+        # The dashboard's own sell-out figure exactly (sell_out_base), not
+        # row["sell_out"] (base + building_blocks) -- so this always matches the
+        # Sales Dashboard for the same customer/SKU/month. building_blocks is the
+        # separate piece that also leaves inventory but was never sell-out; both
+        # are subtracted to reach ending_stock, so opening + sell_in - sell_out -
+        # building_blocks = ending_stock reconciles visibly, column by column.
+        "sell_out": row["sell_out_base"],
         "building_blocks": row["sell_out_building_blocks"],
         "ending_stock": row["ending_stock"],
         # False for a month filled in with zero movement (no rows of its own),
@@ -760,7 +766,6 @@ def get_sell_in_plan(
             forecast.get(sku, {}),
             target_for,
             shipped.get(sku, {}),
-            pack_size=inventory_calc.pack_size_for(sku_cols["product_name"], sku_cols["sku_range"]),
         )
         if not plan:
             without_forecast.append(sku_cols)
@@ -856,7 +861,7 @@ _CUSTOMERS_WITH_MONTH_SQL = """
         customer_id = ANY(CAST(:customer_ids AS integer[]))
         AND sku = :sku
         AND period_start = :month
-        AND metric_name IN ('sell_in', 'sell_out_base')
+        AND metric_name IN ('sell_in', 'sell_out_base', 'sell_out_building_blocks')
         AND NOT (metric_name = 'sell_in' AND value_type = 'manual_plan')
 """
 
@@ -1106,11 +1111,32 @@ _LATEST_ACTUAL_MONTH_SQL = """
     WHERE
         customer_id = ANY(CAST(:customer_ids AS integer[]))
         AND sku = :sku
-        AND metric_name IN ('sell_in', 'sell_out_base')
+        AND metric_name IN ('sell_in', 'sell_out_base', 'sell_out_building_blocks')
         AND NOT (metric_name = 'sell_in' AND value_type = 'manual_plan')
 
     GROUP BY
         customer_id
+"""
+
+
+_SHIPPED_SO_FAR_FOR_MONTH_SQL = """
+    SELECT DISTINCT ON (customer_id)
+        customer_id,
+        metric_value
+
+    FROM inventory_metrics
+
+    WHERE
+        customer_id = ANY(CAST(:customer_ids AS integer[]))
+        AND sku = :sku
+        AND period_start = :month
+        AND metric_name = 'sell_in'
+        AND value_type = 'manual_plan'
+
+    ORDER BY
+        customer_id,
+        as_of_date DESC,
+        loaded_at DESC
 """
 
 
@@ -1120,17 +1146,26 @@ def get_shipped_so_far(customer_ids: list[int], sku: str, month: date) -> list[d
     saving again on that form would overwrite. A customer with no entry reads
     as 0, the same value saving 0 means (it clears the entry), so there is no
     separate "nothing entered yet" state to show.
+
+    Filters by sku and month in SQL (unlike _fetch_shipped, which reads every
+    SKU and month for a customer -- needed by the sell-in plan, but wasteful
+    here where only one cell is ever read).
     """
 
     month = inventory_calc.month_start(month)
     with _read_connection() as conn:
         customers = _fetch_customers(conn)
         _require_customers(customers, customer_ids)
+        rows = conn.execute(
+            text(_SHIPPED_SO_FAR_FOR_MONTH_SQL),
+            {"customer_ids": customer_ids, "sku": sku, "month": month},
+        ).mappings().all()
+        shipped = {row["customer_id"]: row["metric_value"] for row in rows}
         return [
             {
                 "customer_id": customer_id,
                 "customer_name": customers[customer_id],
-                "shipped_so_far": int(_fetch_shipped(conn, customer_id).get(sku, {}).get(month, 0.0)),
+                "shipped_so_far": int(shipped.get(customer_id, 0.0)),
             }
             for customer_id in customer_ids
         ]

@@ -1,4 +1,3 @@
-import pytest
 from datetime import date
 
 from app.services import inventory_calc as calc
@@ -233,10 +232,8 @@ def test_status_is_none_without_a_doh():
 FORECAST = {D(2026, 8): 310.0, D(2026, 9): 300.0, D(2026, 10): 310.0, D(2026, 11): 300.0}
 
 
-def _plan(opening, forecast=FORECAST, months=3, target=10, first=D(2026, 8), shipped=None, pack_size=1):
-    return calc.build_sell_in_plan(
-        opening, first, months, forecast, lambda month: target, shipped, pack_size=pack_size
-    )
+def _plan(opening, forecast=FORECAST, months=3, target=10, first=D(2026, 8), shipped=None):
+    return calc.build_sell_in_plan(opening, first, months, forecast, lambda month: target, shipped)
 
 
 def test_the_daily_rate_looks_at_the_months_after_the_one_being_planned():
@@ -360,57 +357,16 @@ def test_without_temporary_sell_in_the_plan_is_unchanged():
 
 
 # ---- sell-in plan: whole cartons --------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "product, sku_range, expected",
-    [
-        ("Aire Adult Pants L", "Aire Adult Diaper Pants", 8),
-        ("Aire Ultra Pants XL", "Aire Adult Diaper Ultra Pants", 8),
-        ("Aire Ultra Tape S/M", "Aire Adult Diaper Ultra Tape", 12),
-        ("Aire Ultra Tape XL", None, 12),
-        ("Aire Wipes", None, 1),
-    ],
-)
-def test_pack_size_follows_the_product_type(product, sku_range, expected):
-    assert calc.pack_size_for(product, sku_range) == expected
-
-
-def test_recommended_sell_in_is_rounded_up_to_a_multiple_of_the_pack_size():
-    # 310 + 100 - 51 = 359 needed; the next multiple of 8 is 360.
-    august = _plan(51, pack_size=8)[0]
-
-    assert august["recommended_sell_in"] == 360
-    assert august["recommended_sell_in"] % 8 == 0
-
-
-def test_tape_rounds_up_to_twelves():
-    # 310 + 100 - 53 = 357 needed; the next multiple of 12 is 360.
-    august = _plan(53, pack_size=12)[0]
-
-    assert august["recommended_sell_in"] == 360
-
-
-def test_a_quantity_already_on_a_multiple_is_not_rounded_further():
-    assert _plan(50, pack_size=8)[0]["recommended_sell_in"] == 360  # 360 needed, 45 cartons of 8
-
-
-def test_rounding_up_leaves_the_month_slightly_above_the_target():
-    august = _plan(53, pack_size=12)[0]
-
-    assert august["projected_ending_stock"] == 103  # 53 + 360 - 310, against 100 needed
-
-
-def test_no_sell_in_stays_zero_when_stock_is_enough():
-    assert _plan(1000, pack_size=8)[0]["recommended_sell_in"] == 0
-
-
-def test_the_plan_reports_the_pack_size_it_used():
-    assert _plan(50, pack_size=12)[0]["pack_size"] == 12
+#
+# Opening stock, sell-in and the forecast are all already carton counts (not
+# individual units needing packing into cartons of 8 or 12), so the only
+# rounding left is up to the next whole carton -- see
+# test_recommended_sell_in_is_rounded_up_to_whole_units above.
 
 
 def test_temporary_sell_in_is_taken_off_before_rounding():
-    # 360 needed - 60 sent = 300; the next multiple of 8 is 304.
-    august = _plan(50, shipped={D(2026, 8): 60.0}, pack_size=8)[0]
+    forecast = {**FORECAST, D(2026, 8): 310.5}
+    # 310.5 + 100 - 50 - 60 shipped = 300.5 needed, rounds up to 301.
+    august = _plan(50, forecast, shipped={D(2026, 8): 60.0})[0]
 
-    assert august["recommended_sell_in"] == 304
+    assert august["recommended_sell_in"] == 301

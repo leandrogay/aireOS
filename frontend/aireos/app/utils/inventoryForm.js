@@ -72,16 +72,21 @@ export function validateInventoryForm(form, { isEdit = false, now = new Date() }
 
 /**
  * @param {typeof EMPTY_INVENTORY_FORM} form a form that passed validateInventoryForm
+ * @param {{ isEdit?: boolean }} [options]
  * @returns {{ customer_ids: number[], sku: string, month: string, sell_in: number, opening_inventory: number | null, building_blocks: number | null }}
  */
-export function buildInventoryPayload(form) {
+export function buildInventoryPayload(form, { isEdit = false } = {}) {
   return {
     customer_ids: form.customerIds,
     sku: form.sku,
     month: `${form.month}-01`,
     sell_in: Number(form.sellIn),
+    // Never prefilled (see formFromRow), so null correctly means "leave it alone".
     opening_inventory: form.openingInventory === '' ? null : Number(form.openingInventory),
-    building_blocks: form.buildingBlocks === '' ? null : Number(form.buildingBlocks),
+    // Prefilled with the current value on edit, so a blank box there means "clear it to
+    // zero", not "leave the previous value alone" -- null would silently keep the old
+    // figure. On create there is no previous value either way, so null is fine.
+    building_blocks: form.buildingBlocks === '' ? (isEdit ? 0 : null) : Number(form.buildingBlocks),
   };
 }
 
@@ -101,8 +106,12 @@ export function formFromRow(row) {
     openingInventory: '',
     // Unlike opening inventory, building blocks is a real stored figure for
     // any month (not a first-month-only seed), so the current value is shown
-    // here the same way sell-in already is.
-    buildingBlocks: String(row.building_blocks ?? 0),
+    // here the same way sell-in already is. Rounded up: some historical
+    // workbook rows are fractional, but this field (like every quantity
+    // here) is whole units only, so showing the raw figure would fail
+    // validation on save even when the user never touched this field.
+    // Rounds up rather than to nearest so stock on hand is never understated.
+    buildingBlocks: String(Math.ceil(row.building_blocks ?? 0)),
   };
 }
 

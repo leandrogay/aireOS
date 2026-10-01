@@ -53,6 +53,7 @@ export default function InventorySkuTable({ rows, showDoh = false, showCustomer 
             <th className={cn(thClass, numClass)}>Opening</th>
             <th className={cn(thClass, numClass)}>Sell-in</th>
             <th className={cn(thClass, numClass)}>Sell-out</th>
+            <th className={cn(thClass, numClass)}>Building blocks</th>
             <th className={cn(thClass, numClass)}>Ending stock</th>
             {showDoh && (
               <>
@@ -75,6 +76,7 @@ export default function InventorySkuTable({ rows, showDoh = false, showCustomer 
               <td className={cn(tdClass, numClass)}>{formatUnits(row.opening_stock)}</td>
               <td className={cn(tdClass, numClass)}>{formatUnits(row.sell_in)}</td>
               <td className={cn(tdClass, numClass)}>{formatUnits(row.sell_out)}</td>
+              <td className={cn(tdClass, numClass)}>{formatUnits(row.building_blocks)}</td>
               <td className={cn(tdClass, numClass, 'font-medium')}>{formatUnits(row.ending_stock)}</td>
               {showDoh && (
                 <>

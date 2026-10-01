@@ -62,7 +62,7 @@ export default function InventoryRecordForm({ mode, initialForm, customers, skus
 
     setSubmitting(true);
     try {
-      const payload = buildInventoryPayload(form);
+      const payload = buildInventoryPayload(form, { isEdit });
       const save = isEdit ? updateInventoryRecord : createInventoryRecord;
       await save(payload);
       onSaved(isEdit ? 'Inventory data updated successfully.' : 'Inventory data created successfully.');
@@ -168,7 +168,7 @@ export default function InventoryRecordForm({ mode, initialForm, customers, skus
       })}
       {numberField('buildingBlocks', 'Building blocks', {
         required: false,
-        hint: 'Stock used for something other than sell-out (e.g. samples, internal use) that the sales data never sees. Subtracted from ending stock.',
+        hint: 'Stock used for something other than sell-out (e.g. samples, internal use) that the sales data never sees. Subtracted from ending stock; blank counts as 0.',
       })}
 
       {submitError && (

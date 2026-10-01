@@ -5,6 +5,8 @@ import datetime
 import pandas as pd
 import pytest
 
+from google.api_core.exceptions import ServiceUnavailable
+
 from app.services import assistant, bigquery, inventory_service, promotion_service, sellout_lookup
 
 
@@ -808,6 +810,31 @@ def test_inventory_database_error_is_reported_as_tool_error_not_raised(monkeypat
     )
 
     assistant.ask("what's at risk?", history=None, customer="fairprice")
+
+    second_call_contents = fake_client.models.calls[1]["contents"]
+    function_response = _dump(second_call_contents[-1])["parts"][0]["function_response"]["response"]
+    assert "Unable to reach the inventory database" in function_response["error"]
+
+
+def test_a_bigquery_outage_inside_an_inventory_tool_is_also_a_tool_error_not_a_crash(monkeypatch):
+    # get_customer_view and get_sell_in_plan both call BigQuery internally (the
+    # sell-out/forecast lookups) -- a GoogleAPICallError from there must be
+    # caught by the inventory branch's own broad except, not left to propagate
+    # past it to the generic sales-tool GoogleAPICallError handler further out,
+    # which would give a less specific "Unable to reach BigQuery" answer with
+    # no inventory framing.
+    def _boom(**kwargs):
+        raise ServiceUnavailable("BigQuery is down")
+
+    monkeypatch.setattr(inventory_service, "get_customer_view", _boom)
+
+    tool_call = _tool_call_response(("tu_1", "get_customer_inventory", {"customer": "fairprice"}))
+    fake_client = _install_fake_client(
+        monkeypatch,
+        [tool_call, _final_answer(grounded=False, data_source="none"), _search_answer("n/a"), _final_answer(grounded=False, data_source="none")],
+    )
+
+    assistant.ask("what's fairprice's DOH?", history=None, customer="fairprice")
 
     second_call_contents = fake_client.models.calls[1]["contents"]
     function_response = _dump(second_call_contents[-1])["parts"][0]["function_response"]["response"]
