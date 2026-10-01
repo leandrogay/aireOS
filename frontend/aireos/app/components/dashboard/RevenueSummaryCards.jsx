@@ -80,9 +80,10 @@ function SummaryCard({
 // Revenue/units per store format, plus the Total. Reads from the same
 // useDashboardSummary data as RevenueTrendCard (passed down from page.js)
 // rather than fetching independently. One grid, Total first:
-// - xl and up: every card in one row, however many formats the channel has
-//   (offline has 4, online has 1) — grid-flow-col with equal auto columns.
-// - sm–lg: 3 columns (Total + 4 formats = 3 + 2).
+// - lg and up (where page.js gives this card the full page width): every
+//   card in one row, however many formats the channel has (offline has 4,
+//   online has 1) — grid-flow-col with equal auto columns.
+// - sm–md: 3 columns (Total + 4 formats = 3 + 2).
 // - phones: 2 columns with Total spanning the top row, so the 4 formats
 //   sit 2 × 2 instead of leaving one orphan card at the bottom.
 // Cards keep a min width so figures never clip. Above the tiles, the
@@ -131,7 +132,7 @@ export default function RevenueSummaryCards({
       )}
 
       {salesData && (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-flow-col xl:grid-cols-none xl:auto-cols-[minmax(0,1fr)]">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-flow-col lg:grid-cols-none lg:auto-cols-[minmax(0,1fr)]">
           <SummaryCard
             title="Total"
             totals={total}

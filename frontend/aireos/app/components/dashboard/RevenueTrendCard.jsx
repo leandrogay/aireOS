@@ -176,11 +176,18 @@ function ComparisonTooltip({ active, payload, names }) {
   )
 }
 
-// Fixed-height so the card doesn't jump when loading gives way to the chart
-// — matches the chart's own h-[220px].
+// The chart fills whatever height the card has, never less than 220px: on
+// the dashboard the card sits beside the Filters + Comparison column, which
+// can be taller than the chart's own content (see page.js), and a stretched
+// chart reads better than a blank band under it. aspect-auto drops the
+// ChartContainer default aspect-video so the height comes from the flex.
+const CHART_SIZE_CLASS = "aspect-auto min-h-[220px] w-full flex-1"
+
+// Same sizing as the chart so the card doesn't jump when loading gives way
+// to it.
 function ChartLoading({ label }) {
   return (
-    <div className="flex h-[220px] w-full flex-col items-center justify-center gap-2 text-deep-violet-blue/60">
+    <div className="flex min-h-[220px] w-full flex-1 flex-col items-center justify-center gap-2 text-deep-violet-blue/60">
       <Loader2 className="h-6 w-6 animate-spin" />
       <p className="text-sm">{label}</p>
     </div>
@@ -220,7 +227,7 @@ export default function RevenueTrendCard({
   const busy = loading || (comparisonRows !== null && comparisonLoading)
 
   return (
-    <div className="bg-white rounded-lg border border-lavander shadow-sm p-3 h-full">
+    <div className="bg-white rounded-lg border border-lavander shadow-sm p-3 h-full flex flex-col">
       <div className="flex flex-wrap items-end gap-3 mb-2">
         <Tabs value={mode} onValueChange={onModeChange}>
           <TabsList className="bg-lavander">
@@ -255,7 +262,7 @@ export default function RevenueTrendCard({
       {busy && <ChartLoading label="Loading dashboard..." />}
       {error && <p className="text-red-600 text-sm">{error}</p>}
       {!busy && !error && salesData && (
-        <div>
+        <div className="flex flex-1 flex-col">
           {comparisonRows ? (
             <ComparisonTrend rows={comparisonRows} periodNames={periodNames} />
           ) : (
@@ -292,7 +299,7 @@ function ComparisonTrend({ rows, periodNames }) {
   }))
 
   return (
-    <ChartContainer config={chartConfig} className="h-[220px] w-full">
+    <ChartContainer config={chartConfig} className={CHART_SIZE_CLASS}>
       <BarChart accessibilityLayer data={chartData} margin={{ bottom: 8 }}>
         <CartesianGrid vertical={false} />
         <XAxis dataKey="axisLabel" />
@@ -319,7 +326,7 @@ function RevenueTrend({ periodByFormat, periodTotal, granularity }) {
       changePct: index > 0 ? changePct(row.revenue, periodTotal[index - 1].revenue) : null,
     }))
     return (
-      <ChartContainer config={fallbackChartConfig} className="h-[220px] w-full">
+      <ChartContainer config={fallbackChartConfig} className={CHART_SIZE_CLASS}>
         <LineChart accessibilityLayer data={lineData} margin={{ bottom: 8 }}>
           <CartesianGrid vertical={false} />
           <XAxis dataKey="displayLabel" />
@@ -345,7 +352,7 @@ function RevenueTrend({ periodByFormat, periodTotal, granularity }) {
   const chartData = pivotByFormat(periodByFormat, periodTotal)
 
   return (
-    <ChartContainer config={chartConfig} className="h-[220px] w-full">
+    <ChartContainer config={chartConfig} className={CHART_SIZE_CLASS}>
       <BarChart accessibilityLayer data={chartData} margin={{ bottom: 8 }}>
         <CartesianGrid vertical={false} />
         <XAxis dataKey="displayLabel" />

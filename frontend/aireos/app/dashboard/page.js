@@ -41,8 +41,8 @@ function daySpan(start, end) {
 export default function DashboardPage() {
   const { channels, dataVersion, refreshing } = useDataFreshness();
 
-  // Page-header customer (retailer family, e.g. "Fairprice") selector —
-  // every other filter/query below is scoped underneath it. Distinct from
+  // Customer (retailer family, e.g. "Fairprice") selector — the top field
+  // of the Filter panel; every other filter/query below is scoped underneath it. Distinct from
   // `store` (a single branch within that customer, e.g. a FairPrice outlet)
   // — see DashboardFilters. Starts unset and auto-selects the first
   // available customer once useCustomerOptions loads, via the "adjust
@@ -58,9 +58,14 @@ export default function DashboardPage() {
     setCustomerLabel(customerOptions[0].label);
   }
 
+  // SKU codes and store codes belong to one customer's catalogue, so a
+  // customer switch drops both rather than querying a combination that
+  // can't exist. Period/compare stay, since dates mean the same for everyone.
   function handleCustomerChange(value, label) {
     setCustomer(value);
     setCustomerLabel(label);
+    clearSku();
+    clearStore();
   }
 
   const [sku, setSku] = useState('');
@@ -193,18 +198,7 @@ export default function DashboardPage() {
   ].filter(Boolean);
 
   return (
-    <PageLayout
-      title="Sales Dashboard"
-      headerExtra={
-        <CustomerSelector
-          value={customer}
-          onChange={handleCustomerChange}
-          options={customerOptions}
-          loading={customerOptionsLoading}
-          error={customerOptionsError}
-        />
-      }
-    >
+    <PageLayout title="Sales Dashboard">
       <div className="grid grid-cols-1 gap-1 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <RevenueTrendCard
@@ -247,34 +241,51 @@ export default function DashboardPage() {
             }
           />
         </div>
-        <div>
-          <DashboardFilters
-            sku={sku}
-            onSkuChange={handleSkuChange}
-            customer={customer}
-            store={store}
-            onStoreChange={handleStoreChange}
-            hasPeriodChanges={hasExplicitDateFilter || compareTo !== DEFAULT_COMPARE}
-            dataVersion={dataVersion}
-            activeFilters={badges.length > 0 && badges}
-            onClearFilters={clearAllFilters}
-          />
+
+        {/* Right column: scope (Filters) then the headline change (Comparison),
+            stacked beside the chart they explain. A grid rather than flex so
+            the Comparison card's h-full fills whatever height the chart row
+            leaves under the Filters. */}
+        <div className="grid grid-rows-[auto_1fr] gap-1">
+          <div>
+            <DashboardFilters
+              customerControl={
+                <CustomerSelector
+                  value={customer}
+                  onChange={handleCustomerChange}
+                  options={customerOptions}
+                  loading={customerOptionsLoading}
+                  error={customerOptionsError}
+                />
+              }
+              sku={sku}
+              onSkuChange={handleSkuChange}
+              customer={customer}
+              store={store}
+              onStoreChange={handleStoreChange}
+              hasPeriodChanges={hasExplicitDateFilter || compareTo !== DEFAULT_COMPARE}
+              dataVersion={dataVersion}
+              activeFilters={badges.length > 0 && badges}
+              onClearFilters={clearAllFilters}
+            />
+          </div>
+          <div>
+            <PeriodComparisonDetail
+              active={Boolean(baseline)}
+              periodNames={periodNames}
+              baseline={baseline}
+              currentTotals={sumPeriodTotals(currentTotals)}
+              baselineTotals={sumPeriodTotals(baselineTotals)}
+              baselineAvailable={baselineTotals.length > 0}
+              weekCounts={currentWeeks && baselineWeeks ? { current: currentWeeks.count, baseline: baselineWeeks.count } : null}
+              loading={summary.loading || baselineSummary.loading}
+              error={summary.error || baselineSummary.error}
+            />
+          </div>
         </div>
 
-        <div>
-          <PeriodComparisonDetail
-            active={Boolean(baseline)}
-            periodNames={periodNames}
-            baseline={baseline}
-            currentTotals={sumPeriodTotals(currentTotals)}
-            baselineTotals={sumPeriodTotals(baselineTotals)}
-            baselineAvailable={baselineTotals.length > 0}
-            weekCounts={currentWeeks && baselineWeeks ? { current: currentWeeks.count, baseline: baselineWeeks.count } : null}
-            loading={summary.loading || baselineSummary.loading}
-            error={summary.error || baselineSummary.error}
-          />
-        </div>
-        <div className="lg:col-span-2">
+        {/* Full width so every format tile fits on one line (see RevenueSummaryCards). */}
+        <div className="lg:col-span-3">
           <RevenueSummaryCards
             summaryByMode={summary.summaryByMode}
             baselineSummaryByMode={baseline && !baselineSummary.loading ? baselineSummary.summaryByMode : null}

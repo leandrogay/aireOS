@@ -2,18 +2,20 @@
 
 import { useEffect, useState } from 'react';
 
-// "Filter" side panel for the sales dashboard: SKU and Store. The Period and
-// Compare to controls live above the trend chart instead (DateRangeControl,
-// CompareControl), since the timeframe is the first thing to read before
-// the numbers; Clear Filters still resets them (`hasPeriodChanges`).
-// `customer` (the page-header retailer-family selector) scopes both
-// dropdowns' own option lists, since a different customer has its own SKUs
-// and store chain. Each dropdown loads its own options list (refetching on
-// dataVersion so new data shows up without a reload) and reports both the
+// "Filter" side panel for the sales dashboard: Customer, SKU and Store. The
+// Period and Compare to controls live above the trend chart instead
+// (DateRangeControl, CompareControl), since the timeframe is the first thing
+// to read before the numbers; Clear Filters still resets them
+// (`hasPeriodChanges`). `customerControl` (a CustomerSelector owned by
+// page.js) renders first because it is the master scope: `customer` scopes
+// both dropdowns' own option lists, since a different customer has its own
+// SKUs and store chain. Each dropdown loads its own options list (refetching
+// on dataVersion so new data shows up without a reload) and reports both the
 // picked value and its display label up to the parent, since the parent
 // needs the label for the filter badge. Active filter badges render inside
 // this same card, below the controls.
 export default function DashboardFilters({
+  customerControl = null,
   sku,
   onSkuChange,
   customer,
@@ -24,13 +26,16 @@ export default function DashboardFilters({
   activeFilters = null,
   onClearFilters,
 }) {
-  const [skuOptions, setSkuOptions] = useState([]);
-  const [skuLoading, setSkuLoading] = useState(true);
-  const [skuError, setSkuError] = useState(null);
-
-  const [storeOptions, setStoreOptions] = useState([]);
-  const [storeLoading, setStoreLoading] = useState(true);
-  const [storeError, setStoreError] = useState(null);
+  // Each result remembers which customer it was fetched for, so a list is
+  // "loading" (derived during render) until the current customer's options
+  // arrive — switching customer never shows the previous customer's SKUs or
+  // stores. dataVersion refetches for the same customer stay silent.
+  const [skuResult, setSkuResult] = useState({ customer: '', options: [], error: null });
+  const [storeResult, setStoreResult] = useState({ customer: '', options: [], error: null });
+  const skuOptions = skuResult.options;
+  const skuLoading = skuResult.customer !== customer;
+  const storeOptions = storeResult.options;
+  const storeLoading = storeResult.customer !== customer;
 
   useEffect(() => {
     if (!customer) return undefined;
@@ -45,14 +50,9 @@ export default function DashboardFilters({
         );
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Failed to load SKU options');
-        if (!cancelled) {
-          setSkuOptions(data.options);
-          setSkuError(null);
-        }
+        if (!cancelled) setSkuResult({ customer, options: data.options, error: null });
       } catch (err) {
-        if (!cancelled) setSkuError(err.message);
-      } finally {
-        if (!cancelled) setSkuLoading(false);
+        if (!cancelled) setSkuResult({ customer, options: [], error: err.message });
       }
     }
 
@@ -75,14 +75,9 @@ export default function DashboardFilters({
         );
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Failed to load store options');
-        if (!cancelled) {
-          setStoreOptions(data.options);
-          setStoreError(null);
-        }
+        if (!cancelled) setStoreResult({ customer, options: data.options, error: null });
       } catch (err) {
-        if (!cancelled) setStoreError(err.message);
-      } finally {
-        if (!cancelled) setStoreLoading(false);
+        if (!cancelled) setStoreResult({ customer, options: [], error: err.message });
       }
     }
 
@@ -92,7 +87,7 @@ export default function DashboardFilters({
     };
   }, [customer, dataVersion]);
 
-  const error = skuError || storeError;
+  const error = skuResult.error || storeResult.error;
 
   const hasActiveFilters = Boolean(activeFilters) || hasPeriodChanges;
 
@@ -112,6 +107,8 @@ export default function DashboardFilters({
       </div>
 
       <div className="space-y-2">
+        {customerControl}
+
         <div>
           <label className="block text-xs text-deep-violet-blue/70 mb-1">SKU</label>
           <select
