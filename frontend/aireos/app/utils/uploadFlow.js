@@ -59,9 +59,8 @@ export function outcomeFromResult(result) {
     case 'mapped':
       return {
         kind: 'mapped',
-        // A contract is keyed by fingerprint; the built-in FairPrice rules are
-        // keyed by their mapping id instead. Either addresses /mappings/[id].
-        mappingId: mapping.fingerprint || mapping.mapping_id,
+        // GCS contracts are addressed by their header fingerprint.
+        mappingId: mapping.fingerprint,
         name: mapping.name || null,
         vendor: mapping.vendor || null,
         processing: mapping.processing || null,

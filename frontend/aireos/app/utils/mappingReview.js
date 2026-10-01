@@ -82,9 +82,8 @@ export function toColumnRows(mapping) {
   const rows = (mapping?.columns || []).flatMap((column, index) => {
     const matches = rulesForColumn.get(column) || [];
 
-    // Only a real melt group collapses. Not every locked rule is one: the
-    // built-in mapping's rules are all locked, and several read the same
-    // column, so collapsing on locked alone would drop whole columns.
+    // Only a real melt group collapses. Other future locked rules may read the
+    // same column, so collapsing on locked alone would drop source columns.
     const meltMatch = matches.find(({ rule }) => Boolean(rule.meltGroup));
 
     if (meltMatch) {
@@ -97,6 +96,7 @@ export function toColumnRows(mapping) {
       confidence: rule.confidence || 'low',
       rationale: rule.rationale || '',
       reviewed: rule.reviewed === true,
+      transform: rule.transform && typeof rule.transform === 'object' ? rule.transform : null,
     }));
 
     return [
@@ -156,12 +156,12 @@ export function toRules(mapping, rows) {
         targetField: field.targetField,
         sourceColumn: row.column,
         sourceColumns: [row.column],
-        transform: null,
         status: 'mapped',
         editable: true,
         confidence: field.confidence,
         rationale: field.rationale,
         reviewed: field.reviewed === true,
+        transform: field.transform || null,
       })),
     );
 
@@ -172,11 +172,9 @@ export function toRules(mapping, rows) {
  * Which target fields something fills, and what fills them.
  *
  * Read from two places, because they are authoritative about different
- * things. A rule the review cannot edit speaks for itself -- the built-in
- * mapping is entirely such rules, and several of them read the same column, so
- * reading its coverage off the rows would report only the first target each
- * column feeds. Everything editable is read from the rows instead, since those
- * carry the reviewer's changes and the rules do not.
+ * things. A rule the review cannot edit speaks for itself. Everything editable
+ * is read from the rows instead, since those carry the reviewer's changes and
+ * the rules do not.
  */
 function filledTargets(mapping, rows) {
   const filled = new Map();

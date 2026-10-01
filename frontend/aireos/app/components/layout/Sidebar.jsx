@@ -17,7 +17,7 @@ const NAV_ITEMS = [
   { label: 'Dashboard', href: '/dashboard' },
   { label: 'Forecast', href: '/forecast' },
   { label: 'Promotions', href: '/promotions' },
-  { label: 'Inventory', 
+  { label: 'Inventory',
     href: '/inventory',
     children: [{ label: 'DOH Settings', href: '/doh' }],
   },

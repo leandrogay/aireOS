@@ -28,12 +28,10 @@ ENVELOPE = {
 }
 
 
-def test_contract_and_builtin_normalise_to_the_same_shape():
-    builtin = mv.builtin_packet()
+def test_stored_contract_normalises_to_review_rules():
     proposed = mv.envelope_to_packet("abc123", ENVELOPE, "pending")
 
-    assert set(builtin) == set(proposed)
-    for rule in builtin["rules"] + proposed["rules"]:
+    for rule in proposed["rules"]:
         assert set(rule) >= {"targetField", "sourceColumn", "sourceColumns", "transform", "editable"}
 
 
@@ -66,8 +64,12 @@ def test_packet_reports_unread_columns_and_missing_requirements():
     packet = mv.envelope_to_packet("abc123", ENVELOPE, "pending")
 
     assert packet["unmapped"] == ["Vendor Code"]
-    # Nothing fills quantity_units, so the reviewer must be told.
-    assert packet["requiredMissing"] == ["quantity_units"]
+    # These fields are required by the Cloud SQL sell-out fact load.
+    assert packet["requiredMissing"] == [
+        "retailer",
+        "store_code",
+        "quantity_units",
+    ]
     assert packet["warnings"] == CONTRACT["warnings"]
 
 
@@ -96,14 +98,3 @@ def test_state_drives_kind_and_confirmation():
     assert (pending["kind"], pending["validated"]) == ("proposed", False)
     assert (confirmed["kind"], confirmed["validated"]) == ("existing", True)
     assert confirmed["validatedAt"] == ENVELOPE["confirmed_at"]
-
-
-def test_builtin_is_locked_end_to_end():
-    builtin = mv.builtin_packet()
-
-    # Every rule runs as Python in apply_existing_mapping, so repointing a
-    # source in the UI would change the display and not the behaviour.
-    assert builtin["editable"] is False
-    assert not any(rule["editable"] for rule in builtin["rules"])
-    assert builtin["requiredMissing"] == []
-    assert builtin["fingerprint"] is None

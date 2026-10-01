@@ -29,9 +29,8 @@ def get_bigquery_client(project="aire-data") -> bigquery.Client:
 
 
 def _retailer_for(customer: str, mode: str) -> str:
-    # Every row's retailer column is ingested as "{customer}_offline" or
-    # "{customer}_online" (see mapping_service.apply_existing_mapping), one
-    # customer per retailer_family, split into the two dashboard channels.
+    # Retailer names use "{customer}_offline" or "{customer}_online", one
+    # customer family split into the two dashboard channels.
     return f"{customer}_{mode}"
 
 
@@ -210,11 +209,9 @@ def get_store_options(customer: str = DEFAULT_CUSTOMER) -> list[dict]:
 def get_customer_options() -> list[dict]:
     # Distinct top-level customers (retailer families, e.g. "fairprice") for
     # the page-header Customer selector — derived from the retailer column
-    # rather than a hardcoded list, so a newly ingested customer (see
-    # mapping_service.py's retailer_family) shows up automatically with no
-    # dashboard code change. Each row's retailer is ingested as
-    # "{family}_offline" or "{family}_online" (see
-    # mapping_service.apply_existing_mapping); stripping that known channel
+    # rather than a hardcoded list, so a newly ingested customer shows up
+    # automatically with no dashboard code change. Each retailer is named
+    # "{family}_offline" or "{family}_online"; stripping that known channel
     # suffix recovers the family.
     #
     # The table stores retailer_id, so the ids present are mapped to names via

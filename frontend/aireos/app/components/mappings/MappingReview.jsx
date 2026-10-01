@@ -6,10 +6,24 @@ const btn =
   'rounded-md border px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60';
 
 const STATE_LABEL = {
-  builtin: 'Built-in mapping',
   confirmed: 'Confirmed mapping',
   pending: 'Proposed mapping',
 };
+
+function describeTransform(transform) {
+  if (!transform) return null;
+  if (typeof transform === 'string') return transform;
+  if (transform.type === 'regex_extract') {
+    return `Extract group ${transform.group || 1} from /${transform.pattern || ''}/`;
+  }
+  if (transform.type === 'value_map') {
+    const count = Object.keys(transform.values || {}).length;
+    return `Map ${count} source value${count === 1 ? '' : 's'}${
+      Object.hasOwn(transform, 'default') ? '; use a default for the rest' : ''
+    }`;
+  }
+  return transform.type || 'Transformed';
+}
 
 // A read-only summary of a mapping's rules. Every change — editing, approving,
 // discarding — happens on the full review page (/mappings/[id]), which alone
@@ -17,7 +31,6 @@ const STATE_LABEL = {
 // and vendor a first approval needs.
 export const MappingReview = ({ mapping }) => {
   const isPending = mapping.state === 'pending';
-  const isBuiltin = mapping.state === 'builtin';
 
   return (
     <section className="rounded-xl border border-deep-violet-blue/20 bg-white p-6 shadow-sm">
@@ -50,13 +63,6 @@ export const MappingReview = ({ mapping }) => {
           <span className="font-mono text-xs">{mapping.mappingId}</span>
         </div>
       </div>
-
-      {isBuiltin && (
-        <p className="mb-4 rounded-lg border border-deep-violet-blue/20 bg-lavander/50 p-3 text-sm text-deep-violet-blue">
-          These rules run as code in <span className="font-mono text-xs">apply_existing_mapping</span>,
-          so they are shown for reference and cannot be edited here.
-        </p>
-      )}
 
       {mapping.requiredMissing?.length > 0 && (
         <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
@@ -93,8 +99,8 @@ export const MappingReview = ({ mapping }) => {
                   )}
                 </td>
                 <td className="px-3 py-2">
-                  {rule.transform ? (
-                    <span className="text-zinc-700">{rule.transform}</span>
+                  {describeTransform(rule.transform) ? (
+                    <span className="text-zinc-700">{describeTransform(rule.transform)}</span>
                   ) : (
                     <span className="text-zinc-400">Direct</span>
                   )}

@@ -98,7 +98,7 @@ export default function DohSettingsView() {
         )}
 
         <p className="mt-2 text-xs text-deep-violet-blue/60">
-          Customers without thresholds of their own use the Global Default. 
+          Customers without thresholds of their own use the Global Default.
         </p>
       </section>
 

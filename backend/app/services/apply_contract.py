@@ -1,6 +1,7 @@
 """Deterministically apply an approved mapping contract to uploaded data."""
 
 import io
+import re
 from pathlib import Path
 from typing import Any
 import pandas as pd
@@ -47,8 +48,74 @@ def preview_rows(dataframe: pd.DataFrame, limit: int = 3) -> list[dict[str, Any]
     return preview.to_dict(orient="records")
 
 
+def _apply_transformation(
+    series: pd.Series, target: str, transformation: dict[str, Any]
+) -> pd.Series:
+    """Apply one validated generic operation to a mapped target column."""
+    operation = transformation.get("type")
+
+    if operation == "regex_extract":
+        pattern = re.compile(transformation["pattern"])
+        group = transformation.get("group", 1)
+
+        def extract(value):
+            if pd.isna(value) or str(value).strip() == "":
+                return value
+            match = pattern.search(str(value))
+            return match.group(group) if match else pd.NA
+
+        result = series.map(extract)
+        unmatched = (
+            series.notna()
+            & series.astype("string").str.strip().ne("")
+            & result.isna()
+        )
+        if unmatched.any():
+            raise ContractApplicationError(
+                f"regex_extract for {target!r} did not match {int(unmatched.sum())} value(s)."
+            )
+        return result
+
+    if operation == "value_map":
+        case_sensitive = transformation.get("case_sensitive", False)
+        values = transformation.get("values") or {}
+        lookup = {
+            (key if case_sensitive else key.casefold()): value
+            for key, value in values.items()
+        }
+        has_default = "default" in transformation
+        default = transformation.get("default")
+        missing = []
+
+        def translate(value):
+            if pd.isna(value) or str(value).strip() == "":
+                return value
+            text = str(value).strip()
+            key = text if case_sensitive else text.casefold()
+            if key in lookup:
+                return lookup[key]
+            if has_default:
+                return default
+            missing.append(text)
+            return pd.NA
+
+        result = series.map(translate)
+        if missing:
+            examples = sorted(set(missing))[:3]
+            raise ContractApplicationError(
+                f"value_map for {target!r} has no mapping or default for: {examples}"
+            )
+        return result
+
+    raise ContractApplicationError(
+        f"Unsupported transformation type for {target!r}: {operation!r}"
+    )
+
+
 def _apply_identity_mapping(
-    frame: pd.DataFrame, identity_mapping: dict[str, Any]
+    frame: pd.DataFrame,
+    identity_mapping: dict[str, Any],
+    transformations: dict[str, dict] | None = None,
 ) -> pd.DataFrame:
     """
     Rename each source column to the target field it fills.
@@ -58,27 +125,8 @@ def _apply_identity_mapping(
     that -- it moves a column, it does not copy one -- so the first target is
     renamed and every further target gets its own copy of the column.
 
-    =========================================================================
-    THE PER-FIELD TRANSFORMATION GOES HERE.
-
-    Every field a column fills currently receives that column's value
-    verbatim. For a column that fills one field that is usually right. For a
-    column that fills several it is right for at most one of them: mapping
-    "Article Description" to both product_name and size puts the whole
-    string "VEXA ADULT PANTS XL 10S" into both, when size should read "XL".
-
-    So this is the seam. Each (source column, target field) pair is the unit
-    a transform applies to, and the loop below is where one would run --
-    cleaning the product name for product_name, pulling the size token out
-    for size, leaving a straight copy where no transform is configured.
-
-    Where the transform itself should be recorded is open: alongside the
-    target in the contract is the obvious place, and mapping_view already
-    carries a per-rule "transform" field through to the review screen, so the
-    UI has somewhere to put one. mapping_service.clean_product_name,
-    extract_size and title_case are existing implementations of exactly the
-    three transforms this file's own FairPrice mapping needs.
-    =========================================================================
+    Once every target has its own column, optional transformations are applied
+    by target name. Their configuration comes from the GCS contract.
     """
     from app.services.generate_mapping import normalize_targets
 
@@ -95,8 +143,14 @@ def _apply_identity_mapping(
     result = frame.rename(columns=renames)
 
     for filled, extra in copies:
-        # Untransformed on purpose -- see above.
         result[extra] = result[filled]
+
+    for target, transformation in (transformations or {}).items():
+        if target not in result:
+            raise ContractApplicationError(
+                f"Transformation target is missing after mapping: {target!r}"
+            )
+        result[target] = _apply_transformation(result[target], target, transformation)
 
     return result
 
@@ -122,6 +176,7 @@ def apply_contract(
     """Apply identity renames and wide-to-long melt groups without using AI."""
     identity_mapping = contract.get("identity_mapping") or {}
     melt_groups = contract.get("melt_groups") or []
+    transformations = contract.get("transformations") or {}
     if not identity_mapping and not melt_groups:
         raise ContractApplicationError("Mapping contract is empty.")
 
@@ -146,7 +201,9 @@ def apply_contract(
         id_vars = [column for column in dataframe.columns if column not in melt_columns]
 
     if not melt_groups:
-        return _apply_identity_mapping(dataframe[id_vars].copy(), identity_mapping)
+        return _apply_identity_mapping(
+            dataframe[id_vars].copy(), identity_mapping, transformations
+        )
 
     melted_tables = []
     for group in melt_groups:
@@ -199,4 +256,4 @@ def apply_contract(
         result.loc[monthly, "period_start"] + pd.offsets.MonthEnd(0)
     )
 
-    return _apply_identity_mapping(result, identity_mapping)
+    return _apply_identity_mapping(result, identity_mapping, transformations)

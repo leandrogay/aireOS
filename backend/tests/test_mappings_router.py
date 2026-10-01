@@ -9,12 +9,19 @@ file with these headers, so it holds the same line itself.
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.services import storage
+from app.services import sellout_ingestion, storage
 
 client = TestClient(app)
 
 ENVELOPE = {
-    "raw_columns": ["SKU No.", "Brand"],
+    "raw_columns": [
+        "SKU No.",
+        "Brand",
+        "Vendor",
+        "Store Code",
+        "Sales | Month 1 | 01-08-2026",
+        "Qty | Month 1 | 01-08-2026",
+    ],
     "contract": {"identity_mapping": {}, "melt_groups": [], "annotations": {}},
     "name": "Vendor weekly",
     "vendor": "XEL",
@@ -31,6 +38,47 @@ def _rule(target, source, confidence, reviewed):
         "rationale": "",
         "reviewed": reviewed,
     }
+
+
+def _complete_rules(rules):
+    """Add the other fields a contract needs before it may be approved."""
+    return [
+        *rules,
+        _rule("retailer", "Vendor", "high", False),
+        _rule("store_code", "Store Code", "high", False),
+        {
+            "targetField": "revenue",
+            "sourceColumn": "Sales | Month 1 | 01-08-2026",
+            "sourceColumns": ["Sales | Month 1 | 01-08-2026"],
+            "editable": False,
+            "confidence": "high",
+            "reviewed": False,
+            "meltGroup": {
+                "target_field": "revenue",
+                "columns": ["Sales | Month 1 | 01-08-2026"],
+                "period_extract_regex": r"(\d{2}-\d{2}-\d{4})$",
+                "date_format": "%d-%m-%Y",
+                "confidence": "high",
+                "reviewed": False,
+            },
+        },
+        {
+            "targetField": "quantity_units",
+            "sourceColumn": "Qty | Month 1 | 01-08-2026",
+            "sourceColumns": ["Qty | Month 1 | 01-08-2026"],
+            "editable": False,
+            "confidence": "high",
+            "reviewed": False,
+            "meltGroup": {
+                "target_field": "quantity_units",
+                "columns": ["Qty | Month 1 | 01-08-2026"],
+                "period_extract_regex": r"(\d{2}-\d{2}-\d{4})$",
+                "date_format": "%d-%m-%Y",
+                "confidence": "high",
+                "reviewed": False,
+            },
+        },
+    ]
 
 
 def _stub_storage(monkeypatch):
@@ -61,6 +109,17 @@ def _stub_storage(monkeypatch):
 
 # ---- Low-confidence gate ------------------------------------------------------
 
+def test_confirm_rejects_missing_required_ingest_fields(monkeypatch):
+    stored = _stub_storage(monkeypatch)
+    rules = [_rule("sku", "SKU No.", "high", False)]
+
+    response = client.post("/api/mappings/fp/confirm", json={"rules": rules})
+
+    assert response.status_code == 422
+    assert "retailer" in response.json()["detail"]["message"]
+    assert "envelope" not in stored
+
+
 def test_confirm_rejects_an_unreviewed_low_confidence_field_with_422(monkeypatch):
     stored = _stub_storage(monkeypatch)
     rules = [
@@ -68,7 +127,9 @@ def test_confirm_rejects_an_unreviewed_low_confidence_field_with_422(monkeypatch
         _rule("brand", "Brand", "low", False),
     ]
 
-    response = client.post("/api/mappings/fp/confirm", json={"rules": rules})
+    response = client.post(
+        "/api/mappings/fp/confirm", json={"rules": _complete_rules(rules)}
+    )
 
     assert response.status_code == 422
     assert "brand" in response.json()["detail"]["message"]
@@ -82,11 +143,53 @@ def test_confirm_stores_a_reviewed_low_confidence_field_as_reviewed(monkeypatch)
         _rule("brand", "Brand", "low", True),
     ]
 
-    response = client.post("/api/mappings/fp/confirm", json={"rules": rules})
+    response = client.post(
+        "/api/mappings/fp/confirm", json={"rules": _complete_rules(rules)}
+    )
 
     assert response.status_code == 200
     brand = stored["envelope"]["contract"]["annotations"]["brand"]
     assert brand == {"confidence": "low", "rationale": "", "reviewed": True}
+
+
+def test_confirm_processes_uploads_that_were_waiting_for_approval(monkeypatch):
+    _stub_storage(monkeypatch)
+    monkeypatch.setattr(
+        storage,
+        "update_uploads_for_mapping",
+        lambda fingerprint, metadata: {
+            "matched": ["uploads/file.txt"],
+            "updated": ["uploads/file.txt"],
+        },
+    )
+    monkeypatch.setattr(
+        storage,
+        "download_upload",
+        lambda path: ("file.txt", b"source bytes"),
+    )
+    calls = []
+
+    def process(filename, data, contract, *, replace_source=False):
+        calls.append((filename, data, contract, replace_source))
+        return {"rows_stored": 10, "storage_status": "completed"}
+
+    monkeypatch.setattr(sellout_ingestion, "process_confirmed_upload", process)
+    rules = [
+        _rule("sku", "SKU No.", "high", False),
+        _rule("brand", "Brand", "high", False),
+    ]
+
+    response = client.post(
+        "/api/mappings/fp/confirm", json={"rules": _complete_rules(rules)}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["uploads_processed"] == 1
+    assert body["uploads_failed"] == 0
+    assert body["processing"][0]["processing"]["rows_stored"] == 10
+    assert calls[0][0:2] == ("file.txt", b"source bytes")
+    assert calls[0][3] is True
 
 
 # ---- A pending copy left behind after approval --------------------------------
@@ -107,7 +210,7 @@ def test_amending_builds_on_the_confirmed_copy_not_a_stale_pending_one(monkeypat
             storage.confirmed_mapping_path("fp"): ENVELOPE,
         },
     )
-    rules = [_rule("sku", "SKU No.", "high", False)]
+    rules = _complete_rules([_rule("sku", "SKU No.", "high", False)])
 
     # No name or vendor sent: an amendment inherits them from what is confirmed.
     response = client.post("/api/mappings/fp/confirm", json={"rules": rules})

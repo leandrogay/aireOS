@@ -61,8 +61,8 @@ async function request(baseUrl, path, { method = 'GET', body, headers, signal, o
 // ========================================
 // API CALL
 // GET /api/mappings
-// Every stored mapping in the review shape: the builtin rule set, then
-// confirmed contracts, then proposals awaiting approval.
+// Every GCS-stored mapping in the review shape: confirmed contracts, then
+// proposals awaiting approval.
 // ========================================
 export async function listMappings(baseUrl, { signal, onLog } = {}) {
   return request(baseUrl, '/api/mappings', { signal, onLog });

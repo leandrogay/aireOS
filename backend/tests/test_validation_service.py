@@ -15,8 +15,34 @@ def _row(**changes):
         "pack_size": "8",
         "quantity_units": "10",
         "revenue": "100.50",
+        "source_file": "monthly.xlsx",
         **changes,
     }
+
+
+def test_validation_converts_dates_and_numbers_for_storage():
+    result = validate_mapped_dataframe(pd.DataFrame([_row()]))
+    row = result["valid_df"].iloc[0]
+
+    assert result["rows_ingested"] == 1
+    assert row["period_start"] == "2026-01-01"
+    assert row["pack_size"] == 8
+    assert row["quantity_units"] == 10
+    assert row["revenue"] == 100.5
+
+
+def test_validation_rejects_a_row_with_missing_keys_or_bad_numbers():
+    rows = pd.DataFrame(
+        [_row(), _row(store_code="", quantity_units="not-a-number")]
+    )
+
+    result = validate_mapped_dataframe(rows)
+
+    assert result["total_rows"] == 2
+    assert result["rows_ingested"] == 1
+    assert result["total_rejected"] == 1
+    assert "missing store_code" in result["rejection_summary"]
+    assert "invalid numeric quantity_units" in result["rejection_summary"]
 
 
 def test_invalid_row_does_not_reject_valid_row_with_same_dataframe_index():

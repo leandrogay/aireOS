@@ -94,6 +94,19 @@ function TransformedPreview({ processing }) {
       {processing.rejection_summary && (
         <p className="mt-1.5 text-xs text-amber-900">{processing.rejection_summary}</p>
       )}
+      {processing.storage_status === 'completed' && (
+        <p className="mt-1.5 text-xs font-medium text-green-700">
+          {processing.rows_stored?.toLocaleString() || 0} rows stored in Cloud SQL
+          {processing.rows_consolidated
+            ? ` (${processing.rows_consolidated.toLocaleString()} consolidated)`
+            : ''}
+        </p>
+      )}
+      {processing.storage_status === 'disabled' && (
+        <p className="mt-1.5 text-xs font-medium text-amber-900">
+          Preview only — Cloud SQL loading is disabled.
+        </p>
+      )}
     </div>
   );
 }

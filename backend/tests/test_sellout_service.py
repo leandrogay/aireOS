@@ -90,12 +90,15 @@ def test_load_clean_rows_reuses_master_rows_and_upserts_each_fact():
     assert "DO UPDATE" not in sku_sql
     assert sum("INSERT INTO sellout" in sql for sql in sql_calls) == 1
     fact_call = next(
-        call for call in connection.execute.call_args_list
+        call
+        for call in connection.execute.call_args_list
         if "INSERT INTO sellout" in str(call.args[0])
     )
     assert len(fact_call.args[1]) == 2
     assert all(fact["loaded_at"] == timestamp for fact in fact_call.args[1])
-    assert all(fact["data_source"] == "aireos_upload" for fact in fact_call.args[1])
+    assert all(
+        fact["data_source"] == "aireos_upload" for fact in fact_call.args[1]
+    )
     assert not any("DELETE FROM sellout" in sql for sql in sql_calls)
 
 
@@ -136,8 +139,12 @@ def test_replacement_deletes_old_source_rows_inside_same_transaction():
     sellout_service.load_clean_rows(_dataframe(), replace_source=True, engine=engine)
 
     sql_calls = [str(call.args[0]) for call in connection.execute.call_args_list]
-    delete_index = next(i for i, sql in enumerate(sql_calls) if "DELETE FROM sellout" in sql)
-    insert_index = next(i for i, sql in enumerate(sql_calls) if "INSERT INTO sellout" in sql)
+    delete_index = next(
+        index for index, sql in enumerate(sql_calls) if "DELETE FROM sellout" in sql
+    )
+    insert_index = next(
+        index for index, sql in enumerate(sql_calls) if "INSERT INTO sellout" in sql
+    )
     assert delete_index < insert_index
     assert sum("DELETE FROM sellout" in sql for sql in sql_calls) == 1
 
@@ -180,11 +187,13 @@ def test_same_business_key_is_summed_instead_of_overwritten():
     )
 
     sellout_call = next(
-        call for call in connection.execute.call_args_list
+        call
+        for call in connection.execute.call_args_list
         if "INSERT INTO sellout" in str(call.args[0])
     )
     sku_call = next(
-        call for call in connection.execute.call_args_list
+        call
+        for call in connection.execute.call_args_list
         if "INSERT INTO skus" in str(call.args[0])
     )
     assert result["rows_stored"] == 1
@@ -224,7 +233,8 @@ def test_historical_import_can_preserve_source_lineage():
     )
 
     fact_call = next(
-        call for call in connection.execute.call_args_list
+        call
+        for call in connection.execute.call_args_list
         if "INSERT INTO sellout" in str(call.args[0])
     )
     assert all(fact["data_source"] == "pipeline" for fact in fact_call.args[1])
