@@ -75,7 +75,8 @@ aireOS/
     │   ├── inventory/page.js      Inventory: overview, by-customer DOH, at-risk list, sell-in plan, enter/edit data (components/inventory)
     │   ├── components/
     │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column), Sidebar (NAV_ITEMS)
-    │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, DateRangePicker; Toast (+ hooks/useToast)
+    │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, calendar, popover, DateRangePicker
+    │   │   │                      (typed date inputs, not a calendar); Toast (+ hooks/useToast)
     │   │   ├── dashboard/         DashboardFilters, CustomerSelector, FilterBadge, PeriodControls (Period /
     │   │   │                      Compare to: DateRangeControl, CompareControl, RangeCalendar),
     │   │   │                      RevenueTrendCard (Total / By format switch) → TrendChart, ComparisonTotalChart,
@@ -101,15 +102,13 @@ aireOS/
     │       ├── dohSettingsForm.js validate/build/formFrom helpers for the DOH threshold form, GLOBAL_DEFAULT_DOH
     │       ├── retailerLabel.js   shared display label for retailer/customer slugs (fairprice_online → Fairprice Online)
     │       └── mappingHelpers.js
-    ├── hooks/                     Data-fetching hooks for the dashboard (inline fetch, cancel-flag pattern)
+    ├── hooks/                     Data-fetching hooks (cancel-flag pattern; dashboard calls services/*Api.js)
     │   ├── useDataFreshness.js    polls /api/sales/last-updated → { channels, dataVersion, refreshing }
     │   ├── useCustomerOptions.js  /api/sales/customer-options
     │   ├── useDashboardSummary.js /api/sales/dashboard-summary (silent refresh on dataVersion)
-    │   ├── usePeriodComparison.js /api/sales/period-comparison
     │   ├── useDefaultDateRange.js /api/sales/default-date-range
-    │   ├── useSkuSales.js     /api/sales/skus via salesApi.getSkuSales
-    │   ├── usePriceMix.js     useSkuSales × 2 (this period + comparison) → priceMixEffects
-    │   ├── useDraftDateRange.js   local draft state for the picker
+    │   ├── useSkuSales.js         /api/sales/skus via salesApi.getSkuSales
+    │   ├── usePriceMix.js         useSkuSales × 2 (this period + comparison) → priceMixEffects
     │   ├── useDohSettings.js      /api/settings/doh (+ replaceRow for the row a write returns)
     │   └── useToast.js            { toast, notify, dismissToast } for components/ui/Toast
     ├── lib/                       cn() (clsx + tailwind-merge), formatDateRange, formatDate/formatDateTime (shared date display)
@@ -124,7 +123,8 @@ aireOS/
 ```
 
 Key dependencies: `@base-ui/react`, `shadcn`, `class-variance-authority`, `clsx`,
-`tailwind-merge`, `lucide-react`, `recharts`, `tw-animate-css`, `babel-plugin-react-compiler`.
+`tailwind-merge`, `lucide-react`, `recharts`, `react-day-picker` (+ its `date-fns`, behind
+`ui/calendar`), `tw-animate-css`, `babel-plugin-react-compiler`.
 No test runner is installed on the frontend; linting (`npm run lint`) is the frontend check.
 
 ---
@@ -134,7 +134,7 @@ No test runner is installed on the frontend; linting (`npm run lint`) is the fro
 | Domain | Router | Service(s) | Storage | Frontend entry |
 | --- | --- | --- | --- | --- |
 | Upload & mapping | `uploads.py` | `storage`, `mapping_service`, `generate_mapping`, `mapping_view`, `apply_contract`, `validation_service` | **GCS** bucket: `uploads/` files, `mappings/pending/<fp>.json`, `mappings/confirmed/<fp>.json` | `app/upload`, `app/upload2`, `services/mappingApi.js` |
-| Sales dashboard | `sales.py` | `bigquery`, `sellout_lookup` | **BigQuery** `aire-data.Aire_Data_Analytics.public_sellout` (`BQ_SELLOUT_TABLE`; read-only Datastream replica of Cloud SQL `sellout`, weekly rows keyed by `retailer_id`/`store_code`/`sku`). **Cloud SQL Postgres**: `retailers`/`stores`/`skus` resolve those keys to names (retailer name = `{customer}_{offline|online}`) | `app/dashboard`, `hooks/use*.js` |
+| Sales dashboard | `sales.py` | `bigquery`, `sellout_lookup` | **BigQuery** `aire-data.Aire_Data_Analytics.public_sellout` (`BQ_SELLOUT_TABLE`; read-only Datastream replica of Cloud SQL `sellout`, weekly rows keyed by `retailer_id`/`store_code`/`sku`). **Cloud SQL Postgres**: `retailers`/`stores`/`skus` resolve those keys to names (retailer name = `{customer}_{offline|online}`) | `app/dashboard`, `hooks/use*.js`, `services/salesApi.js` |
 | Catalog | `catalog.py` | `catalog_service` | **Cloud SQL Postgres**: `retailers`, `stores`, `skus` | `services/promotionsApi.js` (getRetailers/getStores/getSkuRanges) |
 | Inventory | `inventory.py` | `inventory_service`, `inventory_calc`, `sellout_units`, `forecast_units` | **Cloud SQL Postgres**: `customers`, `customer_retailers`, `inventory_metrics` (long format; app writes carry `data_source='manual_entry'`; only sell-in, a first-month opening and building blocks (stock used outside sell-out) are read; workbook rows are never changed), `doh_settings` (read via `settings/doh.fetch_versions`; closed months use the version in effect at month end, the latest month, at-risk list and sell-in plan use the current one); **BigQuery** (read-only): weekly sell-out (`BQ_SELLOUT_TABLE`, default `public_sellout`) and the forecast table. Ending stock, DOH and the plan are computed, never stored | `app/inventory`, `services/inventoryApi.js` |
 | Settings (DOH) | `settings/doh.py` | `settings/doh`, `settings/common` | **Cloud SQL Postgres**: `doh_settings` (append-only: a change is an INSERT only when min/target/max differ from the newest row; newest by `updated_at DESC, setting_id DESC`; never UPDATE/DELETE), view `current_settings` (one row per customer), `customers.doh_alert_enabled` / `doh_alert_updated_at` (in-place toggle, no version). Also read by the inventory DOH calculations (`fetch_versions`, `thresholds_on`, `current_thresholds`) | `app/doh`, `services/settingsApi.js` |
@@ -195,9 +195,12 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 1. `useDataFreshness` polls `/api/sales/last-updated`; a change bumps `dataVersion`, which every
    other hook lists as a dependency so data silently refreshes.
 2. `useCustomerOptions` → first customer auto-selected during render.
-3. `useDefaultDateRange` ×4 presets, `useDashboardSummary`, `usePeriodComparison` all take
-   `{ customer, sku, store, startDate, endDate, mode, dataVersion }` and hit `/api/sales/*`.
-   Each maps to one `bigquery.get_*` function that builds a parameterised query.
+3. `useDefaultDateRange` (week) gives the latest loaded week; every Period preset is built
+   from it on the client (`dateRangePresets.js`), and `comparisonSetup` derives the
+   "Compare to" baseline range (none by default). `useDashboardSummary` is called for this
+   period and, while comparing, for the baseline. Hooks take
+   `{ customer, sku, store, startDate, endDate, mode, dataVersion }` and hit `/api/sales/*`;
+   each maps to one `bigquery.get_*` function that builds a parameterised query.
 4. Long ranges switch `granularity` week→month on the client (`chartGranularity`). The
    comparison side is always fetched weekly and paired with this period's buckets on the
    client (`alignComparisonBuckets`), so both sides of a comparison cover matching weeks.
@@ -224,7 +227,7 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | `PromoType` Literal in `schemas/promotions.py` and `promo_type_enum` in Postgres | `PROMO_TYPES` in `app/utils/promotionForm.js` |
 | `PromotionBase` field names | `buildPromotionPayload` / `formFromPromotion` |
 | `_PROMOTION_COLUMNS` (nested `stores`, `skus`) | `PromotionList.jsx`, `promotionOverview.js` |
-| `sales.py` query-param names (`start_date`, `granularity`, `comparison_type` …) | `URLSearchParams` keys in `hooks/*.js` |
+| `sales.py` query-param names (`start_date`, `end_date`, `granularity`, `customer`, `store`, `sku` …) | `URLSearchParams` keys in `hooks/*.js` and `services/salesApi.js` |
 | `mapping_view` packet/rule keys (`targetField`, `sourceColumn`, `editable`, `requiredMissing`) | `MappingReview.jsx`, `upload2/ContractView.jsx` |
 | `uploads.py` per-file `mapping.status` values (`mapped`, `pending_confirmation`, `mapping_failed`) | `FileUpload.jsx` result rendering |
 | `settings/doh._settings_view` keys, `GLOBAL_DEFAULT_*_DOH` | `DohSettingsTable.jsx`, `dohSettingsForm.js` (`GLOBAL_DEFAULT_DOH`) |

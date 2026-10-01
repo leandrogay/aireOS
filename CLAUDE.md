@@ -166,7 +166,7 @@ Every error the client can see is `HTTPException(status_code=..., detail=...)`. 
 - **React Compiler is enabled** (`reactCompiler: true`, `babel-plugin-react-compiler`). It
   memoizes for you, so do not add `useMemo`/`useCallback` for performance. Use `useCallback`
   only when a stable identity is a *correctness* requirement (a callback passed into a hook's
-  dependency list, e.g. `handleDateRangeChange` → `usePeriodComparison`).
+  dependency list, e.g. `close` in `CheckboxDropdown.jsx`, read by its outside-click effect).
 - The compiler assumes the Rules of React. Therefore:
   - Dependency arrays are **complete and honest** — every value read inside the effect is
     listed. Never silence `react-hooks/exhaustive-deps`.
