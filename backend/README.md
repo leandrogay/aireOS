@@ -88,6 +88,12 @@ updates, and deletes. See the repository's
 [pipeline implementation notes](../docs/data-pipeline-implementation-notes.md)
 for verified counts and the remaining analytics work.
 
+The sales dashboard (`/api/sales/*`, `app/services/bigquery.py`) reads
+`aire-data.Aire_Data_Analytics.public_sellout`, set by `BQ_SELLOUT_TABLE` in
+`app/config.py`. Its rows carry only `retailer_id`, `store_code` and `sku`;
+`app/services/sellout_lookup.py` resolves them to names from the Cloud SQL
+catalog.
+
 ## Running tests
 
 ```powershell

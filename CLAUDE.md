@@ -85,7 +85,7 @@ app/services/*.py   All business logic and every external call (SQL, BigQuery, G
   connection or auth), do it in one small module under `app/` and migrate a single router
   first — do not mix styles inside one router file.
 - Read config from `os.environ` at call time, not module import time, unless it is a harmless
-  default (`BQFairprice_TABLE`). A missing key should fail the one request that needs it
+  default (`BQ_SELLOUT_TABLE`). A missing key should fail the one request that needs it
   with a clear message, not crash app startup (`get_client()` in `generate_mapping.py` is the
   model).
 
@@ -166,7 +166,7 @@ Every error the client can see is `HTTPException(status_code=..., detail=...)`. 
 - **React Compiler is enabled** (`reactCompiler: true`, `babel-plugin-react-compiler`). It
   memoizes for you, so do not add `useMemo`/`useCallback` for performance. Use `useCallback`
   only when a stable identity is a *correctness* requirement (a callback passed into a hook's
-  dependency list, e.g. `handleDateRangeChange` → `usePeriodComparison`).
+  dependency list, e.g. `close` in `CheckboxDropdown.jsx`, read by its outside-click effect).
 - The compiler assumes the Rules of React. Therefore:
   - Dependency arrays are **complete and honest** — every value read inside the effect is
     listed. Never silence `react-hooks/exhaustive-deps`.

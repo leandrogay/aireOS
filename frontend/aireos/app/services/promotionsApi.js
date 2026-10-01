@@ -38,7 +38,8 @@ export function parseApiError(data, status) {
 }
 
 /**
- * Shared fetch wrapper for the backend API (promotions, catalog, inventory).
+ * Shared fetch wrapper for the backend API (promotions, catalog, inventory, and the
+ * sales calls in salesApi.js).
  *
  * Parses JSON when possible and throws an Error carrying `{ status, data }`
  * so callers can surface the server-provided detail. Network failures
@@ -92,7 +93,7 @@ export async function request(path, { method = 'GET', body } = {}) {
       const wrapped = new Error(
         error.message?.includes('NEXT_PUBLIC_API_URL')
           ? error.message
-          : 'Unable to reach the API. Check NEXT_PUBLIC_API_URL and that the backend is running.',
+          : 'Unable to reach the backend API. Check NEXT_PUBLIC_API_URL and that the backend is running.',
       );
       wrapped.status = 0;
       throw wrapped;
