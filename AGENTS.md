@@ -35,6 +35,7 @@ aireOS/
 │   │       ├── catalog_service.py retailers/stores/skus tables; get_or_create_* seams; domain exceptions
 │   │       ├── promotion_service.py promotions + promotion_stores + promotion_skus, raw SQL, one txn per write
 │   │       ├── bigquery.py        SKU ranking, dashboard summary, period comparison, options, freshness
+│   │       ├── sellout_lookup.py  Cached Cloud SQL catalog lookup: sell-out IDs/codes → retailer/store/SKU names
 │   │       ├── storage.py         GCS: upload files (duplicate detection), mapping JSON packets
 │   │       ├── mapping_service.py Built-in deterministic FairPrice "wide" mapping (regex header match, melt)
 │   │       ├── generate_mapping.py Claude-generated mapping contracts for unknown layouts; validate_contract
@@ -103,7 +104,7 @@ No test runner is installed on the frontend; linting (`npm run lint`) is the fro
 | Domain | Router | Service(s) | Storage | Frontend entry |
 | --- | --- | --- | --- | --- |
 | Upload & mapping | `uploads.py` | `storage`, `mapping_service`, `generate_mapping`, `mapping_view`, `apply_contract`, `validation_service` | **GCS** bucket: `uploads/` files, `mappings/pending/<fp>.json`, `mappings/confirmed/<fp>.json` | `app/upload`, `app/upload2`, `services/mappingApi.js` |
-| Sales dashboard | `sales.py` | `bigquery` | **BigQuery** `aire-data.Aire_Data.aireOS_fairprice` (read-only, weekly rows, retailer = `{customer}_{offline|online}`) | `app/dashboard`, `hooks/use*.js` |
+| Sales dashboard | `sales.py` | `bigquery`, `sellout_lookup` | **BigQuery** `aire-data.Aire_Data_Analytics.public_sellout` (`BQ_SELLOUT_TABLE`; read-only Datastream replica of Cloud SQL `sellout`, weekly rows keyed by `retailer_id`/`store_code`/`sku`). **Cloud SQL Postgres**: `retailers`/`stores`/`skus` resolve those keys to names (retailer name = `{customer}_{offline|online}`) | `app/dashboard`, `hooks/use*.js` |
 | Catalog | `catalog.py` | `catalog_service` | **Cloud SQL Postgres**: `retailers`, `stores`, `skus` | `services/promotionsApi.js` (getRetailers/getStores/getSkuRanges) |
 | Promotions | `promotions.py` | `promotion_service` (+ `catalog_service` seams) | **Cloud SQL Postgres**: `promotions`, `promotion_stores`, `promotion_skus`; enum `promo_type_enum`; trigger `trg_promotions_updated_at` | `app/promotions`, `services/promotionsApi.js` |
 | AI mapping | (inside uploads) | `generate_mapping` | **Anthropic API** (`ANTHROPIC_MODEL`, default `claude-sonnet-4-6`) | — |
@@ -215,7 +216,7 @@ to one `load_dotenv` in `main.py` and update the README.
 
 Backend variables: `GOOGLE_APPLICATION_CREDENTIALS`, `SERVICE_ACCOUNT_KEY_PATH`, `GCP_PROJECT_ID`,
 `GCS_BUCKET_NAME`, `GCS_DESTINATION_PREFIX`, `GCS_DESTINATION_PREFIX_MAPPING`,
-`BQ_FAIRPRICESELLOUT_TABLE`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`,
+`BQ_SELLOUT_TABLE`, `BQ_FAIRPRICESELLOUT_TABLE` (legacy, unused), `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`,
 `POSTGRESQL_INSTANCE_CONNECTION_NAME`, `DB_IAM_USER`, `DB_NAME`.
 
 Frontend variables: `NEXT_PUBLIC_API_URL` (browser-visible, used everywhere), `BACKEND_API_URL`

@@ -245,7 +245,8 @@ be made readable without repeating the earlier permission problem.
 
 The previous stream and `aire-data.Aire_Data` replica remain temporarily as a
 rollback path until application consumers have been moved to the analytics
-dataset.
+dataset. As of 2026-10-01 the sales dashboard reads
+`Aire_Data_Analytics.public_sellout` instead of `Aire_Data`.
 
 ### 6.2 Replicated tables
 

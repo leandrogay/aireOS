@@ -85,7 +85,7 @@ app/services/*.py   All business logic and every external call (SQL, BigQuery, G
   connection or auth), do it in one small module under `app/` and migrate a single router
   first — do not mix styles inside one router file.
 - Read config from `os.environ` at call time, not module import time, unless it is a harmless
-  default (`BQFairprice_TABLE`). A missing key should fail the one request that needs it
+  default (`BQ_SELLOUT_TABLE`). A missing key should fail the one request that needs it
   with a clear message, not crash app startup (`get_client()` in `generate_mapping.py` is the
   model).
 
