@@ -80,7 +80,7 @@ function AssistantChart({
               name={series[0].label}
               fill={resolvedColor}
               fillOpacity={opacity ?? 1}
-              radius={cornerRadius ?? 4}
+              radius={cornerRadius ?? 0}
               isAnimationActive={false}
             >
               {showValueLabels && <LabelList dataKey="value" position="top" style={{ fontSize: tickSize }} formatter={labelFormatter} />}

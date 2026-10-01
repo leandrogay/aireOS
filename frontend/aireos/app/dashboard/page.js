@@ -9,34 +9,21 @@ import DashboardFilters from "@/components/dashboard/DashboardFilters";
 import FilterBadge from "@/components/dashboard/FilterBadge";
 import PeriodComparisonDetail from "@/components/dashboard/PeriodComparisonDetail";
 import CustomerSelector from "@/components/dashboard/CustomerSelector";
-import DateRangeControl from "@/components/dashboard/DateRangeControl";
+import PeriodControls from "@/components/dashboard/PeriodControls";
 import useDataFreshness from "@/hooks/useDataFreshness";
 import useDashboardSummary from "@/hooks/useDashboardSummary";
 import useDefaultDateRange from "@/hooks/useDefaultDateRange";
 import useCustomerOptions from "@/hooks/useCustomerOptions";
-import CompareControl from "@/components/dashboard/CompareControl";
+import usePriceMix from "@/hooks/usePriceMix";
 import {
-  COMPARE_OPTIONS,
   DEFAULT_COMPARE,
-  addDays,
   alignComparisonBuckets,
-  baselineName,
-  comparisonRange,
-  formatPeriodName,
+  comparisonSetup,
+  daysBetween,
   loadedWeeksInRange,
-  parseIso,
   sumPeriodTotals,
 } from "@/app/utils/periodComparison";
 import { DEFAULT_PRESET_ID, buildDateRangePresets } from "@/app/utils/dateRangePresets";
-
-// Whole days between two ISO (YYYY-MM-DD) dates, parsed as local midnight so
-// this isn't off-by-one across timezones.
-function daySpan(start, end) {
-  if (!start || !end) return 0;
-  const startMs = new Date(`${start}T00:00:00`).getTime();
-  const endMs = new Date(`${end}T00:00:00`).getTime();
-  return (endMs - startMs) / 86400000;
-}
 
 export default function DashboardPage() {
   const { channels, dataVersion, refreshing } = useDataFreshness();
@@ -75,9 +62,9 @@ export default function DashboardPage() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [mode, setMode] = useState('offline');
-  // "Compare to" baseline — same period last year by default, since that's
-  // the number a sales review usually opens with. `customCompare` is only
-  // used while compareTo is 'custom'.
+  // "Compare to" baseline — none by default (DEFAULT_COMPARE); Clear Filters
+  // returns to that. `customCompare` is only used while compareTo is
+  // 'custom'.
   const [compareTo, setCompareTo] = useState(DEFAULT_COMPARE);
   const [customCompare, setCustomCompare] = useState({ start: '', end: '' });
   // null = pick automatically from the range length (see autoGranularity).
@@ -108,21 +95,12 @@ export default function DashboardPage() {
   // year) have too many weeks to read as weekly bars, so they default to
   // monthly bars; the chart's By week / By month switch overrides this
   // until the range changes again.
-  const autoGranularity = daySpan(effectiveStartDate, effectiveEndDate) > 100 ? 'month' : 'week';
+  const rangeDays = effectiveStartDate && effectiveEndDate ? daysBetween(effectiveStartDate, effectiveEndDate) : 0;
+  const autoGranularity = rangeDays > 100 ? 'month' : 'week';
   const chartGranularity = granularityChoice ?? autoGranularity;
 
   const rangeInputs = { start: effectiveStartDate, end: effectiveEndDate, latestWeekStart, custom: customCompare };
-  const compareOptions = COMPARE_OPTIONS.map((option) => ({
-    ...option,
-    range: comparisonRange(option.value, rangeInputs),
-  }));
-  const selectedCompare = compareOptions.find((option) => option.value === compareTo);
-  const baseline = selectedCompare?.range ?? null;
-  // "Aug 2026" vs "Aug 2025" — for the legend, panel and "vs …" deltas.
-  const periodNames = {
-    current: formatPeriodName(effectiveStartDate, effectiveEndDate),
-    baseline: baseline ? baselineName(compareTo, rangeInputs) : '',
-  };
+  const { options: compareOptions, baseline, periodNames } = comparisonSetup(compareTo, rangeInputs);
   const compareShort = baseline ? `vs ${periodNames.baseline}` : '';
 
   const summary = useDashboardSummary({
@@ -134,8 +112,8 @@ export default function DashboardPage() {
     endDate: effectiveEndDate,
     granularity: chartGranularity,
   });
-  // Same filters and granularity over the baseline's dates, so both sides
-  // of every comparison (chart, cards, panel) are built the same way.
+  // Same filters over the baseline's dates, so both sides of every
+  // comparison (chart, cards, panel) are built the same way.
   const baselineSummary = useDashboardSummary({
     dataVersion,
     sku,
@@ -143,25 +121,42 @@ export default function DashboardPage() {
     store,
     startDate: baseline?.start ?? '',
     endDate: baseline?.end ?? '',
-    granularity: chartGranularity,
+    // Always weekly: the chart pairs baseline week N with this period's
+    // week N and rolls them into this period's buckets, so a month view
+    // compares exactly matching weeks (see alignComparisonBuckets). Totals
+    // and per-format figures don't depend on granularity.
+    granularity: 'week',
     enabled: Boolean(baseline),
+  });
+
+  const { priceMix } = usePriceMix({
+    dataVersion,
+    customer,
+    mode,
+    store,
+    sku,
+    startDate: effectiveStartDate,
+    endDate: effectiveEndDate,
+    baseline,
   });
 
   const currentTotals = summary.summaryByMode[mode]?.periodTotal ?? [];
   const baselineTotals = baseline ? (baselineSummary.summaryByMode[mode]?.periodTotal ?? []) : [];
   const comparisonRows = baseline
     ? alignComparisonBuckets(currentTotals, baselineTotals, {
+        compareTo,
         granularity: chartGranularity,
         currentStart: effectiveStartDate,
+        currentEnd: effectiveEndDate,
         baselineStart: baseline.start,
+        latestWeekStart,
+        currentByFormat: summary.summaryByMode[mode]?.periodByFormat ?? [],
+        baselineWeeksByFormat: baselineSummary.summaryByMode[mode]?.periodByFormat ?? [],
       })
     : null;
   const currentWeeks = loadedWeeksInRange(effectiveStartDate, effectiveEndDate, latestWeekStart);
   const baselineWeeks = baseline ? loadedWeeksInRange(baseline.start, baseline.end, latestWeekStart) : null;
 
-  const dataThrough = latestWeekStart
-    ? parseIso(addDays(latestWeekStart, 6)).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
-    : null;
   const lastUpdated = customer ? channels[`${customer}_${mode}`] : null;
 
   function handleSkuChange(value, productName) {
@@ -216,28 +211,16 @@ export default function DashboardPage() {
             periodNames={periodNames}
             comparisonLoading={baselineSummary.loading}
             headerExtra={
-              <div className="flex flex-wrap items-end gap-2">
-                <div>
-                  <p className="mb-0.5 text-xs text-deep-violet-blue/70">Period</p>
-                  <DateRangeControl
-                    start={effectiveStartDate}
-                    end={effectiveEndDate}
-                    presets={presets}
-                    latestWeekStart={latestWeekStart}
-                    onChange={handleDateRangeChange}
-                  />
-                </div>
-                <div>
-                  <p className="mb-0.5 text-xs text-deep-violet-blue/70">Compare to</p>
-                  <CompareControl
-                    value={compareTo}
-                    options={compareOptions}
-                    latestWeekStart={latestWeekStart}
-                    onChange={handleCompareChange}
-                  />
-                </div>
-                {dataThrough && <span className="pb-1 text-xs text-deep-violet-blue/60">Data to {dataThrough}</span>}
-              </div>
+              <PeriodControls
+                start={effectiveStartDate}
+                end={effectiveEndDate}
+                presets={presets}
+                latestWeekStart={latestWeekStart}
+                onDateRangeChange={handleDateRangeChange}
+                compareTo={compareTo}
+                compareOptions={compareOptions}
+                onCompareChange={handleCompareChange}
+              />
             }
           />
         </div>
@@ -278,6 +261,7 @@ export default function DashboardPage() {
               baselineTotals={sumPeriodTotals(baselineTotals)}
               baselineAvailable={baselineTotals.length > 0}
               weekCounts={currentWeeks && baselineWeeks ? { current: currentWeeks.count, baseline: baselineWeeks.count } : null}
+              priceMix={priceMix}
               loading={summary.loading || baselineSummary.loading}
               error={summary.error || baselineSummary.error}
             />
@@ -289,7 +273,7 @@ export default function DashboardPage() {
           <RevenueSummaryCards
             summaryByMode={summary.summaryByMode}
             baselineSummaryByMode={baseline && !baselineSummary.loading ? baselineSummary.summaryByMode : null}
-            compareShort={compareShort}
+            periodNames={periodNames}
             loading={summary.loading}
             error={summary.error}
             mode={mode}

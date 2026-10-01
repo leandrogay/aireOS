@@ -11,9 +11,21 @@ function weeksLabel(count) {
   return `${count} sales ${count === 1 ? 'week' : 'weeks'}`;
 }
 
-function toneClass(pct, neutral) {
-  if (neutral || pct === null || pct === 0) return 'text-deep-violet-blue/70';
+// Green up, red down — always, even with uneven period lengths, where the
+// note underneath explains the caveat instead of the colour.
+function toneClass(pct) {
+  if (pct === null || pct === 0) return 'text-deep-violet-blue/70';
   return pct > 0 ? 'text-green-600' : 'text-red-600';
+}
+
+// "▲ +12.8%" in its tone, for the smaller figures under the headline.
+function Change({ pct }) {
+  return (
+    <span className={`font-medium tabular-nums ${toneClass(pct)}`}>
+      <Arrow pct={pct} />
+      {formatChangePct(pct)}
+    </span>
+  );
 }
 
 function Arrow({ pct }) {
@@ -24,11 +36,11 @@ function Arrow({ pct }) {
 
 // Revenue and Volume growth as equal headline figures, side by side, so it
 // reads at a glance whether revenue grew faster than volume (price or mix).
-function GrowthFigure({ label, pct, neutral }) {
+function GrowthFigure({ label, pct }) {
   return (
     <div className="flex-1">
       <p className="text-xs text-deep-violet-blue/70">{label}</p>
-      <p className={`text-xl font-semibold tabular-nums ${toneClass(pct, neutral)}`}>
+      <p className={`text-xl font-semibold tabular-nums ${toneClass(pct)}`}>
         <Arrow pct={pct} />
         {formatChangePct(pct)}
       </p>
@@ -40,7 +52,7 @@ function GrowthFigure({ label, pct, neutral }) {
 // top-down in a narrow column instead of three squeezed side-by-side columns.
 function PeriodRow({ name, tag, totals, available = true }) {
   return (
-    <div className="flex items-baseline justify-between gap-2 border-t border-lavander py-1">
+    <div className="flex items-baseline justify-between gap-2 py-1.5">
       <p className="min-w-0 truncate text-xs font-medium text-deep-violet-blue">
         {name}
         {tag && <span className="font-normal text-deep-violet-blue/60"> · {tag}</span>}
@@ -68,16 +80,23 @@ function PeriodRow({ name, tag, totals, available = true }) {
  *   is already cut to the same number of sales weeks (see comparisonRange),
  *   so the change is a fair like-for-like figure and keeps its green/red.
  * - Uneven lengths (e.g. a 5-week July vs a 4-week June): part of the
- *   change is just the extra week, so it's shown in a neutral colour.
+ *   change is just the extra week, which the note says.
+ *
+ * Under the average-price change, `priceMix` (see priceMixEffects) splits
+ * it into SKU prices vs product mix, so "price or mix" isn't left to guess.
+ * - Shortened custom period: a custom baseline longer than this period is
+ *   cut to its first weeks (see comparisonRange's `shortenedTo`), which the
+ *   note says, since its row is still named after the whole period picked.
  *
  * @param {{
  *   active: boolean,
  *   periodNames: { current: string, baseline: string },
- *   baseline: { start: string, end: string, trimmedTo: string | null } | null,
+ *   baseline: { start: string, end: string, trimmedTo: string | null, shortenedTo: number | null } | null,
  *   currentTotals: { revenue: number, units: number },
  *   baselineTotals: { revenue: number, units: number },
  *   baselineAvailable: boolean,
  *   weekCounts: { current: number, baseline: number } | null,
+ *   priceMix?: { pricePct: number, mixPct: number } | null,
  *   loading?: boolean,
  *   error?: string | null,
  * }} props
@@ -90,10 +109,12 @@ export default function PeriodComparisonDetail({
   baselineTotals,
   baselineAvailable,
   weekCounts = null,
+  priceMix = null,
   loading = false,
   error = null,
 }) {
   const partial = Boolean(baseline?.trimmedTo);
+  const shortened = Boolean(baseline?.shortenedTo);
   const uneven = Boolean(weekCounts) && weekCounts.current !== weekCounts.baseline;
 
   const revenuePct = baselineAvailable ? changePct(currentTotals.revenue, baselineTotals.revenue) : null;
@@ -107,11 +128,24 @@ export default function PeriodComparisonDetail({
 
   let note = null;
   if (uneven) {
-    note = `Uneven lengths: ${weeksLabel(weekCounts.current)} vs ${weekCounts.baseline}, so part of the change is the extra week.`;
+    // Say which side has the extra week(s) and which way that skews the
+    // change: more weeks in the comparison drag the % down, more weeks in
+    // this period lift it.
+    const extra = Math.abs(weekCounts.current - weekCounts.baseline);
+    const longerIsBaseline = weekCounts.baseline > weekCounts.current;
+    const longer = longerIsBaseline ? periodNames.baseline : periodNames.current;
+    const counts = longerIsBaseline
+      ? `${weekCounts.baseline} vs ${weekCounts.current}`
+      : `${weekCounts.current} vs ${weekCounts.baseline}`;
+    note = `${longer} has ${extra} extra sales ${extra === 1 ? 'week' : 'weeks'} (${counts}), so the % change reads ${
+      longerIsBaseline ? 'lower' : 'higher'
+    } than a like-for-like comparison.`;
   } else if (partial) {
     note = `${periodNames.current} has data to ${formatDayMonth(baseline.trimmedTo)}, so both sides are cut to the same ${
       weekCounts ? weeksLabel(weekCounts.current) : 'weeks'
     }.`;
+  } else if (shortened) {
+    note = `${periodNames.baseline} is cut to its first ${weeksLabel(baseline.shortenedTo)} to match ${periodNames.current}.`;
   }
 
   return (
@@ -129,26 +163,54 @@ export default function PeriodComparisonDetail({
 
       {active && !loading && !error && baseline && (
         <>
-          <div className="mb-1 flex gap-3">
-            <GrowthFigure label="Revenue" pct={revenuePct} neutral={uneven} />
-            <GrowthFigure label="Volume" pct={volumePct} neutral={uneven} />
+          {/* Three groups, split by dividers: the headline growth figures,
+              the average-price change and what drove it, then each
+              period's totals. */}
+          <div className="flex gap-3">
+            <GrowthFigure label="Revenue" pct={revenuePct} />
+            <GrowthFigure label="Volume" pct={volumePct} />
           </div>
+
           {aspPct !== null && (
-            <p className="mb-2 text-xs text-deep-violet-blue/70">
-              Avg price per unit <Arrow pct={aspPct} />
-              {formatChangePct(aspPct)}
-              {aspPct > 0 && ' — price or mix improved'}
-              {aspPct < 0 && ' — price or mix softened'}
-            </p>
+            <div className="mt-2 border-t border-lavander pt-2 text-xs text-deep-violet-blue/70">
+              <p className="flex items-baseline justify-between gap-2">
+                <span className="font-medium text-deep-violet-blue">Avg price per unit</span>
+                <Change pct={aspPct} />
+              </p>
+              {priceMix && (
+                <dl className="mt-1 grid grid-cols-[auto_auto_1fr] items-baseline gap-x-2 gap-y-0.5 pl-2">
+                  <dt>Price</dt>
+                  <dd>
+                    <Change pct={priceMix.pricePct} />
+                  </dd>
+                  <dd className="text-deep-violet-blue/60">
+                    <span className="mr-1.5 text-deep-violet-blue/30" aria-hidden="true">|</span>
+                    {priceMix.pricePct > 0 && 'same SKUs selling for more'}
+                    {priceMix.pricePct < 0 && 'same SKUs selling for less'}
+                  </dd>
+                  <dt>Mix</dt>
+                  <dd>
+                    <Change pct={priceMix.mixPct} />
+                  </dd>
+                  <dd className="text-deep-violet-blue/60">
+                    <span className="mr-1.5 text-deep-violet-blue/30" aria-hidden="true">|</span>
+                    {priceMix.mixPct > 0 && 'shift to higher-priced SKUs'}
+                    {priceMix.mixPct < 0 && 'shift to lower-priced SKUs'}
+                  </dd>
+                </dl>
+              )}
+            </div>
           )}
 
-          <PeriodRow name={periodNames.current} tag={partial ? 'to date' : null} totals={currentTotals} />
-          <PeriodRow
-            name={periodNames.baseline}
-            tag={partial ? 'same weeks' : null}
-            totals={baselineTotals}
-            available={baselineAvailable}
-          />
+          <div className="mt-2 divide-y divide-lavander border-t border-lavander">
+            <PeriodRow name={periodNames.current} tag={partial ? 'to date' : null} totals={currentTotals} />
+            <PeriodRow
+              name={periodNames.baseline}
+              tag={partial || shortened ? 'same weeks' : null}
+              totals={baselineTotals}
+              available={baselineAvailable}
+            />
+          </div>
 
           {note && (
             <p className="mt-2 flex items-start gap-1.5 rounded-md bg-lavander/60 px-2 py-1 text-xs text-deep-violet-blue">

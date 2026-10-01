@@ -14,3 +14,7 @@ export const FORMAT_COLORS = {
 
 // Formats the catalog doesn't know ("UNKNOWN") still get a visible colour.
 export const FALLBACK_FORMAT_COLOR = 'var(--aire-violet)';
+
+export function formatColor(format) {
+  return FORMAT_COLORS[format] ?? FALLBACK_FORMAT_COLOR;
+}

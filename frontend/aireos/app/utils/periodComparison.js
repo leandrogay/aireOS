@@ -22,7 +22,9 @@ export function addDays(iso, days) {
   return toIso(date);
 }
 
-function daysBetween(start, end) {
+// Whole days from `start` to `end` (parsed as local midnight, so no
+// off-by-one across timezones).
+export function daysBetween(start, end) {
   return Math.round((parseIso(end) - parseIso(start)) / 86400000);
 }
 
@@ -101,7 +103,8 @@ export const COMPARE_OPTIONS = [
   { value: 'custom', label: 'Custom period', short: 'vs custom period' },
 ];
 
-export const DEFAULT_COMPARE = 'last-year';
+// The dashboard opens without a comparison; a baseline is opt-in.
+export const DEFAULT_COMPARE = 'none';
 
 /**
  * The baseline range for `compareTo`, or null when there is none.
@@ -117,16 +120,33 @@ export const DEFAULT_COMPARE = 'last-year';
  * (e.g. MTD with data to 19 Aug), the baseline is cut to the same number of
  * sales weeks instead of counting a full month against a partial one.
  * `trimmedTo` is this period's data cut-off, for the UI to explain.
- * A custom baseline is used exactly as picked.
+ *
+ * A custom baseline starts where it was picked, but is cut to this period's
+ * loaded week count when it holds more weeks — otherwise its extra weeks
+ * chart as baseline-only bars with nothing to compare against, and its
+ * total counts weeks this period doesn't have. `shortenedTo` is that week
+ * count, for the UI to explain. A shorter custom pick is kept as is (the
+ * comparison panel flags the uneven lengths).
  */
 export function comparisonRange(compareTo, { start, end, latestWeekStart, custom }) {
   if (!start || !end || compareTo === 'none') return null;
-  if (compareTo === 'custom') {
-    return custom?.start && custom?.end ? { start: custom.start, end: custom.end, trimmedTo: null } : null;
-  }
 
   const latestWeekEnd = latestWeekStart ? addDays(latestWeekStart, 6) : null;
   const trimmed = Boolean(latestWeekEnd) && end > latestWeekEnd && start <= latestWeekEnd;
+
+  if (compareTo === 'custom') {
+    if (!custom?.start || !custom?.end) return null;
+    const picked = { start: custom.start, end: custom.end, trimmedTo: null, shortenedTo: null };
+    const currentWeeks = loadedWeeksInRange(start, end, latestWeekStart)?.count ?? 0;
+    const customWeeks = loadedWeeksInRange(custom.start, custom.end, latestWeekStart)?.count ?? 0;
+    if (!currentWeeks || customWeeks <= currentWeeks) return picked;
+    return {
+      ...picked,
+      end: weeksFrom(custom.start, currentWeeks, latestWeekStart),
+      trimmedTo: trimmed ? latestWeekEnd : null,
+      shortenedTo: currentWeeks,
+    };
+  }
   const wholeMonths = isWholeMonths(start, end);
   const months = compareTo === 'previous' ? -monthCount(start, end) : -12;
   const days = compareTo === 'previous' ? -(daysBetween(start, end) + 1) : -364;
@@ -135,22 +155,49 @@ export function comparisonRange(compareTo, { start, end, latestWeekStart, custom
   const baselineStart = shift(start);
   if (!trimmed) {
     const baselineEnd = wholeMonths ? periodBounds('month', shift(end)).end : shift(end);
-    return { start: baselineStart, end: baselineEnd, trimmedTo: null };
+    return { start: baselineStart, end: baselineEnd, trimmedTo: null, shortenedTo: null };
   }
 
   // Sales rows are weekly, so "the same days" can still hold a different
   // number of weeks (1–19 Aug has 2 week starts, 1–19 Jul has 3). Cut the
   // baseline to exactly as many weeks as this period has loaded instead.
   const loadedWeeks = loadedWeeksInRange(start, end, latestWeekStart)?.count ?? 0;
-  const firstBaselineWeek = addDays(
-    latestWeekStart,
-    Math.ceil(daysBetween(latestWeekStart, baselineStart) / 7) * 7,
-  );
   return {
     start: baselineStart,
-    end: addDays(firstBaselineWeek, loadedWeeks * 7 - 1),
+    end: weeksFrom(baselineStart, loadedWeeks, latestWeekStart),
     trimmedTo: latestWeekEnd,
+    shortenedTo: null,
   };
+}
+
+// First sales week starting on or after `start`, on the loaded weeks'
+// weekday grid (anchored at latestWeekStart).
+function firstWeekOnOrAfter(start, latestWeekStart) {
+  return addDays(latestWeekStart, Math.ceil(daysBetween(latestWeekStart, start) / 7) * 7);
+}
+
+// Last day of the `weeks`-th sales week starting on or after `start`.
+function weeksFrom(start, weeks, latestWeekStart) {
+  return addDays(firstWeekOnOrAfter(start, latestWeekStart), weeks * 7 - 1);
+}
+
+/**
+ * Everything the dashboard derives from the "Compare to" choice: each option
+ * with the range it would use (for the picker to show), the selected
+ * baseline range (null for none), and the two periods' display names
+ * ("Aug 2026" vs "Aug 2025") for the legend, panel and summary.
+ */
+export function comparisonSetup(compareTo, rangeInputs) {
+  const options = COMPARE_OPTIONS.map((option) => ({
+    ...option,
+    range: comparisonRange(option.value, rangeInputs),
+  }));
+  const baseline = options.find((option) => option.value === compareTo)?.range ?? null;
+  const periodNames = {
+    current: formatPeriodName(rangeInputs.start, rangeInputs.end),
+    baseline: baseline ? baselineName(compareTo, rangeInputs) : '',
+  };
+  return { options, baseline, periodNames };
 }
 
 const MONTH_YEAR = { month: 'short', year: 'numeric' };
@@ -214,23 +261,123 @@ function bucketIndex(granularity, rangeStart, periodStart) {
   return Math.floor(daysBetween(rangeStart, periodStart) / 7);
 }
 
+const MONTH_YEAR_SHORT = { month: 'short', year: 'numeric' };
+
 /**
- * Pairs this period's `periodTotal` buckets with the baseline's by position
- * (week 1 with week 1, month 1 with month 1), for the side-by-side chart.
- * Returns one row per position: `{ index, current, baseline }`, either may
- * be null when only one side has data there.
+ * Pairs this period's buckets with the baseline for the side-by-side chart.
+ * The baseline is always given as *weekly* rows, and each baseline week is
+ * placed in this period's buckets by how `compareTo` relates the two ranges:
+ *
+ * - By week, 'last-year': with the week exactly 52 weeks (364 days) later —
+ *   same weekday, same week of the year. Matching by position instead
+ *   drifts by a week whenever the two ranges' first sales weeks sit at
+ *   different offsets (Aug 1 2025 is a Friday, Aug 1 2024 a Thursday).
+ * - By month, 'last-year' / 'previous': by the baseline week's own calendar
+ *   month, in order (Aug 2024 → Aug 2025), so a month is compared with that
+ *   whole calendar month, as the totals are.
+ * - 'custom' (and 'previous' by week): by position — baseline week N with
+ *   this period's week N, then into whichever bucket that week falls in, so
+ *   a custom period straddling other months still lines up week for week.
+ *
+ * Baseline weeks with no partner inside this period (a 53rd week, or one
+ * before its start) are left out of the chart rather than drawn as
+ * comparison-only bars; the Comparison panel's totals still count them.
+ *
+ * Returns one row per bucket:
+ * `{ index, axisStart, current, baseline, currentFormats, baselineFormats }`.
+ * - `axisStart`: this period's bucket start, so a bucket with no current
+ *   data still gets a real date label.
+ * - `current`: this period's `periodTotal` row, or null.
+ * - `baseline`: `{ revenue, units, label }` summed over the placed weeks,
+ *   `label` naming them ("Jul 31 – Aug 6, 2025", "Aug 2024"), or null.
+ * - `currentFormats` / `baselineFormats`: revenue per store format
+ *   (`{ HYPER: 1234.5, … }`) from the optional `*ByFormat` rows, for the
+ *   "By format" view; empty objects when not given.
  */
-export function alignComparisonBuckets(currentTotals, baselineTotals, { granularity, currentStart, baselineStart }) {
+export function alignComparisonBuckets(
+  currentTotals,
+  baselineWeeks,
+  {
+    compareTo,
+    granularity,
+    currentStart,
+    currentEnd,
+    baselineStart,
+    latestWeekStart,
+    currentByFormat = [],
+    baselineWeeksByFormat = [],
+  },
+) {
+  const firstCurrentWeek = latestWeekStart ? firstWeekOnOrAfter(currentStart, latestWeekStart) : currentStart;
+  const monthStart = periodBounds('month', currentStart).start;
+  const axisStartFor = (index) =>
+    granularity === 'month' ? shiftMonths(monthStart, index) : addDays(firstCurrentWeek, index * 7);
+  const byCalendarMonth = granularity === 'month' && compareTo !== 'custom';
+  const currentIndex = (periodStart) => bucketIndex(granularity, currentStart, periodStart);
+  // This period's bucket for a baseline week, or null when it has no partner.
+  const baselineIndex = (weekStart) => {
+    if (byCalendarMonth) return bucketIndex('month', baselineStart, weekStart);
+    const pairedWeek =
+      compareTo === 'last-year'
+        ? addDays(weekStart, 364)
+        : addDays(firstCurrentWeek, bucketIndex('week', baselineStart, weekStart) * 7);
+    if (pairedWeek < firstCurrentWeek || (currentEnd && pairedWeek > currentEnd)) return null;
+    return currentIndex(pairedWeek);
+  };
+
   const rows = new Map();
+  const rowAt = (index) => {
+    if (!rows.has(index)) {
+      rows.set(index, {
+        index,
+        axisStart: axisStartFor(index),
+        current: null,
+        baseline: null,
+        currentFormats: {},
+        baselineFormats: {},
+      });
+    }
+    return rows.get(index);
+  };
+
   for (const row of currentTotals) {
-    const index = bucketIndex(granularity, currentStart, row.period_start);
-    rows.set(index, { index, current: row, baseline: null });
+    rowAt(currentIndex(row.period_start)).current = row;
   }
-  for (const row of baselineTotals) {
-    const index = bucketIndex(granularity, baselineStart, row.period_start);
-    rows.set(index, { index, current: rows.get(index)?.current ?? null, baseline: row });
+  for (const week of baselineWeeks) {
+    const index = baselineIndex(week.period_start);
+    if (index === null) continue;
+    const bucket = rowAt(index);
+    const sum = bucket.baseline ?? { firstWeekStart: week.period_start, lastWeekStart: week.period_start, revenue: 0, units: 0 };
+    bucket.baseline = {
+      firstWeekStart: week.period_start < sum.firstWeekStart ? week.period_start : sum.firstWeekStart,
+      lastWeekStart: week.period_start > sum.lastWeekStart ? week.period_start : sum.lastWeekStart,
+      revenue: sum.revenue + week.revenue,
+      units: sum.units + week.units,
+    };
   }
-  return [...rows.values()].sort((a, b) => a.index - b.index);
+  for (const row of currentByFormat) {
+    const formats = rowAt(currentIndex(row.period_start)).currentFormats;
+    formats[row.format] = (formats[row.format] ?? 0) + row.revenue;
+  }
+  for (const row of baselineWeeksByFormat) {
+    const index = baselineIndex(row.period_start);
+    if (index === null) continue;
+    const formats = rowAt(index).baselineFormats;
+    formats[row.format] = (formats[row.format] ?? 0) + row.revenue;
+  }
+
+  const aligned = [...rows.values()].sort((a, b) => a.index - b.index);
+  for (const row of aligned) {
+    if (!row.baseline) continue;
+    const { firstWeekStart, lastWeekStart } = row.baseline;
+    if (byCalendarMonth) {
+      row.baseline.label = parseIso(firstWeekStart).toLocaleDateString('en-US', MONTH_YEAR_SHORT);
+    } else {
+      // With the year, since the baseline is often last year's.
+      row.baseline.label = formatPeriodName(firstWeekStart, addDays(lastWeekStart, 6));
+    }
+  }
+  return aligned;
 }
 
 /** Revenue/units summed over a mode's `periodTotal` rows. */

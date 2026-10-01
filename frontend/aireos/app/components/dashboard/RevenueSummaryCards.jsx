@@ -3,7 +3,8 @@
 import { useState } from "react"
 import FormatMixBar from "@/components/dashboard/FormatMixBar"
 import { changePct, formatChangePct } from "@/app/utils/periodComparison"
-import { FALLBACK_FORMAT_COLOR, FORMAT_COLORS } from "@/app/utils/storeFormats"
+import { formatColor } from "@/app/utils/storeFormats"
+import { PeriodKeySwatch } from "@/components/dashboard/PeriodTexture"
 
 function sumFormats(storeFormats = []) {
   return storeFormats.reduce(
@@ -12,8 +13,9 @@ function sumFormats(storeFormats = []) {
   )
 }
 
-// "▲ +12.1%" under a card's figures; nothing without a comparison. What it's
-// compared against is named once in the panel header, not on every card.
+// "▲ +12.1%" on a card's top line; nothing without a comparison. What it's
+// compared against shows on the card itself: the hatched line underneath
+// (named on hover) and the comparison bar in the mix above.
 function CardChange({ current, baseline }) {
   if (baseline === null) return null
   const pct = changePct(current, baseline)
@@ -26,17 +28,35 @@ function CardChange({ current, baseline }) {
   )
 }
 
-// Compact two-line tile: format + share of total with the change on the
-// first line, bold revenue with units on the second. No "Revenue:"/"Units:"
-// labels — position and weight tell them apart. A plain bordered div
-// rather than the Card primitive, whose header/content spacing made these
-// tall. Lines wrap rather than clip if a tile gets very narrow.
+// One period's revenue and units on a line, prefixed with that period's
+// swatch (solid = this period, hatched = comparison, as in the mix bar and
+// chart) when a comparison is on, so the figures can't be mistaken for each
+// other. Hovering names the period.
+function PeriodFigures({ totals, periodName, hatched = false, comparing }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-1.5" title={comparing ? periodName : undefined}>
+      {comparing && <PeriodKeySwatch hatched={hatched} />}
+      <p className={`tabular-nums ${hatched ? "text-xs text-deep-violet-blue/70" : "text-sm font-semibold"}`}>
+        ${totals.revenue.toLocaleString()}
+      </p>
+      <p className="text-xs text-deep-violet-blue/60 tabular-nums">{totals.units.toLocaleString()} units</p>
+    </div>
+  )
+}
+
+// Compact tile: format + share of total with the change on the first line,
+// bold revenue with units on the second, and — with a comparison — the
+// comparison's revenue and units on a third, muted line. No "Revenue:" /
+// "Units:" labels — position and weight tell them apart. A plain bordered
+// div rather than the Card primitive, whose header/content spacing made
+// these tall. Lines wrap rather than clip if a tile gets very narrow.
 function SummaryCard({
   title,
   totals,
   share = null,
   shareLabel = "",
-  baselineRevenue,
+  baselineTotals = null,
+  periodNames = null,
   emphasis = false,
   color = null,
   highlighted = false,
@@ -67,12 +87,12 @@ function SummaryCard({
             </span>
           )}
         </p>
-        <CardChange current={totals.revenue} baseline={baselineRevenue} />
+        <CardChange current={totals.revenue} baseline={baselineTotals?.revenue ?? null} />
       </div>
-      <div className="flex flex-wrap items-baseline gap-x-1.5">
-        <p className="text-sm font-semibold tabular-nums">${totals.revenue.toLocaleString()}</p>
-        <p className="text-xs text-deep-violet-blue/60 tabular-nums">{totals.units.toLocaleString()} units</p>
-      </div>
+      <PeriodFigures totals={totals} periodName={periodNames?.current} comparing={Boolean(baselineTotals)} />
+      {baselineTotals && (
+        <PeriodFigures totals={baselineTotals} periodName={periodNames?.baseline} hatched comparing />
+      )}
     </div>
   )
 }
@@ -91,11 +111,12 @@ function SummaryCard({
 // "59%" shares follow the same choice, and hovering a segment or a tile
 // highlights its partner. Each format shows its share
 // of total revenue and, with a "Compare to" baseline, its change vs the
-// same format in the baseline.
+// same format in the baseline — and the mix bar adds the baseline's mix as
+// a second, hatched bar, so a shift in share is visible at a glance.
 export default function RevenueSummaryCards({
   summaryByMode = {},
   baselineSummaryByMode = null,
-  compareShort = "",
+  periodNames = null,
   loading = false,
   error = null,
   mode = "offline",
@@ -105,18 +126,11 @@ export default function RevenueSummaryCards({
   const salesData = summaryByMode[mode]
   const baselineData = baselineSummaryByMode?.[mode] ?? null
   const total = sumFormats(salesData?.storeFormats)
-  const baselineRevenueByFormat = new Map(
-    (baselineData?.storeFormats ?? []).map((format) => [format.format, format.revenue])
-  )
+  const baselineByFormat = new Map((baselineData?.storeFormats ?? []).map((format) => [format.format, format]))
 
   return (
     <div className="bg-white rounded-lg border border-lavander shadow-sm p-3 h-full">
-      <p className="text-sm font-medium text-deep-violet-blue mb-2">
-        Sell-out Summary
-        {baselineData && compareShort && (
-          <span className="font-normal text-deep-violet-blue/60"> · change {compareShort}</span>
-        )}
-      </p>
+      <p className="text-sm font-medium text-deep-violet-blue mb-2">Sell-out Summary</p>
 
       {loading && <p className="text-deep-violet-blue/70 text-sm">Loading sell-out summary...</p>}
       {error && <p className="text-red-600 text-sm">{error}</p>}
@@ -124,6 +138,8 @@ export default function RevenueSummaryCards({
       {salesData && salesData.storeFormats.length > 1 && (
         <FormatMixBar
           formats={salesData.storeFormats}
+          baselineFormats={baselineData?.storeFormats ?? null}
+          names={periodNames}
           metric={mixMetric}
           onMetricChange={setMixMetric}
           highlighted={hoveredFormat}
@@ -136,7 +152,8 @@ export default function RevenueSummaryCards({
           <SummaryCard
             title="Total"
             totals={total}
-            baselineRevenue={baselineData ? sumFormats(baselineData.storeFormats).revenue : null}
+            baselineTotals={baselineData ? sumFormats(baselineData.storeFormats) : null}
+            periodNames={periodNames}
             emphasis
             className="col-span-2 sm:col-span-1"
           />
@@ -147,10 +164,13 @@ export default function RevenueSummaryCards({
               totals={format}
               share={total[mixMetric] ? (format[mixMetric] / total[mixMetric]) * 100 : null}
               shareLabel={mixMetric === "units" ? "Share of total volume" : "Share of total revenue"}
-              color={FORMAT_COLORS[format.format] ?? FALLBACK_FORMAT_COLOR}
+              color={formatColor(format.format)}
               highlighted={hoveredFormat === format.format}
               onHover={setHoveredFormat}
-              baselineRevenue={baselineData ? (baselineRevenueByFormat.get(format.format) ?? 0) : null}
+              baselineTotals={
+                baselineData ? (baselineByFormat.get(format.format) ?? { revenue: 0, units: 0 }) : null
+              }
+              periodNames={periodNames}
             />
           ))}
         </div>
