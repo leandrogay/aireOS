@@ -63,17 +63,26 @@ aireOS/
     │   ├── components/
     │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column), Sidebar (NAV_ITEMS)
     │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, DateRangePicker
-    │   │   ├── dashboard/         DashboardFilters, CustomerSelector, RevenueTrendCard, RevenueSummaryCards,
-    │   │   │                      SkuRanking, PeriodComparisonDetail, FilterBadge
+    │   │   ├── dashboard/         DashboardFilters, CustomerSelector, FilterBadge, PeriodControls (Period /
+    │   │   │                      Compare to: DateRangeControl, CompareControl, RangeCalendar),
+    │   │   │                      RevenueTrendCard (Total / By format switch) → TrendChart, ComparisonTotalChart,
+    │   │   │                      ComparisonMixChart; PeriodTexture (hatched "past period" fills), TooltipChange,
+    │   │   │                      PeriodComparisonDetail, RevenueSummaryCards + FormatMixBar, SkuRanking
     │   │   ├── promotions/        PromotionForm, PromotionList, CheckboxDropdown
     │   │   ├── upload/            FileUpload (925 lines), MappingReview, FileUploadSummary (empty)
     │   │   └── upload2/           Harness pieces: MappingDiv, UploadPanel, ResultsPanel, ContractView, RequestLog…
     │   ├── services/              Backend API wrappers
-    │   │   ├── promotionsApi.js   request() + parseApiError() + one fn per /api/promotions & /api/catalog endpoint
+    │   │   ├── promotionsApi.js   request() (exported, shared) + parseApiError() + one fn per /api/promotions & /api/catalog endpoint
+    │   │   ├── salesApi.js        /api/sales wrappers via request() (getSkuSales so far)
     │   │   └── mappingApi.js      /api/uploads wrappers taking an explicit baseUrl (harness style)
     │   └── utils/                 Pure, React-free helpers
     │       ├── promotionForm.js   PROMO_TYPES, EMPTY_PROMOTION_FORM, validate/build/formFrom helpers
     │       ├── promotionOverview.js list grouping/filter helpers
+    │       ├── periodComparison.js Compare-to baselines (comparisonSetup), week pairing for the comparison chart
+    │       ├── dateRangePresets.js Period presets (Latest week, MTD, … Past 12 months) anchored to the latest week
+    │       ├── trendChart.js      Trend chart labels, x-axis setup, bar sizing, format stack order
+    │       ├── priceMix.js        Avg-price change split into SKU price vs product mix
+    │       ├── storeFormats.js    FORMAT_COLORS + formatColor() per store format
     │       └── mappingHelpers.js
     ├── hooks/                     Data-fetching hooks for the dashboard (inline fetch, cancel-flag pattern)
     │   ├── useDataFreshness.js    polls /api/sales/last-updated → { channels, dataVersion, refreshing }
@@ -81,6 +90,8 @@ aireOS/
     │   ├── useDashboardSummary.js /api/sales/dashboard-summary (silent refresh on dataVersion)
     │   ├── usePeriodComparison.js /api/sales/period-comparison
     │   ├── useDefaultDateRange.js /api/sales/default-date-range
+    │   ├── useSkuSales.js     /api/sales/skus via salesApi.getSkuSales
+    │   ├── usePriceMix.js     useSkuSales × 2 (this period + comparison) → priceMixEffects
     │   └── useDraftDateRange.js   local draft state for the picker
     ├── lib/                       cn() (clsx + tailwind-merge), formatDateRange
     ├── public/                    create-next-app SVGs
@@ -166,8 +177,11 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 3. `useDefaultDateRange` ×4 presets, `useDashboardSummary`, `usePeriodComparison` all take
    `{ customer, sku, store, startDate, endDate, mode, dataVersion }` and hit `/api/sales/*`.
    Each maps to one `bigquery.get_*` function that builds a parameterised query.
-4. Long ranges switch `granularity` week→month on the client (`chartGranularity`), passed
-   through to the API so both sides of a comparison agree.
+4. Long ranges switch `granularity` week→month on the client (`chartGranularity`). The
+   comparison side is always fetched weekly and paired with this period's buckets on the
+   client (`alignComparisonBuckets`), so both sides of a comparison cover matching weeks.
+5. While a comparison is on, `usePriceMix` fetches per-SKU sales for both periods
+   (`/api/sales/skus`) so the Comparison panel can split the average-price change.
 
 **Promotions** (`app/promotions/page.js`)
 1. On mount: `getRetailers`, `getStores`, `getSkuRanges`, `getPromotions` (all in `promotionsApi.js`).
