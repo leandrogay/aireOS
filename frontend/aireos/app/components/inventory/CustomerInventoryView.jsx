@@ -4,6 +4,7 @@ import { useState } from 'react';
 
 import useCustomerInventory from '@/hooks/useCustomerInventory';
 import { DOH_STATUS_LABELS, formatDoh, filterMonthRange, latestMonthInput } from '@/app/utils/inventoryForm';
+import { retailerLabel } from '@/app/utils/retailerLabel';
 
 import DohTrendChart from './DohTrendChart';
 import InventoryFilters from './InventoryFilters';
@@ -78,7 +79,7 @@ export default function CustomerInventoryView({ customers, skuOptions, refreshKe
           >
             {customers.map((c) => (
               <option key={c.customer_id} value={c.customer_id}>
-                {c.customer_name}
+                {retailerLabel(c.customer_name)}
               </option>
             ))}
           </select>

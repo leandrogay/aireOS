@@ -8,19 +8,22 @@ import {
   buildInventoryPayload,
   validateInventoryForm,
 } from '@/app/utils/inventoryForm';
+import { retailerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
+import CustomerDropdown from './CustomerDropdown';
 import {
-  checkRowClass,
   errorClass,
   hintClass,
   inputClass,
   invalidInputClass,
   labelClass,
+  primaryButtonClass,
+  secondaryButtonClass,
 } from './formStyles';
 
 /**
- * One month of inventory for one SKU across the chosen customers. In edit mode
+ * One month of inventory for one SKU for the chosen customer. In edit mode
  * the customer, SKU and month are fixed (they identify the record) and only
  * the quantities change. Ending stock and DOH are never entered: they are
  * derived from these numbers, so an edit flows through every later month.
@@ -36,9 +39,8 @@ import {
  * @param {Array<{ sku: string, product_name: string, sku_range: string | null }>} props.skus
  * @param {(message: string) => void} props.onSaved called with the confirmation text
  * @param {() => void} [props.onCancel]
- * @param {string} [props.notice] a note shown above the buttons (edit: what several customers will receive)
  */
-export default function InventoryRecordForm({ mode, initialForm, customers, skus, onSaved, onCancel, notice }) {
+export default function InventoryRecordForm({ mode, initialForm, customers, skus, onSaved, onCancel }) {
   const isEdit = mode === 'edit';
   const [form, setForm] = useState(initialForm);
   const [errors, setErrors] = useState({});
@@ -48,13 +50,6 @@ export default function InventoryRecordForm({ mode, initialForm, customers, skus
   function setField(name, value) {
     setForm((current) => ({ ...current, [name]: value }));
     setErrors((current) => ({ ...current, [name]: undefined }));
-  }
-
-  function toggleCustomer(customerId) {
-    const ids = form.customerIds.includes(customerId)
-      ? form.customerIds.filter((id) => id !== customerId)
-      : [...form.customerIds, customerId];
-    setField('customerIds', ids);
   }
 
   async function handleSubmit(event) {
@@ -100,35 +95,29 @@ export default function InventoryRecordForm({ mode, initialForm, customers, skus
 
   const selectedNames = customers
     .filter((c) => form.customerIds.includes(c.customer_id))
-    .map((c) => c.customer_name)
+    .map((c) => retailerLabel(c.customer_name))
     .join(', ');
 
   return (
     <form onSubmit={handleSubmit} noValidate className="grid gap-3 sm:grid-cols-2">
-      <fieldset className="sm:col-span-2">
-        <legend className={labelClass}>
-          Customer{(!isEdit || form.customerIds.length > 1) && 's'}
-          <span className="text-red-700"> *</span>
-        </legend>
-        {isEdit ? (
+      {isEdit ? (
+        <div>
+          <span className={labelClass}>
+            Customer<span className="text-red-700"> *</span>
+          </span>
           <p className="text-sm text-deep-violet-blue">{selectedNames || '—'}</p>
-        ) : (
-          <div className="flex flex-wrap gap-x-4">
-            {customers.map((customer) => (
-              <label key={customer.customer_id} className={checkRowClass}>
-                <input
-                  type="checkbox"
-                  checked={form.customerIds.includes(customer.customer_id)}
-                  onChange={() => toggleCustomer(customer.customer_id)}
-                  className="size-3.5 accent-deep-violet-blue"
-                />
-                {customer.customer_name}
-              </label>
-            ))}
-          </div>
-        )}
-        {errors.customerIds && <p className={errorClass} role="alert">{errors.customerIds}</p>}
-      </fieldset>
+        </div>
+      ) : (
+        <CustomerDropdown
+          customers={customers}
+          customerIds={form.customerIds}
+          onChange={(ids) => setField('customerIds', ids)}
+          invalid={Boolean(errors.customerIds)}
+        />
+      )}
+      {!isEdit && errors.customerIds && (
+        <p className={cn(errorClass, '-mt-2')} role="alert">{errors.customerIds}</p>
+      )}
 
       <label>
         <span className={labelClass}>
@@ -177,17 +166,10 @@ export default function InventoryRecordForm({ mode, initialForm, customers, skus
         required: false,
         hint: "Only for a SKU's first month. Later months open at the previous ending stock.",
       })}
-
-      <p className="text-sm text-deep-violet-blue/80 sm:col-span-2">
-        Sell-out is not entered here. It comes from the sales dashboard&apos;s data for the month, so the two always
-        agree.
-      </p>
-
-      {notice && (
-        <p className="rounded-md border border-violet bg-lavander px-3 py-2 text-sm text-deep-violet-blue sm:col-span-2">
-          {notice}
-        </p>
-      )}
+      {numberField('buildingBlocks', 'Building blocks', {
+        required: false,
+        hint: 'Stock used for something other than sell-out (e.g. samples, internal use) that the sales data never sees. Subtracted from ending stock.',
+      })}
 
       {submitError && (
         <p className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800 sm:col-span-2" role="alert">
@@ -196,11 +178,11 @@ export default function InventoryRecordForm({ mode, initialForm, customers, skus
       )}
 
       <div className="flex gap-2 sm:col-span-2">
-        <Button type="submit" disabled={submitting}>
+        <Button type="submit" disabled={submitting} className={primaryButtonClass}>
           {submitting ? 'Saving…' : isEdit ? 'Save changes' : 'Create'}
         </Button>
         {onCancel && (
-          <Button type="button" variant="outline" onClick={onCancel} disabled={submitting}>
+          <Button type="button" variant="outline" onClick={onCancel} disabled={submitting} className={secondaryButtonClass}>
             Cancel
           </Button>
         )}

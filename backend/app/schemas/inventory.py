@@ -41,6 +41,12 @@ class InventoryRecordBase(_Base):
     # derive their opening stock from the previous ending stock.
     opening_inventory: int | None = Field(default=None, ge=0)
 
+    # Stock used for a purpose other than sell-out (e.g. samples, internal
+    # use) that the sales dashboard's data never sees, so it would otherwise
+    # silently inflate ending stock. Subtracted from ending stock the same
+    # way sell-out is. Any month, not just the first.
+    building_blocks: int | None = Field(default=None, ge=0)
+
     @field_validator("customer_ids")
     @classmethod
     def _customers_must_be_positive_and_unique(cls, ids):

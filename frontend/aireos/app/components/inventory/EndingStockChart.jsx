@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/chart';
 
 import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
+import { retailerLabel } from '@/app/utils/retailerLabel';
 
 import { labelledTooltipRow } from './chartTooltip';
 
@@ -62,7 +63,7 @@ export default function EndingStockChart({ monthly }) {
   const config = Object.fromEntries(
     customers.map(([id, name], index) => [
       `c${id}`,
-      { label: name, color: CUSTOMER_COLORS[index % CUSTOMER_COLORS.length] },
+      { label: retailerLabel(name), color: CUSTOMER_COLORS[index % CUSTOMER_COLORS.length] },
     ]),
   );
 

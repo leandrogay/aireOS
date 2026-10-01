@@ -418,6 +418,28 @@ def test_the_doh_threshold_endpoints_are_gone():
     assert client.get("/api/inventory/doh-thresholds/1/history").status_code == 404
 
 
+def test_building_blocks_is_passed_through_to_the_service(monkeypatch):
+    seen = {}
+
+    def fake(record):
+        seen["building_blocks"] = record.building_blocks
+        return {"records_written": 1}
+
+    monkeypatch.setattr(inventory_service, "create_records", fake)
+
+    client.post("/api/inventory/records", json={**RECORD, "building_blocks": 12})
+
+    assert seen["building_blocks"] == 12
+
+
+def test_a_negative_building_blocks_quantity_is_rejected(monkeypatch):
+    monkeypatch.setattr(inventory_service, "create_records", _raises(AssertionError("service was called")))
+
+    response = client.post("/api/inventory/records", json={**RECORD, "building_blocks": -1})
+
+    assert response.status_code == 422
+
+
 def test_sell_out_is_not_something_a_record_can_carry(monkeypatch):
     seen = {}
 

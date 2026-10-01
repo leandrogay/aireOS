@@ -8,6 +8,7 @@ import {
   formatMonth,
   formatUnits,
 } from '@/app/utils/inventoryForm';
+import { retailerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
 const thClass = 'sticky top-0 bg-lavander px-2 py-1.5 text-left text-xs font-semibold text-deep-violet-blue';
@@ -67,7 +68,7 @@ export default function InventorySkuTable({ rows, showDoh = false, showCustomer 
         <tbody>
           {sorted.map((row) => (
             <tr key={`${row.customer_id}-${row.sku}-${row.month}`} className="border-t border-lavander">
-              {showCustomer && <td className={tdClass}>{row.customer_name}</td>}
+              {showCustomer && <td className={tdClass}>{retailerLabel(row.customer_name)}</td>}
               <td className={tdClass}>{formatMonth(row.month)}</td>
               <td className={cn(tdClass, 'font-mono text-xs')}>{row.sku}</td>
               <td className={tdClass}>{row.product_name}</td>

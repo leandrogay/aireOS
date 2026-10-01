@@ -34,13 +34,16 @@ class InventoryConflictError(Exception):
 # Constants
 # ============================================================
 
-# Only these two are read from inventory_metrics. Sell-out is not: it comes from
-# the same weekly sales data as the dashboard (see _fetch_actuals), so the
-# sell_out_base / sell_out_building_blocks rows the workbook load left in the
-# table are ignored.
+# Only these are read from inventory_metrics. Sell-out itself is not: it comes
+# from the same weekly sales data as the dashboard (see _fetch_actuals), so the
+# sell_out_base rows the workbook load left in the table are ignored.
+# sell_out_building_blocks is the one exception -- stock used for something
+# other than sell-out (so the dashboard's data never sees it), entered manually
+# and subtracted from ending stock the same way sell-out is.
 INVENTORY_METRICS = (
     "opening_inventory",
     "sell_in",
+    "sell_out_building_blocks",
 )
 
 # Rows written from the app carry this data_source so they never collide with
@@ -51,6 +54,7 @@ MANUAL_DATA_SOURCE = "manual_entry"
 _VALUE_TYPES = {
     "opening_inventory": "actual",
     "sell_in": "actual",
+    "sell_out_building_blocks": "actual",
 }
 
 
@@ -279,11 +283,12 @@ def _fetch_actuals(
     customer_ids: list[int] | None = None,
 ) -> dict[tuple[int, str], dict[date, dict[str, float]]]:
     """
-    Actuals per {(customer_id, sku): {month: {metric: value}}}: sell-in and the
-    first month's opening from inventory_metrics, sell-out from the sales
-    dashboard's weekly data (each week counted in the month it starts, a SKU
-    with no sales that month is 0). A month is only kept once the sales data
-    covers all of it, so a half-loaded month never counts as actual.
+    Actuals per {(customer_id, sku): {month: {metric: value}}}: sell-in, the
+    first month's opening and any building blocks from inventory_metrics,
+    sell-out from the sales dashboard's weekly data (each week counted in the
+    month it starts, a SKU with no sales that month is 0). A month is only
+    kept once the sales data covers all of it, so a half-loaded month never
+    counts as actual.
     """
 
     metrics = _fetch_metrics(conn, customer_ids)
@@ -358,6 +363,7 @@ def _stock_row(customer_id: int, customer_name: str, sku_cols: dict, row: dict) 
         "opening_stock": row["opening_stock"],
         "sell_in": row["sell_in"],
         "sell_out": row["sell_out"],
+        "building_blocks": row["sell_out_building_blocks"],
         "ending_stock": row["ending_stock"],
         # False for a month filled in with zero movement (no rows of its own),
         # which can be created but not edited.
@@ -921,6 +927,8 @@ def _metric_values(record) -> dict[str, float]:
     values = {"sell_in": record.sell_in}
     if record.opening_inventory is not None:
         values["opening_inventory"] = record.opening_inventory
+    if record.building_blocks is not None:
+        values["sell_out_building_blocks"] = record.building_blocks
     return values
 
 

@@ -9,11 +9,13 @@ import {
   formFromRow,
   monthInputToDate,
 } from '@/app/utils/inventoryForm';
+import { retailerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
+import CustomerDropdown from './CustomerDropdown';
 import InventoryRecordForm from './InventoryRecordForm';
 import ShippedSoFarForm from './ShippedSoFarForm';
-import { cardClass, checkRowClass, errorClass, inputClass, labelClass } from './formStyles';
+import { cardClass, errorClass, inputClass, labelClass, primaryButtonClass, secondaryButtonClass } from './formStyles';
 
 /**
  * Create or edit inventory data, or record temporary sell-in for this month
@@ -31,18 +33,11 @@ import { cardClass, checkRowClass, errorClass, inputClass, labelClass } from './
 export default function InventoryDataManager({ customers, skus, editRow, onSaved }) {
   const [mode, setMode] = useState(editRow ? 'edit' : 'create');
   const [record, setRecord] = useState(editRow ? formFromRow(editRow) : null);
-  const [notice, setNotice] = useState('');
   const [formKey, setFormKey] = useState(0);
-
-  function handleLoaded(form, loadedNotice) {
-    setRecord(form);
-    setNotice(loadedNotice);
-  }
 
   function switchMode(next) {
     setMode(next);
     setRecord(null);
-    setNotice('');
     setFormKey((key) => key + 1);
   }
 
@@ -50,20 +45,31 @@ export default function InventoryDataManager({ customers, skus, editRow, onSaved
     onSaved(message);
     // Back to a blank form (create) or the picker (edit) so a second save is deliberate.
     setRecord(null);
-    setNotice('');
     setFormKey((key) => key + 1);
   }
 
   return (
     <section className={cn(cardClass, 'max-w-3xl')}>
       <div className="mb-3 flex gap-2">
-        <Button variant={mode === 'create' ? 'default' : 'outline'} size="sm" onClick={() => switchMode('create')}>
+        <Button
+          variant={mode === 'create' ? 'default' : 'outline'}
+          onClick={() => switchMode('create')}
+          className={mode === 'create' ? primaryButtonClass : secondaryButtonClass}
+        >
           Create
         </Button>
-        <Button variant={mode === 'edit' ? 'default' : 'outline'} size="sm" onClick={() => switchMode('edit')}>
+        <Button
+          variant={mode === 'edit' ? 'default' : 'outline'}
+          onClick={() => switchMode('edit')}
+          className={mode === 'edit' ? primaryButtonClass : secondaryButtonClass}
+        >
           Edit
         </Button>
-        <Button variant={mode === 'shipped' ? 'default' : 'outline'} size="sm" onClick={() => switchMode('shipped')}>
+        <Button
+          variant={mode === 'shipped' ? 'default' : 'outline'}
+          onClick={() => switchMode('shipped')}
+          className={mode === 'shipped' ? primaryButtonClass : secondaryButtonClass}
+        >
           Temporary Sell-in
         </Button>
       </div>
@@ -97,23 +103,20 @@ export default function InventoryDataManager({ customers, skus, editRow, onSaved
           skus={skus}
           onSaved={handleSaved}
           onCancel={() => switchMode('edit')}
-          notice={notice}
         />
       )}
 
       {mode === 'edit' && !record && (
-        <RecordPicker customers={customers} skus={skus} onLoaded={handleLoaded} />
+        <RecordPicker customers={customers} skus={skus} onLoaded={setRecord} />
       )}
     </section>
   );
 }
 
 /**
- * Finds the record to edit: choose one or more customers, a SKU and a month, and
- * the existing records load through the overview endpoint. Every chosen customer
- * must already have data for that month (the backend refuses otherwise, and this
- * says so first). The form is filled from the first customer; when the customers'
- * figures differ, a note says the saved value is applied to all of them.
+ * Finds the record to edit: choose a customer, a SKU and a month, and the
+ * existing record loads through the overview endpoint. Refused with an
+ * explanation if that customer has no data for that SKU and month yet.
  */
 function RecordPicker({ customers, skus, onLoaded }) {
   const [customerIds, setCustomerIds] = useState([]);
@@ -122,16 +125,10 @@ function RecordPicker({ customers, skus, onLoaded }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  function toggleCustomer(customerId) {
-    setCustomerIds((current) =>
-      current.includes(customerId) ? current.filter((id) => id !== customerId) : [...current, customerId],
-    );
-  }
-
   async function handleLoad(event) {
     event.preventDefault();
     if (customerIds.length === 0 || !sku || !month) {
-      setError('Choose at least one customer, a SKU and a month.');
+      setError('Choose a customer, a SKU and a month.');
       return;
     }
 
@@ -145,26 +142,16 @@ function RecordPicker({ customers, skus, onLoaded }) {
         startMonth: monthDate,
         endMonth: monthDate,
       });
-      const rows = customerIds.map((id) =>
-        overview.skus.find((r) => r.customer_id === id && r.month === monthDate && r.has_data),
+      const row = overview.skus.find(
+        (r) => r.customer_id === customerIds[0] && r.month === monthDate && r.has_data,
       );
-      const missing = customers.filter((c) => customerIds.includes(c.customer_id) && !rows[customerIds.indexOf(c.customer_id)]);
-      if (missing.length > 0) {
-        setError(
-          `No inventory exists for ${missing.map((c) => c.customer_name).join(', ')} for that SKU and month. Use Create to add it.`,
-        );
+      if (!row) {
+        const customerName = customers.find((c) => c.customer_id === customerIds[0])?.customer_name;
+        setError(`No inventory exists for ${retailerLabel(customerName)} for that SKU and month. Use Create to add it.`);
         return;
       }
 
-      const differs = rows.some((r) => r.sell_in !== rows[0].sell_in);
-      onLoaded(
-        { ...formFromRow(rows[0]), customerIds },
-        customerIds.length > 1
-          ? `The sell-in you save is applied to all ${customerIds.length} selected customers.${
-              differs ? ' Their current sell-in figures differ; the form shows the first customer\'s.' : ''
-            }`
-          : '',
-      );
+      onLoaded({ ...formFromRow(row), customerIds });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -174,22 +161,7 @@ function RecordPicker({ customers, skus, onLoaded }) {
 
   return (
     <form onSubmit={handleLoad} className="grid gap-3 sm:grid-cols-2">
-      <fieldset className="sm:col-span-2">
-        <legend className={labelClass}>Customers</legend>
-        <div className="flex flex-wrap gap-x-4">
-          {customers.map((customer) => (
-            <label key={customer.customer_id} className={checkRowClass}>
-              <input
-                type="checkbox"
-                checked={customerIds.includes(customer.customer_id)}
-                onChange={() => toggleCustomer(customer.customer_id)}
-                className="size-3.5 accent-deep-violet-blue"
-              />
-              {customer.customer_name}
-            </label>
-          ))}
-        </div>
-      </fieldset>
+      <CustomerDropdown customers={customers} customerIds={customerIds} onChange={setCustomerIds} />
       <label>
         <span className={labelClass}>SKU</span>
         <select value={sku} onChange={(e) => setSku(e.target.value)} className={inputClass}>
@@ -209,7 +181,7 @@ function RecordPicker({ customers, skus, onLoaded }) {
       {error && <p className={cn(errorClass, 'sm:col-span-2')} role="alert">{error}</p>}
 
       <div className="sm:col-span-2">
-        <Button type="submit" disabled={loading}>
+        <Button type="submit" disabled={loading} className={primaryButtonClass}>
           {loading ? 'Loading…' : 'Load record'}
         </Button>
       </div>

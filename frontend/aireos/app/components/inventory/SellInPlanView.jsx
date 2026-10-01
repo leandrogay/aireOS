@@ -3,10 +3,10 @@
 import { useState } from 'react';
 
 import useSellInPlan from '@/hooks/useSellInPlan';
-import { formatDoh, formatMonth, formatUnits } from '@/app/utils/inventoryForm';
+import { formatDoh, formatMonth } from '@/app/utils/inventoryForm';
+import { retailerLabel } from '@/app/utils/retailerLabel';
 
 import SellInDetailTable from './SellInPlanTable';
-import SellInPlanChart from './SellInPlanChart';
 import SkuDropdown from './SkuDropdown';
 import { cardClass, inputClass, labelClass } from './formStyles';
 
@@ -59,7 +59,6 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
   }
 
   const { data, loading, error } = useSellInPlan({ customerId, months, skus, refreshKey });
-  const grandTotal = data ? data.monthly_totals.reduce((sum, t) => sum + t.recommended_sell_in, 0) : 0;
 
   return (
     <div>
@@ -73,7 +72,7 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
           >
             {customers.map((c) => (
               <option key={c.customer_id} value={c.customer_id}>
-                {c.customer_name}
+                {retailerLabel(c.customer_name)}
               </option>
             ))}
           </select>
@@ -110,19 +109,6 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
 
       {data && (
         <div className="grid grid-cols-1 gap-2">
-          <section className={cardClass}>
-            <h2 className="mb-1 text-sm font-medium text-deep-violet-blue">
-              Recommended sell-in: {formatUnits(grandTotal)} units over {data.monthly_totals.length} months
-            </h2>
-            <p className="mb-2 text-xs text-deep-violet-blue/60">
-              Each month&apos;s sell-in covers that month&apos;s forecast sales and leaves the stock needed for the target DOH
-              at the end of the month, minus the stock on hand and any temporary sell-in. Recommended sell-in is rounded
-              up to whole cartons: multiples of 8 for pants and 12 for tape. Sent stock mid-month? Record it
-              under Enter / edit data, then Temporary sell-in.
-            </p>
-            <SellInPlanChart totals={data.monthly_totals} />
-          </section>
-
           {data.skus_without_forecast.length > 0 && (
             <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
               No forecast for {data.skus_without_forecast.map((s) => s.product_name).join(', ')}, so{' '}

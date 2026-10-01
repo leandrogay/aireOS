@@ -4,6 +4,7 @@ import { useState } from 'react';
 
 import useAtRisk from '@/hooks/useAtRisk';
 import { formatDoh, formatMonth, formatUnits } from '@/app/utils/inventoryForm';
+import { retailerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
 import { cardClass, inputClass, labelClass } from './formStyles';
@@ -44,7 +45,7 @@ export default function AtRiskView({ customers, refreshKey }) {
             <option value="">All customers</option>
             {customers.map((c) => (
               <option key={c.customer_id} value={c.customer_id}>
-                {c.customer_name}
+                {retailerLabel(c.customer_name)}
               </option>
             ))}
           </select>
@@ -100,7 +101,7 @@ export default function AtRiskView({ customers, refreshKey }) {
                 <tbody>
                   {data.items.map((item) => (
                     <tr key={`${item.customer_id}-${item.sku}`} className="border-t border-lavander">
-                      <td className={tdClass}>{item.customer_name}</td>
+                      <td className={tdClass}>{retailerLabel(item.customer_name)}</td>
                       <td className={cn(tdClass, 'font-mono text-xs')}>{item.sku}</td>
                       <td className={tdClass}>{item.product_name}</td>
                       <td className={cn(tdClass, numClass)}>{formatUnits(item.ending_stock)}</td>

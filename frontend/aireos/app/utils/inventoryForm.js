@@ -13,6 +13,7 @@ export const EMPTY_INVENTORY_FORM = {
   month: '', // 'YYYY-MM', straight from <input type="month">
   sellIn: '',
   openingInventory: '',
+  buildingBlocks: '',
 };
 
 // A quantity is a whole number of units: digits only, so 0 or more with no decimals.
@@ -46,7 +47,7 @@ export function validateInventoryForm(form, { isEdit = false, now = new Date() }
   const errors = {};
 
   if (!isEdit && form.customerIds.length === 0) {
-    errors.customerIds = 'Choose at least one customer.';
+    errors.customerIds = 'Choose a customer.';
   }
   if (!form.sku) {
     errors.sku = 'Choose a SKU.';
@@ -62,13 +63,16 @@ export function validateInventoryForm(form, { isEdit = false, now = new Date() }
   if (form.openingInventory !== '' && !isQuantity(form.openingInventory)) {
     errors.openingInventory = 'Opening inventory must be a whole number of 0 or more.';
   }
+  if (form.buildingBlocks !== '' && !isQuantity(form.buildingBlocks)) {
+    errors.buildingBlocks = 'Building blocks must be a whole number of 0 or more.';
+  }
 
   return errors;
 }
 
 /**
  * @param {typeof EMPTY_INVENTORY_FORM} form a form that passed validateInventoryForm
- * @returns {{ customer_ids: number[], sku: string, month: string, sell_in: number, opening_inventory: number | null }}
+ * @returns {{ customer_ids: number[], sku: string, month: string, sell_in: number, opening_inventory: number | null, building_blocks: number | null }}
  */
 export function buildInventoryPayload(form) {
   return {
@@ -77,6 +81,7 @@ export function buildInventoryPayload(form) {
     month: `${form.month}-01`,
     sell_in: Number(form.sellIn),
     opening_inventory: form.openingInventory === '' ? null : Number(form.openingInventory),
+    building_blocks: form.buildingBlocks === '' ? null : Number(form.buildingBlocks),
   };
 }
 
@@ -84,7 +89,7 @@ export function buildInventoryPayload(form) {
  * Pre-fills the edit form from a table row of the overview / customer view
  * (see backend inventory_service._stock_row).
  *
- * @param {{ customer_id: number, sku: string, month: string, sell_in: number }} row
+ * @param {{ customer_id: number, sku: string, month: string, sell_in: number, building_blocks: number }} row
  * @returns {typeof EMPTY_INVENTORY_FORM}
  */
 export function formFromRow(row) {
@@ -94,6 +99,10 @@ export function formFromRow(row) {
     month: row.month.slice(0, 7),
     sellIn: String(row.sell_in),
     openingInventory: '',
+    // Unlike opening inventory, building blocks is a real stored figure for
+    // any month (not a first-month-only seed), so the current value is shown
+    // here the same way sell-in already is.
+    buildingBlocks: String(row.building_blocks ?? 0),
   };
 }
 
@@ -116,7 +125,7 @@ export function validateShippedForm(form) {
   const errors = {};
 
   if (form.customerIds.length === 0) {
-    errors.customerIds = 'Choose at least one customer.';
+    errors.customerIds = 'Choose a customer.';
   }
   if (!form.sku) {
     errors.sku = 'Choose a SKU.';

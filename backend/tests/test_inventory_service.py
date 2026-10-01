@@ -181,6 +181,44 @@ def test_overview_rows_carry_sku_details_and_chained_stock(monkeypatch):
     assert feb_a1["ending_stock"] == 50
 
 
+def test_overview_rows_carry_the_current_building_blocks_value(monkeypatch):
+    jan = date(2026, 1, 1)
+    metrics = [
+        _metric(1, "A1", jan, "opening_inventory", 0),
+        _metric(1, "A1", jan, "sell_in", 100),
+        _metric(1, "A1", jan, "sell_out_base", 40),
+        _metric(1, "A1", jan, "sell_out_building_blocks", 15),
+    ]
+    _install(monkeypatch, _router(_customers("fairprice"), metrics))
+
+    row = inventory_service.get_overview()["skus"][0]
+
+    assert row["building_blocks"] == 15
+
+
+def test_overview_rows_show_zero_building_blocks_when_none_was_entered(monkeypatch):
+    _install(monkeypatch, _router(_customers("fairprice"), _two_month_metrics()))
+
+    row = inventory_service.get_overview()["skus"][0]
+
+    assert row["building_blocks"] == 0
+
+
+def test_overview_subtracts_building_blocks_from_ending_stock(monkeypatch):
+    jan = date(2026, 1, 1)
+    metrics = [
+        _metric(1, "A1", jan, "opening_inventory", 0),
+        _metric(1, "A1", jan, "sell_in", 100),
+        _metric(1, "A1", jan, "sell_out_base", 40),
+        _metric(1, "A1", jan, "sell_out_building_blocks", 15),
+    ]
+    _install(monkeypatch, _router(_customers("fairprice"), metrics))
+
+    row = inventory_service.get_overview()["skus"][0]
+
+    assert row["ending_stock"] == 45  # 0 + 100 - 40 - 15
+
+
 def test_overview_sku_filter_changes_what_is_shown_not_the_figures(monkeypatch):
     _install(monkeypatch, _router(_customers("fairprice"), _two_month_metrics()))
 
@@ -243,6 +281,21 @@ def _customer_view(monkeypatch, forecast=None, versions=None):
     _install(monkeypatch, _router(_customers("fairprice"), metrics, [_version()] if versions is None else versions))
     monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: forecast or {})
     return inventory_service.get_customer_view(1)
+
+
+def test_customer_view_rows_carry_the_current_building_blocks_value(monkeypatch):
+    jan = date(2026, 1, 1)
+    metrics = [
+        _metric(1, "A1", jan, "sell_in", 400),
+        _metric(1, "A1", jan, "sell_out_base", 100),
+        _metric(1, "A1", jan, "sell_out_building_blocks", 25),
+    ]
+    _install(monkeypatch, _router(_customers("fairprice"), metrics, [_version()]))
+    monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: {})
+
+    row = inventory_service.get_customer_view(1)["skus"][0]
+
+    assert row["building_blocks"] == 25
 
 
 def test_customer_view_computes_doh_from_forecast_when_actuals_run_out(monkeypatch):
@@ -458,6 +511,35 @@ def test_opening_inventory_is_written_for_a_skus_first_month(monkeypatch):
 
     params = conn.sql_containing("INSERT INTO inventory_metrics")[0][1]
     assert "opening_inventory" in params["metric_names"]
+
+
+def test_building_blocks_is_written_as_an_actual_metric(monkeypatch):
+    conn = _install(monkeypatch, _write_router())
+
+    inventory_service.create_records(_record(building_blocks=12), today=TODAY)
+
+    params = conn.sql_containing("INSERT INTO inventory_metrics")[0][1]
+    index = params["metric_names"].index("sell_out_building_blocks")
+    assert params["metric_values"][index] == 12.0
+    assert params["value_types"][index] == "actual"
+
+
+def test_building_blocks_is_allowed_for_any_month_not_just_the_first(monkeypatch):
+    # Unlike opening_inventory, building_blocks has no "first month only" rule.
+    conn = _install(monkeypatch, _write_router(earlier=[1]))
+
+    inventory_service.create_records(_record(building_blocks=12), today=TODAY)
+
+    assert len(conn.sql_containing("INSERT INTO inventory_metrics")) == 1
+
+
+def test_building_blocks_is_omitted_when_not_given(monkeypatch):
+    conn = _install(monkeypatch, _write_router())
+
+    inventory_service.create_records(_record(), today=TODAY)
+
+    params = conn.sql_containing("INSERT INTO inventory_metrics")[0][1]
+    assert "sell_out_building_blocks" not in params["metric_names"]
 
 
 def test_edit_writes_manual_entry_rows_for_a_month_that_has_data(monkeypatch):
