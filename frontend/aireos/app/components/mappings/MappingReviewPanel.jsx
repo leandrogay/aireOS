@@ -1,22 +1,28 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
-import Link from 'next/link';
-import { AlertTriangle, EyeOff } from 'lucide-react';
+import { Fragment, useCallback, useMemo, useState } from 'react';
+import BackLink from '@/components/ui/BackLink';
+import { AlertTriangle, EyeOff, Trash2 } from 'lucide-react';
 import StatusBadge from '../ui/StatusBadge';
 import ColumnMappingRow from './ColumnMappingRow';
+import ConfirmDiscardDialog from './ConfirmDiscardDialog';
 import FieldCoverage from './FieldCoverage';
+import ReviewProgress from './ReviewProgress';
 import {
   toColumnRows,
   toRules,
   reviewIssues,
   computeCoverage,
+  reviewProgress,
+  splitWarning,
+  withReviewed,
 } from '../../utils/mappingReview';
 
 const button =
   'rounded-md border px-4 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-deep-violet-blue focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60';
 const primary = `${button} border-deep-violet-blue bg-deep-violet-blue text-white hover:opacity-90`;
 const secondary = `${button} border-violet bg-white text-deep-violet-blue hover:bg-lavander`;
+const destructive = `${button} border-red-300 bg-white text-red-700 hover:bg-red-50`;
 
 const STATE_BADGE = {
   builtin: { tone: 'neutral', label: 'Built-in mapping' },
@@ -98,8 +104,16 @@ function OutputPreview({ preview, isLoading, error, onRefresh, disabled }) {
  * }} props
  */
 export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPreview }) {
+  // Each field carries its own `reviewed` flag, saved with the mapping, so a
+  // row confirmed once stays confirmed when the mapping is opened again.
   const [rows, setRows] = useState(() => toColumnRows(mapping));
-  const [confirmedColumns, setConfirmedColumns] = useState(() => new Set());
+  // Columns confirmed by a click on this visit -- the only sign-offs offered
+  // an Undo. One loaded already reviewed is a settled decision; reopening it is
+  // done by changing its fields, not by withdrawing it from a link.
+  const [undoableColumns, setUndoableColumns] = useState(() => new Set());
+  // The column whose review was just undone, so its Confirm button takes
+  // focus back instead of dropping the keyboard user at the top of the page.
+  const [justUndoneColumn, setJustUndoneColumn] = useState(null);
   const [name, setName] = useState(mapping.name || '');
   const [vendor, setVendor] = useState(mapping.vendor || '');
   const [busy, setBusy] = useState(null); // null | 'approve' | 'discard' | 'preview'
@@ -107,13 +121,19 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
   const [approved, setApproved] = useState(null);
   const [preview, setPreview] = useState(null);
   const [previewError, setPreviewError] = useState('');
+  const [isConfirmingDiscard, setIsConfirmingDiscard] = useState(false);
+  const [discardError, setDiscardError] = useState('');
 
   const readOnly = mapping.editable === false;
+  // Only a proposal can be discarded — the backend has no delete for a
+  // confirmed mapping (DELETE /api/mappings/{fp}/pending only).
+  const canDiscard = !!onDiscard && mapping.state === 'pending';
   const issues = useMemo(
-    () => reviewIssues(mapping, rows, confirmedColumns, mapping.requiredFields),
-    [mapping, rows, confirmedColumns],
+    () => reviewIssues(mapping, rows, mapping.requiredFields),
+    [mapping, rows],
   );
   const coverage = useMemo(() => computeCoverage(mapping, rows), [mapping, rows]);
+  const progress = reviewProgress(rows);
 
   // Which column already fills each field, so a row does not offer a field
   // another column has taken. A column filling several fields is fine; a field
@@ -128,52 +148,92 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
     return taken;
   }, [rows]);
 
+  // Undo only ever reverses a Confirm click. Once the row has been edited the
+  // edit is the decision, and an Undo that cleared the sign-off but kept the
+  // edit would not be undoing anything the reviewer just did.
+  const forgetUndo = useCallback((column) => {
+    setUndoableColumns((prev) => {
+      if (!prev.has(column)) return prev;
+      const next = new Set(prev);
+      next.delete(column);
+      return next;
+    });
+  }, []);
+
   // A column can fill several fields, so adding one appends rather than
   // replacing what is there. A field moved off another column is taken off it,
   // since two columns cannot fill the same field.
   const handleAddField = useCallback((column, targetField) => {
     setMessage('');
+    forgetUndo(column);
     setRows((prev) =>
       prev.map((row) => {
         if (row.locked) return row;
 
         if (row.column === column) {
           if (row.fields.some((field) => field.targetField === targetField)) return row;
-          return {
-            ...row,
-            fields: [
-              ...row.fields,
-              // The reviewer chose it, so it is not a guess -- but the
-              // rationale says whose decision it was.
-              { targetField, confidence: 'high', rationale: 'Chosen by the reviewer.' },
-            ],
-          };
+          // Editing a row is the reviewer taking responsibility for it, which
+          // is exactly what confirming it means. The proposal's confidence on
+          // the fields already there is left as it was.
+          return withReviewed(
+            {
+              ...row,
+              fields: [
+                ...row.fields,
+                // The reviewer chose it, so it is not a guess -- but the
+                // rationale says whose decision it was.
+                { targetField, confidence: 'high', rationale: 'Chosen by the reviewer.' },
+              ],
+            },
+            true,
+          );
         }
 
         const without = row.fields.filter((field) => field.targetField !== targetField);
         return without.length === row.fields.length ? row : { ...row, fields: without };
       }),
     );
-    // Editing a row is the reviewer taking responsibility for it, which is
-    // exactly what confirming it means.
-    setConfirmedColumns((prev) => new Set(prev).add(column));
-  }, []);
+  }, [forgetUndo]);
 
   const handleRemoveField = useCallback((column, targetField) => {
     setMessage('');
+    forgetUndo(column);
     setRows((prev) =>
       prev.map((row) =>
         row.column === column && !row.locked
-          ? { ...row, fields: row.fields.filter((f) => f.targetField !== targetField) }
+          ? withReviewed(
+              { ...row, fields: row.fields.filter((f) => f.targetField !== targetField) },
+              true,
+            )
           : row,
       ),
     );
-    setConfirmedColumns((prev) => new Set(prev).add(column));
+  }, [forgetUndo]);
+
+  const setRowReviewed = useCallback((column, reviewed) => {
+    setRows((prev) =>
+      prev.map((row) => (row.column === column ? withReviewed(row, reviewed) : row)),
+    );
   }, []);
 
-  const handleConfirmRow = useCallback((column) => {
-    setConfirmedColumns((prev) => new Set(prev).add(column));
-  }, []);
+  const handleConfirmRow = useCallback(
+    (column) => {
+      setRowReviewed(column, true);
+      setUndoableColumns((prev) => new Set(prev).add(column));
+      setJustUndoneColumn(null);
+    },
+    [setRowReviewed],
+  );
+
+  // A mis-click on Confirm is otherwise only undone by discarding the page.
+  const handleUndoReview = useCallback(
+    (column) => {
+      setRowReviewed(column, false);
+      forgetUndo(column);
+      setJustUndoneColumn(column);
+    },
+    [setRowReviewed, forgetUndo],
+  );
 
   // The coverage panel reaches the same edit from the other end: pick the
   // field first, then the column that holds it.
@@ -208,17 +268,6 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
       );
     });
   }, []);
-
-  const acceptAllHighConfidence = useCallback(() => {
-    setConfirmedColumns((prev) => {
-      const next = new Set(prev);
-      rows.forEach((row) => {
-        if (row.confidence === 'high') next.add(row.column);
-      });
-      return next;
-    });
-    setMessage('High-confidence rows accepted. Low-confidence rows still need confirming.');
-  }, [rows]);
 
   const runPreview = useCallback(async () => {
     setBusy('preview');
@@ -262,13 +311,16 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
     }
   }, [mapping, name, onApprove, rows, vendor]);
 
+  // Discard only runs from the confirm dialog. On success the page navigates
+  // away; on failure the dialog closes so the error beside the button shows.
   const handleDiscard = useCallback(async () => {
     setBusy('discard');
-    setMessage('');
+    setDiscardError('');
     try {
       await onDiscard();
     } catch (error) {
-      setMessage(error.message);
+      setIsConfirmingDiscard(false);
+      setDiscardError(error.message);
     } finally {
       setBusy(null);
     }
@@ -293,8 +345,8 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
             {approved.pending_removed === false && (
               <span className="text-amber-900">
                 {' '}
-                — the pending copy could not be removed; it is ignored on lookup, but
-                worth clearing up.
+                — the old pending copy could not be deleted and is still in the bucket.
+                The confirmed copy takes precedence everywhere, but it is worth clearing up.
               </span>
             )}
           </li>
@@ -315,14 +367,9 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
           </ul>
         )}
 
-        <div className="mt-5 flex flex-wrap gap-3">
-          <Link href="/upload" className={primary}>
-            Back to uploads
-          </Link>
-          <Link href="/mappings" className={secondary}>
-            All mappings
-          </Link>
-        </div>
+        <BackLink href="/upload" className="mt-5">
+          Back to Upload
+        </BackLink>
       </section>
     );
   }
@@ -346,10 +393,31 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
               </p>
             )}
           </div>
-          <Link href="/mappings" className={secondary}>
-            All mappings
-          </Link>
+
+          {/* Up here rather than beside Approve: discarding throws the whole
+              proposal away, so it sits apart from the save flow and is
+              reachable without scrolling past every column. */}
+          {canDiscard && (
+            <button
+              type="button"
+              onClick={() => {
+                setDiscardError('');
+                setIsConfirmingDiscard(true);
+              }}
+              disabled={busy !== null}
+              className={`${destructive} inline-flex items-center gap-2`}
+            >
+              <Trash2 aria-hidden="true" className="size-4" />
+              Discard proposal
+            </button>
+          )}
         </div>
+
+        {discardError && (
+          <p className="mb-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            {discardError}
+          </p>
+        )}
 
         {readOnly && (
           <p className="rounded-lg border border-violet bg-lavander/50 p-3 text-sm text-deep-violet-blue">
@@ -382,9 +450,19 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
         )}
 
         {!!mapping.warnings?.length && (
-          <ul className="mt-3 list-disc space-y-1 rounded-lg border border-amber-200 bg-amber-50 p-3 pl-7 text-sm text-amber-900">
+          <ul className="mt-3 flex items-start gap-2 rounded-lg border border-lavander bg-cream p-3 text-sm text-deep-violet-blue">
             {mapping.warnings.map((warning, index) => (
-              <li key={index}>{warning}</li>
+              <li key={index}>
+                {splitWarning(warning).map((part, partIndex) =>
+                  part.code ? (
+                    <span key={partIndex} className="font-mono text-xs">
+                      {part.text}
+                    </span>
+                  ) : (
+                    <Fragment key={partIndex}>{part.text}</Fragment>
+                  ),
+                )}
+              </li>
             ))}
           </ul>
         )}
@@ -406,11 +484,7 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
               Least certain first — those are the ones worth your time.
             </p>
           </div>
-          {!readOnly && (
-            <button type="button" onClick={acceptAllHighConfidence} className={secondary}>
-              Accept all high-confidence
-            </button>
-          )}
+          {!readOnly && <ReviewProgress {...progress} />}
         </div>
 
         <div className="overflow-x-auto rounded-lg border border-lavander">
@@ -431,10 +505,12 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
                   row={row}
                   targetFields={mapping.targetFields || []}
                   takenFields={takenFields}
-                  confirmed={confirmedColumns.has(row.column)}
                   onAddField={handleAddField}
                   onRemoveField={handleRemoveField}
+                  canUndoReview={undoableColumns.has(row.column)}
+                  focusConfirm={justUndoneColumn === row.column}
                   onConfirm={handleConfirmRow}
+                  onUndoReview={handleUndoReview}
                   onMeltGroupChange={handleMeltGroupChange}
                   readOnly={readOnly}
                   disabled={readOnly || busy !== null}
@@ -498,16 +574,6 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
           )}
 
           <div className="mt-5 flex flex-wrap items-center justify-end gap-3">
-            {onDiscard && mapping.state === 'pending' && (
-              <button
-                type="button"
-                onClick={handleDiscard}
-                disabled={busy !== null}
-                className={`${button} border-red-300 bg-white text-red-700 hover:bg-red-50`}
-              >
-                {busy === 'discard' ? 'Discarding…' : 'Discard proposal'}
-              </button>
-            )}
             <button
               type="button"
               onClick={handleApprove}
@@ -519,6 +585,13 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
           </div>
         </section>
       )}
+
+      <ConfirmDiscardDialog
+        mapping={isConfirmingDiscard ? mapping : null}
+        isDiscarding={busy === 'discard'}
+        onCancel={() => setIsConfirmingDiscard(false)}
+        onConfirm={handleDiscard}
+      />
     </div>
   );
 }
