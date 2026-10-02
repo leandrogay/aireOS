@@ -65,7 +65,7 @@ def _install(monkeypatch, respond):
     # Sell-out comes from the sales dashboard's data, not from inventory_metrics.
     units = getattr(respond, "sellout_units", {})
     through = getattr(respond, "sellout_through", FAR_FUTURE)
-    monkeypatch.setattr(sellout_units, "get_monthly_sellout", lambda retailer_ids: (units, through))
+    monkeypatch.setattr(sellout_units, "get_monthly_sellout", lambda retailer_ids, conn=None: (units, through))
     return conn
 
 
@@ -991,7 +991,7 @@ def test_sell_out_is_taken_from_the_dashboard_data_not_from_inventory_metrics(mo
     metrics = [_metric(1, "A1", jan, "sell_in", 400), _metric(1, "A1", jan, "sell_out_base", 999)]
     respond = _router(_customers("fairprice"), metrics)
     _install(monkeypatch, respond)
-    monkeypatch.setattr(sellout_units, "get_monthly_sellout", lambda ids: ({"A1": {jan: 100.0}}, FAR_FUTURE))
+    monkeypatch.setattr(sellout_units, "get_monthly_sellout", lambda ids, conn=None: ({"A1": {jan: 100.0}}, FAR_FUTURE))
 
     row = inventory_service.get_overview()["skus"][0]
 
@@ -1002,7 +1002,7 @@ def test_sell_out_is_taken_from_the_dashboard_data_not_from_inventory_metrics(mo
 def test_a_sku_with_no_sales_that_month_has_zero_sell_out(monkeypatch):
     jan = date(2026, 1, 1)
     _install(monkeypatch, _router(_customers("fairprice"), [_metric(1, "A1", jan, "sell_in", 50)]))
-    monkeypatch.setattr(sellout_units, "get_monthly_sellout", lambda ids: ({}, FAR_FUTURE))
+    monkeypatch.setattr(sellout_units, "get_monthly_sellout", lambda ids, conn=None: ({}, FAR_FUTURE))
 
     row = inventory_service.get_overview()["skus"][0]
 
@@ -1014,7 +1014,7 @@ def test_sales_are_looked_up_for_the_customers_retailers(monkeypatch):
     seen = []
     _install(monkeypatch, _router(_customers("fairprice"), [_metric(1, "A1", date(2026, 1, 1), "sell_in", 5)]))
     monkeypatch.setattr(
-        sellout_units, "get_monthly_sellout", lambda ids: seen.append(ids) or ({}, FAR_FUTURE)
+        sellout_units, "get_monthly_sellout", lambda ids, conn=None: seen.append(ids) or ({}, FAR_FUTURE)
     )
 
     inventory_service.get_overview()
@@ -1027,7 +1027,7 @@ def test_a_month_the_dashboard_data_does_not_fully_cover_is_not_an_actual(monkey
     metrics = [_metric(1, "A1", jan, "sell_in", 50), _metric(1, "A1", feb, "sell_in", 50)]
     _install(monkeypatch, _router(_customers("fairprice"), metrics))
     monkeypatch.setattr(
-        sellout_units, "get_monthly_sellout", lambda ids: ({"A1": {jan: 10.0}}, date(2026, 2, 19))
+        sellout_units, "get_monthly_sellout", lambda ids, conn=None: ({"A1": {jan: 10.0}}, date(2026, 2, 19))
     )
 
     months = {r["month"] for r in inventory_service.get_overview()["skus"]}
@@ -1038,14 +1038,14 @@ def test_a_month_the_dashboard_data_does_not_fully_cover_is_not_an_actual(monkey
 def test_a_month_is_complete_on_the_last_day_the_data_covers(monkeypatch):
     feb = date(2026, 2, 1)
     _install(monkeypatch, _router(_customers("fairprice"), [_metric(1, "A1", feb, "sell_in", 50)]))
-    monkeypatch.setattr(sellout_units, "get_monthly_sellout", lambda ids: ({}, date(2026, 2, 28)))
+    monkeypatch.setattr(sellout_units, "get_monthly_sellout", lambda ids, conn=None: ({}, date(2026, 2, 28)))
 
     assert len(inventory_service.get_overview()["skus"]) == 1
 
 
 def test_actuals_are_refused_for_a_month_the_dashboard_data_does_not_cover_yet(monkeypatch):
     conn = _install(monkeypatch, _write_router())
-    monkeypatch.setattr(sellout_units, "get_monthly_sellout", lambda ids: ({}, date(2026, 8, 19)))
+    monkeypatch.setattr(sellout_units, "get_monthly_sellout", lambda ids, conn=None: ({}, date(2026, 8, 19)))
 
     with pytest.raises(ValueError, match="only loaded through 19 Aug 2026"):
         inventory_service.create_records(_record(month="2026-08-01"), today=TODAY)
@@ -1055,7 +1055,7 @@ def test_actuals_are_refused_for_a_month_the_dashboard_data_does_not_cover_yet(m
 
 def test_actuals_are_refused_when_there_is_no_sales_data_at_all(monkeypatch):
     conn = _install(monkeypatch, _write_router())
-    monkeypatch.setattr(sellout_units, "get_monthly_sellout", lambda ids: ({}, None))
+    monkeypatch.setattr(sellout_units, "get_monthly_sellout", lambda ids, conn=None: ({}, None))
 
     with pytest.raises(ValueError, match="not loaded yet"):
         inventory_service.create_records(_record(month="2026-08-01"), today=TODAY)
@@ -1065,7 +1065,7 @@ def test_actuals_are_refused_when_there_is_no_sales_data_at_all(monkeypatch):
 
 def test_actuals_are_accepted_when_the_dashboard_data_covers_the_month(monkeypatch):
     conn = _install(monkeypatch, _write_router())
-    monkeypatch.setattr(sellout_units, "get_monthly_sellout", lambda ids: ({}, date(2026, 8, 31)))
+    monkeypatch.setattr(sellout_units, "get_monthly_sellout", lambda ids, conn=None: ({}, date(2026, 8, 31)))
 
     inventory_service.create_records(_record(month="2026-08-01"), today=TODAY)
 

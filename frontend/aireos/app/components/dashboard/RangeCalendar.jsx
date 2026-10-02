@@ -49,10 +49,15 @@ function formatDayMonthYear(iso) {
  *   draft: { start: string, end: string },
  *   onDraftChange: (range: { start: string, end: string }) => void,
  *   latestWeekStart: string,
+ *   latestDataEnd: string,
  * }} props
  */
-export default function RangeCalendar({ draft, onDraftChange, latestWeekStart }) {
-  const latestWeekEnd = latestWeekStart ? addDays(latestWeekStart, 6) : null;
+export default function RangeCalendar({ draft, onDraftChange, latestWeekStart, latestDataEnd }) {
+  // latestDataEnd is the real last day loaded (may be a whole month's end,
+  // not always latestWeekStart + 6 days); falls back to the old +6-days
+  // assumption if it wasn't supplied (the Compare-to custom-range calendar
+  // doesn't currently pass it, so it keeps its existing behavior).
+  const latestWeekEnd = latestDataEnd || (latestWeekStart ? addDays(latestWeekStart, 6) : null);
   const weeks = loadedWeeksInRange(draft.start, draft.end || draft.start, latestWeekStart);
   const endDate = draft.start ? parseIso(draft.end || draft.start) : new Date();
 

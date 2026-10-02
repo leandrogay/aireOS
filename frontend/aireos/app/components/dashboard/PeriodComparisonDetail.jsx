@@ -36,14 +36,23 @@ function Arrow({ pct }) {
 
 // Revenue and Volume growth as equal headline figures, side by side, so it
 // reads at a glance whether revenue grew faster than volume (price or mix).
+// With no change to show (a side has no data, or the comparison is zero) it
+// reads "N/A" in a muted tone with no arrow, so missing data never looks
+// like a -100% collapse.
 function GrowthFigure({ label, pct }) {
   return (
     <div className="flex-1">
       <p className="text-xs text-deep-violet-blue/70">{label}</p>
-      <p className={`text-xl font-semibold tabular-nums ${toneClass(pct)}`}>
-        <Arrow pct={pct} />
-        {formatChangePct(pct)}
-      </p>
+      {pct === null ? (
+        <p className="text-xl font-semibold text-deep-violet-blue/40" title="Data not available">
+          N/A
+        </p>
+      ) : (
+        <p className={`text-xl font-semibold tabular-nums ${toneClass(pct)}`}>
+          <Arrow pct={pct} />
+          {formatChangePct(pct)}
+        </p>
+      )}
     </div>
   );
 }
@@ -87,6 +96,9 @@ function PeriodRow({ name, tag, totals, available = true }) {
  * - Shortened custom period: a custom baseline longer than this period is
  *   cut to its first weeks (see comparisonRange's `shortenedTo`), which the
  *   note says, since its row is still named after the whole period picked.
+ * - Missing data: when either period has no sales rows there is no fair
+ *   change (this period's empty total would read as -100%), so the figures
+ *   show "N/A" and the note names the period without data.
  *
  * @param {{
  *   active: boolean,
@@ -94,6 +106,7 @@ function PeriodRow({ name, tag, totals, available = true }) {
  *   baseline: { start: string, end: string, trimmedTo: string | null, shortenedTo: number | null } | null,
  *   currentTotals: { revenue: number, units: number },
  *   baselineTotals: { revenue: number, units: number },
+ *   currentAvailable?: boolean,
  *   baselineAvailable: boolean,
  *   weekCounts: { current: number, baseline: number } | null,
  *   priceMix?: { pricePct: number, mixPct: number } | null,
@@ -107,6 +120,7 @@ export default function PeriodComparisonDetail({
   baseline,
   currentTotals,
   baselineTotals,
+  currentAvailable = true,
   baselineAvailable,
   weekCounts = null,
   priceMix = null,
@@ -117,17 +131,24 @@ export default function PeriodComparisonDetail({
   const shortened = Boolean(baseline?.shortenedTo);
   const uneven = Boolean(weekCounts) && weekCounts.current !== weekCounts.baseline;
 
-  const revenuePct = baselineAvailable ? changePct(currentTotals.revenue, baselineTotals.revenue) : null;
-  const volumePct = baselineAvailable ? changePct(currentTotals.units, baselineTotals.units) : null;
+  const comparable = currentAvailable && baselineAvailable;
+  const revenuePct = comparable ? changePct(currentTotals.revenue, baselineTotals.revenue) : null;
+  const volumePct = comparable ? changePct(currentTotals.units, baselineTotals.units) : null;
   // Average selling price = revenue per unit; its change is how much of the
   // revenue growth came from price or product mix rather than volume.
   const aspPct =
-    baselineAvailable && currentTotals.units && baselineTotals.units
+    comparable && currentTotals.units && baselineTotals.units
       ? changePct(currentTotals.revenue / currentTotals.units, baselineTotals.revenue / baselineTotals.units)
       : null;
 
   let note = null;
-  if (uneven) {
+  if (!comparable) {
+    const missing = [
+      !currentAvailable && periodNames.current,
+      !baselineAvailable && periodNames.baseline,
+    ].filter(Boolean);
+    note = `No sales data for ${missing.join(' or ')}, so there is no % change to show.`;
+  } else if (uneven) {
     // Say which side has the extra week(s) and which way that skews the
     // change: more weeks in the comparison drag the % down, more weeks in
     // this period lift it.
@@ -203,7 +224,12 @@ export default function PeriodComparisonDetail({
           )}
 
           <div className="mt-2 divide-y divide-lavander border-t border-lavander">
-            <PeriodRow name={periodNames.current} tag={partial ? 'to date' : null} totals={currentTotals} />
+            <PeriodRow
+              name={periodNames.current}
+              tag={partial ? 'to date' : null}
+              totals={currentTotals}
+              available={currentAvailable}
+            />
             <PeriodRow
               name={periodNames.baseline}
               tag={partial || shortened ? 'same weeks' : null}

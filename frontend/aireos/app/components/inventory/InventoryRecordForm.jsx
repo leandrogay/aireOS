@@ -111,11 +111,8 @@ export default function InventoryRecordForm({ mode, initialForm, customers, skus
           customers={customers}
           customerIds={form.customerIds}
           onChange={(ids) => setField('customerIds', ids)}
-          invalid={Boolean(errors.customerIds)}
+          error={errors.customerIds}
         />
-      )}
-      {!isEdit && errors.customerIds && (
-        <p className={cn(errorClass, '-mt-2')} role="alert">{errors.customerIds}</p>
       )}
 
       <label>

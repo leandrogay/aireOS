@@ -128,10 +128,15 @@ export const DEFAULT_COMPARE = 'none';
  * count, for the UI to explain. A shorter custom pick is kept as is (the
  * comparison panel flags the uneven lengths).
  */
-export function comparisonRange(compareTo, { start, end, latestWeekStart, custom }) {
+export function comparisonRange(compareTo, { start, end, latestWeekStart, latestDataEnd, custom }) {
   if (!start || !end || compareTo === 'none') return null;
 
-  const latestWeekEnd = latestWeekStart ? addDays(latestWeekStart, 6) : null;
+  // latestDataEnd is the REAL last day loaded (from backend
+  // get_default_date_range), not always latestWeekStart + 6 days -- when
+  // the latest period is month-granularity data (e.g. a whole August, no
+  // real weekly rows), the data can run to the end of the month. Falls back
+  // to the old +6-days assumption only if latestDataEnd wasn't supplied.
+  const latestWeekEnd = latestDataEnd || (latestWeekStart ? addDays(latestWeekStart, 6) : null);
   const trimmed = Boolean(latestWeekEnd) && end > latestWeekEnd && start <= latestWeekEnd;
 
   if (compareTo === 'custom') {

@@ -1,9 +1,12 @@
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
 from google.api_core.exceptions import GoogleAPICallError
+from google.auth.exceptions import GoogleAuthError
 from google.genai import errors as genai_errors
+from sqlalchemy.exc import SQLAlchemyError
 
-from app.services import assistant, bigquery, sellout_lookup, promotion_service, inventory_service
+from app.config import ConfigError
+from app.services import assistant, sellout_service, promotion_service, inventory_service
 
 router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 
@@ -11,13 +14,13 @@ router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 class AskRequest(BaseModel):
     question: str
     history: list[dict] = []
-    customer: str = bigquery.DEFAULT_CUSTOMER
+    customer: str = sellout_service.DEFAULT_CUSTOMER
     last_chart: dict = {}
     last_chart_style: dict = {}
 
 
 class DigestRequest(BaseModel):
-    customer: str = bigquery.DEFAULT_CUSTOMER
+    customer: str = sellout_service.DEFAULT_CUSTOMER
 
 
 class ExportRequest(BaseModel):
@@ -72,10 +75,10 @@ def digest(payload: DigestRequest):
         raise HTTPException(status_code=503, detail=str(e))
     except GoogleAPICallError as e:
         raise HTTPException(status_code=503, detail=f"Unable to reach BigQuery: {e.message}")
-    except sellout_lookup.CatalogUnavailableError as e:
+    except (SQLAlchemyError, ConfigError, GoogleAuthError) as e:
         raise HTTPException(
             status_code=503,
-            detail=f"The store/product catalog (Cloud SQL) is unreachable, so the digest can't be built right now. ({e})",
+            detail=f"Unable to reach the sales database (Cloud SQL), so the digest can't be built right now. ({e})",
         )
     except genai_errors.ClientError as e:
         raise HTTPException(status_code=502, detail=f"AI service error: {e.message}")

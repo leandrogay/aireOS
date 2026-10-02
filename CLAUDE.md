@@ -32,7 +32,9 @@ for retail sales ingestion, dashboards, and promotion planning, backed by Google
 5. **Don't drive-by refactor.** Migrate old code only when you are already in that file for
    other work (this is the rule in `frontend/aireos/CONTRIBUTING.md` and it applies stack-wide).
 6. **Never touch master data or sales tables from a feature change.** `skus`, `stores`,
-   `retailers` are catalog master data; BigQuery sellout tables are read-only reference data.
+   `retailers` are catalog master data. Cloud SQL `sellout` is the operational source of truth
+   for sell-out (every upload writes there first); the Sales Dashboard and Inventory read it
+   directly. BigQuery forecast views are read-only reference data for the forecast feature only.
    Mapping contracts live in GCS as JSON, never in BigQuery.
 
 ---
@@ -85,7 +87,7 @@ app/services/*.py   All business logic and every external call (SQL, BigQuery, G
   connection or auth), do it in one small module under `app/` and migrate a single router
   first — do not mix styles inside one router file.
 - Read config from `os.environ` at call time, not module import time, unless it is a harmless
-  default (`BQ_SELLOUT_TABLE`). A missing key should fail the one request that needs it
+  default (`BQ_FORECAST_OUTPUT_VIEW`). A missing key should fail the one request that needs it
   with a clear message, not crash app startup (`get_client()` in `generate_mapping.py` is the
   model).
 

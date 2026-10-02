@@ -88,11 +88,13 @@ updates, and deletes. See the repository's
 [pipeline implementation notes](../docs/data-pipeline-implementation-notes.md)
 for verified counts and the remaining analytics work.
 
-The sales dashboard (`/api/sales/*`, `app/services/bigquery.py`) reads
-`aire-data.Aire_Data_Analytics.public_sellout`, set by `BQ_SELLOUT_TABLE` in
-`app/config.py`. Its rows carry only `retailer_id`, `store_code` and `sku`;
-`app/services/sellout_lookup.py` resolves them to names from the Cloud SQL
-catalog.
+The sales dashboard (`/api/sales/*`, `app/services/sellout_service.py`) reads
+the Cloud SQL `sellout` table directly -- the operational source of truth
+every upload writes to first, not a BigQuery replica. Its rows carry only
+`retailer_id`, `store_code` and `sku`; plain SQL joins to `retailers`/
+`stores`/`skus` resolve them to names. A retailer+calendar-month with
+monthly-granularity rows uses only those (never combined with that month's
+weekly rows) -- see `EFFECTIVE_SELLOUT_CTE` in `sellout_service.py`.
 
 ## Running tests
 

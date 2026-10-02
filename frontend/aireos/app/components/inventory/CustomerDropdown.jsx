@@ -9,15 +9,18 @@ import { invalidInputClass } from './formStyles';
 /**
  * Customer picker, shared by the create form, the edit picker and temporary
  * sell-in. A plain single-select -- the backend still takes `customer_ids`
- * as a list, so this always sends either [] or exactly one id.
+ * as a list, so this always sends either [] or exactly one id. The error
+ * renders inside this label, like every other field, so a grid-layout parent
+ * never has to add or remove a sibling grid item (and shift every field
+ * after it) when the error toggles.
  *
  * @param {object} props
  * @param {Array<{ customer_id: number, customer_name: string }>} props.customers
  * @param {number[]} props.customerIds [] or a single selected id
  * @param {(customerIds: number[]) => void} props.onChange
- * @param {boolean} [props.invalid] red border after a failed submit
+ * @param {string} [props.error] shown under the field after a failed submit
  */
-export default function CustomerDropdown({ customers, customerIds, onChange, invalid = false }) {
+export default function CustomerDropdown({ customers, customerIds, onChange, error = '' }) {
   return (
     <label>
       <span className={formLabelClass}>
@@ -39,6 +42,7 @@ export default function CustomerDropdown({ customers, customerIds, onChange, inv
           </option>
         ))}
       </select>
+      {error && <p className={errorClass} role="alert">{error}</p>}
     </label>
   );
 }

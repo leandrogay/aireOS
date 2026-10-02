@@ -5,7 +5,7 @@ import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { changePct, formatChangePct } from '@/app/utils/periodComparison';
 import { formatColor as colorFor } from '@/app/utils/storeFormats';
-import { HatchPattern, PeriodKeySwatch, PeriodSwatch, edgeColor, patternId } from '@/components/dashboard/PeriodTexture';
+import { HatchPattern, PeriodKeySwatch, PeriodSwatch, edgeColor, hatchTint, patternId } from '@/components/dashboard/PeriodTexture';
 import {
   CHART_SIZE_CLASS,
   MAX_BAR_SIZE,
@@ -20,9 +20,6 @@ import {
 // hatched (see PeriodTexture): a 50% tint with stripes and an outline in the
 // format's darker edge colour. This period's segments are solid with the
 // same edge, so a pale segment (UNITY) still has a visible boundary.
-function tintFor(format) {
-  return `color-mix(in srgb, ${colorFor(format)} 50%, var(--card))`;
-}
 
 function formatMoney(value) {
   return `$${value.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
@@ -103,8 +100,8 @@ function MixTooltip({ active, payload, formats }) {
 
 // Formats once, then a single solid-vs-hatched key for the two periods —
 // instead of eight "format · period" legend entries. The key uses the
-// neutral period colour so it isn't read as a ninth format, and lists the
-// comparison first, matching the bars (comparison stack on the left).
+// neutral period colour so it isn't read as a ninth format, and lists this
+// period first, matching the bars (this period's stack on the left).
 function MixLegend({ formats, names }) {
   return (
     <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 pt-2 text-xs text-deep-violet-blue">
@@ -116,12 +113,12 @@ function MixLegend({ formats, names }) {
       ))}
       <span className="flex items-center gap-3 border-l border-lavander pl-4 text-deep-violet-blue/70">
         <span className="flex items-center gap-1.5">
-          <PeriodKeySwatch hatched />
-          {names.baseline}
-        </span>
-        <span className="flex items-center gap-1.5">
           <PeriodKeySwatch />
           {names.current}
+        </span>
+        <span className="flex items-center gap-1.5">
+          <PeriodKeySwatch hatched />
+          {names.baseline}
         </span>
       </span>
     </div>
@@ -130,7 +127,7 @@ function MixLegend({ formats, names }) {
 
 /**
  * The comparison chart's "By format" view: per bucket, the comparison
- * period's stack (hatched, left) beside this period's (solid, right), each
+ * period's stack (hatched, right) beside this period's (solid, left), each
  * split by store format. `rows` come from alignComparisonBuckets, whose
  * `currentFormats` / `baselineFormats` hold revenue per format for the
  * paired weeks, so both stacks cover exactly matching weeks.
@@ -180,19 +177,20 @@ export default function ComparisonMixChart({ rows, periodNames, granularity }) {
               <HatchPattern
                 key={format}
                 id={patternId(baseId, format)}
-                tint={tintFor(format)}
+                tint={hatchTint(colorFor(format))}
                 stripe={edgeColor(colorFor(format))}
               />
             ))}
           </defs>
           {/* Recharts places stacks left to right in the order their first
-              bar is rendered: comparison first, matching the Total view. */}
+              bar is rendered: this period first, matching the Period /
+              Compare to controls above and the Total view. */}
           {formats.map((format) => (
             <Bar
-              key={`baseline_${format}`}
-              dataKey={`baseline_${format}`}
-              stackId="baseline"
-              fill={`url(#${patternId(baseId, format)})`}
+              key={`current_${format}`}
+              dataKey={`current_${format}`}
+              stackId="current"
+              fill={colorFor(format)}
               stroke={edgeColor(colorFor(format))}
               strokeWidth={1}
               maxBarSize={MAX_BAR_SIZE}
@@ -201,10 +199,10 @@ export default function ComparisonMixChart({ rows, periodNames, granularity }) {
           ))}
           {formats.map((format) => (
             <Bar
-              key={`current_${format}`}
-              dataKey={`current_${format}`}
-              stackId="current"
-              fill={colorFor(format)}
+              key={`baseline_${format}`}
+              dataKey={`baseline_${format}`}
+              stackId="baseline"
+              fill={`url(#${patternId(baseId, format)})`}
               stroke={edgeColor(colorFor(format))}
               strokeWidth={1}
               maxBarSize={MAX_BAR_SIZE}
