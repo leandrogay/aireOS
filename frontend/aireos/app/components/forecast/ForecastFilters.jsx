@@ -2,7 +2,7 @@
 
 import { Card, CardContent } from '@/components/ui/card';
 import DateRangePicker from '@/components/ui/DateRangePicker';
-import { retailerLabel } from '@/app/utils/promotionForm';
+import { retailerLabel } from '@/app/utils/retailerLabel';
 
 const selectClass =
   'h-8 w-full px-2 text-xs rounded-md border bg-white text-deep-violet-blue border-violet disabled:opacity-50';

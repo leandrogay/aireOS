@@ -6,7 +6,7 @@ import PageLayout from '@/components/layout/PageLayout';
 import ForecastChart from '@/components/forecast/ForecastChart';
 import ForecastFilters from '@/components/forecast/ForecastFilters';
 import { EMPTY_FORECAST_FRESHNESS, getForecastOptions, getForecastView } from '@/app/services/forecastApi';
-import { retailerLabel } from '@/app/utils/promotionForm';
+import { retailerLabel } from '@/app/utils/retailerLabel';
 import { currentYearDateRange, readForecastDateSession, writeForecastDateSession } from '@/app/utils/dateRange';
 import {
   ALL_PACK_TYPE_VALUES,
