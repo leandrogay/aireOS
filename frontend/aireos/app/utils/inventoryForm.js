@@ -3,6 +3,8 @@
 // backend schemas in app/schemas/inventory.py (InventoryRecordBase,
 // ShippedSoFarUpdate); change them together.
 
+import { singaporeToday } from '@/lib/singaporeTime';
+
 // ============================================================
 // Inventory record form
 // ============================================================
@@ -28,14 +30,15 @@ function isQuantity(value) {
 }
 
 /**
- * The month the wall clock is in, as 'YYYY-MM'. Actuals can only be entered
+ * The month the Singapore wall clock is in, as 'YYYY-MM'. Actuals can only be entered
  * for months before this one (the backend refuses an unfinished month too).
  *
  * @param {Date} [now]
  * @returns {string}
  */
 export function currentMonthInput(now = new Date()) {
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const today = singaporeToday(now);
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
 }
 
 /**

@@ -261,4 +261,14 @@ def test_data_freshness_is_keyed_by_retailer_name(monkeypatch):
     freshness = bigquery.get_data_freshness()
 
     assert set(freshness) == {"fairprice_online", "fairprice_offline"}  # 99 can't be named
-    assert freshness["fairprice_offline"] == "11/09/26 16:43:00"  # shown in Singapore time
+    # UTC on the wire; the frontend shows it in Singapore time.
+    assert freshness["fairprice_offline"] == "2026-09-11T08:43:00Z"
+
+
+def test_data_freshness_treats_a_naive_loaded_at_as_utc(monkeypatch):
+    df = pd.DataFrame({"retailer_id": [55], "loaded_at": [pd.Timestamp("2026-09-11 08:43:00")]})
+    _install_fake_client(monkeypatch, df)
+
+    freshness = bigquery.get_data_freshness()
+
+    assert freshness["fairprice_online"] == "2026-09-11T08:43:00Z"

@@ -225,6 +225,23 @@ def test_history_skips_the_folder_placeholder_object(monkeypatch):
     assert [row["filename"] for row in rows] == ["week01.txt"]
 
 
+def test_history_sorts_a_blob_without_a_creation_time_last(monkeypatch):
+    # Real GCS times are timezone-aware UTC; a naive fallback could not be
+    # compared with them.
+    older = _upload_blob("older.txt")
+    older.time_created = datetime.datetime(2026, 9, 1, tzinfo=datetime.timezone.utc)
+    newer = _upload_blob("newer.txt")
+    newer.time_created = datetime.datetime(2026, 9, 2, tzinfo=datetime.timezone.utc)
+    undated = _upload_blob("undated.txt")
+    undated.time_created = None
+    _install(monkeypatch, [older, undated, newer])
+
+    rows = storage.list_uploads()
+
+    assert [row["filename"] for row in rows] == ["newer.txt", "older.txt", "undated.txt"]
+    assert rows[0]["uploaded_at"] == "2026-09-02T00:00:00+00:00"
+
+
 def test_download_upload_preserves_original_filename(monkeypatch):
     blob = _upload_blob("monthly-sales.xlsx", "abc123", "mapped")
     blob.data = b"workbook bytes"

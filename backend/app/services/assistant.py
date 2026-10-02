@@ -62,6 +62,10 @@ MODEL = os.environ.get("GEMINI_ASSISTANT_MODEL", "gemini-2.5-flash")
 
 MAX_TOOL_ITERATIONS = 8
 
+# Singapore has no daylight saving, so a fixed offset is exact. Only used for
+# the date printed on a downloaded report; everything else works in UTC.
+_SINGAPORE_TZ = datetime.timezone(datetime.timedelta(hours=8))
+
 
 class AssistantConfigError(Exception):
     """GCP project/credentials for Vertex AI are missing or unusable."""
@@ -389,6 +393,16 @@ def _resolve_inventory_customer_id(customer_name: str) -> int:
     return matches[0]["customer_id"]
 
 
+def _utc_today() -> datetime.date:
+    # Not date.today(), which follows whatever timezone the server runs in.
+    return datetime.datetime.now(datetime.timezone.utc).date()
+
+
+def _report_date() -> str:
+    """Today's date for a downloaded report's header, in Singapore time like the rest of the UI."""
+    return datetime.datetime.now(_SINGAPORE_TZ).strftime("%B %d, %Y")
+
+
 def _parse_month(value: str | None) -> datetime.date | None:
     if not value:
         return None
@@ -616,7 +630,7 @@ def _filter_promotions(
 
 def _promotions_starting_or_ending_soon(promotions: list[dict], customer: str | None, days: int = 7) -> list[dict]:
     """Used by generate_digest -- promotions worth flagging as upcoming/wrapping up soon."""
-    today = datetime.date.today()
+    today = _utc_today()
     horizon = today + datetime.timedelta(days=days)
     matches = []
     for promo in promotions:
@@ -1152,7 +1166,7 @@ def _build_pdf(answer_text: str, chart: dict, chart_style: dict | None = None, t
     elements = [
         Paragraph("AireOS Report", styles["Title"]),
         Spacer(1, 6),
-        Paragraph(datetime.date.today().strftime("%B %d, %Y"), styles["Normal"]),
+        Paragraph(_report_date(), styles["Normal"]),
         Spacer(1, 16),
     ]
     points = _split_into_points(answer_text)
@@ -1283,7 +1297,7 @@ def _build_excel(answer_text: str, chart: dict, chart_style: dict | None = None)
 
     ws["A1"] = "AireOS Report"
     ws["A1"].font = XlsxFont(bold=True, size=14)
-    ws["A2"] = datetime.date.today().strftime("%B %d, %Y")
+    ws["A2"] = _report_date()
     ws["A3"] = answer_text
     ws.merge_cells("A3:D3")
     ws.row_dimensions[3].height = 30
@@ -1859,7 +1873,7 @@ def _sanitize_chart_style(raw: dict | None) -> dict:
 
 
 def _system_prompt(current_style: dict) -> str:
-    today = datetime.date.today().isoformat()
+    today = _utc_today().isoformat()
     style_desc = (
         f"color={current_style['color']}, show_value_labels={current_style['show_value_labels']}, "
         f"value_label_format={current_style['value_label_format']}, "

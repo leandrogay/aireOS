@@ -176,10 +176,10 @@ def upload_file_bytes(
             "error": error,
         }
 
-    # Timestamped destination so replacements keep a record of when the
+    # Timestamped (UTC) destination so replacements keep a record of when the
     # current version was uploaded:
     #   uploads/2026-08-19_143012_fairprice_sellout.xlsx
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d_%H%M%S")
     destination = f"{DESTINATION_PREFIX}{timestamp}_{safe_name}"
 
     try:
@@ -393,7 +393,9 @@ def list_uploads(limit: int = 50) -> list[dict]:
     # Cloud Console writes when a folder is created -- not an uploaded file.
     blobs = [blob for blob in blobs if not blob.name.endswith("/")]
 
-    blobs.sort(key=lambda blob: blob.time_created or datetime.datetime.min, reverse=True)
+    # GCS time_created is timezone-aware UTC, so the fallback must be too.
+    oldest = datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
+    blobs.sort(key=lambda blob: blob.time_created or oldest, reverse=True)
 
     uploads = []
     for blob in blobs[:limit]:

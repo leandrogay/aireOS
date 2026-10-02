@@ -269,14 +269,16 @@ def get_customer_options() -> list[dict]:
 
 
 def _format_last_updated(value) -> str | None:
-    """Format a BigQuery loaded_at value as dd/mm/yy hh:mm:ss for the dashboard."""
+    """A BigQuery loaded_at value as a UTC ISO stamp (YYYY-MM-DDTHH:MM:SSZ).
+
+    The frontend shows it in Singapore time (formatDateTime in lib/formatDate.js).
+    """
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
     ts = pd.to_datetime(value, utc=True)
     if pd.isna(ts):
         return None
-    # Display in Singapore time so staff see a local wall-clock stamp.
-    return ts.tz_convert("Asia/Singapore").strftime("%d/%m/%y %H:%M:%S")
+    return ts.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def get_data_freshness() -> dict:

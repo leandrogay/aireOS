@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { formatDateTime } from '@/lib/formatDate';
 import StatusBadge from '../ui/StatusBadge';
 import { formatFileSize } from '../../utils/fileInspect';
 import { STAGES } from '../../utils/uploadFlow';
@@ -9,12 +10,6 @@ const action =
   'rounded-md border px-3 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-60';
 const secondaryAction = `${action} border-violet bg-white text-deep-violet-blue hover:bg-lavander`;
 const primaryAction = `${action} border-deep-violet-blue bg-deep-violet-blue text-white hover:opacity-90`;
-
-function formatDate(value) {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
-}
 
 function StageProgress({ stage }) {
   const currentIndex = STAGES.findIndex((entry) => entry.key === stage);
@@ -255,7 +250,7 @@ export default function UploadFileRow({ item, onRemove, onRetry, onResolveDuplic
             {outcome.existingFilename && outcome.existingFilename !== file.name && (
               <> as <span className="font-medium">{outcome.existingFilename}</span></>
             )}
-            {outcome.uploadedAt && <> on {formatDate(outcome.uploadedAt)}</>}.
+            {outcome.uploadedAt && <> on {formatDateTime(outcome.uploadedAt)}</>}.
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button

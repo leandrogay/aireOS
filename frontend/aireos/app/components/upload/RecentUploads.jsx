@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { formatDateTime } from '@/lib/formatDate';
 import RefreshButton from '@/components/ui/RefreshButton';
 import StatusBadge from '../ui/StatusBadge';
 
@@ -13,12 +14,6 @@ const STATUS_LABELS = {
   partial_match: { tone: 'review', label: 'Needs review' },
   mapping_failed: { tone: 'failed', label: 'Mapping failed' },
 };
-
-function formatDate(value) {
-  if (!value) return '—';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
-}
 
 /**
  * @param {{ uploads: object[], isLoading: boolean, error: string, onRefresh: () => void }} props
@@ -69,7 +64,7 @@ export default function RecentUploads({ uploads, isLoading, error, onRefresh }) 
                     </td>
                     <td className="px-3 py-2">{upload.vendor || '—'}</td>
                     <td className="px-3 py-2 whitespace-nowrap">
-                      {formatDate(upload.uploaded_at)}
+                      {formatDateTime(upload.uploaded_at)}
                     </td>
                     <td className="px-3 py-2">
                       {status ? (

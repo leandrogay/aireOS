@@ -1,13 +1,22 @@
 import json
 import base64
 import datetime
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
+from conftest import FrozenDatetime
 
 from google.api_core.exceptions import ServiceUnavailable
 
 from app.services import assistant, bigquery, inventory_service, promotion_service, sellout_lookup
+
+
+def _freeze_clock(monkeypatch):
+    monkeypatch.setattr(
+        assistant, "datetime", SimpleNamespace(datetime=FrozenDatetime, date=datetime.date,
+                                               timedelta=datetime.timedelta, timezone=datetime.timezone),
+    )
 
 
 # ---- Fakes mirroring just the SDK response shape assistant.py reads --------
@@ -2399,3 +2408,17 @@ def test_sales_tool_catalog_outage_becomes_a_tool_error_not_a_crash(monkeypatch)
     function_response = _dump(fake_client.models.calls[1]["contents"][-1])["parts"][0]["function_response"]
     assert "catalog" in function_response["response"]["error"]
     assert result["answer"] == "I couldn't load the sales data right now."
+
+
+# ---- today and the report date ---------------------------------------------------
+
+def test_today_is_the_utc_day_not_the_server_day(monkeypatch):
+    _freeze_clock(monkeypatch)
+
+    assert assistant._utc_today() == datetime.date(2026, 9, 30)
+
+
+def test_report_date_is_the_singapore_day(monkeypatch):
+    _freeze_clock(monkeypatch)
+
+    assert assistant._report_date() == "October 01, 2026"

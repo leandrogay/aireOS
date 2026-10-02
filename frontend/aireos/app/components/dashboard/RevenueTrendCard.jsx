@@ -6,6 +6,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import ComparisonMixChart from "@/components/dashboard/ComparisonMixChart"
 import ComparisonTotalChart from "@/components/dashboard/ComparisonTotalChart"
 import { FormatTrendChart, TotalTrendChart } from "@/components/dashboard/TrendChart"
+import { formatDateTime } from "@/lib/formatDate"
 
 const tabTriggerClass =
   "text-deep-violet-blue/70 hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white data-active:hover:text-white"
@@ -131,7 +132,7 @@ export default function RevenueTrendCard({
             <TotalTrendChart periodTotal={salesData.periodTotal} granularity={granularity} />
           )}
           <p className="mt-1 text-right text-xs text-deep-violet-blue/60">
-            Last Updated: {lastUpdated || "—"}
+            Last Updated: {formatDateTime(lastUpdated)}
           </p>
         </div>
       )}

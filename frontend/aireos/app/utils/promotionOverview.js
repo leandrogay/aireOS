@@ -4,6 +4,7 @@ import {
   promoTypeLabel,
 } from '@/app/utils/promotionForm';
 import { retailerLabel } from '@/app/utils/retailerLabel';
+import { singaporeToday } from '@/lib/singaporeTime';
 
 const RECURRENCE_OPTIONS = [
   { value: 'none', label: 'Does not repeat' },
@@ -21,17 +22,17 @@ export const PROMOTION_STATUSES = [
 ];
 
 /**
- * Compare period_start / period_end to today.
+ * Compare period_start / period_end to today (the Singapore calendar day).
  *
  * Upcoming: today is before start. Active: today is in range.
  * Past: today is after end. Dates from GET /api/promotions.
  *
  * @param {object} promotion
- * @param {Date} [today]
+ * @param {Date} [now]
  * @returns {'upcoming' | 'active' | 'past'}
  */
-export function promotionStatus(promotion, today = new Date()) {
-  const todayYmd = formatYmd(today);
+export function promotionStatus(promotion, now = new Date()) {
+  const todayYmd = formatYmd(singaporeToday(now));
   const start = formatPromoDate(promotion.period_start);
   const end = formatPromoDate(promotion.period_end);
 
