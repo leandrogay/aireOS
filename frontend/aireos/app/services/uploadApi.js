@@ -9,6 +9,10 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL;
 // backend is not answering", not a latency budget.
 const HISTORY_TIMEOUT_MS = 20000;
 
+// The check reads the file's headers and lists the bucket once; the same kind
+// of floor as above.
+const CHECK_TIMEOUT_MS = 30000;
+
 function describeNetworkFailure(error) {
   if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
     return `No response from the backend at ${API_BASE}. Check that it is running.`;
@@ -69,6 +73,45 @@ export async function uploadFile(file, { force = false, keepDuplicate = false, s
 
   if (!result) {
     throw new Error('The server accepted the upload but returned no result for it.');
+  }
+
+  return result;
+}
+
+// ========================================
+// API CALL
+// POST /api/uploads/check
+// What would happen to one file if it were uploaded, asked the moment it is
+// dropped: whether it can be uploaded at all (`error`), the mapping it would
+// get, and the earlier upload it duplicates. Read-only on the server -- see
+// backend upload_check -- and the upload itself checks everything again.
+// One request per file, like uploadFile, so a slow or failing file never
+// holds up the others' answers.
+// ========================================
+export async function checkUpload(file) {
+  const formData = new FormData();
+  formData.append('files', file);
+
+  let response;
+  try {
+    response = await fetch(`${API_BASE}/api/uploads/check`, {
+      method: 'POST',
+      body: formData,
+      signal: AbortSignal.timeout(CHECK_TIMEOUT_MS),
+    });
+  } catch (error) {
+    throw new Error(describeNetworkFailure(error));
+  }
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  const data = await response.json().catch(() => null);
+  const result = data?.results?.[0];
+
+  if (!result) {
+    throw new Error('The server returned no check result for this file.');
   }
 
   return result;

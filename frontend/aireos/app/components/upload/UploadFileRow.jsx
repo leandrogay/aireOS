@@ -1,314 +1,290 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
-import { X } from 'lucide-react';
+import { ChevronRight, RotateCw, X } from 'lucide-react';
+
 import { formatDateTime } from '@/lib/formatDate';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import StatusBadge from '../ui/StatusBadge';
-import { formatFileSize } from '../../utils/fileInspect';
-import { STAGES } from '../../utils/uploadFlow';
+import DuplicateChoice from '@/components/upload/DuplicateChoice';
+import UploadPreview from '@/components/upload/UploadPreview';
+import { formatFileSize, getFileExtension } from '@/app/utils/fileInspect';
+import { STAGES, fileKind } from '@/app/utils/uploadFlow';
 
 const action =
-  'rounded-md border px-3 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-60';
+  'inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-60';
 const secondaryAction = `${action} border-violet bg-white text-deep-violet-blue hover:bg-lavander`;
 const primaryAction = `${action} border-deep-violet-blue bg-deep-violet-blue text-white hover:opacity-90`;
 
-function StageProgress({ stage }) {
-  const currentIndex = STAGES.findIndex((entry) => entry.key === stage);
+// Before upload the cross means "leave this file out"; after, it only tidies
+// the list (the upload itself is kept, and listed under Recent uploads).
+const BEFORE_UPLOAD = new Set(['checking', 'ready', 'near_match', 'new_layout', 'unchecked', 'duplicate']);
 
+function MappingName({ name, vendor }) {
   return (
-    <ol className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-deep-violet-blue/70">
-      {STAGES.map((entry, index) => (
-        <li key={entry.key} className="flex items-center gap-2">
-          {index > 0 && <span aria-hidden="true">→</span>}
-          <span
-            className={
-              index === currentIndex
-                ? 'font-semibold text-deep-violet-blue'
-                : index < currentIndex
-                  ? 'text-deep-violet-blue/70 line-through decoration-deep-violet-blue/30'
-                  : 'text-deep-violet-blue/40'
-            }
-          >
-            {entry.label}
-          </span>
-        </li>
-      ))}
-    </ol>
+    <>
+      <span className="font-medium">{name || 'a saved mapping'}</span>
+      {vendor && <> · {vendor}</>}
+    </>
   );
 }
 
-function TransformedPreview({ processing }) {
-  const rows = processing?.preview || [];
-  if (!rows.length) return null;
-
-  // Wide output (20 target fields) in a narrow row: show the first handful and
-  // say how many were left off, rather than a table nobody can read.
-  const columns = (processing.columns || Object.keys(rows[0])).slice(0, 6);
-  const hidden = (processing.columns || []).length - columns.length;
+/**
+ * The upload's server-side steps as a segmented bar. The steps are real; only
+ * their timing is a guess (see STAGES), so there is no percentage to show.
+ */
+function UploadProgress({ stage }) {
+  const current = Math.max(0, STAGES.findIndex((entry) => entry.key === stage));
 
   return (
-    <div className="mt-3">
-      <p className="mb-1.5 text-xs font-semibold text-deep-violet-blue">
-        Preview after transformation
-        {processing.rows_mapped != null && (
-          <span className="font-normal text-deep-violet-blue/70">
-            {' '}
-            — {processing.rows_mapped.toLocaleString()} rows mapped
-            {processing.rows_rejected ? `, ${processing.rows_rejected} rejected` : ''}
-          </span>
-        )}
-      </p>
-      <div className="overflow-x-auto rounded-md border border-lavander">
-        <table className="min-w-full text-left text-xs">
-          <thead className="bg-lavander text-deep-violet-blue">
-            <tr>
-              {columns.map((column) => (
-                <th key={column} className="px-2.5 py-1.5 font-medium">
-                  {column}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="text-deep-violet-blue">
-            {rows.slice(0, 3).map((row, rowIndex) => (
-              <tr key={rowIndex} className="border-t border-lavander">
-                {columns.map((column) => (
-                  <td key={column} className="px-2.5 py-1.5 whitespace-nowrap">
-                    {row[column] == null || row[column] === '' ? '—' : String(row[column])}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <div className="mt-2 max-w-sm">
+      <div className="flex gap-1" aria-hidden="true">
+        {STAGES.map((entry, index) => (
+          <span
+            key={entry.key}
+            className={cn(
+              'h-1.5 flex-1 rounded-full',
+              index < current && 'bg-deep-violet-blue',
+              index === current && 'animate-pulse bg-violet motion-reduce:animate-none',
+              index > current && 'bg-lavander',
+            )}
+          />
+        ))}
       </div>
-      {hidden > 0 && (
-        <p className="mt-1 text-xs text-deep-violet-blue/60">
-          + {hidden} more target field{hidden === 1 ? '' : 's'}
-        </p>
-      )}
-      {processing.rejection_summary && (
-        <p className="mt-1.5 text-xs text-amber-900">{processing.rejection_summary}</p>
-      )}
-      {processing.storage_status === 'completed' && (
-        <p className="mt-1.5 text-xs font-medium text-green-700">
-          {processing.rows_stored?.toLocaleString() || 0} rows stored in Cloud SQL
-          {processing.rows_consolidated
-            ? ` (${processing.rows_consolidated.toLocaleString()} consolidated)`
-            : ''}
-        </p>
-      )}
-      {processing.storage_status === 'disabled' && (
-        <p className="mt-1.5 text-xs font-medium text-amber-900">
-          Preview only — Cloud SQL loading is disabled.
-        </p>
-      )}
+      <p className="mt-1 text-xs text-deep-violet-blue/70">
+        Uploading, step {current + 1} of {STAGES.length}: {STAGES[current].label.toLowerCase()}…
+      </p>
     </div>
   );
 }
 
 /**
- * One file, from selection through to its outcome.
+ * What exactly matched the earlier upload. The section heading already says
+ * "Already uploaded", so this only adds what is particular to this file. A
+ * name match does not prove the contents differ: uploads from before content
+ * hashing match by name only (backend find_existing_upload), so it says no
+ * more than "same name".
+ */
+function DuplicateNote({ duplicate, fileName }) {
+  const otherName =
+    duplicate.existingFilename && duplicate.existingFilename !== fileName
+      ? duplicate.existingFilename
+      : null;
+  const when = duplicate.uploadedAt ? `, uploaded ${formatDateTime(duplicate.uploadedAt)}` : '';
+
+  if (duplicate.matchedOn !== 'content') {
+    return duplicate.uploadedAt ? (
+      <>Same name as a file uploaded {formatDateTime(duplicate.uploadedAt)}.</>
+    ) : (
+      <>Same name as an earlier upload.</>
+    );
+  }
+  if (otherName) {
+    return (
+      <>
+        Same contents as <span className="font-medium">{otherName}</span>
+        {when}.
+      </>
+    );
+  }
+  return <>Exact copy{when}.</>;
+}
+
+/**
+ * One file in the upload list, from the moment it is dropped to its result.
+ * The section it sits in (see groupFiles) says what state it is in and what
+ * that means, so the row only carries what is particular to this file, plus
+ * its remove control, centred on the right.
  *
  * @param {{
  *   item: object,
  *   onRemove: (id: string) => void,
  *   onRetry: (id: string) => void,
- *   onResolveDuplicate: (id: string, choice: 'skip' | 'replace' | 'keep') => void,
+ *   onDecide: (id: string, decision: 'replace' | 'keep') => void,
  * }} props
  */
-export default function UploadFileRow({ item, onRemove, onRetry, onResolveDuplicate }) {
-  const { file, status, rejection, stage, outcome, busy } = item;
+export default function UploadFileRow({ item, onRemove, onRetry, onDecide }) {
+  const [showPreview, setShowPreview] = useState(false);
+  const { id, file, check, outcome } = item;
+  const kind = fileKind(item);
+  const extension = getFileExtension(file.name);
+  const processing = kind === 'uploaded' ? outcome.processing : null;
+  const hasPreview = Boolean(processing?.preview?.length);
+  const beforeUpload = BEFORE_UPLOAD.has(kind);
 
   return (
-    <li className="rounded-lg border border-lavander bg-white p-3.5 shadow-sm">
-      {/* The status and remove control are centred against the file's own
-          block (name, size, and why it was rejected), so they sit mid-card on
-          a simple row. Outcome details that come later (previews, duplicate
-          choices) go below this block, so the badge stays with the file name
-          instead of drifting into the middle of a table. */}
-      <div className="flex items-center justify-between gap-3">
+    <li className="rounded-lg border border-lavander bg-white px-4 py-3 shadow-sm">
+      <div className="flex items-center gap-3">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-deep-violet-blue" title={file.name}>
             {file.name}
           </p>
-          <p className="text-xs text-deep-violet-blue/70">{formatFileSize(file.size)}</p>
-          {status === 'rejected' && rejection && (
-            <p className="mt-1 text-xs text-red-700">{rejection}</p>
+          <p className="text-xs text-deep-violet-blue/60">
+            {extension ? `.${extension} · ` : ''}
+            {formatFileSize(file.size)}
+          </p>
+
+          {kind === 'ready' && (
+            <p className="mt-1 text-xs text-deep-violet-blue">
+              Uses <MappingName name={check.mapping.name} vendor={check.mapping.vendor} />
+            </p>
+          )}
+
+          {kind === 'near_match' && (
+            <p className="mt-1 text-xs text-deep-violet-blue">
+              Closest:{' '}
+              <MappingName name={check.mapping.matched?.name} vendor={check.mapping.matched?.vendor} />
+            </p>
+          )}
+
+          {kind === 'duplicate' && (
+            <>
+              <p className="mt-1 text-xs text-deep-violet-blue">
+                <DuplicateNote duplicate={check.duplicate} fileName={file.name} />
+              </p>
+              <DuplicateChoice
+                id={id}
+                fileName={file.name}
+                value={item.decision}
+                onChange={(decision) => onDecide(id, decision)}
+              />
+            </>
+          )}
+
+          {kind === 'uploading' && <UploadProgress stage={item.stage} />}
+
+          {kind === 'uploaded' && (
+            <>
+              <p className="mt-1 text-xs text-deep-violet-blue">
+                {processing?.storage_status === 'completed' && (
+                  <>
+                    <span className="font-medium text-green-700">
+                      {(processing.rows_stored || 0).toLocaleString()} rows loaded
+                    </span>
+                    {' · '}
+                  </>
+                )}
+                <MappingName name={outcome.name} vendor={outcome.vendor} />
+              </p>
+              {processing?.storage_status === 'disabled' && (
+                <p className="mt-1 text-xs text-amber-900">
+                  Preview only: loading into Cloud SQL is turned off.
+                </p>
+              )}
+              {processing?.rejection_summary && (
+                <p className="mt-1 text-xs text-amber-900">{processing.rejection_summary}</p>
+              )}
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs font-medium text-deep-violet-blue">
+                {hasPreview && (
+                  <button
+                    type="button"
+                    aria-expanded={showPreview}
+                    onClick={() => setShowPreview((open) => !open)}
+                    className="inline-flex items-center gap-1 rounded-md outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+                  >
+                    <ChevronRight
+                      aria-hidden="true"
+                      className={cn('size-3.5 transition-transform', showPreview && 'rotate-90')}
+                    />
+                    {showPreview ? 'Hide preview' : 'Preview rows'}
+                  </button>
+                )}
+                {outcome.mappingId && (
+                  <Link
+                    href={`/mappings/${outcome.mappingId}`}
+                    className="rounded-md underline-offset-2 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+                  >
+                    View mapping
+                  </Link>
+                )}
+              </div>
+            </>
+          )}
+
+          {kind === 'needs_review' && (
+            <>
+              {outcome.why === 'partial' && (
+                <>
+                  <p className="mt-1 text-xs text-deep-violet-blue">
+                    Closest:{' '}
+                    <MappingName name={outcome.matched?.name} vendor={outcome.matched?.vendor} />
+                  </p>
+                  {!!outcome.matched?.extra_columns?.length && (
+                    <p className="mt-0.5 text-xs text-deep-violet-blue/80">
+                      Extra columns: {outcome.matched.extra_columns.join(', ')}
+                    </p>
+                  )}
+                  {!!outcome.matched?.missing_columns?.length && (
+                    <p className="mt-0.5 text-xs text-deep-violet-blue/80">
+                      Missing columns: {outcome.matched.missing_columns.join(', ')}
+                    </p>
+                  )}
+                </>
+              )}
+              {/* A new layout's proposal is filed under this file's own
+                  fingerprint, so reviewing it is the next step. A near match
+                  stores nothing for this file: the link opens the mapping it
+                  resembles, which can be looked at but not approved on this
+                  file's behalf, so it is not called a review. */}
+              {outcome.mappingId && (
+                <div className="mt-2">
+                  {outcome.why === 'partial' ? (
+                    <Link
+                      href={`/mappings/${outcome.mappingId}`}
+                      className={secondaryAction}
+                      aria-label={`View the closest mapping for ${file.name}`}
+                    >
+                      View closest mapping
+                    </Link>
+                  ) : (
+                    <Link
+                      href={`/mappings/${outcome.mappingId}`}
+                      className={primaryAction}
+                      aria-label={`Review the suggested mapping for ${file.name}`}
+                    >
+                      Review mapping
+                    </Link>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+
+          {kind === 'failed' && (
+            <>
+              <p className="mt-1 text-xs text-red-700">{outcome.error}</p>
+              <button
+                type="button"
+                onClick={() => onRetry(id)}
+                className={cn(secondaryAction, 'mt-2')}
+              >
+                <RotateCw aria-hidden="true" className="size-3.5" />
+                Try again
+              </button>
+            </>
           )}
         </div>
 
-        <div className="flex shrink-0 items-center gap-1.5">
-          {status === 'ready' && <StatusBadge tone="ready">Ready</StatusBadge>}
-          {status === 'rejected' && <StatusBadge tone="failed">Rejected</StatusBadge>}
-          {status === 'processing' && <StatusBadge tone="busy">Processing</StatusBadge>}
-          {outcome?.kind === 'mapped' && <StatusBadge tone="ready">Done</StatusBadge>}
-          {outcome?.kind === 'needs_review' && (
-            <StatusBadge tone="review">Needs review</StatusBadge>
-          )}
-          {outcome?.kind === 'duplicate' && <StatusBadge tone="duplicate">Duplicate</StatusBadge>}
-          {outcome?.kind === 'failed' && <StatusBadge tone="failed">Failed</StatusBadge>}
-          {outcome?.kind === 'skipped' && <StatusBadge tone="neutral">Skipped</StatusBadge>}
-
-          {/* Icon-only, so the label carries the file name for screen
-              readers and the tooltip says what the cross does. 32px target. */}
-          {(status === 'ready' || status === 'rejected') && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={() => onRemove(item.id)}
-              aria-label={`Remove ${file.name}`}
-              title="Remove"
-              className="text-deep-violet-blue/60 hover:bg-lavander hover:text-deep-violet-blue"
-            >
-              <X aria-hidden="true" />
-            </Button>
-          )}
-        </div>
+        {/* Hidden only mid-upload, when the request cannot be taken back.
+            Icon-only, so the label names the file for screen readers and the
+            tooltip says what the cross does. 32px target. */}
+        {kind !== 'uploading' && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => onRemove(id)}
+            aria-label={beforeUpload ? `Don't upload ${file.name}` : `Remove ${file.name} from the list`}
+            title={beforeUpload ? "Don't upload" : 'Remove from list'}
+            className="shrink-0 text-deep-violet-blue/60 hover:bg-lavander hover:text-deep-violet-blue"
+          >
+            <X aria-hidden="true" />
+          </Button>
+        )}
       </div>
 
-      {status === 'processing' && (
-        <div className="mt-2.5">
-          <StageProgress stage={stage} />
-        </div>
-      )}
-
-      {outcome?.kind === 'mapped' && (
-        <div className="mt-2.5">
-          <p className="text-xs text-deep-violet-blue">
-            Matched{' '}
-            <span className="font-medium">{outcome.name || 'a stored mapping'}</span>
-            {outcome.vendor && <> · {outcome.vendor}</>}
-          </p>
-          <TransformedPreview processing={outcome.processing} />
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            {outcome.mappingId && (
-              <Link href={`/mappings/${outcome.mappingId}`} className={secondaryAction}>
-                View mapping
-              </Link>
-            )}
-            <Link href="/mappings" className={secondaryAction}>
-              Use a different mapping
-            </Link>
-          </div>
-        </div>
-      )}
-
-      {outcome?.kind === 'needs_review' && (
-        <div className="mt-2.5">
-          <p className="text-xs text-deep-violet-blue">
-            {outcome.why === 'partial' ? (
-              <>
-                The columns nearly match{' '}
-                <span className="font-medium">
-                  {outcome.matched?.name || 'a stored mapping'}
-                </span>
-                {outcome.matched?.vendor && <> ({outcome.matched.vendor})</>} — but not exactly,
-                so nothing was applied.
-              </>
-            ) : (
-              'A new file layout. A proposed mapping is waiting for review.'
-            )}
-          </p>
-
-          {outcome.matched && (
-            <ul className="mt-1.5 space-y-0.5 text-xs text-deep-violet-blue/80">
-              {!!outcome.matched.extra_columns?.length && (
-                <li>Columns this file adds: {outcome.matched.extra_columns.join(', ')}</li>
-              )}
-              {!!outcome.matched.missing_columns?.length && (
-                <li>Columns the mapping expects: {outcome.matched.missing_columns.join(', ')}</li>
-              )}
-            </ul>
-          )}
-
-          {/* One link, named for what it opens. A new layout's proposal is
-              waiting under this file's own fingerprint, so reviewing it is the
-              next step. A near match stores nothing for this file -- the link
-              opens the stored mapping it resembles, which can be looked at
-              but not approved on this file's behalf, so it is not called a
-              review. */}
-          {outcome.mappingId && (
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              {outcome.why === 'partial' ? (
-                <Link
-                  href={`/mappings/${outcome.mappingId}`}
-                  className={secondaryAction}
-                  aria-label={`View matched mapping for ${file.name}`}
-                >
-                  View matched mapping
-                </Link>
-              ) : (
-                <Link
-                  href={`/mappings/${outcome.mappingId}`}
-                  className={primaryAction}
-                  aria-label={`Review mapping for ${file.name}`}
-                >
-                  Review mapping
-                </Link>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {outcome?.kind === 'duplicate' && (
-        <div className="mt-2.5">
-          <p className="text-xs text-deep-violet-blue">
-            {outcome.matchedOn === 'content'
-              ? 'The same file contents are already in the bucket'
-              : 'A file with this name was already uploaded'}
-            {outcome.existingFilename && outcome.existingFilename !== file.name && (
-              <> as <span className="font-medium">{outcome.existingFilename}</span></>
-            )}
-            {outcome.uploadedAt && <> on {formatDateTime(outcome.uploadedAt)}</>}.
-          </p>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => onResolveDuplicate(item.id, 'skip')}
-              className={secondaryAction}
-            >
-              Skip
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => onResolveDuplicate(item.id, 'replace')}
-              className={primaryAction}
-            >
-              Replace
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => onResolveDuplicate(item.id, 'keep')}
-              className={secondaryAction}
-            >
-              Upload anyway
-            </button>
-          </div>
-        </div>
-      )}
-
-      {outcome?.kind === 'failed' && (
-        <div className="mt-2.5">
-          <p className="text-xs text-red-700">{outcome.error}</p>
-          <div className="mt-3">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => onRetry(item.id)}
-              className={secondaryAction}
-            >
-              Retry
-            </button>
-          </div>
-        </div>
-      )}
+      {showPreview && hasPreview && <UploadPreview processing={processing} />}
     </li>
   );
 }

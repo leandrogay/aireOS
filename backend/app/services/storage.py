@@ -119,6 +119,32 @@ def find_existing_upload(
     return (filename_match, "filename") if filename_match else (None, None)
 
 
+def check_duplicate(filename: str, data: bytes) -> dict | None:
+    """
+    Whether this file duplicates a previous upload, without uploading it.
+
+    The same rule upload_file_bytes applies (see find_existing_upload), asked
+    ahead of time so the upload screen can have the person decide before they
+    press Upload. Returns None when there is no earlier copy.
+    """
+    safe_name = Path(filename).name
+    existing, match_kind = find_existing_upload(
+        get_storage_client(), safe_name, content_digest(data)
+    )
+    if not existing:
+        return None
+
+    return {
+        "matched_on": match_kind,
+        "existing_filename": (existing.metadata or {}).get(
+            ORIGINAL_FILENAME_METADATA_KEY, safe_name
+        ),
+        "existing_uploaded_at": (
+            existing.time_created.isoformat() if existing.time_created else None
+        ),
+    }
+
+
 # ---- Upload: single file ----------------------------------------------------
 
 def upload_file_bytes(
