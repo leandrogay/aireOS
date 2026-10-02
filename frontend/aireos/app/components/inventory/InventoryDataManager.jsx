@@ -3,6 +3,7 @@
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { getInventoryOverview } from '@/app/services/inventoryApi';
 import {
   EMPTY_INVENTORY_FORM,
@@ -15,7 +16,18 @@ import { cn } from '@/lib/utils';
 import CustomerDropdown from './CustomerDropdown';
 import InventoryRecordForm from './InventoryRecordForm';
 import ShippedSoFarForm from './ShippedSoFarForm';
-import { cardClass, errorClass, inputClass, labelClass, primaryButtonClass, secondaryButtonClass } from './formStyles';
+import { formFieldClass, formLabelClass } from './InventoryChrome';
+import { errorClass, primaryButtonClass } from './formStyles';
+
+const MODES = [
+  { value: 'create', label: 'Create' },
+  { value: 'edit', label: 'Edit' },
+  { value: 'shipped', label: 'Temporary sell-in' },
+];
+
+const MODE_BUTTON_CLASS =
+  'h-6 rounded-md px-2.5 text-[11px] text-deep-violet-blue/70 hover:text-deep-violet-blue';
+const MODE_BUTTON_ACTIVE_CLASS = 'bg-deep-violet-blue text-white hover:bg-deep-violet-blue hover:text-white';
 
 /**
  * Create or edit inventory data, or record temporary sell-in for this month
@@ -49,30 +61,27 @@ export default function InventoryDataManager({ customers, skus, editRow, onSaved
   }
 
   return (
-    <section className={cn(cardClass, 'max-w-3xl')}>
-      <div className="mb-3 flex gap-2">
-        <Button
-          variant={mode === 'create' ? 'default' : 'outline'}
-          onClick={() => switchMode('create')}
-          className={mode === 'create' ? primaryButtonClass : secondaryButtonClass}
-        >
-          Create
-        </Button>
-        <Button
-          variant={mode === 'edit' ? 'default' : 'outline'}
-          onClick={() => switchMode('edit')}
-          className={mode === 'edit' ? primaryButtonClass : secondaryButtonClass}
-        >
-          Edit
-        </Button>
-        <Button
-          variant={mode === 'shipped' ? 'default' : 'outline'}
-          onClick={() => switchMode('shipped')}
-          className={mode === 'shipped' ? primaryButtonClass : secondaryButtonClass}
-        >
-          Temporary Sell-in
-        </Button>
-      </div>
+    <Card size="sm" className="border border-violet/40 bg-white text-deep-violet-blue ring-0">
+      <CardHeader className="flex flex-row items-start justify-between gap-3 pb-1">
+        <CardTitle className="font-serif text-base font-normal text-deep-violet-blue group-data-[size=sm]/card:text-base">
+          Enter or edit data
+        </CardTitle>
+        <div className="inline-flex h-7 items-center rounded-lg bg-lavander p-0.5">
+          {MODES.map((item) => (
+            <Button
+              key={item.value}
+              type="button"
+              variant="ghost"
+              size="xs"
+              onClick={() => switchMode(item.value)}
+              className={cn(MODE_BUTTON_CLASS, mode === item.value && MODE_BUTTON_ACTIVE_CLASS)}
+            >
+              {item.label}
+            </Button>
+          ))}
+        </div>
+      </CardHeader>
+      <CardContent className="max-w-3xl">
 
       {mode === 'create' && (
         <InventoryRecordForm
@@ -109,7 +118,8 @@ export default function InventoryDataManager({ customers, skus, editRow, onSaved
       {mode === 'edit' && !record && (
         <RecordPicker customers={customers} skus={skus} onLoaded={setRecord} />
       )}
-    </section>
+    </CardContent>
+    </Card>
   );
 }
 
@@ -163,8 +173,8 @@ function RecordPicker({ customers, skus, onLoaded }) {
     <form onSubmit={handleLoad} className="grid gap-3 sm:grid-cols-2">
       <CustomerDropdown customers={customers} customerIds={customerIds} onChange={setCustomerIds} />
       <label>
-        <span className={labelClass}>SKU</span>
-        <select value={sku} onChange={(e) => setSku(e.target.value)} className={inputClass}>
+        <span className={formLabelClass}>SKU</span>
+        <select value={sku} onChange={(e) => setSku(e.target.value)} className={formFieldClass}>
           <option value="">Select…</option>
           {skus.map((s) => (
             <option key={s.sku} value={s.sku}>
@@ -174,8 +184,8 @@ function RecordPicker({ customers, skus, onLoaded }) {
         </select>
       </label>
       <label>
-        <span className={labelClass}>Month</span>
-        <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className={inputClass} />
+        <span className={formLabelClass}>Month</span>
+        <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className={formFieldClass} />
       </label>
 
       {error && <p className={cn(errorClass, 'sm:col-span-2')} role="alert">{error}</p>}

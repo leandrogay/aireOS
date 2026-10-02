@@ -4,8 +4,6 @@ import { CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts';
 
 import {
   ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
   ChartTooltip,
   ChartTooltipContent,
 } from '@/components/ui/chart';
@@ -14,12 +12,16 @@ import { formatDoh, formatMonth } from '@/app/utils/inventoryForm';
 
 import { labelledTooltipRow } from './chartTooltip';
 
-const chartConfig = {
-  doh: { label: 'DOH', color: 'var(--aire-deep-blue)' },
-  target_doh: { label: 'Target', color: 'var(--aire-violet)' },
-  min_doh: { label: 'Min', color: 'var(--aire-celest)' },
-  max_doh: { label: 'Max', color: 'var(--aire-celest)' },
-};
+const SERIES = [
+  { key: 'doh', label: 'DOH', color: 'var(--aire-deep-blue)' },
+  { key: 'target_doh', label: 'Target', color: 'var(--aire-violet)' },
+  { key: 'min_doh', label: 'Min', color: 'var(--aire-celest)' },
+  { key: 'max_doh', label: 'Max', color: 'var(--aire-celest)' },
+];
+
+const chartConfig = Object.fromEntries(
+  SERIES.map((series) => [series.key, { label: series.label, color: series.color }]),
+);
 
 // Tooltip order: the measured DOH first, then the target and its band.
 const TOOLTIP_ORDER = ['doh', 'target_doh', 'max_doh', 'min_doh'];
@@ -39,32 +41,59 @@ export default function DohTrendChart({ trend }) {
   const rows = trend.map((row) => ({ ...row, label: formatMonth(row.month) }));
 
   return (
-    <ChartContainer config={chartConfig} className="h-[260px] w-full">
-      <LineChart accessibilityLayer data={rows} margin={{ bottom: 8, left: 4, right: 8 }}>
-        <CartesianGrid vertical={false} />
-        <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-        <YAxis width={40} tick={{ fontSize: 10 }} />
-        <ChartTooltip
-          itemSorter={(item) => TOOLTIP_ORDER.indexOf(item.dataKey)}
-          content={
-            <ChartTooltipContent
-              formatter={labelledTooltipRow(chartConfig, (value) => `${formatDoh(value)} days`)}
+    <div className="space-y-2">
+      <div className="overflow-visible rounded-xl border border-lavander bg-white pl-1 pr-3 pt-2">
+        <ChartContainer config={chartConfig} className="aspect-auto h-[280px] w-full">
+          <LineChart
+            accessibilityLayer
+            data={rows}
+            margin={{ top: 8, right: 8, left: 0, bottom: 4 }}
+          >
+            <CartesianGrid vertical={false} stroke="var(--aire-lavender)" />
+            <XAxis
+              dataKey="label"
+              interval={0}
+              height={52}
+              tick={{ fontSize: 9, fill: '#3A4369' }}
+              angle={-40}
+              textAnchor="end"
+              tickMargin={6}
             />
-          }
-        />
-        <ChartLegend content={<ChartLegendContent />} />
-        <Line dataKey="max_doh" stroke="var(--color-max_doh)" strokeDasharray="2 4" dot={false} isAnimationActive={false} />
-        <Line dataKey="min_doh" stroke="var(--color-min_doh)" strokeDasharray="2 4" dot={false} isAnimationActive={false} />
-        <Line dataKey="target_doh" stroke="var(--color-target_doh)" strokeDasharray="6 4" dot={false} isAnimationActive={false} />
-        <Line
-          dataKey="doh"
-          stroke="var(--color-doh)"
-          strokeWidth={2}
-          dot={{ r: 3 }}
-          connectNulls={false}
-          isAnimationActive={false}
-        />
-      </LineChart>
-    </ChartContainer>
+            <YAxis width={40} tick={{ fontSize: 10, fill: '#3A4369' }} />
+            <ChartTooltip
+              itemSorter={(item) => TOOLTIP_ORDER.indexOf(item.dataKey)}
+              content={
+                <ChartTooltipContent
+                  className="border-violet/40 bg-white"
+                  formatter={labelledTooltipRow(chartConfig, (value) => `${formatDoh(value)} days`)}
+                />
+              }
+            />
+            <Line dataKey="max_doh" stroke="var(--color-max_doh)" strokeDasharray="2 4" dot={false} isAnimationActive={false} />
+            <Line dataKey="min_doh" stroke="var(--color-min_doh)" strokeDasharray="2 4" dot={false} isAnimationActive={false} />
+            <Line dataKey="target_doh" stroke="var(--color-target_doh)" strokeDasharray="6 4" dot={false} isAnimationActive={false} />
+            <Line
+              dataKey="doh"
+              stroke="var(--color-doh)"
+              strokeWidth={2}
+              dot={{ r: 3 }}
+              connectNulls={false}
+              isAnimationActive={false}
+            />
+          </LineChart>
+        </ChartContainer>
+      </div>
+      <div className="flex flex-wrap items-center justify-center gap-4 text-xs text-deep-violet-blue">
+        {SERIES.map((series) => (
+          <span key={series.key} className="inline-flex items-center gap-1.5">
+            <span
+              className="h-2 w-2 shrink-0 rounded-[2px]"
+              style={{ backgroundColor: series.color }}
+            />
+            {series.label}
+          </span>
+        ))}
+      </div>
+    </div>
   );
 }

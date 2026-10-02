@@ -4,8 +4,6 @@ import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 
 import {
   ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
   ChartTooltip,
   ChartTooltipContent,
 } from '@/components/ui/chart';
@@ -68,30 +66,61 @@ export default function EndingStockChart({ monthly }) {
   );
 
   return (
-    <ChartContainer config={config} className="h-[260px] w-full">
-      <BarChart accessibilityLayer data={rows} margin={{ bottom: 8 }}>
-        <CartesianGrid vertical={false} />
-        <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-        <YAxis tickFormatter={formatUnits} width={56} tick={{ fontSize: 10 }} />
-        <ChartTooltip
-          content={
-            <ChartTooltipContent
-              formatter={labelledTooltipRow(config, (value) => `${formatUnits(value)} units`)}
+    <div className="space-y-2">
+      <div className="overflow-visible rounded-xl border border-lavander bg-white pl-1 pr-3 pt-2">
+        <ChartContainer config={config} className="aspect-auto h-[280px] w-full">
+          <BarChart
+            accessibilityLayer
+            data={rows}
+            margin={{ top: 8, right: 8, left: 0, bottom: 4 }}
+          >
+            <CartesianGrid vertical={false} stroke="var(--aire-lavender)" />
+            <XAxis
+              dataKey="label"
+              interval={0}
+              height={52}
+              tick={{ fontSize: 9, fill: '#3A4369' }}
+              angle={-40}
+              textAnchor="end"
+              tickMargin={6}
             />
-          }
-        />
-        <ChartLegend content={<ChartLegendContent />} />
-        {customers.map(([id]) => (
-          <Bar
-            key={id}
-            dataKey={`c${id}`}
-            fill={`var(--color-c${id})`}
-            radius={[4, 4, 0, 0]}
-            maxBarSize={MAX_BAR_SIZE}
-            isAnimationActive={false}
-          />
+            <YAxis
+              tickFormatter={formatUnits}
+              width={48}
+              tick={{ fontSize: 10, fill: '#3A4369' }}
+            />
+            <ChartTooltip
+              content={
+                <ChartTooltipContent
+                  className="border-violet/40 bg-white"
+                  formatter={labelledTooltipRow(config, (value) => `${formatUnits(value)} units`)}
+                />
+              }
+            />
+            {customers.map(([id]) => (
+              <Bar
+                key={id}
+                dataKey={`c${id}`}
+                fill={`var(--color-c${id})`}
+                radius={[4, 4, 0, 0]}
+                maxBarSize={MAX_BAR_SIZE}
+                isAnimationActive={false}
+              />
+            ))}
+          </BarChart>
+        </ChartContainer>
+      </div>
+      <div className="flex flex-wrap items-center justify-center gap-4 text-xs text-deep-violet-blue">
+        {customers.map(([id, name], index) => (
+          <span key={id} className="inline-flex items-center gap-1.5">
+            <span
+              className="h-2 w-2 shrink-0 rounded-[2px]"
+              style={{ backgroundColor: CUSTOMER_COLORS[index % CUSTOMER_COLORS.length] }}
+            />
+            {retailerLabel(name)}
+          </span>
         ))}
-      </BarChart>
-    </ChartContainer>
+      </div>
+    </div>
   );
 }

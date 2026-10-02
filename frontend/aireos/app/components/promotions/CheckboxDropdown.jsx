@@ -22,6 +22,7 @@ import { cn } from '@/lib/utils';
  * @param {boolean} [props.invalid] red border after a failed submit
  * @param {boolean} [props.searchable]
  * @param {string} [props.searchPlaceholder]
+ * @param {string} [props.listClassName] classes for the option list; inventory passes no max-height so every SKU is visible
  * @param {React.ReactNode | ((query: string, close: () => void) => React.ReactNode)} props.children
  */
 export default function CheckboxDropdown({
@@ -31,6 +32,7 @@ export default function CheckboxDropdown({
   invalid = false,
   searchable = false,
   searchPlaceholder = 'Search…',
+  listClassName = 'max-h-52 overflow-auto p-2',
   children,
 }) {
   const [open, setOpen] = useState(false);
@@ -120,7 +122,7 @@ export default function CheckboxDropdown({
               />
             </div>
           )}
-          <div className="max-h-52 overflow-auto p-2">{content}</div>
+          <div className={listClassName}>{content}</div>
         </div>
       )}
     </div>

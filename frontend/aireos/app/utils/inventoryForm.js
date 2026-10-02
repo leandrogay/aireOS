@@ -175,7 +175,21 @@ export function monthInputToDate(monthValue) {
 }
 
 /**
- * The newest month among rows, used as the month range the tables open on.
+ * The earliest month among rows. Paired with `latestMonthInput` so the
+ * filter opens on the same span the chart draws.
+ *
+ * @param {Array<{ month: string }>} rows rows from the API ('YYYY-MM-DD' months)
+ * @returns {string} 'YYYY-MM' for <input type="month">, or '' when there are no rows
+ */
+export function earliestMonthInput(rows) {
+  return rows.reduce((earliest, row) => {
+    const month = row.month.slice(0, 7);
+    return !earliest || month < earliest ? month : earliest;
+  }, '');
+}
+
+/**
+ * The newest month among rows.
  *
  * @param {Array<{ month: string }>} rows rows from the API ('YYYY-MM-DD' months)
  * @returns {string} 'YYYY-MM' for <input type="month">, or '' when there are no rows
@@ -210,6 +224,25 @@ const MONTH_FORMAT = new Intl.DateTimeFormat('en-GB', { month: 'short', year: 'n
  */
 export function formatMonth(isoDate) {
   return MONTH_FORMAT.format(new Date(`${isoDate.slice(0, 7)}-01T00:00:00Z`));
+}
+
+/**
+ * Month choices for a table header filter, oldest first, one entry per month.
+ * Same shape as the forecast table's month dropdown.
+ *
+ * @param {Array<{ month: string }>} rows
+ * @returns {Array<{ value: string, label: string }>}
+ */
+export function monthCheckboxOptions(rows) {
+  const options = [];
+  const seen = new Set();
+  for (const row of [...rows].sort((a, b) => a.month.localeCompare(b.month))) {
+    const value = row.month.slice(0, 7);
+    if (seen.has(value)) continue;
+    seen.add(value);
+    options.push({ value, label: formatMonth(row.month) });
+  }
+  return options;
 }
 
 /**

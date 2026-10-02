@@ -2,7 +2,8 @@
 
 import CheckboxDropdown from '@/app/components/promotions/CheckboxDropdown';
 
-import { checkRowClass, labelClass } from './formStyles';
+import { filterLabelClass } from './InventoryChrome';
+import { checkRowClass } from './formStyles';
 
 /**
  * SKU multi-select with an "All SKUs" option at the top, shared by the
@@ -22,12 +23,13 @@ export default function SkuDropdown({ skuOptions, skus, onChange }) {
   }
 
   return (
-    <div className="w-56">
-      <span className={labelClass}>SKU</span>
+    <div className="min-w-0 [&_button]:h-8 [&_button]:rounded-md [&_button]:border-violet [&_button]:bg-white [&_button]:px-2 [&_button]:py-0 [&_button]:text-xs">
+      <span className={filterLabelClass}>SKU</span>
       <CheckboxDropdown
         summary={skus.length ? `${skus.length} selected` : 'All SKUs'}
         searchable
         searchPlaceholder="Search SKUs…"
+        listClassName="p-2"
       >
         {(query) => (
           <>
