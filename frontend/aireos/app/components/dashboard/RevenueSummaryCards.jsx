@@ -15,10 +15,19 @@ function sumFormats(storeFormats = []) {
 
 // "▲ +12.1%" on a card's top line; nothing without a comparison. What it's
 // compared against shows on the card itself: the hatched line underneath
-// (named on hover) and the comparison bar in the mix above.
-function CardChange({ current, baseline }) {
+// (named on hover) and the comparison bar in the mix above. When either
+// side has no data (or the comparison is zero) it reads a muted "N/A" with
+// no arrow, rather than a red -100% for an empty period.
+function CardChange({ current, baseline, available = true }) {
   if (baseline === null) return null
-  const pct = changePct(current, baseline)
+  const pct = available ? changePct(current, baseline) : null
+  if (pct === null) {
+    return (
+      <span className="shrink-0 text-xs font-medium text-deep-violet-blue/40" title="Data not available">
+        N/A
+      </span>
+    )
+  }
   const color = pct > 0 ? "text-green-600" : pct < 0 ? "text-red-600" : "text-deep-violet-blue/60"
   return (
     <span className={`shrink-0 text-xs font-medium tabular-nums ${color}`}>
@@ -32,15 +41,23 @@ function CardChange({ current, baseline }) {
 // swatch (solid = this period, hatched = comparison, as in the mix bar and
 // chart) when a comparison is on, so the figures can't be mistaken for each
 // other. Hovering names the period. `periodColor` matches the chart's Total
-// view (a single-format channel's colour, else neutral).
-function PeriodFigures({ totals, periodName, hatched = false, comparing, periodColor = null }) {
+// view (a single-format channel's colour, else neutral). A period with no
+// sales rows reads "No sales data" rather than a $0 that looks like a real
+// zero, matching the Comparison card's period rows.
+function PeriodFigures({ totals, periodName, hatched = false, comparing, periodColor = null, available = true }) {
   return (
     <div className="flex flex-wrap items-center gap-x-1.5" title={comparing ? periodName : undefined}>
       {comparing && <PeriodKeySwatch hatched={hatched} color={periodColor} />}
-      <p className={`tabular-nums ${hatched ? "text-xs text-deep-violet-blue/70" : "text-sm font-semibold"}`}>
-        ${totals.revenue.toLocaleString()}
-      </p>
-      <p className="text-xs text-deep-violet-blue/60 tabular-nums">{totals.units.toLocaleString()} units</p>
+      {available ? (
+        <>
+          <p className={`tabular-nums ${hatched ? "text-xs text-deep-violet-blue/70" : "text-sm font-semibold"}`}>
+            ${totals.revenue.toLocaleString()}
+          </p>
+          <p className="text-xs text-deep-violet-blue/60 tabular-nums">{totals.units.toLocaleString()} units</p>
+        </>
+      ) : (
+        <p className={`text-deep-violet-blue/50 ${hatched ? "text-xs" : "text-sm"}`}>No sales data</p>
+      )}
     </div>
   )
 }
@@ -51,6 +68,8 @@ function PeriodFigures({ totals, periodName, hatched = false, comparing, periodC
 // "Units:" labels — position and weight tell them apart. A plain bordered
 // div rather than the Card primitive, whose header/content spacing made
 // these tall. Lines wrap rather than clip if a tile gets very narrow.
+// `available` / `baselineAvailable` say whether each period has sales rows
+// for this tile; without both there is no fair change, so it reads "N/A".
 function SummaryCard({
   title,
   totals,
@@ -61,6 +80,8 @@ function SummaryCard({
   emphasis = false,
   color = null,
   periodColor = null,
+  available = true,
+  baselineAvailable = true,
   highlighted = false,
   onHover = null,
   className = "",
@@ -89,13 +110,18 @@ function SummaryCard({
             </span>
           )}
         </p>
-        <CardChange current={totals.revenue} baseline={baselineTotals?.revenue ?? null} />
+        <CardChange
+          current={totals.revenue}
+          baseline={baselineTotals?.revenue ?? null}
+          available={available && baselineAvailable}
+        />
       </div>
       <PeriodFigures
         totals={totals}
         periodName={periodNames?.current}
         comparing={Boolean(baselineTotals)}
         periodColor={periodColor}
+        available={available}
       />
       {baselineTotals && (
         <PeriodFigures
@@ -104,6 +130,7 @@ function SummaryCard({
           hatched
           comparing
           periodColor={periodColor}
+          available={baselineAvailable}
         />
       )}
     </div>
@@ -126,6 +153,9 @@ function SummaryCard({
 // of total revenue and, with a "Compare to" baseline, its change vs the
 // same format in the baseline — and the mix bar adds the baseline's mix as
 // a second, hatched bar, so a shift in share is visible at a glance.
+// With a comparison, the tiles cover every format in either period, so a
+// format never vanishes just because one side has no data: this period's
+// formats first (in the API's order), then any only the comparison has.
 export default function RevenueSummaryCards({
   summaryByMode = {},
   baselineSummaryByMode = null,
@@ -138,9 +168,14 @@ export default function RevenueSummaryCards({
   const [hoveredFormat, setHoveredFormat] = useState(null)
   const salesData = summaryByMode[mode]
   const baselineData = baselineSummaryByMode?.[mode] ?? null
-  const total = sumFormats(salesData?.storeFormats)
-  const baselineByFormat = new Map((baselineData?.storeFormats ?? []).map((format) => [format.format, format]))
-  const periodColor = singleFormatColor((salesData?.storeFormats ?? []).map((format) => format.format))
+  const currentFormats = salesData?.storeFormats ?? []
+  const baselineFormats = baselineData?.storeFormats ?? []
+  const total = sumFormats(currentFormats)
+  const currentByFormat = new Map(currentFormats.map((format) => [format.format, format]))
+  const baselineByFormat = new Map(baselineFormats.map((format) => [format.format, format]))
+  const formatNames = [...new Set([...currentByFormat.keys(), ...baselineByFormat.keys()])]
+  const periodColor = singleFormatColor(formatNames)
+  const emptyTotals = { revenue: 0, units: 0 }
 
   return (
     <div className="bg-white rounded-lg border border-lavander shadow-sm p-3 h-full">
@@ -169,26 +204,31 @@ export default function RevenueSummaryCards({
             baselineTotals={baselineData ? sumFormats(baselineData.storeFormats) : null}
             periodNames={periodNames}
             periodColor={periodColor}
+            available={currentFormats.length > 0}
+            baselineAvailable={baselineFormats.length > 0}
             emphasis
             className="col-span-2 sm:col-span-1"
           />
-          {salesData.storeFormats.map((format) => (
-            <SummaryCard
-              key={format.format}
-              title={format.format}
-              totals={format}
-              share={total[mixMetric] ? (format[mixMetric] / total[mixMetric]) * 100 : null}
-              shareLabel={mixMetric === "units" ? "Share of total volume" : "Share of total revenue"}
-              color={formatColor(format.format)}
-              periodColor={periodColor}
-              highlighted={hoveredFormat === format.format}
-              onHover={setHoveredFormat}
-              baselineTotals={
-                baselineData ? (baselineByFormat.get(format.format) ?? { revenue: 0, units: 0 }) : null
-              }
-              periodNames={periodNames}
-            />
-          ))}
+          {formatNames.map((name) => {
+            const format = currentByFormat.get(name)
+            return (
+              <SummaryCard
+                key={name}
+                title={name}
+                totals={format ?? emptyTotals}
+                share={format && total[mixMetric] ? (format[mixMetric] / total[mixMetric]) * 100 : null}
+                shareLabel={mixMetric === "units" ? "Share of total volume" : "Share of total revenue"}
+                color={formatColor(name)}
+                periodColor={periodColor}
+                available={Boolean(format)}
+                baselineAvailable={baselineByFormat.has(name)}
+                highlighted={hoveredFormat === name}
+                onHover={setHoveredFormat}
+                baselineTotals={baselineData ? (baselineByFormat.get(name) ?? emptyTotals) : null}
+                periodNames={periodNames}
+              />
+            )
+          })}
         </div>
       )}
     </div>

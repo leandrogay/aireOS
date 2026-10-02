@@ -284,6 +284,7 @@ export default function DashboardPage() {
               baseline={baseline}
               currentTotals={sumPeriodTotals(currentTotals)}
               baselineTotals={sumPeriodTotals(baselineTotals)}
+              currentAvailable={currentTotals.length > 0}
               baselineAvailable={baselineTotals.length > 0}
               weekCounts={currentWeeks && baselineWeeks ? { current: currentWeeks.count, baseline: baselineWeeks.count } : null}
               priceMix={priceMix}
