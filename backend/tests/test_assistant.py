@@ -7,7 +7,7 @@ import pytest
 
 from google.api_core.exceptions import ServiceUnavailable
 
-from app.services import assistant, bigquery, inventory_service, promotion_service, sellout_lookup
+from app.services import assistant, inventory_service, promotion_service, sellout_service
 
 
 # ---- Fakes mirroring just the SDK response shape assistant.py reads --------
@@ -170,7 +170,7 @@ def test_tool_call_result_is_fed_back_and_chart_is_built(monkeypatch):
         },
         "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
     }
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", lambda **kwargs: summary)
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: summary)
 
     tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"granularity": "week"}))
     fake_client = _install_fake_client(monkeypatch, [tool_call, _final_answer()])
@@ -213,7 +213,7 @@ def test_get_sales_summary_chart_combines_offline_and_online(monkeypatch):
             "periodByFormat": [],
         },
     }
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", lambda **kwargs: summary)
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: summary)
 
     tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"granularity": "month"}))
     _install_fake_client(monkeypatch, [tool_call, _final_answer(text="June was up on May: $25,915.28 vs $23,702.80.")])
@@ -228,7 +228,7 @@ def test_tool_error_is_reported_as_is_error_and_loop_continues(monkeypatch):
     def _boom(**kwargs):
         raise ValueError("granularity must be one of ('week', 'month')")
 
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", _boom)
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", _boom)
 
     tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"granularity": "decade"}))
     fake_client = _install_fake_client(
@@ -252,8 +252,8 @@ def test_tool_error_is_reported_as_is_error_and_loop_continues(monkeypatch):
 
 
 def test_multiple_tool_use_blocks_in_one_turn_all_get_results(monkeypatch):
-    monkeypatch.setattr(bigquery, "get_customer_options", lambda: [{"value": "fairprice", "label": "Fairprice"}])
-    monkeypatch.setattr(bigquery, "get_store_options", lambda customer: [{"store_code": "S1", "store_name": "Store 1"}])
+    monkeypatch.setattr(sellout_service, "get_customer_options", lambda: [{"value": "fairprice", "label": "Fairprice"}])
+    monkeypatch.setattr(sellout_service, "get_store_options", lambda customer: [{"store_code": "S1", "store_name": "Store 1"}])
 
     tool_call = _tool_call_response(
         ("tu_1", "list_customers", {}),
@@ -281,7 +281,7 @@ def test_get_sales_summary_mode_scoped_call_does_not_combine_channels(monkeypatc
         "offline": {"storeFormats": [], "periodTotal": [{"period_label": "August 2026", "period_start": "2026-08-06", "revenue": 5473.15, "units": 388}], "periodByFormat": []},
         "online": {"storeFormats": [], "periodTotal": [{"period_label": "August 2026", "period_start": "2026-08-06", "revenue": 4159.30, "units": 300}], "periodByFormat": []},
     }
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", lambda **kwargs: full_summary)
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: full_summary)
 
     tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"granularity": "month", "mode": "offline"}))
     _install_fake_client(monkeypatch, [tool_call, _final_answer(text="Fairprice's offline sales in August 2026 were $5,473.15.")])
@@ -299,7 +299,7 @@ def test_get_sales_summary_no_mode_still_combines_channels(monkeypatch):
         "offline": {"storeFormats": [], "periodTotal": [{"period_label": "August 2026", "period_start": "2026-08-06", "revenue": 5473.15, "units": 388}], "periodByFormat": []},
         "online": {"storeFormats": [], "periodTotal": [{"period_label": "August 2026", "period_start": "2026-08-06", "revenue": 4159.30, "units": 300}], "periodByFormat": []},
     }
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", lambda **kwargs: full_summary)
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: full_summary)
 
     tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"granularity": "month"}))
     _install_fake_client(monkeypatch, [tool_call, _final_answer(text="Total sales in August 2026 were $9,632.45.")])
@@ -316,7 +316,7 @@ def test_default_customer_used_when_tool_omits_it(monkeypatch):
         captured["customer"] = customer
         return []
 
-    monkeypatch.setattr(bigquery, "get_store_options", _fake_options)
+    monkeypatch.setattr(sellout_service, "get_store_options", _fake_options)
 
     tool_call = _tool_call_response(("tu_1", "list_stores", {}))
     _install_fake_client(monkeypatch, [tool_call, _final_answer()])
@@ -333,7 +333,7 @@ def test_compare_periods_builds_two_bar_chart(monkeypatch):
         "current": {"start": "2026-08-17", "end": "2026-08-23", "revenue": 1200.0, "units": 60},
         "previous": {"start": "2026-08-10", "end": "2026-08-16", "revenue": 900.0, "units": 45, "available": True},
     }
-    monkeypatch.setattr(bigquery, "get_period_comparison", lambda **kwargs: comparison)
+    monkeypatch.setattr(sellout_service, "get_period_comparison", lambda **kwargs: comparison)
 
     tool_call = _tool_call_response(("tu_1", "compare_periods", {"comparison_type": "wow"}))
     _install_fake_client(monkeypatch, [tool_call, _final_answer()])
@@ -361,7 +361,7 @@ def test_compare_periods_mode_scoped_calls_are_summed_to_a_combined_total(monkey
             "previous": {"start": "2026-05-01", "end": "2026-05-31", "revenue": 15430.44, "units": 1561, "available": True},
         },
     }
-    monkeypatch.setattr(bigquery, "get_period_comparison", lambda **kwargs: results[kwargs["mode"]])
+    monkeypatch.setattr(sellout_service, "get_period_comparison", lambda **kwargs: results[kwargs["mode"]])
 
     # Confirmed live: the real model passes explicit previous_start/
     # previous_end for a genuine comparison (not just current_start/end) --
@@ -392,7 +392,7 @@ def test_compare_periods_prefers_unscoped_call_over_mode_scoped_ones(monkeypatch
         "previous": {"start": "2026-05-01", "end": "2026-05-31", "revenue": 15430.44, "units": 1561, "available": True},
     }
     results = iter([unscoped, offline_only])
-    monkeypatch.setattr(bigquery, "get_period_comparison", lambda **kwargs: next(results))
+    monkeypatch.setattr(sellout_service, "get_period_comparison", lambda **kwargs: next(results))
 
     tool_call = _tool_call_response(
         ("tu_1", "compare_periods", {"current_start": "2026-06-01", "current_end": "2026-06-30", "previous_start": "2026-05-01", "previous_end": "2026-05-31"}),
@@ -413,7 +413,7 @@ def test_compare_periods_single_mode_scoped_call_used_as_is(monkeypatch):
         "current": {"start": "2026-08-17", "end": "2026-08-23", "revenue": 500.0, "units": 20},
         "previous": {"start": "2026-08-10", "end": "2026-08-16", "revenue": 400.0, "units": 15, "available": True},
     }
-    monkeypatch.setattr(bigquery, "get_period_comparison", lambda **kwargs: offline_only)
+    monkeypatch.setattr(sellout_service, "get_period_comparison", lambda **kwargs: offline_only)
 
     tool_call = _tool_call_response(("tu_1", "compare_periods", {"comparison_type": "wow", "mode": "offline"}))
     _install_fake_client(monkeypatch, [tool_call, _final_answer()])
@@ -436,7 +436,7 @@ def test_compare_periods_used_as_short_range_total_shows_single_bar(monkeypatch)
         "current": {"start": "2026-07-01", "end": "2026-07-19", "revenue": 12000.0, "units": 1200},
         "previous": {"start": "2026-06-01", "end": "2026-06-19", "revenue": 11000.0, "units": 1100, "available": True},
     }
-    monkeypatch.setattr(bigquery, "get_period_comparison", lambda **kwargs: range_total)
+    monkeypatch.setattr(sellout_service, "get_period_comparison", lambda **kwargs: range_total)
 
     tool_call = _tool_call_response(
         ("tu_1", "compare_periods", {"current_start": "2026-07-01", "current_end": "2026-07-19", "mode": "offline"})
@@ -459,7 +459,7 @@ def test_compare_periods_used_as_multi_month_range_total_shows_monthly_breakdown
         "current": {"start": "2026-01-01", "end": "2026-07-31", "revenue": 123860.85, "units": 12000},
         "previous": {"start": "2025-12-01", "end": "2025-12-31", "revenue": 20000.0, "units": 1800, "available": True},
     }
-    monkeypatch.setattr(bigquery, "get_period_comparison", lambda **kwargs: range_total)
+    monkeypatch.setattr(sellout_service, "get_period_comparison", lambda **kwargs: range_total)
 
     monthly_summary = {
         "offline": {
@@ -478,7 +478,7 @@ def test_compare_periods_used_as_multi_month_range_total_shows_monthly_breakdown
         captured_kwargs.update(kwargs)
         return monthly_summary
 
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", _fake_dashboard_summary)
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", _fake_dashboard_summary)
 
     tool_call = _tool_call_response(
         ("tu_1", "compare_periods", {"current_start": "2026-01-01", "current_end": "2026-07-31", "mode": "offline"})
@@ -501,12 +501,12 @@ def test_multi_month_range_total_falls_back_to_single_bar_if_breakdown_fetch_fai
         "current": {"start": "2026-01-01", "end": "2026-07-31", "revenue": 123860.85, "units": 12000},
         "previous": {"start": "2025-12-01", "end": "2025-12-31", "revenue": 20000.0, "units": 1800, "available": True},
     }
-    monkeypatch.setattr(bigquery, "get_period_comparison", lambda **kwargs: range_total)
+    monkeypatch.setattr(sellout_service, "get_period_comparison", lambda **kwargs: range_total)
 
     def _boom(**kwargs):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", _boom)
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", _boom)
 
     tool_call = _tool_call_response(
         ("tu_1", "compare_periods", {"current_start": "2026-01-01", "current_end": "2026-07-31", "mode": "offline"})
@@ -524,7 +524,7 @@ def test_compare_periods_with_no_data_yields_empty_chart(monkeypatch):
         "current": {"start": None, "end": None, "revenue": 0.0, "units": 0.0},
         "previous": {"start": None, "end": None, "revenue": 0.0, "units": 0.0, "available": False},
     }
-    monkeypatch.setattr(bigquery, "get_period_comparison", lambda **kwargs: empty)
+    monkeypatch.setattr(sellout_service, "get_period_comparison", lambda **kwargs: empty)
 
     tool_call = _tool_call_response(("tu_1", "compare_periods", {"comparison_type": "wow"}))
     _install_fake_client(
@@ -556,7 +556,7 @@ def test_multiple_sales_summary_calls_merge_into_one_comparison_chart(monkeypatc
         "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
     }
     results = iter([may, june])
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", lambda **kwargs: next(results))
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: next(results))
 
     tool_call = _tool_call_response(
         ("tu_1", "get_sales_summary", {"granularity": "month", "start_date": "2026-05-01", "end_date": "2026-05-31"}),
@@ -583,7 +583,7 @@ def test_sequential_sales_summary_calls_across_turns_also_merge(monkeypatch):
         "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
     }
     results = iter([may, june])
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", lambda **kwargs: next(results))
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: next(results))
 
     first_call = _tool_call_response(("tu_1", "get_sales_summary", {"start_date": "2026-05-01", "end_date": "2026-05-31"}))
     second_call = _tool_call_response(("tu_2", "get_sales_summary", {"start_date": "2026-06-01", "end_date": "2026-06-30"}))
@@ -612,8 +612,8 @@ def test_compare_periods_wins_over_get_sales_summary_when_both_called(monkeypatc
         ], "periodByFormat": []},
         "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
     }
-    monkeypatch.setattr(bigquery, "get_period_comparison", lambda **kwargs: comparison)
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", lambda **kwargs: offline_only_summary)
+    monkeypatch.setattr(sellout_service, "get_period_comparison", lambda **kwargs: comparison)
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: offline_only_summary)
 
     # get_sales_summary called SECOND (i.e. it would "win" under a
     # last-call-wins rule) -- compare_periods must still be preferred.
@@ -636,7 +636,7 @@ def test_rank_skus_builds_table_not_chart(monkeypatch):
             {"sku": "B", "product_name": "Gadget", "volume": 5, "value": 50.0, "rank": 2},
         ]
     )
-    monkeypatch.setattr(bigquery, "get_sku_ranking", lambda **kwargs: df)
+    monkeypatch.setattr(sellout_service, "get_sku_ranking", lambda **kwargs: df)
 
     tool_call = _tool_call_response(("tu_1", "rank_skus", {"metric": "value"}))
     _install_fake_client(monkeypatch, [tool_call, _final_answer()])
@@ -938,7 +938,7 @@ def test_mismatched_headline_figure_triggers_correction_retry(monkeypatch):
         "offline": {"storeFormats": [], "periodTotal": [{"period_label": "August 2026", "period_start": "2026-08-01", "revenue": 5473.15, "units": 388}], "periodByFormat": []},
         "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
     }
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", lambda **kwargs: summary)
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: summary)
 
     tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"granularity": "month", "mode": "offline"}))
     wrong_answer = _final_answer(text="Fairprice's offline sales in August 2026 were $5,123.45.")
@@ -959,7 +959,7 @@ def test_matching_headline_figure_does_not_trigger_retry(monkeypatch):
         "offline": {"storeFormats": [], "periodTotal": [{"period_label": "August 2026", "period_start": "2026-08-01", "revenue": 5473.15, "units": 388}], "periodByFormat": []},
         "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
     }
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", lambda **kwargs: summary)
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: summary)
 
     tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"granularity": "month", "mode": "offline"}))
     fake_client = _install_fake_client(
@@ -976,7 +976,7 @@ def test_correction_retry_still_wrong_keeps_original_answer(monkeypatch):
         "offline": {"storeFormats": [], "periodTotal": [{"period_label": "August 2026", "period_start": "2026-08-01", "revenue": 5473.15, "units": 388}], "periodByFormat": []},
         "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
     }
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", lambda **kwargs: summary)
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: summary)
 
     tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"granularity": "month", "mode": "offline"}))
     wrong_answer = _final_answer(text="Offline sales in August 2026 were $5,123.45.")
@@ -1020,7 +1020,7 @@ def test_analysis_answers_are_not_checked_against_tool_figures(monkeypatch):
 
 def test_answer_with_no_dollar_figure_is_not_checked(monkeypatch):
     tool_call = _tool_call_response(("tu_1", "list_customers", {}))
-    monkeypatch.setattr(bigquery, "get_customer_options", lambda: [{"value": "fairprice", "label": "Fairprice"}])
+    monkeypatch.setattr(sellout_service, "get_customer_options", lambda: [{"value": "fairprice", "label": "Fairprice"}])
     fake_client = _install_fake_client(
         monkeypatch, [tool_call, _final_answer(text="We currently have data for Fairprice.")]
     )
@@ -1036,7 +1036,7 @@ def test_correction_retry_refusal_keeps_original_answer(monkeypatch):
         "offline": {"storeFormats": [], "periodTotal": [{"period_label": "August 2026", "period_start": "2026-08-01", "revenue": 5473.15, "units": 388}], "periodByFormat": []},
         "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
     }
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", lambda **kwargs: summary)
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: summary)
 
     tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"granularity": "month", "mode": "offline"}))
     wrong_answer = _final_answer(text="Offline sales in August 2026 were $5,123.45.")
@@ -1072,7 +1072,7 @@ def test_export_pdf_with_chart_produces_real_pdf_bytes(monkeypatch):
         "offline": {"storeFormats": [], "periodTotal": [{"period_label": "August 2026", "period_start": "2026-08-01", "revenue": 5473.15, "units": 388}], "periodByFormat": []},
         "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
     }
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", lambda **kwargs: summary)
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: summary)
 
     tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"granularity": "month", "mode": "offline"}))
     _install_fake_client(
@@ -1094,7 +1094,7 @@ def test_export_pptx_with_chart_produces_real_pptx_bytes(monkeypatch):
         "offline": {"storeFormats": [], "periodTotal": [{"period_label": "August 2026", "period_start": "2026-08-01", "revenue": 5473.15, "units": 388}], "periodByFormat": []},
         "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
     }
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", lambda **kwargs: summary)
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: summary)
 
     tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"granularity": "month", "mode": "offline"}))
     _install_fake_client(
@@ -1116,7 +1116,7 @@ def test_export_excel_with_chart_produces_real_xlsx_bytes(monkeypatch):
         "offline": {"storeFormats": [], "periodTotal": [{"period_label": "August 2026", "period_start": "2026-08-01", "revenue": 5473.15, "units": 388}], "periodByFormat": []},
         "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
     }
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", lambda **kwargs: summary)
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: summary)
 
     tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"granularity": "month", "mode": "offline"}))
     _install_fake_client(
@@ -1135,7 +1135,7 @@ def test_export_excel_with_chart_produces_real_xlsx_bytes(monkeypatch):
 
 def test_export_with_table_instead_of_chart_still_produces_a_file(monkeypatch):
     df = pd.DataFrame([{"sku": "A", "product_name": "Widget", "volume": 10, "value": 100.0, "rank": 1}])
-    monkeypatch.setattr(bigquery, "get_sku_ranking", lambda **kwargs: df)
+    monkeypatch.setattr(sellout_service, "get_sku_ranking", lambda **kwargs: df)
 
     tool_call = _tool_call_response(("tu_1", "rank_skus", {"metric": "value"}))
     _install_fake_client(monkeypatch, [tool_call, _final_answer(text="Widget is the top seller.", export_format="pdf")])
@@ -1302,7 +1302,7 @@ def test_refusal_returns_safe_fallback_instead_of_parsing_content(monkeypatch):
 
 def test_loop_raises_after_max_iterations_of_tool_use(monkeypatch):
     tool_call = _tool_call_response(("tu_1", "list_customers", {}))
-    monkeypatch.setattr(bigquery, "get_customer_options", lambda: [])
+    monkeypatch.setattr(sellout_service, "get_customer_options", lambda: [])
     responses = [tool_call] * (assistant.MAX_TOOL_ITERATIONS + 1)
     _install_fake_client(monkeypatch, responses)
 
@@ -1511,7 +1511,7 @@ def test_trend_line_is_computed_from_the_charted_values(monkeypatch):
         },
         "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
     }
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", lambda **kwargs: summary)
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: summary)
 
     tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"granularity": "week"}))
     _install_fake_client(
@@ -1534,7 +1534,7 @@ def test_no_trend_line_values_when_not_requested(monkeypatch):
         },
         "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
     }
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", lambda **kwargs: summary)
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: summary)
 
     tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"granularity": "week"}))
     _install_fake_client(monkeypatch, [tool_call, _final_answer()])
@@ -1616,7 +1616,7 @@ def test_export_pptx_reflects_custom_color_and_value_labels(monkeypatch):
         "offline": {"storeFormats": [], "periodTotal": [{"period_label": "August 2026", "period_start": "2026-08-01", "revenue": 5473.15, "units": 388}], "periodByFormat": []},
         "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
     }
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", lambda **kwargs: summary)
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: summary)
 
     tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"granularity": "month", "mode": "offline"}))
     _install_fake_client(
@@ -1649,7 +1649,7 @@ def test_export_pptx_reflects_value_format_and_gridlines(monkeypatch):
         "offline": {"storeFormats": [], "periodTotal": [{"period_label": "August 2026", "period_start": "2026-08-01", "revenue": 5473.15, "units": 388}], "periodByFormat": []},
         "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
     }
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", lambda **kwargs: summary)
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: summary)
 
     tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"granularity": "month", "mode": "offline"}))
     _install_fake_client(
@@ -1693,7 +1693,7 @@ def test_export_pptx_with_line_chart_type(monkeypatch):
         },
         "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
     }
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", lambda **kwargs: summary)
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: summary)
 
     tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"granularity": "week"}))
     _install_fake_client(
@@ -1727,7 +1727,7 @@ def test_chart_data_is_never_affected_by_adversarial_chart_style(monkeypatch):
         },
         "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
     }
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", lambda **kwargs: summary)
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: summary)
 
     adversarial_styles = [
         {"color": "javascript:alert(1)", "chart_type": "pie", "value_label_format": "$$$hack$$$"},
@@ -1753,7 +1753,7 @@ def test_export_pdf_with_custom_color_still_produces_valid_pdf(monkeypatch):
         "offline": {"storeFormats": [], "periodTotal": [{"period_label": "August 2026", "period_start": "2026-08-01", "revenue": 5473.15, "units": 388}], "periodByFormat": []},
         "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
     }
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", lambda **kwargs: summary)
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: summary)
 
     tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"granularity": "month", "mode": "offline"}))
     _install_fake_client(
@@ -1782,7 +1782,7 @@ def test_export_pptx_reflects_custom_chart_title(monkeypatch):
         "offline": {"storeFormats": [], "periodTotal": [{"period_label": "August 2026", "period_start": "2026-08-01", "revenue": 5473.15, "units": 388}], "periodByFormat": []},
         "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
     }
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", lambda **kwargs: summary)
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: summary)
 
     tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"granularity": "month", "mode": "offline"}))
     _install_fake_client(
@@ -1805,7 +1805,7 @@ def test_export_pdf_with_custom_title_still_produces_valid_pdf(monkeypatch):
         "offline": {"storeFormats": [], "periodTotal": [{"period_label": "August 2026", "period_start": "2026-08-01", "revenue": 5473.15, "units": 388}], "periodByFormat": []},
         "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
     }
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", lambda **kwargs: summary)
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: summary)
 
     tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"granularity": "month", "mode": "offline"}))
     _install_fake_client(
@@ -1835,7 +1835,7 @@ def test_export_pptx_reflects_legend_axis_title_currency_and_markers(monkeypatch
         },
         "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
     }
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", lambda **kwargs: summary)
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: summary)
 
     tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"granularity": "week"}))
     style = {
@@ -1873,7 +1873,7 @@ def test_export_pdf_with_opacity_currency_and_markers_still_produces_valid_pdf(m
         },
         "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
     }
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", lambda **kwargs: summary)
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: summary)
 
     tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"granularity": "week"}))
     style = {
@@ -1916,7 +1916,7 @@ def test_export_pptx_bar_chart_includes_trend_line_as_combo_chart(monkeypatch):
         },
         "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
     }
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", lambda **kwargs: summary)
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: summary)
 
     tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"granularity": "week"}))
     style = {**assistant._DEFAULT_CHART_STYLE, "show_trend_line": True}
@@ -1954,7 +1954,7 @@ def test_export_pptx_line_chart_includes_second_trend_series(monkeypatch):
         },
         "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
     }
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", lambda **kwargs: summary)
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: summary)
 
     tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"granularity": "week"}))
     style = {**assistant._DEFAULT_CHART_STYLE, "show_trend_line": True, "chart_type": "line"}
@@ -1984,7 +1984,7 @@ def test_export_pdf_bar_chart_with_trend_line_still_produces_valid_pdf(monkeypat
         },
         "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
     }
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", lambda **kwargs: summary)
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: summary)
 
     tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"granularity": "week"}))
     style = {**assistant._DEFAULT_CHART_STYLE, "show_trend_line": True}
@@ -2008,7 +2008,7 @@ def test_export_pdf_line_chart_with_trend_line_still_produces_valid_pdf(monkeypa
         },
         "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
     }
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", lambda **kwargs: summary)
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: summary)
 
     tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"granularity": "week"}))
     style = {**assistant._DEFAULT_CHART_STYLE, "show_trend_line": True, "chart_type": "line"}
@@ -2032,7 +2032,7 @@ def test_export_pdf_with_line_chart_type_still_produces_valid_pdf(monkeypatch):
         },
         "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
     }
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", lambda **kwargs: summary)
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: summary)
 
     tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"granularity": "week"}))
     _install_fake_client(
@@ -2294,8 +2294,8 @@ def test_generate_digest_builds_chart_from_wow_comparison(monkeypatch):
         "current": {"start": "2026-09-08", "end": "2026-09-14", "revenue": 12000.0, "units": 900.0},
         "previous": {"start": "2026-09-01", "end": "2026-09-07", "revenue": 10000.0, "units": 800.0, "available": True},
     }
-    monkeypatch.setattr(bigquery, "get_period_comparison", lambda **kwargs: trend)
-    monkeypatch.setattr(bigquery, "get_sku_ranking", lambda **kwargs: pd.DataFrame([]))
+    monkeypatch.setattr(sellout_service, "get_period_comparison", lambda **kwargs: trend)
+    monkeypatch.setattr(sellout_service, "get_sku_ranking", lambda **kwargs: pd.DataFrame([]))
     monkeypatch.setattr(promotion_service, "get_promotions", lambda: [])
     _install_fake_client(monkeypatch, [_digest_answer()])
 
@@ -2314,14 +2314,14 @@ def test_generate_digest_includes_rank_movers_and_promotions_in_facts_sent_to_mo
         "current": {"start": "2026-09-08", "end": "2026-09-14", "revenue": 12000.0, "units": 900.0},
         "previous": {"start": "2026-09-01", "end": "2026-09-07", "revenue": 10000.0, "units": 800.0, "available": True},
     }
-    monkeypatch.setattr(bigquery, "get_period_comparison", lambda **kwargs: trend)
+    monkeypatch.setattr(sellout_service, "get_period_comparison", lambda **kwargs: trend)
 
     def fake_ranking(**kwargs):
         if kwargs.get("start_date") == "2026-09-08":
             return pd.DataFrame([{"sku": "A", "product_name": "Widget A", "rank": 1}])
         return pd.DataFrame([{"sku": "A", "product_name": "Widget A", "rank": 5}])
 
-    monkeypatch.setattr(bigquery, "get_sku_ranking", fake_ranking)
+    monkeypatch.setattr(sellout_service, "get_sku_ranking", fake_ranking)
 
     today = datetime.date.today()
     promos = [_sample_promotion(
@@ -2347,7 +2347,7 @@ def test_generate_digest_promotions_db_failure_degrades_gracefully(monkeypatch):
         "current": {"start": None, "end": None, "revenue": 0.0, "units": 0.0},
         "previous": {"start": None, "end": None, "revenue": 0.0, "units": 0.0, "available": False},
     }
-    monkeypatch.setattr(bigquery, "get_period_comparison", lambda **kwargs: trend)
+    monkeypatch.setattr(sellout_service, "get_period_comparison", lambda **kwargs: trend)
 
     def _raise():
         raise RuntimeError("connection refused")
@@ -2365,8 +2365,8 @@ def test_generate_digest_refusal_still_returns_a_usable_response(monkeypatch):
         "current": {"start": "2026-09-08", "end": "2026-09-14", "revenue": 12000.0, "units": 900.0},
         "previous": {"start": "2026-09-01", "end": "2026-09-07", "revenue": 10000.0, "units": 800.0, "available": True},
     }
-    monkeypatch.setattr(bigquery, "get_period_comparison", lambda **kwargs: trend)
-    monkeypatch.setattr(bigquery, "get_sku_ranking", lambda **kwargs: pd.DataFrame([]))
+    monkeypatch.setattr(sellout_service, "get_period_comparison", lambda **kwargs: trend)
+    monkeypatch.setattr(sellout_service, "get_sku_ranking", lambda **kwargs: pd.DataFrame([]))
     monkeypatch.setattr(promotion_service, "get_promotions", lambda: [])
     blocked = FakeResponse(finish_reason="SAFETY", content={"role": "model", "parts": []})
     _install_fake_client(monkeypatch, [blocked])
@@ -2379,14 +2379,16 @@ def test_generate_digest_refusal_still_returns_a_usable_response(monkeypatch):
 
 # ---- catalog outage inside a sales tool --------------------------------------------
 
-def test_sales_tool_catalog_outage_becomes_a_tool_error_not_a_crash(monkeypatch):
-    # Sell-out rows are labelled from the Cloud SQL catalog, so an outage there
-    # can now fail a sales tool -- the model should be told, like any other
-    # tool failure, and the turn should still produce an answer.
-    def _outage(**kwargs):
-        raise sellout_lookup.CatalogUnavailableError("OperationalError: connection refused")
+def test_sales_tool_database_outage_becomes_a_tool_error_not_a_crash(monkeypatch):
+    # Sales tools now read Cloud SQL directly -- an outage there (not just a
+    # BigQuery one) must still become a tool error the model is told about,
+    # not an unhandled crash, and the turn should still produce an answer.
+    from sqlalchemy.exc import OperationalError
 
-    monkeypatch.setattr(bigquery, "get_dashboard_summary", _outage)
+    def _outage(**kwargs):
+        raise OperationalError("SELECT 1", {}, Exception("connection refused"))
+
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", _outage)
 
     tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"granularity": "week"}))
     fake_client = _install_fake_client(
@@ -2397,5 +2399,5 @@ def test_sales_tool_catalog_outage_becomes_a_tool_error_not_a_crash(monkeypatch)
     result = assistant.ask("how is revenue trending?", history=None, customer="fairprice")
 
     function_response = _dump(fake_client.models.calls[1]["contents"][-1])["parts"][0]["function_response"]
-    assert "catalog" in function_response["response"]["error"]
+    assert "sales database" in function_response["response"]["error"]
     assert result["answer"] == "I couldn't load the sales data right now."

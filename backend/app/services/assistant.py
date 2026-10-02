@@ -2,10 +2,10 @@
 Plain-English business-question assistant.
 
 Gemini (via Vertex AI / Gemini Enterprise) picks which of the read-only
-tools below to call (each a thin wrapper around an existing bigquery.py
-function, plus Google Search grounding for general market data) and, once
-it has what it needs, must answer in a fixed JSON shape (see
-FINAL_ANSWER_SCHEMA) rather than free text.
+tools below to call (each a thin wrapper around an existing sellout_service/
+inventory_service/promotion_service function, plus Google Search grounding
+for general market data) and, once it has what it needs, must answer in a
+fixed JSON shape (see FINAL_ANSWER_SCHEMA) rather than free text.
 
 Grounding is enforced structurally, not just by prompting: the chart/table
 shown to the user is built here, by us, straight from whichever business
@@ -28,8 +28,8 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from google.genai import errors as genai_errors
-from google.auth.exceptions import DefaultCredentialsError
-from google.api_core.exceptions import GoogleAPICallError
+from google.auth.exceptions import GoogleAuthError
+from sqlalchemy.exc import SQLAlchemyError
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet
@@ -50,7 +50,8 @@ from openpyxl import Workbook
 from openpyxl.chart import BarChart as XlsxBarChart, Reference
 from openpyxl.styles import Font as XlsxFont, Alignment as XlsxAlignment
 
-from app.services import bigquery, inventory_service, promotion_service, sellout_lookup
+from app.config import ConfigError
+from app.services import inventory_service, promotion_service, sellout_service
 
 ENV_PATH = Path(__file__).resolve().parents[2] / ".env.backend"
 load_dotenv(ENV_PATH)
@@ -449,7 +450,7 @@ def _run_business_tool(name: str, tool_input: dict, default_customer: str):
     customer = tool_input.get("customer") or default_customer
     try:
         if name == "get_sales_summary":
-            result = bigquery.get_dashboard_summary(
+            result = sellout_service.get_dashboard_summary(
                 granularity=tool_input.get("granularity", "week"),
                 sku=tool_input.get("sku"),
                 customer=customer,
@@ -464,10 +465,10 @@ def _run_business_tool(name: str, tool_input: dict, default_customer: str):
             # can't end up silently combining both (see _sales_summary_periods,
             # which sums whatever channels are present in this dict).
             requested_mode = tool_input.get("mode")
-            if requested_mode in bigquery.DASHBOARD_MODES:
+            if requested_mode in sellout_service.DASHBOARD_MODES:
                 result = {requested_mode: result.get(requested_mode, {})}
         elif name == "compare_periods":
-            result = bigquery.get_period_comparison(
+            result = sellout_service.get_period_comparison(
                 comparison_type=tool_input.get("comparison_type"),
                 current_start=tool_input.get("current_start"),
                 current_end=tool_input.get("current_end"),
@@ -479,7 +480,7 @@ def _run_business_tool(name: str, tool_input: dict, default_customer: str):
                 store=tool_input.get("store"),
             )
         elif name == "rank_skus":
-            df = bigquery.get_sku_ranking(
+            df = sellout_service.get_sku_ranking(
                 metric=tool_input.get("metric", "value"),
                 order=tool_input.get("order", "desc"),
                 sku=tool_input.get("sku"),
@@ -491,16 +492,12 @@ def _run_business_tool(name: str, tool_input: dict, default_customer: str):
             )
             result = df.to_dict(orient="records")
         elif name == "list_customers":
-            result = bigquery.get_customer_options()
+            result = sellout_service.get_customer_options()
         elif name == "list_stores":
-            result = bigquery.get_store_options(customer=customer)
+            result = sellout_service.get_store_options(customer=customer)
         elif name == "list_skus":
-            result = bigquery.get_sku_options(customer=customer)
+            result = sellout_service.get_sku_options(customer=customer)
         elif name == "get_promotions":
-            # Cloud SQL/Postgres, not BigQuery -- a genuinely different
-            # failure domain than the exceptions caught below, so it gets
-            # its own broad catch rather than being narrowed to a specific
-            # exception type.
             try:
                 promotions = promotion_service.get_promotions()
             except Exception as e:
@@ -513,9 +510,6 @@ def _run_business_tool(name: str, tool_input: dict, default_customer: str):
                 sku=tool_input.get("sku"),
             )
         elif name in _INVENTORY_TOOLS:
-            # Cloud SQL/Postgres, same broad-catch reasoning as get_promotions
-            # above -- a genuinely different failure domain than the
-            # BigQuery-specific exceptions caught below.
             try:
                 result = _call_inventory_tool(name, tool_input, default_customer)
             except (inventory_service.CustomerNotFoundError, ValueError) as e:
@@ -526,12 +520,8 @@ def _run_business_tool(name: str, tool_input: dict, default_customer: str):
             return (f"Unknown tool: {name}", True, None)
     except ValueError as e:
         return (f"Invalid arguments: {e}", True, None)
-    except DefaultCredentialsError:
-        return ("BigQuery credentials are not configured on the server.", True, None)
-    except GoogleAPICallError as e:
-        return (f"Unable to reach BigQuery: {e.message}", True, None)
-    except sellout_lookup.CatalogUnavailableError as e:
-        return (f"Unable to reach the store/product catalog needed to label sales data: {e}", True, None)
+    except (SQLAlchemyError, ConfigError, GoogleAuthError) as e:
+        return (f"Unable to reach the sales database: {e}", True, None)
 
     return (json.dumps(result, default=str), False, result)
 
@@ -797,12 +787,12 @@ def _range_total_breakdown_chart(compare_calls: list[tuple[dict, object]], custo
     effective_customer = tool_input.get("customer") or customer
     mode = tool_input.get("mode")
     try:
-        summary = bigquery.get_dashboard_summary(
+        summary = sellout_service.get_dashboard_summary(
             granularity="month", customer=effective_customer, start_date=start, end_date=end,
         )
     except Exception:
         return single_bar
-    if mode in bigquery.DASHBOARD_MODES:
+    if mode in sellout_service.DASHBOARD_MODES:
         summary = {mode: summary.get(mode, {})}
     periods = _sales_summary_periods(summary)
     if not periods:
@@ -2087,16 +2077,16 @@ def generate_digest(customer: str) -> dict:
     """
     client = get_client()
 
-    trend = bigquery.get_period_comparison(comparison_type="wow", customer=customer)
+    trend = sellout_service.get_period_comparison(comparison_type="wow", customer=customer)
     trend_chart = _build_chart([("compare_periods", {"comparison_type": "wow"}, trend)], customer)
 
     movers: list[dict] = []
     current, previous = trend.get("current") or {}, trend.get("previous") or {}
     if current.get("start") and previous.get("start"):
-        current_ranks = bigquery.get_sku_ranking(
+        current_ranks = sellout_service.get_sku_ranking(
             customer=customer, start_date=current["start"], end_date=current["end"]
         ).to_dict(orient="records")
-        previous_ranks = bigquery.get_sku_ranking(
+        previous_ranks = sellout_service.get_sku_ranking(
             customer=customer, start_date=previous["start"], end_date=previous["end"]
         ).to_dict(orient="records")
         movers = _rank_movers(current_ranks, previous_ranks)

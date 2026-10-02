@@ -7,7 +7,6 @@ import RangeCalendar from '@/components/dashboard/RangeCalendar';
 import { cn } from '@/lib/utils';
 import { formatDateRange } from '@/lib/formatDateRange';
 import { findPreset } from '@/app/utils/dateRangePresets';
-import { addDays } from '@/app/utils/periodComparison';
 
 const actionButtonClass =
   'rounded-md px-3 py-1 text-xs font-medium transition-colors disabled:opacity-50';
@@ -29,19 +28,21 @@ const sectionLabelClass = 'text-[11px] font-medium uppercase tracking-wide text-
  *   end: string,
  *   presets: Array<{ id: string, label: string, start: string, end: string }>,
  *   latestWeekStart: string,
+ *   latestDataEnd: string,
  *   onChange: (start: string, end: string) => void,
  * }} props
  */
-export default function DateRangeControl({ start, end, presets, latestWeekStart, onChange }) {
+export default function DateRangeControl({ start, end, presets, latestWeekStart, latestDataEnd, onChange }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState({ start, end });
 
   const activePreset = findPreset(presets, start, end);
   // Show only the dates that have data: MTD is Aug 1 – 31 underneath (so it
-  // compares month for month and grows as weeks load), but with data to
-  // 19 Aug the button reads Aug 1 – 19, matching the comparison card.
-  const latestWeekEnd = latestWeekStart ? addDays(latestWeekStart, 6) : '';
-  const displayEnd = latestWeekEnd && end > latestWeekEnd && start <= latestWeekEnd ? latestWeekEnd : end;
+  // compares month for month and grows as weeks/a month load), but with
+  // data to 19 Aug the button reads Aug 1 – 19, matching the comparison
+  // card. latestDataEnd is the real last day loaded (may be a whole month's
+  // end, not always latestWeekStart + 6 days).
+  const displayEnd = latestDataEnd && end > latestDataEnd && start <= latestDataEnd ? latestDataEnd : end;
 
   function handleOpenChange(nextOpen) {
     // Each opening starts from what the dashboard is showing, not a
@@ -101,6 +102,7 @@ export default function DateRangeControl({ start, end, presets, latestWeekStart,
               draft={draft}
               onDraftChange={setDraft}
               latestWeekStart={latestWeekStart}
+              latestDataEnd={latestDataEnd}
             />
             <div className="flex justify-end gap-2">
               <button

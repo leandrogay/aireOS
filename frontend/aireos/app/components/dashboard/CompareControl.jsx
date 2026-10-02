@@ -22,10 +22,11 @@ const actionButtonClass =
  *   options: Array<{ value: string, label: string, short: string,
  *     range: { start: string, end: string } | null }>,
  *   latestWeekStart: string,
+ *   latestDataEnd: string,
  *   onChange: (value: string, customRange?: { start: string, end: string }) => void,
  * }} props
  */
-export default function CompareControl({ value, options, latestWeekStart, onChange }) {
+export default function CompareControl({ value, options, latestWeekStart, latestDataEnd, onChange }) {
   const [open, setOpen] = useState(false);
   const [pickingCustom, setPickingCustom] = useState(false);
   const [draft, setDraft] = useState({ start: '', end: '' });
@@ -92,7 +93,12 @@ export default function CompareControl({ value, options, latestWeekStart, onChan
         ) : (
           <div className="flex flex-col gap-2">
             <p className="text-xs font-medium text-deep-violet-blue">Compare with a custom period</p>
-            <RangeCalendar draft={draft} onDraftChange={setDraft} latestWeekStart={latestWeekStart} />
+            <RangeCalendar
+              draft={draft}
+              onDraftChange={setDraft}
+              latestWeekStart={latestWeekStart}
+              latestDataEnd={latestDataEnd}
+            />
             <div className="flex justify-end gap-2">
               <button
                 type="button"

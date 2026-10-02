@@ -18,3 +18,11 @@ export const FALLBACK_FORMAT_COLOR = 'var(--aire-violet)';
 export function formatColor(format) {
   return FORMAT_COLORS[format] ?? FALLBACK_FORMAT_COLOR;
 }
+
+// A single-format channel (online: FPON only) draws its Total views in that
+// format's colour rather than the neutral period colour; with several
+// formats (offline) there is no one colour, so null keeps them neutral.
+export function singleFormatColor(formats) {
+  const distinct = new Set(formats);
+  return distinct.size === 1 ? formatColor([...distinct][0]) : null;
+}
