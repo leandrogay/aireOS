@@ -817,9 +817,8 @@ def get_sku_ranges() -> list[str]:
 # ============================================================
 # SKU READ ALL
 #
-# Full catalog rows, used by sellout_lookup to turn the bare sku
-# codes in the BigQuery sell-out table into product names.
-# Same exclusion as get_sku_ranges: rows whose sku equals
+# Full catalog rows, used by inventory_service to label SKU codes with
+# product names. Same exclusion as get_sku_ranges: rows whose sku equals
 # sku_range are leftover range-name inserts, not products.
 # ============================================================
 

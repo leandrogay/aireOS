@@ -28,12 +28,10 @@ ENVELOPE = {
 }
 
 
-def test_contract_and_builtin_normalise_to_the_same_shape():
-    builtin = mv.builtin_packet()
+def test_stored_contract_normalises_to_review_rules():
     proposed = mv.envelope_to_packet("abc123", ENVELOPE, "pending")
 
-    assert set(builtin) == set(proposed)
-    for rule in builtin["rules"] + proposed["rules"]:
+    for rule in proposed["rules"]:
         assert set(rule) >= {"targetField", "sourceColumn", "sourceColumns", "transform", "editable"}
 
 
@@ -66,9 +64,31 @@ def test_packet_reports_unread_columns_and_missing_requirements():
     packet = mv.envelope_to_packet("abc123", ENVELOPE, "pending")
 
     assert packet["unmapped"] == ["Vendor Code"]
-    # This contract fills neither, so both must be flagged for the reviewer.
-    assert set(packet["requiredMissing"]) == {"quantity_units", "period_start"}
+    # These fields are required by the Cloud SQL sell-out fact load.
+    assert packet["requiredMissing"] == [
+        "retailer",
+        "store_code",
+        "quantity_units",
+    ]
     assert packet["warnings"] == CONTRACT["warnings"]
+
+
+# ---- Period fields -----------------------------------------------------------
+
+def test_a_melt_group_fills_the_period_fields():
+    # apply_contract reads period_start out of each period column's header, so
+    # no rule names it -- it must not be reported missing.
+    packet = mv.envelope_to_packet("abc123", ENVELOPE, "confirmed")
+
+    assert "period_start" not in packet["requiredMissing"]
+
+
+def test_without_a_melt_group_period_start_is_missing():
+    envelope = {**ENVELOPE, "contract": {**CONTRACT, "melt_groups": []}}
+
+    packet = mv.envelope_to_packet("abc123", envelope, "confirmed")
+
+    assert "period_start" in packet["requiredMissing"]
 
 
 def test_state_drives_kind_and_confirmation():

@@ -18,6 +18,7 @@ from app.services import storage
 from app.services import generate_mapping
 from app.services import mapping_view
 from app.services import apply_contract as contract_application
+from app.services import sellout_ingestion
 
 router = APIRouter(prefix="/api/mappings", tags=["mappings"])
 
@@ -58,25 +59,65 @@ def _load_envelope(fingerprint: str):
     return None, None
 
 
+def _ingest_waiting_uploads(blob_paths: list[str], contract: dict) -> list[dict]:
+    """Process files that were waiting for this mapping to be approved."""
+    results = []
+    for blob_path in blob_paths:
+        try:
+            upload = storage.download_upload(blob_path)
+            if upload is None:
+                raise FileNotFoundError(blob_path)
+            filename, data = upload
+            processing = sellout_ingestion.process_confirmed_upload(
+                filename,
+                data,
+                contract,
+                # Re-approval may change a business key. Replacing this
+                # source prevents stale rows from the old mapping remaining.
+                replace_source=True,
+            )
+            results.append(
+                {
+                    "success": True,
+                    "blob_path": blob_path,
+                    "filename": filename,
+                    "processing": processing,
+                }
+            )
+        except Exception as exc:
+            results.append(
+                {
+                    "success": False,
+                    "blob_path": blob_path,
+                    "error": str(exc),
+                }
+            )
+    return results
+
+
 @router.get("")
 async def list_mappings():
     """
     Every mapping the review screen can show, in one shape.
 
-    That is the builtin FairPrice rule set plus each contract in the bucket --
-    confirmed ones first, then proposals still awaiting approval.
+    Confirmed GCS contracts first, then proposals still awaiting approval.
     """
 
     def collect() -> list[dict]:
-        packets = [mapping_view.builtin_packet()]
-
-        for state in ("confirmed", "pending"):
-            path_for = (
-                storage.confirmed_mapping_path
-                if state == "confirmed"
-                else storage.pending_mapping_path
-            )
-            for fingerprint in storage.list_mapping_fingerprints(state):
+        packets = []
+        confirmed = storage.list_mapping_fingerprints("confirmed")
+        # A pending copy whose cleanup failed at approval is superseded by its
+        # confirmed one; listing both would show the mapping twice.
+        pending = [
+            fingerprint
+            for fingerprint in storage.list_mapping_fingerprints("pending")
+            if fingerprint not in confirmed
+        ]
+        for state, fingerprints, path_for in (
+            ("confirmed", confirmed, storage.confirmed_mapping_path),
+            ("pending", pending, storage.pending_mapping_path),
+        ):
+            for fingerprint in fingerprints:
                 envelope = storage.download_json(path_for(fingerprint))
                 if envelope:
                     packets.append(
@@ -101,9 +142,6 @@ async def get_mapping(fingerprint: str):
     listing uses, so the review screen can load a single mapping directly
     instead of fetching every mapping to find one.
     """
-    if fingerprint == mapping_view.BUILTIN_MAPPING_ID:
-        return mapping_view.builtin_packet()
-
     envelope, state = await asyncio.to_thread(_load_envelope, fingerprint)
     if not envelope:
         raise HTTPException(
@@ -199,15 +237,9 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
     is the last gate before it becomes the contract every future file with
     these headers gets run through.
     """
-    envelope_before = await asyncio.to_thread(
-        storage.download_json, storage.pending_mapping_path(fingerprint)
-    )
-    # A confirmed contract can be amended again, and by then its pending blob
-    # has been cleaned up -- so fall back to the confirmed one.
-    if not envelope_before:
-        envelope_before = await asyncio.to_thread(
-            storage.download_json, storage.confirmed_mapping_path(fingerprint)
-        )
+    # Confirmed first, as every other lookup does: a pending copy whose cleanup
+    # failed must not become the base of an amendment.
+    envelope_before, _ = await asyncio.to_thread(_load_envelope, fingerprint)
     if not envelope_before:
         raise HTTPException(
             status_code=404, detail="No mapping found for that fingerprint."
@@ -236,6 +268,8 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
         proposed,
         pending["raw_columns"],
         pending.get("target_schema", generate_mapping.TARGET_SCHEMA),
+        trust_review=True,
+        samples=pending.get("column_samples") or {},
     )
 
     if not contract["identity_mapping"] and not contract["melt_groups"]:
@@ -243,6 +277,32 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
             status_code=422,
             detail={
                 "message": "Contract is empty after validation — nothing to store.",
+                "warnings": contract["warnings"],
+            },
+        )
+
+    required_missing = mapping_view.required_missing_fields(contract)
+    if required_missing:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": (
+                    "Required ingest fields are missing: "
+                    + ", ".join(required_missing)
+                ),
+                "warnings": contract["warnings"],
+            },
+        )
+
+    unreviewed = generate_mapping.unreviewed_low_confidence(contract)
+    if unreviewed:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": (
+                    "Confirm every low-confidence field before approving: "
+                    + ", ".join(unreviewed)
+                ),
                 "warnings": contract["warnings"],
             },
         )
@@ -274,26 +334,13 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
         },
     )
 
-    # =========================================================================
-    # TRIGGER THE DATA TRANSFORMATION HERE.
-    #
-    # This is the moment for it: the contract is confirmed, and every file in
-    # uploads["matched"] was uploaded against it while it was still a proposal,
-    # so they have been waiting for exactly this.
-    #
-    # To hand: storage.download_bytes(blob_path) for the file,
-    # contract_application.read_source_dataframe() to parse it,
-    # contract_application.apply_contract(df, contract) to map it, and
-    # validation_service.process_and_validate() to reject bad rows.
-    #
-    # Worth deciding before you write it: this runs inside a request, so a
-    # large file probably belongs on a queue rather than making the browser
-    # wait; and a file can reach here twice if the mapping is amended and
-    # re-confirmed, which would double-count its sales.
-    #
-    # The other moment is in routers/uploads.py, where a file arrives and
-    # matches a contract that is already confirmed.
-    # =========================================================================
+    # Files uploaded before approval were intentionally held back. Apply the
+    # now-confirmed contract and load them without requiring a second upload.
+    ingestion = await asyncio.to_thread(
+        _ingest_waiting_uploads,
+        uploads.get("matched", []),
+        contract,
+    )
 
     return {
         "success": True,
@@ -305,6 +352,9 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
         "moved_to": move["confirmed_path"],
         "pending_removed": move["removed_pending"],
         "uploads_updated": len(uploads["updated"]),
+        "uploads_processed": sum(item["success"] for item in ingestion),
+        "uploads_failed": sum(not item["success"] for item in ingestion),
+        "processing": ingestion,
         "contract": contract,
         "warnings": contract["warnings"],
     }

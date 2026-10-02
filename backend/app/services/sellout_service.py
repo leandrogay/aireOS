@@ -105,7 +105,9 @@ def summarize_clean_rows(dataframe: pd.DataFrame) -> dict:
         "rows_input": len(dataframe),
         "rows_stored": len(records),
         "rows_consolidated": rows_consolidated,
-        "retailers": dict(sorted(Counter(row["retailer"] for row in records).items())),
+        "retailers": dict(
+            sorted(Counter(row["retailer"] for row in records).items())
+        ),
         "sku_count": len({str(row["sku"]) for row in records}),
         "first_period": min(periods),
         "last_period": max(periods),
@@ -117,6 +119,7 @@ def cloud_sql_loading_enabled() -> bool:
 
 
 def _insert_missing_sku(connection: Connection, row: dict) -> None:
+    """Add a new SKU without changing an existing master record."""
     connection.execute(
         text(
             """
@@ -237,7 +240,13 @@ def load_clean_rows(
     try:
         with database.begin() as connection:
             if replace_source:
-                source_files = sorted({row["source_file"] for row in records if row.get("source_file")})
+                source_files = sorted(
+                    {
+                        row["source_file"]
+                        for row in records
+                        if row.get("source_file")
+                    }
+                )
                 for source_file in source_files:
                     connection.execute(
                         text("DELETE FROM sellout WHERE source_file = :source_file"),
@@ -278,26 +287,26 @@ def load_clean_rows(
             for row in records:
                 retailer = str(row["retailer"])
                 retailer_id = retailer_ids[retailer]
-
                 sku = str(row["sku"])
                 if sku not in skus_seen:
                     _insert_missing_sku(connection, row)
                     skus_seen.add(sku)
 
-                fact_record = {
-                    "retailer_id": retailer_id,
-                    "period_start": row["period_start"],
-                    "period_end": row["period_end"],
-                    "period_type": row["period_type"],
-                    "store_code": row["store_code"],
-                    "sku": sku,
-                    "quantity_units": row.get("quantity_units"),
-                    "revenue": row.get("revenue"),
-                    "source_file": row.get("source_file"),
-                    "loaded_at": timestamp,
-                    "data_source": data_source,
-                }
-                facts.append(fact_record)
+                facts.append(
+                    {
+                        "retailer_id": retailer_id,
+                        "period_start": row["period_start"],
+                        "period_end": row["period_end"],
+                        "period_type": row["period_type"],
+                        "store_code": str(row["store_code"]),
+                        "sku": sku,
+                        "quantity_units": row.get("quantity_units"),
+                        "revenue": row.get("revenue"),
+                        "source_file": row.get("source_file"),
+                        "loaded_at": timestamp,
+                        "data_source": data_source,
+                    }
+                )
 
             _upsert_sellout(connection, facts)
     except Exception as exc:

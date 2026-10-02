@@ -72,7 +72,7 @@ D = datetime.date
 # ---- table + label helpers -------------------------------------------------------
 
 def test_default_table_is_public_sellout():
-    assert bigquery.SELLOUT_TABLE == "aire-data.Aire_Data.public_sellout"
+    assert bigquery.SELLOUT_TABLE == "aire-data.Aire_Data_Analytics.public_sellout"
 
 
 def test_week_label_matches_the_label_the_old_table_stored():

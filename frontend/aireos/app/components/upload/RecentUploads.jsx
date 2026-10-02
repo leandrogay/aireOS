@@ -81,7 +81,7 @@ export default function RecentUploads({ uploads, isLoading, error, onRefresh }) 
                       )}
                     </td>
                     <td className="px-3 py-2">
-                      {upload.mapping_fingerprint ? (
+                      {upload.mapping_fingerprint && upload.mapping_available ? (
                         <Link
                           href={`/mappings/${upload.mapping_fingerprint}`}
                           className="font-medium underline underline-offset-2 hover:opacity-80"

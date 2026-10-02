@@ -32,6 +32,30 @@ function weakestConfidence(fields) {
 }
 
 /**
+ * Whether a row still waits on the reviewer: one of its fields was a
+ * low-confidence guess nobody has confirmed. The server holds the same rule
+ * (see backend unreviewed_low_confidence), so approval cannot skip it.
+ */
+export function needsReview(row) {
+  return row.fields.some((field) => field.confidence === 'low' && !field.reviewed);
+}
+
+/**
+ * How far through the review the reviewer is: of the columns the proposal was
+ * unsure of, how many still wait on them. The only rows approval depends on,
+ * so the only ones worth counting.
+ */
+export function reviewProgress(rows) {
+  const guessed = rows.filter((row) => row.fields.some((field) => field.confidence === 'low'));
+  return { total: guessed.length, remaining: guessed.filter(needsReview).length };
+}
+
+/** Every field on the row marked as signed off, or not. */
+export function withReviewed(row, reviewed) {
+  return { ...row, fields: row.fields.map((field) => ({ ...field, reviewed })) };
+}
+
+/**
  * One row per source column, least certain first.
  *
  * A column no rule reads still gets a row, with no fields on it: a column
@@ -58,9 +82,8 @@ export function toColumnRows(mapping) {
   const rows = (mapping?.columns || []).flatMap((column, index) => {
     const matches = rulesForColumn.get(column) || [];
 
-    // Only a real melt group collapses. Not every locked rule is one: the
-    // built-in mapping's rules are all locked, and several read the same
-    // column, so collapsing on locked alone would drop whole columns.
+    // Only a real melt group collapses. Other future locked rules may read the
+    // same column, so collapsing on locked alone would drop source columns.
     const meltMatch = matches.find(({ rule }) => Boolean(rule.meltGroup));
 
     if (meltMatch) {
@@ -72,6 +95,8 @@ export function toColumnRows(mapping) {
       targetField: rule.targetField,
       confidence: rule.confidence || 'low',
       rationale: rule.rationale || '',
+      reviewed: rule.reviewed === true,
+      transform: rule.transform && typeof rule.transform === 'object' ? rule.transform : null,
     }));
 
     return [
@@ -90,9 +115,16 @@ export function toColumnRows(mapping) {
     ];
   });
 
+  // A guess someone already signed off is settled, so it sorts with the sure
+  // things rather than above them. Sorted once, on load: re-sorting as rows
+  // are confirmed would move the next row out from under the reviewer's cursor.
+  const sortKey = (row) =>
+    row.fields.length && !needsReview(row) && row.confidence === 'low'
+      ? CONFIDENCE_ORDER.high
+      : CONFIDENCE_ORDER[row.confidence ?? 'null'];
+
   return rows.sort((a, b) => {
-    const byConfidence =
-      CONFIDENCE_ORDER[a.confidence ?? 'null'] - CONFIDENCE_ORDER[b.confidence ?? 'null'];
+    const byConfidence = sortKey(a) - sortKey(b);
     return byConfidence !== 0 ? byConfidence : a.originalIndex - b.originalIndex;
   });
 }
@@ -111,7 +143,10 @@ export function toRules(mapping, rows) {
     .filter(({ rule }) => rule.editable === false)
     .map(({ rule, index }) => {
       const edited = rows.find((row) => row.ruleIndex === index && row.meltGroup);
-      return edited ? { ...rule, meltGroup: edited.meltGroup } : rule;
+      if (!edited) return rule;
+      // The melt group is stored verbatim, so the sign-off has to ride on it.
+      const reviewed = edited.fields.every((field) => field.reviewed);
+      return { ...rule, reviewed, meltGroup: { ...edited.meltGroup, reviewed } };
     });
 
   const editableRules = rows
@@ -121,11 +156,12 @@ export function toRules(mapping, rows) {
         targetField: field.targetField,
         sourceColumn: row.column,
         sourceColumns: [row.column],
-        transform: null,
         status: 'mapped',
         editable: true,
         confidence: field.confidence,
         rationale: field.rationale,
+        reviewed: field.reviewed === true,
+        transform: field.transform || null,
       })),
     );
 
@@ -136,11 +172,9 @@ export function toRules(mapping, rows) {
  * Which target fields something fills, and what fills them.
  *
  * Read from two places, because they are authoritative about different
- * things. A rule the review cannot edit speaks for itself -- the built-in
- * mapping is entirely such rules, and several of them read the same column, so
- * reading its coverage off the rows would report only the first target each
- * column feeds. Everything editable is read from the rows instead, since those
- * carry the reviewer's changes and the rules do not.
+ * things. A rule the review cannot edit speaks for itself. Everything editable
+ * is read from the rows instead, since those carry the reviewer's changes and
+ * the rules do not.
  */
 function filledTargets(mapping, rows) {
   const filled = new Map();
@@ -207,7 +241,7 @@ export function computeCoverage(mapping, rows) {
  * needs, recomputed here against the edited rows rather than read off the
  * mapping, which describes the version that was loaded.
  */
-export function reviewIssues(mapping, rows, confirmedColumns, requiredFields) {
+export function reviewIssues(mapping, rows, requiredFields) {
   // One column may fill several fields. One field may not be filled by several
   // columns -- both would be renamed to the same name and which survived would
   // be luck -- so that is the clash worth reporting.
@@ -233,11 +267,47 @@ export function reviewIssues(mapping, rows, confirmedColumns, requiredFields) {
   }
 
   return {
-    unconfirmedLowConfidence: rows.filter(
-      (row) => row.confidence === 'low' && !confirmedColumns.has(row.column),
-    ),
+    unconfirmedLowConfidence: rows.filter(needsReview),
     duplicateTargets: [...duplicated],
     missingRequired: (requiredFields || []).filter((field) => !filled.has(field)),
     ignoredColumns: rows.filter((row) => !row.fields.length).map((row) => row.column),
   };
+}
+
+// A Python repr'd string, as the backend's warnings quote them: single-quoted
+// unless the value holds an apostrophe, then double-quoted.
+const QUOTED = `'[^']*'|"[^"]*"`;
+
+// A quoted value, or a list of them, standing on its own -- not the apostrophe
+// in "didn't", which has a letter on one side.
+const QUOTED_VALUE = new RegExp(
+  String.raw`(?<!\w)(\[(?:${QUOTED})(?:, (?:${QUOTED}))*\]|${QUOTED})(?!\w)`,
+  'g',
+);
+
+/**
+ * Split a validation warning into prose and the values it names, so the
+ * names can be set in code type like everywhere else on the page.
+ *
+ * The warnings are sentences built in Python (see backend validate_contract)
+ * with column and field names repr'd into them: 'VName', or
+ * ['VName', 'Dept Code'] for a list. The quotes and brackets are dropped and a
+ * list reads as "VName, Dept Code", matching how the page lists columns
+ * elsewhere.
+ *
+ * @returns {{ text: string, code: boolean }[]}
+ */
+export function splitWarning(warning) {
+  const parts = [];
+  let last = 0;
+
+  for (const match of warning.matchAll(QUOTED_VALUE)) {
+    if (match.index > last) parts.push({ text: warning.slice(last, match.index), code: false });
+    const values = match[0].match(new RegExp(QUOTED, 'g')).map((value) => value.slice(1, -1));
+    parts.push({ text: values.join(', '), code: true });
+    last = match.index + match[0].length;
+  }
+
+  if (last < warning.length) parts.push({ text: warning.slice(last), code: false });
+  return parts;
 }

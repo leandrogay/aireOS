@@ -87,7 +87,15 @@ BQ_FAIRPRICESELLOUT_TABLE = os.environ.get(
 # Weekly sell-out the dashboard reads: a normalized table of retailer_id,
 # store_code and sku rows (names come from the Cloud SQL catalog).
 BQ_SELLOUT_TABLE = os.environ.get(
-    "BQ_SELLOUT_TABLE", "aire-data.Aire_Data.public_sellout"
+    "BQ_SELLOUT_TABLE", "aire-data.Aire_Data_Analytics.public_sellout"
+)
+
+# Final forecast the Forecast page reads: one row per customer x SKU x month
+# with the initial / previous / current lines, cartons only. Read-only; written
+# by the BigQuery procedure run_monthly_forecast_pipeline.
+BQ_FORECAST_OUTPUT_VIEW = os.environ.get(
+    "BQ_FORECAST_OUTPUT_VIEW",
+    "aire-data.Aire_Data_Analytics.aire_forecasting_output",
 )
 
 # Weekly sell-out with catalog names joined on (built on the Datastream

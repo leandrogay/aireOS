@@ -105,12 +105,13 @@ def test_approval_writes_confirmed_and_removes_pending(monkeypatch):
 
 def test_approval_succeeds_when_there_was_no_pending_blob(monkeypatch):
     # Amending an already-confirmed mapping: its pending copy was cleaned up
-    # the first time round, and its absence is not a failure.
+    # the first time round. It is gone, so the review screen must not be told
+    # the cleanup failed.
     _install(monkeypatch)
 
     result = storage.move_pending_mapping_to_confirmed("abc123", {"contract": {}})
 
-    assert result["removed_pending"] is False
+    assert result["removed_pending"] is True
     assert result["pending_error"] is None
     assert result["stored_at"].endswith("mappings/confirmed/abc123.json")
 
@@ -182,6 +183,58 @@ def test_history_reports_the_mapping_name_once_there_is_one(monkeypatch):
     assert row["mapping_fingerprint"] == "abc123"
 
 
+def test_upload_history_links_only_to_mappings_that_exist_in_gcs(monkeypatch):
+    uploads = [
+        {
+            "filename": "legacy.txt",
+            "mapping_fingerprint": "fairprice_wide_v1",
+        },
+        {"filename": "confirmed.txt", "mapping_fingerprint": "confirmed123"},
+        {"filename": "pending.txt", "mapping_fingerprint": "pending123"},
+        {"filename": "unmapped.txt", "mapping_fingerprint": None},
+    ]
+    monkeypatch.setattr(storage, "list_uploads", lambda limit: uploads)
+    monkeypatch.setattr(
+        storage,
+        "list_mapping_fingerprints",
+        lambda state: {
+            "confirmed": ["confirmed123"],
+            "pending": ["pending123"],
+        }[state],
+    )
+
+    rows = uploads_router._list_upload_history(50)
+
+    assert [row["filename"] for row in rows] == [
+        "confirmed.txt",
+        "pending.txt",
+        "unmapped.txt",
+    ]
+    assert [row["mapping_available"] for row in rows] == [True, True, False]
+
+
+def test_history_skips_the_folder_placeholder_object(monkeypatch):
+    # Creating the uploads/ folder in the Cloud Console stores a zero-byte
+    # object named "uploads/". It is not a file, and listed as one it showed up
+    # as a nameless upload with an "Unknown" status in an otherwise empty bucket.
+    placeholder = FakeBlob(storage.DESTINATION_PREFIX)
+    _install(monkeypatch, [placeholder, _upload_blob("week01.txt", "abc123", "mapped")])
+
+    rows = storage.list_uploads()
+
+    assert [row["filename"] for row in rows] == ["week01.txt"]
+
+
+def test_download_upload_preserves_original_filename(monkeypatch):
+    blob = _upload_blob("monthly-sales.xlsx", "abc123", "mapped")
+    blob.data = b"workbook bytes"
+    _install(monkeypatch, [blob])
+
+    result = storage.download_upload(blob.name)
+
+    assert result == ("monthly-sales.xlsx", b"workbook bytes")
+
+
 # ---- what gets recorded on the upload in the first place ---------------------
 
 def test_a_partial_match_records_no_fingerprint_to_link_to():
@@ -203,19 +256,19 @@ def test_a_pending_proposal_records_the_fingerprint_it_is_stored_under():
     assert annotations[storage.MAPPING_FINGERPRINT_METADATA_KEY] == "abc123"
 
 
-def test_a_builtin_match_records_its_mapping_id_name_and_vendor():
+def test_a_confirmed_gcs_match_records_its_fingerprint_name_and_vendor():
     annotations = uploads_router._mapping_annotations(
         {
             "status": "mapped",
-            "mapping_id": mv.BUILTIN_MAPPING_ID,
-            "name": mv.BUILTIN_MAPPING_NAME,
-            "vendor": mv.BUILTIN_MAPPING_VENDOR,
+            "fingerprint": "abc123",
+            "name": "FairPrice monthly",
+            "vendor": "FairPrice",
         }
     )
 
-    assert annotations[storage.MAPPING_FINGERPRINT_METADATA_KEY] == mv.BUILTIN_MAPPING_ID
-    assert annotations[storage.MAPPING_NAME_METADATA_KEY] == mv.BUILTIN_MAPPING_NAME
-    assert annotations[storage.VENDOR_METADATA_KEY] == mv.BUILTIN_MAPPING_VENDOR
+    assert annotations[storage.MAPPING_FINGERPRINT_METADATA_KEY] == "abc123"
+    assert annotations[storage.MAPPING_NAME_METADATA_KEY] == "FairPrice monthly"
+    assert annotations[storage.VENDOR_METADATA_KEY] == "FairPrice"
 
 
 # ---- the coverage checklist ---------------------------------------------------
@@ -228,7 +281,6 @@ def test_every_coverage_field_is_a_field_a_contract_can_actually_fill():
 
     for field in mv.CORE_TARGET_FIELDS:
         assert field in generate_mapping.TARGET_SCHEMA
-        assert field in mv.BUILTIN_TARGET_SCHEMA
 
 
 def test_period_fields_are_declared_as_filled_without_a_column():
@@ -236,16 +288,14 @@ def test_period_fields_are_declared_as_filled_without_a_column():
     assert mv.PERIOD_DERIVED_FIELDS == ["period_start", "period_end", "period_type"]
 
 
-def test_both_packets_carry_the_same_checklist():
+def test_stored_packets_carry_the_review_checklist():
     envelope = {
         "contract": {"identity_mapping": {"SKU": "sku"}, "melt_groups": []},
         "raw_columns": ["SKU"],
         "target_schema": ["sku"],
     }
 
-    builtin = mv.builtin_packet()
     stored = mv.envelope_to_packet("abc123", envelope, "pending")
 
-    assert builtin["coverageFields"] == mv.CORE_TARGET_FIELDS
     assert stored["coverageFields"] == mv.CORE_TARGET_FIELDS
-    assert builtin["periodDerivedFields"] == stored["periodDerivedFields"]
+    assert stored["periodDerivedFields"] == mv.PERIOD_DERIVED_FIELDS

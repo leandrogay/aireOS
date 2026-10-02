@@ -1,4 +1,6 @@
-from typing import Any, Dict
+"""Validate contract-mapped sell-out rows before database storage."""
+
+from typing import Any
 
 import pandas as pd
 
@@ -8,11 +10,10 @@ from app.schemas.sellout import (
     NUMERIC_COLUMNS,
     REQUIRED_COLUMNS,
 )
-from app.services.mapping_service import TARGET_SCHEMA, apply_existing_mapping
 
 
-def validate_mapped_dataframe(mapped: pd.DataFrame) -> Dict[str, Any]:
-    """Standardise any mapped dataframe and separate invalid rows."""
+def validate_mapped_dataframe(mapped: pd.DataFrame) -> dict[str, Any]:
+    """Standardise mapped data and separate rows that are unsafe to store."""
     mapped = mapped.reindex(columns=BUSINESS_COLUMNS).reset_index(drop=True).copy()
 
     text_columns = [
@@ -24,8 +25,8 @@ def validate_mapped_dataframe(mapped: pd.DataFrame) -> Dict[str, Any]:
         mapped[field] = mapped[field].astype("string").str.strip()
         mapped[field] = mapped[field].mask(mapped[field].eq(""))
 
-    failed_indices = set()
-    rejection_reasons = []
+    failed_indices: set[int] = set()
+    rejection_reasons: list[str] = []
 
     for field in REQUIRED_COLUMNS:
         missing = mapped[field].isna()
@@ -34,9 +35,9 @@ def validate_mapped_dataframe(mapped: pd.DataFrame) -> Dict[str, Any]:
             failed_indices.update(mapped.index[missing].tolist())
             rejection_reasons.append(f"{count} rows missing {field}")
 
-    invalid_period_type = mapped["period_type"].notna() & ~mapped["period_type"].isin(
-        ["week", "month"]
-    )
+    invalid_period_type = mapped["period_type"].notna() & ~mapped[
+        "period_type"
+    ].isin(["week", "month"])
     if invalid_period_type.any():
         count = int(invalid_period_type.sum())
         failed_indices.update(mapped.index[invalid_period_type].tolist())
@@ -55,8 +56,7 @@ def validate_mapped_dataframe(mapped: pd.DataFrame) -> Dict[str, Any]:
         parsed = pd.to_numeric(mapped[field], errors="coerce")
         invalid = parsed.isna() & mapped[field].notna()
         if field == "pack_size":
-            non_integer = parsed.notna() & parsed.mod(1).ne(0)
-            invalid = invalid | non_integer
+            invalid = invalid | (parsed.notna() & parsed.mod(1).ne(0))
         count = int(invalid.sum())
         if count:
             failed_indices.update(mapped.index[invalid].tolist())
@@ -64,8 +64,7 @@ def validate_mapped_dataframe(mapped: pd.DataFrame) -> Dict[str, Any]:
         mapped[field] = parsed.mask(invalid)
 
     # Cloud SQL and BigQuery both define pack_size as an integer. Pandas needs
-    # its nullable integer dtype so missing values remain null rather than
-    # forcing the entire column to floating point.
+    # its nullable integer dtype so missing values stay null.
     mapped["pack_size"] = mapped["pack_size"].astype("Int64")
 
     valid_df = mapped.drop(index=list(failed_indices)).reset_index(drop=True)
@@ -81,14 +80,3 @@ def validate_mapped_dataframe(mapped: pd.DataFrame) -> Dict[str, Any]:
         "total_rejected": rejected,
         "rejection_summary": summary,
     }
-
-
-def process_and_validate(
-    df: pd.DataFrame, mapping: Dict[str, Any], filename: str
-) -> Dict[str, Any]:
-    """Map a recognised file, then reject rows that violate the target schema."""
-    mapped = apply_existing_mapping(df.drop_duplicates(), mapping, filename)
-    if list(mapped.columns) != TARGET_SCHEMA:
-        raise ValueError("Mapping output does not conform to the target schema.")
-
-    return validate_mapped_dataframe(mapped)

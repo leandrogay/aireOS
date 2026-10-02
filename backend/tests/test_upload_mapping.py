@@ -4,12 +4,12 @@ import pandas as pd
 import pytest
 
 from app.routers import uploads
-from app.services.mapping_service import (
-    FAIRPRICE_DIMENSION_HEADERS,
-    TARGET_SCHEMA,
-    extract_header_signature,
-    find_matching_mapping,
-)
+
+
+@pytest.fixture(autouse=True)
+def disable_live_cloud_sql(monkeypatch):
+    """Unit tests must never inherit a developer's live-write setting."""
+    monkeypatch.setenv("CLOUD_SQL_LOAD_ENABLED", "false")
 
 
 BASE_ROW = {
@@ -32,12 +32,6 @@ BASE_ROW = {
 }
 
 
-@pytest.fixture(autouse=True)
-def disable_live_cloud_sql(monkeypatch):
-    """Unit tests must never inherit a developer's live-write setting."""
-    monkeypatch.setenv("CLOUD_SQL_LOAD_ENABLED", "false")
-
-
 def _fairprice_df(period_type="Month", periods=2):
     row = dict(BASE_ROW)
     dates = (
@@ -58,41 +52,38 @@ def _as_txt_bytes(dataframe):
     return buffer.getvalue()
 
 
-def test_monthly_file_maps_through_upload_flow():
-    result = uploads.resolve_and_apply_mapping(
-        "any-name.txt", _as_txt_bytes(_fairprice_df())
-    )
-    processing = result["processing"]
-
-    assert result["status"] == "mapped"
-    assert result["source"] == "builtin"
-    assert processing["rows_total"] == 2
-    assert processing["rows_mapped"] == 2
-    assert processing["rows_rejected"] == 0
-    assert processing["columns"] == TARGET_SCHEMA
-    assert processing["preview"][0]["period_start"] == "2026-01-01"
-    assert processing["preview"][0]["period_end"] == "2026-01-31"
-    assert processing["preview"][0]["period_label"] == "2026-M01"
-
-
-def test_weekly_file_uses_same_upload_flow():
-    result = uploads.resolve_and_apply_mapping(
-        "weekly.txt", _as_txt_bytes(_fairprice_df("Week"))
+def test_column_samples_use_distinct_values_instead_of_repeating_first_rows():
+    dataframe = pd.DataFrame(
+        {"Store Format": ["FPON", "FPON", "HYPER", "SUPER", "HYPER"]}
     )
 
-    assert result["processing"]["rows_mapped"] == 2
-    assert result["processing"]["preview"][0]["period_type"] == "week"
-    assert result["processing"]["preview"][0]["period_end"] == "2026-01-07"
+    assert uploads.generate_mapping.column_samples(dataframe) == {
+        "Store Format": ["FPON", "HYPER", "SUPER"]
+    }
 
 
-def test_recognition_remains_independent_of_filename():
-    contents = _as_txt_bytes(_fairprice_df(periods=1))
-    first = uploads.resolve_and_apply_mapping("fairprice.txt", contents)
-    second = uploads.resolve_and_apply_mapping("another-retailer-name.txt", contents)
+def test_fairprice_shaped_file_uses_gcs_resolution(monkeypatch):
+    pending = {
+        "status": "pending_confirmation",
+        "fingerprint": "gcs123",
+        "source": "generated",
+    }
+    calls = []
 
-    assert first["mapping_id"] == second["mapping_id"] == "fairprice_wide_v1"
-    assert first["processing"]["preview"][0]["source_file"] == "fairprice.txt"
-    assert second["processing"]["preview"][0]["source_file"] == "another-retailer-name.txt"
+    def resolve(filename, data, uploaded_to):
+        calls.append((filename, uploaded_to))
+        return pending
+
+    monkeypatch.setattr(uploads.generate_mapping, "resolve_mapping", resolve)
+
+    result = uploads.resolve_and_apply_mapping(
+        "fairprice.txt",
+        _as_txt_bytes(_fairprice_df()),
+        "gs://bucket/fairprice.txt",
+    )
+
+    assert result == pending
+    assert calls == [("fairprice.txt", "gs://bucket/fairprice.txt")]
 
 
 def test_unrecognised_file_continues_to_proposal_flow(monkeypatch):
@@ -102,28 +93,20 @@ def test_unrecognised_file_continues_to_proposal_flow(monkeypatch):
         "fingerprint": "abc123",
         "contract": {"identity_mapping": {}, "melt_groups": []},
     }
-    monkeypatch.setattr(uploads.generate_mapping, "resolve_mapping", lambda *_: pending)
+    monkeypatch.setattr(
+        uploads.generate_mapping,
+        "resolve_mapping",
+        lambda *_: pending,
+    )
 
     result = uploads.resolve_and_apply_mapping(
-        "unknown.txt", _as_txt_bytes(dataframe), "gs://bucket/unknown.txt"
+        "unknown.txt",
+        _as_txt_bytes(dataframe),
+        "gs://bucket/unknown.txt",
     )
 
     assert result == pending
     assert "processing" not in result
-
-
-def test_invalid_measure_rejects_only_its_period_row():
-    dataframe = _fairprice_df()
-    dataframe.loc[0, "Qty (in EA) | Month 2 | 01-02-2026"] = "not-a-number"
-
-    result = uploads.resolve_and_apply_mapping(
-        "monthly.txt", _as_txt_bytes(dataframe)
-    )
-
-    assert result["processing"]["rows_total"] == 2
-    assert result["processing"]["rows_mapped"] == 1
-    assert result["processing"]["rows_rejected"] == 1
-    assert "invalid numeric quantity_units" in result["processing"]["rejection_summary"]
 
 
 def test_confirmed_contract_is_applied_deterministically(monkeypatch):
@@ -172,7 +155,9 @@ def test_confirmed_contract_is_applied_deterministically(monkeypatch):
     )
 
     result = uploads.resolve_and_apply_mapping(
-        "vendor.txt", _as_txt_bytes(dataframe), "gs://bucket/vendor.txt"
+        "vendor.txt",
+        _as_txt_bytes(dataframe),
+        "gs://bucket/vendor.txt",
     )
 
     preview = result["processing"]["preview"][0]
@@ -183,42 +168,80 @@ def test_confirmed_contract_is_applied_deterministically(monkeypatch):
     assert preview["period_type"] == "week"
     assert preview["revenue"] == 12.5
     assert preview["quantity_units"] == 2
-
-
-def test_signature_contains_exact_source_headers():
-    dataframe = _fairprice_df(periods=1)
-    signature = extract_header_signature(dataframe)
-
-    assert signature[:16] == FAIRPRICE_DIMENSION_HEADERS
-    assert find_matching_mapping(signature)["mapping_id"] == "fairprice_wide_v1"
-
-
-def test_upload_reports_cloud_sql_disabled_by_default():
-    result = uploads.resolve_and_apply_mapping(
-        "monthly.txt", _as_txt_bytes(_fairprice_df(periods=1))
-    )
-
     assert result["processing"]["rows_stored"] == 0
     assert result["processing"]["storage_status"] == "disabled"
 
 
-def test_upload_stores_valid_rows_when_cloud_sql_is_enabled(monkeypatch):
+def test_confirmed_contract_stores_valid_rows_when_enabled(monkeypatch):
+    dataframe = pd.DataFrame(
+        {
+            "SKU": ["A1"],
+            "Retailer": ["fairprice_online"],
+            "Store Code": ["FPON"],
+            "Sales | Month 1 | 01-08-2026": ["12.50"],
+            "Qty | Month 1 | 01-08-2026": ["2"],
+        }
+    )
+    contract = {
+        "identity_mapping": {
+            "SKU": "sku",
+            "Retailer": "retailer",
+            "Store Code": "store_code",
+        },
+        "melt_groups": [
+            {
+                "target_field": "revenue",
+                "columns": ["Sales | Month 1 | 01-08-2026"],
+                "period_extract_regex": r"(\d{2}-\d{2}-\d{4})$",
+                "date_format": "%d-%m-%Y",
+            },
+            {
+                "target_field": "quantity_units",
+                "columns": ["Qty | Month 1 | 01-08-2026"],
+                "period_extract_regex": r"(\d{2}-\d{2}-\d{4})$",
+                "date_format": "%d-%m-%Y",
+            },
+        ],
+    }
+    monkeypatch.setattr(
+        uploads.generate_mapping,
+        "resolve_mapping",
+        lambda *_: {
+            "status": "mapped",
+            "fingerprint": "confirmed123",
+            "contract": contract,
+        },
+    )
     monkeypatch.setenv("CLOUD_SQL_LOAD_ENABLED", "true")
     captured = {}
 
-    def fake_load(dataframe, *, replace_source=False):
+    def load(dataframe, *, replace_source=False):
         captured["rows"] = len(dataframe)
         captured["replace_source"] = replace_source
-        return {"rows_stored": len(dataframe), "storage_status": "completed"}
+        captured["period_type"] = dataframe.iloc[0]["period_type"]
+        return {
+            "rows_stored": len(dataframe),
+            "rows_consolidated": 0,
+            "storage_status": "completed",
+        }
 
-    monkeypatch.setattr(uploads.sellout_service, "load_clean_rows", fake_load)
+    monkeypatch.setattr(
+        uploads.sellout_ingestion.sellout_service,
+        "load_clean_rows",
+        load,
+    )
 
     result = uploads.resolve_and_apply_mapping(
-        "monthly.txt",
-        _as_txt_bytes(_fairprice_df(periods=1)),
+        "august.txt",
+        _as_txt_bytes(dataframe),
+        "gs://bucket/august.txt",
         replace_source=True,
     )
 
-    assert captured == {"rows": 1, "replace_source": True}
+    assert captured == {
+        "rows": 1,
+        "replace_source": True,
+        "period_type": "month",
+    }
     assert result["processing"]["rows_stored"] == 1
     assert result["processing"]["storage_status"] == "completed"

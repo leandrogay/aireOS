@@ -94,6 +94,19 @@ function TransformedPreview({ processing }) {
       {processing.rejection_summary && (
         <p className="mt-1.5 text-xs text-amber-900">{processing.rejection_summary}</p>
       )}
+      {processing.storage_status === 'completed' && (
+        <p className="mt-1.5 text-xs font-medium text-green-700">
+          {processing.rows_stored?.toLocaleString() || 0} rows stored in Cloud SQL
+          {processing.rows_consolidated
+            ? ` (${processing.rows_consolidated.toLocaleString()} consolidated)`
+            : ''}
+        </p>
+      )}
+      {processing.storage_status === 'disabled' && (
+        <p className="mt-1.5 text-xs font-medium text-amber-900">
+          Preview only — Cloud SQL loading is disabled.
+        </p>
+      )}
     </div>
   );
 }
@@ -203,18 +216,33 @@ export default function UploadFileRow({ item, onRemove, onRetry, onResolveDuplic
             </ul>
           )}
 
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            {outcome.mappingId && (
-              <>
-                <Link href={`/mappings/${outcome.mappingId}`} className={primaryAction}>
+          {/* One link, named for what it opens. A new layout's proposal is
+              waiting under this file's own fingerprint, so reviewing it is the
+              next step. A near match stores nothing for this file -- the link
+              opens the stored mapping it resembles, which can be looked at
+              but not approved on this file's behalf, so it is not called a
+              review. */}
+          {outcome.mappingId && (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {outcome.why === 'partial' ? (
+                <Link
+                  href={`/mappings/${outcome.mappingId}`}
+                  className={secondaryAction}
+                  aria-label={`View matched mapping for ${file.name}`}
+                >
+                  View matched mapping
+                </Link>
+              ) : (
+                <Link
+                  href={`/mappings/${outcome.mappingId}`}
+                  className={primaryAction}
+                  aria-label={`Review mapping for ${file.name}`}
+                >
                   Review mapping
                 </Link>
-                <Link href={`/mappings/${outcome.mappingId}`} className={secondaryAction}>
-                  View mapping
-                </Link>
-              </>
-            )}
-          </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

@@ -130,6 +130,13 @@
   /* Brand PDF is inconsistent here: hex swatch says #E62A39 (red), RGB value says a
      light blue. Went with the RGB reading — flag to Sandra if this renders wrong. */
   --aire-celest: #A7D2F2;
+
+  /* Sales dashboard comparison chart, Total view: a warm neutral pair from
+     the cream family, so the two period bars never share a colour with a
+     store format (app/utils/storeFormats.js). Checked against every format
+     colour with the dataviz palette validator (normal-vision ΔE ≥ 17). */
+  --chart-period-current: #7A6E64;
+  --chart-period-baseline: var(--aire-cream);
 }
 
 .dark {

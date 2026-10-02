@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { changePct, formatChangePct } from '@/app/utils/periodComparison';
 
 const METRICS = [
   { value: 'value', label: 'Sales Value' },
@@ -20,6 +21,16 @@ function toggleButtonClass(isActive) {
   }`;
 }
 
+function changeColorClass(pct) {
+  if (pct > 0) return 'text-green-600';
+  if (pct < 0) return 'text-red-600';
+  return 'text-deep-violet-blue/60';
+}
+
+// Ranks SKUs for the selected period. With a "Compare to" baseline
+// (comparisonStart/comparisonEnd), the same ranking is fetched for the
+// baseline too and each SKU gets a change column for the chosen metric —
+// the ranking endpoint returns every SKU, so matching by code is complete.
 export default function SkuRanking({
   dataVersion = 0,
   sku = '',
@@ -28,10 +39,14 @@ export default function SkuRanking({
   store = '',
   startDate = '',
   endDate = '',
+  comparisonStart = '',
+  comparisonEnd = '',
+  compareShort = '',
 }) {
   const [metric, setMetric] = useState('value');
   const [order, setOrder] = useState('desc');
   const [skus, setSkus] = useState([]);
+  const [baselineBySku, setBaselineBySku] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const dataVersionRef = useRef(dataVersion);
@@ -48,19 +63,31 @@ export default function SkuRanking({
         setLoading(true);
       }
       setError(null);
-      try {
+      async function fetchSkus(rangeStart, rangeEnd) {
         const params = new URLSearchParams({ metric, order, customer });
         if (sku) params.set('sku', sku);
         if (mode) params.set('mode', mode);
         if (store) params.set('store', store);
-        if (startDate) params.set('start_date', startDate);
-        if (endDate) params.set('end_date', endDate);
+        if (rangeStart) params.set('start_date', rangeStart);
+        if (rangeEnd) params.set('end_date', rangeEnd);
         const res = await fetch(
           `${process.env.NEXT_PUBLIC_API_URL}/api/sales/skus?${params.toString()}`
         );
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Failed to load SKU ranking');
-        if (!cancelled) setSkus(data.skus);
+        return data.skus;
+      }
+
+      try {
+        const hasComparison = Boolean(comparisonStart && comparisonEnd);
+        const [current, baseline] = await Promise.all([
+          fetchSkus(startDate, endDate),
+          hasComparison ? fetchSkus(comparisonStart, comparisonEnd) : null,
+        ]);
+        if (!cancelled) {
+          setSkus(current);
+          setBaselineBySku(baseline ? new Map(baseline.map((s) => [s.sku, s])) : null);
+        }
       } catch (err) {
         if (!cancelled) setError(err.message);
       } finally {
@@ -72,7 +99,7 @@ export default function SkuRanking({
     return () => {
       cancelled = true;
     };
-  }, [metric, order, dataVersion, sku, mode, customer, store, startDate, endDate]);
+  }, [metric, order, dataVersion, sku, mode, customer, store, startDate, endDate, comparisonStart, comparisonEnd]);
 
   return (
     <div className="bg-white rounded-lg border border-lavander shadow-sm p-3">
@@ -124,6 +151,7 @@ export default function SkuRanking({
               <th className="px-3 py-1">Product</th>
               <th className="px-3 py-1">Volume</th>
               <th className="px-3 py-1">Value</th>
+              {baselineBySku && <th className="px-3 py-1">Change {compareShort}</th>}
             </tr>
           </thead>
           <tbody>
@@ -133,11 +161,29 @@ export default function SkuRanking({
                 <td className="px-3 py-1">{s.product_name}</td>
                 <td className="px-3 py-1">{s.volume}</td>
                 <td className="px-3 py-1">${s.value.toLocaleString()}</td>
+                {baselineBySku && (
+                  <SkuChange current={s[metric]} baseline={baselineBySku.get(s.sku)?.[metric] ?? 0} />
+                )}
               </tr>
             ))}
           </tbody>
         </table>
       )}
     </div>
+  );
+}
+
+// Change in the ranking's metric (value or volume) vs the baseline. A SKU
+// with no baseline sales shows "New" rather than an infinite percentage.
+function SkuChange({ current, baseline }) {
+  if (!baseline) {
+    return <td className="px-3 py-1 text-deep-violet-blue/60">{current ? 'New' : '—'}</td>;
+  }
+  const pct = changePct(current, baseline);
+  return (
+    <td className={`px-3 py-1 font-medium ${changeColorClass(pct)}`}>
+      {pct > 0 ? '▲ ' : pct < 0 ? '▼ ' : ''}
+      {formatChangePct(pct)}
+    </td>
   );
 }

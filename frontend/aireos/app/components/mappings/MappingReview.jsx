@@ -6,33 +6,31 @@ const btn =
   'rounded-md border px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60';
 
 const STATE_LABEL = {
-  builtin: 'Built-in mapping',
   confirmed: 'Confirmed mapping',
   pending: 'Proposed mapping',
 };
 
-// A rule may read a column the packet does not otherwise declare -- a composite
-// like "Brand + MCH", or a value from outside the sheet entirely. Offer those
-// alongside the declared columns so editing cannot silently drop one.
-const sourceOptionsFor = (mapping) => {
-  const declared = mapping.columns || [];
-  const inUse = (mapping.rules || []).map((rule) => rule.sourceColumn).filter(Boolean);
-  return Array.from(new Set([...declared, ...inUse]));
-};
+function describeTransform(transform) {
+  if (!transform) return null;
+  if (typeof transform === 'string') return transform;
+  if (transform.type === 'regex_extract') {
+    return `Extract group ${transform.group || 1} from /${transform.pattern || ''}/`;
+  }
+  if (transform.type === 'value_map') {
+    const count = Object.keys(transform.values || {}).length;
+    return `Map ${count} source value${count === 1 ? '' : 's'}${
+      Object.hasOwn(transform, 'default') ? '; use a default for the rest' : ''
+    }`;
+  }
+  return transform.type || 'Transformed';
+}
 
-export const MappingReview = ({
-  mapping,
-  isEditing = false,
-  onStartEdit,
-  onCancelEdit,
-  onSourceChange,
-  onConfirm,
-  onDiscard,
-  disabled = false,
-}) => {
-  const sourceOptions = sourceOptionsFor(mapping);
+// A read-only summary of a mapping's rules. Every change — editing, approving,
+// discarding — happens on the full review page (/mappings/[id]), which alone
+// can show samples and confidence, preview the output, and collect the name
+// and vendor a first approval needs.
+export const MappingReview = ({ mapping }) => {
   const isPending = mapping.state === 'pending';
-  const isBuiltin = mapping.state === 'builtin';
 
   return (
     <section className="rounded-xl border border-deep-violet-blue/20 bg-white p-6 shadow-sm">
@@ -66,13 +64,6 @@ export const MappingReview = ({
         </div>
       </div>
 
-      {isBuiltin && (
-        <p className="mb-4 rounded-lg border border-deep-violet-blue/20 bg-lavander/50 p-3 text-sm text-deep-violet-blue">
-          These rules run as code in <span className="font-mono text-xs">apply_existing_mapping</span>,
-          so they are shown for reference and cannot be edited here.
-        </p>
-      )}
-
       {mapping.requiredMissing?.length > 0 && (
         <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
           Missing required target fields: {mapping.requiredMissing.join(', ')}
@@ -101,29 +92,15 @@ export const MappingReview = ({
               <tr key={`${mapping.mappingId}-${rule.targetField}-${index}`}>
                 <td className="px-3 py-2 font-mono text-zinc-900">{rule.targetField}</td>
                 <td className="px-3 py-2">
-                  {isEditing && rule.editable !== false ? (
-                    <select
-                      value={rule.sourceColumn || ''}
-                      onChange={(event) => onSourceChange(mapping.mappingId, index, event.target.value)}
-                      disabled={disabled}
-                      className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm text-zinc-900 focus:border-deep-violet-blue focus:outline-none"
-                    >
-                      <option value="">Select source column</option>
-                      {sourceOptions.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                  ) : rule.sourceColumn ? (
+                  {rule.sourceColumn ? (
                     <span className="text-zinc-900">{rule.sourceColumn}</span>
                   ) : (
                     <span className="text-zinc-400">No source</span>
                   )}
                 </td>
                 <td className="px-3 py-2">
-                  {rule.transform ? (
-                    <span className="text-zinc-700">{rule.transform}</span>
+                  {describeTransform(rule.transform) ? (
+                    <span className="text-zinc-700">{describeTransform(rule.transform)}</span>
                   ) : (
                     <span className="text-zinc-400">Direct</span>
                   )}
@@ -153,57 +130,14 @@ export const MappingReview = ({
         <div className="flex items-center gap-3">
           <Link
             href={`/mappings/${mapping.mappingId}`}
-            className={`${btn} border-violet bg-white text-deep-violet-blue hover:bg-lavander`}
+            className={`${btn} border-deep-violet-blue bg-deep-violet-blue text-white hover:opacity-90`}
           >
-            {isPending ? 'Review and approve' : 'Open full review'}
+            {isPending
+              ? 'Review and approve'
+              : mapping.editable === false
+                ? 'Open full review'
+                : 'Review and edit'}
           </Link>
-
-          {!isBuiltin && !isEditing && onStartEdit && (
-            <button
-              type="button"
-              onClick={() => onStartEdit(mapping.mappingId)}
-              disabled={disabled}
-              className={`${btn} border-deep-violet-blue bg-white text-deep-violet-blue hover:bg-lavander`}
-            >
-              Edit mapping
-            </button>
-          )}
-
-          {isEditing && onCancelEdit && (
-            <button
-              type="button"
-              onClick={() => onCancelEdit(mapping.mappingId)}
-              disabled={disabled}
-              className={`${btn} border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50`}
-            >
-              Cancel
-            </button>
-          )}
-
-          {isPending && onDiscard && (
-            <button
-              type="button"
-              onClick={() => onDiscard(mapping.mappingId)}
-              disabled={disabled}
-              className={`${btn} border-red-300 bg-white text-red-700 hover:bg-red-50`}
-            >
-              Discard
-            </button>
-          )}
-
-          {/* A first approval needs a name and a vendor, which the full review
-              collects — so only an amendment to an already-named mapping can
-              be saved from here. */}
-          {!isBuiltin && isEditing && !isPending && (
-            <button
-              type="button"
-              onClick={() => onConfirm(mapping.mappingId)}
-              disabled={disabled}
-              className={`${btn} border-deep-violet-blue bg-deep-violet-blue text-white hover:opacity-90`}
-            >
-              Save amendments
-            </button>
-          )}
         </div>
       </div>
     </section>

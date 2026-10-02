@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import PageLayout from "@/components/layout/PageLayout";
 import SkuRanking from "@/components/dashboard/SkuRanking";
 import RevenueTrendCard from "@/components/dashboard/RevenueTrendCard";
@@ -9,34 +9,33 @@ import DashboardFilters from "@/components/dashboard/DashboardFilters";
 import FilterBadge from "@/components/dashboard/FilterBadge";
 import PeriodComparisonDetail from "@/components/dashboard/PeriodComparisonDetail";
 import CustomerSelector from "@/components/dashboard/CustomerSelector";
+import PeriodControls from "@/components/dashboard/PeriodControls";
 import useDataFreshness from "@/hooks/useDataFreshness";
 import useDashboardSummary from "@/hooks/useDashboardSummary";
-import usePeriodComparison from "@/hooks/usePeriodComparison";
 import useDefaultDateRange from "@/hooks/useDefaultDateRange";
 import useCustomerOptions from "@/hooks/useCustomerOptions";
-import { formatDateRange } from "@/lib/formatDateRange";
-
-// Whole days between two ISO (YYYY-MM-DD) dates, parsed as local midnight so
-// this isn't off-by-one across timezones.
-function daySpan(start, end) {
-  if (!start || !end) return 0;
-  const startMs = new Date(`${start}T00:00:00`).getTime();
-  const endMs = new Date(`${end}T00:00:00`).getTime();
-  return (endMs - startMs) / 86400000;
-}
+import usePriceMix from "@/hooks/usePriceMix";
+import {
+  DEFAULT_COMPARE,
+  alignComparisonBuckets,
+  comparisonSetup,
+  daysBetween,
+  loadedWeeksInRange,
+  sumPeriodTotals,
+} from "@/app/utils/periodComparison";
+import { DEFAULT_PRESET_ID, buildDateRangePresets } from "@/app/utils/dateRangePresets";
 
 export default function DashboardPage() {
   const { channels, dataVersion, refreshing } = useDataFreshness();
 
-  // Page-header customer (retailer family, e.g. "Fairprice") selector —
-  // every other filter/query below is scoped underneath it. Distinct from
+  // Customer (retailer family, e.g. "Fairprice") selector — the top field
+  // of the Filter panel; every other filter/query below is scoped underneath it. Distinct from
   // `store` (a single branch within that customer, e.g. a FairPrice outlet)
   // — see DashboardFilters. Starts unset and auto-selects the first
-  // available customer once useCustomerOptions loads, the same
-  // "adjust state during render" pattern usePeriodComparison uses for its
-  // own external-change detection: this is a page-wide scope selector
-  // everything else waits on, not an optional filter, so it should never
-  // sit unset once at least one customer exists.
+  // available customer once useCustomerOptions loads, via the "adjust
+  // state during render" pattern: this is a
+  // page-wide scope selector everything else waits on, not an optional
+  // filter, so it should never sit unset once at least one customer exists.
   const { options: customerOptions, loading: customerOptionsLoading, error: customerOptionsError } =
     useCustomerOptions({ dataVersion });
   const [customer, setCustomer] = useState('');
@@ -46,9 +45,14 @@ export default function DashboardPage() {
     setCustomerLabel(customerOptions[0].label);
   }
 
+  // SKU codes and store codes belong to one customer's catalogue, so a
+  // customer switch drops both rather than querying a combination that
+  // can't exist. Period/compare stay, since dates mean the same for everyone.
   function handleCustomerChange(value, label) {
     setCustomer(value);
     setCustomerLabel(label);
+    clearSku();
+    clearStore();
   }
 
   const [sku, setSku] = useState('');
@@ -58,34 +62,46 @@ export default function DashboardPage() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [mode, setMode] = useState('offline');
+  // "Compare to" baseline — none by default (DEFAULT_COMPARE); Clear Filters
+  // returns to that. `customCompare` is only used while compareTo is
+  // 'custom'.
+  const [compareTo, setCompareTo] = useState(DEFAULT_COMPARE);
+  const [customCompare, setCustomCompare] = useState({ start: '', end: '' });
+  // null = pick automatically from the range length (see autoGranularity).
+  const [granularityChoice, setGranularityChoice] = useState(null);
 
-  const handleDateRangeChange = useCallback((start, end) => {
+  function handleDateRangeChange(start, end) {
     setStartDate(start);
     setEndDate(end);
-  }, []);
+    setGranularityChoice(null);
+  }
+
+  function handleCompareChange(value, customRange) {
+    setCompareTo(value);
+    if (customRange) setCustomCompare(customRange);
+  }
+
+  // Every preset (and the MTD default) is anchored to the latest loaded
+  // week for this channel — see dateRangePresets.js.
+  const latestWeekStart = useDefaultDateRange({ customer, mode, dataVersion, period: 'week' }).start;
+  const presets = buildDateRangePresets(latestWeekStart);
+  const defaultRange = presets.find((preset) => preset.id === DEFAULT_PRESET_ID) ?? { start: '', end: '' };
 
   const hasExplicitDateFilter = Boolean(startDate && endDate);
-  const defaultMonthRange = useDefaultDateRange({ customer, mode, dataVersion, period: 'month' });
-  const defaultWeekRange = useDefaultDateRange({ customer, mode, dataVersion, period: 'week' });
-  const defaultSixMonthRange = useDefaultDateRange({ customer, mode, dataVersion, period: '6months' });
-  const defaultYearRange = useDefaultDateRange({ customer, mode, dataVersion, period: '12months' });
-  const effectiveStartDate = hasExplicitDateFilter ? startDate : defaultMonthRange.start;
-  const effectiveEndDate = hasExplicitDateFilter ? endDate : defaultMonthRange.end;
+  const effectiveStartDate = hasExplicitDateFilter ? startDate : defaultRange.start;
+  const effectiveEndDate = hasExplicitDateFilter ? endDate : defaultRange.end;
 
-  // Past 6 Months/Past Year span too many weeks to read as weekly bars, so
-  // the chart switches to monthly bars for those (and for any custom range
-  // of similar length) — matched by the named preset's own bounds first
-  // (reliable regardless of exact day count), falling back to a day-span
-  // check for arbitrary custom ranges.
-  const isLongRangePreset =
-    (Boolean(defaultSixMonthRange.start) &&
-      effectiveStartDate === defaultSixMonthRange.start &&
-      effectiveEndDate === defaultSixMonthRange.end) ||
-    (Boolean(defaultYearRange.start) &&
-      effectiveStartDate === defaultYearRange.start &&
-      effectiveEndDate === defaultYearRange.end);
-  const chartGranularity =
-    isLongRangePreset || daySpan(effectiveStartDate, effectiveEndDate) > 60 ? 'month' : 'week';
+  // Ranges longer than about a quarter (Past 12 months, YTD later in the
+  // year) have too many weeks to read as weekly bars, so they default to
+  // monthly bars; the chart's By week / By month switch overrides this
+  // until the range changes again.
+  const rangeDays = effectiveStartDate && effectiveEndDate ? daysBetween(effectiveStartDate, effectiveEndDate) : 0;
+  const autoGranularity = rangeDays > 100 ? 'month' : 'week';
+  const chartGranularity = granularityChoice ?? autoGranularity;
+
+  const rangeInputs = { start: effectiveStartDate, end: effectiveEndDate, latestWeekStart, custom: customCompare };
+  const { options: compareOptions, baseline, periodNames } = comparisonSetup(compareTo, rangeInputs);
+  const compareShort = baseline ? `vs ${periodNames.baseline}` : '';
 
   const summary = useDashboardSummary({
     dataVersion,
@@ -96,20 +112,51 @@ export default function DashboardPage() {
     endDate: effectiveEndDate,
     granularity: chartGranularity,
   });
-  // Fed the *effective* scope (not raw startDate/endDate) so a comparison,
-  // once the user turns it on, always compares against whatever the
-  // dashboard is actually showing right now — including the current-month
-  // default — rather than a separate "latest week" fallback of its own.
-  const comparison = usePeriodComparison({
+  // Same filters over the baseline's dates, so both sides of every
+  // comparison (chart, cards, panel) are built the same way.
+  const baselineSummary = useDashboardSummary({
+    dataVersion,
     sku,
-    mode,
     customer,
     store,
+    startDate: baseline?.start ?? '',
+    endDate: baseline?.end ?? '',
+    // Always weekly: the chart pairs baseline week N with this period's
+    // week N and rolls them into this period's buckets, so a month view
+    // compares exactly matching weeks (see alignComparisonBuckets). Totals
+    // and per-format figures don't depend on granularity.
+    granularity: 'week',
+    enabled: Boolean(baseline),
+  });
+
+  const { priceMix } = usePriceMix({
+    dataVersion,
+    customer,
+    mode,
+    store,
+    sku,
     startDate: effectiveStartDate,
     endDate: effectiveEndDate,
-    onDateRangeChange: handleDateRangeChange,
-    dataVersion,
+    baseline,
   });
+
+  const currentTotals = summary.summaryByMode[mode]?.periodTotal ?? [];
+  const baselineTotals = baseline ? (baselineSummary.summaryByMode[mode]?.periodTotal ?? []) : [];
+  const comparisonRows = baseline
+    ? alignComparisonBuckets(currentTotals, baselineTotals, {
+        compareTo,
+        granularity: chartGranularity,
+        currentStart: effectiveStartDate,
+        currentEnd: effectiveEndDate,
+        baselineStart: baseline.start,
+        latestWeekStart,
+        currentByFormat: summary.summaryByMode[mode]?.periodByFormat ?? [],
+        baselineWeeksByFormat: baselineSummary.summaryByMode[mode]?.periodByFormat ?? [],
+      })
+    : null;
+  const currentWeeks = loadedWeeksInRange(effectiveStartDate, effectiveEndDate, latestWeekStart);
+  const baselineWeeks = baseline ? loadedWeeksInRange(baseline.start, baseline.end, latestWeekStart) : null;
+
   const lastUpdated = customer ? channels[`${customer}_${mode}`] : null;
 
   function handleSkuChange(value, productName) {
@@ -132,91 +179,101 @@ export default function DashboardPage() {
     setStoreLabel('');
   }
 
-  function clearDateRange() {
-    setStartDate('');
-    setEndDate('');
-  }
-
   function clearAllFilters() {
     clearSku();
     clearStore();
-    clearDateRange();
-    comparison.setComparisonType(null);
+    handleDateRangeChange('', '');
+    setCompareTo(DEFAULT_COMPARE);
+    setCustomCompare({ start: '', end: '' });
   }
 
   const badges = [
     sku && <FilterBadge key="sku" label={`SKU: ${skuLabel || sku}`} onClear={clearSku} />,
     store && <FilterBadge key="store" label={`Store: ${storeLabel || store}`} onClear={clearStore} />,
-    startDate && endDate && (
-      <FilterBadge key="date" label={`Date: ${formatDateRange(startDate, endDate)}`} onClear={clearDateRange} />
-    ),
   ].filter(Boolean);
 
   return (
-    <PageLayout
-      title="Sales Dashboard"
-      headerExtra={
-        <CustomerSelector
-          value={customer}
-          onChange={handleCustomerChange}
-          options={customerOptions}
-          loading={customerOptionsLoading}
-          error={customerOptionsError}
-        />
-      }
-    >
+    <PageLayout title="Sales Dashboard">
       <div className="grid grid-cols-1 gap-1 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <RevenueTrendCard
             summaryByMode={summary.summaryByMode}
             loading={summary.loading}
             refreshing={summary.refreshing}
-            error={summary.error}
+            error={summary.error || (baseline ? baselineSummary.error : null)}
             freshnessRefreshing={refreshing}
             lastUpdated={lastUpdated}
             mode={mode}
             onModeChange={setMode}
-            comparisonActive={comparison.active}
-            comparisonType={comparison.comparisonType}
-            comparisonResult={comparison.result}
-            comparisonLoading={comparison.loading}
-          />
-        </div>
-        <div>
-          <DashboardFilters
-            sku={sku}
-            onSkuChange={handleSkuChange}
-            customer={customer}
-            store={store}
-            onStoreChange={handleStoreChange}
-            startDate={startDate}
-            endDate={endDate}
-            onDateRangeChange={handleDateRangeChange}
-            effectiveStartDate={effectiveStartDate}
-            effectiveEndDate={effectiveEndDate}
-            defaultWeekRange={defaultWeekRange}
-            defaultMonthRange={defaultMonthRange}
-            defaultSixMonthRange={defaultSixMonthRange}
-            defaultYearRange={defaultYearRange}
-            comparisonType={comparison.comparisonType}
-            onComparisonTypeChange={comparison.setComparisonType}
-            dataVersion={dataVersion}
-            activeFilters={badges.length > 0 && badges}
-            onClearFilters={clearAllFilters}
+            granularity={chartGranularity}
+            onGranularityChange={setGranularityChoice}
+            comparisonRows={comparisonRows}
+            periodNames={periodNames}
+            comparisonLoading={baselineSummary.loading}
+            headerExtra={
+              <PeriodControls
+                start={effectiveStartDate}
+                end={effectiveEndDate}
+                presets={presets}
+                latestWeekStart={latestWeekStart}
+                onDateRangeChange={handleDateRangeChange}
+                compareTo={compareTo}
+                compareOptions={compareOptions}
+                onCompareChange={handleCompareChange}
+              />
+            }
           />
         </div>
 
-        <div>
-          <PeriodComparisonDetail
-            result={comparison.result}
-            loading={comparison.loading}
-            error={comparison.error}
-            active={comparison.active}
-          />
+        {/* Right column: scope (Filters) then the headline change (Comparison),
+            stacked beside the chart they explain. A grid rather than flex so
+            the Comparison card's h-full fills whatever height the chart row
+            leaves under the Filters. */}
+        <div className="grid grid-rows-[auto_1fr] gap-1">
+          <div>
+            <DashboardFilters
+              customerControl={
+                <CustomerSelector
+                  value={customer}
+                  onChange={handleCustomerChange}
+                  options={customerOptions}
+                  loading={customerOptionsLoading}
+                  error={customerOptionsError}
+                />
+              }
+              sku={sku}
+              onSkuChange={handleSkuChange}
+              customer={customer}
+              store={store}
+              onStoreChange={handleStoreChange}
+              hasPeriodChanges={hasExplicitDateFilter || compareTo !== DEFAULT_COMPARE}
+              dataVersion={dataVersion}
+              activeFilters={badges.length > 0 && badges}
+              onClearFilters={clearAllFilters}
+            />
+          </div>
+          <div>
+            <PeriodComparisonDetail
+              active={Boolean(baseline)}
+              periodNames={periodNames}
+              baseline={baseline}
+              currentTotals={sumPeriodTotals(currentTotals)}
+              baselineTotals={sumPeriodTotals(baselineTotals)}
+              baselineAvailable={baselineTotals.length > 0}
+              weekCounts={currentWeeks && baselineWeeks ? { current: currentWeeks.count, baseline: baselineWeeks.count } : null}
+              priceMix={priceMix}
+              loading={summary.loading || baselineSummary.loading}
+              error={summary.error || baselineSummary.error}
+            />
+          </div>
         </div>
-        <div className="lg:col-span-2">
+
+        {/* Full width so every format tile fits on one line (see RevenueSummaryCards). */}
+        <div className="lg:col-span-3">
           <RevenueSummaryCards
             summaryByMode={summary.summaryByMode}
+            baselineSummaryByMode={baseline && !baselineSummary.loading ? baselineSummary.summaryByMode : null}
+            periodNames={periodNames}
             loading={summary.loading}
             error={summary.error}
             mode={mode}
@@ -232,6 +289,9 @@ export default function DashboardPage() {
             store={store}
             startDate={effectiveStartDate}
             endDate={effectiveEndDate}
+            comparisonStart={baseline?.start ?? ''}
+            comparisonEnd={baseline?.end ?? ''}
+            compareShort={compareShort}
           />
         </div>
       </div>

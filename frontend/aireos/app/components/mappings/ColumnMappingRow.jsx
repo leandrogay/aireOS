@@ -8,7 +8,7 @@ import {
   MinusCircle,
   X,
 } from 'lucide-react';
-import { CONFIDENCE_LABELS } from '../../utils/mappingReview';
+import { CONFIDENCE_LABELS, needsReview } from '../../utils/mappingReview';
 
 const CONFIDENCE_STYLES = {
   high: { Icon: CheckCircle2, className: 'text-green-700' },
@@ -16,11 +16,14 @@ const CONFIDENCE_STYLES = {
   low: { Icon: AlertTriangle, className: 'text-red-700' },
 };
 
-function ConfidenceLabel({ level, compact = false }) {
+// A low-confidence guess a reviewer has signed off keeps its label -- it is
+// still worth knowing the proposal was unsure -- but stops shouting.
+function ConfidenceLabel({ level, reviewed = false, compact = false }) {
   const { Icon, className } = CONFIDENCE_STYLES[level] || CONFIDENCE_STYLES.low;
+  const tone = reviewed && level === 'low' ? 'text-deep-violet-blue/60' : className;
 
   return (
-    <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${className}`}>
+    <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${tone}`}>
       <Icon aria-hidden="true" className="size-3.5 shrink-0" />
       {compact ? (CONFIDENCE_LABELS[level] || '').replace(' confidence', '') : CONFIDENCE_LABELS[level]}
     </span>
@@ -39,10 +42,12 @@ function ConfidenceLabel({ level, compact = false }) {
  *   row: object,
  *   targetFields: string[],
  *   takenFields: Map<string, string>,
- *   confirmed: boolean,
  *   onAddField: (column: string, field: string) => void,
  *   onRemoveField: (column: string, field: string) => void,
+ *   canUndoReview: boolean,
+ *   focusConfirm: boolean,
  *   onConfirm: (column: string) => void,
+ *   onUndoReview: (column: string) => void,
  *   onMeltGroupChange: (column: string, changes: object) => void,
  *   disabled?: boolean,
  *   readOnly?: boolean,
@@ -52,15 +57,17 @@ export default function ColumnMappingRow({
   row,
   targetFields,
   takenFields,
-  confirmed,
+  canUndoReview,
+  focusConfirm,
   onAddField,
   onRemoveField,
   onConfirm,
+  onUndoReview,
   onMeltGroupChange,
   disabled = false,
   readOnly = false,
 }) {
-  const needsAttention = row.confidence === 'low' && !confirmed;
+  const needsAttention = needsReview(row);
   // A mapping nobody can change reads better as text than as a control that
   // does nothing.
   const fixed = row.locked || readOnly;
@@ -159,8 +166,7 @@ export default function ColumnMappingRow({
         )}
 
         {/* The melt group's period settings are part of the mapping, so they
-            are editable here. Per-field transformations are not built yet —
-            see _apply_identity_mapping in the backend. */}
+            remain editable alongside the per-field transformation controls. */}
         {row.meltGroup ? (
           <div className="mt-2 space-y-1.5">
             <label className="block text-[11px] text-deep-violet-blue/70">
@@ -190,12 +196,8 @@ export default function ColumnMappingRow({
           </div>
         ) : row.transform ? (
           <p className="mt-2 text-[11px] text-deep-violet-blue/70">{row.transform}</p>
-        ) : row.fields.length > 1 ? (
-          <p className="mt-2 text-[11px] text-amber-800">
-            Each field gets this column&rsquo;s value as-is until a transformation is
-            built for it.
-          </p>
         ) : null}
+
       </td>
 
       <td className="px-3 py-3">
@@ -206,7 +208,10 @@ export default function ColumnMappingRow({
           </span>
         ) : row.fields.length === 1 ? (
           <>
-            <ConfidenceLabel level={row.fields[0].confidence} />
+            <ConfidenceLabel
+              level={row.fields[0].confidence}
+              reviewed={row.fields[0].reviewed}
+            />
             {row.fields[0].rationale && (
               <p className="mt-1 text-[11px] leading-relaxed text-deep-violet-blue/70">
                 {row.fields[0].rationale}
@@ -222,7 +227,7 @@ export default function ColumnMappingRow({
                 <p className="font-mono text-[11px] text-deep-violet-blue">
                   {field.targetField}
                 </p>
-                <ConfidenceLabel level={field.confidence} compact />
+                <ConfidenceLabel level={field.confidence} reviewed={field.reviewed} compact />
                 {field.rationale && (
                   <p className="text-[11px] leading-relaxed text-deep-violet-blue/70">
                     {field.rationale}
@@ -236,15 +241,40 @@ export default function ColumnMappingRow({
 
       <td className="px-3 py-3">
         {row.confidence === 'low' ? (
-          confirmed ? (
-            <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700">
-              <CheckCircle2 aria-hidden="true" className="size-3.5" />
-              Confirmed
-            </span>
+          !needsAttention ? (
+            // One line, so a reviewed row is no taller than its neighbours and
+            // Undo sits roughly where the pointer already is after Confirm.
+            <div className="flex items-center gap-1 whitespace-nowrap">
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700">
+                <CheckCircle2 aria-hidden="true" className="size-3.5" />
+                Reviewed
+              </span>
+              {canUndoReview && !disabled && (
+                <>
+                  <span aria-hidden="true" className="text-xs text-deep-violet-blue/40">
+                    ·
+                  </span>
+                  <button
+                    type="button"
+                    // Only ever mounted by a Confirm click, so taking focus
+                    // here follows the reviewer's action rather than
+                    // interrupting a page load.
+                    autoFocus
+                    onClick={() => onUndoReview(row.column)}
+                    aria-label={`Undo review of ${row.column}`}
+                    className="inline-flex h-6 items-center rounded-md px-1.5 text-xs font-medium text-deep-violet-blue/70 transition hover:bg-lavander hover:text-deep-violet-blue focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-deep-violet-blue"
+                  >
+                    Undo
+                  </button>
+                </>
+              )}
+            </div>
           ) : (
             <button
               type="button"
               disabled={disabled}
+              // Set only on the row whose review was just undone.
+              autoFocus={focusConfirm}
               onClick={() => onConfirm(row.column)}
               className="rounded-md border border-deep-violet-blue bg-white px-2.5 py-1.5 text-xs font-medium text-deep-violet-blue transition hover:bg-lavander focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-deep-violet-blue disabled:cursor-not-allowed disabled:opacity-60"
             >

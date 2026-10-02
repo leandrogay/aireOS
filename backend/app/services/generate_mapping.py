@@ -9,7 +9,10 @@ This asks Claude to classify each column as either:
   (b) part of a repeating metric group -> needs melting, with a regex
       to extract the period date from the column name
 
-Returns a validated JSON contract ready for apply_contract().
+Returns a validated JSON contract ready for apply_contract(). Contracts may
+also declare small, allowlisted per-target transformations. The transformation
+configuration is data stored in GCS; Python only supplies the generic
+operations.
 
 Contracts are keyed by a fingerprint of the file's column headers, so a second
 file with the same headers reuses the already-approved contract instead of
@@ -88,7 +91,7 @@ def to_snake_case(col: str) -> str:
 
 # ---- Reading headers out of the uploaded bytes ------------------------------
 
-def read_header_frame(filename: str, data: bytes, nrows: int = 20) -> pd.DataFrame:
+def read_header_frame(filename: str, data: bytes, nrows: int = 200) -> pd.DataFrame:
     """
     Read the top of an uploaded file — headers plus a few rows.
 
@@ -135,7 +138,7 @@ def column_samples(dataframe: pd.DataFrame, limit: int = 5) -> dict[str, list[st
 
     for column in dataframe.columns:
         values = dataframe[column].dropna().astype(str).str.strip()
-        values = values[values != ""].head(limit)
+        values = values[values != ""].drop_duplicates().head(limit)
         samples[str(column)] = values.tolist()
 
     return samples
@@ -164,8 +167,8 @@ def generate_mapping_contract(
 ) -> dict:
     """
     Calls Claude once, asking it to classify every source column and
-    return a two-part contract: identity_mapping + melt_groups, plus a
-    confidence level and one-line rationale per decision.
+    return an identity_mapping + melt_groups contract, optional per-target
+    transformations, and a confidence level plus rationale per decision.
 
     `samples` — a few real values per column — is passed through when
     available. Headers alone are often ambiguous ("Size" could be a pack size
@@ -236,6 +239,30 @@ Your task:
    - "rationale": one short sentence saying what the decision rests on.
      Cite the sample values where they are what decided it.
    Give each melt group the same two keys directly on the group object.
+7. When a target cannot use the source value verbatim, add a "transformations"
+   entry keyed by that TARGET FIELD. Only these generic operations exist:
+   - regex_extract: extract one capture group from text. Shape:
+     {{"type":"regex_extract", "pattern":"...", "group":1}}
+   - value_map: translate exact source values, optionally case-insensitively,
+     and use a default for everything else. Shape:
+     {{"type":"value_map", "values":{{"CODE":"output"}},
+       "default":"fallback", "case_sensitive":false}}
+   Use regex_extract when a field such as size is embedded in a description.
+   Use value_map when a channel/category code encodes another target, such as
+   an online store-format code versus physical-store formats. A source column
+   may map to both its direct target and a transformed target. When retailer
+   family and online/offline channel are clear from the samples, normalise the
+   retailer to lower-case "<family>_online" or "<family>_offline". Do not add
+   a transformation when the required values cannot be justified by the data.
+   Every value_map key MUST be an observed sample value from the exact source
+   column mapped to that target. Never attach store/channel-code keys to a
+   supplier or vendor-name column. A supplier/vendor is not a retailer; when
+   the retailer channel is encoded by a store-format/name column, map that
+   column to retailer as an additional target and transform that copy.
+   A regex_extract must preserve a complete value. Compound tokens containing
+   separators, such as "S/M", must be captured whole; put compound/longer
+   alternatives before their shorter parts so the regex cannot return only
+   "S" from "S/M".
 
 Respond with ONLY raw JSON in this exact shape, no markdown fences, no explanation:
 {{
@@ -255,6 +282,15 @@ Respond with ONLY raw JSON in this exact shape, no markdown fences, no explanati
   ],
   "annotations": {{
     "target_field": {{"confidence": "high|medium|low", "rationale": "..."}}
+  }},
+  "transformations": {{
+    "target_field": {{"type": "regex_extract", "pattern": "...", "group": 1}},
+    "another_target": {{
+      "type": "value_map",
+      "values": {{"source value": "target value"}},
+      "default": "fallback target value",
+      "case_sensitive": false
+    }}
   }}
 }}
 """
@@ -273,7 +309,7 @@ Respond with ONLY raw JSON in this exact shape, no markdown fences, no explanati
     except json.JSONDecodeError as e:
         raise MappingGenerationError(f"Claude did not return valid JSON: {e}")
 
-    return validate_contract(contract, raw_columns, target_schema)
+    return validate_contract(contract, raw_columns, target_schema, samples=samples)
 
 
 def normalize_targets(value) -> list[str]:
@@ -295,13 +331,18 @@ def normalize_targets(value) -> list[str]:
     return []
 
 
-def _clean_annotation(source: dict | None) -> dict:
+def _clean_annotation(source: dict | None, trust_review: bool = False) -> dict:
     """
-    Normalise one column's confidence + rationale.
+    Normalise one column's confidence, rationale and review flag.
 
     Anything the model omitted, misspelled or invented becomes "low" with no
     rationale. Treating an unreadable confidence as high would let a guess
     through the review gate on a formatting mistake.
+
+    "reviewed" records that a person looked at the row and stood by it. It is
+    kept apart from confidence so the stored contract still says what the
+    proposal was unsure of. Only a reviewer's own submission may set it -- a
+    model that wrote "reviewed": true would be approving its own guess.
     """
     raw = source or {}
     level = str(raw.get("confidence") or "").strip().lower()
@@ -310,10 +351,182 @@ def _clean_annotation(source: dict | None) -> dict:
     return {
         "confidence": level if level in CONFIDENCE_LEVELS else "low",
         "rationale": rationale,
+        "reviewed": trust_review and raw.get("reviewed") is True,
     }
 
 
-def validate_contract(contract: dict, raw_columns: list[str], target_schema: list[str]) -> dict:
+def unreviewed_low_confidence(contract: dict) -> list[str]:
+    """
+    Target fields the proposal was unsure of that no reviewer has confirmed.
+
+    The review screen will not approve while any exist, but that is the
+    browser's word. This lets the confirm endpoint hold the same line.
+    """
+    identity = [
+        target
+        for target, annotation in (contract.get("annotations") or {}).items()
+        if annotation.get("confidence") == "low" and not annotation.get("reviewed")
+    ]
+    melted = [
+        group["target_field"]
+        for group in contract.get("melt_groups") or []
+        if group.get("confidence") == "low" and not group.get("reviewed")
+    ]
+    return identity + melted
+
+
+def _validate_transformations(
+    proposed: dict,
+    claimed: dict[str, str],
+    warnings: list[str],
+    samples: dict[str, list[str]] | None = None,
+) -> tuple[dict[str, dict], set[str]]:
+    """Keep only transformations that are safe for their selected source.
+
+    ``invalid_targets`` identifies fields whose source value cannot safely be
+    used without the rejected transformation. The caller removes those field
+    mappings rather than silently passing the untransformed source through.
+    """
+    clean: dict[str, dict] = {}
+    invalid_targets: set[str] = set()
+    source_samples = samples or {}
+
+    def reject(target: str, message: str) -> None:
+        warnings.append(message)
+        if target in claimed:
+            invalid_targets.add(target)
+
+    for target, raw in (proposed or {}).items():
+        if target not in claimed:
+            warnings.append(
+                f"Dropped transformation for {target!r} — the target is not identity-mapped"
+            )
+            continue
+        if not isinstance(raw, dict):
+            reject(
+                target,
+                f"Dropped transformation for {target!r} — configuration must be an object",
+            )
+            continue
+
+        operation = str(raw.get("type") or "").strip().lower()
+        if operation == "regex_extract":
+            pattern = raw.get("pattern")
+            group = raw.get("group", 1)
+            try:
+                compiled = re.compile(pattern or "")
+            except (re.error, TypeError) as exc:
+                reject(
+                    target,
+                    f"Dropped transformation for {target!r} — invalid regex: {exc}",
+                )
+                continue
+            if not pattern or compiled.groups < 1:
+                reject(
+                    target,
+                    f"Dropped transformation for {target!r} — regex needs a capture group",
+                )
+                continue
+            if (
+                not isinstance(group, int)
+                or isinstance(group, bool)
+                or not 1 <= group <= compiled.groups
+            ):
+                reject(
+                    target,
+                    f"Dropped transformation for {target!r} — group must identify an existing capture group",
+                )
+                continue
+
+            sample_values = source_samples.get(claimed[target], [])
+            bad_samples = []
+            for sample in sample_values:
+                text = str(sample)
+                match = compiled.search(text)
+                if not match:
+                    bad_samples.append(text)
+                    continue
+                start, end = match.span(group)
+                if (
+                    (start > 0 and text[start - 1] == "/")
+                    or (end < len(text) and text[end] == "/")
+                ):
+                    bad_samples.append(text)
+
+            if bad_samples:
+                reject(
+                    target,
+                    f"Dropped transformation for {target!r} — regex does not "
+                    f"extract a complete value from source samples: {bad_samples[:3]}",
+                )
+                continue
+
+            clean[target] = {
+                "type": operation,
+                "pattern": pattern,
+                "group": group,
+            }
+            continue
+
+        if operation == "value_map":
+            values = raw.get("values")
+            if not isinstance(values, dict) or not values:
+                reject(
+                    target,
+                    f"Dropped transformation for {target!r} — value_map needs at least one value",
+                )
+                continue
+            cleaned_values = {
+                str(source).strip(): str(output).strip()
+                for source, output in values.items()
+                if str(source).strip() and str(output).strip()
+            }
+            if not cleaned_values:
+                reject(
+                    target,
+                    f"Dropped transformation for {target!r} — value_map has no usable values",
+                )
+                continue
+
+            case_sensitive = bool(raw.get("case_sensitive", False))
+            sample_values = source_samples.get(claimed[target], [])
+            if sample_values:
+                normalize = (lambda value: value) if case_sensitive else str.casefold
+                observed = {normalize(str(value).strip()) for value in sample_values}
+                configured = {normalize(value) for value in cleaned_values}
+                if observed.isdisjoint(configured):
+                    reject(
+                        target,
+                        f"Dropped transformation for {target!r} — none of its "
+                        f"value_map keys occur in source column {claimed[target]!r}",
+                    )
+                    continue
+
+            transform = {
+                "type": operation,
+                "values": cleaned_values,
+                "case_sensitive": case_sensitive,
+            }
+            if "default" in raw and str(raw.get("default") or "").strip():
+                transform["default"] = str(raw["default"]).strip()
+            clean[target] = transform
+            continue
+
+        reject(
+            target,
+            f"Dropped transformation for {target!r} — unsupported type: {operation!r}",
+        )
+
+    return clean, invalid_targets
+
+
+def validate_contract(
+    contract: dict,
+    raw_columns: list[str],
+    target_schema: list[str],
+    trust_review: bool = False,
+    samples: dict[str, list[str]] | None = None,
+) -> dict:
     """
     Defensive checks before trusting the contract. Anything that fails
     validation gets dropped rather than silently applied.
@@ -321,6 +534,10 @@ def validate_contract(contract: dict, raw_columns: list[str], target_schema: lis
     Every drop is collected into a "warnings" list on the returned contract
     instead of being printed, because a person now reviews this output before
     approving it — they need to see what was discarded, not the server logs.
+
+    trust_review is True only on the confirm path, where the contract came
+    from a reviewer; a freshly generated contract has every "reviewed" flag
+    cleared.
     """
     raw_set = set(raw_columns)
     warnings: list[str] = []
@@ -360,11 +577,34 @@ def validate_contract(contract: dict, raw_columns: list[str], target_schema: lis
             # thing for one of them and a guess for the other. Older contracts
             # keyed them by source column, so fall back to that.
             clean_annotations[tgt] = _clean_annotation(
-                annotations_in.get(tgt) or annotations_in.get(src)
+                annotations_in.get(tgt) or annotations_in.get(src), trust_review
             )
 
         if kept:
             clean_identity[src] = kept[0] if len(kept) == 1 else kept
+
+    clean_transformations, invalid_targets = _validate_transformations(
+        contract.get("transformations") or {}, claimed, warnings, samples
+    )
+
+    # If a field needs a transformation but that transformation is invalid,
+    # passing the raw source through would be a different mapping. Remove only
+    # that target (preserving any sibling targets from the same source) so a
+    # required field becomes an explicit review blocker.
+    if invalid_targets:
+        for src, value in list(clean_identity.items()):
+            kept = [
+                target
+                for target in normalize_targets(value)
+                if target not in invalid_targets
+            ]
+            if kept:
+                clean_identity[src] = kept[0] if len(kept) == 1 else kept
+            else:
+                del clean_identity[src]
+        for target in invalid_targets:
+            clean_annotations.pop(target, None)
+            claimed.pop(target, None)
 
     # 2. Validate melt_groups: columns must exist, regex must compile and
     #    actually match every column in its group, target must be in schema
@@ -432,7 +672,7 @@ def validate_contract(contract: dict, raw_columns: list[str], target_schema: lis
             continue
 
         claimed[tgt] = f"melt group over {len(cols)} column(s)"
-        annotation = _clean_annotation(group)
+        annotation = _clean_annotation(group, trust_review)
         clean_groups.append({
             "target_field": tgt,
             "columns": cols,
@@ -441,15 +681,16 @@ def validate_contract(contract: dict, raw_columns: list[str], target_schema: lis
             **annotation,
         })
 
-    mapped = set(clean_identity) | {c for g in clean_groups for c in g["columns"]}
-    unmapped = [c for c in raw_columns if c not in mapped]
-    if unmapped:
-        warnings.append(f"{len(unmapped)} column(s) left unmapped: {unmapped[:5]}")
+    # Columns nothing reads are deliberately not a warning. A warning is
+    # frozen into the stored contract, so it would go on naming a column after
+    # the reviewer had mapped it; the review screen and mapping_view._meta
+    # work the unread columns out from the current rules instead.
 
     return {
         "identity_mapping": clean_identity,
         "melt_groups": clean_groups,
         "annotations": clean_annotations,
+        "transformations": clean_transformations,
         "warnings": warnings,
     }
 

@@ -331,7 +331,10 @@ def move_pending_mapping_to_confirmed(fingerprint: str, envelope: dict) -> dict:
     stored_at = upload_json(confirmed_path, envelope)
 
     try:
-        removed_pending = delete_blob(pending_path)
+        # delete_blob's False means there was nothing to delete, which happens
+        # on every amendment of a confirmed mapping. Either way it is gone.
+        delete_blob(pending_path)
+        removed_pending = True
         pending_error = None
     except (GCSPermissionError, GCSUploadError) as exc:
         removed_pending = False
@@ -385,6 +388,10 @@ def list_uploads(limit: int = 50) -> list[dict]:
         return []
     except Exception as e:
         raise GCSUploadError(f"Failed listing {DESTINATION_PREFIX}: {e}")
+
+    # A name ending in "/" is a folder placeholder -- the zero-byte object the
+    # Cloud Console writes when a folder is created -- not an uploaded file.
+    blobs = [blob for blob in blobs if not blob.name.endswith("/")]
 
     blobs.sort(key=lambda blob: blob.time_created or datetime.datetime.min, reverse=True)
 
@@ -460,6 +467,26 @@ def download_bytes(path: str) -> bytes | None:
         if not blob.exists():
             return None
         return blob.download_as_bytes()
+    except gcloud_exceptions.Forbidden as e:
+        raise GCSPermissionError(f"Read denied on {path}. Details: {e}")
+    except Exception as e:
+        raise GCSUploadError(f"Failed reading {path}: {e}")
+
+
+def download_upload(path: str) -> tuple[str, bytes] | None:
+    """Read an uploaded blob together with its original client filename."""
+    try:
+        blob = _blob(path)
+        if not blob.exists():
+            return None
+        # ``bucket.blob(path)`` creates a lightweight reference. Reload it so
+        # custom metadata such as the original client filename is available.
+        if hasattr(blob, "reload"):
+            blob.reload()
+        filename = (blob.metadata or {}).get(ORIGINAL_FILENAME_METADATA_KEY)
+        if not filename:
+            filename = blob.name[len(DESTINATION_PREFIX) :]
+        return filename, blob.download_as_bytes()
     except gcloud_exceptions.Forbidden as e:
         raise GCSPermissionError(f"Read denied on {path}. Details: {e}")
     except Exception as e:

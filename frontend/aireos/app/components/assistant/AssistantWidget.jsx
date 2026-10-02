@@ -80,7 +80,7 @@ function AssistantChart({
               name={series[0].label}
               fill={resolvedColor}
               fillOpacity={opacity ?? 1}
-              radius={cornerRadius ?? 4}
+              radius={cornerRadius ?? 0}
               isAnimationActive={false}
             >
               {showValueLabels && <LabelList dataKey="value" position="top" style={{ fontSize: tickSize }} formatter={labelFormatter} />}
@@ -354,8 +354,8 @@ export default function AssistantWidget() {
             {messages.length === 0 && (
               <div className="space-y-2">
                 <p className="text-xs text-deep-violet-blue/60">
-                  Ask a plain-English question about your sales data, e.g. &quot;How did revenue do last
-                  week?&quot;
+                  Ask a plain-English question about your sales or inventory data, e.g. &quot;How did
+                  revenue do last week?&quot; or &quot;What SKUs are at risk right now?&quot;
                 </p>
                 <button
                   type="button"
