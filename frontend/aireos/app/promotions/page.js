@@ -1,9 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { Plus } from 'lucide-react';
 import PageLayout from '@/components/layout/PageLayout';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
+import Toast from '@/components/ui/Toast';
 import PromotionForm, { blankPromotionForm } from '@/components/promotions/PromotionForm';
 import PromotionList from '@/components/promotions/PromotionList';
+import useToast from '@/hooks/useToast';
 import {
   createPromotion,
   deletePromotion,
@@ -49,13 +54,14 @@ export default function PromotionsPage() {
   const [listError, setListError] = useState('');
   const [isLoadingList, setIsLoadingList] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitMessage, setSubmitMessage] = useState('');
+  // Form-level errors, shown inside the modal. Outcomes (created, updated,
+  // deleted, delete failed) are toasts, so the page itself never shifts.
   const [submitError, setSubmitError] = useState('');
+  const { toast, notify, dismissToast } = useToast();
   const [highlightIds, setHighlightIds] = useState([]);
   const [editingPromotion, setEditingPromotion] = useState(null);
-  // Bumped on every Edit click so the form re-plays its flash, even when
-  // switching straight from one promotion to another.
-  const [editFlashKey, setEditFlashKey] = useState(0);
+  // The create / edit form opens in a modal over the overview.
+  const [isFormOpen, setIsFormOpen] = useState(false);
 
   /**
    * Load retailers for All / Specific scope from GET /api/catalog/retailers.
@@ -190,28 +196,40 @@ export default function PromotionsPage() {
   };
 
   /**
-   * Open the pre-filled edit form for one overview row.
+   * Open the modal with a blank create form.
+   */
+  const handleCreate = () => {
+    setEditingPromotion(null);
+    setForm(blankPromotionForm());
+    setErrors({});
+    setSubmitError('');
+    setIsFormOpen(true);
+  };
+
+  /**
+   * Open the modal pre-filled for one overview row.
    *
    * @param {object} promotion
    */
   const handleEdit = (promotion) => {
     setEditingPromotion(promotion);
-    setEditFlashKey((key) => key + 1);
     setForm(formFromPromotion(promotion, retailers));
     setErrors({});
-    setSubmitMessage('');
     setSubmitError('');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setIsFormOpen(true);
   };
 
   /**
-   * Leave edit mode and restore a blank create form.
+   * Close the modal (Cancel, X, Escape or backdrop) and leave edit mode.
+   * Ignored while a save is in flight so the request is never abandoned
+   * with no result shown.
    */
-  const handleCancelEdit = () => {
+  const handleCloseForm = () => {
+    if (isSubmitting) return;
+    setIsFormOpen(false);
     setEditingPromotion(null);
     setForm(blankPromotionForm());
     setErrors({});
-    setSubmitMessage('');
     setSubmitError('');
   };
 
@@ -222,9 +240,6 @@ export default function PromotionsPage() {
    * @param {object} promotion
    */
   const handleDelete = async (promotion) => {
-    setSubmitMessage('');
-    setSubmitError('');
-
     try {
       await deletePromotion(promotion.promotion_id);
 
@@ -241,10 +256,10 @@ export default function PromotionsPage() {
         setErrors({});
       }
 
-      setSubmitMessage('Promotion deleted. It is no longer in the overview.');
+      notify('deleted', 'Promotion deleted');
       await loadPromotions({ silent: true });
     } catch (error) {
-      setSubmitError(error.message || 'Failed to delete promotion.');
+      notify('error', error.message || 'Failed to delete promotion.');
       throw error;
     }
   };
@@ -257,7 +272,6 @@ export default function PromotionsPage() {
    */
   const handleSubmit = async (event) => {
     event.preventDefault();
-    setSubmitMessage('');
     setSubmitError('');
 
     const nextErrors = validatePromotionForm(form, retailers, stores);
@@ -300,10 +314,11 @@ export default function PromotionsPage() {
         setHighlightIds(
           updated?.promotion_id != null ? [updated.promotion_id] : [editingPromotion.promotion_id],
         );
+        setIsFormOpen(false);
         setEditingPromotion(null);
         setForm(blankPromotionForm());
         setErrors({});
-        setSubmitMessage('Promotion updated. The overview now shows the new details.');
+        notify('updated', 'Promotion updated');
         await loadPromotions({ silent: true });
       } catch (error) {
         setSubmitError(error.message || 'Failed to update promotion.');
@@ -348,15 +363,19 @@ export default function PromotionsPage() {
       applyPromotionsToOverview(created);
       setHighlightIds(created?.promotion_id != null ? [created.promotion_id] : []);
 
+      // Short enough to read in the toast's few seconds; the new row is
+      // also highlighted in the overview.
       const storeCount = promotionStoreNames(created).length || newStores.length;
       const skipNote = skipped.length
-        ? ` Skipped stores already running this promotion: ${skipped.join('; ')}.`
+        ? ` · ${skipped.length} ${skipped.length === 1 ? 'store' : 'stores'} already had it, skipped`
         : '';
-      setSubmitMessage(
-        (storeCount === 1
-          ? 'Promotion created. It now appears in the overview.'
-          : `Promotion created across ${storeCount} stores.`) + skipNote,
+      // Amber when some stores were skipped, so that part is not missed.
+      notify(
+        skipped.length ? 'warning' : 'created',
+        (storeCount === 1 ? 'Promotion created' : `Promotion created across ${storeCount} stores`) +
+          skipNote,
       );
+      setIsFormOpen(false);
       setForm(blankPromotionForm());
       setErrors({});
 
@@ -373,40 +392,21 @@ export default function PromotionsPage() {
   };
 
   return (
-    <PageLayout title="Promotions">
-      <div className="flex flex-col gap-2.5">
-        {submitMessage && (
-          <p className="rounded-md border border-violet bg-lavander p-2 text-sm text-deep-violet-blue">
-            {submitMessage}
-          </p>
-        )}
-
-        {submitError && (
-          <p className="rounded-md border border-red-200 bg-red-50 p-2 text-sm text-red-700">
-            {submitError}
-          </p>
-        )}
-
-        <PromotionForm
-          form={form}
-          onChange={handleFormChange}
-          retailers={retailers}
-          stores={stores}
-          skuRangeOptions={skuRangeOptions}
-          retailersError={retailersError}
-          storesError={storesError}
-          skuRangesError={skuRangesError}
-          isLoadingRetailers={isLoadingRetailers}
-          isLoadingStores={isLoadingStores}
-          isLoadingSkuRanges={isLoadingSkuRanges}
-          isSubmitting={isSubmitting}
-          errors={errors}
-          onSubmit={handleSubmit}
-          mode={editingPromotion ? 'edit' : 'create'}
-          flashKey={editFlashKey}
-          onCancel={handleCancelEdit}
-        />
-
+    <PageLayout
+      title="Promotions"
+      fitScreen
+      headerExtra={
+        <Button
+          size="lg"
+          onClick={handleCreate}
+          className="ml-auto bg-deep-violet-blue text-white hover:bg-deep-violet-blue/90"
+        >
+          <Plus data-icon="inline-start" />
+          Create promotion
+        </Button>
+      }
+    >
+      <div className="flex min-h-0 flex-1 flex-col gap-2.5">
         <PromotionList
           promotions={promotions}
           isLoading={isLoadingList}
@@ -418,6 +418,50 @@ export default function PromotionsPage() {
           onRefresh={loadPromotions}
         />
       </div>
+
+      {/* The form brings its own white card, so the dialog shell is bare.
+          It follows the window: full width minus a gutter up to 5xl, and it
+          scrolls when the window is shorter than the form. The form's
+          dropdowns are portaled popovers, so scrolling never clips them. */}
+      <Dialog
+        open={isFormOpen}
+        onOpenChange={(open) => {
+          if (!open) handleCloseForm();
+        }}
+      >
+        <DialogContent
+          aria-label={editingPromotion ? 'Edit promotion' : 'Create promotion'}
+          className="max-h-[calc(100dvh-2rem)] gap-2 overflow-y-auto bg-transparent p-0 ring-0 sm:max-w-[min(64rem,calc(100%-2rem))]"
+        >
+          <PromotionForm
+            form={form}
+            onChange={handleFormChange}
+            retailers={retailers}
+            stores={stores}
+            skuRangeOptions={skuRangeOptions}
+            retailersError={retailersError}
+            storesError={storesError}
+            skuRangesError={skuRangesError}
+            isLoadingRetailers={isLoadingRetailers}
+            isLoadingStores={isLoadingStores}
+            isLoadingSkuRanges={isLoadingSkuRanges}
+            isSubmitting={isSubmitting}
+            errors={errors}
+            onSubmit={handleSubmit}
+            mode={editingPromotion ? 'edit' : 'create'}
+            onCancel={handleCloseForm}
+          />
+          {submitError && (
+            <p
+              role="alert"
+              className="rounded-md border border-red-200 bg-red-50 p-2 text-sm text-red-700"
+            >
+              {submitError}
+            </p>
+          )}
+        </DialogContent>
+      </Dialog>
+      <Toast toast={toast} onDismiss={dismissToast} />
     </PageLayout>
   );
 }

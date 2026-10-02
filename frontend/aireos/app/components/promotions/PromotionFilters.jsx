@@ -61,7 +61,7 @@ export default function PromotionFilters({ filters, options, hasFilters, onChang
       aria-label="Filter promotions"
       className="rounded-lg border border-lavander bg-white p-3 shadow-sm"
     >
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-[repeat(6,minmax(0,1fr))_auto]">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-3">
         <FilterSelect
           label="Retailer"
           value={filters.retailer}

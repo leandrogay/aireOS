@@ -1,15 +1,20 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 
 /**
  * Closed-by-default dropdown whose menu is a checkbox list.
  *
  * The trigger looks like the other cream/lavender inputs. Clicking it opens
- * the panel; clicking outside closes it. Selection stays in the parent —
- * this component only controls open/close.
+ * the panel; clicking outside or Escape closes it. Selection stays in the
+ * parent — this component only controls open/close.
+ *
+ * The panel is a Popover, so it renders in a portal: it is never clipped by
+ * a scrolling container (the promotion form scrolls inside its modal on short
+ * windows), and it flips above the trigger when there is no room below.
  *
  * Children may be a function `(query, close) => nodes` so the parent can
  * filter its rows by the search text, or close the panel after a
@@ -35,59 +40,27 @@ export default function CheckboxDropdown({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const rootRef = useRef(null);
   const searchRef = useRef(null);
 
   /**
-   * Close the menu and clear any search text.
+   * Open or close the menu; closing clears any search text.
+   *
+   * @param {boolean} next
    */
-  const close = useCallback(() => {
-    setOpen(false);
-    setQuery('');
-  }, []);
+  const handleOpenChange = (next) => {
+    setOpen(next);
+    if (!next) setQuery('');
+  };
 
-  /**
-   * Close the menu when the pointer lands outside this dropdown.
-   */
-  useEffect(() => {
-    /**
-     * @param {MouseEvent} event
-     */
-    const handlePointerDown = (event) => {
-      if (!rootRef.current?.contains(event.target)) {
-        close();
-      }
-    };
-
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => document.removeEventListener('mousedown', handlePointerDown);
-  }, [close]);
-
-  /**
-   * Put the caret in the search box as soon as the panel opens.
-   */
-  useEffect(() => {
-    if (open && searchable) {
-      searchRef.current?.focus();
-    }
-  }, [open, searchable]);
+  const close = () => handleOpenChange(false);
 
   const content = typeof children === 'function' ? children(query, close) : children;
 
   return (
-    <div ref={rootRef} className="relative w-full min-w-0 max-w-full">
-      <button
-        type="button"
+    <Popover open={open} onOpenChange={handleOpenChange}>
+      <PopoverTrigger
         disabled={disabled}
-        aria-expanded={open}
         title={summary || undefined}
-        onClick={() => {
-          if (open) {
-            close();
-            return;
-          }
-          setOpen(true);
-        }}
         className={cn(
           'flex w-full min-w-0 max-w-full items-center justify-between overflow-hidden rounded-md border border-lavander bg-cream px-2.5 py-1.5 text-left text-sm text-deep-violet-blue focus:border-violet focus:outline-none disabled:cursor-not-allowed disabled:opacity-60',
           invalid && 'border-red-400 focus:border-red-500',
@@ -99,30 +72,34 @@ export default function CheckboxDropdown({
         <span className="ml-2 shrink-0 text-[10px] text-deep-violet-blue/50" aria-hidden="true">
           {open ? '▲' : '▼'}
         </span>
-      </button>
-      {open && (
-        <div className="absolute left-0 right-0 z-20 mt-1 overflow-hidden rounded-md border border-lavander bg-white shadow-md">
-          {searchable && (
-            <div className="border-b border-lavander p-2">
-              <input
-                ref={searchRef}
-                type="search"
-                value={query}
-                placeholder={searchPlaceholder}
-                aria-label={searchPlaceholder}
-                onChange={(event) => setQuery(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault();
-                  }
-                }}
-                className="w-full rounded-md border border-lavander bg-cream px-2 py-1 text-sm text-deep-violet-blue placeholder:text-deep-violet-blue/45 focus:border-violet focus:outline-none"
-              />
-            </div>
-          )}
-          <div className="max-h-52 overflow-auto p-2">{content}</div>
-        </div>
-      )}
-    </div>
+      </PopoverTrigger>
+      {/* Same width as the trigger, like the old inline panel. The caret goes
+          straight into the search box when there is one. */}
+      <PopoverContent
+        align="start"
+        initialFocus={searchable ? searchRef : undefined}
+        className="w-(--anchor-width) gap-0 overflow-hidden rounded-md border border-lavander bg-white p-0 text-deep-violet-blue ring-0"
+      >
+        {searchable && (
+          <div className="border-b border-lavander p-2">
+            <input
+              ref={searchRef}
+              type="search"
+              value={query}
+              placeholder={searchPlaceholder}
+              aria-label={searchPlaceholder}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                }
+              }}
+              className="w-full rounded-md border border-lavander bg-cream px-2 py-1 text-sm text-deep-violet-blue placeholder:text-deep-violet-blue/45 focus:border-violet focus:outline-none"
+            />
+          </div>
+        )}
+        <div className="max-h-52 overflow-auto p-2">{content}</div>
+      </PopoverContent>
+    </Popover>
   );
 }

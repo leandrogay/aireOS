@@ -31,12 +31,6 @@ const EMPTY_FILTERS = {
   status: '',
 };
 
-// The table keeps the height of a full page whatever the search or filters
-// leave, so the card does not shrink and grow (and pull the footer around)
-// while you type. Rows are h-12 and the header h-10; see PromotionRow.
-const ROW_REM = 3;
-const HEADER_REM = 2.5;
-
 const headerClass = 'px-4 py-2.5 text-xs font-medium text-deep-violet-blue/60';
 
 /**
@@ -176,7 +170,9 @@ export default function PromotionList({
   };
 
   return (
-    <div className="space-y-3">
+    // Fills the height the page gives it (PageLayout fitScreen): the filter
+    // bar keeps its size and the overview card takes the rest.
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
       <PromotionFilters
         filters={filters}
         options={options}
@@ -185,7 +181,11 @@ export default function PromotionList({
         onReset={resetFilters}
       />
 
-      <section className="rounded-lg border border-lavander bg-white shadow-sm">
+      {/* The card's size comes from the window, not from how many rows are
+          listed, so searching or changing rows per page never resizes it;
+          the rows scroll inside. min-h-80 keeps the table usable on a short
+          window (the page scrolls instead). */}
+      <section className="flex min-h-80 flex-1 flex-col overflow-hidden rounded-lg border border-lavander bg-white shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 p-4">
           <div>
             <h2 className="font-serif text-xl text-deep-violet-blue">Promotion overview</h2>
@@ -232,12 +232,18 @@ export default function PromotionList({
         {showTable && (
           <>
             <div
-              className="overflow-x-auto border-t border-lavander"
-              style={{ minHeight: `${HEADER_REM + pageSize * ROW_REM}rem` }}
+              // relative: the header's sr-only "Actions" label is absolutely
+              // positioned; without a positioned ancestor it escapes this
+              // scroll box and widens the whole page on narrow windows.
+              className="relative min-h-0 flex-1 overflow-auto border-t border-lavander"
             >
               <table className="w-full whitespace-nowrap text-left text-sm text-deep-violet-blue [&_td]:align-middle [&_th]:align-middle">
-                <thead className="bg-cream/60">
-                  <tr className="h-10 border-b border-lavander">
+                {/* Stays in view while the rows scroll. White under the cream
+                    tint so rows do not show through; the bottom rule is an
+                    inset shadow because a collapsed table border does not
+                    move with a sticky header. */}
+                <thead className="sticky top-0 z-10 bg-white">
+                  <tr className="h-10 bg-cream/60 [&>th]:shadow-[inset_0_-1px_0_var(--color-lavander)]">
                     <th scope="col" className={headerClass}>Retailer</th>
                     <th scope="col" className={headerClass}>Stores</th>
                     <SortHeader

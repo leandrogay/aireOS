@@ -398,7 +398,7 @@ export default function PromotionForm({
         </div>
       )}
       {/* ==== Header ==== */}
-      <div className="flex flex-wrap items-end justify-between gap-2 border-b border-lavander px-4 py-3">
+      <div className="flex flex-wrap items-end justify-between gap-2 border-b border-lavander py-3 pl-4 pr-12">
         <div>
           <h2 className="font-serif text-xl text-deep-violet-blue">
             {isEdit ? 'Edit promotion' : 'Create promotion'}
@@ -740,16 +740,14 @@ export default function PromotionForm({
             `Fix ${errorCount} highlighted ${errorCount === 1 ? 'field' : 'fields'} above.`}
         </p>
         <div className="flex items-center gap-2">
-          {isEdit && (
-            <button
-              type="button"
-              onClick={onCancel}
-              disabled={isSubmitting}
-              className="rounded-md border border-deep-violet-blue/30 bg-white px-4 py-1.5 text-sm font-medium text-deep-violet-blue transition hover:bg-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Cancel
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={isSubmitting}
+            className="rounded-md border border-deep-violet-blue/30 bg-white px-4 py-1.5 text-sm font-medium text-deep-violet-blue transition hover:bg-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Cancel
+          </button>
           <button
             type="submit"
             disabled={isSubmitting}
