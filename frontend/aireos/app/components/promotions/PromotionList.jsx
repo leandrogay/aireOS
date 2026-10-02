@@ -57,6 +57,19 @@ function SortHeader({ label, field, sortField, sortDirection, onSort }) {
   );
 }
 
+/**
+ * "70 promotions" when nothing is filtered out, "12 of 70 promotions" when
+ * the filters or search narrow the list.
+ *
+ * @param {number} shown
+ * @param {number} total
+ * @returns {string}
+ */
+function resultCountLabel(shown, total) {
+  const noun = total === 1 ? 'promotion' : 'promotions';
+  return shown === total ? `${total} ${noun}` : `${shown} of ${total} ${noun}`;
+}
+
 // Placeholder rows while the first load is in flight, so the table does not
 // jump from empty to full.
 function LoadingRows() {
@@ -185,16 +198,18 @@ export default function PromotionList({
           listed, so searching or changing rows per page never resizes it;
           the rows scroll inside. min-h-80 keeps the table usable on a short
           window (the page scrolls instead). */}
-      <section className="flex min-h-80 flex-1 flex-col overflow-hidden rounded-lg border border-lavander bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3 p-4">
-          <div>
-            <h2 className="font-serif text-xl text-deep-violet-blue">Promotion overview</h2>
-            <p className="mt-0.5 text-xs text-deep-violet-blue/70">
-              {isLoading && !uniquePromotions.length
-                ? 'Loading promotions…'
-                : `${sorted.length} of ${uniquePromotions.length} shown.`}
-            </p>
-          </div>
+      {/* No visible heading (the page title already says Promotions); the
+          aria-label still names the region for screen readers. */}
+      <section
+        aria-label="Promotion overview"
+        className="flex min-h-80 flex-1 flex-col overflow-hidden rounded-lg border border-lavander bg-white shadow-sm"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+          <p className="text-sm text-deep-violet-blue/70" aria-live="polite">
+            {isLoading && !uniquePromotions.length
+              ? 'Loading promotions…'
+              : resultCountLabel(sorted.length, uniquePromotions.length)}
+          </p>
           <div className="flex items-center gap-2">
             <label className="relative">
               <span className="sr-only">Search promotions</span>

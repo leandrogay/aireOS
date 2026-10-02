@@ -1,18 +1,53 @@
 'use client';
 
-import { useEffect } from 'react';
-import { createPortal } from 'react-dom';
-
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import { formatDate } from '@/lib/formatDate';
+import { promoTypeLabel } from '@/app/utils/promotionForm';
 import { retailerLabel } from '@/app/utils/retailerLabel';
-import {
-  promotionRetailerNames,
-  promotionStoreNames,
-  summariseNames,
-} from '@/app/utils/promotionOverview';
+import { promotionRetailerNames, promotionStoreNames } from '@/app/utils/promotionOverview';
+
+/**
+ * "FAIRPRICE ON" for one store, "AMK HYPERMART and 52 other stores" for many.
+ *
+ * @param {string[]} names
+ * @returns {string}
+ */
+function storesLabel(names) {
+  if (!names.length) return '—';
+  if (names.length === 1) return names[0];
+  const others = names.length - 1;
+  return `${names[0]} and ${others} other ${others === 1 ? 'store' : 'stores'}`;
+}
+
+/**
+ * Summary rows that identify one promotion: offer, dates, stores, retailer.
+ *
+ * @param {object} promotion
+ * @returns {Array<{ label: string, value: string }>}
+ */
+function promotionDetails(promotion) {
+  const offer = [promotion.promotion_mechanic, promoTypeLabel(promotion.promo_type)]
+    .filter(Boolean)
+    .join(' · ');
+  return [
+    { label: 'Offer', value: offer || '—' },
+    {
+      label: 'Runs',
+      value: `${formatDate(promotion.period_start)} – ${formatDate(promotion.period_end)}`,
+    },
+    { label: 'Stores', value: storesLabel(promotionStoreNames(promotion)) },
+    {
+      label: 'Retailer',
+      value: promotionRetailerNames(promotion).map(retailerLabel).join(', ') || '—',
+    },
+  ];
+}
 
 /**
  * Confirm before DELETE /api/promotions/{id} so a row click cannot
- * remove a promotion by accident.
+ * remove a promotion by accident. It names the promotion (offer, dates,
+ * stores, retailer) so the user can check it is the right one before
+ * confirming. The dialog itself is the shared ui/ConfirmDialog.
  *
  * @param {{
  *   promotion: object | null,
@@ -22,73 +57,17 @@ import {
  * }} props
  */
 export default function ConfirmDeleteDialog({ promotion, isDeleting, onCancel, onConfirm }) {
-  useEffect(() => {
-    if (!promotion) return;
-
-    /**
-     * @param {KeyboardEvent} event
-     */
-    const handleKeyDown = (event) => {
-      if (event.key === 'Escape') onCancel();
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [promotion, onCancel]);
-
-  if (!promotion || typeof document === 'undefined') return null;
-
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-deep-violet-blue/40 px-4"
-      onClick={() => {
-        if (!isDeleting) onCancel();
-      }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="delete-promotion-title"
-        className="w-full max-w-md rounded-lg border border-lavander bg-white p-4 shadow-lg"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <h3
-          id="delete-promotion-title"
-          className="font-serif text-lg text-deep-violet-blue"
-        >
-          Delete this promotion?
-        </h3>
-        <p className="mt-2 text-sm text-deep-violet-blue/80">
-          This cannot be undone. The overview will drop{' '}
-          <span className="font-medium">
-            {summariseNames(promotionStoreNames(promotion), 'this promotion')}
-          </span>
-          {promotion.period_label ? ` · ${promotion.period_label}` : ''}
-          {promotionRetailerNames(promotion).length
-            ? ` · ${promotionRetailerNames(promotion).map(retailerLabel).join(', ')}`
-            : ''}
-          .
-        </p>
-        <div className="mt-4 flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={isDeleting}
-            className="rounded-md border border-deep-violet-blue/30 bg-white px-3 py-1.5 text-sm font-medium text-deep-violet-blue hover:bg-cream disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={isDeleting}
-            className="rounded-md border border-red-700 bg-red-700 px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isDeleting ? 'Deleting…' : 'Confirm delete'}
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body,
+  return (
+    <ConfirmDialog
+      open={Boolean(promotion)}
+      title="Delete this promotion?"
+      description="It will be removed permanently. This can’t be undone."
+      details={promotion ? promotionDetails(promotion) : []}
+      confirmLabel="Delete promotion"
+      pendingLabel="Deleting…"
+      isPending={isDeleting}
+      onConfirm={onConfirm}
+      onCancel={onCancel}
+    />
   );
 }
