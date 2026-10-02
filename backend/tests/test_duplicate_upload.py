@@ -1,6 +1,8 @@
 import datetime
+from types import SimpleNamespace
 
 import pytest
+from conftest import FrozenDatetime
 
 from app.services import storage
 
@@ -273,3 +275,14 @@ def test_batch_summary_counts_match_individual_results(monkeypatch):
     assert result["uploaded"] == 3
     assert result["failed"] == 0
     assert result["success"] is False  # not every file in the batch uploaded
+
+
+# ---- Timestamps ---------------------------------------------------------------
+
+def test_upload_destination_is_stamped_in_utc_not_server_time(monkeypatch):
+    _install_fake_client(monkeypatch)
+    monkeypatch.setattr(storage, "datetime", SimpleNamespace(datetime=FrozenDatetime, timezone=datetime.timezone))
+
+    result = storage.upload_file_bytes("sales_aug.csv", b"bytes", force=False)
+
+    assert result["destination"].endswith(f"{storage.DESTINATION_PREFIX}2026-09-30_170000_sales_aug.csv")

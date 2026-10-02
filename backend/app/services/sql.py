@@ -97,7 +97,7 @@ def _create_engine(**engine_kwargs) -> Engine:
     db_name = config.require("DB_NAME")
 
     def getconn() -> pg8000.dbapi.Connection:
-        return _connector.connect(
+        conn = _connector.connect(
             instance_connection_name,
             "pg8000",
             user=db_iam_user,
@@ -105,6 +105,8 @@ def _create_engine(**engine_kwargs) -> Engine:
             ip_type=IPTypes.PUBLIC,
             enable_iam_auth=True,
         )
+        _use_utc(conn)
+        return conn
 
     return sqlalchemy.create_engine(
         "postgresql+pg8000://",
@@ -122,6 +124,22 @@ def _create_engine(**engine_kwargs) -> Engine:
 
         **engine_kwargs,
     )
+
+
+def _use_utc(conn) -> None:
+    """
+    Pins the session timezone to UTC, so TIMESTAMPTZ values come back as
+    +00:00 and now()::date is the UTC day, whatever the instance default is.
+    The frontend converts to Singapore time for display.
+
+    SET is transactional in Postgres, so it is committed here; otherwise the
+    pool's rollback-on-return would undo it.
+    """
+
+    cursor = conn.cursor()
+    cursor.execute("SET TIME ZONE 'UTC'")
+    cursor.close()
+    conn.commit()
 
 
 def close_database() -> None:

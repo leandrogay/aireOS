@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import CheckboxDropdown from '@/components/promotions/CheckboxDropdown';
+import { singaporeToday } from '@/lib/singaporeTime';
 import { cn } from '@/lib/utils';
 import {
   MONTH_NAMES,
@@ -26,7 +27,7 @@ const yearButtonClass =
  */
 function MonthGrid({ selected, onPick }) {
   const [viewYear, setViewYear] = useState(
-    () => selected?.year ?? new Date().getFullYear(),
+    () => selected?.year ?? singaporeToday().getFullYear(),
   );
 
   return (

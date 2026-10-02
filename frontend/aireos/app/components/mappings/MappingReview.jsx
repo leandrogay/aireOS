@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { formatDateTime } from '@/lib/formatDate';
 
 const btn =
   'rounded-md border px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60';
@@ -123,7 +124,7 @@ export const MappingReview = ({ mapping }) => {
           {isPending
             ? 'Proposed by Claude. Review the rules, then confirm to store them.'
             : mapping.validated
-              ? `Confirmed${mapping.validatedAt ? ` on ${new Date(mapping.validatedAt).toLocaleString()}` : ''}`
+              ? `Confirmed${mapping.validatedAt ? ` on ${formatDateTime(mapping.validatedAt)}` : ''}`
               : 'Not yet confirmed.'}
         </p>
 

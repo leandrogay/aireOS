@@ -3,6 +3,8 @@ import {
   formatYmd,
   promoTypeLabel,
 } from '@/app/utils/promotionForm';
+import { retailerLabel } from '@/app/utils/retailerLabel';
+import { singaporeToday } from '@/lib/singaporeTime';
 
 const RECURRENCE_OPTIONS = [
   { value: 'none', label: 'Does not repeat' },
@@ -20,17 +22,17 @@ export const PROMOTION_STATUSES = [
 ];
 
 /**
- * Compare period_start / period_end to today.
+ * Compare period_start / period_end to today (the Singapore calendar day).
  *
  * Upcoming: today is before start. Active: today is in range.
  * Past: today is after end. Dates from GET /api/promotions.
  *
  * @param {object} promotion
- * @param {Date} [today]
+ * @param {Date} [now]
  * @returns {'upcoming' | 'active' | 'past'}
  */
-export function promotionStatus(promotion, today = new Date()) {
-  const todayYmd = formatYmd(today);
+export function promotionStatus(promotion, now = new Date()) {
+  const todayYmd = formatYmd(singaporeToday(now));
   const start = formatPromoDate(promotion.period_start);
   const end = formatPromoDate(promotion.period_end);
 
@@ -423,5 +425,37 @@ export function sortPromotions(promotions, field, direction) {
       return Number(right.promotion_id || 0) - Number(left.promotion_id || 0);
     }
     return leftValue < rightValue ? -1 * factor : 1 * factor;
+  });
+}
+
+/**
+ * Free-text search across what a row shows: retailer, store, period, promo
+ * type, mechanic, voucher and status. Every word typed must match somewhere,
+ * so "fairprice feb" narrows instead of widening.
+ *
+ * @param {object[]} promotions
+ * @param {string} query
+ * @returns {object[]}
+ */
+export function searchPromotions(promotions, query) {
+  const words = String(query || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return promotions || [];
+
+  return (promotions || []).filter((promotion) => {
+    const retailers = promotionRetailerNames(promotion);
+    const haystack = [
+      ...retailers,
+      ...retailers.map(retailerLabel),
+      ...promotionStoreNames(promotion),
+      promotion.period_label,
+      promoTypeLabel(promotion.promo_type),
+      promotion.promotion_mechanic,
+      promotion.voucher,
+      promotionStatusLabel(promotionStatus(promotion)),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    return words.every((word) => haystack.includes(word));
   });
 }

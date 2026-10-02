@@ -5,7 +5,11 @@ import PageLayout from '@/components/layout/PageLayout';
 import Dropzone from '../components/upload/Dropzone';
 import UploadFileRow from '../components/upload/UploadFileRow';
 import RecentUploads from '../components/upload/RecentUploads';
-import { MAX_FILES_PER_BATCH } from '../config/upload';
+import {
+  MAX_FILES_PER_BATCH,
+  UPLOAD_HISTORY_LIMIT,
+  UPLOAD_HISTORY_MONTHS,
+} from '../config/upload';
 import { validateFile } from '../utils/fileInspect';
 import { STAGES, outcomeFromResult, summariseOutcomes } from '../utils/uploadFlow';
 import { uploadFile, fetchUploadHistory } from '../services/uploadApi';
@@ -56,7 +60,12 @@ export default function UploadPage() {
     setIsLoadingHistory(true);
     setHistoryError('');
     try {
-      setHistory(await fetchUploadHistory());
+      setHistory(
+        await fetchUploadHistory({
+          limit: UPLOAD_HISTORY_LIMIT,
+          months: UPLOAD_HISTORY_MONTHS,
+        }),
+      );
     } catch (error) {
       setHistoryError(error.message);
     } finally {
@@ -119,13 +128,6 @@ export default function UploadPage() {
     },
     [clearStageTimers],
   );
-
-  const removeAll = useCallback(() => {
-    stageTimers.current.forEach((handles) => handles.forEach(clearTimeout));
-    stageTimers.current.clear();
-    setItems([]);
-    setBatchError('');
-  }, []);
 
   // ---- Processing -------------------------------------------------------
 
@@ -211,7 +213,6 @@ export default function UploadPage() {
   // ---- Render -----------------------------------------------------------
 
   const readyCount = items.filter((item) => item.status === 'ready').length;
-  const isProcessing = items.some((item) => item.status === 'processing');
   const summary = summariseOutcomes(items);
 
   return (
@@ -235,22 +236,12 @@ export default function UploadPage() {
 
           {!!items.length && (
             <>
-              <div className="mt-6 mb-3 flex flex-wrap items-center justify-between gap-3">
-                <p
-                  aria-live="polite"
-                  className="text-sm font-medium text-deep-violet-blue"
-                >
-                  {summary || `${items.length} file${items.length === 1 ? '' : 's'}`}
-                </p>
-                <button
-                  type="button"
-                  onClick={removeAll}
-                  disabled={isProcessing}
-                  className="rounded-md border border-violet bg-white px-3 py-1.5 text-xs font-medium text-deep-violet-blue transition hover:bg-lavander disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  Remove all
-                </button>
-              </div>
+              <p
+                aria-live="polite"
+                className="mt-6 mb-3 text-sm font-medium text-deep-violet-blue"
+              >
+                {summary || `${items.length} file${items.length === 1 ? '' : 's'}`}
+              </p>
 
               <ul className="space-y-3">
                 {items.map((item) => (
@@ -285,6 +276,7 @@ export default function UploadPage() {
           isLoading={isLoadingHistory}
           error={historyError}
           onRefresh={loadHistory}
+          months={UPLOAD_HISTORY_MONTHS}
         />
       </div>
     </PageLayout>

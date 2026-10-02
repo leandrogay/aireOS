@@ -1,5 +1,5 @@
 from calendar import monthrange
-from datetime import date
+from datetime import date, datetime, timezone
 from functools import lru_cache
 
 from sqlalchemy import text
@@ -85,6 +85,11 @@ def _read_connection() -> Connection:
 # ============================================================
 # SMALL HELPERS
 # ============================================================
+
+
+def _utc_today() -> date:
+    # Not date.today(), which follows whatever timezone the server runs in.
+    return datetime.now(timezone.utc).date()
 
 
 def _iso(value: date | None) -> str | None:
@@ -1052,7 +1057,7 @@ def _names(customers: dict[int, str], ids) -> str:
 
 
 def create_records(record, today: date | None = None) -> dict:
-    today = today or date.today()
+    today = today or _utc_today()
     with _get_engine().begin() as conn:
         customers = _fetch_customers(conn)
         existing, product = _validate_record_target(conn, record, customers, today)
@@ -1067,7 +1072,7 @@ def create_records(record, today: date | None = None) -> dict:
 
 
 def update_records(record, today: date | None = None) -> dict:
-    today = today or date.today()
+    today = today or _utc_today()
     with _get_engine().begin() as conn:
         customers = _fetch_customers(conn)
         existing, product = _validate_record_target(conn, record, customers, today)
@@ -1178,7 +1183,7 @@ def set_shipped_so_far(record, today: date | None = None) -> dict:
     already has actual data for that SKU, which belongs in create/edit.
     """
 
-    today = today or date.today()
+    today = today or _utc_today()
     with _get_engine().begin() as conn:
         customers = _fetch_customers(conn)
         _require_customers(customers, record.customer_ids)

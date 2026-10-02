@@ -126,7 +126,8 @@ aireOS/
     │   ├── usePriceMix.js         useSkuSales × 2 (this period + comparison) → priceMixEffects
     │   ├── useDohSettings.js      /api/settings/doh (+ replaceRow for the row a write returns)
     │   └── useToast.js            { toast, notify, dismissToast } for components/ui/Toast
-    ├── lib/                       cn() (clsx + tailwind-merge), formatDateRange, formatDate/formatDateTime (shared date display)
+    ├── lib/                       cn() (clsx + tailwind-merge), formatDateRange, formatDate/formatDateTime (shared date display,
+    │                              Singapore time), singaporeTime (singaporeDateTimeParts, singaporeToday)
     ├── public/                    create-next-app SVGs
     ├── CONTRIBUTING.md            Frontend UI conventions (primitives, tokens, cn(), lucide) — binding
     ├── CLAUDE.md → @AGENTS.md     Next.js auto-generated notice: read node_modules/next/dist/docs before Next APIs
@@ -162,6 +163,12 @@ Invariants that cross domains:
 - Promotion writes never insert/update `skus`, `stores`, `retailers` **except** through the
   `get_or_create_retailers/stores` seams (a promotion may name a new store as free text).
 - `TARGET_SCHEMA` is defined twice (`mapping_service.py`, `generate_mapping.py`) — keep them in sync.
+- Time: the backend stores and returns instants in UTC (TIMESTAMPTZ, Postgres sessions pinned to UTC
+  in `sql.py`, ISO strings with `Z`/`+00:00`) and takes "today" as the UTC day, never `date.today()`.
+  The frontend shows every time in Singapore time through `lib/formatDate.js`, and uses
+  `singaporeToday()` instead of `new Date()` for "today / this month / this year". Bare `YYYY-MM-DD`
+  dates are calendar dates and are never shifted. (Exceptions by design: DOH month boundaries in
+  `settings/doh.py` and the date printed on assistant reports are Singapore days.)
 
 ---
 
