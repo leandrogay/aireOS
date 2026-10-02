@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button';
 export const PAGE_SIZES = [10, 25, 50];
 
 /**
- * Footer of the promotion table: where you are, rows per page, prev / next.
+ * Footer of a paged table card: where you are, rows per page, prev / next.
+ * Pair it with paginate() in app/utils/tableView.js.
  *
  * @param {{
  *   page: number,
@@ -18,7 +19,7 @@ export const PAGE_SIZES = [10, 25, 50];
  *   onPageSizeChange: (pageSize: number) => void,
  * }} props
  */
-export default function PromotionPagination({
+export default function TablePagination({
   page,
   totalPages,
   pageSize,

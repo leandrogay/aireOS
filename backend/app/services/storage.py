@@ -1,5 +1,6 @@
 import json
 import hashlib
+import calendar
 import datetime
 from pathlib import Path
 from typing import Any
@@ -370,9 +371,23 @@ def annotate_upload(blob_path: str, annotations: dict[str, str]) -> bool:
         return False
 
 
-def list_uploads(limit: int = 50) -> list[dict]:
+def months_before(moment: datetime.datetime, months: int) -> datetime.datetime:
     """
-    Recent uploads, newest first.
+    The same day and time `months` calendar months earlier, clamped to the end
+    of a shorter month (31 May minus 3 months is 28 Feb), so "the last 3
+    months" means what a person reading the upload page expects.
+    """
+    month_index = moment.year * 12 + (moment.month - 1) - months
+    year, month = divmod(month_index, 12)
+    month += 1
+    day = min(moment.day, calendar.monthrange(year, month)[1])
+    return moment.replace(year=year, month=month, day=day)
+
+
+def list_uploads(limit: int = 50, since: datetime.datetime | None = None) -> list[dict]:
+    """
+    Recent uploads, newest first, optionally only those created at or after
+    `since` (timezone-aware UTC, like GCS times).
 
     The bucket is the record of what has been uploaded -- there is no upload
     table -- so this reads the blob listing and its custom metadata. Sorting
@@ -392,6 +407,11 @@ def list_uploads(limit: int = 50) -> list[dict]:
     # A name ending in "/" is a folder placeholder -- the zero-byte object the
     # Cloud Console writes when a folder is created -- not an uploaded file.
     blobs = [blob for blob in blobs if not blob.name.endswith("/")]
+
+    # An undated blob cannot be shown to fall inside the window, so a cutoff
+    # leaves it out.
+    if since is not None:
+        blobs = [blob for blob in blobs if blob.time_created and blob.time_created >= since]
 
     # GCS time_created is timezone-aware UTC, so the fallback must be too.
     oldest = datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)

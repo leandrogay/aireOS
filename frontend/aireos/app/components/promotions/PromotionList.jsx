@@ -1,14 +1,17 @@
 'use client';
 
 import { useState } from 'react';
-import { ArrowDown, ArrowUp, ArrowUpDown, Search } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import RefreshButton from '@/components/ui/RefreshButton';
+import SortHeader, { TABLE_HEADER_CLASS as headerClass } from '@/components/ui/SortHeader';
+import TablePagination, { PAGE_SIZES } from '@/components/ui/TablePagination';
+import TableSearch from '@/components/ui/TableSearch';
+import TableSkeleton from '@/components/ui/TableSkeleton';
 import ConfirmDeleteDialog from '@/components/promotions/ConfirmDeleteDialog';
 import PromotionFilters from '@/components/promotions/PromotionFilters';
-import PromotionPagination, { PAGE_SIZES } from '@/components/promotions/PromotionPagination';
 import PromotionRow from '@/components/promotions/PromotionRow';
+import { paginate, resultCountLabel } from '@/app/utils/tableView';
 import {
   dedupePromotions,
   filterPromotions,
@@ -30,59 +33,6 @@ const EMPTY_FILTERS = {
   mechanic: '',
   status: '',
 };
-
-const headerClass = 'px-4 py-2.5 text-xs font-medium text-deep-violet-blue/60';
-
-/**
- * Column header that sorts on press. Same column again flips direction.
- */
-function SortHeader({ label, field, sortField, sortDirection, onSort }) {
-  const active = sortField === field;
-  const Icon = !active ? ArrowUpDown : sortDirection === 'asc' ? ArrowUp : ArrowDown;
-  const ariaSort = !active ? 'none' : sortDirection === 'asc' ? 'ascending' : 'descending';
-
-  return (
-    <th scope="col" aria-sort={ariaSort} className={headerClass}>
-      <button
-        type="button"
-        onClick={() => onSort(field)}
-        className={`inline-flex items-center gap-1 rounded-md outline-none transition-colors hover:text-deep-violet-blue focus-visible:ring-3 focus-visible:ring-ring/50 ${
-          active ? 'text-deep-violet-blue' : ''
-        }`}
-      >
-        {label}
-        <Icon aria-hidden="true" className="size-3.5" />
-      </button>
-    </th>
-  );
-}
-
-/**
- * "70 promotions" when nothing is filtered out, "12 of 70 promotions" when
- * the filters or search narrow the list.
- *
- * @param {number} shown
- * @param {number} total
- * @returns {string}
- */
-function resultCountLabel(shown, total) {
-  const noun = total === 1 ? 'promotion' : 'promotions';
-  return shown === total ? `${total} ${noun}` : `${shown} of ${total} ${noun}`;
-}
-
-// Placeholder rows while the first load is in flight, so the table does not
-// jump from empty to full.
-function LoadingRows() {
-  return Array.from({ length: 6 }, (_, row) => (
-    <tr key={row} className="h-12 border-b border-lavander/80">
-      {Array.from({ length: 9 }, (_, cell) => (
-        <td key={cell} className="px-4 py-3.5">
-          <div className="h-3.5 w-full max-w-[6rem] animate-pulse rounded bg-lavander" />
-        </td>
-      ))}
-    </tr>
-  ));
-}
 
 /**
  * AO4-2 promotion overview: GET /api/promotions rows with filters, search,
@@ -126,9 +76,7 @@ export default function PromotionList({
 
   // Derived, not stored: deleting the last row of the last page lands on the
   // new last page instead of an empty one.
-  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
-  const currentPage = Math.min(page, totalPages);
-  const pageRows = sorted.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const { pageRows, currentPage, totalPages } = paginate(sorted, page, pageSize);
 
   const hasFilters = Object.values(filters).some(Boolean) || search.trim() !== '';
   const showTable = uniquePromotions.length > 0 || isLoading;
@@ -208,23 +156,15 @@ export default function PromotionList({
           <p className="text-sm text-deep-violet-blue/70" aria-live="polite">
             {isLoading && !uniquePromotions.length
               ? 'Loading promotions…'
-              : resultCountLabel(sorted.length, uniquePromotions.length)}
+              : resultCountLabel(sorted.length, uniquePromotions.length, 'promotion')}
           </p>
           <div className="flex items-center gap-2">
-            <label className="relative">
-              <span className="sr-only">Search promotions</span>
-              <Search
-                aria-hidden="true"
-                className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-deep-violet-blue/50"
-              />
-              <input
-                type="search"
-                value={search}
-                onChange={(event) => changeSearch(event.target.value)}
-                placeholder="Search store, period, mechanic…"
-                className="h-9 w-64 max-w-full rounded-lg border border-lavander bg-white pl-8 pr-2.5 text-sm text-deep-violet-blue outline-none placeholder:text-deep-violet-blue/40 focus-visible:ring-3 focus-visible:ring-ring/50"
-              />
-            </label>
+            <TableSearch
+              value={search}
+              onChange={changeSearch}
+              label="Search promotions"
+              placeholder="Search store, period, mechanic…"
+            />
             <RefreshButton
               onClick={onRefresh}
               isRefreshing={isLoading}
@@ -285,7 +225,7 @@ export default function PromotionList({
                   </tr>
                 </thead>
                 <tbody>
-                  {isLoading && !uniquePromotions.length && <LoadingRows />}
+                  {isLoading && !uniquePromotions.length && <TableSkeleton columns={9} />}
                   {!isLoading && sorted.length === 0 && (
                     <tr>
                       <td colSpan={9} className="px-4 py-24 text-center text-deep-violet-blue/80">
@@ -317,7 +257,7 @@ export default function PromotionList({
                 </tbody>
               </table>
             </div>
-            <PromotionPagination
+            <TablePagination
               page={currentPage}
               totalPages={totalPages}
               pageSize={pageSize}

@@ -5,7 +5,11 @@ import PageLayout from '@/components/layout/PageLayout';
 import Dropzone from '../components/upload/Dropzone';
 import UploadFileRow from '../components/upload/UploadFileRow';
 import RecentUploads from '../components/upload/RecentUploads';
-import { MAX_FILES_PER_BATCH } from '../config/upload';
+import {
+  MAX_FILES_PER_BATCH,
+  UPLOAD_HISTORY_LIMIT,
+  UPLOAD_HISTORY_MONTHS,
+} from '../config/upload';
 import { validateFile } from '../utils/fileInspect';
 import { STAGES, outcomeFromResult, summariseOutcomes } from '../utils/uploadFlow';
 import { uploadFile, fetchUploadHistory } from '../services/uploadApi';
@@ -56,7 +60,12 @@ export default function UploadPage() {
     setIsLoadingHistory(true);
     setHistoryError('');
     try {
-      setHistory(await fetchUploadHistory());
+      setHistory(
+        await fetchUploadHistory({
+          limit: UPLOAD_HISTORY_LIMIT,
+          months: UPLOAD_HISTORY_MONTHS,
+        }),
+      );
     } catch (error) {
       setHistoryError(error.message);
     } finally {
@@ -285,6 +294,7 @@ export default function UploadPage() {
           isLoading={isLoadingHistory}
           error={historyError}
           onRefresh={loadHistory}
+          months={UPLOAD_HISTORY_MONTHS}
         />
       </div>
     </PageLayout>

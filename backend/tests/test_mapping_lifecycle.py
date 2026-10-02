@@ -193,7 +193,7 @@ def test_upload_history_links_only_to_mappings_that_exist_in_gcs(monkeypatch):
         {"filename": "pending.txt", "mapping_fingerprint": "pending123"},
         {"filename": "unmapped.txt", "mapping_fingerprint": None},
     ]
-    monkeypatch.setattr(storage, "list_uploads", lambda limit: uploads)
+    monkeypatch.setattr(storage, "list_uploads", lambda limit, since=None: uploads)
     monkeypatch.setattr(
         storage,
         "list_mapping_fingerprints",
@@ -240,6 +240,66 @@ def test_history_sorts_a_blob_without_a_creation_time_last(monkeypatch):
 
     assert [row["filename"] for row in rows] == ["newer.txt", "older.txt", "undated.txt"]
     assert rows[0]["uploaded_at"] == "2026-09-02T00:00:00+00:00"
+
+
+def test_history_since_drops_uploads_created_before_the_cutoff(monkeypatch):
+    # An undated blob cannot be shown to fall inside the window, so it is left
+    # out too rather than guessed at.
+    old = _upload_blob("old.txt")
+    old.time_created = datetime.datetime(2026, 6, 30, tzinfo=datetime.timezone.utc)
+    recent = _upload_blob("recent.txt")
+    recent.time_created = datetime.datetime(2026, 7, 2, tzinfo=datetime.timezone.utc)
+    undated = _upload_blob("undated.txt")
+    undated.time_created = None
+    _install(monkeypatch, [old, recent, undated])
+
+    since = datetime.datetime(2026, 7, 1, tzinfo=datetime.timezone.utc)
+    rows = storage.list_uploads(since=since)
+
+    assert [row["filename"] for row in rows] == ["recent.txt"]
+
+
+def test_months_before_keeps_the_day_and_time():
+    moment = datetime.datetime(2026, 10, 2, 9, 30, tzinfo=datetime.timezone.utc)
+
+    assert storage.months_before(moment, 3) == datetime.datetime(
+        2026, 7, 2, 9, 30, tzinfo=datetime.timezone.utc
+    )
+
+
+def test_months_before_clamps_to_the_end_of_a_shorter_month_across_a_year():
+    moment = datetime.datetime(2026, 5, 31, tzinfo=datetime.timezone.utc)
+
+    assert storage.months_before(moment, 3) == datetime.datetime(
+        2026, 2, 28, tzinfo=datetime.timezone.utc
+    )
+    assert storage.months_before(moment, 6).date() == datetime.date(2025, 11, 30)
+
+
+def test_upload_history_asks_for_uploads_since_n_months_ago(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        storage, "list_uploads", lambda limit, since=None: calls.append(since) or []
+    )
+    monkeypatch.setattr(storage, "list_mapping_fingerprints", lambda state: [])
+
+    before = datetime.datetime.now(datetime.timezone.utc)
+    uploads_router._list_upload_history(50, months=3)
+    after = datetime.datetime.now(datetime.timezone.utc)
+
+    assert storage.months_before(before, 3) <= calls[0] <= storage.months_before(after, 3)
+
+
+def test_upload_history_without_months_has_no_cutoff(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        storage, "list_uploads", lambda limit, since=None: calls.append(since) or []
+    )
+    monkeypatch.setattr(storage, "list_mapping_fingerprints", lambda state: [])
+
+    uploads_router._list_upload_history(50)
+
+    assert calls == [None]
 
 
 def test_download_upload_preserves_original_filename(monkeypatch):
