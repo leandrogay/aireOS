@@ -112,9 +112,8 @@ export default function ShippedSoFarForm({ customers, skus, onSaved }) {
         customers={customers}
         customerIds={form.customerIds}
         onChange={(ids) => setField('customerIds', ids)}
-        invalid={Boolean(errors.customerIds)}
+        error={errors.customerIds}
       />
-      {errors.customerIds && <p className={cn(errorClass, '-mt-2')} role="alert">{errors.customerIds}</p>}
 
       <label>
         <span className={labelClass}>
