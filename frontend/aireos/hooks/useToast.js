@@ -4,9 +4,11 @@ import { useCallback, useState } from 'react';
 
 /**
  * State for one components/ui/Toast: `notify(type, message)` shows a toast
- * (replacing any current one) and `dismissToast` clears it.
+ * (replacing any current one) and `dismissToast` clears it. `type` picks the
+ * colour; see TONES in Toast.jsx.
  *
- * @returns {{ toast: { id: number, type: 'success' | 'error', message: string } | null, notify: (type: 'success' | 'error', message: string) => void, dismissToast: () => void }}
+ * @typedef {'success' | 'created' | 'updated' | 'deleted' | 'warning' | 'error'} ToastType
+ * @returns {{ toast: { id: number, type: ToastType, message: string } | null, notify: (type: ToastType, message: string) => void, dismissToast: () => void }}
  */
 export default function useToast() {
   const [toast, setToast] = useState(null);
