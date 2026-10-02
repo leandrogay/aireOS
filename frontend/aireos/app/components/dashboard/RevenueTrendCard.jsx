@@ -7,6 +7,7 @@ import ComparisonMixChart from "@/components/dashboard/ComparisonMixChart"
 import ComparisonTotalChart from "@/components/dashboard/ComparisonTotalChart"
 import { FormatTrendChart, TotalTrendChart } from "@/components/dashboard/TrendChart"
 import { formatDateTime } from "@/lib/formatDate"
+import { singleFormatColor } from "@/app/utils/storeFormats"
 
 const tabTriggerClass =
   "text-deep-violet-blue/70 hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white data-active:hover:text-white"
@@ -32,7 +33,8 @@ function ChartLoading({ label }) {
  *
  * With no comparison the chart is stacked by store format, in the format
  * colours (FormatTrendChart) — or plain neutral bars (TotalTrendChart) for
- * a single-format channel (online), which has no breakdown to show.
+ * a single-format channel (online), which has no breakdown to show and so
+ * takes that format's colour (FPON) instead of the neutral one.
  *
  * With a comparison, a Total / By format switch (when the channel has more
  * than one format) picks the colour logic, kept strict so a colour always
@@ -51,6 +53,8 @@ export default function RevenueTrendCard({
   error = null,
   freshnessRefreshing = false,
   lastUpdated = null,
+  weeklyBreakdownUnavailable = false,
+  unavailableMonthLabel = "",
   mode = "offline",
   onModeChange = () => {},
   headerExtra = null,
@@ -64,7 +68,9 @@ export default function RevenueTrendCard({
   const salesData = summaryByMode[mode]
   const busy = loading || (comparisonRows !== null && comparisonLoading)
   // Online has a single format, where "By format" would just repeat Total.
-  const hasFormatMix = new Set((salesData?.periodByFormat ?? []).map((row) => row.format)).size > 1
+  const formats = (salesData?.periodByFormat ?? []).map((row) => row.format)
+  const hasFormatMix = new Set(formats).size > 1
+  const channelColor = singleFormatColor(formats)
   const showViewSwitch = comparisonRows !== null && hasFormatMix
 
   return (
@@ -86,7 +92,11 @@ export default function RevenueTrendCard({
 
       <div className="mb-1 flex items-center justify-between gap-2">
         <p className="text-xs text-deep-violet-blue/60">
-          {(refreshing || freshnessRefreshing) && "Refreshing latest data…"}
+          {(refreshing || freshnessRefreshing)
+            ? "Refreshing latest data…"
+            : weeklyBreakdownUnavailable
+            ? `Weekly breakdown unavailable for ${unavailableMonthLabel || "this period"}. Monthly sales data is available.`
+            : ""}
         </p>
         <div className="flex items-center gap-2">
           {showViewSwitch && (
@@ -121,7 +131,12 @@ export default function RevenueTrendCard({
           {comparisonRows && showViewSwitch && chartView === "format" ? (
             <ComparisonMixChart rows={comparisonRows} periodNames={periodNames} granularity={granularity} />
           ) : comparisonRows ? (
-            <ComparisonTotalChart rows={comparisonRows} periodNames={periodNames} granularity={granularity} />
+            <ComparisonTotalChart
+              rows={comparisonRows}
+              periodNames={periodNames}
+              granularity={granularity}
+              color={channelColor}
+            />
           ) : hasFormatMix ? (
             <FormatTrendChart
               periodByFormat={salesData.periodByFormat}
@@ -129,7 +144,7 @@ export default function RevenueTrendCard({
               granularity={granularity}
             />
           ) : (
-            <TotalTrendChart periodTotal={salesData.periodTotal} granularity={granularity} />
+            <TotalTrendChart periodTotal={salesData.periodTotal} granularity={granularity} color={channelColor} />
           )}
           <p className="mt-1 text-right text-xs text-deep-violet-blue/60">
             Last Updated: {formatDateTime(lastUpdated)}

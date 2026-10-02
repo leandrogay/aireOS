@@ -20,10 +20,11 @@ import TooltipChange from '@/components/dashboard/TooltipChange';
 // RevenueTrendCard's switch.
 
 // "Total" view: the neutral period colour, never a format colour, so a
-// single bar is never read as one format.
-const totalChartConfig = {
-  revenue: { label: 'Revenue', color: 'var(--chart-period-current)' },
-};
+// single bar is never read as one format — unless the channel has only one
+// format (online's FPON), which passes its colour in (see singleFormatColor).
+function totalChartConfig(color) {
+  return { revenue: { label: 'Revenue', color: color ?? 'var(--chart-period-current)' } };
+}
 
 function weekOrMonth(periodLabel) {
   return periodLabel.startsWith('Week ') ? 'week' : 'month';
@@ -96,20 +97,27 @@ function TrendTooltip({ active, payload, granularity }) {
 
 /**
  * "Total" view with no comparison: one neutral bar per week/month. Also the
- * only view for a single-format channel (online).
+ * only view for a single-format channel (online), drawn in that format's
+ * `color` when given.
  *
- * @param {{ periodTotal: Array<object>, granularity: 'week' | 'month' }} props
+ * @param {{ periodTotal: Array<object>, granularity: 'week' | 'month', color?: string | null }} props
  */
-export function TotalTrendChart({ periodTotal, granularity }) {
+export function TotalTrendChart({ periodTotal, granularity, color = null }) {
+  // exactLabel uses the ROW's own actual type (weekOrMonth), not the
+  // requested `granularity` — a month-preferred row can appear even under
+  // granularity='month' requests mixed with no real weekly rows elsewhere,
+  // and mislabeling it a week in the tooltip (e.g. "Aug 1 – Aug 7, 2026"
+  // for a row that's really all of August) would contradict the bar's own
+  // displayLabel right next to it. Matches FormatTrendChart's pivotByFormat.
   const chartData = periodTotal.map((row, index) => ({
     displayLabel: displayLabelFor(row.period_label, row.period_start),
-    exactLabel: exactBucketLabel(granularity, row.period_start),
+    exactLabel: exactBucketLabel(weekOrMonth(row.period_label), row.period_start),
     revenue: row.revenue,
     changePct: index > 0 ? changePct(row.revenue, periodTotal[index - 1].revenue) : null,
   }));
 
   return (
-    <ChartContainer config={totalChartConfig} className={CHART_SIZE_CLASS}>
+    <ChartContainer config={totalChartConfig(color)} className={CHART_SIZE_CLASS}>
       <BarChart accessibilityLayer data={chartData} margin={{ bottom: 8 }}>
         <CartesianGrid vertical={false} />
         <XAxis dataKey="displayLabel" {...xAxisProps(chartData.length, granularity)} />

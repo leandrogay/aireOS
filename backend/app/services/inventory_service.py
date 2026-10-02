@@ -299,7 +299,7 @@ def _fetch_actuals(
     metrics = _fetch_metrics(conn, customer_ids)
     retailers = _fetch_customer_retailers(conn, sorted({customer for customer, _ in metrics}))
     sales = {
-        customer: sellout_units.get_monthly_sellout(retailer_ids)
+        customer: sellout_units.get_monthly_sellout(retailer_ids, conn=conn)
         for customer, retailer_ids in retailers.items()
     }
 
@@ -996,7 +996,7 @@ def _require_sellout_coverage(conn: Connection, record) -> None:
 
     retailers = _fetch_customer_retailers(conn, record.customer_ids)
     for customer_id in record.customer_ids:
-        _, data_through = sellout_units.get_monthly_sellout(retailers.get(customer_id, []))
+        _, data_through = sellout_units.get_monthly_sellout(retailers.get(customer_id, []), conn=conn)
         if data_through is None or data_through < _month_end(record.month):
             covered = f"only loaded through {data_through:%d %b %Y}" if data_through else "not loaded yet"
             raise ValueError(
