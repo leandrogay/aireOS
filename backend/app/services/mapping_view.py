@@ -271,3 +271,44 @@ def envelope_to_packet(
         "validated": confirmed,
         "validatedAt": envelope.get("confirmed_at"),
     }
+
+
+def builtin_packet() -> Dict[str, Any]:
+    """Read-only packet describing the built-in mapping flow."""
+    fields = list(dict.fromkeys(CORE_TARGET_FIELDS + REQUIRED_TARGET_FIELDS))
+    rules = [
+        _rule(
+            field,
+            ["built-in parser"],
+            "built-in parser",
+            None,
+            "mapped",
+            editable=False,
+            confidence="high",
+            rationale="Handled by built-in mapping logic.",
+            reviewed=True,
+        )
+        for field in fields
+    ]
+    return {
+        "mappingId": "builtin",
+        "fingerprint": None,
+        "kind": "builtin",
+        "state": "builtin",
+        "name": "Built-in mapping",
+        "vendor": None,
+        "filename": None,
+        "retailerFamily": None,
+        "columns": [],
+        "columnSamples": {},
+        "targetFields": fields,
+        "requiredFields": REQUIRED_TARGET_FIELDS,
+        "coverageFields": CORE_TARGET_FIELDS,
+        "periodDerivedFields": PERIOD_DERIVED_FIELDS,
+        "rules": rules,
+        **_meta(rules, []),
+        "warnings": [],
+        "editable": False,
+        "validated": True,
+        "validatedAt": None,
+    }

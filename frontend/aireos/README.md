@@ -9,7 +9,7 @@ npm install
 
 ### Environment variables
 
-Create a `.env.local` file in `frontend/` with the required environment variables (not committed — see `.gitignore`).
+Download `.env.frontend` from Google Drive and place it in `frontend/aireos/` (not committed — see `.gitignore`). It is required: `next.config.mjs` loads it on startup and `npm run dev` fails if it is missing.
 
 ## Serving the frontend
 
@@ -47,7 +47,7 @@ frontend/
 ├── hooks/                  # Custom React hooks
 ├── lib/                     # Shared utilities/config
 ├── public/                  # Static assets
-├── .env.local              # Local environment variables (not committed)
+├── .env.frontend           # Local environment variables (not committed)
 ├── .gitignore
 ├── AGENTS.md
 ├── CLAUDE.md

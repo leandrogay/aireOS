@@ -55,7 +55,7 @@ export async function request(path, { method = 'GET', body } = {}) {
 
   if (!baseUrl) {
     const error = new Error(
-      'NEXT_PUBLIC_API_URL is not set. Add it to frontend/aireos/.env.local.',
+      'NEXT_PUBLIC_API_URL is not set. Add it to frontend/aireos/.env.frontend.',
     );
     error.status = 0;
     throw error;

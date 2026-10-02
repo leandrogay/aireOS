@@ -98,3 +98,16 @@ def test_state_drives_kind_and_confirmation():
     assert (pending["kind"], pending["validated"]) == ("proposed", False)
     assert (confirmed["kind"], confirmed["validated"]) == ("existing", True)
     assert confirmed["validatedAt"] == ENVELOPE["confirmed_at"]
+
+
+def test_builtin_is_locked_end_to_end():
+    builtin = mv.builtin_packet()
+
+    # Every rule runs as Python in apply_existing_mapping, so repointing a
+    # source in the UI would change the display and not the behaviour.
+    assert builtin["editable"] is False
+    assert not any(rule["editable"] for rule in builtin["rules"])
+    assert builtin["requiredMissing"] == []
+    assert builtin["fingerprint"] is None
+
+

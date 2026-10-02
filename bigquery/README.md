@@ -40,6 +40,31 @@ The foundation script expects `v_inventory_history` to expose
 `customer_id`, `sku`, and `period_start`; its opening assertion stops the run
 if that prerequisite is missing.
 
+## Tier 0 legacy baseline
+
+The Tier 0 forecast (the P&L sell-out formula from
+`backend/app/services/pl_forecast.py`) runs inside the monthly forecast
+pipeline as its own procedure, so it can change without editing the Tier 1
+procedure.
+
+| Object | Kind | Purpose |
+| --- | --- | --- |
+| `fc_tier0_forecasts` | View (`views/010_…`) | The formula recomputed from every past month as a cut-off: latest cut-off = live forecast, 3 months back = holdout, earlier = past errors |
+| `run_tier0_legacy(run_ts)` | Procedure (`procedures/run_tier0_legacy.sql`) | Writes Tier 0's holdout score to `fc_model_quality_log` and its 13-month forecast with an 80% range to `aire_forecasting_runs`, as `tier0_legacy` |
+
+It reads only `fc_training_input` and `fc_future_input`, and writes only the
+pipeline's own tables. To deploy: run `views/010_create_tier0_legacy_forecasts_view.sql`,
+then `procedures/run_tier0_legacy.sql`, then apply the two edits in
+`procedures/pipeline_tier0_changes.sql` to `run_monthly_forecast_pipeline`.
+
+Before deploying a change to the formula, run
+`python scripts/check_tier0_parity.py` from `backend/`. It runs the view's
+query read-only and checks it against `pl_forecast.py` on live data.
+
+Tier 0 has no promotion uplift. The P&L's Sell-out Building Blocks are
+hand-entered activity cartons (AO, display, expansion, promoter sampling) that
+the database doesn't hold; promotion effects come from Tier 1 XREG.
+
 ## Important grain decisions
 
 - FairPrice sales and promotions remain separated in the raw tables as

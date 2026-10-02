@@ -6,7 +6,7 @@ you know which folder owns a concern, how data moves, and which "hat" to wear.
 aireOS (Team WIP × Aire, final-year project) is an internal operations tool for a diaper/
 personal-care brand selling through retailers (FairPrice first). It ingests retailer sellout
 spreadsheets, shows a sales dashboard, manages promotion events, and tracks inventory (ending
-stock, days of holding, DOH thresholds, a sell-in plan). Forecast is a placeholder route.
+stock, days of holding, DOH thresholds, a sell-in plan), and forecasts sell-out.
 
 ---
 
@@ -21,11 +21,14 @@ aireOS/
 │
 ├── backend/                       FastAPI app — run: uvicorn app.main:app --reload (:8000)
 │   ├── app/
-│   │   ├── main.py                FastAPI() instance, CORS (dev: allow all), include_router × 4, GET /
+│   │   ├── main.py                FastAPI() instance, CORS (dev: allow all), include_router × 5, GET /
+│   │   ├── middleware.py          UnhandledErrorMiddleware (turns unhandled exceptions into JSON 500s)
 │   │   ├── routers/               HTTP layer. One file per URL prefix.
 │   │   │   ├── uploads.py         /api/uploads        file ingest + mapping review (async)
 │   │   │   ├── sales.py           /api/sales          BigQuery dashboard reads
 │   │   │   ├── catalog.py         /api/catalog        retailer/store CRUD, sku-range lookup
+│   │   │   ├── promotions.py      /api/promotions     promotion CRUD + /health/db
+│   │   │   └── forecast.py        /api/forecast       sell-out forecast rows
 │   │   │   ├── inventory.py       /api/inventory      overview, per-customer DOH, at-risk list, sell-in plan, record create/edit, temporary sell-in
 │   │   │   ├── settings/          /api/settings       customer-level settings; __init__.py mounts one sub-router per kind
 │   │   │   │   └── doh.py         /api/settings/doh   DOH thresholds (versioned, revert, history, reset to global default) + alert toggle
@@ -53,7 +56,9 @@ aireOS/
 │   │       ├── generate_mapping.py Claude-generated mapping contracts for unknown layouts; validate_contract
 │   │       ├── mapping_view.py    Normalises builtin + stored contracts into one "packet"/"rules" shape for the UI
 │   │       ├── apply_contract.py  Applies a confirmed contract (identity_mapping + melt_groups) to a DataFrame
-│   │       └── validation_service.py Row-level validation against TARGET_SCHEMA after mapping
+│   │       ├── validation_service.py Row-level validation against TARGET_SCHEMA after mapping
+│   │       ├── pl_forecast.py     Pure P&L sell-out forecast (base + building blocks), no I/O
+│   │       └── forecast_service.py BigQuery reads/MERGEs for the forecast table, refresh_forecast()
 │   ├── tests/                     pytest; fakes for BigQuery/GCS clients; no network
 │   ├── pytest.ini                 pythonpath=. testpaths=tests
 │   ├── requirements.txt           fastapi, uvicorn, pandas, openpyxl, sqlalchemy, cloud-sql-python-connector[pg8000],
@@ -70,7 +75,7 @@ aireOS/
     │   ├── upload2/page.js        Developer "mapping harness" (uses components/upload2, manual API base URL)
     │   ├── dashboard/page.js      Sales dashboard: customer/sku/store/date filters, trend chart, ranking
     │   ├── promotions/page.js     Promotion create/edit/delete + overview list
-    │   ├── forecast/page.js       Placeholder
+    │   ├── forecast/page.js       Sell-out forecast chart/table, default view = current year only
     │   ├── doh/page.js            DOH Settings: per-customer thresholds, alert toggle, edit, reset to global default (components/settings)
     │   ├── inventory/page.js      Inventory: overview, by-customer DOH, at-risk list, sell-in plan, enter/edit data (components/inventory)
     │   ├── components/
@@ -83,17 +88,21 @@ aireOS/
     │   │   │                      ComparisonMixChart; PeriodTexture (hatched "past period" fills), TooltipChange,
     │   │   │                      PeriodComparisonDetail, RevenueSummaryCards + FormatMixBar, SkuRanking
     │   │   ├── promotions/        PromotionForm, PromotionList, CheckboxDropdown
+    │   │   ├── forecast/          ForecastChart/Filters/Table, HeaderCheckboxFilter (shared)
+    │   ├── services/              Backend API wrappers
+    │   │   ├── promotionsApi.js   request() + parseApiError() + one fn per /api/promotions & /api/catalog endpoint
+    │   │   ├── forecastApi.js     getForecastRows/Options, own request() (no baseUrl arg)
     │   │   ├── settings/          DohSettingsView (state), DohSettingsTable, DohThresholdForm
     │   │   ├── upload/            FileUpload (925 lines), MappingReview, FileUploadSummary (empty)
     │   │   └── upload2/           Harness pieces: MappingDiv, UploadPanel, ResultsPanel, ContractView, RequestLog…
-    │   ├── services/              Backend API wrappers
-    │   │   ├── promotionsApi.js   request() (exported, shared) + parseApiError() + one fn per /api/promotions & /api/catalog endpoint
     │   │   ├── salesApi.js        /api/sales wrappers via request() (getSkuSales so far)
     │   │   ├── settingsApi.js     /api/settings/* wrappers, one section per kind (reuses promotionsApi.request)
     │   │   └── mappingApi.js      /api/uploads wrappers taking an explicit baseUrl (harness style)
     │   └── utils/                 Pure, React-free helpers
     │       ├── promotionForm.js   PROMO_TYPES, EMPTY_PROMOTION_FORM, validate/build/formFrom helpers
     │       ├── promotionOverview.js list grouping/filter helpers
+    │       ├── forecastView.js    Sell-out run series (Initial Yearly Forecast/Previous/Current), tier resolution
+    │       ├── dateRange.js       currentYearDateRange() -- shared default-date-range helper
     │       ├── periodComparison.js Compare-to baselines (comparisonSetup), week pairing for the comparison chart
     │       ├── dateRangePresets.js Period presets (Latest week, MTD, … Past 12 months) anchored to the latest week
     │       ├── trendChart.js      Trend chart labels, x-axis setup, bar sizing, format stack order
@@ -119,7 +128,7 @@ aireOS/
     ├── jsconfig.json              @/components/* → app/components/*, @/* → ./*
     ├── next.config.mjs            reactCompiler: true
     ├── eslint.config.mjs          eslint-config-next/core-web-vitals
-    └── .env.local                 (gitignored) NEXT_PUBLIC_API_URL, BACKEND_API_URL
+    └── .env.frontend              (gitignored, required) NEXT_PUBLIC_API_URL — loaded by next.config.mjs, see §4
 ```
 
 Key dependencies: `@base-ui/react`, `shadcn`, `class-variance-authority`, `clsx`,
@@ -139,6 +148,7 @@ No test runner is installed on the frontend; linting (`npm run lint`) is the fro
 | Inventory | `inventory.py` | `inventory_service`, `inventory_calc`, `sellout_units`, `forecast_units` | **Cloud SQL Postgres**: `customers`, `customer_retailers`, `inventory_metrics` (long format; app writes carry `data_source='manual_entry'`; only sell-in, a first-month opening and building blocks (stock used outside sell-out) are read; workbook rows are never changed), `doh_settings` (read via `settings/doh.fetch_versions`; closed months use the version in effect at month end, the latest month, at-risk list and sell-in plan use the current one); **BigQuery** (read-only): weekly sell-out (`BQ_SELLOUT_TABLE`, default `public_sellout`) and the forecast table. Ending stock, DOH and the plan are computed, never stored | `app/inventory`, `services/inventoryApi.js` |
 | Settings (DOH) | `settings/doh.py` | `settings/doh`, `settings/common` | **Cloud SQL Postgres**: `doh_settings` (append-only: a change is an INSERT only when min/target/max differ from the newest row; newest by `updated_at DESC, setting_id DESC`; never UPDATE/DELETE), view `current_settings` (one row per customer), `customers.doh_alert_enabled` / `doh_alert_updated_at` (in-place toggle, no version). Also read by the inventory DOH calculations (`fetch_versions`, `thresholds_on`, `current_thresholds`) | `app/doh`, `services/settingsApi.js` |
 | Promotions | `promotions.py` | `promotion_service` (+ `catalog_service` seams) | **Cloud SQL Postgres**: `promotions`, `promotion_stores`, `promotion_skus`; enum `promo_type_enum`; trigger `trg_promotions_updated_at` | `app/promotions`, `services/promotionsApi.js` |
+| Forecast (P&L) | `forecast.py` (`/api/forecast`, read-only; writes are out of band via `scripts/refresh_forecast.py`) | `pl_forecast` (pure), `forecast_service`, `catalog_service` (product prices) | **BigQuery** (`Aire_Data_Analytics`, read-only): model learns from `v_sales_enriched` (weekly), page Actual line reads `v_customer_monthly_sales`; refresh MERGEs into `BQ_FORECAST_TABLE`. **Cloud SQL Postgres**: `skus.price` prices sell-out revenue | `app/forecast` |
 | AI mapping | (inside uploads) | `generate_mapping` | **Anthropic API** (`ANTHROPIC_MODEL`, default `claude-sonnet-4-6`) | — |
 
 Invariants that cross domains:
@@ -240,19 +250,20 @@ When you change the left column, grep the right column in the same PR.
 
 ## 4. Configuration and environment (know the quirks)
 
-Backend env files are loaded in **four places** and not consistently:
+One env file per side, each loaded in exactly one place:
 
-| Module | Loads |
-| --- | --- |
-| `app/main.py` | `backend/.env` |
-| `app/services/storage.py` | `backend/.env.backend` ← **the file that actually exists** |
-| `app/services/generate_mapping.py` | `backend/.env.local` |
-| `app/services/sql.py` | `load_dotenv(backend/)` (a directory — effectively a no-op) |
+| Side | File (gitignored) | Loaded by |
+| --- | --- | --- |
+| Backend | `backend/.env.backend` (template: `backend/.env.example`) | `app/config.py` — the only module that reads it; services import settings from `config` |
+| Frontend | `frontend/aireos/.env.frontend` | `next.config.mjs` via `process.loadEnvFile` |
 
-`backend/README.md` says `.env.local`; reality is `.env.backend`. Because `load_dotenv` never
-overrides an already-set variable and `storage.py` is imported by `uploads.py` at startup, the
-`.env.backend` values win in practice. Do not add a fifth loader — if you touch this, consolidate
-to one `load_dotenv` in `main.py` and update the README.
+Quirks:
+- `next.config.mjs` loads `.env.frontend` unconditionally, so `next dev` fails with
+  `ENOENT ... .env.frontend` if the file is missing. (Next.js still auto-loads a `.env.local` if
+  one exists, but `.env.frontend` is the team's file.)
+  Branches cut before `main`'s AO1-9 merge (`206949a`) still read `.env.local` instead.
+- `app/services/assistant.py` still calls `load_dotenv` itself — the one leftover; don't copy it.
+- Add new backend settings to `config.py`, not `os.environ.get` in a service.
 
 Backend variables: `GOOGLE_APPLICATION_CREDENTIALS`, `SERVICE_ACCOUNT_KEY_PATH`, `GCP_PROJECT_ID`,
 `GCS_BUCKET_NAME`, `GCS_DESTINATION_PREFIX`, `GCS_DESTINATION_PREFIX_MAPPING`,
@@ -312,7 +323,7 @@ half first (it defines the contract), then the frontend half, then update §3.4 
 
 ### Repo root, `.github/`, READMEs — Maintainer
 - Keep `README.md`, `backend/README.md`, `frontend/aireos/README.md` truthful when structure
-  changes (the backend README's env-file name is already wrong — see §4).
+  changes.
 - CI must stay green and credential-free.
 - Conventional Commits; branch `feat/AO<n>-<m>-desc`, `fix/…`, `refactor/…`; PRs to `main`.
 - Never commit `gcp-key.json`, `.env*`, or anything under `node_modules/`, `venv/`, `.next/`.
@@ -325,6 +336,5 @@ half first (it defines the contract), then the frontend half, then update §3.4 
 - `FileUpload.jsx` and `PromotionList.jsx` are oversized; extract when already editing them.
 - Two fetch-wrapper styles (`promotionsApi.request` vs `mappingApi.request(baseUrl, …)`) and
   raw `fetch` in dashboard hooks. New code uses the `promotionsApi` style.
-- Inconsistent dotenv loading (§4).
-- Backend README lists; actual file is `.env.backend`.
+- `assistant.py` still loads the env file itself instead of going through `config.py` (§4).
 - CI covers backend only.

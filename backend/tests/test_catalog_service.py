@@ -1,4 +1,4 @@
-from conftest import FakeConnection
+from conftest import FakeConnection, FakeEngine
 
 from app.services import catalog_service
 
@@ -89,3 +89,24 @@ def test_no_stores_skips_the_query():
 
     assert catalog_service.get_or_create_stores(conn, []) == []
     assert conn.calls == []
+
+
+def _install_fake_read_engine(monkeypatch, respond):
+    engine = FakeEngine(FakeConnection(respond))
+    monkeypatch.setattr(catalog_service, "_get_read_engine", lambda: engine)
+    return engine
+
+
+# ---- get_product_prices ---------------------------------------------------------
+
+
+def test_returns_a_price_per_product_name(monkeypatch):
+    engine = _install_fake_read_engine(
+        monkeypatch, lambda sql, params: [("Widget", 14.0), ("Gadget", 9.5)]
+    )
+
+    prices = catalog_service.get_product_prices()
+
+    assert prices == {"Widget": 14.0, "Gadget": 9.5}
+    sql, _ = engine.conn.calls[0]
+    assert "price IS NOT NULL" in sql

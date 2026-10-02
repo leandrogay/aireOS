@@ -18,7 +18,7 @@
    to keep — just know it hardcodes node_modules' current layout, which is
    NOT guaranteed to match a clean CI/deploy install, so re-test a real
    `npm run build` after any dependency bump. */
-@import "../node_modules/tw-animate-css/dist/tw-animate.css";
+@import "tw-animate-css";
 
 @import "shadcn/tailwind.css";
 

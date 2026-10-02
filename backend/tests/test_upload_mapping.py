@@ -129,13 +129,16 @@ def test_confirmed_contract_is_applied_deterministically(monkeypatch):
             {
                 "target_field": "revenue",
                 "columns": ["Sales | Week 1 | 01-01-2026"],
-                "period_extract_regex": r"(\d{2}-\d{2}-\d{4})$",
+                # Scoped to its own prefix, matching what Claude actually
+                # produces (see tests/test_apply_contract.py) -- a regex
+                # shared across groups would ambiguously match both.
+                "period_extract_regex": r"Sales \| Week \d+ \| (\d{2}-\d{2}-\d{4})$",
                 "date_format": "%d-%m-%Y",
             },
             {
                 "target_field": "quantity_units",
                 "columns": ["Qty | Week 1 | 01-01-2026"],
-                "period_extract_regex": r"(\d{2}-\d{2}-\d{4})$",
+                "period_extract_regex": r"Qty \| Week \d+ \| (\d{2}-\d{2}-\d{4})$",
                 "date_format": "%d-%m-%Y",
             },
         ],

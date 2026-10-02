@@ -848,3 +848,36 @@ def get_skus() -> list[dict]:
         dict(row)
         for row in results
     ]
+
+
+# ============================================================
+# PRODUCT PRICES
+#
+# Sell-out forecast revenue (see forecast_service.refresh_forecast)
+# is priced from this catalog's own skus.price rather than a
+# separate BigQuery price table, so there's one price per product
+# instead of two that could drift apart.
+# ============================================================
+
+
+def get_product_prices() -> dict[str, float]:
+    query = text(
+        """
+        SELECT
+            product_name,
+            price
+
+        FROM skus
+
+        WHERE
+            price IS NOT NULL
+        """
+    )
+
+    with _read_connection() as conn:
+        rows = conn.execute(query).all()
+
+    return {
+        product_name: float(price)
+        for product_name, price in rows
+    }

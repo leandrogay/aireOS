@@ -98,6 +98,33 @@ BQ_FORECAST_OUTPUT_VIEW = os.environ.get(
     "aire-data.Aire_Data_Analytics.aire_forecasting_output",
 )
 
+# Weekly sell-out with catalog names joined on (built on the Datastream
+# replica of Cloud SQL sellout). The forecast model learns from this.
+BQ_SALES_ENRICHED_VIEW = os.environ.get(
+    "BQ_SALES_ENRICHED_VIEW",
+    "aire-data.Aire_Data_Analytics.v_sales_enriched",
+)
+
+# Forecast model output (predictions only; written out of band by
+# scripts/refresh_forecast.py).
+BQ_FORECAST_TABLE = os.environ.get(
+    "BQ_FORECAST_TABLE", "aire-data.Aire_Data.forecasting_output_xianhui_mock"
+)
+
+# Closed monthly sell-out the Forecast page reads its Actual line from.
+BQ_MONTHLY_SALES_VIEW = os.environ.get(
+    "BQ_MONTHLY_SALES_VIEW",
+    "aire-data.Aire_Data_Analytics.v_customer_monthly_sales",
+)
+
+# Final forecast the Forecast page reads: one row per customer x SKU x month
+# with the initial / previous / current lines, cartons only. Read-only; written
+# by the BigQuery procedure run_monthly_forecast_pipeline.
+BQ_FORECAST_OUTPUT_VIEW = os.environ.get(
+    "BQ_FORECAST_OUTPUT_VIEW",
+    "aire-data.Aire_Data_Analytics.aire_forecasting_output",
+)
+
 # ---- Cloud SQL --------------------------------------------------------------
 
 POSTGRESQL_INSTANCE_CONNECTION_NAME = os.environ.get(

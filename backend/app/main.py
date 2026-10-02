@@ -1,11 +1,17 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app import config  # noqa: F401
-from app.routers import sales, uploads, mappings, promotions, catalog, assistant, inventory, settings
+
+from app.middleware import UnhandledErrorMiddleware
+from app.routers import sales, uploads, mappings, promotions, catalog, assistant, forecast, inventory, settings
 
 app = FastAPI()
 
 # origins = ["http://localhost:3000"] # Frontend location
+
+# Registered before CORSMiddleware so it ends up inside it -- see the
+# docstring above for why the order matters.
+app.add_middleware(UnhandledErrorMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -22,6 +28,7 @@ app.include_router(sales.router)
 app.include_router(catalog.router)
 app.include_router(promotions.router)
 app.include_router(assistant.router)
+app.include_router(forecast.router)
 app.include_router(inventory.router)
 app.include_router(settings.router)
 
