@@ -3,6 +3,7 @@ import {
   formatYmd,
   promoTypeLabel,
 } from '@/app/utils/promotionForm';
+import { retailerLabel } from '@/app/utils/retailerLabel';
 
 const RECURRENCE_OPTIONS = [
   { value: 'none', label: 'Does not repeat' },
@@ -423,5 +424,37 @@ export function sortPromotions(promotions, field, direction) {
       return Number(right.promotion_id || 0) - Number(left.promotion_id || 0);
     }
     return leftValue < rightValue ? -1 * factor : 1 * factor;
+  });
+}
+
+/**
+ * Free-text search across what a row shows: retailer, store, period, promo
+ * type, mechanic, voucher and status. Every word typed must match somewhere,
+ * so "fairprice feb" narrows instead of widening.
+ *
+ * @param {object[]} promotions
+ * @param {string} query
+ * @returns {object[]}
+ */
+export function searchPromotions(promotions, query) {
+  const words = String(query || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return promotions || [];
+
+  return (promotions || []).filter((promotion) => {
+    const retailers = promotionRetailerNames(promotion);
+    const haystack = [
+      ...retailers,
+      ...retailers.map(retailerLabel),
+      ...promotionStoreNames(promotion),
+      promotion.period_label,
+      promoTypeLabel(promotion.promo_type),
+      promotion.promotion_mechanic,
+      promotion.voucher,
+      promotionStatusLabel(promotionStatus(promotion)),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    return words.every((word) => haystack.includes(word));
   });
 }
