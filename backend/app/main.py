@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import config  # noqa: F401
 
 from app.middleware import UnhandledErrorMiddleware
-from app.routers import sales, uploads, mappings, promotions, catalog, assistant, inventory, settings
+from app.routers import sales, uploads, mappings, promotions, catalog, assistant, forecast, inventory, settings
 
 app = FastAPI()
 
