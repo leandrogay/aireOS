@@ -1,22 +1,20 @@
 from fastapi import APIRouter, HTTPException
-from google.api_core.exceptions import GoogleAPICallError
-from google.auth.exceptions import DefaultCredentialsError
-from app.services import bigquery, sellout_lookup
+from google.auth.exceptions import GoogleAuthError
+from sqlalchemy.exc import SQLAlchemyError
+
+from app import config
+from app.services import sellout_service
 
 router = APIRouter(prefix="/api/sales", tags=["sales"])
 
-_CREDENTIALS_DETAIL = (
-    "BigQuery credentials are not configured. Set "
-    "GOOGLE_APPLICATION_CREDENTIALS in backend/.env.backend to a service "
-    "account key with BigQuery Data Viewer + Job User access."
+_DATABASE_DETAIL = (
+    "Unable to reach the sales database (Cloud SQL). Check the Cloud SQL "
+    "connection settings in backend/.env.backend."
 )
 
-# Sell-out rows carry only ids/codes; store, product and retailer names come
-# from the Cloud SQL catalog, so an outage there fails these endpoints too.
-_CATALOG_DETAIL = (
-    "The store/product catalog (Cloud SQL) is unreachable, so sales data "
-    "can't be labelled right now. Check the Cloud SQL connection settings."
-)
+
+def _database_error(e: Exception) -> HTTPException:
+    return HTTPException(status_code=503, detail=f"{_DATABASE_DETAIL} ({type(e).__name__}: {e})")
 
 
 @router.get("/skus")
@@ -25,13 +23,13 @@ def get_sku_ranking(
     order: str = "desc",
     sku: str | None = None,
     mode: str | None = None,
-    customer: str = bigquery.DEFAULT_CUSTOMER,
+    customer: str = sellout_service.DEFAULT_CUSTOMER,
     store: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
 ):
     try:
-        ranked = bigquery.get_sku_ranking(
+        ranked = sellout_service.get_sku_ranking(
             metric=metric,
             order=order,
             sku=sku,
@@ -43,12 +41,8 @@ def get_sku_ranking(
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except DefaultCredentialsError:
-        raise HTTPException(status_code=503, detail=_CREDENTIALS_DETAIL)
-    except GoogleAPICallError as e:
-        raise HTTPException(status_code=503, detail=f"Unable to reach BigQuery: {e.message}")
-    except sellout_lookup.CatalogUnavailableError as e:
-        raise HTTPException(status_code=503, detail=f"{_CATALOG_DETAIL} ({e})")
+    except (SQLAlchemyError, config.ConfigError, GoogleAuthError) as e:
+        raise _database_error(e)
 
     return {
         "metric": metric,
@@ -63,28 +57,20 @@ def get_sku_ranking(
     }
 
 @router.get("/sku-options")
-def get_sku_options(customer: str = bigquery.DEFAULT_CUSTOMER):
+def get_sku_options(customer: str = sellout_service.DEFAULT_CUSTOMER):
     try:
-        options = bigquery.get_sku_options(customer=customer)
-    except DefaultCredentialsError:
-        raise HTTPException(status_code=503, detail=_CREDENTIALS_DETAIL)
-    except GoogleAPICallError as e:
-        raise HTTPException(status_code=503, detail=f"Unable to reach BigQuery: {e.message}")
-    except sellout_lookup.CatalogUnavailableError as e:
-        raise HTTPException(status_code=503, detail=f"{_CATALOG_DETAIL} ({e})")
+        options = sellout_service.get_sku_options(customer=customer)
+    except (SQLAlchemyError, config.ConfigError, GoogleAuthError) as e:
+        raise _database_error(e)
 
     return {"options": options}
 
 @router.get("/store-options")
-def get_store_options(customer: str = bigquery.DEFAULT_CUSTOMER):
+def get_store_options(customer: str = sellout_service.DEFAULT_CUSTOMER):
     try:
-        options = bigquery.get_store_options(customer=customer)
-    except DefaultCredentialsError:
-        raise HTTPException(status_code=503, detail=_CREDENTIALS_DETAIL)
-    except GoogleAPICallError as e:
-        raise HTTPException(status_code=503, detail=f"Unable to reach BigQuery: {e.message}")
-    except sellout_lookup.CatalogUnavailableError as e:
-        raise HTTPException(status_code=503, detail=f"{_CATALOG_DETAIL} ({e})")
+        options = sellout_service.get_store_options(customer=customer)
+    except (SQLAlchemyError, config.ConfigError, GoogleAuthError) as e:
+        raise _database_error(e)
 
     return {"options": options}
 
@@ -92,13 +78,9 @@ def get_store_options(customer: str = bigquery.DEFAULT_CUSTOMER):
 def get_customer_options():
     """Distinct top-level customers (retailer families), for the page-header selector."""
     try:
-        options = bigquery.get_customer_options()
-    except DefaultCredentialsError:
-        raise HTTPException(status_code=503, detail=_CREDENTIALS_DETAIL)
-    except GoogleAPICallError as e:
-        raise HTTPException(status_code=503, detail=f"Unable to reach BigQuery: {e.message}")
-    except sellout_lookup.CatalogUnavailableError as e:
-        raise HTTPException(status_code=503, detail=f"{_CATALOG_DETAIL} ({e})")
+        options = sellout_service.get_customer_options()
+    except (SQLAlchemyError, config.ConfigError, GoogleAuthError) as e:
+        raise _database_error(e)
 
     return {"options": options}
 
@@ -106,13 +88,13 @@ def get_customer_options():
 def get_dashboard_summary(
     granularity: str = "week",
     sku: str | None = None,
-    customer: str = bigquery.DEFAULT_CUSTOMER,
+    customer: str = sellout_service.DEFAULT_CUSTOMER,
     store: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
 ):
     try:
-        return bigquery.get_dashboard_summary(
+        return sellout_service.get_dashboard_summary(
             granularity=granularity,
             sku=sku,
             customer=customer,
@@ -122,12 +104,8 @@ def get_dashboard_summary(
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except DefaultCredentialsError:
-        raise HTTPException(status_code=503, detail=_CREDENTIALS_DETAIL)
-    except GoogleAPICallError as e:
-        raise HTTPException(status_code=503, detail=f"Unable to reach BigQuery: {e.message}")
-    except sellout_lookup.CatalogUnavailableError as e:
-        raise HTTPException(status_code=503, detail=f"{_CATALOG_DETAIL} ({e})")
+    except (SQLAlchemyError, config.ConfigError, GoogleAuthError) as e:
+        raise _database_error(e)
 
 @router.get("/period-comparison")
 def get_period_comparison(
@@ -138,11 +116,11 @@ def get_period_comparison(
     previous_end: str | None = None,
     mode: str | None = None,
     sku: str | None = None,
-    customer: str = bigquery.DEFAULT_CUSTOMER,
+    customer: str = sellout_service.DEFAULT_CUSTOMER,
     store: str | None = None,
 ):
     try:
-        return bigquery.get_period_comparison(
+        return sellout_service.get_period_comparison(
             comparison_type=comparison_type,
             current_start=current_start,
             current_end=current_end,
@@ -155,38 +133,26 @@ def get_period_comparison(
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except DefaultCredentialsError:
-        raise HTTPException(status_code=503, detail=_CREDENTIALS_DETAIL)
-    except GoogleAPICallError as e:
-        raise HTTPException(status_code=503, detail=f"Unable to reach BigQuery: {e.message}")
-    except sellout_lookup.CatalogUnavailableError as e:
-        raise HTTPException(status_code=503, detail=f"{_CATALOG_DETAIL} ({e})")
+    except (SQLAlchemyError, config.ConfigError, GoogleAuthError) as e:
+        raise _database_error(e)
 
 
 @router.get("/default-date-range")
 def get_default_date_range(
-    customer: str = bigquery.DEFAULT_CUSTOMER, mode: str | None = None, period: str = "month"
+    customer: str = sellout_service.DEFAULT_CUSTOMER, mode: str | None = None, period: str = "month"
 ):
     try:
-        return bigquery.get_default_date_range(customer=customer, mode=mode, period=period)
+        return sellout_service.get_default_date_range(customer=customer, mode=mode, period=period)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except DefaultCredentialsError:
-        raise HTTPException(status_code=503, detail=_CREDENTIALS_DETAIL)
-    except GoogleAPICallError as e:
-        raise HTTPException(status_code=503, detail=f"Unable to reach BigQuery: {e.message}")
-    except sellout_lookup.CatalogUnavailableError as e:
-        raise HTTPException(status_code=503, detail=f"{_CATALOG_DETAIL} ({e})")
+    except (SQLAlchemyError, config.ConfigError, GoogleAuthError) as e:
+        raise _database_error(e)
 
 
 @router.get("/last-updated")
 def get_last_updated():
-    """Latest BigQuery loaded_at per retailer, across every customer."""
+    """Latest Cloud SQL loaded_at per retailer, across every customer."""
     try:
-        return {"channels": bigquery.get_data_freshness()}
-    except DefaultCredentialsError:
-        raise HTTPException(status_code=503, detail=_CREDENTIALS_DETAIL)
-    except GoogleAPICallError as e:
-        raise HTTPException(status_code=503, detail=f"Unable to reach BigQuery: {e.message}")
-    except sellout_lookup.CatalogUnavailableError as e:
-        raise HTTPException(status_code=503, detail=f"{_CATALOG_DETAIL} ({e})")
+        return {"channels": sellout_service.get_data_freshness()}
+    except (SQLAlchemyError, config.ConfigError, GoogleAuthError) as e:
+        raise _database_error(e)

@@ -101,9 +101,15 @@ function TrendTooltip({ active, payload, granularity }) {
  * @param {{ periodTotal: Array<object>, granularity: 'week' | 'month' }} props
  */
 export function TotalTrendChart({ periodTotal, granularity }) {
+  // exactLabel uses the ROW's own actual type (weekOrMonth), not the
+  // requested `granularity` — a month-preferred row can appear even under
+  // granularity='month' requests mixed with no real weekly rows elsewhere,
+  // and mislabeling it a week in the tooltip (e.g. "Aug 1 – Aug 7, 2026"
+  // for a row that's really all of August) would contradict the bar's own
+  // displayLabel right next to it. Matches FormatTrendChart's pivotByFormat.
   const chartData = periodTotal.map((row, index) => ({
     displayLabel: displayLabelFor(row.period_label, row.period_start),
-    exactLabel: exactBucketLabel(granularity, row.period_start),
+    exactLabel: exactBucketLabel(weekOrMonth(row.period_label), row.period_start),
     revenue: row.revenue,
     changePct: index > 0 ? changePct(row.revenue, periodTotal[index - 1].revenue) : null,
   }));

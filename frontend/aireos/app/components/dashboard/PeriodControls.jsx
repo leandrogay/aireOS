@@ -2,7 +2,7 @@
 
 import CompareControl from '@/components/dashboard/CompareControl';
 import DateRangeControl from '@/components/dashboard/DateRangeControl';
-import { addDays, parseIso } from '@/app/utils/periodComparison';
+import { parseIso } from '@/app/utils/periodComparison';
 
 /**
  * The timeframe controls above the trend chart: Period, Compare to, and how
@@ -15,6 +15,7 @@ import { addDays, parseIso } from '@/app/utils/periodComparison';
  *   end: string,
  *   presets: Array<{ id: string, label: string, start: string, end: string }>,
  *   latestWeekStart: string,
+ *   latestDataEnd: string,
  *   onDateRangeChange: (start: string, end: string) => void,
  *   compareTo: string,
  *   compareOptions: Array<object>,
@@ -26,13 +27,16 @@ export default function PeriodControls({
   end,
   presets,
   latestWeekStart,
+  latestDataEnd,
   onDateRangeChange,
   compareTo,
   compareOptions,
   onCompareChange,
 }) {
-  const dataThrough = latestWeekStart
-    ? parseIso(addDays(latestWeekStart, 6)).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  // latestDataEnd is the real last day loaded (may be a whole month's end,
+  // not always latestWeekStart + 6 days).
+  const dataThrough = latestDataEnd
+    ? parseIso(latestDataEnd).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
     : null;
 
   return (
@@ -44,6 +48,7 @@ export default function PeriodControls({
           end={end}
           presets={presets}
           latestWeekStart={latestWeekStart}
+          latestDataEnd={latestDataEnd}
           onChange={onDateRangeChange}
         />
       </div>
@@ -53,6 +58,7 @@ export default function PeriodControls({
           value={compareTo}
           options={compareOptions}
           latestWeekStart={latestWeekStart}
+          latestDataEnd={latestDataEnd}
           onChange={onCompareChange}
         />
       </div>

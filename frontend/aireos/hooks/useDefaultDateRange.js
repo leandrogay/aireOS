@@ -3,11 +3,16 @@
 import { useEffect, useState } from 'react';
 
 /**
- * Week or month bounds anchored to the latest available week for the given
+ * Bounds anchored to the latest available PREFERRED period for the given
  * channel (not the wall-clock date) — see backend get_default_date_range.
- * The dashboard only asks for the week variant: that latest loaded week is
- * the anchor every date preset (and the MTD default) is built from — see
- * app/utils/dateRangePresets.js.
+ * "Preferred" means: monthly-granularity sell-out rows win over weekly ones
+ * for the same retailer+calendar-month, so period='week' can come back with
+ * a full month's bounds (period_type: 'month') when that's the latest data
+ * actually loaded — not necessarily a 7-day week. The dashboard only asks
+ * for the week variant: that latest preferred period is the anchor every
+ * date preset (and the MTD default) is built from — see
+ * app/utils/dateRangePresets.js. `periodType` tells callers whether the
+ * anchor is a genuine week or a whole month, so they don't assume +6 days.
  */
 export default function useDefaultDateRange({
   customer = '',
@@ -15,7 +20,7 @@ export default function useDefaultDateRange({
   dataVersion = 0,
   period = 'month',
 }) {
-  const [range, setRange] = useState({ start: '', end: '' });
+  const [range, setRange] = useState({ start: '', end: '', periodType: null });
 
   useEffect(() => {
     if (!customer) return undefined;
@@ -31,7 +36,7 @@ export default function useDefaultDateRange({
         );
         const data = await res.json();
         if (!res.ok || cancelled) return;
-        setRange({ start: data.start ?? '', end: data.end ?? '' });
+        setRange({ start: data.start ?? '', end: data.end ?? '', periodType: data.period_type ?? null });
       } catch {
         // Silent — if this fails, callers just get '' bounds, same as no
         // filter/default at all (all-time), rather than blocking the page.

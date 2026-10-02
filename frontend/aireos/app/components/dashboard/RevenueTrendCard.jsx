@@ -50,6 +50,8 @@ export default function RevenueTrendCard({
   error = null,
   freshnessRefreshing = false,
   lastUpdated = null,
+  weeklyBreakdownUnavailable = false,
+  unavailableMonthLabel = "",
   mode = "offline",
   onModeChange = () => {},
   headerExtra = null,
@@ -85,7 +87,11 @@ export default function RevenueTrendCard({
 
       <div className="mb-1 flex items-center justify-between gap-2">
         <p className="text-xs text-deep-violet-blue/60">
-          {(refreshing || freshnessRefreshing) && "Refreshing latest data…"}
+          {(refreshing || freshnessRefreshing)
+            ? "Refreshing latest data…"
+            : weeklyBreakdownUnavailable
+            ? `Weekly breakdown unavailable for ${unavailableMonthLabel || "this period"}. Monthly sales data is available.`
+            : ""}
         </p>
         <div className="flex items-center gap-2">
           {showViewSwitch && (

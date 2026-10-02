@@ -82,8 +82,14 @@ export default function DashboardPage() {
   }
 
   // Every preset (and the MTD default) is anchored to the latest loaded
-  // week for this channel — see dateRangePresets.js.
-  const latestWeekStart = useDefaultDateRange({ customer, mode, dataVersion, period: 'week' }).start;
+  // PREFERRED period for this channel — see dateRangePresets.js. "start" is
+  // still a week's start in the common case, but can be a whole month's
+  // start when that's the latest granularity actually loaded (periodType
+  // 'month') — e.g. August 2026, which has no real weekly rows at all.
+  // latestDataEnd is the real last day loaded either way; comparisonRange
+  // and the Period/calendar controls use it instead of assuming +6 days.
+  const { start: latestWeekStart, end: latestDataEnd, periodType: latestPeriodType } =
+    useDefaultDateRange({ customer, mode, dataVersion, period: 'week' });
   const presets = buildDateRangePresets(latestWeekStart);
   const defaultRange = presets.find((preset) => preset.id === DEFAULT_PRESET_ID) ?? { start: '', end: '' };
 
@@ -96,12 +102,28 @@ export default function DashboardPage() {
   // monthly bars; the chart's By week / By month switch overrides this
   // until the range changes again.
   const rangeDays = effectiveStartDate && effectiveEndDate ? daysBetween(effectiveStartDate, effectiveEndDate) : 0;
-  const autoGranularity = rangeDays > 100 ? 'month' : 'week';
+  // Also default to month view when the latest loaded data for the default
+  // range itself is month-granularity (no real weekly rows exist for it) —
+  // otherwise the dashboard would open on a month-only period defaulting to
+  // an empty weekly chart before the user ever touches the toggle.
+  const defaultsToMonthOnly = !hasExplicitDateFilter && latestPeriodType === 'month';
+  const autoGranularity = rangeDays > 100 || defaultsToMonthOnly ? 'month' : 'week';
   const chartGranularity = granularityChoice ?? autoGranularity;
 
-  const rangeInputs = { start: effectiveStartDate, end: effectiveEndDate, latestWeekStart, custom: customCompare };
+  const rangeInputs = {
+    start: effectiveStartDate,
+    end: effectiveEndDate,
+    latestWeekStart,
+    latestDataEnd,
+    custom: customCompare,
+  };
   const { options: compareOptions, baseline, periodNames } = comparisonSetup(compareTo, rangeInputs);
   const compareShort = baseline ? `vs ${periodNames.baseline}` : '';
+  // The user is looking at By week, but the default range's latest loaded
+  // data is month-only (no real weekly rows exist for it) — the weekly
+  // chart would just be empty. Say so plainly instead of leaving a blank
+  // chart with no explanation; never fabricate weekly bars from the month.
+  const weeklyBreakdownUnavailable = chartGranularity === 'week' && defaultsToMonthOnly;
 
   const summary = useDashboardSummary({
     dataVersion,
@@ -203,6 +225,8 @@ export default function DashboardPage() {
             error={summary.error || (baseline ? baselineSummary.error : null)}
             freshnessRefreshing={refreshing}
             lastUpdated={lastUpdated}
+            weeklyBreakdownUnavailable={weeklyBreakdownUnavailable}
+            unavailableMonthLabel={periodNames.current}
             mode={mode}
             onModeChange={setMode}
             granularity={chartGranularity}
@@ -216,6 +240,7 @@ export default function DashboardPage() {
                 end={effectiveEndDate}
                 presets={presets}
                 latestWeekStart={latestWeekStart}
+                latestDataEnd={latestDataEnd}
                 onDateRangeChange={handleDateRangeChange}
                 compareTo={compareTo}
                 compareOptions={compareOptions}
