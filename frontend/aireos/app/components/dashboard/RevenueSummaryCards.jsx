@@ -3,7 +3,7 @@
 import { useState } from "react"
 import FormatMixBar from "@/components/dashboard/FormatMixBar"
 import { changePct, formatChangePct } from "@/app/utils/periodComparison"
-import { formatColor } from "@/app/utils/storeFormats"
+import { formatColor, singleFormatColor } from "@/app/utils/storeFormats"
 import { PeriodKeySwatch } from "@/components/dashboard/PeriodTexture"
 
 function sumFormats(storeFormats = []) {
@@ -31,11 +31,12 @@ function CardChange({ current, baseline }) {
 // One period's revenue and units on a line, prefixed with that period's
 // swatch (solid = this period, hatched = comparison, as in the mix bar and
 // chart) when a comparison is on, so the figures can't be mistaken for each
-// other. Hovering names the period.
-function PeriodFigures({ totals, periodName, hatched = false, comparing }) {
+// other. Hovering names the period. `periodColor` matches the chart's Total
+// view (a single-format channel's colour, else neutral).
+function PeriodFigures({ totals, periodName, hatched = false, comparing, periodColor = null }) {
   return (
     <div className="flex flex-wrap items-center gap-x-1.5" title={comparing ? periodName : undefined}>
-      {comparing && <PeriodKeySwatch hatched={hatched} />}
+      {comparing && <PeriodKeySwatch hatched={hatched} color={periodColor} />}
       <p className={`tabular-nums ${hatched ? "text-xs text-deep-violet-blue/70" : "text-sm font-semibold"}`}>
         ${totals.revenue.toLocaleString()}
       </p>
@@ -59,6 +60,7 @@ function SummaryCard({
   periodNames = null,
   emphasis = false,
   color = null,
+  periodColor = null,
   highlighted = false,
   onHover = null,
   className = "",
@@ -89,9 +91,20 @@ function SummaryCard({
         </p>
         <CardChange current={totals.revenue} baseline={baselineTotals?.revenue ?? null} />
       </div>
-      <PeriodFigures totals={totals} periodName={periodNames?.current} comparing={Boolean(baselineTotals)} />
+      <PeriodFigures
+        totals={totals}
+        periodName={periodNames?.current}
+        comparing={Boolean(baselineTotals)}
+        periodColor={periodColor}
+      />
       {baselineTotals && (
-        <PeriodFigures totals={baselineTotals} periodName={periodNames?.baseline} hatched comparing />
+        <PeriodFigures
+          totals={baselineTotals}
+          periodName={periodNames?.baseline}
+          hatched
+          comparing
+          periodColor={periodColor}
+        />
       )}
     </div>
   )
@@ -127,6 +140,7 @@ export default function RevenueSummaryCards({
   const baselineData = baselineSummaryByMode?.[mode] ?? null
   const total = sumFormats(salesData?.storeFormats)
   const baselineByFormat = new Map((baselineData?.storeFormats ?? []).map((format) => [format.format, format]))
+  const periodColor = singleFormatColor((salesData?.storeFormats ?? []).map((format) => format.format))
 
   return (
     <div className="bg-white rounded-lg border border-lavander shadow-sm p-3 h-full">
@@ -154,6 +168,7 @@ export default function RevenueSummaryCards({
             totals={total}
             baselineTotals={baselineData ? sumFormats(baselineData.storeFormats) : null}
             periodNames={periodNames}
+            periodColor={periodColor}
             emphasis
             className="col-span-2 sm:col-span-1"
           />
@@ -165,6 +180,7 @@ export default function RevenueSummaryCards({
               share={total[mixMetric] ? (format[mixMetric] / total[mixMetric]) * 100 : null}
               shareLabel={mixMetric === "units" ? "Share of total volume" : "Share of total revenue"}
               color={formatColor(format.format)}
+              periodColor={periodColor}
               highlighted={hoveredFormat === format.format}
               onHover={setHoveredFormat}
               baselineTotals={
