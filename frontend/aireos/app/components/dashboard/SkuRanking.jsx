@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import TableSkeleton from '@/components/ui/TableSkeleton';
 import { changePct, formatChangePct } from '@/app/utils/periodComparison';
 
 const METRICS = [
@@ -101,6 +102,10 @@ export default function SkuRanking({
     };
   }, [metric, order, dataVersion, sku, mode, customer, store, startDate, endDate, comparisonStart, comparisonEnd]);
 
+  // While loading, the Change column follows the comparison being fetched,
+  // not the previous result, so the skeleton has the columns the data will.
+  const showChange = loading ? Boolean(comparisonStart && comparisonEnd) : baselineBySku !== null;
+
   return (
     <div className="bg-white rounded-lg border border-lavander shadow-sm p-3">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
@@ -136,26 +141,33 @@ export default function SkuRanking({
         </div>
       </div>
 
-      {loading && <p className="text-deep-violet-blue/70 text-sm">Loading SKU ranking...</p>}
       {error && <p className="text-red-600 text-sm">{error}</p>}
 
       {!loading && !error && skus.length === 0 && (
         <p className="text-deep-violet-blue/50 text-sm text-center py-6">No SKU data available yet.</p>
       )}
 
-      {!loading && !error && skus.length > 0 && (
-        <table className="w-full text-sm">
+      {(loading || (!error && skus.length > 0)) && (
+        <table className="w-full text-sm" aria-busy={loading}>
           <thead>
             <tr className="text-left text-deep-violet-blue/70 border-t border-lavander">
               <th className="px-3 py-1">Rank</th>
               <th className="px-3 py-1">Product</th>
               <th className="px-3 py-1">Volume</th>
               <th className="px-3 py-1">Value</th>
-              {baselineBySku && <th className="px-3 py-1">Change {compareShort}</th>}
+              {showChange && <th className="px-3 py-1">Change {compareShort}</th>}
             </tr>
           </thead>
           <tbody>
-            {skus.map((s) => (
+            {loading && (
+              <TableSkeleton
+                columns={showChange ? 5 : 4}
+                rows={5}
+                className="h-7 border-b-0 border-t border-lavander"
+                cellClassName="px-3 py-1"
+              />
+            )}
+            {!loading && skus.map((s) => (
               <tr key={s.sku} className="border-t border-lavander text-deep-violet-blue">
                 <td className="px-3 py-1">{s.rank}</td>
                 <td className="px-3 py-1">{s.product_name}</td>
