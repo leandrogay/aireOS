@@ -58,6 +58,7 @@ aireOS/
 │   │       │                      get_forecast_options, get_sales_loaded_at) + get_bigquery_client; the Sales Dashboard
 │   │       │                      functions that used to live here moved to sellout_service.py
 │   │       ├── storage.py         GCS: upload files (duplicate detection), mapping JSON packets
+│   │       ├── upload_check.py    Read-only pre-upload check (POST /api/uploads/check): duplicate + mapping preview, no writes, no Claude
 │   │       ├── mapping_service.py Built-in deterministic FairPrice "wide" mapping (regex header match, melt)
 │   │       ├── generate_mapping.py Claude-generated mapping contracts for unknown layouts; validate_contract
 │   │       ├── mapping_view.py    Normalises builtin + stored contracts into one "packet"/"rules" shape for the UI
@@ -201,6 +202,9 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 ### 3.3 Three concrete flows
 
 **Upload → mapping → review** (`POST /api/uploads`)
+0. On drop, each file is sent to `POST /api/uploads/check` (`upload_check.check_file`): read-only, it reports
+   whether the file can be uploaded, the mapping it would get (`generate_mapping.preview_mapping`) and any earlier
+   upload it duplicates, so the upload page sorts files into Ready / Needs attention before Upload is pressed.
 1. `FileUpload.jsx` posts files. Router reads every stream once, `asyncio.to_thread(storage.upload_many)`
    (duplicate-filename check unless `force`).
 2. Per file, concurrently (`asyncio.gather` → `to_thread(resolve_and_apply_mapping)`):

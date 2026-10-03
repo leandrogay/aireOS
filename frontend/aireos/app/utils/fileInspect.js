@@ -200,28 +200,27 @@ export async function validateFile(file) {
   const extension = getFileExtension(file.name);
 
   if (!ALLOWED_EXTENSIONS.includes(extension)) {
-    return {
-      ok: false,
-      reason: `Unsupported format .${extension || '?'} — use ${ALLOWED_EXTENSIONS
-        .map((ext) => `.${ext}`)
-        .join(', ')}`,
-    };
+    // ".xlsx, .csv or .txt"
+    const allowed = ALLOWED_EXTENSIONS.map((ext) => `.${ext}`);
+    const allowedText = `${allowed.slice(0, -1).join(', ')} or ${allowed.at(-1)}`;
+    const subject = extension ? `.${extension} files aren't` : "This file type isn't";
+    return { ok: false, reason: `${subject} supported. Use ${allowedText}.` };
   }
 
   if (file.size > MAX_FILE_SIZE_BYTES) {
     return {
       ok: false,
-      reason: `Too large at ${formatFileSize(file.size)} — the limit is ${MAX_FILE_SIZE_MB} MB`,
+      reason: `It's ${formatFileSize(file.size)}. The limit is ${MAX_FILE_SIZE_MB} MB.`,
     };
   }
 
   if (file.size === 0) {
-    return { ok: false, reason: 'File is empty' };
+    return { ok: false, reason: 'The file is empty.' };
   }
 
   if (extension === 'txt' || extension === 'csv') {
     const text = await file.text();
-    if (!text.trim()) return { ok: false, reason: 'File has no content' };
+    if (!text.trim()) return { ok: false, reason: 'The file is empty.' };
     return { ok: true };
   }
 
@@ -230,7 +229,7 @@ export async function validateFile(file) {
       const { sheetNames, rows } = await readXlsxRows(file);
       const hasData = rows.some((row) => row.some((cell) => String(cell || '').trim()));
       if (!sheetNames.length || !hasData) {
-        return { ok: false, reason: 'Workbook has no data in its first sheet' };
+        return { ok: false, reason: 'The first sheet is empty.' };
       }
     } catch {
       // An unreadable workbook is not necessarily an invalid one — this reader

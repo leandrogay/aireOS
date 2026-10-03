@@ -8,6 +8,7 @@ from app.services import storage
 from app.services import generate_mapping
 from app.services import apply_contract as contract_application
 from app.services import sellout_ingestion, sellout_service
+from app.services import upload_check
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 
@@ -177,6 +178,29 @@ async def upload_files(
     )
 
     return res
+
+
+@router.post("/check")
+async def check_files(files: List[UploadFile] = File(...)):
+    """
+    What would happen to each file if it were uploaded: whether it can be,
+    the mapping it would get, and the earlier upload it duplicates. Read-only
+    -- nothing is stored and no mapping is generated (see upload_check).
+    """
+    if not files:
+        raise HTTPException(status_code=400, detail="No files were sent.")
+
+    payload: list[tuple[str, bytes]] = [
+        (file.filename or "unnamed", await file.read()) for file in files
+    ]
+
+    try:
+        return {"results": await asyncio.to_thread(upload_check.check_files, payload)}
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Unable to check files against earlier uploads: {exc}",
+        )
 
 
 @router.get("/history")

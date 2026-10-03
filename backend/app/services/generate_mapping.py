@@ -818,6 +818,36 @@ def resolve_mapping(filename: str, data: bytes, uploaded_to: str | None = None) 
     }
 
 
+def preview_mapping(filename: str, data: bytes) -> dict:
+    """
+    Say which of resolve_mapping's outcomes a file would get, without causing it.
+
+    The same lookups in the same order -- confirmed contract, then partial
+    match -- but where resolve_mapping would ask Claude and park a proposal,
+    this only reports "new_layout". No Claude call and no writes, so the upload
+    screen can run it the moment a file is dropped. Raises
+    UnreadableSourceFileError when the headers cannot be read, as
+    resolve_mapping would.
+    """
+    columns = read_header_columns(filename, data)
+    fp = fingerprint(columns)
+
+    confirmed = storage.download_json(storage.confirmed_mapping_path(fp))
+    if confirmed:
+        return {
+            "status": "mapped",
+            "fingerprint": fp,
+            "name": confirmed.get("name"),
+            "vendor": confirmed.get("vendor"),
+        }
+
+    partial = find_partial_match(columns)
+    if partial:
+        return {"status": "partial_match", "fingerprint": fp, "matched": partial}
+
+    return {"status": "new_layout", "fingerprint": fp}
+
+
 if __name__ == "__main__":
     src = Path("../XEL_VENDORS_BRANDS_WEEK_01-01-2026_30-07-2026_1.txt")
 
