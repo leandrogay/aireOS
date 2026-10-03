@@ -26,7 +26,7 @@ const NAV_ITEMS = [
     label: 'Inventory',
     href: '/inventory',
     icon: Package,
-    children: [{ label: 'DOH Settings', href: '/doh' }],
+    children: [{ label: 'DOH settings', href: '/doh' }],
   },
 ];
 
