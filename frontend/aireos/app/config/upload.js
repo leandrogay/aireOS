@@ -20,3 +20,9 @@ export const UPLOAD_LIMITS_TEXT =
   `Up to ${MAX_FILES_PER_BATCH} files per batch · ` +
   `${ALLOWED_EXTENSIONS.map((ext) => `.${ext}`).join(', ')} · ` +
   `max ${MAX_FILE_SIZE_MB} MB each`;
+
+// How far back the upload page's history goes. The cap is the backend's
+// largest `limit` (routers/uploads.py upload_history), so the window rather
+// than the count decides what is listed.
+export const UPLOAD_HISTORY_MONTHS = 3;
+export const UPLOAD_HISTORY_LIMIT = 200;

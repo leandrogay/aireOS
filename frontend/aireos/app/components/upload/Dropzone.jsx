@@ -55,18 +55,42 @@ export default function Dropzone({ onFiles, disabled = false }) {
       }}
       onDragLeave={(event) => {
         event.preventDefault();
+        // Moving onto the icon or the text fires a leave on the panel too;
+        // only a real exit should end the drag state, or the label flickers.
+        if (event.currentTarget.contains(event.relatedTarget)) return;
         setIsDragging(false);
       }}
       onDrop={handleDrop}
-      className={`flex flex-col items-center rounded-xl border-2 border-dashed px-6 py-10 text-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-deep-violet-blue focus-visible:ring-offset-2 focus-visible:ring-offset-white ${
+      // A cool lavender tint, not the page's cream: in cream it read as a hole
+      // in the white card. The tint marks it as its own target, and it
+      // deepens on hover and goes solid while a file is held over it.
+      className={`group flex flex-col items-center rounded-xl border-2 px-6 py-10 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-deep-violet-blue focus-visible:ring-offset-2 focus-visible:ring-offset-white ${
         isDragging
-          ? 'border-deep-violet-blue bg-lavander'
-          : 'border-violet bg-cream hover:border-deep-violet-blue hover:bg-lavander'
+          ? 'border-solid border-deep-violet-blue bg-lavander'
+          : 'border-dashed border-violet bg-lavander/40 hover:border-deep-violet-blue/60 hover:bg-lavander/70'
       } ${disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
     >
-      <UploadCloud aria-hidden="true" className="size-8 text-deep-violet-blue" />
-      <p className="mt-3 text-base font-medium text-deep-violet-blue">
-        Drop files here, or click to browse
+      {/* White disc so the icon stands off the tint and gives the eye a
+          starting point. */}
+      <span
+        aria-hidden="true"
+        className={`flex size-14 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-violet/40 transition-transform ${
+          isDragging ? 'scale-110' : 'group-hover:scale-105'
+        }`}
+      >
+        <UploadCloud className="size-7 text-deep-violet-blue" />
+      </span>
+      <p className="mt-4 text-base font-medium text-deep-violet-blue">
+        {isDragging ? (
+          'Release to add files'
+        ) : (
+          <>
+            Drop files here, or{' '}
+            <span className="font-semibold underline decoration-violet decoration-2 underline-offset-4 group-hover:decoration-deep-violet-blue">
+              click to browse
+            </span>
+          </>
+        )}
       </p>
       <p className="mt-1 text-sm text-deep-violet-blue/70">{UPLOAD_LIMITS_TEXT}</p>
 

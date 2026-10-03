@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from 'react';
 import PageLayout from '@/components/layout/PageLayout';
 import BackLink from '@/components/ui/BackLink';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import RefreshButton from '@/components/ui/RefreshButton';
 import { MappingReview } from '@/components/mappings/MappingReview';
 import MappingSummaryTable from '@/components/mappings/MappingSummaryTable';
 import { normalizeBaseUrl } from '../utils/mappingHelpers';
@@ -72,38 +71,24 @@ export default function MappingsPage() {
   return (
     <PageLayout
       title="Stored mappings"
+      fitScreen
       headerExtra={
         <div className="ml-auto flex items-center gap-2">
           <BackLink href="/upload">Back to Upload</BackLink>
-          <RefreshButton
-            onClick={loadMappings}
-            isRefreshing={isLoadingMappings}
-            label="Refresh mappings"
-          />
         </div>
       }
     >
-      <p className="mb-5 -mt-1 text-sm text-deep-violet-blue/80">
+      <p className="mb-3 -mt-1 text-sm text-deep-violet-blue/80">
         Review the rules each file layout is mapped through. Open a mapping&apos;s full review to edit, approve or discard it.
       </p>
 
-      {mappingLoadError && (
-        <p className="mb-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {mappingLoadError}
-        </p>
-      )}
-
-      {isLoadingMappings && !mappingReviews.length && (
-        <p className="text-sm text-deep-violet-blue/70">Loading mappings…</p>
-      )}
-
-      {!mappingLoadError && !mappingReviews.length && !isLoadingMappings && (
-        <p className="text-sm text-deep-violet-blue/80">No stored mappings found yet.</p>
-      )}
-
-      {!!mappingReviews.length && (
-        <MappingSummaryTable mappings={mappingReviews} onOpen={openMapping} />
-      )}
+      <MappingSummaryTable
+        mappings={mappingReviews}
+        isLoading={isLoadingMappings}
+        error={mappingLoadError}
+        onOpen={openMapping}
+        onRefresh={loadMappings}
+      />
 
       {/* Mounted only while a mapping is open, so the review inside never
           renders against a mapping that has just been closed or reloaded away. */}

@@ -159,6 +159,25 @@ def test_data_freshness_has_no_customer_filter(monkeypatch):
     assert params is None or "retailer_name" not in (params or {})
 
 
+def test_data_freshness_is_sent_in_utc(monkeypatch):
+    # TIMESTAMPTZ comes back timezone-aware; the frontend shows it in Singapore time.
+    loaded_at = pd.Timestamp("2026-09-11 16:43:00", tz="Asia/Singapore")
+    _install(monkeypatch, lambda sql, params: [{"retailer_name": "fairprice_offline", "loaded_at": loaded_at}])
+
+    freshness = sellout_service.get_data_freshness()
+
+    assert freshness == {"fairprice_offline": "2026-09-11T08:43:00Z"}
+
+
+def test_data_freshness_treats_a_naive_loaded_at_as_utc(monkeypatch):
+    loaded_at = pd.Timestamp("2026-09-11 08:43:00")
+    _install(monkeypatch, lambda sql, params: [{"retailer_name": "fairprice_online", "loaded_at": loaded_at}])
+
+    freshness = sellout_service.get_data_freshness()
+
+    assert freshness == {"fairprice_online": "2026-09-11T08:43:00Z"}
+
+
 # ---- get_dashboard_summary -----------------------------------------------
 
 def test_dashboard_summary_validates_granularity(monkeypatch):

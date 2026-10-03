@@ -1,6 +1,9 @@
 'use client';
 
 import Link from 'next/link';
+import { X } from 'lucide-react';
+import { formatDateTime } from '@/lib/formatDate';
+import { Button } from '@/components/ui/button';
 import StatusBadge from '../ui/StatusBadge';
 import { formatFileSize } from '../../utils/fileInspect';
 import { STAGES } from '../../utils/uploadFlow';
@@ -9,12 +12,6 @@ const action =
   'rounded-md border px-3 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-60';
 const secondaryAction = `${action} border-violet bg-white text-deep-violet-blue hover:bg-lavander`;
 const primaryAction = `${action} border-deep-violet-blue bg-deep-violet-blue text-white hover:opacity-90`;
-
-function formatDate(value) {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
-}
 
 function StageProgress({ stage }) {
   const currentIndex = STAGES.findIndex((entry) => entry.key === stage);
@@ -126,13 +123,23 @@ export default function UploadFileRow({ item, onRemove, onRetry, onResolveDuplic
 
   return (
     <li className="rounded-lg border border-lavander bg-white p-3.5 shadow-sm">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-deep-violet-blue">{file.name}</p>
+      {/* The status and remove control are centred against the file's own
+          block (name, size, and why it was rejected), so they sit mid-card on
+          a simple row. Outcome details that come later (previews, duplicate
+          choices) go below this block, so the badge stays with the file name
+          instead of drifting into the middle of a table. */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-deep-violet-blue" title={file.name}>
+            {file.name}
+          </p>
           <p className="text-xs text-deep-violet-blue/70">{formatFileSize(file.size)}</p>
+          {status === 'rejected' && rejection && (
+            <p className="mt-1 text-xs text-red-700">{rejection}</p>
+          )}
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1.5">
           {status === 'ready' && <StatusBadge tone="ready">Ready</StatusBadge>}
           {status === 'rejected' && <StatusBadge tone="failed">Rejected</StatusBadge>}
           {status === 'processing' && <StatusBadge tone="busy">Processing</StatusBadge>}
@@ -144,22 +151,23 @@ export default function UploadFileRow({ item, onRemove, onRetry, onResolveDuplic
           {outcome?.kind === 'failed' && <StatusBadge tone="failed">Failed</StatusBadge>}
           {outcome?.kind === 'skipped' && <StatusBadge tone="neutral">Skipped</StatusBadge>}
 
+          {/* Icon-only, so the label carries the file name for screen
+              readers and the tooltip says what the cross does. 32px target. */}
           {(status === 'ready' || status === 'rejected') && (
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon"
               onClick={() => onRemove(item.id)}
-              className={secondaryAction}
               aria-label={`Remove ${file.name}`}
+              title="Remove"
+              className="text-deep-violet-blue/60 hover:bg-lavander hover:text-deep-violet-blue"
             >
-              Remove
-            </button>
+              <X aria-hidden="true" />
+            </Button>
           )}
         </div>
       </div>
-
-      {status === 'rejected' && rejection && (
-        <p className="mt-2 text-xs text-red-700">{rejection}</p>
-      )}
 
       {status === 'processing' && (
         <div className="mt-2.5">
@@ -255,7 +263,7 @@ export default function UploadFileRow({ item, onRemove, onRetry, onResolveDuplic
             {outcome.existingFilename && outcome.existingFilename !== file.name && (
               <> as <span className="font-medium">{outcome.existingFilename}</span></>
             )}
-            {outcome.uploadedAt && <> on {formatDate(outcome.uploadedAt)}</>}.
+            {outcome.uploadedAt && <> on {formatDateTime(outcome.uploadedAt)}</>}.
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button

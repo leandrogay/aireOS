@@ -78,12 +78,16 @@ export async function uploadFile(file, { force = false, keepDuplicate = false, s
 // API CALL
 // GET /api/uploads/history
 // Recent uploads, newest first: filename, vendor, date, and the mapping each
-// file was run through.
+// file was run through. `months` keeps only uploads from that many calendar
+// months back (see backend storage.months_before); `limit` caps the count.
 // ========================================
-export async function fetchUploadHistory(limit = 25) {
+export async function fetchUploadHistory({ limit = 25, months } = {}) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (months) params.set('months', String(months));
+
   let response;
   try {
-    response = await fetch(`${API_BASE}/api/uploads/history?limit=${limit}`, {
+    response = await fetch(`${API_BASE}/api/uploads/history?${params}`, {
       signal: AbortSignal.timeout(HISTORY_TIMEOUT_MS),
     });
   } catch (error) {

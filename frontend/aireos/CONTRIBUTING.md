@@ -18,7 +18,13 @@ Reusable UI primitives already exist in `app/components/ui/`: `Button`, `Card`
 (+ `CardHeader`/`CardTitle`/`CardContent`/etc.), `Tabs`, `Chart`,
 `Calendar` (react-day-picker; the dashboard's `RangeCalendar` builds on it),
 `Popover`, `DateRangePicker` (typed date inputs), `RefreshButton` (spinning
-reload icon — pass the page's loading flag as `isRefreshing`). Use these instead of writing a new
+reload icon — pass the page's loading flag as `isRefreshing`), `Skeleton`
+(pulsing placeholder block), `TableSkeleton` (placeholder `<tr>` rows for a
+table's first load — pass the header's column count as `columns`), and the
+list-table kit modelled on the promotion overview: `SortHeader` (+
+`TABLE_HEADER_CLASS`), `TableSearch`, `TablePagination` (+ `PAGE_SIZES`) and
+`FilterSelect`, with `paginate`/`resultCountLabel`/`nextSort` in
+`app/utils/tableView.js`. Use these instead of writing a new
 `<button className="...">` or `<div className="bg-white border rounded-lg p-5">`
 by hand.
 

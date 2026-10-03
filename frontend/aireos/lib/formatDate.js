@@ -9,6 +9,11 @@
 // Built from fixed month names rather than Intl: current ICU prints "Sept" for
 // en-GB/en-SG while older browsers print "Sep", and the same text should come
 // out on every browser (and on the server, if one of these ever renders there).
+//
+// Timestamps are shown in Singapore time whatever the viewer's timezone (see
+// singaporeTime.js); the API sends them in UTC.
+
+import { singaporeDateTimeParts } from './singaporeTime';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -39,7 +44,7 @@ function toDate(value) {
  *
  * A bare `YYYY-MM-DD` is shown as written, never shifted by timezone
  * (`new Date('2026-09-06')` is UTC midnight, which is 5 Sep west of UTC). A full
- * timestamp or Date is shown as the viewer's local calendar date.
+ * timestamp or Date is shown as its Singapore calendar date.
  *
  * @param {string | Date | null | undefined} value
  * @returns {string} the formatted date, '—' when empty, or the value as given when it is not a date
@@ -59,13 +64,14 @@ export function formatDate(value) {
 
   const date = toDate(value);
   if (!date) return String(value);
-  return datePart(date.getFullYear(), date.getMonth(), date.getDate());
+  const { year, monthIndex, day } = singaporeDateTimeParts(date);
+  return datePart(year, monthIndex, day);
 }
 
 /**
- * A moment in time, such as `updated_at` / "Last updated", in the viewer's
- * local time: `'2026-09-26T09:21:25+00:00'` → `'26 Sep 2026, 17:21'` in
- * Singapore. No seconds: nobody reads them in a table, and they make every
+ * A moment in time, such as `updated_at` / "Last updated", in Singapore
+ * time: `'2026-09-26T09:21:25+00:00'` → `'26 Sep 2026, 17:21'`, wherever the
+ * viewer is. No seconds: nobody reads them in a table, and they make every
  * value look different. A bare `YYYY-MM-DD` has no time, so it is shown as a
  * date instead of inventing "00:00".
  *
@@ -78,6 +84,6 @@ export function formatDateTime(value) {
 
   const date = toDate(value);
   if (!date) return String(value);
-  const day = datePart(date.getFullYear(), date.getMonth(), date.getDate());
-  return `${day}, ${twoDigits(date.getHours())}:${twoDigits(date.getMinutes())}`;
+  const { year, monthIndex, day, hours, minutes } = singaporeDateTimeParts(date);
+  return `${datePart(year, monthIndex, day)}, ${twoDigits(hours)}:${twoDigits(minutes)}`;
 }

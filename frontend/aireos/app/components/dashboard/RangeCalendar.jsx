@@ -3,6 +3,7 @@
 import { getDefaultClassNames } from 'react-day-picker';
 import { Calendar } from '@/components/ui/calendar';
 import { addDays, loadedWeeksInRange, parseIso, toIso, weekStartDay } from '@/app/utils/periodComparison';
+import { singaporeToday } from '@/lib/singaporeTime';
 
 // Tiny "Start" / "End" caption above the picked day. It sits in its own
 // micro-row: calendarClassNames.week leaves a 16px gap above every row and
@@ -59,7 +60,7 @@ export default function RangeCalendar({ draft, onDraftChange, latestWeekStart, l
   // doesn't currently pass it, so it keeps its existing behavior).
   const latestWeekEnd = latestDataEnd || (latestWeekStart ? addDays(latestWeekStart, 6) : null);
   const weeks = loadedWeeksInRange(draft.start, draft.end || draft.start, latestWeekStart);
-  const endDate = draft.start ? parseIso(draft.end || draft.start) : new Date();
+  const endDate = draft.start ? parseIso(draft.end || draft.start) : singaporeToday();
 
   return (
     <div>

@@ -1,27 +1,22 @@
 'use client';
 
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useState } from 'react';
 
+import { Button } from '@/components/ui/button';
 import RefreshButton from '@/components/ui/RefreshButton';
-import { formatDate } from '@/lib/formatDate';
-import { cn } from '@/lib/utils';
+import SortHeader, { TABLE_HEADER_CLASS as headerClass } from '@/components/ui/SortHeader';
+import TablePagination, { PAGE_SIZES } from '@/components/ui/TablePagination';
+import TableSearch from '@/components/ui/TableSearch';
+import TableSkeleton from '@/components/ui/TableSkeleton';
+import ConfirmDeleteDialog from '@/components/promotions/ConfirmDeleteDialog';
+import PromotionFilters from '@/components/promotions/PromotionFilters';
+import PromotionRow from '@/components/promotions/PromotionRow';
+import { paginate, resultCountLabel } from '@/app/utils/tableView';
 import {
-  promoTypeLabel,
-  uniqueSkuRangeLabels,
-} from '@/app/utils/promotionForm';
-import { retailerLabel } from '@/app/utils/retailerLabel';
-import {
-  PROMOTION_STATUSES,
   dedupePromotions,
   filterPromotions,
-  promotionRetailerNames,
-  promotionStatus,
-  promotionStatusLabel,
-  promotionStoreNames,
-  promotionStores,
+  searchPromotions,
   sortPromotions,
-  summariseNames,
   uniquePromotionMechanics,
   uniquePromotionPeriods,
   uniquePromotionRetailers,
@@ -29,269 +24,20 @@ import {
   uniquePromotionTypes,
 } from '@/app/utils/promotionOverview';
 
-// Header pills fill their cell (arrow pinned right, like a select). min-w-max
-// stops a tight table from truncating the label; the label span in
-// HeaderFilter caps a long selected value instead.
-const pillClass =
-  'flex w-full min-w-max items-center justify-between gap-1 whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide transition';
-const actionButtonClass =
-  'inline-flex min-w-[4rem] items-center justify-center rounded-md px-3 py-1 text-xs font-medium shadow-sm transition';
+// Keys match filterPromotions() in app/utils/promotionOverview.js.
+const EMPTY_FILTERS = {
+  retailer: '',
+  storeName: '',
+  period: '',
+  promoType: '',
+  mechanic: '',
+  status: '',
+};
 
 /**
- * Soft status pills that sit with the cream / lavender page, not neon chips.
- *
- * @param {'upcoming' | 'active' | 'past'} status
- * @returns {string}
- */
-function statusBadgeClass(status) {
-  if (status === 'active') {
-    return 'border border-emerald-200 bg-emerald-50 text-emerald-800';
-  }
-  if (status === 'upcoming') {
-    return 'border border-violet/40 bg-lavander text-deep-violet-blue';
-  }
-  return 'border border-lavander bg-cream text-deep-violet-blue/70';
-}
-
-/**
- * Compact labelled box for one expanded-row field.
- *
- * @param {{ label: string, value?: string, children?: import('react').ReactNode }} props
- */
-function DetailTile({ label, value, children, className = '' }) {
-  return (
-    <div
-      className={`min-w-0 overflow-hidden rounded-md border border-lavander/80 bg-white px-2 py-1 ${className}`}
-    >
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/50">
-        {label}
-      </p>
-      {value ? (
-        <p className="mt-0.5 break-words font-medium leading-snug text-deep-violet-blue">{value}</p>
-      ) : null}
-      {children}
-    </div>
-  );
-}
-
-/**
- * Confirm before DELETE /api/promotions/{id} so a row click cannot
- * remove a promotion by accident.
- *
- * @param {object} props
- */
-function ConfirmDeleteDialog({ promotion, isDeleting, onCancel, onConfirm }) {
-  if (!promotion || typeof document === 'undefined') return null;
-
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-deep-violet-blue/40 px-4"
-      onClick={() => {
-        if (!isDeleting) onCancel();
-      }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="delete-promotion-title"
-        className="w-full max-w-md rounded-lg border border-lavander bg-white p-4 shadow-lg"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <h3
-          id="delete-promotion-title"
-          className="font-serif text-lg text-deep-violet-blue"
-        >
-          Delete this promotion?
-        </h3>
-        <p className="mt-2 text-sm text-deep-violet-blue/80">
-          This cannot be undone. The overview will drop{' '}
-          <span className="font-medium">
-            {summariseNames(promotionStoreNames(promotion), 'this promotion')}
-          </span>
-          {promotion.period_label ? ` · ${promotion.period_label}` : ''}
-          {promotionRetailerNames(promotion).length
-            ? ` · ${promotionRetailerNames(promotion).map(retailerLabel).join(', ')}`
-            : ''}
-          .
-        </p>
-        <div className="mt-4 flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={isDeleting}
-            className="rounded-md border border-deep-violet-blue/30 bg-white px-3 py-1.5 text-sm font-medium text-deep-violet-blue hover:bg-cream disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={isDeleting}
-            className="rounded-md border border-red-700 bg-red-700 px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isDeleting ? 'Deleting…' : 'Confirm delete'}
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body,
-  );
-}
-
-/**
- * Oval column header that opens a filter menu on press.
- *
- * @param {object} props
- */
-function HeaderFilter({
-  id,
-  label,
-  value,
-  allLabel,
-  options,
-  openId,
-  setOpenId,
-  onChange,
-  className = '',
-}) {
-  const open = openId === id;
-  const selected = options.find((option) => option.value === value);
-  const buttonRef = useRef(null);
-  const menuRef = useRef(null);
-  const [menuPos, setMenuPos] = useState({
-    top: undefined,
-    bottom: undefined,
-    left: 0,
-    maxHeight: 256,
-  });
-
-  // Layout effect so the menu is measured and placed before it is
-  // painted; a plain effect would flash it at (0, 0) for one frame.
-  useLayoutEffect(() => {
-    if (!open || !buttonRef.current) return;
-
-    const placeMenu = () => {
-      const rect = buttonRef.current.getBoundingClientRect();
-      const gap = 6;
-      const edge = 12;
-      const maxHeight = 256;
-      const contentHeight = menuRef.current?.scrollHeight ?? maxHeight;
-      const needed = Math.min(contentHeight, maxHeight);
-      const spaceBelow = window.innerHeight - rect.bottom - gap - edge;
-      const spaceAbove = rect.top - gap - edge;
-      const openUp = spaceBelow < needed && spaceAbove > spaceBelow;
-      const available = openUp ? spaceAbove : spaceBelow;
-
-      setMenuPos({
-        top: openUp ? undefined : rect.bottom + gap,
-        bottom: openUp ? window.innerHeight - rect.top + gap : undefined,
-        left: Math.min(rect.left, window.innerWidth - 220),
-        maxHeight: Math.max(80, Math.min(maxHeight, available)),
-      });
-    };
-
-    placeMenu();
-    window.addEventListener('resize', placeMenu);
-    window.addEventListener('scroll', placeMenu, true);
-    return () => {
-      window.removeEventListener('resize', placeMenu);
-      window.removeEventListener('scroll', placeMenu, true);
-    };
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-
-    /**
-     * Close when the pointer is outside both the pill and the portaled menu.
-     *
-     * @param {MouseEvent} event
-     */
-    const handlePointerDown = (event) => {
-      if (
-        buttonRef.current?.contains(event.target) ||
-        menuRef.current?.contains(event.target)
-      ) {
-        return;
-      }
-      setOpenId(null);
-    };
-
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => document.removeEventListener('mousedown', handlePointerDown);
-  }, [open, setOpenId]);
-
-  return (
-    <div className="relative">
-      <button
-        ref={buttonRef}
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpenId(open ? null : id)}
-        className={cn(
-          pillClass,
-          className,
-          value
-            ? 'border-deep-violet-blue bg-deep-violet-blue text-white'
-            : 'border-lavander bg-white text-deep-violet-blue hover:bg-cream',
-        )}
-      >
-        <span className="max-w-[9rem] truncate">{selected ? selected.label : label}</span>
-        <span className="text-[8px] leading-none" aria-hidden="true">
-          {open ? '▲' : '▼'}
-        </span>
-      </button>
-      {open &&
-        createPortal(
-          <div
-            ref={menuRef}
-            style={{
-              top: menuPos.top,
-              bottom: menuPos.bottom,
-              left: menuPos.left,
-              maxHeight: menuPos.maxHeight,
-            }}
-            className="fixed z-50 min-w-[12rem] overflow-y-auto rounded-xl border border-lavander bg-white py-1 shadow-lg"
-          >
-            <button
-              type="button"
-              onClick={() => {
-                onChange('');
-                setOpenId(null);
-              }}
-              className={`block w-full px-3 py-1.5 text-left text-[11px] font-normal normal-case tracking-normal hover:bg-cream ${
-                !value ? 'font-medium text-deep-violet-blue' : 'text-deep-violet-blue/80'
-              }`}
-            >
-              {allLabel}
-            </button>
-            {options.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => {
-                  onChange(option.value);
-                  setOpenId(null);
-                }}
-                className={`block w-full px-3 py-1.5 text-left text-[11px] font-normal normal-case tracking-normal hover:bg-cream ${
-                  value === option.value
-                    ? 'font-medium text-deep-violet-blue'
-                    : 'text-deep-violet-blue/80'
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>,
-          document.body,
-        )}
-    </div>
-  );
-}
-
-/**
- * AO4-2 promotion overview: GET /api/promotions rows, with a filter on
- * each column except start/end date. Those two stay sort-only.
+ * AO4-2 promotion overview: GET /api/promotions rows with filters, search,
+ * sorting on the two dates, and paging. Edit and Delete live in each row's
+ * "..." menu.
  *
  * @param {object} props
  */
@@ -306,124 +52,73 @@ export default function PromotionList({
   onRefresh,
 }) {
   const highlighted = new Set(highlightIds);
-  const [storeFilter, setStoreFilter] = useState('');
-  const [periodFilter, setPeriodFilter] = useState('');
-  const [promoTypeFilter, setPromoTypeFilter] = useState('');
-  const [mechanicFilter, setMechanicFilter] = useState('');
-  const [retailerFilter, setRetailerFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  const [filters, setFilters] = useState(EMPTY_FILTERS);
+  const [search, setSearch] = useState('');
   const [sortField, setSortField] = useState('period_start');
   const [sortDirection, setSortDirection] = useState('desc');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
   const [expandedId, setExpandedId] = useState(null);
-  const [openFilter, setOpenFilter] = useState(null);
   const [pendingDelete, setPendingDelete] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const uniquePromotions = useMemo(
-    () => dedupePromotions(promotions),
-    [promotions],
-  );
-  const storeOptions = useMemo(
-    () => uniquePromotionStoreNames(uniquePromotions),
-    [uniquePromotions],
-  );
-  const periodOptions = useMemo(
-    () => uniquePromotionPeriods(uniquePromotions),
-    [uniquePromotions],
-  );
-  const typeOptions = useMemo(
-    () => uniquePromotionTypes(uniquePromotions),
-    [uniquePromotions],
-  );
-  const mechanicOptions = useMemo(
-    () => uniquePromotionMechanics(uniquePromotions),
-    [uniquePromotions],
-  );
-  const retailerOptions = useMemo(
-    () => uniquePromotionRetailers(uniquePromotions),
-    [uniquePromotions],
-  );
+  const uniquePromotions = dedupePromotions(promotions);
+  const options = {
+    retailers: uniquePromotionRetailers(uniquePromotions),
+    stores: uniquePromotionStoreNames(uniquePromotions),
+    periods: uniquePromotionPeriods(uniquePromotions),
+    types: uniquePromotionTypes(uniquePromotions),
+    mechanics: uniquePromotionMechanics(uniquePromotions),
+  };
 
-  const visible = useMemo(() => {
-    const filtered = filterPromotions(
-      uniquePromotions,
-      {
-        storeName: storeFilter,
-        period: periodFilter,
-        promoType: promoTypeFilter,
-        mechanic: mechanicFilter,
-        retailer: retailerFilter,
-        status: statusFilter,
-      },
-    );
-    return sortPromotions(filtered, sortField, sortDirection);
-  }, [
-    uniquePromotions,
-    storeFilter,
-    periodFilter,
-    promoTypeFilter,
-    mechanicFilter,
-    retailerFilter,
-    statusFilter,
-    sortField,
-    sortDirection,
-  ]);
+  const matching = searchPromotions(filterPromotions(uniquePromotions, filters), search);
+  const sorted = sortPromotions(matching, sortField, sortDirection);
 
-  /**
-   * Toggle start/end sort. Same column again flips direction.
-   *
-   * @param {'period_start' | 'period_end'} field
-   */
+  // Derived, not stored: deleting the last row of the last page lands on the
+  // new last page instead of an empty one.
+  const { pageRows, currentPage, totalPages } = paginate(sorted, page, pageSize);
+
+  const hasFilters = Object.values(filters).some(Boolean) || search.trim() !== '';
+  const showTable = uniquePromotions.length > 0 || isLoading;
+
+  // Any change to what is listed goes back to page 1, where the result starts.
+  const changeFilter = (key, value) => {
+    setFilters((current) => ({ ...current, [key]: value }));
+    setPage(1);
+  };
+
+  const changeSearch = (value) => {
+    setSearch(value);
+    setPage(1);
+  };
+
+  const resetFilters = () => {
+    setFilters(EMPTY_FILTERS);
+    setSearch('');
+    setPage(1);
+  };
+
+  const changePageSize = (size) => {
+    setPageSize(size);
+    setPage(1);
+  };
+
   const handleSort = (field) => {
     if (sortField === field) {
       setSortDirection((current) => (current === 'asc' ? 'desc' : 'asc'));
-      return;
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
     }
-    setSortField(field);
-    setSortDirection('asc');
+    setPage(1);
   };
 
-  /**
-   * Arrow shown on the active date column.
-   *
-   * @param {'period_start' | 'period_end'} field
-   * @returns {string}
-   */
-  const sortMark = (field) => {
-    if (sortField !== field) return '↕';
-    return sortDirection === 'asc' ? '↑' : '↓';
-  };
-
-  const clearFilters = () => {
-    setStoreFilter('');
-    setPeriodFilter('');
-    setPromoTypeFilter('');
-    setMechanicFilter('');
-    setRetailerFilter('');
-    setStatusFilter('');
-    setOpenFilter(null);
-  };
-
-  const hasFilters = Boolean(
-    storeFilter ||
-      periodFilter ||
-      promoTypeFilter ||
-      mechanicFilter ||
-      retailerFilter ||
-      statusFilter,
-  );
-
-  /**
-   * Close the confirm dialog unless a delete request is already in flight.
-   */
   const cancelDelete = () => {
     if (isDeleting) return;
     setPendingDelete(null);
   };
 
-  /**
-   * Call DELETE only after Confirm delete. Cancel never hits the API.
-   */
+  // DELETE is only called from here; Cancel never reaches the API.
   const confirmDelete = async () => {
     if (!pendingDelete) return;
     setIsDeleting(true);
@@ -435,407 +130,151 @@ export default function PromotionList({
     }
   };
 
-  useEffect(() => {
-    if (!pendingDelete) return;
-
-    /**
-     * @param {KeyboardEvent} event
-     */
-    const handleKeyDown = (event) => {
-      if (event.key === 'Escape') cancelDelete();
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [pendingDelete, isDeleting]);
-
   return (
-    <section className="rounded-lg border border-lavander bg-white p-3 shadow-sm">
-      <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h2 className="font-serif text-xl text-deep-violet-blue">Promotion overview</h2>
-          <p className="mt-0.5 text-xs text-deep-violet-blue/70">
-            {isLoading
+    // Fills the height the page gives it (PageLayout fitScreen): the filter
+    // bar keeps its size and the overview card takes the rest.
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <PromotionFilters
+        filters={filters}
+        options={options}
+        hasFilters={hasFilters}
+        onChange={changeFilter}
+        onReset={resetFilters}
+      />
+
+      {/* The card's size comes from the window, not from how many rows are
+          listed, so searching or changing rows per page never resizes it;
+          the rows scroll inside. min-h-80 keeps the table usable on a short
+          window (the page scrolls instead). */}
+      {/* No visible heading (the page title already says Promotions); the
+          aria-label still names the region for screen readers. */}
+      <section
+        aria-label="Promotion overview"
+        className="flex min-h-80 flex-1 flex-col overflow-hidden rounded-lg border border-lavander bg-white shadow-sm"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+          <p className="text-sm text-deep-violet-blue/70" aria-live="polite">
+            {isLoading && !uniquePromotions.length
               ? 'Loading promotions…'
-              : `${visible.length} of ${uniquePromotions.length} shown.`}
+              : resultCountLabel(sorted.length, uniquePromotions.length, 'promotion')}
           </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={clearFilters}
-            disabled={!hasFilters}
-            className="rounded-md border border-deep-violet-blue/30 bg-white px-3 py-1 text-xs font-medium text-deep-violet-blue transition hover:bg-cream disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Clear filters
-          </button>
-          <RefreshButton
-            onClick={onRefresh}
-            isRefreshing={isLoading}
-            label="Refresh promotions"
-            className="rounded-md border-deep-violet-blue/30 bg-white text-deep-violet-blue hover:bg-cream"
-          />
-        </div>
-      </div>
-
-      {error && (
-        <p className="mb-2 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700">
-          {error}
-        </p>
-      )}
-
-      {!error && !uniquePromotions.length && !isLoading && (
-        <p className="text-xs text-deep-violet-blue/80">No promotions registered yet.</p>
-      )}
-
-      {uniquePromotions.length > 0 && (
-        <div className="overflow-x-auto rounded-md border border-lavander">
-          <div className="max-h-[28rem] overflow-y-auto">
-          <table className="w-full whitespace-nowrap text-left text-xs text-deep-violet-blue [&_td]:align-middle [&_th]:align-middle">
-            <thead className="sticky top-0 z-10 bg-cream">
-              <tr className="border-b border-lavander">
-                <th className="px-2.5 py-2">
-                  <HeaderFilter
-                    id="retailer"
-                    label="Retailer"
-                    value={retailerFilter}
-                    allLabel="All retailers"
-                    options={retailerOptions.map((name) => ({
-                      value: name,
-                      label: retailerLabel(name),
-                    }))}
-                    openId={openFilter}
-                    setOpenId={setOpenFilter}
-                    onChange={setRetailerFilter}
-                  />
-                </th>
-                <th className="px-2.5 py-2">
-                  <HeaderFilter
-                    id="store"
-                    label="Stores"
-                    value={storeFilter}
-                    allLabel="All stores"
-                    options={storeOptions.map((name) => ({ value: name, label: name }))}
-                    openId={openFilter}
-                    setOpenId={setOpenFilter}
-                    onChange={setStoreFilter}
-                  />
-                </th>
-                {/* Start and end share one fixed width so the two date
-                    columns match. w-32 on the th keeps them out of the
-                    spare-space share on wide screens; the pill's own width
-                    (w-32 minus the th padding) holds it when the table is
-                    narrow and every column shrinks to its content. */}
-                <th className="w-32 px-2.5 py-2">
-                  <button
-                    type="button"
-                    onClick={() => handleSort('period_start')}
-                    className={cn(
-                      pillClass,
-                      'w-[6.75rem] justify-center',
-                      sortField === 'period_start'
-                        ? 'border-deep-violet-blue bg-white text-deep-violet-blue'
-                        : 'border-lavander bg-white text-deep-violet-blue/80 hover:bg-cream',
-                    )}
-                  >
-                    Start date
-                    <span className="text-[8px] leading-none">{sortMark('period_start')}</span>
-                  </button>
-                </th>
-                <th className="w-32 px-2.5 py-2">
-                  <button
-                    type="button"
-                    onClick={() => handleSort('period_end')}
-                    className={cn(
-                      pillClass,
-                      'w-[6.75rem] justify-center',
-                      sortField === 'period_end'
-                        ? 'border-deep-violet-blue bg-white text-deep-violet-blue'
-                        : 'border-lavander bg-white text-deep-violet-blue/80 hover:bg-cream',
-                    )}
-                  >
-                    End date
-                    <span className="text-[8px] leading-none">{sortMark('period_end')}</span>
-                  </button>
-                </th>
-                <th className="px-2.5 py-2">
-                  <HeaderFilter
-                    id="period"
-                    className="justify-center"
-                    label="Period"
-                    value={periodFilter}
-                    allLabel="All periods"
-                    options={periodOptions.map((label) => ({ value: label, label }))}
-                    openId={openFilter}
-                    setOpenId={setOpenFilter}
-                    onChange={setPeriodFilter}
-                  />
-                </th>
-                <th className="px-2.5 py-2">
-                  <HeaderFilter
-                    id="promoType"
-                    className="justify-center"
-                    label="Promo type"
-                    value={promoTypeFilter}
-                    allLabel="All types"
-                    options={typeOptions.map((type) => ({
-                      value: type,
-                      label: promoTypeLabel(type),
-                    }))}
-                    openId={openFilter}
-                    setOpenId={setOpenFilter}
-                    onChange={setPromoTypeFilter}
-                  />
-                </th>
-                <th className="px-2.5 py-2">
-                  <HeaderFilter
-                    id="mechanic"
-                    className="justify-center"
-                    label="Mechanic"
-                    value={mechanicFilter}
-                    allLabel="All mechanics"
-                    options={mechanicOptions.map((mechanic) => ({
-                      value: mechanic,
-                      label: mechanic,
-                    }))}
-                    openId={openFilter}
-                    setOpenId={setOpenFilter}
-                    onChange={setMechanicFilter}
-                  />
-                </th>
-                <th className="px-2.5 py-2">
-                  <HeaderFilter
-                    id="status"
-                    className="justify-center"
-                    label="Status"
-                    value={statusFilter}
-                    allLabel="All statuses"
-                    options={PROMOTION_STATUSES.map((status) => ({
-                      value: status.value,
-                      label: status.label,
-                    }))}
-                    openId={openFilter}
-                    setOpenId={setOpenFilter}
-                    onChange={setStatusFilter}
-                  />
-                </th>
-                {/* w-px shrinks the column to the Edit + Delete buttons, so
-                    this full-width pill spans exactly that pair and its
-                    centred label sits over the gap between them. Muted and
-                    cursor-default because, unlike the others, it is not a
-                    filter or sort control. */}
-                <th className="w-px px-2.5 py-2">
-                  <span
-                    className={cn(
-                      pillClass,
-                      'cursor-default justify-center border-lavander bg-white text-deep-violet-blue/70',
-                    )}
-                  >
-                    Actions
-                  </span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {visible.length === 0 && (
-                <tr>
-                  <td colSpan={9} className="px-2.5 py-3 text-deep-violet-blue/80">
-                    No promotions match these filters.
-                  </td>
-                </tr>
-              )}
-              {visible.map((promotion) => {
-                const isNew = highlighted.has(promotion.promotion_id);
-                const isEditing = editingId === promotion.promotion_id;
-                const isOpen = expandedId === promotion.promotion_id;
-                const status = promotionStatus(promotion);
-                const skuLabels = uniqueSkuRangeLabels(promotion.skus);
-                const storeNames = promotionStoreNames(promotion);
-                const retailerNames = promotionRetailerNames(promotion).map(retailerLabel);
-                const linkedStores = promotionStores(promotion);
-                const rowClass = isEditing
-                  ? 'bg-lavander/90'
-                  : isNew
-                    ? 'bg-lavander/70'
-                    : isOpen
-                      ? 'bg-cream/80'
-                      : 'bg-white hover:bg-cream/50';
-
-                return (
-                  <Fragment key={promotion.promotion_id}>
-                    <tr
-                      className={`cursor-pointer border-b border-lavander/80 ${rowClass}`}
-                      onClick={() =>
-                        setExpandedId(isOpen ? null : promotion.promotion_id)
-                      }
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault();
-                          setExpandedId(isOpen ? null : promotion.promotion_id);
-                        }
-                      }}
-                      tabIndex={0}
-                    >
-                      <td
-                        className="px-2.5 py-2 font-medium"
-                        title={retailerNames.join(', ') || undefined}
-                      >
-                        <span className="inline-flex items-center gap-1.5">
-                          <span
-                            aria-hidden="true"
-                            className="inline-flex w-2.5 justify-center text-[18px] leading-none text-deep-violet-blue/50"
-                          >
-                            {isOpen ? '▾' : '▸'}
-                          </span>
-                          {summariseNames(retailerNames)}
-                        </span>
-                      </td>
-                      <td className="px-2.5 py-2 font-medium" title={storeNames.join(', ') || undefined}>
-                        <span className="block max-w-[14rem] truncate">
-                          {summariseNames(storeNames)}
-                        </span>
-                      </td>
-                      <td className="px-2.5 py-2 text-center tabular-nums">{formatDate(promotion.period_start)}</td>
-                      <td className="px-2.5 py-2 text-center tabular-nums">{formatDate(promotion.period_end)}</td>
-                      {/* Multi-week labels ("W20-2025, W21-2025, W22-2025") wrap
-                          instead of stretching the column for every short
-                          "Dec-2026" row and pushing Actions off the edge.
-                          Each word is nowrap so lines break only at spaces,
-                          never after the hyphen in "W21-2025". */}
-                      <td className="px-2.5 py-2 text-center" title={promotion.period_label || undefined}>
-                        <span className="mx-auto block max-w-[6rem] overflow-hidden whitespace-normal leading-snug">
-                          {promotion.period_label
-                            ? promotion.period_label.split(' ').map((word, index) => (
-                                <Fragment key={index}>
-                                  {index > 0 && ' '}
-                                  <span className="whitespace-nowrap">{word}</span>
-                                </Fragment>
-                              ))
-                            : '-'}
-                        </span>
-                      </td>
-                      <td className="px-2.5 py-2 text-center">{promoTypeLabel(promotion.promo_type)}</td>
-                      <td className="px-2.5 py-2 text-center" title={promotion.promotion_mechanic || undefined}>
-                        <span className="mx-auto block max-w-[9rem] truncate">
-                          {promotion.promotion_mechanic || '-'}
-                        </span>
-                      </td>
-                      <td className="px-2.5 py-2 text-center">
-                        <span
-                          className={`inline-flex items-center align-middle rounded-full px-2.5 py-0.5 text-[10px] font-medium tracking-wide ${statusBadgeClass(status)}`}
-                        >
-                          {promotionStatusLabel(status)}
-                        </span>
-                      </td>
-                      <td className="whitespace-nowrap px-2.5 py-2">
-                        <div className="inline-flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              onEdit?.(promotion);
-                            }}
-                            className={`${actionButtonClass} ${
-                              isEditing
-                                ? 'bg-violet text-deep-violet-blue'
-                                : 'bg-deep-violet-blue text-white hover:opacity-90'
-                            }`}
-                          >
-                            {isEditing ? 'Editing' : 'Edit'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setPendingDelete(promotion);
-                            }}
-                            className={`${actionButtonClass} border border-deep-violet-blue/25 bg-white text-deep-violet-blue hover:bg-lavander`}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                    {isOpen && (
-                      <tr className="border-b border-lavander/80">
-                        <td colSpan={9} className="whitespace-normal bg-cream/50 px-2.5 py-1.5 text-[11px] text-deep-violet-blue">
-                          <div className="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] [&>*]:min-w-0">
-                            <DetailTile label={`Stores (${linkedStores.length})`}>
-                              {linkedStores.length ? (
-                                <ul className="mt-1 flex max-h-48 flex-wrap gap-1 overflow-y-auto">
-                                  {linkedStores.map((store) => {
-                                    const name = store.store_name || store.store_code;
-                                    const parts = [
-                                      retailerNames.length > 1 ? store.retailer : null,
-                                      name,
-                                      store.store_format,
-                                    ].filter(Boolean);
-                                    return (
-                                      <li
-                                        key={store.store_id ?? `${store.retailer}|${store.store_code}`}
-                                        title={parts.join(' · ')}
-                                        className="max-w-full truncate rounded-full border border-lavander bg-cream/70 px-2 py-0.5 font-medium leading-snug text-deep-violet-blue"
-                                      >
-                                        {retailerNames.length > 1 && (
-                                          <span className="text-deep-violet-blue/60">
-                                            {retailerLabel(store.retailer)} ·{' '}
-                                          </span>
-                                        )}
-                                        {name}
-                                        {store.store_format && (
-                                          <span className="text-deep-violet-blue/60">
-                                            {' '}· {store.store_format}
-                                          </span>
-                                        )}
-                                      </li>
-                                    );
-                                  })}
-                                </ul>
-                              ) : (
-                                <p className="mt-0.5 font-medium text-deep-violet-blue">-</p>
-                              )}
-                            </DetailTile>
-                            <div className="flex min-w-0 flex-col gap-1.5">
-                              <DetailTile
-                                label="Voucher"
-                                value={promotion.voucher || '-'}
-                              />
-                              <DetailTile label="SKU range">
-                                {skuLabels.length ? (
-                                  <ul className="mt-0.5 min-w-0 list-inside list-disc font-medium leading-snug text-deep-violet-blue">
-                                    {skuLabels.map((label) => (
-                                      <li
-                                        key={label}
-                                        title={label}
-                                        className="min-w-0 truncate whitespace-nowrap"
-                                      >
-                                        {label}
-                                      </li>
-                                    ))}
-                                  </ul>
-                                ) : (
-                                  <p className="mt-0.5 font-medium text-deep-violet-blue">-</p>
-                                )}
-                              </DetailTile>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className="flex items-center gap-2">
+            <TableSearch
+              value={search}
+              onChange={changeSearch}
+              label="Search promotions"
+              placeholder="Search store, period, mechanic…"
+            />
+            <RefreshButton
+              onClick={onRefresh}
+              isRefreshing={isLoading}
+              label="Refresh promotions"
+              className="rounded-md border-deep-violet-blue/30 bg-white text-deep-violet-blue hover:bg-cream"
+            />
           </div>
         </div>
-      )}
+
+        {error && (
+          <p className="mx-4 mb-3 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+            {error}
+          </p>
+        )}
+
+        {!error && !showTable && (
+          <p className="px-4 pb-4 text-sm text-deep-violet-blue/80">No promotions registered yet.</p>
+        )}
+
+        {showTable && (
+          <>
+            <div
+              // relative: the header's sr-only "Actions" label is absolutely
+              // positioned; without a positioned ancestor it escapes this
+              // scroll box and widens the whole page on narrow windows.
+              className="relative min-h-0 flex-1 overflow-auto border-t border-lavander"
+            >
+              <table className="w-full whitespace-nowrap text-left text-sm text-deep-violet-blue [&_td]:align-middle [&_th]:align-middle">
+                {/* Stays in view while the rows scroll. White under the cream
+                    tint so rows do not show through; the bottom rule is an
+                    inset shadow because a collapsed table border does not
+                    move with a sticky header. */}
+                <thead className="sticky top-0 z-10 bg-white">
+                  <tr className="h-10 bg-cream/60 [&>th]:shadow-[inset_0_-1px_0_var(--color-lavander)]">
+                    <th scope="col" className={headerClass}>Retailer</th>
+                    <th scope="col" className={headerClass}>Stores</th>
+                    <SortHeader
+                      label="Start date"
+                      field="period_start"
+                      sortField={sortField}
+                      sortDirection={sortDirection}
+                      onSort={handleSort}
+                    />
+                    <SortHeader
+                      label="End date"
+                      field="period_end"
+                      sortField={sortField}
+                      sortDirection={sortDirection}
+                      onSort={handleSort}
+                    />
+                    <th scope="col" className={headerClass}>Period</th>
+                    <th scope="col" className={headerClass}>Promo type</th>
+                    <th scope="col" className={headerClass}>Mechanic</th>
+                    <th scope="col" className={headerClass}>Status</th>
+                    <th scope="col" className="w-px px-2 py-2.5">
+                      <span className="sr-only">Actions</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {isLoading && !uniquePromotions.length && <TableSkeleton columns={9} />}
+                  {!isLoading && sorted.length === 0 && (
+                    <tr>
+                      <td colSpan={9} className="px-4 py-24 text-center text-deep-violet-blue/80">
+                        <p>No promotions match these filters.</p>
+                        {hasFilters && (
+                          <Button variant="outline" className="mt-3" onClick={resetFilters}>
+                            Reset filters
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                  {pageRows.map((promotion) => {
+                    const id = promotion.promotion_id;
+                    const isOpen = expandedId === id;
+                    return (
+                      <PromotionRow
+                        key={id}
+                        promotion={promotion}
+                        isOpen={isOpen}
+                        isEditing={editingId === id}
+                        isNew={highlighted.has(id)}
+                        onToggle={() => setExpandedId(isOpen ? null : id)}
+                        onEdit={onEdit}
+                        onDelete={setPendingDelete}
+                      />
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <TablePagination
+              page={currentPage}
+              totalPages={totalPages}
+              pageSize={pageSize}
+              totalRows={sorted.length}
+              onPageChange={setPage}
+              onPageSizeChange={changePageSize}
+            />
+          </>
+        )}
+      </section>
+
       <ConfirmDeleteDialog
         promotion={pendingDelete}
         isDeleting={isDeleting}
         onCancel={cancelDelete}
         onConfirm={confirmDelete}
       />
-    </section>
+    </div>
   );
 }

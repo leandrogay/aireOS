@@ -2,7 +2,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import pytest
-from conftest import FakeConnection, FakeEngine
+from conftest import FakeConnection, FakeEngine, FrozenDatetime
 
 from app.schemas.inventory import InventoryRecordCreate, InventoryRecordUpdate
 from app.services import catalog_service, forecast_units, inventory_service, sellout_units
@@ -1300,3 +1300,11 @@ def test_the_temporary_sell_in_refusal_names_the_product(monkeypatch):
 
     with pytest.raises(ValueError, match="already has actual data for Pants A for fairprice"):
         inventory_service.set_shipped_so_far(_shipped(month="2026-04-01"), today=TODAY)
+
+
+# ---- today ----------------------------------------------------------------
+
+def test_today_is_the_utc_day_not_the_server_day(monkeypatch):
+    monkeypatch.setattr(inventory_service, "datetime", FrozenDatetime)
+
+    assert inventory_service._utc_today() == date(2026, 9, 30)
