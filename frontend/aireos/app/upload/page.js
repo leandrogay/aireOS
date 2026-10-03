@@ -331,11 +331,6 @@ export default function UploadPage() {
 
   return (
     <PageLayout title="Upload sales data">
-      <p className="mb-5 -mt-1 text-sm text-deep-violet-blue/80">
-        Drop retailer sales exports here. Each file is checked straight away, so you can see
-        what will happen before you upload.
-      </p>
-
       <div className="space-y-6">
         <section className="rounded-xl border border-lavander bg-white p-6 shadow-sm">
           {/* Files in flight don't hold the page: more can be added and
