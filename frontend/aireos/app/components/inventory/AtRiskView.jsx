@@ -123,7 +123,7 @@ export default function AtRiskView({ customers, refreshKey }) {
                   <InventoryTableSkeleton columns={10} />
                 ) : visible.length === 0 ? (
                   <tr>
-                    <td className="px-2.5 py-3 text-deep-violet-blue/80" colSpan={9}>
+                    <td className="px-2.5 py-3 text-deep-violet-blue/80" colSpan={10}>
                       {data.items.length === 0 ? 'No SKUs are at risk.' : 'No rows match these filters.'}
                     </td>
                   </tr>

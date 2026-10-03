@@ -45,7 +45,7 @@ export default function SellInDetailTable({ rows, loading = false }) {
               <InventoryTableSkeleton columns={9} />
             ) : visible.length === 0 ? (
               <tr>
-                <td className="px-2.5 py-3 text-deep-violet-blue/80" colSpan={8}>
+                <td className="px-2.5 py-3 text-deep-violet-blue/80" colSpan={9}>
                   {rows.length === 0 ? 'No SKUs are in this plan.' : 'No rows match these filters.'}
                 </td>
               </tr>
