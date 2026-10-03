@@ -83,13 +83,12 @@ export default function DohSettingsView() {
           </p>
         )}
 
-        {loading && data.length === 0 ? (
-          <p className="text-sm text-deep-violet-blue/70">Loading DOH settings…</p>
-        ) : data.length === 0 ? (
+        {!loading && data.length === 0 ? (
           !error && <p className="text-sm text-deep-violet-blue/70">No customers found.</p>
         ) : (
           <DohSettingsTable
             rows={data}
+            loading={loading && data.length === 0}
             editingId={editingId}
             pendingAlerts={pendingAlerts}
             onEdit={handleEdit}
