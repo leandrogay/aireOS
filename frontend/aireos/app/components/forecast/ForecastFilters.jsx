@@ -43,7 +43,7 @@ export default function ForecastFilters({
   metric,
 }) {
   return (
-    <Card size="sm" className="border border-violet/40 text-deep-violet-blue ring-0">
+    <Card size="sm" className="rounded-lg border border-lavander bg-white text-deep-violet-blue shadow-sm ring-0">
       <CardContent className="space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">

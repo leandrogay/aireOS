@@ -408,8 +408,8 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
   }
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-xl border border-lavander bg-white p-6 shadow-sm">
+    <div className="space-y-1">
+      <section className="rounded-lg border border-lavander bg-white p-6 shadow-sm">
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
             <StatusBadge tone={badge.tone}>{badge.label}</StatusBadge>
@@ -509,7 +509,7 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
         readOnly={readOnly || busy !== null}
       />
 
-      <section className="rounded-xl border border-lavander bg-white p-6 shadow-sm">
+      <section className="rounded-lg border border-lavander bg-white p-6 shadow-sm">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="font-serif text-lg text-deep-violet-blue">Column mapping</h3>
@@ -563,7 +563,7 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
       </section>
 
       {!readOnly && (
-        <section className="rounded-xl border border-lavander bg-white p-6 shadow-sm">
+        <section className="rounded-lg border border-lavander bg-white p-6 shadow-sm">
           <h3 className="mb-1 font-serif text-lg text-deep-violet-blue">Save for reuse</h3>
           <p className="mb-4 text-sm text-deep-violet-blue/70">
             Every future file with this column layout runs through these rules.

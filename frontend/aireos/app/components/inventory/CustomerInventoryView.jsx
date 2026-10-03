@@ -86,7 +86,7 @@ export default function CustomerInventoryView({ customers, skuOptions, refreshKe
   ];
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-1">
       <InventoryFilters
         leading={(
           <label htmlFor="inventory-customer">

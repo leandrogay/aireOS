@@ -60,7 +60,7 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-1">
       <InventoryFilterCard
         canClear={skus.length > 0 || months !== 6}
         onClear={clearFilters}
@@ -117,7 +117,7 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
       )}
 
       {data && data.skus_without_forecast.length > 0 && (
-        <div className="rounded-lg border border-violet/40 bg-white px-3 py-2.5" role="status">
+        <div className="rounded-lg border border-lavander bg-white px-3 py-2.5 shadow-sm" role="status">
           <p className="text-xs text-deep-violet-blue">
             <span className="font-medium">
               {data.skus_without_forecast.length === 1

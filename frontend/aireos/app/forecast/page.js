@@ -151,7 +151,7 @@ export default function ForecastPage() {
 
   return (
     <PageLayout title="Sell-Out Forecast">
-      <div className="space-y-2">
+      <div className="space-y-1">
         {error && (
           <p className="rounded-md border border-violet bg-lavander/50 px-3 py-2 text-sm text-deep-violet-blue">
             {error}

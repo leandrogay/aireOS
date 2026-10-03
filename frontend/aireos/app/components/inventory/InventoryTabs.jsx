@@ -56,7 +56,7 @@ export default function InventoryTabs() {
   const skuOptions = options.skus;
 
   return (
-    <div className="mt-6">
+    <div>
       <Tabs value={tab} onValueChange={handleTabChange} className="gap-0">
         <TabsList className="h-8 w-full rounded-md border border-violet/40 bg-white p-0.5">
           {TABS.map((t) => (
@@ -67,7 +67,7 @@ export default function InventoryTabs() {
         </TabsList>
       </Tabs>
 
-      <div className="mt-1 space-y-2">
+      <div className="mt-1 space-y-1">
       {options.error && (
         <p className="rounded-md border border-violet bg-lavander/50 px-3 py-2 text-sm text-deep-violet-blue" role="alert">
           {options.error}

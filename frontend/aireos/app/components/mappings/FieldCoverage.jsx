@@ -32,7 +32,7 @@ export default function FieldCoverage({ coverage, rows, onAssign, onClear, readO
   const taken = assignable.filter((row) => row.fields.length > 0);
 
   return (
-    <section className="rounded-xl border border-lavander bg-white p-6 shadow-sm">
+    <section className="rounded-lg border border-lavander bg-white p-6 shadow-sm">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <div>
           <h3 className="font-serif text-lg text-deep-violet-blue">Field coverage</h3>
