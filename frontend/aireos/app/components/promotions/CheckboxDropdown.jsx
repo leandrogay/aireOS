@@ -74,30 +74,34 @@ export default function CheckboxDropdown({
         <span className="ml-2 shrink-0 text-[10px] text-deep-violet-blue/50" aria-hidden="true">
           {open ? '▲' : '▼'}
         </span>
-      </button>
-      {open && (
-        <div className="absolute left-0 right-0 z-20 mt-1 overflow-hidden rounded-md border border-lavander bg-white shadow-md">
-          {searchable && (
-            <div className="border-b border-lavander p-2">
-              <input
-                ref={searchRef}
-                type="search"
-                value={query}
-                placeholder={searchPlaceholder}
-                aria-label={searchPlaceholder}
-                onChange={(event) => setQuery(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault();
-                  }
-                }}
-                className="w-full rounded-md border border-lavander bg-cream px-2 py-1 text-sm text-deep-violet-blue placeholder:text-deep-violet-blue/45 focus:border-violet focus:outline-none"
-              />
-            </div>
-          )}
-          <div className={listClassName}>{content}</div>
-        </div>
-      )}
-    </div>
+      </PopoverTrigger>
+      {/* Same width as the trigger, like the old inline panel. The caret goes
+          straight into the search box when there is one. */}
+      <PopoverContent
+        align="start"
+        initialFocus={searchable ? searchRef : undefined}
+        className="w-(--anchor-width) gap-0 overflow-hidden rounded-md border border-lavander bg-white p-0 text-deep-violet-blue ring-0"
+      >
+        {searchable && (
+          <div className="border-b border-lavander p-2">
+            <input
+              ref={searchRef}
+              type="search"
+              value={query}
+              placeholder={searchPlaceholder}
+              aria-label={searchPlaceholder}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                }
+              }}
+              className="w-full rounded-md border border-lavander bg-cream px-2 py-1 text-sm text-deep-violet-blue placeholder:text-deep-violet-blue/45 focus:border-violet focus:outline-none"
+            />
+          </div>
+        )}
+        <div className={listClassName}>{content}</div>
+      </PopoverContent>
+    </Popover>
   );
 }
