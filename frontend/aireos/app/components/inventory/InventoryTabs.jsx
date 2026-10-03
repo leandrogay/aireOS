@@ -14,7 +14,7 @@ import InventoryOverview from './InventoryOverview';
 import SellInPlanView from './SellInPlanView';
 
 const TAB_TRIGGER_CLASS =
-  'text-deep-violet-blue/70 hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white';
+  'h-6 min-w-0 flex-1 rounded-md px-2.5 text-xs font-medium text-deep-violet-blue/65 transition hover:bg-cream hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white data-active:hover:bg-deep-violet-blue data-active:hover:text-white';
 
 const TABS = [
   { value: 'overview', label: 'Overview' },
@@ -56,9 +56,9 @@ export default function InventoryTabs() {
   const skuOptions = options.skus;
 
   return (
-    <div>
-      <Tabs value={tab} onValueChange={handleTabChange} className="mb-3">
-        <TabsList className="bg-lavander">
+    <div className="mt-6">
+      <Tabs value={tab} onValueChange={handleTabChange} className="gap-0">
+        <TabsList className="h-8 w-full rounded-md border border-violet/40 bg-white p-0.5">
           {TABS.map((t) => (
             <TabsTrigger key={t.value} value={t.value} className={TAB_TRIGGER_CLASS}>
               {t.label}
@@ -67,8 +67,9 @@ export default function InventoryTabs() {
         </TabsList>
       </Tabs>
 
+      <div className="mt-1 space-y-2">
       {options.error && (
-        <p className="mb-2 text-sm text-red-600" role="alert">
+        <p className="rounded-md border border-violet bg-lavander/50 px-3 py-2 text-sm text-deep-violet-blue" role="alert">
           {options.error}
         </p>
       )}
@@ -101,6 +102,7 @@ export default function InventoryTabs() {
           onSaved={handleRecordSaved}
         />
       )}
+      </div>
 
       <Toast toast={toast} onDismiss={dismissToast} />
     </div>

@@ -6,9 +6,14 @@ import useSellInPlan from '@/hooks/useSellInPlan';
 import { formatDoh, formatMonth } from '@/app/utils/inventoryForm';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 
+import {
+  filterControlClass,
+  filterLabelClass,
+  InventoryFilterCard,
+  StatTag,
+} from './InventoryChrome';
 import SellInDetailTable from './SellInPlanTable';
 import SkuDropdown from './SkuDropdown';
-import { cardClass, inputClass, labelClass } from './formStyles';
 
 const MONTH_CHOICES = [3, 6, 12];
 
@@ -17,23 +22,12 @@ const MONTH_CHOICES = [3, 6, 12];
  * they differ (actuals were entered for only some SKUs) the range is shown.
  *
  * @param {Record<string, string>} lastActualBySku 'YYYY-MM-DD' per SKU
- * @returns {import('react').ReactNode}
+ * @returns {string}
  */
-function startsFromText(lastActualBySku) {
+function startsFromLabel(lastActualBySku) {
   const months = [...new Set(Object.values(lastActualBySku))].sort();
-  if (months.length === 1) {
-    return (
-      <>
-        Starts from actual stock at the end of <strong>{formatMonth(months[0])}</strong>
-      </>
-    );
-  }
-  return (
-    <>
-      Each SKU starts from its own last actual month (<strong>{formatMonth(months[0])}</strong> to{' '}
-      <strong>{formatMonth(months[months.length - 1])}</strong>)
-    </>
-  );
+  if (months.length === 1) return formatMonth(months[0]);
+  return `${formatMonth(months[0])} – ${formatMonth(months[months.length - 1])}`;
 }
 
 /**
@@ -60,15 +54,34 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
 
   const { data, loading, error } = useSellInPlan({ customerId, months, skus, refreshKey });
 
+  function clearFilters() {
+    setSkus([]);
+    setMonths(6);
+  }
+
   return (
-    <div>
-      <div className="mb-3 flex flex-wrap items-end gap-3">
-        <label className="w-56">
-          <span className={labelClass}>Customer</span>
+    <div className="space-y-2">
+      <InventoryFilterCard
+        canClear={skus.length > 0 || months !== 6}
+        onClear={clearFilters}
+        stats={data?.actuals_through ? (
+          <>
+            <StatTag label="Starts" value={startsFromLabel(data.actuals_through_by_sku)} />
+            <StatTag label="Target" value={`${formatDoh(data.threshold.target_doh)} days`} />
+            {data.threshold.is_global_default ? <StatTag label="Source" value="Global default" /> : null}
+          </>
+        ) : null}
+        note={data?.actuals_through_by_sku && new Set(Object.values(data.actuals_through_by_sku)).size > 1
+          ? 'Each SKU starts from its own last actual month.'
+          : null}
+      >
+        <label htmlFor="inventory-plan-customer">
+          <span className={filterLabelClass}>Customer</span>
           <select
+            id="inventory-plan-customer"
             value={customerId ?? ''}
             onChange={(e) => setCustomerId(Number(e.target.value))}
-            className={inputClass}
+            className={filterControlClass}
           >
             {customers.map((c) => (
               <option key={c.customer_id} value={c.customer_id}>
@@ -80,9 +93,14 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
 
         <SkuDropdown skuOptions={skuOptions} skus={skus} onChange={setSkus} />
 
-        <label className="w-40">
-          <span className={labelClass}>Months ahead</span>
-          <select value={months} onChange={(e) => setMonths(Number(e.target.value))} className={inputClass}>
+        <label htmlFor="inventory-months-ahead">
+          <span className={filterLabelClass}>Months ahead</span>
+          <select
+            id="inventory-months-ahead"
+            value={months}
+            onChange={(e) => setMonths(Number(e.target.value))}
+            className={filterControlClass}
+          >
             {MONTH_CHOICES.map((n) => (
               <option key={n} value={n}>
                 {n} months
@@ -90,38 +108,41 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
             ))}
           </select>
         </label>
+      </InventoryFilterCard>
 
-        {data?.actuals_through && (
-          <p className="pb-1.5 text-sm text-deep-violet-blue">
-            {startsFromText(data.actuals_through_by_sku)}, holding{' '}
-            <strong>{formatDoh(data.threshold.target_doh)}</strong> days of stock
-            {data.threshold.is_global_default && (
-              <span className="ml-2 rounded-full border border-violet bg-lavander px-2 py-0.5 text-[11px]">
-                Global Default
-              </span>
-            )}
+      {error && (
+        <p className="rounded-md border border-violet bg-lavander/50 px-3 py-2 text-sm text-deep-violet-blue" role="alert">
+          {error}
+        </p>
+      )}
+      {loading && !data && <p className="text-xs text-muted-foreground">Building the plan…</p>}
+
+      {data && data.skus_without_forecast.length > 0 && (
+        <div className="rounded-lg border border-violet/40 bg-white px-3 py-2.5" role="status">
+          <p className="text-xs text-deep-violet-blue">
+            <span className="font-medium">
+              {data.skus_without_forecast.length === 1
+                ? '1 SKU has no forecast'
+                : `${data.skus_without_forecast.length} SKUs have no forecast`}
+            </span>
+            <span className="text-deep-violet-blue/70">
+              , so {data.skus_without_forecast.length === 1 ? 'it is' : 'they are'} not in this plan.
+            </span>
           </p>
-        )}
-      </div>
-
-      {error && <p className="mb-2 text-sm text-red-600" role="alert">{error}</p>}
-      {loading && !data && <p className="text-sm text-deep-violet-blue/70">Building the plan…</p>}
-
-      {data && (
-        <div className="grid grid-cols-1 gap-2">
-          {data.skus_without_forecast.length > 0 && (
-            <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-              No forecast for {data.skus_without_forecast.map((s) => s.product_name).join(', ')}, so{' '}
-              {data.skus_without_forecast.length === 1 ? 'it is' : 'they are'} not in this plan.
-            </p>
-          )}
-
-          <section className={cardClass}>
-            <h2 className="mb-2 text-sm font-medium text-deep-violet-blue">Sell-in plan by SKU and month</h2>
-            <SellInDetailTable rows={data.rows} />
-          </section>
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {data.skus_without_forecast.map((sku) => (
+              <span
+                key={sku.sku}
+                className="rounded-full border border-lavander bg-lavander/60 px-2 py-0.5 text-[11px] text-deep-violet-blue"
+              >
+                {sku.product_name}
+              </span>
+            ))}
+          </div>
         </div>
       )}
+
+      {data && <SellInDetailTable rows={data.rows} />}
     </div>
   );
 }

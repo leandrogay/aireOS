@@ -3,13 +3,20 @@
 import { useState } from 'react';
 
 import useCustomerInventory from '@/hooks/useCustomerInventory';
-import { DOH_STATUS_LABELS, formatDoh, filterMonthRange, latestMonthInput } from '@/app/utils/inventoryForm';
+import { DOH_STATUS_LABELS, earliestMonthInput, formatDoh, filterMonthRange, latestMonthInput } from '@/app/utils/inventoryForm';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 
 import DohTrendChart from './DohTrendChart';
+import {
+  filterControlClass,
+  filterLabelClass,
+  InventorySection,
+  monthRangeLabel,
+  skuScopeLabel,
+  StatTag,
+} from './InventoryChrome';
 import InventoryFilters from './InventoryFilters';
 import InventorySkuTable from './InventorySkuTable';
-import { cardClass, inputClass, labelClass } from './formStyles';
 
 const STATUS_OPTIONS = Object.entries(DOH_STATUS_LABELS).map(([value, label]) => ({ value, label }));
 
@@ -29,8 +36,9 @@ const STATUS_OPTIONS = Object.entries(DOH_STATUS_LABELS).map(([value, label]) =>
 export default function CustomerInventoryView({ customers, skuOptions, refreshKey, onEditRow }) {
   const [customerId, setCustomerId] = useState(null);
   const [skus, setSkus] = useState([]);
-  // null = the user has not touched the range, so it shows the newest month of data. Editing
-  // either picker (even to blank) makes the range theirs; "Clear filters" returns it to null.
+  // null = the user has not touched the range, so it shows the full span of
+  // the trend. Editing either picker (even to blank) makes the range theirs;
+  // "Clear filters" returns it to null.
   const [startMonth, setStartMonth] = useState(null);
   const [endMonth, setEndMonth] = useState(null);
   const [status, setStatus] = useState('');
@@ -47,13 +55,14 @@ export default function CustomerInventoryView({ customers, skuOptions, refreshKe
     refreshKey,
   });
 
-  // The API returns the full history. The table is narrowed to the range (the newest month until
-  // the user picks one); the DOH trend keeps the whole history until the range is edited.
-  const defaultMonth = data ? latestMonthInput(data.skus) : '';
-  const shownStart = startMonth ?? defaultMonth;
-  const shownEnd = endMonth ?? defaultMonth;
-  const rangeEdited = startMonth !== null || endMonth !== null;
-  const trend = data && rangeEdited ? filterMonthRange(data.trend, shownStart, shownEnd) : data?.trend;
+  // The API returns the full history. From/To open on that whole span, which
+  // is what the trend draws, and both the trend and the table follow the range.
+  const rangeRows = data?.trend?.length ? data.trend : data?.skus ?? [];
+  const defaultStart = earliestMonthInput(rangeRows);
+  const defaultEnd = latestMonthInput(rangeRows);
+  const shownStart = startMonth ?? defaultStart;
+  const shownEnd = endMonth ?? defaultEnd;
+  const trend = data ? filterMonthRange(data.trend, shownStart, shownEnd) : undefined;
 
   function clearFilters() {
     setSkus([]);
@@ -67,44 +76,51 @@ export default function CustomerInventoryView({ customers, skuOptions, refreshKe
     : [];
   const threshold = data?.threshold;
 
+  const customerName = customers.find((c) => c.customer_id === customerId)?.customer_name;
+  const scopeTags = [
+    { label: 'Customer', value: customerName ? retailerLabel(customerName) : '—' },
+    { label: 'SKU', value: skuScopeLabel(skus) },
+    { label: 'Months', value: monthRangeLabel(shownStart, shownEnd) },
+    { label: 'Status', value: status ? DOH_STATUS_LABELS[status] : 'All' },
+  ];
+
   return (
-    <div>
-      <div className="mb-3 flex flex-wrap items-end gap-3">
-        <label className="w-56">
-          <span className={labelClass}>Customer</span>
-          <select
-            value={customerId ?? ''}
-            onChange={(e) => setCustomerId(Number(e.target.value))}
-            className={inputClass}
-          >
-            {customers.map((c) => (
-              <option key={c.customer_id} value={c.customer_id}>
-                {retailerLabel(c.customer_name)}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        {threshold && (
-          <p className="pb-1.5 text-sm text-deep-violet-blue">
-            DOH target <strong>{formatDoh(threshold.target_doh)}</strong> days (min{' '}
-            {formatDoh(threshold.min_doh)}, max {formatDoh(threshold.max_doh)})
-            {threshold.is_global_default && (
-              <span className="ml-2 rounded-full border border-violet bg-lavander px-2 py-0.5 text-[11px]">
-                Global Default
-              </span>
-            )}
-          </p>
-        )}
-      </div>
-
+    <div className="space-y-2">
       <InventoryFilters
+        leading={(
+          <label htmlFor="inventory-customer">
+            <span className={filterLabelClass}>Customer</span>
+            <select
+              id="inventory-customer"
+              value={customerId ?? ''}
+              onChange={(e) => setCustomerId(Number(e.target.value))}
+              className={filterControlClass}
+            >
+              {customers.map((c) => (
+                <option key={c.customer_id} value={c.customer_id}>
+                  {retailerLabel(c.customer_name)}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        stats={threshold ? (
+          <>
+            <StatTag label="DOH target" value={`${formatDoh(threshold.target_doh)} days`} />
+            <StatTag
+              label="Band"
+              value={`${formatDoh(threshold.min_doh)}–${formatDoh(threshold.max_doh)}`}
+            />
+            {threshold.is_global_default ? <StatTag label="Source" value="Global default" /> : null}
+          </>
+        ) : null}
         skuOptions={skuOptions}
         skus={skus}
         onSkusChange={setSkus}
         startMonth={shownStart}
         endMonth={shownEnd}
-        defaultMonth={defaultMonth}
+        defaultStart={defaultStart}
+        defaultEnd={defaultEnd}
         onStartMonthChange={setStartMonth}
         onEndMonthChange={setEndMonth}
         status={status}
@@ -113,27 +129,25 @@ export default function CustomerInventoryView({ customers, skuOptions, refreshKe
         onClear={clearFilters}
       />
 
-      {error && <p className="mb-2 text-sm text-red-600" role="alert">{error}</p>}
+      {error && (
+        <p className="rounded-md border border-violet bg-lavander/50 px-3 py-2 text-sm text-deep-violet-blue" role="alert">
+          {error}
+        </p>
+      )}
 
-      <div className="grid grid-cols-1 gap-2">
-        <section className={cardClass}>
-          <h2 className="mb-2 text-sm font-medium text-deep-violet-blue">Days of holding (DOH) trend</h2>
-          {loading && !data ? (
-            <p className="text-sm text-deep-violet-blue/70">Loading inventory…</p>
-          ) : (
-            data && <DohTrendChart trend={trend} />
-          )}
-        </section>
+      <InventorySection title="Days of holding (DOH) trend" tags={scopeTags}>
+        {loading && !data ? (
+          <p className="text-xs text-muted-foreground">Loading inventory…</p>
+        ) : (
+          data && <DohTrendChart trend={trend} />
+        )}
+      </InventorySection>
 
-        <section className={cardClass}>
-          <h2 className="mb-2 text-sm font-medium text-deep-violet-blue">Inventory by SKU</h2>
-          {loading && !data ? (
-            <p className="text-sm text-deep-violet-blue/70">Loading inventory…</p>
-          ) : (
-            data && <InventorySkuTable rows={rows} showDoh showCustomer={false} onEdit={onEditRow} />
-          )}
-        </section>
-      </div>
+      {loading && !data ? (
+        <p className="text-xs text-muted-foreground">Loading inventory…</p>
+      ) : (
+        data && <InventorySkuTable rows={rows} showDoh showCustomer={false} onEdit={onEditRow} />
+      )}
     </div>
   );
 }

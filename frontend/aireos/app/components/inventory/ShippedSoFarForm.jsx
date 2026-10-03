@@ -15,12 +15,11 @@ import { retailerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
 import CustomerDropdown from './CustomerDropdown';
+import { formFieldClass, formLabelClass } from './InventoryChrome';
 import {
   errorClass,
   hintClass,
-  inputClass,
   invalidInputClass,
-  labelClass,
   primaryButtonClass,
 } from './formStyles';
 
@@ -116,16 +115,18 @@ export default function ShippedSoFarForm({ customers, skus, onSaved }) {
       />
 
       <label>
-        <span className={labelClass}>
+        <span className={formLabelClass}>
           SKU<span className="text-red-700"> *</span>
         </span>
         <select
           value={form.sku}
           onChange={(e) => setField('sku', e.target.value)}
           aria-invalid={Boolean(errors.sku)}
-          className={cn(inputClass, errors.sku && invalidInputClass)}
+          className={cn(formFieldClass, errors.sku && invalidInputClass)}
         >
-          <option value="">Select a SKU…</option>
+          <option value="" disabled hidden>
+            Select a SKU…
+          </option>
           {skus.map((s) => (
             <option key={s.sku} value={s.sku}>
               {s.product_name}
@@ -136,7 +137,7 @@ export default function ShippedSoFarForm({ customers, skus, onSaved }) {
       </label>
 
       <label>
-        <span className={labelClass}>
+        <span className={formLabelClass}>
           Month<span className="text-red-700"> *</span>
         </span>
         <input
@@ -144,13 +145,13 @@ export default function ShippedSoFarForm({ customers, skus, onSaved }) {
           value={form.month}
           onChange={(e) => setField('month', e.target.value)}
           aria-invalid={Boolean(errors.month)}
-          className={cn(inputClass, errors.month && invalidInputClass)}
+          className={cn(formFieldClass, errors.month && invalidInputClass)}
         />
         {errors.month && <p className={errorClass} role="alert">{errors.month}</p>}
       </label>
 
       <label>
-        <span className={labelClass}>
+        <span className={formLabelClass}>
           Temporary sell-in (units)<span className="text-red-700"> *</span>
         </span>
         <input
@@ -159,7 +160,7 @@ export default function ShippedSoFarForm({ customers, skus, onSaved }) {
           value={form.shippedSoFar}
           onChange={(e) => setField('shippedSoFar', e.target.value)}
           aria-invalid={Boolean(errors.shippedSoFar)}
-          className={cn(inputClass, errors.shippedSoFar && invalidInputClass)}
+          className={cn(formFieldClass, errors.shippedSoFar && invalidInputClass)}
         />
         {errors.shippedSoFar ? (
           <p className={errorClass} role="alert">{errors.shippedSoFar}</p>

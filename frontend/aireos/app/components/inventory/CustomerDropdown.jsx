@@ -3,7 +3,8 @@
 import { retailerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
-import { errorClass, inputClass, invalidInputClass, labelClass } from './formStyles';
+import { formFieldClass, formLabelClass } from './InventoryChrome';
+import { invalidInputClass } from './formStyles';
 
 /**
  * Customer picker, shared by the create form, the edit picker and temporary
@@ -22,16 +23,19 @@ import { errorClass, inputClass, invalidInputClass, labelClass } from './formSty
 export default function CustomerDropdown({ customers, customerIds, onChange, error = '' }) {
   return (
     <label>
-      <span className={labelClass}>
+      <span className={formLabelClass}>
         Customer<span className="text-red-700"> *</span>
       </span>
       <select
         value={customerIds[0] ?? ''}
         onChange={(e) => onChange(e.target.value ? [Number(e.target.value)] : [])}
-        aria-invalid={Boolean(error)}
-        className={cn(inputClass, error && invalidInputClass)}
+        aria-invalid={invalid}
+        className={cn(formFieldClass, invalid && invalidInputClass)}
       >
-        <option value="">Select a customer…</option>
+        {/* Shown while nothing is chosen. Hidden so it is not a selectable option. */}
+        <option value="" disabled hidden>
+          Select a customer…
+        </option>
         {customers.map((customer) => (
           <option key={customer.customer_id} value={customer.customer_id}>
             {retailerLabel(customer.customer_name)}

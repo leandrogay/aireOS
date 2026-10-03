@@ -27,6 +27,7 @@ import { cn } from '@/lib/utils';
  * @param {boolean} [props.invalid] red border after a failed submit
  * @param {boolean} [props.searchable]
  * @param {string} [props.searchPlaceholder]
+ * @param {string} [props.listClassName] classes for the option list; inventory passes no max-height so every SKU is visible
  * @param {React.ReactNode | ((query: string, close: () => void) => React.ReactNode)} props.children
  */
 export default function CheckboxDropdown({
@@ -36,6 +37,7 @@ export default function CheckboxDropdown({
   invalid = false,
   searchable = false,
   searchPlaceholder = 'Search…',
+  listClassName = 'max-h-52 overflow-auto p-2',
   children,
 }) {
   const [open, setOpen] = useState(false);
@@ -72,34 +74,30 @@ export default function CheckboxDropdown({
         <span className="ml-2 shrink-0 text-[10px] text-deep-violet-blue/50" aria-hidden="true">
           {open ? '▲' : '▼'}
         </span>
-      </PopoverTrigger>
-      {/* Same width as the trigger, like the old inline panel. The caret goes
-          straight into the search box when there is one. */}
-      <PopoverContent
-        align="start"
-        initialFocus={searchable ? searchRef : undefined}
-        className="w-(--anchor-width) gap-0 overflow-hidden rounded-md border border-lavander bg-white p-0 text-deep-violet-blue ring-0"
-      >
-        {searchable && (
-          <div className="border-b border-lavander p-2">
-            <input
-              ref={searchRef}
-              type="search"
-              value={query}
-              placeholder={searchPlaceholder}
-              aria-label={searchPlaceholder}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  event.preventDefault();
-                }
-              }}
-              className="w-full rounded-md border border-lavander bg-cream px-2 py-1 text-sm text-deep-violet-blue placeholder:text-deep-violet-blue/45 focus:border-violet focus:outline-none"
-            />
-          </div>
-        )}
-        <div className="max-h-52 overflow-auto p-2">{content}</div>
-      </PopoverContent>
-    </Popover>
+      </button>
+      {open && (
+        <div className="absolute left-0 right-0 z-20 mt-1 overflow-hidden rounded-md border border-lavander bg-white shadow-md">
+          {searchable && (
+            <div className="border-b border-lavander p-2">
+              <input
+                ref={searchRef}
+                type="search"
+                value={query}
+                placeholder={searchPlaceholder}
+                aria-label={searchPlaceholder}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                  }
+                }}
+                className="w-full rounded-md border border-lavander bg-cream px-2 py-1 text-sm text-deep-violet-blue placeholder:text-deep-violet-blue/45 focus:border-violet focus:outline-none"
+              />
+            </div>
+          )}
+          <div className={listClassName}>{content}</div>
+        </div>
+      )}
+    </div>
   );
 }

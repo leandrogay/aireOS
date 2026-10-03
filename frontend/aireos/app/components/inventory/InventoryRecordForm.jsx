@@ -12,12 +12,11 @@ import { retailerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
 import CustomerDropdown from './CustomerDropdown';
+import { formFieldClass, formLabelClass } from './InventoryChrome';
 import {
   errorClass,
   hintClass,
-  inputClass,
   invalidInputClass,
-  labelClass,
   primaryButtonClass,
   secondaryButtonClass,
 } from './formStyles';
@@ -76,7 +75,7 @@ export default function InventoryRecordForm({ mode, initialForm, customers, skus
   function numberField(name, label, { required = true, hint } = {}) {
     return (
       <label>
-        <span className={labelClass}>
+        <span className={formLabelClass}>
           {label}
           {required && <span className="text-red-700"> *</span>}
         </span>
@@ -86,7 +85,7 @@ export default function InventoryRecordForm({ mode, initialForm, customers, skus
           value={form[name]}
           onChange={(e) => setField(name, e.target.value)}
           aria-invalid={Boolean(errors[name])}
-          className={cn(inputClass, errors[name] && invalidInputClass)}
+          className={cn(formFieldClass, errors[name] && invalidInputClass)}
         />
         {errors[name] ? <p className={errorClass} role="alert">{errors[name]}</p> : hint && <p className={hintClass}>{hint}</p>}
       </label>
@@ -102,7 +101,7 @@ export default function InventoryRecordForm({ mode, initialForm, customers, skus
     <form onSubmit={handleSubmit} noValidate className="grid gap-3 sm:grid-cols-2">
       {isEdit ? (
         <div>
-          <span className={labelClass}>
+          <span className={formLabelClass}>
             Customer<span className="text-red-700"> *</span>
           </span>
           <p className="text-sm text-deep-violet-blue">{selectedNames || '—'}</p>
@@ -117,7 +116,7 @@ export default function InventoryRecordForm({ mode, initialForm, customers, skus
       )}
 
       <label>
-        <span className={labelClass}>
+        <span className={formLabelClass}>
           SKU<span className="text-red-700"> *</span>
         </span>
         <select
@@ -125,9 +124,11 @@ export default function InventoryRecordForm({ mode, initialForm, customers, skus
           disabled={isEdit}
           onChange={(e) => setField('sku', e.target.value)}
           aria-invalid={Boolean(errors.sku)}
-          className={cn(inputClass, errors.sku && invalidInputClass)}
+          className={cn(formFieldClass, errors.sku && invalidInputClass)}
         >
-          <option value="">Select a SKU…</option>
+          <option value="" disabled hidden>
+            Select a SKU…
+          </option>
           {skus.map((s) => (
             <option key={s.sku} value={s.sku}>
               {s.product_name}
@@ -138,7 +139,7 @@ export default function InventoryRecordForm({ mode, initialForm, customers, skus
       </label>
 
       <label>
-        <span className={labelClass}>
+        <span className={formLabelClass}>
           Month<span className="text-red-700"> *</span>
         </span>
         <input
@@ -147,7 +148,7 @@ export default function InventoryRecordForm({ mode, initialForm, customers, skus
           disabled={isEdit}
           onChange={(e) => setField('month', e.target.value)}
           aria-invalid={Boolean(errors.month)}
-          className={cn(inputClass, errors.month && invalidInputClass)}
+          className={cn(formFieldClass, errors.month && invalidInputClass)}
         />
         {errors.month ? (
           <p className={errorClass} role="alert">{errors.month}</p>
