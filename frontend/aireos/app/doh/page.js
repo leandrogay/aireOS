@@ -6,7 +6,7 @@ import DohSettingsView from "@/components/settings/DohSettingsView";
 // tree under DohSettingsView (backend /api/settings/doh).
 export default function DOHSettingsPage() {
   return (
-    <PageLayout title="DOH Settings">
+    <PageLayout title="DOH settings">
       <DohSettingsView />
     </PageLayout>
   );
