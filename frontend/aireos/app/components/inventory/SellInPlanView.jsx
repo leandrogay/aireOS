@@ -115,7 +115,6 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
           {error}
         </p>
       )}
-      {loading && !data && <p className="text-xs text-muted-foreground">Building the plan…</p>}
 
       {data && data.skus_without_forecast.length > 0 && (
         <div className="rounded-lg border border-violet/40 bg-white px-3 py-2.5" role="status">
@@ -142,7 +141,7 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
         </div>
       )}
 
-      {data && <SellInDetailTable rows={data.rows} />}
+      {(data || loading) && <SellInDetailTable rows={data?.rows ?? []} loading={loading && !data} />}
     </div>
   );
 }

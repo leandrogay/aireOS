@@ -3,6 +3,8 @@
 import { useState } from 'react';
 
 import HeaderCheckboxFilter from '@/components/forecast/HeaderCheckboxFilter';
+import { Skeleton } from '@/components/ui/skeleton';
+import TableSkeleton from '@/components/ui/TableSkeleton';
 import { monthCheckboxOptions } from '@/app/utils/inventoryForm';
 
 const actionButtonClass =
@@ -14,6 +16,16 @@ export const inventoryTdClass = 'px-2.5 py-2 text-deep-violet-blue';
 export const inventoryRowClass = 'border-b border-lavander/80 bg-white hover:bg-cream/50';
 
 /**
+ * Placeholder rows for an inventory table's first load, sized like the real
+ * rows (inventoryRowClass / inventoryTdClass) so nothing moves when they arrive.
+ *
+ * @param {{ columns: number }} props
+ */
+export function InventoryTableSkeleton({ columns }) {
+  return <TableSkeleton columns={columns} rows={5} className="h-8 bg-white" cellClassName="px-2.5 py-2" />;
+}
+
+/**
  * Forecast-style table shell shared by the inventory tabs: a count, Clear,
  * Expand/Collapse, and the month checkbox filter. `children` draws the columns
  * for the rows still showing, and places `monthHeader` on the Month column.
@@ -22,9 +34,11 @@ export const inventoryRowClass = 'border-b border-lavander/80 bg-white hover:bg-
  * @param {string} props.title
  * @param {object[]} props.rows rows before the month filter
  * @param {string} [props.description]
+ * @param {boolean} [props.loading] first load in flight: the row count shows a
+ *   placeholder, and `children` should draw InventoryTableSkeleton rows
  * @param {(visible: object[], monthHeader: import('react').ReactNode) => import('react').ReactNode} props.children
  */
-export default function InventoryTableFrame({ title, rows, description, children }) {
+export default function InventoryTableFrame({ title, rows, description, loading = false, children }) {
   const [expanded, setExpanded] = useState(false);
   const [monthFilter, setMonthFilter] = useState([]);
   const [openFilter, setOpenFilter] = useState(null);
@@ -60,9 +74,13 @@ export default function InventoryTableFrame({ title, rows, description, children
       <div className="mb-2 flex items-center justify-between gap-2">
         <div>
           <h3 className="font-serif text-base text-deep-violet-blue">{title}</h3>
-          <p className="text-[11px] text-deep-violet-blue/70">
-            {visible.length} of {rows.length} rows shown
-          </p>
+          {loading ? (
+            <Skeleton aria-hidden="true" className="mt-1 h-3 w-24 rounded bg-lavander" />
+          ) : (
+            <p className="text-[11px] text-deep-violet-blue/70">
+              {visible.length} of {rows.length} rows shown
+            </p>
+          )}
           {description ? (
             <p className="mt-1 max-w-3xl text-[11px] text-deep-violet-blue/60">{description}</p>
           ) : null}

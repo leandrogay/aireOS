@@ -95,10 +95,8 @@ export default function InventoryOverview({ skuOptions, refreshKey, onEditRow })
         </InventoryChartSlot>
       </InventorySection>
 
-      {loading && !data ? (
-        <p className="text-xs text-muted-foreground">Loading inventory…</p>
-      ) : (
-        data && <InventorySkuTable rows={tableRows} onEdit={onEditRow} />
+      {(data || loading) && (
+        <InventorySkuTable rows={tableRows} loading={loading && !data} onEdit={onEditRow} />
       )}
     </div>
   );

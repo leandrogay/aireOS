@@ -142,10 +142,14 @@ export default function CustomerInventoryView({ customers, skuOptions, refreshKe
         </InventoryChartSlot>
       </InventorySection>
 
-      {loading && !data ? (
-        <p className="text-xs text-muted-foreground">Loading inventory…</p>
-      ) : (
-        data && <InventorySkuTable rows={rows} showDoh showCustomer={false} onEdit={onEditRow} />
+      {(data || loading) && (
+        <InventorySkuTable
+          rows={rows}
+          loading={loading && !data}
+          showDoh
+          showCustomer={false}
+          onEdit={onEditRow}
+        />
       )}
     </div>
   );

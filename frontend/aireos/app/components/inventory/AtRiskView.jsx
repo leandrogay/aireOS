@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 
 import { filterControlClass, filterLabelClass, InventoryFilterCard, StatTag } from './InventoryChrome';
 import InventoryTableFrame, {
+  InventoryTableSkeleton,
   inventoryRowClass,
   inventoryTdClass,
   inventoryThClass,
@@ -94,10 +95,11 @@ export default function AtRiskView({ customers, refreshKey }) {
         </p>
       )}
 
-      {data && (
+      {(data || loading) && (
         <InventoryTableFrame
           title="At-risk SKUs"
-          rows={data.items}
+          rows={data?.items ?? []}
+          loading={loading && !data}
           description="A SKU is at risk when its days of holding is outside the customer's min-max band. It leaves this list automatically once its days of holding is back inside the band."
         >
           {(visible, monthHeader) => (
@@ -116,8 +118,10 @@ export default function AtRiskView({ customers, refreshKey }) {
                   <th className={inventoryThClass}>Risk</th>
                 </tr>
               </thead>
-              <tbody>
-                {visible.length === 0 ? (
+              <tbody aria-busy={loading && !data}>
+                {!data ? (
+                  <InventoryTableSkeleton columns={10} />
+                ) : visible.length === 0 ? (
                   <tr>
                     <td className="px-2.5 py-3 text-deep-violet-blue/80" colSpan={9}>
                       {data.items.length === 0 ? 'No SKUs are at risk.' : 'No rows match these filters.'}
@@ -143,10 +147,6 @@ export default function AtRiskView({ customers, refreshKey }) {
             </table>
           )}
         </InventoryTableFrame>
-      )}
-
-      {loading && !data && (
-        <p className="text-xs text-muted-foreground">Checking stock levels…</p>
       )}
     </div>
   );

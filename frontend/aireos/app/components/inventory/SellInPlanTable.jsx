@@ -4,6 +4,7 @@ import { formatDoh, formatMonth, formatUnits } from '@/app/utils/inventoryForm';
 import { cn } from '@/lib/utils';
 
 import InventoryTableFrame, {
+  InventoryTableSkeleton,
   inventoryRowClass,
   inventoryTdClass,
   inventoryThClass,
@@ -18,11 +19,12 @@ const numClass = 'tabular-nums';
  * sell-in, the days of holding left at month end and the projected ending
  * stock. The sell-in lands during the month it is shown against.
  *
- * @param {{ rows: object[] }} props
+ * @param {{ rows: object[], loading?: boolean }} props `loading`: first load in
+ *   flight, so placeholder rows
  */
-export default function SellInDetailTable({ rows }) {
+export default function SellInDetailTable({ rows, loading = false }) {
   return (
-    <InventoryTableFrame title="Sell-in plan by SKU and month" rows={rows}>
+    <InventoryTableFrame title="Sell-in plan by SKU and month" rows={rows} loading={loading}>
       {(visible, monthHeader) => (
         <table className="w-full text-left text-xs text-deep-violet-blue">
           <thead className="sticky top-0 z-10 bg-cream">
@@ -38,8 +40,10 @@ export default function SellInDetailTable({ rows }) {
               <th className={cn(inventoryThClass, numClass)}>Projected ending</th>
             </tr>
           </thead>
-          <tbody>
-            {visible.length === 0 ? (
+          <tbody aria-busy={loading}>
+            {loading ? (
+              <InventoryTableSkeleton columns={9} />
+            ) : visible.length === 0 ? (
               <tr>
                 <td className="px-2.5 py-3 text-deep-violet-blue/80" colSpan={8}>
                   {rows.length === 0 ? 'No SKUs are in this plan.' : 'No rows match these filters.'}
