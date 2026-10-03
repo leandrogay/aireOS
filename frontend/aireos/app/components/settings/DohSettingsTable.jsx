@@ -2,6 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import TableSkeleton from '@/components/ui/TableSkeleton';
 import { formatDohDays } from '@/app/utils/dohSettingsForm';
 import { formatDateTime } from '@/lib/formatDate';
 import { retailerLabel } from '@/app/utils/retailerLabel';
@@ -35,8 +36,17 @@ const editActiveClass = 'bg-violet text-deep-violet-blue hover:bg-violet';
  * @param {Record<number, boolean>} props.pendingAlerts customer_id -> value being saved
  * @param {(row: object) => void} props.onEdit
  * @param {(row: object, enabled: boolean) => void} props.onToggleAlert
+ * @param {boolean} [props.loading] first load in flight: placeholder rows,
+ *   sized like the real ones (the Edit button sets their 40px height)
  */
-export default function DohSettingsTable({ rows, editingId, pendingAlerts, onEdit, onToggleAlert }) {
+export default function DohSettingsTable({
+  rows,
+  editingId,
+  pendingAlerts,
+  onEdit,
+  onToggleAlert,
+  loading = false,
+}) {
   return (
     <div className="overflow-auto rounded-md border border-lavander">
       <table className="w-full border-collapse">
@@ -53,7 +63,15 @@ export default function DohSettingsTable({ rows, editingId, pendingAlerts, onEdi
             </th>
           </tr>
         </thead>
-        <tbody>
+        <tbody aria-busy={loading}>
+          {loading && (
+            <TableSkeleton
+              columns={7}
+              rows={4}
+              className="h-10 border-b-0 border-t border-lavander"
+              cellClassName="px-2 py-1.5"
+            />
+          )}
           {rows.map((row) => {
             const alertPending = row.customer_id in pendingAlerts;
             const alertOn = alertPending ? pendingAlerts[row.customer_id] : row.doh_alert_enabled;

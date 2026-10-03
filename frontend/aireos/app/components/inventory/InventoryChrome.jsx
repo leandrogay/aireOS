@@ -1,6 +1,7 @@
 'use client';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import ChartLoading from '@/components/ui/ChartLoading';
 import { formatMonth } from '@/app/utils/inventoryForm';
 
 // Same compact field styling as ForecastFilters, so the inventory filter
@@ -71,7 +72,7 @@ export function ScopeTag({ label, value }) {
  */
 export function InventoryFilterCard({ canClear, onClear, stats, note, children }) {
   return (
-    <Card size="sm" className="relative z-10 overflow-visible border border-violet/40 text-deep-violet-blue ring-0">
+    <Card size="sm" className="relative z-10 overflow-visible rounded-lg border border-lavander bg-white text-deep-violet-blue shadow-sm ring-0">
       <CardContent className="space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
@@ -101,7 +102,7 @@ export function InventoryFilterCard({ canClear, onClear, stats, note, children }
  */
 export function InventorySection({ title, tags, description, children }) {
   return (
-    <Card size="sm" className="overflow-visible border border-violet/40 bg-white text-deep-violet-blue ring-0">
+    <Card size="sm" className="overflow-visible rounded-lg border border-lavander bg-white text-deep-violet-blue shadow-sm ring-0">
       <CardHeader className="pb-1">
         <div className="min-w-0 space-y-1.5">
           <CardTitle className="font-serif text-base font-normal text-deep-violet-blue group-data-[size=sm]/card:text-base">
@@ -119,5 +120,32 @@ export function InventorySection({ title, tags, description, children }) {
       </CardHeader>
       <CardContent>{children}</CardContent>
     </Card>
+  );
+}
+
+/**
+ * Chart slot with the shared chart loading states (ui/ChartLoading). The
+ * first load shows a placeholder the size of the 280px chart frame; after
+ * that, a refetch (filter change, or refreshKey after a save) dims the old
+ * chart under an overlay instead of swapping it out, so it doesn't flash.
+ *
+ * @param {object} props
+ * @param {boolean} props.loading
+ * @param {boolean} props.ready true once there is data to draw
+ * @param {import('react').ReactNode} props.children the chart
+ */
+export function InventoryChartSlot({ loading, ready, children }) {
+  if (!ready) {
+    return loading ? (
+      <ChartLoading label="Loading inventory…" className="h-[290px] rounded-xl border border-lavander bg-white" />
+    ) : null;
+  }
+
+  // min-h so the overlay still fits when the chart is just its one-line empty state.
+  return (
+    <div className={`relative ${loading ? 'min-h-[120px]' : ''}`}>
+      {children}
+      {loading && <ChartLoading overlay label="Updating inventory…" />}
+    </div>
   );
 }

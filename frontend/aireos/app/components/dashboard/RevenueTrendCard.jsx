@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Loader2 } from "lucide-react"
+import ChartLoading from "@/components/ui/ChartLoading"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import ComparisonMixChart from "@/components/dashboard/ComparisonMixChart"
 import ComparisonTotalChart from "@/components/dashboard/ComparisonTotalChart"
@@ -11,17 +11,6 @@ import { singleFormatColor } from "@/app/utils/storeFormats"
 
 const tabTriggerClass =
   "text-deep-violet-blue/70 hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white data-active:hover:text-white"
-
-// Same sizing as the chart so the card doesn't jump when loading gives way
-// to it.
-function ChartLoading({ label }) {
-  return (
-    <div className="flex min-h-[220px] w-full flex-1 flex-col items-center justify-center gap-2 text-deep-violet-blue/60">
-      <Loader2 className="h-6 w-6 animate-spin" />
-      <p className="text-sm">{label}</p>
-    </div>
-  )
-}
 
 /**
  * Revenue trend card: offline/online mode switch, an optional `headerExtra`
@@ -124,7 +113,10 @@ export default function RevenueTrendCard({
         </div>
       </div>
 
-      {busy && <ChartLoading label="Loading dashboard..." />}
+      {/* Always the full placeholder, never the overlay: a refetch can change
+          the granularity or add a comparison, and the old bars would be
+          drawn with the new labels. flex-1 keeps the card's height. */}
+      {busy && <ChartLoading label="Loading dashboard…" className="flex-1" />}
       {error && <p className="text-red-600 text-sm">{error}</p>}
       {!busy && !error && salesData && (
         <div className="flex flex-1 flex-col">

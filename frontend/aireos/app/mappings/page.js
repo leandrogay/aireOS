@@ -78,10 +78,6 @@ export default function MappingsPage() {
         </div>
       }
     >
-      <p className="mb-3 -mt-1 text-sm text-deep-violet-blue/80">
-        Review the rules each file layout is mapped through. Open a mapping&apos;s full review to edit, approve or discard it.
-      </p>
-
       <MappingSummaryTable
         mappings={mappingReviews}
         isLoading={isLoadingMappings}

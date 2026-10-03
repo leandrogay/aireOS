@@ -1,6 +1,7 @@
 'use client';
 
 import { Info } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
 import { changePct, formatChangePct, parseIso } from '@/app/utils/periodComparison';
 
 function formatDayMonth(iso) {
@@ -74,6 +75,34 @@ function PeriodRow({ name, tag, totals, available = true }) {
       ) : (
         <p className="shrink-0 text-xs text-deep-violet-blue/50">No sales data</p>
       )}
+    </div>
+  );
+}
+
+// Placeholder in the shape of the loaded card: the two growth figures, then
+// one row per period, so the card keeps its layout while the baseline loads.
+function ComparisonSkeleton() {
+  return (
+    <div role="status">
+      <span className="sr-only">Loading comparison…</span>
+      <div aria-hidden="true">
+        <div className="flex gap-3">
+          {['revenue', 'volume'].map((key) => (
+            <div key={key} className="flex-1">
+              <Skeleton className="h-3 w-14 rounded bg-lavander" />
+              <Skeleton className="mt-1.5 h-6 w-20 rounded bg-lavander" />
+            </div>
+          ))}
+        </div>
+        <div className="mt-2 divide-y divide-lavander border-t border-lavander">
+          {['current', 'baseline'].map((key) => (
+            <div key={key} className="flex items-center justify-between gap-2 py-2">
+              <Skeleton className="h-3 w-20 rounded bg-lavander" />
+              <Skeleton className="h-4 w-28 rounded bg-lavander" />
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -179,7 +208,7 @@ export default function PeriodComparisonDetail({
         </p>
       )}
 
-      {active && loading && <p className="text-deep-violet-blue/70 text-sm">Loading comparison...</p>}
+      {active && loading && <ComparisonSkeleton />}
       {active && error && <p className="text-red-600 text-sm">{error}</p>}
 
       {active && !loading && !error && baseline && (

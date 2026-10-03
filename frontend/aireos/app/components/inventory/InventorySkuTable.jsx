@@ -11,6 +11,7 @@ import { retailerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
 import InventoryTableFrame, {
+  InventoryTableSkeleton,
   inventoryRowClass,
   inventoryTdClass,
   inventoryThClass,
@@ -35,6 +36,7 @@ const STATUS_CLASSES = {
  * @param {boolean} [props.showCustomer]
  * @param {(row: object) => void} [props.onEdit]
  * @param {string} [props.title]
+ * @param {boolean} [props.loading] first load in flight: placeholder rows
  */
 export default function InventorySkuTable({
   rows,
@@ -42,6 +44,7 @@ export default function InventorySkuTable({
   showCustomer = true,
   onEdit,
   title = 'Inventory by SKU',
+  loading = false,
 }) {
   const sorted = [...rows].sort(
     (a, b) => b.month.localeCompare(a.month) || a.product_name.localeCompare(b.product_name),
@@ -49,7 +52,7 @@ export default function InventorySkuTable({
   const columnCount = 6 + (showCustomer ? 1 : 0) + (showDoh ? 4 : 0) + (onEdit ? 1 : 0);
 
   return (
-    <InventoryTableFrame title={title} rows={sorted}>
+    <InventoryTableFrame title={title} rows={sorted} loading={loading}>
       {(visible, monthHeader) => (
         <table className="w-full text-left text-xs text-deep-violet-blue">
           <thead className="sticky top-0 z-10 bg-cream">
@@ -74,8 +77,10 @@ export default function InventorySkuTable({
               {onEdit && <th className={inventoryThClass}>Action</th>}
             </tr>
           </thead>
-          <tbody>
-            {visible.length === 0 ? (
+          <tbody aria-busy={loading}>
+            {loading ? (
+              <InventoryTableSkeleton columns={columnCount} />
+            ) : visible.length === 0 ? (
               <tr>
                 <td className="px-2.5 py-3 text-deep-violet-blue/80" colSpan={columnCount}>
                   No rows match these filters.

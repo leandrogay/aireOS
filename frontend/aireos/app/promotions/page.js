@@ -397,7 +397,6 @@ export default function PromotionsPage() {
       fitScreen
       headerExtra={
         <Button
-          size="lg"
           onClick={handleCreate}
           className="ml-auto bg-deep-violet-blue text-white hover:bg-deep-violet-blue/90"
         >

@@ -2,9 +2,13 @@
 
 import { useState } from "react"
 import FormatMixBar from "@/components/dashboard/FormatMixBar"
+import { Skeleton } from "@/components/ui/skeleton"
 import { changePct, formatChangePct } from "@/app/utils/periodComparison"
 import { formatColor, singleFormatColor } from "@/app/utils/storeFormats"
 import { PeriodKeySwatch } from "@/components/dashboard/PeriodTexture"
+
+const TILE_GRID_CLASS =
+  "grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-flow-col lg:grid-cols-none lg:auto-cols-[minmax(0,1fr)]"
 
 function sumFormats(storeFormats = []) {
   return storeFormats.reduce(
@@ -137,6 +141,29 @@ function SummaryCard({
   )
 }
 
+// Placeholder tiles on the same grid as the real ones, so nothing jumps when
+// the figures arrive. `count` includes the Total tile.
+function SummaryCardsSkeleton({ count }) {
+  return (
+    <div role="status">
+      <span className="sr-only">Loading sell-out summary…</span>
+      <div aria-hidden="true" className={TILE_GRID_CLASS}>
+        {Array.from({ length: count }, (_, index) => (
+          <div
+            key={index}
+            className={`min-w-[8rem] rounded-lg border border-lavander px-2.5 py-1.5 ${
+              index === 0 ? "col-span-2 sm:col-span-1" : ""
+            }`}
+          >
+            <Skeleton className="h-3 w-16 rounded bg-lavander" />
+            <Skeleton className="mt-2 h-4 w-24 rounded bg-lavander" />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // Revenue/units per store format, plus the Total. Reads from the same
 // useDashboardSummary data as RevenueTrendCard (passed down from page.js)
 // rather than fetching independently. One grid, Total first:
@@ -181,10 +208,13 @@ export default function RevenueSummaryCards({
     <div className="bg-white rounded-lg border border-lavander shadow-sm p-3 h-full">
       <p className="text-sm font-medium text-deep-violet-blue mb-2">Sell-out Summary</p>
 
-      {loading && <p className="text-deep-violet-blue/70 text-sm">Loading sell-out summary...</p>}
+      {/* The hook keeps the previous filters' data while it refetches, so hide
+          it rather than show stale figures beside the skeleton. Offline's 4
+          formats + Total until a first load says how many there are. */}
+      {loading && <SummaryCardsSkeleton count={(salesData?.storeFormats.length ?? 4) + 1} />}
       {error && <p className="text-red-600 text-sm">{error}</p>}
 
-      {salesData && salesData.storeFormats.length > 1 && (
+      {!loading && salesData && salesData.storeFormats.length > 1 && (
         <FormatMixBar
           formats={salesData.storeFormats}
           baselineFormats={baselineData?.storeFormats ?? null}
@@ -196,8 +226,8 @@ export default function RevenueSummaryCards({
         />
       )}
 
-      {salesData && (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-flow-col lg:grid-cols-none lg:auto-cols-[minmax(0,1fr)]">
+      {!loading && salesData && (
+        <div className={TILE_GRID_CLASS}>
           <SummaryCard
             title="Total"
             totals={total}
