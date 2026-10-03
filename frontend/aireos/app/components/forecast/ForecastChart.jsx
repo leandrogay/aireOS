@@ -5,6 +5,7 @@ import { Area, CartesianGrid, ComposedChart, Line, ReferenceArea, ReferenceLine,
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
+import ChartLoading from '@/components/ui/ChartLoading';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ForecastLineToggle from '@/components/forecast/ForecastLineToggle';
 import ForecastPointDetails from '@/components/forecast/ForecastPointDetails';
@@ -162,6 +163,7 @@ export default function ForecastChart({
   salesLabel,
   salesLoadedAt,
   confidence,
+  loading = false,
 }) {
   const chartWrapRef = useRef(null);
   const overPanelRef = useRef(false);
@@ -362,7 +364,16 @@ export default function ForecastChart({
         {!hasVisibleLine ? (
           <p className="text-sm text-muted-foreground">No lines selected. Turn a line on to plot values.</p>
         ) : !hasData ? (
-          <p className="text-sm text-muted-foreground">No forecast data matches these filters.</p>
+          // Rows start empty, so without this the first load would briefly
+          // claim there is no data. Sized like the chart frame below.
+          loading ? (
+            <ChartLoading
+              label="Loading forecast…"
+              className="h-[calc(34vh+10px)] min-h-[230px] rounded-xl border border-lavander bg-white"
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">No forecast data matches these filters.</p>
+          )
         ) : (
           <>
             <div
@@ -489,7 +500,9 @@ export default function ForecastChart({
                   ))}
                 </ComposedChart>
               </ChartContainer>
-              {hoverPromos.length ? (
+              {loading && <ChartLoading overlay label="Updating forecast…" />}
+              {/* Hidden while loading so it can't open over the overlay with old values. */}
+              {!loading && hoverPromos.length ? (
                 <div
                   data-promo-panel="true"
                   className="absolute z-50"

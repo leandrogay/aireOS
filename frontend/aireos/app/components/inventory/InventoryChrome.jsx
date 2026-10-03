@@ -1,6 +1,7 @@
 'use client';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import ChartLoading from '@/components/ui/ChartLoading';
 import { formatMonth } from '@/app/utils/inventoryForm';
 
 // Same compact field styling as ForecastFilters, so the inventory filter
@@ -119,5 +120,32 @@ export function InventorySection({ title, tags, description, children }) {
       </CardHeader>
       <CardContent>{children}</CardContent>
     </Card>
+  );
+}
+
+/**
+ * Chart slot with the shared chart loading states (ui/ChartLoading). The
+ * first load shows a placeholder the size of the 280px chart frame; after
+ * that, a refetch (filter change, or refreshKey after a save) dims the old
+ * chart under an overlay instead of swapping it out, so it doesn't flash.
+ *
+ * @param {object} props
+ * @param {boolean} props.loading
+ * @param {boolean} props.ready true once there is data to draw
+ * @param {import('react').ReactNode} props.children the chart
+ */
+export function InventoryChartSlot({ loading, ready, children }) {
+  if (!ready) {
+    return loading ? (
+      <ChartLoading label="Loading inventory…" className="h-[290px] rounded-xl border border-lavander bg-white" />
+    ) : null;
+  }
+
+  // min-h so the overlay still fits when the chart is just its one-line empty state.
+  return (
+    <div className={`relative ${loading ? 'min-h-[120px]' : ''}`}>
+      {children}
+      {loading && <ChartLoading overlay label="Updating inventory…" />}
+    </div>
   );
 }

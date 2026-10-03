@@ -10,6 +10,7 @@ import DohTrendChart from './DohTrendChart';
 import {
   filterControlClass,
   filterLabelClass,
+  InventoryChartSlot,
   InventorySection,
   monthRangeLabel,
   skuScopeLabel,
@@ -136,11 +137,9 @@ export default function CustomerInventoryView({ customers, skuOptions, refreshKe
       )}
 
       <InventorySection title="Days of holding (DOH) trend" tags={scopeTags}>
-        {loading && !data ? (
-          <p className="text-xs text-muted-foreground">Loading inventory…</p>
-        ) : (
-          data && <DohTrendChart trend={trend} />
-        )}
+        <InventoryChartSlot loading={loading} ready={Boolean(data)}>
+          {data && <DohTrendChart trend={trend} />}
+        </InventoryChartSlot>
       </InventorySection>
 
       {loading && !data ? (

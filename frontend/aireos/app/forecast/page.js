@@ -157,9 +157,6 @@ export default function ForecastPage() {
             {error}
           </p>
         )}
-        {loading && !error && (
-          <p className="text-xs text-muted-foreground">Loading forecast from BigQuery…</p>
-        )}
 
         <ForecastFilters
           productName={productName}
@@ -203,6 +200,7 @@ export default function ForecastPage() {
           salesLabel={salesLabel}
           salesLoadedAt={freshness.latest_sales_loaded_at}
           confidence={confidence}
+          loading={loading}
         />
       </div>
     </PageLayout>

@@ -6,7 +6,7 @@ import useInventoryOverview from '@/hooks/useInventoryOverview';
 import { earliestMonthInput, filterMonthRange, latestMonthInput } from '@/app/utils/inventoryForm';
 
 import EndingStockChart from './EndingStockChart';
-import { InventorySection, monthRangeLabel, skuScopeLabel, StatTag } from './InventoryChrome';
+import { InventoryChartSlot, InventorySection, monthRangeLabel, skuScopeLabel, StatTag } from './InventoryChrome';
 import InventoryFilters from './InventoryFilters';
 import InventorySkuTable from './InventorySkuTable';
 
@@ -90,11 +90,9 @@ export default function InventoryOverview({ skuOptions, refreshKey, onEditRow })
       )}
 
       <InventorySection title="Ending stock by month" tags={scopeTags}>
-        {loading && !data ? (
-          <p className="text-xs text-muted-foreground">Loading inventory…</p>
-        ) : (
-          data && <EndingStockChart monthly={chartRows} />
-        )}
+        <InventoryChartSlot loading={loading} ready={Boolean(data)}>
+          {data && <EndingStockChart monthly={chartRows} />}
+        </InventoryChartSlot>
       </InventorySection>
 
       {loading && !data ? (
