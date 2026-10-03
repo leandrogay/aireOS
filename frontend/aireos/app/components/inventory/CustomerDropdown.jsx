@@ -4,7 +4,7 @@ import { retailerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
 import { formFieldClass, formLabelClass } from './InventoryChrome';
-import { invalidInputClass } from './formStyles';
+import { errorClass, invalidInputClass } from './formStyles';
 
 /**
  * Customer picker, shared by the create form, the edit picker and temporary
@@ -21,6 +21,8 @@ import { invalidInputClass } from './formStyles';
  * @param {string} [props.error] shown under the field after a failed submit
  */
 export default function CustomerDropdown({ customers, customerIds, onChange, error = '' }) {
+  const invalid = Boolean(error);
+
   return (
     <label>
       <span className={formLabelClass}>
