@@ -34,7 +34,7 @@ export const MappingReview = ({ mapping }) => {
   const isPending = mapping.state === 'pending';
 
   return (
-    <section className="rounded-xl border border-deep-violet-blue/20 bg-white p-6 shadow-sm">
+    <section className="rounded-lg border border-lavander bg-white p-6 shadow-sm">
       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="mb-2 inline-flex rounded-full border border-deep-violet-blue/20 bg-lavander px-3 py-1 text-xs font-semibold uppercase tracking-wide text-deep-violet-blue">

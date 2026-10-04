@@ -10,6 +10,7 @@ import DohTrendChart from './DohTrendChart';
 import {
   filterControlClass,
   filterLabelClass,
+  InventoryChartSlot,
   InventorySection,
   monthRangeLabel,
   skuScopeLabel,
@@ -85,7 +86,7 @@ export default function CustomerInventoryView({ customers, skuOptions, refreshKe
   ];
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-1">
       <InventoryFilters
         leading={(
           <label htmlFor="inventory-customer">
@@ -136,17 +137,19 @@ export default function CustomerInventoryView({ customers, skuOptions, refreshKe
       )}
 
       <InventorySection title="Days of holding (DOH) trend" tags={scopeTags}>
-        {loading && !data ? (
-          <p className="text-xs text-muted-foreground">Loading inventory…</p>
-        ) : (
-          data && <DohTrendChart trend={trend} />
-        )}
+        <InventoryChartSlot loading={loading} ready={Boolean(data)}>
+          {data && <DohTrendChart trend={trend} />}
+        </InventoryChartSlot>
       </InventorySection>
 
-      {loading && !data ? (
-        <p className="text-xs text-muted-foreground">Loading inventory…</p>
-      ) : (
-        data && <InventorySkuTable rows={rows} showDoh showCustomer={false} onEdit={onEditRow} />
+      {(data || loading) && (
+        <InventorySkuTable
+          rows={rows}
+          loading={loading && !data}
+          showDoh
+          showCustomer={false}
+          onEdit={onEditRow}
+        />
       )}
     </div>
   );

@@ -66,7 +66,7 @@ export default function DohSettingsView() {
   const editingRow = data.find((row) => row.customer_id === editingId);
 
   return (
-    <div className="grid gap-2">
+    <div className="grid gap-1">
       <section className={cardClass}>
         <div className="mb-2 flex items-center justify-between gap-2">
           <h2 className="text-sm font-medium text-deep-violet-blue">Customer DOH thresholds</h2>
@@ -83,13 +83,12 @@ export default function DohSettingsView() {
           </p>
         )}
 
-        {loading && data.length === 0 ? (
-          <p className="text-sm text-deep-violet-blue/70">Loading DOH settings…</p>
-        ) : data.length === 0 ? (
+        {!loading && data.length === 0 ? (
           !error && <p className="text-sm text-deep-violet-blue/70">No customers found.</p>
         ) : (
           <DohSettingsTable
             rows={data}
+            loading={loading && data.length === 0}
             editingId={editingId}
             pendingAlerts={pendingAlerts}
             onEdit={handleEdit}

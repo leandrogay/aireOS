@@ -86,7 +86,7 @@ export default function MappingSummaryTable({ mappings, isLoading, error, onOpen
   return (
     // Fills the height the page gives it (PageLayout fitScreen): the filter
     // bar keeps its size and the table card takes the rest.
-    <div className="flex min-h-0 flex-1 flex-col gap-3">
+    <div className="flex min-h-0 flex-1 flex-col gap-1">
       <MappingFilters
         filters={filters}
         vendors={uniqueMappingVendors(mappings)}
