@@ -335,13 +335,13 @@ export default function ForecastChart({
           <TabsList className="h-7 bg-lavander p-0.5">
             <TabsTrigger
               value="units"
-              className="h-6 px-2.5 text-[11px] text-deep-violet-blue/70 hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white"
+              className="h-6 px-2.5 text-[11px] text-deep-violet-blue/70 hover:bg-white hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white data-active:hover:bg-deep-violet-blue data-active:hover:text-white"
             >
-              Carton units
+              Volume
             </TabsTrigger>
             <TabsTrigger
               value="revenue"
-              className="h-6 px-2.5 text-[11px] text-deep-violet-blue/70 hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white"
+              className="h-6 px-2.5 text-[11px] text-deep-violet-blue/70 hover:bg-white hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white data-active:hover:bg-deep-violet-blue data-active:hover:text-white"
             >
               Revenue
             </TabsTrigger>

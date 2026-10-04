@@ -12,7 +12,7 @@ function formatMetricValue(value, metric) {
   if (metric === 'revenue') {
     return `$${Math.round(value).toLocaleString()}`;
   }
-  return `${Math.round(value).toLocaleString()} carton units`;
+  return `${Math.round(value).toLocaleString()} volume`;
 }
 
 function StatTag({ label, value }) {
