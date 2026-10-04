@@ -4,20 +4,11 @@ import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { getInventoryOverview } from '@/app/services/inventoryApi';
-import {
-  EMPTY_INVENTORY_FORM,
-  formFromRow,
-  monthInputToDate,
-} from '@/app/utils/inventoryForm';
-import { retailerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
-import CustomerDropdown from './CustomerDropdown';
-import InventoryRecordForm from './InventoryRecordForm';
-import ShippedSoFarForm from './ShippedSoFarForm';
-import { formFieldClass, formLabelClass } from './InventoryChrome';
-import { errorClass, primaryButtonClass } from './formStyles';
+import InventoryBulkCreateForm from './InventoryBulkCreateForm';
+import InventoryBulkEditForm from './InventoryBulkEditForm';
+import InventoryBulkShippedForm from './InventoryBulkShippedForm';
 
 const MODES = [
   { value: 'create', label: 'Create' },
@@ -25,16 +16,21 @@ const MODES = [
   { value: 'shipped', label: 'Temporary sell-in' },
 ];
 
-const MODE_BUTTON_CLASS =
-  'h-6 rounded-md px-2.5 text-[11px] text-deep-violet-blue/70 hover:text-deep-violet-blue';
+const MODE_BUTTON_CLASS = 'h-6 rounded-md px-2.5 text-[11px] text-deep-violet-blue/70 hover:text-deep-violet-blue';
 const MODE_BUTTON_ACTIVE_CLASS = 'bg-deep-violet-blue text-white hover:bg-deep-violet-blue hover:text-white';
 
 /**
  * Create or edit inventory data, or record temporary sell-in for this month
  * (Temporary sell-in: sell-in already sent for a month that has not ended,
- * used only by the sell-in plan). Create and Edit are for finished months. Edit starts either from a table row (its
- * Edit button passes `editRow`) or from a picker here: choose the customer,
- * SKU and month, and the existing record is loaded into the form.
+ * used only by the sell-in plan). All three show every relevant SKU as a
+ * table once a customer and month are chosen (InventoryBulkCreateForm /
+ * InventoryBulkEditForm / InventoryBulkShippedForm) instead of one SKU at a
+ * time: Create lists every catalog SKU, blank until touched; Edit lists only
+ * the SKUs that already have data for that (finished) month, pre-filled with
+ * their current figures; Temporary sell-in also lists every catalog SKU,
+ * pre-filled with its current temporary figure, for the month still in
+ * progress. Edit starts pre-loaded when reached from a table row's Edit
+ * button (`editRow`).
  *
  * @param {object} props
  * @param {Array<{ customer_id: number, customer_name: string }>} props.customers
@@ -44,20 +40,22 @@ const MODE_BUTTON_ACTIVE_CLASS = 'bg-deep-violet-blue text-white hover:bg-deep-v
  */
 export default function InventoryDataManager({ customers, skus, editRow, onSaved }) {
   const [mode, setMode] = useState(editRow ? 'edit' : 'create');
-  const [record, setRecord] = useState(editRow ? formFromRow(editRow) : null);
-  const [formKey, setFormKey] = useState(0);
+  // Remounts create to a blank form on a tab switch or a full save, so a
+  // second create there is always deliberate. Edit and temporary sell-in
+  // manage their own state across saves instead (they stay on the same
+  // customer/month to let a second correction follow the first, since
+  // neither is an insert-only operation) -- see InventoryBulkEditForm /
+  // InventoryBulkShippedForm.
+  const [resetKey, setResetKey] = useState(0);
 
   function switchMode(next) {
     setMode(next);
-    setRecord(null);
-    setFormKey((key) => key + 1);
+    setResetKey((key) => key + 1);
   }
 
-  function handleSaved(message) {
+  function handleCreateSaved(message) {
     onSaved(message);
-    // Back to a blank form (create) or the picker (edit) so a second save is deliberate.
-    setRecord(null);
-    setFormKey((key) => key + 1);
+    setResetKey((key) => key + 1);
   }
 
   return (
@@ -81,120 +79,27 @@ export default function InventoryDataManager({ customers, skus, editRow, onSaved
           ))}
         </div>
       </CardHeader>
-      <CardContent className="max-w-3xl">
+      <CardContent className="max-w-4xl">
+        {mode === 'create' && (
+          <InventoryBulkCreateForm
+            key={`create-${resetKey}`}
+            customers={customers}
+            skus={skus}
+            onSaved={handleCreateSaved}
+          />
+        )}
 
-      {mode === 'create' && (
-        <InventoryRecordForm
-          key={`create-${formKey}`}
-          mode="create"
-          initialForm={EMPTY_INVENTORY_FORM}
-          customers={customers}
-          skus={skus}
-          onSaved={handleSaved}
-        />
-      )}
+        {mode === 'shipped' && <InventoryBulkShippedForm customers={customers} skus={skus} onSaved={onSaved} />}
 
-      {mode === 'shipped' && (
-        <ShippedSoFarForm
-          key={`shipped-${formKey}`}
-          customers={customers}
-          skus={skus}
-          onSaved={handleSaved}
-        />
-      )}
-
-      {mode === 'edit' && record && (
-        <InventoryRecordForm
-          key={`edit-${formKey}`}
-          mode="edit"
-          initialForm={record}
-          customers={customers}
-          skus={skus}
-          onSaved={handleSaved}
-          onCancel={() => switchMode('edit')}
-        />
-      )}
-
-      {mode === 'edit' && !record && (
-        <RecordPicker customers={customers} skus={skus} onLoaded={setRecord} />
-      )}
-    </CardContent>
+        {mode === 'edit' && (
+          <InventoryBulkEditForm
+            key={editRow ? `${editRow.customer_id}-${editRow.month}` : 'edit'}
+            customers={customers}
+            editRow={editRow}
+            onSaved={onSaved}
+          />
+        )}
+      </CardContent>
     </Card>
-  );
-}
-
-/**
- * Finds the record to edit: choose a customer, a SKU and a month, and the
- * existing record loads through the overview endpoint. Refused with an
- * explanation if that customer has no data for that SKU and month yet.
- */
-function RecordPicker({ customers, skus, onLoaded }) {
-  const [customerIds, setCustomerIds] = useState([]);
-  const [sku, setSku] = useState('');
-  const [month, setMonth] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  async function handleLoad(event) {
-    event.preventDefault();
-    if (customerIds.length === 0 || !sku || !month) {
-      setError('Choose a customer, a SKU and a month.');
-      return;
-    }
-
-    setError('');
-    setLoading(true);
-    try {
-      const monthDate = monthInputToDate(month);
-      const overview = await getInventoryOverview({
-        customerIds,
-        skus: [sku],
-        startMonth: monthDate,
-        endMonth: monthDate,
-      });
-      const row = overview.skus.find(
-        (r) => r.customer_id === customerIds[0] && r.month === monthDate && r.has_data,
-      );
-      if (!row) {
-        const customerName = customers.find((c) => c.customer_id === customerIds[0])?.customer_name;
-        setError(`No inventory exists for ${retailerLabel(customerName)} for that SKU and month. Use Create to add it.`);
-        return;
-      }
-
-      onLoaded({ ...formFromRow(row), customerIds });
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <form onSubmit={handleLoad} className="grid gap-3 sm:grid-cols-2">
-      <CustomerDropdown customers={customers} customerIds={customerIds} onChange={setCustomerIds} />
-      <label>
-        <span className={formLabelClass}>SKU</span>
-        <select value={sku} onChange={(e) => setSku(e.target.value)} className={formFieldClass}>
-          <option value="">Select…</option>
-          {skus.map((s) => (
-            <option key={s.sku} value={s.sku}>
-              {s.product_name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        <span className={formLabelClass}>Month</span>
-        <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className={formFieldClass} />
-      </label>
-
-      {error && <p className={cn(errorClass, 'sm:col-span-2')} role="alert">{error}</p>}
-
-      <div className="sm:col-span-2">
-        <Button type="submit" disabled={loading} className={primaryButtonClass}>
-          {loading ? 'Loading…' : 'Load record'}
-        </Button>
-      </div>
-    </form>
   );
 }

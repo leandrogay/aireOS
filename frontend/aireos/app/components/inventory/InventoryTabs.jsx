@@ -95,7 +95,7 @@ export default function InventoryTabs() {
 
       {tab === 'manage' && (
         <InventoryDataManager
-          key={editRow ? `${editRow.customer_id}-${editRow.sku}-${editRow.month}` : 'blank'}
+          key={editRow ? `${editRow.customer_id}-${editRow.month}` : 'blank'}
           customers={options.customers}
           skus={options.skus}
           editRow={editRow}
