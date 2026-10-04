@@ -451,6 +451,8 @@ export default function ForecastChart({
                       ifOverflow="visible"
                     />
                   ))}
+                  {/* Archived for now: 80% confidence band around the current forecast line.
+                      Restore by uncommenting this block.
                   {showRange ? (
                     <Area
                       dataKey="range"
@@ -465,6 +467,7 @@ export default function ForecastChart({
                       isAnimationActive={false}
                     />
                   ) : null}
+                  */}
                   {FORECAST_SERIES.filter((series) => visibleSeries[series.key]).map((series) => (
                     <Line
                       key={series.key}
