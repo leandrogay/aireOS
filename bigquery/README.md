@@ -34,7 +34,7 @@ because every view statement uses
 Then run `views/002_validate_forecasting_foundation_views.sql`. The first
 comparison should show matching raw/enriched sell-out counts, every duplicate
 count should be zero, expected/actual promotion event counts should match, and
-the raw/monthly quantity and revenue totals should match.
+the effective-source/monthly quantity and revenue differences should be zero.
 
 The foundation script expects `v_inventory_history` to expose
 `customer_id`, `sku`, and `period_start`; its opening assertion stops the run
@@ -77,6 +77,9 @@ the database doesn't hold; promotion effects come from Tier 1 XREG.
   forecasting consumers.
 - Inventory is supplied at combined customer level, so the monthly foundation
   combines both channels through `public_customer_retailers`.
+- Monthly sell-out is authoritative for a retailer + calendar month whenever
+  it exists. Weekly rows are retained only for retailer-months without monthly
+  coverage, so uploading both granularities never doubles the monthly facts.
 - Weekly sales are assigned to the month containing `period_start`. This is
   stated explicitly in the view and can be replaced with a proration rule if
   the forecasting team later requires it.
