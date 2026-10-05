@@ -270,7 +270,7 @@ const MONTH_YEAR_SHORT = { month: 'short', year: 'numeric' };
 
 /**
  * Pairs this period's buckets with the baseline for the side-by-side chart.
- * The baseline is always given as *weekly* rows, and each baseline week is
+ * The baseline is normally given as *weekly* rows, and each baseline week is
  * placed in this period's buckets by how `compareTo` relates the two ranges:
  *
  * - By week, 'last-year': with the week exactly 52 weeks (364 days) later —
@@ -283,6 +283,10 @@ const MONTH_YEAR_SHORT = { month: 'short', year: 'numeric' };
  * - 'custom' (and 'previous' by week): by position — baseline week N with
  *   this period's week N, then into whichever bucket that week falls in, so
  *   a custom period straddling other months still lines up week for week.
+ *
+ * - `baselineGranularity: 'month'` (month view over monthly-only data, which
+ *   has no weeks to pair): the baseline is given as *monthly* rows, and
+ *   baseline month N goes with this period's month N for every `compareTo`.
  *
  * Baseline weeks with no partner inside this period (a 53rd week, or one
  * before its start) are left out of the chart rather than drawn as
@@ -305,6 +309,7 @@ export function alignComparisonBuckets(
   {
     compareTo,
     granularity,
+    baselineGranularity = 'week',
     currentStart,
     currentEnd,
     baselineStart,
@@ -317,10 +322,17 @@ export function alignComparisonBuckets(
   const monthStart = periodBounds('month', currentStart).start;
   const axisStartFor = (index) =>
     granularity === 'month' ? shiftMonths(monthStart, index) : addDays(firstCurrentWeek, index * 7);
+  const baselineByMonth = baselineGranularity === 'month';
   const byCalendarMonth = granularity === 'month' && compareTo !== 'custom';
+  const monthLabels = byCalendarMonth || baselineByMonth;
   const currentIndex = (periodStart) => bucketIndex(granularity, currentStart, periodStart);
   // This period's bucket for a baseline week, or null when it has no partner.
   const baselineIndex = (weekStart) => {
+    if (baselineByMonth) {
+      const index = bucketIndex('month', baselineStart, weekStart);
+      if (index < 0 || (currentEnd && axisStartFor(index) > currentEnd)) return null;
+      return index;
+    }
     if (byCalendarMonth) return bucketIndex('month', baselineStart, weekStart);
     const pairedWeek =
       compareTo === 'last-year'
@@ -375,7 +387,7 @@ export function alignComparisonBuckets(
   for (const row of aligned) {
     if (!row.baseline) continue;
     const { firstWeekStart, lastWeekStart } = row.baseline;
-    if (byCalendarMonth) {
+    if (monthLabels) {
       row.baseline.label = parseIso(firstWeekStart).toLocaleDateString('en-US', MONTH_YEAR_SHORT);
     } else {
       // With the year, since the baseline is often last year's.

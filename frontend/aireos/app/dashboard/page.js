@@ -14,6 +14,7 @@ import useDataFreshness from "@/hooks/useDataFreshness";
 import useDashboardSummary from "@/hooks/useDashboardSummary";
 import useDefaultDateRange from "@/hooks/useDefaultDateRange";
 import useCustomerOptions from "@/hooks/useCustomerOptions";
+import useMonthlyOnly from "@/hooks/useMonthlyOnly";
 import usePriceMix from "@/hooks/usePriceMix";
 import {
   DEFAULT_COMPARE,
@@ -24,6 +25,7 @@ import {
   sumPeriodTotals,
 } from "@/app/utils/periodComparison";
 import { DEFAULT_PRESET_ID, buildDateRangePresets } from "@/app/utils/dateRangePresets";
+import { weeklyGapMessage } from "@/app/utils/weeklyGaps";
 
 export default function DashboardPage() {
   const { channels, dataVersion, refreshing } = useDataFreshness();
@@ -88,7 +90,7 @@ export default function DashboardPage() {
   // 'month') — e.g. August 2026, which has no real weekly rows at all.
   // latestDataEnd is the real last day loaded either way; comparisonRange
   // and the Period/calendar controls use it instead of assuming +6 days.
-  const { start: latestWeekStart, end: latestDataEnd, periodType: latestPeriodType } =
+  const { start: latestWeekStart, end: latestDataEnd } =
     useDefaultDateRange({ customer, mode, dataVersion, period: 'week' });
   const presets = buildDateRangePresets(latestWeekStart);
   const defaultRange = presets.find((preset) => preset.id === DEFAULT_PRESET_ID) ?? { start: '', end: '' };
@@ -96,19 +98,6 @@ export default function DashboardPage() {
   const hasExplicitDateFilter = Boolean(startDate && endDate);
   const effectiveStartDate = hasExplicitDateFilter ? startDate : defaultRange.start;
   const effectiveEndDate = hasExplicitDateFilter ? endDate : defaultRange.end;
-
-  // Ranges longer than about a quarter (Past 12 months, YTD later in the
-  // year) have too many weeks to read as weekly bars, so they default to
-  // monthly bars; the chart's By week / By month switch overrides this
-  // until the range changes again.
-  const rangeDays = effectiveStartDate && effectiveEndDate ? daysBetween(effectiveStartDate, effectiveEndDate) : 0;
-  // Also default to month view when the latest loaded data for the default
-  // range itself is month-granularity (no real weekly rows exist for it) —
-  // otherwise the dashboard would open on a month-only period defaulting to
-  // an empty weekly chart before the user ever touches the toggle.
-  const defaultsToMonthOnly = !hasExplicitDateFilter && latestPeriodType === 'month';
-  const autoGranularity = rangeDays > 100 || defaultsToMonthOnly ? 'month' : 'week';
-  const chartGranularity = granularityChoice ?? autoGranularity;
 
   const rangeInputs = {
     start: effectiveStartDate,
@@ -119,11 +108,54 @@ export default function DashboardPage() {
   };
   const { options: compareOptions, baseline, periodNames } = comparisonSetup(compareTo, rangeInputs);
   const compareShort = baseline ? `vs ${periodNames.baseline}` : '';
-  // The user is looking at By week, but the default range's latest loaded
-  // data is month-only (no real weekly rows exist for it) — the weekly
-  // chart would just be empty. Say so plainly instead of leaving a blank
-  // chart with no explanation; never fabricate weekly bars from the month.
-  const weeklyBreakdownUnavailable = chartGranularity === 'week' && defaultsToMonthOnly;
+
+  // Some months are loaded only as monthly totals (e.g. August 2026), and a
+  // weekly summary leaves them out. Checked for both sides of a comparison
+  // before picking the granularity, so either side being month-only puts
+  // both on month bars instead of leaving one side empty.
+  const currentMonthlyOnly = useMonthlyOnly({
+    dataVersion,
+    customer,
+    store,
+    sku,
+    startDate: effectiveStartDate,
+    endDate: effectiveEndDate,
+  });
+  const baselineMonthlyOnly = useMonthlyOnly({
+    dataVersion,
+    customer,
+    store,
+    sku,
+    startDate: baseline?.start ?? '',
+    endDate: baseline?.end ?? '',
+    enabled: Boolean(baseline),
+  });
+  // Both sides' monthly-only months in one list: either way, they're the
+  // months whose weekly sell-out is missing.
+  const monthlyOnlyMonths = [
+    ...(currentMonthlyOnly.data?.[mode] ?? []),
+    ...(baseline ? (baselineMonthlyOnly.data?.[mode] ?? []) : []),
+  ];
+  const hasMonthlyOnly = monthlyOnlyMonths.length > 0;
+  // Summaries wait for the check so they aren't fetched by week first and
+  // then again by month.
+  const granularityPending = currentMonthlyOnly.loading || baselineMonthlyOnly.loading;
+
+  // Ranges longer than about a quarter (Past 12 months, YTD later in the
+  // year) have too many weeks to read as weekly bars, so they default to
+  // monthly bars, as do ranges with monthly-only data; the chart's
+  // By week / By month switch overrides this until the range changes again.
+  const rangeDays = effectiveStartDate && effectiveEndDate ? daysBetween(effectiveStartDate, effectiveEndDate) : 0;
+  const autoGranularity = rangeDays > 100 || hasMonthlyOnly ? 'month' : 'week';
+  const chartGranularity = granularityChoice ?? autoGranularity;
+  // The user picked By week over monthly-only data — the weekly chart is
+  // missing those months. Name exactly which ones (not the whole period), so
+  // users know what weekly data to upload; never fabricate weekly bars.
+  const weeklyGap = chartGranularity === 'week' ? weeklyGapMessage(monthlyOnlyMonths) : null;
+  // The baseline is normally read by week so it can be paired week for week
+  // (see alignComparisonBuckets); with monthly-only data on either side the
+  // month view reads it by month too, where those months exist.
+  const baselineGranularity = chartGranularity === 'month' && hasMonthlyOnly ? 'month' : 'week';
 
   const summary = useDashboardSummary({
     dataVersion,
@@ -133,6 +165,7 @@ export default function DashboardPage() {
     startDate: effectiveStartDate,
     endDate: effectiveEndDate,
     granularity: chartGranularity,
+    enabled: !granularityPending,
   });
   // Same filters over the baseline's dates, so both sides of every
   // comparison (chart, cards, panel) are built the same way.
@@ -143,12 +176,12 @@ export default function DashboardPage() {
     store,
     startDate: baseline?.start ?? '',
     endDate: baseline?.end ?? '',
-    // Always weekly: the chart pairs baseline week N with this period's
-    // week N and rolls them into this period's buckets, so a month view
-    // compares exactly matching weeks (see alignComparisonBuckets). Totals
-    // and per-format figures don't depend on granularity.
-    granularity: 'week',
-    enabled: Boolean(baseline),
+    // Weekly unless monthly-only data needs month rows (baselineGranularity):
+    // the chart pairs baseline week N with this period's week N and rolls
+    // them into this period's buckets, so a month view compares exactly
+    // matching weeks (see alignComparisonBuckets).
+    granularity: baselineGranularity,
+    enabled: Boolean(baseline) && !granularityPending,
   });
 
   const { priceMix } = usePriceMix({
@@ -168,6 +201,7 @@ export default function DashboardPage() {
     ? alignComparisonBuckets(currentTotals, baselineTotals, {
         compareTo,
         granularity: chartGranularity,
+        baselineGranularity,
         currentStart: effectiveStartDate,
         currentEnd: effectiveEndDate,
         baselineStart: baseline.start,
@@ -225,8 +259,7 @@ export default function DashboardPage() {
             error={summary.error || (baseline ? baselineSummary.error : null)}
             freshnessRefreshing={refreshing}
             lastUpdated={lastUpdated}
-            weeklyBreakdownUnavailable={weeklyBreakdownUnavailable}
-            unavailableMonthLabel={periodNames.current}
+            weeklyGap={weeklyGap}
             mode={mode}
             onModeChange={setMode}
             granularity={chartGranularity}

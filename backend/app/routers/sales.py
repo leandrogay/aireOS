@@ -107,6 +107,25 @@ def get_dashboard_summary(
     except (SQLAlchemyError, config.ConfigError, GoogleAuthError) as e:
         raise _database_error(e)
 
+
+@router.get("/monthly-only")
+def get_monthly_only(
+    sku: str | None = None,
+    customer: str = sellout_service.DEFAULT_CUSTOMER,
+    store: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+):
+    """{offline, online}: the months in the range with monthly-only data (no weekly breakdown), as YYYY-MM-01."""
+    try:
+        return sellout_service.get_monthly_only_months(
+            sku=sku, customer=customer, store=store, start_date=start_date, end_date=end_date
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except (SQLAlchemyError, config.ConfigError, GoogleAuthError) as e:
+        raise _database_error(e)
+
 @router.get("/period-comparison")
 def get_period_comparison(
     comparison_type: str | None = None,
