@@ -4,8 +4,8 @@ import { useState } from "react"
 import FormatMixBar from "@/components/dashboard/FormatMixBar"
 import { Skeleton } from "@/components/ui/skeleton"
 import { changePct, formatChangePct } from "@/app/utils/periodComparison"
-import { formatColor, singleFormatColor } from "@/app/utils/storeFormats"
-import { PeriodKeySwatch } from "@/components/dashboard/PeriodTexture"
+import { formatColor } from "@/app/utils/storeFormats"
+import { PeriodSwatch, hatchTint } from "@/components/dashboard/PeriodTexture"
 
 const TILE_GRID_CLASS =
   "grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-flow-col lg:grid-cols-none lg:auto-cols-[minmax(0,1fr)]"
@@ -41,17 +41,19 @@ function CardChange({ current, baseline, available = true }) {
   )
 }
 
-// One period's revenue and units on a line, prefixed with that period's
-// swatch (solid = this period, hatched = comparison, as in the mix bar and
-// chart) when a comparison is on, so the figures can't be mistaken for each
-// other. Hovering names the period. `periodColor` matches the chart's Total
-// view (a single-format channel's colour, else neutral). A period with no
-// sales rows reads "No sales data" rather than a $0 that looks like a real
-// zero, matching the Comparison card's period rows.
-function PeriodFigures({ totals, periodName, hatched = false, comparing, periodColor = null, available = true }) {
+// One period's revenue and units on a line. With a comparison, a format
+// tile leads each line with its format's swatch — solid for this period,
+// hatched for the comparison — drawn exactly like that format's bars in the
+// chart, so the figures can't be mistaken for each other. The Total tile is
+// every format, so it has no one colour: its comparison line reads "vs"
+// instead. Hovering names the period. A period with no sales rows reads "No
+// sales data" rather than a $0 that looks like a real zero, matching the
+// Comparison card's period rows.
+function PeriodFigures({ totals, periodName, hatched = false, comparing, color = null, available = true }) {
   return (
     <div className="flex flex-wrap items-center gap-x-1.5" title={comparing ? periodName : undefined}>
-      {comparing && <PeriodKeySwatch hatched={hatched} color={periodColor} />}
+      {comparing && color && <PeriodSwatch color={color} tint={hatchTint(color)} hatched={hatched} />}
+      {comparing && !color && hatched && <span className="text-xs text-deep-violet-blue/60">vs</span>}
       {available ? (
         <>
           <p className={`tabular-nums ${hatched ? "text-xs text-deep-violet-blue/70" : "text-sm font-semibold"}`}>
@@ -83,7 +85,6 @@ function SummaryCard({
   periodNames = null,
   emphasis = false,
   color = null,
-  periodColor = null,
   available = true,
   baselineAvailable = true,
   highlighted = false,
@@ -124,7 +125,7 @@ function SummaryCard({
         totals={totals}
         periodName={periodNames?.current}
         comparing={Boolean(baselineTotals)}
-        periodColor={periodColor}
+        color={color}
         available={available}
       />
       {baselineTotals && (
@@ -133,7 +134,7 @@ function SummaryCard({
           periodName={periodNames?.baseline}
           hatched
           comparing
-          periodColor={periodColor}
+          color={color}
           available={baselineAvailable}
         />
       )}
@@ -201,7 +202,6 @@ export default function RevenueSummaryCards({
   const currentByFormat = new Map(currentFormats.map((format) => [format.format, format]))
   const baselineByFormat = new Map(baselineFormats.map((format) => [format.format, format]))
   const formatNames = [...new Set([...currentByFormat.keys(), ...baselineByFormat.keys()])]
-  const periodColor = singleFormatColor(formatNames)
   const emptyTotals = { revenue: 0, units: 0 }
 
   return (
@@ -233,7 +233,6 @@ export default function RevenueSummaryCards({
             totals={total}
             baselineTotals={baselineData ? sumFormats(baselineData.storeFormats) : null}
             periodNames={periodNames}
-            periodColor={periodColor}
             available={currentFormats.length > 0}
             baselineAvailable={baselineFormats.length > 0}
             emphasis
@@ -249,8 +248,7 @@ export default function RevenueSummaryCards({
                 share={format && total[mixMetric] ? (format[mixMetric] / total[mixMetric]) * 100 : null}
                 shareLabel={mixMetric === "units" ? "Share of total volume" : "Share of total revenue"}
                 color={formatColor(name)}
-                periodColor={periodColor}
-                available={Boolean(format)}
+                    available={Boolean(format)}
                 baselineAvailable={baselineByFormat.has(name)}
                 highlighted={hoveredFormat === name}
                 onHover={setHoveredFormat}

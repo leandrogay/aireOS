@@ -7,6 +7,7 @@ import { formatColor } from '@/app/utils/storeFormats';
 import {
   CHART_SIZE_CLASS,
   MAX_BAR_SIZE,
+  TILTED_LABEL_LEFT_MARGIN,
   displayLabelFor,
   exactBucketLabel,
   formatAxisCurrency,
@@ -15,16 +16,8 @@ import {
 } from '@/app/utils/trendChart';
 import TooltipChange from '@/components/dashboard/TooltipChange';
 
-// The revenue trend with no comparison: TotalTrendChart (neutral bars) and
-// FormatTrendChart (stacked by store format), the Total / By format pair of
-// RevenueTrendCard's switch.
-
-// "Total" view: the neutral period colour, never a format colour, so a
-// single bar is never read as one format — unless the channel has only one
-// format (online's FPON), which passes its colour in (see singleFormatColor).
-function totalChartConfig(color) {
-  return { revenue: { label: 'Revenue', color: color ?? 'var(--chart-period-current)' } };
-}
+// The revenue trend with no comparison (FormatTrendChart), stacked by store
+// format; RevenueTrendCard uses ComparisonMixChart while comparing.
 
 function weekOrMonth(periodLabel) {
   return periodLabel.startsWith('Week ') ? 'week' : 'month';
@@ -96,48 +89,10 @@ function TrendTooltip({ active, payload, granularity }) {
 }
 
 /**
- * "Total" view with no comparison: one neutral bar per week/month. Also the
- * only view for a single-format channel (online), drawn in that format's
- * `color` when given.
- *
- * @param {{ periodTotal: Array<object>, granularity: 'week' | 'month', color?: string | null }} props
- */
-export function TotalTrendChart({ periodTotal, granularity, color = null }) {
-  // exactLabel uses the ROW's own actual type (weekOrMonth), not the
-  // requested `granularity` — a month-preferred row can appear even under
-  // granularity='month' requests mixed with no real weekly rows elsewhere,
-  // and mislabeling it a week in the tooltip (e.g. "Aug 1 – Aug 7, 2026"
-  // for a row that's really all of August) would contradict the bar's own
-  // displayLabel right next to it. Matches FormatTrendChart's pivotByFormat.
-  const chartData = periodTotal.map((row, index) => ({
-    displayLabel: displayLabelFor(row.period_label, row.period_start),
-    exactLabel: exactBucketLabel(weekOrMonth(row.period_label), row.period_start),
-    revenue: row.revenue,
-    changePct: index > 0 ? changePct(row.revenue, periodTotal[index - 1].revenue) : null,
-  }));
-
-  return (
-    <ChartContainer config={totalChartConfig(color)} className={CHART_SIZE_CLASS}>
-      <BarChart accessibilityLayer data={chartData} margin={{ bottom: 8 }}>
-        <CartesianGrid vertical={false} />
-        <XAxis dataKey="displayLabel" {...xAxisProps(chartData.length, granularity)} />
-        <YAxis tickFormatter={formatAxisCurrency} width={50} tick={{ fontSize: 10 }} />
-        <ChartTooltip content={<TrendTooltip granularity={granularity} />} />
-        <Bar
-          dataKey="revenue"
-          name="Revenue"
-          fill="var(--color-revenue)"
-          maxBarSize={MAX_BAR_SIZE}
-          isAnimationActive={false}
-        />
-      </BarChart>
-    </ChartContainer>
-  );
-}
-
-/**
- * "By format" view with no comparison: one bar per week/month stacked by
- * store format, in the format colours.
+ * The trend with no comparison: one bar per week/month stacked by store
+ * format, in the format colours (a single-format channel is one colour).
+ * Each bar is labelled by its row's own type (weekOrMonth), so a
+ * month-only row is never titled as a week in the tooltip.
  *
  * @param {{ periodByFormat: Array<object>, periodTotal: Array<object>, granularity: 'week' | 'month' }} props
  */
@@ -145,12 +100,15 @@ export function FormatTrendChart({ periodByFormat, periodTotal, granularity }) {
   const formats = sortFormatsByTotalDesc(periodByFormat);
   const chartConfig = Object.fromEntries(formats.map((format) => [format, { label: format, color: formatColor(format) }]));
   const chartData = pivotByFormat(periodByFormat, periodTotal);
+  const axisProps = xAxisProps(chartData.length, granularity);
+  // Tilted labels run down-left from their bar, so the first needs room past the y-axis.
+  const margin = axisProps.angle ? { bottom: 8, left: TILTED_LABEL_LEFT_MARGIN } : { bottom: 8 };
 
   return (
     <ChartContainer config={chartConfig} className={CHART_SIZE_CLASS}>
-      <BarChart accessibilityLayer data={chartData} margin={{ bottom: 8 }}>
+      <BarChart accessibilityLayer data={chartData} margin={margin}>
         <CartesianGrid vertical={false} />
-        <XAxis dataKey="displayLabel" {...xAxisProps(chartData.length, granularity)} />
+        <XAxis dataKey="displayLabel" {...axisProps} />
         <YAxis tickFormatter={formatAxisCurrency} width={50} tick={{ fontSize: 10 }} />
         <ChartTooltip content={<TrendTooltip granularity={granularity} />} />
         <ChartLegend content={<ChartLegendContent />} />

@@ -238,6 +238,49 @@ def test_dashboard_summary_rolls_up_by_retailer_format_and_month(monkeypatch):
     assert result["offline"] == {"storeFormats": [], "periodTotal": [], "periodByFormat": []}
 
 
+# ---- get_monthly_only_months ---------------------------------------------
+
+def test_monthly_only_validates_dates_before_querying(monkeypatch):
+    _no_engine_allowed(monkeypatch)
+    with pytest.raises(ValueError, match="start_date"):
+        sellout_service.get_monthly_only_months(start_date="Aug 2026")
+
+
+def test_monthly_only_lists_each_channels_months_sorted_and_deduplicated(monkeypatch):
+    rows = [
+        {"retailer": "fairprice_offline", "month": date(2026, 8, 1)},
+        {"retailer": "fairprice_offline", "month": date(2026, 6, 1)},
+        {"retailer": "fairprice_online", "month": date(2026, 8, 1)},
+    ]
+    _install(monkeypatch, lambda sql, params: rows)
+
+    result = sellout_service.get_monthly_only_months(customer="fairprice")
+
+    assert result == {"offline": ["2026-06-01", "2026-08-01"], "online": ["2026-08-01"]}
+
+
+def test_monthly_only_with_no_monthly_only_months_gives_empty_lists(monkeypatch):
+    _install(monkeypatch, lambda sql, params: [])
+
+    assert sellout_service.get_monthly_only_months(customer="fairprice") == {"offline": [], "online": []}
+
+
+def test_monthly_only_reads_month_rows_without_weeks_in_the_dashboard_scope(monkeypatch):
+    conn = _install(monkeypatch, lambda sql, params: [])
+
+    sellout_service.get_monthly_only_months(
+        customer="fairprice", sku="A1", start_date="2026-07-01", end_date="2026-08-31"
+    )
+
+    (sql, params) = conn.calls[0]
+    assert "s.period_type = 'month'" in sql
+    assert "NOT EXISTS" in sql and "w.period_type = 'week'" in sql
+    assert "s.sku = :sku" in sql
+    assert params["retailer_names"] == ["fairprice_offline", "fairprice_online"]
+    assert params["start_date"] == "2026-07-01"
+    assert params["end_date"] == "2026-08-31"
+
+
 # ---- get_default_date_range ----------------------------------------------
 
 def test_default_date_range_validates_period_and_mode(monkeypatch):

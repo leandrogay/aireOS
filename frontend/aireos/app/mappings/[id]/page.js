@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import PageLayout from '@/components/layout/PageLayout';
 import BackLink from '@/components/ui/BackLink';
 import MappingReviewPanel from '../../components/mappings/MappingReviewPanel';
+import MappingReviewSkeleton from '../../components/mappings/MappingReviewSkeleton';
 import { normalizeBaseUrl } from '../../utils/mappingHelpers';
 import {
   lookupMapping,
@@ -89,9 +90,7 @@ export default function MappingReviewPage() {
         )
       }
     >
-      {isLoading && (
-        <p className="text-sm text-deep-violet-blue/70">Loading mapping…</p>
-      )}
+      {isLoading && <MappingReviewSkeleton />}
 
       {loadError && (
         <div className="rounded-xl border border-red-200 bg-red-50 p-6">

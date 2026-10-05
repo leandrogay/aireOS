@@ -1,8 +1,13 @@
 'use client';
 
 import { cn } from '@/lib/utils';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { formatColor as colorFor } from '@/app/utils/storeFormats';
 import { edgeColor } from '@/components/dashboard/PeriodTexture';
+
+// Matches RevenueTrendCard's toggles: dark blue for the selected option.
+const tabTriggerClass =
+  'text-deep-violet-blue/70 hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white data-active:hover:text-white';
 
 const METRICS = [
   { value: 'revenue', label: 'Revenue' },
@@ -104,21 +109,16 @@ export default function FormatMixBar({
     <div className="mb-2">
       <div className="mb-1 flex items-center justify-between gap-2">
         <p className="text-xs text-deep-violet-blue/70">Format mix</p>
-        <div className="flex gap-1">
-          {METRICS.map((m) => (
-            <button
-              key={m.value}
-              type="button"
-              onClick={() => onMetricChange(m.value)}
-              className={cn(
-                'rounded px-1.5 py-0.5 text-xs text-deep-violet-blue/70 hover:text-deep-violet-blue',
-                metric === m.value && 'bg-lavander font-medium text-deep-violet-blue',
-              )}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
+        {/* Same Tabs styling as the trend card's By week / By month switch. */}
+        <Tabs value={metric} onValueChange={onMetricChange}>
+          <TabsList className="h-7 bg-lavander">
+            {METRICS.map((m) => (
+              <TabsTrigger key={m.value} value={m.value} className={`text-xs ${tabTriggerClass}`}>
+                {m.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
       </div>
 
       <div className="grid gap-1.5">

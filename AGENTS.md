@@ -91,7 +91,7 @@ aireOS/
     │   │   │                      (typed date inputs, not a calendar); Toast (+ hooks/useToast)
     │   │   ├── dashboard/         DashboardFilters, CustomerSelector, FilterBadge, PeriodControls (Period /
     │   │   │                      Compare to: DateRangeControl, CompareControl, RangeCalendar),
-    │   │   │                      RevenueTrendCard (Total / By format switch) → TrendChart, ComparisonTotalChart,
+    │   │   │                      RevenueTrendCard (always by format) → TrendChart (FormatTrendChart),
     │   │   │                      ComparisonMixChart; PeriodTexture (hatched "past period" fills), TooltipChange,
     │   │   │                      PeriodComparisonDetail, RevenueSummaryCards + FormatMixBar, SkuRanking
     │   │   ├── promotions/        PromotionForm, PromotionList, CheckboxDropdown
@@ -102,7 +102,7 @@ aireOS/
     │   │   ├── settings/          DohSettingsView (state), DohSettingsTable, DohThresholdForm
     │   │   ├── upload/            FileUpload (925 lines), MappingReview, FileUploadSummary (empty)
     │   │   └── upload2/           Harness pieces: MappingDiv, UploadPanel, ResultsPanel, ContractView, RequestLog…
-    │   │   ├── salesApi.js        /api/sales wrappers via request() (getSkuSales so far)
+    │   │   ├── salesApi.js        /api/sales wrappers via request() (getSkuSales, getMonthlyOnly)
     │   │   ├── settingsApi.js     /api/settings/* wrappers, one section per kind (reuses promotionsApi.request)
     │   │   └── mappingApi.js      /api/uploads wrappers taking an explicit baseUrl (harness style)
     │   └── utils/                 Pure, React-free helpers
@@ -113,6 +113,7 @@ aireOS/
     │       ├── periodComparison.js Compare-to baselines (comparisonSetup), week pairing for the comparison chart
     │       ├── dateRangePresets.js Period presets (Latest week, MTD, … Past 12 months) anchored to the latest week
     │       ├── trendChart.js      Trend chart labels, x-axis setup, bar sizing, format stack order
+    │       ├── weeklyGaps.js      "No weekly data for …" message: monthly-only months merged into ranges, capped
     │       ├── priceMix.js        Avg-price change split into SKU price vs product mix
     │       ├── storeFormats.js    FORMAT_COLORS + formatColor() per store format
     │       ├── dohSettingsForm.js validate/build/formFrom helpers for the DOH threshold form, GLOBAL_DEFAULT_DOH
@@ -124,6 +125,7 @@ aireOS/
     │   ├── useDashboardSummary.js /api/sales/dashboard-summary (silent refresh on dataVersion)
     │   ├── useDefaultDateRange.js /api/sales/default-date-range
     │   ├── useSkuSales.js         /api/sales/skus via salesApi.getSkuSales
+    │   ├── useMonthlyOnly.js      /api/sales/monthly-only via salesApi.getMonthlyOnly (months with no weekly breakdown → month bars)
     │   ├── usePriceMix.js         useSkuSales × 2 (this period + comparison) → priceMixEffects
     │   ├── useDohSettings.js      /api/settings/doh (+ replaceRow for the row a write returns)
     │   └── useToast.js            { toast, notify, dismissToast } for components/ui/Toast

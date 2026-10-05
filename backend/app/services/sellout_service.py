@@ -696,29 +696,10 @@ def get_dashboard_summary(
     # (e.g. August 2026) is included. granularity='week' reads genuine
     # weekly rows only -- a month with no real weekly breakdown correctly
     # comes back empty rather than fabricating weekly bars from a monthly
-    # total; the frontend shows a message for that case instead.
+    # total; get_monthly_only_months tells the frontend when that happens.
     if granularity not in DASHBOARD_GRANULARITIES:
         raise ValueError(f"granularity must be one of {DASHBOARD_GRANULARITIES}")
-    _validate_date(start_date, "start_date")
-    _validate_date(end_date, "end_date")
-
-    retailer_names = _customer_retailers(customer)
-    where_clauses = [
-        "s.retailer_id IN (SELECT retailer_id FROM retailers WHERE retailer_name = ANY(CAST(:retailer_names AS text[])))",
-    ]
-    params: dict = {"retailer_names": retailer_names}
-    if sku:
-        where_clauses.append("s.sku = :sku")
-        params["sku"] = sku
-    if store:
-        where_clauses.append("s.store_code = :store")
-        params["store"] = store
-    if start_date:
-        where_clauses.append("s.period_start >= CAST(:start_date AS date)")
-        params["start_date"] = start_date
-    if end_date:
-        where_clauses.append("s.period_start <= CAST(:end_date AS date)")
-        params["end_date"] = end_date
+    where_clauses, params = _dashboard_scope(customer, sku, store, start_date, end_date)
 
     if granularity == "month":
         source_cte = EFFECTIVE_SELLOUT_CTE
@@ -753,6 +734,71 @@ def get_dashboard_summary(
         df = _dashboard_rows(df, granularity)
 
     return {mode: _dashboard_mode_summary(df, _retailer_for(customer, mode)) for mode in DASHBOARD_MODES}
+
+
+def get_monthly_only_months(
+    sku: str | None = None,
+    customer: str = DEFAULT_CUSTOMER,
+    store: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict:
+    """Per channel, the months in the range loaded only as a monthly total
+    (no weekly rows for that retailer+month, e.g. August 2026), as sorted
+    YYYY-MM-01 strings. A weekly dashboard-summary is missing those months,
+    so the dashboard reads both sides of a comparison by month instead, and
+    names the months so users know which weekly data to upload."""
+    where_clauses, params = _dashboard_scope(customer, sku, store, start_date, end_date)
+    query = text(
+        f"""
+        SELECT DISTINCT r.retailer_name AS retailer, date_trunc('month', s.period_start)::date AS month
+        FROM sellout s
+        JOIN retailers r ON r.retailer_id = s.retailer_id
+        WHERE {' AND '.join(where_clauses)}
+          AND s.period_type = 'month'
+          AND NOT EXISTS (
+              SELECT 1 FROM sellout w
+              WHERE w.retailer_id = s.retailer_id
+                AND w.period_type = 'week'
+                AND date_trunc('month', w.period_start) = date_trunc('month', s.period_start)
+          )
+        """
+    )
+    with _get_read_engine().connect() as conn:
+        rows = conn.execute(query, params).mappings().all()
+    months = {mode: set() for mode in DASHBOARD_MODES}
+    for row in rows:
+        for mode in DASHBOARD_MODES:
+            if row["retailer"] == _retailer_for(customer, mode):
+                months[mode].add(pd.Timestamp(row["month"]).strftime("%Y-%m-%d"))
+    return {mode: sorted(found) for mode, found in months.items()}
+
+
+def _dashboard_scope(
+    customer: str, sku: str | None, store: str | None, start_date: str | None, end_date: str | None
+) -> tuple[list[str], dict]:
+    # WHERE clauses + bind params for one customer's sellout rows, shared by
+    # get_dashboard_summary and get_monthly_only_months so both read the same
+    # rows. A row counts when its period_start falls inside the range.
+    _validate_date(start_date, "start_date")
+    _validate_date(end_date, "end_date")
+    where_clauses = [
+        "s.retailer_id IN (SELECT retailer_id FROM retailers WHERE retailer_name = ANY(CAST(:retailer_names AS text[])))",
+    ]
+    params: dict = {"retailer_names": _customer_retailers(customer)}
+    if sku:
+        where_clauses.append("s.sku = :sku")
+        params["sku"] = sku
+    if store:
+        where_clauses.append("s.store_code = :store")
+        params["store"] = store
+    if start_date:
+        where_clauses.append("s.period_start >= CAST(:start_date AS date)")
+        params["start_date"] = start_date
+    if end_date:
+        where_clauses.append("s.period_start <= CAST(:end_date AS date)")
+        params["end_date"] = end_date
+    return where_clauses, params
 
 
 # ============================================================

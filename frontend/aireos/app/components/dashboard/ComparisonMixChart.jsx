@@ -1,19 +1,20 @@
 'use client';
 
-import { useId } from 'react';
+import { Fragment, useId } from 'react';
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { changePct, formatChangePct } from '@/app/utils/periodComparison';
 import { formatColor as colorFor } from '@/app/utils/storeFormats';
-import { HatchPattern, PeriodKeySwatch, PeriodSwatch, edgeColor, hatchTint, patternId } from '@/components/dashboard/PeriodTexture';
+import { HatchPattern, PeriodSwatch, edgeColor, hatchTint, patternId } from '@/components/dashboard/PeriodTexture';
 import {
   CHART_SIZE_CLASS,
   MAX_BAR_SIZE,
   bucketLabel,
   exactBucketLabel,
   formatAxisCurrency,
+  TILTED_LABEL_LEFT_MARGIN,
+  comparisonAxisProps,
   sortFormatsByTotalDesc,
-  xAxisProps,
 } from '@/app/utils/trendChart';
 
 // The comparison period is drawn in the same format colours as this period,
@@ -98,35 +99,64 @@ function MixTooltip({ active, payload, formats }) {
   );
 }
 
-// Formats once, then a single solid-vs-hatched key for the two periods —
-// instead of eight "format · period" legend entries. The key uses the
-// neutral period colour so it isn't read as a ninth format, and lists this
-// period first, matching the bars (this period's stack on the left).
-function MixLegend({ formats, names }) {
+// The x-axis labels, one per bar: this period's centred under its solid
+// stack and the comparison's (muted) under its hatched stack, on one shared
+// baseline. Drawn as the label of an empty, zero-height bar at the bottom of
+// each stack, so Recharts hands over that stack's exact x and width; an axis
+// tick has only one position per bucket. Every label is shown, tilted by
+// `tilt` (comparisonAxisProps' angle) so neighbours don't overlap — not
+// named `angle`, which Recharts' Label sets to 0 when it clones this element.
+// `points` is the chart data and `field` the label to show.
+function BarAxisLabel({ x, y, width, height, index, points, field, muted = false, tilt = 0 }) {
+  const text = points[index]?.[field];
+  if (!text) return null;
   return (
-    <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 pt-2 text-xs text-deep-violet-blue">
-      {formats.map((format) => (
-        <span key={format} className="flex items-center gap-1.5">
-          <PeriodSwatch color={colorFor(format)} />
-          {format}
-        </span>
-      ))}
-      <span className="flex items-center gap-3 border-l border-lavander pl-4 text-deep-violet-blue/70">
-        <span className="flex items-center gap-1.5">
-          <PeriodKeySwatch />
-          {names.current}
-        </span>
-        <span className="flex items-center gap-1.5">
-          <PeriodKeySwatch hatched />
-          {names.baseline}
-        </span>
-      </span>
+    <text
+      transform={`translate(${x + width / 2},${y + height + 10})${tilt ? ` rotate(${tilt})` : ''}`}
+      textAnchor={tilt ? 'end' : 'middle'}
+      dominantBaseline="hanging"
+      fontSize={12}
+      className={muted ? 'fill-muted-foreground opacity-70' : 'fill-muted-foreground'}
+    >
+      {text}
+    </text>
+  );
+}
+
+// One row per period, this period first (matching the bars): its name, then
+// each format it has sales for, with the swatch its bars are drawn in —
+// solid for this period, hatched for the comparison. A grid, so both rows'
+// formats start at the same place.
+function MixLegend({ rows, names }) {
+  return (
+    <div className="flex justify-center pt-2">
+      <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1 text-xs text-deep-violet-blue">
+        {rows.map((row) => (
+          <Fragment key={row.key}>
+            <span className={row.hatched ? 'text-deep-violet-blue/70' : 'font-medium'}>{names[row.key]}</span>
+            <span className="flex flex-wrap items-center gap-x-3 gap-y-1 border-l border-lavander pl-3">
+              {row.formats.length === 0 && <span className="text-deep-violet-blue/50">No sales data</span>}
+              {row.formats.map((format) => (
+                <span key={format} className="flex items-center gap-1.5">
+                  <PeriodSwatch color={colorFor(format)} tint={hatchTint(colorFor(format))} hatched={row.hatched} />
+                  {format}
+                </span>
+              ))}
+            </span>
+          </Fragment>
+        ))}
+      </div>
     </div>
   );
 }
 
+// Formats with sales on one side of the chart, in the chart's stack order.
+function formatsWithSales(formats, rows, side) {
+  return formats.filter((format) => rows.some((row) => (row[side][format] ?? 0) !== 0));
+}
+
 /**
- * The comparison chart's "By format" view: per bucket, the comparison
+ * The comparison chart: per bucket, the comparison
  * period's stack (hatched, right) beside this period's (solid, left), each
  * split by store format. `rows` come from alignComparisonBuckets, whose
  * `currentFormats` / `baselineFormats` hold revenue per format for the
@@ -152,10 +182,15 @@ export default function ComparisonMixChart({ rows, periodNames, granularity }) {
       axisLabel: bucketLabel(granularity, row.axisStart),
       currentLabel: exactBucketLabel(granularity, row.axisStart),
       baselineLabel: row.baseline?.label ?? null,
+      // Short like axisLabel (no year on a week), for BarAxisLabel.
+      baselineAxisLabel: row.baseline ? bucketLabel(granularity, row.baseline.firstWeekStart) : '',
       currentTotal: row.current?.revenue ?? null,
       baselineTotal: row.baseline?.revenue ?? null,
       currentFormats: row.currentFormats,
       baselineFormats: row.baselineFormats,
+      // The empty bars BarAxisLabel hangs from.
+      currentAxis: 0,
+      baselineAxis: 0,
     };
     for (const format of formats) {
       point[`baseline_${format}`] = row.baselineFormats[format] ?? null;
@@ -163,13 +198,23 @@ export default function ComparisonMixChart({ rows, periodNames, granularity }) {
     }
     return point;
   });
+  // The axis keeps its height and spacing, but its single tick per bucket is
+  // hidden: BarAxisLabel labels each of the two stacks instead.
+  const axisProps = comparisonAxisProps(granularity);
+  const axisLabel = (field, muted) => (
+    <BarAxisLabel points={chartData} field={field} muted={muted} tilt={axisProps.angle} />
+  );
 
   return (
     <>
       <ChartContainer config={{}} className={CHART_SIZE_CLASS}>
-        <BarChart accessibilityLayer data={chartData} margin={{ bottom: 8 }}>
+        <BarChart accessibilityLayer data={chartData} margin={{ bottom: 8, left: TILTED_LABEL_LEFT_MARGIN }}>
           <CartesianGrid vertical={false} />
-          <XAxis dataKey="axisLabel" {...xAxisProps(chartData.length, granularity)} />
+          <XAxis
+            dataKey="axisLabel"
+            {...axisProps}
+            tick={false}
+          />
           <YAxis tickFormatter={formatAxisCurrency} width={50} tick={{ fontSize: 10 }} />
           <ChartTooltip content={<MixTooltip formats={formats} />} />
           <defs>
@@ -184,7 +229,18 @@ export default function ComparisonMixChart({ rows, periodNames, granularity }) {
           </defs>
           {/* Recharts places stacks left to right in the order their first
               bar is rendered: this period first, matching the Period /
-              Compare to controls above and the Total view. */}
+              Compare to controls above. Each stack starts with an empty
+              bar that carries its x-axis label; minPointSize keeps it as an
+              invisible 1px bar, since Recharts drops a zero-value bar (and
+              its label) entirely. */}
+          <Bar
+            dataKey="currentAxis"
+            stackId="current"
+            fill="none"
+            minPointSize={1}
+            isAnimationActive={false}
+            label={axisLabel('axisLabel', false)}
+          />
           {formats.map((format) => (
             <Bar
               key={`current_${format}`}
@@ -197,6 +253,14 @@ export default function ComparisonMixChart({ rows, periodNames, granularity }) {
               isAnimationActive={false}
             />
           ))}
+          <Bar
+            dataKey="baselineAxis"
+            stackId="baseline"
+            fill="none"
+            minPointSize={1}
+            isAnimationActive={false}
+            label={axisLabel('baselineAxisLabel', true)}
+          />
           {formats.map((format) => (
             <Bar
               key={`baseline_${format}`}
@@ -211,7 +275,13 @@ export default function ComparisonMixChart({ rows, periodNames, granularity }) {
           ))}
         </BarChart>
       </ChartContainer>
-      <MixLegend formats={formats} names={names} />
+      <MixLegend
+        names={names}
+        rows={[
+          { key: 'current', hatched: false, formats: formatsWithSales(formats, rows, 'currentFormats') },
+          { key: 'baseline', hatched: true, formats: formatsWithSales(formats, rows, 'baselineFormats') },
+        ]}
+      />
     </>
   );
 }
