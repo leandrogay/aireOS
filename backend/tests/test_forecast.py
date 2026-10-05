@@ -220,12 +220,14 @@ def test_get_forecast_options(monkeypatch):
             {
                 "product_name": "Aire Ultra Tape L",
                 "customer_name": "fairprice",
-                "month_year": datetime.date(2024, 7, 1),
+                "first_month": datetime.date(2024, 7, 1),
+                "last_month": datetime.date(2026, 3, 1),
             },
             {
                 "product_name": "Aire Adult Pants L",
                 "customer_name": "fairprice",
-                "month_year": datetime.date(2027, 8, 1),
+                "first_month": datetime.date(2025, 1, 1),
+                "last_month": datetime.date(2027, 8, 1),
             },
         ]
     )
@@ -240,6 +242,16 @@ def test_get_forecast_options(monkeypatch):
     assert options["products"] == ["Aire Adult Pants L", "Aire Ultra Tape L"]
     assert options["start_date"] == "2024-07-01"
     assert options["end_date"] == "2027-08-01"
+
+
+def test_forecast_options_are_grouped_in_bigquery_not_downloaded_row_by_row(monkeypatch):
+    fake = _install_fake_client(monkeypatch, pd.DataFrame())
+
+    bigquery.get_forecast_options()
+
+    assert "GROUP BY product_name, customer_name" in fake.last_query
+    assert "MIN(month_year)" in fake.last_query
+    assert "MAX(month_year)" in fake.last_query
 
 
 # ---- sales freshness (latest sales loaded_at) ----

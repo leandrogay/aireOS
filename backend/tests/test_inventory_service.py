@@ -1097,7 +1097,9 @@ def _risk_view(monkeypatch, versions=None, **kwargs):
         _metric(1, "C3", feb, "sell_in", 5),
     ]
     _install(monkeypatch, _router(_customers("fairprice"), metrics, versions or [_version()]))
-    monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: _RISK_FORECAST)
+    monkeypatch.setattr(
+        forecast_units, "get_forecast_units_by_customer", lambda customer_ids: {c: _RISK_FORECAST for c in customer_ids}
+    )
     return inventory_service.get_at_risk(**kwargs)
 
 
@@ -1172,7 +1174,9 @@ def test_building_blocks_can_push_a_sku_from_within_band_to_at_risk(monkeypatch)
         _metric(1, "A1", jan, "sell_out_base", 100),
     ]
     _install(monkeypatch, _router(_customers("fairprice"), base_metrics, [_version()]))
-    monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: _RISK_FORECAST)
+    monkeypatch.setattr(
+        forecast_units, "get_forecast_units_by_customer", lambda customer_ids: {c: _RISK_FORECAST for c in customer_ids}
+    )
 
     within_band = inventory_service.get_at_risk()
     assert "A1" not in {i["sku"] for i in within_band["items"]}
@@ -1181,7 +1185,9 @@ def test_building_blocks_can_push_a_sku_from_within_band_to_at_risk(monkeypatch)
     # so doh falls to 15.0 -- below the min of 25.
     with_blocks = base_metrics + [_metric(1, "A1", jan, "sell_out_building_blocks", 150)]
     _install(monkeypatch, _router(_customers("fairprice"), with_blocks, [_version()]))
-    monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: _RISK_FORECAST)
+    monkeypatch.setattr(
+        forecast_units, "get_forecast_units_by_customer", lambda customer_ids: {c: _RISK_FORECAST for c in customer_ids}
+    )
 
     at_risk = inventory_service.get_at_risk()
     item = next(i for i in at_risk["items"] if i["sku"] == "A1")
@@ -1218,12 +1224,28 @@ def test_at_risk_rejects_an_unknown_customer(monkeypatch):
 
 def test_at_risk_only_reads_the_chosen_customers(monkeypatch):
     conn = _install(monkeypatch, _router(_customers("fairprice", "giant")))
-    monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: {})
+    seen = []
+    monkeypatch.setattr(
+        forecast_units, "get_forecast_units_by_customer", lambda customer_ids: seen.append(customer_ids) or {}
+    )
 
     inventory_service.get_at_risk(customer_ids=[2])
 
     assert conn.sql_containing("DISTINCT ON")[0][1]["customer_ids"] == [2]
     assert conn.sql_containing("FROM doh_settings")[0][1] == {"customer_ids": [2]}
+    assert seen == [[2]]
+
+
+def test_at_risk_reads_every_customers_forecast_in_one_call(monkeypatch):
+    _install(monkeypatch, _router(_customers("fairprice", "giant", "sheng siong")))
+    seen = []
+    monkeypatch.setattr(
+        forecast_units, "get_forecast_units_by_customer", lambda customer_ids: seen.append(customer_ids) or {}
+    )
+
+    inventory_service.get_at_risk()
+
+    assert seen == [[1, 2, 3]]
 
 
 def test_the_overview_can_be_limited_to_sku_that_are_at_risk(monkeypatch):
