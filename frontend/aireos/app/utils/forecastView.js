@@ -299,9 +299,11 @@ export function forecastPointDetails(point, metric, formatValue) {
   const models = formatModelMix(point.currentModels);
   if (models) details.push({ label: 'Model', value: models });
   if (point.range) {
+    // Negative bounds read as (10) rather than -10, accounting style.
+    const formatBound = (value) => (value < 0 ? `(${formatValue(-value)})` : formatValue(value));
     details.push({
-      label: '80% range',
-      value: `${formatValue(point.range[0])} – ${formatValue(point.range[1])}`,
+      label: '80% Confidence Range',
+      value: `${formatBound(point.range[0])} to ${formatBound(point.range[1])}`,
     });
   }
   if (point.promoMix) {
@@ -551,7 +553,9 @@ export function formatSgtTimestamp(value) {
 }
 
 function confidenceReason(band, { shortHistory }) {
-  if (band === 'high') return 'past forecasts landed close to actual sales';
+  // The score is a backtest (the model re-run on past months it hadn't
+  // seen), not a track record of earlier live forecasts.
+  if (band === 'high') return 'model tracked actual sales closely when tested on past months';
   if (band === 'medium') return 'sales vary month to month, review recommended';
   if (band === 'low') {
     return shortHistory
