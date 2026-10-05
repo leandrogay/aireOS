@@ -94,6 +94,37 @@ def test_sku_ranking_empty_result_returns_the_right_columns(monkeypatch):
     assert df.empty
 
 
+def _catalog_row(sku, product_name, sku_range, size, value):
+    return {"sku": sku, "product_name": product_name, "sku_range": sku_range, "size": size,
+            "volume": value / 10, "value": value}
+
+
+def test_sku_ranking_product_order_lists_the_clients_order_and_keeps_metric_rank(monkeypatch):
+    # SQL returns highest value first (the rank order); product order then
+    # lists range by range (Adult Pants, Ultra Tape, Ultra Pants), S/M-L-XL.
+    rows = [
+        _catalog_row("UP-L", "Aire Ultra Pants L", "Aire Adult Diaper Ultra Pants", "L", 900.0),
+        _catalog_row("AP-XL", "Aire Adult Pants XL", "Aire Adult Diaper Pants", "XL", 800.0),
+        _catalog_row("UT-SM", "Aire Ultra Tape S/M", "Aire Adult Diaper Ultra Tape", "S/M", 700.0),
+        _catalog_row("AP-SM", "Aire Adult Pants S/M", "Aire Adult Diaper Pants", "S/M", 600.0),
+        _catalog_row("NEW", "Something New", None, None, 500.0),
+    ]
+    conn = _install(monkeypatch, lambda sql, params: rows)
+
+    ranked = sellout_service.get_sku_ranking(order="product", customer="fairprice")
+
+    assert list(ranked["sku"]) == ["AP-SM", "AP-XL", "UT-SM", "UP-L", "NEW"]
+    assert list(ranked["rank"]) == [4, 2, 3, 1, 5]
+    (sql, _params) = conn.calls[0]
+    assert "ORDER BY value DESC" in sql
+
+
+def test_sku_ranking_rejects_an_unknown_order(monkeypatch):
+    _no_engine_allowed(monkeypatch)
+    with pytest.raises(ValueError, match="order"):
+        sellout_service.get_sku_ranking(order="alphabetical")
+
+
 # ---- get_sku_options / get_store_options / get_customer_options --------
 
 def test_sku_options_include_both_week_and_month_rows(monkeypatch):
@@ -116,6 +147,20 @@ def test_sku_options_are_ordered_by_range_then_size(monkeypatch):
     options = sellout_service.get_sku_options(customer="fairprice")
 
     assert [o["sku"] for o in options] == ["P-L", "T-L", "T-XL"]
+
+
+def test_sku_options_follow_the_clients_range_order_not_alphabetical(monkeypatch):
+    rows = [
+        {"sku": "UP-SM", "product_name": "Aire Ultra Pants S/M", "sku_range": "Aire Adult Diaper Ultra Pants", "size": "S/M"},
+        {"sku": "UT-L", "product_name": "Aire Ultra Tape L", "sku_range": "Aire Adult Diaper Ultra Tape", "size": "L"},
+        {"sku": "AP-XL", "product_name": "Aire Adult Pants XL", "sku_range": "Aire Adult Diaper Pants", "size": "XL"},
+        {"sku": "UT-SM", "product_name": "Aire Ultra Tape S/M", "sku_range": "Aire Adult Diaper Ultra Tape", "size": "S/M"},
+    ]
+    _install(monkeypatch, lambda sql, params: rows)
+
+    options = sellout_service.get_sku_options(customer="fairprice")
+
+    assert [o["sku"] for o in options] == ["AP-XL", "UT-SM", "UT-L", "UP-SM"]
 
 
 def test_store_options_dedupe_by_code_keeping_first_name(monkeypatch):

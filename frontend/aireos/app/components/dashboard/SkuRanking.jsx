@@ -44,8 +44,16 @@ export default function SkuRanking({
   comparisonEnd = '',
   compareShort = '',
 }) {
-  const [metric, setMetric] = useState('value');
-  const [order, setOrder] = useState('desc');
+  // Each sort button toggles on and off. With none selected the table lists
+  // SKUs in the client's product order (backend order="product", see
+  // SKU_RANGE_ORDER), each still showing its rank by sales value. Selecting
+  // any button sorts; the half not picked falls back to Sales Value /
+  // Highest first.
+  const [metricChoice, setMetricChoice] = useState(null);
+  const [orderChoice, setOrderChoice] = useState(null);
+  const sorting = Boolean(metricChoice || orderChoice);
+  const metric = metricChoice ?? 'value';
+  const order = sorting ? (orderChoice ?? 'desc') : 'product';
   const [skus, setSkus] = useState([]);
   const [baselineBySku, setBaselineBySku] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -121,8 +129,9 @@ export default function SkuRanking({
             <button
               key={m.value}
               type="button"
-              onClick={() => setMetric(m.value)}
-              className={toggleButtonClass(metric === m.value)}
+              onClick={() => setMetricChoice(metricChoice === m.value ? null : m.value)}
+              aria-pressed={metricChoice === m.value}
+              className={toggleButtonClass(metricChoice === m.value)}
             >
               {m.label}
             </button>
@@ -132,8 +141,9 @@ export default function SkuRanking({
             <button
               key={o.value}
               type="button"
-              onClick={() => setOrder(o.value)}
-              className={toggleButtonClass(order === o.value)}
+              onClick={() => setOrderChoice(orderChoice === o.value ? null : o.value)}
+              aria-pressed={orderChoice === o.value}
+              className={toggleButtonClass(orderChoice === o.value)}
             >
               {o.label}
             </button>
