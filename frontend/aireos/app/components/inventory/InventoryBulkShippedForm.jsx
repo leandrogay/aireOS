@@ -52,21 +52,27 @@ export default function InventoryBulkShippedForm({ customers, skus, onSaved }) {
 
   const showTable = customerIds.length > 0 && Boolean(month);
 
+  function resetTable() {
+    setBaseline({});
+    setValues({});
+    setRowErrors({});
+    setSavedSkus(new Set());
+    setLoadError('');
+  }
+
   useEffect(() => {
-    if (!showTable) {
-      setBaseline({});
-      setValues({});
-      setRowErrors({});
-      setSavedSkus(new Set());
-      setLoadError('');
-      return;
-    }
+    // Resetting on a customer/month change happens eagerly in the field's
+    // own onChange handler below (and in handleCancel), not here -- an
+    // effect that just mirrors a condition into several setState calls
+    // trips react-hooks/set-state-in-effect, and the fix is the same one
+    // InventoryBulkCreateForm already uses.
+    if (!showTable) return;
 
     let cancelled = false;
-    setLoading(true);
-    setLoadError('');
 
     async function load() {
+      setLoading(true);
+      setLoadError('');
       const monthDate = monthInputToDate(month);
       const outcomes = await Promise.allSettled(
         skus.map((s) => getShippedSoFar({ customerIds, sku: s.sku, month: monthDate })),
@@ -96,7 +102,7 @@ export default function InventoryBulkShippedForm({ customers, skus, onSaved }) {
     return () => {
       cancelled = true;
     };
-  }, [customerIds, month, skus]);
+  }, [customerIds, month, skus, showTable]);
 
   function isDirty(sku) {
     return values[sku]?.shippedSoFar !== baseline[sku]?.shippedSoFar;
@@ -116,6 +122,7 @@ export default function InventoryBulkShippedForm({ customers, skus, onSaved }) {
   function handleCancel() {
     setCustomerIds([]);
     setMonth('');
+    resetTable();
     setTopError('');
   }
 
@@ -198,12 +205,27 @@ export default function InventoryBulkShippedForm({ customers, skus, onSaved }) {
       </p>
 
       <div className="grid gap-3 sm:grid-cols-2 sm:max-w-xl">
-        <CustomerDropdown customers={customers} customerIds={customerIds} onChange={setCustomerIds} />
+        <CustomerDropdown
+          customers={customers}
+          customerIds={customerIds}
+          onChange={(ids) => {
+            setCustomerIds(ids);
+            resetTable();
+          }}
+        />
         <label>
           <span className={formLabelClass}>
             Month<span className="text-red-700"> *</span>
           </span>
-          <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className={formFieldClass} />
+          <input
+            type="month"
+            value={month}
+            onChange={(e) => {
+              setMonth(e.target.value);
+              resetTable();
+            }}
+            className={formFieldClass}
+          />
         </label>
       </div>
 

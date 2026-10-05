@@ -71,22 +71,28 @@ export default function InventoryBulkEditForm({ customers, editRow, onSaved }) {
 
   const showTable = customerIds.length > 0 && Boolean(month);
 
+  function resetTable() {
+    setSkuRows([]);
+    setBaseline({});
+    setValues({});
+    setRowErrors({});
+    setSavedSkus(new Set());
+    setLoadError('');
+  }
+
   useEffect(() => {
-    if (!showTable) {
-      setSkuRows([]);
-      setBaseline({});
-      setValues({});
-      setRowErrors({});
-      setSavedSkus(new Set());
-      setLoadError('');
-      return;
-    }
+    // Resetting on a customer/month change happens eagerly in the field's
+    // own onChange handler below (and in handleCancel), not here -- an
+    // effect that just mirrors a condition into several setState calls
+    // trips react-hooks/set-state-in-effect, and the fix is the same one
+    // InventoryBulkCreateForm already uses.
+    if (!showTable) return;
 
     let cancelled = false;
-    setLoading(true);
-    setLoadError('');
 
     async function load() {
+      setLoading(true);
+      setLoadError('');
       try {
         const monthDate = monthInputToDate(month);
         const overview = await getInventoryOverview({ customerIds, startMonth: monthDate, endMonth: monthDate });
@@ -114,7 +120,7 @@ export default function InventoryBulkEditForm({ customers, editRow, onSaved }) {
     return () => {
       cancelled = true;
     };
-  }, [customerIds, month]);
+  }, [customerIds, month, showTable]);
 
   function setRowField(sku, field, value) {
     setValues((current) => ({ ...current, [sku]: { ...current[sku], [field]: value } }));
@@ -129,10 +135,10 @@ export default function InventoryBulkEditForm({ customers, editRow, onSaved }) {
 
   function handleCancel() {
     // Resetting customerIds/month (rather than just values) collapses the
-    // table back to the picker, same as first opening Edit -- the load
-    // effect clears skuRows/baseline/values/rowErrors/savedSkus for us.
+    // table back to the picker, same as first opening Edit.
     setCustomerIds([]);
     setMonth('');
+    resetTable();
     setTopError('');
   }
 
@@ -211,12 +217,27 @@ export default function InventoryBulkEditForm({ customers, editRow, onSaved }) {
   return (
     <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-3">
       <div className="grid gap-3 sm:grid-cols-2 sm:max-w-xl">
-        <CustomerDropdown customers={customers} customerIds={customerIds} onChange={setCustomerIds} />
+        <CustomerDropdown
+          customers={customers}
+          customerIds={customerIds}
+          onChange={(ids) => {
+            setCustomerIds(ids);
+            resetTable();
+          }}
+        />
         <label>
           <span className={formLabelClass}>
             Month<span className="text-red-700"> *</span>
           </span>
-          <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className={formFieldClass} />
+          <input
+            type="month"
+            value={month}
+            onChange={(e) => {
+              setMonth(e.target.value);
+              resetTable();
+            }}
+            className={formFieldClass}
+          />
         </label>
       </div>
 
