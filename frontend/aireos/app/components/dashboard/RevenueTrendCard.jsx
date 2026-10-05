@@ -33,6 +33,7 @@ export default function RevenueTrendCard({
   freshnessRefreshing = false,
   lastUpdated = null,
   weeklyGap = null,
+  weekAvailable = true,
   mode = "offline",
   onModeChange = () => {},
   headerExtra = null,
@@ -71,7 +72,9 @@ export default function RevenueTrendCard({
         <div className="flex items-center gap-2">
           <Tabs value={granularity} onValueChange={onGranularityChange}>
             <TabsList className="h-7 bg-lavander">
-              <TabsTrigger value="week" className={`text-xs ${tabTriggerClass}`}>
+              {/* Disabled (faded) when no month in the range has weekly rows
+                  (page.js weekAvailable). */}
+              <TabsTrigger value="week" disabled={!weekAvailable} className={`text-xs ${tabTriggerClass}`}>
                 By week
               </TabsTrigger>
               <TabsTrigger value="month" className={`text-xs ${tabTriggerClass}`}>

@@ -56,3 +56,17 @@ export function weeklyGapMessage(months) {
     detail: `Months with monthly totals only: ${labels.join(', ')}`,
   };
 }
+
+/**
+ * Whether the range has any month with weekly rows, i.e. one that isn't in
+ * `monthlyOnlyMonths`. When every month is monthly-only, the dashboard's
+ * By week drill-down has nothing to show and is disabled.
+ */
+export function rangeHasWeeklyMonths(start, end, monthlyOnlyMonths) {
+  if (!start || !end) return false;
+  const monthlyOnly = new Set(monthlyOnlyMonths);
+  for (let month = periodBounds('month', start).start; month <= end; month = nextMonth(month)) {
+    if (!monthlyOnly.has(month)) return true;
+  }
+  return false;
+}

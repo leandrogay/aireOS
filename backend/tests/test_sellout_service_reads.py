@@ -283,6 +283,19 @@ def test_monthly_only_reads_month_rows_without_weeks_in_the_dashboard_scope(monk
 
 # ---- get_default_date_range ----------------------------------------------
 
+def _latest_and_earliest(latest_rows, earliest, latest_week=date(2026, 7, 30)):
+    # The latest-period query gets `latest_rows`, the MIN(period_start) one
+    # `earliest`, and the latest-genuine-week one `latest_week`.
+    def respond(sql, params):
+        if "MIN(period_start)" in sql:
+            return [{"earliest_start": earliest}]
+        if "period_type = 'week'" in sql and "effective_sellout" not in sql:
+            return [(latest_week,)]
+        return latest_rows
+
+    return respond
+
+
 def test_default_date_range_validates_period_and_mode(monkeypatch):
     _no_engine_allowed(monkeypatch)
     with pytest.raises(ValueError, match="period"):
@@ -296,7 +309,9 @@ def test_default_date_range_with_no_data_returns_nulls(monkeypatch):
 
     result = sellout_service.get_default_date_range(customer="fairprice")
 
-    assert result == {"start": None, "end": None, "period_type": None}
+    assert result == {
+        "start": None, "end": None, "period_type": None, "earliest_start": None, "latest_week_start": None,
+    }
 
 
 def test_default_date_range_week_returns_the_latest_preferred_period_as_is(monkeypatch):
@@ -304,16 +319,32 @@ def test_default_date_range_week_returns_the_latest_preferred_period_as_is(monke
     # real weekly rows for it), period='week' must return that month's
     # bounds directly, not fabricate a week from it.
     rows = [{"period_start": date(2026, 8, 1), "period_end": date(2026, 8, 31), "period_type": "month"}]
-    _install(monkeypatch, lambda sql, params: rows)
+    _install(monkeypatch, _latest_and_earliest(rows, date(2024, 1, 4)))
 
     result = sellout_service.get_default_date_range(customer="fairprice", period="week")
 
-    assert result == {"start": "2026-08-01", "end": "2026-08-31", "period_type": "month"}
+    assert result == {
+        "start": "2026-08-01",
+        "end": "2026-08-31",
+        "period_type": "month",
+        "earliest_start": "2024-01-04",
+        "latest_week_start": "2026-07-30",
+    }
+
+
+def test_default_date_range_earliest_start_is_scoped_to_the_channel(monkeypatch):
+    rows = [{"period_start": date(2026, 8, 1), "period_end": date(2026, 8, 31), "period_type": "month"}]
+    conn = _install(monkeypatch, _latest_and_earliest(rows, date(2024, 1, 4)))
+
+    sellout_service.get_default_date_range(customer="fairprice", mode="offline")
+
+    [(_sql, params)] = conn.sql_containing("MIN(period_start)")
+    assert params == {"retailer_name": "fairprice_offline"}
 
 
 def test_default_date_range_month_spans_count_back_from_the_latest_periods_month(monkeypatch):
     rows = [{"period_start": date(2026, 8, 1), "period_end": date(2026, 8, 31), "period_type": "month"}]
-    _install(monkeypatch, lambda sql, params: rows)
+    _install(monkeypatch, _latest_and_earliest(rows, date(2024, 1, 4)))
 
     result = sellout_service.get_default_date_range(customer="fairprice", period="6months")
 

@@ -3,10 +3,10 @@
 import { useState } from 'react';
 import { CalendarDays, ChevronDown } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import RangeCalendar from '@/components/dashboard/RangeCalendar';
+import MonthRangeCalendar from '@/components/dashboard/MonthRangeCalendar';
 import { cn } from '@/lib/utils';
-import { formatDateRange } from '@/lib/formatDateRange';
 import { findPreset } from '@/app/utils/dateRangePresets';
+import { formatPeriodName, periodBounds } from '@/app/utils/periodComparison';
 
 const actionButtonClass =
   'rounded-md px-3 py-1 text-xs font-medium transition-colors disabled:opacity-50';
@@ -15,33 +15,32 @@ const sectionLabelClass = 'text-[11px] font-medium uppercase tracking-wide text-
 /**
  * The dashboard's Period control, above the trend chart. The trigger
  * always shows the range the dashboard is actually using — its preset name
- * (e.g. "MTD") or "Custom" — so there is never a highlighted preset next to
- * blank inputs. The popover lists presets on the left (applied at once) and
- * a range calendar on the right (see RangeCalendar), applied on Apply.
- * Both sides carry a small header, and every preset is drawn as an
- * outlined button rather than plain text, so the options above the
- * highlighted default (e.g. "Latest week" above MTD) read as clickable
- * instead of as a label for the active one.
+ * (e.g. "Latest month") or "Custom" — so there is never a highlighted preset
+ * next to a blank picker. The popover lists presets on the left (applied at
+ * once) and a month-range picker on the right (see MonthRangeCalendar),
+ * applied on Apply. Ranges are always whole months: the dashboard works in
+ * monthly figures. Both sides carry a small header, and every preset is
+ * drawn as an outlined button rather than plain text, so the options read
+ * as clickable instead of as a label for the active one.
  *
  * @param {{
  *   start: string,
  *   end: string,
  *   presets: Array<{ id: string, label: string, start: string, end: string }>,
- *   latestWeekStart: string,
  *   latestDataEnd: string,
+ *   earliestDataStart: string,
  *   onChange: (start: string, end: string) => void,
  * }} props
  */
-export default function DateRangeControl({ start, end, presets, latestWeekStart, latestDataEnd, onChange }) {
+export default function DateRangeControl({ start, end, presets, latestDataEnd, earliestDataStart, onChange }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState({ start, end });
 
   const activePreset = findPreset(presets, start, end);
-  // Show only the dates that have data: MTD is Aug 1 – 31 underneath (so it
-  // compares month for month and grows as weeks/a month load), but with
-  // data to 19 Aug the button reads Aug 1 – 19, matching the comparison
-  // card. latestDataEnd is the real last day loaded (may be a whole month's
-  // end, not always latestWeekStart + 6 days).
+  // Show only the dates that have data: Latest month is Aug 1 – 31
+  // underneath (so it compares month for month), but if only weekly data to
+  // 19 Aug is loaded the button reads Aug 1 – 19, matching the comparison
+  // card. latestDataEnd is the real last day loaded.
   const displayEnd = latestDataEnd && end > latestDataEnd && start <= latestDataEnd ? latestDataEnd : end;
 
   function handleOpenChange(nextOpen) {
@@ -57,7 +56,8 @@ export default function DateRangeControl({ start, end, presets, latestWeekStart,
   }
 
   function applyDraft() {
-    onChange(draft.start, draft.end || draft.start);
+    // One click picks just that month.
+    onChange(draft.start, draft.end || periodBounds('month', draft.start).end);
     setOpen(false);
   }
 
@@ -69,7 +69,7 @@ export default function DateRangeControl({ start, end, presets, latestWeekStart,
       >
         <CalendarDays className="size-3.5" />
         <span className="font-semibold">{activePreset ? activePreset.label : 'Custom'}</span>
-        <span className="text-deep-violet-blue/70">· {formatDateRange(start, displayEnd) ?? 'Loading…'}</span>
+        <span className="text-deep-violet-blue/70">· {formatPeriodName(start, displayEnd) || 'Loading…'}</span>
         <ChevronDown className="size-3.5" />
       </PopoverTrigger>
       {/* Start-aligned: Period is the left-hand control, so the popover has
@@ -97,12 +97,12 @@ export default function DateRangeControl({ start, end, presets, latestWeekStart,
             </div>
           </div>
           <div className="flex flex-col gap-2">
-            <p className={sectionLabelClass}>Custom range</p>
-            <RangeCalendar
+            <p className={sectionLabelClass}>Custom months</p>
+            <MonthRangeCalendar
               draft={draft}
               onDraftChange={setDraft}
-              latestWeekStart={latestWeekStart}
               latestDataEnd={latestDataEnd}
+              earliestDataStart={earliestDataStart}
             />
             <div className="flex justify-end gap-2">
               <button

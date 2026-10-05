@@ -1,10 +1,12 @@
-// Pure helpers for the dashboard's date range control: the preset list
-// (Latest week, MTD, Last month, QTD, YTD…). Every preset is anchored to the latest *loaded* week for the
-// channel (backend get_default_date_range period=week), not today's date —
-// if uploads lag, "MTD" still means the month the newest data is in.
+// Pure helpers for the dashboard's Period control: the preset list (Latest
+// month, Past 3/6/12 months, Year to date, Last year). Every preset is a run
+// of whole calendar months — the dashboard works in monthly figures, which
+// can't be split — anchored to the month of the latest *loaded* period for
+// the channel (backend get_default_date_range period=week), not today's
+// date: if uploads lag, "Latest month" still means the newest data's month.
 // No React, no fetching. All dates are ISO YYYY-MM-DD strings.
 
-import { addDays, parseIso, periodBounds, toIso } from '@/app/utils/periodComparison';
+import { parseIso, periodBounds, toIso } from '@/app/utils/periodComparison';
 
 // ==== Presets ====
 
@@ -13,39 +15,28 @@ function monthsBack(iso, months) {
   return toIso(new Date(date.getFullYear(), date.getMonth() - months, 1));
 }
 
-function quarterBounds(iso) {
-  const date = parseIso(iso);
-  const firstMonth = Math.floor(date.getMonth() / 3) * 3;
-  return {
-    start: toIso(new Date(date.getFullYear(), firstMonth, 1)),
-    end: toIso(new Date(date.getFullYear(), firstMonth + 3, 0)),
-  };
-}
-
 /**
- * Preset ranges, in the order the control lists them. Month-based presets
- * (MTD, Past 3/12 months, QTD, YTD) end at the end of that month/quarter/
- * year rather than at the latest week: no data exists past the latest week
- * anyway, and whole months let "Compare to" match month for month (see
- * comparisonRange). MTD is also the dashboard's default range.
+ * Preset ranges, in the order the control lists them. Each ends with the
+ * latest loaded month, except Last year (the whole previous calendar year).
+ * Latest month is the dashboard's default range.
  */
-export function buildDateRangePresets(latestWeekStart) {
-  if (!latestWeekStart) return [];
-  const latestWeekEnd = addDays(latestWeekStart, 6);
-  const month = periodBounds('month', latestWeekStart);
+export function buildDateRangePresets(latestPeriodStart) {
+  if (!latestPeriodStart) return [];
+  const month = periodBounds('month', latestPeriodStart);
+  const year = periodBounds('year', latestPeriodStart);
+  const lastYear = periodBounds('year', monthsBack(year.start, 12));
 
   return [
-    { id: 'latest-week', label: 'Latest week', start: latestWeekStart, end: latestWeekEnd },
-    { id: 'mtd', label: 'MTD', start: month.start, end: month.end },
-    { id: 'last-month', label: 'Last month', ...periodBounds('month', addDays(month.start, -1)) },
+    { id: 'latest-month', label: 'Latest month', ...month },
     { id: 'past-3-months', label: 'Past 3 months', start: monthsBack(month.start, 2), end: month.end },
-    { id: 'qtd', label: 'QTD', ...quarterBounds(latestWeekStart) },
-    { id: 'ytd', label: 'YTD', ...periodBounds('year', latestWeekStart) },
+    { id: 'past-6-months', label: 'Past 6 months', start: monthsBack(month.start, 5), end: month.end },
     { id: 'past-12-months', label: 'Past 12 months', start: monthsBack(month.start, 11), end: month.end },
+    { id: 'ytd', label: 'Year to date', start: year.start, end: month.end },
+    { id: 'last-year', label: 'Last year', ...lastYear },
   ];
 }
 
-export const DEFAULT_PRESET_ID = 'mtd';
+export const DEFAULT_PRESET_ID = 'latest-month';
 
 export function findPreset(presets, start, end) {
   return presets.find((preset) => preset.start === start && preset.end === end) ?? null;

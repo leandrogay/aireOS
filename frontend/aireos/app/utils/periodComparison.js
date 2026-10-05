@@ -51,7 +51,7 @@ export function periodBounds(unit, iso) {
 
 // Same day-of-month `months` away, clamped to that month's last day
 // (Mar 31 − 1 month → Feb 28).
-function shiftMonths(iso, months) {
+export function shiftMonths(iso, months) {
   const date = parseIso(iso);
   const target = new Date(date.getFullYear(), date.getMonth() + months, 1);
   const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
@@ -63,7 +63,8 @@ function isWholeMonths(start, end) {
   return periodBounds('month', start).start === start && periodBounds('month', end).end === end;
 }
 
-function monthCount(start, end) {
+/** Calendar months a range touches: Jun 1 – Aug 31 → 3. */
+export function monthCount(start, end) {
   const s = parseIso(start);
   const e = parseIso(end);
   return (e.getFullYear() - s.getFullYear()) * 12 + e.getMonth() - s.getMonth() + 1;
@@ -86,12 +87,6 @@ export function loadedWeeksInRange(start, end, latestWeekStart) {
     firstStart: addDays(latestWeekStart, firstOffset * 7),
     lastStart: addDays(latestWeekStart, lastOffset * 7),
   };
-}
-
-// Day of week (0 = Sunday) the loaded weeks start on, so the calendar's
-// rows line up exactly with the weeks being counted.
-export function weekStartDay(latestWeekStart) {
-  return latestWeekStart ? parseIso(latestWeekStart).getDay() : 1;
 }
 
 // ==== Compare to ====
@@ -121,12 +116,10 @@ export const DEFAULT_COMPARE = 'none';
  * sales weeks instead of counting a full month against a partial one.
  * `trimmedTo` is this period's data cut-off, for the UI to explain.
  *
- * A custom baseline starts where it was picked, but is cut to this period's
- * loaded week count when it holds more weeks — otherwise its extra weeks
- * chart as baseline-only bars with nothing to compare against, and its
- * total counts weeks this period doesn't have. `shortenedTo` is that week
- * count, for the UI to explain. A shorter custom pick is kept as is (the
- * comparison panel flags the uneven lengths).
+ * A custom baseline starts at the month picked (`custom.start`) and always
+ * runs as many months as the selected range, so a comparison never covers
+ * more or fewer months than what it's compared with — even after the
+ * Period changes. `custom.end` is ignored.
  */
 export function comparisonRange(compareTo, { start, end, latestWeekStart, latestDataEnd, custom }) {
   if (!start || !end || compareTo === 'none') return null;
@@ -140,16 +133,12 @@ export function comparisonRange(compareTo, { start, end, latestWeekStart, latest
   const trimmed = Boolean(latestWeekEnd) && end > latestWeekEnd && start <= latestWeekEnd;
 
   if (compareTo === 'custom') {
-    if (!custom?.start || !custom?.end) return null;
-    const picked = { start: custom.start, end: custom.end, trimmedTo: null, shortenedTo: null };
-    const currentWeeks = loadedWeeksInRange(start, end, latestWeekStart)?.count ?? 0;
-    const customWeeks = loadedWeeksInRange(custom.start, custom.end, latestWeekStart)?.count ?? 0;
-    if (!currentWeeks || customWeeks <= currentWeeks) return picked;
+    if (!custom?.start) return null;
+    const customStart = periodBounds('month', custom.start).start;
     return {
-      ...picked,
-      end: weeksFrom(custom.start, currentWeeks, latestWeekStart),
-      trimmedTo: trimmed ? latestWeekEnd : null,
-      shortenedTo: currentWeeks,
+      start: customStart,
+      end: periodBounds('month', shiftMonths(customStart, monthCount(start, end) - 1)).end,
+      trimmedTo: null,
     };
   }
   const wholeMonths = isWholeMonths(start, end);
@@ -160,7 +149,7 @@ export function comparisonRange(compareTo, { start, end, latestWeekStart, latest
   const baselineStart = shift(start);
   if (!trimmed) {
     const baselineEnd = wholeMonths ? periodBounds('month', shift(end)).end : shift(end);
-    return { start: baselineStart, end: baselineEnd, trimmedTo: null, shortenedTo: null };
+    return { start: baselineStart, end: baselineEnd, trimmedTo: null };
   }
 
   // Sales rows are weekly, so "the same days" can still hold a different
@@ -171,7 +160,6 @@ export function comparisonRange(compareTo, { start, end, latestWeekStart, latest
     start: baselineStart,
     end: weeksFrom(baselineStart, loadedWeeks, latestWeekStart),
     trimmedTo: latestWeekEnd,
-    shortenedTo: null,
   };
 }
 
@@ -236,8 +224,8 @@ export function formatPeriodName(start, end) {
 
 /**
  * Name for a baseline: named after the whole period it stands for, not its
- * like-for-like trimmed dates — MTD vs last year reads "Aug 2025", not
- * "Aug 1 – Aug 20, 2025". The trimming is explained separately in the UI.
+ * like-for-like trimmed dates — a partial Aug vs last year reads "Aug 2025",
+ * not "Aug 1 – Aug 20, 2025". The trimming is explained separately in the UI.
  */
 export function baselineName(compareTo, { start, end, custom }) {
   const untrimmed = comparisonRange(compareTo, { start, end, latestWeekStart: '', custom });

@@ -2,7 +2,7 @@
 
 import CompareControl from '@/components/dashboard/CompareControl';
 import DateRangeControl from '@/components/dashboard/DateRangeControl';
-import { parseIso } from '@/app/utils/periodComparison';
+import { monthCount, parseIso } from '@/app/utils/periodComparison';
 
 /**
  * The timeframe controls above the trend chart: Period, Compare to, and how
@@ -14,8 +14,8 @@ import { parseIso } from '@/app/utils/periodComparison';
  *   start: string,
  *   end: string,
  *   presets: Array<{ id: string, label: string, start: string, end: string }>,
- *   latestWeekStart: string,
  *   latestDataEnd: string,
+ *   earliestDataStart: string,
  *   onDateRangeChange: (start: string, end: string) => void,
  *   compareTo: string,
  *   compareOptions: Array<object>,
@@ -26,15 +26,14 @@ export default function PeriodControls({
   start,
   end,
   presets,
-  latestWeekStart,
   latestDataEnd,
+  earliestDataStart,
   onDateRangeChange,
   compareTo,
   compareOptions,
   onCompareChange,
 }) {
-  // latestDataEnd is the real last day loaded (may be a whole month's end,
-  // not always latestWeekStart + 6 days).
+  // latestDataEnd is the real last day loaded.
   const dataThrough = latestDataEnd
     ? parseIso(latestDataEnd).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
     : null;
@@ -47,8 +46,8 @@ export default function PeriodControls({
           start={start}
           end={end}
           presets={presets}
-          latestWeekStart={latestWeekStart}
           latestDataEnd={latestDataEnd}
+          earliestDataStart={earliestDataStart}
           onChange={onDateRangeChange}
         />
       </div>
@@ -57,8 +56,10 @@ export default function PeriodControls({
         <CompareControl
           value={compareTo}
           options={compareOptions}
-          latestWeekStart={latestWeekStart}
           latestDataEnd={latestDataEnd}
+          earliestDataStart={earliestDataStart}
+          // A custom comparison runs as many months as the Period.
+          periodLength={start && end ? monthCount(start, end) : 1}
           onChange={onCompareChange}
         />
       </div>

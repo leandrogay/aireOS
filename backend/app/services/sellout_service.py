@@ -807,9 +807,9 @@ def _dashboard_scope(
 
 
 def _latest_week_start(retailer: str | None) -> pd.Timestamp | None:
-    # Most recent GENUINE week row's period_start -- used only for a
-    # week-over-week comparison, which is inherently a weekly concept and
-    # must not silently substitute a monthly period.
+    # Most recent GENUINE week row's period_start -- for a week-over-week
+    # comparison and the dashboard's week grid, which are inherently weekly
+    # and must not silently substitute a monthly period.
     where_clauses = ["period_type = 'week'"]
     params: dict = {}
     if retailer:
@@ -866,6 +866,21 @@ def _latest_preferred_period(retailer: str | None) -> dict | None:
     return {"start": row["period_start"], "end": row["period_end"], "period_type": row["period_type"]}
 
 
+def _earliest_period_start(retailer: str | None):
+    # Start of the first sellout row (week or month), scoped like
+    # _latest_preferred_period: one retailer/channel, or every retailer when
+    # None. None when there's no data.
+    where_sql = ""
+    params: dict = {}
+    if retailer:
+        where_sql = "WHERE retailer_id IN (SELECT retailer_id FROM retailers WHERE retailer_name = :retailer_name)"
+        params["retailer_name"] = retailer
+    query = text(f"SELECT MIN(period_start) AS earliest_start FROM sellout {where_sql}")
+    with _get_read_engine().connect() as conn:
+        row = conn.execute(query, params).mappings().first()
+    return row["earliest_start"] if row else None
+
+
 def _month_bounds(anchor: pd.Timestamp) -> tuple[pd.Timestamp, pd.Timestamp]:
     start = anchor.replace(day=1)
     end = start + pd.offsets.MonthEnd(0)
@@ -899,7 +914,7 @@ def get_default_date_range(
     retailer = _retailer_for(customer, mode) if mode else None
     latest = _latest_preferred_period(retailer)
     if latest is None:
-        return {"start": None, "end": None, "period_type": None}
+        return {"start": None, "end": None, "period_type": None, "earliest_start": None, "latest_week_start": None}
 
     anchor = pd.Timestamp(latest["start"])
     if period == "week":
@@ -909,10 +924,20 @@ def get_default_date_range(
         span = month_spans[period]
         start = month_start - pd.DateOffset(months=span - 1)
         end = month_end
+    earliest = _earliest_period_start(retailer)
+    latest_week = _latest_week_start(retailer)
     return {
         "start": start.strftime("%Y-%m-%d"),
         "end": end.strftime("%Y-%m-%d"),
         "period_type": latest["period_type"],
+        # The first loaded period, so the dashboard's month pickers can block
+        # months before any data instead of a hard-coded year.
+        "earliest_start": pd.Timestamp(earliest).strftime("%Y-%m-%d") if earliest is not None else None,
+        # The latest GENUINE week's start, which can differ from `start` when
+        # the newest data is a monthly total (e.g. Aug 1 2026, a Saturday,
+        # while weekly rows start on Thursdays). The dashboard lines its
+        # weeks up on this, so week labels and pairing match the real rows.
+        "latest_week_start": latest_week.strftime("%Y-%m-%d") if latest_week is not None else None,
     }
 
 
