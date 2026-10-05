@@ -1,5 +1,5 @@
-// "Past period" texture shared by the comparison chart's Total and By format
-// views: the comparison bar is a light tint of its colour with 45° stripes
+// "Past period" texture shared by the comparison chart, its legend and the
+// Sell-out Summary: the comparison bar is a light tint of its colour with 45° stripes
 // and an outline in a darker edge colour, while this period stays solid. The
 // stripes and outline keep even the palest colours (UNITY's lavender,
 // FINEST's light blue) legible on the white card, where fading alone made
@@ -34,39 +34,6 @@ export function HatchPattern({ id, tint, stripe }) {
 // The hatched comparison bar's background: the colour at 50% over the card.
 export function hatchTint(color) {
   return `color-mix(in srgb, ${color} 50%, var(--card))`;
-}
-
-/**
- * Colours for a Total view's two periods: this period's solid fill, the
- * comparison's hatch tint, and the edge (stripes + outline). With no
- * `color` these are the neutral period colours (globals.css), so a bar is
- * never read as one format; a single-format channel (online's FPON) passes
- * that format's colour instead, since there it is the only format anyway.
- *
- * @param {string | null} [color]
- * @returns {{ solid: string, tint: string, edge: string }}
- */
-export function periodPalette(color = null) {
-  if (!color) {
-    return {
-      solid: 'var(--chart-period-current)',
-      tint: 'var(--chart-period-baseline)',
-      edge: 'var(--chart-period-current)',
-    };
-  }
-  return { solid: color, tint: hatchTint(color), edge: edgeColor(color) };
-}
-
-/**
- * Swatch for "this period" (solid) or "the comparison" (hatched), as in the
- * Total view's bars and the legends' keys — in the neutral period colours,
- * or a single-format channel's `color` (see periodPalette).
- *
- * @param {{ hatched?: boolean, color?: string | null }} props
- */
-export function PeriodKeySwatch({ hatched = false, color = null }) {
-  const palette = periodPalette(color);
-  return <PeriodSwatch color={palette.solid} edge={palette.edge} tint={palette.tint} hatched={hatched} />;
 }
 
 /**

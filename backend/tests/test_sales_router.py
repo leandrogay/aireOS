@@ -14,6 +14,7 @@ SALES_ENDPOINTS = [
     ("/api/sales/store-options", "get_store_options"),
     ("/api/sales/customer-options", "get_customer_options"),
     ("/api/sales/dashboard-summary", "get_dashboard_summary"),
+    ("/api/sales/monthly-only", "get_monthly_only_months"),
     ("/api/sales/period-comparison", "get_period_comparison"),
     ("/api/sales/default-date-range", "get_default_date_range"),
     ("/api/sales/last-updated", "get_data_freshness"),
@@ -42,3 +43,26 @@ def test_digest_endpoint_maps_a_database_outage_to_503(monkeypatch):
     response = client.post("/api/assistant/digest", json={})
 
     assert response.status_code == 503
+
+
+# ---- /api/sales/monthly-only ---------------------------------------------
+
+def test_monthly_only_maps_a_bad_date_to_400(monkeypatch):
+    def _bad_date(**kwargs):
+        raise ValueError("start_date must be in YYYY-MM-DD format")
+
+    monkeypatch.setattr(sellout_service, "get_monthly_only_months", _bad_date)
+
+    response = client.get("/api/sales/monthly-only?start_date=Aug")
+
+    assert response.status_code == 400
+    assert "start_date" in response.json()["detail"]
+
+
+def test_monthly_only_returns_the_months_per_channel(monkeypatch):
+    monkeypatch.setattr(sellout_service, "get_monthly_only_months", lambda **kwargs: {"offline": ["2026-08-01"], "online": []})
+
+    response = client.get("/api/sales/monthly-only?customer=fairprice")
+
+    assert response.status_code == 200
+    assert response.json() == {"offline": ["2026-08-01"], "online": []}

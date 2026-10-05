@@ -24,21 +24,32 @@ export function displayLabelFor(periodLabel, periodStart) {
   return bucketLabel(periodLabel.startsWith('Week ') ? 'week' : 'month', periodStart);
 }
 
-// Up to 6 labels sit flat. Past that they tilt 45° so every bucket keeps its
-// label instead of Recharts silently dropping some (a YTD by month lost
-// "Jan"). Past 16 even tilted labels collide, so every Nth is shown,
-// evenly spaced, about 12 in all. The axis is made tall enough for the
-// tilted text: a week label ("Nov 20 – Nov 26") drops much further than a
-// month label ("Jan 2026"), and Recharts clips whatever doesn't fit.
+// Labels are never skipped (Recharts would otherwise drop some silently: a
+// YTD by month lost "Jan"); when they'd run into each other they tilt 45°
+// instead. Up to 6 month labels ("Jan 2026") sit flat, and up to 2 week
+// labels; a week label ("Nov 20 – Nov 26") is about as wide as a bar's slot,
+// so more of them tilt. The axis is made tall enough for the tilted text,
+// since Recharts clips whatever doesn't fit.
 export function xAxisProps(count, granularity) {
-  if (count <= 6) return { interval: 0 };
-  return {
-    interval: count <= 16 ? 0 : Math.ceil(count / 12) - 1,
-    angle: -45,
-    textAnchor: 'end',
-    height: granularity === 'week' ? 84 : 56,
-  };
+  if (count <= (granularity === 'week' ? 2 : 6)) return { interval: 0 };
+  return { interval: 0, angle: -45, textAnchor: 'end', height: tiltedAxisHeight(granularity) };
 }
+
+// The comparison chart labels both bars of every bucket, which never fit
+// flat side by side, so its labels are always tilted and never skipped.
+export function comparisonAxisProps(granularity) {
+  return { interval: 0, angle: -45, height: tiltedAxisHeight(granularity) };
+}
+
+// Room under the plot for a 45° label: about 0.7 of its width, plus the gap
+// above it. Week labels are about twice as long as month labels.
+function tiltedAxisHeight(granularity) {
+  return granularity === 'week' ? 88 : 56;
+}
+
+// Left margin for the first tilted label, which runs down-left from its bar
+// past the y-axis.
+export const TILTED_LABEL_LEFT_MARGIN = 24;
 
 export function formatAxisCurrency(value) {
   if (typeof value !== 'number') return value;
