@@ -60,9 +60,43 @@
   -- 2. Sales at the same customer + SKU + month grain as combined inventory.
   --    Online/offline values are retained as separate columns as well as totals.
   --
-  --    Current rule: a weekly fact belongs to the month containing period_start.
+  --    When monthly and weekly facts overlap for a retailer + calendar month,
+  --    monthly facts are authoritative. Weekly facts are used only for months
+  --    without monthly coverage. This mirrors Cloud SQL's effective sell-out
+  --    rule and prevents the two granularities from being added together.
+  --    A retained weekly fact belongs to the month containing period_start.
   -- ---------------------------------------------------------------------------
   CREATE OR REPLACE VIEW `aire-data.Aire_Data_Analytics.v_customer_monthly_sales` AS
+  WITH sales_with_month AS (
+    SELECT
+      sales.*,
+      DATE_TRUNC(sales.period_start, MONTH) AS sales_month
+    FROM `aire-data.Aire_Data_Analytics.v_sales_enriched` AS sales
+  ),
+  monthly_coverage AS (
+    SELECT DISTINCT
+      retailer_id,
+      sales_month
+    FROM sales_with_month
+    WHERE period_type = 'month'
+  ),
+  effective_sales AS (
+    SELECT sales.*
+    FROM sales_with_month AS sales
+    WHERE sales.period_type = 'month'
+
+    UNION ALL
+
+    SELECT sales.*
+    FROM sales_with_month AS sales
+    WHERE sales.period_type = 'week'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM monthly_coverage AS coverage
+        WHERE coverage.retailer_id = sales.retailer_id
+          AND coverage.sales_month = sales.sales_month
+      )
+  )
   SELECT
     customer.customer_id,
     customer.customer_name,
@@ -74,9 +108,9 @@
     ANY_VALUE(sales.uom) AS uom,
     ANY_VALUE(sales.pack_size) AS pack_size,
     ANY_VALUE(sales.price) AS price,
-    DATE_TRUNC(sales.period_start, MONTH) AS period_start,
-    LAST_DAY(DATE_TRUNC(sales.period_start, MONTH), MONTH) AS period_end,
-  SUM(sales.quantity_units) AS quantity_cartons,
+    sales.sales_month AS period_start,
+    LAST_DAY(sales.sales_month, MONTH) AS period_end,
+    SUM(sales.quantity_units) AS quantity_cartons,
     SUM(sales.revenue) AS revenue,
     SUM(IF(sales.retailer_name = 'fairprice_online', sales.quantity_units, 0))
     AS online_quantity_cartons,
@@ -104,7 +138,7 @@
       ORDER BY sales.source_file
     ) AS source_files,
     MAX(sales.loaded_at) AS latest_sales_loaded_at
-  FROM `aire-data.Aire_Data_Analytics.v_sales_enriched` AS sales
+  FROM effective_sales AS sales
   JOIN `aire-data.Aire_Data_Analytics.public_customer_retailers` AS bridge
     ON bridge.retailer_id = sales.retailer_id
   JOIN `aire-data.Aire_Data_Analytics.public_customers` AS customer
@@ -113,8 +147,7 @@
     customer.customer_id,
     customer.customer_name,
     sales.sku,
-    period_start,
-    period_end;
+    sales.sales_month;
 
 
   -- ---------------------------------------------------------------------------

@@ -66,17 +66,133 @@ FROM sku_counts AS sku
 JOIN store_counts AS store USING (promotion_id);
 
 
--- 4. Monthly sales totals must still equal the source totals. This validates
---    aggregation, not period allocation.
+-- 4. Monthly sales must equal the effective source totals: monthly facts win
+--    for a retailer + calendar month, otherwise weekly facts are retained.
+--    Both differences must be zero (allowing tiny floating-point noise).
+WITH source_with_month AS (
+  SELECT
+    sellout.*,
+    DATE_TRUNC(sellout.period_start, MONTH) AS sales_month
+  FROM `aire-data.Aire_Data_Analytics.public_sellout` AS sellout
+),
+monthly_coverage AS (
+  SELECT DISTINCT
+    retailer_id,
+    sales_month
+  FROM source_with_month
+  WHERE period_type = 'month'
+),
+effective_source AS (
+  SELECT source.*
+  FROM source_with_month AS source
+  WHERE source.period_type = 'month'
+
+  UNION ALL
+
+  SELECT source.*
+  FROM source_with_month AS source
+  WHERE source.period_type = 'week'
+    AND NOT EXISTS (
+      SELECT 1
+      FROM monthly_coverage AS coverage
+      WHERE coverage.retailer_id = source.retailer_id
+        AND coverage.sales_month = source.sales_month
+    )
+),
+expected AS (
+  SELECT
+    SUM(quantity_units) AS quantity_cartons,
+    SUM(revenue) AS revenue
+  FROM effective_source
+),
+actual AS (
+  SELECT
+    SUM(quantity_cartons) AS quantity_cartons,
+    SUM(revenue) AS revenue
+  FROM `aire-data.Aire_Data_Analytics.v_customer_monthly_sales`
+)
 SELECT
-  (SELECT SUM(quantity_units) FROM `aire-data.Aire_Data_Analytics.public_sellout`)
-    AS raw_quantity_cartons,
-  (SELECT SUM(quantity_cartons) FROM `aire-data.Aire_Data_Analytics.v_customer_monthly_sales`)
-    AS monthly_quantity_cartons,
-  (SELECT SUM(revenue) FROM `aire-data.Aire_Data_Analytics.public_sellout`)
-    AS raw_revenue,
-  (SELECT SUM(revenue) FROM `aire-data.Aire_Data_Analytics.v_customer_monthly_sales`)
-    AS monthly_revenue;
+  expected.quantity_cartons AS expected_quantity_cartons,
+  actual.quantity_cartons AS actual_quantity_cartons,
+  ROUND(actual.quantity_cartons - expected.quantity_cartons, 6)
+    AS quantity_difference,
+  expected.revenue AS expected_revenue,
+  actual.revenue AS actual_revenue,
+  ROUND(actual.revenue - expected.revenue, 6) AS revenue_difference
+FROM expected
+CROSS JOIN actual;
+
+
+-- 4b. Check the same invariant at customer + SKU + month grain so differences
+--     cannot cancel each other out in the overall totals. Must return zero rows.
+WITH source_with_month AS (
+  SELECT
+    sellout.*,
+    DATE_TRUNC(sellout.period_start, MONTH) AS sales_month
+  FROM `aire-data.Aire_Data_Analytics.public_sellout` AS sellout
+),
+monthly_coverage AS (
+  SELECT DISTINCT retailer_id, sales_month
+  FROM source_with_month
+  WHERE period_type = 'month'
+),
+effective_source AS (
+  SELECT source.*
+  FROM source_with_month AS source
+  WHERE source.period_type = 'month'
+
+  UNION ALL
+
+  SELECT source.*
+  FROM source_with_month AS source
+  WHERE source.period_type = 'week'
+    AND NOT EXISTS (
+      SELECT 1
+      FROM monthly_coverage AS coverage
+      WHERE coverage.retailer_id = source.retailer_id
+        AND coverage.sales_month = source.sales_month
+    )
+),
+expected_by_key AS (
+  SELECT
+    bridge.customer_id,
+    source.sku,
+    source.sales_month AS period_start,
+    SUM(source.quantity_units) AS quantity_cartons,
+    SUM(source.revenue) AS revenue
+  FROM effective_source AS source
+  JOIN `aire-data.Aire_Data_Analytics.public_customer_retailers` AS bridge
+    ON bridge.retailer_id = source.retailer_id
+  GROUP BY bridge.customer_id, source.sku, source.sales_month
+),
+actual_by_key AS (
+  SELECT
+    customer_id,
+    sku,
+    period_start,
+    quantity_cartons,
+    revenue
+  FROM `aire-data.Aire_Data_Analytics.v_customer_monthly_sales`
+)
+SELECT
+  COALESCE(expected.customer_id, actual.customer_id) AS customer_id,
+  COALESCE(expected.sku, actual.sku) AS sku,
+  COALESCE(expected.period_start, actual.period_start) AS period_start,
+  expected.quantity_cartons AS expected_quantity_cartons,
+  actual.quantity_cartons AS actual_quantity_cartons,
+  ROUND(actual.quantity_cartons - expected.quantity_cartons, 6)
+    AS quantity_difference,
+  expected.revenue AS expected_revenue,
+  actual.revenue AS actual_revenue,
+  ROUND(actual.revenue - expected.revenue, 6) AS revenue_difference
+FROM expected_by_key AS expected
+FULL OUTER JOIN actual_by_key AS actual
+  USING (customer_id, sku, period_start)
+WHERE expected.customer_id IS NULL
+   OR actual.customer_id IS NULL
+   OR ABS(actual.quantity_cartons - expected.quantity_cartons) > 0.000001
+   OR ABS(actual.revenue - expected.revenue) > 0.000001
+ORDER BY customer_id, sku, period_start;
 
 
 -- 5. Show domain coverage in the comprehensive monthly foundation.
