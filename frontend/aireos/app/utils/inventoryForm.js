@@ -25,7 +25,7 @@ const QUANTITY_PATTERN = /^\d+$/;
  * @param {string} value
  * @returns {boolean} true for '0', '12'; false for '', '-1', '3.5', '1e3', 'abc'
  */
-function isQuantity(value) {
+export function isQuantity(value) {
   return QUANTITY_PATTERN.test(String(value).trim());
 }
 
@@ -42,6 +42,21 @@ export function currentMonthInput(now = new Date()) {
 }
 
 /**
+ * @param {string} monthValue 'YYYY-MM' from <input type="month"> or ''
+ * @param {Date} [now]
+ * @returns {string} an error message, or '' when the month is choosable
+ */
+export function validateFinishedMonth(monthValue, now = new Date()) {
+  if (!/^\d{4}-\d{2}$/.test(monthValue)) {
+    return 'Choose a month.';
+  }
+  if (monthValue >= currentMonthInput(now)) {
+    return 'That month has not ended yet. Use Temporary sell-in for sell-in already sent this month.';
+  }
+  return '';
+}
+
+/**
  * @param {typeof EMPTY_INVENTORY_FORM} form
  * @param {{ isEdit?: boolean, now?: Date }} [options]
  * @returns {Record<string, string>} field name -> message; empty when valid
@@ -55,10 +70,9 @@ export function validateInventoryForm(form, { isEdit = false, now = new Date() }
   if (!form.sku) {
     errors.sku = 'Choose a SKU.';
   }
-  if (!/^\d{4}-\d{2}$/.test(form.month)) {
-    errors.month = 'Choose a month.';
-  } else if (form.month >= currentMonthInput(now)) {
-    errors.month = 'That month has not ended yet. Use Temporary sell-in for sell-in already sent this month.';
+  const monthError = validateFinishedMonth(form.month, now);
+  if (monthError) {
+    errors.month = monthError;
   }
   if (!isQuantity(form.sellIn)) {
     errors.sellIn = 'Enter sell-in as a whole number of 0 or more.';
@@ -84,7 +98,7 @@ export function buildInventoryPayload(form, { isEdit = false } = {}) {
     sku: form.sku,
     month: `${form.month}-01`,
     sell_in: Number(form.sellIn),
-    // Never prefilled (see formFromRow), so null correctly means "leave it alone".
+    // Never prefilled, so null correctly means "leave it alone".
     opening_inventory: form.openingInventory === '' ? null : Number(form.openingInventory),
     // Prefilled with the current value on edit, so a blank box there means "clear it to
     // zero", not "leave the previous value alone" -- null would silently keep the old
@@ -94,28 +108,15 @@ export function buildInventoryPayload(form, { isEdit = false } = {}) {
 }
 
 /**
- * Pre-fills the edit form from a table row of the overview / customer view
- * (see backend inventory_service._stock_row).
+ * Whether any quantity field of a bulk-create table row has been filled in,
+ * so a row nobody touched can be skipped instead of demanding sell-in for
+ * every SKU in the catalog.
  *
- * @param {{ customer_id: number, sku: string, month: string, sell_in: number, building_blocks: number }} row
- * @returns {typeof EMPTY_INVENTORY_FORM}
+ * @param {{ sellIn: string, openingInventory: string, buildingBlocks: string }} row
+ * @returns {boolean}
  */
-export function formFromRow(row) {
-  return {
-    customerIds: [row.customer_id],
-    sku: row.sku,
-    month: row.month.slice(0, 7),
-    sellIn: String(row.sell_in),
-    openingInventory: '',
-    // Unlike opening inventory, building blocks is a real stored figure for
-    // any month (not a first-month-only seed), so the current value is shown
-    // here the same way sell-in already is. Rounded up: some historical
-    // workbook rows are fractional, but this field (like every quantity
-    // here) is whole units only, so showing the raw figure would fail
-    // validation on save even when the user never touched this field.
-    // Rounds up rather than to nearest so stock on hand is never understated.
-    buildingBlocks: String(Math.ceil(row.building_blocks ?? 0)),
-  };
+export function isRowTouched(row) {
+  return row.sellIn !== '' || row.openingInventory !== '' || row.buildingBlocks !== '';
 }
 
 // ============================================================

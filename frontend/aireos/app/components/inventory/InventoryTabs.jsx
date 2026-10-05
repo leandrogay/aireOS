@@ -49,7 +49,12 @@ export default function InventoryTabs() {
 
   function handleRecordSaved(message) {
     setRefreshKey((key) => key + 1);
-    setEditRow(null);
+    // editRow is deliberately left as-is here (unlike handleTabChange, which
+    // clears it): InventoryDataManager's key is derived from it, so clearing
+    // it on every save would remount InventoryDataManager back to its
+    // default 'create' mode right after an edit save -- exactly the opposite
+    // of InventoryBulkEditForm staying on the same customer/month so a
+    // second correction can follow the first.
     notify('success', message);
   }
 
@@ -95,7 +100,7 @@ export default function InventoryTabs() {
 
       {tab === 'manage' && (
         <InventoryDataManager
-          key={editRow ? `${editRow.customer_id}-${editRow.sku}-${editRow.month}` : 'blank'}
+          key={editRow ? `${editRow.customer_id}-${editRow.month}` : 'blank'}
           customers={options.customers}
           skus={options.skus}
           editRow={editRow}
