@@ -11,7 +11,12 @@ import { useEffect, useState } from 'react';
  * actually loaded — not necessarily a 7-day week. The dashboard only asks
  * for the week variant: that latest preferred period is the anchor every
  * date preset (and the MTD default) is built from — see
- * app/utils/dateRangePresets.js. `periodType` tells callers whether the
+ * app/utils/dateRangePresets.js. `earliestStart` is the first loaded
+ * period's start, so month pickers can block months with no data, and
+ * `latestWeekStart` the latest genuine weekly row's start (the weekday
+ * the loaded weeks start on), which `start` isn't when the newest data is a
+ * monthly total.
+ * `periodType` tells callers whether the
  * anchor is a genuine week or a whole month, so they don't assume +6 days.
  */
 export default function useDefaultDateRange({
@@ -20,7 +25,7 @@ export default function useDefaultDateRange({
   dataVersion = 0,
   period = 'month',
 }) {
-  const [range, setRange] = useState({ start: '', end: '', periodType: null });
+  const [range, setRange] = useState({ start: '', end: '', periodType: null, earliestStart: '', latestWeekStart: '' });
 
   useEffect(() => {
     if (!customer) return undefined;
@@ -36,7 +41,13 @@ export default function useDefaultDateRange({
         );
         const data = await res.json();
         if (!res.ok || cancelled) return;
-        setRange({ start: data.start ?? '', end: data.end ?? '', periodType: data.period_type ?? null });
+        setRange({
+          start: data.start ?? '',
+          end: data.end ?? '',
+          periodType: data.period_type ?? null,
+          earliestStart: data.earliest_start ?? '',
+          latestWeekStart: data.latest_week_start ?? '',
+        });
       } catch {
         // Silent — if this fails, callers just get '' bounds, same as no
         // filter/default at all (all-time), rather than blocking the page.

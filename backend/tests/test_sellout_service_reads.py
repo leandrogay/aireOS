@@ -94,6 +94,37 @@ def test_sku_ranking_empty_result_returns_the_right_columns(monkeypatch):
     assert df.empty
 
 
+def _catalog_row(sku, product_name, sku_range, size, value):
+    return {"sku": sku, "product_name": product_name, "sku_range": sku_range, "size": size,
+            "volume": value / 10, "value": value}
+
+
+def test_sku_ranking_product_order_lists_the_clients_order_and_keeps_metric_rank(monkeypatch):
+    # SQL returns highest value first (the rank order); product order then
+    # lists range by range (Adult Pants, Ultra Tape, Ultra Pants), S/M-L-XL.
+    rows = [
+        _catalog_row("UP-L", "Aire Ultra Pants L", "Aire Adult Diaper Ultra Pants", "L", 900.0),
+        _catalog_row("AP-XL", "Aire Adult Pants XL", "Aire Adult Diaper Pants", "XL", 800.0),
+        _catalog_row("UT-SM", "Aire Ultra Tape S/M", "Aire Adult Diaper Ultra Tape", "S/M", 700.0),
+        _catalog_row("AP-SM", "Aire Adult Pants S/M", "Aire Adult Diaper Pants", "S/M", 600.0),
+        _catalog_row("NEW", "Something New", None, None, 500.0),
+    ]
+    conn = _install(monkeypatch, lambda sql, params: rows)
+
+    ranked = sellout_service.get_sku_ranking(order="product", customer="fairprice")
+
+    assert list(ranked["sku"]) == ["AP-SM", "AP-XL", "UT-SM", "UP-L", "NEW"]
+    assert list(ranked["rank"]) == [4, 2, 3, 1, 5]
+    (sql, _params) = conn.calls[0]
+    assert "ORDER BY value DESC" in sql
+
+
+def test_sku_ranking_rejects_an_unknown_order(monkeypatch):
+    _no_engine_allowed(monkeypatch)
+    with pytest.raises(ValueError, match="order"):
+        sellout_service.get_sku_ranking(order="alphabetical")
+
+
 # ---- get_sku_options / get_store_options / get_customer_options --------
 
 def test_sku_options_include_both_week_and_month_rows(monkeypatch):
@@ -116,6 +147,20 @@ def test_sku_options_are_ordered_by_range_then_size(monkeypatch):
     options = sellout_service.get_sku_options(customer="fairprice")
 
     assert [o["sku"] for o in options] == ["P-L", "T-L", "T-XL"]
+
+
+def test_sku_options_follow_the_clients_range_order_not_alphabetical(monkeypatch):
+    rows = [
+        {"sku": "UP-SM", "product_name": "Aire Ultra Pants S/M", "sku_range": "Aire Adult Diaper Ultra Pants", "size": "S/M"},
+        {"sku": "UT-L", "product_name": "Aire Ultra Tape L", "sku_range": "Aire Adult Diaper Ultra Tape", "size": "L"},
+        {"sku": "AP-XL", "product_name": "Aire Adult Pants XL", "sku_range": "Aire Adult Diaper Pants", "size": "XL"},
+        {"sku": "UT-SM", "product_name": "Aire Ultra Tape S/M", "sku_range": "Aire Adult Diaper Ultra Tape", "size": "S/M"},
+    ]
+    _install(monkeypatch, lambda sql, params: rows)
+
+    options = sellout_service.get_sku_options(customer="fairprice")
+
+    assert [o["sku"] for o in options] == ["AP-XL", "UT-SM", "UT-L", "UP-SM"]
 
 
 def test_store_options_dedupe_by_code_keeping_first_name(monkeypatch):
@@ -283,6 +328,19 @@ def test_monthly_only_reads_month_rows_without_weeks_in_the_dashboard_scope(monk
 
 # ---- get_default_date_range ----------------------------------------------
 
+def _latest_and_earliest(latest_rows, earliest, latest_week=date(2026, 7, 30)):
+    # The latest-period query gets `latest_rows`, the MIN(period_start) one
+    # `earliest`, and the latest-genuine-week one `latest_week`.
+    def respond(sql, params):
+        if "MIN(period_start)" in sql:
+            return [{"earliest_start": earliest}]
+        if "period_type = 'week'" in sql and "effective_sellout" not in sql:
+            return [(latest_week,)]
+        return latest_rows
+
+    return respond
+
+
 def test_default_date_range_validates_period_and_mode(monkeypatch):
     _no_engine_allowed(monkeypatch)
     with pytest.raises(ValueError, match="period"):
@@ -296,7 +354,9 @@ def test_default_date_range_with_no_data_returns_nulls(monkeypatch):
 
     result = sellout_service.get_default_date_range(customer="fairprice")
 
-    assert result == {"start": None, "end": None, "period_type": None}
+    assert result == {
+        "start": None, "end": None, "period_type": None, "earliest_start": None, "latest_week_start": None,
+    }
 
 
 def test_default_date_range_week_returns_the_latest_preferred_period_as_is(monkeypatch):
@@ -304,16 +364,32 @@ def test_default_date_range_week_returns_the_latest_preferred_period_as_is(monke
     # real weekly rows for it), period='week' must return that month's
     # bounds directly, not fabricate a week from it.
     rows = [{"period_start": date(2026, 8, 1), "period_end": date(2026, 8, 31), "period_type": "month"}]
-    _install(monkeypatch, lambda sql, params: rows)
+    _install(monkeypatch, _latest_and_earliest(rows, date(2024, 1, 4)))
 
     result = sellout_service.get_default_date_range(customer="fairprice", period="week")
 
-    assert result == {"start": "2026-08-01", "end": "2026-08-31", "period_type": "month"}
+    assert result == {
+        "start": "2026-08-01",
+        "end": "2026-08-31",
+        "period_type": "month",
+        "earliest_start": "2024-01-04",
+        "latest_week_start": "2026-07-30",
+    }
+
+
+def test_default_date_range_earliest_start_is_scoped_to_the_channel(monkeypatch):
+    rows = [{"period_start": date(2026, 8, 1), "period_end": date(2026, 8, 31), "period_type": "month"}]
+    conn = _install(monkeypatch, _latest_and_earliest(rows, date(2024, 1, 4)))
+
+    sellout_service.get_default_date_range(customer="fairprice", mode="offline")
+
+    [(_sql, params)] = conn.sql_containing("MIN(period_start)")
+    assert params == {"retailer_name": "fairprice_offline"}
 
 
 def test_default_date_range_month_spans_count_back_from_the_latest_periods_month(monkeypatch):
     rows = [{"period_start": date(2026, 8, 1), "period_end": date(2026, 8, 31), "period_type": "month"}]
-    _install(monkeypatch, lambda sql, params: rows)
+    _install(monkeypatch, _latest_and_earliest(rows, date(2024, 1, 4)))
 
     result = sellout_service.get_default_date_range(customer="fairprice", period="6months")
 

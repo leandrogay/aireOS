@@ -3,17 +3,18 @@
 import { useState } from 'react';
 import { ChevronDown, GitCompareArrows } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import RangeCalendar from '@/components/dashboard/RangeCalendar';
+import MonthRangeCalendar from '@/components/dashboard/MonthRangeCalendar';
 import { cn } from '@/lib/utils';
-import { formatDateRange } from '@/lib/formatDateRange';
+import { formatPeriodName } from '@/app/utils/periodComparison';
 
 const actionButtonClass =
   'rounded-md px-3 py-1 text-xs font-medium transition-colors disabled:opacity-50';
 
 /**
  * "Compare to" control beside the Period control: No comparison, Previous
- * period, Same period last year (the default) or a Custom period picked on
- * the same range calendar. Each option shows the exact dates it would use
+ * period, Same period last year or a Custom period, where only the first
+ * month is picked and the comparison runs as many months as the Period
+ * (`periodLength`). Each option shows the exact months it would use
  * (worked out by comparisonRange in page.js), so the user never has to
  * guess what "previous" means for their range.
  *
@@ -21,18 +22,19 @@ const actionButtonClass =
  *   value: 'none' | 'previous' | 'last-year' | 'custom',
  *   options: Array<{ value: string, label: string, short: string,
  *     range: { start: string, end: string } | null }>,
- *   latestWeekStart: string,
  *   latestDataEnd: string,
+ *   earliestDataStart: string,
+ *   periodLength: number,
  *   onChange: (value: string, customRange?: { start: string, end: string }) => void,
  * }} props
  */
-export default function CompareControl({ value, options, latestWeekStart, latestDataEnd, onChange }) {
+export default function CompareControl({ value, options, latestDataEnd, earliestDataStart, periodLength, onChange }) {
   const [open, setOpen] = useState(false);
   const [pickingCustom, setPickingCustom] = useState(false);
   const [draft, setDraft] = useState({ start: '', end: '' });
 
   const selected = options.find((option) => option.value === value);
-  const selectedDates = selected?.range ? formatDateRange(selected.range.start, selected.range.end) : null;
+  const selectedDates = selected?.range ? formatPeriodName(selected.range.start, selected.range.end) : null;
 
   function handleOpenChange(nextOpen) {
     if (nextOpen) setPickingCustom(false);
@@ -42,7 +44,7 @@ export default function CompareControl({ value, options, latestWeekStart, latest
   function choose(option) {
     if (option.value === 'custom') {
       // Start from the current custom pick, else last year's range, so the
-      // calendar opens somewhere sensible rather than empty.
+      // month picker opens somewhere sensible rather than empty.
       const lastYear = options.find((o) => o.value === 'last-year')?.range;
       setDraft(option.range ?? lastYear ?? { start: '', end: '' });
       setPickingCustom(true);
@@ -53,7 +55,7 @@ export default function CompareControl({ value, options, latestWeekStart, latest
   }
 
   function applyCustom() {
-    onChange('custom', { start: draft.start, end: draft.end || draft.start });
+    onChange('custom', { start: draft.start, end: draft.end });
     setOpen(false);
   }
 
@@ -81,23 +83,26 @@ export default function CompareControl({ value, options, latestWeekStart, latest
                 <span className="block font-medium">{option.label}</span>
                 {option.range && (
                   <span className={cn('block', value === option.value ? 'text-white/80' : 'text-deep-violet-blue/60')}>
-                    {formatDateRange(option.range.start, option.range.end)}
+                    {formatPeriodName(option.range.start, option.range.end)}
                   </span>
                 )}
                 {option.value === 'custom' && !option.range && (
-                  <span className="block text-deep-violet-blue/60">Pick any dates, e.g. Mar vs Aug</span>
+                  <span className="block text-deep-violet-blue/60">Pick the first month, e.g. Mar vs Aug</span>
                 )}
               </button>
             ))}
           </div>
         ) : (
           <div className="flex flex-col gap-2">
-            <p className="text-xs font-medium text-deep-violet-blue">Compare with a custom period</p>
-            <RangeCalendar
+            <p className="text-xs font-medium text-deep-violet-blue">Compare with custom months</p>
+            {/* Start month only: the comparison always runs periodLength months,
+                as many as the Period (see comparisonRange). */}
+            <MonthRangeCalendar
               draft={draft}
               onDraftChange={setDraft}
-              latestWeekStart={latestWeekStart}
               latestDataEnd={latestDataEnd}
+              earliestDataStart={earliestDataStart}
+              length={periodLength}
             />
             <div className="flex justify-end gap-2">
               <button

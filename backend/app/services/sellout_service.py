@@ -384,6 +384,15 @@ EFFECTIVE_SELLOUT_CTE = """
 # ============================================================
 
 SKU_RANKING_METRICS = ("volume", "value")
+# "product" lists SKUs in SKU_RANGE_ORDER/SKU_SIZE_ORDER (the ranking's
+# default view); "desc"/"asc" sort by the metric.
+SKU_RANKING_ORDERS = ("product", "desc", "asc")
+# The order the client reads its products in: product line, then size.
+# Shared by the SKU filter dropdown and the ranking's product order. A
+# range or size not listed here (e.g. a new line) goes after the listed
+# ones, alphabetically.
+SKU_RANGE_ORDER = ("Aire Adult Diaper Pants", "Aire Adult Diaper Ultra Tape", "Aire Adult Diaper Ultra Pants")
+SKU_SIZE_ORDER = ("S/M", "L", "XL")
 SKU_RANKING_COLUMNS = ["sku", "product_name", "volume", "value", "rank"]
 DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 PERIOD_COMPARISON_TYPES = ("wow", "mom", "yoy")
@@ -407,6 +416,14 @@ def _retailer_family(retailer: str) -> str:
         if retailer.endswith(suffix):
             return retailer[: -len(suffix)]
     return retailer
+
+
+def _sku_product_order(sku_range: str | None, size: str | None) -> tuple:
+    # Sort key for SKU_RANGE_ORDER then SKU_SIZE_ORDER; unknown values last.
+    sku_range = sku_range or ""
+    range_rank = SKU_RANGE_ORDER.index(sku_range) if sku_range in SKU_RANGE_ORDER else len(SKU_RANGE_ORDER)
+    size_rank = SKU_SIZE_ORDER.index(size) if size in SKU_SIZE_ORDER else len(SKU_SIZE_ORDER)
+    return (range_rank, sku_range, size_rank)
 
 
 def _validate_date(value: str | None, field_name: str) -> None:
@@ -433,10 +450,12 @@ def get_sku_ranking(
     # through the effective-sellout view (monthly rows preferred over weekly
     # for the same retailer+month) so a month-only period like August 2026
     # is never silently excluded from "all-time" or date-ranged rankings.
+    # order="product" keeps each SKU's rank (highest metric = 1) but lists
+    # them in the client's product order (_sku_product_order).
     if metric not in SKU_RANKING_METRICS:
         raise ValueError(f"metric must be one of {SKU_RANKING_METRICS}")
-    if order not in ("asc", "desc"):
-        raise ValueError("order must be 'asc' or 'desc'")
+    if order not in SKU_RANKING_ORDERS:
+        raise ValueError(f"order must be one of {SKU_RANKING_ORDERS}")
     if mode is not None and mode not in DASHBOARD_MODES:
         raise ValueError(f"mode must be one of {DASHBOARD_MODES}")
     _validate_date(start_date, "start_date")
@@ -470,6 +489,8 @@ def get_sku_ranking(
         SELECT
           s.sku,
           COALESCE(MAX(k.product_name), s.sku) AS product_name,
+          MAX(k.sku_range) AS sku_range,
+          MAX(k.size) AS size,
           COALESCE(SUM(s.quantity_units), 0) AS volume,
           COALESCE(SUM(s.revenue), 0) AS value
         FROM effective_sellout s
@@ -490,14 +511,17 @@ def get_sku_ranking(
     ranked["value"] = ranked["value"].astype(float).round(2)
     ranked = ranked.reset_index(drop=True)
     ranked["rank"] = ranked.index + 1
-    return ranked[SKU_RANKING_COLUMNS]
+    if order == "product":
+        product_keys = [_sku_product_order(r, z) for r, z in zip(ranked["sku_range"], ranked["size"])]
+        ranked = ranked.iloc[sorted(range(len(ranked)), key=lambda i: product_keys[i])]
+    return ranked[SKU_RANKING_COLUMNS].reset_index(drop=True)
 
 
 def get_sku_options(customer: str = DEFAULT_CUSTOMER) -> list[dict]:
     # SKUs with real sales data (week or month rows -- existence only, no
     # monthly-preference logic needed for a distinct-values dropdown),
-    # scoped to the customer's two channels. Ordered by product line
-    # (sku_range) then size smallest-to-largest, same as before.
+    # scoped to the customer's two channels. In the client's product order
+    # (_sku_product_order), the same as the ranking's default view.
     retailer_names = _customer_retailers(customer)
     query = text(
         """
@@ -514,14 +538,13 @@ def get_sku_options(customer: str = DEFAULT_CUSTOMER) -> list[dict]:
     if not rows:
         return []
 
-    size_order = {"S/M": 0, "L": 1, "XL": 2}
     options = []
     for row in rows:
         options.append(
             {
                 "sku": row["sku"],
                 "product_name": row["product_name"] or row["sku"],
-                "_sort": (row["sku_range"] or "", size_order.get(row["size"], 3)),
+                "_sort": _sku_product_order(row["sku_range"], row["size"]),
             }
         )
     options.sort(key=lambda option: option["_sort"])
@@ -807,9 +830,9 @@ def _dashboard_scope(
 
 
 def _latest_week_start(retailer: str | None) -> pd.Timestamp | None:
-    # Most recent GENUINE week row's period_start -- used only for a
-    # week-over-week comparison, which is inherently a weekly concept and
-    # must not silently substitute a monthly period.
+    # Most recent GENUINE week row's period_start -- for a week-over-week
+    # comparison and the dashboard's week grid, which are inherently weekly
+    # and must not silently substitute a monthly period.
     where_clauses = ["period_type = 'week'"]
     params: dict = {}
     if retailer:
@@ -866,6 +889,21 @@ def _latest_preferred_period(retailer: str | None) -> dict | None:
     return {"start": row["period_start"], "end": row["period_end"], "period_type": row["period_type"]}
 
 
+def _earliest_period_start(retailer: str | None):
+    # Start of the first sellout row (week or month), scoped like
+    # _latest_preferred_period: one retailer/channel, or every retailer when
+    # None. None when there's no data.
+    where_sql = ""
+    params: dict = {}
+    if retailer:
+        where_sql = "WHERE retailer_id IN (SELECT retailer_id FROM retailers WHERE retailer_name = :retailer_name)"
+        params["retailer_name"] = retailer
+    query = text(f"SELECT MIN(period_start) AS earliest_start FROM sellout {where_sql}")
+    with _get_read_engine().connect() as conn:
+        row = conn.execute(query, params).mappings().first()
+    return row["earliest_start"] if row else None
+
+
 def _month_bounds(anchor: pd.Timestamp) -> tuple[pd.Timestamp, pd.Timestamp]:
     start = anchor.replace(day=1)
     end = start + pd.offsets.MonthEnd(0)
@@ -899,7 +937,7 @@ def get_default_date_range(
     retailer = _retailer_for(customer, mode) if mode else None
     latest = _latest_preferred_period(retailer)
     if latest is None:
-        return {"start": None, "end": None, "period_type": None}
+        return {"start": None, "end": None, "period_type": None, "earliest_start": None, "latest_week_start": None}
 
     anchor = pd.Timestamp(latest["start"])
     if period == "week":
@@ -909,10 +947,20 @@ def get_default_date_range(
         span = month_spans[period]
         start = month_start - pd.DateOffset(months=span - 1)
         end = month_end
+    earliest = _earliest_period_start(retailer)
+    latest_week = _latest_week_start(retailer)
     return {
         "start": start.strftime("%Y-%m-%d"),
         "end": end.strftime("%Y-%m-%d"),
         "period_type": latest["period_type"],
+        # The first loaded period, so the dashboard's month pickers can block
+        # months before any data instead of a hard-coded year.
+        "earliest_start": pd.Timestamp(earliest).strftime("%Y-%m-%d") if earliest is not None else None,
+        # The latest GENUINE week's start, which can differ from `start` when
+        # the newest data is a monthly total (e.g. Aug 1 2026, a Saturday,
+        # while weekly rows start on Thursdays). The dashboard lines its
+        # weeks up on this, so week labels and pairing match the real rows.
+        "latest_week_start": latest_week.strftime("%Y-%m-%d") if latest_week is not None else None,
     }
 
 

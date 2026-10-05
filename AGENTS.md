@@ -88,9 +88,10 @@ aireOS/
     │   ├── components/
     │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column), Sidebar (NAV_ITEMS)
     │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, calendar, popover, DateRangePicker
-    │   │   │                      (typed date inputs, not a calendar); Toast (+ hooks/useToast)
+    │   │   │                      (typed date inputs, not a calendar); MonthGrid (year + 12-month grid, shared by
+    │   │   │                      promotions MonthPicker and the dashboard month-range picker); Toast (+ hooks/useToast)
     │   │   ├── dashboard/         DashboardFilters, CustomerSelector, FilterBadge, PeriodControls (Period /
-    │   │   │                      Compare to: DateRangeControl, CompareControl, RangeCalendar),
+    │   │   │                      Compare to: DateRangeControl, CompareControl, MonthRangeCalendar — whole months only),
     │   │   │                      RevenueTrendCard (always by format) → TrendChart (FormatTrendChart),
     │   │   │                      ComparisonMixChart; PeriodTexture (hatched "past period" fills), TooltipChange,
     │   │   │                      PeriodComparisonDetail, RevenueSummaryCards + FormatMixBar, SkuRanking
@@ -111,7 +112,7 @@ aireOS/
     │       ├── forecastView.js    Sell-out run series (Initial Yearly Forecast/Previous/Current), tier resolution
     │       ├── dateRange.js       currentYearDateRange() -- shared default-date-range helper
     │       ├── periodComparison.js Compare-to baselines (comparisonSetup), week pairing for the comparison chart
-    │       ├── dateRangePresets.js Period presets (Latest week, MTD, … Past 12 months) anchored to the latest week
+    │       ├── dateRangePresets.js Period presets in whole months (Latest month … Past 12 months, YTD, Last year), anchored to the latest loaded month
     │       ├── trendChart.js      Trend chart labels, x-axis setup, bar sizing, format stack order
     │       ├── weeklyGaps.js      "No weekly data for …" message: monthly-only months merged into ranges, capped
     │       ├── priceMix.js        Avg-price change split into SKU price vs product mix
@@ -224,15 +225,17 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 1. `useDataFreshness` polls `/api/sales/last-updated`; a change bumps `dataVersion`, which every
    other hook lists as a dependency so data silently refreshes.
 2. `useCustomerOptions` → first customer auto-selected during render.
-3. `useDefaultDateRange` (week) gives the latest loaded week; every Period preset is built
-   from it on the client (`dateRangePresets.js`), and `comparisonSetup` derives the
+3. `useDefaultDateRange` (week) gives the latest loaded period; every Period preset (whole
+   months — the dashboard works in monthly figures) is built from its month on the client
+   (`dateRangePresets.js`), and `comparisonSetup` derives the
    "Compare to" baseline range (none by default). `useDashboardSummary` is called for this
    period and, while comparing, for the baseline. Hooks take
    `{ customer, sku, store, startDate, endDate, mode, dataVersion }` and hit `/api/sales/*`;
    each maps to one `bigquery.get_*` function that builds a parameterised query.
-4. Long ranges switch `granularity` week→month on the client (`chartGranularity`). The
-   comparison side is always fetched weekly and paired with this period's buckets on the
-   client (`alignComparisonBuckets`), so both sides of a comparison cover matching weeks.
+4. The chart opens By month; By week is a drill-down, disabled when no month in the range has
+   weekly rows (`useMonthlyOnly`). Both sides of a comparison are read at the chart's
+   granularity — monthly totals by month, weekly rows by week — so they compare the same kind
+   of data; `alignComparisonBuckets` pairs them on the client.
 5. While a comparison is on, `usePriceMix` fetches per-SKU sales for both periods
    (`/api/sales/skus`) so the Comparison panel can split the average-price change.
 
