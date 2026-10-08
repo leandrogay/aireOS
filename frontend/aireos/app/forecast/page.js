@@ -18,6 +18,7 @@ import {
   toggleSelectedValue,
   toggleSeriesVisibility,
 } from '@/app/utils/forecastView';
+import useForecastYearTotals from '@/hooks/useForecastYearTotals';
 
 export default function ForecastPage() {
   const [productName, setProductName] = useState('');
@@ -128,6 +129,18 @@ export default function ForecastPage() {
   const lastRun = freshness.current_generated_at;
   const salesLabel = customerName ? `${retailerLabel(customerName)} sales` : 'All customers sales';
   const confidence = singleSeries ? forecastConfidence(rows) : null;
+  // Year cards always cover Jan-Dec, so they fetch a wider window than the
+  // date filter when the filter cuts a year short.
+  const { years: yearTotals, loading: yearTotalsLoading } = useForecastYearTotals({
+    ready,
+    productName,
+    customerName,
+    startDate,
+    endDate,
+    bounds: dateBounds,
+    rows,
+    actuals,
+  });
 
   const scopeTags = [
     { label: 'SKU', value: productName || 'All SKUs' },
@@ -200,6 +213,8 @@ export default function ForecastPage() {
           salesLabel={salesLabel}
           salesLoadedAt={freshness.latest_sales_loaded_at}
           confidence={confidence}
+          yearTotals={yearTotals}
+          yearTotalsLoading={yearTotalsLoading}
           loading={loading}
         />
       </div>

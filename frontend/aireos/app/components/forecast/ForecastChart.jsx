@@ -12,6 +12,7 @@ import ForecastPointDetails from '@/components/forecast/ForecastPointDetails';
 import ForecastPromoPanel from '@/components/forecast/ForecastPromoPanel';
 import ForecastPromoToggle from '@/components/forecast/ForecastPromoToggle';
 import ForecastTable from '@/components/forecast/ForecastTable';
+import ForecastYearTotals from '@/components/forecast/ForecastYearTotals';
 import ForecastLegendFooter from '@/components/forecast/ForecastLegendFooter';
 import {
   FORECAST_SERIES,
@@ -163,6 +164,8 @@ export default function ForecastChart({
   salesLabel,
   salesLoadedAt,
   confidence,
+  yearTotals = [],
+  yearTotalsLoading = false,
   loading = false,
 }) {
   const chartWrapRef = useRef(null);
@@ -531,6 +534,11 @@ export default function ForecastChart({
                 </div>
               ) : null}
             </div>
+            {/* `loading` too: while the page refetches, `points` still hold
+                the previous filter's months, and a year total from those
+                would be wrong rather than merely stale. */}
+            <ForecastYearTotals years={yearTotals} loading={yearTotalsLoading || loading} />
+
             <ForecastLegendFooter
               lastRun={lastRun}
               salesLabel={salesLabel}
