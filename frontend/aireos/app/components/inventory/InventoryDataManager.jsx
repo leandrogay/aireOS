@@ -9,8 +9,10 @@ import { cn } from '@/lib/utils';
 import InventoryBulkCreateForm from './InventoryBulkCreateForm';
 import InventoryBulkEditForm from './InventoryBulkEditForm';
 import InventoryBulkShippedForm from './InventoryBulkShippedForm';
+import SellInUploadForm from './SellInUploadForm';
 
 const MODES = [
+  { value: 'upload', label: 'Upload' },
   { value: 'create', label: 'Create' },
   { value: 'edit', label: 'Edit' },
   { value: 'shipped', label: 'Temporary sell-in' },
@@ -20,9 +22,10 @@ const MODE_BUTTON_CLASS = 'h-6 rounded-md px-2.5 text-[11px] text-deep-violet-bl
 const MODE_BUTTON_ACTIVE_CLASS = 'bg-deep-violet-blue text-white hover:bg-deep-violet-blue hover:text-white';
 
 /**
- * Create or edit inventory data, or record temporary sell-in for this month
+ * Create or edit inventory data, record temporary sell-in for this month
  * (Temporary sell-in: sell-in already sent for a month that has not ended,
- * used only by the sell-in plan). All three show every relevant SKU as a
+ * used only by the sell-in plan), or upload the sell-in tracker spreadsheet
+ * (Upload: sell-in per customer, SKU and month). All three show every relevant SKU as a
  * table once a customer and month are chosen (InventoryBulkCreateForm /
  * InventoryBulkEditForm / InventoryBulkShippedForm) instead of one SKU at a
  * time: Create lists every catalog SKU, blank until touched; Edit lists only
@@ -39,7 +42,7 @@ const MODE_BUTTON_ACTIVE_CLASS = 'bg-deep-violet-blue text-white hover:bg-deep-v
  * @param {(message: string) => void} props.onSaved
  */
 export default function InventoryDataManager({ customers, skus, editRow, onSaved }) {
-  const [mode, setMode] = useState(editRow ? 'edit' : 'create');
+  const [mode, setMode] = useState(editRow ? 'edit' : 'upload');
   // Remounts create to a blank form on a tab switch or a full save, so a
   // second create there is always deliberate. Edit and temporary sell-in
   // manage their own state across saves instead (they stay on the same
@@ -90,6 +93,8 @@ export default function InventoryDataManager({ customers, skus, editRow, onSaved
         )}
 
         {mode === 'shipped' && <InventoryBulkShippedForm customers={customers} skus={skus} onSaved={onSaved} />}
+
+        {mode === 'upload' && <SellInUploadForm onSaved={onSaved} />}
 
         {mode === 'edit' && (
           <InventoryBulkEditForm
