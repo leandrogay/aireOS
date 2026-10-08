@@ -82,7 +82,7 @@ export default function InventoryDataManager({ customers, skus, editRow, onSaved
           ))}
         </div>
       </CardHeader>
-      <CardContent className="max-w-4xl">
+      <CardContent>
         {mode === 'create' && (
           <InventoryBulkCreateForm
             key={`create-${resetKey}`}
