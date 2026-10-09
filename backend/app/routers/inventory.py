@@ -1,6 +1,6 @@
 from datetime import date
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from google.api_core.exceptions import GoogleAPICallError
 from google.auth.exceptions import DefaultCredentialsError
 
@@ -197,6 +197,28 @@ def get_sell_in_plan(
             detail=f"Unable to reach BigQuery for the forecast: {e.message}",
         )
 
+
+@router.get("/customers/{customer_id}/sell-in-outlook")
+def get_sell_in_outlook(
+    customer_id: int,
+    months: int = Query(default=6, ge=1, le=12),
+    sku: list[str] | None = Query(default=None),
+):
+    try:
+        return inventory_service.get_sell_in_outlook(customer_id, months=months, skus=sku)
+
+    except inventory_service.CustomerNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    except DefaultCredentialsError:
+        raise HTTPException(status_code=503, detail=_CREDENTIALS_DETAIL)
+
+    except GoogleAPICallError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Unable to reach BigQuery for the forecast: {e.message}",
+        )
+
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -310,4 +332,40 @@ def set_shipped_so_far(update: ShippedSoFarUpdate):
                 f"Failed to save: "
                 f"{type(e).__name__}: {e}"
             ),
+        )
+
+
+@router.post("/sell-in-upload/preview")
+def preview_sell_in_upload(file: UploadFile = File(...)):
+    try:
+        return inventory_service.preview_sell_in_upload(file.file.read())
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    except DefaultCredentialsError:
+        raise HTTPException(status_code=503, detail=_CREDENTIALS_DETAIL)
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to read the sell-in file: {type(e).__name__}: {e}",
+        )
+
+
+@router.post("/sell-in-upload")
+def apply_sell_in_upload(file: UploadFile = File(...)):
+    try:
+        return inventory_service.apply_sell_in_upload(file.file.read())
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    except DefaultCredentialsError:
+        raise HTTPException(status_code=503, detail=_CREDENTIALS_DETAIL)
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to save the sell-in file: {type(e).__name__}: {e}",
         )

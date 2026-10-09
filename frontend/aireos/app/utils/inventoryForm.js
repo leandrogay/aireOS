@@ -107,6 +107,29 @@ export function buildInventoryPayload(form, { isEdit = false } = {}) {
   };
 }
 
+const SIZE_ORDER = ['S/M', 'L', 'XL'];
+
+/**
+ * Entry tables list each product line together (by sku_range), with its sizes
+ * smallest to largest.
+ *
+ * @template {{ sku_range: string | null, size: string | null, product_name: string }} T
+ * @param {T[]} rows
+ * @returns {T[]}
+ */
+export function sortSkusForEntry(rows) {
+  const sizeRank = (size) => {
+    const index = SIZE_ORDER.indexOf(size);
+    return index === -1 ? SIZE_ORDER.length : index;
+  };
+  return [...rows].sort(
+    (a, b) =>
+      (a.sku_range ?? '').localeCompare(b.sku_range ?? '') ||
+      sizeRank(a.size) - sizeRank(b.size) ||
+      a.product_name.localeCompare(b.product_name),
+  );
+}
+
 /**
  * Whether any quantity field of a bulk-create table row has been filled in,
  * so a row nobody touched can be skipped instead of demanding sell-in for

@@ -9,6 +9,7 @@ import {
   formatMonth,
   isRowTouched,
   monthInputToDate,
+  sortSkusForEntry,
   validateFinishedMonth,
   validateInventoryForm,
 } from '@/app/utils/inventoryForm';
@@ -36,7 +37,8 @@ const EMPTY_ROW = { sellIn: '', openingInventory: '', buildingBlocks: '' };
  * @param {Array<{ sku: string, product_name: string, sku_range: string | null }>} props.skus
  * @param {(message: string) => void} props.onSaved called with the confirmation text
  */
-export default function InventoryBulkCreateForm({ customers, skus, onSaved }) {
+export default function InventoryBulkCreateForm({ customers, skus: catalogSkus, onSaved }) {
+  const skus = sortSkusForEntry(catalogSkus);
   const [customerIds, setCustomerIds] = useState([]);
   const [month, setMonth] = useState('');
   const [rows, setRows] = useState({});

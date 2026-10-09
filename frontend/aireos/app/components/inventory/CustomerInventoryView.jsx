@@ -6,7 +6,6 @@ import useCustomerInventory from '@/hooks/useCustomerInventory';
 import { DOH_STATUS_LABELS, earliestMonthInput, formatDoh, filterMonthRange, latestMonthInput } from '@/app/utils/inventoryForm';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 
-import DohTrendChart from './DohTrendChart';
 import {
   filterControlClass,
   filterLabelClass,
@@ -18,12 +17,13 @@ import {
 } from './InventoryChrome';
 import InventoryFilters from './InventoryFilters';
 import InventorySkuTable from './InventorySkuTable';
+import SellInTrendChart from './SellInTrendChart';
 
 const STATUS_OPTIONS = Object.entries(DOH_STATUS_LABELS).map(([value, label]) => ({ value, label }));
 
 /**
- * One customer's inventory: DOH trend as a line against the customer's target
- * band, and the SKU-level table with ending stock, DOH and the gap to target.
+ * One customer's inventory: sell-in per month, and the SKU-level table with
+ * ending stock, DOH and the gap to target.
  * Opening and ending stock come from the same derivation as the overview;
  * DOH is derived by the backend from ending stock and forward sell-out
  * (real where it exists, forecast after that).
@@ -136,9 +136,9 @@ export default function CustomerInventoryView({ customers, skuOptions, refreshKe
         </p>
       )}
 
-      <InventorySection title="Days of holding (DOH) trend" tags={scopeTags}>
+      <InventorySection title="Sell-in trend" tags={scopeTags}>
         <InventoryChartSlot loading={loading} ready={Boolean(data)}>
-          {data && <DohTrendChart trend={trend} />}
+          {data && <SellInTrendChart trend={trend} />}
         </InventoryChartSlot>
       </InventorySection>
 

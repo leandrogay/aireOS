@@ -7,6 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
 from app.services import catalog_service, forecast_units, inventory_calc, sellout_units, sql
+from app.services.sell_in_upload import product_for_description, quantity_problem, read_sell_in_lines
 from app.services.settings import doh as doh_settings
 
 
@@ -354,6 +355,17 @@ def _known_skus(
     return {sku: months for sku, months in forecast.items() if sku in details}
 
 
+def _forecast_by_sku(customer_id: int, details: dict[str, dict]) -> dict[str, dict[date, float]]:
+    """Predicted units keyed by SKU code; a forecast row for a SKU our own catalog
+    doesn't know is skipped."""
+
+    return {
+        sku: months
+        for sku, months in forecast_units.get_forecast_units(customer_id).items()
+        if sku in details
+    }
+
+
 # ============================================================
 # OVERVIEW (all customers)
 # ============================================================
@@ -591,6 +603,7 @@ def get_customer_view(
             {
                 "month": month,
                 "ending_stock": round(sum(r["ending_stock"] for r in rows), 2),
+                "sell_in": round(sum(r["sell_in"] for r in rows), 2),
                 "doh": doh,
                 **_target_columns(_band_for_month(versions, date.fromisoformat(month), latest), doh),
             }
@@ -720,10 +733,54 @@ def get_at_risk(
 # ============================================================
 
 
+def _sku_plans(
+    metrics: dict[tuple[int, str], dict[date, dict[str, float]]],
+    forecast: dict[str, dict[date, float]],
+    shipped: dict[str, dict[date, float]],
+    threshold: dict,
+    months: int,
+    details: dict[str, dict],
+) -> tuple[dict[str, tuple[date, float]], list[dict], list[dict]]:
+    """
+    Each SKU's last actual month and ending stock, its planned rows (raw dates),
+    and the SKUs with no forecast for their start month. A plan is what to send
+    from now on, so every month aims at the current target, even when a SKU's
+    last actual month is some way back.
+    """
+
+    def target_for(month: date) -> float:
+        return threshold["target_doh"]
+
+    last_actual = {}
+    for (_, sku), sku_months in metrics.items():
+        last = inventory_calc.build_monthly_series(sku_months)[-1]
+        last_actual[sku] = (last["month"], last["ending_stock"])
+
+    rows = []
+    without_forecast = []
+    for sku, (last_month, ending_stock) in last_actual.items():
+        sku_cols = _sku_columns(sku, details)
+        plan = inventory_calc.build_sell_in_plan(
+            ending_stock,
+            inventory_calc.add_months(last_month, 1),
+            months,
+            forecast.get(sku, {}),
+            target_for,
+            shipped.get(sku, {}),
+        )
+        if not plan:
+            without_forecast.append(sku_cols)
+            continue
+        for row in plan:
+            rows.append({**sku_cols, **row})
+    return last_actual, rows, without_forecast
+
+
 def get_sell_in_plan(
     customer_id: int,
     months: int = inventory_calc.SELL_IN_PLAN_MONTHS,
     skus: list[str] | None = None,
+    month: str | None = None,
 ) -> dict:
     """
     Recommended sell-in per SKU and future month for one customer (in whole
@@ -799,6 +856,10 @@ def get_sell_in_plan(
         rows = [row for row in rows if row["sku"] in skus]
         without_forecast = [cols for cols in without_forecast if cols["sku"] in skus]
 
+    if month:
+        target = _parse_month(month)
+        rows = [row for row in rows if row["month"] == target.isoformat()]
+
     rows.sort(key=lambda r: (r["month"], r["product_name"]))
 
     return {
@@ -811,6 +872,76 @@ def get_sell_in_plan(
         "sku_totals": _sku_totals(rows),
         "skus_without_forecast": sorted(without_forecast, key=lambda c: c["product_name"]),
     }
+
+
+def _sum_or_none(values: list[float]) -> float | None:
+    return round(sum(values), 2) if values else None
+
+
+def get_sell_in_outlook(
+    customer_id: int,
+    months: int = inventory_calc.SELL_IN_PLAN_MONTHS,
+    skus: list[str] | None = None,
+) -> dict:
+    """
+    One customer's sell-in and sell-out by month for the sell-in plan chart:
+    the three months up to the last actual month, then the `months` months the
+    plan covers. Each SKU is actual up to its own last actual month and then
+    uses the plan's recommended sell-in and the forecast sell-out, so a SKU
+    only adds to the months its own data covers.
+    """
+
+    with _read_connection() as conn:
+        customers = _fetch_customers(conn)
+        _require_customers(customers, [customer_id])
+        metrics = _fetch_actuals(conn, [customer_id])
+        versions = doh_settings.fetch_versions(conn, [customer_id]).get(customer_id, [])
+        shipped = _fetch_shipped(conn, customer_id)
+
+    customer = {"customer_id": customer_id, "customer_name": customers[customer_id]}
+    metrics = {key: sku_months for key, sku_months in metrics.items() if not skus or key[1] in skus}
+    if not metrics:
+        return {"customer": customer, "actuals_through": None, "months": []}
+
+    threshold = _threshold_view(customer_id, customers[customer_id], versions)
+    details = _sku_details()
+    forecast = _forecast_by_sku(customer_id, details)
+    last_actual, plan_rows, _ = _sku_plans(metrics, forecast, shipped, threshold, months, details)
+
+    actuals_through = max(month for month, _ in last_actual.values())
+    window = [inventory_calc.add_months(actuals_through, offset) for offset in range(-2, months + 1)]
+
+    actual_by_sku = [
+        {row["month"]: row for row in inventory_calc.build_monthly_series(sku_months)}
+        for sku_months in metrics.values()
+    ]
+    recommended: dict[date, list[float]] = {}
+    forecast_out: dict[date, list[float]] = {}
+    for row in plan_rows:
+        recommended.setdefault(row["month"], []).append(row["recommended_sell_in"])
+        forecast_out.setdefault(row["month"], []).append(row["forecast_sell_out"])
+
+    series = []
+    for month in window:
+        actual = [by_month[month] for by_month in actual_by_sku if month in by_month]
+        series.append(
+            {
+                "month": _iso(month),
+                "sell_in_actual": _sum_or_none([row["sell_in"] for row in actual]),
+                "sell_in_recommended": _sum_or_none(recommended.get(month, [])),
+                "sell_out_actual": _sum_or_none([row["sell_out"] for row in actual]),
+                "sell_out_forecast": _sum_or_none(forecast_out.get(month, [])),
+            }
+        )
+
+    return {"customer": customer, "actuals_through": _iso(actuals_through), "months": series}
+
+
+def _parse_month(value: str) -> date:
+    try:
+        return date.fromisoformat(f"{value[:7]}-01")
+    except ValueError:
+        raise ValueError(f"month must look like 2026-10, not {value!r}.")
 
 
 def _sum_by(rows: list[dict], key: str) -> list[dict]:
@@ -1237,3 +1368,133 @@ def set_shipped_so_far(record, today: date | None = None) -> dict:
         "shipped_so_far": record.shipped_so_far,
         "records_written": written,
     }
+
+
+# ============================================================
+# SELL-IN UPLOAD
+#
+# The sell-in tracker's qty in packs, per customer, month and SKU, written as
+# actual sell-in (manual_entry, so it replaces what was entered or loaded
+# before). A line is skipped rather than guessed at when its customer, product
+# or month cannot be matched, the month has not ended, or its sell-out is not
+# loaded yet.
+# ============================================================
+
+
+def _plan_sell_in_upload(conn: Connection, data: bytes, today: date) -> tuple[list[dict], list[dict]]:
+    customers = _fetch_customers(conn)
+    customer_by_name = {name.lower(): customer_id for customer_id, name in customers.items()}
+    details = _sku_details()
+    sku_by_product = {info["product_name"]: sku for sku, info in details.items()}
+
+    skipped: dict[tuple, dict] = {}
+
+    def skip(reason: str, line: dict) -> None:
+        key = (reason, line["customer_name"], line["month"], line["description"])
+        entry = skipped.setdefault(
+            key,
+            {
+                "reason": reason,
+                "customer_name": line["customer_name"],
+                "month": _iso(line["month"]),
+                "description": line["description"],
+                "lines": 0,
+                "qty": 0.0,
+            },
+        )
+        entry["lines"] += 1
+        entry["qty"] += line["qty"] or 0.0
+
+    candidates = []
+    for line in read_sell_in_lines(data):
+        customer_id = customer_by_name.get(line["customer_name"].lower())
+        if customer_id is None:
+            skip("Customer is not in inventory", line)
+            continue
+        if line["month"] is None:
+            skip("Month of sales or invoice year is not recognised", line)
+            continue
+        problem = quantity_problem(line["qty"])
+        if problem:
+            skip(problem, line)
+            continue
+        product = product_for_description(line["description"])
+        if product is None or product not in sku_by_product:
+            skip("Product description is not recognised", line)
+            continue
+        candidates.append((line, customer_id, sku_by_product[product]))
+
+    retailers = _fetch_customer_retailers(conn, sorted({customer_id for _, customer_id, _ in candidates}))
+    data_through = {
+        customer_id: sellout_units.get_monthly_sellout(retailers.get(customer_id, []), conn=conn)[1]
+        for customer_id in retailers
+    }
+
+    totals: dict[tuple[int, date, str], float] = {}
+    for line, customer_id, sku in candidates:
+        if _month_end(line["month"]) >= today:
+            skip("Month has not ended", line)
+        elif data_through.get(customer_id) is None or data_through[customer_id] < _month_end(line["month"]):
+            skip("Sell-out for this month is not loaded yet", line)
+        else:
+            key = (customer_id, line["month"], sku)
+            totals[key] = totals.get(key, 0.0) + line["qty"]
+
+    current = _fetch_actuals(conn, sorted({customer_id for customer_id, _, _ in totals}))
+    rows = []
+    for (customer_id, month, sku), qty in totals.items():
+        before = current.get((customer_id, sku), {}).get(month, {}).get("sell_in")
+        qty = round(qty, 2)
+        if before is None:
+            status = "new"
+        elif round(before, 2) == qty:
+            status = "unchanged"
+        else:
+            status = "changed"
+        rows.append(
+            {
+                "customer_id": customer_id,
+                "customer_name": customers[customer_id],
+                "month": month,
+                "sku": sku,
+                "product_name": details[sku]["product_name"],
+                "qty": qty,
+                "current": before,
+                "status": status,
+            }
+        )
+    rows.sort(key=lambda r: (r["customer_name"], r["month"], r["product_name"]))
+    return rows, sorted(skipped.values(), key=lambda s: (s["customer_name"], s["month"] or "", s["reason"]))
+
+
+def preview_sell_in_upload(data: bytes, today: date | None = None) -> dict:
+    today = today or _utc_today()
+    with _read_connection() as conn:
+        rows, skipped = _plan_sell_in_upload(conn, data, today)
+
+    counts = {"new": 0, "changed": 0, "unchanged": 0}
+    for row in rows:
+        counts[row["status"]] += 1
+    return {
+        "counts": counts,
+        "rows": [{**row, "month": _iso(row["month"])} for row in rows],
+        "skipped": skipped,
+    }
+
+
+def apply_sell_in_upload(data: bytes, today: date | None = None) -> dict:
+    today = today or _utc_today()
+    with _get_engine().begin() as conn:
+        rows, _ = _plan_sell_in_upload(conn, data, today)
+        changed = [row for row in rows if row["status"] != "unchanged"]
+        for row in changed:
+            _write_metrics(
+                conn,
+                [row["customer_id"]],
+                row["sku"],
+                row["month"],
+                [("sell_in", row["qty"], _VALUE_TYPES["sell_in"])],
+                today,
+            )
+
+    return {"records_written": len(changed), "unchanged": len(rows) - len(changed)}
