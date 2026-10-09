@@ -82,6 +82,7 @@ def test_customer_view_maps_a_bigquery_outage_to_503(monkeypatch):
         ("/api/inventory/overview", "get_overview"),
         ("/api/inventory/customers/1", "get_customer_view"),
         ("/api/inventory/customers/1/sell-in-plan", "get_sell_in_plan"),
+        ("/api/inventory/customers/1/sell-in-outlook", "get_sell_in_outlook"),
     ],
 )
 def test_an_unexpected_failure_is_a_500_that_names_the_cause(monkeypatch, url, function_name):
@@ -132,6 +133,31 @@ def test_sell_in_plan_maps_a_bigquery_outage_to_503(monkeypatch):
 
     assert response.status_code == 503
     assert "forecast" in response.json()["detail"].lower()
+
+
+def test_sell_in_outlook_passes_the_months_and_chosen_skus_to_the_service(monkeypatch):
+    seen = {}
+
+    def fake(customer_id, months, skus):
+        seen.update(customer_id=customer_id, months=months, skus=skus)
+        return {"months": []}
+
+    monkeypatch.setattr(inventory_service, "get_sell_in_outlook", fake)
+
+    response = client.get("/api/inventory/customers/1/sell-in-outlook?months=3&sku=S1&sku=S2")
+
+    assert response.status_code == 200
+    assert seen == {"customer_id": 1, "months": 3, "skus": ["S1", "S2"]}
+
+
+def test_sell_in_outlook_of_an_unknown_customer_is_404(monkeypatch):
+    monkeypatch.setattr(
+        inventory_service,
+        "get_sell_in_outlook",
+        _raises(inventory_service.CustomerNotFoundError("nope")),
+    )
+
+    assert client.get("/api/inventory/customers/9/sell-in-outlook").status_code == 404
 
 
 # ---- at risk -----------------------------------------------------------------------

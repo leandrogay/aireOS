@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 
+import useSellInOutlook from '@/hooks/useSellInOutlook';
 import useSellInPlan from '@/hooks/useSellInPlan';
 import { formatDoh, formatMonth } from '@/app/utils/inventoryForm';
 import { retailerLabel } from '@/app/utils/retailerLabel';
@@ -9,10 +10,14 @@ import { retailerLabel } from '@/app/utils/retailerLabel';
 import {
   filterControlClass,
   filterLabelClass,
+  InventoryChartSlot,
   InventoryFilterCard,
+  InventorySection,
+  skuScopeLabel,
   StatTag,
 } from './InventoryChrome';
 import SellInDetailTable from './SellInPlanTable';
+import SellInOutlookChart from './SellInOutlookChart';
 import SkuDropdown from './SkuDropdown';
 
 const MONTH_CHOICES = [3, 6, 12];
@@ -53,6 +58,12 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
   }
 
   const { data, loading, error } = useSellInPlan({ customerId, months, skus, refreshKey });
+  const outlook = useSellInOutlook({ customerId, months, skus, refreshKey });
+  const customerName = customers.find((c) => c.customer_id === customerId)?.customer_name;
+  const outlookTags = [
+    { label: 'Customer', value: customerName ? retailerLabel(customerName) : '—' },
+    { label: 'SKU', value: skuScopeLabel(skus) },
+  ];
 
   function clearFilters() {
     setSkus([]);
@@ -140,6 +151,14 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
           </div>
         </div>
       )}
+
+      <InventorySection title="Sell-in and sell-out" tags={outlookTags}>
+        <InventoryChartSlot loading={outlook.loading} ready={Boolean(outlook.data)}>
+          {outlook.data && (
+            <SellInOutlookChart months={outlook.data.months} actualsThrough={outlook.data.actuals_through} />
+          )}
+        </InventoryChartSlot>
+      </InventorySection>
 
       {(data || loading) && <SellInDetailTable rows={data?.rows ?? []} loading={loading && !data} />}
     </div>

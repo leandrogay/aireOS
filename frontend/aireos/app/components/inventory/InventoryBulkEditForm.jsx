@@ -8,6 +8,7 @@ import {
   buildInventoryPayload,
   formatMonth,
   monthInputToDate,
+  sortSkusForEntry,
   validateFinishedMonth,
   validateInventoryForm,
 } from '@/app/utils/inventoryForm';
@@ -97,7 +98,9 @@ export default function InventoryBulkEditForm({ customers, editRow, onSaved }) {
         const monthDate = monthInputToDate(month);
         const overview = await getInventoryOverview({ customerIds, startMonth: monthDate, endMonth: monthDate });
         if (cancelled) return;
-        const dataRows = overview.skus.filter((r) => r.customer_id === customerIds[0] && r.has_data);
+        const dataRows = sortSkusForEntry(
+          overview.skus.filter((r) => r.customer_id === customerIds[0] && r.has_data),
+        );
         const nextBaseline = {};
         const nextValues = {};
         dataRows.forEach((row) => {

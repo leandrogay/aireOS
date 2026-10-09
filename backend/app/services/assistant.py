@@ -330,6 +330,7 @@ _FUNCTION_SCHEMAS = [
                 "customer": {"type": "string", "description": "Retailer/customer name. Defaults to the current page's customer if omitted."},
                 "months": {"type": "integer", "description": "How many months ahead to plan, counted from the month after the last actual month (given back as actuals_through). Defaults to 6 -- pass a larger value if the month the user asked about is further out than that, so it's actually included in the returned rows."},
                 "skus": {"type": "array", "items": {"type": "string"}, "description": "Exact SKU codes to scope the plan to. Call list_inventory_skus first if the user named a product rather than a code."},
+                "month": {"type": "string", "description": "YYYY-MM for the one month the user asked about, e.g. '2026-10' for October. Pass it whenever the question names a month: the result then holds only that month's rows, so the answer and its table/chart show the same month. Omit only when the question covers every planned month."},
             },
             "additionalProperties": False,
         },
@@ -442,7 +443,7 @@ def _call_inventory_tool(name: str, tool_input: dict, default_customer: str):
 
     if name == "get_sell_in_plan":
         customer_id = _resolve_inventory_customer_id(tool_input.get("customer") or default_customer)
-        kwargs = {"customer_id": customer_id, "skus": tool_input.get("skus")}
+        kwargs = {"customer_id": customer_id, "skus": tool_input.get("skus"), "month": tool_input.get("month")}
         if tool_input.get("months"):
             kwargs["months"] = tool_input["months"]
         return inventory_service.get_sell_in_plan(**kwargs)
