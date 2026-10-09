@@ -1,4 +1,4 @@
-import { request } from '@/app/services/promotionsApi';
+import { parseApiError, request } from '@/app/services/promotionsApi';
 
 /**
  * Builds a query string, skipping empty values and repeating array keys
@@ -119,6 +119,22 @@ export async function getSellInPlan(customerId, { months, skus } = {}) {
 }
 
 /**
+ * GET /api/inventory/customers/{customerId}/sell-in-outlook
+ *
+ * Sell-in and sell-out per month for the sell-in plan chart: the three months
+ * up to the last actual month, then the plan's months ahead.
+ *
+ * @param {number} customerId
+ * @param {{ months?: number, skus?: string[] }} [options] how many months ahead, 1 to 12 (default 6), and the SKUs to include (default all)
+ * @returns {Promise<{ customer: object, actuals_through: string | null, months: object[] }>}
+ */
+export async function getSellInOutlook(customerId, { months, skus } = {}) {
+  return request(
+    `/api/inventory/customers/${encodeURIComponent(customerId)}/sell-in-outlook${toQuery({ months, sku: skus })}`,
+  );
+}
+
+/**
  * POST /api/inventory/records
  *
  * Creates one month of inventory data for one SKU across the chosen
@@ -171,4 +187,68 @@ export async function getShippedSoFar({ customerIds, sku, month } = {}) {
  */
 export async function setShippedSoFar(payload) {
   return request('/api/inventory/shipped-so-far', { method: 'PUT', body: payload });
+}
+
+/**
+ * POST a file as multipart form data (`file`), for the endpoints that read a
+ * spreadsheet. `request()` only sends JSON, so this is the one place that
+ * sends a file.
+ *
+ * @param {string} path
+ * @param {File} file
+ * @returns {Promise<object>}
+ */
+async function postFile(path, file) {
+  const baseUrl = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
+  const body = new FormData();
+  body.append('file', file);
+
+  let response;
+  try {
+    response = await fetch(`${baseUrl}${path}`, { method: 'POST', cache: 'no-store', body });
+  } catch {
+    throw new Error('Unable to reach the backend API. Check NEXT_PUBLIC_API_URL and that the backend is running.');
+  }
+
+  const text = await response.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    data = text;
+  }
+
+  if (!response.ok) {
+    const error = new Error(parseApiError(data, response.status));
+    error.status = response.status;
+    throw error;
+  }
+  return data;
+}
+
+/**
+ * POST /api/inventory/sell-in-upload/preview
+ *
+ * Reads the sell-in tracker and reports what saving it would change, without
+ * writing anything.
+ *
+ * @param {File} file
+ * @returns {Promise<{ counts: { new: number, changed: number, unchanged: number }, rows: object[], skipped: object[] }>}
+ */
+export async function previewSellInUpload(file) {
+  return postFile('/api/inventory/sell-in-upload/preview', file);
+}
+
+/**
+ * POST /api/inventory/sell-in-upload
+ *
+ * Saves the sell-in tracker as actual sell-in for each customer, SKU and month
+ * it covers. Reads the file again on the server, so it saves what the preview
+ * showed for the same file.
+ *
+ * @param {File} file
+ * @returns {Promise<{ records_written: number, unchanged: number }>}
+ */
+export async function applySellInUpload(file) {
+  return postFile('/api/inventory/sell-in-upload', file);
 }

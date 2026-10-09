@@ -4,7 +4,13 @@ import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { getShippedSoFar, setShippedSoFar } from '@/app/services/inventoryApi';
-import { buildShippedPayload, formatMonth, monthInputToDate, validateShippedForm } from '@/app/utils/inventoryForm';
+import {
+  buildShippedPayload,
+  formatMonth,
+  monthInputToDate,
+  sortSkusForEntry,
+  validateShippedForm,
+} from '@/app/utils/inventoryForm';
 
 import CustomerDropdown from './CustomerDropdown';
 import { formFieldClass, formLabelClass } from './InventoryChrome';
@@ -38,7 +44,8 @@ const SHIPPED_COLUMNS = [
  * @param {Array<{ sku: string, product_name: string }>} props.skus
  * @param {(message: string) => void} props.onSaved called with the confirmation text
  */
-export default function InventoryBulkShippedForm({ customers, skus, onSaved }) {
+export default function InventoryBulkShippedForm({ customers, skus: catalogSkus, onSaved }) {
+  const skus = sortSkusForEntry(catalogSkus);
   const [customerIds, setCustomerIds] = useState([]);
   const [month, setMonth] = useState('');
   const [loading, setLoading] = useState(false);
