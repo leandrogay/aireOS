@@ -26,7 +26,7 @@ aireOS/
 │   │   ├── routers/               HTTP layer. One file per URL prefix.
 │   │   │   ├── uploads.py         /api/uploads        file ingest + mapping review (async)
 │   │   │   ├── sales.py           /api/sales          BigQuery dashboard reads
-│   │   │   ├── catalog.py         /api/catalog        retailer/store CRUD, sku-range lookup
+│   │   │   ├── catalog.py         /api/catalog        customer/retailer/store CRUD, retailer → customer link, sku-range lookup
 │   │   │   ├── promotions.py      /api/promotions     promotion CRUD + /health/db
 │   │   │   └── forecast.py        /api/forecast       sell-out forecast rows
 │   │   │   ├── inventory.py       /api/inventory      overview, per-customer DOH, at-risk list, sell-in plan, record create/edit, temporary sell-in
@@ -34,7 +34,8 @@ aireOS/
 │   │   │   │   └── doh.py         /api/settings/doh   DOH thresholds (versioned, revert, history, reset to global default) + alert toggle
 │   │   │   └── promotions.py      /api/promotions     promotion CRUD + /health/db
 │   │   ├── schemas/               Pydantic v2 request models (only catalog + promotions today)
-│   │   │   ├── catalog.py         _Base, RetailerCreate/Update, StoreCreate/Update, SkuItem
+│   │   │   ├── catalog.py         _Base, normalise_name (names → lowercase slugs), CustomerCreate/Update,
+│   │   │   │                      RetailerCreate (needs customer_id)/Update/Link, StoreCreate/Update, SkuItem
 │   │   │   ├── inventory.py       InventoryRecordCreate/Update, ShippedSoFarUpdate
 │   │   │   ├── settings/common.py SettingsChangeBase (optional updated_by), shared by every kind of setting
 │   │   │   ├── settings/doh.py    DohThresholdsUpdate (min <= target <= max, NUMERIC(6,2)), DohAlertUpdate, DohRevert, DohReset
@@ -47,7 +48,10 @@ aireOS/
 │   │       ├── settings/doh.py    doh_settings (append-only versions) + customers alert columns; reads via the current_settings view; GLOBAL_DEFAULT_*_DOH 25/30/35
 │   │       ├── sellout_units.py   Cloud SQL monthly sell-out per SKU for inventory, via sellout_service's effective-sellout view
 │   │       ├── forecast_units.py  read-only BigQuery forecast units per SKU/month, from the aire_forecasting_output view (BQ_FORECAST_OUTPUT_VIEW)
-│   │       ├── catalog_service.py retailers/stores/skus tables; get_or_create_* seams; domain exceptions
+│   │       ├── catalog_service.py retailers/stores/skus tables; get_or_create_* seams; domain exceptions; retailer
+│   │       │                      writes for the Customers page (always under a customer, blocked once it has stores)
+│   │       ├── customer_service.py customers CRUD + list_customers (customers with nested retailers, in_use flags,
+│   │       │                      unlinked retailers); a record with data can't be renamed/deleted (looked up by name)
 │   │       ├── promotion_service.py promotions + promotion_stores + promotion_skus, raw SQL, one txn per write
 │   │       ├── sellout_service.py Cloud SQL `sellout`: ingestion writes, plus the Sales Dashboard reads (SKU ranking,
 │   │       │                      dashboard summary, period comparison, options, freshness) that used to go through
@@ -83,6 +87,7 @@ aireOS/
     │   ├── dashboard/page.js      Sales dashboard: customer/sku/store/date filters, trend chart, ranking
     │   ├── promotions/page.js     Promotion create/edit/delete + overview list
     │   ├── forecast/page.js       Sell-out forecast chart/table, default view = current year only
+    │   ├── customers/page.js      Customers: customers + their retailers, add/rename/delete, link unlinked retailers (components/customers)
     │   ├── doh/page.js            DOH Settings: per-customer thresholds, alert toggle, edit, reset to global default (components/settings)
     │   ├── inventory/page.js      Inventory: overview, by-customer DOH, at-risk list, sell-in plan, enter/edit data (components/inventory)
     │   ├── components/
@@ -96,6 +101,8 @@ aireOS/
     │   │   │                      ComparisonMixChart; PeriodTexture (hatched "past period" fills), TooltipChange,
     │   │   │                      PeriodComparisonDetail, RevenueSummaryCards + FormatMixBar, SkuRanking
     │   │   ├── promotions/        PromotionForm, PromotionList, CheckboxDropdown
+    │   │   ├── customers/         CustomersView (state), CustomerTable → CustomerRow (expandable, retailers inside),
+    │   │   │                      RetailerTable, RowActions ("..." menu), NameFormDialog, LinkRetailerDialog, UnlinkedRetailers
     │   │   ├── forecast/          ForecastChart/Filters/Table, HeaderCheckboxFilter (shared)
     │   ├── services/              Backend API wrappers
     │   │   ├── promotionsApi.js   request() + parseApiError() + one fn per /api/promotions & /api/catalog endpoint
@@ -105,6 +112,7 @@ aireOS/
     │   │   └── upload2/           Harness pieces: MappingDiv, UploadPanel, ResultsPanel, ContractView, RequestLog…
     │   │   ├── salesApi.js        /api/sales wrappers via request() (getSkuSales, getMonthlyOnly)
     │   │   ├── settingsApi.js     /api/settings/* wrappers, one section per kind (reuses promotionsApi.request)
+    │   │   ├── catalogApi.js      /api/catalog customers + retailer writes for the Customers page (reuses promotionsApi.request)
     │   │   └── mappingApi.js      /api/uploads wrappers taking an explicit baseUrl (harness style)
     │   └── utils/                 Pure, React-free helpers
     │       ├── promotionForm.js   PROMO_TYPES, EMPTY_PROMOTION_FORM, validate/build/formFrom helpers
@@ -118,6 +126,7 @@ aireOS/
     │       ├── priceMix.js        Avg-price change split into SKU price vs product mix
     │       ├── storeFormats.js    FORMAT_COLORS + formatColor() per store format
     │       ├── dohSettingsForm.js validate/build/formFrom helpers for the DOH threshold form, GLOBAL_DEFAULT_DOH
+    │       ├── customerForm.js    normaliseName (mirrors backend slug), validateName, edit/delete block reasons
     │       ├── retailerLabel.js   shared display label for retailer/customer slugs (fairprice_online → Fairprice Online)
     │       └── mappingHelpers.js
     ├── hooks/                     Data-fetching hooks (cancel-flag pattern; dashboard calls services/*Api.js)
@@ -129,6 +138,7 @@ aireOS/
     │   ├── useMonthlyOnly.js      /api/sales/monthly-only via salesApi.getMonthlyOnly (months with no weekly breakdown → month bars)
     │   ├── usePriceMix.js         useSkuSales × 2 (this period + comparison) → priceMixEffects
     │   ├── useDohSettings.js      /api/settings/doh (+ replaceRow for the row a write returns)
+    │   ├── useCustomers.js        /api/catalog/customers (+ applyCustomer / removeCustomer for the row a write returns)
     │   └── useToast.js            { toast, notify, dismissToast } for components/ui/Toast
     ├── lib/                       cn() (clsx + tailwind-merge), formatDateRange, formatDate/formatDateTime (shared date display,
     │                              Singapore time), singaporeTime (singaporeDateTimeParts, singaporeToday)
@@ -155,7 +165,7 @@ No test runner is installed on the frontend; linting (`npm run lint`) is the fro
 | --- | --- | --- | --- | --- |
 | Upload & mapping | `uploads.py` | `storage`, `mapping_service`, `generate_mapping`, `mapping_view`, `apply_contract`, `validation_service` | **GCS** bucket: `uploads/` files, `mappings/pending/<fp>.json`, `mappings/confirmed/<fp>.json` | `app/upload`, `app/upload2`, `services/mappingApi.js` |
 | Sales dashboard | `sales.py` | `sellout_service` | **Cloud SQL Postgres**: `sellout` (the source of truth -- every upload writes here first; `retailer_id`/`store_code`/`sku` rows, `period_type` `week` or `month`), joined to `retailers`/`stores`/`skus` for names (retailer name = `{customer}_{offline|online}`). A retailer+calendar-month with monthly-granularity rows uses only those (never both, see `EFFECTIVE_SELLOUT_CTE`); `granularity='week'` summary views read genuine weekly rows only. No more BigQuery/Datastream replication lag -- reads are real-time | `app/dashboard`, `hooks/use*.js`, `services/salesApi.js` |
-| Catalog | `catalog.py` | `catalog_service` | **Cloud SQL Postgres**: `retailers`, `stores`, `skus` | `services/promotionsApi.js` (getRetailers/getStores/getSkuRanges) |
+| Catalog | `catalog.py` | `catalog_service`, `customer_service` | **Cloud SQL Postgres**: `customers`, `customer_retailers`, `retailers`, `stores`, `skus`. Names are lowercase slugs, unique case-insensitively. A retailer with stores, or a customer with any such retailer or `inventory_metrics` rows, is `in_use` and can't be renamed or deleted (the dashboard, uploads and forecast find it by name) | `app/customers`, `services/catalogApi.js`; `services/promotionsApi.js` (getRetailers/getStores/getSkuRanges) |
 | Inventory | `inventory.py` | `inventory_service`, `inventory_calc`, `sellout_units`, `forecast_units` | **Cloud SQL Postgres**: `customers`, `customer_retailers`, `inventory_metrics` (long format; app writes carry `data_source='manual_entry'`; only sell-in, a first-month opening and building blocks (stock used outside sell-out) are read; workbook rows are never changed), `doh_settings` (read via `settings/doh.fetch_versions`; closed months use the version in effect at month end, the latest month, at-risk list and sell-in plan use the current one), `sellout` (sell-out, via `sellout_units`/`sellout_service`'s effective-sellout view, same monthly-preferred-over-weekly rule as the dashboard); **BigQuery** (read-only): the forecast table. Ending stock, DOH and the plan are computed, never stored | `app/inventory`, `services/inventoryApi.js` |
 | Settings (DOH) | `settings/doh.py` | `settings/doh`, `settings/common` | **Cloud SQL Postgres**: `doh_settings` (append-only: a change is an INSERT only when min/target/max differ from the newest row; newest by `updated_at DESC, setting_id DESC`; never UPDATE/DELETE), view `current_settings` (one row per customer), `customers.doh_alert_enabled` / `doh_alert_updated_at` (in-place toggle, no version). Also read by the inventory DOH calculations (`fetch_versions`, `thresholds_on`, `current_thresholds`) | `app/doh`, `services/settingsApi.js` |
 | Promotions | `promotions.py` | `promotion_service` (+ `catalog_service` seams) | **Cloud SQL Postgres**: `promotions`, `promotion_stores`, `promotion_skus`; enum `promo_type_enum`; trigger `trg_promotions_updated_at` | `app/promotions`, `services/promotionsApi.js` |
@@ -264,6 +274,8 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | `uploads.py` per-file `mapping.status` values (`mapped`, `pending_confirmation`, `mapping_failed`) | `FileUpload.jsx` result rendering |
 | `settings/doh._settings_view` keys, `GLOBAL_DEFAULT_*_DOH` | `DohSettingsTable.jsx`, `dohSettingsForm.js` (`GLOBAL_DEFAULT_DOH`) |
 | `DohThresholdsUpdate` field names | `buildDohThresholdPayload` |
+| `customer_service.list_customers` keys (`customers[].retailers[]`, `in_use`, `unlinked_retailers`), retailer writes' `{ retailer, customer }` | `useCustomers.js`, `components/customers/*` |
+| `schemas.catalog.normalise_name` slug rule, `in_use` rules | `customerForm.js` (`normaliseName`, `*BlockReason`) |
 | `HTTPException.detail` shapes | `parseApiError()` |
 
 When you change the left column, grep the right column in the same PR.

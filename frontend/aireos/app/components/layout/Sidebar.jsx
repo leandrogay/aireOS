@@ -19,7 +19,8 @@ const NAV_ITEMS = [
     icon: Upload,
     children: [
       { label: 'Mappings', href: '/mappings' },
-      { label: 'Customers', href: '/customers'}],
+      { label: 'Customers', href: '/customers' },
+    ],
   },
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { label: 'Forecast', href: '/forecast', icon: TrendingUp },
