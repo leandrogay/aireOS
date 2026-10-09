@@ -1,6 +1,7 @@
+import re
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class _Base(BaseModel):
@@ -11,22 +12,89 @@ class _Base(BaseModel):
 
 
 # ============================================================
+# NAME SLUGS
+#
+# Customer and retailer names are stored as lowercase slugs
+# (fairprice, fairprice_online): the dashboard, promotions and
+# uploads all look them up by that exact text, so every name a
+# user types is normalised here before it reaches a service.
+# The frontend mirrors this in normaliseName (customerForm.js).
+# ============================================================
+
+
+_SEPARATORS = re.compile(r"[\s\-]+")
+_SLUG = re.compile(r"^[a-z0-9_]+$")
+
+
+def normalise_name(value: str) -> str:
+    """'Giant Online' -> 'giant_online'; rejects anything but letters, digits, spaces, hyphens and underscores."""
+
+    slug = _SEPARATORS.sub("_", value.lower()).strip("_")
+
+    if not slug:
+        raise ValueError("Enter a name.")
+
+    if not _SLUG.match(slug):
+        raise ValueError(
+            "Use only letters, numbers, spaces, hyphens or underscores."
+        )
+
+    return slug
+
+
+# ============================================================
+# CUSTOMER
+# ============================================================
+
+
+class CustomerBase(_Base):
+    customer_name: str = Field(
+        min_length=1,
+        max_length=255,
+    )
+
+    @field_validator("customer_name")
+    @classmethod
+    def _slug(cls, value: str) -> str:
+        return normalise_name(value)
+
+
+class CustomerCreate(CustomerBase):
+    pass
+
+
+class CustomerUpdate(CustomerBase):
+    pass
+
+
+# ============================================================
 # RETAILER
 # ============================================================
 
 
-class RetailerCreate(_Base):
+class RetailerBase(_Base):
     retailer_name: str = Field(
         min_length=1,
         max_length=255,
     )
 
+    @field_validator("retailer_name")
+    @classmethod
+    def _slug(cls, value: str) -> str:
+        return normalise_name(value)
 
-class RetailerUpdate(_Base):
-    retailer_name: str = Field(
-        min_length=1,
-        max_length=255,
-    )
+
+class RetailerCreate(RetailerBase):
+    # Every retailer belongs to a customer (customer_retailers).
+    customer_id: int = Field(gt=0)
+
+
+class RetailerUpdate(RetailerBase):
+    pass
+
+
+class RetailerLink(_Base):
+    customer_id: int = Field(gt=0)
 
 
 # ============================================================

@@ -1,4 +1,5 @@
 from calendar import monthrange
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timezone
 from functools import lru_cache
 
@@ -344,6 +345,16 @@ def _sku_columns(sku: str, details: dict[str, dict]) -> dict:
     }
 
 
+def _known_skus(
+    forecast: dict[str, dict[date, float]],
+    details: dict[str, dict],
+) -> dict[str, dict[date, float]]:
+    """Predicted units keyed by SKU code; a forecast row for a SKU our own catalog
+    doesn't know is skipped."""
+
+    return {sku: months for sku, months in forecast.items() if sku in details}
+
+
 def _forecast_by_sku(customer_id: int, details: dict[str, dict]) -> dict[str, dict[date, float]]:
     """Predicted units keyed by SKU code; a forecast row for a SKU our own catalog
     doesn't know is skipped."""
@@ -554,14 +565,19 @@ def get_customer_view(
     ones (see DOH THRESHOLDS).
     """
 
-    with _read_connection() as conn:
-        customers = _fetch_customers(conn)
-        _require_customers(customers, [customer_id])
-        metrics = _fetch_actuals(conn, [customer_id])
-        versions = doh_settings.fetch_versions(conn, [customer_id]).get(customer_id, [])
+    # The BigQuery forecast is the slowest read, so it runs in the background
+    # while Postgres answers the rest: the request waits for the slower of the
+    # two instead of both. Started only once the customer is known to exist.
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with _read_connection() as conn:
+            customers = _fetch_customers(conn)
+            _require_customers(customers, [customer_id])
+            forecast_job = pool.submit(forecast_units.get_forecast_units, customer_id)
+            metrics = _fetch_actuals(conn, [customer_id])
+            versions = doh_settings.fetch_versions(conn, [customer_id]).get(customer_id, [])
 
-    details = _sku_details()
-    forecast = _forecast_by_sku(customer_id, details)
+        details = _sku_details()
+        forecast = _known_skus(forecast_job.result(), details)
 
     table = _customer_table(
         customer_id,
@@ -663,14 +679,20 @@ def get_at_risk(
     if risk is not None and risk not in AT_RISK_STATUSES:
         raise ValueError(f"risk must be one of {AT_RISK_STATUSES}")
 
-    with _read_connection() as conn:
-        customers = _fetch_customers(conn)
-        chosen = customer_ids or list(customers)
-        _require_customers(customers, chosen)
-        metrics = _fetch_actuals(conn, chosen)
-        versions = doh_settings.fetch_versions(conn, chosen)
+    # One BigQuery read for every chosen customer, in the background while
+    # Postgres answers the rest (see get_customer_view).
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with _read_connection() as conn:
+            customers = _fetch_customers(conn)
+            chosen = customer_ids or list(customers)
+            _require_customers(customers, chosen)
+            forecast_job = pool.submit(forecast_units.get_forecast_units_by_customer, chosen)
+            metrics = _fetch_actuals(conn, chosen)
+            versions = doh_settings.fetch_versions(conn, chosen)
 
-    details = _sku_details()
+        details = _sku_details()
+        forecasts = forecast_job.result()
+
     latest = _latest_month_by_customer(metrics)
 
     items = []
@@ -683,7 +705,7 @@ def get_at_risk(
             {key: months for key, months in metrics.items() if key[0] == customer_id},
             versions.get(customer_id, []),
             details,
-            _forecast_by_sku(customer_id, details),
+            _known_skus(forecasts.get(customer_id, {}), details),
             start_month=latest[customer_id],
             end_month=latest[customer_id],
         )
@@ -771,12 +793,18 @@ def get_sell_in_plan(
     plan to those SKUs; the monthly totals then cover only them.
     """
 
-    with _read_connection() as conn:
-        customers = _fetch_customers(conn)
-        _require_customers(customers, [customer_id])
-        metrics = _fetch_actuals(conn, [customer_id])
-        versions = doh_settings.fetch_versions(conn, [customer_id]).get(customer_id, [])
-        shipped = _fetch_shipped(conn, customer_id)
+    # The forecast runs in the background while Postgres answers the rest
+    # (see get_customer_view).
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with _read_connection() as conn:
+            customers = _fetch_customers(conn)
+            _require_customers(customers, [customer_id])
+            forecast_job = pool.submit(forecast_units.get_forecast_units, customer_id)
+            metrics = _fetch_actuals(conn, [customer_id])
+            versions = doh_settings.fetch_versions(conn, [customer_id]).get(customer_id, [])
+            shipped = _fetch_shipped(conn, customer_id)
+
+        forecast = forecast_job.result()
 
     threshold = _threshold_view(customer_id, customers[customer_id], versions)
     customer = {"customer_id": customer_id, "customer_name": customers[customer_id]}
@@ -793,9 +821,36 @@ def get_sell_in_plan(
         }
 
     details = _sku_details()
-    forecast = _forecast_by_sku(customer_id, details)
-    last_actual, plan_rows, without_forecast = _sku_plans(metrics, forecast, shipped, threshold, months, details)
-    rows = [{**row, "month": _iso(row["month"])} for row in plan_rows]
+    forecast = _known_skus(forecast, details)
+
+    # A plan is what to send from now on, so every month aims at the current
+    # target, even when a SKU's last actual month is some way back.
+    def target_for(month: date) -> float:
+        return threshold["target_doh"]
+
+    # Each SKU's own last actual month and the stock it ended that month with.
+    last_actual = {}
+    for (_, sku), sku_months in metrics.items():
+        last = inventory_calc.build_monthly_series(sku_months)[-1]
+        last_actual[sku] = (last["month"], last["ending_stock"])
+
+    rows = []
+    without_forecast = []
+    for sku, (last_month, ending_stock) in last_actual.items():
+        sku_cols = _sku_columns(sku, details)
+        plan = inventory_calc.build_sell_in_plan(
+            ending_stock,
+            inventory_calc.add_months(last_month, 1),
+            months,
+            forecast.get(sku, {}),
+            target_for,
+            shipped.get(sku, {}),
+        )
+        if not plan:
+            without_forecast.append(sku_cols)
+            continue
+        for row in plan:
+            rows.append({**sku_cols, **row, "month": _iso(row["month"])})
 
     if skus:
         rows = [row for row in rows if row["sku"] in skus]

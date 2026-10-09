@@ -26,13 +26,17 @@ const TABS = [
 
 /**
  * The inventory page: overall view for all customers, one customer with DOH,
- * the at-risk list, the sell-in plan, and the create/edit form. Only the active tab is mounted, so
- * switching tabs refetches, and `refreshKey` (bumped after any write) makes the
- * mounted views refetch too. Table rows' Edit buttons jump to the form.
+ * the at-risk list, the sell-in plan, and the create/edit form. A view tab is
+ * mounted the first time it is opened and then kept (hidden while inactive), so
+ * switching back shows its data and filters straight away instead of refetching;
+ * `refreshKey` (bumped after any write) makes every mounted view refetch. The
+ * form is not kept: it remounts from `editRow` on purpose. Table rows' Edit
+ * buttons jump to the form.
  */
 export default function InventoryTabs() {
   const options = useInventoryOptions();
   const [tab, setTab] = useState('overview');
+  const [visitedTabs, setVisitedTabs] = useState(['overview']);
   const [refreshKey, setRefreshKey] = useState(0);
   const [editRow, setEditRow] = useState(null);
   const { toast, notify, dismissToast } = useToast();
@@ -40,6 +44,7 @@ export default function InventoryTabs() {
   function handleTabChange(value) {
     setTab(value);
     setEditRow(null);
+    setVisitedTabs((visited) => (visited.includes(value) ? visited : [...visited, value]));
   }
 
   function handleEditRow(row) {
@@ -79,24 +84,26 @@ export default function InventoryTabs() {
         </p>
       )}
 
-      {tab === 'overview' && (
+      <KeptTabPanel value="overview" tab={tab} visitedTabs={visitedTabs}>
         <InventoryOverview skuOptions={skuOptions} refreshKey={refreshKey} onEditRow={handleEditRow} />
-      )}
+      </KeptTabPanel>
 
-      {tab === 'customer' && (
+      <KeptTabPanel value="customer" tab={tab} visitedTabs={visitedTabs}>
         <CustomerInventoryView
           customers={options.customers}
           skuOptions={skuOptions}
           refreshKey={refreshKey}
           onEditRow={handleEditRow}
         />
-      )}
+      </KeptTabPanel>
 
-      {tab === 'risk' && <AtRiskView customers={options.customers} refreshKey={refreshKey} />}
+      <KeptTabPanel value="risk" tab={tab} visitedTabs={visitedTabs}>
+        <AtRiskView customers={options.customers} refreshKey={refreshKey} />
+      </KeptTabPanel>
 
-      {tab === 'plan' && (
+      <KeptTabPanel value="plan" tab={tab} visitedTabs={visitedTabs}>
         <SellInPlanView customers={options.customers} skuOptions={skuOptions} refreshKey={refreshKey} />
-      )}
+      </KeptTabPanel>
 
       {tab === 'manage' && (
         <InventoryDataManager
@@ -112,4 +119,19 @@ export default function InventoryTabs() {
       <Toast toast={toast} onDismiss={dismissToast} />
     </div>
   );
+}
+
+/**
+ * A view tab that is mounted on its first visit and then only hidden, so its
+ * fetched data and filters survive a tab switch.
+ *
+ * @param {object} props
+ * @param {string} props.value this panel's tab
+ * @param {string} props.tab the active tab
+ * @param {string[]} props.visitedTabs tabs opened so far
+ * @param {import('react').ReactNode} props.children
+ */
+function KeptTabPanel({ value, tab, visitedTabs, children }) {
+  if (!visitedTabs.includes(value)) return null;
+  return <div hidden={tab !== value}>{children}</div>;
 }
