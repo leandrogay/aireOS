@@ -119,8 +119,14 @@ export default function ForecastPage() {
   // The 80% range, confidence and promo situation describe one series, so
   // they only show once a single customer and SKU are picked.
   const singleSeries = Boolean(productName && customerName);
-  const points = buildMonthlyPoints(rows, actuals, metric, { singleSeries });
-  const horizonTotal = sumHorizonForecast(points);
+  // Same rows the chart plots. Volume and revenue are both summed so the
+  // year strip can show the next-12-month total beside the year, whichever
+  // metric the chart tab is on.
+  const unitPoints = buildMonthlyPoints(rows, actuals, 'units', { singleSeries });
+  const revenuePoints = buildMonthlyPoints(rows, actuals, 'revenue', { singleSeries });
+  const points = metric === 'revenue' ? revenuePoints : unitPoints;
+  const horizonVolume = sumHorizonForecast(unitPoints);
+  const horizonRevenue = sumHorizonForecast(revenuePoints);
   // When the pipeline produced the Current line for this customer
   // (MAX(current_generated_at) over the fetched rows, see backend
   // forecast_service.forecast_stamps_from_rows).
@@ -186,8 +192,6 @@ export default function ForecastPage() {
           maxDate={dateBounds.end}
           onClearFilters={clearFilters}
           canClearFilters={canClearFilters}
-          horizonTotal={horizonTotal}
-          metric={metric}
         />
 
         <ForecastChart
@@ -215,6 +219,8 @@ export default function ForecastPage() {
           confidence={confidence}
           yearTotals={yearTotals}
           yearTotalsLoading={yearTotalsLoading}
+          horizonVolume={horizonVolume}
+          horizonRevenue={horizonRevenue}
           loading={loading}
         />
       </div>

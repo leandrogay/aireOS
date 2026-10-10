@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
-import { Area, CartesianGrid, ComposedChart, Line, ReferenceArea, ReferenceLine, XAxis, YAxis } from 'recharts';
+import { Area, ComposedChart, Line, ReferenceArea, ReferenceLine, XAxis, YAxis } from 'recharts';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
@@ -166,6 +166,8 @@ export default function ForecastChart({
   confidence,
   yearTotals = [],
   yearTotalsLoading = false,
+  horizonVolume = null,
+  horizonRevenue = null,
   loading = false,
 }) {
   const chartWrapRef = useRef(null);
@@ -379,16 +381,17 @@ export default function ForecastChart({
           )
         ) : (
           <>
-            <div
-              ref={chartWrapRef}
-              className="relative z-20 overflow-visible rounded-xl border border-lavander bg-white pl-1 pr-3 pt-2"
-              onMouseMoveCapture={rememberPointerX}
-              onMouseLeave={(event) => {
-                const next = event.relatedTarget;
-                if (next instanceof Node && chartWrapRef.current?.contains(next)) return;
-                clearHover();
-              }}
-            >
+            <div className="overflow-visible">
+              <div
+                ref={chartWrapRef}
+                className="relative z-20 overflow-visible pl-1 pr-3 pt-2"
+                onMouseMoveCapture={rememberPointerX}
+                onMouseLeave={(event) => {
+                  const next = event.relatedTarget;
+                  if (next instanceof Node && chartWrapRef.current?.contains(next)) return;
+                  clearHover();
+                }}
+              >
               <ChartContainer config={chartConfig} className="aspect-auto h-[34vh] min-h-[220px] w-full">
                 <ComposedChart
                   accessibilityLayer
@@ -396,7 +399,6 @@ export default function ForecastChart({
                   margin={{ top: 8, right: 18, left: 0, bottom: 28 }}
                 >
                   <OverlayDefs bands={overlayBands} />
-                  <CartesianGrid vertical={false} stroke="var(--aire-lavender)" />
                   <XAxis
                     dataKey="x"
                     type="number"
@@ -533,17 +535,23 @@ export default function ForecastChart({
                   />
                 </div>
               ) : null}
+              </div>
+              <ForecastLegendFooter
+                lastRun={lastRun}
+                salesLabel={salesLabel}
+                salesLoadedAt={salesLoadedAt}
+                confidence={confidence}
+                className="-mt-6 px-3 pb-1 pt-0"
+              />
             </div>
             {/* `loading` too: while the page refetches, `points` still hold
                 the previous filter's months, and a year total from those
                 would be wrong rather than merely stale. */}
-            <ForecastYearTotals years={yearTotals} loading={yearTotalsLoading || loading} />
-
-            <ForecastLegendFooter
-              lastRun={lastRun}
-              salesLabel={salesLabel}
-              salesLoadedAt={salesLoadedAt}
-              confidence={confidence}
+            <ForecastYearTotals
+              years={yearTotals}
+              loading={yearTotalsLoading || loading}
+              horizonVolume={horizonVolume}
+              horizonRevenue={horizonRevenue}
             />
 
             <ForecastTable

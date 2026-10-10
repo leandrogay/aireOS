@@ -56,7 +56,7 @@ function ConfidenceBadge({ confidence }) {
 }
 
 /**
- * Centred line under the chart: when the pipeline last produced the Current
+ * Centred line in the chart box, under the graph: when the pipeline last produced the Current
  * forecast (MAX(current_generated_at) for the customer), when that
  * customer's sales last loaded (latest_sales_loaded_at; see backend
  * get_forecast_freshness) and, for one customer + SKU, the confidence badge.
@@ -67,11 +67,12 @@ function ConfidenceBadge({ confidence }) {
  *   salesLabel: string,
  *   salesLoadedAt?: string | null,
  *   confidence?: object | null,
+ *   className?: string,
  * }} props
  */
-export default function ForecastLegendFooter({ lastRun, salesLabel, salesLoadedAt, confidence }) {
+export default function ForecastLegendFooter({ lastRun, salesLabel, salesLoadedAt, confidence, className }) {
   return (
-    <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 pt-0.5 text-[11px] text-deep-violet-blue">
+    <div className={cn('flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-deep-violet-blue', className)}>
       <span>
         <span className="text-deep-violet-blue/55">Last Updated (Current): </span>
         <span className="font-medium">{formatSgtTimestamp(lastRun)}</span>

@@ -1,11 +1,15 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { FORECAST_SERIES } from '@/app/utils/forecastView';
 
-// Same colours as the Actual and Current lines above.
-const ACTUAL_COLOR = FORECAST_SERIES.find((series) => series.key === 'actual')?.color ?? '#3A4369';
-const FORECAST_COLOR = FORECAST_SERIES.find((series) => series.key === 'current')?.color ?? '#0D9488';
+const SPLIT = [
+  { key: 'actual', label: 'Actual' },
+  { key: 'forecast', label: 'Forecast' },
+  { key: 'total', label: 'Total' },
+];
+
+// A step darker than the cream header, so the column lines still read on it.
+const HEADER_RULE = 'border-[#C5CBE0]';
 
 function formatVolume(value) {
   if (value == null) return '—';
@@ -20,144 +24,173 @@ function formatRevenue(value) {
   })}`;
 }
 
-function SourceCell({ color, children }) {
+function mixCaption(year) {
+  const parts = [];
+  if (year.actualMonths) parts.push(`${year.actualMonths} mo actual`);
+  if (year.forecastMonths) parts.push(`${year.forecastMonths} mo forecast`);
+  return parts.join(' · ');
+}
+
+function ColumnWidths() {
   return (
-    <span className="inline-flex items-center gap-1.5">
-      {color ? (
-        <span aria-hidden="true" className="size-1.5 rounded-full" style={{ backgroundColor: color }} />
-      ) : null}
-      {children}
-    </span>
+    <colgroup>
+      <col className="w-[18%]" />
+      <col className="w-[13.66%]" />
+      <col className="w-[13.66%]" />
+      <col className="w-[13.66%]" />
+      <col className="w-[13.66%]" />
+      <col className="w-[13.66%]" />
+      <col className="w-[13.7%]" />
+    </colgroup>
   );
 }
 
-function YearGroup({ year, divided }) {
-  const rows = [];
-  if (year.actualMonths) {
-    rows.push({
-      key: 'actual',
-      label: `Actual · ${year.actualMonths} mo`,
-      color: ACTUAL_COLOR,
-      volume: year.volume.actual,
-      revenue: year.revenue.actual,
-      emphasis: false,
-    });
-  }
-  if (year.forecastMonths) {
-    rows.push({
-      key: 'forecast',
-      label: `Forecast · ${year.forecastMonths} mo`,
-      color: FORECAST_COLOR,
-      volume: year.volume.forecast,
-      revenue: year.revenue.forecast,
-      emphasis: false,
-    });
-  }
-  rows.push({
-    key: 'total',
-    label: 'Total',
-    color: null,
-    volume: year.volume.total,
-    revenue: year.revenue.total,
-    emphasis: true,
-  });
-
-  return rows.map((row, index) => (
-    <tr
-      key={`${year.year}-${row.key}`}
+function GroupLabel({ children }) {
+  return (
+    <th
+      colSpan={3}
       className={cn(
-        'border-b border-lavander/80 bg-white hover:bg-cream/50',
-        divided && index === 0 && 'border-t border-lavander'
+        'border-b border-l bg-cream px-2 py-1.5 text-center text-[10px] font-bold uppercase tracking-wide text-deep-violet-blue',
+        HEADER_RULE
       )}
     >
-      {index === 0 ? (
-        <td className="px-2 py-2 align-top font-medium" rowSpan={rows.length}>
-          {year.year}
-        </td>
-      ) : null}
-      <td
-        className={cn(
-          'px-2.5 py-2',
-          row.emphasis ? 'font-medium' : 'text-[11px] text-deep-violet-blue/70'
-        )}
-      >
-        <SourceCell color={row.color}>{row.label}</SourceCell>
-      </td>
-      <td
-        className={cn(
-          'px-1.5 py-2 tabular-nums',
-          row.emphasis ? 'font-medium' : 'text-[11px] text-deep-violet-blue/70'
-        )}
-      >
-        {formatVolume(row.volume)}
-      </td>
-      <td
-        className={cn(
-          'px-1.5 py-2 tabular-nums',
-          row.emphasis ? 'font-medium' : 'text-[11px] text-deep-violet-blue/70'
-        )}
-        title={row.key === 'total' && year.revenue.total == null ? 'No catalog price for these SKUs' : undefined}
-      >
-        {formatRevenue(row.revenue)}
-      </td>
-    </tr>
-  ));
+      {children}
+    </th>
+  );
+}
+
+function SplitLabel({ children, emphasis = false, className }) {
+  return (
+    <th
+      className={cn(
+        'border-b border-l bg-cream px-2 py-1 text-right text-[10px] uppercase tracking-wide',
+        emphasis ? 'font-extrabold text-deep-violet-blue' : 'font-bold text-deep-violet-blue/80',
+        HEADER_RULE,
+        className
+      )}
+    >
+      {children}
+    </th>
+  );
+}
+
+function Amount({ value, format, emphasis = false, className, title }) {
+  return (
+    <td
+      title={title}
+      className={cn(
+        'whitespace-nowrap border-l border-lavander/80 px-2 py-1 text-right tabular-nums',
+        emphasis ? 'font-medium text-deep-violet-blue' : 'text-deep-violet-blue/75',
+        className
+      )}
+    >
+      {format(value)}
+    </td>
+  );
 }
 
 /**
- * Volume and revenue totals for every calendar year the chart touches, shown
- * between the chart and its footer.
+ * One thin row per calendar year under the chart: actual, forecast and the
+ * combined total for volume and revenue. The next-12-month Current total
+ * (sumHorizonForecast) sits in its own strip under the table, with no
+ * actual/forecast split. Year figures come from buildYearlyTotals.
  *
- * Each year counts a month once -- its actual if sales have loaded, else the
- * Current forecast -- so Actual and Forecast rows split the year, and Total
- * underneath adds them. See buildYearlyTotals in app/utils/forecastView.js.
- *
- * @param {{ years: object[], loading?: boolean }} props
+ * @param {{
+ *   years: object[],
+ *   loading?: boolean,
+ *   horizonVolume?: number | null,
+ *   horizonRevenue?: number | null,
+ * }} props
  */
-export default function ForecastYearTotals({ years, loading = false }) {
+export default function ForecastYearTotals({
+  years,
+  loading = false,
+  horizonVolume = null,
+  horizonRevenue = null,
+}) {
   if (loading) {
-    return <div className="h-[120px] animate-pulse rounded-lg border border-lavander bg-white" />;
+    return <div className="h-12 animate-pulse rounded-md border border-lavander bg-white" />;
   }
 
   if (!years.length) return null;
 
   return (
-    <section aria-label="Full-year totals" className="rounded-lg border border-lavander bg-white p-3 shadow-sm">
-      <div className="mb-2">
-        <h3 className="font-serif text-base text-deep-violet-blue">Full-year totals</h3>
-        <p className="text-[11px] text-deep-violet-blue/70">
-          Actual sales where loaded, Current forecast for the remaining months
-        </p>
-      </div>
-
+    <section aria-label="Full-year totals" className="space-y-1.5">
       <div className="overflow-x-auto rounded-md border border-lavander">
-        <table className="w-full table-fixed text-left text-xs text-deep-violet-blue">
-          <colgroup>
-            <col className="w-[16%]" />
-            <col className="w-[28%]" />
-            <col />
-            <col />
-          </colgroup>
-          <thead className="bg-cream">
-            <tr className="border-b border-lavander">
-              <th className="px-2.5 py-2 text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">
-                Year
-              </th>
-              <th className="px-2.5 py-2 text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">
-                Source
-              </th>
-              <th className="px-2.5 py-2 text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">
-                Volume
-              </th>
-              <th className="px-2.5 py-2 text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">
-                Revenue
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {years.map((year, index) => (
-              <YearGroup key={year.year} year={year} divided={index > 0} />
+      <table className="w-full border-separate border-spacing-0 text-left text-xs text-deep-violet-blue">
+        <ColumnWidths />
+        <thead>
+          <tr>
+            <th rowSpan={2} className={cn('border-b bg-cream px-2.5 align-bottom pb-1 text-[10px] font-bold uppercase tracking-wide text-deep-violet-blue', HEADER_RULE)}>
+              Year
+            </th>
+            <GroupLabel>Volume</GroupLabel>
+            <GroupLabel>Revenue</GroupLabel>
+          </tr>
+          <tr>
+            {SPLIT.map((column) => (
+              <SplitLabel key={`vol-${column.key}`} emphasis={column.key === 'total'}>
+                {column.label}
+              </SplitLabel>
             ))}
+            {SPLIT.map((column) => (
+              <SplitLabel key={`rev-${column.key}`} emphasis={column.key === 'total'}>
+                {column.label}
+              </SplitLabel>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {years.map((year, index) => {
+            const mix = mixCaption(year);
+            const revenueMissing = year.revenue.total == null;
+            const rowRule = index < years.length - 1 ? 'border-b border-lavander/70' : '';
+            return (
+              <tr key={year.year} className="bg-white">
+                <td className={cn('whitespace-nowrap px-2.5 py-1 align-middle', rowRule)}>
+                  <span className="font-medium">{year.year}</span>
+                  {mix ? (
+                    <span className="ml-1.5 text-[10px] font-normal text-deep-violet-blue/50">{mix}</span>
+                  ) : null}
+                </td>
+                {SPLIT.map((column) => (
+                  <Amount
+                    key={`vol-${column.key}`}
+                    value={year.volume[column.key]}
+                    format={formatVolume}
+                    emphasis={column.key === 'total'}
+                    className={rowRule}
+                  />
+                ))}
+                {SPLIT.map((column) => (
+                  <Amount
+                    key={`rev-${column.key}`}
+                    value={year.revenue[column.key]}
+                    format={formatRevenue}
+                    emphasis={column.key === 'total'}
+                    className={rowRule}
+                    title={revenueMissing ? 'No catalog price for these SKUs' : undefined}
+                  />
+                ))}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      </div>
+      <div className="overflow-x-auto rounded-md bg-[#F7F4F1]">
+        <table className="w-full border-separate border-spacing-0 text-left text-xs text-deep-violet-blue">
+          <ColumnWidths />
+          <tbody>
+            <tr>
+              <td className="whitespace-nowrap px-2.5 py-1 font-medium">Next 12 months forecast</td>
+              <td colSpan={3} className={cn('border-l px-2 py-1 text-center font-medium tabular-nums', HEADER_RULE)}>
+                {formatVolume(horizonVolume)}
+              </td>
+              <td colSpan={3} className={cn('border-l px-2 py-1 text-center font-medium tabular-nums', HEADER_RULE)}>
+                {formatRevenue(horizonRevenue)}
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>
