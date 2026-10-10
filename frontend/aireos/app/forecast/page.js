@@ -18,6 +18,7 @@ import {
   toggleSelectedValue,
   toggleSeriesVisibility,
 } from '@/app/utils/forecastView';
+import useForecastYearTotals from '@/hooks/useForecastYearTotals';
 
 export default function ForecastPage() {
   const [productName, setProductName] = useState('');
@@ -118,8 +119,14 @@ export default function ForecastPage() {
   // The 80% range, confidence and promo situation describe one series, so
   // they only show once a single customer and SKU are picked.
   const singleSeries = Boolean(productName && customerName);
-  const points = buildMonthlyPoints(rows, actuals, metric, { singleSeries });
-  const horizonTotal = sumHorizonForecast(points);
+  // Same rows the chart plots. Volume and revenue are both summed so the
+  // year strip can show the next-12-month total beside the year, whichever
+  // metric the chart tab is on.
+  const unitPoints = buildMonthlyPoints(rows, actuals, 'units', { singleSeries });
+  const revenuePoints = buildMonthlyPoints(rows, actuals, 'revenue', { singleSeries });
+  const points = metric === 'revenue' ? revenuePoints : unitPoints;
+  const horizonVolume = sumHorizonForecast(unitPoints);
+  const horizonRevenue = sumHorizonForecast(revenuePoints);
   // When the pipeline produced the Current line for this customer
   // (MAX(current_generated_at) over the fetched rows, see backend
   // forecast_service.forecast_stamps_from_rows).
@@ -128,6 +135,18 @@ export default function ForecastPage() {
   const lastRun = freshness.current_generated_at;
   const salesLabel = customerName ? `${retailerLabel(customerName)} sales` : 'All customers sales';
   const confidence = singleSeries ? forecastConfidence(rows) : null;
+  // Year cards always cover Jan-Dec, so they fetch a wider window than the
+  // date filter when the filter cuts a year short.
+  const { years: yearTotals, loading: yearTotalsLoading } = useForecastYearTotals({
+    ready,
+    productName,
+    customerName,
+    startDate,
+    endDate,
+    bounds: dateBounds,
+    rows,
+    actuals,
+  });
 
   const scopeTags = [
     { label: 'SKU', value: productName || 'All SKUs' },
@@ -173,8 +192,6 @@ export default function ForecastPage() {
           maxDate={dateBounds.end}
           onClearFilters={clearFilters}
           canClearFilters={canClearFilters}
-          horizonTotal={horizonTotal}
-          metric={metric}
         />
 
         <ForecastChart
@@ -200,6 +217,10 @@ export default function ForecastPage() {
           salesLabel={salesLabel}
           salesLoadedAt={freshness.latest_sales_loaded_at}
           confidence={confidence}
+          yearTotals={yearTotals}
+          yearTotalsLoading={yearTotalsLoading}
+          horizonVolume={horizonVolume}
+          horizonRevenue={horizonRevenue}
           loading={loading}
         />
       </div>

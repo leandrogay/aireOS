@@ -501,6 +501,91 @@ export function sumHorizonForecast(points) {
   }, 0);
 }
 
+// ============================================================
+// YEARLY TOTALS
+// ============================================================
+
+/**
+ * The Jan-Dec span of every calendar year the date filter touches, clamped
+ * to the months that exist.
+ *
+ * The year cards always read as whole years, so a filter of Jun 2025 - Mar
+ * 2026 still needs Jan 2025 - Dec 2026 of data. Returns the same range it
+ * was given when that already covers the full years, which is the default
+ * current-year view -- the caller uses that to skip a second fetch.
+ */
+export function fullYearWindow(startDate, endDate, bounds = {}) {
+  if (!startDate || !endDate) return null;
+  let start = `${startDate.slice(0, 4)}-01-01`;
+  let end = `${endDate.slice(0, 4)}-12-31`;
+  if (bounds.start && bounds.start > start) start = bounds.start;
+  if (bounds.end && bounds.end < end) end = bounds.end;
+  return { start, end };
+}
+
+function addValue(part, key, value) {
+  if (value == null) return;
+  part[key] = (part[key] ?? 0) + value;
+}
+
+// Null, not 0, when no month contributed: revenue is blank for a SKU with no
+// catalog price (see backend add_forecast_revenue), and "$0" would read as a
+// real total rather than a missing one.
+function totalOf(part) {
+  if (part.actual == null && part.forecast == null) return null;
+  return (part.actual ?? 0) + (part.forecast ?? 0);
+}
+
+/**
+ * One total per calendar year, for the cards under the chart.
+ *
+ * A year in progress is part history, part forecast, so each month counts
+ * exactly once: its Actual when sales have loaded, otherwise the Current
+ * forecast. Volume and revenue are taken from the same chosen months, so
+ * the two numbers on a card always describe the same set of months. A month
+ * with neither an actual nor a forecast is counted nowhere.
+ *
+ * @param {object[]} unitPoints buildMonthlyPoints(..., 'units')
+ * @param {object[]} revenuePoints buildMonthlyPoints(..., 'revenue')
+ */
+export function buildYearlyTotals(unitPoints = [], revenuePoints = []) {
+  const revenueByMonth = new Map(revenuePoints.map((point) => [point.month_year, point]));
+  const byYear = new Map();
+
+  for (const point of unitPoints) {
+    if (!point.month_year) continue;
+    const useActual = point.actual != null;
+    const volume = useActual ? point.actual : point.current;
+    const revenuePoint = revenueByMonth.get(point.month_year);
+    const revenue = useActual ? revenuePoint?.actual ?? null : revenuePoint?.current ?? null;
+    if (volume == null && revenue == null) continue;
+
+    const year = point.month_year.slice(0, 4);
+    if (!byYear.has(year)) {
+      byYear.set(year, {
+        year,
+        actualMonths: 0,
+        forecastMonths: 0,
+        volume: { actual: null, forecast: null, total: null },
+        revenue: { actual: null, forecast: null, total: null },
+      });
+    }
+    const entry = byYear.get(year);
+    const key = useActual ? 'actual' : 'forecast';
+    if (useActual) entry.actualMonths += 1;
+    else entry.forecastMonths += 1;
+    addValue(entry.volume, key, volume);
+    addValue(entry.revenue, key, revenue);
+  }
+
+  for (const entry of byYear.values()) {
+    entry.volume.total = totalOf(entry.volume);
+    entry.revenue.total = totalOf(entry.revenue);
+  }
+
+  return [...byYear.values()].sort((a, b) => a.year.localeCompare(b.year));
+}
+
 export function pickDefaultProduct(products) {
   if (!products.length) return '';
   if (products.includes(DEFAULT_PRODUCT_NAME)) return DEFAULT_PRODUCT_NAME;

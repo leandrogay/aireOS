@@ -44,7 +44,7 @@ export default function ForecastTable({ points, metric, visibleSeries }) {
   }
 
   return (
-    <section className="rounded-lg border border-lavander bg-white p-3 shadow-sm">
+    <section className="bg-white">
       <div className="mb-2 flex items-center justify-between gap-2">
         <div>
           <h3 className="font-serif text-base text-deep-violet-blue">Monthly values</h3>

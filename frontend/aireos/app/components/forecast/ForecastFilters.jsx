@@ -7,23 +7,6 @@ import { retailerLabel } from '@/app/utils/retailerLabel';
 const selectClass =
   'h-8 w-full px-2 text-xs rounded-md border bg-white text-deep-violet-blue border-violet disabled:opacity-50';
 
-function formatMetricValue(value, metric) {
-  if (value == null) return '—';
-  if (metric === 'revenue') {
-    return `$${Math.round(value).toLocaleString()}`;
-  }
-  return `${Math.round(value).toLocaleString()} volume`;
-}
-
-function StatTag({ label, value }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-lavander bg-lavander/60 px-2.5 py-1 text-[11px] text-deep-violet-blue">
-      <span className="font-semibold uppercase tracking-wide text-deep-violet-blue/45">{label}</span>
-      <span className="font-medium">{value}</span>
-    </span>
-  );
-}
-
 export default function ForecastFilters({
   productName,
   onProductNameChange,
@@ -39,27 +22,20 @@ export default function ForecastFilters({
   maxDate,
   onClearFilters,
   canClearFilters,
-  horizonTotal,
-  metric,
 }) {
   return (
     <Card size="sm" className="rounded-lg border border-lavander bg-white text-deep-violet-blue shadow-sm ring-0">
       <CardContent className="space-y-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <p className="font-serif text-base text-deep-violet-blue">Filters</p>
-            <button
-              type="button"
-              onClick={onClearFilters}
-              disabled={!canClearFilters}
-              className="rounded-md border border-deep-violet-blue/30 bg-white px-2 py-0.5 text-[10px] font-medium text-deep-violet-blue transition hover:bg-cream disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Clear
-            </button>
-          </div>
-          <div className="flex flex-wrap items-center justify-end gap-1.5">
-            <StatTag label="Next 12 mo" value={formatMetricValue(horizonTotal, metric)} />
-          </div>
+        <div className="flex items-center gap-2">
+          <p className="font-serif text-base text-deep-violet-blue">Filters</p>
+          <button
+            type="button"
+            onClick={onClearFilters}
+            disabled={!canClearFilters}
+            className="rounded-md border border-deep-violet-blue/30 bg-white px-2 py-0.5 text-[10px] font-medium text-deep-violet-blue transition hover:bg-cream disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Clear
+          </button>
         </div>
 
         <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
