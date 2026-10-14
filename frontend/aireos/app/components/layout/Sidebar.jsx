@@ -10,8 +10,9 @@ import { cn } from '@/lib/utils';
 
 // Every tab links to a real (currently placeholder, for Forecast/Promotions/
 // Inventory — see app/forecast, app/promotions, app/inventory) page, so
-// nothing is blocked off. Mappings is nested under Upload and only appears
-// while the user is in the Upload/Mappings flow.
+// nothing is blocked off. Sub-tabs (Upload › Mappings, Forecast › Scenario
+// builder, Inventory › DOH settings) only appear while the user is in that
+// section.
 const NAV_ITEMS = [
   {
     label: 'Upload',
@@ -20,7 +21,12 @@ const NAV_ITEMS = [
     children: [{ label: 'Mappings', href: '/mappings' }],
   },
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { label: 'Forecast', href: '/forecast', icon: TrendingUp },
+  {
+    label: 'Forecast',
+    href: '/forecast',
+    icon: TrendingUp,
+    children: [{ label: 'Scenario builder', href: '/scenario' }],
+  },
   { label: 'Promotions', href: '/promotions', icon: Tag },
   {
     label: 'Inventory',

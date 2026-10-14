@@ -36,6 +36,9 @@
   --color-lavander: var(--aire-lavender);
   --color-violet: var(--aire-violet);
   --color-celest: var(--aire-celest);
+  --color-scenario: var(--aire-scenario);
+  --color-scenario-soft: var(--aire-scenario-soft);
+  --color-scenario-ink: var(--aire-scenario-ink);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -130,6 +133,12 @@
   /* Brand PDF is inconsistent here: hex swatch says #E62A39 (red), RGB value says a
      light blue. Went with the RGB reading — flag to Sandra if this renders wrong. */
   --aire-celest: #A7D2F2;
+  /* Scenario builder: the Simulated line and everything that belongs to a
+     draft (pins, tinted rows, pitch card), kept apart from the committed
+     forecast colours in forecastView.js. */
+  --aire-scenario: #D23F74;
+  --aire-scenario-soft: #FBEAF0;
+  --aire-scenario-ink: #8E1F4A;
 }
 
 .dark {

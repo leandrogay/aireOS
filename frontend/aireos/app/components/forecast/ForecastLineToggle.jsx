@@ -31,21 +31,24 @@ function SeriesMark({ color, shape }) {
 /**
  * Line on/off pills. `hints` maps a series key to a short explanation shown
  * on hover or keyboard focus of that pill (e.g. why Initial is missing).
+ * `series` defaults to the committed forecast lines; the Scenario builder
+ * adds its Simulated line.
  *
  * @param {{
+ *   series?: { key: string, label: string, color: string, shape: string }[],
  *   visible: Record<string, boolean>,
  *   onToggle: (key: string) => void,
  *   hints?: Record<string, string | null>,
  * }} props
  */
-export default function ForecastLineToggle({ visible, onToggle, hints = {} }) {
+export default function ForecastLineToggle({ series: lines = FORECAST_SERIES, visible, onToggle, hints = {} }) {
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
       <p className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/50">
         Lines
       </p>
       <div className="flex flex-wrap gap-1.5">
-        {FORECAST_SERIES.map((series) => {
+        {lines.map((series) => {
           const isActive = visible[series.key];
           const hint = hints[series.key];
           const hintId = `forecast-line-hint-${series.key}`;

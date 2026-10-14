@@ -89,14 +89,53 @@ function Amount({ value, format, emphasis = false, className, title }) {
   );
 }
 
+function signed(value, format) {
+  if (!value) return null;
+  return `${value > 0 ? '+' : '−'}${format(Math.abs(value))}`;
+}
+
+function SimulatedRow({ year, className }) {
+  const change = {
+    volume: signed(year.deltaUnits, formatVolume),
+    revenue: signed(year.deltaRevenue, formatRevenue),
+  };
+  return (
+    <tr className="bg-scenario-soft text-scenario-ink">
+      <td className={cn('whitespace-nowrap px-2.5 py-1 align-middle font-medium', className)}>Simulated</td>
+      {['volume', 'revenue'].flatMap((group) =>
+        SPLIT.map((column) => (
+          <td
+            key={`${group}-${column.key}`}
+            className={cn(
+              'whitespace-nowrap border-l border-lavander/80 px-2 py-1 text-right tabular-nums',
+              column.key === 'total' && 'font-medium',
+              className
+            )}
+          >
+            {(group === 'volume' ? formatVolume : formatRevenue)(year[group][column.key])}
+            {column.key !== 'actual' && change[group] ? (
+              <span className="ml-1 text-[10px] opacity-75">{change[group]}</span>
+            ) : null}
+          </td>
+        ))
+      )}
+    </tr>
+  );
+}
+
 /**
  * One thin row per calendar year under the chart: actual, forecast and the
  * combined total for volume and revenue. The next-12-month Current total
  * (sumHorizonForecast) sits in its own strip under the table, with no
  * actual/forecast split. Year figures come from buildYearlyTotals.
  *
+ * `simulatedYears` (Scenario builder only) adds a tinted "Simulated" row
+ * under each year, with the draft's change against Current beside the
+ * forecast and total (scenarioEngine.simulatedYearTotals).
+ *
  * @param {{
  *   years: object[],
+ *   simulatedYears?: object[],
  *   loading?: boolean,
  *   horizonVolume?: number | null,
  *   horizonRevenue?: number | null,
@@ -107,6 +146,7 @@ export default function ForecastYearTotals({
   loading = false,
   horizonVolume = null,
   horizonRevenue = null,
+  simulatedYears = [],
 }) {
   if (loading) {
     return <div className="h-12 animate-pulse rounded-md border border-lavander bg-white" />;
@@ -144,8 +184,9 @@ export default function ForecastYearTotals({
           {years.map((year, index) => {
             const mix = mixCaption(year);
             const revenueMissing = year.revenue.total == null;
-            const rowRule = index < years.length - 1 ? 'border-b border-lavander/70' : '';
-            return (
+            const simulated = simulatedYears.find((item) => item.year === year.year);
+            const rowRule = index < years.length - 1 || simulated ? 'border-b border-lavander/70' : '';
+            return [
               <tr key={year.year} className="bg-white">
                 <td className={cn('whitespace-nowrap px-2.5 py-1 align-middle', rowRule)}>
                   <span className="font-medium">{year.year}</span>
@@ -172,8 +213,15 @@ export default function ForecastYearTotals({
                     title={revenueMissing ? 'No catalog price for these SKUs' : undefined}
                   />
                 ))}
-              </tr>
-            );
+              </tr>,
+              simulated ? (
+                <SimulatedRow
+                  key={`${year.year}-simulated`}
+                  year={simulated}
+                  className={index < years.length - 1 ? 'border-b border-lavander/70' : ''}
+                />
+              ) : null,
+            ];
           })}
         </tbody>
       </table>

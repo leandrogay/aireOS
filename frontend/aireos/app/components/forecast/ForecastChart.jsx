@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
-import { Area, ComposedChart, Line, ReferenceArea, ReferenceLine, XAxis, YAxis } from 'recharts';
+import { Area, ComposedChart, Line, ReferenceArea, ReferenceDot, ReferenceLine, XAxis, YAxis } from 'recharts';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
@@ -169,6 +169,7 @@ export default function ForecastChart({
   horizonVolume = null,
   horizonRevenue = null,
   loading = false,
+  scenario = null,
 }) {
   const chartWrapRef = useRef(null);
   const overPanelRef = useRef(false);
@@ -179,7 +180,18 @@ export default function ForecastChart({
   const [panelX, setPanelX] = useState(0);
   const [wrapWidth, setWrapWidth] = useState(0);
 
-  const visibleKeys = FORECAST_SERIES.filter((series) => visibleSeries[series.key]).map((series) => series.key);
+  // The Scenario builder adds its Simulated line (and pins, draft promo
+  // bands, seasonal average) through `scenario`; /forecast passes nothing,
+  // so it draws exactly the committed lines. All values arrive precomputed
+  // (app/utils/scenarioEngine.js); this component only draws them.
+  const allSeries = scenario ? [...FORECAST_SERIES, ...scenario.series] : FORECAST_SERIES;
+  const config = scenario
+    ? {
+        ...chartConfig,
+        ...Object.fromEntries(scenario.series.map((series) => [series.key, { label: series.label, color: series.color }])),
+      }
+    : chartConfig;
+  const visibleKeys = allSeries.filter((series) => visibleSeries[series.key]).map((series) => series.key);
   const hasVisibleLine = visibleKeys.length > 0;
   const hasData = points.some((point) =>
     visibleKeys.some((key) => point[key] != null)
@@ -250,13 +262,23 @@ export default function ForecastChart({
     selectedPackTypes
   );
   const panelLeft = promoPanelLeft(panelX, wrapWidth);
-  const seriesValues = FORECAST_SERIES.filter((series) => visibleSeries[series.key]).map((series) => ({
+  const seriesValues = allSeries.filter((series) => visibleSeries[series.key]).map((series) => ({
     key: series.key,
     label: series.label,
     color: series.color,
     value: hoverPoint?.[series.key],
   }));
   const formatValue = (value) => formatTooltipValue(value, metric);
+  const monthX = (monthYear) => monthYears.indexOf(monthYear);
+  const showSimulated = Boolean(scenario) && Boolean(visibleSeries.simulated);
+  const scenarioMarkers = showSimulated
+    ? scenario.markers
+        .map((marker) => ({ ...marker, x: monthX(marker.month_year) }))
+        .filter((marker) => marker.x >= 0 && chartData[marker.x]?.simulated != null)
+    : [];
+  const scenarioBands = (scenario?.promoBands ?? [])
+    .map((band) => ({ ...band, x1: monthX(band.startMonth), x2: monthX(band.endMonth) + 1 }))
+    .filter((band) => band.x1 >= 0 && band.x2 > 0);
 
   function axisXFromClientX(clientX) {
     if (!chartWrapRef.current || !chartPoints.length) return null;
@@ -357,7 +379,7 @@ export default function ForecastChart({
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-lavander bg-white px-3 py-2">
-          <ForecastLineToggle visible={visibleSeries} onToggle={onToggleSeries} hints={lineHints} />
+          <ForecastLineToggle series={allSeries} visible={visibleSeries} onToggle={onToggleSeries} hints={lineHints} />
           <ForecastPromoToggle
             selectedTypes={selectedPromoTypes}
             onToggleType={onTogglePromoType}
@@ -392,7 +414,7 @@ export default function ForecastChart({
                   clearHover();
                 }}
               >
-              <ChartContainer config={chartConfig} className="aspect-auto h-[34vh] min-h-[220px] w-full">
+              <ChartContainer config={config} className="aspect-auto h-[34vh] min-h-[220px] w-full">
                 <ComposedChart
                   accessibilityLayer
                   data={plotData}
@@ -484,7 +506,47 @@ export default function ForecastChart({
                     />
                   ) : null}
                   */}
-                  {FORECAST_SERIES.filter((series) => visibleSeries[series.key]).map((series) => (
+                  {scenarioBands.map((band) => (
+                    <ReferenceArea
+                      key={band.key}
+                      x1={band.x1}
+                      x2={band.x2}
+                      fill="none"
+                      stroke={band.color}
+                      strokeDasharray="4 3"
+                      strokeWidth={1.5}
+                      ifOverflow="visible"
+                    />
+                  ))}
+                  {scenario?.seasonalAverage != null && visibleSeries.simulated ? (
+                    <ReferenceLine
+                      y={scenario.seasonalAverage}
+                      stroke="#A8741A"
+                      strokeDasharray="4 4"
+                      strokeWidth={1.4}
+                      ifOverflow="extendDomain"
+                      label={{
+                        value: `Seasonal avg ${formatAxisValue(Math.round(scenario.seasonalAverage), metric)}`,
+                        position: 'insideTopRight',
+                        fontSize: 10,
+                        fill: '#A8741A',
+                      }}
+                    />
+                  ) : null}
+                  {showSimulated ? (
+                    <Area
+                      dataKey="simulatedGap"
+                      type="monotone"
+                      stroke="none"
+                      fill={scenario.series[0].color}
+                      fillOpacity={0.14}
+                      tooltipType="none"
+                      legendType="none"
+                      activeDot={false}
+                      isAnimationActive={false}
+                    />
+                  ) : null}
+                  {allSeries.filter((series) => visibleSeries[series.key]).map((series) => (
                     <Line
                       key={series.key}
                       dataKey={series.key}
@@ -504,6 +566,18 @@ export default function ForecastChart({
                       activeDot={{ r: 5, fill: series.color }}
                       connectNulls={series.connectNulls ?? true}
                       isAnimationActive={false}
+                    />
+                  ))}
+                  {scenarioMarkers.map((marker) => (
+                    <ReferenceDot
+                      key={`marker-${marker.key}`}
+                      x={marker.x}
+                      y={chartData[marker.x].simulated}
+                      r={6}
+                      fill={scenario.series[0].color}
+                      stroke="#fff"
+                      strokeWidth={2}
+                      ifOverflow="visible"
                     />
                   ))}
                 </ComposedChart>
@@ -552,13 +626,18 @@ export default function ForecastChart({
               loading={yearTotalsLoading || loading}
               horizonVolume={horizonVolume}
               horizonRevenue={horizonRevenue}
+              simulatedYears={showSimulated ? scenario.simulatedYears : []}
             />
 
-            <ForecastTable
-              points={points}
-              metric={metric}
-              visibleSeries={visibleSeries}
-            />
+            {/* The Scenario builder reviews changes in its pitch card instead
+                (blueprint Part 2), so the monthly table is /forecast only. */}
+            {scenario ? null : (
+              <ForecastTable
+                points={points}
+                metric={metric}
+                visibleSeries={visibleSeries}
+              />
+            )}
           </>
         )}
       </CardContent>
