@@ -6,6 +6,7 @@ import TableSkeleton from '@/components/ui/TableSkeleton';
 import { TABLE_HEADER_CLASS as headerClass } from '@/components/ui/SortHeader';
 import { resultCountLabel } from '@/app/utils/tableView';
 
+import ColumnGrid from './ColumnGrid';
 import CustomerRow from './CustomerRow';
 
 /**
@@ -80,13 +81,14 @@ export default function CustomerTable({
 
       {showTable && (
         <div className="relative overflow-x-auto border-t border-lavander">
-          <table className="w-full whitespace-nowrap text-left text-sm text-deep-violet-blue [&_td]:align-middle [&_th]:align-middle">
+          <table className="w-full min-w-[40rem] table-fixed whitespace-nowrap text-left text-sm text-deep-violet-blue [&_td]:align-middle [&_th]:align-middle">
+            <ColumnGrid />
             <thead>
               <tr className="h-10 bg-cream/60 [&>th]:shadow-[inset_0_-1px_0_var(--color-lavander)]">
                 <th scope="col" className={headerClass}>Customer</th>
                 <th scope="col" className={headerClass}>Retailers</th>
                 <th scope="col" className={headerClass}>Status</th>
-                <th scope="col" className="w-px px-2 py-2.5">
+                <th scope="col" className="px-2 py-2.5">
                   <span className="sr-only">Actions</span>
                 </th>
               </tr>

@@ -13,6 +13,7 @@ import {
   retailerBlockReason,
 } from '@/app/utils/customerForm';
 
+import { EXPANDED_ROW_INSET } from './ColumnGrid';
 import RetailerTable from './RetailerTable';
 import RowActions from './RowActions';
 import UsageStatus from './UsageStatus';
@@ -101,17 +102,19 @@ export default function CustomerRow({
               event.stopPropagation();
               onToggle();
             }}
-            className="inline-flex items-center gap-2 rounded-md text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+            className="inline-flex max-w-full items-center gap-2 rounded-md text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
           >
             <ChevronRight
               aria-hidden="true"
               className={cn('size-4 shrink-0 text-deep-violet-blue/50 transition-transform', isOpen && 'rotate-90')}
             />
-            {name}
+            <span className="truncate" title={name}>
+              {name}
+            </span>
           </button>
         </td>
         <td className="px-4 py-2.5" title={retailerNames.join(', ') || undefined}>
-          <span className={cn('block max-w-[18rem] truncate', !retailerNames.length && 'text-deep-violet-blue/50')}>
+          <span className={cn('block truncate', !retailerNames.length && 'text-deep-violet-blue/50')}>
             {summariseNames(retailerNames, 'None yet')}
           </span>
         </td>
@@ -129,7 +132,11 @@ export default function CustomerRow({
           <td colSpan={4} className="whitespace-normal bg-cream/50 px-4 py-3">
             <div className="grid gap-2">
               {customer.retailers.length > 0 ? (
-                <RetailerTable retailers={customer.retailers} actionsFor={retailerActions} />
+                <RetailerTable
+                  retailers={customer.retailers}
+                  inset={EXPANDED_ROW_INSET}
+                  actionsFor={retailerActions}
+                />
               ) : (
                 <p className="text-sm text-deep-violet-blue/70">{name} has no retailers yet.</p>
               )}

@@ -5,6 +5,7 @@ import { Link2, Pencil, Trash2 } from 'lucide-react';
 import { cardClass } from '@/components/inventory/formStyles';
 import { retailerBlockReason } from '@/app/utils/customerForm';
 
+import { CARD_INSET } from './ColumnGrid';
 import RetailerTable from './RetailerTable';
 
 /**
@@ -47,7 +48,7 @@ export default function UnlinkedRetailers({ retailers, onLink, onEdit, onDelete 
       <p className="mb-2 mt-0.5 text-xs text-deep-violet-blue/70">
         Every retailer should belong to a customer. Link each one below to its customer.
       </p>
-      <RetailerTable retailers={retailers} actionsFor={actionsFor} />
+      <RetailerTable retailers={retailers} inset={CARD_INSET} actionsFor={actionsFor} />
     </section>
   );
 }
