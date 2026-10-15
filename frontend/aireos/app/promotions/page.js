@@ -8,6 +8,7 @@ import { Dialog, DialogContent } from '@/components/ui/dialog';
 import Toast from '@/components/ui/Toast';
 import PromotionForm, { blankPromotionForm } from '@/components/promotions/PromotionForm';
 import PromotionList from '@/components/promotions/PromotionList';
+import useExpandedRows from '@/hooks/useExpandedRows';
 import useToast from '@/hooks/useToast';
 import {
   createPromotion,
@@ -28,7 +29,6 @@ import {
 import {
   promotionStoreKey,
   storesCoveredByEvent,
-  summariseNames,
   promotionStoreNames,
 } from '@/app/utils/promotionOverview';
 
@@ -52,13 +52,16 @@ export default function PromotionsPage() {
   const [isLoadingSkuRanges, setIsLoadingSkuRanges] = useState(false);
   const [promotions, setPromotions] = useState([]);
   const [listError, setListError] = useState('');
-  const [isLoadingList, setIsLoadingList] = useState(false);
+  // True from the start: the list loads on mount, so the first paint shows
+  // placeholder rows rather than the "no promotions yet" message.
+  const [isLoadingList, setIsLoadingList] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   // Form-level errors, shown inside the modal. Outcomes (created, updated,
   // deleted, delete failed) are toasts, so the page itself never shifts.
   const [submitError, setSubmitError] = useState('');
   const { toast, notify, dismissToast } = useToast();
   const [highlightIds, setHighlightIds] = useState([]);
+  const expanded = useExpandedRows();
   const [editingPromotion, setEditingPromotion] = useState(null);
   // The create / edit form opens in a modal over the overview.
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -152,7 +155,7 @@ export default function PromotionsPage() {
       const data = await getPromotions();
       setPromotions(data);
     } catch (error) {
-      if (!silent) setPromotions([]);
+      // Rows already loaded stay on screen under the error and its Retry.
       setListError(error.message || 'Failed to load promotions.');
     } finally {
       if (!silent) setIsLoadingList(false);
@@ -235,7 +238,8 @@ export default function PromotionsPage() {
 
   /**
    * DELETE /api/promotions/{id} for one overview row. The confirm dialog
-   * in the list is the only path that reaches this handler.
+   * in the list is the only path that reaches this handler; it closes
+   * either way, so a failure is reported here as a toast, not thrown.
    *
    * @param {object} promotion
    */
@@ -260,7 +264,6 @@ export default function PromotionsPage() {
       await loadPromotions({ silent: true });
     } catch (error) {
       notify('error', error.message || 'Failed to delete promotion.');
-      throw error;
     }
   };
 
@@ -311,9 +314,9 @@ export default function PromotionsPage() {
       try {
         const updated = await updatePromotion(editingPromotion.promotion_id, payload);
         applyPromotionsToOverview(updated);
-        setHighlightIds(
-          updated?.promotion_id != null ? [updated.promotion_id] : [editingPromotion.promotion_id],
-        );
+        const updatedId = updated?.promotion_id ?? editingPromotion.promotion_id;
+        setHighlightIds([updatedId]);
+        expanded.expand(updatedId);
         setIsFormOpen(false);
         setEditingPromotion(null);
         setForm(blankPromotionForm());
@@ -362,6 +365,7 @@ export default function PromotionsPage() {
 
       applyPromotionsToOverview(created);
       setHighlightIds(created?.promotion_id != null ? [created.promotion_id] : []);
+      if (created?.promotion_id != null) expanded.expand(created.promotion_id);
 
       // Short enough to read in the toast's few seconds; the new row is
       // also highlighted in the overview.
@@ -412,6 +416,8 @@ export default function PromotionsPage() {
           error={listError}
           highlightIds={highlightIds}
           editingId={editingPromotion?.promotion_id}
+          isExpanded={expanded.isExpanded}
+          onToggle={expanded.toggle}
           onEdit={handleEdit}
           onDelete={handleDelete}
           onRefresh={loadPromotions}

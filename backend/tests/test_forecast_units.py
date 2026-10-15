@@ -31,18 +31,34 @@ def _install(monkeypatch, frame):
     return client
 
 
-def test_the_customer_id_is_a_bound_parameter(monkeypatch):
-    client = _install(monkeypatch, pd.DataFrame(columns=["sku", "month_year", "forecast_current"]))
+COLUMNS = ["customer_id", "sku", "month_year", "forecast_current"]
+
+
+def test_the_customer_filter_is_not_pushed_into_the_view(monkeypatch):
+    # A customer filter made the view's window functions slower to run, so the
+    # small view is read whole and the customer is picked out in Python.
+    client = _install(monkeypatch, pd.DataFrame(columns=COLUMNS))
 
     forecast_units.get_forecast_units(7)
 
-    params = {p.name: p.value for p in client.last_job_config.query_parameters}
-    assert params == {"customer_id": 7}
-    assert "@customer_id" in client.last_query
+    assert "customer_id =" not in client.last_query
+    assert "UNNEST" not in client.last_query
+
+
+def test_only_the_asked_for_customer_is_returned(monkeypatch):
+    frame = pd.DataFrame(
+        [
+            {"customer_id": 1, "sku": "A1", "month_year": date(2026, 8, 1), "forecast_current": 10.0},
+            {"customer_id": 2, "sku": "A1", "month_year": date(2026, 8, 1), "forecast_current": 20.0},
+        ]
+    )
+    _install(monkeypatch, frame)
+
+    assert forecast_units.get_forecast_units(2) == {"A1": {date(2026, 8, 1): 20.0}}
 
 
 def test_only_rows_with_a_forecast_are_read(monkeypatch):
-    client = _install(monkeypatch, pd.DataFrame(columns=["sku", "month_year", "forecast_current"]))
+    client = _install(monkeypatch, pd.DataFrame(columns=COLUMNS))
 
     forecast_units.get_forecast_units(1)
 
@@ -52,9 +68,9 @@ def test_only_rows_with_a_forecast_are_read(monkeypatch):
 def test_predictions_are_keyed_by_sku_and_first_of_month(monkeypatch):
     frame = pd.DataFrame(
         [
-            {"sku": "A1", "month_year": pd.Timestamp("2026-08-01"), "forecast_current": 1310.0},
-            {"sku": "A1", "month_year": date(2026, 9, 1), "forecast_current": 1984.0},
-            {"sku": "B1", "month_year": pd.Timestamp("2026-08-01"), "forecast_current": 44.0},
+            {"customer_id": 1, "sku": "A1", "month_year": pd.Timestamp("2026-08-01"), "forecast_current": 1310.0},
+            {"customer_id": 1, "sku": "A1", "month_year": date(2026, 9, 1), "forecast_current": 1984.0},
+            {"customer_id": 1, "sku": "B1", "month_year": pd.Timestamp("2026-08-01"), "forecast_current": 44.0},
         ]
     )
     _install(monkeypatch, frame)
@@ -68,6 +84,58 @@ def test_predictions_are_keyed_by_sku_and_first_of_month(monkeypatch):
 
 
 def test_no_rows_gives_an_empty_forecast(monkeypatch):
-    _install(monkeypatch, pd.DataFrame(columns=["sku", "month_year", "forecast_current"]))
+    _install(monkeypatch, pd.DataFrame(columns=COLUMNS))
 
     assert forecast_units.get_forecast_units(1) == {}
+
+
+# ---- several customers in one query ----
+
+
+def test_several_customers_are_read_in_one_query(monkeypatch):
+    client = _install(monkeypatch, pd.DataFrame(columns=COLUMNS))
+    queries = []
+    record = client.query
+    client.query = lambda query, job_config=None: queries.append(query) or record(query, job_config)
+
+    forecast_units.get_forecast_units_by_customer([1, 2, 3])
+
+    assert len(queries) == 1
+
+
+def test_predictions_are_grouped_by_customer(monkeypatch):
+    frame = pd.DataFrame(
+        [
+            {"customer_id": 1, "sku": "A1", "month_year": date(2026, 8, 1), "forecast_current": 10.0},
+            {"customer_id": 2, "sku": "A1", "month_year": date(2026, 8, 1), "forecast_current": 20.0},
+        ]
+    )
+    _install(monkeypatch, frame)
+
+    forecast = forecast_units.get_forecast_units_by_customer([1, 2])
+
+    assert forecast == {
+        1: {"A1": {date(2026, 8, 1): 10.0}},
+        2: {"A1": {date(2026, 8, 1): 20.0}},
+    }
+
+
+def test_customers_not_asked_for_are_left_out(monkeypatch):
+    frame = pd.DataFrame(
+        [
+            {"customer_id": 1, "sku": "A1", "month_year": date(2026, 8, 1), "forecast_current": 10.0},
+            {"customer_id": 3, "sku": "A1", "month_year": date(2026, 8, 1), "forecast_current": 30.0},
+        ]
+    )
+    _install(monkeypatch, frame)
+
+    assert set(forecast_units.get_forecast_units_by_customer([1, 2])) == {1}
+
+
+def test_no_customers_skips_bigquery(monkeypatch):
+    def _no_client_allowed():
+        raise AssertionError("BigQuery must not be called")
+
+    monkeypatch.setattr(bigquery, "get_bigquery_client", _no_client_allowed)
+
+    assert forecast_units.get_forecast_units_by_customer([]) == {}

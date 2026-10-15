@@ -1,6 +1,7 @@
-// Pure helpers shared by the list tables (promotions, recent uploads, stored
-// mappings): which rows are on the current page, the "N things" count above
-// the table, and how a header press changes the sort.
+// Pure helpers shared by the list tables (customers, promotions, recent
+// uploads, stored mappings): which rows are on the current page, the "N
+// things" count above the table, how a header press changes the sort, and
+// the "first +N" label for a cell listing many names.
 
 /**
  * The slice of `rows` on `page`. The page is clamped rather than trusted, so
@@ -62,4 +63,18 @@ export function matchesSearch(values, query) {
   const needle = query.trim().toLowerCase();
   if (!needle) return true;
   return values.some((value) => String(value || '').toLowerCase().includes(needle));
+}
+
+/**
+ * Short label for a list of names in one table cell: the first one, plus
+ * "+N" when there are more. Put the full list in the cell's `title`.
+ *
+ * @param {string[]} names
+ * @param {string} [empty]
+ * @returns {string}
+ */
+export function summariseNames(names, empty = '—') {
+  if (!names.length) return empty;
+  if (names.length === 1) return names[0];
+  return `${names[0]} +${names.length - 1}`;
 }
