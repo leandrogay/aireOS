@@ -7,7 +7,9 @@ import PageLayout from '@/components/layout/PageLayout';
 import { Button } from '@/components/ui/button';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import Toast from '@/components/ui/Toast';
+import useConfirmAction from '@/hooks/useConfirmAction';
 import useCustomers from '@/hooks/useCustomers';
+import useExpandedRows from '@/hooks/useExpandedRows';
 import useToast from '@/hooks/useToast';
 import {
   createCustomer,
@@ -86,29 +88,19 @@ export default function CustomersView() {
   // { type: 'customer-create' | 'customer-edit' | 'retailer-create' | 'retailer-edit', customer?, retailer? }
   const [dialog, setDialog] = useState(null);
   const [linking, setLinking] = useState(null);
-  // { customer } for a customer, { retailer, customer } for a retailer (customer null when unlinked).
-  const [pendingDelete, setPendingDelete] = useState(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [expandedIds, setExpandedIds] = useState(() => new Set());
+  // target: { customer } for a customer, { retailer, customer } for a retailer (customer null when unlinked).
+  const deletion = useConfirmAction({ onConfirm: deleteRecord });
+  const expanded = useExpandedRows();
   const [highlightId, setHighlightId] = useState(null);
 
   function refresh() {
     setRefreshKey((key) => key + 1);
   }
 
-  function toggleExpanded(customerId) {
-    setExpandedIds((current) => {
-      const next = new Set(current);
-      if (next.has(customerId)) next.delete(customerId);
-      else next.add(customerId);
-      return next;
-    });
-  }
-
   function showCustomer(customer) {
     applyCustomer(customer);
     setHighlightId(customer.customer_id);
-    setExpandedIds((current) => new Set(current).add(customer.customer_id));
+    expanded.expand(customer.customer_id);
   }
 
   // A 409 can mean the record gained data since the list loaded (it is now
@@ -163,9 +155,7 @@ export default function CustomersView() {
     }
   }
 
-  async function confirmDelete() {
-    const { customer, retailer } = pendingDelete;
-    setIsDeleting(true);
+  async function deleteRecord({ customer, retailer }) {
     try {
       if (retailer) {
         const result = await deleteRetailer(retailer.retailer_id);
@@ -181,12 +171,10 @@ export default function CustomersView() {
       // The row stays in the list; the toast carries the backend's reason.
       notify('error', err.message);
       refreshOnConflict(err);
-    } finally {
-      setIsDeleting(false);
-      setPendingDelete(null);
     }
   }
 
+  const pendingDelete = deletion.target;
   const deleteDetails = pendingDelete?.retailer
     ? [
         { label: 'Retailer', value: retailerLabel(pendingDelete.retailer.retailer_name) },
@@ -217,22 +205,22 @@ export default function CustomersView() {
           customers={data}
           loading={loading}
           error={error}
-          expandedIds={expandedIds}
+          isExpanded={expanded.isExpanded}
           highlightId={highlightId}
-          onToggle={toggleExpanded}
+          onToggle={expanded.toggle}
           onRefresh={refresh}
           onEdit={(customer) => setDialog({ type: 'customer-edit', customer })}
-          onDelete={(customer) => setPendingDelete({ customer })}
+          onDelete={(customer) => deletion.request({ customer })}
           onAddRetailer={(customer) => setDialog({ type: 'retailer-create', customer })}
           onEditRetailer={(retailer, customer) => setDialog({ type: 'retailer-edit', retailer, customer })}
-          onDeleteRetailer={(retailer, customer) => setPendingDelete({ retailer, customer })}
+          onDeleteRetailer={(retailer, customer) => deletion.request({ retailer, customer })}
         />
 
         <UnlinkedRetailers
           retailers={unlinked}
           onLink={setLinking}
           onEdit={(retailer) => setDialog({ type: 'retailer-edit', retailer })}
-          onDelete={(retailer) => setPendingDelete({ retailer, customer: null })}
+          onDelete={(retailer) => deletion.request({ retailer, customer: null })}
         />
 
         <p className="mt-1 px-1 text-xs text-deep-violet-blue/60">
@@ -262,9 +250,9 @@ export default function CustomersView() {
         details={deleteDetails}
         confirmLabel={pendingDelete?.retailer ? 'Delete retailer' : 'Delete customer'}
         pendingLabel="Deleting…"
-        isPending={isDeleting}
-        onConfirm={confirmDelete}
-        onCancel={() => setPendingDelete(null)}
+        isPending={deletion.isPending}
+        onConfirm={deletion.confirm}
+        onCancel={deletion.cancel}
       />
 
       <Toast toast={toast} onDismiss={dismissToast} />

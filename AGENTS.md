@@ -94,15 +94,20 @@ aireOS/
     │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column), Sidebar (NAV_ITEMS)
     │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, calendar, popover, DateRangePicker
     │   │   │                      (typed date inputs, not a calendar); MonthGrid (year + 12-month grid, shared by
-    │   │   │                      promotions MonthPicker and the dashboard month-range picker); Toast (+ hooks/useToast)
+    │   │   │                      promotions MonthPicker and the dashboard month-range picker); Toast (+ hooks/useToast);
+    │   │   │                      list-table kit (Customers + Promotions): DataTable (card: count, search slot, refresh,
+    │   │   │                      Retry, empty state, footer) → TableGrid (column config → fixed widths, sort headers,
+    │   │   │                      skeleton; `nested` variant + `inset` for tables inside rows), ExpandableRow, RowActions
+    │   │   │                      ("..." menu, disabledReason), StatusPill; + hooks/useExpandedRows, hooks/useConfirmAction
     │   │   ├── dashboard/         DashboardFilters, CustomerSelector, FilterBadge, PeriodControls (Period /
     │   │   │                      Compare to: DateRangeControl, CompareControl, MonthRangeCalendar — whole months only),
     │   │   │                      RevenueTrendCard (always by format) → TrendChart (FormatTrendChart),
     │   │   │                      ComparisonMixChart; PeriodTexture (hatched "past period" fills), TooltipChange,
     │   │   │                      PeriodComparisonDetail, RevenueSummaryCards + FormatMixBar, SkuRanking
-    │   │   ├── promotions/        PromotionForm, PromotionList, CheckboxDropdown
+    │   │   ├── promotions/        PromotionForm, PromotionList → PromotionRow (on ui/DataTable), columns.js, CheckboxDropdown
     │   │   ├── customers/         CustomersView (state), CustomerTable → CustomerRow (expandable, retailers inside),
-    │   │   │                      RetailerTable, RowActions ("..." menu), NameFormDialog, LinkRetailerDialog, UnlinkedRetailers
+    │   │   │                      RetailerTable (nested TableGrid), columns.js (shared grid), NameFormDialog,
+    │   │   │                      LinkRetailerDialog, UnlinkedRetailers
     │   │   ├── forecast/          ForecastChart/Filters/Table, HeaderCheckboxFilter (shared)
     │   ├── services/              Backend API wrappers
     │   │   ├── promotionsApi.js   request() + parseApiError() + one fn per /api/promotions & /api/catalog endpoint
@@ -139,6 +144,8 @@ aireOS/
     │   ├── usePriceMix.js         useSkuSales × 2 (this period + comparison) → priceMixEffects
     │   ├── useDohSettings.js      /api/settings/doh (+ replaceRow for the row a write returns)
     │   ├── useCustomers.js        /api/catalog/customers (+ applyCustomer / removeCustomer for the row a write returns)
+    │   ├── useExpandedRows.js     { isExpanded, toggle, expand } for ui/ExpandableRow (several open by default)
+    │   ├── useConfirmAction.js    { target, isPending, request, cancel, confirm } for ui/ConfirmDialog (e.g. Delete)
     │   └── useToast.js            { toast, notify, dismissToast } for components/ui/Toast
     ├── lib/                       cn() (clsx + tailwind-merge), formatDateRange, formatDate/formatDateTime (shared date display,
     │                              Singapore time), singaporeTime (singaporeDateTimeParts, singaporeToday)

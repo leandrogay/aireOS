@@ -13,10 +13,12 @@ import {
 } from '@/components/ui/dropdown-menu';
 
 /**
- * The "..." menu at the end of a customer or retailer row, in the promotions
- * list's look (PromotionRowActions): destructive items are red and sit after
- * a separator. An item with a `disabledReason` is greyed out and says why
- * underneath, because a disabled item cannot show a tooltip.
+ * The "..." menu at the end of a list-table row (pass it as ExpandableRow's
+ * `actions`). Destructive items are red and sit after a separator, so they
+ * are never confused with the rest; Delete should only open a ConfirmDialog
+ * (useConfirmAction), never remove anything itself. An item with a
+ * `disabledReason` is greyed out and says why underneath, because a disabled
+ * item cannot show a tooltip.
  *
  * @param {{
  *   label: string,
