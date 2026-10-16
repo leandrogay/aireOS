@@ -4,7 +4,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
-import { Boxes, LayoutDashboard, Package, PanelLeft, Tag, TrendingUp, Upload } from 'lucide-react';
+import { LayoutDashboard, Package, PanelLeft, Tag, TrendingUp, Upload } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 
@@ -17,12 +17,14 @@ const NAV_ITEMS = [
     label: 'Upload',
     href: '/upload',
     icon: Upload,
-    children: [{ label: 'Mappings', href: '/mappings' }],
+    children: [
+      { label: 'Mappings', href: '/mappings' },
+      { label: 'SKUs', href: '/skus' },
+    ],
   },
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { label: 'Forecast', href: '/forecast', icon: TrendingUp },
   { label: 'Promotions', href: '/promotions', icon: Tag },
-  { label: 'SKUs', href: '/skus', icon: Boxes },
   {
     label: 'Inventory',
     href: '/inventory',

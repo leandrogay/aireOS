@@ -194,6 +194,17 @@ def test_search_and_filters_are_bound_parameters(monkeypatch):
     }
 
 
+def test_missing_sku_filters_do_not_bind_untyped_nulls(monkeypatch):
+    engine = _install_fake_read_engine(monkeypatch, lambda sql, params: [SKU_ROW])
+
+    rows = catalog_service.list_skus()
+
+    assert rows == [SKU_ROW]
+    sql, params = engine.conn.calls[0]
+    assert ":search IS NULL" not in sql
+    assert params == {}
+
+
 def test_update_sku_does_not_change_the_sku_code(monkeypatch):
     updated = {**SKU_ROW, "price": Decimal("13.00")}
 

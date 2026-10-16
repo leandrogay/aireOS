@@ -1012,6 +1012,30 @@ def list_skus(
     max_price=None,
 ) -> list[dict]:
     search_pattern = f"%{search.strip()}%" if search and search.strip() else None
+    where_clauses = [
+        "is_active = TRUE",
+        "sku IS DISTINCT FROM sku_range",
+    ]
+    params = {}
+
+    if search_pattern is not None:
+        where_clauses.append(
+            "(sku ILIKE :search OR sku_range ILIKE :search OR product_name ILIKE :search)"
+        )
+        params["search"] = search_pattern
+    if sku_range is not None:
+        where_clauses.append("sku_range = :sku_range")
+        params["sku_range"] = sku_range
+    if brand is not None:
+        where_clauses.append("brand = :brand")
+        params["brand"] = brand
+    if min_price is not None:
+        where_clauses.append("price >= :min_price")
+        params["min_price"] = min_price
+    if max_price is not None:
+        where_clauses.append("price <= :max_price")
+        params["max_price"] = max_price
+
     query = text(
         f"""
         SELECT
@@ -1020,31 +1044,13 @@ def list_skus(
         FROM skus
 
         WHERE
-            is_active = TRUE
-            AND sku IS DISTINCT FROM sku_range
-            AND (
-                :search IS NULL
-                OR sku ILIKE :search
-                OR sku_range ILIKE :search
-                OR product_name ILIKE :search
-            )
-            AND (:sku_range IS NULL OR sku_range = :sku_range)
-            AND (:brand IS NULL OR brand = :brand)
-            AND (:min_price IS NULL OR price >= :min_price)
-            AND (:max_price IS NULL OR price <= :max_price)
+            {" AND ".join(where_clauses)}
 
         ORDER BY
             product_name ASC,
             sku ASC
         """
     )
-    params = {
-        "search": search_pattern,
-        "sku_range": sku_range,
-        "brand": brand,
-        "min_price": min_price,
-        "max_price": max_price,
-    }
 
     with _read_connection() as conn:
         rows = conn.execute(query, params).mappings().all()
