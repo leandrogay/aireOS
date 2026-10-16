@@ -39,3 +39,22 @@ export async function getMonthlyOnly({ customer, store, sku, startDate, endDate 
   params.set('end_date', endDate);
   return request(`/api/sales/monthly-only?${params.toString()}`);
 }
+
+/**
+ * GET /api/sales/customer-totals
+ *
+ * One period total per customer, split into offline and online — see backend
+ * get_customer_totals. Each bar on the cross-customer chart is this sum for
+ * the selected dates. has_offline / has_online say whether that channel
+ * exists for the customer at all.
+ *
+ * @param {{ customers: string[], sku?: string, startDate: string, endDate: string }} filters
+ * @returns {Promise<{ customers: Array<{ customer: string, label: string, has_offline: boolean, has_online: boolean, offline: { revenue: number, units: number }, online: { revenue: number, units: number } }> }>}
+ */
+export async function getCustomerTotals({ customers, sku, startDate, endDate }) {
+  const params = new URLSearchParams({ customers: customers.join(',') });
+  if (sku) params.set('sku', sku);
+  params.set('start_date', startDate);
+  params.set('end_date', endDate);
+  return request(`/api/sales/customer-totals?${params.toString()}`);
+}

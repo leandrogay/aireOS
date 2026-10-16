@@ -1,25 +1,16 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { formatColor as colorFor } from '@/app/utils/storeFormats';
+import { formatColor } from '@/app/utils/storeFormats';
+import { formatRevenue } from '@/app/utils/trendChart';
 import { edgeColor } from '@/components/dashboard/PeriodTexture';
-
-// Matches RevenueTrendCard's toggles: dark blue for the selected option.
-const tabTriggerClass =
-  'text-deep-violet-blue/70 hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white data-active:hover:text-white';
-
-const METRICS = [
-  { value: 'revenue', label: 'Revenue' },
-  { value: 'units', label: 'Volume' },
-];
 
 function formatShare(share) {
   return share > 0 && share < 1 ? '<1%' : `${share.toFixed(0)}%`;
 }
 
 function amountText(format, metric) {
-  return metric === 'units' ? `${format.units.toLocaleString()} units` : `$${format.revenue.toLocaleString()}`;
+  return metric === 'units' ? `${format.units.toLocaleString()} units` : formatRevenue(format.revenue);
 }
 
 function tooltipText(format, metric, share) {
@@ -77,8 +68,9 @@ function inOrderOf(formats, order) {
  *   formats: Array<{ format: string, revenue: number, units: number }>,
  *   baselineFormats?: Array<{ format: string, revenue: number, units: number }> | null,
  *   names?: { current: string, baseline: string } | null,
+ *   label?: string,
  *   metric: 'revenue' | 'units',
- *   onMetricChange: (metric: 'revenue' | 'units') => void,
+ *   colorFor?: (name: string) => string,
  *   highlighted: string | null,
  *   onHover: (format: string | null) => void,
  * }} props
@@ -87,8 +79,9 @@ export default function FormatMixBar({
   formats,
   baselineFormats = null,
   names = null,
+  label = 'Format mix',
   metric,
-  onMetricChange,
+  colorFor = formatColor,
   highlighted,
   onHover,
 }) {
@@ -107,19 +100,7 @@ export default function FormatMixBar({
 
   return (
     <div className="mb-2">
-      <div className="mb-1 flex items-center justify-between gap-2">
-        <p className="text-xs text-deep-violet-blue/70">Format mix</p>
-        {/* Same Tabs styling as the trend card's By week / By month switch. */}
-        <Tabs value={metric} onValueChange={onMetricChange}>
-          <TabsList className="h-7 bg-lavander">
-            {METRICS.map((m) => (
-              <TabsTrigger key={m.value} value={m.value} className={`text-xs ${tabTriggerClass}`}>
-                {m.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
-      </div>
+      <p className="mb-1 text-xs text-deep-violet-blue/70">{label}</p>
 
       <div className="grid gap-1.5">
         {bars.map((bar) => (

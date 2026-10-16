@@ -3,7 +3,7 @@
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip } from '@/components/ui/chart';
 import { changePct } from '@/app/utils/periodComparison';
-import { formatColor } from '@/app/utils/storeFormats';
+import { formatColor, UNNAMED_FORMAT } from '@/app/utils/storeFormats';
 import {
   CHART_SIZE_CLASS,
   MAX_BAR_SIZE,
@@ -11,6 +11,7 @@ import {
   displayLabelFor,
   exactBucketLabel,
   formatAxisCurrency,
+  formatRevenue,
   sortFormatsByTotalDesc,
   xAxisProps,
 } from '@/app/utils/trendChart';
@@ -67,10 +68,10 @@ function TrendTooltip({ active, payload, granularity }) {
                   style={{ backgroundColor: item.color ?? item.payload?.fill }}
                 />
               )}
-              {item.name}
+              {item.name === UNNAMED_FORMAT ? 'Total' : item.name}
             </span>
             <span className="font-mono font-medium text-deep-violet-blue tabular-nums">
-              ${Number(item.value).toLocaleString()}
+              {formatRevenue(item.value)}
             </span>
           </div>
         ))}
@@ -78,7 +79,7 @@ function TrendTooltip({ active, payload, granularity }) {
           <div className="mt-0.5 flex w-full items-center justify-between gap-2 border-t border-lavander pt-1">
             <span className="font-medium text-deep-violet-blue">Total</span>
             <span className="font-mono font-semibold text-deep-violet-blue tabular-nums">
-              ${total.toLocaleString()}
+              {formatRevenue(total)}
             </span>
           </div>
         )}
@@ -98,6 +99,7 @@ function TrendTooltip({ active, payload, granularity }) {
  */
 export function FormatTrendChart({ periodByFormat, periodTotal, granularity }) {
   const formats = sortFormatsByTotalDesc(periodByFormat);
+  const unnamedOnly = formats.length === 1 && formats[0] === UNNAMED_FORMAT;
   const chartConfig = Object.fromEntries(formats.map((format) => [format, { label: format, color: formatColor(format) }]));
   const chartData = pivotByFormat(periodByFormat, periodTotal);
   const axisProps = xAxisProps(chartData.length, granularity);
@@ -111,7 +113,7 @@ export function FormatTrendChart({ periodByFormat, periodTotal, granularity }) {
         <XAxis dataKey="displayLabel" {...axisProps} />
         <YAxis tickFormatter={formatAxisCurrency} width={50} tick={{ fontSize: 10 }} />
         <ChartTooltip content={<TrendTooltip granularity={granularity} />} />
-        <ChartLegend content={<ChartLegendContent />} />
+        {!unnamedOnly && <ChartLegend content={<ChartLegendContent />} />}
         {formats.map((format) => (
           <Bar
             key={format}

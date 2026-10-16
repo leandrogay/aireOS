@@ -4,7 +4,7 @@ import { Fragment, useId } from 'react';
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { changePct, formatChangePct } from '@/app/utils/periodComparison';
-import { formatColor as colorFor } from '@/app/utils/storeFormats';
+import { formatColor as colorFor, UNNAMED_FORMAT } from '@/app/utils/storeFormats';
 import { HatchPattern, PeriodSwatch, edgeColor, hatchTint, patternId } from '@/components/dashboard/PeriodTexture';
 import {
   CHART_SIZE_CLASS,
@@ -12,6 +12,7 @@ import {
   bucketLabel,
   exactBucketLabel,
   formatAxisCurrency,
+  formatRevenue,
   TILTED_LABEL_LEFT_MARGIN,
   comparisonAxisProps,
   sortFormatsByTotalDesc,
@@ -23,7 +24,7 @@ import {
 // same edge, so a pale segment (UNITY) still has a visible boundary.
 
 function formatMoney(value) {
-  return `$${value.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
+  return formatRevenue(value);
 }
 
 function ChangeCell({ current, baseline }) {
@@ -66,7 +67,7 @@ function MixTooltip({ active, payload, formats }) {
           </tr>
         </thead>
         <tbody>
-          {lines.map((line) => (
+          {lines.filter((line) => line.format !== UNNAMED_FORMAT).map((line) => (
             <tr key={line.format}>
               <td>
                 <span className="flex items-center gap-1.5">
@@ -136,7 +137,7 @@ function MixLegend({ rows, names }) {
             <span className={row.hatched ? 'text-deep-violet-blue/70' : 'font-medium'}>{names[row.key]}</span>
             <span className="flex flex-wrap items-center gap-x-3 gap-y-1 border-l border-lavander pl-3">
               {row.formats.length === 0 && <span className="text-deep-violet-blue/50">No sales data</span>}
-              {row.formats.map((format) => (
+              {row.formats.filter((format) => format !== UNNAMED_FORMAT).map((format) => (
                 <span key={format} className="flex items-center gap-1.5">
                   <PeriodSwatch color={colorFor(format)} tint={hatchTint(colorFor(format))} hatched={row.hatched} />
                   {format}
