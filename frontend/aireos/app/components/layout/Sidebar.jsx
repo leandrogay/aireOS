@@ -4,7 +4,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
-import { LayoutDashboard, Package, PanelLeft, Tag, TrendingUp, Upload } from 'lucide-react';
+import { Boxes, LayoutDashboard, Package, PanelLeft, Tag, TrendingUp, Upload } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 
@@ -22,6 +22,7 @@ const NAV_ITEMS = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { label: 'Forecast', href: '/forecast', icon: TrendingUp },
   { label: 'Promotions', href: '/promotions', icon: Tag },
+  { label: 'SKUs', href: '/skus', icon: Boxes },
   {
     label: 'Inventory',
     href: '/inventory',

@@ -1,16 +1,20 @@
-from fastapi import APIRouter, HTTPException
+from decimal import Decimal
+
+from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy.exc import IntegrityError
 
 from app.services import catalog_service
 from app.schemas.catalog import (
     RetailerCreate,
     RetailerUpdate,
+    SkuCreate,
+    SkuUpdate,
     StoreCreate,
     StoreUpdate,
 )
 
 
-# Retailers and stores are under /api/catalog
+# Retailers, stores and SKUs are under /api/catalog
 router = APIRouter(
     prefix="/api/catalog",
     tags=["catalog"],
@@ -346,4 +350,134 @@ def get_sku_ranges():
                 f"Failed to retrieve sku ranges: "
                 f"{type(e).__name__}: {e}"
             ),
+        )
+
+
+# ============================================================
+# SKU CRUD, SEARCH AND FILTERS
+# ============================================================
+
+
+@router.post("/skus", status_code=201)
+def create_sku(sku: SkuCreate):
+    try:
+        return catalog_service.create_sku(sku)
+
+    except catalog_service.SkuAlreadyExistsError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+    except IntegrityError:
+        raise HTTPException(
+            status_code=409,
+            detail="A SKU with this code already exists.",
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create SKU: {type(e).__name__}: {e}",
+        )
+
+
+@router.get("/skus")
+def list_skus(
+    search: str | None = Query(default=None, max_length=255),
+    sku_range: str | None = Query(default=None, max_length=255),
+    brand: str | None = Query(default=None, max_length=255),
+    min_price: Decimal | None = Query(default=None, ge=0),
+    max_price: Decimal | None = Query(default=None, ge=0),
+):
+    if min_price is not None and max_price is not None and min_price > max_price:
+        raise HTTPException(
+            status_code=422,
+            detail="Minimum price cannot exceed maximum price.",
+        )
+
+    try:
+        return catalog_service.list_skus(
+            search=search,
+            sku_range=sku_range,
+            brand=brand,
+            min_price=min_price,
+            max_price=max_price,
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve SKUs: {type(e).__name__}: {e}",
+        )
+
+
+# Static subpaths must be declared before /skus/{sku}.
+@router.get("/skus/options")
+def get_sku_options():
+    try:
+        return catalog_service.get_sku_options()
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve SKU options: {type(e).__name__}: {e}",
+        )
+
+
+@router.get("/skus/{sku}")
+def get_sku(sku: str):
+    try:
+        item = catalog_service.get_sku(sku)
+        if item is None:
+            raise HTTPException(status_code=404, detail="SKU not found")
+        return item
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve SKU: {type(e).__name__}: {e}",
+        )
+
+
+@router.put("/skus/{sku}")
+def update_sku(sku: str, changes: SkuUpdate):
+    try:
+        updated = catalog_service.update_sku(sku, changes)
+        if updated is None:
+            raise HTTPException(status_code=404, detail="SKU not found")
+        return updated
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to update SKU: {type(e).__name__}: {e}",
+        )
+
+
+@router.delete("/skus/{sku}")
+def archive_sku(sku: str):
+    try:
+        archived = catalog_service.archive_sku(sku)
+        if archived is None:
+            raise HTTPException(status_code=404, detail="SKU not found")
+        return {
+            "status": "ok",
+            "message": f"SKU {sku} was moved to the archived SKU catalogue.",
+            "sku": sku,
+        }
+
+    except catalog_service.SkuHasPromotionsError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to archive SKU: {type(e).__name__}: {e}",
         )

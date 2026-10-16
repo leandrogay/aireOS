@@ -113,3 +113,51 @@ class SkuItem(_Base):
         default=None,
         ge=0,
     )
+
+
+class SkuBase(_Base):
+    sku_range: str = Field(
+        min_length=1,
+        max_length=255,
+    )
+
+    product_name: str = Field(
+        min_length=1,
+        max_length=255,
+    )
+
+    size: str = Field(
+        min_length=1,
+        max_length=100,
+    )
+
+    brand: str = Field(
+        min_length=1,
+        max_length=255,
+    )
+
+    uom: str = Field(
+        min_length=1,
+        max_length=50,
+    )
+
+    pack_size: int = Field(gt=0)
+
+    price: Decimal = Field(
+        ge=0,
+        max_digits=10,
+        decimal_places=2,
+    )
+
+
+class SkuCreate(SkuBase):
+    sku: str = Field(
+        min_length=1,
+        max_length=100,
+    )
+
+
+class SkuUpdate(SkuBase):
+    """Editable SKU fields. The immutable SKU code comes from the URL."""
+
+    pass
