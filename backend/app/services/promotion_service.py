@@ -270,7 +270,8 @@ def _skus_by_range(
             FROM skus
 
             WHERE
-                sku_range = ANY(CAST(:sku_ranges AS text[]))
+                is_active = TRUE
+                AND sku_range = ANY(CAST(:sku_ranges AS text[]))
                 AND sku IS DISTINCT FROM sku_range
 
             ORDER BY
@@ -306,7 +307,8 @@ def _existing_skus(
             FROM skus
 
             WHERE
-                sku = ANY(CAST(:skus AS text[]))
+                is_active = TRUE
+                AND sku = ANY(CAST(:skus AS text[]))
             """
         ),
         {

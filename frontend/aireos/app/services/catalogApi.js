@@ -1,49 +1,23 @@
 import { request } from '@/app/services/promotionsApi';
 
-// Wrappers for the Customers page: customers and the retailers under them
-// (backend app/routers/catalog.py). getRetailers / getStores for the
-// promotions form stay in promotionsApi.js.
-//
-// Names are sent as typed; the backend stores them as lowercase slugs
-// ("Giant Online" -> giant_online, schemas.catalog.normalise_name) and
-// answers 409 with a sentence for a taken name or a record already in use.
+// Customer, retailer and SKU wrappers for backend app/routers/catalog.py.
+// Retailer/store catalogue reads used by Promotions stay in promotionsApi.js.
 
 // ============================================================
 // Customers: /api/catalog/customers
 // ============================================================
 
-/**
- * GET /api/catalog/customers
- *
- * Every customer with its retailers and in-use flags, plus the retailers no
- * customer owns yet (backend customer_service.list_customers).
- *
- * @returns {Promise<{
- *   customers: Array<{ customer_id: number, customer_name: string, in_use: boolean, retailers: Array<{ retailer_id: number, retailer_name: string, store_count: number, in_use: boolean }> }>,
- *   unlinked_retailers: Array<{ retailer_id: number, retailer_name: string, store_count: number, in_use: boolean }>,
- * }>}
- */
+/** GET /api/catalog/customers. */
 export async function getCustomers() {
   return request('/api/catalog/customers');
 }
 
-/**
- * POST /api/catalog/customers
- *
- * @param {{ customer_name: string }} payload
- * @returns {Promise<object>} the new customer row
- */
+/** POST /api/catalog/customers. */
 export async function createCustomer(payload) {
   return request('/api/catalog/customers', { method: 'POST', body: payload });
 }
 
-/**
- * PUT /api/catalog/customers/{customerId}
- *
- * @param {number} customerId
- * @param {{ customer_name: string }} payload
- * @returns {Promise<object>} the updated customer row
- */
+/** PUT /api/catalog/customers/{customerId}. */
 export async function updateCustomer(customerId, payload) {
   return request(`/api/catalog/customers/${encodeURIComponent(customerId)}`, {
     method: 'PUT',
@@ -51,12 +25,7 @@ export async function updateCustomer(customerId, payload) {
   });
 }
 
-/**
- * DELETE /api/catalog/customers/{customerId}
- *
- * @param {number} customerId
- * @returns {Promise<{ status: string, customer_id: number }>}
- */
+/** DELETE /api/catalog/customers/{customerId}. */
 export async function deleteCustomer(customerId) {
   return request(`/api/catalog/customers/${encodeURIComponent(customerId)}`, {
     method: 'DELETE',
@@ -65,28 +34,14 @@ export async function deleteCustomer(customerId) {
 
 // ============================================================
 // Retailers: /api/catalog/retailers
-//
-// Writes answer with the parent customer row under `customer` (null for a
-// retailer no customer owns), so the page swaps that one row in place.
 // ============================================================
 
-/**
- * POST /api/catalog/retailers
- *
- * @param {{ retailer_name: string, customer_id: number }} payload
- * @returns {Promise<{ retailer: object, customer: object }>}
- */
+/** POST /api/catalog/retailers. */
 export async function createRetailer(payload) {
   return request('/api/catalog/retailers', { method: 'POST', body: payload });
 }
 
-/**
- * PUT /api/catalog/retailers/{retailerId}
- *
- * @param {number} retailerId
- * @param {{ retailer_name: string }} payload
- * @returns {Promise<{ retailer: object, customer: object | null }>}
- */
+/** PUT /api/catalog/retailers/{retailerId}. */
 export async function updateRetailer(retailerId, payload) {
   return request(`/api/catalog/retailers/${encodeURIComponent(retailerId)}`, {
     method: 'PUT',
@@ -94,15 +49,7 @@ export async function updateRetailer(retailerId, payload) {
   });
 }
 
-/**
- * PUT /api/catalog/retailers/{retailerId}/customer
- *
- * Links a retailer that has no customer yet.
- *
- * @param {number} retailerId
- * @param {{ customer_id: number }} payload
- * @returns {Promise<{ retailer: object, customer: object }>}
- */
+/** PUT /api/catalog/retailers/{retailerId}/customer. */
 export async function linkRetailer(retailerId, payload) {
   return request(`/api/catalog/retailers/${encodeURIComponent(retailerId)}/customer`, {
     method: 'PUT',
@@ -110,14 +57,59 @@ export async function linkRetailer(retailerId, payload) {
   });
 }
 
-/**
- * DELETE /api/catalog/retailers/{retailerId}
- *
- * @param {number} retailerId
- * @returns {Promise<{ status: string, retailer_id: number, customer: object | null }>}
- */
+/** DELETE /api/catalog/retailers/{retailerId}. */
 export async function deleteRetailer(retailerId) {
   return request(`/api/catalog/retailers/${encodeURIComponent(retailerId)}`, {
+    method: 'DELETE',
+  });
+}
+
+// ============================================================
+// SKUs: /api/catalog/skus
+// ============================================================
+
+function queryString(filters = {}) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== '' && value != null) params.set(key, String(value));
+  }
+  const query = params.toString();
+  return query ? `?${query}` : '';
+}
+
+/** GET /api/catalog/skus with optional search and filters. */
+export async function getSkus(filters) {
+  const data = await request(`/api/catalog/skus${queryString(filters)}`);
+  return Array.isArray(data) ? data : [];
+}
+
+/** GET /api/catalog/skus/{sku}. */
+export function getSku(sku) {
+  return request(`/api/catalog/skus/${encodeURIComponent(sku)}`);
+}
+
+/** GET /api/catalog/skus/options. */
+export async function getSkuOptions() {
+  const data = await request('/api/catalog/skus/options');
+  return data && typeof data === 'object' ? data : {};
+}
+
+/** POST /api/catalog/skus. */
+export function createSku(payload) {
+  return request('/api/catalog/skus', { method: 'POST', body: payload });
+}
+
+/** PUT /api/catalog/skus/{sku}. */
+export function updateSku(sku, payload) {
+  return request(`/api/catalog/skus/${encodeURIComponent(sku)}`, {
+    method: 'PUT',
+    body: payload,
+  });
+}
+
+/** DELETE /api/catalog/skus/{sku}; archives rather than removing history. */
+export function archiveSku(sku) {
+  return request(`/api/catalog/skus/${encodeURIComponent(sku)}`, {
     method: 'DELETE',
   });
 }
