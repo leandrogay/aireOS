@@ -16,6 +16,7 @@ import useDefaultDateRange from "@/hooks/useDefaultDateRange";
 import useCustomerOptions from "@/hooks/useCustomerOptions";
 import useMonthlyOnly from "@/hooks/useMonthlyOnly";
 import usePriceMix from "@/hooks/usePriceMix";
+import useCustomerTotals from "@/hooks/useCustomerTotals";
 import {
   DEFAULT_COMPARE,
   alignComparisonBuckets,
@@ -24,35 +25,44 @@ import {
 } from "@/app/utils/periodComparison";
 import { DEFAULT_PRESET_ID, buildDateRangePresets } from "@/app/utils/dateRangePresets";
 import { rangeHasWeeklyMonths, weeklyGapMessage } from "@/app/utils/weeklyGaps";
+import { relabelFormatRows } from "@/app/utils/storeFormats";
+
+const NO_CUSTOMERS = [];
 
 export default function DashboardPage() {
   const { channels, dataVersion, refreshing } = useDataFreshness();
 
-  // Customer (retailer family, e.g. "Fairprice") selector — the top field
-  // of the Filter panel; every other filter/query below is scoped underneath it. Distinct from
-  // `store` (a single branch within that customer, e.g. a FairPrice outlet)
-  // — see DashboardFilters. Starts unset and auto-selects the first
-  // available customer once useCustomerOptions loads, via the "adjust
-  // state during render" pattern: this is a
-  // page-wide scope selector everything else waits on, not an optional
-  // filter, so it should never sit unset once at least one customer exists.
+  // Customer ticks. null until the options arrive, then every customer is
+  // ticked (the cross-customer chart). [] is the user clearing every tick
+  // from the menu, and must not be filled back in on its own. Clear in the
+  // filter card is the one action that ticks every customer again. The rest
+  // of the page still reads one customer: the first ticked name in the
+  // option list. The chart reads `customers` once two or more are ticked.
   const { options: customerOptions, loading: customerOptionsLoading, error: customerOptionsError } =
     useCustomerOptions({ dataVersion });
-  const [customer, setCustomer] = useState('');
-  const [customerLabel, setCustomerLabel] = useState('');
-  if (!customer && customerOptions.length > 0) {
-    setCustomer(customerOptions[0].value);
-    setCustomerLabel(customerOptions[0].label);
+  const [selectedCustomers, setSelectedCustomers] = useState(null);
+  if (selectedCustomers === null && customerOptions.length > 0) {
+    setSelectedCustomers(customerOptions.map((option) => option.value));
   }
+  const customers = selectedCustomers ?? NO_CUSTOMERS;
+  const customer = customerOptions.find((option) => customers.includes(option.value))?.value ?? '';
+  const comparingCustomers = customers.length > 1;
 
-  // SKU codes and store codes belong to one customer's catalogue, so a
-  // customer switch drops both rather than querying a combination that
-  // can't exist. Period/compare stay, since dates mean the same for everyone.
-  function handleCustomerChange(value, label) {
-    setCustomer(value);
-    setCustomerLabel(label);
-    clearSku();
-    clearStore();
+  // Switching the single customer drops the SKU, because that code may not
+  // exist for the new customer. A store code belongs to one customer, so it
+  // is cleared whenever more than one customer is ticked. Period stays.
+  function handleCustomersChange(next) {
+    const previousSingle = customers.length === 1 ? customers[0] : null;
+    const nextSingle = next.length === 1 ? next[0] : null;
+    setSelectedCustomers(next);
+    if (previousSingle && nextSingle && previousSingle !== nextSingle) clearSku();
+    // A store belongs to one customer, and a period comparison is a
+    // time series. Neither applies once the chart is one total per customer.
+    if (next.length !== 1) {
+      clearStore();
+      setCompareTo(DEFAULT_COMPARE);
+      setCustomCompare({ start: '', end: '' });
+    }
   }
 
   const [sku, setSku] = useState('');
@@ -62,6 +72,14 @@ export default function DashboardPage() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [mode, setMode] = useState('offline');
+  // `{customer}_online` is absent from the freshness map when that channel
+  // has no sell-out rows (NHG). Online is disabled only once that map has
+  // loaded, and only when every ticked customer is offline-only.
+  const freshnessLoaded = Object.keys(channels).length > 0;
+  const onlineAvailable = customers.some((name) => Boolean(channels[`${name}_online`]));
+  if (freshnessLoaded && mode === 'online' && customers.length > 0 && !onlineAvailable) {
+    setMode('offline');
+  }
   // "Compare to" baseline — none by default (DEFAULT_COMPARE); Clear Filters
   // returns to that. `customCompare` is only used while compareTo is
   // 'custom'.
@@ -200,6 +218,15 @@ export default function DashboardPage() {
     enabled: Boolean(baseline) && !granularityPending,
   });
 
+  const customerTotals = useCustomerTotals({
+    dataVersion,
+    customers,
+    sku,
+    startDate: effectiveStartDate,
+    endDate: effectiveEndDate,
+    enabled: comparingCustomers,
+  });
+
   const { priceMix } = usePriceMix({
     dataVersion,
     customer,
@@ -213,6 +240,8 @@ export default function DashboardPage() {
 
   const currentTotals = summary.summaryByMode[mode]?.periodTotal ?? [];
   const baselineTotals = baseline ? (baselineSummary.summaryByMode[mode]?.periodTotal ?? []) : [];
+  const currentFormatRows = summary.summaryByMode[mode]?.periodByFormat ?? [];
+  const baselineFormatRows = baseline ? (baselineSummary.summaryByMode[mode]?.periodByFormat ?? []) : [];
   const comparisonRows = baseline
     ? alignComparisonBuckets(currentTotals, baselineTotals, {
         compareTo,
@@ -222,12 +251,16 @@ export default function DashboardPage() {
         currentEnd: effectiveEndDate,
         baselineStart: baseline.start,
         latestWeekStart,
-        currentByFormat: summary.summaryByMode[mode]?.periodByFormat ?? [],
-        baselineWeeksByFormat: baselineSummary.summaryByMode[mode]?.periodByFormat ?? [],
+        currentByFormat: relabelFormatRows(currentFormatRows, baselineFormatRows),
+        baselineWeeksByFormat: relabelFormatRows(baselineFormatRows, currentFormatRows),
       })
     : null;
 
-  const lastUpdated = customer ? channels[`${customer}_${mode}`] : null;
+  const lastUpdated = customers
+    .map((name) => channels[`${name}_${mode}`])
+    .filter(Boolean)
+    .sort()
+    .at(-1) ?? null;
 
   function handleSkuChange(value, productName) {
     setSku(value);
@@ -255,6 +288,11 @@ export default function DashboardPage() {
     handleDateRangeChange('', '');
     setCompareTo(DEFAULT_COMPARE);
     setCustomCompare({ start: '', end: '' });
+    // The filter box opens with every customer ticked. Clear puts that back,
+    // including when only one customer was chosen.
+    if (customerOptions.length > 0) {
+      setSelectedCustomers(customerOptions.map((option) => option.value));
+    }
   }
 
   const badges = [
@@ -268,9 +306,9 @@ export default function DashboardPage() {
         <div className="lg:col-span-2">
           <RevenueTrendCard
             summaryByMode={summary.summaryByMode}
-            loading={summary.loading}
+            loading={customers.length === 0 ? false : (comparingCustomers ? customerTotals.loading : summary.loading)}
             refreshing={summary.refreshing}
-            error={summary.error || (baseline ? baselineSummary.error : null)}
+            error={customers.length === 0 ? null : (comparingCustomers ? customerTotals.error : (summary.error || (baseline ? baselineSummary.error : null)))}
             freshnessRefreshing={refreshing}
             lastUpdated={lastUpdated}
             weeklyGap={weeklyGap}
@@ -279,9 +317,11 @@ export default function DashboardPage() {
             onModeChange={setMode}
             granularity={chartGranularity}
             onGranularityChange={setGranularityChoice}
-            comparisonRows={comparisonRows}
+            comparisonRows={comparingCustomers ? null : comparisonRows}
             periodNames={periodNames}
             comparisonLoading={baselineSummary.loading}
+            customerBars={customers.length === 0 ? [] : (comparingCustomers ? customerTotals.rows : null)}
+            onlineEnabled={!freshnessLoaded || onlineAvailable}
             headerExtra={
               <PeriodControls
                 start={effectiveStartDate}
@@ -292,6 +332,7 @@ export default function DashboardPage() {
                 onDateRangeChange={handleDateRangeChange}
                 compareTo={compareTo}
                 compareOptions={compareOptions}
+                compareDisabled={comparingCustomers}
                 onCompareChange={handleCompareChange}
               />
             }
@@ -307,8 +348,8 @@ export default function DashboardPage() {
             <DashboardFilters
               customerControl={
                 <CustomerSelector
-                  value={customer}
-                  onChange={handleCustomerChange}
+                  selected={customers}
+                  onChange={handleCustomersChange}
                   options={customerOptions}
                   loading={customerOptionsLoading}
                   error={customerOptionsError}
@@ -316,10 +357,13 @@ export default function DashboardPage() {
               }
               sku={sku}
               onSkuChange={handleSkuChange}
+              customers={customers}
               customer={customer}
+              storeDisabled={customers.length !== 1}
               store={store}
               onStoreChange={handleStoreChange}
               hasPeriodChanges={hasExplicitDateFilter || compareTo !== DEFAULT_COMPARE}
+              customersFiltered={customerOptions.length > 0 && customers.length !== customerOptions.length}
               dataVersion={dataVersion}
               activeFilters={badges.length > 0 && badges}
               onClearFilters={clearAllFilters}
@@ -347,9 +391,11 @@ export default function DashboardPage() {
             summaryByMode={summary.summaryByMode}
             baselineSummaryByMode={baseline && !baselineSummary.loading ? baselineSummary.summaryByMode : null}
             periodNames={periodNames}
-            loading={summary.loading}
-            error={summary.error}
+            loading={comparingCustomers ? customerTotals.loading : summary.loading}
+            error={comparingCustomers ? customerTotals.error : summary.error}
             mode={mode}
+            comparingCustomers={comparingCustomers}
+            customerRows={customerTotals.rows}
           />
         </div>
 
@@ -365,6 +411,11 @@ export default function DashboardPage() {
             comparisonStart={baseline?.start ?? ''}
             comparisonEnd={baseline?.end ?? ''}
             compareShort={compareShort}
+            comparingCustomers={comparingCustomers}
+            customers={customers}
+            customerRows={customerTotals.rows}
+            customerRowsLoading={customerTotals.loading}
+            customerRowsError={customerTotals.error}
           />
         </div>
       </div>

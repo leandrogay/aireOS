@@ -19,6 +19,7 @@ import { monthCount, parseIso } from '@/app/utils/periodComparison';
  *   onDateRangeChange: (start: string, end: string) => void,
  *   compareTo: string,
  *   compareOptions: Array<object>,
+ *   compareDisabled: boolean,
  *   onCompareChange: (value: string, customRange?: { start: string, end: string }) => void,
  * }} props
  */
@@ -31,6 +32,7 @@ export default function PeriodControls({
   onDateRangeChange,
   compareTo,
   compareOptions,
+  compareDisabled = false,
   onCompareChange,
 }) {
   // latestDataEnd is the real last day loaded.
@@ -60,6 +62,7 @@ export default function PeriodControls({
           earliestDataStart={earliestDataStart}
           // A custom comparison runs as many months as the Period.
           periodLength={start && end ? monthCount(start, end) : 1}
+          disabled={compareDisabled}
           onChange={onCompareChange}
         />
       </div>
