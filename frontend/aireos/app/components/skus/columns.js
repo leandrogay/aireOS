@@ -14,3 +14,13 @@ export const SKU_COLUMNS = [
   { key: 'price', label: 'Price', width: '7rem' },
   ACTIONS_COLUMN,
 ];
+
+export const SKU_HISTORY_COLUMNS = [
+  { key: 'action', label: 'Action', width: '7rem' },
+  { key: 'when', label: 'When', width: '11rem' },
+  { key: 'product', label: 'Product' },
+  { key: 'range', label: 'Range' },
+  { key: 'size', label: 'Size', width: '5rem' },
+  { key: 'pack', label: 'Pack', width: '5rem' },
+  { key: 'price', label: 'Price', width: '7rem' },
+];

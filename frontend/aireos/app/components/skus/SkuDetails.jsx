@@ -1,6 +1,8 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import StatusPill from '@/components/ui/StatusPill';
+import TableGrid from '@/components/ui/TableGrid';
 import {
   Dialog,
   DialogContent,
@@ -11,7 +13,10 @@ import {
 } from '@/components/ui/dialog';
 import { formatDateTime } from '@/lib/formatDate';
 
+import { SKU_HISTORY_COLUMNS } from './columns';
+
 const money = new Intl.NumberFormat('en-SG', { style: 'currency', currency: 'SGD' });
+const ACTION_TONES = { created: 'success', updated: 'info', archived: 'muted' };
 
 export default function SkuDetails({ open, sku, loading, error, onEdit, onClose }) {
   const fields = sku ? [
@@ -44,30 +49,23 @@ export default function SkuDetails({ open, sku, loading, error, onEdit, onClose 
               {!sku.history?.length ? (
                 <p className="text-sm text-muted-foreground">No history has been recorded yet.</p>
               ) : (
-                <div className="overflow-x-auto rounded-lg border border-border">
-                  <table className="w-full whitespace-nowrap text-left text-xs">
-                    <thead className="bg-muted/60 text-muted-foreground">
-                      <tr>
-                        {['Action', 'When', 'Product', 'Range', 'Size', 'Pack', 'Price'].map((label) => (
-                          <th key={label} className="px-3 py-2 font-medium">{label}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {sku.history.map((entry) => (
-                        <tr key={entry.sku_history_id}>
-                          <td className="px-3 py-2 capitalize">{entry.action}</td>
-                          <td className="px-3 py-2 text-muted-foreground">{formatDateTime(entry.changed_at)}</td>
-                          <td className="px-3 py-2">{entry.product_name}</td>
-                          <td className="px-3 py-2">{entry.sku_range}</td>
-                          <td className="px-3 py-2">{entry.size}</td>
-                          <td className="px-3 py-2 tabular-nums">{entry.pack_size}</td>
-                          <td className="px-3 py-2 tabular-nums">{money.format(Number(entry.price))}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <TableGrid variant="nested" columns={SKU_HISTORY_COLUMNS} minWidth="54rem">
+                  {sku.history.map((entry) => (
+                    <tr key={entry.sku_history_id} className="h-11 border-b border-lavander/80 last:border-b-0">
+                      <td className="px-4 py-2">
+                        <StatusPill tone={ACTION_TONES[entry.action]}>
+                          <span className="capitalize">{entry.action}</span>
+                        </StatusPill>
+                      </td>
+                      <td className="px-4 py-2 text-muted-foreground">{formatDateTime(entry.changed_at)}</td>
+                      <td className="truncate px-4 py-2" title={entry.product_name}>{entry.product_name}</td>
+                      <td className="truncate px-4 py-2" title={entry.sku_range}>{entry.sku_range}</td>
+                      <td className="px-4 py-2">{entry.size}</td>
+                      <td className="px-4 py-2 tabular-nums">{entry.pack_size}</td>
+                      <td className="px-4 py-2 tabular-nums">{money.format(Number(entry.price))}</td>
+                    </tr>
+                  ))}
+                </TableGrid>
               )}
             </section>
           </>

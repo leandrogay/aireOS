@@ -2,22 +2,13 @@
 
 import { Button } from '@/components/ui/button';
 import FilterSelect from '@/components/ui/FilterSelect';
-import TableSearch from '@/components/ui/TableSearch';
 
 const options = (values) => values.map((value) => ({ value: String(value), label: String(value) }));
 
-export default function SkuFilters({ search, filters, values, onSearch, onChange, onReset }) {
-  const active = Boolean(search || filters.skuRange || filters.brand || filters.minPrice || filters.maxPrice);
-
+export default function SkuFilters({ filters, values, hasFilters, onChange, onReset }) {
   return (
     <section aria-label="Filter SKUs" className="rounded-lg border border-lavander bg-white p-3 shadow-sm">
       <div className="flex flex-wrap items-end gap-3">
-        <TableSearch
-          value={search}
-          onChange={onSearch}
-          label="Search SKUs"
-          placeholder="Search SKU, range or product…"
-        />
         <div className="grid min-w-0 flex-1 grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-3">
           <FilterSelect
             label="SKU range"
@@ -56,7 +47,7 @@ export default function SkuFilters({ search, filters, values, onSearch, onChange
             />
           </label>
         </div>
-        <Button variant="outline" size="lg" onClick={onReset} disabled={!active}>Reset</Button>
+        <Button variant="outline" size="lg" onClick={onReset} disabled={!hasFilters}>Reset</Button>
       </div>
     </section>
   );

@@ -6,11 +6,13 @@ import { Plus } from 'lucide-react';
 import PageLayout from '@/components/layout/PageLayout';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { Button } from '@/components/ui/button';
+import { PAGE_SIZES } from '@/components/ui/TablePagination';
 import Toast from '@/components/ui/Toast';
 import SkuDetails from '@/components/skus/SkuDetails';
 import SkuFilters from '@/components/skus/SkuFilters';
 import SkuForm from '@/components/skus/SkuForm';
 import SkuTable from '@/components/skus/SkuTable';
+import useConfirmAction from '@/hooks/useConfirmAction';
 import useToast from '@/hooks/useToast';
 import { paginate, matchesSearch } from '@/app/utils/tableView';
 import {
@@ -30,7 +32,7 @@ export default function SkusPage() {
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
   const [refreshKey, setRefreshKey] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -38,9 +40,8 @@ export default function SkusPage() {
   const [details, setDetails] = useState(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [detailsError, setDetailsError] = useState('');
-  const [pendingArchive, setPendingArchive] = useState(null);
-  const [archiving, setArchiving] = useState(false);
   const { toast, notify, dismissToast } = useToast();
+  const deletion = useConfirmAction({ onConfirm: archiveRecord });
 
   useEffect(() => {
     let cancelled = false;
@@ -68,6 +69,7 @@ export default function SkusPage() {
     return true;
   });
   const { pageRows, currentPage, totalPages } = paginate(filtered, page, pageSize);
+  const hasFilters = search.trim() !== '' || Object.values(filters).some((value) => value !== '');
 
   const changeSearch = (value) => { setSearch(value); setPage(1); };
   const changeFilter = (key, value) => {
@@ -106,21 +108,15 @@ export default function SkusPage() {
     }
   };
 
-  const confirmArchive = async () => {
-    if (!pendingArchive) return;
-    setArchiving(true);
+  async function archiveRecord(sku) {
     try {
-      await archiveSku(pendingArchive.sku);
-      setSkus((current) => current.filter((item) => item.sku !== pendingArchive.sku));
-      notify('deleted', `SKU ${pendingArchive.sku} moved to the archived catalogue.`);
-      setPendingArchive(null);
+      await archiveSku(sku.sku);
+      setSkus((current) => current.filter((item) => item.sku !== sku.sku));
+      notify('deleted', `SKU ${sku.sku} moved to the archived catalogue.`);
     } catch (archiveError) {
       notify('error', archiveError.message || 'Failed to archive SKU.');
-      setPendingArchive(null);
-    } finally {
-      setArchiving(false);
     }
-  };
+  }
 
   return (
     <PageLayout
@@ -130,10 +126,9 @@ export default function SkusPage() {
     >
       <div className="flex min-h-0 flex-1 flex-col gap-3">
         <SkuFilters
-          search={search}
           filters={filters}
           values={options}
-          onSearch={changeSearch}
+          hasFilters={hasFilters}
           onChange={changeFilter}
           onReset={() => { setSearch(''); setFilters(EMPTY_FILTERS); setPage(1); }}
         />
@@ -141,6 +136,7 @@ export default function SkusPage() {
           rows={pageRows}
           total={filtered.length}
           totalCount={skus.length}
+          search={search}
           loading={loading}
           error={error}
           page={currentPage}
@@ -150,8 +146,9 @@ export default function SkusPage() {
           onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
           onView={viewSku}
           onEdit={(sku) => setEditor({ sku })}
-          onDelete={setPendingArchive}
+          onDelete={deletion.request}
           onRefresh={refreshCatalog}
+          onSearch={changeSearch}
         />
       </div>
 
@@ -173,18 +170,18 @@ export default function SkusPage() {
         onEdit={(sku) => { setDetails(null); setEditor({ sku }); }}
       />
       <ConfirmDialog
-        open={Boolean(pendingArchive)}
+        open={Boolean(deletion.target)}
         title="Delete this SKU?"
         description="It will leave the active catalogue but remain available to historical sales and inventory records."
-        details={pendingArchive ? [
-          { label: 'SKU', value: pendingArchive.sku },
-          { label: 'Product', value: pendingArchive.product_name },
+        details={deletion.target ? [
+          { label: 'SKU', value: deletion.target.sku },
+          { label: 'Product', value: deletion.target.product_name },
         ] : []}
         confirmLabel="Delete SKU"
         pendingLabel="Deleting…"
-        isPending={archiving}
-        onConfirm={confirmArchive}
-        onCancel={() => setPendingArchive(null)}
+        isPending={deletion.isPending}
+        onConfirm={deletion.confirm}
+        onCancel={deletion.cancel}
       />
       <Toast toast={toast} onDismiss={dismissToast} />
     </PageLayout>
