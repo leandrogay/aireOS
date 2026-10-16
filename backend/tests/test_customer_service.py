@@ -3,6 +3,7 @@ from conftest import FakeConnection, FakeEngine
 
 from app.schemas.catalog import CustomerCreate, CustomerUpdate
 from app.services import customer_service
+from app.services.settings import doh
 
 
 def _customer(in_use=False, retailers=()):
@@ -78,6 +79,22 @@ def test_create_inserts_the_slug_and_returns_the_row(monkeypatch):
     assert params == {"customer_name": "giant"}
 
 
+def test_create_gives_the_new_customer_default_doh_settings(monkeypatch):
+    conn = FakeConnection(_respond(customer=_customer()))
+    _install(monkeypatch, conn)
+
+    customer_service.create_customer(CustomerCreate(customer_name="Giant"))
+
+    _, params = conn.sql_containing("INSERT INTO doh_settings")[0]
+    assert params == {
+        "customer_id": 3,
+        "min_doh": doh.GLOBAL_DEFAULT_MIN_DOH,
+        "target_doh": doh.GLOBAL_DEFAULT_TARGET_DOH,
+        "max_doh": doh.GLOBAL_DEFAULT_MAX_DOH,
+        "updated_by": None,
+    }
+
+
 def test_a_taken_name_raises_without_inserting(monkeypatch):
     conn = FakeConnection(_respond(name_taken=True))
     _install(monkeypatch, conn)
@@ -88,6 +105,7 @@ def test_a_taken_name_raises_without_inserting(monkeypatch):
     _, params = conn.sql_containing("lower(customer_name)")[0]
     assert params == {"customer_name": "giant", "exclude_id": None}
     assert conn.sql_containing("INSERT INTO customers") == []
+    assert conn.sql_containing("INSERT INTO doh_settings") == []
 
 
 # ---- update --------------------------------------------------------------------
@@ -134,6 +152,7 @@ def test_a_customer_in_use_cannot_be_deleted(monkeypatch):
         customer_service.delete_customer(3)
 
     assert conn.sql_containing("DELETE FROM customers") == []
+    assert conn.sql_containing("DELETE FROM doh_settings") == []
 
 
 def test_a_customer_with_retailers_cannot_be_deleted(monkeypatch):
@@ -153,6 +172,27 @@ def test_an_unused_customer_is_deleted(monkeypatch):
     assert customer_service.delete_customer(3) is True
     _, params = conn.sql_containing("DELETE FROM customers")[0]
     assert params == {"customer_id": 3}
+
+
+def test_deleting_a_customer_leaves_its_doh_settings_to_the_cascade(monkeypatch):
+    conn = FakeConnection(_respond(customer=_customer()))
+    _install(monkeypatch, conn)
+
+    customer_service.delete_customer(3)
+
+    # doh_settings.customer_id is ON DELETE CASCADE, so only the customer row is deleted here.
+    deletes = [sql for sql, _ in conn.calls if sql.startswith("DELETE FROM")]
+    assert [sql.split()[2] for sql in deletes] == ["customers"]
+
+
+def test_doh_settings_do_not_make_a_customer_in_use(monkeypatch):
+    conn = FakeConnection(_respond(customer=_customer()))
+    _install(monkeypatch, conn)
+
+    customer_service.list_customers()
+
+    sql, _ = conn.sql_containing("FROM customers c")[0]
+    assert "doh_settings" not in sql
 
 
 def test_deleting_a_missing_customer_returns_false(monkeypatch):
