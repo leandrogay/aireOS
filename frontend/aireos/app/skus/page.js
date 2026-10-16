@@ -31,6 +31,7 @@ export default function SkusPage() {
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [editor, setEditor] = useState(null);
@@ -56,7 +57,7 @@ export default function SkusPage() {
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [refreshKey]);
 
   const filtered = skus.filter((sku) => {
     if (!matchesSearch([sku.sku, sku.sku_range, sku.product_name], search)) return false;
@@ -72,6 +73,11 @@ export default function SkusPage() {
   const changeFilter = (key, value) => {
     setFilters((current) => ({ ...current, [key]: value }));
     setPage(1);
+  };
+  const refreshCatalog = () => {
+    setLoading(true);
+    setError('');
+    setRefreshKey((current) => current + 1);
   };
 
   const saveSku = async (payload) => {
@@ -134,6 +140,7 @@ export default function SkusPage() {
         <SkuTable
           rows={pageRows}
           total={filtered.length}
+          totalCount={skus.length}
           loading={loading}
           error={error}
           page={currentPage}
@@ -144,6 +151,7 @@ export default function SkusPage() {
           onView={viewSku}
           onEdit={(sku) => setEditor({ sku })}
           onDelete={setPendingArchive}
+          onRefresh={refreshCatalog}
         />
       </div>
 

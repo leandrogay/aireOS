@@ -2,16 +2,18 @@
 
 import { Eye, Pencil, Trash2 } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
+import DataTable from '@/components/ui/DataTable';
+import RowActions from '@/components/ui/RowActions';
 import TablePagination from '@/components/ui/TablePagination';
-import TableSkeleton from '@/components/ui/TableSkeleton';
+
+import { SKU_COLUMNS } from './columns';
 
 const money = new Intl.NumberFormat('en-SG', { style: 'currency', currency: 'SGD' });
-const header = 'px-3 py-2.5 text-xs font-medium text-deep-violet-blue/70';
 
 export default function SkuTable({
   rows,
   total,
+  totalCount,
   loading,
   error,
   page,
@@ -22,58 +24,57 @@ export default function SkuTable({
   onView,
   onEdit,
   onDelete,
+  onRefresh,
 }) {
   return (
-    <section aria-label="SKU catalogue" className="flex min-h-80 flex-1 flex-col overflow-hidden rounded-lg border border-lavander bg-white shadow-sm">
-      <div className="px-4 py-3 text-sm text-deep-violet-blue/70" aria-live="polite">
-        {loading ? 'Loading SKUs…' : `${total} active ${total === 1 ? 'SKU' : 'SKUs'}`}
-      </div>
-      {error && <p className="mx-4 mb-3 rounded-md border border-red-200 bg-red-50 p-2 text-sm text-red-700">{error}</p>}
-      <div className="min-h-0 flex-1 overflow-auto border-t border-lavander">
-        <table className="w-full whitespace-nowrap text-left text-sm text-deep-violet-blue">
-          <thead className="sticky top-0 z-10 bg-cream">
-            <tr>
-              {['SKU', 'Product', 'Range', 'Size', 'Brand', 'UOM', 'Pack size', 'Price'].map((label) => (
-                <th key={label} scope="col" className={header}>{label}</th>
-              ))}
-              <th scope="col" className="w-px px-3 py-2.5"><span className="sr-only">Actions</span></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-lavander/70">
-            {loading && <TableSkeleton columns={9} />}
-            {!loading && !rows.length && (
-              <tr><td colSpan={9} className="px-4 py-20 text-center text-deep-violet-blue/70">No SKUs match the current search and filters.</td></tr>
-            )}
-            {!loading && rows.map((sku) => (
-              <tr key={sku.sku} className="hover:bg-cream/60">
-                <td className="px-3 py-2.5 font-medium">{sku.sku}</td>
-                <td className="max-w-64 truncate px-3 py-2.5" title={sku.product_name}>{sku.product_name}</td>
-                <td className="max-w-52 truncate px-3 py-2.5" title={sku.sku_range}>{sku.sku_range}</td>
-                <td className="px-3 py-2.5">{sku.size}</td>
-                <td className="px-3 py-2.5">{sku.brand}</td>
-                <td className="px-3 py-2.5">{sku.uom}</td>
-                <td className="px-3 py-2.5 tabular-nums">{sku.pack_size}</td>
-                <td className="px-3 py-2.5 tabular-nums">{money.format(Number(sku.price))}</td>
-                <td className="px-2 py-2">
-                  <div className="flex gap-1">
-                    <Button variant="ghost" size="icon-sm" aria-label={`View ${sku.sku}`} onClick={() => onView(sku)}><Eye /></Button>
-                    <Button variant="ghost" size="icon-sm" aria-label={`Edit ${sku.sku}`} onClick={() => onEdit(sku)}><Pencil /></Button>
-                    <Button variant="ghost" size="icon-sm" aria-label={`Delete ${sku.sku}`} onClick={() => onDelete(sku)}><Trash2 /></Button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <TablePagination
-        page={page}
-        totalPages={totalPages}
-        pageSize={pageSize}
-        totalRows={total}
-        onPageChange={onPageChange}
-        onPageSizeChange={onPageSizeChange}
-      />
-    </section>
+    <DataTable
+      label="SKU catalogue"
+      noun="SKU"
+      plural="SKUs"
+      totalCount={totalCount}
+      shownCount={total}
+      isLoading={loading}
+      error={error}
+      onRefresh={onRefresh}
+      emptyMessage="No active SKUs yet. Use Create SKU to add the first one."
+      fill
+      footer={
+        <TablePagination
+          page={page}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          totalRows={total}
+          onPageChange={onPageChange}
+          onPageSizeChange={onPageSizeChange}
+        />
+      }
+      columns={SKU_COLUMNS}
+      minWidth="72rem"
+      emptyState={!loading && totalCount > 0 && total === 0 ? 'No SKUs match the current search and filters.' : null}
+    >
+      {rows.map((sku) => {
+        const actions = [
+          { key: 'view', label: 'View details', icon: Eye, onSelect: () => onView(sku) },
+          { key: 'edit', label: 'Edit', icon: Pencil, onSelect: () => onEdit(sku) },
+          { key: 'delete', label: 'Delete', icon: Trash2, destructive: true, onSelect: () => onDelete(sku) },
+        ];
+
+        return (
+          <tr key={sku.sku} className="h-11 border-b border-lavander/80 last:border-b-0 hover:bg-cream/60">
+            <td className="px-4 py-2.5 font-medium">{sku.sku}</td>
+            <td className="truncate px-4 py-2.5" title={sku.product_name}>{sku.product_name}</td>
+            <td className="truncate px-4 py-2.5" title={sku.sku_range}>{sku.sku_range}</td>
+            <td className="px-4 py-2.5">{sku.size}</td>
+            <td className="px-4 py-2.5">{sku.brand}</td>
+            <td className="px-4 py-2.5">{sku.uom}</td>
+            <td className="px-4 py-2.5 tabular-nums">{sku.pack_size}</td>
+            <td className="px-4 py-2.5 tabular-nums">{money.format(Number(sku.price))}</td>
+            <td className="px-2 py-1 text-right">
+              <RowActions label={`Actions for SKU ${sku.sku}`} actions={actions} />
+            </td>
+          </tr>
+        );
+      })}
+    </DataTable>
   );
 }
