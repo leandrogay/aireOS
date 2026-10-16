@@ -20,6 +20,7 @@ const NAV_ITEMS = [
     children: [
       { label: 'Mappings', href: '/mappings' },
       { label: 'SKUs', href: '/skus' },
+      { label: 'Customers', href: '/customers' },
     ],
   },
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
