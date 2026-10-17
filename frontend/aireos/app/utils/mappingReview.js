@@ -97,6 +97,9 @@ export function toColumnRows(mapping) {
       rationale: rule.rationale || '',
       reviewed: rule.reviewed === true,
       transform: rule.transform && typeof rule.transform === 'object' ? rule.transform : null,
+      // Settings that are not a column or a transform (how a SKU is matched,
+      // where its description is read). Carried so an edit keeps them.
+      options: rule.options || null,
     }));
 
     return [
@@ -137,13 +140,17 @@ export function toColumnRows(mapping) {
  * from the mapping untouched apart from their edited period settings, since
  * the review never repoints them.
  */
-export function toRules(mapping, rows) {
+export function toRules(mapping, rows, fieldReviews = {}) {
   const lockedRules = (mapping?.rules || [])
     .map((rule, index) => ({ rule, index }))
     .filter(({ rule }) => rule.editable === false)
     .map(({ rule, index }) => {
       const edited = rows.find((row) => row.ruleIndex === index && row.meltGroup);
-      if (!edited) return rule;
+      if (!edited) {
+        // A field filled without a column (constant, derived, not in this
+        // file) is confirmed from the coverage panel, not a row.
+        return fieldReviews[rule.targetField] ? { ...rule, reviewed: true } : rule;
+      }
       // The melt group is stored verbatim, so the sign-off has to ride on it.
       const reviewed = edited.fields.every((field) => field.reviewed);
       return { ...rule, reviewed, meltGroup: { ...edited.meltGroup, reviewed } };
@@ -162,6 +169,7 @@ export function toRules(mapping, rows) {
         rationale: field.rationale,
         reviewed: field.reviewed === true,
         transform: field.transform || null,
+        options: field.options || null,
       })),
     );
 
@@ -172,31 +180,42 @@ export function toRules(mapping, rows) {
  * Which target fields something fills, and what fills them.
  *
  * Read from two places, because they are authoritative about different
- * things. A rule the review cannot edit speaks for itself. Everything editable
- * is read from the rows instead, since those carry the reviewer's changes and
- * the rules do not.
+ * things. A rule the review cannot edit speaks for itself -- a melt group, a
+ * constant, a derived field, the file's name, or one not in this file.
+ * Everything editable is read from the rows instead, since those carry the
+ * reviewer's changes and the rules do not. A column the reviewer assigns wins
+ * over a locked "not in this file".
  */
 function filledTargets(mapping, rows) {
   const filled = new Map();
-
-  (mapping?.rules || []).forEach((rule) => {
-    if (rule.editable !== false || !rule.targetField || filled.has(rule.targetField)) return;
-    filled.set(rule.targetField, {
-      column: rule.sourceColumn,
-      confidence: rule.confidence || 'high',
-      locked: true,
-    });
-  });
 
   rows.forEach((row) => {
     if (row.locked) return;
     row.fields.forEach((field) => {
       if (filled.has(field.targetField)) return;
       filled.set(field.targetField, {
+        status: 'mapped',
         column: row.column,
         confidence: field.confidence,
+        reviewed: field.reviewed === true,
         locked: false,
       });
+    });
+  });
+
+  (mapping?.rules || []).forEach((rule) => {
+    if (rule.editable !== false || !rule.targetField || filled.has(rule.targetField)) return;
+    let status = 'auto';
+    if (rule.meltGroup) status = 'mapped';
+    else if (rule.status === 'not_available') status = 'not_available';
+    filled.set(rule.targetField, {
+      status,
+      column: rule.meltGroup ? rule.sourceColumn : null,
+      description: rule.description || rule.sourceColumn,
+      reason: rule.reason || null,
+      confidence: rule.confidence || 'high',
+      reviewed: rule.reviewed === true,
+      locked: true,
     });
   });
 
@@ -204,44 +223,42 @@ function filledTargets(mapping, rows) {
 }
 
 /**
- * Every business field the mapping is expected to fill, and where it stands.
+ * Every field the mapping accounts for, and how.
  *
- * Three states, and the difference matters to whoever is reading:
- *   mapped    a source column feeds it
- *   auto      a melt group fills it with no column involved -- period_start
- *             and its two siblings are read out of the period columns' own
- *             headers, so there is nothing to choose and showing them as
- *             missing would send someone hunting for a column that is not
- *             there
- *   unmapped  nothing fills it yet
+ * Four states, and the difference matters to whoever is reading:
+ *   mapped         a source column (or a group of them) feeds it
+ *   auto           filled without a column: a constant, computed from other
+ *                  fields, or written by the pipeline
+ *   not_available  the proposal says the file does not hold it, with a reason
+ *   unmapped       nothing fills it -- the reviewer cleared it
  *
- * @returns {{ field: string, status: 'mapped'|'auto'|'unmapped', column: string?, confidence: string?, locked: boolean }[]}
+ * @returns {{ field: string, status: 'mapped'|'auto'|'not_available'|'unmapped', column: string?, description: string?, reason: string?, confidence: string?, reviewed: boolean, locked: boolean }[]}
  */
-export function computeCoverage(mapping, rows) {
+export function computeCoverage(mapping, rows, fieldReviews = {}) {
   const filled = filledTargets(mapping, rows);
-  const periodDerived = new Set(mapping?.periodDerivedFields || []);
-  const hasMeltGroup = rows.some((row) => row.locked);
 
   return (mapping?.coverageFields || []).map((field) => {
     const entry = filled.get(field);
-    if (entry) return { field, status: 'mapped', ...entry };
-
-    if (periodDerived.has(field) && hasMeltGroup) {
-      return { field, status: 'auto', column: null, confidence: 'high', locked: true };
+    if (!entry) {
+      return { field, status: 'unmapped', column: null, confidence: null, reviewed: false, locked: false };
     }
-
-    return { field, status: 'unmapped', column: null, confidence: null, locked: false };
+    return { field, ...entry, reviewed: entry.reviewed || fieldReviews[field] === true };
   });
+}
+
+/** A decision made without a column that the proposal was unsure of and nobody has confirmed. */
+export function needsFieldReview(entry) {
+  return entry.locked && !entry.column && entry.confidence === 'low' && !entry.reviewed;
 }
 
 /**
  * What still stands between these rows and an approval.
  *
- * Required fields come from the server's own list of what the ingest step
+ * Required fields come from the server's own list of what an output row
  * needs, recomputed here against the edited rows rather than read off the
  * mapping, which describes the version that was loaded.
  */
-export function reviewIssues(mapping, rows, requiredFields) {
+export function reviewIssues(mapping, rows, requiredFields, fieldReviews = {}) {
   // One column may fill several fields. One field may not be filled by several
   // columns -- both would be renamed to the same name and which survived would
   // be luck -- so that is the clash worth reporting.
@@ -257,21 +274,60 @@ export function reviewIssues(mapping, rows, requiredFields) {
     });
   });
 
-  const filled = new Set(filledTargets(mapping, rows).keys());
-
-  // A melt group fills the period fields off its own column headers. Counting
-  // them as missing because no column is pointed at them would block an
-  // approval over a field that is already covered.
-  if (rows.some((row) => row.locked)) {
-    (mapping?.periodDerivedFields || []).forEach((field) => filled.add(field));
-  }
+  const coverage = computeCoverage(mapping, rows, fieldReviews);
+  const statusOf = new Map(coverage.map((entry) => [entry.field, entry.status]));
 
   return {
     unconfirmedLowConfidence: rows.filter(needsReview),
+    unconfirmedFields: coverage.filter(needsFieldReview).map((entry) => entry.field),
     duplicateTargets: [...duplicated],
-    missingRequired: (requiredFields || []).filter((field) => !filled.has(field)),
+    missingRequired: (requiredFields || []).filter((field) =>
+      ['unmapped', 'not_available', undefined].includes(statusOf.get(field)),
+    ),
     ignoredColumns: rows.filter((row) => !row.fields.length).map((row) => row.column),
   };
+}
+
+function describeTransform(transform) {
+  const otherwise = transform.default ? [`else ${transform.default}`] : [];
+  switch (transform.type) {
+    case 'rules':
+      return [
+        ...(transform.rules || []).map((rule) => `${rule.op} "${rule.value}" → ${rule.output}`),
+        ...otherwise,
+      ].join(', ');
+    case 'value_map':
+      return [
+        ...Object.entries(transform.values || {}).map(([from, to]) => `${from} → ${to}`),
+        ...otherwise,
+      ].join(', ');
+    case 'negate':
+      return 'negated (sales are recorded as negative)';
+    case 'uom_factor':
+      return Object.entries(transform.factors || {})
+        .map(([uom, factor]) => `× ${typeof factor === 'object' ? factor.column : factor} when ${transform.column} is ${uom}`)
+        .join(', ');
+    case 'month_start':
+      return 'read as its month';
+    case 'forward_fill':
+      return 'a blank cell takes the value above';
+    case 'zero_as_empty':
+      return '0 means no sale';
+    case 'regex_extract':
+      return `extract /${transform.pattern}/`;
+    default:
+      return transform.type;
+  }
+}
+
+/**
+ * A field's transforms in one line, so a reviewer can read what is done to a
+ * value without reading the contract: 'equals "FPON" → fairprice_online, else
+ * fairprice_offline'.
+ */
+export function describeTransforms(transforms) {
+  if (!Array.isArray(transforms)) return transforms && typeof transforms === 'object' ? describeTransform(transforms) : '';
+  return transforms.map(describeTransform).join('; ');
 }
 
 // A Python repr'd string, as the backend's warnings quote them: single-quoted

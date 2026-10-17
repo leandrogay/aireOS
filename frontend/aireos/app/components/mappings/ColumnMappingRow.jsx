@@ -8,7 +8,7 @@ import {
   MinusCircle,
   X,
 } from 'lucide-react';
-import { CONFIDENCE_LABELS, needsReview } from '../../utils/mappingReview';
+import { CONFIDENCE_LABELS, describeTransforms, needsReview } from '../../utils/mappingReview';
 
 const CONFIDENCE_STYLES = {
   high: { Icon: CheckCircle2, className: 'text-green-700' },
@@ -90,8 +90,8 @@ export default function ColumnMappingRow({
         {row.locked && (
           <p className="mt-1 inline-flex items-center gap-1 text-[11px] text-deep-violet-blue/60">
             <Lock aria-hidden="true" className="size-3" />
-            and {(row.groupColumns?.length || 1) - 1} more period column
-            {row.groupColumns?.length === 2 ? '' : 's'}
+            and {(row.groupColumns?.length || 1) - 1} more column
+            {row.groupColumns?.length === 2 ? '' : 's'} like it
           </p>
         )}
       </td>
@@ -165,38 +165,60 @@ export default function ColumnMappingRow({
           </select>
         )}
 
-        {/* The melt group's period settings are part of the mapping, so they
-            remain editable alongside the per-field transformation controls. */}
+        {/* The melt group's column selector and date format are part of the
+            mapping, so they stay editable. A pattern selector picks next
+            month's columns too; a between selector picks up a new outlet. */}
         {row.meltGroup ? (
           <div className="mt-2 space-y-1.5">
-            <label className="block text-[11px] text-deep-violet-blue/70">
-              Period pattern
-              <input
-                type="text"
-                value={row.meltGroup.period_extract_regex || ''}
-                disabled={disabled}
-                onChange={(event) =>
-                  onMeltGroupChange(row.column, { period_extract_regex: event.target.value })
-                }
-                className="mt-0.5 w-full rounded-md border border-violet bg-white px-2 py-1 font-mono text-[11px] text-deep-violet-blue focus:border-deep-violet-blue focus:outline-none"
-              />
-            </label>
-            <label className="block text-[11px] text-deep-violet-blue/70">
-              Date format
-              <input
-                type="text"
-                value={row.meltGroup.date_format || ''}
-                disabled={disabled}
-                onChange={(event) =>
-                  onMeltGroupChange(row.column, { date_format: event.target.value })
-                }
-                className="mt-0.5 w-full rounded-md border border-violet bg-white px-2 py-1 font-mono text-[11px] text-deep-violet-blue focus:border-deep-violet-blue focus:outline-none"
-              />
-            </label>
+            {row.meltGroup.select?.kind === 'pattern' && (
+              <label className="block text-[11px] text-deep-violet-blue/70">
+                Column pattern
+                <input
+                  type="text"
+                  value={row.meltGroup.select.pattern || ''}
+                  disabled={disabled}
+                  onChange={(event) =>
+                    onMeltGroupChange(row.column, {
+                      select: { ...row.meltGroup.select, pattern: event.target.value },
+                    })
+                  }
+                  className="mt-0.5 w-full rounded-md border border-violet bg-white px-2 py-1 font-mono text-[11px] text-deep-violet-blue focus:border-deep-violet-blue focus:outline-none"
+                />
+              </label>
+            )}
+            {row.meltGroup.select?.kind === 'between' && (
+              <p className="text-[11px] text-deep-violet-blue/70">
+                Every column between <span className="font-mono">{row.meltGroup.select.after}</span> and{' '}
+                <span className="font-mono">{row.meltGroup.select.before || 'the last column'}</span>
+              </p>
+            )}
+            {row.meltGroup.key?.target === 'period_start' && (
+              <label className="block text-[11px] text-deep-violet-blue/70">
+                Date format
+                <input
+                  type="text"
+                  value={row.meltGroup.key.date_format || ''}
+                  disabled={disabled}
+                  onChange={(event) =>
+                    onMeltGroupChange(row.column, {
+                      key: { ...row.meltGroup.key, date_format: event.target.value },
+                    })
+                  }
+                  className="mt-0.5 w-full rounded-md border border-violet bg-white px-2 py-1 font-mono text-[11px] text-deep-violet-blue focus:border-deep-violet-blue focus:outline-none"
+                />
+              </label>
+            )}
+            {row.transform && <p className="text-[11px] text-deep-violet-blue/70">{row.transform}</p>}
           </div>
-        ) : row.transform ? (
-          <p className="mt-2 text-[11px] text-deep-violet-blue/70">{row.transform}</p>
-        ) : null}
+        ) : (
+          row.fields
+            .filter((field) => field.transform)
+            .map((field) => (
+              <p key={field.targetField} className="mt-2 text-[11px] text-deep-violet-blue/70">
+                <span className="font-mono">{field.targetField}</span>: {describeTransforms(field.transform)}
+              </p>
+            ))
+        )}
 
       </td>
 

@@ -7,7 +7,11 @@ import StatusBadge from '../ui/StatusBadge';
 import ColumnMappingRow from './ColumnMappingRow';
 import ConfirmDiscardDialog from './ConfirmDiscardDialog';
 import FieldCoverage from './FieldCoverage';
+import MappingChecks from './MappingChecks';
+import OutputPreview from './OutputPreview';
 import ReviewProgress from './ReviewProgress';
+import SkuCodeTable from './SkuCodeTable';
+import { codeRows, unknownCodes, withCodeTable } from '../../utils/skuCodeTable';
 import {
   toColumnRows,
   toRules,
@@ -21,75 +25,12 @@ import {
 const button =
   'rounded-md border px-4 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-deep-violet-blue focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60';
 const primary = `${button} border-deep-violet-blue bg-deep-violet-blue text-white hover:opacity-90`;
-const secondary = `${button} border-violet bg-white text-deep-violet-blue hover:bg-lavander`;
 const destructive = `${button} border-red-300 bg-white text-red-700 hover:bg-red-50`;
 
 const STATE_BADGE = {
   confirmed: { tone: 'ready', label: 'Confirmed mapping' },
   pending: { tone: 'review', label: 'Awaiting approval' },
 };
-
-function OutputPreview({ preview, isLoading, error, onRefresh, disabled }) {
-  const rows = preview?.preview || [];
-  const columns = (preview?.columns || []).slice(0, 8);
-
-  return (
-    <section className="mt-6">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
-        <h3 className="font-serif text-lg text-deep-violet-blue">Output preview</h3>
-        <button type="button" onClick={onRefresh} disabled={isLoading || disabled} className={secondary}>
-          {isLoading ? 'Running…' : 'Preview these rules'}
-        </button>
-      </div>
-
-      {error && (
-        <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {error}
-        </p>
-      )}
-
-      {!error && !rows.length && !isLoading && (
-        <p className="text-sm text-deep-violet-blue/70">
-          Run a preview to see these rules applied to the file this mapping came from.
-        </p>
-      )}
-
-      {!error && !!rows.length && (
-        <>
-          <div className="overflow-x-auto rounded-lg border border-lavander">
-            <table className="min-w-full text-left text-xs">
-              <thead className="bg-lavander text-deep-violet-blue">
-                <tr>
-                  {columns.map((column) => (
-                    <th key={column} className="px-3 py-2 font-medium whitespace-nowrap">
-                      {column}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="text-deep-violet-blue">
-                {rows.map((row, index) => (
-                  <tr key={index} className="border-t border-lavander">
-                    {columns.map((column) => (
-                      <td key={column} className="px-3 py-2 whitespace-nowrap">
-                        {row[column] == null || row[column] === '' ? '—' : String(row[column])}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <p className="mt-1.5 text-xs text-deep-violet-blue/60">
-            {rows.length} of {preview.rows_total?.toLocaleString()} output rows
-            {preview.columns?.length > columns.length &&
-              ` · ${preview.columns.length - columns.length} more target fields`}
-          </p>
-        </>
-      )}
-    </section>
-  );
-}
 
 /**
  * The human-in-the-loop review: every source column, what the proposal thinks
@@ -106,6 +47,9 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
   // Each field carries its own `reviewed` flag, saved with the mapping, so a
   // row confirmed once stays confirmed when the mapping is opened again.
   const [rows, setRows] = useState(() => toColumnRows(mapping));
+  // Sign-offs on decisions made without a column (a constant, a field not in
+  // this file), by target field. Rows carry their own.
+  const [fieldReviews, setFieldReviews] = useState({});
   // Columns confirmed by a click on this visit -- the only sign-offs offered
   // an Undo. One loaded already reviewed is a settled decision; reopening it is
   // done by changing its fields, not by withdrawing it from a link.
@@ -128,11 +72,25 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
   // confirmed mapping (DELETE /api/mappings/{fp}/pending only).
   const canDiscard = !!onDiscard && mapping.state === 'pending';
   const issues = useMemo(
-    () => reviewIssues(mapping, rows, mapping.requiredFields),
-    [mapping, rows],
+    () => reviewIssues(mapping, rows, mapping.requiredFields, fieldReviews),
+    [mapping, rows, fieldReviews],
   );
-  const coverage = useMemo(() => computeCoverage(mapping, rows), [mapping, rows]);
+  const coverage = useMemo(
+    () => computeCoverage(mapping, rows, fieldReviews),
+    [mapping, rows, fieldReviews],
+  );
   const progress = reviewProgress(rows);
+
+  // The product-code table lives on the sku field's transforms, so it is edited
+  // on whichever row reads the sku. Codes come from the latest preview when
+  // there is one (the reviewer may have repointed the sku), else the proposal.
+  const skuField = rows
+    .filter((row) => !row.locked)
+    .flatMap((row) => row.fields)
+    .find((field) => field.targetField === 'sku');
+  const masterAvailable = mapping.masterSkusAvailable !== false;
+  const codes = codeRows(preview?.sku_codes || mapping.skuCodes, skuField?.transform, mapping.masterSkus);
+  const unknown = masterAvailable ? unknownCodes(codes) : [];
 
   // Which column already fills each field, so a row does not offer a field
   // another column has taken. A column filling several fields is fine; a field
@@ -247,6 +205,29 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
     [handleAddField],
   );
 
+  // Picking a master SKU for a code is the reviewer deciding the sku field, so
+  // it counts as reviewing it.
+  const handleSkuCodeChange = useCallback((code, sku) => {
+    setMessage('');
+    setRows((prev) =>
+      prev.map((row) => {
+        if (row.locked || !row.fields.some((field) => field.targetField === 'sku')) return row;
+        return {
+          ...row,
+          fields: row.fields.map((field) =>
+            field.targetField === 'sku'
+              ? { ...field, transform: withCodeTable(field.transform, code, sku), reviewed: true }
+              : field,
+          ),
+        };
+      }),
+    );
+  }, []);
+
+  const handleConfirmField = useCallback((field) => {
+    setFieldReviews((prev) => ({ ...prev, [field]: true }));
+  }, []);
+
   const handleClearField = useCallback((field) => {
     setMessage('');
     setRows((prev) =>
@@ -278,14 +259,14 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
     setBusy('preview');
     setPreviewError('');
     try {
-      setPreview(await onPreview(toRules(mapping, rows)));
+      setPreview(await onPreview(toRules(mapping, rows, fieldReviews)));
     } catch (error) {
       setPreview(null);
       setPreviewError(error.message);
     } finally {
       setBusy(null);
     }
-  }, [mapping, onPreview, rows]);
+  }, [fieldReviews, mapping, onPreview, rows]);
 
   const blockers = [
     issues.missingRequired.length &&
@@ -296,6 +277,11 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
       `${issues.unconfirmedLowConfidence.length} low-confidence column${
         issues.unconfirmedLowConfidence.length === 1 ? '' : 's'
       } still to confirm`,
+    issues.unconfirmedFields.length &&
+      `Confirm ${issues.unconfirmedFields.join(', ')} under Field coverage`,
+    unknown.length &&
+      `${unknown.length} product code${unknown.length === 1 ? ' is' : 's are'} not a master SKU: ${unknown.join(', ')}`,
+    codes.length > 0 && !masterAvailable && 'The SKU master could not be read to check the product codes',
     issues.duplicateTargets.length &&
       `Two columns both map to ${issues.duplicateTargets.join(', ')}`,
     !name.trim() && 'A mapping name is needed',
@@ -308,7 +294,7 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
     try {
       setApproved(
         await onApprove({
-          rules: toRules(mapping, rows),
+          rules: toRules(mapping, rows, fieldReviews),
           name: name.trim(),
           vendor: vendor.trim(),
         }),
@@ -318,7 +304,7 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
     } finally {
       setBusy(null);
     }
-  }, [mapping, name, onApprove, rows, vendor]);
+  }, [fieldReviews, mapping, name, onApprove, rows, vendor]);
 
   // Discard only runs from the confirm dialog. On success the page navigates
   // away; on failure the dialog closes so the error beside the button shows.
@@ -350,7 +336,14 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
 
         <ul className="mt-3 space-y-1 text-sm text-deep-violet-blue">
           <li>
-            Moved to <span className="font-mono text-xs">{approved.moved_to}</span>
+            Saved as version {approved.version} at <span className="font-mono text-xs">{approved.moved_to}</span>
+            {approved.archived_previous && (
+              <>
+                {' '}
+                (the version it replaces is kept at{' '}
+                <span className="font-mono text-xs">{approved.archived_previous}</span>)
+              </>
+            )}
             {approved.pending_removed === false && (
               <span className="text-amber-900">
                 {' '}
@@ -373,6 +366,13 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
             </li>
           )}
         </ul>
+
+        {approved.awaiting_transformation && (
+          <p className="mt-3 rounded-lg border border-lavander bg-cream p-3 text-sm text-deep-violet-blue">
+            This mapping uses the new contract format. Files that match it are stored and marked
+            as mapped; they are transformed and loaded once the transformation reads this format.
+          </p>
+        )}
 
         {approved.uploads_failed > 0 && (
           <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
@@ -463,10 +463,10 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
           <p className="mt-3 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
             <AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
             <span>
-              No column fills the required field
+              Nothing fills the required field
               {issues.missingRequired.length === 1 ? '' : 's'}{' '}
               <span className="font-mono text-xs">{issues.missingRequired.join(', ')}</span>.
-              The ingest step needs {issues.missingRequired.length === 1 ? 'it' : 'them'}.
+              A sell-out row cannot exist without {issues.missingRequired.length === 1 ? 'it' : 'them'}.
             </span>
           </p>
         )}
@@ -501,11 +501,26 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
         )}
       </section>
 
+      <MappingChecks
+        checks={preview?.checks || mapping.checks}
+        source={preview?.checks ? 'preview' : 'proposal'}
+      />
+
       <FieldCoverage
         coverage={coverage}
         rows={rows}
+        requiredFields={mapping.requiredFields}
         onAssign={handleAssignField}
         onClear={handleClearField}
+        onConfirmField={handleConfirmField}
+        readOnly={readOnly || busy !== null}
+      />
+
+      <SkuCodeTable
+        rows={skuField ? codes : []}
+        masterSkus={mapping.masterSkus || []}
+        masterAvailable={masterAvailable}
+        onChange={handleSkuCodeChange}
         readOnly={readOnly || busy !== null}
       />
 
@@ -559,6 +574,7 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
           error={previewError}
           onRefresh={runPreview}
           disabled={busy !== null && busy !== 'preview'}
+          contractFormat={mapping.contractFormat}
         />
       </section>
 

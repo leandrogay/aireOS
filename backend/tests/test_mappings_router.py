@@ -16,7 +16,7 @@ client = TestClient(app)
 ENVELOPE = {
     "raw_columns": [
         "SKU No.",
-        "Brand",
+        "Store Name",
         "Vendor",
         "Store Code",
         "Sales | Month 1 | 01-08-2026",
@@ -124,7 +124,7 @@ def test_confirm_rejects_an_unreviewed_low_confidence_field_with_422(monkeypatch
     stored = _stub_storage(monkeypatch)
     rules = [
         _rule("sku", "SKU No.", "high", False),
-        _rule("brand", "Brand", "low", False),
+        _rule("store_name", "Store Name", "low", False),
     ]
 
     response = client.post(
@@ -132,7 +132,7 @@ def test_confirm_rejects_an_unreviewed_low_confidence_field_with_422(monkeypatch
     )
 
     assert response.status_code == 422
-    assert "brand" in response.json()["detail"]["message"]
+    assert "store_name" in response.json()["detail"]["message"]
     assert "envelope" not in stored
 
 
@@ -140,7 +140,7 @@ def test_confirm_stores_a_reviewed_low_confidence_field_as_reviewed(monkeypatch)
     stored = _stub_storage(monkeypatch)
     rules = [
         _rule("sku", "SKU No.", "high", False),
-        _rule("brand", "Brand", "low", True),
+        _rule("store_name", "Store Name", "low", True),
     ]
 
     response = client.post(
@@ -148,8 +148,26 @@ def test_confirm_stores_a_reviewed_low_confidence_field_as_reviewed(monkeypatch)
     )
 
     assert response.status_code == 200
-    brand = stored["envelope"]["contract"]["annotations"]["brand"]
-    assert brand == {"confidence": "low", "rationale": "", "reviewed": True}
+    # Confirmed in version 1, so stored back in version 1 for today's
+    # transformation.
+    contract = stored["envelope"]["contract"]
+    assert contract["identity_mapping"]["Store Name"] == "store_name"
+    assert contract["annotations"]["store_name"] == {"confidence": "low", "rationale": "", "reviewed": True}
+    assert response.json()["contract_format"] == 1
+
+
+def test_confirm_records_what_the_reviewer_changed_and_numbers_the_version(monkeypatch):
+    stored = _stub_storage(monkeypatch)
+    rules = _complete_rules([_rule("sku", "SKU No.", "high", False)])
+
+    response = client.post("/api/mappings/fp/confirm", json={"rules": rules})
+
+    assert response.status_code == 200
+    envelope = stored["envelope"]
+    assert envelope["version"] == 1
+    changed = {change.get("field") for change in envelope["reviewer_diff"]}
+    assert {"sku", "retailer", "store_code"} <= changed
+    assert envelope["edited_by_user"] is True
 
 
 def test_confirm_processes_uploads_that_were_waiting_for_approval(monkeypatch):
@@ -176,7 +194,7 @@ def test_confirm_processes_uploads_that_were_waiting_for_approval(monkeypatch):
     monkeypatch.setattr(sellout_ingestion, "process_confirmed_upload", process)
     rules = [
         _rule("sku", "SKU No.", "high", False),
-        _rule("brand", "Brand", "high", False),
+        _rule("store_name", "Store Name", "high", False),
     ]
 
     response = client.post(
@@ -190,6 +208,7 @@ def test_confirm_processes_uploads_that_were_waiting_for_approval(monkeypatch):
     assert body["processing"][0]["processing"]["rows_stored"] == 10
     assert calls[0][0:2] == ("file.txt", b"source bytes")
     assert calls[0][3] is True
+    assert "identity_mapping" in calls[0][2]
 
 
 # ---- A pending copy left behind after approval --------------------------------
@@ -236,3 +255,73 @@ def test_listing_leaves_out_a_pending_copy_that_has_been_confirmed(monkeypatch):
 
     listed = [(m["fingerprint"], m["state"]) for m in response.json()["mappings"]]
     assert listed == [("fp", "confirmed"), ("new", "pending")]
+
+
+def test_confirming_edited_rules_keeps_the_contracts_data_source(monkeypatch):
+    stored = _stub_storage(monkeypatch)
+    monkeypatch.setattr(
+        storage,
+        "download_json",
+        lambda path: {**ENVELOPE, "contract": {"version": 2, "fields": {}, "melt_groups": [], "data_source": "promo_claim"}}
+        if path == storage.pending_mapping_path("fp")
+        else None,
+    )
+    rules = _complete_rules([_rule("sku", "SKU No.", "high", False)])
+
+    response = client.post("/api/mappings/fp/confirm", json={"rules": rules})
+
+    assert response.status_code == 200
+    assert stored["envelope"]["contract"]["data_source"] == "promo_claim"
+
+
+# ---- Version 2 contracts ---------------------------------------------------------------
+
+V2_ENVELOPE = {
+    **ENVELOPE,
+    "contract": {"version": 2, "fields": {}, "melt_groups": [], "aggregate": {"period": "month"}},
+}
+
+
+def test_a_version_2_mapping_is_confirmed_but_its_uploads_wait_for_the_transformation(monkeypatch):
+    stored = _stub_storage(monkeypatch)
+    monkeypatch.setattr(
+        storage, "download_json",
+        lambda path: V2_ENVELOPE if path == storage.pending_mapping_path("fp") else None,
+    )
+    monkeypatch.setattr(
+        storage, "update_uploads_for_mapping",
+        lambda fingerprint, metadata: {"matched": ["uploads/file.txt"], "updated": ["uploads/file.txt"]},
+    )
+
+    def no_transformation(*args, **kwargs):
+        raise AssertionError("a version 2 contract must not be run by today's transformation")
+
+    monkeypatch.setattr(sellout_ingestion, "process_confirmed_upload", no_transformation)
+
+    response = client.post("/api/mappings/fp/confirm", json={"rules": _complete_rules([_rule("sku", "SKU No.", "high", False)])})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert (body["contract_format"], body["awaiting_transformation"]) == (2, True)
+    assert body["uploads_processed"] == 0
+    # The roll-up instruction is kept although the rules do not carry it.
+    assert stored["envelope"]["contract"]["aggregate"]["period"] == "month"
+
+
+def test_confirming_is_blocked_while_a_product_code_is_not_a_master_sku(monkeypatch):
+    import io
+
+    from app.services import generate_mapping
+
+    stored = _stub_storage(monkeypatch)
+    csv = b"SKU No.,Store Name,Vendor,Store Code,Sales | Month 1 | 01-08-2026,Qty | Month 1 | 01-08-2026\n99999999,A,V,1,10,1\n"
+    envelope = {**V2_ENVELOPE, "example_file": "uploads/x.csv", "source_filename": "x.csv"}
+    monkeypatch.setattr(storage, "download_json", lambda path: envelope if path == storage.pending_mapping_path("fp") else None)
+    monkeypatch.setattr(storage, "download_bytes", lambda path: csv)
+    monkeypatch.setattr(generate_mapping.catalog_service, "get_skus", lambda: [{"sku": "13255043"}])
+
+    response = client.post("/api/mappings/fp/confirm", json={"rules": _complete_rules([_rule("sku", "SKU No.", "high", False)])})
+
+    assert response.status_code == 422
+    assert "99999999" in response.json()["detail"]["message"]
+    assert "envelope" not in stored

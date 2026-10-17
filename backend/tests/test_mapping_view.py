@@ -46,31 +46,82 @@ def test_melt_group_becomes_one_locked_rule():
     assert "melt 2 period columns" in revenue["transform"]
 
 
+def test_every_target_field_has_a_rule():
+    packet = mv.envelope_to_packet("abc123", ENVELOPE, "pending")
+
+    assert [rule["targetField"] for rule in packet["rules"]] == mv.CORE_TARGET_FIELDS
+
+
+def test_a_field_without_a_column_says_how_it_is_filled():
+    packet = mv.envelope_to_packet("abc123", ENVELOPE, "pending")
+    by_field = {rule["targetField"]: rule for rule in packet["rules"]}
+
+    assert by_field["period_end"]["status"] == "derived"
+    assert by_field["period_end"]["description"] == "Computed"
+    assert by_field["store_name"]["status"] == "not_available"
+    assert by_field["store_name"]["description"].startswith("Not in this file")
+
+
+def test_a_reviewer_assigning_a_column_overrides_not_available():
+    packet = mv.envelope_to_packet("abc123", ENVELOPE, "pending")
+    rules = packet["rules"] + [{
+        "targetField": "store_name", "sourceColumn": "Vendor Code",
+        "sourceColumns": ["Vendor Code"], "editable": True, "confidence": "high", "reviewed": True,
+    }]
+
+    contract = mv.rules_to_contract(rules)
+
+    assert contract["fields"]["store_name"]["status"] == "mapped"
+    assert contract["fields"]["store_name"]["source"] == "Vendor Code"
+
+
+def test_an_edited_sku_code_table_rides_along_on_its_rule():
+    table = {"type": "value_map", "values": {"0059-01-025-R": "13255045"}}
+    rules = [{"targetField": "sku", "sourceColumn": "Material", "editable": True, "transform": [table]}]
+
+    contract = mv.rules_to_contract(rules)
+
+    assert contract["fields"]["sku"]["transforms"] == [table]
+
+
+def test_the_packet_carries_the_code_table_and_the_instructions():
+    envelope = {
+        **ENVELOPE,
+        "sku_codes": [{"code": "0059-01-025-R", "sku": "13255045", "description": "PANTS L", "rows": 3}],
+        "contract": {"version": 2, "fields": {}, "melt_groups": [], "aggregate": {"period": "month"}},
+    }
+
+    packet = mv.envelope_to_packet("abc123", envelope, "pending")
+
+    assert packet["skuCodes"] == envelope["sku_codes"]
+    assert packet["instructions"]["aggregate"]["period"] == "month"
+    assert packet["contractFormat"] == 2
+    assert mv.envelope_to_packet("abc123", ENVELOPE, "pending")["contractFormat"] == 1
+
+
 def test_editing_one_rule_leaves_melt_groups_untouched():
     packet = mv.envelope_to_packet("abc123", ENVELOPE, "pending")
 
     rules = [dict(rule) for rule in packet["rules"]]
     for rule in rules:
-        if rule["targetField"] == "brand":
+        if rule["targetField"] == "sku":
             rule["sourceColumn"] = "Vendor Code"
 
     contract = mv.rules_to_contract(rules)
 
-    assert contract["identity_mapping"] == {"SKU No.": "sku", "Vendor Code": "brand"}
-    assert contract["melt_groups"] == CONTRACT["melt_groups"]
+    assert contract["fields"]["sku"]["source"] == "Vendor Code"
+    group = contract["melt_groups"][0]
+    assert group["select"] == {"kind": "columns", "columns": CONTRACT["melt_groups"][0]["columns"]}
+    assert group["key"]["pattern"] == CONTRACT["melt_groups"][0]["period_extract_regex"]
 
 
 def test_packet_reports_unread_columns_and_missing_requirements():
     packet = mv.envelope_to_packet("abc123", ENVELOPE, "pending")
 
     assert packet["unmapped"] == ["Vendor Code"]
-    # These fields are required by the Cloud SQL sell-out fact load.
-    assert packet["requiredMissing"] == [
-        "retailer",
-        "store_code",
-        "quantity_units",
-    ]
-    assert packet["warnings"] == CONTRACT["warnings"]
+    # A row cannot exist without these. A store is not one of them: a
+    # retailer that reports none loads under a placeholder store.
+    assert packet["requiredMissing"] == ["retailer", "quantity_units"]
 
 
 # ---- Period fields -----------------------------------------------------------
@@ -98,16 +149,3 @@ def test_state_drives_kind_and_confirmation():
     assert (pending["kind"], pending["validated"]) == ("proposed", False)
     assert (confirmed["kind"], confirmed["validated"]) == ("existing", True)
     assert confirmed["validatedAt"] == ENVELOPE["confirmed_at"]
-
-
-def test_builtin_is_locked_end_to_end():
-    builtin = mv.builtin_packet()
-
-    # Every rule runs as Python in apply_existing_mapping, so repointing a
-    # source in the UI would change the display and not the behaviour.
-    assert builtin["editable"] is False
-    assert not any(rule["editable"] for rule in builtin["rules"])
-    assert builtin["requiredMissing"] == []
-    assert builtin["fingerprint"] is None
-
-

@@ -245,7 +245,8 @@ Rules:
 4. **Validation tests prove no side effect:** install a `_no_client_allowed` fake that raises
    `AssertionError` and assert `pytest.raises(ValueError)`.
 5. **Pure modules get pure tests.** `mapping_view`, `apply_contract`, `validation_service`,
-   `mapping_service` need no fakes — feed a small dict/DataFrame, assert the result.
+   `mapping_contract`, `layout_detection`, `mapping_checks` need no fakes —
+   feed a small dict/DataFrame (or a synthetic file from `conftest.py`), assert the result.
 6. **Route tests (integration)** use `fastapi.testclient.TestClient(app)` and monkeypatch the
    *service* function the router calls (`monkeypatch.setattr(promotion_service, "get_promotion", lambda _id: None)`)
    to assert the status-code mapping in §2.5. Add one per new router; don't duplicate service

@@ -63,10 +63,20 @@ aireOS/
 │   │       │                      functions that used to live here moved to sellout_service.py
 │   │       ├── storage.py         GCS: upload files (duplicate detection), mapping JSON packets
 │   │       ├── upload_check.py    Read-only pre-upload check (POST /api/uploads/check): duplicate + mapping preview, no writes, no Claude
-│   │       ├── mapping_service.py Built-in deterministic FairPrice "wide" mapping (regex header match, melt)
-│   │       ├── generate_mapping.py Claude-generated mapping contracts for unknown layouts; validate_contract
-│   │       ├── mapping_view.py    Normalises builtin + stored contracts into one "packet"/"rules" shape for the UI
-│   │       ├── apply_contract.py  Applies a confirmed contract (identity_mapping + melt_groups) to a DataFrame
+│   │       ├── layout_detection.py PURE: finds the data table in an upload (sheet not a pivot, header row, preamble +
+│   │       │                      stated period, footer/total rows, total + spacer columns, merged cells filled down)
+│   │       ├── column_profile.py  PURE: whole-file column profile, repeated period/outlet column groups, template fingerprint
+│   │       ├── mapping_contract.py PURE: contract v2 -- instructions only: one entry per target field (mapped/derived/
+│   │       │                      constant/system/not_available), layout, aggregate (monthly roll-up), sku code table;
+│   │       │                      upgrade()/downgrade() for v1, validate_contract, required fields, reviewer diff
+│   │       ├── generate_mapping.py Confirmed-contract lookup (template + legacy fingerprint), near-match, Claude proposal with
+│   │       │                      check-and-repair loop for unknown layouts
+│   │       ├── mapping_prompt.py  PURE: field definitions, glossary, per-file JSON output schema, prompt text
+│   │       ├── mapping_checks.py  PURE: static checks of a contract against its file (never runs it): every product code a
+│   │       │                      master SKU, required fields, rule coverage, revenue-name guard, stated period; confidence
+│   │       ├── reference_contracts.py Hand-written v2 contracts for FairPrice / NHG / Sheng Siong (golden tests, prompt examples, eval)
+│   │       ├── mapping_view.py    Contracts <-> the review screen's "packet"/"rules" shape (one rule per target field)
+│   │       ├── apply_contract.py  The transformation: applies a version 1 contract (identity_mapping + melt_groups) to a DataFrame
 │   │       ├── validation_service.py Row-level validation against TARGET_SCHEMA after mapping
 │   │       ├── pl_forecast.py     Pure P&L sell-out forecast (base + building blocks), no I/O
 │   │       └── forecast_service.py BigQuery reads/MERGEs for the forecast table, refresh_forecast()
@@ -170,7 +180,7 @@ No test runner is installed on the frontend; linting (`npm run lint`) is the fro
 
 | Domain | Router | Service(s) | Storage | Frontend entry |
 | --- | --- | --- | --- | --- |
-| Upload & mapping | `uploads.py` | `storage`, `mapping_service`, `generate_mapping`, `mapping_view`, `apply_contract`, `validation_service` | **GCS** bucket: `uploads/` files, `mappings/pending/<fp>.json`, `mappings/confirmed/<fp>.json` | `app/upload`, `app/upload2`, `services/mappingApi.js` |
+| Upload & mapping | `uploads.py`, `mappings.py` | Generation: `layout_detection`, `column_profile`, `generate_mapping`, `mapping_prompt`, `mapping_contract`, `mapping_checks`, `mapping_view`. Transformation: `sellout_ingestion`, `apply_contract`, `validation_service` | **GCS** bucket: `uploads/` files, `mappings/pending/<fp>.json`, `mappings/confirmed/<fp>.json`, `mappings/history/<fp>/v<n>.json`. **Cloud SQL** `skus` read-only, to check product codes | `app/upload`, `app/mappings`, `services/mappingApi.js` |
 | Sales dashboard | `sales.py` | `sellout_service` | **Cloud SQL Postgres**: `sellout` (the source of truth -- every upload writes here first; `retailer_id`/`store_code`/`sku` rows, `period_type` `week` or `month`), joined to `retailers`/`stores`/`skus` for names (retailer name = `{customer}_{offline|online}`). A retailer+calendar-month with monthly-granularity rows uses only those (never both, see `EFFECTIVE_SELLOUT_CTE`); `granularity='week'` summary views read genuine weekly rows only. No more BigQuery/Datastream replication lag -- reads are real-time | `app/dashboard`, `hooks/use*.js`, `services/salesApi.js` |
 | Catalog | `catalog.py` | `catalog_service`, `customer_service` | **Cloud SQL Postgres**: `customers`, `customer_retailers`, `retailers`, `stores`, `skus`. Names are lowercase slugs, unique case-insensitively. A retailer with stores, or a customer with any such retailer or `inventory_metrics` rows, is `in_use` and can't be renamed or deleted (the dashboard, uploads and forecast find it by name) | `app/customers`, `services/catalogApi.js`; `services/promotionsApi.js` (getRetailers/getStores/getSkuRanges) |
 | Inventory | `inventory.py` | `inventory_service`, `inventory_calc`, `sellout_units`, `forecast_units` | **Cloud SQL Postgres**: `customers`, `customer_retailers`, `inventory_metrics` (long format; app writes carry `data_source='manual_entry'`; only sell-in, a first-month opening and building blocks (stock used outside sell-out) are read; workbook rows are never changed), `doh_settings` (read via `settings/doh.fetch_versions`; closed months use the version in effect at month end, the latest month, at-risk list and sell-in plan use the current one), `sellout` (sell-out, via `sellout_units`/`sellout_service`'s effective-sellout view, same monthly-preferred-over-weekly rule as the dashboard); **BigQuery** (read-only): the forecast table. Ending stock, DOH and the plan are computed, never stored | `app/inventory`, `services/inventoryApi.js` |
@@ -183,7 +193,16 @@ Invariants that cross domains:
 - Mapping never writes to BigQuery. Ingestion into BigQuery is out of band.
 - Promotion writes never insert/update `skus`, `stores`, `retailers` **except** through the
   `get_or_create_retailers/stores` seams (a promotion may name a new store as free text).
-- `TARGET_SCHEMA` is defined twice (`mapping_service.py`, `generate_mapping.py`) — keep them in sync.
+- `TARGET_SCHEMA` is `schemas/sellout.BUSINESS_COLUMNS`, defined once.
+- A mapping is strictly a contract: instructions written by mapping generation and carried out by the
+  transformation. No business rule lives outside the contract -- the monthly roll-up is the contract's `aggregate`,
+  where the data sits is its `layout`, and a retailer's product codes become master SKUs through the `sku` field's
+  `value_map` (the code table). A product code that is not a master SKU fails the contract's checks and blocks
+  approval until the code table is fixed or the product is added to the SKU master.
+- Today's transformation (`sellout_ingestion` → `apply_contract`) runs version 1 contracts only. A file matching a
+  confirmed version 2 contract is stored and mapped, with `processing.storage_status = "awaiting_transformation"`;
+  nothing loads until the transformation reads that format. An amended version 1 mapping is written back in version
+  1 when it fits (`mapping_contract.downgrade`).
 - Time: the backend stores and returns instants in UTC (TIMESTAMPTZ, Postgres sessions pinned to UTC
   in `sql.py`, ISO strings with `Z`/`+00:00`) and takes "today" as the UTC day, never `date.today()`.
   The frontend shows every time in Singapore time through `lib/formatDate.js`, and uses
@@ -228,15 +247,18 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 1. `FileUpload.jsx` posts files. Router reads every stream once, `asyncio.to_thread(storage.upload_many)`
    (duplicate-filename check unless `force`).
 2. Per file, concurrently (`asyncio.gather` → `to_thread(resolve_and_apply_mapping)`):
-   read headers → `mapping_service.find_matching_mapping` (built-in FairPrice regex match) →
-   if hit: `validation_service.process_and_validate` → `status: "mapped", source: "builtin"`.
-   Else `generate_mapping.resolve_mapping`: fingerprint headers → look for
-   `mappings/confirmed/<fp>.json` → else ask Claude for a contract → store in
-   `mappings/pending/` → `status: "pending_confirmation"`.
-3. `MappingReview.jsx` lists `GET /api/uploads/mappings` (every packet normalised by
-   `mapping_view`), user edits **rules** (not raw contract), `POST .../{fp}/confirm` with
-   `{ rules }` → server rebuilds + re-validates contract → promotes to `confirmed/`.
-   `DELETE .../{fp}/pending` discards.
+   `generate_mapping.resolve_mapping`: `layout_detection.read_table` → fingerprint the header templates →
+   `mappings/confirmed/<fp>.json` (or the legacy exact-header fingerprint) → `status: "mapped"`; a version 1 contract
+   runs through `sellout_ingestion.process_confirmed_upload`, a version 2 one waits for the transformation. Else a
+   near match is reported, else Claude proposes a contract (structured output, schema built from this file's headers,
+   SKU master listed), `mapping_checks` checks it statically against the file and the SKU master, failures go back for
+   up to 2 repairs, and the result is stored in `mappings/pending/` with its checks and the file's product codes →
+   `status: "pending_confirmation"`.
+3. The review page loads `GET /api/mappings/{fp}` (packet from `mapping_view`: one rule per target field, the
+   checks, the product codes and the SKU master), the user edits **rules** and the product-code table,
+   `POST /api/mappings/{fp}/preview` re-runs the checks, and `POST .../{fp}/confirm` rebuilds + re-validates and
+   re-checks the contract (unknown product codes → 422), records the reviewer's diff against the proposal, archives
+   any previous version under `mappings/history/` and stores it under `confirmed/`. `DELETE .../{fp}/pending` discards.
 
 **Dashboard** (`app/dashboard/page.js`)
 1. `useDataFreshness` polls `/api/sales/last-updated`; a change bumps `dataVersion`, which every
@@ -277,7 +299,9 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | `PromotionBase` field names | `buildPromotionPayload` / `formFromPromotion` |
 | `_PROMOTION_COLUMNS` (nested `stores`, `skus`) | `PromotionList.jsx`, `promotionOverview.js` |
 | `sales.py` query-param names (`start_date`, `end_date`, `granularity`, `customer`, `store`, `sku` …) | `URLSearchParams` keys in `hooks/*.js` and `services/salesApi.js` |
-| `mapping_view` packet/rule keys (`targetField`, `sourceColumn`, `editable`, `requiredMissing`) | `MappingReview.jsx`, `upload2/ContractView.jsx` |
+| `mapping_view` packet/rule keys (`targetField`, `sourceColumn`, `editable`, `status`, `field`, `meltGroup`, `options`, `description`, `requiredMissing`, `checks`) | `utils/mappingReview.js`, `components/mappings/*` |
+| `mapping_checks` check shape (`id`, `level`, `passed`, `message`, `fields`, `evidence`) | `utils/mappingChecks.js`, `MappingChecks.jsx` |
+| packet `skuCodes`, `masterSkus`, `contractFormat`, `instructions`; `processing.storage_status = "awaiting_transformation"` | `utils/skuCodeTable.js`, `SkuCodeTable.jsx`, `MappingReviewPanel.jsx`, `UploadFileRow.jsx` |
 | `uploads.py` per-file `mapping.status` values (`mapped`, `pending_confirmation`, `mapping_failed`) | `FileUpload.jsx` result rendering |
 | `settings/doh._settings_view` keys, `GLOBAL_DEFAULT_*_DOH` | `DohSettingsTable.jsx`, `dohSettingsForm.js` (`GLOBAL_DEFAULT_DOH`) |
 | `DohThresholdsUpdate` field names | `buildDohThresholdPayload` |
@@ -337,14 +361,21 @@ half first (it defines the contract), then the frontend half, then update §3.4 
 - You keep `TARGET_SCHEMA`, `PromoType`, and error `detail` shapes stable, because the frontend
   depends on them by name.
 
-### `/backend/app/services/{mapping_service,generate_mapping,mapping_view,apply_contract}` — Data-pipeline engineer
-- Think in DataFrames and contracts: `identity_mapping` (source col → target field) and
-  `melt_groups` (wide period columns → long rows with `period_start`/`period_end`/`period_type`).
-- Built-in FairPrice mapping is deterministic Python and shown read-only; Claude-generated
-  contracts are JSON in GCS and always re-validated (`validate_contract`) before being trusted.
-- Recognised files must never call the Anthropic API. Keep that ordering in
-  `resolve_and_apply_mapping`.
-- Prefer pure functions with tiny DataFrame fixtures in tests; no GCS or Anthropic in tests.
+### `/backend/app/services/{layout_detection,column_profile,mapping_contract,mapping_checks,mapping_prompt,generate_mapping,mapping_view}` — Mapping generation
+- Think in DataFrames and contracts: a v2 contract has one entry per target field (`mapped` from a column or a melt
+  group, `derived`, `constant`, `system`, `not_available` with a reason), `melt_groups` that select columns by rule
+  (`pattern` / `between`), never by exact name, a `layout` and an `aggregate` instruction.
+- Generation only writes and checks contracts; it never transforms or loads data, and its checks are static (it
+  does not run the contract). The transformation reads the contract and does exactly what it says.
+- Business rules as agreed with the product owner: monthly roll-up (B1, as `aggregate`), product codes to master
+  SKUs through the contract's code table (B3), product details from the file, never revenue from
+  claim/contra/price columns, and "not available" over a forced mapping.
+- Claude-generated contracts are JSON in GCS and always re-validated (`validate_contract`) and re-checked
+  (`mapping_checks`) before being trusted. Confidence comes from the checks, not the model.
+- Known layouts (template fingerprint) must never call the Anthropic API. Keep that ordering in `resolve_mapping`.
+- Golden tests run the real sample files in `tests/fixtures/retailer_samples/` (git-ignored; skipped when absent);
+  CI covers the same traits with the synthetic files in `conftest.py`. `scripts/eval_mapping.py` scores proposals
+  against `reference_contracts` -- rerun it when the prompt or model changes.
 
 ### `/frontend/aireos` — Pragmatic Next.js/React engineer
 - Server Components by default; `'use client'` only where state/effects/handlers exist.

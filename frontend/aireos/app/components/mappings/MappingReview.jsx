@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { formatDateTime } from '@/lib/formatDate';
+import { describeTransforms } from '../../utils/mappingReview';
 
 const btn =
   'rounded-md border px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60';
@@ -11,19 +12,12 @@ const STATE_LABEL = {
   pending: 'Proposed mapping',
 };
 
+// A rule's transform in words: a melt group's own summary (a string), or the
+// shared description of a field's transforms (see mappingReview.js).
 function describeTransform(transform) {
   if (!transform) return null;
   if (typeof transform === 'string') return transform;
-  if (transform.type === 'regex_extract') {
-    return `Extract group ${transform.group || 1} from /${transform.pattern || ''}/`;
-  }
-  if (transform.type === 'value_map') {
-    const count = Object.keys(transform.values || {}).length;
-    return `Map ${count} source value${count === 1 ? '' : 's'}${
-      Object.hasOwn(transform, 'default') ? '; use a default for the rest' : ''
-    }`;
-  }
-  return transform.type || 'Transformed';
+  return describeTransforms(transform) || null;
 }
 
 // A read-only summary of a mapping's rules. Every change — editing, approving,

@@ -245,3 +245,22 @@ def test_confirmed_contract_stores_valid_rows_when_enabled(monkeypatch):
     }
     assert result["processing"]["rows_stored"] == 1
     assert result["processing"]["storage_status"] == "completed"
+
+
+def test_a_version_2_contract_is_left_for_the_transformation(monkeypatch):
+    monkeypatch.setattr(
+        uploads.generate_mapping,
+        "resolve_mapping",
+        lambda *_: {"status": "mapped", "fingerprint": "v2fp", "contract": {"version": 2, "fields": {}}},
+    )
+
+    def no_transformation(*args, **kwargs):
+        raise AssertionError("today's transformation only runs version 1 contracts")
+
+    monkeypatch.setattr(uploads.sellout_ingestion, "process_confirmed_upload", no_transformation)
+
+    result = uploads.resolve_and_apply_mapping("nhg.xlsx", b"bytes", "gs://bucket/nhg.xlsx")
+
+    assert result["status"] == "mapped"
+    assert result["processing"]["storage_status"] == "awaiting_transformation"
+    assert result["processing"]["rows_stored"] == 0
