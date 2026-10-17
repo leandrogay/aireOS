@@ -4,6 +4,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
 from app.services import sql
+from app.services.settings import doh
 
 
 # Customers (customers table, e.g. "fairprice") and the retailers that
@@ -62,8 +63,8 @@ def _get_read_engine() -> Engine:
 # A retailer is in use once it has a store: sell-out rows (FK to
 # stores) and promotions (promotion_stores -> stores) both need one.
 # A customer is in use when any of its retailers is, or it has
-# inventory rows of its own. DOH settings are not checked yet: the
-# customer <-> DOH link is still to be settled. json_agg returns NULL when there
+# inventory rows of its own. DOH settings never make a customer in use:
+# they are created and deleted with it. json_agg returns NULL when there
 # are no rows, hence the COALESCE to an empty array.
 # ============================================================
 
@@ -293,6 +294,11 @@ def create_customer(
             },
         ).scalar_one()
 
+        doh.create_default_settings(
+            conn,
+            customer_id,
+        )
+
         return fetch_customer(
             conn,
             customer_id,
@@ -381,6 +387,7 @@ def delete_customer(
                 f'Delete the retailers under "{current["customer_name"]}" first.'
             )
 
+        # doh_settings rows go with the customer (ON DELETE CASCADE).
         conn.execute(
             text(
                 """
