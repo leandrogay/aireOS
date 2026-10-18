@@ -176,31 +176,12 @@ def fingerprint(columns: list[str]) -> str:
     """
     Stable identifier for a column layout.
 
-    Built from header templates in source order, with each repeated template
-    collapsed to its first occurrence, so the same layout fingerprints identically
-    whatever months its headers name and however many outlet columns it has.
-    Column order remains part of the signature: moving a field can change the
-    meaning of a marker-based selector such as "between OUTLET and Total".
+    Built from header templates, with each repeated group collapsed to one
+    entry, so the same layout fingerprints identically whatever months its
+    headers name and however many outlet columns it has. Order-free and
+    punctuation-free as before: the contract addresses columns by name or by
+    pattern, never by position.
     """
-    template_by_column = {
-        column: template
-        for template, members in layout_templates(columns).items()
-        for column in members
-    }
-    ordered = []
-    seen = set()
-    for column in columns:
-        template = template_by_column[column]
-        if template in seen:
-            continue
-        seen.add(template)
-        ordered.append(template)
-    joined = "\x1f".join(ordered)
-    return hashlib.sha256(joined.encode("utf-8")).hexdigest()[:16]
-
-
-def unordered_fingerprint(columns: list[str]) -> str:
-    """The order-free template key used by early version 2 mappings."""
     joined = "\x1f".join(sorted(layout_templates(columns)))
     return hashlib.sha256(joined.encode("utf-8")).hexdigest()[:16]
 

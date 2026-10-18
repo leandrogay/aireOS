@@ -5,8 +5,10 @@ const secondary =
 
 /**
  * The rows these rules produce from the mapping's example file (backend POST
- * /api/mappings/{fp}/preview), using the same deterministic transformation as
- * approval and future recognised uploads.
+ * /api/mappings/{fp}/preview), for a mapping today's transformation runs
+ * (contract format 1). A format 2 contract is instructions the transformation
+ * will carry out once it reads that format, so its preview re-runs the checks
+ * and shows no rows.
  *
  * @param {{
  *   preview: object | null,
@@ -14,9 +16,10 @@ const secondary =
  *   error: string,
  *   onRefresh: () => void,
  *   disabled: boolean,
+ *   contractFormat?: number,
  * }} props
  */
-export default function OutputPreview({ preview, isLoading, error, onRefresh, disabled }) {
+export default function OutputPreview({ preview, isLoading, error, onRefresh, disabled, contractFormat = 1 }) {
   const rows = preview?.preview || [];
   const columns = (preview?.columns || []).slice(0, 8);
 
@@ -25,7 +28,7 @@ export default function OutputPreview({ preview, isLoading, error, onRefresh, di
       <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
         <h3 className="font-serif text-lg text-deep-violet-blue">Output preview</h3>
         <button type="button" onClick={onRefresh} disabled={isLoading || disabled} className={secondary}>
-          {isLoading ? 'Running…' : 'Preview these rules'}
+          {isLoading ? 'Running…' : contractFormat === 2 ? 'Check these rules' : 'Preview these rules'}
         </button>
       </div>
 
@@ -37,7 +40,9 @@ export default function OutputPreview({ preview, isLoading, error, onRefresh, di
 
       {!error && !rows.length && !isLoading && (
         <p className="text-sm text-deep-violet-blue/70">
-          Run a preview to see these rules applied to the file this mapping came from, and the checks re-run on them.
+          {contractFormat === 2
+            ? 'This mapping is a set of instructions for the transformation, which does not read this format yet, so there are no output rows to show. Checking re-runs the checks on your edits.'
+            : 'Run a preview to see these rules applied to the file this mapping came from, and the checks re-run on them.'}
         </p>
       )}
 

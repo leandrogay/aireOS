@@ -41,15 +41,8 @@ def test_validation_rejects_a_row_with_missing_keys_or_bad_numbers():
     assert result["total_rows"] == 2
     assert result["rows_ingested"] == 1
     assert result["total_rejected"] == 1
+    assert "missing store_code" in result["rejection_summary"]
     assert "invalid numeric quantity_units" in result["rejection_summary"]
-
-
-def test_validation_allows_customer_level_rows_without_a_store_dimension():
-    result = validate_mapped_dataframe(pd.DataFrame([_row(store_code=None)]))
-
-    assert result["rows_ingested"] == 1
-    assert result["total_rejected"] == 0
-    assert pd.isna(result["valid_df"].iloc[0]["store_code"])
 
 
 def test_invalid_row_does_not_reject_valid_row_with_same_dataframe_index():

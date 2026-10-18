@@ -172,6 +172,15 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide }) {
                   Preview only: loading into Cloud SQL is turned off.
                 </p>
               )}
+              {/* A mapping in the new contract format: the file is stored and
+                  mapped, and waits for the transformation to read that format
+                  (backend uploads.AWAITING_TRANSFORMATION). */}
+              {processing?.storage_status === 'awaiting_transformation' && (
+                <p className="mt-1 text-xs text-deep-violet-blue/80">
+                  Stored and mapped. Loading waits until the transformation supports this mapping&apos;s
+                  contract format.
+                </p>
+              )}
               {processing?.rejection_summary && (
                 <p className="mt-1 text-xs text-amber-900">{processing.rejection_summary}</p>
               )}

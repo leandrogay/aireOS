@@ -7,10 +7,10 @@ screen loads, edits, previews and approves mappings on their own, long after
 the upload that proposed them. Uploading is one thing, curating the mappings
 uploads are run through is another, and they now have a router each.
 
-A contract is instructions for the transformation. Both stored contract
-formats are checked here, previewed through the same deterministic executor,
-and run after approval. Version 1 remains supported for mappings confirmed
-before the expanded contract format was introduced.
+A contract is instructions for the transformation. Version 2 contracts are
+checked here (statically, against the example file and the SKU master) but
+not run: the transformation reads them once it supports that format. Version 1
+contracts -- the FairPrice one -- still run through today's transformation.
 """
 
 import asyncio
@@ -101,7 +101,14 @@ def _example_table(envelope: dict):
 
 
 def _ingest_waiting_uploads(blob_paths: list[str], contract: dict) -> list[dict]:
-    """Process files that were waiting for this mapping to be approved."""
+    """
+    Process files that were waiting for this mapping to be approved -- when
+    today's transformation can run it. A version 2 contract is left for the
+    transformation, and its uploads stay stored and mapped.
+    """
+    if mapping_contract.is_v2(contract):
+        return []
+
     results = []
     for blob_path in blob_paths:
         try:
@@ -212,8 +219,9 @@ async def preview_mapping(fingerprint: str, body: PreviewRequest):
 
     The checks run again on the rules as edited (every product code a master
     SKU, rule values covered, required fields filled...), so the reviewer
-    sees whether an edit fixed what failed. Output rows use the exact same
-    deterministic transformation that approval and future uploads use.
+    sees whether an edit fixed what failed. Output rows are shown only for a
+    mapping today's transformation can run (version 1); a version 2 contract
+    is instructions the transformation will carry out later.
     """
     envelope, _ = await asyncio.to_thread(_load_envelope, fingerprint)
     if not envelope:
@@ -249,20 +257,12 @@ async def preview_mapping(fingerprint: str, body: PreviewRequest):
             "sku_codes": mapping_checks.sku_codes(frame, validated),
         }
 
-        # Unsafe rules still return their structured checks to the reviewer;
-        # they are not executed merely to produce a preview.
-        if mapping_checks.failures(checks):
-            return result
-
-        executable = validated
-        if not mapping_contract.is_v2(envelope.get("contract")):
-            executable = mapping_contract.downgrade(validated)
-        if executable is not None:
-            mapped = sellout_ingestion.transform_confirmed_upload(
-                filename,
-                data,
-                executable,
-            )
+        # A version 1 mapping still runs through today's transformation,
+        # unchanged, so its rows can be shown.
+        v1 = None if mapping_contract.is_v2(envelope.get("contract")) else mapping_contract.downgrade(validated)
+        if v1 is not None:
+            dataframe = contract_application.read_source_dataframe(filename, data)
+            mapped = contract_application.apply_contract(dataframe, v1)
             target_columns = [
                 column
                 for column in envelope.get("target_schema", generate_mapping.TARGET_SCHEMA)
@@ -399,8 +399,8 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
         pending.get("proposal") or pending.get("contract") or {}, contract
     )
 
-    # A mapping confirmed in version 1 is written back in that format when the
-    # amendment fits, preserving compatibility with already stored contracts.
+    # A mapping confirmed in version 1 (FairPrice) is written back in version
+    # 1 when the amendment fits it, so today's transformation keeps running it.
     stored_contract = {key: value for key, value in contract.items() if key != "warnings"}
     if not mapping_contract.is_v2(pending.get("contract")):
         stored_contract = mapping_contract.downgrade(contract) or stored_contract
@@ -437,7 +437,7 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
 
     # Files uploaded before approval were intentionally held back. Apply the
     # now-confirmed contract and load them without requiring a second upload,
-    # through the same executor used for every future recognised upload.
+    # when today's transformation can run it.
     ingestion = await asyncio.to_thread(
         _ingest_waiting_uploads,
         uploads.get("matched", []),
@@ -455,6 +455,9 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
         "archived_previous": move.get("archived_path"),
         "version": envelope["version"],
         "contract_format": 2 if mapping_contract.is_v2(stored_contract) else 1,
+        # Uploads of a version 2 mapping stay stored until the transformation
+        # can run that format.
+        "awaiting_transformation": mapping_contract.is_v2(stored_contract),
         "pending_removed": move["removed_pending"],
         "uploads_updated": len(uploads["updated"]),
         "uploads_processed": sum(item["success"] for item in ingestion),

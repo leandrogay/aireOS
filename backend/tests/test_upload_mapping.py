@@ -215,11 +215,10 @@ def test_confirmed_contract_stores_valid_rows_when_enabled(monkeypatch):
     monkeypatch.setenv("CLOUD_SQL_LOAD_ENABLED", "true")
     captured = {}
 
-    def load(dataframe, *, replace_source=False, data_source="aireos_upload"):
+    def load(dataframe, *, replace_source=False):
         captured["rows"] = len(dataframe)
         captured["replace_source"] = replace_source
         captured["period_type"] = dataframe.iloc[0]["period_type"]
-        captured["data_source"] = data_source
         return {
             "rows_stored": len(dataframe),
             "rows_consolidated": 0,
@@ -243,67 +242,25 @@ def test_confirmed_contract_stores_valid_rows_when_enabled(monkeypatch):
         "rows": 1,
         "replace_source": True,
         "period_type": "month",
-        "data_source": "aireos_upload",
     }
     assert result["processing"]["rows_stored"] == 1
     assert result["processing"]["storage_status"] == "completed"
 
 
-def test_a_version_2_contract_is_transformed_and_validated(monkeypatch):
-    dataframe = pd.DataFrame(
-        {
-            "Date": ["2026-08-14", "2026-08-15"],
-            "SKU": ["A1", "A1"],
-            "Qty": ["3", "bad"],
-            "Revenue": ["12.50", "4.00"],
-        }
-    )
-    proposal = {
-        "version": 2,
-        "fields": {
-            "period_start": {
-                "status": "mapped",
-                "source": "Date",
-                "transforms": [{"type": "month_start"}],
-            },
-            "period_type": {"status": "constant", "value": "month"},
-            "retailer": {"status": "constant", "value": "customer_offline"},
-            "store_code": {"status": "constant", "value": "ALL"},
-            "sku": {"status": "mapped", "source": "SKU"},
-            "quantity_units": {"status": "mapped", "source": "Qty"},
-            "revenue": {"status": "mapped", "source": "Revenue"},
-        },
-        "melt_groups": [],
-    }
-    contract = uploads.generate_mapping.validate_contract(
-        proposal,
-        list(dataframe.columns),
-        trust_review=True,
-    )
+def test_a_version_2_contract_is_left_for_the_transformation(monkeypatch):
     monkeypatch.setattr(
         uploads.generate_mapping,
         "resolve_mapping",
-        lambda *_: {
-            "status": "mapped",
-            "fingerprint": "v2fp",
-            "contract": contract,
-        },
+        lambda *_: {"status": "mapped", "fingerprint": "v2fp", "contract": {"version": 2, "fields": {}}},
     )
 
-    monkeypatch.setattr(
-        uploads.sellout_ingestion.sellout_service,
-        "cloud_sql_loading_enabled",
-        lambda: False,
-    )
-    result = uploads.resolve_and_apply_mapping(
-        "customer.csv",
-        dataframe.to_csv(index=False).encode(),
-        "gs://bucket/customer.csv",
-    )
+    def no_transformation(*args, **kwargs):
+        raise AssertionError("today's transformation only runs version 1 contracts")
+
+    monkeypatch.setattr(uploads.sellout_ingestion, "process_confirmed_upload", no_transformation)
+
+    result = uploads.resolve_and_apply_mapping("nhg.xlsx", b"bytes", "gs://bucket/nhg.xlsx")
 
     assert result["status"] == "mapped"
-    assert result["processing"]["storage_status"] == "disabled"
+    assert result["processing"]["storage_status"] == "awaiting_transformation"
     assert result["processing"]["rows_stored"] == 0
-    assert result["processing"]["rows_mapped"] == 1
-    assert result["processing"]["rows_rejected"] == 1
-    assert result["processing"]["rejection_summary"].startswith("1 rows rejected:")

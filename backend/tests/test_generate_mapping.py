@@ -285,33 +285,12 @@ def test_next_months_file_resolves_to_the_confirmed_contract(monkeypatch):
 def test_a_contract_stored_under_the_old_fingerprint_is_still_found(monkeypatch):
     columns = gm.read_header_columns("fp.txt", fairprice_txt())
     legacy = gm.legacy_fingerprint(columns)
-    _bucket(monkeypatch, {
-        gm.storage.confirmed_mapping_path(legacy): {
-            "contract": {},
-            "name": "Old",
-            "raw_columns": columns,
-        }
-    })
+    _bucket(monkeypatch, {gm.storage.confirmed_mapping_path(legacy): {"contract": {}, "name": "Old"}})
     monkeypatch.setattr(gm, "get_client", _no_claude)
 
     result = gm.resolve_mapping("fp.txt", fairprice_txt())
 
     assert (result["status"], result["fingerprint"]) == ("mapped", legacy)
-
-
-def test_reordered_headers_do_not_reuse_an_order_free_legacy_contract(monkeypatch):
-    columns = gm.read_header_columns("fp.txt", fairprice_txt())
-    old_key = gm.unordered_fingerprint(columns)
-    _bucket(monkeypatch, {
-        gm.storage.confirmed_mapping_path(old_key): {
-            "contract": {"version": 2},
-            "raw_columns": columns,
-        }
-    })
-
-    key, envelope = gm.find_confirmed(list(reversed(columns)))
-
-    assert (key, envelope) == (None, None)
 
 
 def test_a_new_layout_is_proposed_checked_and_parked_for_review(monkeypatch):
@@ -329,30 +308,6 @@ def test_a_new_layout_is_proposed_checked_and_parked_for_review(monkeypatch):
     assert envelope["model"] == gm.MODEL
     assert [item["code"] for item in envelope["sku_codes"]] == ["1909284", "1909280"]
     assert envelope["contract"]["layout"]["header_row"] == 7
-
-
-def test_a_near_match_still_gets_a_new_proposal_for_review(monkeypatch):
-    written = _bucket(monkeypatch, {})
-    monkeypatch.setattr(
-        gm,
-        "find_partial_match",
-        lambda columns: pytest.fail("actual uploads do not stop at a near match"),
-    )
-    messages = _install(
-        monkeypatch,
-        [_answer(reference_contracts.reference_contract("fairprice_monthly"))],
-    )
-
-    result = gm.resolve_mapping(
-        "fairprice.txt",
-        fairprice_txt(),
-        "gs://bucket/uploads/fairprice.txt",
-    )
-
-    assert result["status"] == "pending_confirmation"
-    assert len(messages.calls) == 1
-    envelope = written[gm.storage.pending_mapping_path(result["fingerprint"])]
-    assert "near_match" not in envelope
 
 
 # ---- The schema ------------------------------------------------------------------------

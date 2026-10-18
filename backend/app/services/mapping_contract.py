@@ -53,7 +53,7 @@ as they are (FairPrice article numbers are the master codes).
 The first contracts (version 1: identity_mapping + melt_groups with exact column
 lists) are still stored in GCS. They are read through upgrade(), unchanged on
 disk, and downgrade() writes an amended one back in that shape when it fits, so
-existing mappings retain their stored format.
+today's transformation keeps running it.
 
 Pure: no GCS, no database, no Claude.
 """
@@ -943,9 +943,9 @@ def downgrade(contract: dict) -> dict | None:
     A version 2 contract in the version 1 shape, or None when it says something
     version 1 cannot.
 
-    A mapping confirmed in version 1 is written back in that shape when a
-    reviewer amends it, preserving compatibility with existing stored
-    mappings. It fits only when the data starts on row 1 of
+    Today's transformation only runs version 1, so a mapping confirmed in that
+    shape (the FairPrice contract) is written back in it when a reviewer
+    amends it, and keeps loading. It fits only when the data starts on row 1 of
     the first sheet, nothing is filled down or rolled up, melt groups list
     exact period columns, and every field is read from a column with at most
     one regex_extract or value_map (or is not available, or is the period type

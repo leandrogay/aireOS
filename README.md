@@ -64,9 +64,10 @@ it; the transformation reads it and does exactly what it says. See
 | `DELETE /api/uploads/mappings/{fingerprint}/pending` | Discard a rejected proposal |
 
 `POST /api/uploads` is the single ingestion entry point. A recognised layout
-runs through the deterministic transformation in either stored contract format
-(`backend/app/services/sellout_ingestion.py` → `apply_contract.py`). A matching
-file is standardised, validated and loaded into Cloud SQL. Unrecognised layouts continue to the Claude
+with a version 1 contract runs through today's transformation
+(`backend/app/services/sellout_ingestion.py` → `apply_contract.py`). A file
+matching a version 2 contract is stored and mapped, and waits until the
+transformation reads that format. Unrecognised layouts continue to the Claude
 proposal and review workflow. Mapping does not insert rows into BigQuery.
 
 ## Coding Standards
