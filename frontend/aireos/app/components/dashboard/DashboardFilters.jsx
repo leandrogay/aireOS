@@ -18,10 +18,13 @@ export default function DashboardFilters({
   customerControl = null,
   sku,
   onSkuChange,
+  customers = [],
   customer,
   store,
   onStoreChange,
+  storeDisabled = false,
   hasPeriodChanges = false,
+  customersFiltered = false,
   dataVersion = 0,
   activeFilters = null,
   onClearFilters,
@@ -30,29 +33,37 @@ export default function DashboardFilters({
   // "loading" (derived during render) until the current customer's options
   // arrive — switching customer never shows the previous customer's SKUs or
   // stores. dataVersion refetches for the same customer stay silent.
-  const [skuResult, setSkuResult] = useState({ customer: '', options: [], error: null });
+  const [skuResult, setSkuResult] = useState({ scope: '', options: [], error: null });
   const [storeResult, setStoreResult] = useState({ customer: '', options: [], error: null });
-  const skuOptions = skuResult.options;
-  const skuLoading = skuResult.customer !== customer;
-  const storeOptions = storeResult.options;
-  const storeLoading = storeResult.customer !== customer;
+  const skuScope = customers.join('\0');
+  const skuOptions = customers.length === 0 ? [] : skuResult.options;
+  const skuLoading = customers.length > 0 && skuResult.scope !== skuScope;
+  const storeOptions = customer ? storeResult.options : [];
+  const storeLoading = Boolean(customer) && storeResult.customer !== customer;
 
   useEffect(() => {
-    if (!customer) return undefined;
+    if (customers.length === 0) return undefined;
 
     let cancelled = false;
 
     async function fetchOptions() {
       try {
-        const params = new URLSearchParams({ customer });
-        const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/api/sales/sku-options?${params.toString()}`
-        );
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Failed to load SKU options');
-        if (!cancelled) setSkuResult({ customer, options: data.options, error: null });
+        const lists = await Promise.all(customers.map(async (name) => {
+          const params = new URLSearchParams({ customer: name });
+          const res = await fetch(
+            `${process.env.NEXT_PUBLIC_API_URL}/api/sales/sku-options?${params.toString()}`
+          );
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.detail || 'Failed to load SKU options');
+          return data.options;
+        }));
+        const bySku = new Map();
+        for (const option of lists.flat()) {
+          if (!bySku.has(option.sku)) bySku.set(option.sku, option);
+        }
+        if (!cancelled) setSkuResult({ scope: skuScope, options: [...bySku.values()], error: null });
       } catch (err) {
-        if (!cancelled) setSkuResult({ customer, options: [], error: err.message });
+        if (!cancelled) setSkuResult({ scope: skuScope, options: [], error: err.message });
       }
     }
 
@@ -60,7 +71,7 @@ export default function DashboardFilters({
     return () => {
       cancelled = true;
     };
-  }, [customer, dataVersion]);
+  }, [customers, skuScope, dataVersion]);
 
   useEffect(() => {
     if (!customer) return undefined;
@@ -89,21 +100,20 @@ export default function DashboardFilters({
 
   const error = skuResult.error || storeResult.error;
 
-  const hasActiveFilters = Boolean(activeFilters) || hasPeriodChanges;
+  const hasActiveFilters = Boolean(activeFilters) || hasPeriodChanges || customersFiltered;
 
   return (
     <div className="bg-white rounded-lg border border-lavander shadow-sm p-3 h-full">
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-sm font-medium text-deep-violet-blue">Filter</p>
-        {hasActiveFilters && (
-          <button
-            type="button"
-            onClick={onClearFilters}
-            className="text-xs text-deep-violet-blue hover:text-violet hover:underline"
-          >
-            Clear Filters
-          </button>
-        )}
+      <div className="mb-2 flex items-center gap-2">
+        <h3 className="font-serif text-base text-deep-violet-blue">Filter</h3>
+        <button
+          type="button"
+          onClick={onClearFilters}
+          disabled={!hasActiveFilters}
+          className="rounded-md border border-deep-violet-blue/30 bg-white px-2 py-0.5 text-[10px] font-medium text-deep-violet-blue transition hover:bg-cream disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Clear
+        </button>
       </div>
 
       <div className="space-y-2">
@@ -147,7 +157,8 @@ export default function DashboardFilters({
               const storeName = storeOptions.find((o) => o.store_code === value)?.store_name ?? '';
               onStoreChange(value, storeName);
             }}
-            disabled={storeLoading}
+            disabled={storeDisabled || storeLoading}
+            title={storeDisabled ? 'Store applies when one customer is selected' : undefined}
             className="w-full px-2 py-1 text-xs rounded-md border bg-white text-deep-violet-blue border-violet disabled:opacity-50"
           >
             {storeLoading ? (

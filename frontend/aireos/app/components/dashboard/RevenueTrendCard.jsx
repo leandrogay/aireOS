@@ -1,10 +1,13 @@
 "use client"
 
+import { useState } from "react"
 import ChartLoading from "@/components/ui/ChartLoading"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import ComparisonMixChart from "@/components/dashboard/ComparisonMixChart"
+import CustomerComparisonChart from "@/components/dashboard/CustomerComparisonChart"
 import { FormatTrendChart } from "@/components/dashboard/TrendChart"
 import { formatDateTime } from "@/lib/formatDate"
+import { relabelFormatRows } from "@/app/utils/storeFormats"
 
 const tabTriggerClass =
   "text-deep-violet-blue/70 hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white data-active:hover:text-white"
@@ -42,9 +45,13 @@ export default function RevenueTrendCard({
   comparisonRows = null,
   comparisonLoading = false,
   periodNames = null,
+  customerBars = null,
+  onlineEnabled = true,
 }) {
+  const [metric, setMetric] = useState("revenue")
   const salesData = summaryByMode[mode]
-  const busy = loading || (comparisonRows !== null && comparisonLoading)
+  const comparingCustomers = customerBars !== null
+  const busy = loading || (!comparingCustomers && comparisonRows !== null && comparisonLoading)
 
   return (
     <div className="bg-white rounded-lg border border-lavander shadow-sm p-3 h-full flex flex-col">
@@ -54,7 +61,7 @@ export default function RevenueTrendCard({
             <TabsTrigger value="offline" className={tabTriggerClass}>
               Offline
             </TabsTrigger>
-            <TabsTrigger value="online" className={tabTriggerClass}>
+            <TabsTrigger value="online" disabled={!onlineEnabled} className={tabTriggerClass}>
               Online
             </TabsTrigger>
           </TabsList>
@@ -66,22 +73,39 @@ export default function RevenueTrendCard({
       <div className="mb-1 flex items-center justify-between gap-2">
         {/* weeklyGap (weeklyGapMessage) names at most a few month ranges;
             its hover text lists them all. */}
-        <p className="text-xs text-deep-violet-blue/60" title={weeklyGap?.detail}>
-          {(refreshing || freshnessRefreshing) ? "Refreshing latest data…" : (weeklyGap?.text ?? "")}
+        <p className="text-xs text-deep-violet-blue/60" title={comparingCustomers ? undefined : weeklyGap?.detail}>
+          {(refreshing || freshnessRefreshing)
+            ? "Refreshing latest data…"
+            : comparingCustomers
+              ? "One total per customer for the selected period"
+              : (weeklyGap?.text ?? "")}
         </p>
         <div className="flex items-center gap-2">
-          <Tabs value={granularity} onValueChange={onGranularityChange}>
-            <TabsList className="h-7 bg-lavander">
-              {/* Disabled (faded) when no month in the range has weekly rows
-                  (page.js weekAvailable). */}
-              <TabsTrigger value="week" disabled={!weekAvailable} className={`text-xs ${tabTriggerClass}`}>
-                By week
-              </TabsTrigger>
-              <TabsTrigger value="month" className={`text-xs ${tabTriggerClass}`}>
-                By month
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
+          {comparingCustomers ? (
+            <Tabs value={metric} onValueChange={setMetric}>
+              <TabsList className="h-7 bg-lavander">
+                <TabsTrigger value="units" className={`text-xs ${tabTriggerClass}`}>
+                  Volume
+                </TabsTrigger>
+                <TabsTrigger value="revenue" className={`text-xs ${tabTriggerClass}`}>
+                  Revenue
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          ) : (
+            <Tabs value={granularity} onValueChange={onGranularityChange}>
+              <TabsList className="h-7 bg-lavander">
+                {/* Disabled (faded) when no month in the range has weekly rows
+                    (page.js weekAvailable). */}
+                <TabsTrigger value="week" disabled={!weekAvailable} className={`text-xs ${tabTriggerClass}`}>
+                  By week
+                </TabsTrigger>
+                <TabsTrigger value="month" className={`text-xs ${tabTriggerClass}`}>
+                  By month
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
         </div>
       </div>
 
@@ -90,13 +114,21 @@ export default function RevenueTrendCard({
           drawn with the new labels. flex-1 keeps the card's height. */}
       {busy && <ChartLoading label="Loading dashboard…" className="flex-1" />}
       {error && <p className="text-red-600 text-sm">{error}</p>}
-      {!busy && !error && salesData && (
+      {!busy && !error && comparingCustomers && (
+        <div className="flex flex-1 flex-col">
+          <CustomerComparisonChart customers={customerBars} mode={mode} metric={metric} />
+          <p className="mt-1 text-right text-xs text-deep-violet-blue/60">
+            Last Updated: {formatDateTime(lastUpdated)}
+          </p>
+        </div>
+      )}
+      {!busy && !error && !comparingCustomers && salesData && (
         <div className="flex flex-1 flex-col">
           {comparisonRows ? (
             <ComparisonMixChart rows={comparisonRows} periodNames={periodNames} granularity={granularity} />
           ) : (
             <FormatTrendChart
-              periodByFormat={salesData.periodByFormat}
+              periodByFormat={relabelFormatRows(salesData.periodByFormat ?? [])}
               periodTotal={salesData.periodTotal}
               granularity={granularity}
             />

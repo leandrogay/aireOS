@@ -56,7 +56,15 @@ export function formatAxisCurrency(value) {
   if (Math.abs(value) >= 1000) {
     return `$${(value / 1000).toLocaleString('en-US', { maximumFractionDigits: 1 })}k`;
   }
-  return `$${value}`;
+  return formatRevenue(value);
+}
+
+// A revenue figure as a price: grouped, always two decimal places.
+export function formatRevenue(value) {
+  return `$${Number(value).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 // Stack order for the per-format bar: Recharts stacks <Bar> elements bottom-up
