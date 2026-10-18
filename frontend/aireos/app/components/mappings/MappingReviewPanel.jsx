@@ -367,13 +367,6 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
           )}
         </ul>
 
-        {approved.awaiting_transformation && (
-          <p className="mt-3 rounded-lg border border-lavander bg-cream p-3 text-sm text-deep-violet-blue">
-            This mapping uses the new contract format. Files that match it are stored and marked
-            as mapped; they are transformed and loaded once the transformation reads this format.
-          </p>
-        )}
-
         {approved.uploads_failed > 0 && (
           <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
             <p className="font-medium">
@@ -574,7 +567,6 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
           error={previewError}
           onRefresh={runPreview}
           disabled={busy !== null && busy !== 'preview'}
-          contractFormat={mapping.contractFormat}
         />
       </section>
 

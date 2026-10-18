@@ -282,7 +282,7 @@ V2_ENVELOPE = {
 }
 
 
-def test_a_version_2_mapping_is_confirmed_but_its_uploads_wait_for_the_transformation(monkeypatch):
+def test_a_version_2_mapping_is_confirmed_and_waiting_uploads_are_processed(monkeypatch):
     stored = _stub_storage(monkeypatch)
     monkeypatch.setattr(
         storage, "download_json",
@@ -292,18 +292,25 @@ def test_a_version_2_mapping_is_confirmed_but_its_uploads_wait_for_the_transform
         storage, "update_uploads_for_mapping",
         lambda fingerprint, metadata: {"matched": ["uploads/file.txt"], "updated": ["uploads/file.txt"]},
     )
+    monkeypatch.setattr(storage, "download_upload", lambda path: ("file.txt", b"source"))
+    calls = []
 
-    def no_transformation(*args, **kwargs):
-        raise AssertionError("a version 2 contract must not be run by today's transformation")
+    def process(filename, data, contract, *, replace_source=False):
+        calls.append((filename, data, contract, replace_source))
+        return {"rows_stored": 4, "storage_status": "completed"}
 
-    monkeypatch.setattr(sellout_ingestion, "process_confirmed_upload", no_transformation)
+    monkeypatch.setattr(sellout_ingestion, "process_confirmed_upload", process)
 
     response = client.post("/api/mappings/fp/confirm", json={"rules": _complete_rules([_rule("sku", "SKU No.", "high", False)])})
 
     assert response.status_code == 200
     body = response.json()
-    assert (body["contract_format"], body["awaiting_transformation"]) == (2, True)
-    assert body["uploads_processed"] == 0
+    assert body["contract_format"] == 2
+    assert "awaiting_transformation" not in body
+    assert body["uploads_processed"] == 1
+    assert body["processing"][0]["processing"]["rows_stored"] == 4
+    assert calls[0][0:2] == ("file.txt", b"source")
+    assert calls[0][3] is True
     # The roll-up instruction is kept although the rules do not carry it.
     assert stored["envelope"]["contract"]["aggregate"]["period"] == "month"
 

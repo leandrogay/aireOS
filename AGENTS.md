@@ -76,7 +76,7 @@ aireOS/
 │   │       │                      master SKU, required fields, rule coverage, revenue-name guard, stated period; confidence
 │   │       ├── reference_contracts.py Hand-written v2 contracts for FairPrice / NHG / Sheng Siong (golden tests, prompt examples, eval)
 │   │       ├── mapping_view.py    Contracts <-> the review screen's "packet"/"rules" shape (one rule per target field)
-│   │       ├── apply_contract.py  The transformation: applies a version 1 contract (identity_mapping + melt_groups) to a DataFrame
+│   │       ├── apply_contract.py  Deterministic transformation executor for version 1 and version 2 mapping contracts
 │   │       ├── validation_service.py Row-level validation against TARGET_SCHEMA after mapping
 │   │       ├── pl_forecast.py     Pure P&L sell-out forecast (base + building blocks), no I/O
 │   │       └── forecast_service.py BigQuery reads/MERGEs for the forecast table, refresh_forecast()
@@ -199,10 +199,9 @@ Invariants that cross domains:
   where the data sits is its `layout`, and a retailer's product codes become master SKUs through the `sku` field's
   `value_map` (the code table). A product code that is not a master SKU fails the contract's checks and blocks
   approval until the code table is fixed or the product is added to the SKU master.
-- Today's transformation (`sellout_ingestion` → `apply_contract`) runs version 1 contracts only. A file matching a
-  confirmed version 2 contract is stored and mapped, with `processing.storage_status = "awaiting_transformation"`;
-  nothing loads until the transformation reads that format. An amended version 1 mapping is written back in version
-  1 when it fits (`mapping_contract.downgrade`).
+- The transformation (`sellout_ingestion` → `apply_contract`) runs both contract formats. Version 2 executes layout,
+  field, melt, transform and aggregate instructions; version 1 remains supported for existing mappings. An amended
+  version 1 mapping is written back in version 1 when it fits (`mapping_contract.downgrade`).
 - Time: the backend stores and returns instants in UTC (TIMESTAMPTZ, Postgres sessions pinned to UTC
   in `sql.py`, ISO strings with `Z`/`+00:00`) and takes "today" as the UTC day, never `date.today()`.
   The frontend shows every time in Singapore time through `lib/formatDate.js`, and uses
@@ -248,10 +247,10 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
    (duplicate-filename check unless `force`).
 2. Per file, concurrently (`asyncio.gather` → `to_thread(resolve_and_apply_mapping)`):
    `generate_mapping.resolve_mapping`: `layout_detection.read_table` → fingerprint the header templates →
-   `mappings/confirmed/<fp>.json` (or the legacy exact-header fingerprint) → `status: "mapped"`; a version 1 contract
-   runs through `sellout_ingestion.process_confirmed_upload`, a version 2 one waits for the transformation. Else a
-   near match is reported, else Claude proposes a contract (structured output, schema built from this file's headers,
-   SKU master listed), `mapping_checks` checks it statically against the file and the SKU master, failures go back for
+   `mappings/confirmed/<fp>.json` (or a compatible legacy fingerprint) → `status: "mapped"`; either contract format
+   runs through `sellout_ingestion.process_confirmed_upload`. Else Claude proposes a contract (structured output,
+   schema built from this file's headers, SKU master listed),
+   `mapping_checks` checks it statically against the file and the SKU master, failures go back for
    up to 2 repairs, and the result is stored in `mappings/pending/` with its checks and the file's product codes →
    `status: "pending_confirmation"`.
 3. The review page loads `GET /api/mappings/{fp}` (packet from `mapping_view`: one rule per target field, the
@@ -301,7 +300,7 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | `sales.py` query-param names (`start_date`, `end_date`, `granularity`, `customer`, `store`, `sku` …) | `URLSearchParams` keys in `hooks/*.js` and `services/salesApi.js` |
 | `mapping_view` packet/rule keys (`targetField`, `sourceColumn`, `editable`, `status`, `field`, `meltGroup`, `options`, `description`, `requiredMissing`, `checks`) | `utils/mappingReview.js`, `components/mappings/*` |
 | `mapping_checks` check shape (`id`, `level`, `passed`, `message`, `fields`, `evidence`) | `utils/mappingChecks.js`, `MappingChecks.jsx` |
-| packet `skuCodes`, `masterSkus`, `contractFormat`, `instructions`; `processing.storage_status = "awaiting_transformation"` | `utils/skuCodeTable.js`, `SkuCodeTable.jsx`, `MappingReviewPanel.jsx`, `UploadFileRow.jsx` |
+| packet `skuCodes`, `masterSkus`, `contractFormat`, `instructions`; processing preview/rejection fields | `utils/skuCodeTable.js`, `SkuCodeTable.jsx`, `MappingReviewPanel.jsx`, `UploadFileRow.jsx` |
 | `uploads.py` per-file `mapping.status` values (`mapped`, `pending_confirmation`, `mapping_failed`) | `FileUpload.jsx` result rendering |
 | `settings/doh._settings_view` keys, `GLOBAL_DEFAULT_*_DOH` | `DohSettingsTable.jsx`, `dohSettingsForm.js` (`GLOBAL_DEFAULT_DOH`) |
 | `DohThresholdsUpdate` field names | `buildDohThresholdPayload` |
