@@ -28,11 +28,12 @@ GOOGLE_APPLICATION_CREDENTIALS, same as the API:
 
 import argparse
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.services import forecast_service
+from app.services import forecast_service, notification_service
 
 OUT_DIR = Path(__file__).resolve().parent / "out"
 
@@ -82,18 +83,42 @@ def main() -> None:
                         help="actual months the model should ignore")
     args = parser.parse_args()
 
-    result = forecast_service.refresh_forecast(
-        write=args.write,
-        refresh_actuals=not args.skip_actuals,
-        refresh_yearly=not args.skip_yearly,
-        recompute_all=args.recompute_all,
-        exclude_months={month.strip() for month in args.exclude_months.split(",") if month.strip()},
-        uplift_override=_parse_uplifts(args.uplift),
-    )
+    # Only a --write run is "the pipeline" completing or failing for staff
+    # purposes -- a preview (the default, often run first just to check for
+    # errors) never applies anything, so it would be noise to alert on.
+    try:
+        result = forecast_service.refresh_forecast(
+            write=args.write,
+            refresh_actuals=not args.skip_actuals,
+            refresh_yearly=not args.skip_yearly,
+            recompute_all=args.recompute_all,
+            exclude_months={month.strip() for month in args.exclude_months.split(",") if month.strip()},
+            uplift_override=_parse_uplifts(args.uplift),
+        )
+    except Exception as exc:
+        if args.write:
+            notification_service.insert(
+                notification_service.FORECAST_FAILURE,
+                {
+                    "period_start": None,
+                    "period_end": None,
+                    "customers": [],
+                    "skus": [],
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "errors": [f"{type(exc).__name__}: {exc}"],
+                },
+            )
+        raise
+
     print("\n".join(result["notes"]))
     _save_preview(result)
 
-    if not args.write:
+    if args.write:
+        payload = forecast_service.forecast_notification_payload(result["forecast"])
+        payload["updated_at"] = datetime.now(timezone.utc).isoformat()
+        payload["errors"] = []
+        notification_service.insert(notification_service.FORECAST_SUCCESS, payload)
+    else:
         print("\nPreview only -- add --write to update BigQuery.")
 
 

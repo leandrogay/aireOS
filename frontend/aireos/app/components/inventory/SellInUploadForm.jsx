@@ -109,9 +109,11 @@ export default function SellInUploadForm({ onSaved }) {
       </label>
 
       <div className="flex gap-2">
-        <Button type="button" onClick={handlePreview} disabled={!file} className={primaryButtonClass}>
-          {previewing ? 'Reading file…' : 'Preview'}
-        </Button>
+        {!preview && (
+          <Button type="button" onClick={handlePreview} disabled={!file} className={primaryButtonClass}>
+            {previewing ? 'Reading file…' : 'Preview'}
+          </Button>
+        )}
         {preview && (
           <Button type="button" onClick={handleSave} disabled={writable === 0 || saving} className={primaryButtonClass}>
             {saving ? 'Saving…' : `Save ${plural(writable, 'value')}`}

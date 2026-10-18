@@ -1,3 +1,4 @@
+import json
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
@@ -5,7 +6,7 @@ import pytest
 from conftest import FakeConnection, FakeEngine, FrozenDatetime
 
 from app.schemas.inventory import InventoryRecordCreate, InventoryRecordUpdate
-from app.services import catalog_service, forecast_units, inventory_service, sellout_units
+from app.services import catalog_service, forecast_units, inventory_service, notification_service, sellout_units
 
 
 TODAY = date(2026, 9, 24)
@@ -86,6 +87,12 @@ def _router(customers=None, metrics=None, versions=None, shipped=None, **others)
         for fragment, rows in others.items():
             if fragment.replace("_", " ") in sql:
                 return rows
+        # Checked before the generic "FROM customers" branch below, which
+        # would otherwise also match this query's own "FROM customers".
+        if "doh_alert_enabled" in sql:
+            return [(respond.doh_alert_enabled,)]
+        if "INSERT INTO notifications" in sql:
+            return [(99,)]
         if "FROM customer_retailers" in sql:
             return [{"customer_id": 1, "retailer_id": 57}]
         if "FROM customers" in sql:
@@ -99,6 +106,10 @@ def _router(customers=None, metrics=None, versions=None, shipped=None, **others)
         return []
 
     respond.sellout_units = _sales_units(metrics)
+    # Off by default so a test that doesn't care about low-stock
+    # notifications never also needs to fake a forecast for it (see
+    # _notify_low_stock, which returns immediately when this is false).
+    respond.doh_alert_enabled = False
     return respond
 
 
@@ -592,6 +603,198 @@ def test_edit_of_several_customers_fails_if_any_has_no_data(monkeypatch):
         )
 
     assert conn.sql_containing("INSERT INTO inventory_metrics") == []
+
+
+# ---- low-stock notifications -------------------------------------------------------
+#
+# _notify_low_stock itself is tested directly against the same fixture shape
+# as the customer-view tests above (reusing their exact, already-proven DOH
+# numbers), since reaching a real below_min/above_max status needs a full
+# ending-stock-and-forecast fixture that the simpler create/edit write tests
+# above don't build. Separately, create_records/update_records are checked to
+# actually call it (the wiring), without needing that full fixture again.
+
+
+def _notify_router(metrics, forecast, versions=None, alert_enabled=True, already_alerted=()):
+    router = _router(
+        _customers("fairprice"),
+        metrics,
+        versions or [_version()],
+        **{"unnest(skus)": [(sku,) for sku in already_alerted]},
+    )
+    router.doh_alert_enabled = alert_enabled
+    return router
+
+
+def _notify_setup(monkeypatch, metrics, forecast, versions=None, alert_enabled=True, already_alerted=()):
+    conn = _install(
+        monkeypatch,
+        _notify_router(metrics, forecast, versions=versions, alert_enabled=alert_enabled, already_alerted=already_alerted),
+    )
+    monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: forecast)
+    return conn
+
+
+# Feb ending stock 20, March forecast 310/31 days -> DOH 2 (test_customer_view_computes_doh_from_forecast_when_actuals_run_out
+# above proves these numbers) -- well below the default band's min_doh (25).
+_BELOW_MIN_METRICS = [
+    _metric(1, "A1", date(2026, 1, 1), "sell_in", 400),
+    _metric(1, "A1", date(2026, 1, 1), "sell_out_base", 100),
+    _metric(1, "A1", date(2026, 2, 1), "sell_in", 0),
+    _metric(1, "A1", date(2026, 2, 1), "sell_out_base", 280),
+]
+_BELOW_MIN_FORECAST = {"A1": {date(2026, 3, 1): 310.0}}
+
+
+def test_a_sku_below_min_doh_gets_a_low_stock_notification(monkeypatch):
+    conn = _notify_setup(monkeypatch, _BELOW_MIN_METRICS, _BELOW_MIN_FORECAST)
+
+    inventory_service._notify_low_stock(conn, 1, ["A1"], TODAY)
+
+    writes = conn.sql_containing("INSERT INTO notifications")
+    assert len(writes) == 1
+    assert writes[0][1]["notification_type"] == notification_service.LOW_STOCK
+    assert writes[0][1]["customer_id"] == 1
+    assert writes[0][1]["skus"] == ["A1"]
+    payload = json.loads(writes[0][1]["payload"])
+    assert payload == {
+        "sku": "A1",
+        "product_name": "Pants A",
+        "customer_name": "fairprice",
+        "current_stock": 20,
+        "doh_threshold": 25,
+        "doh_remaining": 2.0,
+        "last_update": TODAY.isoformat(),
+    }
+
+
+def test_a_sku_within_its_band_gets_no_notification(monkeypatch):
+    # Same ending stock, but a forecast so slow that DOH lands inside the band.
+    conn = _notify_setup(monkeypatch, _BELOW_MIN_METRICS, {"A1": {date(2026, 3, 1): 20.0}})
+
+    inventory_service._notify_low_stock(conn, 1, ["A1"], TODAY)
+
+    assert conn.sql_containing("INSERT INTO notifications") == []
+
+
+def test_overstock_above_max_doh_is_not_a_low_stock_notification(monkeypatch):
+    # A very slow forecast pushes DOH far above max_doh (35) -- that is
+    # overstock, not the low-stock/stockout these stories are about.
+    conn = _notify_setup(monkeypatch, _BELOW_MIN_METRICS, {"A1": {date(2026, 3, 1): 1.0}})
+
+    inventory_service._notify_low_stock(conn, 1, ["A1"], TODAY)
+
+    assert conn.sql_containing("INSERT INTO notifications") == []
+
+
+def test_alerts_disabled_for_the_customer_skips_the_check_entirely(monkeypatch):
+    conn = _notify_setup(monkeypatch, _BELOW_MIN_METRICS, _BELOW_MIN_FORECAST, alert_enabled=False)
+    monkeypatch.setattr(
+        inventory_service, "_forecast_by_sku", lambda customer_id, details: (_ for _ in ()).throw(AssertionError("forecast was computed"))
+    )
+
+    inventory_service._notify_low_stock(conn, 1, ["A1"], TODAY)
+
+    assert conn.sql_containing("INSERT INTO notifications") == []
+
+
+def test_a_sku_already_covered_by_an_unread_alert_is_not_re_alerted(monkeypatch):
+    conn = _notify_setup(monkeypatch, _BELOW_MIN_METRICS, _BELOW_MIN_FORECAST, already_alerted=["A1"])
+
+    inventory_service._notify_low_stock(conn, 1, ["A1"], TODAY)
+
+    assert conn.sql_containing("INSERT INTO notifications") == []
+
+
+def test_five_or_more_new_low_stock_skus_become_one_consolidated_notification(monkeypatch):
+    skus = ["A1", "B2", "C3", "D4", "E5"]
+    metrics = [
+        _metric(1, sku, date(2026, 1, 1), "sell_in", 400)
+        for sku in skus
+    ] + [
+        _metric(1, sku, date(2026, 1, 1), "sell_out_base", 100)
+        for sku in skus
+    ] + [
+        _metric(1, sku, date(2026, 2, 1), "sell_in", 0)
+        for sku in skus
+    ] + [
+        _metric(1, sku, date(2026, 2, 1), "sell_out_base", 280)
+        for sku in skus
+    ]
+    forecast = {sku: {date(2026, 3, 1): 310.0} for sku in skus}
+    conn = _notify_setup(monkeypatch, metrics, forecast)
+    monkeypatch.setattr(catalog_service, "get_skus", lambda: [{"sku": sku, "sku_range": "R", "product_name": sku, "size": "L"} for sku in skus])
+
+    inventory_service._notify_low_stock(conn, 1, skus, TODAY)
+
+    writes = conn.sql_containing("INSERT INTO notifications")
+    assert len(writes) == 1
+    assert sorted(writes[0][1]["skus"]) == skus
+    payload = json.loads(writes[0][1]["payload"])
+    assert payload["count"] == 5
+    assert sorted(item["sku"] for item in payload["items"]) == skus
+
+
+def test_four_new_low_stock_skus_stay_as_individual_notifications(monkeypatch):
+    skus = ["A1", "B2", "C3", "D4"]
+    metrics = [
+        _metric(1, sku, date(2026, 1, 1), "sell_in", 400) for sku in skus
+    ] + [
+        _metric(1, sku, date(2026, 1, 1), "sell_out_base", 100) for sku in skus
+    ] + [
+        _metric(1, sku, date(2026, 2, 1), "sell_in", 0) for sku in skus
+    ] + [
+        _metric(1, sku, date(2026, 2, 1), "sell_out_base", 280) for sku in skus
+    ]
+    forecast = {sku: {date(2026, 3, 1): 310.0} for sku in skus}
+    conn = _notify_setup(monkeypatch, metrics, forecast)
+    monkeypatch.setattr(catalog_service, "get_skus", lambda: [{"sku": sku, "sku_range": "R", "product_name": sku, "size": "L"} for sku in skus])
+
+    inventory_service._notify_low_stock(conn, 1, skus, TODAY)
+
+    assert len(conn.sql_containing("INSERT INTO notifications")) == 4
+
+
+def test_a_notification_failure_never_breaks_the_write_it_is_attached_to(monkeypatch):
+    base = _write_router()
+
+    def respond(sql, params):
+        if "doh_alert_enabled" in sql:
+            raise RuntimeError("boom")
+        return base(sql, params)
+
+    _install(monkeypatch, respond)
+
+    # Would raise if _notify_low_stock's own try/except didn't swallow this.
+    inventory_service.create_records(_record(), today=TODAY)
+
+
+def test_create_checks_low_stock_for_every_customer_the_write_touches(monkeypatch):
+    conn = _install(monkeypatch, _write_router())
+    seen = []
+    monkeypatch.setattr(
+        inventory_service,
+        "_notify_low_stock",
+        lambda conn, customer_id, skus, today: seen.append((customer_id, skus, today)),
+    )
+
+    inventory_service.create_records(_record(customer_ids=[1, 2]), today=TODAY)
+
+    assert seen == [(1, ["A1"], TODAY), (2, ["A1"], TODAY)]
+
+
+def test_update_checks_low_stock_for_every_customer_the_write_touches(monkeypatch):
+    conn = _install(monkeypatch, _write_router(existing=[1, 2]))
+    seen = []
+    monkeypatch.setattr(
+        inventory_service,
+        "_notify_low_stock",
+        lambda conn, customer_id, skus, today: seen.append((customer_id, skus, today)),
+    )
+
+    inventory_service.update_records(_record(InventoryRecordUpdate, customer_ids=[1, 2]), today=TODAY)
+
+    assert seen == [(1, ["A1"], TODAY), (2, ["A1"], TODAY)]
 
 
 # ---- sell-in plan ------------------------------------------------------------------

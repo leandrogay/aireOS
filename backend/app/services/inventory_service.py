@@ -5,8 +5,8 @@ from functools import lru_cache
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
-from app.services import catalog_service, forecast_units, inventory_calc, sellout_units, sql
-from app.services.sell_in_upload import product_for_description, quantity_problem, read_sell_in_lines
+from app.services import catalog_service, forecast_units, inventory_calc, notification_service, sellout_units, sql
+from app.services.sell_in_upload import canonical_customer_name, product_for_description, quantity_problem, read_sell_in_lines
 from app.services.settings import doh as doh_settings
 
 
@@ -1149,6 +1149,93 @@ def _names(customers: dict[int, str], ids) -> str:
     return ", ".join(customers[i] for i in sorted(ids))
 
 
+# ============================================================
+# LOW-STOCK NOTIFICATIONS
+#
+# Checked after a write touches sell-in, so a SKU that drops below its
+# customer's DOH floor raises an in-system alert without anyone having to
+# keep the Inventory page open. Best-effort: the forecast needed to compute
+# DOH is a BigQuery read, and must never be able to break a write that is
+# otherwise Postgres-only, so any failure here is swallowed, not raised.
+# ============================================================
+
+
+def _notify_low_stock(conn: Connection, customer_id: int, skus: list[str], today: date) -> None:
+    try:
+        # Through the same conn as the write (not settings/doh.get_settings,
+        # which opens its own connection) so this never needs network beyond
+        # what the write itself already opened, and so a customer with alerts
+        # off never even reaches the forecast lookup below.
+        alert_row = conn.execute(
+            text("SELECT doh_alert_enabled FROM customers WHERE customer_id = :customer_id"),
+            {"customer_id": customer_id},
+        ).first()
+        if alert_row is None or not alert_row[0]:
+            return
+
+        customers = _fetch_customers(conn)
+        metrics = _fetch_actuals(conn, [customer_id])
+        latest = _latest_month_by_customer(metrics).get(customer_id)
+        if latest is None:
+            return
+
+        details = _sku_details()
+        forecast = _forecast_by_sku(customer_id, details)
+        versions = doh_settings.fetch_versions(conn, [customer_id]).get(customer_id, [])
+
+        table = _customer_table(
+            customer_id,
+            customers[customer_id],
+            metrics,
+            versions,
+            details,
+            forecast,
+            skus=skus,
+            start_month=latest,
+            end_month=latest,
+        )
+        below_min = [row for row in table if row["doh_status"] == inventory_calc.DOH_STATUS_BELOW_MIN]
+        if not below_min:
+            return
+
+        already = notification_service.already_alerted_skus(conn, customer_id)
+        new_items = [
+            {
+                "sku": row["sku"],
+                "product_name": row["product_name"],
+                "customer_name": row["customer_name"],
+                "current_stock": round(row["ending_stock"]),
+                "doh_threshold": row["min_doh"],
+                "doh_remaining": row["doh"],
+                "last_update": _iso(today),
+            }
+            for row in below_min
+            if row["sku"] not in already
+        ]
+        if not new_items:
+            return
+
+        if len(new_items) >= notification_service.CONSOLIDATE_AT:
+            notification_service.insert(
+                notification_service.LOW_STOCK,
+                {"count": len(new_items), "items": new_items},
+                customer_id=customer_id,
+                skus=[item["sku"] for item in new_items],
+                conn=conn,
+            )
+        else:
+            for item in new_items:
+                notification_service.insert(
+                    notification_service.LOW_STOCK,
+                    item,
+                    customer_id=customer_id,
+                    skus=[item["sku"]],
+                    conn=conn,
+                )
+    except Exception:
+        pass
+
+
 def create_records(record, today: date | None = None) -> dict:
     today = today or _utc_today()
     with _get_engine().begin() as conn:
@@ -1160,6 +1247,8 @@ def create_records(record, today: date | None = None) -> dict:
                 f"{_names(customers, existing)}. Use edit to change it."
             )
         written = _write_record(conn, record, today)
+        for customer_id in record.customer_ids:
+            _notify_low_stock(conn, customer_id, [record.sku], today)
 
     return _write_summary(record, written)
 
@@ -1176,6 +1265,8 @@ def update_records(record, today: date | None = None) -> dict:
                 f"{_names(customers, missing)}. Use create to add it."
             )
         written = _write_record(conn, record, today)
+        for customer_id in record.customer_ids:
+            _notify_low_stock(conn, customer_id, [record.sku], today)
 
     return _write_summary(record, written)
 
@@ -1352,7 +1443,7 @@ def _plan_sell_in_upload(conn: Connection, data: bytes, today: date) -> tuple[li
 
     candidates = []
     for line in read_sell_in_lines(data):
-        customer_id = customer_by_name.get(line["customer_name"].lower())
+        customer_id = customer_by_name.get(canonical_customer_name(line["customer_name"]).lower())
         if customer_id is None:
             skip("Customer is not in inventory", line)
             continue
@@ -1441,5 +1532,16 @@ def apply_sell_in_upload(data: bytes, today: date | None = None) -> dict:
                 [("sell_in", row["qty"], _VALUE_TYPES["sell_in"])],
                 today,
             )
+
+        # Every matched SKU is checked, not just the ones that changed: a SKU
+        # already sitting below its threshold still deserves an alert the
+        # first time an upload touches it, even if the number it confirms is
+        # the same one already on file.
+        touched_skus: dict[int, set[str]] = {}
+        for row in rows:
+            touched_skus.setdefault(row["customer_id"], set()).add(row["sku"])
+
+        for customer_id, skus in touched_skus.items():
+            _notify_low_stock(conn, customer_id, sorted(skus), today)
 
     return {"records_written": len(changed), "unchanged": len(rows) - len(changed)}
