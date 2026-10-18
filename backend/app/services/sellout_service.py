@@ -40,6 +40,16 @@ SELLOUT_COLUMNS = (
 )
 _BULK_UPSERT_THRESHOLD = 100
 _BULK_UPSERT_BATCH_SIZE = 500
+# The sellout table's natural key requires a store code, while some retailer
+# exports are customer-level totals with no store dimension. Keep that absence
+# in the mapped preview, then use one explicit storage member for the database
+# key instead of inventing a real branch.
+ALL_STORES_CODE = "__all__"
+ALL_STORES_NAME = "All stores"
+
+
+def _is_blank(value) -> bool:
+    return value is None or pd.isna(value) or str(value).strip() == ""
 
 
 def _consolidate_records(records: list[dict]) -> list[dict]:
@@ -81,6 +91,10 @@ def _prepare_records(dataframe: pd.DataFrame) -> tuple[list[dict], int]:
         .where(dataframe.notna(), None)
         .to_dict("records")
     )
+    for row in input_records:
+        if _is_blank(row.get("store_code")):
+            row["store_code"] = ALL_STORES_CODE
+            row["store_name"] = ALL_STORES_NAME
     records = _consolidate_records(input_records)
     for row in records:
         for field in ("period_start", "period_end"):

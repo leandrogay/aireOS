@@ -9,19 +9,8 @@ from app.services import generate_mapping
 from app.services import apply_contract as contract_application
 from app.services import sellout_ingestion, sellout_service
 from app.services import upload_check
-from app.services import mapping_contract
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
-
-# The processing result of an upload whose contract the transformation cannot
-# run yet: nothing transformed, nothing stored.
-AWAITING_TRANSFORMATION = {
-    "storage_status": "awaiting_transformation",
-    "rows_stored": 0,
-    "rows_rejected": 0,
-    "rejection_summary": "",
-}
-
 
 def _mapping_annotations(mapping: dict | None) -> dict[str, str]:
     """Return the mapping outcome fields stored on an uploaded GCS blob."""
@@ -50,13 +39,6 @@ def resolve_and_apply_mapping(
     """Resolve one GCS mapping, then validate and store confirmed output."""
     resolved = generate_mapping.resolve_mapping(filename, data, uploaded_to)
     if resolved.get("status") != "mapped":
-        return resolved
-
-    # Today's transformation runs version 1 contracts only. A file whose
-    # confirmed contract is version 2 is kept in the bucket, mapped, and left
-    # for the transformation to process once it reads that format.
-    if mapping_contract.is_v2(resolved.get("contract")):
-        resolved["processing"] = AWAITING_TRANSFORMATION
         return resolved
 
     resolved["processing"] = sellout_ingestion.process_confirmed_upload(
@@ -149,7 +131,7 @@ async def upload_files(
             return {
                 "status": "mapping_failed",
                 "reason": "bad_llm_output",
-                "error": str(exc),
+                "error": f"Unable to propose a mapping for {filename}: {exc}",
             }
         except contract_application.ContractApplicationError as exc:
             return {

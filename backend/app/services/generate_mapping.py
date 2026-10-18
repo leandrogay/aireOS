@@ -36,6 +36,7 @@ from app.services.column_profile import (
     header_template,
     layout_templates,
     legacy_fingerprint,
+    unordered_fingerprint,
     profile_columns,
     to_snake_case,
 )
@@ -280,13 +281,26 @@ def generate_mapping_contract(
 def find_confirmed(columns: list[str]) -> tuple[str, dict] | tuple[None, None]:
     """
     The confirmed mapping for this layout and the fingerprint it is stored
-    under: the template fingerprint first, then the exact-header fingerprint
-    contracts confirmed before templates are stored under.
+    under: the ordered template fingerprint first, then compatible historical
+    template/exact-header keys whose stored raw columns have the same order.
     """
-    for key in dict.fromkeys([fingerprint(columns), legacy_fingerprint(columns)]):
+    # Ordered signatures are authoritative. The other two keys keep contracts
+    # confirmed before this rule changed addressable without asking users to
+    # recreate them.
+    ordered_key = fingerprint(columns)
+    for key in dict.fromkeys([
+        ordered_key,
+        unordered_fingerprint(columns),
+        legacy_fingerprint(columns),
+    ]):
         envelope = storage.download_json(storage.confirmed_mapping_path(key))
-        if envelope:
-            return key, envelope
+        if not envelope:
+            continue
+        if key != ordered_key:
+            stored_columns = envelope.get("raw_columns") or []
+            if not stored_columns or fingerprint(stored_columns) != ordered_key:
+                continue
+        return key, envelope
     return None, None
 
 
@@ -346,13 +360,11 @@ def resolve_mapping(filename: str, data: bytes, uploaded_to: str | None = None) 
     """
     Work out the mapping contract for an uploaded file.
 
-    Three outcomes, cheapest first:
+    Two outcomes, cheapest first:
 
       - a confirmed contract exists for this layout: returned as-is, no Claude
         call
-      - the layout nearly matches a confirmed mapping: returned as a partial
-        match for review, no Claude call and nothing applied
-      - the layout is new: a contract is proposed and checked, parked under
+      - the layout is unrecognised: a contract is proposed and checked, parked under
         mappings/pending/, and returned for the user to review
 
     This is a blocking function (network I/O to both Anthropic and GCS) -- the
@@ -374,15 +386,6 @@ def resolve_mapping(filename: str, data: bytes, uploaded_to: str | None = None) 
         }
 
     fp = fingerprint(columns)
-    partial = find_partial_match(columns)
-    if partial:
-        return {
-            "status": "partial_match",
-            "fingerprint": fp,
-            "source": "partial",
-            "matched": partial,
-        }
-
     proposal = generate_mapping_contract(filename, frame, layout)
 
     envelope = {
