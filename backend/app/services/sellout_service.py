@@ -418,6 +418,18 @@ def _retailer_family(retailer: str) -> str:
     return retailer
 
 
+def _customer_label(family: str) -> str:
+    # "fairprice" reads "Fairprice". A short code such as "nhg" stays "NHG".
+    words = [word for word in family.replace("_", " ").split() if word]
+    labelled = []
+    for word in words:
+        if word.isalpha() and len(word) <= 3:
+            labelled.append(word.upper())
+        else:
+            labelled.append(word[:1].upper() + word[1:].lower())
+    return " ".join(labelled)
+
+
 def _sku_product_order(sku_range: str | None, size: str | None) -> tuple:
     # Sort key for SKU_RANGE_ORDER then SKU_SIZE_ORDER; unknown values last.
     sku_range = sku_range or ""
@@ -436,12 +448,24 @@ def _validate_date(value: str | None, field_name: str) -> None:
 # ============================================================
 
 
+def _ranking_customers(customer: str, customers: list[str] | None) -> list[str]:
+    # One customer is the ranking's original scope. A list sums each SKU
+    # across those families (the dashboard's Products view).
+    if customers is None:
+        return [customer]
+    names = [name.strip() for name in customers if name and name.strip()]
+    if not names:
+        raise ValueError("customers must name at least one customer")
+    return names
+
+
 def get_sku_ranking(
     metric: str = "value",
     order: str = "desc",
     sku: str | None = None,
     mode: str | None = None,
     customer: str = DEFAULT_CUSTOMER,
+    customers: list[str] | None = None,
     store: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -452,6 +476,8 @@ def get_sku_ranking(
     # is never silently excluded from "all-time" or date-ranged rankings.
     # order="product" keeps each SKU's rank (highest metric = 1) but lists
     # them in the client's product order (_sku_product_order).
+    # `customers` replaces `customer` and sums each SKU across those families
+    # on the chosen channel, so one row is the product's total for everyone ticked.
     if metric not in SKU_RANKING_METRICS:
         raise ValueError(f"metric must be one of {SKU_RANKING_METRICS}")
     if order not in SKU_RANKING_ORDERS:
@@ -460,9 +486,13 @@ def get_sku_ranking(
         raise ValueError(f"mode must be one of {DASHBOARD_MODES}")
     _validate_date(start_date, "start_date")
     _validate_date(end_date, "end_date")
+    names = _ranking_customers(customer, customers)
 
     sql_order = "ASC" if order == "asc" else "DESC"
-    retailer_names = [_retailer_for(customer, mode)] if mode else _customer_retailers(customer)
+    if mode:
+        retailer_names = [_retailer_for(name, mode) for name in names]
+    else:
+        retailer_names = [retailer for name in names for retailer in _customer_retailers(name)]
     where_clauses = [
         "s.sku IS NOT NULL",
         "s.retailer_id IN (SELECT retailer_id FROM retailers WHERE retailer_name = ANY(CAST(:retailer_names AS text[])))",
@@ -593,7 +623,7 @@ def get_customer_options() -> list[dict]:
     with _get_read_engine().connect() as conn:
         rows = conn.execute(query).all()
     families = sorted({_retailer_family(row[0]) for row in rows})
-    return [{"value": family, "label": family.title()} for family in families]
+    return [{"value": family, "label": _customer_label(family)} for family in families]
 
 
 def _format_last_updated(value) -> str | None:
@@ -757,6 +787,88 @@ def get_dashboard_summary(
         df = _dashboard_rows(df, granularity)
 
     return {mode: _dashboard_mode_summary(df, _retailer_for(customer, mode)) for mode in DASHBOARD_MODES}
+
+
+def get_customer_totals(
+    customers: list[str],
+    sku: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict:
+    """One period total per customer, split into offline and online.
+
+    This is the cross-customer bar chart: each bar is the sum of the
+    selected dates, not a week or a month. The effective-sellout view is
+    used so a retailer+month that has both weekly and monthly rows is
+    counted once. has_offline / has_online say whether that channel exists
+    for the customer at all, including outside the date range, so a
+    customer with no online sales (NHG) can be left off the Online chart
+    instead of drawn as a zero.
+    """
+    names = list(dict.fromkeys(name.strip() for name in customers if name and name.strip()))
+    if not names:
+        raise ValueError("customers must include at least one customer")
+    _validate_date(start_date, "start_date")
+    _validate_date(end_date, "end_date")
+
+    retailer_names = [retailer for name in names for retailer in _customer_retailers(name)]
+    where_clauses = [
+        "r.retailer_name = ANY(CAST(:retailer_names AS text[]))",
+    ]
+    params: dict = {"retailer_names": retailer_names}
+    if sku:
+        where_clauses.append("s.sku = :sku")
+        params["sku"] = sku
+    if start_date:
+        where_clauses.append("s.period_start >= CAST(:start_date AS date)")
+        params["start_date"] = start_date
+    if end_date:
+        where_clauses.append("s.period_start <= CAST(:end_date AS date)")
+        params["end_date"] = end_date
+
+    totals_query = text(
+        EFFECTIVE_SELLOUT_CTE
+        + f"""
+        SELECT
+          r.retailer_name,
+          COALESCE(SUM(s.revenue), 0) AS revenue,
+          COALESCE(SUM(s.quantity_units), 0) AS units
+        FROM effective_sellout s
+        JOIN retailers r ON r.retailer_id = s.retailer_id
+        WHERE {' AND '.join(where_clauses)}
+        GROUP BY r.retailer_name
+        """
+    )
+    presence_query = text(
+        """
+        SELECT DISTINCT r.retailer_name
+        FROM sellout s
+        JOIN retailers r ON r.retailer_id = s.retailer_id
+        WHERE r.retailer_name = ANY(CAST(:retailer_names AS text[]))
+        """
+    )
+    with _get_read_engine().connect() as conn:
+        total_rows = conn.execute(totals_query, params).mappings().all()
+        present_rows = conn.execute(presence_query, {"retailer_names": retailer_names}).mappings().all()
+
+    totals_by_retailer = {row["retailer_name"]: row for row in total_rows}
+    present = {row["retailer_name"] for row in present_rows}
+    result = []
+    for name in names:
+        entry = {
+            "customer": name,
+            "label": _customer_label(name),
+        }
+        for mode in DASHBOARD_MODES:
+            retailer = _retailer_for(name, mode)
+            row = totals_by_retailer.get(retailer)
+            entry[mode] = {
+                "revenue": round(float(row["revenue"] or 0), 2) if row else 0.0,
+                "units": float(row["units"] or 0) if row else 0.0,
+            }
+            entry[f"has_{mode}"] = retailer in present
+        result.append(entry)
+    return {"customers": result}
 
 
 def get_monthly_only_months(

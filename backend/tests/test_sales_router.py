@@ -13,6 +13,7 @@ SALES_ENDPOINTS = [
     ("/api/sales/sku-options", "get_sku_options"),
     ("/api/sales/store-options", "get_store_options"),
     ("/api/sales/customer-options", "get_customer_options"),
+    ("/api/sales/customer-totals", "get_customer_totals"),
     ("/api/sales/dashboard-summary", "get_dashboard_summary"),
     ("/api/sales/monthly-only", "get_monthly_only_months"),
     ("/api/sales/period-comparison", "get_period_comparison"),
@@ -66,3 +67,22 @@ def test_monthly_only_returns_the_months_per_channel(monkeypatch):
 
     assert response.status_code == 200
     assert response.json() == {"offline": ["2026-08-01"], "online": []}
+
+
+def test_skus_maps_blank_customers_to_400():
+    response = client.get("/api/sales/skus?customers=,")
+
+    assert response.status_code == 400
+    assert "customers" in response.json()["detail"]
+
+
+def test_customer_totals_maps_a_bad_date_to_400(monkeypatch):
+    def _bad_date(**kwargs):
+        raise ValueError("start_date must be in YYYY-MM-DD format")
+
+    monkeypatch.setattr(sellout_service, "get_customer_totals", _bad_date)
+
+    response = client.get("/api/sales/customer-totals?customers=fairprice&start_date=Aug")
+
+    assert response.status_code == 400
+    assert "start_date" in response.json()["detail"]

@@ -24,10 +24,14 @@ def get_sku_ranking(
     sku: str | None = None,
     mode: str | None = None,
     customer: str = sellout_service.DEFAULT_CUSTOMER,
+    customers: str | None = None,
     store: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
 ):
+    # `customers` (comma-separated) sums each SKU across those families and
+    # replaces the single `customer` scope. Absent, the ranking stays one customer.
+    named = [part.strip() for part in customers.split(",")] if customers is not None else None
     try:
         ranked = sellout_service.get_sku_ranking(
             metric=metric,
@@ -35,6 +39,7 @@ def get_sku_ranking(
             sku=sku,
             mode=mode,
             customer=customer,
+            customers=named,
             store=store,
             start_date=start_date,
             end_date=end_date,
@@ -50,6 +55,7 @@ def get_sku_ranking(
         "sku": sku,
         "mode": mode,
         "customer": customer,
+        "customers": [name for name in named if name] if named is not None else None,
         "store": store,
         "start_date": start_date,
         "end_date": end_date,
@@ -83,6 +89,26 @@ def get_customer_options():
         raise _database_error(e)
 
     return {"options": options}
+
+@router.get("/customer-totals")
+def get_customer_totals(
+    customers: str = "",
+    sku: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+):
+    """Period totals for each named customer, for the cross-customer bar chart."""
+    try:
+        return sellout_service.get_customer_totals(
+            customers=[part.strip() for part in customers.split(",")],
+            sku=sku,
+            start_date=start_date,
+            end_date=end_date,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except (SQLAlchemyError, config.ConfigError, GoogleAuthError) as e:
+        raise _database_error(e)
 
 @router.get("/dashboard-summary")
 def get_dashboard_summary(

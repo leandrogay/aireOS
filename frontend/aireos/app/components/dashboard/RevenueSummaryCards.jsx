@@ -4,7 +4,8 @@ import { useState } from "react"
 import FormatMixBar from "@/components/dashboard/FormatMixBar"
 import { Skeleton } from "@/components/ui/skeleton"
 import { changePct, formatChangePct } from "@/app/utils/periodComparison"
-import { formatColor } from "@/app/utils/storeFormats"
+import { customerColor, formatColor, formatsToShow } from "@/app/utils/storeFormats"
+import { formatRevenue } from "@/app/utils/trendChart"
 import { PeriodSwatch, hatchTint } from "@/components/dashboard/PeriodTexture"
 
 const TILE_GRID_CLASS =
@@ -57,7 +58,7 @@ function PeriodFigures({ totals, periodName, hatched = false, comparing, color =
       {available ? (
         <>
           <p className={`tabular-nums ${hatched ? "text-xs text-deep-violet-blue/70" : "text-sm font-semibold"}`}>
-            ${totals.revenue.toLocaleString()}
+            {formatRevenue(totals.revenue)}
           </p>
           <p className="text-xs text-deep-violet-blue/60 tabular-nums">{totals.units.toLocaleString()} units</p>
         </>
@@ -175,8 +176,8 @@ function SummaryCardsSkeleton({ count }) {
 // - phones: 2 columns with Total spanning the top row, so the 4 formats
 //   sit 2 × 2 instead of leaving one orphan card at the bottom.
 // Cards keep a min width so figures never clip. Above the tiles, the
-// format mix bar shows each format's share of revenue or volume; the tiles'
-// "59%" shares follow the same choice, and hovering a segment or a tile
+// format mix bar shows each format's share of revenue; the tiles' "59%"
+// shares follow that, and hovering a segment or a tile
 // highlights its partner. Each format shows its share
 // of total revenue and, with a "Compare to" baseline, its change vs the
 // same format in the baseline — and the mix bar adds the baseline's mix as
@@ -191,22 +192,55 @@ export default function RevenueSummaryCards({
   loading = false,
   error = null,
   mode = "offline",
+  comparingCustomers = false,
+  customerRows = [],
 }) {
-  const [mixMetric, setMixMetric] = useState("revenue")
   const [hoveredFormat, setHoveredFormat] = useState(null)
   const salesData = summaryByMode[mode]
   const baselineData = baselineSummaryByMode?.[mode] ?? null
   const currentFormats = salesData?.storeFormats ?? []
   const baselineFormats = baselineData?.storeFormats ?? []
   const total = sumFormats(currentFormats)
-  const currentByFormat = new Map(currentFormats.map((format) => [format.format, format]))
-  const baselineByFormat = new Map(baselineFormats.map((format) => [format.format, format]))
+  // A customer with no store format at all is one Total. A mix of named
+  // formats and blank ones keeps the named tiles and groups the blank ones
+  // as Others. The total above still counts every row.
+  const shownFormats = formatsToShow(currentFormats)
+  const shownBaseline = formatsToShow(baselineFormats)
+  // Two or more customers: one tile per customer for this channel, not store
+  // formats. A customer who sells on the channel stays, at 0, like the chart.
+  const customerTiles = customerRows
+    .filter((row) => (mode === "online" ? row.has_online : row.has_offline))
+    .map((row) => {
+      const channel = row[mode] ?? { revenue: 0, units: 0 }
+      return { format: row.label, revenue: channel.revenue ?? 0, units: channel.units ?? 0 }
+    })
+    .sort((a, b) => (b.revenue ?? 0) - (a.revenue ?? 0))
+  const tileFormats = comparingCustomers ? customerTiles : shownFormats
+  const tileBaseline = comparingCustomers ? [] : shownBaseline
+  const tileTotal = comparingCustomers ? sumFormats(customerTiles) : total
+  const currentByFormat = new Map(tileFormats.map((format) => [format.format, format]))
+  const baselineByFormat = new Map(tileBaseline.map((format) => [format.format, format]))
+  const colorForName = comparingCustomers
+    ? (name) => customerColor(name, customerTiles.map((tile) => tile.format))
+    : formatColor
   const formatNames = [...new Set([...currentByFormat.keys(), ...baselineByFormat.keys()])]
   const emptyTotals = { revenue: 0, units: 0 }
 
   return (
     <div className="bg-white rounded-lg border border-lavander shadow-sm p-3 h-full">
-      <p className="text-sm font-medium text-deep-violet-blue mb-2">Sell-out Summary</p>
+      <div className="mb-2">
+        <h3 className="font-serif text-base text-deep-violet-blue">
+          Sell-out Summary{" "}
+          <span className="font-sans text-sm font-normal text-deep-violet-blue/50">
+            ({mode === "online" ? "Online" : "Offline"})
+          </span>
+        </h3>
+        {comparingCustomers && (
+          <p className="text-[11px] text-deep-violet-blue/70">
+            Each customer&apos;s total for the selected period.
+          </p>
+        )}
+      </div>
 
       {/* The hook keeps the previous filters' data while it refetches, so hide
           it rather than show stale figures beside the skeleton. Offline's 4
@@ -214,27 +248,28 @@ export default function RevenueSummaryCards({
       {loading && <SummaryCardsSkeleton count={(salesData?.storeFormats.length ?? 4) + 1} />}
       {error && <p className="text-red-600 text-sm">{error}</p>}
 
-      {!loading && salesData && salesData.storeFormats.length > 1 && (
+      {!loading && (comparingCustomers || salesData) && tileFormats.length > 1 && (
         <FormatMixBar
-          formats={salesData.storeFormats}
-          baselineFormats={baselineData?.storeFormats ?? null}
+          formats={tileFormats}
+          baselineFormats={comparingCustomers ? null : (baselineData ? tileBaseline : null)}
           names={periodNames}
-          metric={mixMetric}
-          onMetricChange={setMixMetric}
+          label={comparingCustomers ? "Customer mix" : "Format mix"}
+          metric="revenue"
+          colorFor={colorForName}
           highlighted={hoveredFormat}
           onHover={setHoveredFormat}
         />
       )}
 
-      {!loading && salesData && (
+      {!loading && (comparingCustomers || salesData) && (
         <div className={TILE_GRID_CLASS}>
           <SummaryCard
             title="Total"
-            totals={total}
-            baselineTotals={baselineData ? sumFormats(baselineData.storeFormats) : null}
+            totals={tileTotal}
+            baselineTotals={!comparingCustomers && baselineData ? sumFormats(baselineData.storeFormats) : null}
             periodNames={periodNames}
-            available={currentFormats.length > 0}
-            baselineAvailable={baselineFormats.length > 0}
+            available={comparingCustomers ? customerTiles.length > 0 : currentFormats.length > 0}
+            baselineAvailable={!comparingCustomers && baselineFormats.length > 0}
             emphasis
             className="col-span-2 sm:col-span-1"
           />
@@ -245,14 +280,14 @@ export default function RevenueSummaryCards({
                 key={name}
                 title={name}
                 totals={format ?? emptyTotals}
-                share={format && total[mixMetric] ? (format[mixMetric] / total[mixMetric]) * 100 : null}
-                shareLabel={mixMetric === "units" ? "Share of total volume" : "Share of total revenue"}
-                color={formatColor(name)}
-                    available={Boolean(format)}
-                baselineAvailable={baselineByFormat.has(name)}
+                share={format && tileTotal.revenue ? (format.revenue / tileTotal.revenue) * 100 : null}
+                shareLabel="Share of total revenue"
+                color={colorForName(name)}
+                available={Boolean(format)}
+                baselineAvailable={!comparingCustomers && baselineByFormat.has(name)}
                 highlighted={hoveredFormat === name}
                 onHover={setHoveredFormat}
-                baselineTotals={baselineData ? (baselineByFormat.get(name) ?? emptyTotals) : null}
+                baselineTotals={!comparingCustomers && baselineData ? (baselineByFormat.get(name) ?? emptyTotals) : null}
                 periodNames={periodNames}
               />
             )

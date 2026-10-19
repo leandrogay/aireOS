@@ -403,6 +403,30 @@ def reset_to_default(customer_id: int, updated_by: str | None = None) -> dict:
     return {"changed": changed, "settings": _settings_view(current)}
 
 
+# ============================================================
+# CUSTOMER LIFECYCLE
+#
+# Called by customer_service inside its create transaction: a new
+# customer starts with a global-default version so its DOH settings exist
+# from day one. There is no delete here: doh_settings.customer_id is
+# ON DELETE CASCADE, so deleting a customer removes its versions in the
+# database -- DOH settings never block a customer delete.
+# ============================================================
+
+
+def create_default_settings(conn: Connection, customer_id: int) -> None:
+    """Give a just-created customer its first DOH version, on the global defaults."""
+
+    _insert_version(
+        conn,
+        customer_id,
+        GLOBAL_DEFAULT_MIN_DOH,
+        GLOBAL_DEFAULT_TARGET_DOH,
+        GLOBAL_DEFAULT_MAX_DOH,
+        None,
+    )
+
+
 def get_history(customer_id: int, limit: int, offset: int) -> dict:
     """
     One page of a customer's threshold versions, newest first, with the total

@@ -30,6 +30,14 @@ class StoreHasPromotionsError(Exception):
     pass
 
 
+class SkuAlreadyExistsError(Exception):
+    pass
+
+
+class SkuHasPromotionsError(Exception):
+    pass
+
+
 # ============================================================
 # ENGINE
 #
@@ -976,6 +984,8 @@ def get_sku_ranges() -> list[str]:
         FROM skus
 
         WHERE
+            is_active = TRUE
+            AND
             sku_range IS NOT NULL
             AND sku IS DISTINCT FROM sku_range
 
@@ -1008,12 +1018,21 @@ def get_skus() -> list[dict]:
             sku,
             sku_range,
             product_name,
-            size
+            size,
+            brand,
+            uom,
+            pack_size,
+            price
 
         FROM skus
 
         WHERE
-            sku IS DISTINCT FROM sku_range
+            is_active = TRUE
+            AND sku IS DISTINCT FROM sku_range
+
+        ORDER BY
+            product_name ASC,
+            sku ASC
         """
     )
 
@@ -1026,6 +1045,370 @@ def get_skus() -> list[dict]:
         dict(row)
         for row in results
     ]
+
+
+# ============================================================
+# SKU MANAGEMENT
+#
+# SKU codes are immutable and globally unique. Archiving keeps the master row
+# (and therefore historical foreign keys) intact, while active catalog reads
+# hide it. Every write records a complete snapshot in sku_history.
+# ============================================================
+
+
+_SKU_COLUMNS = """
+    sku,
+    sku_range,
+    product_name,
+    size,
+    brand,
+    uom,
+    pack_size,
+    price
+"""
+
+
+def _fetch_active_sku(
+    conn: Connection,
+    sku: str,
+) -> dict | None:
+    row = conn.execute(
+        text(
+            f"""
+            SELECT
+                {_SKU_COLUMNS}
+
+            FROM skus
+
+            WHERE
+                sku = :sku
+                AND is_active = TRUE
+            """
+        ),
+        {"sku": sku},
+    ).mappings().first()
+
+    return dict(row) if row is not None else None
+
+
+def _insert_sku_history(
+    conn: Connection,
+    sku: dict,
+    action: str,
+) -> None:
+    conn.execute(
+        text(
+            """
+            INSERT INTO sku_history (
+                sku,
+                action,
+                sku_range,
+                product_name,
+                size,
+                brand,
+                uom,
+                pack_size,
+                price
+            )
+            VALUES (
+                :sku,
+                :action,
+                :sku_range,
+                :product_name,
+                :size,
+                :brand,
+                :uom,
+                :pack_size,
+                :price
+            )
+            """
+        ),
+        {
+            **sku,
+            "action": action,
+        },
+    )
+
+
+def create_sku(sku) -> dict:
+    values = sku.model_dump()
+
+    with _get_engine().begin() as conn:
+        exists = conn.execute(
+            text(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM skus
+                    WHERE sku = :sku
+                )
+                """
+            ),
+            {"sku": values["sku"]},
+        ).scalar_one()
+
+        if exists:
+            raise SkuAlreadyExistsError(
+                f"SKU {values['sku']} already exists or has been archived."
+            )
+
+        row = conn.execute(
+            text(
+                f"""
+                INSERT INTO skus (
+                    {_SKU_COLUMNS}
+                )
+                VALUES (
+                    :sku,
+                    :sku_range,
+                    :product_name,
+                    :size,
+                    :brand,
+                    :uom,
+                    :pack_size,
+                    :price
+                )
+                RETURNING
+                    {_SKU_COLUMNS}
+                """
+            ),
+            values,
+        ).mappings().first()
+
+        created = dict(row)
+        _insert_sku_history(conn, created, "created")
+
+    return created
+
+
+def list_skus(
+    *,
+    search: str | None = None,
+    sku_range: str | None = None,
+    brand: str | None = None,
+    min_price=None,
+    max_price=None,
+) -> list[dict]:
+    search_pattern = f"%{search.strip()}%" if search and search.strip() else None
+    where_clauses = [
+        "is_active = TRUE",
+        "sku IS DISTINCT FROM sku_range",
+    ]
+    params = {}
+
+    if search_pattern is not None:
+        where_clauses.append(
+            "(sku ILIKE :search OR sku_range ILIKE :search OR product_name ILIKE :search)"
+        )
+        params["search"] = search_pattern
+    if sku_range is not None:
+        where_clauses.append("sku_range = :sku_range")
+        params["sku_range"] = sku_range
+    if brand is not None:
+        where_clauses.append("brand = :brand")
+        params["brand"] = brand
+    if min_price is not None:
+        where_clauses.append("price >= :min_price")
+        params["min_price"] = min_price
+    if max_price is not None:
+        where_clauses.append("price <= :max_price")
+        params["max_price"] = max_price
+
+    query = text(
+        f"""
+        SELECT
+            {_SKU_COLUMNS}
+
+        FROM skus
+
+        WHERE
+            {" AND ".join(where_clauses)}
+
+        ORDER BY
+            product_name ASC,
+            sku ASC
+        """
+    )
+
+    with _read_connection() as conn:
+        rows = conn.execute(query, params).mappings().all()
+
+    return [dict(row) for row in rows]
+
+
+def get_sku(sku: str) -> dict | None:
+    with _read_connection() as conn:
+        item = _fetch_active_sku(conn, sku)
+        if item is None:
+            return None
+
+        history = conn.execute(
+            text(
+                f"""
+                SELECT
+                    sku_history_id,
+                    action,
+                    {_SKU_COLUMNS},
+                    changed_at
+
+                FROM sku_history
+
+                WHERE sku = :sku
+
+                ORDER BY
+                    changed_at DESC,
+                    sku_history_id DESC
+                """
+            ),
+            {"sku": sku},
+        ).mappings().all()
+
+    item["history"] = [dict(row) for row in history]
+    return item
+
+
+def get_sku_options() -> dict[str, list]:
+    query = text(
+        """
+        SELECT
+            sku_range,
+            brand,
+            size,
+            uom,
+            pack_size
+
+        FROM skus
+
+        WHERE
+            is_active = TRUE
+            AND sku IS DISTINCT FROM sku_range
+        """
+    )
+
+    with _read_connection() as conn:
+        rows = conn.execute(query).mappings().all()
+
+    def values_for(field: str) -> list:
+        return sorted({row[field] for row in rows if row.get(field) is not None})
+
+    return {
+        "sku_ranges": values_for("sku_range"),
+        "brands": values_for("brand"),
+        "sizes": values_for("size"),
+        "uoms": values_for("uom"),
+        "pack_sizes": values_for("pack_size"),
+    }
+
+
+def update_sku(sku: str, changes) -> dict | None:
+    params = {
+        "sku": sku,
+        **changes.model_dump(),
+    }
+
+    with _get_engine().begin() as conn:
+        row = conn.execute(
+            text(
+                f"""
+                UPDATE skus
+                SET
+                    sku_range = :sku_range,
+                    product_name = :product_name,
+                    size = :size,
+                    brand = :brand,
+                    uom = :uom,
+                    pack_size = :pack_size,
+                    price = :price
+
+                WHERE
+                    sku = :sku
+                    AND is_active = TRUE
+
+                RETURNING
+                    {_SKU_COLUMNS}
+                """
+            ),
+            params,
+        ).mappings().first()
+
+        if row is None:
+            return None
+
+        updated = dict(row)
+        _insert_sku_history(conn, updated, "updated")
+
+    return updated
+
+
+def archive_sku(sku: str) -> dict | None:
+    with _get_engine().begin() as conn:
+        item = _fetch_active_sku(conn, sku)
+        if item is None:
+            return None
+
+        has_promotions = conn.execute(
+            text(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM promotion_skus
+                    WHERE sku = :sku
+                )
+                """
+            ),
+            {"sku": sku},
+        ).scalar_one()
+
+        if has_promotions:
+            raise SkuHasPromotionsError(
+                "SKU cannot be archived because it is attached to promotions."
+            )
+
+        conn.execute(
+            text(
+                """
+                INSERT INTO old_skus (
+                    sku,
+                    sku_range,
+                    product_name,
+                    size,
+                    brand,
+                    uom,
+                    pack_size,
+                    price
+                )
+                VALUES (
+                    :sku,
+                    :sku_range,
+                    :product_name,
+                    :size,
+                    :brand,
+                    :uom,
+                    :pack_size,
+                    :price
+                )
+                ON CONFLICT (sku)
+                DO NOTHING
+                """
+            ),
+            item,
+        )
+
+        _insert_sku_history(conn, item, "archived")
+        conn.execute(
+            text(
+                """
+                UPDATE skus
+                SET
+                    is_active = FALSE,
+                    archived_at = CURRENT_TIMESTAMP
+                WHERE sku = :sku
+                """
+            ),
+            {"sku": sku},
+        )
+
+    return item
 
 
 # ============================================================
@@ -1049,6 +1432,7 @@ def get_product_prices() -> dict[str, float]:
 
         WHERE
             price IS NOT NULL
+            AND is_active = TRUE
         """
     )
 

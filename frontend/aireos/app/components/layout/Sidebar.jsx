@@ -19,6 +19,7 @@ const NAV_ITEMS = [
     icon: Upload,
     children: [
       { label: 'Mappings', href: '/mappings' },
+      { label: 'SKUs', href: '/skus' },
       { label: 'Customers', href: '/customers' },
     ],
   },
