@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils';
 
 import ColumnGroupDetails from './ColumnGroupDetails';
 import ConfidenceBadge, { confidenceLevel } from './ConfidenceBadge';
+import ResetButton from './ResetButton';
 
 const smallButton =
   'shrink-0 rounded-md border border-deep-violet-blue bg-white px-2 py-1 text-[11px] font-medium text-deep-violet-blue transition hover:bg-lavander focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-deep-violet-blue disabled:opacity-60';
@@ -174,16 +175,17 @@ function FieldInfo({ entry }) {
 /**
  * How sure the AI was, shown on every field it filled, and the sign-off on a
  * low-confidence guess: "Looks right", then "Confirmed" (with Undo on this
- * visit).
+ * visit). A field the reviewer changed -- or cleared -- also offers Reset,
+ * back to what the AI proposed.
  */
-function Confidence({ entry, canUndo, onConfirm, onUndo, disabled }) {
-  if (entry.status === 'unmapped') return null;
+function Confidence({ entry, canUndo, onConfirm, onUndo, canReset, onReset, disabled }) {
+  const filled = entry.status !== 'unmapped';
   const level = confidenceLevel(entry);
-  const guessed = entry.confidence === 'low' && level !== 'reviewer';
+  const guessed = filled && entry.confidence === 'low' && level !== 'reviewer';
 
   return (
     <div className="flex flex-wrap items-center gap-1.5 sm:flex-col sm:items-end">
-      <ConfidenceBadge level={level} />
+      {filled && <ConfidenceBadge level={level} />}
       {guessed && !entry.reviewed && (
         <button type="button" disabled={disabled} onClick={() => onConfirm(entry)} className={smallButton}>
           Looks right
@@ -209,11 +211,35 @@ function Confidence({ entry, canUndo, onConfirm, onUndo, disabled }) {
           )}
         </span>
       )}
+      {canReset && (
+        <ResetButton
+          label={`Reset ${entry.label} to the ${PROPOSER}'s proposal`}
+          onClick={onReset}
+          disabled={disabled}
+        />
+      )}
     </div>
   );
 }
 
-function FieldRow({ entry, mapping, rows, groups, canUndo, onAssign, onChooseGroup, onClear, onConfirm, onUndo, onGroupSettingsChange, disabled }) {
+function FieldRow({
+  entry,
+  mapping,
+  rows,
+  groups,
+  canUndo,
+  canResetField,
+  onResetField,
+  onAssign,
+  onChooseGroup,
+  onClear,
+  onConfirm,
+  onUndo,
+  onGroupSettingsChange,
+  disabled,
+}) {
+  // The retailer is reset in step 1, where it is changed.
+  const canReset = entry.field !== 'retailer' && canResetField(entry.field);
   const missing = isMissing(entry);
   const unsure = needsConfirm(entry);
   const group = groups.find((item) => item.id === entry.groupId);
@@ -278,7 +304,15 @@ function FieldRow({ entry, mapping, rows, groups, canUndo, onAssign, onChooseGro
         )}
       </div>
 
-      <Confidence entry={entry} canUndo={canUndo} onConfirm={onConfirm} onUndo={onUndo} disabled={disabled} />
+      <Confidence
+        entry={entry}
+        canUndo={canUndo}
+        onConfirm={onConfirm}
+        onUndo={onUndo}
+        canReset={canReset}
+        onReset={() => onResetField(entry.field)}
+        disabled={disabled}
+      />
     </li>
   );
 }
@@ -306,6 +340,8 @@ function FieldRow({ entry, mapping, rows, groups, canUndo, onAssign, onChooseGro
  *   onConfirm: (entry: object) => void,
  *   onUndo: (entry: object) => void,
  *   onGroupSettingsChange: (groupId: string, changes: object) => void,
+ *   canResetField: (field: string) => boolean,
+ *   onResetField: (field: string) => void,
  *   disabled: boolean,
  * }} props
  */

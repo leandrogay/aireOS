@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { AlertTriangle, CheckCircle2, Loader2, Plus, RotateCcw } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Loader2, Plus } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import InfoTooltip from '@/components/ui/InfoTooltip';
@@ -11,6 +11,8 @@ import { canRenameOutputs, retailerChoices } from '@/app/utils/mappingCustomer';
 import { PROPOSER } from '@/app/utils/mappingReview';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
+
+import ResetButton from './ResetButton';
 
 const smallButton = 'h-7 border-deep-violet-blue/30 bg-white px-2 text-xs text-deep-violet-blue hover:bg-cream';
 
@@ -271,15 +273,12 @@ export default function CustomerStep({
             {where.long} Sales only reach the dashboard through the customer&apos;s retailers.
           </InfoTooltip>
           {retailerChanged && (
-            <button
-              type="button"
-              disabled={disabled}
+            <ResetButton
+              label={`Reset the retailer to the ${PROPOSER}'s proposal`}
               onClick={onResetRetailer}
-              className="ml-auto inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-deep-violet-blue/70 hover:bg-cream hover:text-deep-violet-blue disabled:opacity-60"
-            >
-              <RotateCcw aria-hidden="true" className="size-3" />
-              Reset to the {PROPOSER}&apos;s proposal
-            </button>
+              disabled={disabled}
+              className="ml-auto"
+            />
           )}
         </div>
 

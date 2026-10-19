@@ -3,8 +3,16 @@
 import { useState } from 'react';
 
 import { retailerDecision, withRetailerChoice } from '@/app/utils/mappingCustomer';
-import { groupKind, toColumnRows, toGroups, toRules, withFieldReviewed } from '@/app/utils/mappingReview';
-import { withCodeTable } from '@/app/utils/skuCodeTable';
+import {
+  groupKind,
+  rulesKeyFor,
+  toColumnRows,
+  toGroups,
+  toRules,
+  withFieldReviewed,
+  withFieldsReset,
+} from '@/app/utils/mappingReview';
+import { codeTableOf, withCodeTable } from '@/app/utils/skuCodeTable';
 
 const REVIEWER = { confidence: 'high', rationale: 'Chosen by the reviewer.', reviewed: true };
 
@@ -50,7 +58,9 @@ export default function useMappingEdits({ mapping }) {
   // Fields confirmed by a click on this visit -- the only sign-offs offered an
   // Undo. One loaded already confirmed is a settled decision.
   const [confirmedNow, setConfirmedNow] = useState(() => new Set());
-  const [loadedRules] = useState(() => toRules(mapping, { rows: toColumnRows(mapping), groups: toGroups(mapping) }));
+  // The proposal as loaded: what every reset goes back to.
+  const [original] = useState(() => ({ rows: toColumnRows(mapping), groups: toGroups(mapping) }));
+  const [loadedRules] = useState(() => toRules(mapping, original));
   const loadedKey = JSON.stringify(loadedRules);
 
   const state = { rows, groups, fieldReviews, fieldEdits };
@@ -171,6 +181,47 @@ export default function useMappingEdits({ mapping }) {
     forgetConfirm(entry.field);
   }
 
+  // ---- Resetting to the proposal -------------------------------------------------
+
+  /**
+   * Whether these fields can go back to the proposal: they were changed, and
+   * resetting them would change something (a Period read from headings whose
+   * group was removed only comes back with the group).
+   */
+  function canResetFields(fields) {
+    const now = rulesKeyFor(rules, fields);
+    if (now === rulesKeyFor(loadedRules, fields)) return false;
+    return rulesKeyFor(toRules(mapping, withFieldsReset(state, original, fields)), fields) !== now;
+  }
+
+  function resetFields(fields) {
+    const next = withFieldsReset(state, original, fields);
+    setRows(next.rows);
+    setGroups(next.groups);
+    setFieldReviews(next.fieldReviews);
+    setFieldEdits(next.fieldEdits);
+    fields.forEach(forgetConfirm);
+  }
+
+  // The product-code table as proposed, and as it is now (the sku field's
+  // value_map, skuCodeTable.codeTableOf).
+  const proposedCodes = codeTableOf(
+    original.rows.flatMap((row) => row.fields).find((field) => field.targetField === 'sku')?.transform,
+  );
+  const currentCodes = codeTableOf(
+    rows.flatMap((row) => row.fields).find((field) => field.targetField === 'sku')?.transform,
+  );
+
+  /** Whether a product code's master SKU differs from the proposal. */
+  function codeChanged(code) {
+    return (currentCodes[code] || '') !== (proposedCodes[code] || '');
+  }
+
+  // Back to the proposed master SKU for each of these codes, the rest kept.
+  function resetSkuCodes(codes) {
+    codes.forEach((code) => setSkuCode(code, proposedCodes[code] || ''));
+  }
+
   // Picking a master SKU for a code is the reviewer deciding the sku field.
   function setSkuCode(code, sku) {
     setRows((prev) =>
@@ -278,5 +329,9 @@ export default function useMappingEdits({ mapping }) {
     setRetailerConstant,
     setRetailerChoice,
     resetRetailer,
+    canResetFields,
+    resetFields,
+    codeChanged,
+    resetSkuCodes,
   };
 }

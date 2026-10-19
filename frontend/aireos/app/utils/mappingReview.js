@@ -475,6 +475,66 @@ export function isMissing(entry) {
   return entry.required && (entry.status === 'unmapped' || entry.status === 'not_available');
 }
 
+function without(object, keys) {
+  const next = { ...object };
+  keys.forEach((key) => delete next[key]);
+  return next;
+}
+
+/**
+ * The edit state with some fields put back as the AI proposed them
+ * (`original`: the rows and groups as loaded), everything else left as the
+ * reviewer has it.
+ *
+ * Each field gets back its column (with its transforms -- for the sku, its
+ * code table too) or its group, and loses any edit or sign-off made since. A
+ * column is read once, so whatever now claims a column the restored fields
+ * need gives it up: a group holding it is dropped, and another field reading
+ * a column a restored group holds is taken off it.
+ *
+ * @param {{ rows: object[], groups: object[], fieldReviews?: object, fieldEdits?: object }} state
+ * @param {{ rows: object[], groups: object[] }} original
+ * @param {string[]} fields
+ */
+export function withFieldsReset(state, original, fields) {
+  const reset = new Set(fields);
+  const restoredGroups = original.groups.filter((group) => reset.has(group.field));
+  const groupColumns = new Set(restoredGroups.flatMap((group) => group.columns));
+
+  const rows = state.rows.map((row) => {
+    const kept = row.fields.filter((field) => !reset.has(field.targetField) && !groupColumns.has(row.column));
+    const back = (original.rows.find((item) => item.column === row.column)?.fields || []).filter((field) =>
+      reset.has(field.targetField),
+    );
+    return { ...row, fields: [...kept, ...back] };
+  });
+
+  const columnsBack = new Set(
+    rows.filter((row) => row.fields.some((field) => reset.has(field.targetField))).map((row) => row.column),
+  );
+  const groups = [
+    ...state.groups.filter(
+      (group) =>
+        !reset.has(group.field) &&
+        !group.columns.some((column) => groupColumns.has(column) || columnsBack.has(column)),
+    ),
+    ...restoredGroups,
+  ];
+
+  return {
+    rows,
+    groups,
+    fieldReviews: without(state.fieldReviews || {}, fields),
+    fieldEdits: without(state.fieldEdits || {}, fields),
+  };
+}
+
+/** The rules for some fields, as text, to tell whether they differ. */
+export function rulesKeyFor(rules, fields) {
+  const wanted = new Set(fields);
+  return JSON.stringify(rules.filter((rule) => wanted.has(rule.targetField)));
+}
+
 /**
  * What still stands between these edits and an approval, as far as the
  * fields go. The server holds the same rules (backend required_missing_fields,

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Loader2, Play } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import Disclosure from '@/components/ui/Disclosure';
 import { secondaryButtonClass } from '@/components/inventory/formStyles';
 import useCustomers from '@/hooks/useCustomers';
@@ -31,6 +32,7 @@ import NewCustomerDialog from './NewCustomerDialog';
 import OutputPreview from './OutputPreview';
 import ReviewChecklist from './ReviewChecklist';
 import ReviewHeader from './ReviewHeader';
+import ResetButton from './ResetButton';
 import ReviewSection from './ReviewSection';
 import SkuCodeTable from './SkuCodeTable';
 import UnusedColumns from './UnusedColumns';
@@ -63,6 +65,8 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
   const [preview, setPreview] = useState(null);
   const [previewError, setPreviewError] = useState('');
   const [isConfirmingDiscard, setIsConfirmingDiscard] = useState(false);
+  // The step whose Reset is waiting on "are you sure?": 'fields' | 'products' | null.
+  const [confirmingReset, setConfirmingReset] = useState(null);
   const [discardError, setDiscardError] = useState('');
 
   const decision = retailerDecision(mapping, edits.rows, edits.fieldEdits);
@@ -188,6 +192,20 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
     (entry) => entry.decidable && (entry.status === 'unmapped' || entry.status === 'not_available'),
   );
 
+  // What each step's Reset puts back. Step 2 is every field in its table but
+  // the retailer, which step 1 resets; step 3 is the product codes.
+  const stepFields = issues.coverage
+    .filter((entry) => entry.decidable && entry.field !== 'retailer')
+    .map((entry) => entry.field);
+  const canResetFields = edits.canResetFields(stepFields);
+  const changedCodes = codes.map((row) => row.code).filter(edits.codeChanged);
+
+  function confirmReset() {
+    if (confirmingReset === 'fields') edits.resetFields(stepFields);
+    if (confirmingReset === 'products') edits.resetSkuCodes(changedCodes);
+    setConfirmingReset(null);
+  }
+
   return (
     <div className="space-y-1">
       <ReviewHeader
@@ -240,6 +258,16 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
             title="Where each field comes from"
             info={`Change a field by choosing another column — or, for Units sold and Sales value, a group of period or outlet columns. Confirm the low-confidence ones with “Looks right”. Each field's ⓘ has its details.`}
             done={done(items, ['required', 'confirm', 'duplicates'])}
+            action={
+              canResetFields && (
+                <ResetButton
+                  text="Reset step"
+                  label={`Reset every field in this step to the ${PROPOSER}'s proposal`}
+                  onClick={() => setConfirmingReset('fields')}
+                  disabled={disabled}
+                />
+              )
+            }
           >
             <FieldTable
               coverage={issues.coverage}
@@ -253,6 +281,8 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
               onConfirm={edits.confirmField}
               onUndo={edits.undoConfirm}
               onGroupSettingsChange={edits.changeGroupSettings}
+              canResetField={(field) => edits.canResetFields([field])}
+              onResetField={(field) => edits.resetFields([field])}
               disabled={disabled}
             />
             <UnusedColumns
@@ -274,12 +304,24 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
               title="Which of our products each code is"
               info="Every product code in the example file has to be one of our master SKUs. Pick the product for any code that is not, or add the product to the SKU master first."
               done={done(items, ['products'])}
+              action={
+                changedCodes.length > 0 && (
+                  <ResetButton
+                    text="Reset step"
+                    label={`Reset every product code to the ${PROPOSER}'s proposal`}
+                    onClick={() => setConfirmingReset('products')}
+                    disabled={disabled}
+                  />
+                )
+              }
             >
               <SkuCodeTable
                 rows={codes}
                 masterSkus={mapping.masterSkus || []}
                 masterAvailable={masterAvailable}
                 onChange={edits.setSkuCode}
+                codeChanged={edits.codeChanged}
+                onResetCode={(code) => edits.resetSkuCodes([code])}
                 readOnly={disabled}
               />
             </ReviewSection>
@@ -336,6 +378,22 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
         unlinked={customers.unlinked}
         onCreated={handleCustomerCreated}
         onClose={() => setIsNewCustomerOpen(false)}
+      />
+
+      {/* A whole step back to the proposal can undo many edits at once, so it
+          asks first; one field or code resets straight away. */}
+      <ConfirmDialog
+        open={confirmingReset !== null}
+        title={confirmingReset === 'products' ? 'Reset the product codes?' : 'Reset the fields?'}
+        description={
+          confirmingReset === 'products'
+            ? `${changedCodes.length} product code${changedCodes.length === 1 ? '' : 's'} go back to the master SKU the ${PROPOSER} proposed.`
+            : `Every field in step 2 goes back to the ${PROPOSER}'s proposal, including the product codes in step 3. The customer and retailer in step 1 are kept.`
+        }
+        confirmLabel="Reset"
+        tone="default"
+        onConfirm={confirmReset}
+        onCancel={() => setConfirmingReset(null)}
       />
 
       <ConfirmDiscardDialog

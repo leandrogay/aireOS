@@ -4,6 +4,9 @@ import { AlertTriangle, CheckCircle2 } from 'lucide-react';
 
 import SelectDropdown from '@/components/ui/SelectDropdown';
 import { cn } from '@/lib/utils';
+import { PROPOSER } from '@/app/utils/mappingReview';
+
+import ResetButton from './ResetButton';
 
 /**
  * The mapping's product-code table: every product code in the example file,
@@ -19,10 +22,20 @@ import { cn } from '@/lib/utils';
  *   masterSkus: Array<{ sku: string, product_name: string?, size: string? }>,
  *   masterAvailable: boolean,
  *   onChange: (code: string, sku: string) => void,
+ *   codeChanged: (code: string) => boolean,
+ *   onResetCode: (code: string) => void,
  *   readOnly?: boolean,
  * }} props
  */
-export default function SkuCodeTable({ rows, masterSkus, masterAvailable, onChange, readOnly = false }) {
+export default function SkuCodeTable({
+  rows,
+  masterSkus,
+  masterAvailable,
+  onChange,
+  codeChanged,
+  onResetCode,
+  readOnly = false,
+}) {
   return (
     <div>
       {!masterAvailable && (
@@ -49,11 +62,6 @@ export default function SkuCodeTable({ rows, masterSkus, masterAvailable, onChan
                 <td className="px-2 py-1.5 text-deep-violet-blue/80">{row.rows.toLocaleString()}</td>
                 <td className="px-2 py-1.5">
                   <div className="flex items-center gap-2">
-                    {row.known ? (
-                      <CheckCircle2 aria-label="Master SKU" className="size-3.5 shrink-0 text-green-700" />
-                    ) : (
-                      <AlertTriangle aria-label="Not a master SKU" className="size-3.5 shrink-0 text-amber-700" />
-                    )}
                     <SelectDropdown
                       value={row.fromTable ? row.sku : ''}
                       onChange={(sku) => onChange(row.code, sku)}
@@ -74,6 +82,19 @@ export default function SkuCodeTable({ rows, masterSkus, masterAvailable, onChan
                         })),
                       ]}
                     />
+                    {row.known ? (
+                      <CheckCircle2 aria-label="Master SKU" className="size-3.5 shrink-0 text-green-700" />
+                    ) : (
+                      <AlertTriangle aria-label="Not a master SKU" className="size-3.5 shrink-0 text-amber-700" />
+                    )}
+                    {codeChanged(row.code) && (
+                      <ResetButton
+                        compact
+                        label={`Reset ${row.code} to the ${PROPOSER}'s proposal`}
+                        onClick={() => onResetCode(row.code)}
+                        disabled={readOnly}
+                      />
+                    )}
                   </div>
                 </td>
               </tr>
