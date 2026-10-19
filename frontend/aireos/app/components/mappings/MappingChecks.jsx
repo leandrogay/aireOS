@@ -2,7 +2,8 @@
 
 import { AlertTriangle, CheckCircle2, HelpCircle, Info } from 'lucide-react';
 
-import { checkSummary, evidenceLines, sortChecks } from '../../utils/mappingChecks';
+import Disclosure from '@/components/ui/Disclosure';
+import { evidenceLines, sortChecks } from '../../utils/mappingChecks';
 
 const LEVEL_STYLES = {
   error: { Icon: AlertTriangle, className: 'text-red-700', box: 'border-red-200 bg-red-50' },
@@ -20,7 +21,10 @@ function CheckLine({ check }) {
     <li className={`flex items-start gap-2 ${check.passed ? '' : `rounded-md border p-2 ${style.box}`}`}>
       <Icon aria-hidden="true" className={`mt-0.5 size-3.5 shrink-0 ${style.className}`} />
       <div className="min-w-0 text-xs text-deep-violet-blue">
-        <p>{check.message}</p>
+        <p>
+          {!check.passed && check.level === 'error' && <span className="font-medium">Blocks approval: </span>}
+          {check.message}
+        </p>
         {evidence.length > 0 && (
           <ul className="mt-0.5 space-y-0.5 font-mono text-[11px] text-deep-violet-blue/70">
             {evidence.map((line) => (
@@ -36,40 +40,27 @@ function CheckLine({ check }) {
 }
 
 /**
- * What happened when these rules were run on the whole example file: totals
- * reconciled against the file's own footer or pivot, periods against the
- * period the file states, required fields filled, no claim or price column
- * read as revenue. Failures come first with the numbers that disagree; what
- * passed is folded away. `source` says whether these are the proposal's checks
- * or a fresh run on the rules as edited.
+ * What the checks found when these rules were run on the whole example file:
+ * totals against the file's own footer, periods against the period it states,
+ * required fields filled, no claim or price column read as revenue. Failures
+ * come first with the numbers that disagree, an error marked as what blocks
+ * approval; what passed is folded away. Shown inside its review step, which
+ * carries the heading and says how fresh the results are.
  *
- * @param {{ checks: object[], source: 'proposal' | 'preview' }} props
+ * @param {{ checks: object[] }} props
  */
-export default function MappingChecks({ checks, source }) {
-  if (!checks?.length) return null;
+export default function MappingChecks({ checks }) {
+  if (!checks?.length) {
+    return <p className="text-xs text-deep-violet-blue/70">No checks have been run on this mapping yet.</p>;
+  }
   const sorted = sortChecks(checks);
-  const { failed, warnings, passed } = checkSummary(checks);
   const open = sorted.filter((check) => !check.passed);
   const done = sorted.filter((check) => check.passed);
 
   return (
-    <section className="rounded-lg border border-lavander bg-white p-6 shadow-sm">
-      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <div>
-          <h3 className="font-serif text-lg text-deep-violet-blue">Checks on the example file</h3>
-          <p className="text-xs text-deep-violet-blue/70">
-            {source === 'preview'
-              ? 'Re-run on the rules as you have edited them.'
-              : 'Run on the proposal before it reached you. Preview your rules to run them again.'}
-          </p>
-        </div>
-        <p className="text-sm font-medium text-deep-violet-blue">
-          {failed} failed · {warnings} warning{warnings === 1 ? '' : 's'} · {passed} passed
-        </p>
-      </div>
-
+    <div>
       {open.length > 0 && (
-        <ul className="mb-3 space-y-2">
+        <ul className="mb-2 space-y-1.5">
           {open.map((check) => (
             <CheckLine key={check.id} check={check} />
           ))}
@@ -77,17 +68,14 @@ export default function MappingChecks({ checks, source }) {
       )}
 
       {done.length > 0 && (
-        <details>
-          <summary className="cursor-pointer text-xs font-medium text-deep-violet-blue">
-            {done.length} check{done.length === 1 ? '' : 's'} passed
-          </summary>
+        <Disclosure variant="link" summary={`${done.length} check${done.length === 1 ? '' : 's'} passed`}>
           <ul className="mt-2 space-y-1.5">
             {done.map((check) => (
               <CheckLine key={check.id} check={check} />
             ))}
           </ul>
-        </details>
+        </Disclosure>
       )}
-    </section>
+    </div>
   );
 }

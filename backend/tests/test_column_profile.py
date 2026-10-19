@@ -119,3 +119,38 @@ def test_column_samples_use_distinct_values_instead_of_repeating_first_rows():
     frame = pd.DataFrame({"Store Format": ["FPON", "FPON", "HYPER", "SUPER", "HYPER"]})
 
     assert cp.column_samples(frame) == {"Store Format": ["FPON", "HYPER", "SUPER"]}
+
+
+# ---- Groups offered to the reviewer --------------------------------------------
+
+MONTH_NAMED = ["Article", "Net Sales Jan 2026", "Net Sales Feb 2026", "Net Sales Mar 2026", "Remarks"]
+
+
+def test_month_named_period_columns_are_offered_as_a_group():
+    groups = cp.review_column_groups(MONTH_NAMED)
+
+    assert len(groups) == 1
+    group = groups[0]
+    assert group["columns"] == MONTH_NAMED[1:4]
+    assert group["date_format"] == "%b %Y"
+    assert group["period_type"] == "month"
+    # Next year's file matches the same selector.
+    assert pd.Series(["Net Sales Apr 2027", "Remarks"]).str.contains(group["select_pattern"]).tolist() == [True, False]
+
+
+def test_month_named_groups_leave_the_fingerprint_alone():
+    # The fingerprint is built from detect_column_groups, which must not see
+    # them: a confirmed mapping for such a layout would stop being found.
+    assert cp.detect_column_groups(MONTH_NAMED) == []
+    assert cp.fingerprint(MONTH_NAMED) == cp.fingerprint(
+        ["Article", "Net Sales Jan 2026", "Net Sales Feb 2026", "Net Sales Mar 2026", "Remarks"]
+    )
+
+
+def test_a_column_already_in_a_dated_group_is_not_offered_twice():
+    columns = ["SALES | Month 1 | 01-01-2026 Jan 2026", "SALES | Month 2 | 01-02-2026 Feb 2026"]
+
+    groups = cp.review_column_groups(columns)
+
+    assert len(groups) == 1
+    assert groups[0]["template"] == cp.header_template(columns[0])

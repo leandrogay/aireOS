@@ -72,8 +72,9 @@ export async function listMappings(baseUrl, { signal, onLog } = {}) {
 // API CALL
 // POST /api/mappings/:fingerprint/confirm
 // Approves a mapping and saves it for reuse. Body takes { rules } (what the
-// review screen edits), and { name, vendor }, which are required the first
-// time a mapping is approved.
+// review screen edits), and { name, customer_id }, which are required the
+// first time a mapping is approved. Every retailer the rules write to must
+// belong to that customer, or the answer is a 422 naming them.
 // ========================================
 export async function confirmMapping(baseUrl, fingerprint, body, onLog) {
   return request(baseUrl, `/api/mappings/${encodeURIComponent(fingerprint)}/confirm`, {

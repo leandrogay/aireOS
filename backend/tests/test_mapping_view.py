@@ -149,3 +149,114 @@ def test_state_drives_kind_and_confirmation():
     assert (pending["kind"], pending["validated"]) == ("proposed", False)
     assert (confirmed["kind"], confirmed["validated"]) == ("existing", True)
     assert confirmed["validatedAt"] == ENVELOPE["confirmed_at"]
+
+
+# ---- Column groups the reviewer can choose -------------------------------------
+
+V2_COLUMNS = [
+    "SKU No.",
+    "SALES | Month 1 | 01-01-2026",
+    "SALES | Month 2 | 01-02-2026",
+    "Qty | Month 1 | 01-01-2026",
+    "Qty | Month 2 | 01-02-2026",
+]
+SALES_GROUP = {
+    "id": "sales",
+    "select": {"kind": "pattern", "pattern": r"^SALES \| Month \d+ \| "},
+    "key": {"target": "period_start", "pattern": r"(\d{2}-\d{2}-\d{4})$", "date_format": "%d-%m-%Y"},
+    "value_target": "revenue",
+    "period_type": "month",
+}
+
+
+def test_column_groups_say_which_measure_each_fills_and_how_its_headings_read():
+    contract = {"version": 2, "fields": {}, "melt_groups": [SALES_GROUP]}
+
+    groups = mv.column_groups(V2_COLUMNS, contract, {"Qty | Month 1 | 01-01-2026": ["4"]})
+
+    sales, qty = groups
+    assert (sales["meltGroupId"], sales["field"]) == ("sales", "revenue")
+    # A group the contract already has keeps the contract's own settings.
+    assert sales["group"]["select"] == SALES_GROUP["select"]
+    assert (qty["meltGroupId"], qty["field"]) == (None, None)
+    assert qty["readings"][0] == {"column": "Qty | Month 1 | 01-01-2026", "readsAs": "2026-01-01", "sample": "4"}
+    assert (qty["first"], qty["last"]) == ("2026-01-01", "2026-02-01")
+    assert qty["label"] == "Qty | Month 1 | ‹period›"
+
+
+def test_weekly_spaced_headings_read_as_weeks():
+    columns = ["Sales 05-01-2026", "Sales 12-01-2026", "Sales 19-01-2026"]
+
+    (group,) = mv.column_groups(columns, {"version": 2, "fields": {}, "melt_groups": []}, {})
+
+    assert group["group"]["period_type"] == "week"
+
+
+def test_a_group_built_from_a_detected_one_validates_as_a_melt_group():
+    # The rules the review screen sends when a reviewer picks a detected group
+    # for Units sold: the group's settings, an id, the field it fills.
+    contract = {"version": 2, "fields": {}, "melt_groups": [SALES_GROUP]}
+    qty = mv.column_groups(V2_COLUMNS, contract, {})[1]
+    group = {**qty["group"], "id": "quantity_units", "value_target": "quantity_units"}
+    rules = [
+        {
+            "targetField": "quantity_units",
+            "editable": False,
+            "confidence": "high",
+            "reviewed": True,
+            "meltGroup": group,
+            "field": {"status": "mapped", "melt_group": "quantity_units"},
+        },
+        {
+            "targetField": "period_start",
+            "editable": False,
+            "confidence": "high",
+            "reviewed": True,
+            "field": {"status": "mapped", "melt_group": "quantity_units"},
+        },
+    ]
+
+    validated = mv.validate_contract(mv.rules_to_contract(rules), V2_COLUMNS, trust_review=True)
+
+    assert validated["fields"]["quantity_units"]["melt_group"] == "quantity_units"
+    assert validated["fields"]["period_start"]["melt_group"] == "quantity_units"
+    assert [g["id"] for g in validated["melt_groups"]] == ["quantity_units"]
+    assert not [w for w in validated["warnings"] if "melt group" in w.lower()]
+
+
+def test_a_month_named_group_offered_to_the_reviewer_runs_as_months():
+    import pandas as pd
+
+    from app.services import apply_contract
+
+    columns = ["Article", "Net Sales Jan 2026", "Net Sales Feb 2026"]
+    (entry,) = mv.column_groups(columns, {"version": 2, "fields": {}, "melt_groups": []}, {})
+    group = {**entry["group"], "id": "revenue", "value_target": "revenue", "confidence": "high"}
+    contract = mv.validate_contract(
+        {
+            "version": 2,
+            "melt_groups": [group],
+            "fields": {
+                "revenue": {"status": "mapped", "melt_group": "revenue"},
+                "period_start": {"status": "mapped", "melt_group": "revenue"},
+                "period_type": {"status": "derived"},
+                "sku": {"status": "mapped", "source": "Article"},
+                "retailer": {"status": "constant", "value": "giant_offline"},
+            },
+        },
+        columns,
+    )
+
+    out = apply_contract.apply_contract(pd.DataFrame([["13255043", 5, 7]], columns=columns), contract, source_file="x")
+
+    assert out["period_start"].astype(str).tolist() == ["2026-01-01", "2026-02-01"]
+    assert out["revenue"].tolist() == [5, 7]
+    assert set(out["period_type"]) == {"month"}
+
+
+def test_the_packet_says_which_model_proposed_the_mapping():
+    packet = mv.envelope_to_packet("fp", {**ENVELOPE, "provider": "gemini", "model": "gemini-3.8-flash"}, "pending")
+
+    assert packet["proposedBy"] == {"provider": "gemini", "model": "gemini-3.8-flash"}
+    # A mapping written before this was recorded has no model to name.
+    assert mv.envelope_to_packet("fp", ENVELOPE, "pending")["proposedBy"] == {"provider": None, "model": None}

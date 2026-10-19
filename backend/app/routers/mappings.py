@@ -24,6 +24,7 @@ from app.services import generate_mapping
 from app.services import mapping_view
 from app.services import apply_contract as contract_application
 from app.services import layout_detection, mapping_checks, mapping_contract
+from app.services import customer_service
 from app.services import sellout_ingestion
 
 router = APIRouter(prefix="/api/mappings", tags=["mappings"])
@@ -36,12 +37,13 @@ class ConfirmRequest(BaseModel):
     # The review screen edits rules, not raw contracts. Sending those instead
     # keeps the contract shape -- and its validation -- on the server.
     rules: list[dict] | None = None
-    # What this mapping is called and whose files it reads. Required on a first
-    # approval so the mapping can be recognised later by something other than a
-    # 16-character hash; optional afterwards, when amending leaves them as they
-    # were.
+    # What this mapping is called and the customer whose files it reads.
+    # Required on a first approval so the mapping can be recognised later by
+    # something other than a 16-character hash, and so its sales land on
+    # retailers the dashboard can find; optional afterwards, when amending
+    # leaves them as they were.
     name: str | None = Field(default=None, max_length=120)
-    vendor: str | None = Field(default=None, max_length=120)
+    customer_id: int | None = Field(default=None, gt=0)
 
 
 class PreviewRequest(BaseModel):
@@ -98,6 +100,19 @@ def _example_table(envelope: dict):
     except layout_detection.LayoutError as exc:
         raise contract_application.ContractApplicationError(str(exc)) from exc
     return filename, data, frame, layout
+
+
+def _foreign_retailers(contract: dict, customer: dict, envelope: dict) -> list[str]:
+    """
+    Retailers the contract writes sales to that are not the customer's. An
+    upload creates any retailer name it meets with no customer, and the
+    dashboard -- which finds sales through the customer -- never shows them.
+    """
+    outputs = mapping_contract.retailer_outputs(
+        contract, samples=mapping_view.validation_values(envelope)
+    )
+    own = {retailer["retailer_name"] for retailer in customer.get("retailers") or []}
+    return [name for name in outputs or [] if name not in own]
 
 
 def _ingest_waiting_uploads(blob_paths: list[str], contract: dict) -> list[dict]:
@@ -312,15 +327,23 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
 
     pending = envelope_before
 
-    # An amendment inherits the name and vendor it was approved under; only a
-    # first approval has to supply them.
+    # An amendment inherits the name and customer it was approved under; only
+    # a first approval has to supply them. A mapping approved before customers
+    # existed carries a free-text vendor only, and is linked on its next
+    # approval.
     name = (body.name or pending.get("name") or "").strip()
-    vendor = (body.vendor or pending.get("vendor") or "").strip()
-    if not name or not vendor:
+    customer_id = body.customer_id or pending.get("customer_id")
+    if not name or not customer_id:
         raise HTTPException(
             status_code=422,
-            detail="A mapping needs a name and a vendor before it can be saved for reuse.",
+            detail="A mapping needs a name and a customer before it can be saved for reuse.",
         )
+
+    customer = await asyncio.to_thread(customer_service.get_customer, customer_id)
+    if customer is None:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    # Written as the vendor too: upload history and older screens read it.
+    vendor = customer["customer_name"]
 
     proposed = _proposed_contract(pending, body.rules, body.contract)
 
@@ -349,6 +372,21 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
                 "message": (
                     "Required ingest fields are missing: "
                     + ", ".join(required_missing)
+                ),
+                "warnings": contract["warnings"],
+            },
+        )
+
+    foreign = _foreign_retailers(contract, customer, pending)
+    if foreign:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": (
+                    f"This mapping writes sales to {', '.join(foreign)}, which "
+                    f"{'is not a retailer' if len(foreign) == 1 else 'are not retailers'} "
+                    f"of {vendor}. Add {'it' if len(foreign) == 1 else 'them'} to the "
+                    "customer or change the retailer."
                 ),
                 "warnings": contract["warnings"],
             },
@@ -410,6 +448,8 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
         "contract": stored_contract,
         "name": name,
         "vendor": vendor,
+        "customer_id": customer["customer_id"],
+        "customer_name": customer["customer_name"],
         "version": int(pending.get("version") or 0) + 1 if state == "confirmed" else 1,
         "edited_by_user": bool(reviewer_diff),
         "reviewer_diff": reviewer_diff,
@@ -449,6 +489,8 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
         "fingerprint": fingerprint,
         "name": name,
         "vendor": vendor,
+        "customer_id": customer["customer_id"],
+        "customer_name": customer["customer_name"],
         "stored_at": move["stored_at"],
         "moved_from": move["pending_path"],
         "moved_to": move["confirmed_path"],

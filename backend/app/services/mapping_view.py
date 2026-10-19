@@ -1,9 +1,13 @@
 """Present GCS mapping contracts in the shape used by the review screen."""
 
+import re
 from typing import Any, Dict, List
+
+import pandas as pd
 
 from app.schemas.sellout import BUSINESS_COLUMNS
 from app.services import mapping_contract
+from app.services.column_profile import review_column_groups
 from app.services.mapping_contract import (
     DECIDABLE_FIELDS,
     REQUIRED_FIELDS,
@@ -258,6 +262,133 @@ def validation_values(envelope: Dict[str, Any]) -> Dict[str, List[str]]:
     return envelope.get("column_samples") or {}
 
 
+# How many headings a group shows the reviewer reading, and the gap in days
+# between consecutive periods below which they are weeks rather than months.
+READINGS_SHOWN = 3
+WEEK_SPACING_DAYS = 8
+
+
+def _period_type_from_dates(dates: list[pd.Timestamp]) -> str | None:
+    ordered = sorted(set(dates))
+    if len(ordered) < 2:
+        return None
+    gaps = sorted((b - a).days for a, b in zip(ordered, ordered[1:]))
+    middle = gaps[len(gaps) // 2]
+    return "week" if middle <= WEEK_SPACING_DAYS else "month"
+
+
+def _read_keys(group: dict, columns: list[str]) -> tuple[list, str | None]:
+    """Each column's key as the transformation will read it, or a problem."""
+    key = group.get("key") or {}
+    if key.get("target") != "period_start":
+        return list(columns), None
+    pattern, date_format = key.get("pattern"), key.get("date_format")
+    if not pattern or not date_format:
+        return [], "The dates in these headings could not be read."
+    try:
+        raw = [re.search(pattern, column).group(1) for column in columns]
+        dates = pd.to_datetime(pd.Series(raw), format=date_format, errors="raise")
+    except Exception:
+        return [], "The dates in these headings could not be read."
+    return list(dates), None
+
+
+def _group_label(group: dict, columns: list[str]) -> str:
+    """A heading for the group: its first column with the period blanked out."""
+    key = group.get("key") or {}
+    if key.get("target") == "period_start" and key.get("pattern"):
+        match = re.search(key["pattern"], columns[0])
+        if match:
+            return columns[0][: match.start(1)] + "‹period›" + columns[0][match.end(1) :]
+    if len(columns) > 1:
+        return f"{columns[0]} … {columns[-1]}"
+    return columns[0]
+
+
+def _group_entry(entry_id: str, group: dict, columns: list[str], samples: dict) -> dict:
+    keys, problem = _read_keys(group, columns)
+    kind = "period" if (group.get("key") or {}).get("target") == "period_start" else "store"
+    settings = {name: group[name] for name in ("select", "key", "period_type") if group.get(name)}
+    if kind == "period" and keys and not settings.get("period_type"):
+        settings["period_type"] = _period_type_from_dates(keys) or "month"
+
+    readings = [
+        {
+            "column": column,
+            "readsAs": key.date().isoformat() if kind == "period" else key,
+            "sample": (samples.get(column) or [None])[0],
+        }
+        for column, key in list(zip(columns, keys))[:READINGS_SHOWN]
+    ]
+    return {
+        "id": entry_id,
+        "kind": kind,
+        "label": _group_label(group, columns),
+        "columns": columns,
+        "group": settings,
+        "readings": readings,
+        "first": readings[0]["readsAs"] if kind == "period" and readings else None,
+        "last": max(keys).date().isoformat() if kind == "period" and keys else None,
+        "problem": problem,
+        "meltGroupId": None,
+        "field": None,
+    }
+
+
+def _detected_settings(detected: dict) -> dict:
+    """A detected group (column_profile) as the contract's melt-group settings."""
+    if detected["kind"] == "period":
+        return {
+            "select": {"kind": "pattern", "pattern": detected["select_pattern"]},
+            "key": {
+                "target": "period_start",
+                "pattern": detected["key_pattern"],
+                **({"date_format": detected["date_format"]} if detected.get("date_format") else {}),
+            },
+            **({"period_type": detected["period_type"]} if detected.get("period_type") else {}),
+        }
+    # A run of outlet codes is picked by the columns either side of it, so an
+    # outlet added next month is picked up too. A run at the very start of the
+    # file has nothing before it, so its columns are named instead.
+    if detected.get("after"):
+        select = {"kind": "between", "after": detected["after"]}
+        if detected.get("before"):
+            select["before"] = detected["before"]
+    else:
+        select = {"kind": "columns", "columns": detected["columns"]}
+    return {"select": select, "key": {"target": "store_code"}}
+
+
+def column_groups(columns: List[str], contract: Dict[str, Any], samples: Dict[str, list]) -> List[Dict[str, Any]]:
+    """
+    Every repeated column group the reviewer can choose as the source of a
+    measure -- one row per period or per outlet -- with what it fills now.
+
+    The groups layout detection finds (column_profile.review_column_groups),
+    joined to the contract's own melt groups by the columns they select: a
+    match takes the contract's settings, since the reviewer may have edited
+    them. A contract group nothing detected is listed as it stands, so it can
+    still be seen and taken off.
+    """
+    current = upgrade(contract)
+    selected = mapping_contract.group_columns(current, columns)
+    by_columns = {tuple(cols): group for group in current.get("melt_groups") or [] if (cols := selected.get(group["id"]))}
+
+    entries = []
+    for index, detected in enumerate(review_column_groups(columns)):
+        group = by_columns.pop(tuple(detected["columns"]), None)
+        entry = _group_entry(f"detected-{index}", group or _detected_settings(detected), detected["columns"], samples)
+        if group:
+            entry["meltGroupId"], entry["field"] = group["id"], group.get("value_target")
+        entries.append(entry)
+
+    for cols, group in by_columns.items():
+        entry = _group_entry(f"melt-{group['id']}", group, list(cols), samples)
+        entry["meltGroupId"], entry["field"] = group["id"], group.get("value_target")
+        entries.append(entry)
+    return entries
+
+
 def envelope_to_packet(
     fingerprint: str, envelope: Dict[str, Any], state: str
 ) -> Dict[str, Any]:
@@ -285,9 +416,20 @@ def envelope_to_packet(
         # the fingerprint there would read as a name and it is not one.
         "name": envelope.get("name"),
         "vendor": envelope.get("vendor"),
+        # The customer whose retailers this mapping's sales land on. None on a
+        # proposal, and on a mapping approved before customers existed (only
+        # its free-text vendor is known); either is linked at approval.
+        "customerId": envelope.get("customer_id"),
+        "customerName": envelope.get("customer_name"),
         "filename": envelope.get("example_file"),
+        # The name the file was uploaded under, which is what a person
+        # recognises a proposal by before it has a name of its own.
+        "sourceFilename": envelope.get("source_filename"),
         "retailerFamily": None,
         "version": envelope.get("version"),
+        # Which model proposed this mapping (recorded by generate_mapping), so
+        # the review can say so once instead of naming a model throughout.
+        "proposedBy": {"provider": envelope.get("provider"), "model": envelope.get("model")},
         "columns": columns,
         "columnSamples": envelope.get("column_samples") or {},
         # The fields a reviewer may point a column at. Sent with the mapping
@@ -303,6 +445,10 @@ def envelope_to_packet(
         "coverageFields": CORE_TARGET_FIELDS,
         "periodDerivedFields": PERIOD_DERIVED_FIELDS,
         "rules": rules,
+        # The file's repeated column groups (one column per period or per
+        # outlet), which the reviewer can choose as a measure's source.
+        "columnGroups": column_groups(columns, contract, envelope.get("column_samples") or {}),
+        "measureFields": list(mapping_contract.MEASURE_FIELDS),
         **_meta(rules, columns),
         # The proposal's checks, run on the whole example file. The review
         # screen shows the failures first, with their evidence.

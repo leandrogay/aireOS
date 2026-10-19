@@ -60,7 +60,16 @@ class CustomerBase(_Base):
 
 
 class CustomerCreate(CustomerBase):
-    pass
+    # Retailers created (or, when an upload already made them, linked) under
+    # the new customer in the same transaction -- the mapping review creates a
+    # customer together with the <name>_offline / <name>_online retailers its
+    # file writes to.
+    retailer_names: list[str] = Field(default_factory=list, max_length=10)
+
+    @field_validator("retailer_names")
+    @classmethod
+    def _slugs(cls, values: list[str]) -> list[str]:
+        return list(dict.fromkeys(normalise_name(value) for value in values))
 
 
 class CustomerUpdate(CustomerBase):

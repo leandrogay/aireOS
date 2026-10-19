@@ -12,6 +12,7 @@ import TableSearch from '@/components/ui/TableSearch';
 import TableSkeleton from '@/components/ui/TableSkeleton';
 import { UPLOAD_STATUS_LABELS, searchUploads, sortUploadsByDate } from '@/app/utils/uploadHistory';
 import { nextSort, paginate, resultCountLabel } from '@/app/utils/tableView';
+import { vendorLabel } from '@/app/utils/retailerLabel';
 
 const COLUMN_COUNT = 5;
 
@@ -75,7 +76,7 @@ export default function RecentUploads({ uploads, isLoading, error, onRefresh, mo
             value={search}
             onChange={changeSearch}
             label="Search uploads"
-            placeholder="Search file, vendor, mapping…"
+            placeholder="Search file, customer, mapping…"
           />
           <RefreshButton
             onClick={onRefresh}
@@ -105,7 +106,7 @@ export default function RecentUploads({ uploads, isLoading, error, onRefresh, mo
               <thead>
                 <tr className="h-10 border-b border-lavander bg-cream/60">
                   <th scope="col" className={headerClass}>File</th>
-                  <th scope="col" className={headerClass}>Vendor</th>
+                  <th scope="col" className={headerClass}>Customer</th>
                   <SortHeader
                     label="Uploaded"
                     field="uploaded_at"
@@ -137,7 +138,7 @@ export default function RecentUploads({ uploads, isLoading, error, onRefresh, mo
                       <td className="px-4 py-2.5 font-medium" title={upload.filename}>
                         <span className="block max-w-[18rem] truncate">{upload.filename}</span>
                       </td>
-                      <td className="px-4 py-2.5">{upload.vendor || '—'}</td>
+                      <td className="px-4 py-2.5">{vendorLabel(upload.vendor) || '—'}</td>
                       <td className="px-4 py-2.5 tabular-nums">{formatDateTime(upload.uploaded_at)}</td>
                       <td className="px-4 py-2.5">
                         {status ? (

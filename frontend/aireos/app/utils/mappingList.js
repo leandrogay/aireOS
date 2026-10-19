@@ -1,4 +1,5 @@
 import { matchesSearch } from '@/app/utils/tableView';
+import { retailerLabel, vendorLabel } from '@/app/utils/retailerLabel';
 
 // Mapping state as something a person reads. Anything unrecognised falls
 // through to the raw value rather than being hidden. Keys are the `state` of
@@ -48,45 +49,65 @@ export function issueSummary(mapping) {
 }
 
 /**
- * The name shown in the Vendor column. A built-in mapping has no vendor but
- * may name its retailer family.
+ * What a mapping is called in a list or a heading. A proposal has no name
+ * until it is approved, so it is known by the file it was proposed for.
  *
  * @param {object} mapping
  * @returns {string}
  */
-export function mappingVendor(mapping) {
-  return mapping.vendor || mapping.retailerFamily || '';
+export function mappingTitle(mapping) {
+  if (mapping.name) return mapping.name;
+  const file = mapping.sourceFilename || String(mapping.filename || '').split('/').pop();
+  return file ? `New layout from ${file}` : 'New layout';
 }
 
 /**
- * Distinct vendors across the list, A–Z, for the Vendor filter.
+ * The name shown in the Customer column: the linked customer, else the
+ * free-text vendor a mapping approved before customers existed was saved
+ * under.
+ *
+ * @param {object} mapping
+ * @returns {string}
+ */
+export function mappingCustomer(mapping) {
+  return retailerLabel(mapping.customerName) || vendorLabel(mapping.vendor) || mapping.retailerFamily || '';
+}
+
+/**
+ * Distinct customers across the list, A–Z, for the Customer filter.
  *
  * @param {object[]} mappings
  * @returns {string[]}
  */
-export function uniqueMappingVendors(mappings) {
-  const vendors = new Set(mappings.map(mappingVendor).filter(Boolean));
-  return [...vendors].sort((a, b) => a.localeCompare(b));
+export function uniqueMappingCustomers(mappings) {
+  const customers = new Set(mappings.map(mappingCustomer).filter(Boolean));
+  return [...customers].sort((a, b) => a.localeCompare(b));
+}
+
+/** Whether a value passes a multi-pick filter: nothing picked lets everything through. */
+function picked(selection, value) {
+  return !selection?.length || selection.includes(value);
 }
 
 /**
- * Mappings that pass every filter that is set. An empty value means "all".
+ * Mappings that pass every filter that is set. Each filter is a list of the
+ * values ticked; an empty list means "all".
  *
  * @param {object[]} mappings
- * @param {{ vendor: string, status: string, issues: string }} filters
+ * @param {{ customer: string[], status: string[], issues: string[] }} filters
  * @returns {object[]}
  */
 export function filterMappings(mappings, filters) {
   return mappings.filter(
     (mapping) =>
-      (!filters.vendor || mappingVendor(mapping) === filters.vendor) &&
-      (!filters.status || mapping.state === filters.status) &&
-      (!filters.issues || mappingIssueKind(mapping) === filters.issues),
+      picked(filters.customer, mappingCustomer(mapping)) &&
+      picked(filters.status, mapping.state) &&
+      picked(filters.issues, mappingIssueKind(mapping)),
   );
 }
 
 /**
- * Mappings whose name, example file name or vendor contains the query.
+ * Mappings whose name, example file name or customer contains the query.
  *
  * @param {object[]} mappings
  * @param {string} query
@@ -94,24 +115,24 @@ export function filterMappings(mappings, filters) {
  */
 export function searchMappings(mappings, query) {
   return mappings.filter((mapping) =>
-    matchesSearch([mapping.name, mapping.filename, mappingVendor(mapping)], query),
+    matchesSearch([mappingTitle(mapping), mapping.filename, mappingCustomer(mapping)], query),
   );
 }
 
 /**
- * Mappings ordered A–Z (or Z–A) on the Mapping or Vendor column. With no sort
+ * Mappings ordered A–Z (or Z–A) on the Mapping or Customer column. With no sort
  * field the backend's order is kept: confirmed mappings first, then
  * proposals. Blank values sort last either way, so unnamed proposals never
  * crowd the top of the list.
  *
  * @param {object[]} mappings
- * @param {'name' | 'vendor' | null} field
+ * @param {'name' | 'customer' | null} field
  * @param {'asc' | 'desc'} direction
  * @returns {object[]}
  */
 export function sortMappings(mappings, field, direction) {
   if (!field) return mappings;
-  const valueOf = field === 'vendor' ? mappingVendor : (mapping) => mapping.name || '';
+  const valueOf = field === 'customer' ? mappingCustomer : (mapping) => mapping.name || '';
   const sign = direction === 'asc' ? 1 : -1;
 
   return [...mappings].sort((a, b) => {

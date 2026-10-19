@@ -149,6 +149,87 @@ def detect_column_groups(columns: list[str]) -> list[dict]:
     return groups
 
 
+# ---- Groups the review screen offers ---------------------------------------------
+
+# A month named in a header with its year: "Jan 2026", "January-26", "2026 Jan".
+# Not part of detect_column_groups, which the fingerprint is built from: adding
+# a group there would change the fingerprint of every layout with such headers
+# and orphan the mappings confirmed for them.
+_MONTH = r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*"
+MONTH_YEAR_TOKEN = re.compile(rf"(?i)\b(?:{_MONTH}[\s\-'/.]*\d{{2,4}}|\d{{4}}[\s\-/.]*{_MONTH})\b")
+# Month first before year first, the way the retailers write them; the first
+# format that reads every header in a group wins.
+_MONTH_YEAR_FORMATS = tuple(
+    f"{first}{separator}{second}"
+    for order in ("month_first", "year_first")
+    for month in ("%b", "%B")
+    for year in ("%Y", "%y")
+    for separator in (" ", "-", "'", "/", ".", "")
+    for first, second in [(month, year) if order == "month_first" else (year, month)]
+)
+
+
+def _guess_month_year_format(keys: list[str]) -> str | None:
+    for date_format in _MONTH_YEAR_FORMATS:
+        parsed = pd.to_datetime(pd.Series(keys), format=date_format, errors="coerce")
+        if parsed.notna().all():
+            return date_format
+    return None
+
+
+def _month_year_patterns(header: str, token: re.Match) -> tuple[str, str]:
+    def generalise(text: str) -> str:
+        return re.sub(r"\d+", r"\\d+", re.escape(text))
+
+    before = generalise(header[: token.start()])
+    after = generalise(header[token.end() :])
+    month_year = MONTH_YEAR_TOKEN.pattern.removeprefix("(?i)")
+    return f"(?i)^{before}{month_year}{after}$", f"(?i){before}({month_year}){after}$"
+
+
+def detect_month_name_groups(columns: list[str], taken: set[str] = frozenset()) -> list[dict]:
+    """
+    Period groups whose headers name the month ("Sales Jan 2026"), shaped like
+    the period groups of detect_column_groups. Columns in `taken` are already
+    in a group and are left out.
+    """
+    by_template: dict[str, list[tuple[str, re.Match]]] = {}
+    for column in columns:
+        if column in taken:
+            continue
+        token = MONTH_YEAR_TOKEN.search(column)
+        if token:
+            template = to_snake_case(column[: token.start()] + "<month>" + column[token.end() :])
+            by_template.setdefault(template, []).append((column, token))
+
+    groups = []
+    for template, members in by_template.items():
+        if len(members) < 2:
+            continue
+        select_pattern, key_pattern = _month_year_patterns(*members[0])
+        keys = [token.group(0) for _, token in members]
+        groups.append({
+            "kind": "period",
+            "template": template,
+            "columns": [column for column, _ in members],
+            "select_pattern": select_pattern,
+            "key_pattern": key_pattern,
+            "date_format": _guess_month_year_format(keys),
+            "period_type": "month",
+        })
+    return groups
+
+
+def review_column_groups(columns: list[str]) -> list[dict]:
+    """
+    Every repeated column group a reviewer can choose as a field's source: the
+    ones detect_column_groups finds, and month-named period columns.
+    """
+    groups = detect_column_groups(columns)
+    taken = {column for group in groups for column in group["columns"]}
+    return groups + detect_month_name_groups(columns, taken)
+
+
 # ---- Fingerprint ---------------------------------------------------------------
 
 STORE_COLUMNS_TEMPLATE = "<store_code_columns>"

@@ -90,6 +90,69 @@ def test_a_taken_name_raises_without_inserting(monkeypatch):
     assert conn.sql_containing("INSERT INTO customers") == []
 
 
+def _respond_with_retailers(existing):
+    """_respond, plus the retailer lookup answered from `existing` by name."""
+    base = _respond(customer=_customer())
+
+    def respond(sql, params):
+        if "lower(r.retailer_name)" in sql:
+            row = existing.get(params["retailer_name"])
+            return [row] if row else []
+        if "INSERT INTO retailers" in sql:
+            return [(21,)]
+        return base(sql, params)
+
+    return respond
+
+
+def test_create_with_retailers_creates_and_links_each_one(monkeypatch):
+    conn = FakeConnection(_respond_with_retailers({}))
+    _install(monkeypatch, conn)
+
+    customer_service.create_customer(
+        CustomerCreate(customer_name="Giant", retailer_names=["Giant Offline", "giant_offline", "giant online"])
+    )
+
+    inserted = [params["retailer_name"] for _, params in conn.sql_containing("INSERT INTO retailers")]
+    assert inserted == ["giant_offline", "giant_online"]
+    links = [params for _, params in conn.sql_containing("INSERT INTO customer_retailers")]
+    assert links == [{"customer_id": 3, "retailer_id": 21}] * 2
+
+
+def test_create_links_a_retailer_an_upload_already_made_instead_of_duplicating_it(monkeypatch):
+    unlinked = {"retailer_id": 7, "customer_id": None}
+    conn = FakeConnection(_respond_with_retailers({"giant_offline": unlinked}))
+    _install(monkeypatch, conn)
+
+    customer_service.create_customer(CustomerCreate(customer_name="giant", retailer_names=["giant_offline"]))
+
+    assert conn.sql_containing("INSERT INTO retailers") == []
+    _, params = conn.sql_containing("INSERT INTO customer_retailers")[0]
+    assert params == {"customer_id": 3, "retailer_id": 7}
+
+
+def test_a_retailer_another_customer_owns_raises_without_linking_it(monkeypatch):
+    owned = {"retailer_id": 7, "customer_id": 1}
+    conn = FakeConnection(_respond_with_retailers({"giant_offline": owned}))
+    _install(monkeypatch, conn)
+
+    with pytest.raises(customer_service.RetailerOwnedError, match="already belongs"):
+        customer_service.create_customer(CustomerCreate(customer_name="giant", retailer_names=["giant_offline"]))
+
+    assert conn.sql_containing("INSERT INTO customer_retailers") == []
+
+
+# ---- read one ------------------------------------------------------------------
+
+
+def test_get_customer_returns_the_row_or_none(monkeypatch):
+    _install(monkeypatch, FakeConnection(_respond(customer=_customer())))
+    assert customer_service.get_customer(3) == _customer()
+
+    _install(monkeypatch, FakeConnection(_respond(customer=None)))
+    assert customer_service.get_customer(9) is None
+
+
 # ---- update --------------------------------------------------------------------
 
 

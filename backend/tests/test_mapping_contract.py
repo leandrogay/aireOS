@@ -398,3 +398,43 @@ def test_the_version_is_told_by_the_shape():
     assert mc.is_v2(_contract())
     assert not mc.is_v2(V1)
     assert not mc.is_v2({})
+
+
+# ---- Which retailers a contract writes to ---------------------------------------------
+
+def test_a_constant_retailer_writes_its_value():
+    assert mc.retailer_outputs(_contract()) == ["fairprice_offline"]
+
+
+def test_retailer_rules_write_their_outputs_and_default_once_each():
+    rules = {
+        "type": "rules",
+        "rules": [
+            {"op": "equals", "value": "FPON", "output": "fairprice_online"},
+            {"op": "equals", "value": "FPXT", "output": "fairprice_online"},
+        ],
+        "default": "fairprice_offline",
+    }
+    contract = _contract(retailer={"status": "mapped", "source": "Store Format", "transforms": [rules]})
+
+    assert mc.retailer_outputs(contract) == ["fairprice_online", "fairprice_offline"]
+
+
+def test_a_retailer_code_table_writes_its_values():
+    table = {"type": "value_map", "values": {"NH": "nhg_offline", "NHO": "nhg_online"}}
+    contract = _contract(retailer={"status": "mapped", "source": "Store Format", "transforms": [table]})
+
+    assert mc.retailer_outputs(contract) == ["nhg_offline", "nhg_online"]
+
+
+def test_a_retailer_read_as_it_is_writes_the_columns_values_only_when_they_are_known():
+    contract = _contract(retailer={"status": "mapped", "source": "Store Format"})
+
+    assert mc.retailer_outputs(contract, samples=SAMPLES) == ["FPON", "HYPER", "SUPER"]
+    assert mc.retailer_outputs(contract) is None
+
+
+def test_a_retailer_not_in_the_file_writes_nothing():
+    contract = _contract(retailer={"status": "not_available", "reason": "no retailer"})
+
+    assert mc.retailer_outputs(contract) == []

@@ -258,6 +258,12 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
    `POST /api/mappings/{fp}/preview` re-runs the checks, and `POST .../{fp}/confirm` rebuilds + re-validates and
    re-checks the contract (unknown product codes → 422), records the reviewer's diff against the proposal, archives
    any previous version under `mappings/history/` and stores it under `confirmed/`. `DELETE .../{fp}/pending` discards.
+   The page is numbered steps (customer → fields → product codes → checks) beside a "What's left" list
+   (`utils/reviewChecklist.js`). A mapping belongs to a **customer**: confirm requires `customer_id` (stored as
+   `customer_id`/`customer_name`, and as `vendor` for upload history) and 422s while any retailer the contract writes
+   to (`mapping_contract.retailer_outputs`) is not that customer's -- otherwise uploads would create retailers no
+   customer owns and the dashboard would never show their sales. A new customer is created from the page with its
+   `<name>_offline`/`<name>_online` retailers in one transaction (`CustomerCreate.retailer_names`).
 
 **Dashboard** (`app/dashboard/page.js`)
 1. `useDataFreshness` polls `/api/sales/last-updated`; a change bumps `dataVersion`, which every
@@ -304,6 +310,9 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | `uploads.py` per-file `mapping.status` values (`mapped`, `pending_confirmation`, `mapping_failed`) | `FileUpload.jsx` result rendering |
 | `settings/doh._settings_view` keys, `GLOBAL_DEFAULT_*_DOH` | `DohSettingsTable.jsx`, `dohSettingsForm.js` (`GLOBAL_DEFAULT_DOH`) |
 | `DohThresholdsUpdate` field names | `buildDohThresholdPayload` |
+| `ConfirmRequest.customer_id`; packet `customerId`, `customerName`, `sourceFilename`; `mapping_contract.retailer_outputs` | `mappingApi.confirmMapping`, `utils/mappingCustomer.js` (`retailerOutputs` mirrors it), `utils/mappingList.js` |
+| packet `columnGroups` (`mapping_view.column_groups`: detected groups from `column_profile.review_column_groups`, with contract-ready `group` settings, `readings`, `meltGroupId`/`field`) and `measureFields` | `utils/mappingReview.js` (`toGroups`, `groupChoices`, `toRules`), `FieldTable.jsx`, `ColumnGroupDetails.jsx`, `UnusedColumns.jsx`. `review_column_groups` adds month-named headings for review only -- never fold them into `detect_column_groups`, which the layout fingerprint is built from |
+| `CustomerCreate.retailer_names` (`customer_service._attach_retailer`: links a retailer an upload made, 409 for another customer's) | `NewCustomerDialog.jsx` |
 | `customer_service.list_customers` keys (`customers[].retailers[]`, `in_use`, `unlinked_retailers`), retailer writes' `{ retailer, customer }` | `useCustomers.js`, `components/customers/*` |
 | `schemas.catalog.normalise_name` slug rule, `in_use` rules | `customerForm.js` (`normaliseName`, `*BlockReason`) |
 | `HTTPException.detail` shapes | `parseApiError()` |

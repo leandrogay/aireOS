@@ -895,7 +895,44 @@ def unreviewed_low_confidence(contract: dict) -> list[str]:
     return list(dict.fromkeys(fields + groups))
 
 
-DECISION_KEYS = ("status", "source", "melt_group", "from_field", "value", "transforms")
+def retailer_outputs(contract: dict, samples: dict[str, list] | None = None) -> list[str] | None:
+    """
+    Every retailer name a contract writes sales to, read from its instructions
+    without running them: a constant's value, or the outputs (and default) of
+    the rules or code table that last translates the retailer. A column read
+    as it is writes the column's own values, taken from `samples` when given.
+
+    None when that cannot be known from the contract alone, so a caller can
+    tell "writes to nothing" from "cannot say".
+
+    Uploads create any retailer name they meet (catalog_service
+    get_or_create_retailers) with no customer, which the dashboard then never
+    finds, so approval checks these against the mapping's customer first.
+    """
+    entry = (upgrade(contract).get("fields") or {}).get("retailer") or {}
+    status = entry.get("status")
+    if status == "constant":
+        return [str(entry.get("value"))] if entry.get("value") not in (None, "") else []
+    if status not in ("mapped", "derived"):
+        return []
+
+    transforms = entry.get("transforms") or []
+    last = transforms[-1] if transforms else None
+    if last and last.get("type") == "rules":
+        outputs = [rule.get("output") for rule in last.get("rules") or []]
+    elif last and last.get("type") == "value_map":
+        outputs = list((last.get("values") or {}).values())
+    elif not transforms and samples and entry.get("source") in samples:
+        outputs = list(samples[entry["source"]] or [])
+    else:
+        return None
+
+    if last and last.get("default") not in (None, ""):
+        outputs.append(last["default"])
+    return list(dict.fromkeys(str(output) for output in outputs if output not in (None, "")))
+
+
+DECISION_KEYS =("status", "source", "melt_group", "from_field", "value", "transforms")
 
 
 def contract_diff(before: dict | None, after: dict) -> list[dict]:

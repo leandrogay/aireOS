@@ -9,7 +9,7 @@ file with these headers, so it holds the same line itself.
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.services import sellout_ingestion, storage
+from app.services import customer_service, sellout_ingestion, storage
 
 client = TestClient(app)
 
@@ -24,7 +24,16 @@ ENVELOPE = {
     ],
     "contract": {"identity_mapping": {}, "melt_groups": [], "annotations": {}},
     "name": "Vendor weekly",
-    "vendor": "XEL",
+    "vendor": "xel",
+    "customer_id": 3,
+    "customer_name": "xel",
+}
+
+CUSTOMER = {
+    "customer_id": 3,
+    "customer_name": "xel",
+    "retailers": [{"retailer_id": 8, "retailer_name": "xel_offline"}],
+    "in_use": False,
 }
 
 
@@ -103,6 +112,9 @@ def _stub_storage(monkeypatch):
     monkeypatch.setattr(storage, "move_pending_mapping_to_confirmed", move)
     monkeypatch.setattr(
         storage, "update_uploads_for_mapping", lambda fingerprint, metadata: {"updated": []}
+    )
+    monkeypatch.setattr(
+        customer_service, "get_customer", lambda customer_id: CUSTOMER if customer_id == 3 else None
     )
     return stored
 
@@ -213,7 +225,7 @@ def test_confirm_processes_uploads_that_were_waiting_for_approval(monkeypatch):
 
 # ---- A pending copy left behind after approval --------------------------------
 
-STALE_PENDING = {**ENVELOPE, "name": None, "vendor": None}
+STALE_PENDING = {**ENVELOPE, "name": None, "vendor": None, "customer_id": None, "customer_name": None}
 
 
 def _serve(monkeypatch, blobs):
@@ -231,12 +243,13 @@ def test_amending_builds_on_the_confirmed_copy_not_a_stale_pending_one(monkeypat
     )
     rules = _complete_rules([_rule("sku", "SKU No.", "high", False)])
 
-    # No name or vendor sent: an amendment inherits them from what is confirmed.
+    # No name or customer sent: an amendment inherits them from what is confirmed.
     response = client.post("/api/mappings/fp/confirm", json={"rules": rules})
 
     assert response.status_code == 200
     assert stored["envelope"]["name"] == "Vendor weekly"
-    assert stored["envelope"]["vendor"] == "XEL"
+    assert stored["envelope"]["vendor"] == "xel"
+    assert stored["envelope"]["customer_id"] == 3
 
 
 def test_listing_leaves_out_a_pending_copy_that_has_been_confirmed(monkeypatch):
@@ -332,3 +345,84 @@ def test_confirming_is_blocked_while_a_product_code_is_not_a_master_sku(monkeypa
     assert response.status_code == 422
     assert "99999999" in response.json()["detail"]["message"]
     assert "envelope" not in stored
+
+
+# ---- The customer a mapping belongs to -------------------------------------------------
+
+def _serve_pending(monkeypatch, envelope):
+    monkeypatch.setattr(
+        storage, "download_json",
+        lambda path: envelope if path == storage.pending_mapping_path("fp") else None,
+    )
+
+
+def _constant_retailer_rules(value):
+    """Complete rules with the retailer a constant, as for NHG."""
+    rules = [rule for rule in _complete_rules([_rule("sku", "SKU No.", "high", False)]) if rule["targetField"] != "retailer"]
+    return [
+        *rules,
+        {
+            "targetField": "retailer",
+            "sourceColumn": "",
+            "sourceColumns": [],
+            "editable": False,
+            "confidence": "high",
+            "reviewed": False,
+            "field": {"status": "constant", "value": value},
+        },
+    ]
+
+
+def test_a_first_approval_without_a_customer_is_422_and_stores_nothing(monkeypatch):
+    stored = _stub_storage(monkeypatch)
+    _serve_pending(monkeypatch, STALE_PENDING)
+
+    response = client.post(
+        "/api/mappings/fp/confirm", json={"name": "XEL weekly", "rules": _constant_retailer_rules("xel_offline")}
+    )
+
+    assert response.status_code == 422
+    assert "customer" in response.json()["detail"]
+    assert "envelope" not in stored
+
+
+def test_an_unknown_customer_is_404(monkeypatch):
+    stored = _stub_storage(monkeypatch)
+    _serve_pending(monkeypatch, STALE_PENDING)
+
+    response = client.post(
+        "/api/mappings/fp/confirm",
+        json={"name": "XEL weekly", "customer_id": 99, "rules": _constant_retailer_rules("xel_offline")},
+    )
+
+    assert response.status_code == 404
+    assert "envelope" not in stored
+
+
+def test_a_retailer_outside_the_customer_blocks_approval_with_its_name(monkeypatch):
+    stored = _stub_storage(monkeypatch)
+    _serve_pending(monkeypatch, STALE_PENDING)
+
+    response = client.post(
+        "/api/mappings/fp/confirm",
+        json={"name": "XEL weekly", "customer_id": 3, "rules": _constant_retailer_rules("giant_offline")},
+    )
+
+    assert response.status_code == 422
+    assert "giant_offline" in response.json()["detail"]["message"]
+    assert "envelope" not in stored
+
+
+def test_approval_records_the_customer_and_writes_its_name_as_the_vendor(monkeypatch):
+    stored = _stub_storage(monkeypatch)
+    _serve_pending(monkeypatch, STALE_PENDING)
+
+    response = client.post(
+        "/api/mappings/fp/confirm",
+        json={"name": "XEL weekly", "customer_id": 3, "rules": _constant_retailer_rules("xel_offline")},
+    )
+
+    assert response.status_code == 200
+    envelope = stored["envelope"]
+    assert (envelope["customer_id"], envelope["customer_name"], envelope["vendor"]) == (3, "xel", "xel")
+    assert response.json()["customer_name"] == "xel"
