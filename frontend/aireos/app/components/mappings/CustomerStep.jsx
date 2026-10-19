@@ -6,7 +6,7 @@ import { AlertTriangle, CheckCircle2, Loader2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import InfoTooltip from '@/components/ui/InfoTooltip';
 import SelectDropdown from '@/components/ui/SelectDropdown';
-import { inputClass, labelClass, secondaryButtonClass } from '@/components/inventory/formStyles';
+import { inputClass, labelClass } from '@/components/inventory/formStyles';
 import { canRenameOutputs, retailerChoices } from '@/app/utils/mappingCustomer';
 import { PROPOSER } from '@/app/utils/mappingReview';
 import { retailerLabel } from '@/app/utils/retailerLabel';
@@ -147,7 +147,7 @@ function decisionText(decision, outputs) {
  *   suggested: boolean,
  *   legacyVendor: string | null,
  *   onCustomerChange: (customerId: number | null) => void,
- *   onNewCustomer: () => void,
+ *   onNewCustomer: (name: string) => void,
  *   decision: object,
  *   outputs: string[] | null,
  *   statuses: object[],
@@ -228,32 +228,25 @@ export default function CustomerStep({
               *
             </span>
           </label>
-          <div className="flex gap-2">
-            <SelectDropdown
-              id="mapping-customer"
-              value={customer ? String(customer.customer_id) : ''}
-              onChange={(id) => onCustomerChange(id ? Number(id) : null)}
-              placeholder={customersLoading ? 'Loading customers…' : 'Choose a customer…'}
-              searchable={customers.length > 8}
-              searchPlaceholder="Search customers…"
-              disabled={disabled || customersLoading}
-              options={customers.map((item) => ({
-                value: String(item.customer_id),
-                label: retailerLabel(item.customer_name),
-              }))}
-            />
-            <Button
-              type="button"
-              variant="outline"
-              disabled={disabled || customersLoading}
-              onClick={onNewCustomer}
-              title="Create a customer and its retailers"
-              className={cn(secondaryButtonClass, 'shrink-0 px-2.5')}
-            >
-              <Plus aria-hidden="true" className="size-3.5" />
-              New
-            </Button>
-          </div>
+          {/* Look for the customer first; creating one is the last row of
+              the same list, carrying over a name searched for and not found. */}
+          <SelectDropdown
+            id="mapping-customer"
+            value={customer ? String(customer.customer_id) : ''}
+            onChange={(id) => onCustomerChange(id ? Number(id) : null)}
+            placeholder={customersLoading ? 'Loading customers…' : 'Choose a customer…'}
+            searchable={customers.length > 8}
+            searchPlaceholder="Search customers…"
+            disabled={disabled || customersLoading}
+            options={customers.map((item) => ({
+              value: String(item.customer_id),
+              label: retailerLabel(item.customer_name),
+            }))}
+            action={{
+              label: (typed) => (typed ? `Create customer “${typed}”` : 'Create new customer'),
+              onSelect: onNewCustomer,
+            }}
+          />
           {customersError && (
             <p role="alert" className="mt-1 text-xs text-red-700">
               Customers could not be loaded: {customersError}

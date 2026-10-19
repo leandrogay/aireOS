@@ -58,7 +58,9 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
   const [name, setName] = useState(mapping.name || '');
   // null until the customers load; then the reviewer's pick, or a suggestion.
   const [customerChoice, setCustomerChoice] = useState(null);
-  const [isNewCustomerOpen, setIsNewCustomerOpen] = useState(false);
+  // The new-customer form, open with a name to start from ('' for the
+  // suggestion from the file), or null while closed.
+  const [newCustomerName, setNewCustomerName] = useState(null);
   const [busy, setBusy] = useState(null); // null | 'approve' | 'discard' | 'preview'
   const [message, setMessage] = useState('');
   const [approved, setApproved] = useState(null);
@@ -140,7 +142,7 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
   function handleCustomerCreated(created) {
     customers.applyCustomer(created);
     setCustomerChoice({ id: created.customer_id, suggested: false });
-    setIsNewCustomerOpen(false);
+    setNewCustomerName(null);
   }
 
   async function runChecks() {
@@ -239,7 +241,7 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
               suggested={Boolean(customerChoice?.suggested)}
               legacyVendor={!mapping.customerId && mapping.state === 'confirmed' ? mapping.vendor : null}
               onCustomerChange={(id) => setCustomerChoice({ id, suggested: false })}
-              onNewCustomer={() => setIsNewCustomerOpen(true)}
+              onNewCustomer={setNewCustomerName}
               decision={decision}
               outputs={outputs}
               statuses={statuses}
@@ -372,12 +374,16 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
       </div>
 
       <NewCustomerDialog
-        open={isNewCustomerOpen}
-        defaults={newCustomerDefaults(outputs)}
+        open={newCustomerName !== null}
+        defaults={{
+          ...newCustomerDefaults(outputs),
+          // A name searched for and not found beats the guess from the file.
+          ...(newCustomerName ? { name: newCustomerName } : {}),
+        }}
         customers={customers.data}
         unlinked={customers.unlinked}
         onCreated={handleCustomerCreated}
-        onClose={() => setIsNewCustomerOpen(false)}
+        onClose={() => setNewCustomerName(null)}
       />
 
       {/* A whole step back to the proposal can undo many edits at once, so it

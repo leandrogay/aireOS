@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { Check } from 'lucide-react';
+import { Check, Plus } from 'lucide-react';
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
@@ -23,6 +23,11 @@ const SIZES = {
  * matches none -- which is also how an action menu works: keep `value` at ''
  * and the button keeps saying "Map to…" after every pick.
  *
+ * `action` pins one more row under the list -- "+ Create new customer" --
+ * for when what is wanted is not in it. It is called with whatever was typed
+ * in the search box, and `label` may be a function of that text, so a search
+ * with no match can offer to create exactly that.
+ *
  * @param {{
  *   value: string,
  *   onChange: (value: string) => void,
@@ -38,6 +43,7 @@ const SIZES = {
  *   id?: string,
  *   className?: string,
  *   triggerClassName?: string,
+ *   action?: { label: string | ((query: string) => string), onSelect: (query: string) => void },
  * }} props
  */
 export default function SelectDropdown({
@@ -55,6 +61,7 @@ export default function SelectDropdown({
   id,
   className,
   triggerClassName,
+  action,
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -156,6 +163,26 @@ export default function SelectDropdown({
           ))}
           {!shown.length && <p className="px-2 py-1 text-sm text-deep-violet-blue/60">No matches</p>}
         </div>
+        {/* Pinned under the list, so it is there whatever the list scrolls to:
+            the way out when what is wanted is not in it. */}
+        {action && (
+          <div className="border-t border-lavander p-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                const typed = query.trim();
+                handleOpenChange(false);
+                action.onSelect(typed);
+              }}
+              className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-sm font-medium text-deep-violet-blue outline-none hover:bg-cream focus-visible:bg-cream"
+            >
+              <Plus aria-hidden="true" className="size-3.5 shrink-0" />
+              <span className="min-w-0 truncate">
+                {typeof action.label === 'function' ? action.label(query.trim()) : action.label}
+              </span>
+            </button>
+          </div>
+        )}
       </PopoverContent>
     </Popover>
   );
