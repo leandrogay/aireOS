@@ -1,6 +1,6 @@
 """
 Proposing a contract for a new layout, and finding the confirmed one for a
-known layout -- with a fake Anthropic client and SKU master, so no network.
+known layout -- with a fake Gemini client and SKU master, so no network.
 
 What must hold: the model can only name this file's headers; a proposal that
 fails its checks is sent back with the evidence a limited number of times; a
@@ -17,26 +17,25 @@ from app.services import generate_mapping as gm
 from app.services import reference_contracts
 
 
-class FakeBlock:
-    def __init__(self, text):
-        self.type = "text"
-        self.text = text
+class FakeCandidate:
+    def __init__(self, finish_reason):
+        self.finish_reason = finish_reason
 
 
 class FakeResponse:
-    def __init__(self, text, stop_reason="end_turn"):
-        self.content = [FakeBlock(text)]
-        self.stop_reason = stop_reason
+    def __init__(self, text, finish_reason="STOP"):
+        self.text = text
+        self.candidates = [FakeCandidate(finish_reason)]
 
 
-class FakeMessages:
-    """Answers each create() call with the next scripted answer; records the calls."""
+class FakeModels:
+    """Answers each generate_content() call with the next scripted answer; records the calls."""
 
     def __init__(self, answers):
         self.answers = list(answers)
         self.calls = []
 
-    def create(self, **kwargs):
+    def generate_content(self, **kwargs):
         self.calls.append(kwargs)
         answer = self.answers.pop(0)
         if isinstance(answer, FakeResponse):
@@ -46,7 +45,11 @@ class FakeMessages:
 
 class FakeClient:
     def __init__(self, answers):
-        self.messages = FakeMessages(answers)
+        self.models = FakeModels(answers)
+
+
+def _text(content: dict) -> str:
+    return content["parts"][0]["text"]
 
 
 def _answer(contract: dict) -> dict:
@@ -109,9 +112,54 @@ def sku_master(monkeypatch):
     monkeypatch.setattr(gm.catalog_service, "get_skus", lambda: MASTER)
 
 
+@pytest.fixture(autouse=True)
+def gemini_by_default(monkeypatch):
+    """Pin the flag, so a developer's own .env.backend can't change what these tests ask."""
+    monkeypatch.setattr(gm.config, "MAPPING_PROVIDER", "gemini")
+
+
 def _install(monkeypatch, answers):
     client = FakeClient(answers)
-    monkeypatch.setattr(gm, "get_client", lambda: client)
+    monkeypatch.setattr(gm, "get_gemini_client", lambda: client)
+    return client.models
+
+
+# The Anthropic client, faked the same way: scripted answers, recorded calls.
+
+class FakeClaudeBlock:
+    def __init__(self, text):
+        self.type = "text"
+        self.text = text
+
+
+class FakeClaudeResponse:
+    def __init__(self, text, stop_reason="end_turn"):
+        self.content = [FakeClaudeBlock(text)]
+        self.stop_reason = stop_reason
+
+
+class FakeClaudeMessages:
+    def __init__(self, answers):
+        self.answers = list(answers)
+        self.calls = []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        answer = self.answers.pop(0)
+        if isinstance(answer, FakeClaudeResponse):
+            return answer
+        return FakeClaudeResponse(json.dumps(answer))
+
+
+class FakeClaudeClient:
+    def __init__(self, answers):
+        self.messages = FakeClaudeMessages(answers)
+
+
+def _install_claude(monkeypatch, answers):
+    client = FakeClaudeClient(answers)
+    monkeypatch.setattr(gm, "get_anthropic_client", lambda: client)
+    monkeypatch.setattr(gm.config, "MAPPING_PROVIDER", "anthropic")
     return client.messages
 
 
@@ -161,7 +209,7 @@ def test_an_unknown_product_code_fails_the_proposal_and_is_sent_back(monkeypatch
     failed = {c["id"]: c for c in proposal["checks"] if c["level"] == "error" and not c["passed"]}
     assert set(failed) == {"sku_codes"}
     assert "1909280" in failed["sku_codes"]["message"]
-    assert "1909280" in messages.calls[1]["messages"][2]["content"]
+    assert "1909280" in _text(messages.calls[1]["contents"][2])
     assert proposal["contract"]["fields"]["sku"]["confidence"] == "low"
 
 
@@ -171,7 +219,7 @@ def test_the_prompt_lists_the_sku_master_and_the_code_description_pairs(monkeypa
 
     gm.generate_mapping_contract("claim.xlsx", frame, layout)
 
-    prompt = messages.calls[0]["messages"][0]["content"]
+    prompt = _text(messages.calls[0]["contents"][0])
     assert '"sku": "13271338"' in prompt
     assert '"ItemCode": "1909280"' in prompt and '"Description": "AIRE ULTRA TAPE DIAPERS L"' in prompt
 
@@ -184,9 +232,9 @@ def test_a_failing_proposal_is_sent_back_with_the_evidence(monkeypatch):
     proposal = gm.generate_mapping_contract("claim.xlsx", frame, layout)
 
     assert proposal["attempts"] == 2
-    repair = messages.calls[1]["messages"]
-    assert [m["role"] for m in repair] == ["user", "assistant", "user"]
-    assert "Supplier Claim" in repair[2]["content"]
+    repair = messages.calls[1]["contents"]
+    assert [m["role"] for m in repair] == ["user", "model", "user"]
+    assert "Supplier Claim" in _text(repair[2])
     assert proposal["contract"]["fields"]["revenue"]["status"] == "not_available"
 
 
@@ -209,7 +257,7 @@ def test_the_model_can_only_name_this_files_headers(monkeypatch):
 
     gm.generate_mapping_contract("claim.xlsx", frame, layout)
 
-    schema = messages.calls[0]["output_config"]["format"]["schema"]
+    schema = messages.calls[0]["config"].response_json_schema
     source = schema["properties"]["fields"]["items"]["properties"]["source"]
     # The file's headers, plus "" for a field read from no column.
     assert source["enum"] == [*frame.columns, ""]
@@ -221,10 +269,10 @@ def test_the_prompt_carries_the_whole_file_profile_and_the_detected_groups(monke
 
     gm.generate_mapping_contract("claim.xlsx", frame, layout)
 
-    prompt = messages.calls[0]["messages"][0]["content"]
+    prompt = _text(messages.calls[0]["contents"][0])
     assert "Column profile over all 3 data rows" in prompt
     assert '"kind": "dimension"' in prompt
-    assert "never revenue" in messages.calls[0]["system"]
+    assert "never revenue" in messages.calls[0]["config"].system_instruction
 
 
 def test_an_excluded_example_is_not_shown(monkeypatch):
@@ -233,32 +281,148 @@ def test_an_excluded_example_is_not_shown(monkeypatch):
 
     gm.generate_mapping_contract("claim.xlsx", frame, layout, exclude_examples=("sheng_siong_claim",))
 
-    prompt = messages.calls[0]["messages"][0]["content"]
+    prompt = _text(messages.calls[0]["contents"][0])
     assert "Sheng Siong claim sales summary" not in prompt
     assert "NHG SAP postings" in prompt
 
 
-def test_structured_output_request_omits_unsupported_temperature(monkeypatch):
+def test_the_request_asks_the_configured_model_for_json(monkeypatch):
     messages = _install(monkeypatch, [_answer(reference_contracts.reference_contract("sheng_siong_claim"))])
     frame, layout = _sheng_siong()
 
     gm.generate_mapping_contract("claim.xlsx", frame, layout)
 
-    assert "temperature" not in messages.calls[0]
+    assert messages.calls[0]["model"] == gm.config.MAPPING_MODEL
+    assert messages.calls[0]["config"].response_mime_type == "application/json"
 
 
-def test_a_refusal_is_a_generation_error(monkeypatch):
-    _install(monkeypatch, [FakeResponse("", stop_reason="refusal")])
+def test_a_safety_block_is_a_generation_error(monkeypatch):
+    _install(monkeypatch, [FakeResponse("", finish_reason="SAFETY")])
     frame, layout = _sheng_siong()
 
     with pytest.raises(gm.MappingGenerationError, match="declined"):
         gm.generate_mapping_contract("claim.xlsx", frame, layout)
 
 
-# ---- Known layouts never call Claude ---------------------------------------------------
+def test_a_blocked_prompt_with_no_candidates_is_a_generation_error(monkeypatch):
+    blocked = FakeResponse("")
+    blocked.candidates = []
+    _install(monkeypatch, [blocked])
+    frame, layout = _sheng_siong()
 
-def _no_claude():
-    raise AssertionError("a known layout must not call Claude")
+    with pytest.raises(gm.MappingGenerationError, match="declined"):
+        gm.generate_mapping_contract("claim.xlsx", frame, layout)
+
+
+def test_a_truncated_answer_is_a_generation_error(monkeypatch):
+    _install(monkeypatch, [FakeResponse('{"fields": [', finish_reason="MAX_TOKENS")])
+    frame, layout = _sheng_siong()
+
+    with pytest.raises(gm.MappingGenerationError, match="cut off"):
+        gm.generate_mapping_contract("claim.xlsx", frame, layout)
+
+
+# ---- Claude, behind the MAPPING_PROVIDER flag ------------------------------------------
+
+def test_the_anthropic_flag_asks_claude_and_not_gemini(monkeypatch):
+    messages = _install_claude(monkeypatch, [_answer(reference_contracts.reference_contract("sheng_siong_claim"))])
+    monkeypatch.setattr(gm, "get_gemini_client", _no_model)
+    frame, layout = _sheng_siong()
+
+    proposal = gm.generate_mapping_contract("claim.xlsx", frame, layout)
+
+    assert (proposal["provider"], proposal["model"]) == ("anthropic", gm.config.ANTHROPIC_MODEL)
+    assert messages.calls[0]["model"] == gm.config.ANTHROPIC_MODEL
+    assert "never revenue" in messages.calls[0]["system"]
+    schema = messages.calls[0]["output_config"]["format"]["schema"]
+    assert schema["properties"]["fields"]["items"]["properties"]["source"]["enum"] == [*frame.columns, ""]
+
+
+def test_a_provider_argument_overrides_the_flag(monkeypatch):
+    monkeypatch.setattr(gm, "get_gemini_client", _no_model)
+    messages = _install_claude(monkeypatch, [_answer(reference_contracts.reference_contract("sheng_siong_claim"))])
+    monkeypatch.setattr(gm.config, "MAPPING_PROVIDER", "gemini")
+    frame, layout = _sheng_siong()
+
+    proposal = gm.generate_mapping_contract("claim.xlsx", frame, layout, provider="anthropic")
+
+    assert proposal["provider"] == "anthropic"
+    assert len(messages.calls) == 1
+
+
+def test_claude_repairs_use_the_assistant_role(monkeypatch):
+    fixed = reference_contracts.reference_contract("sheng_siong_claim")
+    messages = _install_claude(monkeypatch, [_answer(_claim_as_revenue()), _answer(fixed)])
+    frame, layout = _sheng_siong()
+
+    gm.generate_mapping_contract("claim.xlsx", frame, layout)
+
+    repair = messages.calls[1]["messages"]
+    assert [m["role"] for m in repair] == ["user", "assistant", "user"]
+    assert "Supplier Claim" in repair[2]["content"]
+
+
+def test_a_claude_refusal_is_a_generation_error(monkeypatch):
+    _install_claude(monkeypatch, [FakeClaudeResponse("", stop_reason="refusal")])
+    frame, layout = _sheng_siong()
+
+    with pytest.raises(gm.MappingGenerationError, match="declined"):
+        gm.generate_mapping_contract("claim.xlsx", frame, layout)
+
+
+def test_a_missing_anthropic_key_is_a_config_error(monkeypatch):
+    monkeypatch.setattr(gm, "_anthropic_client", None)
+    monkeypatch.setattr(gm.config, "ANTHROPIC_API_KEY", None)
+
+    with pytest.raises(gm.MappingConfigError, match="ANTHROPIC_API_KEY"):
+        gm.get_anthropic_client()
+
+
+def test_an_unknown_provider_is_a_config_error_before_any_call(monkeypatch):
+    monkeypatch.setattr(gm.config, "MAPPING_PROVIDER", "openai")
+    monkeypatch.setattr(gm, "get_gemini_client", _no_model)
+    monkeypatch.setattr(gm, "get_anthropic_client", _no_model)
+    frame, layout = _sheng_siong()
+
+    with pytest.raises(gm.MappingConfigError, match="MAPPING_PROVIDER"):
+        gm.generate_mapping_contract("claim.xlsx", frame, layout)
+
+
+# ---- The Vertex AI client --------------------------------------------------------------
+
+def test_missing_gcp_project_is_a_config_error(monkeypatch):
+    monkeypatch.setattr(gm, "_gemini_client", None)
+    monkeypatch.setattr(gm.config, "GCP_PROJECT_ID", None)
+
+    with pytest.raises(gm.MappingConfigError, match="GCP_PROJECT_ID"):
+        gm.get_gemini_client()
+
+
+def test_unusable_google_credentials_are_a_config_error(monkeypatch):
+    class NoCredentialsModels:
+        def generate_content(self, **kwargs):
+            raise gm.GoogleAuthError("no default credentials")
+
+    class NoCredentialsClient:
+        models = NoCredentialsModels()
+
+    monkeypatch.setattr(gm, "get_gemini_client", lambda: NoCredentialsClient())
+    frame, layout = _sheng_siong()
+
+    with pytest.raises(gm.MappingConfigError, match="Vertex AI"):
+        gm.generate_mapping_contract("claim.xlsx", frame, layout)
+
+
+# ---- Known layouts never call a model ---------------------------------------------------
+
+def _no_model():
+    raise AssertionError("this must not call a model")
+
+
+def _forbid_model_calls(monkeypatch):
+    """A known layout must not call either provider."""
+    monkeypatch.setattr(gm, "get_gemini_client", _no_model)
+    monkeypatch.setattr(gm, "get_anthropic_client", _no_model)
 
 
 def _bucket(monkeypatch, blobs):
@@ -272,7 +436,7 @@ def _bucket(monkeypatch, blobs):
 def test_next_months_file_resolves_to_the_confirmed_contract(monkeypatch):
     january = gm.read_header_columns("fp.txt", fairprice_txt())
     _bucket(monkeypatch, {gm.storage.confirmed_mapping_path(gm.fingerprint(january)): {"contract": {"version": 2}, "name": "FP"}})
-    monkeypatch.setattr(gm, "get_client", _no_claude)
+    _forbid_model_calls(monkeypatch)
 
     result = gm.resolve_mapping("fp.txt", fairprice_txt(["01-03-2026", "01-04-2026"]))
 
@@ -290,7 +454,7 @@ def test_a_contract_stored_under_the_old_fingerprint_is_still_found(monkeypatch)
             "raw_columns": columns,
         }
     })
-    monkeypatch.setattr(gm, "get_client", _no_claude)
+    _forbid_model_calls(monkeypatch)
 
     result = gm.resolve_mapping("fp.txt", fairprice_txt())
 
@@ -324,7 +488,7 @@ def test_a_new_layout_is_proposed_checked_and_parked_for_review(monkeypatch):
     assert envelope["layout"]["header_row"] == 7
     assert envelope["column_profile"]["2A"]["type"] == "number"
     assert envelope["checks"] and envelope["attempts"] == 1
-    assert envelope["model"] == gm.MODEL
+    assert (envelope["provider"], envelope["model"]) == ("gemini", gm.config.MAPPING_MODEL)
     assert [item["code"] for item in envelope["sku_codes"]] == ["1909284", "1909280"]
     assert envelope["contract"]["layout"]["header_row"] == 7
 

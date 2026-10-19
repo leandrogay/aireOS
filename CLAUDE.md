@@ -77,7 +77,7 @@ app/services/*.py   All business logic and every external call (SQL, BigQuery, G
 
 - External clients are process-wide singletons created lazily:
   `@lru_cache(maxsize=1)` on `get_bigquery_client()`, `get_storage_client()`, `_get_engine()`;
-  a guarded `global` in `generate_mapping.get_client()` and `sql.connect_with_connector()`.
+  a guarded `global` in `generate_mapping.get_gemini_client()`/`get_anthropic_client()` and `sql.connect_with_connector()`.
   Never construct a `bigquery.Client`, `storage.Client`, `Anthropic`, or SQLAlchemy `Engine`
   inside a request path.
 - Reads that are a single `SELECT` use `sql.connect_with_connector_autocommit()` via
@@ -88,7 +88,7 @@ app/services/*.py   All business logic and every external call (SQL, BigQuery, G
   first — do not mix styles inside one router file.
 - Read config from `os.environ` at call time, not module import time, unless it is a harmless
   default (`BQ_FORECAST_OUTPUT_VIEW`). A missing key should fail the one request that needs it
-  with a clear message, not crash app startup (`get_client()` in `generate_mapping.py` is the
+  with a clear message, not crash app startup (`get_anthropic_client()` in `generate_mapping.py` is the
   model).
 
 ### 2.4 Sync vs async route handlers

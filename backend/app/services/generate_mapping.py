@@ -4,9 +4,10 @@ Mapping contracts for uploaded files: find the confirmed one, or propose one.
 A file's layout is located first (layout_detection), its columns profiled over
 every row (column_profile), and its layout fingerprinted from header templates,
 so next month's file -- new dates in the headers, an extra outlet column --
-finds the contract confirmed for this month's without asking Claude again.
+finds the contract confirmed for this month's without asking the model again.
 
-Only a layout never seen before is sent to Claude. The proposal comes back as
+Only a layout never seen before is sent to the model -- Gemini on Vertex AI or
+Claude on the Anthropic API, per the MAPPING_PROVIDER flag. The proposal comes back as
 JSON constrained to a schema built from this file's own headers
 (mapping_prompt), is validated (mapping_contract), and is then checked against
 the file and the SKU master (mapping_checks) -- statically: nothing here runs
@@ -25,6 +26,10 @@ import anthropic
 import pandas as pd
 from anthropic import Anthropic
 from anthropic.types import MessageParam
+from google import genai
+from google.auth.exceptions import GoogleAuthError
+from google.genai import errors as genai_errors
+from google.genai import types
 
 from app import config
 from app.schemas.sellout import BUSINESS_COLUMNS
@@ -60,7 +65,12 @@ __all__ = [
     "validate_contract",
 ]
 
-MODEL = config.ANTHROPIC_MODEL
+# Which model proposes contracts is a flag (MAPPING_PROVIDER) so the two can be
+# compared on the same files; every pending proposal records which one made it.
+PROVIDERS = ("gemini", "anthropic")
+
+# Gemini's finish reasons for an answer it withheld; the mapping is declined.
+_REFUSAL_FINISH_REASONS = {"SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII", "RECITATION"}
 
 TARGET_SCHEMA = BUSINESS_COLUMNS
 
@@ -75,36 +85,70 @@ MAX_REPAIRS = 2
 PARTIAL_MATCH_THRESHOLD = 0.6
 
 class MappingConfigError(Exception):
-    """The Anthropic API key is missing or unusable."""
+    """The provider flag, or the chosen provider's credentials, are missing or unusable."""
 
 
 class MappingGenerationError(Exception):
-    """Claude returned something that couldn't be parsed into a contract."""
+    """The model returned something that couldn't be parsed into a contract."""
 
 
 class UnreadableSourceFileError(Exception):
     """The uploaded file's headers couldn't be read."""
 
 
-_client: Anthropic | None = None
+# ---- Model providers ------------------------------------------------------------
+
+def resolve_provider(provider: str | None = None) -> str:
+    """The provider to ask: the one given, else the MAPPING_PROVIDER flag."""
+    chosen = (provider or config.MAPPING_PROVIDER or "").strip().lower()
+    if chosen not in PROVIDERS:
+        raise MappingConfigError(
+            f"MAPPING_PROVIDER must be one of {', '.join(PROVIDERS)}, not {chosen!r}"
+        )
+    return chosen
 
 
-def get_client() -> Anthropic:
+def model_for(provider: str) -> str:
+    """The model id a provider is asked with."""
+    return config.ANTHROPIC_MODEL if provider == "anthropic" else config.MAPPING_MODEL
+
+
+_gemini_client: genai.Client | None = None
+_anthropic_client: Anthropic | None = None
+
+
+def get_gemini_client() -> genai.Client:
     """
-    Build the Anthropic client lazily.
+    Build the Gemini-on-Vertex-AI client lazily.
 
-    Reading the key at module scope turns a missing environment variable into a
-    failed app startup; this turns it into a clean error on the one request
-    that actually needs the key.
+    Reading the project at module scope turns a missing environment variable
+    into a failed app startup; this turns it into a clean error on the one
+    request that actually needs the model. Auth is Google Application Default
+    Credentials, the same service account as BigQuery and GCS.
     """
-    global _client
-    if _client is None:
+    global _gemini_client
+    if _gemini_client is None:
+        try:
+            project_id = config.require("GCP_PROJECT_ID")
+        except config.ConfigError as e:
+            raise MappingConfigError(str(e)) from e
+        _gemini_client = genai.Client(vertexai=True, project=project_id, location=config.MAPPING_VERTEX_LOCATION)
+    return _gemini_client
+
+
+def get_anthropic_client() -> Anthropic:
+    """
+    Build the Anthropic client lazily, for the same reason: a missing key
+    fails the one request that needs it, not app startup.
+    """
+    global _anthropic_client
+    if _anthropic_client is None:
         try:
             api_key = config.require("ANTHROPIC_API_KEY")
         except config.ConfigError as e:
             raise MappingConfigError(str(e)) from e
-        _client = Anthropic(api_key=api_key)
-    return _client
+        _anthropic_client = Anthropic(api_key=api_key)
+    return _anthropic_client
 
 
 # ---- Reading the uploaded bytes -------------------------------------------------
@@ -136,14 +180,26 @@ def layout_summary(layout: dict) -> dict:
     return {key: value for key, value in layout.items() if key != "frame"}
 
 
-# ---- Asking Claude for a contract -----------------------------------------------
+# ---- Asking the model for a contract --------------------------------------------
 
 
-def _ask(messages: list[MessageParam], schema: dict) -> str:
-    """One request; the JSON text of the answer."""
+def _ask(provider: str, messages: list[MessageParam], schema: dict) -> str:
+    """
+    One request to the chosen provider; the JSON text of the answer.
+
+    The conversation is kept in one shape (role user/assistant, text content)
+    and translated for Gemini, so the repair loop is the same for both.
+    """
+    if provider == "anthropic":
+        return _ask_anthropic(messages, schema)
+    return _ask_gemini(messages, schema)
+
+
+def _ask_anthropic(messages: list[MessageParam], schema: dict) -> str:
+    """One Claude request (Anthropic API, API key); the JSON text of the answer."""
     try:
-        response = get_client().messages.create(
-            model=MODEL,
+        response = get_anthropic_client().messages.create(
+            model=model_for("anthropic"),
             max_tokens=16000,
             system=mapping_prompt.SYSTEM_PROMPT,
             messages=messages,
@@ -159,6 +215,42 @@ def _ask(messages: list[MessageParam], schema: dict) -> str:
     text = next((block.text for block in response.content if block.type == "text"), None)
     if not text:
         raise MappingGenerationError("Claude returned no proposal.")
+    return text
+
+
+def _gemini_contents(messages: list[MessageParam]) -> list[dict]:
+    """The conversation in Gemini's shape: the assistant's role is "model"."""
+    return [
+        {"role": "model" if m["role"] == "assistant" else "user", "parts": [{"text": m["content"]}]}
+        for m in messages
+    ]
+
+
+def _ask_gemini(messages: list[MessageParam], schema: dict) -> str:
+    """One Gemini request (Vertex AI, Google credentials); the JSON text of the answer."""
+    request_config = types.GenerateContentConfig(
+        system_instruction=mapping_prompt.SYSTEM_PROMPT,
+        response_mime_type="application/json",
+        response_json_schema=schema,
+    )
+    try:
+        response = get_gemini_client().models.generate_content(
+            model=model_for("gemini"), contents=_gemini_contents(messages), config=request_config
+        )
+    except GoogleAuthError as e:
+        raise MappingConfigError(f"Google credentials for Vertex AI are unusable: {e}") from e
+    except genai_errors.APIError as e:
+        raise MappingGenerationError(f"The Gemini API call failed: {e}") from e
+
+    # A prompt blocked outright comes back with no candidates at all.
+    candidate = response.candidates[0] if response.candidates else None
+    if candidate is None or candidate.finish_reason in _REFUSAL_FINISH_REASONS:
+        raise MappingGenerationError("Gemini declined to propose a mapping for this file.")
+    if candidate.finish_reason == "MAX_TOKENS":
+        raise MappingGenerationError("Gemini's proposal was cut off before it was complete.")
+    text = response.text
+    if not text:
+        raise MappingGenerationError("Gemini returned no proposal.")
     return text
 
 
@@ -198,6 +290,7 @@ def generate_mapping_contract(
     layout: dict,
     exclude_examples: tuple[str, ...] = (),
     master_skus: list[dict] | None = None,
+    provider: str | None = None,
 ) -> dict:
     """
     Propose a contract for a new layout, check it against the file and the SKU
@@ -206,10 +299,13 @@ def generate_mapping_contract(
     The contract records where the data sits (its layout, from layout
     detection) beside the model's field decisions. Returns the validated
     contract (each field's confidence taken from the checks), the checks from
-    its last round, and how many attempts it took. A contract that still fails
-    is returned as it stands: the reviewer is shown the failing checks and
-    their evidence, and it cannot be approved until they pass.
+    its last round, how many attempts it took, and which provider and model
+    made it (the MAPPING_PROVIDER flag unless `provider` is given, as the eval
+    script does to compare them). A contract that still fails is returned as
+    it stands: the reviewer is shown the failing checks and their evidence,
+    and it cannot be approved until they pass.
     """
+    provider = resolve_provider(provider)
     if master_skus is None:
         master_skus = fetch_master_skus()
     columns = [str(column) for column in frame.columns]
@@ -234,11 +330,11 @@ def generate_mapping_contract(
     checks: list[dict] = []
     attempts = 0
     for attempts in range(1, MAX_REPAIRS + 2):
-        answer_text = _ask(messages, schema)
+        answer_text = _ask(provider, messages, schema)
         try:
             answer = json.loads(answer_text)
         except json.JSONDecodeError as e:
-            raise MappingGenerationError(f"Claude did not return valid JSON: {e}") from e
+            raise MappingGenerationError(f"The model did not return valid JSON: {e}") from e
 
         proposed = mapping_prompt.parse_proposal(answer)
         proposed["layout"] = layout_instructions(layout)
@@ -253,7 +349,13 @@ def generate_mapping_contract(
         ]
 
     contract = mapping_checks.field_confidence(contract, checks)
-    return {"contract": contract, "checks": checks, "attempts": attempts}
+    return {
+        "contract": contract,
+        "checks": checks,
+        "attempts": attempts,
+        "provider": provider,
+        "model": model_for(provider),
+    }
 
 
 # ---- Stored mappings -------------------------------------------------------------
@@ -342,12 +444,12 @@ def resolve_mapping(filename: str, data: bytes, uploaded_to: str | None = None) 
 
     Two outcomes, cheapest first:
 
-      - a confirmed contract exists for this layout: returned as-is, no Claude
+      - a confirmed contract exists for this layout: returned as-is, no model
         call
       - the layout is unrecognised: a contract is proposed and checked, parked under
         mappings/pending/, and returned for the user to review
 
-    This is a blocking function (network I/O to both Anthropic and GCS) -- the
+    This is a blocking function (network I/O to the model provider and GCS) -- the
     router runs it in a thread.
     """
     frame, layout = read_layout(filename, data)
@@ -388,7 +490,8 @@ def resolve_mapping(filename: str, data: bytes, uploaded_to: str | None = None) 
         "sku_codes": mapping_checks.sku_codes(frame, proposal["contract"]),
         "example_file": uploaded_to,
         "source_filename": filename,
-        "model": MODEL,
+        "provider": proposal["provider"],
+        "model": proposal["model"],
         "proposed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }
     storage.upload_json(storage.pending_mapping_path(fp), envelope)
@@ -407,8 +510,8 @@ def preview_mapping(filename: str, data: bytes) -> dict:
     Say which of resolve_mapping's outcomes a file would get, without causing it.
 
     The same lookups in the same order -- confirmed contract, then partial
-    match -- but where resolve_mapping would ask Claude and park a proposal,
-    this only reports "new_layout". No Claude call and no writes, so the upload
+    match -- but where resolve_mapping would ask the model and park a proposal,
+    this only reports "new_layout". No model call and no writes, so the upload
     screen can run it the moment a file is dropped. Raises
     UnreadableSourceFileError when the headers cannot be read, as
     resolve_mapping would.

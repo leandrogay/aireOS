@@ -1,7 +1,7 @@
 """
-Score Claude's mapping proposals against the reference contracts.
+Score the model's mapping proposals against the reference contracts.
 
-For each retailer sample file, asks Claude for a contract exactly as an upload
+For each retailer sample file, asks the model (Gemini on Vertex AI) for a contract exactly as an upload
 of a new layout would -- but with that retailer's own reference contract left
 out of the examples, so the answer cannot be copied -- and compares it field by
 field with the reference (app/services/reference_contracts.py):
@@ -14,14 +14,16 @@ field with the reference (app/services/reference_contracts.py):
   - the monthly roll-up instruction must match
 
 It also reports the checks the proposal failed and how many attempts it took.
-Rerun it whenever the prompt (mapping_prompt.py) or ANTHROPIC_MODEL changes.
-Not part of pytest: it calls the Anthropic API and costs money.
+Rerun it whenever the prompt (mapping_prompt.py) or a model changes.
+Not part of pytest: it calls Vertex AI and/or the Anthropic API and costs money.
 
-Run from backend/ with the venv active and ANTHROPIC_API_KEY set; the samples
+Run from backend/ with the venv active -- GCP_PROJECT_ID plus Google
+credentials for Gemini, ANTHROPIC_API_KEY for Claude; the samples
 live in tests/fixtures/retailer_samples/ (git-ignored):
 
     python scripts/eval_mapping.py
     python scripts/eval_mapping.py --only nhg_sap --show-diff
+    python scripts/eval_mapping.py --provider all     # Gemini vs Claude, same files
 """
 
 import argparse
@@ -65,13 +67,13 @@ def _decision(contract: dict, columns: dict[str, list[str]], target: str) -> dic
     return {"status": status}
 
 
-def evaluate(key: str, path: Path, show_diff: bool) -> dict:
+def evaluate(key: str, path: Path, show_diff: bool, provider: str) -> dict:
     data = path.read_bytes()
     frame, layout = layout_detection.read_table(path.name, data)
     raw_columns = list(frame.columns)
 
     proposal = generate_mapping.generate_mapping_contract(
-        path.name, frame, layout, exclude_examples=(key,)
+        path.name, frame, layout, exclude_examples=(key,), provider=provider
     )
     proposed = proposal["contract"]
     reference = reference_contracts.reference_contract(key)
@@ -103,23 +105,41 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--only", choices=sorted(PATTERNS), help="evaluate one retailer only")
     parser.add_argument("--show-diff", action="store_true", help="print every field that disagrees")
+    parser.add_argument(
+        "--provider",
+        choices=[*generate_mapping.PROVIDERS, "all"],
+        help="which model to score (default: the MAPPING_PROVIDER flag); 'all' scores each in turn to compare them",
+    )
     args = parser.parse_args()
 
-    print(f"model: {generate_mapping.MODEL}")
-    results = []
-    for key, pattern in PATTERNS.items():
-        if args.only and key != args.only:
-            continue
-        matches = sorted(SAMPLES.glob(pattern))
-        if not matches:
-            print(f"{key:<20} skipped: no file matching {pattern} in {SAMPLES}")
-            continue
-        results.append(evaluate(key, matches[0], args.show_diff))
+    if args.provider == "all":
+        providers = list(generate_mapping.PROVIDERS)
+    else:
+        providers = [generate_mapping.resolve_provider(args.provider)]
 
-    if results:
-        agreed = sum(r["agreed"] for r in results)
-        total = sum(r["total"] for r in results)
-        print(f"\noverall: {agreed}/{total} fields agree ({agreed / total:.0%})")
+    summary = []
+    for provider in providers:
+        print(f"\nprovider: {provider}   model: {generate_mapping.model_for(provider)}")
+        results = []
+        for key, pattern in PATTERNS.items():
+            if args.only and key != args.only:
+                continue
+            matches = sorted(SAMPLES.glob(pattern))
+            if not matches:
+                print(f"{key:<20} skipped: no file matching {pattern} in {SAMPLES}")
+                continue
+            results.append(evaluate(key, matches[0], args.show_diff, provider))
+
+        if results:
+            agreed = sum(r["agreed"] for r in results)
+            total = sum(r["total"] for r in results)
+            print(f"overall: {agreed}/{total} fields agree ({agreed / total:.0%})")
+            summary.append((provider, agreed, total))
+
+    if len(summary) > 1:
+        print("\ncomparison:")
+        for provider, agreed, total in summary:
+            print(f"  {provider:<10} {generate_mapping.model_for(provider):<24} {agreed}/{total} ({agreed / total:.0%})")
     return 0
 
 

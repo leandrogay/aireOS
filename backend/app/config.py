@@ -137,8 +137,19 @@ def cloud_sql_loading_enabled() -> bool:
         "on",
     }
 
-# ---- Anthropic --------------------------------------------------------------
+# ---- Mapping model ----------------------------------------------------------
 
+# Which model proposes mapping contracts: "gemini" or "anthropic". A flag so
+# the two can be compared on the same files.
+MAPPING_PROVIDER = os.environ.get("MAPPING_PROVIDER", "gemini")
+
+# Gemini through Vertex AI in GCP_PROJECT_ID, signed in with the same Google
+# credentials as BigQuery/GCS -- no API key. Newer Gemini models are served
+# from the global endpoint, not every single region.
+MAPPING_VERTEX_LOCATION = os.environ.get("MAPPING_VERTEX_LOCATION", "global")
+MAPPING_MODEL = os.environ.get("MAPPING_MODEL", "gemini-3.8-flash")
+
+# Claude through the Anthropic API, with an API key.
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 

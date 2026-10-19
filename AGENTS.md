@@ -83,8 +83,8 @@ aireOS/
 │   ├── tests/                     pytest; fakes for BigQuery/GCS clients; no network
 │   ├── pytest.ini                 pythonpath=. testpaths=tests
 │   ├── requirements.txt           fastapi, uvicorn, pandas, openpyxl, sqlalchemy, cloud-sql-python-connector[pg8000],
-│   │                              google-cloud-bigquery, google-cloud-storage, anthropic, python-dotenv, python-multipart
-│   ├── .env.backend               (gitignored) GCP + Cloud SQL + Anthropic config — see §4
+│   │                              google-cloud-bigquery, google-cloud-storage, google-genai, anthropic, python-dotenv, python-multipart
+│   ├── .env.backend               (gitignored) GCP + Cloud SQL + Vertex AI model config — see §4
 │   └── gcp-key.json               (gitignored) service-account key
 │
 └── frontend/aireos/               Next.js 16.3 App Router, React 19.2, JavaScript — run: npm run dev (:3000)
@@ -187,7 +187,7 @@ No test runner is installed on the frontend; linting (`npm run lint`) is the fro
 | Settings (DOH) | `settings/doh.py` | `settings/doh`, `settings/common` | **Cloud SQL Postgres**: `doh_settings` (append-only: a change is an INSERT only when min/target/max differ from the newest row; newest by `updated_at DESC, setting_id DESC`; never UPDATE/DELETE), view `current_settings` (one row per customer), `customers.doh_alert_enabled` / `doh_alert_updated_at` (in-place toggle, no version). Also read by the inventory DOH calculations (`fetch_versions`, `thresholds_on`, `current_thresholds`) | `app/doh`, `services/settingsApi.js` |
 | Promotions | `promotions.py` | `promotion_service` (+ `catalog_service` seams) | **Cloud SQL Postgres**: `promotions`, `promotion_stores`, `promotion_skus`; enum `promo_type_enum`; trigger `trg_promotions_updated_at` | `app/promotions`, `services/promotionsApi.js` |
 | Forecast (P&L) | `forecast.py` (`/api/forecast`, read-only; writes are out of band via `scripts/refresh_forecast.py`) | `pl_forecast` (pure), `forecast_service`, `catalog_service` (product prices) | **BigQuery** (`Aire_Data_Analytics`, read-only): model learns from `v_sales_enriched` (weekly), page Actual line reads `v_customer_monthly_sales`; refresh MERGEs into `BQ_FORECAST_TABLE`. **Cloud SQL Postgres**: `skus.price` prices sell-out revenue | `app/forecast` |
-| AI mapping | (inside uploads) | `generate_mapping` | **Anthropic API** (`ANTHROPIC_MODEL`, default `claude-sonnet-4-6`) | — |
+| AI mapping | (inside uploads) | `generate_mapping` | Flag `MAPPING_PROVIDER` (`gemini` default / `anthropic`): **Gemini on Vertex AI** (`google-genai`, `GCP_PROJECT_ID` + Google credentials; `MAPPING_MODEL` default `gemini-3.8-flash`, `MAPPING_VERTEX_LOCATION` default `global`) or **Anthropic API** (`ANTHROPIC_API_KEY`; `ANTHROPIC_MODEL` default `claude-sonnet-4-6`). Pending proposals record `provider` + `model`; `scripts/eval_mapping.py --provider all` compares them | — |
 
 Invariants that cross domains:
 - Mapping never writes to BigQuery. Ingestion into BigQuery is out of band.
@@ -331,7 +331,8 @@ Quirks:
 
 Backend variables: `GOOGLE_APPLICATION_CREDENTIALS`, `SERVICE_ACCOUNT_KEY_PATH`, `GCP_PROJECT_ID`,
 `GCS_BUCKET_NAME`, `GCS_DESTINATION_PREFIX`, `GCS_DESTINATION_PREFIX_MAPPING`,
-`BQ_FAIRPRICESELLOUT_TABLE` (legacy, unused), `BQ_FORECAST_OUTPUT_VIEW`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`,
+`BQ_FAIRPRICESELLOUT_TABLE` (legacy, unused), `BQ_FORECAST_OUTPUT_VIEW`, `MAPPING_PROVIDER`, `MAPPING_MODEL`,
+`MAPPING_VERTEX_LOCATION`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`,
 `POSTGRESQL_INSTANCE_CONNECTION_NAME`, `DB_IAM_USER`, `DB_NAME`. (`BQ_SELLOUT_TABLE` was removed --
 the Sales Dashboard and Inventory read the Cloud SQL `sellout` table directly now, not a BigQuery replica.)
 
@@ -371,7 +372,7 @@ half first (it defines the contract), then the frontend half, then update §3.4 
   claim/contra/price columns, and "not available" over a forced mapping.
 - Claude-generated contracts are JSON in GCS and always re-validated (`validate_contract`) and re-checked
   (`mapping_checks`) before being trusted. Confidence comes from the checks, not the model.
-- Known layouts (template fingerprint) must never call the Anthropic API. Keep that ordering in `resolve_mapping`.
+- Known layouts (template fingerprint) must never call the model. Keep that ordering in `resolve_mapping`.
 - Golden tests run the real sample files in `tests/fixtures/retailer_samples/` (git-ignored; skipped when absent);
   CI covers the same traits with the synthetic files in `conftest.py`. `scripts/eval_mapping.py` scores proposals
   against `reference_contracts` -- rerun it when the prompt or model changes.
