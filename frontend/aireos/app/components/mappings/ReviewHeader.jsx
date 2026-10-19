@@ -71,8 +71,8 @@ export default function ReviewHeader({ mapping, changed, canDiscard, busy, disca
         {isConfirmed ? 'In use for every file with these columns.' : 'Check each step, then approve.'}
         <InfoTooltip label="About this mapping">
           {isConfirmed
-            ? 'Every file with these columns is read this way. Saving a new version processes the files already uploaded with this layout again.'
-            : 'Once approved, files with the same columns are read this way without another review. The What’s left list tracks what still needs you.'}
+            ? 'Saving creates a new version. Files already uploaded with these columns are imported again using it.'
+            : 'Approving saves this mapping. Files with the same columns are then imported automatically, with no review. Any waiting uploads are imported now.'}
         </InfoTooltip>
       </p>
 
