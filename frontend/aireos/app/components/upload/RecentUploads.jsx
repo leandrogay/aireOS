@@ -95,7 +95,7 @@ export default function RecentUploads({ uploads, isLoading, error, onRefresh, mo
 
       {!error && !showTable && (
         <p className="px-4 pb-4 text-sm text-deep-violet-blue/80">
-          Nothing has been uploaded in the {windowLabel}.
+          Nothing has been uploaded.
         </p>
       )}
 
