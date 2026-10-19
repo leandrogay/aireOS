@@ -1,9 +1,10 @@
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app import config  # noqa: F401
 
 from app.middleware import UnhandledErrorMiddleware
-from app.routers import sales, uploads, mappings, promotions, catalog, assistant, forecast, inventory, settings
+from app.auth import require_user
+from app.routers import auth, sales, uploads, mappings, promotions, catalog, assistant, forecast, inventory, settings
 
 app = FastAPI()
 
@@ -15,22 +16,25 @@ app.add_middleware(UnhandledErrorMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
-    # allow_origins=origins,
-    allow_origin_regex=".*",   # dev only
+    allow_origins=[config.AUTH_FRONTEND_URL.rstrip("/")] if config.auth_enabled() else [],
+    allow_origin_regex=None if config.auth_enabled() else ".*",  # dev only
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"]
 )
 
-app.include_router(uploads.router)
-app.include_router(mappings.router)
-app.include_router(sales.router)
-app.include_router(catalog.router)
-app.include_router(promotions.router)
-app.include_router(assistant.router)
-app.include_router(forecast.router)
-app.include_router(inventory.router)
-app.include_router(settings.router)
+protected = [Depends(require_user)]
+
+app.include_router(auth.router)
+app.include_router(uploads.router, dependencies=protected)
+app.include_router(mappings.router, dependencies=protected)
+app.include_router(sales.router, dependencies=protected)
+app.include_router(catalog.router, dependencies=protected)
+app.include_router(promotions.router, dependencies=protected)
+app.include_router(assistant.router, dependencies=protected)
+app.include_router(forecast.router, dependencies=protected)
+app.include_router(inventory.router, dependencies=protected)
+app.include_router(settings.router, dependencies=protected)
 
 
 @app.get("/")

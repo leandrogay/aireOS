@@ -205,7 +205,12 @@ async function postFile(path, file) {
 
   let response;
   try {
-    response = await fetch(`${baseUrl}${path}`, { method: 'POST', cache: 'no-store', body });
+    response = await fetch(`${baseUrl}${path}`, {
+      method: 'POST',
+      cache: 'no-store',
+      credentials: 'include',
+      body,
+    });
   } catch {
     throw new Error('Unable to reach the backend API. Check NEXT_PUBLIC_API_URL and that the backend is running.');
   }

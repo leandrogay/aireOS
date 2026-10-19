@@ -46,7 +46,8 @@ export default function DashboardFilters({
       try {
         const params = new URLSearchParams({ customer });
         const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/api/sales/sku-options?${params.toString()}`
+          `${process.env.NEXT_PUBLIC_API_URL}/api/sales/sku-options?${params.toString()}`,
+          { credentials: 'include' },
         );
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Failed to load SKU options');
@@ -71,7 +72,8 @@ export default function DashboardFilters({
       try {
         const params = new URLSearchParams({ customer });
         const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/api/sales/store-options?${params.toString()}`
+          `${process.env.NEXT_PUBLIC_API_URL}/api/sales/store-options?${params.toString()}`,
+          { credentials: 'include' },
         );
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Failed to load store options');

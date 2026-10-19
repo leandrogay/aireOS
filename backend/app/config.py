@@ -142,6 +142,35 @@ def cloud_sql_loading_enabled() -> bool:
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 
+# ---- Authentication ---------------------------------------------------------
+
+AUTH_ENABLED = os.environ.get("AUTH_ENABLED", "false")
+AUTH_SESSION_SECRET = os.environ.get("AUTH_SESSION_SECRET")
+AUTH_ALLOWED_DOMAIN = os.environ.get("AUTH_ALLOWED_DOMAIN", "shop-aire.com")
+AUTH_FRONTEND_URL = os.environ.get("AUTH_FRONTEND_URL", "http://localhost:3000")
+AUTH_COOKIE_SECURE = os.environ.get("AUTH_COOKIE_SECURE", "false")
+AUTH_COOKIE_DOMAIN = os.environ.get("AUTH_COOKIE_DOMAIN")
+GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID")
+GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET")
+GOOGLE_OAUTH_REDIRECT_URI = os.environ.get(
+    "GOOGLE_OAUTH_REDIRECT_URI",
+    "http://localhost:8000/api/auth/callback",
+)
+
+
+def _enabled(value: str | None) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def auth_enabled() -> bool:
+    """Return whether routes require a signed-in Workspace user."""
+    return _enabled(AUTH_ENABLED)
+
+
+def auth_cookie_secure() -> bool:
+    """Return whether authentication cookies require HTTPS."""
+    return _enabled(AUTH_COOKIE_SECURE)
+
 
 # ---- Access helpers ---------------------------------------------------------
 

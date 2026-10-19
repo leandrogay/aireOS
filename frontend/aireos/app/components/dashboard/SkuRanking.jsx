@@ -80,7 +80,8 @@ export default function SkuRanking({
         if (rangeStart) params.set('start_date', rangeStart);
         if (rangeEnd) params.set('end_date', rangeEnd);
         const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/api/sales/skus?${params.toString()}`
+          `${process.env.NEXT_PUBLIC_API_URL}/api/sales/skus?${params.toString()}`,
+          { credentials: 'include' },
         );
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Failed to load SKU ranking');
