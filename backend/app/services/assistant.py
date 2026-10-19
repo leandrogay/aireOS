@@ -16,15 +16,12 @@ figures into its own JSON.
 """
 
 import io
-import os
 import re
 import json
 import copy
 import base64
 import datetime
-from pathlib import Path
 
-from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from google.genai import errors as genai_errors
@@ -50,16 +47,15 @@ from openpyxl import Workbook
 from openpyxl.chart import BarChart as XlsxBarChart, Reference
 from openpyxl.styles import Font as XlsxFont, Alignment as XlsxAlignment
 
+from app import config
 from app.config import ConfigError
+from app.schemas.catalog import normalise_name
 from app.services import inventory_service, promotion_service, sellout_service
 
-ENV_PATH = Path(__file__).resolve().parents[2] / ".env.backend"
-load_dotenv(ENV_PATH)
+GCP_PROJECT_ID = config.GCP_PROJECT_ID
+GCP_VERTEX_LOCATION = config.GCP_VERTEX_LOCATION
 
-GCP_PROJECT_ID = os.environ.get("GCP_PROJECT_ID")
-GCP_VERTEX_LOCATION = os.environ.get("GCP_VERTEX_LOCATION", "us-central1")
-
-MODEL = os.environ.get("GEMINI_ASSISTANT_MODEL", "gemini-2.5-flash")
+MODEL = config.GEMINI_ASSISTANT_MODEL
 
 MAX_TOOL_ITERATIONS = 8
 
@@ -381,11 +377,22 @@ _INVENTORY_TOOLS = {
 }
 
 
+def _customer_slug(name: str) -> str:
+    """'Sheng Shiong' -> 'sheng_shiong', the form customers are stored in. The
+    model writes names the way people do, so every customer name it passes goes
+    through the same rule the catalog uses."""
+
+    try:
+        return normalise_name(name)
+    except ValueError:
+        return name.strip().lower()
+
+
 def _resolve_inventory_customer_id(customer_name: str) -> int:
     customers = inventory_service.list_customers()
     if not customers:
         raise ValueError("No customers are set up in inventory yet.")
-    needle = customer_name.lower()
+    needle = _customer_slug(customer_name)
     matches = [c for c in customers if needle in c["customer_name"].lower()]
     known = ", ".join(c["customer_name"] for c in customers)
     if not matches:
@@ -466,7 +473,7 @@ def _run_business_tool(name: str, tool_input: dict, default_customer: str):
     kept separately so the chart-building step can't accidentally diverge
     from what the model actually saw.
     """
-    customer = tool_input.get("customer") or default_customer
+    customer = _customer_slug(tool_input.get("customer") or default_customer)
     try:
         if name == "get_sales_summary":
             summary_args = {
@@ -561,7 +568,7 @@ def _run_business_tool(name: str, tool_input: dict, default_customer: str):
 def _promotion_matches_customer(promo: dict, customer: str | None) -> bool:
     if not customer:
         return True
-    needle = customer.lower()
+    needle = _customer_slug(customer)
     return any(needle in (store.get("retailer") or "").lower() for store in (promo.get("stores") or []))
 
 
@@ -2211,6 +2218,14 @@ def _text_only_history(history: list | None) -> list:
     return cleaned
 
 
+_UNSETTLED_ANSWER = {
+    "answer": "I couldn't find an answer to that.",
+    "grounded": False,
+    "data_source": "none",
+    "follow_up_prompts": [],
+}
+
+
 def _serialize_contents(contents: list) -> list[dict]:
     """types.Content objects (produced during this turn) -> plain dicts, so
     the response is JSON-serializable and the caller can replay it verbatim
@@ -2383,7 +2398,27 @@ def _run_tool_loop(client, contents: list, config, customer: str, chart_sources:
                 )
             )
         contents.append(types.Content(role="user", parts=response_parts))
-    raise AssistantLoopError(f"No final answer after {MAX_TOOL_ITERATIONS} tool iterations")
+
+    # Still asking for tools after MAX_TOOL_ITERATIONS rounds. Rather than fail
+    # the whole question, give the model one last turn in which it may not call
+    # a tool, so it answers from what it has already gathered.
+    no_more_tools = config.model_copy(
+        update={"tool_config": types.ToolConfig(function_calling_config=types.FunctionCallingConfig(mode="NONE"))}
+    )
+    response = client.models.generate_content(model=MODEL, contents=contents, config=no_more_tools)
+    candidate = response.candidates[0]
+    if candidate.finish_reason in _REFUSAL_FINISH_REASONS:
+        contents.append(candidate.content)
+        return response, True
+    try:
+        has_answer = bool(json.loads(response.text).get("answer", "").strip())
+    except (json.JSONDecodeError, TypeError, AttributeError):
+        has_answer = False
+    if response.function_calls or not has_answer:
+        # Not added to `contents`: a dangling tool call would break the next request.
+        raise AssistantLoopError(f"No final answer after {MAX_TOOL_ITERATIONS} tool iterations")
+    contents.append(candidate.content)
+    return response, False
 
 
 def ask(
@@ -2426,10 +2461,15 @@ def ask(
         response_json_schema=FINAL_ANSWER_SCHEMA,
     )
 
-    response, refused = _run_tool_loop(client, contents, config, customer, chart_sources, tools_called)
+    try:
+        response, refused = _run_tool_loop(client, contents, config, customer, chart_sources, tools_called)
+    except AssistantLoopError:
+        # The internal tools never led to an answer: treat it like any other
+        # question they couldn't answer, which falls through to the web search.
+        response, refused = None, False
     if refused:
         return {**_REFUSAL_ANSWER, **_empty_chart(), "messages": _serialize_contents(contents)}
-    parsed = json.loads(response.text)
+    parsed = json.loads(response.text) if response is not None else dict(_UNSETTLED_ANSWER)
 
     # Figures quoted without a single tool call this turn came from memory (an
     # earlier answer), so nothing fresh backs them. One re-fetch, then whatever
@@ -2483,10 +2523,10 @@ def ask(
     # the chart already on screen is carried over only when the model says
     # this message is about that chart (a restyle, "why is that") -- never
     # just because this turn happened to fetch nothing.
-    if parsed.get("data_source") in ("none", "market_data"):
-        chart = _empty_chart()
-    elif parsed.get("uses_previous_chart"):
+    if parsed.get("uses_previous_chart"):
         chart = _resolve_last_chart(chart, last_chart)
+    elif parsed.get("data_source") in ("none", "market_data"):
+        chart = _empty_chart()
 
     parsed = _verify_and_maybe_correct(client, contents, config, parsed, chart, chart_sources)
     if _unsupported_headline(parsed, chart, chart_sources) is not None:

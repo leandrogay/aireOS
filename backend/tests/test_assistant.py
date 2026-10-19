@@ -1315,14 +1315,49 @@ def test_refusal_returns_safe_fallback_instead_of_parsing_content(monkeypatch):
     assert result["has_chart"] is False
 
 
-def test_loop_raises_after_max_iterations_of_tool_use(monkeypatch):
+def test_a_loop_that_never_settles_falls_back_to_the_web_search(monkeypatch):
     tool_call = _tool_call_response(("tu_1", "list_customers", {}))
     monkeypatch.setattr(sellout_service, "get_customer_options", lambda: [])
-    responses = [tool_call] * (assistant.MAX_TOOL_ITERATIONS + 1)
+    responses = [tool_call] * (assistant.MAX_TOOL_ITERATIONS + 1) + [
+        _search_answer("Competitor news."),
+        _final_answer(grounded=True, data_source="market_data", text="A competitor launched a product."),
+    ]
+    fake_client = _install_fake_client(monkeypatch, responses)
+
+    result = assistant.ask("competitor news?", history=None, customer="fairprice")
+
+    assert result["answer"] == "A competitor launched a product."
+    assert result["data_source"] == "market_data"
+    # the dangling tool call from the failed last turn is not replayed to the search request
+    search_contents = fake_client.models.calls[-2]["contents"]
+    assert _dump(search_contents[-2])["parts"][0].get("function_response") is not None
+
+
+def test_a_loop_that_never_settles_and_a_search_that_finds_nothing_gives_a_plain_answer(monkeypatch):
+    tool_call = _tool_call_response(("tu_1", "list_customers", {}))
+    monkeypatch.setattr(sellout_service, "get_customer_options", lambda: [])
+    empty_search = FakeResponse(text=None, content={"role": "model", "parts": []})
+    responses = [tool_call] * (assistant.MAX_TOOL_ITERATIONS + 1) + [empty_search]
     _install_fake_client(monkeypatch, responses)
 
-    with pytest.raises(assistant.AssistantLoopError):
-        assistant.ask("infinite loop question", history=None, customer="fairprice")
+    result = assistant.ask("something unanswerable", history=None, customer="fairprice")
+
+    assert result["answer"] == "I couldn't find an answer to that."
+    assert result["has_chart"] is False and result["has_table"] is False
+
+
+def test_after_max_iterations_the_model_gets_one_last_turn_without_tools(monkeypatch):
+    tool_call = _tool_call_response(("tu_1", "list_customers", {}))
+    monkeypatch.setattr(sellout_service, "get_customer_options", lambda: [])
+    responses = [tool_call] * assistant.MAX_TOOL_ITERATIONS + [_final_answer(text="Here is what I found.", data_source="none")]
+    fake_client = _install_fake_client(monkeypatch, responses)
+
+    result = assistant.ask("a question the model keeps researching", history=None, customer="fairprice")
+
+    assert result["answer"] == "Here is what I found."
+    last_config = fake_client.models.calls[-1]["config"]
+    assert last_config.tool_config.function_calling_config.mode == "NONE"
+    assert len(fake_client.models.calls) == assistant.MAX_TOOL_ITERATIONS + 1
 
 
 # ---- get_client() config error ----------------------------------------------
@@ -2444,12 +2479,12 @@ def test_report_date_is_the_singapore_day(monkeypatch):
 
 _INVENTORY_CUSTOMERS = [
     {"customer_id": 1, "customer_name": "fairprice"},
-    {"customer_id": 2, "customer_name": "sheng shiong"},
+    {"customer_id": 2, "customer_name": "sheng_shiong"},
 ]
 
 
 def _customer_view(customer_id, doh, month="2026-07-01", product="Adult Pants L"):
-    name = {1: "fairprice", 2: "sheng shiong"}[customer_id]
+    name = {1: "fairprice", 2: "sheng_shiong"}[customer_id]
     return {
         "customer": {"customer_id": customer_id, "customer_name": name},
         "threshold": {"target_doh": 30.0, "min_doh": 25.0, "max_doh": 35.0, "is_global_default": True},
@@ -2559,7 +2594,7 @@ def test_two_customer_inventory_calls_show_both_customers_rows(monkeypatch):
     result = assistant.ask("compare DOH", history=None, customer="fairprice")
 
     assert result["table_columns"][0] == "customer"
-    assert [row[0] for row in result["table_rows"]] == ["fairprice", "sheng shiong"]
+    assert [row[0] for row in result["table_rows"]] == ["fairprice", "sheng_shiong"]
     assert [row[4] for row in result["table_rows"]] == ["39.8", "22.5"]
 
 
@@ -2883,3 +2918,41 @@ def test_a_new_question_exports_its_own_answer(monkeypatch):
     result = assistant.ask("hi", history=None, customer="fairprice", last_answer=_ORIGINAL_ANSWER)
 
     assert result["export_answer"] == "Hello!"
+
+
+# ---- customer names the way people write them, and restyles labelled "none" ---
+
+def test_a_customer_written_with_spaces_and_capitals_resolves_to_its_stored_name(monkeypatch):
+    monkeypatch.setattr(
+        inventory_service, "list_customers",
+        lambda: [{"customer_id": 1, "customer_name": "fairprice"}, {"customer_id": 9, "customer_name": "sheng_shiong"}],
+    )
+
+    assert assistant._resolve_inventory_customer_id("Sheng Shiong") == 9
+    assert assistant._resolve_inventory_customer_id("sheng-shiong") == 9
+    assert assistant._resolve_inventory_customer_id("sheng_shiong") == 9
+
+
+def test_a_sales_tool_receives_the_customer_as_a_slug(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: seen.update(kwargs) or {})
+
+    assistant._run_business_tool("get_sales_summary", {"customer": "Sheng Shiong"}, "fairprice")
+
+    assert seen["customer"] == "sheng_shiong"
+
+
+def test_a_restyle_keeps_the_chart_even_when_the_model_labels_it_data_source_none(monkeypatch):
+    red = {**assistant._DEFAULT_CHART_STYLE, "color": "#DC2626"}
+    _install_fake_client(
+        monkeypatch,
+        [_final_answer(text="Updated the colour.", data_source="none", uses_previous_chart=True, chart_style=red)],
+    )
+
+    result = assistant.ask(
+        "make it red", history=None, customer="fairprice",
+        last_chart=_REVENUE_CHART, last_answer=_ORIGINAL_ANSWER,
+    )
+
+    assert result["chart_series"] == _REVENUE_CHART["chart_series"]
+    assert result["export_answer"] == _ORIGINAL_ANSWER
