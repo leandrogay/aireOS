@@ -1,7 +1,9 @@
+from decimal import Decimal
+
 import pytest
 from conftest import FakeConnection, FakeEngine
 
-from app.schemas.catalog import RetailerCreate, RetailerUpdate
+from app.schemas.catalog import RetailerCreate, RetailerUpdate, SkuCreate, SkuUpdate
 from app.services import catalog_service
 from app.services.settings.common import CustomerNotFoundError
 
@@ -113,6 +115,146 @@ def test_returns_a_price_per_product_name(monkeypatch):
     assert prices == {"Widget": 14.0, "Gadget": 9.5}
     sql, _ = engine.conn.calls[0]
     assert "price IS NOT NULL" in sql
+
+
+# ---- SKU management ---------------------------------------------------------
+
+
+SKU_ROW = {
+    "sku": "NEW-001",
+    "sku_range": "Adult Pants",
+    "product_name": "Aire Adult Pants M",
+    "size": "M",
+    "brand": "AIRE",
+    "uom": "EA",
+    "pack_size": 8,
+    "price": Decimal("12.50"),
+}
+
+
+def _sku_create():
+    return SkuCreate(**SKU_ROW)
+
+
+def _install_fake_write_engine(monkeypatch, respond):
+    engine = FakeEngine(FakeConnection(respond))
+    monkeypatch.setattr(catalog_service, "_get_engine", lambda: engine)
+    return engine
+
+
+def test_create_sku_rejects_a_code_that_already_exists(monkeypatch):
+    _install_fake_write_engine(
+        monkeypatch,
+        lambda sql, params: [(True,)] if "SELECT EXISTS" in sql else [],
+    )
+
+    with pytest.raises(catalog_service.SkuAlreadyExistsError):
+        catalog_service.create_sku(_sku_create())
+
+
+def test_create_sku_and_history_share_one_transaction(monkeypatch):
+    def respond(sql, params):
+        if "SELECT EXISTS" in sql:
+            return [(False,)]
+        if "INSERT INTO skus" in sql:
+            return [SKU_ROW]
+        return []
+
+    engine = _install_fake_write_engine(monkeypatch, respond)
+
+    created = catalog_service.create_sku(_sku_create())
+
+    assert created == SKU_ROW
+    assert len(engine.conn.sql_containing("INSERT INTO sku_history")) == 1
+    _, history_params = engine.conn.sql_containing("INSERT INTO sku_history")[0]
+    assert history_params["action"] == "created"
+    assert history_params["sku"] == "NEW-001"
+
+
+def test_search_and_filters_are_bound_parameters(monkeypatch):
+    engine = _install_fake_read_engine(monkeypatch, lambda sql, params: [SKU_ROW])
+
+    rows = catalog_service.list_skus(
+        search="pants",
+        sku_range="Adult Pants",
+        brand="AIRE",
+        min_price=Decimal("10"),
+        max_price=Decimal("20"),
+    )
+
+    assert rows == [SKU_ROW]
+    sql, params = engine.conn.calls[0]
+    assert "ILIKE :search" in sql
+    assert params == {
+        "search": "%pants%",
+        "sku_range": "Adult Pants",
+        "brand": "AIRE",
+        "min_price": Decimal("10"),
+        "max_price": Decimal("20"),
+    }
+
+
+def test_missing_sku_filters_do_not_bind_untyped_nulls(monkeypatch):
+    engine = _install_fake_read_engine(monkeypatch, lambda sql, params: [SKU_ROW])
+
+    rows = catalog_service.list_skus()
+
+    assert rows == [SKU_ROW]
+    sql, params = engine.conn.calls[0]
+    assert ":search IS NULL" not in sql
+    assert params == {}
+
+
+def test_update_sku_does_not_change_the_sku_code(monkeypatch):
+    updated = {**SKU_ROW, "price": Decimal("13.00")}
+
+    def respond(sql, params):
+        if "UPDATE skus" in sql:
+            return [updated]
+        return []
+
+    engine = _install_fake_write_engine(monkeypatch, respond)
+    payload = SkuUpdate(**{key: value for key, value in updated.items() if key != "sku"})
+
+    result = catalog_service.update_sku("NEW-001", payload)
+
+    assert result == updated
+    update_sql, update_params = engine.conn.sql_containing("UPDATE skus")[0]
+    assert "SET sku =" not in update_sql
+    assert update_params["sku"] == "NEW-001"
+    assert engine.conn.sql_containing("INSERT INTO sku_history")[0][1]["action"] == "updated"
+
+
+def test_archive_sku_is_blocked_when_promotions_reference_it(monkeypatch):
+    def respond(sql, params):
+        if "FROM skus" in sql:
+            return [SKU_ROW]
+        if "FROM promotion_skus" in sql:
+            return [(True,)]
+        return []
+
+    _install_fake_write_engine(monkeypatch, respond)
+
+    with pytest.raises(catalog_service.SkuHasPromotionsError):
+        catalog_service.archive_sku("NEW-001")
+
+
+def test_archive_sku_copies_snapshot_and_marks_master_inactive(monkeypatch):
+    def respond(sql, params):
+        if "FROM skus" in sql:
+            return [SKU_ROW]
+        if "FROM promotion_skus" in sql:
+            return [(False,)]
+        return []
+
+    engine = _install_fake_write_engine(monkeypatch, respond)
+
+    archived = catalog_service.archive_sku("NEW-001")
+
+    assert archived == SKU_ROW
+    assert len(engine.conn.sql_containing("INSERT INTO old_skus")) == 1
+    assert len(engine.conn.sql_containing("SET is_active = FALSE")) == 1
+    assert engine.conn.sql_containing("INSERT INTO sku_history")[0][1]["action"] == "archived"
 
 
 # ---- retailers under a customer (Customers page) --------------------------------
