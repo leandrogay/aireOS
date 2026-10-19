@@ -95,7 +95,7 @@ Maximum staleness: 15 minutes
 ```
 
 The replicated objects are `sellout`, `customers`, `customer_retailers`,
-`customer_doh_targets`, `inventory_metric_types`, `inventory_metrics`,
+`doh_settings`, `inventory_metric_types`, `inventory_metrics`,
 `promotions`, `promotion_skus`, `promotion_stores`, `retailers`, `stores`, and
 `skus`. Datastream backfills existing facts and replicates subsequent inserts,
 updates, and deletes. See the repository's
