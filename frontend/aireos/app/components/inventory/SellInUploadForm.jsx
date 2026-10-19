@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { applySellInUpload, previewSellInUpload } from '@/app/services/inventoryApi';
@@ -36,14 +36,19 @@ export default function SellInUploadForm({ onSaved }) {
   const [previewing, setPreviewing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  // Bumped on every file change so a Preview response for a since-replaced file is dropped
+  // instead of overwriting the preview for the file now selected.
+  const selectionRef = useRef(0);
 
   function chooseFile(next) {
+    selectionRef.current += 1;
     setFile(next);
     setPreview(null);
     setError('');
   }
 
   function handleCancel() {
+    selectionRef.current += 1;
     setFile(null);
     setFileKey((key) => key + 1);
     setPreview(null);
@@ -51,15 +56,17 @@ export default function SellInUploadForm({ onSaved }) {
   }
 
   async function handlePreview() {
+    const selection = selectionRef.current;
     setPreviewing(true);
     setError('');
     setPreview(null);
     try {
-      setPreview(await previewSellInUpload(file));
+      const result = await previewSellInUpload(file);
+      if (selection === selectionRef.current) setPreview(result);
     } catch (err) {
-      setError(err.message);
+      if (selection === selectionRef.current) setError(err.message);
     } finally {
-      setPreviewing(false);
+      if (selection === selectionRef.current) setPreviewing(false);
     }
   }
 
