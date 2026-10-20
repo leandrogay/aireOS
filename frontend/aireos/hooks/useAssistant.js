@@ -60,11 +60,17 @@ export default function useAssistant() {
       setLoading(true);
       setError(null);
 
-      // Only the message right before this question can be "the chart on
-      // screen" -- an older one would put a previous question's table next
-      // to this answer. The style is a separate preference that persists, so
-      // it still comes from the latest message that had a chart.
-      const previousMessage = messages[messages.length - 1];
+      // "The chart on screen" is the chart of the latest reply that was about
+      // data. A question that failed has no reply, and chit-chat ("thanks")
+      // or a refusal has no chart and no data of its own, so those are skipped
+      // rather than hiding the chart still on screen; a reply that answered a
+      // data question (even without a table) stops the search, so an older
+      // question's chart never ends up next to a newer answer. The style is a
+      // separate preference that persists, so it still comes from the latest
+      // message with a chart.
+      const previousMessage = [...messages]
+        .reverse()
+        .find((m) => m.role === 'assistant' && (m.hasChart || m.hasTable || m.dataSource !== 'none'));
       const previousHasData = previousMessage && (previousMessage.hasChart || previousMessage.hasTable);
       const lastChart = previousHasData
         ? {

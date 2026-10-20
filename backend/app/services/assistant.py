@@ -1056,25 +1056,18 @@ def _customer_name_of(raw: dict) -> str | None:
 
 
 def _inventory_chart(chart_sources: list[tuple[str, dict, object]]) -> dict | None:
-    """The inventory tools in fixed priority (overview > customer > at-risk > plan)."""
+    """
+    The inventory tools in fixed priority (customer > at-risk > plan > overview).
+    The overview comes last because it only has stock, no DOH: when a question
+    fetched both, it is the DOH lookup's table that holds the figure the answer
+    quotes.
+    """
 
     def results(tool: str) -> list:
         return [(tool_input, raw) for name, tool_input, raw in chart_sources if name == tool]
 
     return (
         _inventory_table(
-            results("get_inventory_overview"),
-            "skus",
-            ["month", "customer", "product", "ending_stock"],
-            lambda row: [
-                str(row.get("month", "")),
-                str(row.get("customer_name", "")),
-                str(row.get("product_name", "")),
-                _table_cell(row.get("ending_stock")),
-            ],
-            latest_month_only=True,
-        )
-        or _inventory_table(
             results("get_customer_inventory"),
             "skus",
             ["month", "product", "ending_stock", "doh", "target_doh", "status"],
@@ -1115,6 +1108,19 @@ def _inventory_chart(chart_sources: list[tuple[str, dict, object]]) -> dict | No
                 _table_cell(row.get("projected_ending_stock")),
             ],
             _customer_name_of,
+        )
+    
+        or _inventory_table(
+            results("get_inventory_overview"),
+            "skus",
+            ["month", "customer", "product", "ending_stock"],
+            lambda row: [
+                str(row.get("month", "")),
+                str(row.get("customer_name", "")),
+                str(row.get("product_name", "")),
+                _table_cell(row.get("ending_stock")),
+            ],
+            latest_month_only=True,
         )
     )
 
@@ -2522,8 +2528,15 @@ def ask(
     # business data at all (a refusal, a web-search answer) shows nothing, and
     # the chart already on screen is carried over only when the model says
     # this message is about that chart (a restyle, "why is that") -- never
-    # just because this turn happened to fetch nothing.
-    if parsed.get("uses_previous_chart"):
+    # just because this turn happened to fetch nothing. The model's flag alone
+    # is not enough ("thanks" got it wrongly): the message must also have
+    # changed the chart's style, or be an answer about the data.
+    chart_style = _sanitize_chart_style(parsed.get("chart_style"))
+    restyled = chart_style != resolved_input_style
+    about_the_chart = bool(parsed.get("uses_previous_chart")) and (
+        restyled or parsed.get("data_source") not in ("none", "market_data")
+    )
+    if about_the_chart:
         chart = _resolve_last_chart(chart, last_chart)
     elif parsed.get("data_source") in ("none", "market_data"):
         chart = _empty_chart()
@@ -2534,14 +2547,13 @@ def ask(
         # it is left out and the answer is shown as it is -- no error text.
         chart = _empty_chart()
 
-    chart_style = _sanitize_chart_style(parsed.get("chart_style"))
     chart = _resolve_chart_type(chart, chart_style)
     trend_values: list[float] = []
     if chart_style["show_trend_line"] and chart.get("chart_series"):
         trend_values = _linear_trend(chart["chart_series"][0]["values"])
 
     # The report keeps the answer the chart was first made for.
-    restyled_only = bool(parsed.get("uses_previous_chart")) and bool(last_answer) and chart_style != resolved_input_style
+    restyled_only = about_the_chart and restyled and bool(last_answer)
     export_answer = last_answer if restyled_only else parsed["answer"]
 
     download = _build_download(parsed.get("export_format", "none"), export_answer, chart, chart_style, trend_values)

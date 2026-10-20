@@ -2956,3 +2956,38 @@ def test_a_restyle_keeps_the_chart_even_when_the_model_labels_it_data_source_non
 
     assert result["chart_series"] == _REVENUE_CHART["chart_series"]
     assert result["export_answer"] == _ORIGINAL_ANSWER
+
+
+def test_the_doh_table_is_shown_when_the_stock_overview_was_fetched_too():
+    overview = {"skus": [{"month": "2026-08-01", "customer_name": "fairprice", "product_name": "Pants", "ending_stock": 500}]}
+    view = _customer_view(1, 39.8)
+
+    chart = assistant._build_chart(
+        [("get_inventory_overview", {}, overview), ("get_customer_inventory", {"customer": "fairprice"}, view)],
+        "fairprice",
+    )
+
+    assert "doh" in chart["table_columns"]
+
+
+def test_the_stock_overview_is_still_shown_when_it_is_the_only_inventory_tool_used():
+    overview = {"skus": [{"month": "2026-08-01", "customer_name": "fairprice", "product_name": "Pants", "ending_stock": 500}]}
+
+    chart = assistant._build_chart([("get_inventory_overview", {}, overview)], "fairprice")
+
+    assert chart["table_columns"] == ["month", "customer", "product", "ending_stock"]
+
+
+def test_a_thank_you_wrongly_flagged_as_about_the_chart_does_not_show_it(monkeypatch):
+    _install_fake_client(
+        monkeypatch,
+        [_final_answer(text="You're welcome!", data_source="none", uses_previous_chart=True)],
+    )
+
+    result = assistant.ask(
+        "thanks", history=None, customer="fairprice",
+        last_chart=_REVENUE_CHART, last_answer=_ORIGINAL_ANSWER,
+    )
+
+    assert result["has_chart"] is False
+    assert result["export_answer"] == "You're welcome!"
