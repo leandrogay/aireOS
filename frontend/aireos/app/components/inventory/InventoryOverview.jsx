@@ -44,6 +44,9 @@ export default function InventoryOverview({ skuOptions, refreshKey, onEditRow })
   const tableRows = data ? filterMonthRange(data.skus, shownStart, shownEnd) : [];
   const chartRows = data ? filterMonthRange(data.monthly, shownStart, shownEnd) : undefined;
   const atRiskSkuCount = data ? new Set(data.skus.map((row) => `${row.customer_id}-${row.sku}`)).size : 0;
+  // Distinct counts: a SKU sold to three customers is still one SKU, so these follow the data as customers or SKUs are added.
+  const distinctSkuCount = data ? new Set(data.skus.map((row) => row.sku)).size : 0;
+  const customerCount = data ? new Set(data.skus.map((row) => row.customer_id)).size : 0;
 
   function clearFilters() {
     setSkus([]);
@@ -78,7 +81,14 @@ export default function InventoryOverview({ skuOptions, refreshKey, onEditRow })
         onAtRiskChange={setAtRiskOnly}
         onClear={clearFilters}
         stats={data ? (
-          <StatTag label={atRiskOnly ? 'At risk' : 'SKUs'} value={String(atRiskSkuCount)} />
+          atRiskOnly ? (
+            <StatTag label="At risk" value={String(atRiskSkuCount)} />
+          ) : (
+            <>
+              <StatTag label="SKUs" value={String(distinctSkuCount)} />
+              <StatTag label={customerCount === 1 ? 'Customer' : 'Customers'} value={String(customerCount)} />
+            </>
+          )
         ) : null}
         note={atRiskNote}
       />

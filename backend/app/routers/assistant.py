@@ -17,6 +17,7 @@ class AskRequest(BaseModel):
     customer: str = sellout_service.DEFAULT_CUSTOMER
     last_chart: dict = {}
     last_chart_style: dict = {}
+    last_answer: str = ""
 
 
 class DigestRequest(BaseModel):
@@ -52,6 +53,7 @@ def ask(payload: AskRequest):
             customer=payload.customer,
             last_chart=payload.last_chart,
             last_chart_style=payload.last_chart_style,
+            last_answer=payload.last_answer,
         )
     except assistant.AssistantConfigError as e:
         raise HTTPException(status_code=503, detail=str(e))
