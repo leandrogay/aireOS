@@ -66,10 +66,14 @@ def get_storage_client() -> storage.Client:
     client is safe to share across threads.
     """
     try:
-        key_path = config.require_file("SERVICE_ACCOUNT_KEY_PATH")
+        key_path = config.optional_key_file("SERVICE_ACCOUNT_KEY_PATH")
         project_id = config.require("GCP_PROJECT_ID")
     except config.ConfigError as e:
         raise GCSConfigError(str(e)) from e
+
+    if key_path is None:
+        # No key file: the runtime identity (see config.optional_key_file).
+        return storage.Client(project=project_id)
 
     credentials = service_account.Credentials.from_service_account_file(key_path)
     return storage.Client(project=project_id, credentials=credentials)

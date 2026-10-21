@@ -28,6 +28,12 @@ Path-valued settings (`SERVICE_ACCOUNT_KEY_PATH`, `GOOGLE_APPLICATION_CREDENTIAL
 are resolved relative to `backend/`, so `./gcp-key.json` works no matter which
 directory you launch the app from.
 
+The key file is optional. With both key paths unset, every Google client
+(Cloud SQL, GCS, BigQuery, Vertex AI) uses Application Default Credentials:
+the service's own service account on Cloud Run, or your own login locally
+after `gcloud auth application-default login`. A key path that is set but
+points at a missing file is still an error.
+
 ## Serving the backend
 
 ```powershell

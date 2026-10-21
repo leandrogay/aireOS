@@ -172,3 +172,20 @@ def require_file(name: str) -> str:
     if not os.path.exists(path):
         raise ConfigError(f"{name} points to a file that does not exist: {path}")
     return path
+
+
+def optional_key_file(name: str) -> str | None:
+    """
+    Return a service-account key path, or None to use the runtime identity.
+
+    None means Application Default Credentials: the service's own service
+    account on Cloud Run, `gcloud auth application-default login` locally. A
+    path that is set but missing is still an error, so a typo in .env.backend
+    fails loudly instead of quietly switching to a different identity.
+    """
+    path = globals().get(name)
+    if not path:
+        return None
+    if not os.path.exists(path):
+        raise ConfigError(f"{name} points to a file that does not exist: {path}")
+    return path

@@ -80,3 +80,5 @@ desktop.ini
 # ===== Misc =====
 *.log
 .cache/
+
+*/tests/fixtures/*
