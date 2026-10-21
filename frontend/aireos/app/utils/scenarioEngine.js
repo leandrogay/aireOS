@@ -4,14 +4,14 @@
 //
 // One engine for the Scenario builder (see the Forecast Simulator
 // blueprint, Part 6). Every source (building blocks, draft promotions)
-// turns its draft items into DELTA CELLS, and everything on the page --
+// turns its items into DELTA CELLS, and everything on the page --
 // chart line, year totals, pitch card, impact table -- reads only these
 // cells, never the items themselves. That keeps the two sources independent:
 // either can return [] without breaking the page.
 //
 // A delta cell, one per item x customer x SKU x month:
 //   {
-//     itemId, source,              // which draft item, and which source made it
+//     itemId, source,              // which item, and which source made it
 //     customer, sku, month_year,   // customer_name / product_name / 'YYYY-MM-01', as on forecast rows
 //     baseUnits, baseRevenue,      // the Current forecast for this cell
 //     deltaUnits, deltaRevenue,    // what the item adds on top of it
@@ -20,8 +20,8 @@
 // A source (registered in scenarioSources.js):
 //   {
 //     key,                          // 'blocks' | 'promotions'
-//     itemsKey,                     // where its items live on the draft
-//     deltas(items, rows) => DeltaCell[],
+//     itemsKey,                     // where its items live, e.g. items.blocks
+//     deltas(items, rows, view) => DeltaCell[],   // view = chartView(), see below
 //     describe(item) => { title, subtitle, explanation }
 //   }
 //
@@ -45,14 +45,74 @@ export const SIMULATED_SERIES = {
 const CURRENT_UNITS = 'forecast_current';
 const CURRENT_REVENUE = 'forecast_current_revenue';
 
+// The forecast rows an item applies to: its customer, its SKU (or every SKU
+// when sku === ''), its months, and only rows with a Current value (months
+// with actuals have none, so they are never changed).
+function itemRows(rows, item) {
+  if (!item.customer || !item.startMonth || !item.endMonth) return [];
+  return rows.filter(
+    (row) =>
+      row[CURRENT_UNITS] != null &&
+      row.customer_name === item.customer &&
+      (!item.sku || row.product_name === item.sku) &&
+      row.month_year >= item.startMonth &&
+      row.month_year <= item.endMonth
+  );
+}
+
+function deltaCell(row, item, source, deltaUnits) {
+  const baseUnits = row[CURRENT_UNITS];
+  const baseRevenue = row[CURRENT_REVENUE] ?? null;
+  // Added units are priced like the row's own Current units, i.e. this
+  // customer's price for this SKU.
+  const price = baseRevenue != null && baseUnits ? baseRevenue / baseUnits : null;
+  return {
+    itemId: item.id,
+    source,
+    customer: row.customer_name,
+    sku: row.product_name,
+    month_year: row.month_year,
+    baseUnits,
+    baseRevenue,
+    deltaUnits,
+    deltaRevenue: price == null ? null : deltaUnits * price,
+  };
+}
+
+/**
+ * The page's chart filters, in the shape a source's deltas() receives.
+ *
+ * @param {{ productName: string, customerName: string, startDate: string, endDate: string }} filters
+ */
+export function chartView({ productName = '', customerName = '', startDate = '', endDate = '' }) {
+  return {
+    productName,
+    customerName,
+    startMonth: startDate ? `${startDate.slice(0, 7)}-01` : '',
+    endMonth: endDate ? `${endDate.slice(0, 7)}-01` : '',
+  };
+}
+
+/**
+ * True when the fetched rows hold every customer x SKU x month the item
+ * covers. A fixed number of units is split by share of the whole item, so
+ * it can only be split when nothing the item covers is filtered out.
+ *
+ * @param {object} item
+ * @param {ReturnType<typeof chartView>} view
+ */
+export function viewCoversItem(item, view) {
+  if (view.customerName && view.customerName !== item.customer) return false;
+  if (view.productName && view.productName !== item.sku) return false;
+  if (view.startMonth && item.startMonth < view.startMonth) return false;
+  if (view.endMonth && item.endMonth > view.endMonth) return false;
+  return true;
+}
+
 /**
  * Delta cells for one item that lifts the Current forecast by a flat %.
  * Shared by every uplift-style source, so building blocks and draft
  * promotions measure their impact the same way.
- *
- * An item matches a forecast row when the customer matches, the SKU matches
- * (or the item covers all SKUs, sku === ''), and the month is inside the
- * item's range. Rows with no Current value (months with actuals) are skipped.
  *
  * @param {object[]} rows forecast rows from GET /api/forecast
  * @param {{ id: string, customer: string, sku: string, startMonth: string, endMonth: string }} item
@@ -60,31 +120,35 @@ const CURRENT_REVENUE = 'forecast_current_revenue';
  * @param {string} source the source key, copied onto each cell
  */
 export function upliftDeltaCells(rows, item, upliftPct, source) {
-  const cells = [];
-  if (!item.customer || !item.startMonth || !item.endMonth) return cells;
   const share = (Number(upliftPct) || 0) / 100;
+  return itemRows(rows, item).map((row) => deltaCell(row, item, source, row[CURRENT_UNITS] * share));
+}
 
-  for (const row of rows) {
-    const baseUnits = row[CURRENT_UNITS];
-    if (baseUnits == null) continue;
-    if (row.customer_name !== item.customer) continue;
-    if (item.sku && row.product_name !== item.sku) continue;
-    if (row.month_year < item.startMonth || row.month_year > item.endMonth) continue;
-
-    const baseRevenue = row[CURRENT_REVENUE] ?? null;
-    cells.push({
-      itemId: item.id,
-      source,
-      customer: row.customer_name,
-      sku: row.product_name,
-      month_year: row.month_year,
-      baseUnits,
-      baseRevenue,
-      deltaUnits: baseUnits * share,
-      deltaRevenue: baseRevenue == null ? null : baseRevenue * share,
-    });
-  }
-  return cells;
+/**
+ * Delta cells for one item that adds a fixed number of units over its whole
+ * date range. The units are split across its months and SKUs in proportion
+ * to their Current forecast, so the seasonality and SKU mix stay as they
+ * are; if Current is 0 everywhere, they are split evenly.
+ *
+ * Returns no cells unless the fetched rows cover the whole item (see
+ * viewCoversItem): splitting over a filtered slice would pile every unit
+ * into the part that happens to be on screen.
+ *
+ * @param {object[]} rows forecast rows from GET /api/forecast
+ * @param {{ id: string, customer: string, sku: string, startMonth: string, endMonth: string }} item
+ * @param {number} units total units added across the item's months
+ * @param {string} source the source key, copied onto each cell
+ * @param {ReturnType<typeof chartView>} view
+ */
+export function unitsDeltaCells(rows, item, units, source, view) {
+  if (!viewCoversItem(item, view)) return [];
+  const matched = itemRows(rows, item);
+  const total = Number(units) || 0;
+  const baseTotal = matched.reduce((sum, row) => sum + row[CURRENT_UNITS], 0);
+  return matched.map((row) => {
+    const share = baseTotal > 0 ? row[CURRENT_UNITS] / baseTotal : 1 / matched.length;
+    return deltaCell(row, item, source, total * share);
+  });
 }
 
 function addTo(totals, key, cell) {
@@ -101,7 +165,7 @@ function addTo(totals, key, cell) {
 }
 
 /**
- * Run every source over the draft and total the cells by month and by item.
+ * Run every source over its items and total the cells by month and by item.
  *
  * `byItem` only holds items that produced at least one cell. An item missing
  * from it is outside the rows the page fetched (another customer or SKU than
@@ -109,11 +173,12 @@ function addTo(totals, key, cell) {
  * "outside chart filters" with no numbers (blueprint Part 4.6).
  *
  * @param {object[]} rows forecast rows from GET /api/forecast
- * @param {Record<string, object[]>} draft items per source, e.g. { blocks: [], promotions: [] }
+ * @param {Record<string, object[]>} items items per source, e.g. { blocks: [], promotions: [] }
  * @param {object[]} sources SCENARIO_SOURCES
+ * @param {ReturnType<typeof chartView>} view the chart filters the rows were fetched with
  */
-export function simulate(rows, draft, sources) {
-  const cells = sources.flatMap((source) => source.deltas(draft[source.itemsKey] ?? [], rows));
+export function simulate(rows, items, sources, view) {
+  const cells = sources.flatMap((source) => source.deltas(items[source.itemsKey] ?? [], rows, view));
   const byMonth = new Map();
   const byItem = new Map();
   for (const cell of cells) {
@@ -144,7 +209,7 @@ export function withSimulatedLine(points, byMonth, metric) {
 }
 
 /**
- * Year totals with the draft's deltas added to the forecast side, for the
+ * Year totals with the items' deltas added to the forecast side, for the
  * "Simulated" rows under the year table. Same shape as buildYearlyTotals.
  *
  * @param {object[]} years buildYearlyTotals output

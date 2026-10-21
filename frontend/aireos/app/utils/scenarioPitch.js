@@ -4,7 +4,7 @@
 //
 // The four cards on the pitch summary (blueprint Part 2.1). They read the
 // monthly points the chart plots plus the engine's per-month deltas, never
-// the draft items, so draft promotions count the moment their source returns
+// the items, so draft promotions count the moment their source returns
 // cells. Dip, gap and attainment are in units; revenue impact is in dollars.
 
 import { formatMonthLabel } from '@/app/utils/forecastView';
@@ -131,13 +131,13 @@ export function monthSpanLabel(months) {
  * Plain-text pitch summary for the clipboard (blueprint Part 2.4): the four
  * metrics, then one line per item with its explanation as a "Why:" line.
  *
- * @param {{ draftName: string, scope: string, cards: { label: string, value: string, detail: string }[], unitLabel: string, items: { title: string, subtitle: string, months: string, before: string, after: string, uplift: string, explanation: string }[] }} summary
+ * @param {{ scope: string, cards: { label: string, value: string, detail: string }[], unitLabel: string, items: { title: string, subtitle: string, months: string, before: string, after: string, uplift: string, explanation: string }[] }} summary
  */
-export function pitchSummaryText({ draftName, scope, cards, unitLabel, items }) {
-  const lines = [`PITCH SIMULATION SUMMARY — Draft: ${draftName}`, `Scope: ${scope}`, ''];
+export function pitchSummaryText({ scope, cards, unitLabel, items }) {
+  const lines = ['PITCH SIMULATION SUMMARY', `Scope: ${scope}`, ''];
   for (const card of cards) lines.push(`• ${card.label}: ${card.value} (${card.detail})`);
   lines.push('', `Impact by building block & promotion (${unitLabel}):`);
-  if (!items.length) lines.push('  – No items in this draft yet.');
+  if (!items.length) lines.push('  – No building blocks or promotions switched on.');
   for (const item of items) {
     lines.push(`  – ${item.title} (${item.subtitle}, ${item.months}): ${item.before} → ${item.after}, ${item.uplift}`);
     if (item.explanation) lines.push(`    Why: ${item.explanation}`);
@@ -146,18 +146,18 @@ export function pitchSummaryText({ draftName, scope, cards, unitLabel, items }) 
 }
 
 /**
- * One impact-table row per draft item, across every source (blueprint Part
- * 2.3). `totals` is the item's simulate().byItem entry, or null when the item
+ * One impact-table row per counted item, across every source (blueprint
+ * Part 2.3). `totals` is the item's simulate().byItem entry, or null when the item
  * is outside the rows the page fetched -- the table then shows it labelled,
  * with no numbers, and leaves it out of the "All items" total.
  *
- * @param {Record<string, object[]>} draft items per source
+ * @param {Record<string, object[]>} items per source, e.g. { blocks, promotions }
  * @param {object[]} sources SCENARIO_SOURCES
  * @param {Map} byItem simulate().byItem
  */
-export function impactRows(draft, sources, byItem) {
+export function impactRows(items, sources, byItem) {
   return sources.flatMap((source) =>
-    (draft[source.itemsKey] ?? []).map((item) => ({
+    (items[source.itemsKey] ?? []).map((item) => ({
       key: item.id,
       sourceLabel: source.label,
       ...source.describe(item),

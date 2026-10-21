@@ -68,14 +68,13 @@ function metricCards(metrics) {
  * pitch version" and the before/after delta badges come later.
  *
  * @param {{
- *   draftName: string,
  *   scope: string,
  *   metrics: object,
  *   rows: object[],
  *   metric: 'units' | 'revenue',
  * }} props metrics from pitchMetrics, rows from impactRows
  */
-export default function PitchSummaryCard({ draftName, scope, metrics, rows, metric }) {
+export default function PitchSummaryCard({ scope, metrics, rows, metric }) {
   const [copyStatus, setCopyStatus] = useState('');
   const cards = metricCards(metrics);
   const format = metric === 'revenue' ? formatDollars : formatUnits;
@@ -83,7 +82,6 @@ export default function PitchSummaryCard({ draftName, scope, metrics, rows, metr
 
   async function copySummary() {
     const text = pitchSummaryText({
-      draftName,
       scope,
       cards,
       unitLabel,
@@ -116,7 +114,7 @@ export default function PitchSummaryCard({ draftName, scope, metrics, rows, metr
   return (
     <Card size="sm" className="rounded-lg border-[1.5px] border-scenario bg-white text-deep-violet-blue shadow-sm ring-0">
       <CardContent className="space-y-3">
-        <p className="font-serif text-base">Pitch summary · Draft: {draftName}</p>
+        <p className="font-serif text-base">Pitch summary</p>
 
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           {cards.map((card) => (
@@ -142,8 +140,8 @@ export default function PitchSummaryCard({ draftName, scope, metrics, rows, metr
         </p>
         <ImpactTable rows={rows} metric={metric} format={format} />
         <p className="text-[11px] text-deep-violet-blue/55">
-          Each item is measured on its own customer and SKU. Items outside the chart filters show no numbers
-          until the page loads every customer and SKU.
+          Only switched-on items count. Each is measured on its own customer and SKU; items outside the chart
+          filters show no numbers until the page loads every customer and SKU.
         </p>
 
         <div className="flex flex-wrap items-center gap-3">

@@ -8,7 +8,7 @@ const headClass =
 const cellClass = 'border-b border-lavander/70 px-2 py-1.5 text-right align-top tabular-nums';
 
 /**
- * Before / after / uplift for each item in the draft, building blocks and
+ * Before / after / uplift for each switched-on item, building blocks and
  * draft promotions alike (blueprint Part 2.3). Each row is measured on the
  * item's own customer and SKU, so rows don't move with the chart filters,
  * except items outside the fetched rows, which show "—".
@@ -84,7 +84,7 @@ export default function ImpactTable({ rows, metric, format }) {
           {rows.length ? null : (
             <tr>
               <td colSpan={7} className="px-2 py-3 text-deep-violet-blue/60">
-                No building blocks or promotions in this draft yet.
+                No building blocks or promotions switched on yet.
               </td>
             </tr>
           )}

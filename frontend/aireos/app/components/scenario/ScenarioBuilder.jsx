@@ -8,7 +8,6 @@ import ChartLoading from '@/components/ui/ChartLoading';
 import ForecastChart from '@/components/forecast/ForecastChart';
 import ForecastFilters from '@/components/forecast/ForecastFilters';
 import BuildingBlocksSection from '@/components/scenario/BuildingBlocksSection';
-import DraftSwitcher from '@/components/scenario/DraftSwitcher';
 import PitchSummaryCard from '@/components/scenario/PitchSummaryCard';
 import PromotionsSection from '@/components/scenario/PromotionsSection';
 import ScenarioPanel from '@/components/scenario/ScenarioPanel';
@@ -23,6 +22,7 @@ import {
 } from '@/app/utils/forecastView';
 import {
   SIMULATED_SERIES,
+  chartView,
   forecastMonths,
   itemMarkers,
   simulate,
@@ -31,20 +31,23 @@ import {
 } from '@/app/utils/scenarioEngine';
 import { impactRows, monthSpanLabel, pitchMetrics, seasonalAverage } from '@/app/utils/scenarioPitch';
 import { draftPromotionBands } from '@/app/utils/scenarioPromotions';
+import { activeScenarioBlocks } from '@/app/utils/scenarioBlocks';
 import { SCENARIO_SOURCES } from '@/app/utils/scenarioSources';
 import useForecastFilters from '@/hooks/useForecastFilters';
 import useForecastView from '@/hooks/useForecastView';
 import useForecastYearTotals from '@/hooks/useForecastYearTotals';
-import useScenarioDraft from '@/hooks/useScenarioDraft';
+import useScenarioBlocks from '@/hooks/useScenarioBlocks';
 
 /**
  * The Scenario builder workspace (blueprint Part 4): the same filters and
- * chart as /forecast, with the selected Forecast Draft simulated on top, a
- * pitch summary underneath and the building blocks panel on the right.
+ * chart as /forecast, with the switched-on building blocks (and draft
+ * promotions) simulated on top, a pitch summary underneath and the panel on
+ * the right.
  *
  * Shared file: it owns the state and the layout slots. Everything it shows
  * is calculated by the pure scenario utils from the forecast rows and the
- * draft; nothing here is written back to the server.
+ * items. Saving a block never changes the Current forecast: only the
+ * Simulated line reads them.
  */
 export default function ScenarioBuilder() {
   const filters = useForecastFilters();
@@ -56,7 +59,10 @@ export default function ScenarioBuilder() {
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const view = useForecastView({ ready, productName, customerName, startDate, endDate });
   const { rows, actuals, promotions, freshness } = view.data;
-  const { drafts, draft, selectDraft, renameDraft, setBlocks, setPromotions } = useScenarioDraft();
+  const scenarioBlocks = useScenarioBlocks();
+  // Draft promotions are the promotions side's to save; until then they live
+  // in this page's memory only.
+  const [draftPromotions, setDraftPromotions] = useState([]);
   const { years, loading: yearTotalsLoading } = useForecastYearTotals({
     ready,
     productName,
@@ -68,9 +74,6 @@ export default function ScenarioBuilder() {
     actuals,
   });
 
-  // useScenarioDraft reads sessionStorage in its initial state, so nothing
-  // draft-specific may render until after hydration. The options arrive by
-  // fetch, so waiting for them guarantees that.
   if (!ready) {
     return filters.error ? (
       <p className="rounded-md border border-violet bg-lavander/50 px-3 py-2 text-sm text-deep-violet-blue">
@@ -89,25 +92,26 @@ export default function ScenarioBuilder() {
   const revenuePoints = buildMonthlyPoints(rows, actuals, 'revenue', { singleSeries });
   const basePoints = metric === 'revenue' ? revenuePoints : unitPoints;
 
-  const { byMonth, byItem } = simulate(rows, draft, SCENARIO_SOURCES);
+  // Only switched-on blocks count, on the chart and in the pitch summary.
+  const counted = { blocks: activeScenarioBlocks(scenarioBlocks.blocks), promotions: draftPromotions };
+  const { byMonth, byItem } = simulate(rows, counted, SCENARIO_SOURCES, chartView(filters));
   const scenario = {
     series: [SIMULATED_SERIES],
     markers: itemMarkers(byItem),
-    promoBands: draftPromotionBands(draft.promotions),
+    promoBands: draftPromotionBands(draftPromotions),
     seasonalAverage: seasonalAverage(basePoints),
     simulatedYears: simulatedYearTotals(years, byMonth),
   };
   const metrics = pitchMetrics(unitPoints, revenuePoints, byMonth);
-  const itemRows = impactRows(draft, SCENARIO_SOURCES, byItem);
+  const itemRows = impactRows(counted, SCENARIO_SOURCES, byItem);
   const months = forecastMonths(rows);
-  const itemCount = draft.blocks.length + draft.promotions.length;
-  const error = filters.error ?? view.error;
+  const itemCount = scenarioBlocks.blocks.length + draftPromotions.length;
+  const error = filters.error ?? view.error ?? scenarioBlocks.error;
 
   const customerText = customerName ? retailerLabel(customerName) : 'All customers';
   const scopeTags = [
     { label: 'SKU', value: productName || 'All SKUs' },
     { label: 'Customer', value: customerText },
-    { label: 'Draft', value: draft.name || 'Untitled' },
   ];
   const scope = `${productName || 'All SKUs'} · ${customerText} · ${monthSpanLabel([startDate, endDate].map((date) => `${date.slice(0, 7)}-01`))}`;
 
@@ -122,16 +126,13 @@ export default function ScenarioBuilder() {
 
   return (
     <div className="space-y-2">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="flex min-w-0 flex-1 items-center gap-2 rounded-md bg-scenario-soft px-3 py-2 text-xs text-scenario-ink">
-          <PencilLine className="size-3.5 shrink-0" aria-hidden="true" />
-          <span>
-            Sandbox: changes to <b>{draft.name || 'this draft'}</b> show here only. The Current forecast, Inventory
-            and Dashboard stay as they are.
-          </span>
-        </p>
-        <DraftSwitcher drafts={drafts} activeId={draft.id} onSelect={selectDraft} />
-      </div>
+      <p className="flex items-center gap-2 rounded-md bg-scenario-soft px-3 py-2 text-xs text-scenario-ink">
+        <PencilLine className="size-3.5 shrink-0" aria-hidden="true" />
+        <span>
+          Sandbox: building blocks only move the dashed <b>Simulated</b> line, so you can compare it with the
+          Current forecast. The Current forecast, Inventory and Dashboard stay as they are.
+        </span>
+      </p>
 
       {error && (
         <p className="rounded-md border border-violet bg-lavander/50 px-3 py-2 text-sm text-deep-violet-blue">
@@ -191,7 +192,6 @@ export default function ScenarioBuilder() {
           />
 
           <PitchSummaryCard
-            draftName={draft.name || 'Untitled'}
             scope={scope}
             metrics={metrics}
             rows={itemRows}
@@ -203,13 +203,21 @@ export default function ScenarioBuilder() {
           collapsed={panelCollapsed}
           onCollapsedChange={setPanelCollapsed}
           itemCount={itemCount}
-          draftName={draft.name}
-          onRenameDraft={renameDraft}
           blocksSection={
-            <BuildingBlocksSection key={draft.id} items={draft.blocks} onChange={setBlocks} {...sectionProps} />
+            scenarioBlocks.loading ? (
+              <p className="text-xs text-deep-violet-blue/60">Loading building blocks…</p>
+            ) : (
+              <BuildingBlocksSection
+                items={scenarioBlocks.blocks}
+                onChange={scenarioBlocks.setBlocks}
+                onSave={scenarioBlocks.saveBlock}
+                onDelete={scenarioBlocks.deleteBlock}
+                {...sectionProps}
+              />
+            )
           }
           promotionsSection={
-            <PromotionsSection key={draft.id} items={draft.promotions} onChange={setPromotions} {...sectionProps} />
+            <PromotionsSection items={draftPromotions} onChange={setDraftPromotions} {...sectionProps} />
           }
         />
       </div>
