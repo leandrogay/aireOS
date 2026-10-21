@@ -21,6 +21,8 @@ export const SKU_HISTORY_COLUMNS = [
   { key: 'product', label: 'Product' },
   { key: 'range', label: 'Range' },
   { key: 'size', label: 'Size', width: '5rem' },
+  { key: 'brand', label: 'Brand', width: '6rem' },
+  { key: 'uom', label: 'UOM', width: '5rem' },
   { key: 'pack', label: 'Pack', width: '5rem' },
   { key: 'price', label: 'Price', width: '7rem' },
 ];
