@@ -274,8 +274,8 @@ Rules:
 
 - Commit `gcp-key.json`, `.env*`, or any credential. `.gitignore` already blocks `*.json`
   at the root — do not weaken it.
-- Widen CORS beyond what `main.py` has without a comment; the current `allow_origin_regex=".*"`
-  is dev-only and must be tightened before any deployment.
+- Widen CORS beyond the explicit `CORS_ALLOWED_ORIGINS` list. Credentials are allowed, so
+  never a wildcard or a catch-all `allow_origin_regex`.
 - Insert rows into BigQuery, or modify `skus`/`stores`/`retailers` rows from a promotion write.
 - Add a second `components/` folder, a second icon library, a second fetch wrapper, or a
   second `.env` loader.

@@ -137,6 +137,29 @@ def cloud_sql_loading_enabled() -> bool:
         "on",
     }
 
+# ---- HTTP -------------------------------------------------------------------
+
+DEFAULT_CORS_ALLOWED_ORIGINS = "http://localhost:3000,http://127.0.0.1:3000"
+
+
+def parse_origins(raw: str) -> list[str]:
+    """
+    Split a comma-separated origin list, dropping blanks and trailing slashes.
+
+    Browsers send `Origin: https://host` with no trailing slash, so a
+    configured `https://host/` would otherwise never match.
+    """
+    return [origin.strip().rstrip("/") for origin in raw.split(",") if origin.strip()]
+
+
+# Browser origins allowed to call the API with credentials. Behind the cloud
+# load balancer the frontend and API share one domain, so production lists
+# just that domain; locally it is the Next.js dev server. An empty value (as
+# copied from .env.example) means the default, not "allow nobody".
+CORS_ALLOWED_ORIGINS = parse_origins(
+    os.environ.get("CORS_ALLOWED_ORIGINS") or DEFAULT_CORS_ALLOWED_ORIGINS
+)
+
 # ---- Anthropic --------------------------------------------------------------
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")

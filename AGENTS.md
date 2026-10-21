@@ -21,7 +21,7 @@ aireOS/
 │
 ├── backend/                       FastAPI app — run: uvicorn app.main:app --reload (:8000)
 │   ├── app/
-│   │   ├── main.py                FastAPI() instance, CORS (dev: allow all), include_router × 5, GET /
+│   │   ├── main.py                FastAPI() instance, CORS (origins from config.CORS_ALLOWED_ORIGINS), include_router × 5, GET /
 │   │   ├── middleware.py          UnhandledErrorMiddleware (turns unhandled exceptions into JSON 500s)
 │   │   ├── routers/               HTTP layer. One file per URL prefix.
 │   │   │   ├── uploads.py         /api/uploads        file ingest + mapping review (async)
@@ -204,7 +204,8 @@ Invariants that cross domains:
 - Browser → FastAPI over plain `fetch`, JSON bodies, base URL `NEXT_PUBLIC_API_URL`
   (`http://localhost:8000` in dev). No auth, no cookies, no server-side Next.js data fetching —
   every page that loads data is a `'use client'` tree.
-- CORS is wide open (`allow_origin_regex=".*"`) in `main.py` — dev only.
+- CORS allows only `CORS_ALLOWED_ORIGINS` (`config.py`; default the local Next.js dev server).
+  Behind the cloud load balancer the browser calls the API same-origin, so production lists just the app's domain.
 - Uploads are `multipart/form-data` with field name `files` (many) and optional `force`.
 - Errors: FastAPI returns `{ "detail": string | [{loc,msg,...}] }`. The frontend
   `parseApiError()` flattens both to one message and the thrown `Error` carries `.status` and
