@@ -32,12 +32,15 @@ aireOS/
 │   │   │   ├── inventory.py       /api/inventory      overview, per-customer DOH, at-risk list, sell-in plan, record create/edit, temporary sell-in
 │   │   │   ├── settings/          /api/settings       customer-level settings; __init__.py mounts one sub-router per kind
 │   │   │   │   └── doh.py         /api/settings/doh   DOH thresholds (versioned, revert, history, reset to global default) + alert toggle
+│   │   │   ├── scenario/          /api/scenario       Scenario builder items; __init__.py mounts one sub-router per kind
+│   │   │   │   └── building_blocks.py /api/scenario/building-blocks  list/create/replace/delete what-if building blocks
 │   │   │   └── promotions.py      /api/promotions     promotion CRUD + /health/db
 │   │   ├── schemas/               Pydantic v2 request models (only catalog + promotions today)
 │   │   │   ├── catalog.py         _Base, normalise_name (names → lowercase slugs), CustomerCreate/Update,
 │   │   │   │                      RetailerCreate (needs customer_id)/Update/Link, StoreCreate/Update,
 │   │   │   │                      SkuItem + required SkuCreate/Update
 │   │   │   ├── inventory.py       InventoryRecordCreate/Update, ShippedSoFarUpdate
+│   │   │   ├── scenario/building_blocks.py ScenarioBuildingBlockCreate/Update (uplift_mode pct|units, pct <= 50, whole units, first-of-month range)
 │   │   │   ├── settings/common.py SettingsChangeBase (optional updated_by), shared by every kind of setting
 │   │   │   ├── settings/doh.py    DohThresholdsUpdate (min <= target <= max, NUMERIC(6,2)), DohAlertUpdate, DohRevert, DohReset
 │   │   │   └── promotions.py      PromoType Literal, PromotionStoreRef, PromotionBase/Create/Update
@@ -47,6 +50,8 @@ aireOS/
 │   │       ├── inventory_service.py inventory_metrics reads/writes + DOH thresholds via settings/doh (history by month) (raw SQL, one txn per write)
 │   │       ├── settings/common.py shared by every kind of setting: engines, CustomerNotFoundError, lock_customer
 │   │       ├── settings/doh.py    doh_settings (append-only versions) + customers alert columns; reads via the current_settings view; GLOBAL_DEFAULT_*_DOH 25/30/35
+│   │       ├── scenario/common.py engines shared by every kind of Scenario builder item
+│   │       ├── scenario/building_blocks.py scenario_building_blocks CRUD; resolves customer_name/product_name to customer_id/sku
 │   │       ├── sellout_units.py   Cloud SQL monthly sell-out per SKU for inventory, via sellout_service's effective-sellout view
 │   │       ├── forecast_units.py  read-only BigQuery forecast units per SKU/month, from the aire_forecasting_output view (BQ_FORECAST_OUTPUT_VIEW)
 │   │       ├── catalog_service.py retailers/stores/skus CRUD; SKU history/archive; get_or_create_* seams; retailer
@@ -120,6 +125,7 @@ aireOS/
     │   │   └── upload2/           Harness pieces: MappingDiv, UploadPanel, ResultsPanel, ContractView, RequestLog…
     │   │   ├── salesApi.js        /api/sales wrappers via request() (getSkuSales, getMonthlyOnly)
     │   │   ├── settingsApi.js     /api/settings/* wrappers, one section per kind (reuses promotionsApi.request)
+    │   │   ├── scenarioBuildingBlocksApi.js /api/scenario/building-blocks wrappers (reuses promotionsApi.request)
     │   │   ├── catalogApi.js      /api/catalog customers + retailer writes for the Customers page (reuses promotionsApi.request)
     │   │   └── mappingApi.js      /api/uploads wrappers taking an explicit baseUrl (harness style)
     │   └── utils/                 Pure, React-free helpers
@@ -147,6 +153,7 @@ aireOS/
     │   ├── useMonthlyOnly.js      /api/sales/monthly-only via salesApi.getMonthlyOnly (months with no weekly breakdown → month bars)
     │   ├── usePriceMix.js         useSkuSales × 2 (this period + comparison) → priceMixEffects
     │   ├── useDohSettings.js      /api/settings/doh (+ replaceRow for the row a write returns)
+    │   ├── useScenarioBlocks.js   /api/scenario/building-blocks: saved blocks + working copies, saveBlock/deleteBlock, unsaved warning
     │   ├── useCustomers.js        /api/catalog/customers (+ applyCustomer / removeCustomer for the row a write returns)
     │   ├── useExpandedRows.js     { isExpanded, toggle, expand } for ui/ExpandableRow (several open by default)
     │   ├── useConfirmAction.js    { target, isPending, request, cancel, confirm } for ui/ConfirmDialog (e.g. Delete)
@@ -178,6 +185,7 @@ No test runner is installed on the frontend; linting (`npm run lint`) is the fro
 | Sales dashboard | `sales.py` | `sellout_service` | **Cloud SQL Postgres**: `sellout` (the source of truth -- every upload writes here first; `retailer_id`/`store_code`/`sku` rows, `period_type` `week` or `month`), joined to `retailers`/`stores`/`skus` for names (retailer name = `{customer}_{offline|online}`). A retailer+calendar-month with monthly-granularity rows uses only those (never both, see `EFFECTIVE_SELLOUT_CTE`); `granularity='week'` summary views read genuine weekly rows only. No more BigQuery/Datastream replication lag -- reads are real-time | `app/dashboard`, `hooks/use*.js`, `services/salesApi.js` |
 | Catalog | `catalog.py` | `catalog_service`, `customer_service` | **Cloud SQL Postgres**: `customers`, `customer_retailers`, `retailers`, `stores`, `skus`, `old_skus`, `sku_history`. Names are lowercase slugs, unique case-insensitively. A retailer with stores, or a customer with any such retailer or `inventory_metrics` rows, is `in_use` and can't be renamed or deleted. SKU archival keeps referenced master rows inactive and records history. | `app/customers`, `app/skus`, `services/catalogApi.js`; `services/promotionsApi.js` (getRetailers/getStores/getSkuRanges) |
 | Inventory | `inventory.py` | `inventory_service`, `inventory_calc`, `sellout_units`, `forecast_units` | **Cloud SQL Postgres**: `customers`, `customer_retailers`, `inventory_metrics` (long format; app writes carry `data_source='manual_entry'`; only sell-in, a first-month opening and building blocks (stock used outside sell-out) are read; workbook rows are never changed), `doh_settings` (read via `settings/doh.fetch_versions`; closed months use the version in effect at month end, the latest month, at-risk list and sell-in plan use the current one), `sellout` (sell-out, via `sellout_units`/`sellout_service`'s effective-sellout view, same monthly-preferred-over-weekly rule as the dashboard); **BigQuery** (read-only): the forecast table. Ending stock, DOH and the plan are computed, never stored | `app/inventory`, `services/inventoryApi.js` |
+| Scenario builder | `scenario/building_blocks.py` (`/api/scenario/building-blocks`) | `scenario/building_blocks`, `scenario/common` | **Cloud SQL Postgres**: `scenario_building_blocks` (what-if uplifts stored as entered: `uplift_mode` `pct` = % on Current each month, `units` = whole units over the whole range; `is_active` decides whether a block counts; `customer_id` ON DELETE CASCADE, `sku` NULL = all SKUs). Only the Scenario builder's Simulated line reads it -- the Current forecast, Inventory and Dashboard never do; the delta is worked out on the client (`scenarioEngine.js`). Not the same as inventory's `sell_out_building_blocks` (confirmed blocks that count as actuals) | `app/scenario`, `services/scenarioBuildingBlocksApi.js` |
 | Settings (DOH) | `settings/doh.py` | `settings/doh`, `settings/common` | **Cloud SQL Postgres**: `doh_settings` (append-only: a change is an INSERT only when min/target/max differ from the newest row; newest by `updated_at DESC, setting_id DESC`; never UPDATE/DELETE, except that a new customer gets a global-default row; `customer_id` is ON DELETE CASCADE, so deleting a customer deletes its rows and DOH settings never block it), view `current_settings` (one row per customer), `customers.doh_alert_enabled` / `doh_alert_updated_at` (in-place toggle, no version). Also read by the inventory DOH calculations (`fetch_versions`, `thresholds_on`, `current_thresholds`) | `app/doh`, `services/settingsApi.js` |
 | Promotions | `promotions.py` | `promotion_service` (+ `catalog_service` seams) | **Cloud SQL Postgres**: `promotions`, `promotion_stores`, `promotion_skus`; enum `promo_type_enum`; trigger `trg_promotions_updated_at` | `app/promotions`, `services/promotionsApi.js` |
 | Forecast (P&L) | `forecast.py` (`/api/forecast`, read-only; writes are out of band via `scripts/refresh_forecast.py`) | `pl_forecast` (pure), `forecast_service`, `catalog_service` (product prices) | **BigQuery** (`Aire_Data_Analytics`, read-only): model learns from `v_sales_enriched` (weekly), page Actual line reads `v_customer_monthly_sales`; refresh MERGEs into `BQ_FORECAST_TABLE`. **Cloud SQL Postgres**: `skus.price` prices sell-out revenue | `app/forecast` |
@@ -286,6 +294,7 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | `uploads.py` per-file `mapping.status` values (`mapped`, `pending_confirmation`, `mapping_failed`) | `FileUpload.jsx` result rendering |
 | `settings/doh._settings_view` keys, `GLOBAL_DEFAULT_*_DOH` | `DohSettingsTable.jsx`, `dohSettingsForm.js` (`GLOBAL_DEFAULT_DOH`) |
 | `DohThresholdsUpdate` field names | `buildDohThresholdPayload` |
+| `ScenarioBuildingBlockBase` field names, `building_blocks._block_view` keys | `buildScenarioBlockPayload` / `scenarioBlockFromApi` in `scenarioBlocks.js` |
 | `customer_service.list_customers` keys (`customers[].retailers[]`, `in_use`, `unlinked_retailers`), retailer writes' `{ retailer, customer }` | `useCustomers.js`, `components/customers/*` |
 | `schemas.catalog.normalise_name` slug rule, `in_use` rules | `customerForm.js` (`normaliseName`, `*BlockReason`) |
 | `HTTPException.detail` shapes | `parseApiError()` |
