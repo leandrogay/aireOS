@@ -1423,3 +1423,126 @@ def test_today_is_the_utc_day_not_the_server_day(monkeypatch):
     monkeypatch.setattr(inventory_service, "datetime", FrozenDatetime)
 
     assert inventory_service._utc_today() == date(2026, 9, 30)
+
+
+# ---- sell-in upload: preview/apply -----------------------------------------------
+
+# "AIRE ADULT PANTS S/M 10S" is a real DESCRIPTION_PRODUCTS key, mapping to the
+# catalog product name below -- this SKU exists so that match succeeds.
+UPLOAD_SKU = {"sku": "S1", "sku_range": "Range S", "product_name": "Aire Adult Pants S/M", "size": "S/M"}
+UPLOAD_MONTH = date(2026, 8, 1)  # finished relative to TODAY (2026-09-24)
+
+
+def _upload_line(**overrides):
+    line = {
+        "customer_name": "Fairprice",
+        "month": UPLOAD_MONTH,
+        "description": "AIRE ADULT PANTS S/M 10S",
+        "qty": 10.0,
+    }
+    line.update(overrides)
+    return line
+
+
+def _install_upload(monkeypatch, lines, metrics=None, customer_names=("Fairprice",)):
+    """Stubs read_sell_in_lines so _plan_sell_in_upload runs on `lines` without a real workbook."""
+
+    conn = _install(monkeypatch, _router(customers=_customers(*customer_names), metrics=metrics))
+    monkeypatch.setattr(catalog_service, "get_skus", lambda: [UPLOAD_SKU])
+    monkeypatch.setattr(inventory_service, "read_sell_in_lines", lambda data: lines)
+    return conn
+
+
+def test_all_rows_already_matching_leaves_nothing_new_or_changed_to_save(monkeypatch):
+    _install_upload(
+        monkeypatch,
+        [_upload_line(qty=10.0)],
+        metrics=[_metric(1, "S1", UPLOAD_MONTH, "sell_in", 10.0)],
+    )
+
+    preview = inventory_service.preview_sell_in_upload(b"", today=TODAY)
+
+    assert preview["counts"] == {"new": 0, "changed": 0, "unchanged": 1}
+    assert preview["rows"][0]["status"] == "unchanged"
+
+
+def test_uploading_the_same_file_twice_writes_nothing_the_second_time(monkeypatch):
+    lines = [_upload_line(qty=10.0)]
+
+    _install_upload(monkeypatch, lines, metrics=[])
+    first = inventory_service.apply_sell_in_upload(b"", today=TODAY)
+    assert first == {"records_written": 1, "unchanged": 0}
+
+    _install_upload(monkeypatch, lines, metrics=[_metric(1, "S1", UPLOAD_MONTH, "sell_in", 10.0)])
+    second = inventory_service.apply_sell_in_upload(b"", today=TODAY)
+    assert second == {"records_written": 0, "unchanged": 1}
+
+
+def test_an_invalid_line_is_skipped_without_being_summed_into_a_valid_lines_total(monkeypatch):
+    lines = [_upload_line(qty=5.0), _upload_line(qty=-3.0)]
+    _install_upload(monkeypatch, lines, metrics=[])
+
+    preview = inventory_service.preview_sell_in_upload(b"", today=TODAY)
+
+    assert preview["counts"] == {"new": 1, "changed": 0, "unchanged": 0}
+    assert preview["rows"][0]["qty"] == 5.0
+    assert preview["skipped"] == [
+        {
+            "reason": "Quantity in packs is negative",
+            "customer_name": "Fairprice",
+            "month": "2026-08-01",
+            "description": "AIRE ADULT PANTS S/M 10S",
+            "lines": 1,
+            "qty": -3.0,
+        }
+    ]
+
+
+def test_a_line_with_an_unrecognised_month_or_year_is_skipped_with_that_reason(monkeypatch):
+    _install_upload(monkeypatch, [_upload_line(month=None)], metrics=[])
+
+    preview = inventory_service.preview_sell_in_upload(b"", today=TODAY)
+
+    assert preview["rows"] == []
+    assert preview["skipped"] == [
+        {
+            "reason": "Month of sales or invoice year is not recognised",
+            "customer_name": "Fairprice",
+            "month": None,
+            "description": "AIRE ADULT PANTS S/M 10S",
+            "lines": 1,
+            "qty": 10.0,
+        }
+    ]
+
+
+def test_a_quantity_of_zero_is_saved_as_a_real_value_not_treated_as_missing(monkeypatch):
+    _install_upload(monkeypatch, [_upload_line(qty=0.0)], metrics=[])
+
+    preview = inventory_service.preview_sell_in_upload(b"", today=TODAY)
+
+    assert preview["skipped"] == []
+    assert preview["counts"] == {"new": 1, "changed": 0, "unchanged": 0}
+    assert preview["rows"][0]["qty"] == 0.0
+
+
+def test_a_product_description_not_in_the_catalog_is_skipped_as_not_recognised(monkeypatch):
+    _install_upload(
+        monkeypatch,
+        [_upload_line(description="SOME NEW PRODUCT NOT YET MAPPED")],
+        metrics=[],
+    )
+
+    preview = inventory_service.preview_sell_in_upload(b"", today=TODAY)
+
+    assert preview["rows"] == []
+    assert preview["skipped"][0]["reason"] == "Product description is not recognised"
+
+
+def test_customer_name_matching_is_case_insensitive(monkeypatch):
+    _install_upload(monkeypatch, [_upload_line(customer_name="FAIRPRICE")], metrics=[])
+
+    preview = inventory_service.preview_sell_in_upload(b"", today=TODAY)
+
+    assert preview["skipped"] == []
+    assert preview["rows"][0]["customer_id"] == 1
