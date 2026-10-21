@@ -785,6 +785,44 @@ def _compare_periods_totals(calls: list[tuple[dict, object]]) -> tuple[float, fl
     return None
 
 
+def _calls_by_customer(calls: list[tuple[dict, object]], default_customer: str) -> dict[str, list]:
+    """compare_periods calls grouped by the customer each was for, in call order."""
+
+    groups: dict[str, list] = {}
+    for tool_input, raw in calls:
+        groups.setdefault(_customer_slug(tool_input.get("customer") or default_customer), []).append((tool_input, raw))
+    return groups
+
+
+def _per_customer_total_chart(by_customer: dict[str, list]) -> dict | None:
+    """
+    One bar per customer for a range total asked across several customers
+    ("total revenue in August" -> Fairprice, NHG, ...). Keeping only the last
+    call showed one customer's figure -- possibly $0 -- under an answer about
+    all of them.
+    """
+
+    categories: list[str] = []
+    values: list[float] = []
+    for slug, calls in by_customer.items():
+        totals = _compare_periods_totals(calls)
+        if totals is None:
+            continue
+        categories.append(slug.replace("_", " ").title())
+        values.append(round(float(totals[1]), 2))
+    if not categories:
+        return None
+    return {
+        "has_chart": True,
+        "chart_type": "bar",
+        "chart_categories": categories,
+        "chart_series": [{"label": "Revenue", "values": values}],
+        "has_table": False,
+        "table_columns": [],
+        "table_rows": [],
+    }
+
+
 def _range_total_breakdown_chart(compare_calls: list[tuple[dict, object]], customer: str, current_revenue: float, current_label: str) -> dict:
     """
     compare_periods used as a range-total calculator, for a range spanning
@@ -877,6 +915,15 @@ def _build_chart(chart_sources: list[tuple[str, dict, object]], customer: str) -
 
     compare_calls = [(tool_input, raw) for name, tool_input, raw in chart_sources if name == "compare_periods"]
     if compare_calls:
+        by_customer = _calls_by_customer(compare_calls, customer)
+        if len(by_customer) > 1:
+            if not _is_real_comparison(compare_calls):
+                per_customer = _per_customer_total_chart(by_customer)
+                if per_customer is not None:
+                    return per_customer
+            # A Previous-vs-Current chart has room for one customer: the
+            # page's own if it was asked about, otherwise the first one.
+            compare_calls = by_customer.get(_customer_slug(customer)) or next(iter(by_customer.values()))
         totals = _compare_periods_totals(compare_calls)
         if totals is not None:
             previous_revenue, current_revenue = totals

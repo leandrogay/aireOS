@@ -2991,3 +2991,37 @@ def test_a_thank_you_wrongly_flagged_as_about_the_chart_does_not_show_it(monkeyp
 
     assert result["has_chart"] is False
     assert result["export_answer"] == "You're welcome!"
+
+
+# ---- a range total asked across several customers ------------------------------
+
+def _range_total(customer, revenue):
+    return (
+        {"customer": customer, "current_start": "2026-08-01", "current_end": "2026-08-31"},
+        {"current": {"start": "2026-08-01", "end": "2026-08-31", "revenue": revenue, "units": 1},
+         "previous": {"start": "2026-07-01", "end": "2026-07-31", "revenue": 1.0, "units": 1}},
+    )
+
+
+def test_a_range_total_for_several_customers_shows_one_bar_per_customer():
+    sources = [("compare_periods", *_range_total(c, r)) for c, r in
+               (("fairprice", 24052.28), ("nhg", 28155.5), ("sheng_siong", 0.0))]
+
+    chart = assistant._build_chart(sources, "fairprice")
+
+    assert chart["chart_categories"] == ["Fairprice", "Nhg", "Sheng Siong"]
+    assert chart["chart_series"] == [{"label": "Revenue", "values": [24052.28, 28155.5, 0.0]}]
+
+
+def test_a_comparison_across_several_customers_shows_the_pages_customer():
+    fair_input, fair_raw = _range_total("fairprice", 24052.28)
+    nhg_input, nhg_raw = _range_total("nhg", 28155.5)
+    fair_input = {**fair_input, "previous_start": "2026-07-01", "previous_end": "2026-07-31"}
+    nhg_input = {**nhg_input, "previous_start": "2026-07-01", "previous_end": "2026-07-31"}
+
+    chart = assistant._build_chart(
+        [("compare_periods", fair_input, fair_raw), ("compare_periods", nhg_input, nhg_raw)], "fairprice"
+    )
+
+    assert chart["chart_categories"] == ["Previous", "Current"]
+    assert chart["chart_series"][0]["values"] == [1.0, 24052.28]

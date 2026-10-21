@@ -407,10 +407,9 @@ def test_period_comparison_validates_comparison_type_and_mode(monkeypatch):
         sellout_service.get_period_comparison(mode="instore")
 
 
-def test_period_comparison_without_mode_has_no_retailer_filter(monkeypatch):
-    # Locked-in pre-existing quirk, preserved bug-for-bug across this
-    # migration: omitting mode means no retailer/customer scoping at all,
-    # not "both channels of the given customer".
+def test_period_comparison_without_mode_covers_both_of_the_customers_channels(monkeypatch):
+    # Regression: omitting mode used to drop the customer filter entirely, so
+    # "Fairprice revenue in August" summed every customer's sales.
     conn = _install(
         monkeypatch,
         lambda sql, params: [{"period_start": date(2026, 8, 1), "period_end": date(2026, 8, 31), "period_type": "month"}]
@@ -422,8 +421,20 @@ def test_period_comparison_without_mode_has_no_retailer_filter(monkeypatch):
 
     main_query = conn.calls[-1]
     sql, params = main_query
-    assert "retailer_name" not in params
-    assert "retailers" not in sql
+    assert params["retailer_names"] == ["fairprice_offline", "fairprice_online"]
+    assert "retailer_name = ANY(CAST(:retailer_names AS text[]))" in sql
+
+
+def test_period_comparison_with_a_mode_covers_only_that_channel(monkeypatch):
+    conn = _install(monkeypatch, lambda sql, params: [])
+
+    sellout_service.get_period_comparison(
+        customer="nhg", mode="offline",
+        current_start="2026-08-01", current_end="2026-08-31",
+        previous_start="2026-07-01", previous_end="2026-07-31",
+    )
+
+    assert conn.calls[-1][1]["retailer_names"] == ["nhg_offline"]
 
 
 def test_period_comparison_wow_reads_genuine_weeks_not_effective_sellout(monkeypatch):
