@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import config  # noqa: F401
 
 from app.middleware import UnhandledErrorMiddleware
-from app.routers import sales, uploads, mappings, promotions, catalog, assistant, forecast, inventory, settings, notifications
+from app.routers import sales, uploads, mappings, promotions, catalog, assistant, forecast, inventory, settings, notifications, scenario
 
 app = FastAPI()
 
@@ -32,6 +32,7 @@ app.include_router(forecast.router)
 app.include_router(inventory.router)
 app.include_router(settings.router)
 app.include_router(notifications.router)
+app.include_router(scenario.router)
 
 
 @app.get("/")
