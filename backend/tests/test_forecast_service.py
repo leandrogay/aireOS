@@ -431,3 +431,31 @@ def test_sku_without_a_price_gets_blank_revenue_not_zero():
     assert priced[0]["realised_price"] is None
     assert priced[0]["forecast_current_revenue"] is None
     assert priced[0]["forecast_current"] == 40.0
+
+
+# ---- forecast_notification_payload -------------------------------------------------
+
+
+def test_forecast_notification_payload_lists_customers_skus_and_the_period():
+    forecast = pd.DataFrame(
+        {
+            "customer_name": ["fairprice", "fairprice", "giant"],
+            "product_name": ["Pants A", "Pants B", "Pants A"],
+            "month_year": ["2026-08", "2026-09", "2026-08"],
+        }
+    )
+
+    payload = forecast_service.forecast_notification_payload(forecast)
+
+    assert payload == {
+        "period_start": "2026-08",
+        "period_end": "2026-09",
+        "customers": ["fairprice", "giant"],
+        "skus": ["Pants A", "Pants B"],
+    }
+
+
+def test_forecast_notification_payload_of_an_empty_run_has_no_period():
+    payload = forecast_service.forecast_notification_payload(pd.DataFrame())
+
+    assert payload == {"period_start": None, "period_end": None, "customers": [], "skus": []}

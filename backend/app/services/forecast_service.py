@@ -416,3 +416,23 @@ def refresh_forecast(
         "written": written,
         "notes": notes,
     }
+
+
+def forecast_notification_payload(forecast: pd.DataFrame) -> dict:
+    """
+    Customers, SKUs and the period covered by one refresh_forecast() run's
+    `forecast` rows -- the fields the forecast-pipeline-completed notification
+    shows. Pure: scripts/refresh_forecast.py adds updated_at/errors itself,
+    since those depend on when and how the run was invoked, not the rows.
+    """
+
+    if forecast.empty:
+        return {"period_start": None, "period_end": None, "customers": [], "skus": []}
+
+    months = sorted(str(month) for month in forecast["month_year"].dropna().unique())
+    return {
+        "period_start": months[0] if months else None,
+        "period_end": months[-1] if months else None,
+        "customers": sorted(forecast["customer_name"].dropna().unique().tolist()),
+        "skus": sorted(forecast["product_name"].dropna().unique().tolist()),
+    }
