@@ -167,20 +167,6 @@ export function promotionStoreNames(promotion) {
 }
 
 /**
- * Short label for a list of names: the first one, plus "+N" when there
- * are more. Used for the store and retailer columns.
- *
- * @param {string[]} names
- * @param {string} [empty]
- * @returns {string}
- */
-export function summariseNames(names, empty = '—') {
-  if (!names.length) return empty;
-  if (names.length === 1) return names[0];
-  return `${names[0]} +${names.length - 1}`;
-}
-
-/**
  * Keep one row per input combination, preferring the newest promotion_id.
  *
  * @param {object[]} promotions

@@ -8,6 +8,8 @@ import { LayoutDashboard, Package, PanelLeft, Tag, TrendingUp, Upload } from 'lu
 
 import { cn } from '@/lib/utils';
 
+import NotificationBell from './NotificationBell';
+
 // Every tab links to a real (currently placeholder, for Forecast/Promotions/
 // Inventory — see app/forecast, app/promotions, app/inventory) page, so
 // nothing is blocked off. Sub-tabs (Upload › Mappings, Forecast › Scenario
@@ -18,7 +20,11 @@ const NAV_ITEMS = [
     label: 'Upload',
     href: '/upload',
     icon: Upload,
-    children: [{ label: 'Mappings', href: '/mappings' }],
+    children: [
+      { label: 'Mappings', href: '/mappings' },
+      { label: 'SKUs', href: '/skus' },
+      { label: 'Customers', href: '/customers' },
+    ],
   },
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   {
@@ -58,7 +64,7 @@ export default function Sidebar() {
       <div
         className={cn(
           'mb-4 flex items-center',
-          collapsed ? 'justify-center' : 'justify-between pl-1',
+          collapsed ? 'flex-col justify-center gap-2' : 'justify-between pl-1',
         )}
       >
         {!collapsed && (
@@ -72,14 +78,17 @@ export default function Sidebar() {
             />
           </Link>
         )}
-        <button
-          type="button"
-          onClick={() => setCollapsed((prev) => !prev)}
-          aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
-          className="flex size-8 items-center justify-center rounded-md text-deep-violet-blue/70 transition-colors hover:bg-lavander hover:text-deep-violet-blue"
-        >
-          <PanelLeft className="size-4" />
-        </button>
+        <div className={cn('flex items-center', collapsed ? 'flex-col gap-2' : 'gap-1')}>
+          <NotificationBell collapsed={collapsed} />
+          <button
+            type="button"
+            onClick={() => setCollapsed((prev) => !prev)}
+            aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
+            className="flex size-8 items-center justify-center rounded-md text-deep-violet-blue/70 transition-colors hover:bg-lavander hover:text-deep-violet-blue"
+          >
+            <PanelLeft className="size-4" />
+          </button>
+        </div>
       </div>
 
       {!collapsed && (

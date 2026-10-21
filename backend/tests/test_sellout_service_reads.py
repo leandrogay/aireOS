@@ -70,6 +70,22 @@ def test_sku_ranking_mode_scopes_to_one_retailer(monkeypatch):
     assert params["retailer_names"] == ["fairprice_offline"]
 
 
+def test_sku_ranking_sums_named_customers_on_the_channel(monkeypatch):
+    conn = _install(monkeypatch, lambda sql, params: [])
+
+    sellout_service.get_sku_ranking(customers=["fairprice", "nhg"], mode="offline")
+
+    (sql, params) = conn.calls[0]
+    assert params["retailer_names"] == ["fairprice_offline", "nhg_offline"]
+    assert "GROUP BY s.sku" in sql
+
+
+def test_sku_ranking_rejects_a_blank_customer_list(monkeypatch):
+    _no_engine_allowed(monkeypatch)
+    with pytest.raises(ValueError, match="customers"):
+        sellout_service.get_sku_ranking(customers=[" ", ""])
+
+
 def test_sku_ranking_shapes_rank_and_rounds_value(monkeypatch):
     # product_name's "no SKU in the catalog" fallback is SQL-side
     # (COALESCE(MAX(k.product_name), s.sku)), not re-applied in Python.
@@ -191,6 +207,84 @@ def test_customer_options_strip_the_channel_suffix(monkeypatch):
     options = sellout_service.get_customer_options()
 
     assert options == [{"value": "fairprice", "label": "Fairprice"}]
+
+
+def test_customer_options_keep_a_short_code_uppercase(monkeypatch):
+    rows = [("nhg_offline",)]
+    _install(monkeypatch, lambda sql, params: rows)
+
+    options = sellout_service.get_customer_options()
+
+    assert options == [{"value": "nhg", "label": "NHG"}]
+
+
+# ---- get_customer_totals ------------------------------------------------
+
+
+def test_customer_totals_rejects_blank_customers_and_bad_dates(monkeypatch):
+    _no_engine_allowed(monkeypatch)
+    with pytest.raises(ValueError, match="customers"):
+        sellout_service.get_customer_totals([])
+    with pytest.raises(ValueError, match="start_date"):
+        sellout_service.get_customer_totals(["fairprice"], start_date="Aug")
+
+
+def test_customer_totals_reads_effective_sellout_for_every_channel(monkeypatch):
+    conn = _install(monkeypatch, lambda sql, params: [])
+
+    sellout_service.get_customer_totals(
+        ["fairprice", "nhg"], sku="13255045", start_date="2026-06-01", end_date="2026-08-31"
+    )
+
+    (totals_sql, totals_params) = conn.calls[0]
+    (_presence_sql, presence_params) = conn.calls[1]
+    assert "effective_sellout" in totals_sql
+    assert "monthly_coverage" in totals_sql
+    assert totals_params["retailer_names"] == [
+        "fairprice_offline",
+        "fairprice_online",
+        "nhg_offline",
+        "nhg_online",
+    ]
+    assert totals_params["sku"] == "13255045"
+    assert presence_params["retailer_names"] == totals_params["retailer_names"]
+
+
+def test_customer_totals_reports_channel_presence_and_period_sums(monkeypatch):
+    def respond(sql, params):
+        if "effective_sellout" in sql:
+            return [
+                {"retailer_name": "fairprice_offline", "revenue": 100.126, "units": 10},
+                {"retailer_name": "nhg_offline", "revenue": 40, "units": 4},
+            ]
+        return [
+            {"retailer_name": "fairprice_offline"},
+            {"retailer_name": "fairprice_online"},
+            {"retailer_name": "nhg_offline"},
+        ]
+
+    _install(monkeypatch, respond)
+
+    result = sellout_service.get_customer_totals(["nhg", "fairprice"])
+
+    assert result["customers"] == [
+        {
+            "customer": "nhg",
+            "label": "NHG",
+            "offline": {"revenue": 40.0, "units": 4.0},
+            "has_offline": True,
+            "online": {"revenue": 0.0, "units": 0.0},
+            "has_online": False,
+        },
+        {
+            "customer": "fairprice",
+            "label": "Fairprice",
+            "offline": {"revenue": 100.13, "units": 10.0},
+            "has_offline": True,
+            "online": {"revenue": 0.0, "units": 0.0},
+            "has_online": True,
+        },
+    ]
 
 
 # ---- get_data_freshness -------------------------------------------------
@@ -407,10 +501,9 @@ def test_period_comparison_validates_comparison_type_and_mode(monkeypatch):
         sellout_service.get_period_comparison(mode="instore")
 
 
-def test_period_comparison_without_mode_has_no_retailer_filter(monkeypatch):
-    # Locked-in pre-existing quirk, preserved bug-for-bug across this
-    # migration: omitting mode means no retailer/customer scoping at all,
-    # not "both channels of the given customer".
+def test_period_comparison_without_mode_covers_both_of_the_customers_channels(monkeypatch):
+    # Regression: omitting mode used to drop the customer filter entirely, so
+    # "Fairprice revenue in August" summed every customer's sales.
     conn = _install(
         monkeypatch,
         lambda sql, params: [{"period_start": date(2026, 8, 1), "period_end": date(2026, 8, 31), "period_type": "month"}]
@@ -422,8 +515,20 @@ def test_period_comparison_without_mode_has_no_retailer_filter(monkeypatch):
 
     main_query = conn.calls[-1]
     sql, params = main_query
-    assert "retailer_name" not in params
-    assert "retailers" not in sql
+    assert params["retailer_names"] == ["fairprice_offline", "fairprice_online"]
+    assert "retailer_name = ANY(CAST(:retailer_names AS text[]))" in sql
+
+
+def test_period_comparison_with_a_mode_covers_only_that_channel(monkeypatch):
+    conn = _install(monkeypatch, lambda sql, params: [])
+
+    sellout_service.get_period_comparison(
+        customer="nhg", mode="offline",
+        current_start="2026-08-01", current_end="2026-08-31",
+        previous_start="2026-07-01", previous_end="2026-07-31",
+    )
+
+    assert conn.calls[-1][1]["retailer_names"] == ["nhg_offline"]
 
 
 def test_period_comparison_wow_reads_genuine_weeks_not_effective_sellout(monkeypatch):

@@ -321,18 +321,29 @@ def get_forecast_options() -> dict:
     source = _FORECAST_OUTPUT_WITH_NAMES.format(
         view=BQ_FORECAST_OUTPUT_VIEW, dataset=_catalog_dataset()
     )
+    # Grouped in BigQuery so only one row per customer x product comes back,
+    # not every month of both views.
     query = f"""
+        WITH options AS (
+          SELECT
+            product_name,
+            customer_name,
+            month_year
+          FROM ({source})
+          UNION ALL
+          SELECT
+            product_name,
+            customer_name,
+            period_start AS month_year
+          FROM `{BQ_MONTHLY_SALES_VIEW}`
+        )
         SELECT
           product_name,
           customer_name,
-          month_year
-        FROM ({source})
-        UNION ALL
-        SELECT
-          product_name,
-          customer_name,
-          period_start AS month_year
-        FROM `{BQ_MONTHLY_SALES_VIEW}`
+          MIN(month_year) AS first_month,
+          MAX(month_year) AS last_month
+        FROM options
+        GROUP BY product_name, customer_name
     """
     client = get_bigquery_client()
     df = client.query(query).result().to_dataframe()
@@ -344,7 +355,7 @@ def get_forecast_options() -> dict:
             "end_date": None,
         }
 
-    months = df["month_year"].dropna()
+    months = pd.concat([df["first_month"], df["last_month"]]).dropna()
     return {
         "products": sorted(
             {name for name in df["product_name"].dropna().tolist() if name}

@@ -3,6 +3,7 @@
 import { Info } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { changePct, formatChangePct, parseIso } from '@/app/utils/periodComparison';
+import { formatRevenue } from '@/app/utils/trendChart';
 
 function formatDayMonth(iso) {
   return parseIso(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
@@ -65,7 +66,7 @@ function PeriodRow({ name, tag, totals, available = true }) {
       </p>
       {available ? (
         <p className="shrink-0 text-right tabular-nums">
-          <span className="text-sm font-semibold text-deep-violet-blue">${totals.revenue.toLocaleString()}</span>
+          <span className="text-sm font-semibold text-deep-violet-blue">{formatRevenue(totals.revenue)}</span>
           <span className="ml-1.5 text-xs text-deep-violet-blue/60">{totals.units.toLocaleString()} units</span>
         </p>
       ) : (
@@ -172,7 +173,7 @@ export default function PeriodComparisonDetail({
 
   return (
     <div className="bg-white rounded-lg border border-lavander shadow-sm p-3 h-full">
-      <p className="text-sm font-medium text-deep-violet-blue mb-1">Comparison</p>
+      <h3 className="mb-1 font-serif text-base text-deep-violet-blue">Comparison</h3>
 
       {!active && (
         <p className="text-deep-violet-blue/50 text-sm">

@@ -34,6 +34,13 @@ DESCRIPTION_PRODUCTS = {
     "ADULT TAPE ULTRA XL": "Aire Ultra Tape XL",
 }
 
+# The tracker's trading name for a customer, mapped to the customer_name
+# AireOS stores them under, for customers whose name in the tracker differs
+# from what they are called in the inventory customer list.
+CUSTOMER_ALIASES = {
+    "CMM MARKETING SERVICES PTE LTD": "sheng_shiong",
+}
+
 _NO_ROWS_MESSAGE = (
     "The sell-in sheet has no rows to upload. Check that this is the sell-in tracker "
     "and that the sheet has data under its header row."
@@ -42,6 +49,13 @@ _NO_ROWS_MESSAGE = (
 
 def product_for_description(description: str) -> str | None:
     return DESCRIPTION_PRODUCTS.get(description.upper())
+
+
+def canonical_customer_name(tracker_name: str) -> str:
+    """The tracker's customer name, translated to AireOS's own name for that
+    customer when the two differ (see CUSTOMER_ALIASES); unchanged otherwise."""
+
+    return CUSTOMER_ALIASES.get(tracker_name.upper(), tracker_name)
 
 
 def quantity_problem(qty: float | None) -> str | None:

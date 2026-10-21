@@ -16,6 +16,10 @@ import datetime
 class FakeResult:
     def __init__(self, rows):
         self._rows = list(rows)
+        # Matches real SQLAlchemy's rowcount for an UPDATE/DELETE: how many
+        # rows the statement affected. A respond() for such a statement
+        # returns the affected rows (even if the caller discards them).
+        self.rowcount = len(self._rows)
 
     def all(self):
         return list(self._rows)
