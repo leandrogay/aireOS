@@ -1,0 +1,20 @@
+# Never ship credentials or local env files in the image.
+gcp-key.json
+*.json
+.env*
+
+# Local tooling and output.
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+scripts/out/
+
+# Tests (and the commercial retailer samples under tests/fixtures/).
+tests/
+pytest.ini
+
+Dockerfile
+.dockerignore
+README.md
