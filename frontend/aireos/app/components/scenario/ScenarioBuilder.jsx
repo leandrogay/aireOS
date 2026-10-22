@@ -11,8 +11,10 @@ import { mixCaption } from '@/components/forecast/ForecastYearTotals';
 import BlockTable from '@/components/scenario/BlockTable';
 import BuildingBlocksSection from '@/components/scenario/BuildingBlocksSection';
 import ImpactStrip from '@/components/scenario/ImpactStrip';
+import MonthlyPlan from '@/components/scenario/MonthlyPlan';
 import PromotionsSection from '@/components/scenario/PromotionsSection';
 import ScenarioPanel from '@/components/scenario/ScenarioPanel';
+import ScenarioTotals from '@/components/scenario/ScenarioTotals';
 import ScenarioYearComparison from '@/components/scenario/ScenarioYearComparison';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 import {
@@ -32,11 +34,16 @@ import {
   itemMarkers,
   simulate,
   simulatedYearTotals,
+  splitBasisNeeds,
   withSimulatedLine,
 } from '@/app/utils/scenarioEngine';
 import { monthSpanLabel, pitchMetrics, seasonalAverage } from '@/app/utils/scenarioPitch';
 import { draftPromotionBands } from '@/app/utils/scenarioPromotions';
-import { activeScenarioBlocks, hasUnsavedChanges, updateScenarioBlock } from '@/app/utils/scenarioBlocks';
+import {
+  activeScenarioBlocks,
+  hasUnsavedChanges,
+  updateScenarioBlock,
+} from '@/app/utils/scenarioBlocks';
 import { SCENARIO_SOURCES } from '@/app/utils/scenarioSources';
 import useForecastFilters from '@/hooks/useForecastFilters';
 import useForecastView from '@/hooks/useForecastView';
@@ -44,6 +51,7 @@ import useForecastYearTotals from '@/hooks/useForecastYearTotals';
 import useConfirmAction from '@/hooks/useConfirmAction';
 import useExpandedRows from '@/hooks/useExpandedRows';
 import useScenarioBlocks from '@/hooks/useScenarioBlocks';
+import useUnitsSplitBasis from '@/hooks/useUnitsSplitBasis';
 
 // Distinct items with cells in any of these months.
 function itemsInMonths(monthCells, months) {
@@ -109,6 +117,12 @@ export default function ScenarioBuilder() {
     rows,
     actuals,
   });
+  // Units blocks the filters only partly show (an All SKUs block while one
+  // SKU is picked) are split over rows fetched for their whole scope.
+  const splitBasis = useUnitsSplitBasis({
+    ready,
+    needs: splitBasisNeeds(activeScenarioBlocks(scenarioBlocks.blocks), chartView(filters)),
+  });
 
   if (!ready) {
     return filters.error ? (
@@ -131,7 +145,7 @@ export default function ScenarioBuilder() {
   // Only switched-on blocks count, on the chart and in the tables.
   const allBlocks = scenarioBlocks.blocks;
   const counted = { blocks: activeScenarioBlocks(allBlocks), promotions: draftPromotions };
-  const { cells, byMonth, byItem } = simulate(rows, counted, SCENARIO_SOURCES, chartView(filters));
+  const { cells, byMonth, byItem } = simulate(rows, counted, SCENARIO_SOURCES, chartView(filters, splitBasis.basis));
   // Nothing simulated until a switched-on block changes something in view:
   // no Simulated line, legend entry or table columns before that.
   const hasSimulated = byItem.size > 0;
@@ -219,7 +233,7 @@ export default function ScenarioBuilder() {
 
   const months = forecastMonths(rows);
   const itemCount = allBlocks.length + draftPromotions.length;
-  const error = filters.error ?? view.error ?? scenarioBlocks.error ?? actionError;
+  const error = filters.error ?? view.error ?? scenarioBlocks.error ?? splitBasis.error ?? actionError;
 
   const customerText = customerName ? retailerLabel(customerName) : 'All customers';
 
@@ -250,6 +264,13 @@ export default function ScenarioBuilder() {
   function editSaved(block) {
     setSelectedId(block.id);
     setPanelCollapsed(false);
+  }
+
+  // From the monthly plan: open a block (draft promotions aren't edited
+  // here) in the panel.
+  function openItem(itemId) {
+    const block = allBlocks.find((item) => item.id === itemId);
+    if (block) editSaved(block);
   }
 
   const sectionProps = {
@@ -307,10 +328,30 @@ export default function ScenarioBuilder() {
             }
             summary={<ImpactStrip metrics={metrics} years={yearShares} loading={view.loading} />}
             yearTable={
-              <ScenarioYearComparison
-                metric={metric}
-                rows={comparisonRows}
-                loading={yearTotalsLoading || view.loading}
+              <ScenarioTotals
+                singleSeries={singleSeries}
+                yearTable={
+                  <ScenarioYearComparison
+                    metric={metric}
+                    rows={comparisonRows}
+                    loading={yearTotalsLoading || view.loading}
+                  />
+                }
+                monthlyPlan={
+                  <MonthlyPlan
+                    ready={ready}
+                    productName={productName}
+                    customerName={customerName}
+                    startDate={startDate}
+                    endDate={endDate}
+                    rows={rows}
+                    actuals={actuals}
+                    byMonth={byMonth}
+                    monthItems={monthItems}
+                    onOpenItem={openItem}
+                    scope={`${customerText} · ${productName || 'All SKUs'}`}
+                  />
+                }
               />
             }
             promotions={promotions}

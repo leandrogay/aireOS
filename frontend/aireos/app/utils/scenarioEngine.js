@@ -82,14 +82,21 @@ function deltaCell(row, item, source, deltaUnits) {
 /**
  * The page's chart filters, in the shape a source's deltas() receives.
  *
+ * `splitBasis` (optional) holds forecast rows fetched beyond the filters so
+ * a units item can still be split when the filters show only part of it:
+ * Map customer_name → { startMonth, endMonth, rows } with every SKU of that
+ * customer over those months (see useUnitsSplitBasis).
+ *
  * @param {{ productName: string, customerName: string, startDate: string, endDate: string }} filters
+ * @param {Map<string, { startMonth: string, endMonth: string, rows: object[] }>} [splitBasis]
  */
-export function chartView({ productName = '', customerName = '', startDate = '', endDate = '' }) {
+export function chartView({ productName = '', customerName = '', startDate = '', endDate = '' }, splitBasis = null) {
   return {
     productName,
     customerName,
     startMonth: startDate ? `${startDate.slice(0, 7)}-01` : '',
     endMonth: endDate ? `${endDate.slice(0, 7)}-01` : '',
+    splitBasis,
   };
 }
 
@@ -124,15 +131,50 @@ export function upliftDeltaCells(rows, item, upliftPct, source) {
   return itemRows(rows, item).map((row) => deltaCell(row, item, source, row[CURRENT_UNITS] * share));
 }
 
+// The rows a units item is split over: the item's whole scope. The page's
+// rows when the filters show all of it; otherwise the split basis fetched for
+// its customer, if that covers the item's months; otherwise none (still
+// loading), since splitting over a filtered slice would pile every unit into
+// the part that happens to be on screen.
+function splitRowsFor(rows, item, view) {
+  if (viewCoversItem(item, view)) return rows;
+  const basis = view.splitBasis?.get(item.customer);
+  if (basis && basis.startMonth <= item.startMonth && basis.endMonth >= item.endMonth) return basis.rows;
+  return null;
+}
+
+/**
+ * Units items whose split needs rows beyond the page's filters, as
+ * { customer: { startMonth, endMonth } } spanning all of that customer's
+ * such items: what useUnitsSplitBasis fetches.
+ *
+ * @param {object[]} items switched-on items
+ * @param {ReturnType<typeof chartView>} view
+ */
+export function splitBasisNeeds(items, view) {
+  const needs = {};
+  for (const item of items) {
+    if (item.upliftMode !== 'units' || !item.customer || !item.startMonth || !item.endMonth) continue;
+    if (viewCoversItem(item, view)) continue;
+    const need = needs[item.customer];
+    needs[item.customer] = {
+      startMonth: need && need.startMonth < item.startMonth ? need.startMonth : item.startMonth,
+      endMonth: need && need.endMonth > item.endMonth ? need.endMonth : item.endMonth,
+    };
+  }
+  return needs;
+}
+
 /**
  * Delta cells for one item that adds a fixed number of units over its whole
  * date range. The units are split across its months and SKUs in proportion
  * to their Current forecast, so the seasonality and SKU mix stay as they
  * are; if Current is 0 everywhere, they are split evenly.
  *
- * Returns no cells unless the fetched rows cover the whole item (see
- * viewCoversItem): splitting over a filtered slice would pile every unit
- * into the part that happens to be on screen.
+ * The split is always over the item's whole scope (splitRowsFor), and cells
+ * are returned only for the page's rows, so an All SKUs block shows its
+ * share for the one SKU in view, and a block running past the period shows
+ * its in-period months. No cells while the split's rows are loading.
  *
  * @param {object[]} rows forecast rows from GET /api/forecast
  * @param {{ id: string, customer: string, sku: string, startMonth: string, endMonth: string }} item
@@ -141,12 +183,13 @@ export function upliftDeltaCells(rows, item, upliftPct, source) {
  * @param {ReturnType<typeof chartView>} view
  */
 export function unitsDeltaCells(rows, item, units, source, view) {
-  if (!viewCoversItem(item, view)) return [];
-  const matched = itemRows(rows, item);
+  const splitRows = splitRowsFor(rows, item, view);
+  if (!splitRows) return [];
+  const scope = itemRows(splitRows, item);
   const total = Number(units) || 0;
-  const baseTotal = matched.reduce((sum, row) => sum + row[CURRENT_UNITS], 0);
-  return matched.map((row) => {
-    const share = baseTotal > 0 ? row[CURRENT_UNITS] / baseTotal : 1 / matched.length;
+  const baseTotal = scope.reduce((sum, row) => sum + row[CURRENT_UNITS], 0);
+  return itemRows(rows, item).map((row) => {
+    const share = baseTotal > 0 ? row[CURRENT_UNITS] / baseTotal : 1 / scope.length;
     return deltaCell(row, item, source, total * share);
   });
 }

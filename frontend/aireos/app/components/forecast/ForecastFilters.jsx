@@ -3,9 +3,7 @@
 import { cn } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
 import DateRangePicker from '@/components/ui/DateRangePicker';
-import DateRangeControl from '@/components/ui/DateRangeControl';
 import { retailerLabel } from '@/app/utils/retailerLabel';
-import { forecastDateRangePresets } from '@/app/utils/dateRange';
 
 const selectClass =
   'h-8 w-full px-2 text-xs rounded-md border bg-white text-deep-violet-blue border-violet disabled:opacity-50';
@@ -63,9 +61,8 @@ function CustomerField({ value, onChange, options }) {
 
 /**
  * Forecast filters: SKU, customer, date range, Clear. The default is the
- * card /forecast uses. `variant="toolbar"` (Scenario builder only) is one
- * row with no card, inside the chart card, and picks the period with
- * DateRangeControl (whole months, with presets) instead of two dates.
+ * card /forecast uses. `variant="toolbar"` (Scenario builder only) is the
+ * same fields in one row with no card, inside the chart card.
  */
 
 export default function ForecastFilters({
@@ -94,18 +91,18 @@ export default function ForecastFilters({
         <div className="w-full sm:w-44">
           <SkuField value={productName} onChange={onProductNameChange} options={productOptions} />
         </div>
-        <div>
-          <p className={labelClass}>Period</p>
-          <DateRangeControl
+        <div className="w-full sm:w-80">
+          <DateRangePicker
             start={startDate}
             end={endDate}
-            presets={forecastDateRangePresets({ start: minDate, end: maxDate })}
-            earliestDataStart={minDate}
-            latestDataEnd={maxDate}
-            onChange={(start, end) => {
-              onStartDateChange(start);
-              onEndDateChange(end);
-            }}
+            onStartChange={onStartDateChange}
+            onEndChange={onEndDateChange}
+            minDate={minDate}
+            maxDate={maxDate}
+            startLabel="From"
+            endLabel="To"
+            className="grid-cols-2 gap-2"
+            inputClassName="border-violet bg-white h-8"
           />
         </div>
         <button type="button" onClick={onClearFilters} disabled={!canClearFilters} className={cn(clearClass, 'mb-1.5')}>

@@ -17,29 +17,6 @@ export function currentYearDateRange(bounds = {}) {
   };
 }
 
-// Presets for the Scenario builder's Period control (DateRangeControl's
-// shape). Forward-looking, unlike the dashboard's: forecasts run ahead of
-// today. Whole months, clamped to the data that exists.
-export function forecastDateRangePresets(bounds = {}) {
-  const clamp = ({ start, end }) => ({
-    start: bounds.start && bounds.start > start ? bounds.start : start,
-    end: bounds.end && bounds.end < end ? bounds.end : end,
-  });
-  const today = singaporeToday();
-  const pad = (n) => String(n).padStart(2, '0');
-  const monthStart = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-01`;
-  const last = new Date(today.getFullYear(), today.getMonth() + 12, 0);
-  const twelveEnd = `${last.getFullYear()}-${pad(last.getMonth() + 1)}-${pad(last.getDate())}`;
-  const presets = [
-    { id: 'this-year', label: 'This year', ...currentYearDateRange(bounds) },
-    { id: 'next-12-months', label: 'Next 12 months', ...clamp({ start: monthStart, end: twelveEnd }) },
-  ];
-  if (bounds.start && bounds.end) {
-    presets.push({ id: 'all-months', label: 'All months', start: bounds.start, end: bounds.end });
-  }
-  return presets;
-}
-
 const FORECAST_DATE_SESSION_KEY = 'aireos.forecast.dateRange';
 
 export function readForecastDateSession() {

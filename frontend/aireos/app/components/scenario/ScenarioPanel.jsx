@@ -34,7 +34,7 @@ export default function ScenarioPanel({
     return (
       <aside
         aria-label="Scenario builder"
-        className="flex items-center justify-center gap-3 rounded-lg border border-lavander bg-white py-3 min-[1100px]:sticky min-[1100px]:top-4 min-[1100px]:flex-col"
+        className="flex items-center justify-center gap-3 rounded-lg border border-lavander bg-white py-3 min-[1100px]:flex-col"
       >
         <button
           type="button"
@@ -57,7 +57,7 @@ export default function ScenarioPanel({
   return (
     <aside
       aria-label="Scenario builder"
-      className="flex flex-col overflow-hidden rounded-lg border border-lavander bg-white text-deep-violet-blue min-[1100px]:sticky min-[1100px]:top-4 min-[1100px]:max-h-[calc(100dvh-2rem)]"
+      className="flex flex-col overflow-hidden rounded-lg border border-lavander bg-white text-deep-violet-blue"
     >
       <div className="flex items-start justify-between gap-2 border-b border-lavander px-3 py-2.5">
         <div className="min-w-0 flex-1">
