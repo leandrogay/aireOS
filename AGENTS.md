@@ -100,13 +100,15 @@ aireOS/
     │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column), Sidebar (NAV_ITEMS)
     │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, calendar, popover, DateRangePicker
     │   │   │                      (typed date inputs, not a calendar); MonthGrid (year + 12-month grid, shared by
-    │   │   │                      promotions MonthPicker and the dashboard month-range picker); Toast (+ hooks/useToast);
+    │   │   │                      promotions MonthPicker and the dashboard month-range picker); DateRangeControl (Period
+    │   │   │                      picker: presets + MonthRangeCalendar, whole months; dashboard + Forecast/Scenario
+    │   │   │                      filters); InfoTooltip ("i" hint, inventory + Scenario builder); Toast (+ hooks/useToast);
     │   │   │                      list-table kit (Customers + Promotions): DataTable (card: count, search slot, refresh,
     │   │   │                      Retry, empty state, footer) → TableGrid (column config → fixed widths, sort headers,
     │   │   │                      skeleton; `nested` variant + `inset` for tables inside rows), ExpandableRow, RowActions
     │   │   │                      ("..." menu, disabledReason), StatusPill; + hooks/useExpandedRows, hooks/useConfirmAction
     │   │   ├── dashboard/         DashboardFilters, CustomerSelector, FilterBadge, PeriodControls (Period /
-    │   │   │                      Compare to: DateRangeControl, CompareControl, MonthRangeCalendar — whole months only),
+    │   │   │                      Compare to: ui/DateRangeControl, CompareControl — whole months only),
     │   │   │                      RevenueTrendCard (always by format) → TrendChart (FormatTrendChart),
     │   │   │                      ComparisonMixChart; PeriodTexture (hatched "past period" fills), TooltipChange,
     │   │   │                      PeriodComparisonDetail, RevenueSummaryCards + FormatMixBar, SkuRanking
@@ -115,7 +117,12 @@ aireOS/
     │   │   │                      RetailerTable (nested TableGrid), columns.js (shared grid), NameFormDialog,
     │   │   │                      LinkRetailerDialog, UnlinkedRetailers
     │   │   ├── skus/              SKU catalogue filters/table, create-edit form, details/history
-    │   │   ├── forecast/          ForecastChart/Filters/Table, HeaderCheckboxFilter (shared)
+    │   │   ├── forecast/          ForecastChart/Filters/Table, HeaderCheckboxFilter (shared); ForecastChart takes the
+    │   │   │                      Scenario builder's `scenario`, `toolbar`, `summary` and `yearTable` slots
+    │   │   ├── scenario/          ScenarioBuilder (state + layout) → ForecastChart + ImpactStrip + ScenarioYearComparison,
+    │   │   │                      ScenarioPanel (Building blocks / Promotions tabs: BuildingBlocksSection → BlockList,
+    │   │   │                      BlockEditor, UpliftField; PromotionsSection is the promotions side's), BlockTable
+    │   │   │                      (saved blocks on ui/DataTable, columns.js)
     │   ├── services/              Backend API wrappers
     │   │   ├── promotionsApi.js   request() + parseApiError() + promotion/retailer/store endpoints
     │   │   ├── catalogApi.js      SKU CRUD, details, options and archive API wrappers
@@ -133,7 +140,8 @@ aireOS/
     │       ├── skuForm.js         required-field validation and SKU form/payload conversion
     │       ├── promotionOverview.js list grouping/filter helpers
     │       ├── forecastView.js    Sell-out run series (Initial Yearly Forecast/Previous/Current), tier resolution
-    │       ├── dateRange.js       currentYearDateRange() -- shared default-date-range helper
+    │       ├── dateRange.js       currentYearDateRange() -- shared default-date-range helper; forecastDateRangePresets()
+    │       │                      (forward-looking Period presets for the Forecast/Scenario DateRangeControl)
     │       ├── periodComparison.js Compare-to baselines (comparisonSetup), week pairing for the comparison chart
     │       ├── dateRangePresets.js Period presets in whole months (Latest month … Past 12 months, YTD, Last year), anchored to the latest loaded month
     │       ├── trendChart.js      Trend chart labels, x-axis setup, bar sizing, format stack order
