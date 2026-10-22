@@ -1,5 +1,6 @@
 """Google Workspace login, callback, session inspection, and logout routes."""
 
+import logging
 import urllib.parse
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -10,6 +11,7 @@ from app.auth import require_user
 from app.services import auth_service
 
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
@@ -75,6 +77,7 @@ def callback(
     except auth_service.InvalidSessionError:
         return _login_error("invalid_state")
     except auth_service.AuthProviderError:
+        logger.exception("Google authentication provider failed")
         return _login_error("authentication_failed")
     except config.ConfigError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc

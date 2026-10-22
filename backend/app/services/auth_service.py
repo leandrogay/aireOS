@@ -24,6 +24,9 @@ SESSION_COOKIE = "aireos_session"
 OAUTH_STATE_COOKIE = "aireos_oauth_state"
 SESSION_MAX_AGE_SECONDS = 8 * 60 * 60
 OAUTH_STATE_MAX_AGE_SECONDS = 10 * 60
+# Allow a small difference between the application host and Google's clocks.
+# Token signatures, audience, issuer, expiry and Workspace membership are still verified.
+OIDC_CLOCK_SKEW_SECONDS = 5
 
 
 class InvalidSessionError(ValueError):
@@ -187,6 +190,7 @@ def _verify_id_token(token: str) -> dict[str, Any]:
             token,
             GoogleRequest(),
             config.require("GOOGLE_OAUTH_CLIENT_ID"),
+            clock_skew_in_seconds=OIDC_CLOCK_SKEW_SECONDS,
         )
     except ValueError as exc:
         raise AuthProviderError("Google returned an invalid identity token") from exc

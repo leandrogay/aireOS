@@ -90,6 +90,28 @@ def test_callback_rejects_user_outside_workspace(monkeypatch):
         )
 
 
+def test_id_token_verification_allows_small_clock_skew(monkeypatch):
+    _configure(monkeypatch)
+    captured = {}
+
+    def fake_verify(token, _request, audience, *, clock_skew_in_seconds):
+        captured.update(
+            token=token,
+            audience=audience,
+            clock_skew_in_seconds=clock_skew_in_seconds,
+        )
+        return {"sub": "google-user-1"}
+
+    monkeypatch.setattr(auth_service.id_token, "verify_oauth2_token", fake_verify)
+
+    assert auth_service._verify_id_token("id-token") == {"sub": "google-user-1"}
+    assert captured == {
+        "token": "id-token",
+        "audience": "client-id",
+        "clock_skew_in_seconds": auth_service.OIDC_CLOCK_SKEW_SECONDS,
+    }
+
+
 def test_session_rejects_tampering(monkeypatch):
     _configure(monkeypatch)
     token = auth_service.create_session(

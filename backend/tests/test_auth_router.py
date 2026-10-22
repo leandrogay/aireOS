@@ -1,3 +1,5 @@
+import logging
+
 from fastapi.testclient import TestClient
 
 from app import config
@@ -58,6 +60,32 @@ def test_callback_sets_session_cookie_and_redirects_home(monkeypatch):
     assert response.status_code == 302
     assert response.headers["location"] == "http://localhost:3000/dashboard"
     assert response.cookies[auth_service.SESSION_COOKIE] == "signed-session"
+
+
+def test_callback_logs_provider_failure_without_exposing_request_values(monkeypatch, caplog):
+    monkeypatch.setattr(config, "AUTH_FRONTEND_URL", "http://localhost:3000")
+
+    def fail_login(_code, _state, _cookie):
+        raise auth_service.AuthProviderError("Google rejected the token exchange")
+
+    monkeypatch.setattr(auth_service, "complete_login", fail_login)
+    client.cookies.set(auth_service.OAUTH_STATE_COOKIE, "signed-state")
+    try:
+        with caplog.at_level(logging.ERROR, logger="app.routers.auth"):
+            response = client.get(
+                "/api/auth/callback?code=sensitive-code&state=sensitive-state",
+                follow_redirects=False,
+            )
+    finally:
+        client.cookies.delete(auth_service.OAUTH_STATE_COOKIE)
+
+    assert response.status_code == 302
+    assert response.headers["location"] == (
+        "http://localhost:3000/login?error=authentication_failed"
+    )
+    assert "Google authentication provider failed" in caplog.text
+    assert "sensitive-code" not in caplog.text
+    assert "sensitive-state" not in caplog.text
 
 
 def test_internal_api_rejects_request_without_session_when_auth_is_enabled(monkeypatch):
