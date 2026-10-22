@@ -36,31 +36,31 @@ export default async function LoginPage({ searchParams }) {
   return (
     <main className="relative isolate flex min-h-screen items-center justify-center overflow-hidden bg-cream px-6 py-12">
       <PackshotBackdrop />
-      <Card className="relative z-10 w-full max-w-lg gap-0 overflow-hidden border-border/70 py-0 shadow-xl shadow-primary/10">
-        <CardHeader className="items-center px-8 pt-10 pb-7 text-center sm:px-12 sm:pt-12">
+      <Card className="relative z-10 min-h-[34rem] w-full max-w-3xl gap-0 overflow-hidden border-border/70 py-0 shadow-xl shadow-primary/10">
+        <CardHeader className="flex flex-1 flex-col items-center justify-center px-8 pt-12 pb-10 text-center sm:px-16 sm:pt-16">
           <Image
             src="/aire-logo.png"
             alt="AIRE"
-            width={120}
-            height={49}
+            width={150}
+            height={61}
             className="mx-auto"
             priority
           />
-          <CardTitle className="mt-7 text-3xl tracking-tight text-deep-violet-blue">
+          <CardTitle className="mt-9 text-4xl tracking-tight text-deep-violet-blue sm:text-5xl">
             Welcome to AireOS
           </CardTitle>
-          <CardDescription className="mt-2 max-w-sm text-sm leading-6">
+          <CardDescription className="mt-3 max-w-lg text-lg leading-8">
             Sign in securely with your Aire Google Workspace account to continue.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-5 border-t border-border/60 bg-card/60 px-8 py-8 sm:px-12 sm:py-10">
+        <CardContent className="space-y-6 border-t border-border/60 bg-card/60 px-8 py-10 sm:px-16 sm:py-12">
           {errorMessage && (
-            <p role="alert" className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            <p role="alert" className="rounded-lg bg-destructive/10 px-4 py-3 text-base text-destructive">
               {errorMessage}
             </p>
           )}
           {!apiBase && (
-            <p role="alert" className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            <p role="alert" className="rounded-lg bg-destructive/10 px-4 py-3 text-base text-destructive">
               NEXT_PUBLIC_API_URL is not configured.
             </p>
           )}
@@ -71,13 +71,13 @@ export default async function LoginPage({ searchParams }) {
               variant: 'outline',
               size: 'lg',
               className:
-                'h-14 w-full gap-3 border-border bg-background px-5 text-base font-semibold shadow-sm hover:border-primary/40 hover:bg-primary/5',
+                'h-16 w-full gap-3 border-border bg-background px-6 text-xl font-semibold shadow-sm hover:border-primary/40 hover:bg-primary/5',
             })}
           >
-            <Image src="/google-g-logo.svg" alt="" width={22} height={22} />
+            <Image src="/google-g-logo.svg" alt="" width={24} height={24} />
             Continue with Google
           </a>
-          <div className="flex items-center justify-center gap-2 text-center text-xs text-muted-foreground">
+          <div className="flex items-center justify-center gap-2 text-center text-sm text-muted-foreground">
             <ShieldCheck aria-hidden="true" className="size-4 text-primary" />
             <span>Google Workspace SSO · Verified @shop-aire.com accounts only</span>
           </div>
