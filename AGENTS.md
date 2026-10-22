@@ -100,9 +100,9 @@ aireOS/
     │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column), Sidebar (NAV_ITEMS)
     │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, calendar, popover, DateRangePicker
     │   │   │                      (typed date inputs, not a calendar); MonthGrid (year + 12-month grid, shared by
-    │   │   │                      promotions MonthPicker and the dashboard month-range picker); DateRangeControl (Period
-    │   │   │                      picker: presets + MonthRangeCalendar, whole months; dashboard + Forecast/Scenario
-    │   │   │                      filters); InfoTooltip ("i" hint, inventory + Scenario builder); Toast (+ hooks/useToast);
+    │   │   │                      promotions MonthPicker and the dashboard month-range picker); DateRangeControl
+    │   │   │                      (dashboard Period picker: presets + MonthRangeCalendar, whole months); InfoTooltip
+    │   │   │                      ("i" hint, inventory + Scenario builder); Toast (+ hooks/useToast);
     │   │   │                      list-table kit (Customers + Promotions): DataTable (card: count, search slot, refresh,
     │   │   │                      Retry, empty state, footer) → TableGrid (column config → fixed widths, sort headers,
     │   │   │                      skeleton; `nested` variant + `inset` for tables inside rows), ExpandableRow, RowActions
@@ -119,7 +119,8 @@ aireOS/
     │   │   ├── skus/              SKU catalogue filters/table, create-edit form, details/history
     │   │   ├── forecast/          ForecastChart/Filters/Table, HeaderCheckboxFilter (shared); ForecastChart takes the
     │   │   │                      Scenario builder's `scenario`, `toolbar`, `summary` and `yearTable` slots
-    │   │   ├── scenario/          ScenarioBuilder (state + layout) → ForecastChart + ImpactStrip + ScenarioYearComparison,
+    │   │   ├── scenario/          ScenarioBuilder (state + layout) → ForecastChart + ImpactStrip + ScenarioTotals (By year:
+    │   │   │                      ScenarioYearComparison | By month: MonthlyPlan → MonthlyPlanTable, summed over the filters),
     │   │   │                      ScenarioPanel (Building blocks / Promotions tabs: BuildingBlocksSection → BlockList,
     │   │   │                      BlockEditor, UpliftField; PromotionsSection is the promotions side's), BlockTable
     │   │   │                      (saved blocks on ui/DataTable, columns.js)
@@ -140,8 +141,8 @@ aireOS/
     │       ├── skuForm.js         required-field validation and SKU form/payload conversion
     │       ├── promotionOverview.js list grouping/filter helpers
     │       ├── forecastView.js    Sell-out run series (Initial Yearly Forecast/Previous/Current), tier resolution
-    │       ├── dateRange.js       currentYearDateRange() -- shared default-date-range helper; forecastDateRangePresets()
-    │       │                      (forward-looking Period presets for the Forecast/Scenario DateRangeControl)
+    │       ├── scenarioPlan.js    Monthly plan rows: last year, model, blocks, adjusted, variance; shiftMonth()
+    │       ├── dateRange.js       currentYearDateRange() -- shared default-date-range helper
     │       ├── periodComparison.js Compare-to baselines (comparisonSetup), week pairing for the comparison chart
     │       ├── dateRangePresets.js Period presets in whole months (Latest month … Past 12 months, YTD, Last year), anchored to the latest loaded month
     │       ├── trendChart.js      Trend chart labels, x-axis setup, bar sizing, format stack order
@@ -162,6 +163,8 @@ aireOS/
     │   ├── usePriceMix.js         useSkuSales × 2 (this period + comparison) → priceMixEffects
     │   ├── useDohSettings.js      /api/settings/doh (+ replaceRow for the row a write returns)
     │   ├── useScenarioBlocks.js   /api/scenario/building-blocks: saved blocks + working copies, saveBlock/deleteBlock, unsaved warning
+    │   ├── useUnitsSplitBasis.js  /api/forecast rows beyond the filters, so units blocks the filters only partly show can be split
+    │   ├── useLastYearActuals.js  /api/forecast actuals 12 months back, for the monthly plan's Last year actual
     │   ├── useCustomers.js        /api/catalog/customers (+ applyCustomer / removeCustomer for the row a write returns)
     │   ├── useExpandedRows.js     { isExpanded, toggle, expand } for ui/ExpandableRow (several open by default)
     │   ├── useConfirmAction.js    { target, isPending, request, cancel, confirm } for ui/ConfirmDialog (e.g. Delete)
