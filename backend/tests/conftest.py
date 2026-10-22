@@ -12,6 +12,8 @@ FrozenDatetime pins the clock for the UTC tests.
 
 import datetime
 
+import pytest
+
 
 class FakeResult:
     def __init__(self, rows):
@@ -95,3 +97,23 @@ class FrozenDatetime(datetime.datetime):
         if tz is None:
             return FROZEN_UTC.astimezone(SINGAPORE).replace(tzinfo=None)
         return FROZEN_UTC.astimezone(tz)
+
+
+# ---- No real notifications --------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def _no_real_notification_database(monkeypatch):
+    """
+    Uploads and mapping approvals write a notification of their own, outside
+    any engine a test fakes. Without this, a test of one of them would open a
+    real Cloud SQL connection on any machine that has credentials. Tests that
+    exercise notification_service install their own fake engine over this.
+    """
+
+    from app.services import notification_service
+
+    def blocked():
+        raise AssertionError("tests must not reach the real notifications table")
+
+    monkeypatch.setattr(notification_service, "_get_engine", blocked)
+    monkeypatch.setattr(notification_service, "_get_read_engine", blocked)

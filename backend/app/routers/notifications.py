@@ -1,7 +1,14 @@
-from fastapi import APIRouter, HTTPException
+import asyncio
 
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
+
+from app import notification_stream
 from app.schemas.notifications import MarkReadRequest
 from app.services import notification_service
+
+# A comment line this often keeps proxies from closing a quiet stream.
+_KEEP_ALIVE_SECONDS = 25
 
 # One shared notification feed (no per-user accounts) under /api/notifications
 router = APIRouter(
@@ -20,6 +27,34 @@ def list_notifications(unread_only: bool = False, limit: int = 50):
             status_code=500,
             detail=f"Failed to list notifications: {type(e).__name__}: {e}",
         )
+
+
+@router.get("/stream")
+async def stream_changes(request: Request):
+    """
+    Server-Sent Events: a `changed` event whenever any notification is added,
+    read or deleted, so a tab re-fetches only then instead of polling. The
+    browser's EventSource reconnects by itself (after `retry` ms) if this drops.
+    """
+
+    async def events():
+        queue = notification_stream.subscribe()
+        try:
+            yield "retry: 5000\n\n"
+            while not await request.is_disconnected():
+                try:
+                    await asyncio.wait_for(queue.get(), timeout=_KEEP_ALIVE_SECONDS)
+                    yield "event: changed\ndata: {}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": keep-alive\n\n"
+        finally:
+            notification_stream.unsubscribe(queue)
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/unread-count")

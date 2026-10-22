@@ -94,6 +94,7 @@ function ForecastDetails({ payload, success }) {
           value={payload.skus.length ? `${payload.skus.length}: ${payload.skus.join(', ')}` : '0'}
         />
         <Field label="Last updated" value={formatDateTime(payload.updated_at)} />
+        <Field label="Started by" value={payload.source === 'scheduled' ? 'Scheduled run' : 'Forecast script'} />
       </div>
       {!success && (
         <div className="mt-1">
@@ -110,6 +111,31 @@ function ForecastDetails({ payload, success }) {
   );
 }
 
+function MappingDetails({ payload }) {
+  return (
+    <>
+      <p className="text-deep-violet-blue/80">
+        {payload.amended
+          ? 'An approved file mapping was changed. Every future file with these columns will use the new version.'
+          : 'A new file mapping was approved. Every future file with these columns will be loaded with it.'}
+      </p>
+      <div className="mt-2 space-y-1">
+        <Field label="Mapping" value={payload.name} />
+        <Field label="Vendor" value={payload.vendor} />
+        <Field label="Waiting files loaded" value={payload.uploads_processed} />
+        {payload.uploads_failed > 0 && <Field label="Waiting files that failed" value={payload.uploads_failed} />}
+      </div>
+    </>
+  );
+}
+
+const TITLES = {
+  low_stock: lowStockTitle,
+  forecast_success: (payload) => forecastTitle(payload, true),
+  forecast_failure: (payload) => forecastTitle(payload, false),
+  mapping_uploaded: (payload) => `[MAPPING] ${payload.amended ? 'Mapping updated' : 'New mapping approved'} – ${payload.name}`,
+};
+
 const MARK_READ_BUTTON_CLASS =
   'shrink-0 rounded-md border border-violet/40 bg-white px-2 py-0.5 text-[11px] font-medium text-deep-violet-blue transition hover:bg-cream';
 
@@ -124,10 +150,7 @@ const MARK_READ_BUTTON_CLASS =
  */
 function NotificationCard({ notification, onMarkRead }) {
   const { notification_type: type, payload, created_at: createdAt } = notification;
-  const title =
-    type === 'low_stock'
-      ? lowStockTitle(payload)
-      : forecastTitle(payload, type === 'forecast_success');
+  const title = TITLES[type] ? TITLES[type](payload) : 'Notification';
 
   return (
     <div className={CARD_CLASS}>
@@ -140,6 +163,7 @@ function NotificationCard({ notification, onMarkRead }) {
       {type === 'low_stock' && <LowStockDetails payload={payload} />}
       {type === 'forecast_success' && <ForecastDetails payload={payload} success />}
       {type === 'forecast_failure' && <ForecastDetails payload={payload} success={false} />}
+      {type === 'mapping_uploaded' && <MappingDetails payload={payload} />}
       <p className="mt-2 text-right text-[10px] text-deep-violet-blue/50">{formatDateTime(createdAt)}</p>
     </div>
   );
