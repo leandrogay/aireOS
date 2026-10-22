@@ -95,14 +95,14 @@ export default function SkusPage() {
     setEditor(null);
   };
 
-  const viewSku = async (sku) => {
+  const viewSkuHistory = async (sku) => {
     setDetails(sku);
     setDetailsLoading(true);
     setDetailsError('');
     try {
       setDetails(await getSku(sku.sku));
     } catch (viewError) {
-      setDetailsError(viewError.message || 'Failed to load SKU details.');
+      setDetailsError(viewError.message || 'Failed to load SKU history.');
     } finally {
       setDetailsLoading(false);
     }
@@ -122,7 +122,15 @@ export default function SkusPage() {
     <PageLayout
       title="SKU catalogue"
       fitScreen
-      headerExtra={<Button onClick={() => setEditor({ sku: null })}><Plus />Create SKU</Button>}
+      headerExtra={(
+        <Button
+          onClick={() => setEditor({ sku: null })}
+          className="ml-auto bg-deep-violet-blue text-white hover:bg-deep-violet-blue/90"
+        >
+          <Plus data-icon="inline-start" />
+          Create SKU
+        </Button>
+      )}
     >
       <div className="flex min-h-0 flex-1 flex-col gap-3">
         <SkuFilters
@@ -144,7 +152,7 @@ export default function SkusPage() {
           totalPages={totalPages}
           onPageChange={setPage}
           onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
-          onView={viewSku}
+          onHistory={viewSkuHistory}
           onEdit={(sku) => setEditor({ sku })}
           onDelete={deletion.request}
           onRefresh={refreshCatalog}
@@ -167,7 +175,6 @@ export default function SkusPage() {
         loading={detailsLoading}
         error={detailsError}
         onClose={() => setDetails(null)}
-        onEdit={(sku) => { setDetails(null); setEditor({ sku }); }}
       />
       <ConfirmDialog
         open={Boolean(deletion.target)}
