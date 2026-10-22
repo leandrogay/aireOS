@@ -1,27 +1,32 @@
 'use client';
 
 import { useState } from 'react';
-import { PencilLine } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import ChartLoading from '@/components/ui/ChartLoading';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import ForecastChart from '@/components/forecast/ForecastChart';
 import ForecastFilters from '@/components/forecast/ForecastFilters';
+import { mixCaption } from '@/components/forecast/ForecastYearTotals';
+import BlockTable from '@/components/scenario/BlockTable';
 import BuildingBlocksSection from '@/components/scenario/BuildingBlocksSection';
-import PitchSummaryCard from '@/components/scenario/PitchSummaryCard';
+import ImpactStrip from '@/components/scenario/ImpactStrip';
 import PromotionsSection from '@/components/scenario/PromotionsSection';
 import ScenarioPanel from '@/components/scenario/ScenarioPanel';
+import ScenarioYearComparison from '@/components/scenario/ScenarioYearComparison';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 import {
   ALL_PACK_TYPE_VALUES,
   ALL_PROMO_TYPE_VALUES,
   ALL_SERIES_VISIBLE,
   buildMonthlyPoints,
+  sumHorizonForecast,
   toggleSelectedValue,
   toggleSeriesVisibility,
 } from '@/app/utils/forecastView';
 import {
   SIMULATED_SERIES,
+  cellsByMonth,
   chartView,
   forecastMonths,
   itemMarkers,
@@ -29,20 +34,32 @@ import {
   simulatedYearTotals,
   withSimulatedLine,
 } from '@/app/utils/scenarioEngine';
-import { impactRows, monthSpanLabel, pitchMetrics, seasonalAverage } from '@/app/utils/scenarioPitch';
+import { monthSpanLabel, pitchMetrics, seasonalAverage } from '@/app/utils/scenarioPitch';
 import { draftPromotionBands } from '@/app/utils/scenarioPromotions';
-import { activeScenarioBlocks } from '@/app/utils/scenarioBlocks';
+import { activeScenarioBlocks, hasUnsavedChanges, updateScenarioBlock } from '@/app/utils/scenarioBlocks';
 import { SCENARIO_SOURCES } from '@/app/utils/scenarioSources';
 import useForecastFilters from '@/hooks/useForecastFilters';
 import useForecastView from '@/hooks/useForecastView';
 import useForecastYearTotals from '@/hooks/useForecastYearTotals';
+import useConfirmAction from '@/hooks/useConfirmAction';
+import useExpandedRows from '@/hooks/useExpandedRows';
 import useScenarioBlocks from '@/hooks/useScenarioBlocks';
+
+// Distinct items with cells in any of these months.
+function itemsInMonths(monthCells, months) {
+  const ids = new Set();
+  for (const month of months) {
+    for (const id of monthCells.get(month)?.keys() ?? []) ids.add(id);
+  }
+  return ids.size;
+}
 
 /**
  * The Scenario builder workspace (blueprint Part 4): the same filters and
  * chart as /forecast, with the switched-on building blocks (and draft
- * promotions) simulated on top, a pitch summary underneath and the panel on
- * the right.
+ * promotions) simulated on top. The chart card holds the filters, the
+ * impact summary and a Current-vs-Simulated table; saved blocks are listed
+ * in a table under it; the panel on the right creates and edits them.
  *
  * Shared file: it owns the state and the layout slots. Everything it shows
  * is calculated by the pure scenario utils from the forecast rows and the
@@ -63,6 +80,25 @@ export default function ScenarioBuilder() {
   // Draft promotions are the promotions side's to save; until then they live
   // in this page's memory only.
   const [draftPromotions, setDraftPromotions] = useState([]);
+  // The block open in the panel's editor (a draft, or a saved block opened
+  // from the table with Edit); its months are banded on the chart.
+  const [selectedId, setSelectedId] = useState(null);
+  const [newIds, setNewIds] = useState([]);
+  const [togglingIds, setTogglingIds] = useState([]);
+  const [actionError, setActionError] = useState(null);
+  const expandedRows = useExpandedRows();
+  const deletion = useConfirmAction({ onConfirm: deleteSaved });
+
+  // Called by the confirm dialog; catches its own errors (useConfirmAction).
+  async function deleteSaved(block) {
+    setActionError(null);
+    try {
+      await scenarioBlocks.deleteBlock(block);
+      setSelectedId((current) => (current === block.id ? null : current));
+    } catch (err) {
+      setActionError(`Couldn't delete ${block.name}: ${err.message}`);
+    }
+  }
   const { years, loading: yearTotalsLoading } = useForecastYearTotals({
     ready,
     productName,
@@ -92,28 +128,129 @@ export default function ScenarioBuilder() {
   const revenuePoints = buildMonthlyPoints(rows, actuals, 'revenue', { singleSeries });
   const basePoints = metric === 'revenue' ? revenuePoints : unitPoints;
 
-  // Only switched-on blocks count, on the chart and in the pitch summary.
-  const counted = { blocks: activeScenarioBlocks(scenarioBlocks.blocks), promotions: draftPromotions };
-  const { byMonth, byItem } = simulate(rows, counted, SCENARIO_SOURCES, chartView(filters));
+  // Only switched-on blocks count, on the chart and in the tables.
+  const allBlocks = scenarioBlocks.blocks;
+  const counted = { blocks: activeScenarioBlocks(allBlocks), promotions: draftPromotions };
+  const { cells, byMonth, byItem } = simulate(rows, counted, SCENARIO_SOURCES, chartView(filters));
+  // Nothing simulated until a switched-on block changes something in view:
+  // no Simulated line, legend entry or table columns before that.
+  const hasSimulated = byItem.size > 0;
+  const monthCells = cellsByMonth(cells);
+  const names = new Map([...allBlocks, ...draftPromotions].map((item) => [item.id, item.name]));
+  const monthItems = new Map(
+    [...monthCells].map(([month, items]) => [
+      month,
+      [...items].map(([itemId, totals]) => ({ itemId, name: names.get(itemId) ?? '', ...totals })),
+    ])
+  );
+  const monthsByItem = new Map();
+  for (const [month, items] of [...monthCells].sort(([a], [b]) => a.localeCompare(b))) {
+    for (const [itemId, totals] of items) {
+      if (!monthsByItem.has(itemId)) monthsByItem.set(itemId, []);
+      monthsByItem.get(itemId).push({ month_year: month, ...totals });
+    }
+  }
+
+  // The panel holds drafts, saved blocks with unsaved edits (not ones the
+  // table is saving a switch for) and the saved block opened with Edit.
+  const savedBlocks = allBlocks.filter((block) => block.saved);
+  const panelBlocks = allBlocks.filter(
+    (block) =>
+      !block.saved ||
+      block.id === selectedId ||
+      (hasUnsavedChanges(block) && !togglingIds.includes(block.id))
+  );
+  const selectedBlock = panelBlocks.find((block) => block.id === selectedId) ?? panelBlocks[0] ?? null;
+
+  const simulatedYears = simulatedYearTotals(years, byMonth);
   const scenario = {
-    series: [SIMULATED_SERIES],
-    markers: itemMarkers(byItem),
+    series: hasSimulated ? [SIMULATED_SERIES] : [],
+    markers: hasSimulated ? itemMarkers(byItem) : [],
     promoBands: draftPromotionBands(draftPromotions),
     seasonalAverage: seasonalAverage(basePoints),
-    simulatedYears: simulatedYearTotals(years, byMonth),
+    simulatedYears: hasSimulated ? simulatedYears : [],
+    monthItems,
+    selectedBand:
+      selectedBlock && byItem.has(selectedBlock.id)
+        ? { startMonth: selectedBlock.startMonth, endMonth: selectedBlock.endMonth, label: selectedBlock.name }
+        : null,
   };
   const metrics = pitchMetrics(unitPoints, revenuePoints, byMonth);
-  const itemRows = impactRows(counted, SCENARIO_SOURCES, byItem);
+  const yearShares = simulatedYears
+    .filter((year) => year.deltaUnits || year.deltaRevenue)
+    .map((year) => {
+      const base = years.find((item) => item.year === year.year);
+      return {
+        year: year.year,
+        unitsPct: base?.volume.total ? year.deltaUnits / base.volume.total : null,
+        revenuePct: base?.revenue.total ? year.deltaRevenue / base.revenue.total : null,
+      };
+    });
+
+  // Comparison table rows: each year in view, then the next 12 months (the
+  // months the Current line covers).
+  const horizonMonths = basePoints.filter((point) => point.current != null).map((point) => point.month_year);
+  const deltaKey = metric === 'revenue' ? 'deltaRevenue' : 'deltaUnits';
+  const comparisonRows = [
+    ...simulatedYears.map((year) => {
+      const base = years.find((item) => item.year === year.year);
+      const yearMonths = [...monthCells.keys()].filter((month) => month.slice(0, 4) === year.year);
+      return {
+        key: year.year,
+        label: year.year,
+        caption: base ? mixCaption(base) : '',
+        current: metric === 'revenue' ? base?.revenue.total ?? null : base?.volume.total ?? null,
+        delta: year[deltaKey] ?? 0,
+        blocks: itemsInMonths(monthCells, yearMonths),
+      };
+    }),
+    ...(horizonMonths.length
+      ? [
+          {
+            key: 'next-12',
+            label: 'Next 12 months',
+            current: sumHorizonForecast(basePoints),
+            delta: horizonMonths.reduce((total, month) => total + (byMonth.get(month)?.[deltaKey] ?? 0), 0),
+            blocks: itemsInMonths(monthCells, horizonMonths),
+          },
+        ]
+      : []),
+  ];
+
   const months = forecastMonths(rows);
-  const itemCount = scenarioBlocks.blocks.length + draftPromotions.length;
-  const error = filters.error ?? view.error ?? scenarioBlocks.error;
+  const itemCount = allBlocks.length + draftPromotions.length;
+  const error = filters.error ?? view.error ?? scenarioBlocks.error ?? actionError;
 
   const customerText = customerName ? retailerLabel(customerName) : 'All customers';
-  const scopeTags = [
-    { label: 'SKU', value: productName || 'All SKUs' },
-    { label: 'Customer', value: customerText },
-  ];
-  const scope = `${productName || 'All SKUs'} · ${customerText} · ${monthSpanLabel([startDate, endDate].map((date) => `${date.slice(0, 7)}-01`))}`;
+
+  async function savePanelBlock(block) {
+    await scenarioBlocks.saveBlock(block);
+    // Saved: it moves to the table, marked new, and the panel lets it go.
+    setNewIds((current) => [...current, block.id]);
+    setSelectedId((current) => (current === block.id ? null : current));
+  }
+
+  // The table's switch saves straight away; on failure the block goes back
+  // to how it was and the reason shows above the page.
+  async function toggleSaved(block, isActive) {
+    const next = updateScenarioBlock(block, { isActive });
+    setActionError(null);
+    setTogglingIds((current) => [...current, block.id]);
+    scenarioBlocks.setBlocks((current) => current.map((item) => (item.id === block.id ? next : item)));
+    try {
+      await scenarioBlocks.saveBlock(next);
+    } catch (err) {
+      scenarioBlocks.setBlocks((current) => current.map((item) => (item.id === block.id ? block : item)));
+      setActionError(`Couldn't ${isActive ? 'switch on' : 'switch off'} ${block.name}: ${err.message}`);
+    } finally {
+      setTogglingIds((current) => current.filter((id) => id !== block.id));
+    }
+  }
+
+  function editSaved(block) {
+    setSelectedId(block.id);
+    setPanelCollapsed(false);
+  }
 
   const sectionProps = {
     customerOptions: filters.customerOptions,
@@ -126,14 +263,6 @@ export default function ScenarioBuilder() {
 
   return (
     <div className="space-y-2">
-      <p className="flex items-center gap-2 rounded-md bg-scenario-soft px-3 py-2 text-xs text-scenario-ink">
-        <PencilLine className="size-3.5 shrink-0" aria-hidden="true" />
-        <span>
-          Sandbox: building blocks only move the dashed <b>Simulated</b> line, so you can compare it with the
-          Current forecast. The Current forecast, Inventory and Dashboard stay as they are.
-        </span>
-      </p>
-
       {error && (
         <p className="rounded-md border border-violet bg-lavander/50 px-3 py-2 text-sm text-deep-violet-blue">
           {error}
@@ -149,31 +278,41 @@ export default function ScenarioBuilder() {
         )}
       >
         <div className="min-w-0 space-y-1">
-          <ForecastFilters
-            productName={productName}
-            onProductNameChange={filters.setProductName}
-            productOptions={filters.productOptions}
-            customerName={customerName}
-            onCustomerNameChange={filters.setCustomerName}
-            customerOptions={filters.customerOptions}
-            startDate={startDate}
-            endDate={endDate}
-            onStartDateChange={filters.setStartDate}
-            onEndDateChange={filters.setEndDate}
-            minDate={filters.bounds.start}
-            maxDate={filters.bounds.end}
-            onClearFilters={filters.clear}
-            canClearFilters={filters.canClear}
-          />
-
           <ForecastChart
-            points={withSimulatedLine(basePoints, byMonth, metric)}
+            points={hasSimulated ? withSimulatedLine(basePoints, byMonth, metric) : basePoints}
             startDate={startDate}
             endDate={endDate}
             metric={metric}
             onMetricChange={setMetric}
             singleSeries={singleSeries}
-            scopeTags={scopeTags}
+            scopeTags={[]}
+            toolbar={
+              <ForecastFilters
+                variant="toolbar"
+                productName={productName}
+                onProductNameChange={filters.setProductName}
+                productOptions={filters.productOptions}
+                customerName={customerName}
+                onCustomerNameChange={filters.setCustomerName}
+                customerOptions={filters.customerOptions}
+                startDate={startDate}
+                endDate={endDate}
+                onStartDateChange={filters.setStartDate}
+                onEndDateChange={filters.setEndDate}
+                minDate={filters.bounds.start}
+                maxDate={filters.bounds.end}
+                onClearFilters={filters.clear}
+                canClearFilters={filters.canClear}
+              />
+            }
+            summary={<ImpactStrip metrics={metrics} years={yearShares} loading={view.loading} />}
+            yearTable={
+              <ScenarioYearComparison
+                metric={metric}
+                rows={comparisonRows}
+                loading={yearTotalsLoading || view.loading}
+              />
+            }
             promotions={promotions}
             selectedPromoTypes={selectedPromoTypes}
             onTogglePromoType={(value) => setSelectedPromoTypes((current) => toggleSelectedValue(current, value))}
@@ -187,16 +326,12 @@ export default function ScenarioBuilder() {
             confidence={null}
             yearTotals={years}
             yearTotalsLoading={yearTotalsLoading}
+            horizonVolume={sumHorizonForecast(unitPoints)}
+            horizonRevenue={sumHorizonForecast(revenuePoints)}
             loading={view.loading}
             scenario={scenario}
           />
 
-          <PitchSummaryCard
-            scope={scope}
-            metrics={metrics}
-            rows={itemRows}
-            metric={metric}
-          />
         </div>
 
         <ScenarioPanel
@@ -208,10 +343,14 @@ export default function ScenarioBuilder() {
               <p className="text-xs text-deep-violet-blue/60">Loading building blocks…</p>
             ) : (
               <BuildingBlocksSection
-                items={scenarioBlocks.blocks}
+                items={panelBlocks}
+                savedCount={savedBlocks.length}
+                selectedId={selectedBlock?.id ?? null}
+                onSelect={setSelectedId}
                 onChange={scenarioBlocks.setBlocks}
-                onSave={scenarioBlocks.saveBlock}
-                onDelete={scenarioBlocks.deleteBlock}
+                onSave={savePanelBlock}
+                onRequestDelete={deletion.request}
+                onClose={() => setSelectedId(null)}
                 {...sectionProps}
               />
             )
@@ -221,6 +360,51 @@ export default function ScenarioBuilder() {
           }
         />
       </div>
+
+      <BlockTable
+        blocks={savedBlocks}
+        view={chartView(filters)}
+        impacts={byItem}
+        monthsByItem={monthsByItem}
+        metric={metric}
+        isLoading={scenarioBlocks.loading}
+        editingId={selectedBlock?.saved ? selectedBlock.id : null}
+        newIds={newIds}
+        togglingIds={togglingIds}
+        isExpanded={expandedRows.isExpanded}
+        onToggleRow={expandedRows.toggle}
+        onToggleActive={toggleSaved}
+        onEdit={editSaved}
+        onDelete={deletion.request}
+        onClearFilters={filters.clear}
+      />
+
+      <ConfirmDialog
+        open={Boolean(deletion.target)}
+        title="Delete this building block?"
+        description="It will be removed for good. To keep it but take it off the chart, switch it off instead."
+        details={
+          deletion.target
+            ? [
+                { label: 'Block', value: deletion.target.name },
+                {
+                  label: 'Applies to',
+                  value: `${retailerLabel(deletion.target.customer)} · ${deletion.target.sku || 'All SKUs'}`,
+                },
+                {
+                  label: 'Months',
+                  value: monthSpanLabel([deletion.target.startMonth, deletion.target.endMonth].filter(Boolean)),
+                },
+              ]
+            : undefined
+        }
+        confirmLabel="Delete block"
+        pendingLabel="Deleting…"
+        tone="destructive"
+        isPending={deletion.isPending}
+        onConfirm={deletion.confirm}
+        onCancel={deletion.cancel}
+      />
     </div>
   );
 }

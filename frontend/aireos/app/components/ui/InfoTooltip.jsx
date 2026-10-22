@@ -5,9 +5,9 @@ import { Info } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 /**
- * A small info icon that shows field help on hover, for a table column
- * header where a hint paragraph under every input (as the single-record form
- * uses) would not fit.
+ * A small info icon that shows help on hover: beside a table column header
+ * where a hint paragraph under every input would not fit, or beside a page
+ * title for a note that would otherwise take a banner.
  *
  * @param {object} props
  * @param {string} props.label read by screen readers; not shown

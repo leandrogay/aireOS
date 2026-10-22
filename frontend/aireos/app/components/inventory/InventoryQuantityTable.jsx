@@ -4,7 +4,7 @@ import { Check } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 
-import InfoTooltip from './InfoTooltip';
+import InfoTooltip from '@/components/ui/InfoTooltip';
 import { inventoryRowClass, inventoryTdClass, inventoryThClass } from './InventoryTableFrame';
 import { invalidInputClass } from './formStyles';
 import { formFieldClass } from './InventoryChrome';

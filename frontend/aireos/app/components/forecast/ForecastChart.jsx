@@ -145,6 +145,46 @@ function promoPanelLeft(originX, wrapWidth) {
   return Math.max(PROMO_PANEL_EDGE, Math.min(left, maxLeft));
 }
 
+// Tooltip footer in the Scenario builder: how far Simulated sits from
+// Current this month, and which switched-on blocks add to it.
+function ScenarioPointDetails({ point, items, metric, formatValue }) {
+  if (point.simulated == null || point.current == null) return null;
+  const delta = point.simulated - point.current;
+  if (!delta) return null;
+  const pct = point.current ? ` (${delta < 0 ? '−' : '+'}${Math.abs((delta / point.current) * 100).toFixed(1)}%)` : '';
+  // Sign written here, figure unsigned, so revenue reads "+$2,555.00".
+  const signed = (value) => `${value < 0 ? '−' : '+'}${formatValue(Math.abs(value))}`;
+  return (
+    <div className="mt-1 space-y-0.5 border-t border-lavander pt-1.5 text-[11px] tabular-nums">
+      <div className="flex justify-between gap-3">
+        <span>Difference</span>
+        <span className="font-semibold text-scenario-ink">
+          {signed(delta)}
+          {pct}
+        </span>
+      </div>
+      {items.length ? (
+        <>
+          <p className="pt-1 text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/50">
+            What adds to this month
+          </p>
+          {items.map((item) => {
+            const value = metric === 'revenue' ? item.deltaRevenue : item.deltaUnits;
+            return (
+              <div key={item.itemId} className="flex justify-between gap-3">
+                <span className="truncate">{item.name}</span>
+                <span className="font-semibold text-scenario-ink">
+                  {signed(value)}
+                </span>
+              </div>
+            );
+          })}
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 export default function ForecastChart({
   points,
   startDate,
@@ -170,6 +210,12 @@ export default function ForecastChart({
   horizonRevenue = null,
   loading = false,
   scenario = null,
+  // Scenario builder only (all default off, so /forecast is unchanged):
+  // `toolbar` renders under the card header, `summary` right under the
+  // chart; `yearTable` replaces ForecastYearTotals.
+  toolbar = null,
+  summary = null,
+  yearTable = null,
 }) {
   const chartWrapRef = useRef(null);
   const overPanelRef = useRef(false);
@@ -270,12 +316,26 @@ export default function ForecastChart({
   }));
   const formatValue = (value) => formatTooltipValue(value, metric);
   const monthX = (monthYear) => monthYears.indexOf(monthYear);
-  const showSimulated = Boolean(scenario) && Boolean(visibleSeries.simulated);
+  // The Scenario builder sends no Simulated series until a switched-on block
+  // changes something in view, so its gap, markers and band wait for it too.
+  const simulatedSeries = scenario?.series[0] ?? null;
+  const showSimulated = Boolean(simulatedSeries) && Boolean(visibleSeries.simulated);
   const scenarioMarkers = showSimulated
     ? scenario.markers
         .map((marker) => ({ ...marker, x: monthX(marker.month_year) }))
         .filter((marker) => marker.x >= 0 && chartData[marker.x]?.simulated != null)
     : [];
+  // The block selected in the panel or the blocks table: its months banded.
+  const selectedBand =
+    showSimulated && scenario.selectedBand
+      ? {
+          ...scenario.selectedBand,
+          // Centred on the month's points (plotted at whole x values), so
+          // the band sits behind the months it changes.
+          x1: monthX(scenario.selectedBand.startMonth) - 0.5,
+          x2: monthX(scenario.selectedBand.endMonth) + 0.5,
+        }
+      : null;
   const scenarioBands = (scenario?.promoBands ?? [])
     .map((band) => ({ ...band, x1: monthX(band.startMonth), x2: monthX(band.endMonth) + 1 }))
     .filter((band) => band.x1 >= 0 && band.x2 > 0);
@@ -354,11 +414,13 @@ export default function ForecastChart({
           <CardTitle className="font-serif text-base font-normal text-deep-violet-blue group-data-[size=sm]/card:text-base">
             Monthly forecast
           </CardTitle>
-          <div className="flex flex-wrap gap-1.5">
-            {scopeTags.map((tag) => (
-              <ScopeTag key={tag.label} label={tag.label} value={tag.value} />
-            ))}
-          </div>
+          {scopeTags.length ? (
+            <div className="flex flex-wrap gap-1.5">
+              {scopeTags.map((tag) => (
+                <ScopeTag key={tag.label} label={tag.label} value={tag.value} />
+              ))}
+            </div>
+          ) : null}
         </div>
         <Tabs value={metric} onValueChange={onMetricChange}>
           <TabsList className="h-7 bg-lavander p-0.5">
@@ -378,6 +440,7 @@ export default function ForecastChart({
         </Tabs>
       </CardHeader>
       <CardContent className="space-y-3">
+        {toolbar}
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-lavander bg-white px-3 py-2">
           <ForecastLineToggle series={allSeries} visible={visibleSeries} onToggle={onToggleSeries} hints={lineHints} />
           <ForecastPromoToggle
@@ -459,10 +522,20 @@ export default function ForecastChart({
                           labelFormatter={(_value, payload) => payload?.[0]?.payload?.label ?? ''}
                           valueFormatter={formatValue}
                           footer={
-                            <ForecastPointDetails
-                              details={forecastPointDetails(point, metric, formatValue)}
-                              className="mt-1 border-t border-lavander pt-1.5"
-                            />
+                            <>
+                              {showSimulated ? (
+                                <ScenarioPointDetails
+                                  point={point}
+                                  items={scenario.monthItems?.get(point.month_year) ?? []}
+                                  metric={metric}
+                                  formatValue={formatValue}
+                                />
+                              ) : null}
+                              <ForecastPointDetails
+                                details={forecastPointDetails(point, metric, formatValue)}
+                                className="mt-1 border-t border-lavander pt-1.5"
+                              />
+                            </>
                           }
                         />
                       );
@@ -506,6 +579,23 @@ export default function ForecastChart({
                     />
                   ) : null}
                   */}
+                  {selectedBand && selectedBand.x1 >= -0.5 && selectedBand.x2 > 0 ? (
+                    <ReferenceArea
+                      x1={Math.max(selectedBand.x1, 0)}
+                      x2={selectedBand.x2}
+                      fill="var(--color-scenario-soft)"
+                      fillOpacity={0.9}
+                      stroke="none"
+                      ifOverflow="visible"
+                      label={{
+                        value: selectedBand.label,
+                        position: 'insideTop',
+                        fontSize: 10,
+                        fontWeight: 600,
+                        fill: 'var(--color-scenario-ink)',
+                      }}
+                    />
+                  ) : null}
                   {scenarioBands.map((band) => (
                     <ReferenceArea
                       key={band.key}
@@ -538,8 +628,8 @@ export default function ForecastChart({
                       dataKey="simulatedGap"
                       type="monotone"
                       stroke="none"
-                      fill={scenario.series[0].color}
-                      fillOpacity={0.14}
+                      fill={simulatedSeries.color}
+                      fillOpacity={0.3}
                       tooltipType="none"
                       legendType="none"
                       activeDot={false}
@@ -574,7 +664,7 @@ export default function ForecastChart({
                       x={marker.x}
                       y={chartData[marker.x].simulated}
                       r={6}
-                      fill={scenario.series[0].color}
+                      fill={simulatedSeries.color}
                       stroke="#fff"
                       strokeWidth={2}
                       ifOverflow="visible"
@@ -618,19 +708,22 @@ export default function ForecastChart({
                 className="-mt-6 px-3 pb-1 pt-0"
               />
             </div>
+            {summary}
             {/* `loading` too: while the page refetches, `points` still hold
                 the previous filter's months, and a year total from those
                 would be wrong rather than merely stale. */}
-            <ForecastYearTotals
-              years={yearTotals}
-              loading={yearTotalsLoading || loading}
-              horizonVolume={horizonVolume}
-              horizonRevenue={horizonRevenue}
-              simulatedYears={showSimulated ? scenario.simulatedYears : []}
-            />
+            {yearTable ?? (
+              <ForecastYearTotals
+                years={yearTotals}
+                loading={yearTotalsLoading || loading}
+                horizonVolume={horizonVolume}
+                horizonRevenue={horizonRevenue}
+                simulatedYears={showSimulated ? scenario.simulatedYears : []}
+              />
+            )}
 
-            {/* The Scenario builder reviews changes in its pitch card instead
-                (blueprint Part 2), so the monthly table is /forecast only. */}
+            {/* The Scenario builder reviews changes in its comparison and
+                blocks tables instead, so the monthly table is /forecast only. */}
             {scenario ? null : (
               <ForecastTable
                 points={points}

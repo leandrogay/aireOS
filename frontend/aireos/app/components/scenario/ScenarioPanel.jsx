@@ -75,11 +75,6 @@ export default function ScenarioPanel({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
-        <p className="mb-3 flex items-start gap-2 rounded-md bg-scenario-soft px-2.5 py-2 text-[11px] text-scenario-ink">
-          <span className="mt-1 size-1.5 shrink-0 rounded-full bg-scenario" aria-hidden="true" />
-          Blocks that are switched on show on the Simulated line straight away. Save a block to keep it;
-          switch it off to keep it without counting it.
-        </p>
         <Tabs defaultValue="blocks">
           <TabsList className="h-7 bg-lavander p-0.5">
             <TabsTrigger value="blocks" className={triggerClass}>Building blocks</TabsTrigger>

@@ -9,7 +9,7 @@ const SPLIT = [
 ];
 
 // A step darker than the cream header, so the column lines still read on it.
-const HEADER_RULE = 'border-[#C5CBE0]';
+export const HEADER_RULE = 'border-[#C5CBE0]';
 
 function formatVolume(value) {
   if (value == null) return '—';
@@ -24,7 +24,7 @@ function formatRevenue(value) {
   })}`;
 }
 
-function mixCaption(year) {
+export function mixCaption(year) {
   const parts = [];
   if (year.actualMonths) parts.push(`${year.actualMonths} mo actual`);
   if (year.forecastMonths) parts.push(`${year.forecastMonths} mo forecast`);

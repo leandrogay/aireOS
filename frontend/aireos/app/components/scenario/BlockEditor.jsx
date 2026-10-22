@@ -2,6 +2,9 @@
 
 import { Trash2 } from 'lucide-react';
 
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { primaryButtonClass, secondaryButtonClass } from '@/components/inventory/formStyles';
 import UpliftField from '@/components/scenario/UpliftField';
 import { formatMonthLabel } from '@/app/utils/forecastView';
 import { retailerLabel } from '@/app/utils/retailerLabel';
@@ -202,7 +205,7 @@ export default function BlockEditor({
 
       <div>
         <label className={labelClass} htmlFor="block-explanation">
-          Why <span className="text-deep-violet-blue/50">(optional · shown in the pitch summary)</span>
+          Explanation <span className="text-deep-violet-blue/50">(optional · shown in the blocks table)</span>
         </label>
         <textarea
           id="block-explanation"
@@ -214,7 +217,17 @@ export default function BlockEditor({
         />
       </div>
 
-      <p className="rounded-md bg-scenario-soft px-2.5 py-2 text-xs text-scenario-ink">
+      {/* Scenario colour only when the note gives simulated numbers; when
+          the block is off or out of view it is information, in the neutral
+          style the page's other notes use. */}
+      <p
+        className={cn(
+          'rounded-md px-2.5 py-2 text-xs',
+          block.isActive && impact
+            ? 'bg-scenario-soft text-scenario-ink'
+            : 'border border-violet bg-lavander/50 text-deep-violet-blue'
+        )}
+      >
         <ImpactNote block={block} impact={impact} />
       </p>
       {warning ? (
@@ -224,34 +237,26 @@ export default function BlockEditor({
       {saveError ? <p className={errorClass}>{saveError}</p> : null}
 
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onSave}
-          disabled={!unsaved || saving}
-          className="h-8 flex-1 rounded-md bg-deep-violet-blue px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-        >
+        <Button type="button" onClick={onSave} disabled={!unsaved || saving} className={cn(primaryButtonClass, 'flex-1')}>
           {saving ? 'Saving…' : unsaved ? 'Save block' : 'Saved'}
-        </button>
+        </Button>
         {unsaved && block.saved ? (
-          <button
-            type="button"
-            onClick={onDiscard}
-            disabled={saving}
-            className="h-8 rounded-md border border-lavander bg-white px-3 text-xs font-medium text-deep-violet-blue hover:bg-cream disabled:opacity-50"
-          >
+          <Button type="button" variant="outline" onClick={onDiscard} disabled={saving} className={secondaryButtonClass}>
             Discard changes
-          </button>
+          </Button>
         ) : null}
-        <button
+        <Button
           type="button"
+          variant="outline"
+          size="icon"
           onClick={onDelete}
           disabled={saving}
           aria-label={`Delete ${block.name}`}
           title="Delete block"
-          className="flex size-8 shrink-0 items-center justify-center rounded-md border border-lavander bg-white text-deep-violet-blue/70 hover:bg-cream disabled:opacity-50"
+          className="border-deep-violet-blue/30 bg-white text-deep-violet-blue hover:bg-cream"
         >
-          <Trash2 className="size-3.5" />
-        </button>
+          <Trash2 />
+        </Button>
       </div>
     </div>
   );
