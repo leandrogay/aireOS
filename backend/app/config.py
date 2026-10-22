@@ -147,6 +147,12 @@ ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 GEMINI_ASSISTANT_MODEL = os.environ.get("GEMINI_ASSISTANT_MODEL", "gemini-3.8-flash")
 GCP_VERTEX_LOCATION = os.environ.get("GCP_VERTEX_LOCATION", "global")
 
+# ---- Notifications ----------------------------------------------------------
+
+# Notifications older than this many days are deleted, read or unread.
+NOTIFICATION_RETENTION_DAYS = int(os.environ.get("NOTIFICATION_RETENTION_DAYS", "60"))
+
+
 # ---- Access helpers ---------------------------------------------------------
 
 def require(name: str) -> str:

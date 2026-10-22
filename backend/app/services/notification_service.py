@@ -18,6 +18,7 @@ from functools import lru_cache
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
+from app import config
 from app.services import sql
 
 LOW_STOCK = "low_stock"
@@ -144,6 +145,28 @@ def mark_read(notification_ids: list[int]) -> int:
         return result.rowcount
 
 
+_DELETE_EXPIRED_SQL = """
+    DELETE FROM notifications
+    WHERE created_at < CURRENT_TIMESTAMP - CAST(:days AS integer) * INTERVAL '1 day'
+"""
+
+
+def _delete_expired(conn: Connection) -> int:
+    return conn.execute(text(_DELETE_EXPIRED_SQL), {"days": config.NOTIFICATION_RETENTION_DAYS}).rowcount
+
+
+def delete_expired() -> int:
+    """
+    Deletes notifications older than NOTIFICATION_RETENTION_DAYS, read or
+    unread, and returns how many went. There is no scheduled job: this runs
+    when the backend starts and before every new notification is written,
+    which keeps the table trimmed without anything running on a timer.
+    """
+
+    with _get_engine().begin() as conn:
+        return _delete_expired(conn)
+
+
 def _insert(
     conn: Connection,
     notification_type: str,
@@ -185,6 +208,8 @@ def insert(
     """
 
     if conn is not None:
+        _delete_expired(conn)
         return _insert(conn, notification_type, payload, customer_id, skus)
     with _get_engine().begin() as new_conn:
+        _delete_expired(new_conn)
         return _insert(new_conn, notification_type, payload, customer_id, skus)

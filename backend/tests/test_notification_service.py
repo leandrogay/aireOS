@@ -5,10 +5,12 @@ from conftest import FakeConnection, FakeEngine
 from app.services import notification_service
 
 
-def _router(rows=None, affected=1):
+def _router(rows=None, affected=1, deleted=0):
     """respond() that answers by the statement each call sends."""
 
     def respond(sql, params):
+        if "DELETE FROM notifications" in sql:
+            return [(1,)] * deleted
         if "INSERT INTO notifications" in sql:
             return [(99,)]
         if "UPDATE notifications" in sql:
@@ -124,3 +126,28 @@ def test_already_alerted_skus_reads_only_unread_low_stock_for_that_customer(monk
     assert "read_at IS NULL" in sql
     assert params["notification_type"] == notification_service.LOW_STOCK
     assert params["customer_id"] == 1
+
+
+# ---- retention -----------------------------------------------------------------
+
+
+def test_delete_expired_removes_rows_older_than_the_retention_period(monkeypatch):
+    conn = _install(monkeypatch, _router(deleted=4))
+    monkeypatch.setattr(notification_service.config, "NOTIFICATION_RETENTION_DAYS", 60)
+
+    assert notification_service.delete_expired() == 4
+    sql, params = conn.sql_containing("DELETE FROM notifications")[0]
+    assert params == {"days": 60}
+    assert "created_at <" in sql
+    # read and unread alike
+    assert "read_at" not in sql
+
+
+def test_writing_a_notification_first_deletes_expired_ones_in_the_same_transaction(monkeypatch):
+    conn = _install(monkeypatch, _router())
+
+    notification_service.insert(notification_service.LOW_STOCK, {"sku": "A1"}, customer_id=1, skus=["A1"], conn=conn)
+
+    statements = [sql for sql, _ in conn.calls]
+    assert "DELETE FROM notifications" in statements[0]
+    assert "INSERT INTO notifications" in statements[1]
