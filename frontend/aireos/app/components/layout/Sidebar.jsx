@@ -4,7 +4,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
-import { LayoutDashboard, Package, PanelLeft, Tag, TrendingUp, Upload } from 'lucide-react';
+import { LayoutDashboard, Library, Package, PanelLeft, Tag, TrendingUp, Upload } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 
@@ -12,8 +12,9 @@ import NotificationBell from './NotificationBell';
 
 // Every tab links to a real (currently placeholder, for Forecast/Promotions/
 // Inventory — see app/forecast, app/promotions, app/inventory) page, so
-// nothing is blocked off. Mappings is nested under Upload and only appears
-// while the user is in the Upload/Mappings flow.
+// nothing is blocked off. Sub-items (Mappings under Upload, SKUs/Customers
+// under Catalog) only appear while the user is inside that section. Catalog has
+// no page of its own, so it links to its first child.
 const NAV_ITEMS = [
   {
     label: 'Upload',
@@ -21,8 +22,6 @@ const NAV_ITEMS = [
     icon: Upload,
     children: [
       { label: 'Mappings', href: '/mappings' },
-      { label: 'SKUs', href: '/skus' },
-      { label: 'Customers', href: '/customers' },
     ],
   },
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -33,6 +32,15 @@ const NAV_ITEMS = [
     href: '/inventory',
     icon: Package,
     children: [{ label: 'DOH settings', href: '/doh' }],
+  },
+  {
+    label: 'Catalog',
+    href: '/skus',
+    icon: Library,
+    children: [
+      { label: 'SKUs', href: '/skus' },
+      { label: 'Customers', href: '/customers' },
+    ],
   },
 ];
 
@@ -88,9 +96,10 @@ export default function Sidebar() {
       {!collapsed && (
         <ul className="space-y-0.5">
           {NAV_ITEMS.map((item) => {
-            const isActive = matchesPath(pathname, item.href);
             const childActive =
               item.children?.some((child) => matchesPath(pathname, child.href)) ?? false;
+            // Catalog shares its href with its first child; highlight the child only.
+            const isActive = matchesPath(pathname, item.href) && !childActive;
             // Show sub-items only while inside this section (parent or any child).
             const showChildren = !!item.children && (isActive || childActive);
             const Icon = item.icon;
