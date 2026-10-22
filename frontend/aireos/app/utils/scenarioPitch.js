@@ -2,7 +2,8 @@
 // SCENARIO PITCH METRICS -- pure, no React
 // ============================================================
 //
-// The four cards on the pitch summary (blueprint Part 2.1). They read the
+// The scenario's measures (blueprint Part 2.1; the impact summary above the
+// chart shows units, revenue and gap, and its pitch summary is gone). They read the
 // monthly points the chart plots plus the engine's per-month deltas, never
 // the items, so draft promotions count the moment their source returns
 // cells. Dip, gap and attainment are in units; revenue impact is in dollars.
@@ -46,6 +47,15 @@ export function pitchMetrics(unitPoints, revenuePoints, byMonth) {
   let revenueAdded = 0;
   let revenueBase = 0;
   const impactMonths = [];
+  // Volume added: the same months, read in units (the impact strip).
+  let unitsAdded = 0;
+  let unitsBase = 0;
+  for (const point of unitPoints) {
+    const delta = deltaFor(byMonth, point.month_year, 'deltaUnits');
+    if (!delta) continue;
+    unitsAdded += delta;
+    unitsBase += point.current ?? 0;
+  }
   for (const point of revenuePoints) {
     const delta = deltaFor(byMonth, point.month_year, 'deltaRevenue');
     if (!delta) continue;
@@ -92,6 +102,10 @@ export function pitchMetrics(unitPoints, revenuePoints, byMonth) {
   }
 
   return {
+    units: {
+      added: unitsAdded,
+      pctOfCurrent: unitsBase ? unitsAdded / unitsBase : null,
+    },
     revenue: {
       added: revenueAdded,
       pctOfCurrent: revenueBase ? revenueAdded / revenueBase : null,
@@ -125,24 +139,6 @@ export function monthSpanLabel(months) {
   const first = formatMonthLabel(months[0]);
   const last = formatMonthLabel(months[months.length - 1]);
   return first === last ? first : `${first} – ${last}`;
-}
-
-/**
- * Plain-text pitch summary for the clipboard (blueprint Part 2.4): the four
- * metrics, then one line per item with its explanation as a "Why:" line.
- *
- * @param {{ scope: string, cards: { label: string, value: string, detail: string }[], unitLabel: string, items: { title: string, subtitle: string, months: string, before: string, after: string, uplift: string, explanation: string }[] }} summary
- */
-export function pitchSummaryText({ scope, cards, unitLabel, items }) {
-  const lines = ['PITCH SIMULATION SUMMARY', `Scope: ${scope}`, ''];
-  for (const card of cards) lines.push(`• ${card.label}: ${card.value} (${card.detail})`);
-  lines.push('', `Impact by building block & promotion (${unitLabel}):`);
-  if (!items.length) lines.push('  – No building blocks or promotions switched on.');
-  for (const item of items) {
-    lines.push(`  – ${item.title} (${item.subtitle}, ${item.months}): ${item.before} → ${item.after}, ${item.uplift}`);
-    if (item.explanation) lines.push(`    Why: ${item.explanation}`);
-  }
-  return lines.join('\n');
 }
 
 /**

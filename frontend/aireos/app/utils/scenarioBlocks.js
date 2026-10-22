@@ -143,7 +143,7 @@ export function switchUpliftMode(block, mode, impact) {
 }
 
 /**
- * "+18%" or "+900 units", for the list, impact table and pitch summary.
+ * "+18%" or "+900 units", for the panel list and the blocks table.
  *
  * @param {object} block
  */
@@ -251,7 +251,7 @@ export function scenarioBlockFromApi(row) {
 }
 
 /**
- * The blocks that count on the Simulated line and in the pitch summary:
+ * The blocks that count on the Simulated line and in the impact summary:
  * the switched-on ones, saved or not.
  *
  * @param {object[]} blocks

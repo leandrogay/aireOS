@@ -3,7 +3,6 @@
 import { Tag } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
-import StatusPill from '@/components/ui/StatusPill';
 import { Switch } from '@/components/ui/switch';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 import { hasUnsavedChanges, upliftLabel } from '@/app/utils/scenarioBlocks';
@@ -12,6 +11,14 @@ import { monthSpanLabel } from '@/app/utils/scenarioPitch';
 function blockSummary(block) {
   const span = monthSpanLabel([block.startMonth, block.endMonth].filter(Boolean));
   return `${block.sku || 'All SKUs'} · ${upliftLabel(block)} · ${span}`;
+}
+
+// What the block adds on the Simulated line, when it is on it.
+function impactLine(impact) {
+  if (!impact) return null;
+  const units = Math.round(impact.deltaUnits).toLocaleString('en-US');
+  const dollars = Math.round(impact.deltaRevenue).toLocaleString('en-US');
+  return `+${units} units · +$${dollars}`;
 }
 
 // One short status line per block, most important first: an unsaved block
@@ -41,13 +48,14 @@ export default function BlockList({ blocks, selectedId, onSelect, onToggle, impa
     <ul className="space-y-1.5">
       {blocks.map((block) => {
         const status = blockStatus(block, impacts.has(block.id));
+        const impact = block.isActive ? impactLine(impacts.get(block.id)) : null;
         const selected = block.id === selectedId;
         return (
           <li
             key={block.id}
             className={cn(
               'flex items-center gap-2 rounded-md border pr-2.5 transition',
-              selected ? 'border-scenario bg-scenario-soft' : 'border-lavander bg-white hover:bg-cream/60'
+              selected ? 'border-deep-violet-blue bg-lavander/40' : 'border-lavander bg-white hover:bg-cream/60'
             )}
           >
             <button
@@ -64,6 +72,9 @@ export default function BlockList({ blocks, selectedId, onSelect, onToggle, impa
                 <span className="block truncate text-xs font-medium text-deep-violet-blue">
                   {retailerLabel(block.customer)} · {block.name}
                 </span>
+                {impact ? (
+                  <span className="block truncate text-[11px] font-semibold tabular-nums text-scenario-ink">{impact}</span>
+                ) : null}
                 <span className="block truncate text-[11px] text-deep-violet-blue/60">{blockSummary(block)}</span>
                 {status ? (
                   <span
@@ -77,13 +88,10 @@ export default function BlockList({ blocks, selectedId, onSelect, onToggle, impa
                 ) : null}
               </span>
             </button>
-            <StatusPill tone={block.isActive ? 'success' : 'muted'}>
-              {block.isActive ? 'Active' : 'Inactive'}
-            </StatusPill>
             <Switch
               checked={block.isActive}
               onCheckedChange={(checked) => onToggle(block, checked)}
-              aria-label={`${block.isActive ? 'Make inactive' : 'Make active'}: ${block.name}`}
+              aria-label={`${block.isActive ? 'Take off the Simulated line' : 'Show on the Simulated line'}: ${block.name}`}
               title={block.isActive ? 'On the Simulated line' : 'Off the Simulated line'}
               className="data-checked:bg-scenario"
             />

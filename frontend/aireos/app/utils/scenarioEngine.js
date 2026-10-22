@@ -165,6 +165,31 @@ function addTo(totals, key, cell) {
 }
 
 /**
+ * The cells regrouped by month, then by item: Map month_year → Map itemId →
+ * { baseUnits, baseRevenue, deltaUnits, deltaRevenue }. For the chart
+ * tooltip (which blocks add to a month), the comparison table (how many
+ * blocks are active in a period) and the blocks table's by-month detail.
+ *
+ * @param {object[]} cells simulate().cells
+ */
+export function cellsByMonth(cells) {
+  const months = new Map();
+  for (const cell of cells) {
+    if (!months.has(cell.month_year)) months.set(cell.month_year, new Map());
+    const items = months.get(cell.month_year);
+    if (!items.has(cell.itemId)) {
+      items.set(cell.itemId, { baseUnits: 0, baseRevenue: 0, deltaUnits: 0, deltaRevenue: 0 });
+    }
+    const entry = items.get(cell.itemId);
+    entry.baseUnits += cell.baseUnits;
+    entry.baseRevenue += cell.baseRevenue ?? 0;
+    entry.deltaUnits += cell.deltaUnits;
+    entry.deltaRevenue += cell.deltaRevenue ?? 0;
+  }
+  return months;
+}
+
+/**
  * Run every source over its items and total the cells by month and by item.
  *
  * `byItem` only holds items that produced at least one cell. An item missing
