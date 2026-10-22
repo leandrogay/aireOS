@@ -27,7 +27,7 @@ export default function SkuTable({
 }) {
   return (
     <DataTable
-      label="SKU catalogue"
+      label="SKU catalog"
       noun="SKU"
       plural="SKUs"
       totalCount={totalCount}

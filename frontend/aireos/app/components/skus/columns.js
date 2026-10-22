@@ -1,6 +1,6 @@
 import { ACTIONS_COLUMN } from '@/components/ui/TableGrid';
 
-// Fixed widths keep the catalogue stable while searching and paging. Product
+// Fixed widths keep the catalog stable while searching and paging. Product
 // and range share the remaining space and truncate with their full value in
 // the cell title.
 export const SKU_COLUMNS = [

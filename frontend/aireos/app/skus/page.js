@@ -52,7 +52,7 @@ export default function SkusPage() {
         setOptions(values);
       })
       .catch((loadError) => {
-        if (!cancelled) setError(loadError.message || 'Failed to load the SKU catalogue.');
+        if (!cancelled) setError(loadError.message || 'Failed to load the SKU catalog.');
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -112,7 +112,7 @@ export default function SkusPage() {
     try {
       await archiveSku(sku.sku);
       setSkus((current) => current.filter((item) => item.sku !== sku.sku));
-      notify('deleted', `SKU ${sku.sku} moved to the archived catalogue.`);
+      notify('deleted', `SKU ${sku.sku} moved to the archived catalog.`);
     } catch (archiveError) {
       notify('error', archiveError.message || 'Failed to archive SKU.');
     }
@@ -120,7 +120,7 @@ export default function SkusPage() {
 
   return (
     <PageLayout
-      title="SKU catalogue"
+      title="SKU catalog"
       fitScreen
       headerExtra={(
         <Button
@@ -179,7 +179,7 @@ export default function SkusPage() {
       <ConfirmDialog
         open={Boolean(deletion.target)}
         title="Delete this SKU?"
-        description="It will leave the active catalogue but remain available to historical sales and inventory records."
+        description="It will leave the active catalog but remain available to historical sales and inventory records."
         details={deletion.target ? [
           { label: 'SKU', value: deletion.target.sku },
           { label: 'Product', value: deletion.target.product_name },

@@ -7,7 +7,7 @@ import RowActions from '@/components/ui/RowActions';
 const money = new Intl.NumberFormat('en-SG', { style: 'currency', currency: 'SGD' });
 
 /**
- * One SKU catalogue row. History remains in a dialog, while the standard
+ * One SKU catalog row. History remains in a dialog, while the standard
  * row-actions menu keeps History, Edit and Delete consistent with the
  * Customers and Promotions lists.
  *

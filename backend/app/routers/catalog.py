@@ -699,7 +699,7 @@ def archive_sku(sku: str):
             raise HTTPException(status_code=404, detail="SKU not found")
         return {
             "status": "ok",
-            "message": f"SKU {sku} was moved to the archived SKU catalogue.",
+            "message": f"SKU {sku} was moved to the archived SKU catalog.",
             "sku": sku,
         }
 

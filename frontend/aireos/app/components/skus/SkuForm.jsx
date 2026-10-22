@@ -87,7 +87,7 @@ function TextField({ label, value, error, onChange, readOnly = false, ...inputPr
 }
 
 /**
- * Single-select version of the Promotions dropdown. Existing catalogue values
+ * Single-select version of the Promotions dropdown. Existing catalog values
  * remain one click away, while a searched value can still be added for a new
  * product line instead of turning the options list into a closed vocabulary.
  */
@@ -273,7 +273,7 @@ export default function SkuForm({ open, sku, options = {}, onSave, onClose }) {
             <FormSection
               step={2}
               title="Classification"
-              hint="Reuse catalogue values where suitable, or enter a new value in the dropdown search."
+              hint="Reuse catalog values where suitable, or enter a new value in the dropdown search."
             >
               <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-3 [&>*]:min-w-0">
                 <OptionField
@@ -306,7 +306,7 @@ export default function SkuForm({ open, sku, options = {}, onSave, onClose }) {
             <FormSection
               step={3}
               title="Packaging & price"
-              hint="Define how the product is sold and its current catalogue price."
+              hint="Define how the product is sold and its current catalog price."
             >
               <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-3 [&>*]:min-w-0">
                 <OptionField

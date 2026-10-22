@@ -63,9 +63,9 @@ conversion. Source rows sharing a business key have their quantities and
 revenue summed without another pack-size conversion. Any future unit-contract
 change requires coordinated schema and consumer updates.
 
-## SKU catalogue management
+## SKU catalog management
 
-`/api/catalog/skus` provides the active SKU catalogue used by the `/skus`
+`/api/catalog/skus` provides the active SKU catalog used by the `/skus`
 screen. Staff can create, search, filter and update complete master records;
 the SKU code is immutable and remains globally unique. Each create/update is
 snapshotted in `sku_history`.
@@ -74,7 +74,7 @@ Apply `migrations/003_create_sku_management.sql` before using this screen. A
 delete request is intentionally an archive: it is refused while the SKU is
 attached to a promotion, copies the product snapshot to `old_skus`, and marks
 the `skus` row inactive. Keeping that row preserves foreign-key references from
-historical sell-out and inventory facts while removing it from active catalogue
+historical sell-out and inventory facts while removing it from active catalog
 and promotion options.
 
 ## Clean sell-out data in BigQuery
