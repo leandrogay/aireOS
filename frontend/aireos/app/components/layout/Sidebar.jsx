@@ -4,35 +4,10 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
-import { LayoutDashboard, Package, PanelLeft, Tag, TrendingUp, Upload } from 'lucide-react';
+import { PanelLeft } from 'lucide-react';
 
+import { NAV_ITEMS } from '@/components/layout/navItems';
 import { cn } from '@/lib/utils';
-
-// Every tab links to a real (currently placeholder, for Forecast/Promotions/
-// Inventory — see app/forecast, app/promotions, app/inventory) page, so
-// nothing is blocked off. Mappings is nested under Upload and only appears
-// while the user is in the Upload/Mappings flow.
-const NAV_ITEMS = [
-  {
-    label: 'Upload',
-    href: '/upload',
-    icon: Upload,
-    children: [
-      { label: 'Mappings', href: '/mappings' },
-      { label: 'SKUs', href: '/skus' },
-      { label: 'Customers', href: '/customers' },
-    ],
-  },
-  { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { label: 'Forecast', href: '/forecast', icon: TrendingUp },
-  { label: 'Promotions', href: '/promotions', icon: Tag },
-  {
-    label: 'Inventory',
-    href: '/inventory',
-    icon: Package,
-    children: [{ label: 'DOH settings', href: '/doh' }],
-  },
-];
 
 // A detail route (/mappings/abc123) still belongs to its tab.
 function matchesPath(pathname, href) {

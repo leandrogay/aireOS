@@ -1,69 +1,55 @@
-import Image from "next/image";
+import LandingActions from '@/components/landing/LandingActions';
+import LandingHeader from '@/components/landing/LandingHeader';
+import ModuleGrid from '@/components/landing/ModuleGrid';
+import MonthlyCycle from '@/components/landing/MonthlyCycle';
 
+export const metadata = {
+  title: 'AireOS',
+  description:
+    "Aire's operations workspace: retailer sell-out uploads, sales dashboard, forecast, promotions and inventory planning.",
+};
+
+// Landing page. A server component with no data fetching, so it renders
+// instantly and works before sign-in exists. It uses its own header instead of
+// PageLayout: the sidebar belongs to the app, and this page is the way in.
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.js
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="flex min-h-screen flex-col bg-cream">
+      <LandingHeader />
+
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-12 sm:px-6 sm:py-16">
+        <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_24rem] lg:gap-16">
+          <div className="max-w-xl">
+            <p className="text-xs font-medium uppercase tracking-wider text-deep-violet-blue/70">
+              Aire operations workspace
+            </p>
+            <h1 className="mt-3 text-balance font-serif text-4xl leading-tight text-deep-violet-blue sm:text-5xl">
+              From retailer spreadsheets to next month&apos;s sell-in plan
+            </h1>
+            <p className="mt-4 text-base leading-relaxed text-deep-violet-blue/80">
+              AireOS reads the sell-out files each retailer sends and turns them into one view of
+              sales, forecast, promotions and stock, so the team can decide what to ship to each
+              customer.
+            </p>
+            <div className="mt-8">
+              <LandingActions />
+            </div>
+          </div>
+
+          <MonthlyCycle />
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+        <div className="mt-16 sm:mt-20">
+          <ModuleGrid />
         </div>
       </main>
+
+      <footer className="border-t border-lavander">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-5 text-xs text-deep-violet-blue/70 sm:px-6">
+          <span>AireOS · Team WIP × Aire</span>
+          <span>Internal tool for the Aire team</span>
+        </div>
+      </footer>
     </div>
   );
 }
