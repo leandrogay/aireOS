@@ -31,7 +31,10 @@ const NAV_ITEMS = [
     label: 'Forecast',
     href: '/forecast',
     icon: TrendingUp,
-    children: [{ label: 'Scenario builder', href: '/scenario' }],
+    children: [
+      { label: 'Scenario builder', href: '/scenario' },
+      { label: 'Promotion Uplift Settings', href: '/promo-uplift-settings' },
+    ],
   },
   { label: 'Promotions', href: '/promotions', icon: Tag },
   {

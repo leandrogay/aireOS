@@ -128,3 +128,157 @@ export async function revertDohThresholds(customerId, settingId) {
     { method: 'POST', body: { updated_by: UPDATED_BY } },
   );
 }
+
+// ============================================================
+// Promotion Uplift Settings: /api/settings/promo-uplifts
+// (backend app/routers/settings/promo_uplifts.py)
+//
+// Uplift per promotion mechanic, and each customer's ordinary-month discount
+// (the "anchor" placeholder uplifts are measured from). Percentages come back
+// as JSON numbers (4 means +4%). Writes answer with `{ changed, ... }`, like
+// the DOH wrappers above.
+// ============================================================
+
+const PROMO_UPLIFTS = '/api/settings/promo-uplifts';
+
+/**
+ * GET /api/settings/promo-uplifts
+ *
+ * Every current uplift row (any scope), the all-customers anchor, and the
+ * promotion mechanics in the promotions table that match no setting.
+ *
+ * @returns {Promise<{ settings: object[], default_anchor_pct: number, unmapped_mechanics: Array<{ promotion_mechanic: string, promotions: number }> }>}
+ */
+export async function getPromoUpliftSettings() {
+  return request(PROMO_UPLIFTS);
+}
+
+/**
+ * GET /api/settings/promo-uplifts/resolved?customer=&product=
+ *
+ * The uplift of every mechanic for one customer (forecast family name) and
+ * product name ('' = all SKUs), as the Scenario builder uses it: placeholder
+ * values already recalculated from the customer's anchor. For all SKUs,
+ * `product_uplifts` lists products whose own value differs.
+ *
+ * @param {{ customer: string, product?: string }} scope
+ * @returns {Promise<{ customer_name: string, product_name: string | null, anchor: object, uplifts: object[], product_uplifts: Record<string, Record<string, number>> }>}
+ */
+export async function getResolvedPromoUplifts({ customer, product = '' }) {
+  const search = new URLSearchParams({ customer });
+  if (product) search.set('product', product);
+  return request(`${PROMO_UPLIFTS}/resolved?${search.toString()}`);
+}
+
+/**
+ * PUT /api/settings/promo-uplifts/{settingId}
+ *
+ * Saves a typed value as a new version (source 'estimate', so it no longer
+ * follows the anchor). Learned rows answer 409.
+ *
+ * @param {number} settingId
+ * @param {{ uplift_pct: number, note?: string | null }} payload sent with `updated_by: UPDATED_BY`
+ * @returns {Promise<{ changed: boolean, setting: object }>}
+ */
+export async function savePromoUplift(settingId, payload) {
+  return request(`${PROMO_UPLIFTS}/${encodeURIComponent(settingId)}`, {
+    method: 'PUT',
+    body: { ...payload, updated_by: UPDATED_BY },
+  });
+}
+
+/**
+ * POST /api/settings/promo-uplifts/{settingId}/reset
+ *
+ * An all-customers row goes back on the placeholder rule; a customer, range
+ * or SKU override is retired (`setting` is then null).
+ *
+ * @param {number} settingId
+ * @returns {Promise<{ changed: boolean, setting: object | null }>}
+ */
+export async function resetPromoUplift(settingId) {
+  return request(`${PROMO_UPLIFTS}/${encodeURIComponent(settingId)}/reset`, {
+    method: 'POST',
+    body: { updated_by: UPDATED_BY },
+  });
+}
+
+/**
+ * POST /api/settings/promo-uplifts
+ *
+ * A mechanic's own value for one customer, SKU range or SKU. 409 when that
+ * scope already has a value.
+ *
+ * @param {{ mechanic_key: string, scope: 'customer' | 'range' | 'sku', customer_id: number, sku_range?: string, sku?: string, uplift_pct: number, note?: string }} payload
+ * @returns {Promise<{ changed: boolean, setting: object }>}
+ */
+export async function addPromoUpliftOverride(payload) {
+  return request(PROMO_UPLIFTS, {
+    method: 'POST',
+    body: { ...payload, updated_by: UPDATED_BY },
+  });
+}
+
+/**
+ * GET /api/settings/promo-uplifts/mechanics/{mechanicKey}/history
+ *
+ * @param {string} mechanicKey
+ * @returns {Promise<object[]>} every version at every scope, newest first
+ */
+export async function getPromoUpliftHistory(mechanicKey) {
+  return request(`${PROMO_UPLIFTS}/mechanics/${encodeURIComponent(mechanicKey)}/history`);
+}
+
+/**
+ * GET /api/settings/promo-uplifts/anchors
+ *
+ * Every customer's ordinary-month discount: the value in use, its source
+ * ('manual', 'suggested' or 'default'), and the suggestion from data with the
+ * months it used.
+ *
+ * @returns {Promise<{ default_anchor_pct: number, customers: object[] }>}
+ */
+export async function getPromoAnchors() {
+  return request(`${PROMO_UPLIFTS}/anchors`);
+}
+
+/**
+ * PUT /api/settings/promo-uplifts/anchors/{customerId}, or .../anchors/default
+ * when customerId is null (the all-customers value).
+ *
+ * @param {number | null} customerId
+ * @param {number} anchorPct 0-100
+ * @returns {Promise<{ changed: boolean, anchor?: object, default_anchor_pct?: number }>}
+ */
+export async function savePromoAnchor(customerId, anchorPct) {
+  const target = customerId == null ? 'default' : encodeURIComponent(customerId);
+  return request(`${PROMO_UPLIFTS}/anchors/${target}`, {
+    method: 'PUT',
+    body: { anchor_pct: anchorPct, updated_by: UPDATED_BY },
+  });
+}
+
+/**
+ * POST /api/settings/promo-uplifts/anchors/{customerId}/reset
+ *
+ * Back to the suggestion from the customer's own promotions.
+ *
+ * @param {number} customerId
+ * @returns {Promise<{ changed: boolean, anchor: object }>}
+ */
+export async function resetPromoAnchor(customerId) {
+  return request(`${PROMO_UPLIFTS}/anchors/${encodeURIComponent(customerId)}/reset`, {
+    method: 'POST',
+    body: { updated_by: UPDATED_BY },
+  });
+}
+
+/**
+ * GET /api/settings/promo-uplifts/anchors/{customerId}/history
+ *
+ * @param {number} customerId
+ * @returns {Promise<Array<{ id: number, anchor_pct: number | null, source: string, changed_by: string, changed_at: string, is_current: boolean }>>}
+ */
+export async function getPromoAnchorHistory(customerId) {
+  return request(`${PROMO_UPLIFTS}/anchors/${encodeURIComponent(customerId)}/history`);
+}
