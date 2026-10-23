@@ -19,6 +19,7 @@ from app.services import generate_mapping
 from app.services import mapping_view
 from app.services import apply_contract as contract_application
 from app.services import sellout_ingestion
+from app.services import notification_service
 
 router = APIRouter(prefix="/api/mappings", tags=["mappings"])
 
@@ -239,7 +240,7 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
     """
     # Confirmed first, as every other lookup does: a pending copy whose cleanup
     # failed must not become the base of an amendment.
-    envelope_before, _ = await asyncio.to_thread(_load_envelope, fingerprint)
+    envelope_before, found_in = await asyncio.to_thread(_load_envelope, fingerprint)
     if not envelope_before:
         raise HTTPException(
             status_code=404, detail="No mapping found for that fingerprint."
@@ -340,6 +341,19 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
         _ingest_waiting_uploads,
         uploads.get("matched", []),
         contract,
+    )
+
+    # After everything above has been saved, and never failing the approval.
+    await asyncio.to_thread(
+        notification_service.insert_best_effort,
+        notification_service.MAPPING_UPLOADED,
+        {
+            "name": name,
+            "vendor": vendor,
+            "amended": found_in == "confirmed",
+            "uploads_processed": sum(item["success"] for item in ingestion),
+            "uploads_failed": sum(not item["success"] for item in ingestion),
+        },
     )
 
     return {

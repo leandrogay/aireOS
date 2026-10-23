@@ -9,7 +9,7 @@ file with these headers, so it holds the same line itself.
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.services import sellout_ingestion, storage
+from app.services import notification_service, sellout_ingestion, storage
 
 client = TestClient(app)
 
@@ -236,3 +236,47 @@ def test_listing_leaves_out_a_pending_copy_that_has_been_confirmed(monkeypatch):
 
     listed = [(m["fingerprint"], m["state"]) for m in response.json()["mappings"]]
     assert listed == [("fp", "confirmed"), ("new", "pending")]
+
+
+# ---- approving a mapping raises a notification ----------------------------------
+
+
+def _capture_notifications(monkeypatch):
+    sent = []
+    monkeypatch.setattr(notification_service, "insert_best_effort", lambda kind, payload: sent.append((kind, payload)))
+    return sent
+
+
+def test_a_first_approval_raises_a_new_mapping_notification(monkeypatch):
+    _stub_storage(monkeypatch)
+    sent = _capture_notifications(monkeypatch)
+    rules = _complete_rules([_rule("sku", "SKU No.", "high", False)])
+
+    response = client.post("/api/mappings/fp/confirm", json={"rules": rules})
+
+    assert response.status_code == 200
+    assert sent == [(
+        "mapping_uploaded",
+        {"name": "Vendor weekly", "vendor": "XEL", "amended": False, "uploads_processed": 0, "uploads_failed": 0},
+    )]
+
+
+def test_re_approving_a_confirmed_mapping_is_marked_as_an_amendment(monkeypatch):
+    _stub_storage(monkeypatch)
+    _serve(monkeypatch, {storage.confirmed_mapping_path("fp"): ENVELOPE})
+    sent = _capture_notifications(monkeypatch)
+    rules = _complete_rules([_rule("sku", "SKU No.", "high", False)])
+
+    client.post("/api/mappings/fp/confirm", json={"rules": rules})
+
+    assert sent[0][1]["amended"] is True
+
+
+def test_an_approval_still_succeeds_when_its_notification_cannot_be_written(monkeypatch):
+    # The real insert_best_effort, against the blocked test database.
+    _stub_storage(monkeypatch)
+    rules = _complete_rules([_rule("sku", "SKU No.", "high", False)])
+
+    response = client.post("/api/mappings/fp/confirm", json={"rules": rules})
+
+    assert response.status_code == 200

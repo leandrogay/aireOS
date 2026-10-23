@@ -147,6 +147,29 @@ ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 GEMINI_ASSISTANT_MODEL = os.environ.get("GEMINI_ASSISTANT_MODEL", "gemini-3.8-flash")
 GCP_VERTEX_LOCATION = os.environ.get("GCP_VERTEX_LOCATION", "global")
 
+# ---- Notifications ----------------------------------------------------------
+
+# Notifications older than this many days are deleted, read or unread.
+NOTIFICATION_RETENTION_DAYS = int(os.environ.get("NOTIFICATION_RETENTION_DAYS", "60"))
+# How often the backend deletes them (it also does once at startup).
+NOTIFICATION_CLEANUP_INTERVAL_HOURS = float(os.environ.get("NOTIFICATION_CLEANUP_INTERVAL_HOURS", "24"))
+
+# Pub/Sub subscription the scheduled BigQuery forecast run ("Retrain when new
+# month lands") reports each finished run to. Empty: the backend does not
+# listen, and only scripts/refresh_forecast.py raises forecast notifications.
+FORECAST_PIPELINE_SUBSCRIPTION = os.environ.get("FORECAST_PIPELINE_SUBSCRIPTION", "")
+# Written by retrain_if_new_month: one row per run, retrained=TRUE only when a
+# new forecast was actually produced.
+BQ_TRAINING_RUN_LOG_TABLE = os.environ.get(
+    "BQ_TRAINING_RUN_LOG_TABLE", "aire-data.Aire_Data_Analytics.training_run_log"
+)
+# The live forecast output (not the 12-hourly snapshot), so a notification
+# raised right after a run describes that run.
+BQ_FORECAST_PIPELINE_VIEW = os.environ.get(
+    "BQ_FORECAST_PIPELINE_VIEW", "aire-data.Aire_Data_Analytics.aire_forecasting_output"
+)
+
+
 # ---- Access helpers ---------------------------------------------------------
 
 def require(name: str) -> str:

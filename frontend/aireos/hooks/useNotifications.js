@@ -2,27 +2,28 @@
 
 import { useEffect, useState } from 'react';
 
-import { getNotifications, markNotificationsRead } from '@/app/services/notificationsApi';
-
-export const NOTIFICATIONS_POLL_MS = 60_000;
+import {
+  getNotifications,
+  markNotificationsRead,
+  notificationsStreamUrl,
+} from '@/app/services/notificationsApi';
 
 /**
- * Polls the shared, unread-only notification feed (see backend
- * notification_service) while the app is open, so a low-stock or
- * forecast-pipeline alert shows up without anyone keeping a page open --
- * same pattern as useDataFreshness. Once read, a notification drops out of
- * this list entirely rather than staying with its read state shown. Pauses
- * while the tab is hidden; the next poll on return catches up.
+ * The shared, unread-only notification feed (see backend notification_service).
+ * Once read, a notification drops out of this list entirely rather than
+ * staying with its read state shown.
  *
- * The background poll is a safety net so the unread badge appears by itself
- * within a minute either way; `refresh` is for the moment someone actually
- * opens the bell, so checking it never depends on the poll's timing or needs
- * a page reload to see something that was just created.
+ * Pushed, not polled: an EventSource on /api/notifications/stream gets a
+ * `changed` event the moment any notification is added, read or deleted --
+ * from this tab, another person's, the forecast script or the scheduled
+ * BigQuery run -- and only then is the list re-fetched. The browser
+ * reconnects the stream by itself if it drops, and the list is re-fetched on
+ * every (re)connect to catch anything missed in between. `refresh` is for the
+ * moment someone opens the bell.
  *
- * @param {number} [pollMs]
  * @returns {{ notifications: object[], unreadCount: number, markRead: (ids: number[]) => Promise<void>, refresh: () => Promise<void> }}
  */
-export default function useNotifications(pollMs = NOTIFICATIONS_POLL_MS) {
+export default function useNotifications() {
   const [notifications, setNotifications] = useState([]);
 
   async function refresh() {
@@ -30,32 +31,32 @@ export default function useNotifications(pollMs = NOTIFICATIONS_POLL_MS) {
       const list = await getNotifications({ unreadOnly: true, limit: 50 });
       setNotifications(list);
     } catch {
-      // Leave the last good list in place; the next poll or refresh() call will retry.
+      // Leave the last good list in place; the next change or refresh() call will retry.
     }
   }
 
   useEffect(() => {
     let cancelled = false;
 
-    async function checkNotifications() {
-      if (document.visibilityState === 'hidden') return;
+    async function loadNotifications() {
       try {
         const list = await getNotifications({ unreadOnly: true, limit: 50 });
-        if (cancelled) return;
-        setNotifications(list);
+        if (!cancelled) setNotifications(list);
       } catch {
-        // Leave the last good list in place; try again on the next poll.
+        // Leave the last good list in place; the next change will retry.
       }
     }
 
-    checkNotifications();
-    const intervalId = setInterval(checkNotifications, pollMs);
+    // `open` fires on the first connect and on every automatic reconnect.
+    const source = new EventSource(notificationsStreamUrl());
+    source.addEventListener('open', loadNotifications);
+    source.addEventListener('changed', loadNotifications);
 
     return () => {
       cancelled = true;
-      clearInterval(intervalId);
+      source.close();
     };
-  }, [pollMs]);
+  }, []);
 
   async function markRead(ids) {
     if (ids.length === 0) return;
