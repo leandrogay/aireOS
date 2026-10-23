@@ -1,5 +1,6 @@
 import logging
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app import config
@@ -7,10 +8,13 @@ from app.main import app
 from app.services import auth_service
 
 
-client = TestClient(app)
+@pytest.fixture
+def client():
+    """Give each auth test an isolated cookie jar."""
+    return TestClient(app)
 
 
-def test_login_redirects_to_google_and_sets_state_cookie(monkeypatch):
+def test_login_redirects_to_google_and_sets_state_cookie(monkeypatch, client):
     monkeypatch.setattr(config, "AUTH_ENABLED", "true")
     monkeypatch.setattr(
         auth_service,
@@ -28,7 +32,7 @@ def test_login_redirects_to_google_and_sets_state_cookie(monkeypatch):
     assert auth_service.OAUTH_STATE_COOKIE in response.cookies
 
 
-def test_me_rejects_request_without_session_when_auth_is_enabled(monkeypatch):
+def test_me_rejects_request_without_session_when_auth_is_enabled(monkeypatch, client):
     monkeypatch.setattr(config, "AUTH_ENABLED", "true")
 
     response = client.get("/api/auth/me")
@@ -37,7 +41,7 @@ def test_me_rejects_request_without_session_when_auth_is_enabled(monkeypatch):
     assert response.json()["detail"] == "Authentication required"
 
 
-def test_callback_sets_session_cookie_and_redirects_home(monkeypatch):
+def test_callback_sets_session_cookie_and_redirects_home(monkeypatch, client):
     monkeypatch.setattr(config, "AUTH_FRONTEND_URL", "http://localhost:3000")
     monkeypatch.setattr(
         auth_service,
@@ -62,7 +66,9 @@ def test_callback_sets_session_cookie_and_redirects_home(monkeypatch):
     assert response.cookies[auth_service.SESSION_COOKIE] == "signed-session"
 
 
-def test_callback_logs_provider_failure_without_exposing_request_values(monkeypatch, caplog):
+def test_callback_logs_provider_failure_without_exposing_request_values(
+    monkeypatch, caplog, client
+):
     monkeypatch.setattr(config, "AUTH_FRONTEND_URL", "http://localhost:3000")
 
     def fail_login(_code, _state, _cookie):
@@ -88,7 +94,9 @@ def test_callback_logs_provider_failure_without_exposing_request_values(monkeypa
     assert "sensitive-state" not in caplog.text
 
 
-def test_internal_api_rejects_request_without_session_when_auth_is_enabled(monkeypatch):
+def test_internal_api_rejects_request_without_session_when_auth_is_enabled(
+    monkeypatch, client
+):
     monkeypatch.setattr(config, "AUTH_ENABLED", "true")
 
     response = client.get("/api/sales/customer-options")
@@ -96,7 +104,7 @@ def test_internal_api_rejects_request_without_session_when_auth_is_enabled(monke
     assert response.status_code == 401
 
 
-def test_me_returns_signed_in_user(monkeypatch):
+def test_me_returns_signed_in_user(monkeypatch, client):
     monkeypatch.setattr(config, "AUTH_ENABLED", "true")
     monkeypatch.setattr(config, "AUTH_SESSION_SECRET", "a-test-secret-that-is-long-enough")
     token = auth_service.create_session(
