@@ -184,7 +184,7 @@ function ExportButtons({ message }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           format,
-          answer: message.text,
+          answer: message.exportText || message.text,
           has_chart: message.hasChart,
           chart_type: message.chartType,
           chart_categories: message.chartCategories,
@@ -246,12 +246,6 @@ function AssistantMessage({ message, onFollowUp }) {
         )}
 
         <p className="whitespace-pre-wrap">{isUser ? message.text : renderWithBold(message.text)}</p>
-
-        {!isUser && message.grounded === false && message.dataSource !== 'analysis' && (
-          <p className="mt-1 text-[11px] italic text-deep-violet-blue/60">
-            I couldn&apos;t find data to fully answer this.
-          </p>
-        )}
 
         {!isUser && message.hasChart && (
           <div className="mt-2 rounded bg-white p-1">

@@ -113,7 +113,7 @@ aireOS/
     │   │   ├── customers/         CustomersView (state), CustomerTable → CustomerRow (expandable, retailers inside),
     │   │   │                      RetailerTable (nested TableGrid), columns.js (shared grid), NameFormDialog,
     │   │   │                      LinkRetailerDialog, UnlinkedRetailers
-    │   │   ├── skus/              SKU catalogue filters/table, create-edit form, details/history
+    │   │   ├── skus/              SKU catalog filters/table, create-edit form, details/history
     │   │   ├── forecast/          ForecastChart/Filters/Table, HeaderCheckboxFilter (shared)
     │   ├── services/              Backend API wrappers
     │   │   ├── promotionsApi.js   request() + parseApiError() + promotion/retailer/store endpoints
@@ -188,6 +188,7 @@ No test runner is installed on the frontend; linting (`npm run lint`) is the fro
 | Promotions | `promotions.py` | `promotion_service` (+ `catalog_service` seams) | **Cloud SQL Postgres**: `promotions`, `promotion_stores`, `promotion_skus`; enum `promo_type_enum`; trigger `trg_promotions_updated_at` | `app/promotions`, `services/promotionsApi.js` |
 | Forecast (P&L) | `forecast.py` (`/api/forecast`, read-only; writes are out of band via `scripts/refresh_forecast.py`) | `pl_forecast` (pure), `forecast_service`, `catalog_service` (product prices) | **BigQuery** (`Aire_Data_Analytics`, read-only): model learns from `v_sales_enriched` (weekly), page Actual line reads `v_customer_monthly_sales`; refresh MERGEs into `BQ_FORECAST_TABLE`. **Cloud SQL Postgres**: `skus.price` prices sell-out revenue | `app/forecast` |
 | AI mapping | (inside uploads) | `generate_mapping` | **Anthropic API** (`ANTHROPIC_MODEL`, default `claude-sonnet-4-6`) | — |
+| Assistant | `assistant.py` (`/api/assistant`) | `assistant` | **Gemini on Vertex AI** (`GEMINI_ASSISTANT_MODEL`, default `gemini-3.8-flash`; `GCP_VERTEX_LOCATION`, default `global`), both set in `config.py` | floating widget (`components/assistant`) |
 
 Invariants that cross domains:
 - Mapping never writes to BigQuery. Ingestion into BigQuery is out of band.
@@ -314,13 +315,13 @@ Quirks:
   `ENOENT ... .env.frontend` if the file is missing. (Next.js still auto-loads a `.env.local` if
   one exists, but `.env.frontend` is the team's file.)
   Branches cut before `main`'s AO1-9 merge (`206949a`) still read `.env.local` instead.
-- `app/services/assistant.py` still calls `load_dotenv` itself — the one leftover; don't copy it.
 - Add new backend settings to `config.py`, not `os.environ.get` in a service.
 
 Backend variables: `GOOGLE_APPLICATION_CREDENTIALS`, `SERVICE_ACCOUNT_KEY_PATH`, `GCP_PROJECT_ID`,
 `GCS_BUCKET_NAME`, `GCS_DESTINATION_PREFIX`, `GCS_DESTINATION_PREFIX_MAPPING`,
 `BQ_FAIRPRICESELLOUT_TABLE` (legacy, unused), `BQ_FORECAST_OUTPUT_VIEW`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`,
-`POSTGRESQL_INSTANCE_CONNECTION_NAME`, `DB_IAM_USER`, `DB_NAME`, `AUTH_ENABLED`,
+`GEMINI_ASSISTANT_MODEL`, `GCP_VERTEX_LOCATION`, `POSTGRESQL_INSTANCE_CONNECTION_NAME`,
+`DB_IAM_USER`, `DB_NAME`, `AUTH_ENABLED`,
 `AUTH_SESSION_SECRET`, `AUTH_ALLOWED_DOMAIN`, `AUTH_FRONTEND_URL`, `AUTH_COOKIE_SECURE`,
 `AUTH_COOKIE_DOMAIN`, `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`,
 `GOOGLE_OAUTH_REDIRECT_URI`. (`BQ_SELLOUT_TABLE` was removed --
@@ -393,5 +394,4 @@ half first (it defines the contract), then the frontend half, then update §3.4 
 - `FileUpload.jsx` and `PromotionList.jsx` are oversized; extract when already editing them.
 - Two fetch-wrapper styles (`promotionsApi.request` vs `mappingApi.request(baseUrl, …)`) and
   raw `fetch` in dashboard hooks. New code uses the `promotionsApi` style.
-- `assistant.py` still loads the env file itself instead of going through `config.py` (§4).
 - CI covers backend only.

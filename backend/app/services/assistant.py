@@ -16,15 +16,12 @@ figures into its own JSON.
 """
 
 import io
-import os
 import re
 import json
 import copy
 import base64
 import datetime
-from pathlib import Path
 
-from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from google.genai import errors as genai_errors
@@ -50,16 +47,15 @@ from openpyxl import Workbook
 from openpyxl.chart import BarChart as XlsxBarChart, Reference
 from openpyxl.styles import Font as XlsxFont, Alignment as XlsxAlignment
 
+from app import config
 from app.config import ConfigError
+from app.schemas.catalog import normalise_name
 from app.services import inventory_service, promotion_service, sellout_service
 
-ENV_PATH = Path(__file__).resolve().parents[2] / ".env.backend"
-load_dotenv(ENV_PATH)
+GCP_PROJECT_ID = config.GCP_PROJECT_ID
+GCP_VERTEX_LOCATION = config.GCP_VERTEX_LOCATION
 
-GCP_PROJECT_ID = os.environ.get("GCP_PROJECT_ID")
-GCP_VERTEX_LOCATION = os.environ.get("GCP_VERTEX_LOCATION", "us-central1")
-
-MODEL = os.environ.get("GEMINI_ASSISTANT_MODEL", "gemini-2.5-flash")
+MODEL = config.GEMINI_ASSISTANT_MODEL
 
 MAX_TOOL_ITERATIONS = 8
 
@@ -103,7 +99,7 @@ _FUNCTION_SCHEMAS = [
             "type": "object",
             "properties": {
                 "customer": {"type": "string", "description": "Retailer/customer, e.g. 'fairprice'. Defaults to the current page's customer if omitted."},
-                "granularity": {"type": "string", "enum": ["week", "month"], "description": "Defaults to 'week'."},
+                "granularity": {"type": "string", "enum": ["week", "month"], "description": "Defaults to 'week'. Use 'month' when the question is about a month ('in August') or whole months; a month loaded only as monthly totals has no weekly rows."},
                 "mode": {"type": "string", "enum": ["offline", "online"], "description": "Restrict to one channel -- pass this whenever the question names a specific channel (e.g. \"offline sales\"). Omit only when the question genuinely wants both channels combined."},
                 "sku": {"type": "string", "description": "Optional exact SKU code to scope to one product."},
                 "store": {"type": "string", "description": "Optional exact store_code to scope to one branch."},
@@ -381,11 +377,22 @@ _INVENTORY_TOOLS = {
 }
 
 
+def _customer_slug(name: str) -> str:
+    """'Sheng Shiong' -> 'sheng_shiong', the form customers are stored in. The
+    model writes names the way people do, so every customer name it passes goes
+    through the same rule the catalog uses."""
+
+    try:
+        return normalise_name(name)
+    except ValueError:
+        return name.strip().lower()
+
+
 def _resolve_inventory_customer_id(customer_name: str) -> int:
     customers = inventory_service.list_customers()
     if not customers:
         raise ValueError("No customers are set up in inventory yet.")
-    needle = customer_name.lower()
+    needle = _customer_slug(customer_name)
     matches = [c for c in customers if needle in c["customer_name"].lower()]
     known = ", ".join(c["customer_name"] for c in customers)
     if not matches:
@@ -453,6 +460,10 @@ def _call_inventory_tool(name: str, tool_input: dict, default_customer: str):
 
 # ---- Executing a tool call -----------------------------------------------
 
+def _has_period_rows(summary: dict) -> bool:
+    return any(((summary or {}).get(mode) or {}).get("periodTotal") for mode in sellout_service.DASHBOARD_MODES)
+
+
 def _run_business_tool(name: str, tool_input: dict, default_customer: str):
     """
     Returns (content_for_model: str, is_error: bool, raw_result: object|None).
@@ -462,17 +473,23 @@ def _run_business_tool(name: str, tool_input: dict, default_customer: str):
     kept separately so the chart-building step can't accidentally diverge
     from what the model actually saw.
     """
-    customer = tool_input.get("customer") or default_customer
+    customer = _customer_slug(tool_input.get("customer") or default_customer)
     try:
         if name == "get_sales_summary":
-            result = sellout_service.get_dashboard_summary(
-                granularity=tool_input.get("granularity", "week"),
-                sku=tool_input.get("sku"),
-                customer=customer,
-                store=tool_input.get("store"),
-                start_date=tool_input.get("start_date"),
-                end_date=tool_input.get("end_date"),
-            )
+            summary_args = {
+                "sku": tool_input.get("sku"),
+                "customer": customer,
+                "store": tool_input.get("store"),
+                "start_date": tool_input.get("start_date"),
+                "end_date": tool_input.get("end_date"),
+            }
+            granularity = tool_input.get("granularity", "week")
+            result = sellout_service.get_dashboard_summary(granularity=granularity, **summary_args)
+            if granularity == "week" and not _has_period_rows(result):
+                # A month that was only ever loaded as monthly totals has no
+                # weekly rows at all (the dashboard shows it as a month bar for
+                # the same reason), so an empty weekly answer is not "no sales".
+                result = sellout_service.get_dashboard_summary(granularity="month", **summary_args)
             # get_dashboard_summary always computes both channels (it feeds
             # the dashboard's Offline/Online toggle, which needs both ready
             # without a refetch) -- filter down when the question was
@@ -551,7 +568,7 @@ def _run_business_tool(name: str, tool_input: dict, default_customer: str):
 def _promotion_matches_customer(promo: dict, customer: str | None) -> bool:
     if not customer:
         return True
-    needle = customer.lower()
+    needle = _customer_slug(customer)
     return any(needle in (store.get("retailer") or "").lower() for store in (promo.get("stores") or []))
 
 
@@ -768,6 +785,44 @@ def _compare_periods_totals(calls: list[tuple[dict, object]]) -> tuple[float, fl
     return None
 
 
+def _calls_by_customer(calls: list[tuple[dict, object]], default_customer: str) -> dict[str, list]:
+    """compare_periods calls grouped by the customer each was for, in call order."""
+
+    groups: dict[str, list] = {}
+    for tool_input, raw in calls:
+        groups.setdefault(_customer_slug(tool_input.get("customer") or default_customer), []).append((tool_input, raw))
+    return groups
+
+
+def _per_customer_total_chart(by_customer: dict[str, list]) -> dict | None:
+    """
+    One bar per customer for a range total asked across several customers
+    ("total revenue in August" -> Fairprice, NHG, ...). Keeping only the last
+    call showed one customer's figure -- possibly $0 -- under an answer about
+    all of them.
+    """
+
+    categories: list[str] = []
+    values: list[float] = []
+    for slug, calls in by_customer.items():
+        totals = _compare_periods_totals(calls)
+        if totals is None:
+            continue
+        categories.append(slug.replace("_", " ").title())
+        values.append(round(float(totals[1]), 2))
+    if not categories:
+        return None
+    return {
+        "has_chart": True,
+        "chart_type": "bar",
+        "chart_categories": categories,
+        "chart_series": [{"label": "Revenue", "values": values}],
+        "has_table": False,
+        "table_columns": [],
+        "table_rows": [],
+    }
+
+
 def _range_total_breakdown_chart(compare_calls: list[tuple[dict, object]], customer: str, current_revenue: float, current_label: str) -> dict:
     """
     compare_periods used as a range-total calculator, for a range spanning
@@ -844,20 +899,31 @@ def _build_chart(chart_sources: list[tuple[str, dict, object]], customer: str) -
     these numbers, it only narrates what's already here.
 
     Priority is fixed (compare_periods > get_sales_summary > rank_skus >
-    get_promotions > the inventory tools), not "whichever tool was called
+    the inventory tools > get_promotions), not "whichever tool was called
     last": a comparison question's headline figure is the ALL-CHANNEL total,
     which get_sales_summary's per-channel numbers don't directly match -- see
     _compare_periods_totals and _sales_summary_periods for how each tool's
     own calls get reconciled into a single combined total before it's ever
-    compared across tools. The inventory tools sit last since inventory
-    (stock/DOH) and sales (revenue/units) are never both relevant to the
-    same question.
+    compared across tools. get_promotions sits last because it is context
+    for a "why" question (a promotion explaining a figure), never the figure
+    being cited: "why is Fairprice's DOH high, was there a promotion?" must
+    still show the DOH table. Inventory (stock/DOH) and sales (revenue/units)
+    are not both relevant to the same question.
     """
     if not chart_sources:
         return _empty_chart()
 
     compare_calls = [(tool_input, raw) for name, tool_input, raw in chart_sources if name == "compare_periods"]
     if compare_calls:
+        by_customer = _calls_by_customer(compare_calls, customer)
+        if len(by_customer) > 1:
+            if not _is_real_comparison(compare_calls):
+                per_customer = _per_customer_total_chart(by_customer)
+                if per_customer is not None:
+                    return per_customer
+            # A Previous-vs-Current chart has room for one customer: the
+            # page's own if it was asked about, otherwise the first one.
+            compare_calls = by_customer.get(_customer_slug(customer)) or next(iter(by_customer.values()))
         totals = _compare_periods_totals(compare_calls)
         if totals is not None:
             previous_revenue, current_revenue = totals
@@ -913,122 +979,197 @@ def _build_chart(chart_sources: list[tuple[str, dict, object]], customer: str) -
                 ],
             }
 
+    inventory_chart = _inventory_chart(chart_sources)
+    if inventory_chart is not None:
+        return inventory_chart
+
     promotion_results = [raw for name, tool_input, raw in chart_sources if name == "get_promotions"]
     if promotion_results:
         rows = promotion_results[-1] or []
         if rows:
-            return {
-                "has_chart": False,
-                "chart_type": "none",
-                "chart_categories": [],
-                "chart_series": [],
-                "has_table": True,
-                "table_columns": ["stores", "period", "type", "mechanic"],
-                "table_rows": [
+            return _table_chart(
+                ["stores", "period", "type", "mechanic"],
+                [
                     [
                         "; ".join(f"{s.get('retailer', '')} - {s.get('store_name', '')}" for s in (p.get("stores") or [])) or "—",
                         str(p.get("period_label", "")),
                         str(p.get("promo_type", "")),
                         str(p.get("promotion_mechanic", "")),
                     ]
-                    for p in rows[:10]
+                    for p in rows[:_MAX_TABLE_ROWS_PER_CALL]
                 ],
-            }
-
-    overview_results = [raw for name, tool_input, raw in chart_sources if name == "get_inventory_overview"]
-    if overview_results:
-        rows = (overview_results[-1] or {}).get("skus") or []
-        if rows:
-            return {
-                "has_chart": False,
-                "chart_type": "none",
-                "chart_categories": [],
-                "chart_series": [],
-                "has_table": True,
-                "table_columns": ["month", "customer", "product", "ending_stock"],
-                "table_rows": [
-                    [
-                        str(row.get("month", "")),
-                        str(row.get("customer_name", "")),
-                        str(row.get("product_name", "")),
-                        _table_cell(row.get("ending_stock")),
-                    ]
-                    for row in rows[:10]
-                ],
-            }
-
-    customer_inventory_results = [raw for name, tool_input, raw in chart_sources if name == "get_customer_inventory"]
-    if customer_inventory_results:
-        rows = (customer_inventory_results[-1] or {}).get("skus") or []
-        if rows:
-            return {
-                "has_chart": False,
-                "chart_type": "none",
-                "chart_categories": [],
-                "chart_series": [],
-                "has_table": True,
-                "table_columns": ["month", "product", "ending_stock", "doh", "target_doh", "status"],
-                "table_rows": [
-                    [
-                        str(row.get("month", "")),
-                        str(row.get("product_name", "")),
-                        _table_cell(row.get("ending_stock")),
-                        _table_cell(row.get("doh")),
-                        _table_cell(row.get("target_doh")),
-                        _doh_status_label(row.get("doh_status")),
-                    ]
-                    for row in rows[:10]
-                ],
-            }
-
-    at_risk_results = [raw for name, tool_input, raw in chart_sources if name == "get_at_risk_inventory"]
-    if at_risk_results:
-        rows = (at_risk_results[-1] or {}).get("items") or []
-        if rows:
-            return {
-                "has_chart": False,
-                "chart_type": "none",
-                "chart_categories": [],
-                "chart_series": [],
-                "has_table": True,
-                "table_columns": ["customer", "product", "doh", "target_doh", "status", "days_outside_band"],
-                "table_rows": [
-                    [
-                        str(row.get("customer_name", "")),
-                        str(row.get("product_name", "")),
-                        _table_cell(row.get("doh")),
-                        _table_cell(row.get("target_doh")),
-                        _doh_status_label(row.get("doh_status")),
-                        _table_cell(row.get("days_outside_band")),
-                    ]
-                    for row in rows[:10]
-                ],
-            }
-
-    sell_in_plan_results = [raw for name, tool_input, raw in chart_sources if name == "get_sell_in_plan"]
-    if sell_in_plan_results:
-        rows = (sell_in_plan_results[-1] or {}).get("rows") or []
-        if rows:
-            return {
-                "has_chart": False,
-                "chart_type": "none",
-                "chart_categories": [],
-                "chart_series": [],
-                "has_table": True,
-                "table_columns": ["month", "product", "forecast_sell_out", "recommended_sell_in", "projected_ending_stock"],
-                "table_rows": [
-                    [
-                        str(row.get("month", "")),
-                        str(row.get("product_name", "")),
-                        _table_cell(row.get("forecast_sell_out")),
-                        _table_cell(row.get("recommended_sell_in")),
-                        _table_cell(row.get("projected_ending_stock")),
-                    ]
-                    for row in rows[:10]
-                ],
-            }
+            )
 
     return _empty_chart()
+
+
+_MAX_TABLE_ROWS_PER_CALL = 10
+
+
+def _table_chart(columns: list[str], rows: list[list[str]]) -> dict:
+    return {
+        "has_chart": False,
+        "chart_type": "none",
+        "chart_categories": [],
+        "chart_series": [],
+        "has_table": True,
+        "table_columns": columns,
+        "table_rows": rows,
+    }
+
+
+def _inventory_table(
+    calls: list,
+    rows_key: str,
+    columns: list[str],
+    row_cells,
+    customer_name_of=None,
+    latest_month_only: bool = False,
+    overall_cells=None,
+) -> dict | None:
+    """
+    One table from EVERY call to one inventory tool this turn, not just the
+    last: a question that needed two calls (two customers, or a retry after
+    resolving a name) must show both calls' rows, or the table would back only
+    part of what the answer cites. Each call contributes up to
+    _MAX_TABLE_ROWS_PER_CALL rows, identical rows are shown once, and a
+    customer column is added only when the calls covered different customers.
+
+    `calls` is [(tool_input, raw_result)]. With latest_month_only (the history
+    tools, which return every month on record), a call that named no month
+    range shows only the newest month -- the current position, which is what
+    "what's the DOH" means -- instead of the first ten rows, which are the
+    oldest. A call that did name a range shows its newest months first.
+
+    `overall_cells(raw, month)` gives the whole-customer row for a month (the
+    combined DOH the answer usually quotes), shown above that month's SKU rows
+    so the headline figure is on screen too.
+    """
+
+    per_call = []
+    for tool_input, raw in calls:
+        rows = list((raw or {}).get(rows_key) or [])
+        if latest_month_only and rows:
+            if tool_input.get("start_month") or tool_input.get("end_month"):
+                rows.sort(key=lambda row: str(row.get("month", "")), reverse=True)
+            else:
+                newest = max(str(row.get("month", "")) for row in rows)
+                rows = [row for row in rows if str(row.get("month", "")) == newest]
+        rows = rows[:_MAX_TABLE_ROWS_PER_CALL]
+        if rows:
+            name = customer_name_of(raw) if customer_name_of else None
+            cells = []
+            last_month = None
+            for row in rows:
+                month = row.get("month")
+                if overall_cells and month != last_month:
+                    overall = overall_cells(raw, month)
+                    if overall:
+                        cells.append(overall)
+                last_month = month
+                cells.append(row_cells(row))
+            per_call.append((name, cells))
+    if not per_call:
+        return None
+
+    with_customer = customer_name_of is not None and len({name for name, _ in per_call}) > 1
+    table_rows: list[list[str]] = []
+    for name, cells in per_call:
+        for row in cells:
+            candidate = [name or "—", *row] if with_customer else row
+            if candidate not in table_rows:
+                table_rows.append(candidate)
+    return _table_chart((["customer", *columns] if with_customer else columns), table_rows)
+
+
+def _customer_overall_cells(raw: dict, month: str) -> list[str] | None:
+    """The customer-wide row (all products combined) from the tool's monthly trend."""
+
+    for row in raw.get("trend") or []:
+        if row.get("month") == month:
+            return [
+                str(month),
+                "All products",
+                _table_cell(row.get("ending_stock")),
+                _table_cell(row.get("doh")),
+                _table_cell(row.get("target_doh")),
+                _doh_status_label(row.get("doh_status")),
+            ]
+    return None
+
+
+def _customer_name_of(raw: dict) -> str | None:
+    return (raw.get("customer") or {}).get("customer_name")
+
+
+def _inventory_chart(chart_sources: list[tuple[str, dict, object]]) -> dict | None:
+    """
+    The inventory tools in fixed priority (customer > at-risk > plan > overview).
+    The overview comes last because it only has stock, no DOH: when a question
+    fetched both, it is the DOH lookup's table that holds the figure the answer
+    quotes.
+    """
+
+    def results(tool: str) -> list:
+        return [(tool_input, raw) for name, tool_input, raw in chart_sources if name == tool]
+
+    return (
+        _inventory_table(
+            results("get_customer_inventory"),
+            "skus",
+            ["month", "product", "ending_stock", "doh", "target_doh", "status"],
+            lambda row: [
+                str(row.get("month", "")),
+                str(row.get("product_name", "")),
+                _table_cell(row.get("ending_stock")),
+                _table_cell(row.get("doh")),
+                _table_cell(row.get("target_doh")),
+                _doh_status_label(row.get("doh_status")),
+            ],
+            _customer_name_of,
+            latest_month_only=True,
+            overall_cells=_customer_overall_cells,
+        )
+        or _inventory_table(
+            results("get_at_risk_inventory"),
+            "items",
+            ["customer", "product", "doh", "target_doh", "status", "days_outside_band"],
+            lambda row: [
+                str(row.get("customer_name", "")),
+                str(row.get("product_name", "")),
+                _table_cell(row.get("doh")),
+                _table_cell(row.get("target_doh")),
+                _doh_status_label(row.get("doh_status")),
+                _table_cell(row.get("days_outside_band")),
+            ],
+        )
+        or _inventory_table(
+            results("get_sell_in_plan"),
+            "rows",
+            ["month", "product", "forecast_sell_out", "recommended_sell_in", "projected_ending_stock"],
+            lambda row: [
+                str(row.get("month", "")),
+                str(row.get("product_name", "")),
+                _table_cell(row.get("forecast_sell_out")),
+                _table_cell(row.get("recommended_sell_in")),
+                _table_cell(row.get("projected_ending_stock")),
+            ],
+            _customer_name_of,
+        )
+
+        or _inventory_table(
+            results("get_inventory_overview"),
+            "skus",
+            ["month", "customer", "product", "ending_stock"],
+            lambda row: [
+                str(row.get("month", "")),
+                str(row.get("customer_name", "")),
+                str(row.get("product_name", "")),
+                _table_cell(row.get("ending_stock")),
+            ],
+            latest_month_only=True,
+        )
+    )
 
 
 def _empty_chart() -> dict:
@@ -1045,11 +1186,12 @@ def _empty_chart() -> dict:
 
 def _resolve_last_chart(chart: dict, last_chart: dict | None) -> dict:
     """
-    Falls back to the chart the frontend says is already on screen when this
-    turn made no chartable tool call (has_chart/has_table both false) -- not
-    just for styling follow-ups ("make it red") but any follow-up about the
-    same answer ("why is that"), which is more correct than silently
-    dropping the chart just because nothing was re-fetched this turn.
+    Falls back to the chart the frontend says is on screen when this turn made
+    no chartable tool call (has_chart/has_table both false). Only called when
+    the model flagged the message as being about that chart (uses_previous_chart:
+    a restyle, an export, "why is that"), and the frontend only sends the chart
+    from the message immediately before -- so a chart from several questions
+    ago can never come back next to an answer about something else.
     """
     if chart.get("has_chart") or chart.get("has_table"):
         return chart
@@ -1607,22 +1749,52 @@ def _build_download(
 # ---- Numeric grounding safeguard -------------------------------------------
 #
 # Belt-and-suspenders on top of the chart-building guarantee above: the
-# chart can never cite a wrong number (it's built purely from tool data),
-# but the *text* still goes through the model, which can occasionally slip
-# on arithmetic even with every input number correct (observed live: a
-# multi-month total came out ~$400 off with no reproducible cause). This
-# doesn't try to catch every number in the answer -- deltas and percentages
-# are legitimate derived arithmetic, not verbatim tool output, and checking
-# those invites false positives. It only checks the FIRST dollar figure,
-# since that's consistently the headline total/figure the question was
-# actually asking for.
+# table/chart can never show a wrong number (it's built purely from tool
+# data), but the *text* still goes through the model, which can slip even
+# with every input number correct (observed live: a multi-month total came
+# out ~$400 off with no reproducible cause), or quote a figure from an
+# earlier turn. This doesn't try to catch every number in the answer --
+# deltas and percentages are legitimate derived arithmetic, not verbatim
+# tool output, and checking those invites false positives. It checks the
+# FIRST figure only, since that's consistently the headline the question was
+# asking for: the first dollar figure against the revenue the tools returned,
+# or, for an inventory answer, the first figure written in days/units/packs
+# against the numbers in the table the user is actually looking at. A
+# headline that still doesn't match after one retry means the table is
+# left out, rather than showing data that disagrees with the answer.
 
 _DOLLAR_FIGURE_RE = re.compile(r"\$\s?([\d,]+\.\d{2})")
+_UNIT_FIGURE_RE = re.compile(r"(?<![\w.$])(\d[\d,]*(?:\.(\d+))?)\s*(?:days?|units?|packs?|cartons?)\b", re.IGNORECASE)
+
+# Fetched fresh data is required for a figure; this is the one nudge to get it.
+_FRESH_LOOKUP_NUDGE = (
+    "You quoted figures without calling any tool this turn. Figures from earlier "
+    "turns may be out of date, and the table shown to the user is built only from "
+    "this turn's tool calls. If the user's latest message asks for data, call the "
+    "relevant tool(s) now and answer from those results. If it does not ask for "
+    "data (a thank-you, a greeting, small talk), do not call any tool: reply "
+    "briefly without quoting any figures and set data_source to \"none\"."
+)
+
+_INVENTORY_COLUMNS = {"ending_stock", "doh", "forecast_sell_out", "recommended_sell_in"}
 
 
 def _first_dollar_figure(text: str) -> float | None:
     match = _DOLLAR_FIGURE_RE.search(text or "")
     return float(match.group(1).replace(",", "")) if match else None
+
+
+def _first_unit_figure(text: str) -> tuple[float, int, str] | None:
+    """(value, decimal places written, the figure as written, e.g. '39.8 days')."""
+
+    match = _UNIT_FIGURE_RE.search(text or "")
+    if not match:
+        return None
+    return float(match.group(1).replace(",", "")), len(match.group(2) or ""), match.group(0).strip()
+
+
+def _cites_a_figure(text: str) -> bool:
+    return _first_dollar_figure(text) is not None or _first_unit_figure(text) is not None
 
 
 def _known_good_revenue_figures(chart: dict, chart_sources: list[tuple[str, dict, object]]) -> set[float]:
@@ -1649,6 +1821,69 @@ def _known_good_revenue_figures(chart: dict, chart_sources: list[tuple[str, dict
     return figures
 
 
+def _displayed_figures(chart: dict) -> set[float]:
+    """Every number in the table/chart the user sees (text cells such as
+    months and product names don't parse and are skipped)."""
+
+    figures: set[float] = set()
+    for series in chart.get("chart_series") or []:
+        for value in series.get("values", []):
+            figures.add(float(value))
+    for row in chart.get("table_rows") or []:
+        for cell in row:
+            try:
+                figures.add(float(str(cell).replace(",", "")))
+            except ValueError:
+                pass
+    return figures
+
+
+def _involves_inventory(chart: dict, chart_sources: list[tuple[str, dict, object]]) -> bool:
+    if any(name in _INVENTORY_TOOLS and name != "list_inventory_skus" for name, _input, _raw in chart_sources):
+        return True
+    return bool(_INVENTORY_COLUMNS & set(chart.get("table_columns") or []))
+
+
+def _figure_is_shown(value: float, decimals: int, figures: set[float]) -> bool:
+    # "40 days" is a fair way to write a DOH of 39.8; "39.9 days" is not.
+    tolerance = 0.5 * 10 ** -decimals + 1e-9
+    return any(abs(figure - value) <= tolerance for figure in figures)
+
+
+def _unsupported_headline(
+    parsed: dict,
+    chart: dict,
+    chart_sources: list[tuple[str, dict, object]],
+) -> tuple[str, list[str]] | None:
+    """
+    (the headline figure as written, the verified figures it should have been
+    one of) when the answer's headline figure matches nothing the tools
+    returned or the table shows; None when it's backed or there's nothing to
+    check it against. Only applies to internal-data answers; a market_data
+    answer's figures come from search results, not chart_sources.
+    """
+
+    if parsed.get("data_source") != "aire_data" or not parsed.get("grounded"):
+        return None
+    answer = parsed.get("answer", "")
+
+    dollars = _first_dollar_figure(answer)
+    if dollars is not None:
+        known_good = _known_good_revenue_figures(chart, chart_sources)
+        if known_good and dollars not in known_good:
+            return f"${dollars:,.2f}", [f"${v:,.2f}" for v in sorted(known_good)]
+        return None
+
+    if _involves_inventory(chart, chart_sources):
+        unit_figure = _first_unit_figure(answer)
+        if unit_figure is not None:
+            value, decimals, written = unit_figure
+            shown = _displayed_figures(chart)
+            if not _figure_is_shown(value, decimals, shown):
+                return written, [f"{v:g}" for v in sorted(shown)]
+    return None
+
+
 def _verify_and_maybe_correct(
     client: "genai.Client",
     contents: list,
@@ -1658,30 +1893,24 @@ def _verify_and_maybe_correct(
     chart_sources: list[tuple[str, dict, object]],
 ) -> dict:
     """
-    If the answer's headline dollar figure doesn't match anything the tools
-    actually returned, ask the model to restate it once -- pointing out
+    If the answer's headline figure doesn't match what the tools returned (or
+    what the table shows), ask the model to restate it once -- pointing out
     exactly which figures are verified -- rather than silently shipping a
-    number that isn't grounded. Only applies to internal-data answers; a
-    market_data answer's figures come from search results, not chart_sources,
-    so there's nothing here to check them against.
+    number that isn't grounded. The caller decides what to do if it still
+    doesn't match (see ask()).
     """
-    if parsed.get("data_source") != "aire_data" or not parsed.get("grounded"):
-        return parsed
 
-    headline = _first_dollar_figure(parsed.get("answer", ""))
-    if headline is None:
+    problem = _unsupported_headline(parsed, chart, chart_sources)
+    if problem is None:
         return parsed
-
-    known_good = _known_good_revenue_figures(chart, chart_sources)
-    if not known_good or headline in known_good:
-        return parsed
+    written, verified = problem
 
     contents.append({
         "role": "user",
         "parts": [{"text": (
-            f"Your answer states ${headline:,.2f}, which doesn't match any figure the "
-            f"tools actually returned. The verified figures from this turn's tool "
-            f"results are: {', '.join(f'${v:,.2f}' for v in sorted(known_good))}. "
+            f"Your answer states {written}, which doesn't match any figure the "
+            f"tools actually returned or the table shows. The verified figures from this "
+            f"turn are: {', '.join(verified)}. "
             "Restate your final answer using one of these exact figures."
         )}],
     })
@@ -1700,8 +1929,7 @@ def _verify_and_maybe_correct(
 
     # Only accept the retry if it actually verifies now -- otherwise the
     # original (at least consistently wrong) answer is no worse a bet.
-    retry_headline = _first_dollar_figure(retry_parsed.get("answer", ""))
-    if retry_headline is not None and retry_headline in known_good:
+    if _unsupported_headline(retry_parsed, chart, chart_sources) is None:
         return retry_parsed
     return parsed
 
@@ -1718,6 +1946,10 @@ FINAL_ANSWER_SCHEMA = {
             "type": "array",
             "items": {"type": "string"},
             "description": "Exactly 2 or 3 short, contextual follow-up questions the user might ask next.",
+        },
+        "uses_previous_chart": {
+            "type": "boolean",
+            "description": "True ONLY when this message is about the chart/table already on screen (restyling it, exporting it, \"why is that\") and you did NOT fetch new data for it this turn. False for every message that asks for data -- those must call a tool, and the table shown is whatever that fresh call returned.",
         },
         "export_format": {
             "type": "string",
@@ -1792,7 +2024,7 @@ FINAL_ANSWER_SCHEMA = {
             "description": "Presentation-only preferences for the chart currently on screen. Never a way to change the underlying numbers -- if there's no chart to style, say so in your answer instead of inventing one.",
         },
     },
-    "required": ["answer", "grounded", "data_source", "follow_up_prompts", "export_format", "chart_style"],
+    "required": ["answer", "grounded", "data_source", "follow_up_prompts", "uses_previous_chart", "export_format", "chart_style"],
     "additionalProperties": False,
 }
 
@@ -1916,6 +2148,19 @@ Rules:
   get_sell_in_plan first.
 - Only state figures that came back from a tool call. Never estimate,
   guess, or use outside knowledge for anything a tool could have answered.
+- Earlier messages in this conversation may quote figures whose tool results
+  are no longer available to you, and the data may have changed since. For
+  every message that asks for data -- including a follow-up about a
+  different customer, product, period or metric -- call the relevant tool
+  again for THIS question, and never restate a number from an earlier answer.
+  The table or chart shown to the user is built only from this turn's tool
+  calls, so an answer that quotes figures without fetching them has nothing
+  to back it up. Set uses_previous_chart=true only when the message is purely
+  about the chart/table already on screen (restyle, export, "why is that") and
+  you fetched nothing new.
+- A message that is not asking for data at all ("thanks", a greeting, small
+  talk) gets a short plain reply: no tool calls, no figures from earlier
+  answers, data_source="none".
 - Never manually add up multiple rows from get_sales_summary (or any other
   tool) to produce a single total -- that arithmetic is exactly where small
   mistakes creep in. If a question needs one total across a range spanning
@@ -1998,6 +2243,36 @@ _REFUSAL_FINISH_REASONS = {"SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII", 
 
 _REFUSAL_ANSWER = {
     "answer": "I'm not able to answer that question.",
+    "grounded": False,
+    "data_source": "none",
+    "follow_up_prompts": [],
+}
+
+
+def _text_only_history(history: list | None) -> list:
+    """
+    Earlier turns' tool calls and tool results are dropped, keeping only the
+    text of the conversation. With the old results in view the model answers
+    follow-ups from them instead of fetching again, which is how a table from
+    a previous question ends up next to an answer about a new one.
+    """
+
+    cleaned = []
+    for content in history or []:
+        parts = content.get("parts") if isinstance(content, dict) else None
+        if not parts:
+            cleaned.append(content)
+            continue
+        text_parts = [p for p in parts if isinstance(p, dict) and "text" in p and not p.get("thought")]
+        if len(text_parts) == len(parts):
+            cleaned.append(content)
+        elif text_parts:
+            cleaned.append({**content, "parts": text_parts})
+    return cleaned
+
+
+_UNSETTLED_ANSWER = {
+    "answer": "I couldn't find an answer to that.",
     "grounded": False,
     "data_source": "none",
     "follow_up_prompts": [],
@@ -2144,12 +2419,68 @@ def generate_digest(customer: str) -> dict:
     }
 
 
+def _run_tool_loop(client, contents: list, config, customer: str, chart_sources: list, tools_called: list):
+    """
+    Calls the model until it stops asking for tools, appending to `contents`,
+    `chart_sources` (every chartable tool's raw result) and `tools_called` in
+    place. Returns (the final response, whether the model refused).
+    """
+
+    for _ in range(MAX_TOOL_ITERATIONS):
+        response = client.models.generate_content(model=MODEL, contents=contents, config=config)
+        candidate = response.candidates[0]
+        contents.append(candidate.content)
+
+        if candidate.finish_reason in _REFUSAL_FINISH_REASONS:
+            return response, True
+
+        function_calls = response.function_calls or []
+        if not function_calls:
+            return response, False
+
+        response_parts = []
+        for fc in function_calls:
+            tools_called.append(fc.name)
+            content, is_error, raw_result = _run_business_tool(fc.name, fc.args or {}, customer)
+            if not is_error and fc.name in _CHARTABLE_TOOLS and raw_result is not None:
+                chart_sources.append((fc.name, fc.args or {}, raw_result))
+            response_parts.append(
+                types.Part.from_function_response(
+                    name=fc.name,
+                    response={"error": content} if is_error else {"result": content},
+                )
+            )
+        contents.append(types.Content(role="user", parts=response_parts))
+
+    # Still asking for tools after MAX_TOOL_ITERATIONS rounds. Rather than fail
+    # the whole question, give the model one last turn in which it may not call
+    # a tool, so it answers from what it has already gathered.
+    no_more_tools = config.model_copy(
+        update={"tool_config": types.ToolConfig(function_calling_config=types.FunctionCallingConfig(mode="NONE"))}
+    )
+    response = client.models.generate_content(model=MODEL, contents=contents, config=no_more_tools)
+    candidate = response.candidates[0]
+    if candidate.finish_reason in _REFUSAL_FINISH_REASONS:
+        contents.append(candidate.content)
+        return response, True
+    try:
+        has_answer = bool(json.loads(response.text).get("answer", "").strip())
+    except (json.JSONDecodeError, TypeError, AttributeError):
+        has_answer = False
+    if response.function_calls or not has_answer:
+        # Not added to `contents`: a dangling tool call would break the next request.
+        raise AssistantLoopError(f"No final answer after {MAX_TOOL_ITERATIONS} tool iterations")
+    contents.append(candidate.content)
+    return response, False
+
+
 def ask(
     question: str,
     history: list[dict] | None,
     customer: str,
     last_chart: dict | None = None,
     last_chart_style: dict | None = None,
+    last_answer: str | None = None,
 ) -> dict:
     """
     Runs the agentic loop for one question and returns:
@@ -2169,10 +2500,11 @@ def ask(
     active in one call.
     """
     client = get_client()
-    contents: list = list(history or [])
+    contents: list = _text_only_history(history)
     contents.append({"role": "user", "parts": [{"text": question}]})
 
     chart_sources: list[tuple[str, dict, object]] = []
+    tools_called: list[str] = []
     resolved_input_style = _sanitize_chart_style(last_chart_style) if last_chart_style else _DEFAULT_CHART_STYLE
     system_instruction = _system_prompt(resolved_input_style)
     config = types.GenerateContentConfig(
@@ -2182,35 +2514,31 @@ def ask(
         response_json_schema=FINAL_ANSWER_SCHEMA,
     )
 
-    response = None
-    for _ in range(MAX_TOOL_ITERATIONS):
-        response = client.models.generate_content(model=MODEL, contents=contents, config=config)
-        candidate = response.candidates[0]
-        contents.append(candidate.content)
+    try:
+        response, refused = _run_tool_loop(client, contents, config, customer, chart_sources, tools_called)
+    except AssistantLoopError:
+        # The internal tools never led to an answer: treat it like any other
+        # question they couldn't answer, which falls through to the web search.
+        response, refused = None, False
+    if refused:
+        return {**_REFUSAL_ANSWER, **_empty_chart(), "messages": _serialize_contents(contents)}
+    parsed = json.loads(response.text) if response is not None else dict(_UNSETTLED_ANSWER)
 
-        if candidate.finish_reason in _REFUSAL_FINISH_REASONS:
+    # Figures quoted without a single tool call this turn came from memory (an
+    # earlier answer), so nothing fresh backs them. One re-fetch, then whatever
+    # comes back is judged like any other answer.
+    if (
+        not tools_called
+        and parsed.get("data_source") == "aire_data"
+        and parsed.get("grounded")
+        and not parsed.get("uses_previous_chart")
+        and _cites_a_figure(parsed.get("answer", ""))
+    ):
+        contents.append({"role": "user", "parts": [{"text": _FRESH_LOOKUP_NUDGE}]})
+        response, refused = _run_tool_loop(client, contents, config, customer, chart_sources, tools_called)
+        if refused:
             return {**_REFUSAL_ANSWER, **_empty_chart(), "messages": _serialize_contents(contents)}
-
-        function_calls = response.function_calls or []
-        if not function_calls:
-            break
-
-        response_parts = []
-        for fc in function_calls:
-            content, is_error, raw_result = _run_business_tool(fc.name, fc.args or {}, customer)
-            if not is_error and fc.name in _CHARTABLE_TOOLS and raw_result is not None:
-                chart_sources.append((fc.name, fc.args or {}, raw_result))
-            response_parts.append(
-                types.Part.from_function_response(
-                    name=fc.name,
-                    response={"error": content} if is_error else {"result": content},
-                )
-            )
-        contents.append(types.Content(role="user", parts=response_parts))
-    else:
-        raise AssistantLoopError(f"No final answer after {MAX_TOOL_ITERATIONS} tool iterations")
-
-    parsed = json.loads(response.text)
+        parsed = json.loads(response.text)
 
     if not parsed.get("grounded", True) and parsed.get("data_source") != "analysis":
         # data_source="analysis" is deliberately ungrounded (the model
@@ -2242,26 +2570,44 @@ def ask(
                     parsed = reshaped
 
     chart = _build_chart(chart_sources, customer)
-    parsed = _verify_and_maybe_correct(client, contents, config, parsed, chart, chart_sources)
 
-    # Carrying forward the previous chart is only correct when this turn's
-    # answer is actually about that context (a styling tweak, "why is
-    # that") -- an off-topic refusal ("what should I eat for lunch") also
-    # makes no tool call, but has nothing to do with the old chart, so
-    # showing it there would be actively misleading rather than helpful.
-    if parsed.get("data_source") != "none":
-        chart = _resolve_last_chart(chart, last_chart)
-
+    # What is shown is this turn's own data. An answer that is not about this
+    # business data at all (a refusal, a web-search answer) shows nothing, and
+    # the chart already on screen is carried over only when the model says
+    # this message is about that chart (a restyle, "why is that") -- never
+    # just because this turn happened to fetch nothing. The model's flag alone
+    # is not enough ("thanks" got it wrongly): the message must also have
+    # changed the chart's style, or be an answer about the data.
     chart_style = _sanitize_chart_style(parsed.get("chart_style"))
+    restyled = chart_style != resolved_input_style
+    about_the_chart = bool(parsed.get("uses_previous_chart")) and (
+        restyled or parsed.get("data_source") not in ("none", "market_data")
+    )
+    if about_the_chart:
+        chart = _resolve_last_chart(chart, last_chart)
+    elif parsed.get("data_source") in ("none", "market_data"):
+        chart = _empty_chart()
+
+    parsed = _verify_and_maybe_correct(client, contents, config, parsed, chart, chart_sources)
+    if _unsupported_headline(parsed, chart, chart_sources) is not None:
+        # A table that doesn't back the answer's figure is worse than none, so
+        # it is left out and the answer is shown as it is -- no error text.
+        chart = _empty_chart()
+
     chart = _resolve_chart_type(chart, chart_style)
     trend_values: list[float] = []
     if chart_style["show_trend_line"] and chart.get("chart_series"):
         trend_values = _linear_trend(chart["chart_series"][0]["values"])
 
-    download = _build_download(parsed.get("export_format", "none"), parsed["answer"], chart, chart_style, trend_values)
+    # The report keeps the answer the chart was first made for.
+    restyled_only = about_the_chart and restyled and bool(last_answer)
+    export_answer = last_answer if restyled_only else parsed["answer"]
+
+    download = _build_download(parsed.get("export_format", "none"), export_answer, chart, chart_style, trend_values)
 
     return {
         **parsed,
+        "export_answer": export_answer,
         **chart,
         "chart_style": chart_style,
         "chart_trend_values": trend_values,

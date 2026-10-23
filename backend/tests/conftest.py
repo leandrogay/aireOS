@@ -12,10 +12,24 @@ FrozenDatetime pins the clock for the UTC tests.
 
 import datetime
 
+import pytest
+
+from app import config
+
+
+@pytest.fixture(autouse=True)
+def disable_authentication_by_default(monkeypatch):
+    """Keep domain tests independent of a developer's local SSO setting."""
+    monkeypatch.setattr(config, "AUTH_ENABLED", "false")
+
 
 class FakeResult:
     def __init__(self, rows):
         self._rows = list(rows)
+        # Matches real SQLAlchemy's rowcount for an UPDATE/DELETE: how many
+        # rows the statement affected. A respond() for such a statement
+        # returns the affected rows (even if the caller discards them).
+        self.rowcount = len(self._rows)
 
     def all(self):
         return list(self._rows)

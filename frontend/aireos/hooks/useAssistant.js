@@ -24,6 +24,8 @@ function assistantMessageFromResponse(data) {
   return {
     role: 'assistant',
     text: data.answer,
+    // What a PDF/PowerPoint says: the original answer when this message only restyled a chart.
+    exportText: data.export_answer || data.answer,
     grounded: data.grounded,
     dataSource: data.data_source,
     hasChart: data.has_chart,
@@ -58,18 +60,30 @@ export default function useAssistant() {
       setLoading(true);
       setError(null);
 
-      const lastChartMessage = [...messages].reverse().find((m) => m.hasChart || m.hasTable);
-      const lastChart = lastChartMessage
+      // "The chart on screen" is the chart of the latest reply that was about
+      // data. A question that failed has no reply, and chit-chat ("thanks")
+      // or a refusal has no chart and no data of its own, so those are skipped
+      // rather than hiding the chart still on screen; a reply that answered a
+      // data question (even without a table) stops the search, so an older
+      // question's chart never ends up next to a newer answer. The style is a
+      // separate preference that persists, so it still comes from the latest
+      // message with a chart.
+      const previousMessage = [...messages]
+        .reverse()
+        .find((m) => m.role === 'assistant' && (m.hasChart || m.hasTable || m.dataSource !== 'none'));
+      const previousHasData = previousMessage && (previousMessage.hasChart || previousMessage.hasTable);
+      const lastChart = previousHasData
         ? {
-            has_chart: lastChartMessage.hasChart,
-            chart_type: lastChartMessage.chartType,
-            chart_categories: lastChartMessage.chartCategories,
-            chart_series: lastChartMessage.chartSeries,
-            has_table: lastChartMessage.hasTable,
-            table_columns: lastChartMessage.tableColumns,
-            table_rows: lastChartMessage.tableRows,
+            has_chart: previousMessage.hasChart,
+            chart_type: previousMessage.chartType,
+            chart_categories: previousMessage.chartCategories,
+            chart_series: previousMessage.chartSeries,
+            has_table: previousMessage.hasTable,
+            table_columns: previousMessage.tableColumns,
+            table_rows: previousMessage.tableRows,
           }
         : {};
+      const lastChartMessage = [...messages].reverse().find((m) => m.hasChart || m.hasTable);
       const lastChartStyle = lastChartMessage?.chartStyle || {};
 
       try {
@@ -82,6 +96,7 @@ export default function useAssistant() {
             history,
             last_chart: lastChart,
             last_chart_style: lastChartStyle,
+            last_answer: previousHasData ? previousMessage.exportText || previousMessage.text : '',
           }),
         });
         const data = await res.json();

@@ -142,6 +142,11 @@ def cloud_sql_loading_enabled() -> bool:
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 
+# ---- Gemini (Vertex AI) -----------------------------------------------------
+
+GEMINI_ASSISTANT_MODEL = os.environ.get("GEMINI_ASSISTANT_MODEL", "gemini-3.8-flash")
+GCP_VERTEX_LOCATION = os.environ.get("GCP_VERTEX_LOCATION", "global")
+
 # ---- Authentication ---------------------------------------------------------
 
 AUTH_ENABLED = os.environ.get("AUTH_ENABLED", "false")
@@ -170,7 +175,6 @@ def auth_enabled() -> bool:
 def auth_cookie_secure() -> bool:
     """Return whether authentication cookies require HTTPS."""
     return _enabled(AUTH_COOKIE_SECURE)
-
 
 # ---- Access helpers ---------------------------------------------------------
 

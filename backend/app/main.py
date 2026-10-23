@@ -2,9 +2,10 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app import config  # noqa: F401
 
-from app.middleware import UnhandledErrorMiddleware
 from app.auth import require_user
-from app.routers import auth, sales, uploads, mappings, promotions, catalog, assistant, forecast, inventory, settings
+from app.middleware import UnhandledErrorMiddleware
+from app.routers import assistant, auth, catalog, forecast, inventory, mappings
+from app.routers import notifications, promotions, sales, settings, uploads
 
 app = FastAPI()
 
@@ -35,6 +36,7 @@ app.include_router(assistant.router, dependencies=protected)
 app.include_router(forecast.router, dependencies=protected)
 app.include_router(inventory.router, dependencies=protected)
 app.include_router(settings.router, dependencies=protected)
+app.include_router(notifications.router, dependencies=protected)
 
 
 @app.get("/")

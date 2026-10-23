@@ -1,6 +1,6 @@
 import { ACTIONS_COLUMN } from '@/components/ui/TableGrid';
 
-// Fixed widths keep the catalogue stable while searching and paging. Product
+// Fixed widths keep the catalog stable while searching and paging. Product
 // and range share the remaining space and truncate with their full value in
 // the cell title.
 export const SKU_COLUMNS = [
@@ -21,6 +21,8 @@ export const SKU_HISTORY_COLUMNS = [
   { key: 'product', label: 'Product' },
   { key: 'range', label: 'Range' },
   { key: 'size', label: 'Size', width: '5rem' },
+  { key: 'brand', label: 'Brand', width: '6rem' },
+  { key: 'uom', label: 'UOM', width: '5rem' },
   { key: 'pack', label: 'Pack', width: '5rem' },
   { key: 'price', label: 'Price', width: '7rem' },
 ];

@@ -1,26 +1,26 @@
 'use client';
 
-import { Eye, Pencil, Trash2 } from 'lucide-react';
+import { History, Pencil, Trash2 } from 'lucide-react';
 
 import RowActions from '@/components/ui/RowActions';
 
 const money = new Intl.NumberFormat('en-SG', { style: 'currency', currency: 'SGD' });
 
 /**
- * One SKU catalogue row. Details remain in the existing dialog, while the
- * standard row-actions menu keeps View, Edit and Delete consistent with the
+ * One SKU catalog row. History remains in a dialog, while the standard
+ * row-actions menu keeps History, Edit and Delete consistent with the
  * Customers and Promotions lists.
  *
  * @param {{
  *   sku: object,
- *   onView: (sku: object) => void,
+ *   onHistory: (sku: object) => void,
  *   onEdit: (sku: object) => void,
  *   onDelete: (sku: object) => void,
  * }} props
  */
-export default function SkuRow({ sku, onView, onEdit, onDelete }) {
+export default function SkuRow({ sku, onHistory, onEdit, onDelete }) {
   const actions = [
-    { key: 'view', label: 'View details', icon: Eye, onSelect: () => onView(sku) },
+    { key: 'history', label: 'History', icon: History, onSelect: () => onHistory(sku) },
     { key: 'edit', label: 'Edit', icon: Pencil, onSelect: () => onEdit(sku) },
     { key: 'delete', label: 'Delete', icon: Trash2, destructive: true, onSelect: () => onDelete(sku) },
   ];
