@@ -5,7 +5,7 @@ import { useEffect } from 'react';
 import { cn } from '@/lib/utils';
 
 const DISMISS_AFTER_MS = 4000;
-const GAP_PX = 1;
+const GAP_PX = 4;
 const EDGE_PX = 16;
 
 // Beside the notification bell (layout/NotificationBell), not on top of it:
