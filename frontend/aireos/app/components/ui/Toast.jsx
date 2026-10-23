@@ -5,16 +5,15 @@ import { useEffect } from 'react';
 import { cn } from '@/lib/utils';
 
 const DISMISS_AFTER_MS = 4000;
-const GAP_PX = 4;
+const GAP_PX = 12;
 const EDGE_PX = 16;
 
 // Beside the notification bell (layout/NotificationBell), not on top of it:
-// the toast's right edge sits GAP_PX left of the bell icon itself (not its
-// padded button), centred on it. When the bell is scrolled out of view there
-// is nothing to cover, so the corner is used.
+// the toast's right edge sits just left of the bell, centred on it. When the
+// bell is scrolled out of view there is nothing to cover, so the corner is used.
 function placeBesideBell(element) {
   if (!element) return;
-  const bell = document.querySelector('[data-notification-bell] svg')?.getBoundingClientRect();
+  const bell = document.querySelector('[data-notification-bell]')?.getBoundingClientRect();
   if (bell && bell.bottom > 0) {
     element.style.top = `${bell.top + bell.height / 2}px`;
     element.style.right = `${window.innerWidth - bell.left + GAP_PX}px`;
