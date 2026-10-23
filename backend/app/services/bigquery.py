@@ -235,6 +235,160 @@ def get_forecast_output_rows(
     return [_forecast_output_row(record) for record in df.to_dict(orient="records")]
 
 
+# ============================================================
+# FORECAST WITHOUT THE MODEL'S PROMOTIONS
+#
+# In months where the pipeline's Current line comes from ARIMA_PLUS_XREG,
+# the forecast already includes the promotion entered for that month. The
+# Scenario builder's "Plan my own promotions" view swaps in the model the
+# pipeline would have picked without XREG, so planned promotions can be
+# added without counting the entered one twice.
+#
+# "Would have picked" is step 3c of run_monthly_forecast_pipeline with XREG
+# taken out: ARIMA_PLUS, unless the series is too short or ARIMA_PLUS is
+# inaccurate and Tier 0 is better. Keep these two numbers in step with that
+# procedure (tier0_min_history_months, tier0_fallback_smape).
+# ============================================================
+
+TIER0_MIN_HISTORY_MONTHS = 6
+TIER0_FALLBACK_SMAPE = 50
+
+_FORECAST_ALTERNATIVES_SQL = """
+    WITH latest AS (
+      SELECT MAX(forecast_generated_at) AS ts
+      FROM `{dataset}.aire_forecasting_runs`
+    ),
+    run AS (
+      SELECT r.*
+      FROM `{dataset}.aire_forecasting_runs` AS r, latest
+      WHERE r.forecast_generated_at = latest.ts
+    ),
+    xreg_months AS (
+      SELECT customer_id, sku, month_year, forecast_generated_at
+      FROM run
+      WHERE is_best AND source_model = 'tier1_arimax'
+    ),
+    history AS (
+      SELECT customer_id, sku, COUNT(*) AS months_of_history
+      FROM `{dataset}.fc_training_input`
+      GROUP BY customer_id, sku
+    ),
+    scored AS (
+      SELECT
+        x.customer_id,
+        x.sku,
+        x.month_year,
+        x.forecast_generated_at,
+        COALESCE(h.months_of_history, 0) AS months_of_history,
+        a.customer_id IS NOT NULL AS has_arima,
+        t.customer_id IS NOT NULL AS has_tier0,
+        qa.smape AS arima_smape,
+        qt.smape AS tier0_smape,
+        a.predicted_quantity_cartons AS arima_cartons,
+        a.prediction_interval_lower_bound AS arima_low,
+        a.prediction_interval_upper_bound AS arima_high,
+        t.predicted_quantity_cartons AS tier0_cartons,
+        t.prediction_interval_lower_bound AS tier0_low,
+        t.prediction_interval_upper_bound AS tier0_high
+      FROM xreg_months AS x
+      LEFT JOIN run AS a
+        ON a.source_model = 'tier1_arima' AND NOT a.is_best
+       AND a.customer_id = x.customer_id AND a.sku = x.sku AND a.month_year = x.month_year
+      LEFT JOIN run AS t
+        ON t.source_model = 'tier0_legacy' AND NOT t.is_best
+       AND t.customer_id = x.customer_id AND t.sku = x.sku AND t.month_year = x.month_year
+      LEFT JOIN history AS h
+        ON h.customer_id = x.customer_id AND h.sku = x.sku
+      LEFT JOIN `{dataset}.fc_model_quality_views` AS qa
+        ON qa.model_name = 'tier1_arima' AND qa.customer_id = x.customer_id AND qa.sku = x.sku
+      LEFT JOIN `{dataset}.fc_model_quality_views` AS qt
+        ON qt.model_name = 'tier0_legacy' AND qt.customer_id = x.customer_id AND qt.sku = x.sku
+    ),
+    chosen AS (
+      SELECT
+        *,
+        CASE
+          WHEN months_of_history < @min_history_months THEN 'tier0_legacy'
+          WHEN NOT has_arima THEN 'tier0_legacy'
+          WHEN has_tier0 AND arima_smape > @fallback_smape AND tier0_smape < arima_smape
+            THEN 'tier0_legacy'
+          ELSE 'tier1_arima'
+        END AS alt_source_model
+      FROM scored
+    ),
+    with_names AS (
+      SELECT
+        c.customer_id,
+        customer.customer_name,
+        c.sku,
+        product.product_name,
+        c.month_year,
+        c.alt_source_model,
+        c.forecast_generated_at AS alt_generated_at,
+        IF(c.alt_source_model = 'tier1_arima', c.arima_cartons, c.tier0_cartons) AS alt_forecast_current,
+        IF(c.alt_source_model = 'tier1_arima', c.arima_low, c.tier0_low) AS alt_low_80,
+        IF(c.alt_source_model = 'tier1_arima', c.arima_high, c.tier0_high) AS alt_high_80,
+        IF(c.alt_source_model = 'tier1_arima', c.arima_smape, c.tier0_smape) AS alt_backtest_smape
+      FROM chosen AS c
+      JOIN `{dataset}.public_customers` AS customer
+        ON customer.customer_id = c.customer_id
+      JOIN `{dataset}.public_skus` AS product
+        ON product.sku = c.sku
+    )
+"""
+
+
+def _forecast_alternative_row(record: dict) -> dict:
+    return {
+        "customer_id": _json_int(record.get("customer_id")),
+        "customer_name": _json_str(record.get("customer_name")),
+        "sku": _json_str(record.get("sku")),
+        "product_name": _json_str(record.get("product_name")),
+        "month_year": _iso_date(record.get("month_year")),
+        "alt_source_model": _json_str(record.get("alt_source_model")),
+        "alt_generated_at": _iso_stamp(record.get("alt_generated_at")),
+        "alt_forecast_current": _json_number(record.get("alt_forecast_current")),
+        "alt_low_80": _json_number(record.get("alt_low_80")),
+        "alt_high_80": _json_number(record.get("alt_high_80")),
+        "alt_backtest_smape": _json_number(record.get("alt_backtest_smape")),
+    }
+
+
+def get_forecast_alternatives(
+    product_name: str | None = None,
+    customer_name: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> list[dict]:
+    """
+    For every customer x SKU x month whose Current line comes from
+    ARIMA_PLUS_XREG, the forecast the pipeline would have chosen without it
+    (cartons only; forecast_service prices them). Read-only: the runs table
+    keeps every model's forecast for the latest run.
+    """
+    where_clauses, query_parameters = _name_and_date_filters(
+        product_name, customer_name, start_date, end_date, "month_year"
+    )
+    query_parameters += [
+        bigquery.ScalarQueryParameter("min_history_months", "INT64", TIER0_MIN_HISTORY_MONTHS),
+        bigquery.ScalarQueryParameter("fallback_smape", "FLOAT64", TIER0_FALLBACK_SMAPE),
+    ]
+    query = f"""
+        {_FORECAST_ALTERNATIVES_SQL.format(dataset=_catalog_dataset())}
+        SELECT *
+        FROM with_names
+        WHERE {" AND ".join(where_clauses)}
+          AND alt_forecast_current IS NOT NULL
+        ORDER BY customer_name, product_name, month_year
+    """
+    job_config = bigquery.QueryJobConfig(query_parameters=query_parameters)
+    client = get_bigquery_client()
+    df = client.query(query, job_config=job_config).result().to_dataframe()
+    if df.empty:
+        return []
+    return [_forecast_alternative_row(record) for record in df.to_dict(orient="records")]
+
+
 def get_realised_prices(
     product_name: str | None = None,
     customer_name: str | None = None,

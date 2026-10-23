@@ -196,6 +196,57 @@ def get_forecast_view(
     }
 
 
+_ALTERNATIVE_REVENUE_COLUMNS = {
+    "alt_forecast_current": "alt_forecast_current_revenue",
+    "alt_low_80": "alt_low_80_revenue",
+    "alt_high_80": "alt_high_80_revenue",
+}
+
+
+def get_forecast_alternatives(
+    product_name: str | None = None,
+    customer_name: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict:
+    """The forecast without the model's promotions, for months where the Current line uses them.
+
+    Used by the Scenario builder's "Plan my own promotions" view
+    (bigquery.get_forecast_alternatives). The cartons are priced at the same
+    realised price as the Current line, so switching views changes revenue
+    only because the forecast changed.
+    """
+    filters = {
+        "product_name": product_name or None,
+        "customer_name": customer_name or None,
+        "start_date": start_date or None,
+        "end_date": end_date or None,
+    }
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        rows_job = pool.submit(bigquery_service.get_forecast_alternatives, **filters)
+        prices_job = pool.submit(
+            bigquery_service.get_realised_prices,
+            product_name=filters["product_name"],
+            customer_name=filters["customer_name"],
+        )
+        rows = rows_job.result()
+        prices = prices_job.result()
+
+    priced = []
+    for row in rows:
+        price = prices.get((row.get("customer_id"), row.get("sku")))
+        revenue = {
+            revenue_key: round(row[cartons_key] * price, 2)
+            if row.get(cartons_key) is not None and price is not None
+            else None
+            for cartons_key, revenue_key in _ALTERNATIVE_REVENUE_COLUMNS.items()
+        }
+        priced.append({**row, **revenue})
+
+    return {**filters, "rows": priced}
+
+
 # ============================================================
 # WRITES
 #
