@@ -169,12 +169,16 @@ function OptionField({
                       onChange(candidate);
                       close();
                     }}
-                    className="w-full justify-start text-deep-violet-blue"
+                    // Hover like the option rows above (cream + brand blue),
+                    // not the ghost variant's grey + near-black.
+                    className="w-full min-w-0 justify-start text-deep-violet-blue hover:bg-cream hover:text-deep-violet-blue"
                   >
                     <Plus aria-hidden="true" />
-                    {validCandidate
-                      ? `${createLabel} “${candidate}”`
-                      : createLabel}
+                    <span className="min-w-0 truncate">
+                      {validCandidate
+                        ? `${createLabel} “${candidate}”`
+                        : createLabel}
+                    </span>
                   </Button>
                   <p className="px-2 pb-1 text-[11px] text-deep-violet-blue/60">
                     {exactMatch

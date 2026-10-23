@@ -24,14 +24,14 @@ export default function SkuDetails({ open, sku, loading, error, onClose }) {
     <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
       <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-[min(72rem,calc(100%-2rem))]">
         <DialogHeader>
-          <DialogTitle>{sku ? `History · ${sku.sku}` : 'SKU history'}</DialogTitle>
-          <DialogDescription>
+          <DialogTitle className="font-serif text-xl text-deep-violet-blue">{sku ? `History · ${sku.sku}` : 'SKU history'}</DialogTitle>
+          <DialogDescription className="text-xs text-deep-violet-blue/65">
             {sku?.product_name
               ? `Audit trail for ${sku.product_name}.`
               : 'Recorded changes to this SKU.'}
           </DialogDescription>
         </DialogHeader>
-        {loading && <p className="py-10 text-center text-muted-foreground">Loading history...</p>}
+        {loading && <p className="py-10 text-center text-sm text-deep-violet-blue/70">Loading history...</p>}
         {error && (
           <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
             {error}
@@ -39,7 +39,7 @@ export default function SkuDetails({ open, sku, loading, error, onClose }) {
         )}
         {!loading && !error && sku && (
           !sku.history?.length ? (
-            <p className="rounded-md border border-lavander bg-cream/40 px-4 py-10 text-center text-sm text-muted-foreground">
+            <p className="rounded-md border border-lavander bg-cream/40 px-4 py-10 text-center text-sm text-deep-violet-blue/80">
               No history has been recorded yet.
             </p>
           ) : (
@@ -51,7 +51,7 @@ export default function SkuDetails({ open, sku, loading, error, onClose }) {
                       <span className="capitalize">{entry.action}</span>
                     </StatusPill>
                   </td>
-                  <td className="px-4 py-2 text-muted-foreground">{formatDateTime(entry.changed_at)}</td>
+                  <td className="px-4 py-2 text-deep-violet-blue/70">{formatDateTime(entry.changed_at)}</td>
                   <td className={cn(SKU_CELL_CLASS, 'px-4 py-2')}>{entry.product_name}</td>
                   <td className={cn(SKU_CELL_CLASS, 'px-4 py-2')}>{entry.sku_range}</td>
                   <td className={cn(SKU_CELL_CLASS, 'px-4 py-2')}>{entry.size}</td>
