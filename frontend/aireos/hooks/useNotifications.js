@@ -9,9 +9,9 @@ import {
 } from '@/app/services/notificationsApi';
 
 /**
- * The shared, unread-only notification feed (see backend notification_service).
- * Once read, a notification drops out of this list entirely rather than
- * staying with its read state shown.
+ * The shared notification feed (see backend notification_service): the 50
+ * newest, read and unread, newest first. A read notification stays in the
+ * list (shown greyed out); `unreadCount` counts only the unread ones.
  *
  * Pushed, not polled: an EventSource on /api/notifications/stream gets a
  * `changed` event the moment any notification is added, read or deleted --
@@ -28,7 +28,7 @@ export default function useNotifications() {
 
   async function refresh() {
     try {
-      const list = await getNotifications({ unreadOnly: true, limit: 50 });
+      const list = await getNotifications({ limit: 50 });
       setNotifications(list);
     } catch {
       // Leave the last good list in place; the next change or refresh() call will retry.
@@ -40,7 +40,7 @@ export default function useNotifications() {
 
     async function loadNotifications() {
       try {
-        const list = await getNotifications({ unreadOnly: true, limit: 50 });
+        const list = await getNotifications({ limit: 50 });
         if (!cancelled) setNotifications(list);
       } catch {
         // Leave the last good list in place; the next change will retry.
@@ -60,11 +60,14 @@ export default function useNotifications() {
 
   async function markRead(ids) {
     if (ids.length === 0) return;
-    // Optimistic: removed immediately rather than waiting on the request's
+    // Optimistic: greyed out immediately rather than waiting on the request's
     // round trip, which otherwise makes every "Mark as read" feel laggy.
     // Rolled back if the request turns out to have failed.
     const previous = notifications;
-    setNotifications((current) => current.filter((n) => !ids.includes(n.notification_id)));
+    const readAt = new Date().toISOString();
+    setNotifications((current) =>
+      current.map((n) => (ids.includes(n.notification_id) && !n.read_at ? { ...n, read_at: readAt } : n)),
+    );
     try {
       await markNotificationsRead(ids);
     } catch {
@@ -72,5 +75,6 @@ export default function useNotifications() {
     }
   }
 
-  return { notifications, unreadCount: notifications.length, markRead, refresh };
+  const unreadCount = notifications.filter((n) => !n.read_at).length;
+  return { notifications, unreadCount, markRead, refresh };
 }

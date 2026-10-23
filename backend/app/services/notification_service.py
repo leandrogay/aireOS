@@ -182,26 +182,6 @@ def mark_read(notification_ids: list[int]) -> int:
         return result.rowcount
 
 
-_DELETE_EXPIRED_SQL = """
-    DELETE FROM notifications
-    WHERE created_at < CURRENT_TIMESTAMP - CAST(:days AS integer) * INTERVAL '1 day'
-"""
-
-
-def delete_expired() -> int:
-    """
-    Deletes notifications older than NOTIFICATION_RETENTION_DAYS, read or
-    unread, and returns how many went. Run by the backend at startup and then
-    every NOTIFICATION_CLEANUP_INTERVAL_HOURS (see _cleanup_loop in app/main.py).
-    """
-
-    with _get_engine().begin() as conn:
-        deleted = conn.execute(text(_DELETE_EXPIRED_SQL), {"days": config.NOTIFICATION_RETENTION_DAYS}).rowcount
-        if deleted:
-            _announce(conn)
-        return deleted
-
-
 def _insert(
     conn: Connection,
     notification_type: str,

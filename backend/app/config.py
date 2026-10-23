@@ -149,10 +149,8 @@ GCP_VERTEX_LOCATION = os.environ.get("GCP_VERTEX_LOCATION", "global")
 
 # ---- Notifications ----------------------------------------------------------
 
-# Notifications older than this many days are deleted, read or unread.
-NOTIFICATION_RETENTION_DAYS = int(os.environ.get("NOTIFICATION_RETENTION_DAYS", "60"))
-# How often the backend deletes them (it also does once at startup).
-NOTIFICATION_CLEANUP_INTERVAL_HOURS = float(os.environ.get("NOTIFICATION_CLEANUP_INTERVAL_HOURS", "24"))
+# Notifications older than 60 days are deleted by the database itself (pg_cron,
+# migrations/005_schedule_notification_cleanup.sql), not by this app.
 
 # Pub/Sub subscription the scheduled BigQuery forecast run ("Retrain when new
 # month lands") reports each finished run to. Empty: the backend does not
