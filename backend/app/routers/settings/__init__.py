@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.routers.settings import doh
+from app.routers.settings import doh, promo_uplifts
 
 
 # Customer-level settings are under /api/settings, one sub-router per kind
@@ -9,3 +9,4 @@ from app.routers.settings import doh
 router = APIRouter(prefix="/api/settings")
 
 router.include_router(doh.router)
+router.include_router(promo_uplifts.router)
