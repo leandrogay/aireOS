@@ -112,7 +112,15 @@ export default function SkusPage() {
     try {
       await archiveSku(sku.sku);
       setSkus((current) => current.filter((item) => item.sku !== sku.sku));
-      notify('deleted', `SKU ${sku.sku} moved to the archived catalog.`);
+      try {
+        setOptions(await getSkuOptions());
+      } catch (optionsError) {
+        setError(
+          optionsError.message ||
+            `SKU ${sku.sku} was archived, but the catalog options could not be refreshed.`,
+        );
+      }
+      notify('deleted', `SKU ${sku.sku} was archived.`);
     } catch (archiveError) {
       notify('error', archiveError.message || 'Failed to archive SKU.');
     }

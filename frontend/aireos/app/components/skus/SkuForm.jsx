@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Plus } from 'lucide-react';
 
 import CheckboxDropdown from '@/components/promotions/CheckboxDropdown';
+import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -99,7 +100,9 @@ function OptionField({
   error,
   onChange,
   numeric = false,
+  createLabel = null,
 }) {
+  const optionKind = createLabel?.replace(/^Create new /, '').toLowerCase();
   const allOptions = [...new Set(options.map(String).filter(Boolean))].sort((left, right) =>
     left.localeCompare(right, undefined, { numeric: true }),
   );
@@ -116,6 +119,14 @@ function OptionField({
         invalid={Boolean(error)}
         searchable
         searchPlaceholder={`Search or enter ${label.toLowerCase()}...`}
+        onSearchChange={(query) => {
+          const candidate = query.trim();
+          if (!candidate) {
+            onChange('');
+          } else if (!numeric || /^\d+$/.test(candidate)) {
+            onChange(candidate);
+          }
+        }}
       >
         {(query, close) => {
           const candidate = query.trim();
@@ -147,7 +158,31 @@ function OptionField({
                   <span className="min-w-0 truncate">{option}</span>
                 </label>
               ))}
-              {validCandidate && (
+              {createLabel ? (
+                <div className="mt-1 border-t border-lavander pt-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={!validCandidate}
+                    onClick={() => {
+                      onChange(candidate);
+                      close();
+                    }}
+                    className="w-full justify-start text-deep-violet-blue"
+                  >
+                    <Plus aria-hidden="true" />
+                    {validCandidate
+                      ? `${createLabel} “${candidate}”`
+                      : createLabel}
+                  </Button>
+                  <p className="px-2 pb-1 text-[11px] text-deep-violet-blue/60">
+                    {exactMatch
+                      ? `This ${optionKind} already exists.`
+                      : 'Enter a new name above. It will be saved with this SKU.'}
+                  </p>
+                </div>
+              ) : validCandidate && (
                 <button
                   type="button"
                   onClick={() => {
@@ -168,7 +203,9 @@ function OptionField({
           );
         }}
       </CheckboxDropdown>
-      <p className={hintClass}>Choose an existing value or search to add a new one.</p>
+      <p className={hintClass}>
+        Choose an existing value or type a new one. Typed values are kept when the menu closes.
+      </p>
       <FieldError message={error} />
     </fieldset>
   );
@@ -283,6 +320,7 @@ export default function SkuForm({ open, sku, options = {}, onSave, onClose }) {
                   options={options.sku_ranges}
                   error={errors.sku_range}
                   onChange={(value) => change('sku_range', value)}
+                  createLabel="Create new SKU range"
                 />
                 <OptionField
                   name="brand"
@@ -291,6 +329,7 @@ export default function SkuForm({ open, sku, options = {}, onSave, onClose }) {
                   options={options.brands}
                   error={errors.brand}
                   onChange={(value) => change('brand', value)}
+                  createLabel="Create new brand"
                 />
                 <OptionField
                   name="size"
@@ -299,6 +338,7 @@ export default function SkuForm({ open, sku, options = {}, onSave, onClose }) {
                   options={options.sizes}
                   error={errors.size}
                   onChange={(value) => change('size', value)}
+                  createLabel="Create new size"
                 />
               </div>
             </FormSection>
@@ -316,6 +356,7 @@ export default function SkuForm({ open, sku, options = {}, onSave, onClose }) {
                   options={options.uoms}
                   error={errors.uom}
                   onChange={(value) => change('uom', value)}
+                  createLabel="Create new unit of measure"
                 />
                 <OptionField
                   name="pack-size"
@@ -325,6 +366,7 @@ export default function SkuForm({ open, sku, options = {}, onSave, onClose }) {
                   error={errors.pack_size}
                   onChange={(value) => change('pack_size', value)}
                   numeric
+                  createLabel="Create new pack size"
                 />
                 <label>
                   <span className={labelClass}>

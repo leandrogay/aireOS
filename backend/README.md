@@ -68,14 +68,19 @@ change requires coordinated schema and consumer updates.
 `/api/catalog/skus` provides the active SKU catalog used by the `/skus`
 screen. Staff can create, search, filter and update complete master records;
 the SKU code is immutable and remains globally unique. Each create/update is
-snapshotted in `sku_history`.
+snapshotted in `sku_history`. Historical price calculations can call
+`get_product_prices(as_of_date=...)` to use the version recorded by the end of
+that date instead of applying today's catalog price to an earlier period.
 
-Apply `migrations/003_create_sku_management.sql` before using this screen. A
+Apply `migrations/003_create_sku_management.sql` and then
+`migrations/004_consolidate_sku_versions.sql` before using this screen. A
 delete request is intentionally an archive: it is refused while the SKU is
-attached to a promotion, copies the product snapshot to `old_skus`, and marks
-the `skus` row inactive. Keeping that row preserves foreign-key references from
-historical sell-out and inventory facts while removing it from active catalog
-and promotion options.
+attached to a promotion, records an `archived` version in `sku_history`, and
+marks the `skus` row inactive. Keeping that stable master row preserves
+foreign-key references from historical sell-out and inventory facts while
+removing it from active catalog and promotion options. The consolidation
+migration moves any legacy archive snapshots into `sku_history` before
+removing the redundant archive table.
 
 ## Clean sell-out data in BigQuery
 
