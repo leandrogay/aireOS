@@ -39,11 +39,12 @@ export const ALL_SERIES_VISIBLE = Object.fromEntries(
 );
 
 // source_model values written by run_monthly_forecast_pipeline /
-// run_tier0_legacy in BigQuery. Keep in sync with those procedures. Both
-// ARIMA models (with and without promo input) show as one Tier 1 label;
-// which of the two won a month isn't a distinction the page needs.
+// run_tier0_legacy in BigQuery. Keep in sync with those procedures. The two
+// ARIMA models get their own labels: "advanced" is ARIMA_PLUS_XREG (with the
+// promotion input), "basic" is ARIMA_PLUS (without it), so the page shows
+// which months already include the promotion entered for them.
 export const SOURCE_MODEL_LABELS = {
-  tier1_arima: 'Tier 1 advanced',
+  tier1_arima: 'Tier 1 basic',
   tier1_arimax: 'Tier 1 advanced',
   tier0_legacy: 'Tier 0 baseline',
 };
@@ -269,9 +270,9 @@ export function buildMonthlyPoints(rows, actuals = [], metric = 'units', { singl
 }
 
 /**
- * "Tier 1 advanced" for one SKU, or "Tier 1 advanced ×7 · Tier 0 baseline ×2"
- * when a month's total mixes SKUs forecast by different tiers. Counts are
- * grouped by label, so the two Tier 1 models add up to one entry.
+ * "Tier 1 basic" for one SKU, or "Tier 1 basic ×5 · Tier 1 advanced ×2 ·
+ * Tier 0 baseline ×2" when a month's total mixes SKUs forecast by different
+ * models. Counts are grouped by label.
  */
 export function formatModelMix(currentModels) {
   const countsByLabel = {};
