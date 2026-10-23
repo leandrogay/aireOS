@@ -1,12 +1,28 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import {
   getNotifications,
   markNotificationsRead,
   notificationsStreamUrl,
 } from '@/app/services/notificationsApi';
+
+/**
+ * Fetches the list, but only hands it back if nothing has superseded it since
+ * it started: a newer fetch (answers can arrive out of order) or a Mark as
+ * read (an answer started before the click still says "unread"). Anything
+ * marked read whose request is still in flight is kept read, so a list that
+ * lands in between can't flash it back to unread. Returns null if superseded.
+ */
+async function fetchNewest(latestFetch, pendingRead) {
+  const request = ++latestFetch.current;
+  const list = await getNotifications({ limit: 50 });
+  if (request !== latestFetch.current) return null;
+  if (pendingRead.current.size === 0) return list;
+  const readAt = new Date().toISOString();
+  return list.map((n) => (pendingRead.current.has(n.notification_id) && !n.read_at ? { ...n, read_at: readAt } : n));
+}
 
 /**
  * The shared notification feed (see backend notification_service): the 50
@@ -25,11 +41,13 @@ import {
  */
 export default function useNotifications() {
   const [notifications, setNotifications] = useState([]);
+  const latestFetch = useRef(0);
+  const pendingRead = useRef(new Set());
 
   async function refresh() {
     try {
-      const list = await getNotifications({ limit: 50 });
-      setNotifications(list);
+      const list = await fetchNewest(latestFetch, pendingRead);
+      if (list) setNotifications(list);
     } catch {
       // Leave the last good list in place; the next change or refresh() call will retry.
     }
@@ -40,8 +58,8 @@ export default function useNotifications() {
 
     async function loadNotifications() {
       try {
-        const list = await getNotifications({ limit: 50 });
-        if (!cancelled) setNotifications(list);
+        const list = await fetchNewest(latestFetch, pendingRead);
+        if (list && !cancelled) setNotifications(list);
       } catch {
         // Leave the last good list in place; the next change will retry.
       }
@@ -65,6 +83,8 @@ export default function useNotifications() {
     // Rolled back if the request turns out to have failed.
     const previous = notifications;
     const readAt = new Date().toISOString();
+    ids.forEach((id) => pendingRead.current.add(id));
+    latestFetch.current += 1;
     setNotifications((current) =>
       current.map((n) => (ids.includes(n.notification_id) && !n.read_at ? { ...n, read_at: readAt } : n)),
     );
@@ -72,6 +92,8 @@ export default function useNotifications() {
       await markNotificationsRead(ids);
     } catch {
       setNotifications(previous);
+    } finally {
+      ids.forEach((id) => pendingRead.current.delete(id));
     }
   }
 
