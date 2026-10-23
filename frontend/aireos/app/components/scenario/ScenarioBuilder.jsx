@@ -11,6 +11,7 @@ import { mixCaption } from '@/components/forecast/ForecastYearTotals';
 import BlockTable from '@/components/scenario/BlockTable';
 import BuildingBlocksSection from '@/components/scenario/BuildingBlocksSection';
 import ImpactStrip from '@/components/scenario/ImpactStrip';
+import ModelViewToggle from '@/components/scenario/ModelViewToggle';
 import MonthlyPlan from '@/components/scenario/MonthlyPlan';
 import PromotionsSection from '@/components/scenario/PromotionsSection';
 import ScenarioPanel from '@/components/scenario/ScenarioPanel';
@@ -38,19 +39,28 @@ import {
   withSimulatedLine,
 } from '@/app/utils/scenarioEngine';
 import { monthSpanLabel, pitchMetrics, seasonalAverage } from '@/app/utils/scenarioPitch';
-import { draftPromotionBands } from '@/app/utils/scenarioPromotions';
+import {
+  MODEL_VIEWS,
+  OFFICIAL_REFERENCE_SERIES,
+  modelPromotionSummary,
+  rowsForView,
+  withOfficialReference,
+} from '@/app/utils/scenarioModelView';
+import { activeScenarioPromotions, draftPromotionBands } from '@/app/utils/scenarioPromotions';
 import {
   activeScenarioBlocks,
   hasUnsavedChanges,
   updateScenarioBlock,
 } from '@/app/utils/scenarioBlocks';
 import { SCENARIO_SOURCES } from '@/app/utils/scenarioSources';
+import useForecastAlternatives from '@/hooks/useForecastAlternatives';
 import useForecastFilters from '@/hooks/useForecastFilters';
 import useForecastView from '@/hooks/useForecastView';
 import useForecastYearTotals from '@/hooks/useForecastYearTotals';
 import useConfirmAction from '@/hooks/useConfirmAction';
 import useExpandedRows from '@/hooks/useExpandedRows';
 import useScenarioBlocks from '@/hooks/useScenarioBlocks';
+import useScenarioPromotions from '@/hooks/useScenarioPromotions';
 import useUnitsSplitBasis from '@/hooks/useUnitsSplitBasis';
 
 // Distinct items with cells in any of these months.
@@ -80,14 +90,36 @@ export default function ScenarioBuilder() {
   const [metric, setMetric] = useState('units');
   const [selectedPromoTypes, setSelectedPromoTypes] = useState(ALL_PROMO_TYPE_VALUES);
   const [selectedPackTypes, setSelectedPackTypes] = useState(ALL_PACK_TYPE_VALUES);
-  const [visibleSeries, setVisibleSeries] = useState({ ...ALL_SERIES_VISIBLE, [SIMULATED_SERIES.key]: true });
+  const [visibleSeries, setVisibleSeries] = useState({
+    ...ALL_SERIES_VISIBLE,
+    [SIMULATED_SERIES.key]: true,
+    [OFFICIAL_REFERENCE_SERIES.key]: true,
+  });
   const [panelCollapsed, setPanelCollapsed] = useState(false);
+  const [modelView, setModelView] = useState(MODEL_VIEWS.official);
   const view = useForecastView({ ready, productName, customerName, startDate, endDate });
-  const { rows, actuals, promotions, freshness } = view.data;
+  const { rows: officialRows, actuals, promotions, freshness } = view.data;
+
+  // Months whose official forecast already includes the promotion entered
+  // for them can be swapped for the forecast without it, so planned
+  // promotions are never counted twice (app/utils/scenarioModelView.js).
+  // Only for one customer and one SKU: across several, the months mix models
+  // and the toggle would be too hard to read. Greyed out when that SKU has no
+  // such month.
+  const showViewToggle = Boolean(productName && customerName);
+  const modelSummary = modelPromotionSummary(officialRows);
+  const canSwitchView = showViewToggle && modelSummary.modelMonths > 0;
+  const activeView = canSwitchView ? modelView : MODEL_VIEWS.official;
+  const alternatives = useForecastAlternatives({
+    enabled: ready && canSwitchView && activeView === MODEL_VIEWS.planned,
+    productName,
+    customerName,
+  });
+  const mapRows = (forecastRows) => rowsForView(forecastRows, alternatives.data, activeView);
+  const rows = mapRows(officialRows);
   const scenarioBlocks = useScenarioBlocks();
-  // Draft promotions are the promotions side's to save; until then they live
-  // in this page's memory only.
-  const [draftPromotions, setDraftPromotions] = useState([]);
+  // Planned promotions: saved like blocks (hooks/useScenarioPromotions.js).
+  const scenarioPromotions = useScenarioPromotions();
   // The block open in the panel's editor (a draft, or a saved block opened
   // from the table with Edit); its months are banded on the chart.
   const [selectedId, setSelectedId] = useState(null);
@@ -114,8 +146,9 @@ export default function ScenarioBuilder() {
     startDate,
     endDate,
     bounds: filters.bounds,
-    rows,
+    rows: officialRows,
     actuals,
+    mapRows,
   });
   // Units blocks the filters only partly show (an All SKUs block while one
   // SKU is picked) are split over rows fetched for their whole scope.
@@ -140,17 +173,27 @@ export default function ScenarioBuilder() {
   const singleSeries = Boolean(productName && customerName);
   const unitPoints = buildMonthlyPoints(rows, actuals, 'units', { singleSeries });
   const revenuePoints = buildMonthlyPoints(rows, actuals, 'revenue', { singleSeries });
-  const basePoints = metric === 'revenue' ? revenuePoints : unitPoints;
+  const swapped = rows !== officialRows;
+  const officialPoints = swapped
+    ? buildMonthlyPoints(officialRows, actuals, metric === 'revenue' ? 'revenue' : 'units', { singleSeries })
+    : null;
+  const viewPoints = metric === 'revenue' ? revenuePoints : unitPoints;
+  const basePoints = swapped ? withOfficialReference(viewPoints, officialPoints) : viewPoints;
 
-  // Only switched-on blocks count, on the chart and in the tables.
+  // Only switched-on blocks and promotions count, on the chart and in the tables.
   const allBlocks = scenarioBlocks.blocks;
-  const counted = { blocks: activeScenarioBlocks(allBlocks), promotions: draftPromotions };
+  const activePromotions = activeScenarioPromotions(scenarioPromotions.promotions);
+  const counted = { blocks: activeScenarioBlocks(allBlocks), promotions: activePromotions };
   const { cells, byMonth, byItem } = simulate(rows, counted, SCENARIO_SOURCES, chartView(filters, splitBasis.basis));
-  // Nothing simulated until a switched-on block changes something in view:
+  // Nothing simulated until a switched-on item changes something in view:
   // no Simulated line, legend entry or table columns before that.
   const hasSimulated = byItem.size > 0;
   const monthCells = cellsByMonth(cells);
-  const names = new Map([...allBlocks, ...draftPromotions].map((item) => [item.id, item.name]));
+  // Promotions have no name of their own; their mechanic stands in.
+  const names = new Map([
+    ...allBlocks.map((block) => [block.id, block.name]),
+    ...scenarioPromotions.promotions.map((promotion) => [promotion.id, promotion.mechanicLabel]),
+  ]);
   const monthItems = new Map(
     [...monthCells].map(([month, items]) => [
       month,
@@ -178,9 +221,11 @@ export default function ScenarioBuilder() {
 
   const simulatedYears = simulatedYearTotals(years, byMonth);
   const scenario = {
-    series: hasSimulated ? [SIMULATED_SERIES] : [],
+    // Simulated stays first: the chart takes its colour from series[0]. The
+    // grey Official reference only shows in the Plan my own promotions view.
+    series: [...(hasSimulated ? [SIMULATED_SERIES] : []), ...(swapped ? [OFFICIAL_REFERENCE_SERIES] : [])],
     markers: hasSimulated ? itemMarkers(byItem) : [],
-    promoBands: draftPromotionBands(draftPromotions),
+    promoBands: draftPromotionBands(activePromotions),
     seasonalAverage: seasonalAverage(basePoints),
     simulatedYears: hasSimulated ? simulatedYears : [],
     monthItems,
@@ -232,8 +277,9 @@ export default function ScenarioBuilder() {
   ];
 
   const months = forecastMonths(rows);
-  const itemCount = allBlocks.length + draftPromotions.length;
-  const error = filters.error ?? view.error ?? scenarioBlocks.error ?? splitBasis.error ?? actionError;
+  const itemCount = allBlocks.length + scenarioPromotions.promotions.length;
+  const error =
+    filters.error ?? view.error ?? scenarioBlocks.error ?? scenarioPromotions.error ?? splitBasis.error ?? actionError;
 
   const customerText = customerName ? retailerLabel(customerName) : 'All customers';
 
@@ -295,10 +341,23 @@ export default function ScenarioBuilder() {
           'grid items-start gap-2',
           panelCollapsed
             ? 'min-[1100px]:grid-cols-[minmax(0,1fr)_56px]'
-            : 'min-[1100px]:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]'
+            : 'min-[1100px]:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)] min-[1100px]:items-stretch'
         )}
       >
-        <div className="min-w-0 space-y-1">
+        {/* Side by side, the chart card and the panel end at the same height:
+            the row is as tall as the taller one and the chart card stretches. */}
+        <div className="min-w-0 space-y-1 min-[1100px]:flex min-[1100px]:flex-col min-[1100px]:[&>[data-slot=card]]:flex-1">
+          {showViewToggle ? (
+            <ModelViewToggle
+              value={activeView}
+              onChange={setModelView}
+              disabled={!canSwitchView}
+              summary={modelSummary}
+              loading={alternatives.loading}
+              error={alternatives.error}
+            />
+          ) : null}
+
           <ForecastChart
             points={hasSimulated ? withSimulatedLine(basePoints, byMonth, metric) : basePoints}
             startDate={startDate}
@@ -375,6 +434,19 @@ export default function ScenarioBuilder() {
 
         </div>
 
+        {/* Side by side, the open panel takes exactly the chart card's height
+            (absolute, inset-0) instead of setting the row's, so both end level
+            whatever the tab or the chart view. Each tab scrolls on its own under
+            the fixed tab buttons, and overscroll-contain stops a scroll that
+            reaches a tab's end from carrying on into the page. */}
+        <div
+          className={cn(
+            'relative min-w-0',
+            panelCollapsed
+              ? null
+              : 'min-[1100px]:[&>aside]:absolute min-[1100px]:[&>aside]:inset-0 min-[1100px]:[&_[data-slot=tabs]]:h-full min-[1100px]:[&_[data-slot=tabs-content]]:min-h-0 min-[1100px]:[&_[data-slot=tabs-content]]:overflow-y-auto min-[1100px]:[&_[data-slot=tabs-content]]:overscroll-contain min-[1100px]:[&_[data-slot=tabs-content]]:pr-1'
+          )}
+        >
         <ScenarioPanel
           collapsed={panelCollapsed}
           onCollapsedChange={setPanelCollapsed}
@@ -397,9 +469,21 @@ export default function ScenarioBuilder() {
             )
           }
           promotionsSection={
-            <PromotionsSection items={draftPromotions} onChange={setDraftPromotions} {...sectionProps} />
+            scenarioPromotions.loading ? (
+              <p className="text-xs text-deep-violet-blue/60">Loading promotions…</p>
+            ) : (
+              <PromotionsSection
+                items={scenarioPromotions.promotions}
+                onChange={scenarioPromotions.setPromotions}
+                onSave={scenarioPromotions.savePromotion}
+                onDelete={scenarioPromotions.deletePromotion}
+                rows={rows}
+                {...sectionProps}
+              />
+            )
           }
         />
+        </div>
       </div>
 
       <BlockTable
