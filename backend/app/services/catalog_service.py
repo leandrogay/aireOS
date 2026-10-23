@@ -1,7 +1,8 @@
 from functools import lru_cache
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
-from app.services import sql
+from app.services import customer_service, sql
+from app.services.settings.common import lock_customer
 
 
 # ============================================================
@@ -17,7 +18,23 @@ class RetailerHasStoresError(Exception):
     pass
 
 
+class RetailerNameTakenError(Exception):
+    pass
+
+
+class RetailerAlreadyLinkedError(Exception):
+    pass
+
+
 class StoreHasPromotionsError(Exception):
+    pass
+
+
+class SkuAlreadyExistsError(Exception):
+    pass
+
+
+class SkuHasPromotionsError(Exception):
     pass
 
 
@@ -118,14 +135,22 @@ def _fetch_retailer(
     conn: Connection,
     retailer_id: int,
 ) -> dict | None:
+    # customer_id is NULL for a retailer no customer owns yet
+    # (see customer_service.list_customers). A retailer with a
+    # store is in use: sell-out and promotions both hang off stores.
     query = text(
         """
         SELECT
             r.retailer_id,
             r.retailer_name,
-            COUNT(s.store_id) AS store_count
+            cr.customer_id,
+            COUNT(s.store_id) AS store_count,
+            COUNT(s.store_id) > 0 AS in_use
 
         FROM retailers r
+
+        LEFT JOIN customer_retailers cr
+            ON cr.retailer_id = r.retailer_id
 
         LEFT JOIN stores s
             ON s.retailer_id = r.retailer_id
@@ -135,7 +160,8 @@ def _fetch_retailer(
 
         GROUP BY
             r.retailer_id,
-            r.retailer_name
+            r.retailer_name,
+            cr.customer_id
         """
     )
 
@@ -152,8 +178,89 @@ def _fetch_retailer(
     return dict(result)
 
 
+def _retailer_result(
+    conn: Connection,
+    retailer_id: int,
+) -> dict:
+    # Every retailer write on the Customers page answers with the
+    # retailer and its parent customer row, so the page can swap
+    # the customer in place without refetching the whole list.
+    retailer = _fetch_retailer(conn, retailer_id)
+    customer_id = retailer["customer_id"]
+
+    return {
+        "retailer": retailer,
+        "customer": (
+            customer_service.fetch_customer(conn, customer_id)
+            if customer_id is not None
+            else None
+        ),
+    }
+
+
+def _ensure_retailer_name_free(
+    conn: Connection,
+    retailer_name: str,
+    exclude_retailer_id: int | None = None,
+) -> None:
+    # Same rule as customer names: case-insensitive, with the
+    # unique constraint as the race backstop (IntegrityError -> 409).
+    taken = conn.execute(
+        text(
+            """
+            SELECT EXISTS (
+                SELECT 1
+
+                FROM retailers
+
+                WHERE
+                    lower(retailer_name) = lower(:retailer_name)
+                    AND retailer_id IS DISTINCT FROM CAST(:exclude_id AS INTEGER)
+            )
+            """
+        ),
+        {
+            "retailer_name": retailer_name,
+            "exclude_id": exclude_retailer_id,
+        },
+    ).scalar_one()
+
+    if taken:
+        raise RetailerNameTakenError(
+            f'A retailer named "{retailer_name}" already exists.'
+        )
+
+
+def _link_to_customer(
+    conn: Connection,
+    retailer_id: int,
+    customer_id: int,
+) -> None:
+    conn.execute(
+        text(
+            """
+            INSERT INTO customer_retailers (
+                customer_id,
+                retailer_id
+            )
+            VALUES (
+                :customer_id,
+                :retailer_id
+            )
+            """
+        ),
+        {
+            "customer_id": customer_id,
+            "retailer_id": retailer_id,
+        },
+    )
+
+
 # ============================================================
 # RETAILER CREATE
+#
+# A retailer is always created under a customer: the row and its
+# customer_retailers link go in together.
 # ============================================================
 
 
@@ -161,6 +268,16 @@ def create_retailer(
     retailer,
 ) -> dict:
     with _get_engine().begin() as conn:
+        lock_customer(
+            conn,
+            retailer.customer_id,
+        )
+
+        _ensure_retailer_name_free(
+            conn,
+            retailer.retailer_name,
+        )
+
         retailer_id = conn.execute(
             text(
                 """
@@ -179,7 +296,13 @@ def create_retailer(
             },
         ).scalar_one()
 
-        return _fetch_retailer(
+        _link_to_customer(
+            conn,
+            retailer_id,
+            retailer.customer_id,
+        )
+
+        return _retailer_result(
             conn,
             retailer_id,
         )
@@ -240,6 +363,9 @@ def get_retailer(
 
 # ============================================================
 # RETAILER UPDATE
+#
+# Only an unused retailer can be renamed (see customer_service for
+# why a rename would lose data).
 # ============================================================
 
 
@@ -248,7 +374,27 @@ def update_retailer(
     retailer,
 ) -> dict | None:
     with _get_engine().begin() as conn:
-        result = conn.execute(
+        current = _fetch_retailer(
+            conn,
+            retailer_id,
+        )
+
+        if current is None:
+            return None
+
+        if current["in_use"]:
+            raise RetailerHasStoresError(
+                f'"{current["retailer_name"]}" already has stores, '
+                "sales or promotions, so it can't be renamed."
+            )
+
+        _ensure_retailer_name_free(
+            conn,
+            retailer.retailer_name,
+            exclude_retailer_id=retailer_id,
+        )
+
+        conn.execute(
             text(
                 """
                 UPDATE retailers
@@ -258,20 +404,59 @@ def update_retailer(
 
                 WHERE
                     retailer_id = :retailer_id
-
-                RETURNING retailer_id
                 """
             ),
             {
                 "retailer_id": retailer_id,
                 "retailer_name": retailer.retailer_name,
             },
-        ).scalar()
+        )
 
-        if result is None:
+        return _retailer_result(
+            conn,
+            retailer_id,
+        )
+
+
+# ============================================================
+# RETAILER LINK
+#
+# For a retailer created without a customer (by a promotion or an
+# upload). Moving a retailer that already has a customer is not
+# offered: its sell-out would move to another customer's inventory.
+# ============================================================
+
+
+def link_retailer(
+    retailer_id: int,
+    customer_id: int,
+) -> dict | None:
+    with _get_engine().begin() as conn:
+        lock_customer(
+            conn,
+            customer_id,
+        )
+
+        current = _fetch_retailer(
+            conn,
+            retailer_id,
+        )
+
+        if current is None:
             return None
 
-        return _fetch_retailer(
+        if current["customer_id"] is not None:
+            raise RetailerAlreadyLinkedError(
+                f'"{current["retailer_name"]}" already belongs to a customer.'
+            )
+
+        _link_to_customer(
+            conn,
+            retailer_id,
+            customer_id,
+        )
+
+        return _retailer_result(
             conn,
             retailer_id,
         )
@@ -284,14 +469,33 @@ def update_retailer(
 
 def delete_retailer(
     retailer_id: int,
-) -> bool:
+) -> dict | None:
+    """
+    Delete an unused retailer and its customer link. Returns the
+    parent customer row (None for an unlinked retailer) under
+    "customer", or None when the retailer does not exist.
+    """
+
     with _get_engine().begin() as conn:
-        retailer_exists = conn.execute(
+        current = _fetch_retailer(
+            conn,
+            retailer_id,
+        )
+
+        if current is None:
+            return None
+
+        if current["in_use"]:
+            raise RetailerHasStoresError(
+                f'"{current["retailer_name"]}" already has stores, '
+                "sales or promotions, so it can't be deleted."
+            )
+
+        # The link row references the retailer, so it goes first.
+        conn.execute(
             text(
                 """
-                SELECT 1
-
-                FROM retailers
+                DELETE FROM customer_retailers
 
                 WHERE retailer_id = :retailer_id
                 """
@@ -299,33 +503,7 @@ def delete_retailer(
             {
                 "retailer_id": retailer_id,
             },
-        ).first()
-
-        if retailer_exists is None:
-            return False
-
-        has_stores = conn.execute(
-            text(
-                """
-                SELECT EXISTS (
-                    SELECT 1
-
-                    FROM stores
-
-                    WHERE retailer_id = :retailer_id
-                )
-                """
-            ),
-            {
-                "retailer_id": retailer_id,
-            },
-        ).scalar_one()
-
-        if has_stores:
-            raise RetailerHasStoresError(
-                "Retailer cannot be deleted because "
-                "it still has stores."
-            )
+        )
 
         conn.execute(
             text(
@@ -340,7 +518,15 @@ def delete_retailer(
             },
         )
 
-        return True
+        customer_id = current["customer_id"]
+
+        return {
+            "customer": (
+                customer_service.fetch_customer(conn, customer_id)
+                if customer_id is not None
+                else None
+            ),
+        }
 
 
 # ============================================================
@@ -798,6 +984,8 @@ def get_sku_ranges() -> list[str]:
         FROM skus
 
         WHERE
+            is_active = TRUE
+            AND
             sku_range IS NOT NULL
             AND sku IS DISTINCT FROM sku_range
 
@@ -830,12 +1018,21 @@ def get_skus() -> list[dict]:
             sku,
             sku_range,
             product_name,
-            size
+            size,
+            brand,
+            uom,
+            pack_size,
+            price
 
         FROM skus
 
         WHERE
-            sku IS DISTINCT FROM sku_range
+            is_active = TRUE
+            AND sku IS DISTINCT FROM sku_range
+
+        ORDER BY
+            product_name ASC,
+            sku ASC
         """
     )
 
@@ -848,6 +1045,370 @@ def get_skus() -> list[dict]:
         dict(row)
         for row in results
     ]
+
+
+# ============================================================
+# SKU MANAGEMENT
+#
+# SKU codes are immutable and globally unique. Archiving keeps the master row
+# (and therefore historical foreign keys) intact, while active catalog reads
+# hide it. Every write records a complete snapshot in sku_history.
+# ============================================================
+
+
+_SKU_COLUMNS = """
+    sku,
+    sku_range,
+    product_name,
+    size,
+    brand,
+    uom,
+    pack_size,
+    price
+"""
+
+
+def _fetch_active_sku(
+    conn: Connection,
+    sku: str,
+) -> dict | None:
+    row = conn.execute(
+        text(
+            f"""
+            SELECT
+                {_SKU_COLUMNS}
+
+            FROM skus
+
+            WHERE
+                sku = :sku
+                AND is_active = TRUE
+            """
+        ),
+        {"sku": sku},
+    ).mappings().first()
+
+    return dict(row) if row is not None else None
+
+
+def _insert_sku_history(
+    conn: Connection,
+    sku: dict,
+    action: str,
+) -> None:
+    conn.execute(
+        text(
+            """
+            INSERT INTO sku_history (
+                sku,
+                action,
+                sku_range,
+                product_name,
+                size,
+                brand,
+                uom,
+                pack_size,
+                price
+            )
+            VALUES (
+                :sku,
+                :action,
+                :sku_range,
+                :product_name,
+                :size,
+                :brand,
+                :uom,
+                :pack_size,
+                :price
+            )
+            """
+        ),
+        {
+            **sku,
+            "action": action,
+        },
+    )
+
+
+def create_sku(sku) -> dict:
+    values = sku.model_dump()
+
+    with _get_engine().begin() as conn:
+        exists = conn.execute(
+            text(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM skus
+                    WHERE sku = :sku
+                )
+                """
+            ),
+            {"sku": values["sku"]},
+        ).scalar_one()
+
+        if exists:
+            raise SkuAlreadyExistsError(
+                f"SKU {values['sku']} already exists or has been archived."
+            )
+
+        row = conn.execute(
+            text(
+                f"""
+                INSERT INTO skus (
+                    {_SKU_COLUMNS}
+                )
+                VALUES (
+                    :sku,
+                    :sku_range,
+                    :product_name,
+                    :size,
+                    :brand,
+                    :uom,
+                    :pack_size,
+                    :price
+                )
+                RETURNING
+                    {_SKU_COLUMNS}
+                """
+            ),
+            values,
+        ).mappings().first()
+
+        created = dict(row)
+        _insert_sku_history(conn, created, "created")
+
+    return created
+
+
+def list_skus(
+    *,
+    search: str | None = None,
+    sku_range: str | None = None,
+    brand: str | None = None,
+    min_price=None,
+    max_price=None,
+) -> list[dict]:
+    search_pattern = f"%{search.strip()}%" if search and search.strip() else None
+    where_clauses = [
+        "is_active = TRUE",
+        "sku IS DISTINCT FROM sku_range",
+    ]
+    params = {}
+
+    if search_pattern is not None:
+        where_clauses.append(
+            "(sku ILIKE :search OR sku_range ILIKE :search OR product_name ILIKE :search)"
+        )
+        params["search"] = search_pattern
+    if sku_range is not None:
+        where_clauses.append("sku_range = :sku_range")
+        params["sku_range"] = sku_range
+    if brand is not None:
+        where_clauses.append("brand = :brand")
+        params["brand"] = brand
+    if min_price is not None:
+        where_clauses.append("price >= :min_price")
+        params["min_price"] = min_price
+    if max_price is not None:
+        where_clauses.append("price <= :max_price")
+        params["max_price"] = max_price
+
+    query = text(
+        f"""
+        SELECT
+            {_SKU_COLUMNS}
+
+        FROM skus
+
+        WHERE
+            {" AND ".join(where_clauses)}
+
+        ORDER BY
+            product_name ASC,
+            sku ASC
+        """
+    )
+
+    with _read_connection() as conn:
+        rows = conn.execute(query, params).mappings().all()
+
+    return [dict(row) for row in rows]
+
+
+def get_sku(sku: str) -> dict | None:
+    with _read_connection() as conn:
+        item = _fetch_active_sku(conn, sku)
+        if item is None:
+            return None
+
+        history = conn.execute(
+            text(
+                f"""
+                SELECT
+                    sku_history_id,
+                    action,
+                    {_SKU_COLUMNS},
+                    changed_at
+
+                FROM sku_history
+
+                WHERE sku = :sku
+
+                ORDER BY
+                    changed_at DESC,
+                    sku_history_id DESC
+                """
+            ),
+            {"sku": sku},
+        ).mappings().all()
+
+    item["history"] = [dict(row) for row in history]
+    return item
+
+
+def get_sku_options() -> dict[str, list]:
+    query = text(
+        """
+        SELECT
+            sku_range,
+            brand,
+            size,
+            uom,
+            pack_size
+
+        FROM skus
+
+        WHERE
+            is_active = TRUE
+            AND sku IS DISTINCT FROM sku_range
+        """
+    )
+
+    with _read_connection() as conn:
+        rows = conn.execute(query).mappings().all()
+
+    def values_for(field: str) -> list:
+        return sorted({row[field] for row in rows if row.get(field) is not None})
+
+    return {
+        "sku_ranges": values_for("sku_range"),
+        "brands": values_for("brand"),
+        "sizes": values_for("size"),
+        "uoms": values_for("uom"),
+        "pack_sizes": values_for("pack_size"),
+    }
+
+
+def update_sku(sku: str, changes) -> dict | None:
+    params = {
+        "sku": sku,
+        **changes.model_dump(),
+    }
+
+    with _get_engine().begin() as conn:
+        row = conn.execute(
+            text(
+                f"""
+                UPDATE skus
+                SET
+                    sku_range = :sku_range,
+                    product_name = :product_name,
+                    size = :size,
+                    brand = :brand,
+                    uom = :uom,
+                    pack_size = :pack_size,
+                    price = :price
+
+                WHERE
+                    sku = :sku
+                    AND is_active = TRUE
+
+                RETURNING
+                    {_SKU_COLUMNS}
+                """
+            ),
+            params,
+        ).mappings().first()
+
+        if row is None:
+            return None
+
+        updated = dict(row)
+        _insert_sku_history(conn, updated, "updated")
+
+    return updated
+
+
+def archive_sku(sku: str) -> dict | None:
+    with _get_engine().begin() as conn:
+        item = _fetch_active_sku(conn, sku)
+        if item is None:
+            return None
+
+        has_promotions = conn.execute(
+            text(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM promotion_skus
+                    WHERE sku = :sku
+                )
+                """
+            ),
+            {"sku": sku},
+        ).scalar_one()
+
+        if has_promotions:
+            raise SkuHasPromotionsError(
+                "SKU cannot be archived because it is attached to promotions."
+            )
+
+        conn.execute(
+            text(
+                """
+                INSERT INTO old_skus (
+                    sku,
+                    sku_range,
+                    product_name,
+                    size,
+                    brand,
+                    uom,
+                    pack_size,
+                    price
+                )
+                VALUES (
+                    :sku,
+                    :sku_range,
+                    :product_name,
+                    :size,
+                    :brand,
+                    :uom,
+                    :pack_size,
+                    :price
+                )
+                ON CONFLICT (sku)
+                DO NOTHING
+                """
+            ),
+            item,
+        )
+
+        _insert_sku_history(conn, item, "archived")
+        conn.execute(
+            text(
+                """
+                UPDATE skus
+                SET
+                    is_active = FALSE,
+                    archived_at = CURRENT_TIMESTAMP
+                WHERE sku = :sku
+                """
+            ),
+            {"sku": sku},
+        )
+
+    return item
 
 
 # ============================================================
@@ -871,6 +1432,7 @@ def get_product_prices() -> dict[str, float]:
 
         WHERE
             price IS NOT NULL
+            AND is_active = TRUE
         """
     )
 

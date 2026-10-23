@@ -4,20 +4,25 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
-import { LayoutDashboard, Package, PanelLeft, Tag, TrendingUp, Upload } from 'lucide-react';
+import { LayoutDashboard, Library, Package, PanelLeft, Tag, TrendingUp, Upload } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 
+import NotificationBell from './NotificationBell';
+
 // Every tab links to a real (currently placeholder, for Forecast/Promotions/
 // Inventory — see app/forecast, app/promotions, app/inventory) page, so
-// nothing is blocked off. Mappings is nested under Upload and only appears
-// while the user is in the Upload/Mappings flow.
+// nothing is blocked off. Sub-items (Mappings under Upload, SKUs/Customers
+// under Catalog) only appear while the user is inside that section. Catalog has
+// no page of its own, so it links to its first child.
 const NAV_ITEMS = [
   {
     label: 'Upload',
     href: '/upload',
     icon: Upload,
-    children: [{ label: 'Mappings', href: '/mappings' }],
+    children: [
+      { label: 'Mappings', href: '/mappings' },
+    ],
   },
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { label: 'Forecast', href: '/forecast', icon: TrendingUp },
@@ -27,6 +32,15 @@ const NAV_ITEMS = [
     href: '/inventory',
     icon: Package,
     children: [{ label: 'DOH settings', href: '/doh' }],
+  },
+  {
+    label: 'Catalog',
+    href: '/skus',
+    icon: Library,
+    children: [
+      { label: 'SKUs', href: '/skus' },
+      { label: 'Customers', href: '/customers' },
+    ],
   },
 ];
 
@@ -52,7 +66,7 @@ export default function Sidebar() {
       <div
         className={cn(
           'mb-4 flex items-center',
-          collapsed ? 'justify-center' : 'justify-between pl-1',
+          collapsed ? 'flex-col justify-center gap-2' : 'justify-between pl-1',
         )}
       >
         {!collapsed && (
@@ -66,22 +80,26 @@ export default function Sidebar() {
             />
           </Link>
         )}
-        <button
-          type="button"
-          onClick={() => setCollapsed((prev) => !prev)}
-          aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
-          className="flex size-8 items-center justify-center rounded-md text-deep-violet-blue/70 transition-colors hover:bg-lavander hover:text-deep-violet-blue"
-        >
-          <PanelLeft className="size-4" />
-        </button>
+        <div className={cn('flex items-center', collapsed ? 'flex-col gap-2' : 'gap-1')}>
+          <NotificationBell collapsed={collapsed} />
+          <button
+            type="button"
+            onClick={() => setCollapsed((prev) => !prev)}
+            aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
+            className="flex size-8 items-center justify-center rounded-md text-deep-violet-blue/70 transition-colors hover:bg-lavander hover:text-deep-violet-blue"
+          >
+            <PanelLeft className="size-4" />
+          </button>
+        </div>
       </div>
 
       {!collapsed && (
         <ul className="space-y-0.5">
           {NAV_ITEMS.map((item) => {
-            const isActive = matchesPath(pathname, item.href);
             const childActive =
               item.children?.some((child) => matchesPath(pathname, child.href)) ?? false;
+            // Catalog shares its href with its first child; highlight the child only.
+            const isActive = matchesPath(pathname, item.href) && !childActive;
             // Show sub-items only while inside this section (parent or any child).
             const showChildren = !!item.children && (isActive || childActive);
             const Icon = item.icon;

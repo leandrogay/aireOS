@@ -4,7 +4,12 @@ from io import BytesIO
 import openpyxl
 import pytest
 
-from app.services.sell_in_upload import product_for_description, quantity_problem, read_sell_in_lines
+from app.services.sell_in_upload import (
+    canonical_customer_name,
+    product_for_description,
+    quantity_problem,
+    read_sell_in_lines,
+)
 
 HEADER = [
     "Month of Sales",
@@ -129,6 +134,14 @@ def test_each_tracker_description_maps_to_its_catalog_product(description, produ
 def test_a_description_that_is_not_listed_is_not_guessed():
     assert product_for_description("AIRE ADULT PANTS XL 10S - Ultra") is None
     assert product_for_description("") is None
+
+
+def test_cmm_marketing_services_is_known_as_sheng_shiong():
+    assert canonical_customer_name("CMM Marketing Services Pte Ltd") == "sheng_shiong"
+
+
+def test_an_unlisted_customer_name_is_returned_unchanged():
+    assert canonical_customer_name("Fairprice") == "Fairprice"
 
 
 def test_a_sheet_with_only_a_header_is_refused_with_a_message_about_rows():

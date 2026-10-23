@@ -3,15 +3,14 @@
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import RefreshButton from '@/components/ui/RefreshButton';
-import SortHeader, { TABLE_HEADER_CLASS as headerClass } from '@/components/ui/SortHeader';
+import DataTable from '@/components/ui/DataTable';
 import TablePagination, { PAGE_SIZES } from '@/components/ui/TablePagination';
 import TableSearch from '@/components/ui/TableSearch';
-import TableSkeleton from '@/components/ui/TableSkeleton';
 import ConfirmDeleteDialog from '@/components/promotions/ConfirmDeleteDialog';
 import PromotionFilters from '@/components/promotions/PromotionFilters';
 import PromotionRow from '@/components/promotions/PromotionRow';
-import { paginate, resultCountLabel } from '@/app/utils/tableView';
+import useConfirmAction from '@/hooks/useConfirmAction';
+import { nextSort, paginate } from '@/app/utils/tableView';
 import {
   dedupePromotions,
   filterPromotions,
@@ -23,6 +22,8 @@ import {
   uniquePromotionStoreNames,
   uniquePromotionTypes,
 } from '@/app/utils/promotionOverview';
+
+import { PROMOTION_COLUMNS } from './columns';
 
 // Keys match filterPromotions() in app/utils/promotionOverview.js.
 const EMPTY_FILTERS = {
@@ -36,10 +37,23 @@ const EMPTY_FILTERS = {
 
 /**
  * AO4-2 promotion overview: GET /api/promotions rows with filters, search,
- * sorting on the two dates, and paging. Edit and Delete live in each row's
- * "..." menu.
+ * sorting on the two dates, and paging, in the shared list-table card.
+ * Edit and Delete live in each row's "..." menu; Delete asks first and
+ * calls `onDelete` only on confirm. Which rows are open is the page's
+ * (useExpandedRows), so a saved promotion can open itself.
  *
- * @param {object} props
+ * @param {{
+ *   promotions?: object[],
+ *   isLoading?: boolean,
+ *   error?: string,
+ *   highlightIds?: number[],
+ *   editingId?: number | null,
+ *   isExpanded: (promotionId: number) => boolean,
+ *   onToggle: (promotionId: number) => void,
+ *   onEdit: (promotion: object) => void,
+ *   onDelete: (promotion: object) => Promise<void>,
+ *   onRefresh: () => void,
+ * }} props
  */
 export default function PromotionList({
   promotions = [],
@@ -47,6 +61,8 @@ export default function PromotionList({
   error = '',
   highlightIds = [],
   editingId = null,
+  isExpanded,
+  onToggle,
   onEdit,
   onDelete,
   onRefresh,
@@ -54,13 +70,10 @@ export default function PromotionList({
   const highlighted = new Set(highlightIds);
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [search, setSearch] = useState('');
-  const [sortField, setSortField] = useState('period_start');
-  const [sortDirection, setSortDirection] = useState('desc');
+  const [sort, setSort] = useState({ field: 'period_start', direction: 'desc' });
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
-  const [expandedId, setExpandedId] = useState(null);
-  const [pendingDelete, setPendingDelete] = useState(null);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const deletion = useConfirmAction({ onConfirm: onDelete });
 
   const uniquePromotions = dedupePromotions(promotions);
   const options = {
@@ -72,14 +85,13 @@ export default function PromotionList({
   };
 
   const matching = searchPromotions(filterPromotions(uniquePromotions, filters), search);
-  const sorted = sortPromotions(matching, sortField, sortDirection);
+  const sorted = sortPromotions(matching, sort.field, sort.direction);
 
   // Derived, not stored: deleting the last row of the last page lands on the
   // new last page instead of an empty one.
   const { pageRows, currentPage, totalPages } = paginate(sorted, page, pageSize);
 
   const hasFilters = Object.values(filters).some(Boolean) || search.trim() !== '';
-  const showTable = uniquePromotions.length > 0 || isLoading;
 
   // Any change to what is listed goes back to page 1, where the result starts.
   const changeFilter = (key, value) => {
@@ -104,31 +116,20 @@ export default function PromotionList({
   };
 
   const handleSort = (field) => {
-    if (sortField === field) {
-      setSortDirection((current) => (current === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setSortField(field);
-      setSortDirection('asc');
-    }
+    setSort((current) => nextSort(current, field));
     setPage(1);
   };
 
-  const cancelDelete = () => {
-    if (isDeleting) return;
-    setPendingDelete(null);
-  };
-
-  // DELETE is only called from here; Cancel never reaches the API.
-  const confirmDelete = async () => {
-    if (!pendingDelete) return;
-    setIsDeleting(true);
-    try {
-      await onDelete?.(pendingDelete);
-      setPendingDelete(null);
-    } finally {
-      setIsDeleting(false);
-    }
-  };
+  const noMatches = !isLoading && uniquePromotions.length > 0 && sorted.length === 0 && (
+    <>
+      <p>No promotions match these filters.</p>
+      {hasFilters && (
+        <Button variant="outline" className="mt-3" onClick={resetFilters}>
+          Reset filters
+        </Button>
+      )}
+    </>
+  );
 
   return (
     // Fills the height the page gives it (PageLayout fitScreen): the filter
@@ -142,138 +143,62 @@ export default function PromotionList({
         onReset={resetFilters}
       />
 
-      {/* The card's size comes from the window, not from how many rows are
-          listed, so searching or changing rows per page never resizes it;
-          the rows scroll inside. min-h-80 keeps the table usable on a short
-          window (the page scrolls instead). */}
-      {/* No visible heading (the page title already says Promotions); the
-          aria-label still names the region for screen readers. */}
-      <section
-        aria-label="Promotion overview"
-        className="flex min-h-80 flex-1 flex-col overflow-hidden rounded-lg border border-lavander bg-white shadow-sm"
+      <DataTable
+        label="Promotion overview"
+        noun="promotion"
+        totalCount={uniquePromotions.length}
+        shownCount={sorted.length}
+        isLoading={isLoading}
+        error={error}
+        onRefresh={onRefresh}
+        emptyMessage="No promotions yet. Use Create promotion to add the first one."
+        fill
+        toolbar={
+          <TableSearch
+            value={search}
+            onChange={changeSearch}
+            label="Search promotions"
+            placeholder="Search store, period, mechanic…"
+          />
+        }
+        footer={
+          <TablePagination
+            page={currentPage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            totalRows={sorted.length}
+            onPageChange={setPage}
+            onPageSizeChange={changePageSize}
+          />
+        }
+        columns={PROMOTION_COLUMNS}
+        minWidth="72rem"
+        sort={sort}
+        onSort={handleSort}
+        emptyState={noMatches || null}
       >
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-          <p className="text-sm text-deep-violet-blue/70" aria-live="polite">
-            {isLoading && !uniquePromotions.length
-              ? 'Loading promotions…'
-              : resultCountLabel(sorted.length, uniquePromotions.length, 'promotion')}
-          </p>
-          <div className="flex items-center gap-2">
-            <TableSearch
-              value={search}
-              onChange={changeSearch}
-              label="Search promotions"
-              placeholder="Search store, period, mechanic…"
+        {pageRows.map((promotion) => {
+          const id = promotion.promotion_id;
+          return (
+            <PromotionRow
+              key={id}
+              promotion={promotion}
+              isOpen={isExpanded(id)}
+              isEditing={editingId === id}
+              isNew={highlighted.has(id)}
+              onToggle={() => onToggle(id)}
+              onEdit={onEdit}
+              onDelete={deletion.request}
             />
-            <RefreshButton
-              onClick={onRefresh}
-              isRefreshing={isLoading}
-              label="Refresh promotions"
-              className="rounded-md border-deep-violet-blue/30 bg-white text-deep-violet-blue hover:bg-cream"
-            />
-          </div>
-        </div>
-
-        {error && (
-          <p className="mx-4 mb-3 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700">
-            {error}
-          </p>
-        )}
-
-        {!error && !showTable && (
-          <p className="px-4 pb-4 text-sm text-deep-violet-blue/80">No promotions registered yet.</p>
-        )}
-
-        {showTable && (
-          <>
-            <div
-              // relative: the header's sr-only "Actions" label is absolutely
-              // positioned; without a positioned ancestor it escapes this
-              // scroll box and widens the whole page on narrow windows.
-              className="relative min-h-0 flex-1 overflow-auto border-t border-lavander"
-            >
-              <table className="w-full whitespace-nowrap text-left text-sm text-deep-violet-blue [&_td]:align-middle [&_th]:align-middle">
-                {/* Stays in view while the rows scroll. White under the cream
-                    tint so rows do not show through; the bottom rule is an
-                    inset shadow because a collapsed table border does not
-                    move with a sticky header. */}
-                <thead className="sticky top-0 z-10 bg-white">
-                  <tr className="h-10 bg-cream/60 [&>th]:shadow-[inset_0_-1px_0_var(--color-lavander)]">
-                    <th scope="col" className={headerClass}>Retailer</th>
-                    <th scope="col" className={headerClass}>Stores</th>
-                    <SortHeader
-                      label="Start date"
-                      field="period_start"
-                      sortField={sortField}
-                      sortDirection={sortDirection}
-                      onSort={handleSort}
-                    />
-                    <SortHeader
-                      label="End date"
-                      field="period_end"
-                      sortField={sortField}
-                      sortDirection={sortDirection}
-                      onSort={handleSort}
-                    />
-                    <th scope="col" className={headerClass}>Period</th>
-                    <th scope="col" className={headerClass}>Promo type</th>
-                    <th scope="col" className={headerClass}>Mechanic</th>
-                    <th scope="col" className={headerClass}>Status</th>
-                    <th scope="col" className="w-px px-2 py-2.5">
-                      <span className="sr-only">Actions</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {isLoading && !uniquePromotions.length && <TableSkeleton columns={9} />}
-                  {!isLoading && sorted.length === 0 && (
-                    <tr>
-                      <td colSpan={9} className="px-4 py-24 text-center text-deep-violet-blue/80">
-                        <p>No promotions match these filters.</p>
-                        {hasFilters && (
-                          <Button variant="outline" className="mt-3" onClick={resetFilters}>
-                            Reset filters
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  )}
-                  {pageRows.map((promotion) => {
-                    const id = promotion.promotion_id;
-                    const isOpen = expandedId === id;
-                    return (
-                      <PromotionRow
-                        key={id}
-                        promotion={promotion}
-                        isOpen={isOpen}
-                        isEditing={editingId === id}
-                        isNew={highlighted.has(id)}
-                        onToggle={() => setExpandedId(isOpen ? null : id)}
-                        onEdit={onEdit}
-                        onDelete={setPendingDelete}
-                      />
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <TablePagination
-              page={currentPage}
-              totalPages={totalPages}
-              pageSize={pageSize}
-              totalRows={sorted.length}
-              onPageChange={setPage}
-              onPageSizeChange={changePageSize}
-            />
-          </>
-        )}
-      </section>
+          );
+        })}
+      </DataTable>
 
       <ConfirmDeleteDialog
-        promotion={pendingDelete}
-        isDeleting={isDeleting}
-        onCancel={cancelDelete}
-        onConfirm={confirmDelete}
+        promotion={deletion.target}
+        isDeleting={deletion.isPending}
+        onCancel={deletion.cancel}
+        onConfirm={deletion.confirm}
       />
     </div>
   );

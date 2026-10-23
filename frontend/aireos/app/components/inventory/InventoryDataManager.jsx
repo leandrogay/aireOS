@@ -65,7 +65,7 @@ export default function InventoryDataManager({ customers, skus, editRow, onSaved
     <Card size="sm" className="rounded-lg border border-lavander bg-white text-deep-violet-blue shadow-sm ring-0">
       <CardHeader className="flex flex-row items-start justify-between gap-3 pb-1">
         <CardTitle className="font-serif text-base font-normal text-deep-violet-blue group-data-[size=sm]/card:text-base">
-          Enter or edit data
+          {MODES.find((item) => item.value === mode)?.label} data
         </CardTitle>
         <div className="inline-flex h-7 items-center rounded-lg bg-lavander p-0.5">
           {MODES.map((item) => (

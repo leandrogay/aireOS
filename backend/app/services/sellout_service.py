@@ -1205,11 +1205,9 @@ def get_period_comparison(
 
     overall_start = min(cur_start, prev_start)
     overall_end = max(cur_end, prev_end)
-    # retailer is deliberately omitted from the filter when mode is None --
-    # preserves the existing (if surprising) "no mode = no retailer/customer
-    # filter at all" behavior, locked in by
-    # test_period_comparison_without_mode_has_no_retailer_filter. Not fixed
-    # as a drive-by in this migration.
+    # No mode means both of this customer's channels -- not every customer:
+    # "Fairprice in August" must not add NHG's sales in.
+    retailer_names = [retailer] if retailer else _customer_retailers(customer)
     where_clauses = ["s.period_start BETWEEN CAST(:overall_start AS date) AND CAST(:overall_end AS date)"]
     params: dict = {
         "overall_start": overall_start.strftime("%Y-%m-%d"),
@@ -1219,11 +1217,10 @@ def get_period_comparison(
         "prev_start": prev_start.strftime("%Y-%m-%d"),
         "prev_end": prev_end.strftime("%Y-%m-%d"),
     }
-    if retailer:
-        where_clauses.append(
-            "s.retailer_id IN (SELECT retailer_id FROM retailers WHERE retailer_name = :retailer_name)"
-        )
-        params["retailer_name"] = retailer
+    where_clauses.append(
+        "s.retailer_id IN (SELECT retailer_id FROM retailers WHERE retailer_name = ANY(CAST(:retailer_names AS text[])))"
+    )
+    params["retailer_names"] = retailer_names
     if sku:
         where_clauses.append("s.sku = :sku")
         params["sku"] = sku

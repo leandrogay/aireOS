@@ -1,16 +1,24 @@
-from fastapi import APIRouter, HTTPException
+from decimal import Decimal
+
+from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy.exc import IntegrityError
 
-from app.services import catalog_service
+from app.services import catalog_service, customer_service
+from app.services.settings.common import CustomerNotFoundError
 from app.schemas.catalog import (
+    CustomerCreate,
+    CustomerUpdate,
     RetailerCreate,
+    RetailerLink,
     RetailerUpdate,
+    SkuCreate,
+    SkuUpdate,
     StoreCreate,
     StoreUpdate,
 )
 
 
-# Retailers and stores are under /api/catalog
+# Customers, retailers, stores and SKUs are under /api/catalog
 router = APIRouter(
     prefix="/api/catalog",
     tags=["catalog"],
@@ -18,7 +26,162 @@ router = APIRouter(
 
 
 # ============================================================
+# CUSTOMER CRUD
+#
+# The Customers page: customers and the retailers under them.
+# A name clash, or a customer that already has data, is a 409
+# with a sentence the page shows as is. IntegrityError is the
+# backstop for a race past the service's own checks.
+# ============================================================
+
+
+_CUSTOMER_NAME_TAKEN = "A customer with this name already exists."
+_RETAILER_NAME_TAKEN = "A retailer with this name already exists."
+
+
+@router.get("/customers")
+def get_customers():
+    try:
+        return customer_service.list_customers()
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Failed to retrieve customers: "
+                f"{type(e).__name__}: {e}"
+            ),
+        )
+
+
+@router.post("/customers", status_code=201)
+def create_customer(customer: CustomerCreate):
+    try:
+        return customer_service.create_customer(
+            customer
+        )
+
+    except customer_service.CustomerNameTakenError as e:
+        raise HTTPException(
+            status_code=409,
+            detail=str(e),
+        )
+
+    except IntegrityError:
+        raise HTTPException(
+            status_code=409,
+            detail=_CUSTOMER_NAME_TAKEN,
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Failed to create customer: "
+                f"{type(e).__name__}: {e}"
+            ),
+        )
+
+
+@router.put("/customers/{customer_id}")
+def update_customer(customer_id: int, customer: CustomerUpdate):
+    try:
+        updated = customer_service.update_customer(
+            customer_id,
+            customer,
+        )
+
+        if updated is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Customer not found",
+            )
+
+        return updated
+
+    except HTTPException:
+        raise
+
+    except (
+        customer_service.CustomerNameTakenError,
+        customer_service.CustomerInUseError,
+    ) as e:
+        raise HTTPException(
+            status_code=409,
+            detail=str(e),
+        )
+
+    except IntegrityError:
+        raise HTTPException(
+            status_code=409,
+            detail=_CUSTOMER_NAME_TAKEN,
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Failed to update customer: "
+                f"{type(e).__name__}: {e}"
+            ),
+        )
+
+
+@router.delete("/customers/{customer_id}")
+def delete_customer(customer_id: int):
+    try:
+        deleted = customer_service.delete_customer(
+            customer_id
+        )
+
+        if not deleted:
+            raise HTTPException(
+                status_code=404,
+                detail="Customer not found",
+            )
+
+        return {
+            "status": "ok",
+            "message": "Customer deleted successfully",
+            "customer_id": customer_id,
+        }
+
+    except HTTPException:
+        raise
+
+    except (
+        customer_service.CustomerInUseError,
+        customer_service.CustomerHasRetailersError,
+    ) as e:
+        raise HTTPException(
+            status_code=409,
+            detail=str(e),
+        )
+
+    except IntegrityError:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This customer is still referenced by other data, "
+                "so it can't be deleted."
+            ),
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Failed to delete customer: "
+                f"{type(e).__name__}: {e}"
+            ),
+        )
+
+
+# ============================================================
 # RETAILER CRUD
+#
+# Writes answer with { retailer, customer }: the retailer and its
+# parent customer row (null for a retailer no customer owns yet).
 # ============================================================
 
 
@@ -29,12 +192,22 @@ def create_retailer(retailer: RetailerCreate):
             retailer
         )
 
+    except CustomerNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=str(e),
+        )
+
+    except catalog_service.RetailerNameTakenError as e:
+        raise HTTPException(
+            status_code=409,
+            detail=str(e),
+        )
+
     except IntegrityError:
         raise HTTPException(
             status_code=409,
-            detail=(
-                "A retailer with this name already exists."
-            ),
+            detail=_RETAILER_NAME_TAKEN,
         )
 
     except Exception as e:
@@ -109,12 +282,19 @@ def update_retailer(retailer_id: int, retailer: RetailerUpdate):
     except HTTPException:
         raise
 
+    except (
+        catalog_service.RetailerNameTakenError,
+        catalog_service.RetailerHasStoresError,
+    ) as e:
+        raise HTTPException(
+            status_code=409,
+            detail=str(e),
+        )
+
     except IntegrityError:
         raise HTTPException(
             status_code=409,
-            detail=(
-                "A retailer with this name already exists."
-            ),
+            detail=_RETAILER_NAME_TAKEN,
         )
 
     except Exception as e:
@@ -127,6 +307,53 @@ def update_retailer(retailer_id: int, retailer: RetailerUpdate):
         )
 
 
+@router.put("/retailers/{retailer_id}/customer")
+def link_retailer(retailer_id: int, link: RetailerLink):
+    try:
+        linked = catalog_service.link_retailer(
+            retailer_id,
+            link.customer_id,
+        )
+
+        if linked is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Retailer not found",
+            )
+
+        return linked
+
+    except HTTPException:
+        raise
+
+    except CustomerNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=str(e),
+        )
+
+    except catalog_service.RetailerAlreadyLinkedError as e:
+        raise HTTPException(
+            status_code=409,
+            detail=str(e),
+        )
+
+    except IntegrityError:
+        raise HTTPException(
+            status_code=409,
+            detail="This retailer already belongs to a customer.",
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Failed to link retailer: "
+                f"{type(e).__name__}: {e}"
+            ),
+        )
+
+
 @router.delete("/retailers/{retailer_id}")
 def delete_retailer(retailer_id: int):
     try:
@@ -134,7 +361,7 @@ def delete_retailer(retailer_id: int):
             retailer_id
         )
 
-        if not deleted:
+        if deleted is None:
             raise HTTPException(
                 status_code=404,
                 detail="Retailer not found",
@@ -144,6 +371,7 @@ def delete_retailer(retailer_id: int):
             "status": "ok",
             "message": "Retailer deleted successfully",
             "retailer_id": retailer_id,
+            "customer": deleted["customer"],
         }
 
     except catalog_service.RetailerHasStoresError as e:
@@ -154,6 +382,15 @@ def delete_retailer(retailer_id: int):
 
     except HTTPException:
         raise
+
+    except IntegrityError:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This retailer is still referenced by other data, "
+                "so it can't be deleted."
+            ),
+        )
 
     except Exception as e:
         raise HTTPException(
@@ -346,4 +583,134 @@ def get_sku_ranges():
                 f"Failed to retrieve sku ranges: "
                 f"{type(e).__name__}: {e}"
             ),
+        )
+
+
+# ============================================================
+# SKU CRUD, SEARCH AND FILTERS
+# ============================================================
+
+
+@router.post("/skus", status_code=201)
+def create_sku(sku: SkuCreate):
+    try:
+        return catalog_service.create_sku(sku)
+
+    except catalog_service.SkuAlreadyExistsError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+    except IntegrityError:
+        raise HTTPException(
+            status_code=409,
+            detail="A SKU with this code already exists.",
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create SKU: {type(e).__name__}: {e}",
+        )
+
+
+@router.get("/skus")
+def list_skus(
+    search: str | None = Query(default=None, max_length=255),
+    sku_range: str | None = Query(default=None, max_length=255),
+    brand: str | None = Query(default=None, max_length=255),
+    min_price: Decimal | None = Query(default=None, ge=0),
+    max_price: Decimal | None = Query(default=None, ge=0),
+):
+    if min_price is not None and max_price is not None and min_price > max_price:
+        raise HTTPException(
+            status_code=422,
+            detail="Minimum price cannot exceed maximum price.",
+        )
+
+    try:
+        return catalog_service.list_skus(
+            search=search,
+            sku_range=sku_range,
+            brand=brand,
+            min_price=min_price,
+            max_price=max_price,
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve SKUs: {type(e).__name__}: {e}",
+        )
+
+
+# Static subpaths must be declared before /skus/{sku}.
+@router.get("/skus/options")
+def get_sku_options():
+    try:
+        return catalog_service.get_sku_options()
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve SKU options: {type(e).__name__}: {e}",
+        )
+
+
+@router.get("/skus/{sku}")
+def get_sku(sku: str):
+    try:
+        item = catalog_service.get_sku(sku)
+        if item is None:
+            raise HTTPException(status_code=404, detail="SKU not found")
+        return item
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve SKU: {type(e).__name__}: {e}",
+        )
+
+
+@router.put("/skus/{sku}")
+def update_sku(sku: str, changes: SkuUpdate):
+    try:
+        updated = catalog_service.update_sku(sku, changes)
+        if updated is None:
+            raise HTTPException(status_code=404, detail="SKU not found")
+        return updated
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to update SKU: {type(e).__name__}: {e}",
+        )
+
+
+@router.delete("/skus/{sku}")
+def archive_sku(sku: str):
+    try:
+        archived = catalog_service.archive_sku(sku)
+        if archived is None:
+            raise HTTPException(status_code=404, detail="SKU not found")
+        return {
+            "status": "ok",
+            "message": f"SKU {sku} was moved to the archived SKU catalog.",
+            "sku": sku,
+        }
+
+    except catalog_service.SkuHasPromotionsError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to archive SKU: {type(e).__name__}: {e}",
         )
