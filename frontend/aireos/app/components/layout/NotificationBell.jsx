@@ -26,6 +26,7 @@ export default function NotificationBell() {
   return (
     <Popover onOpenChange={handleOpenChange}>
       <PopoverTrigger
+        data-notification-bell
         aria-label={unreadCount > 0 ? `Notifications (${unreadCount} unread)` : 'Notifications'}
         className="relative flex size-9 shrink-0 items-center justify-center rounded-md text-deep-violet-blue/70 transition-colors hover:bg-lavander hover:text-deep-violet-blue"
       >

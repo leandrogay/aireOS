@@ -5,6 +5,26 @@ import { useEffect } from 'react';
 import { cn } from '@/lib/utils';
 
 const DISMISS_AFTER_MS = 4000;
+const GAP_PX = 1;
+const EDGE_PX = 16;
+
+// Beside the notification bell (layout/NotificationBell), not on top of it:
+// the toast's right edge sits GAP_PX left of the bell icon itself (not its
+// padded button), centred on it. When the bell is scrolled out of view there
+// is nothing to cover, so the corner is used.
+function placeBesideBell(element) {
+  if (!element) return;
+  const bell = document.querySelector('[data-notification-bell] svg')?.getBoundingClientRect();
+  if (bell && bell.bottom > 0) {
+    element.style.top = `${bell.top + bell.height / 2}px`;
+    element.style.right = `${window.innerWidth - bell.left + GAP_PX}px`;
+    element.style.transform = 'translateY(-50%)';
+  } else {
+    element.style.top = `${EDGE_PX}px`;
+    element.style.right = `${EDGE_PX}px`;
+    element.style.transform = 'none';
+  }
+}
 
 // One colour per kind of outcome, so a glance says what just happened.
 // Solid fills are things that went through; the tinted ones ask for a second
@@ -20,7 +40,7 @@ const TONES = {
 };
 
 /**
- * Small self-dismissing confirmation in the top-right corner, e.g.
+ * Small self-dismissing confirmation beside the notification bell, e.g.
  * "Thresholds updated successfully". Pair it with hooks/useToast, which owns
  * the state:
  *
@@ -49,10 +69,11 @@ export default function Toast({ toast, onDismiss }) {
 
   return (
     <div
+      ref={placeBesideBell}
       role="status"
       aria-live="polite"
       className={cn(
-        'fixed right-4 top-4 z-50 max-w-sm rounded-lg border px-4 py-3 text-sm shadow-lg',
+        'fixed z-50 max-w-sm rounded-lg border px-4 py-3 text-sm shadow-lg',
         TONES[toast.type] || TONES.success,
       )}
     >
