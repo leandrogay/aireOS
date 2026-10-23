@@ -63,9 +63,9 @@ aireOS/
 │   │       │                      get_forecast_options, get_sales_loaded_at) + get_bigquery_client; the Sales Dashboard
 │   │       │                      functions that used to live here moved to sellout_service.py
 │   │       ├── storage.py         GCS: upload files (duplicate detection), mapping JSON packets
-│   │       ├── upload_check.py    Read-only pre-upload check (POST /api/uploads/check): duplicate + mapping preview, no writes, no Claude
+│   │       ├── upload_check.py    Read-only pre-upload check (POST /api/uploads/check): duplicate + mapping preview, no writes, no model call
 │   │       ├── mapping_service.py Built-in deterministic FairPrice "wide" mapping (regex header match, melt)
-│   │       ├── generate_mapping.py Claude-generated mapping contracts for unknown layouts; validate_contract
+│   │       ├── generate_mapping.py Gemini-generated mapping contracts for unknown layouts; validate_contract
 │   │       ├── mapping_view.py    Normalises builtin + stored contracts into one "packet"/"rules" shape for the UI
 │   │       ├── apply_contract.py  Applies a confirmed contract (identity_mapping + melt_groups) to a DataFrame
 │   │       ├── validation_service.py Row-level validation against TARGET_SCHEMA after mapping
@@ -74,8 +74,8 @@ aireOS/
 │   ├── tests/                     pytest; fakes for BigQuery/GCS clients; no network
 │   ├── pytest.ini                 pythonpath=. testpaths=tests
 │   ├── requirements.txt           fastapi, uvicorn, pandas, openpyxl, sqlalchemy, cloud-sql-python-connector[pg8000],
-│   │                              google-cloud-bigquery, google-cloud-storage, anthropic, python-dotenv, python-multipart
-│   ├── .env.backend               (gitignored) GCP + Cloud SQL + Anthropic config — see §4
+│   │                              google-cloud-bigquery, google-cloud-storage, google-genai, python-dotenv, python-multipart
+│   ├── .env.backend               (gitignored) GCP + Cloud SQL + Vertex AI config — see §4
 │   └── gcp-key.json               (gitignored) service-account key
 │
 └── frontend/aireos/               Next.js 16.3 App Router, React 19.2, JavaScript — run: npm run dev (:3000)
@@ -181,7 +181,7 @@ No test runner is installed on the frontend; linting (`npm run lint`) is the fro
 | Settings (DOH) | `settings/doh.py` | `settings/doh`, `settings/common` | **Cloud SQL Postgres**: `doh_settings` (append-only: a change is an INSERT only when min/target/max differ from the newest row; newest by `updated_at DESC, setting_id DESC`; never UPDATE/DELETE, except that a new customer gets a global-default row; `customer_id` is ON DELETE CASCADE, so deleting a customer deletes its rows and DOH settings never block it), view `current_settings` (one row per customer), `customers.doh_alert_enabled` / `doh_alert_updated_at` (in-place toggle, no version). Also read by the inventory DOH calculations (`fetch_versions`, `thresholds_on`, `current_thresholds`) | `app/doh`, `services/settingsApi.js` |
 | Promotions | `promotions.py` | `promotion_service` (+ `catalog_service` seams) | **Cloud SQL Postgres**: `promotions`, `promotion_stores`, `promotion_skus`; enum `promo_type_enum`; trigger `trg_promotions_updated_at` | `app/promotions`, `services/promotionsApi.js` |
 | Forecast (P&L) | `forecast.py` (`/api/forecast`, read-only; writes are out of band via `scripts/refresh_forecast.py`) | `pl_forecast` (pure), `forecast_service`, `catalog_service` (product prices) | **BigQuery** (`Aire_Data_Analytics`, read-only): model learns from `v_sales_enriched` (weekly), page Actual line reads `v_customer_monthly_sales`; refresh MERGEs into `BQ_FORECAST_TABLE`. **Cloud SQL Postgres**: `skus.price` prices sell-out revenue | `app/forecast` |
-| AI mapping | (inside uploads) | `generate_mapping` | **Anthropic API** (`ANTHROPIC_MODEL`, default `claude-sonnet-4-6`) | — |
+| AI mapping | (inside uploads) | `generate_mapping` | **Gemini on Vertex AI** (`google-genai`, `MAPPING_MODEL` default `gemini-3.8-flash`, signed in as the service account, no API key) | — |
 
 Invariants that cross domains:
 - Mapping never writes to BigQuery. Ingestion into BigQuery is out of band.
@@ -218,7 +218,7 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
                    └─► fetch(`${NEXT_PUBLIC_API_URL}/api/...?params`)
                         └─► app/routers/*.py   parse query args / Pydantic body
                              └─► app/services/*.py   validate enums, build SQL, call client singleton
-                                  └─► BigQuery | Cloud SQL | GCS | Anthropic
+                                  └─► BigQuery | Cloud SQL | GCS | Vertex AI (Gemini)
                              ◄─── dict / list[dict] / DataFrame.to_dict
                         ◄─── JSON (200) or {detail} (4xx/5xx)
                    ◄─── { data, loading, error } state
@@ -236,7 +236,7 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
    read headers → `mapping_service.find_matching_mapping` (built-in FairPrice regex match) →
    if hit: `validation_service.process_and_validate` → `status: "mapped", source: "builtin"`.
    Else `generate_mapping.resolve_mapping`: fingerprint headers → look for
-   `mappings/confirmed/<fp>.json` → else ask Claude for a contract → store in
+   `mappings/confirmed/<fp>.json` → else ask Gemini for a contract → store in
    `mappings/pending/` → `status: "pending_confirmation"`.
 3. `MappingReview.jsx` lists `GET /api/uploads/mappings` (every packet normalised by
    `mapping_view`), user edits **rules** (not raw contract), `POST .../{fp}/confirm` with
@@ -313,7 +313,7 @@ Quirks:
 
 Backend variables: `GOOGLE_APPLICATION_CREDENTIALS`, `SERVICE_ACCOUNT_KEY_PATH`, `GCP_PROJECT_ID`,
 `GCS_BUCKET_NAME`, `GCS_DESTINATION_PREFIX`, `GCS_DESTINATION_PREFIX_MAPPING`,
-`BQ_FAIRPRICESELLOUT_TABLE` (legacy, unused), `BQ_FORECAST_OUTPUT_VIEW`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`,
+`BQ_FAIRPRICESELLOUT_TABLE` (legacy, unused), `BQ_FORECAST_OUTPUT_VIEW`, `MAPPING_MODEL`, `MAPPING_VERTEX_LOCATION`,
 `POSTGRESQL_INSTANCE_CONNECTION_NAME`, `DB_IAM_USER`, `DB_NAME`. (`BQ_SELLOUT_TABLE` was removed --
 the Sales Dashboard and Inventory read the Cloud SQL `sellout` table directly now, not a BigQuery replica.)
 
@@ -345,11 +345,11 @@ half first (it defines the contract), then the frontend half, then update §3.4 
 ### `/backend/app/services/{mapping_service,generate_mapping,mapping_view,apply_contract}` — Data-pipeline engineer
 - Think in DataFrames and contracts: `identity_mapping` (source col → target field) and
   `melt_groups` (wide period columns → long rows with `period_start`/`period_end`/`period_type`).
-- Built-in FairPrice mapping is deterministic Python and shown read-only; Claude-generated
+- Built-in FairPrice mapping is deterministic Python and shown read-only; Gemini-generated
   contracts are JSON in GCS and always re-validated (`validate_contract`) before being trusted.
-- Recognised files must never call the Anthropic API. Keep that ordering in
+- Recognised files must never call the model. Keep that ordering in
   `resolve_and_apply_mapping`.
-- Prefer pure functions with tiny DataFrame fixtures in tests; no GCS or Anthropic in tests.
+- Prefer pure functions with tiny DataFrame fixtures in tests; no GCS or Vertex AI in tests.
 
 ### `/frontend/aireos` — Pragmatic Next.js/React engineer
 - Server Components by default; `'use client'` only where state/effects/handlers exist.

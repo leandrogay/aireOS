@@ -4,7 +4,7 @@ LLM-generated mapping contract.
 Given:
   - the raw source columns
   - the target schema
-This asks Claude to classify each column as either:
+This asks Gemini (on Google Cloud's Vertex AI) to classify each column as either:
   (a) an identity column -> simple 1:1 rename, or
   (b) part of a repeating metric group -> needs melting, with a regex
       to extract the period date from the column name
@@ -16,7 +16,7 @@ operations.
 
 Contracts are keyed by a fingerprint of the file's column headers, so a second
 file with the same headers reuses the already-approved contract instead of
-paying for another Claude call.
+paying for another model call.
 """
 
 import io
@@ -26,12 +26,13 @@ import hashlib
 import datetime
 import pandas as pd
 from pathlib import Path
-from anthropic import Anthropic
+from google import genai
+from google.genai import types
 from app import config
 from app.schemas.sellout import BUSINESS_COLUMNS
 from app.services import storage
 
-MODEL = config.ANTHROPIC_MODEL
+MODEL = config.MAPPING_MODEL
 
 TARGET_SCHEMA = BUSINESS_COLUMNS
 
@@ -49,35 +50,40 @@ PARTIAL_MATCH_THRESHOLD = 0.6
 
 
 class MappingConfigError(Exception):
-    """The Anthropic API key is missing or unusable."""
+    """The Google Cloud project for Vertex AI is not configured."""
 
 
 class MappingGenerationError(Exception):
-    """Claude returned something that couldn't be parsed into a contract."""
+    """The model returned something that couldn't be parsed into a contract."""
 
 
 class UnreadableSourceFileError(Exception):
     """The uploaded file's headers couldn't be read."""
 
 
-_client: Anthropic | None = None
+_client: genai.Client | None = None
 
 
-def get_client() -> Anthropic:
+def get_client() -> genai.Client:
     """
-    Build the Anthropic client lazily.
+    Build the Gemini client lazily, on Vertex AI.
 
-    Reading the key at module scope turns a missing environment variable into a
-    failed app startup; this turns it into a clean error on the one request
-    that actually needs the key.
+    It signs in with the same Google credentials as BigQuery and Cloud
+    Storage -- the service account on Cloud Run -- so there is no API key to
+    store. Requiring the project here, not at import, turns a missing setting
+    into a clean error on the one request that needs it, not a failed startup.
     """
     global _client
     if _client is None:
         try:
-            api_key = config.require("ANTHROPIC_API_KEY")
+            project_id = config.require("GCP_PROJECT_ID")
         except config.ConfigError as e:
             raise MappingConfigError(str(e)) from e
-        _client = Anthropic(api_key=api_key)
+        _client = genai.Client(
+            enterprise=True,
+            project=project_id,
+            location=config.MAPPING_VERTEX_LOCATION,
+        )
     return _client
 
 
@@ -158,7 +164,7 @@ def fingerprint(columns: list[str]) -> str:
     return hashlib.sha256(joined.encode("utf-8")).hexdigest()[:16]
 
 
-# ---- Asking Claude for a contract -------------------------------------------
+# ---- Asking the model for a contract -------------------------------------------
 
 def generate_mapping_contract(
     raw_columns: list[str],
@@ -166,7 +172,7 @@ def generate_mapping_contract(
     samples: dict[str, list[str]] | None = None,
 ) -> dict:
     """
-    Calls Claude once, asking it to classify every source column and
+    Calls the model once, asking it to classify every source column and
     return an identity_mapping + melt_groups contract, optional per-target
     transformations, and a confidence level plus rationale per decision.
 
@@ -295,19 +301,27 @@ Respond with ONLY raw JSON in this exact shape, no markdown fences, no explanati
 }}
 """
 
-    response = get_client().messages.create(
+    response = get_client().models.generate_content(
         model=MODEL,
-        max_tokens=4000,
-        messages=[{"role": "user", "content": prompt}],
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            # JSON mode keeps the reply parseable; temperature 0 keeps the same
+            # headers getting the same proposal. The output limit is generous
+            # because thinking tokens count against it.
+            response_mime_type="application/json",
+            temperature=0,
+            max_output_tokens=8192,
+        ),
     )
 
-    raw = response.content[0].text.strip()
+    # `text` is None when the reply was blocked or empty.
+    raw = (response.text or "").strip()
     raw = re.sub(r"^```json|```$", "", raw, flags=re.MULTILINE).strip()
 
     try:
         contract = json.loads(raw)
     except json.JSONDecodeError as e:
-        raise MappingGenerationError(f"Claude did not return valid JSON: {e}")
+        raise MappingGenerationError(f"The model did not return valid JSON: {e}")
 
     return validate_contract(contract, raw_columns, target_schema, samples=samples)
 
@@ -758,13 +772,13 @@ def resolve_mapping(filename: str, data: bytes, uploaded_to: str | None = None) 
     Three outcomes, cheapest first:
 
       - a confirmed contract exists for this exact column layout: returned
-        as-is, no Claude call
+        as-is, no model call
       - the layout nearly matches a confirmed mapping: returned as a partial
-        match for review, no Claude call and nothing applied
+        match for review, no model call and nothing applied
       - the layout is new: a fresh contract is generated, parked under
         mappings/pending/, and returned for the user to review
 
-    This is a blocking function (network I/O to both Anthropic and GCS) — the
+    This is a blocking function (network I/O to both Vertex AI and GCS) — the
     router runs it in a thread.
     """
     frame = read_header_frame(filename, data)
@@ -823,8 +837,8 @@ def preview_mapping(filename: str, data: bytes) -> dict:
     Say which of resolve_mapping's outcomes a file would get, without causing it.
 
     The same lookups in the same order -- confirmed contract, then partial
-    match -- but where resolve_mapping would ask Claude and park a proposal,
-    this only reports "new_layout". No Claude call and no writes, so the upload
+    match -- but where resolve_mapping would ask the model and park a proposal,
+    this only reports "new_layout". No model call and no writes, so the upload
     screen can run it the moment a file is dropped. Raises
     UnreadableSourceFileError when the headers cannot be read, as
     resolve_mapping would.
@@ -853,7 +867,7 @@ if __name__ == "__main__":
 
     cols = read_header_columns(src.name, src.read_bytes())
     print(f"Fingerprint: {fingerprint(cols)}")
-    print("Calling Claude to generate mapping contract...\n")
+    print("Calling Gemini to generate mapping contract...\n")
 
     result = generate_mapping_contract(cols, TARGET_SCHEMA)
 

@@ -122,7 +122,7 @@ export const MappingReview = ({ mapping }) => {
       <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-deep-violet-blue/80">
           {isPending
-            ? 'Proposed by Claude. Review the rules, then confirm to store them.'
+            ? 'Proposed by AI. Review the rules, then confirm to store them.'
             : mapping.validated
               ? `Confirmed${mapping.validatedAt ? ` on ${formatDateTime(mapping.validatedAt)}` : ''}`
               : 'Not yet confirmed.'}

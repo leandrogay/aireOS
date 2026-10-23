@@ -160,10 +160,20 @@ CORS_ALLOWED_ORIGINS = parse_origins(
     os.environ.get("CORS_ALLOWED_ORIGINS") or DEFAULT_CORS_ALLOWED_ORIGINS
 )
 
-# ---- Anthropic --------------------------------------------------------------
+# ---- Mapping model ----------------------------------------------------------
 
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
-ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+# Gemini on Vertex AI in GCP_PROJECT_ID, signed in with the same Google
+# credentials as BigQuery and GCS -- no API key.
+# `or`, not a get() default: .env.example leaves these blank, and a blank value
+# must mean "use the default".
+# gemini-2.5-* retired on Vertex AI on 2026-10-20; 3.8 Flash is Google's named
+# replacement and is listed as available until at least 2027-09-02.
+MAPPING_MODEL = os.environ.get("MAPPING_MODEL")
+# "global" is Vertex AI's any-region endpoint: best availability and the newest
+# models, but Google picks where the request is processed. Set a region such
+# as "asia-southeast1" (or "us" / "eu") if the sample values in a mapping
+# request must stay in one place.
+MAPPING_VERTEX_LOCATION = os.environ.get("MAPPING_VERTEX_LOCATION") or "global"
 
 
 # ---- Access helpers ---------------------------------------------------------
