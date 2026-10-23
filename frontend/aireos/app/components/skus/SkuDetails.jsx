@@ -12,8 +12,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { formatDateTime } from '@/lib/formatDate';
+import { cn } from '@/lib/utils';
 
-import { SKU_HISTORY_COLUMNS } from './columns';
+import { SKU_CELL_CLASS, SKU_HISTORY_COLUMNS } from './columns';
 
 const money = new Intl.NumberFormat('en-SG', { style: 'currency', currency: 'SGD' });
 const ACTION_TONES = { created: 'success', updated: 'info', archived: 'muted' };
@@ -51,13 +52,13 @@ export default function SkuDetails({ open, sku, loading, error, onClose }) {
                     </StatusPill>
                   </td>
                   <td className="px-4 py-2 text-muted-foreground">{formatDateTime(entry.changed_at)}</td>
-                  <td className="truncate px-4 py-2" title={entry.product_name}>{entry.product_name}</td>
-                  <td className="truncate px-4 py-2" title={entry.sku_range}>{entry.sku_range}</td>
-                  <td className="px-4 py-2">{entry.size}</td>
-                  <td className="px-4 py-2">{entry.brand}</td>
-                  <td className="px-4 py-2">{entry.uom}</td>
-                  <td className="px-4 py-2 tabular-nums">{entry.pack_size}</td>
-                  <td className="px-4 py-2 tabular-nums">{money.format(Number(entry.price))}</td>
+                  <td className={cn(SKU_CELL_CLASS, 'px-4 py-2')}>{entry.product_name}</td>
+                  <td className={cn(SKU_CELL_CLASS, 'px-4 py-2')}>{entry.sku_range}</td>
+                  <td className={cn(SKU_CELL_CLASS, 'px-4 py-2')}>{entry.size}</td>
+                  <td className={cn(SKU_CELL_CLASS, 'px-4 py-2')}>{entry.brand}</td>
+                  <td className={cn(SKU_CELL_CLASS, 'px-4 py-2')}>{entry.uom}</td>
+                  <td className={cn(SKU_CELL_CLASS, 'px-4 py-2 tabular-nums')}>{entry.pack_size}</td>
+                  <td className={cn(SKU_CELL_CLASS, 'px-4 py-2 tabular-nums')}>{money.format(Number(entry.price))}</td>
                 </tr>
               ))}
             </TableGrid>
