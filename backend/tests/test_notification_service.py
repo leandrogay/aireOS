@@ -5,12 +5,10 @@ from conftest import FakeConnection, FakeEngine
 from app.services import notification_service
 
 
-def _router(rows=None, affected=1, deleted=0):
+def _router(rows=None, affected=1):
     """respond() that answers by the statement each call sends."""
 
     def respond(sql, params):
-        if "DELETE FROM notifications" in sql:
-            return [(1,)] * deleted
         if "INSERT INTO notifications" in sql:
             return [(99,)]
         if "UPDATE notifications" in sql:
@@ -130,19 +128,7 @@ def test_already_alerted_skus_reads_only_unread_low_stock_for_that_customer(monk
     assert params["customer_id"] == 1
 
 
-# ---- retention -----------------------------------------------------------------
-
-
-def test_delete_expired_removes_rows_older_than_the_retention_period(monkeypatch):
-    conn = _install(monkeypatch, _router(deleted=4))
-    monkeypatch.setattr(notification_service.config, "NOTIFICATION_RETENTION_DAYS", 60)
-
-    assert notification_service.delete_expired() == 4
-    sql, params = conn.sql_containing("DELETE FROM notifications")[0]
-    assert params == {"days": 60}
-    assert "created_at <" in sql
-    # read and unread alike
-    assert "read_at" not in sql
+# ---- deleting old notifications is the database's job (pg_cron) ------------------
 
 
 def test_writing_a_notification_does_not_delete_anything(monkeypatch):
@@ -179,16 +165,6 @@ def test_marking_read_is_announced_only_when_something_changed(monkeypatch):
     unchanged = _install(monkeypatch, _router(affected=0))
     notification_service.mark_read([1, 2])
     assert _announcements(unchanged) == []
-
-
-def test_the_expiry_cleanup_is_announced_only_when_rows_went(monkeypatch):
-    deleted = _install(monkeypatch, _router(deleted=3))
-    notification_service.delete_expired()
-    assert len(_announcements(deleted)) == 1
-
-    nothing = _install(monkeypatch, _router(deleted=0))
-    notification_service.delete_expired()
-    assert _announcements(nothing) == []
 
 
 def test_has_forecast_run_looks_the_run_up_by_name(monkeypatch):

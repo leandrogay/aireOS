@@ -4,9 +4,10 @@ import { formatDate, formatDateTime } from '@/lib/formatDate';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
-// Every notification this panel ever receives is unread (the feed is fetched
-// unread-only -- see useNotifications), so one card style covers all of them.
-const CARD_CLASS = 'rounded-lg border border-violet bg-lavander/40 px-3 py-2.5 text-xs';
+// Unread notifications stand out; read ones stay in the list, greyed out.
+const CARD_CLASS = 'rounded-lg border px-3 py-2.5 text-xs transition-opacity';
+const UNREAD_CARD_CLASS = 'border-violet bg-lavander/40';
+const READ_CARD_CLASS = 'border-lavander bg-white opacity-60';
 
 function Field({ label, value }) {
   return (
@@ -149,16 +150,22 @@ const MARK_READ_BUTTON_CLASS =
  * @param {{ notification: { notification_id: number, notification_type: string, payload: object, created_at: string }, onMarkRead: () => void }} props
  */
 function NotificationCard({ notification, onMarkRead }) {
-  const { notification_type: type, payload, created_at: createdAt } = notification;
+  const { notification_type: type, payload, created_at: createdAt, read_at: readAt } = notification;
   const title = TITLES[type] ? TITLES[type](payload) : 'Notification';
+  const unread = !readAt;
 
   return (
-    <div className={CARD_CLASS}>
+    <div className={cn(CARD_CLASS, unread ? UNREAD_CARD_CLASS : READ_CARD_CLASS)}>
       <div className="flex items-start justify-between gap-2">
-        <p className="min-w-0 flex-1 font-serif text-sm text-deep-violet-blue">{title}</p>
-        <button type="button" onClick={onMarkRead} className={cn(MARK_READ_BUTTON_CLASS, 'shrink-0')}>
-          Mark as read
-        </button>
+        <p className="flex min-w-0 flex-1 items-start gap-1.5 font-serif text-sm text-deep-violet-blue">
+          {unread && <span aria-label="Unread" className="mt-1.5 size-2 shrink-0 rounded-full bg-red-600" />}
+          <span className="min-w-0">{title}</span>
+        </p>
+        {unread && (
+          <button type="button" onClick={onMarkRead} className={cn(MARK_READ_BUTTON_CLASS, 'shrink-0')}>
+            Mark as read
+          </button>
+        )}
       </div>
       {type === 'low_stock' && <LowStockDetails payload={payload} />}
       {type === 'forecast_success' && <ForecastDetails payload={payload} success />}
@@ -170,26 +177,29 @@ function NotificationCard({ notification, onMarkRead }) {
 }
 
 /**
- * The bell's dropdown contents: every unread notification from the shared
- * feed, newest first, each with when it was sent and its own "Mark as read",
- * plus a "Mark all as read" above the list. A notification disappears from
- * here as soon as it's read -- this only ever shows unread ones.
+ * The bell's dropdown contents: the shared feed, newest first, read and
+ * unread together. An unread notification has a dot and its own "Mark as
+ * read"; once read it stays in the list, greyed out. "Mark all as read" shows
+ * while anything is unread.
  *
  * @param {{ notifications: object[], markRead: (ids: number[]) => void }} props
  */
 export default function NotificationPanel({ notifications, markRead }) {
   if (notifications.length === 0) {
-    return <p className="px-1 py-2 text-xs text-deep-violet-blue/70">No unread notifications.</p>;
+    return <p className="px-1 py-2 text-xs text-deep-violet-blue/70">No notifications yet.</p>;
   }
 
-  const allIds = notifications.map((n) => n.notification_id);
+  const unreadIds = notifications.filter((n) => !n.read_at).map((n) => n.notification_id);
 
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex justify-end px-0.5">
-        <button type="button" onClick={() => markRead(allIds)} className={MARK_READ_BUTTON_CLASS}>
-          Mark all as read
-        </button>
+      <div className="flex items-center justify-between px-0.5">
+        <p className="font-serif text-sm text-deep-violet-blue">Notifications</p>
+        {unreadIds.length > 0 && (
+          <button type="button" onClick={() => markRead(unreadIds)} className={MARK_READ_BUTTON_CLASS}>
+            Mark all as read
+          </button>
+        )}
       </div>
       <div className="flex max-h-96 flex-col gap-1.5 overflow-y-auto">
         {notifications.map((notification) => (

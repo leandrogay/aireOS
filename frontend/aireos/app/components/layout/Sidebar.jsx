@@ -8,7 +8,6 @@ import { LayoutDashboard, Library, Package, PanelLeft, Tag, TrendingUp, Upload }
 
 import { cn } from '@/lib/utils';
 
-import NotificationBell from './NotificationBell';
 
 // Every tab links to a real (currently placeholder, for Forecast/Promotions/
 // Inventory — see app/forecast, app/promotions, app/inventory) page, so
@@ -80,17 +79,14 @@ export default function Sidebar() {
             />
           </Link>
         )}
-        <div className={cn('flex items-center', collapsed ? 'flex-col gap-2' : 'gap-1')}>
-          <NotificationBell collapsed={collapsed} />
-          <button
-            type="button"
-            onClick={() => setCollapsed((prev) => !prev)}
-            aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
-            className="flex size-8 items-center justify-center rounded-md text-deep-violet-blue/70 transition-colors hover:bg-lavander hover:text-deep-violet-blue"
-          >
-            <PanelLeft className="size-4" />
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => setCollapsed((prev) => !prev)}
+          aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
+          className="flex size-8 items-center justify-center rounded-md text-deep-violet-blue/70 transition-colors hover:bg-lavander hover:text-deep-violet-blue"
+        >
+          <PanelLeft className="size-4" />
+        </button>
       </div>
 
       {!collapsed && (
