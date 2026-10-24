@@ -1,3 +1,4 @@
+import datetime
 from functools import lru_cache
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
@@ -1364,36 +1365,6 @@ def archive_sku(sku: str) -> dict | None:
                 "SKU cannot be archived because it is attached to promotions."
             )
 
-        conn.execute(
-            text(
-                """
-                INSERT INTO old_skus (
-                    sku,
-                    sku_range,
-                    product_name,
-                    size,
-                    brand,
-                    uom,
-                    pack_size,
-                    price
-                )
-                VALUES (
-                    :sku,
-                    :sku_range,
-                    :product_name,
-                    :size,
-                    :brand,
-                    :uom,
-                    :pack_size,
-                    :price
-                )
-                ON CONFLICT (sku)
-                DO NOTHING
-                """
-            ),
-            item,
-        )
-
         _insert_sku_history(conn, item, "archived")
         conn.execute(
             text(
@@ -1414,30 +1385,79 @@ def archive_sku(sku: str) -> dict | None:
 # ============================================================
 # PRODUCT PRICES
 #
-# Sell-out forecast revenue (see forecast_service.refresh_forecast)
-# is priced from this catalog's own skus.price rather than a
-# separate BigQuery price table, so there's one price per product
-# instead of two that could drift apart.
+# Current price reads come from skus. Historical calculations read the
+# complete snapshots in sku_history, so changing today's catalog price does
+# not replace the price used for an earlier period.
 # ============================================================
 
 
-def get_product_prices() -> dict[str, float]:
-    query = text(
-        """
-        SELECT
-            product_name,
-            price
+def get_product_prices(
+    as_of_date: datetime.date | None = None,
+) -> dict[str, float]:
+    """Return current prices, or the SKU versions effective on a past date."""
+    params = {}
+    if as_of_date is None:
+        query = text(
+            """
+            SELECT
+                product_name,
+                price
 
-        FROM skus
+            FROM skus
 
-        WHERE
-            price IS NOT NULL
-            AND is_active = TRUE
-        """
-    )
+            WHERE
+                price IS NOT NULL
+                AND is_active = TRUE
+            """
+        )
+    else:
+        query = text(
+            """
+            WITH effective_versions AS (
+                SELECT DISTINCT ON (sku)
+                    sku,
+                    action,
+                    product_name,
+                    price
+
+                FROM sku_history
+
+                ORDER BY
+                    sku,
+                    (changed_at < CAST(:as_of_date AS DATE) + INTERVAL '1 day') DESC,
+                    CASE
+                        WHEN changed_at < CAST(:as_of_date AS DATE) + INTERVAL '1 day'
+                        THEN changed_at
+                    END DESC,
+                    CASE
+                        WHEN changed_at >= CAST(:as_of_date AS DATE) + INTERVAL '1 day'
+                        THEN changed_at
+                    END ASC,
+                    CASE
+                        WHEN changed_at < CAST(:as_of_date AS DATE) + INTERVAL '1 day'
+                        THEN sku_history_id
+                    END DESC,
+                    CASE
+                        WHEN changed_at >= CAST(:as_of_date AS DATE) + INTERVAL '1 day'
+                        THEN sku_history_id
+                    END ASC
+            )
+            SELECT
+                product_name,
+                price
+
+            FROM effective_versions
+
+            WHERE
+                action <> 'archived'
+                AND product_name IS NOT NULL
+                AND price IS NOT NULL
+            """
+        )
+        params["as_of_date"] = as_of_date
 
     with _read_connection() as conn:
-        rows = conn.execute(query).all()
+        rows = conn.execute(query, params).all()
 
     return {
         product_name: float(price)

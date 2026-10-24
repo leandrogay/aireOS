@@ -5,6 +5,13 @@ import FilterSelect from '@/components/ui/FilterSelect';
 
 const options = (values) => values.map((value) => ({ value: String(value), label: String(value) }));
 
+// Same look as FilterSelect: a filled filter gets the solid brand border so
+// active filters read the same across the whole bar.
+const priceInputClass = (value) =>
+  `h-9 rounded-lg border bg-white px-2.5 text-sm font-normal text-deep-violet-blue outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50 ${
+    value ? 'border-deep-violet-blue' : 'border-lavander hover:bg-cream/60'
+  }`;
+
 export default function SkuFilters({ filters, values, hasFilters, onChange, onReset }) {
   return (
     <section aria-label="Filter SKUs" className="rounded-lg border border-lavander bg-white p-3 shadow-sm">
@@ -32,7 +39,7 @@ export default function SkuFilters({ filters, values, hasFilters, onChange, onRe
               step="0.01"
               value={filters.minPrice}
               onChange={(event) => onChange('minPrice', event.target.value)}
-              className="h-9 rounded-lg border border-lavander bg-white px-2.5 text-sm font-normal text-deep-violet-blue outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+              className={priceInputClass(filters.minPrice)}
             />
           </label>
           <label className="grid gap-1 text-xs font-medium text-deep-violet-blue/70">
@@ -43,7 +50,7 @@ export default function SkuFilters({ filters, values, hasFilters, onChange, onRe
               step="0.01"
               value={filters.maxPrice}
               onChange={(event) => onChange('maxPrice', event.target.value)}
-              className="h-9 rounded-lg border border-lavander bg-white px-2.5 text-sm font-normal text-deep-violet-blue outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+              className={priceInputClass(filters.maxPrice)}
             />
           </label>
         </div>

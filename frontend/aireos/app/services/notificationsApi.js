@@ -17,6 +17,20 @@ export async function getNotifications({ unreadOnly = false, limit = 50 } = {}) 
 }
 
 /**
+ * GET /api/notifications/stream
+ *
+ * The Server-Sent Events URL for an EventSource: it sends a `changed` event
+ * whenever a notification is added, read or deleted (see backend
+ * routers/notifications.stream_changes). Built like request()'s URLs.
+ *
+ * @returns {string}
+ */
+export function notificationsStreamUrl() {
+  const baseUrl = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
+  return `${baseUrl}/api/notifications/stream`;
+}
+
+/**
  * GET /api/notifications/unread-count
  *
  * @returns {Promise<{ unread_count: number }>}

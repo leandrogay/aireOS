@@ -1,32 +1,71 @@
+import asyncio
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app import config  # noqa: F401
 
+from app import config, notification_stream
 from app.auth import require_user
 from app.middleware import UnhandledErrorMiddleware
 from app.routers import assistant, auth, catalog, forecast, inventory, mappings
 from app.routers import notifications, promotions, sales, settings, uploads
+from app.services import forecast_pipeline_events
 
-app = FastAPI()
+logger = logging.getLogger("uvicorn.error")
 
-# origins = ["http://localhost:3000"] # Frontend location
 
-# Registered before CORSMiddleware so it ends up inside it -- see the
-# docstring above for why the order matters.
+def _start_forecast_run_listener():
+    # Pub/Sub being unreachable must not stop the app from starting.
+    try:
+        return forecast_pipeline_events.start_listening()
+    except Exception as exc:
+        logger.warning("Not listening for scheduled forecast runs: %s", exc)
+        return None
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # Run notification listeners in the background so the API can start first.
+    stop_listening = asyncio.Event()
+    listener = asyncio.create_task(
+        notification_stream.run_listener(stop_listening)
+    )
+    forecast_runs = _start_forecast_run_listener()
+
+    yield
+
+    stop_listening.set()
+    if forecast_runs is not None:
+        forecast_runs.cancel()
+    await listener
+
+
+app = FastAPI(lifespan=lifespan)
+
+# Registered before CORSMiddleware so unhandled errors still receive the
+# appropriate CORS headers.
 app.add_middleware(UnhandledErrorMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[config.AUTH_FRONTEND_URL.rstrip("/")] if config.auth_enabled() else [],
+    allow_origins=(
+        [config.AUTH_FRONTEND_URL.rstrip("/")]
+        if config.auth_enabled()
+        else []
+    ),
     allow_origin_regex=None if config.auth_enabled() else ".*",  # dev only
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"]
+    allow_headers=["*"],
 )
 
 protected = [Depends(require_user)]
 
+# Authentication endpoints must remain public so users can log in.
 app.include_router(auth.router)
+
+# All internal application endpoints require a valid session when enabled.
 app.include_router(uploads.router, dependencies=protected)
 app.include_router(mappings.router, dependencies=protected)
 app.include_router(sales.router, dependencies=protected)

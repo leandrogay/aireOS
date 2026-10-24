@@ -176,6 +176,27 @@ def auth_cookie_secure() -> bool:
     """Return whether authentication cookies require HTTPS."""
     return _enabled(AUTH_COOKIE_SECURE)
 
+# ---- Notifications ----------------------------------------------------------
+
+# Notifications older than 60 days are deleted by the database itself (pg_cron,
+# migrations/005_schedule_notification_cleanup.sql), not by this app.
+
+# Pub/Sub subscription the scheduled BigQuery forecast run ("Retrain when new
+# month lands") reports each finished run to. Empty: the backend does not
+# listen, and only scripts/refresh_forecast.py raises forecast notifications.
+FORECAST_PIPELINE_SUBSCRIPTION = os.environ.get("FORECAST_PIPELINE_SUBSCRIPTION", "")
+# Written by retrain_if_new_month: one row per run, retrained=TRUE only when a
+# new forecast was actually produced.
+BQ_TRAINING_RUN_LOG_TABLE = os.environ.get(
+    "BQ_TRAINING_RUN_LOG_TABLE", "aire-data.Aire_Data_Analytics.training_run_log"
+)
+# The live forecast output (not the 12-hourly snapshot), so a notification
+# raised right after a run describes that run.
+BQ_FORECAST_PIPELINE_VIEW = os.environ.get(
+    "BQ_FORECAST_PIPELINE_VIEW", "aire-data.Aire_Data_Analytics.aire_forecasting_output"
+)
+
+
 # ---- Access helpers ---------------------------------------------------------
 
 def require(name: str) -> str:

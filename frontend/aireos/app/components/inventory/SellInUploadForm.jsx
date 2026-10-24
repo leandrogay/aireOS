@@ -8,7 +8,14 @@ import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 
 import { formFieldClass, formLabelClass, StatTag } from './InventoryChrome';
-import InventoryTableFrame, { inventoryRowClass, inventoryTdClass, inventoryThClass } from './InventoryTableFrame';
+import InventoryTableFrame, {
+  inventoryHeadRowClass,
+  inventoryRowClass,
+  inventoryTableClass,
+  inventoryTdClass,
+  inventoryTheadClass,
+  inventoryThClass,
+} from './InventoryTableFrame';
 import { primaryButtonClass, secondaryButtonClass } from './formStyles';
 
 const STATUS_LABELS = { new: 'New', changed: 'Changed', unchanged: 'Same' };
@@ -154,9 +161,9 @@ export default function SellInUploadForm({ onSaved }) {
 
           <InventoryTableFrame title="Values from the file" rows={preview.rows}>
             {(visible, monthHeader) => (
-              <table className="w-full text-left text-xs text-deep-violet-blue">
-                <thead className="sticky top-0 z-10 bg-cream">
-                  <tr className="border-b border-lavander">
+              <table className={inventoryTableClass}>
+                <thead className={inventoryTheadClass}>
+                  <tr className={inventoryHeadRowClass}>
                     <th className={inventoryThClass}>Customer</th>
                     {monthHeader}
                     <th className={inventoryThClass}>Product</th>

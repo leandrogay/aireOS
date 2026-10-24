@@ -9,6 +9,9 @@ import { cn } from '@/lib/utils';
 
 import { filterControlClass, filterLabelClass, InventoryFilterCard, StatTag } from './InventoryChrome';
 import InventoryTableFrame, {
+  inventoryHeadRowClass,
+  inventoryTableClass,
+  inventoryTheadClass,
   InventoryTableSkeleton,
   inventoryRowClass,
   inventoryTdClass,
@@ -103,9 +106,9 @@ export default function AtRiskView({ customers, refreshKey }) {
           description="A SKU is at risk when its days of holding is outside the customer's min-max band. It leaves this list automatically once its days of holding is back inside the band."
         >
           {(visible, monthHeader) => (
-            <table className="w-full text-left text-xs text-deep-violet-blue">
-              <thead className="sticky top-0 z-10 bg-cream">
-                <tr className="border-b border-lavander">
+            <table className={inventoryTableClass}>
+              <thead className={inventoryTheadClass}>
+                <tr className={inventoryHeadRowClass}>
                   <th className={inventoryThClass}>Customer</th>
                   {monthHeader}
                   <th className={inventoryThClass}>SKU</th>
