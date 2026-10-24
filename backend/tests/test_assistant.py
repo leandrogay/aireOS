@@ -1,3 +1,4 @@
+import io
 import json
 import base64
 import datetime
@@ -850,6 +851,289 @@ def test_a_bigquery_outage_inside_an_inventory_tool_is_also_a_tool_error_not_a_c
     second_call_contents = fake_client.models.calls[1]["contents"]
     function_response = _dump(second_call_contents[-1])["parts"][0]["function_response"]["response"]
     assert "Unable to reach the inventory database" in function_response["error"]
+
+
+# ---- ask(): forecast (get_demand_forecast) ------------------------------------
+
+def _forecast_result(**overrides):
+    result = {
+        "customer": "fairprice",
+        "product_name": "Aire Ultra Tape L",
+        "channel": "Online and offline combined",
+        "unit": "cartons",
+        "period": {"start": "2026-09-01", "end": "2026-10-01"},
+        "forecast_months_available": {"first": "2026-09-01", "last": "2027-08-01"},
+        "forecast_generated_at": "2026-10-04T17:14:40Z",
+        "forecast_generated_at_sgt": "5 Oct 2026, 1:14 am",
+        "actuals_loaded_at": "2026-10-06T05:05:11Z",
+        "actuals_loaded_at_sgt": "6 Oct 2026, 1:05 pm",
+        "series": [{
+            "customer": "fairprice",
+            "product_name": "Aire Ultra Tape L",
+            "sku": "13271338",
+            "confidence": {"band": "low", "label": "Low", "reason": "limited sales history, check before using", "detail": ""},
+            "forecast": [
+                {"month": "2026-09-01", "cartons": 52, "low_80": 32, "high_80": 79},
+                {"month": "2026-10-01", "cartons": 1052, "low_80": -2, "high_80": 1080},
+            ],
+            "actuals": [{"month": "2026-08-01", "cartons": 88, "month_to_date": False}],
+        }],
+        "monthly_totals": [],
+        "forecast_total_cartons": 1104,
+    }
+    return {**result, **overrides}
+
+
+def _ask_forecast(monkeypatch, answer, result=None):
+    seen = {}
+
+    def fake_forecast(**kwargs):
+        seen.update(kwargs)
+        return result or _forecast_result()
+
+    monkeypatch.setattr(assistant.forecast_summary, "get_demand_forecast", fake_forecast)
+    tool_call = _tool_call_response(("tu_1", "get_demand_forecast", {"product": "ultra tape l", "customer": "fairprice"}))
+    fake_client = _install_fake_client(monkeypatch, [tool_call, _final_answer(text=answer), _final_answer(text=answer)])
+    return assistant.ask("what is the forecast for ultra tape l?", history=None, customer="fairprice"), seen, fake_client
+
+
+def test_forecast_tool_passes_names_through_and_builds_labelled_table(monkeypatch):
+    result, seen, _ = _ask_forecast(monkeypatch, "Forecast for Sep 2026: 52 cartons.")
+
+    assert seen == {"product": "ultra tape l", "customer": "fairprice", "start_month": None, "end_month": None}
+    assert result["has_chart"] is False
+    assert result["table_columns"] == ["type", "month", "customer", "product", "cartons", "range_80", "confidence"]
+    assert result["table_rows"] == [
+        ["Actual", "Aug 2026", "Fairprice", "Aire Ultra Tape L (13271338)", "88", "—", "—"],
+        ["Forecast", "Sep 2026", "Fairprice", "Aire Ultra Tape L (13271338)", "52", "32 to 79", "Low"],
+        ["Forecast", "Oct 2026", "Fairprice", "Aire Ultra Tape L (13271338)", "1,052", "(2) to 1,080", "Low"],
+        ["Forecast total", "Sep 2026 – Oct 2026", "Fairprice", "Aire Ultra Tape L", "1,104", "—", "—"],
+    ]
+    assert result["table_note"] == (
+        "Forecast run: 5 Oct 2026, 1:14 am SGT · Actuals loaded: 6 Oct 2026, 1:05 pm SGT"
+        " · Cartons; online and offline combined, as on the Forecast page"
+    )
+
+
+def test_forecast_month_to_date_actual_is_labelled_as_such(monkeypatch):
+    forecast = _forecast_result()
+    forecast["series"][0]["actuals"] = [{"month": "2026-10-01", "cartons": 20, "month_to_date": True}]
+
+    result, _, _ = _ask_forecast(monkeypatch, "Forecast for Sep 2026: 52 cartons.", result=forecast)
+
+    assert result["table_rows"][0][0] == "Actual (month to date)"
+
+
+def test_forecast_with_many_series_shows_only_month_totals(monkeypatch):
+    series = [
+        {**_forecast_result()["series"][0], "product_name": f"SKU {i}", "sku": str(i)}
+        for i in range(assistant._MAX_FORECAST_SERIES_IN_TABLE + 1)
+    ]
+    totals = [{"month": "2026-09-01", "forecast_cartons": 520, "actual_cartons": None, "actual_month_to_date": False}]
+    forecast = _forecast_result(series=series, monthly_totals=totals, product_name=None, forecast_total_cartons=None)
+
+    result, _, _ = _ask_forecast(monkeypatch, "Forecast for Sep 2026: 520 cartons.", result=forecast)
+
+    assert result["table_rows"] == [["Forecast total", "Sep 2026", "Fairprice", "All SKUs", "520", "—", "—"]]
+
+
+def test_forecast_tool_bad_arguments_are_a_tool_error_not_a_crash(monkeypatch):
+    def unknown_customer(**kwargs):
+        raise ValueError("No forecast for customer 'nhg'.")
+
+    monkeypatch.setattr(assistant.forecast_summary, "get_demand_forecast", unknown_customer)
+    tool_call = _tool_call_response(("tu_1", "get_demand_forecast", {"customer": "nhg"}))
+    fake_client = _install_fake_client(monkeypatch, [tool_call, _final_answer(text="There is no forecast for NHG yet.")])
+
+    result = assistant.ask("forecast for nhg?", history=None, customer="fairprice")
+
+    tool_turn = _dump(fake_client.models.calls[1]["contents"][-1])
+    assert "Invalid arguments: No forecast for customer 'nhg'." in json.dumps(tool_turn)
+    assert result["has_table"] is False
+
+
+def test_forecast_table_wins_over_a_sales_lookup_made_alongside_it():
+    chart = assistant._build_chart(
+        [
+            ("get_sales_summary", {}, {"offline": {"periodTotal": [{"period_label": "Aug 2026", "revenue": 712.3}]}}),
+            ("get_demand_forecast", {}, _forecast_result()),
+        ],
+        "fairprice",
+    )
+
+    assert chart["has_table"] is True
+    assert chart["table_rows"][1][0] == "Forecast"
+
+
+def test_forecast_headline_cartons_matching_the_table_is_kept(monkeypatch):
+    result, _, fake_client = _ask_forecast(monkeypatch, "Forecast for Oct 2026: 1,052 cartons (Confidence: Low).")
+
+    assert len(fake_client.models.calls) == 2
+    assert result["has_table"] is True
+
+
+def test_forecast_headline_cartons_not_in_the_table_hides_the_table(monkeypatch):
+    result, _, fake_client = _ask_forecast(monkeypatch, "Forecast for Sep 2026: 60 cartons.")
+
+    # One correction retry, still wrong: the table that disagrees is left out.
+    assert len(fake_client.models.calls) == 3
+    assert result["has_table"] is False
+
+
+def _pptx_text(pptx_bytes):
+    from pptx import Presentation
+
+    texts = []
+    for slide in Presentation(io.BytesIO(pptx_bytes)).slides:
+        for shape in slide.shapes:
+            if shape.has_table:
+                texts.extend(" ".join(cell.text for cell in row.cells) for row in shape.table.rows)
+            elif shape.has_text_frame:
+                texts.append(shape.text_frame.text)
+    return texts
+
+
+def test_forecast_export_pdf_and_pptx_include_the_table_and_note():
+    chart = assistant._forecast_chart([("get_demand_forecast", {}, _forecast_result())])
+
+    pdf_bytes, _, _ = assistant.generate_export_file("pdf", "Forecast for Sep 2026: 52 cartons.", chart)
+    pptx_bytes, _, _ = assistant.generate_export_file("pptx", "Forecast for Sep 2026: 52 cartons.", chart)
+
+    assert pdf_bytes[:4] == b"%PDF"
+    texts = _pptx_text(pptx_bytes)
+    assert any(text.startswith("Forecast Sep 2026") and "52" in text for text in texts)
+    assert any(text.startswith("Actual Aug 2026") and "88" in text for text in texts)
+    assert any(text.startswith("Forecast run: 5 Oct 2026, 1:14 am SGT") for text in texts)
+
+
+def test_long_table_continues_on_further_slides_with_its_header():
+    from pptx import Presentation
+
+    rows = [[str(i), "x"] for i in range(assistant._MAX_TABLE_ROWS_PER_SLIDE + 3)]
+    chart = assistant._table_chart(["n", "v"], rows)
+
+    pptx_bytes, _, _ = assistant.generate_export_file("pptx", "Some answer.", chart)
+
+    tables = [shape.table for slide in Presentation(io.BytesIO(pptx_bytes)).slides for shape in slide.shapes if shape.has_table]
+    assert [len(table.rows) for table in tables] == [assistant._MAX_TABLE_ROWS_PER_SLIDE + 1, 4]
+    assert all(table.cell(0, 0).text == "n" for table in tables)
+
+
+def test_export_endpoint_passes_the_table_note_to_the_file(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    seen = {}
+
+    def fake_export(export_format, answer, chart, chart_style, trend_values):
+        seen["chart"] = chart
+        return b"%PDF", "application/pdf", "aireos-report.pdf"
+
+    monkeypatch.setattr(assistant, "generate_export_file", fake_export)
+
+    response = TestClient(app).post("/api/assistant/export", json={
+        "format": "pdf", "answer": "a", "has_table": True,
+        "table_columns": ["type"], "table_rows": [["Forecast"]], "table_note": "Forecast run: 5 Oct 2026",
+    })
+
+    assert response.status_code == 200
+    assert seen["chart"]["table_note"] == "Forecast run: 5 Oct 2026"
+
+
+def _priced_forecast_result():
+    forecast = _forecast_result()
+    forecast["series"][0]["forecast"][0]["revenue"] = 441.79
+    forecast["series"][0]["forecast"][1]["revenue"] = 8937.81
+    forecast["series"][0]["actuals"][0]["revenue"] = 712.3
+    forecast["forecast_total_revenue"] = 9379.6
+    return forecast
+
+
+def _ask_forecast_revenue(monkeypatch, answer):
+    monkeypatch.setattr(assistant.forecast_summary, "get_demand_forecast", lambda **kwargs: _priced_forecast_result())
+    tool_call = _tool_call_response(
+        ("tu_1", "get_demand_forecast", {"product": "ultra tape l", "customer": "fairprice", "include_revenue": True})
+    )
+    fake_client = _install_fake_client(monkeypatch, [tool_call, _final_answer(text=answer), _final_answer(text=answer)])
+    return assistant.ask("forecast revenue for ultra tape l?", history=None, customer="fairprice"), fake_client
+
+
+def test_forecast_revenue_question_shows_revenue_column_instead_of_range(monkeypatch):
+    result, _ = _ask_forecast_revenue(monkeypatch, "Forecast revenue for Sep 2026 is $441.79.")
+
+    assert result["table_columns"] == ["type", "month", "customer", "product", "cartons", "revenue", "confidence"]
+    assert result["table_rows"] == [
+        ["Actual", "Aug 2026", "Fairprice", "Aire Ultra Tape L (13271338)", "88", "$712.30", "—"],
+        ["Forecast", "Sep 2026", "Fairprice", "Aire Ultra Tape L (13271338)", "52", "$441.79", "Low"],
+        ["Forecast", "Oct 2026", "Fairprice", "Aire Ultra Tape L (13271338)", "1,052", "$8,937.81", "Low"],
+        ["Forecast total", "Sep 2026 – Oct 2026", "Fairprice", "Aire Ultra Tape L", "1,104", "$9,379.60", "—"],
+    ]
+    assert "realised price per carton" in result["table_note"]
+
+
+def test_forecast_revenue_headline_matching_the_tool_is_kept(monkeypatch):
+    result, fake_client = _ask_forecast_revenue(monkeypatch, "Forecast revenue for Sep–Oct 2026 is $9,379.60.")
+
+    assert len(fake_client.models.calls) == 2
+    assert result["has_table"] is True
+
+
+def test_forecast_revenue_headline_worked_out_by_the_model_hides_the_table(monkeypatch):
+    result, fake_client = _ask_forecast_revenue(monkeypatch, "Forecast revenue for Sep 2026 is $450.00.")
+
+    assert len(fake_client.models.calls) == 3
+    assert result["has_table"] is False
+
+
+def test_cartons_question_keeps_the_range_column(monkeypatch):
+    result, _, _ = _ask_forecast(monkeypatch, "Forecast for Sep 2026: 52 cartons.")
+
+    assert result["table_columns"][5] == "range_80"
+    assert "realised price" not in result["table_note"]
+
+
+# ---- Customer nicknames -------------------------------------------------------
+
+@pytest.mark.parametrize("typed", ["NTUC", "ntuc fairprice", "FP", "Fair Price", "FairPrice"])
+def test_customer_nicknames_resolve_to_the_stored_customer(typed):
+    assert assistant._customer_slug(typed) == "fairprice"
+
+
+def test_unknown_names_pass_through_unchanged():
+    assert assistant._customer_slug("Sheng Shiong") == "sheng_shiong"
+    assert assistant._customer_slug("Giant") == "giant"
+
+
+def test_forecast_tool_gets_the_resolved_customer_not_the_nickname(monkeypatch):
+    seen = {}
+
+    def fake_forecast(**kwargs):
+        seen.update(kwargs)
+        return _forecast_result()
+
+    monkeypatch.setattr(assistant.forecast_summary, "get_demand_forecast", fake_forecast)
+    tool_call = _tool_call_response(("tu_1", "get_demand_forecast", {"customer": "NTUC"}))
+    _install_fake_client(monkeypatch, [tool_call, _final_answer(text="Forecast for Sep 2026: 52 cartons.")])
+
+    assistant.ask("forecast for ntuc?", history=None, customer="fairprice")
+
+    assert seen["customer"] == "fairprice"
+
+
+def test_sales_tools_also_get_the_resolved_customer(monkeypatch):
+    seen = {}
+
+    def fake_summary(**kwargs):
+        seen.update(kwargs)
+        return {"offline": {"periodTotal": []}, "online": {"periodTotal": []}}
+
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", fake_summary)
+    tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"customer": "NTUC", "granularity": "month"}))
+    _install_fake_client(monkeypatch, [tool_call, _final_answer(text="No sales yet.")])
+
+    assistant.ask("ntuc sales?", history=None, customer="fairprice")
+
+    assert seen["customer"] == "fairprice"
 
 
 # ---- ask(): search fallback --------------------------------------------------
@@ -2458,10 +2742,17 @@ def test_sales_tool_database_outage_becomes_a_tool_error_not_a_crash(monkeypatch
 
 # ---- today and the report date ---------------------------------------------------
 
-def test_today_is_the_utc_day_not_the_server_day(monkeypatch):
+def test_today_is_the_singapore_day_not_the_utc_day(monkeypatch):
+    # 30 Sep 17:00 UTC is 1 Oct 01:00 in Singapore: "this month" is October.
     _freeze_clock(monkeypatch)
 
-    assert assistant._utc_today() == datetime.date(2026, 9, 30)
+    assert assistant._singapore_today() == datetime.date(2026, 10, 1)
+
+
+def test_system_prompt_gives_the_singapore_date(monkeypatch):
+    _freeze_clock(monkeypatch)
+
+    assert "Today's date is 2026-10-01." in assistant._system_prompt(dict(assistant._DEFAULT_CHART_STYLE))
 
 
 def test_report_date_is_the_singapore_day(monkeypatch):

@@ -40,6 +40,7 @@ class ExportRequest(BaseModel):
     has_table: bool = False
     table_columns: list = []
     table_rows: list = []
+    table_note: str = ""
     chart_style: dict = {}
     chart_trend_values: list = []
 
@@ -103,6 +104,7 @@ def export(payload: ExportRequest):
         "has_table": payload.has_table,
         "table_columns": payload.table_columns,
         "table_rows": payload.table_rows,
+        "table_note": payload.table_note,
     }
     try:
         file_bytes, media_type, filename = assistant.generate_export_file(
