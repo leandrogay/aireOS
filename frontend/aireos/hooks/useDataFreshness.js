@@ -34,7 +34,9 @@ export default function useDataFreshness(pollMs = FRESHNESS_POLL_MS) {
     let cancelled = false
 
     async function fetchLastUpdated() {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/sales/last-updated`)
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/sales/last-updated`, {
+        credentials: 'include',
+      })
       const data = await res.json()
       if (!res.ok) throw new Error(data.detail || "Failed to load data freshness")
       return data.channels || {}

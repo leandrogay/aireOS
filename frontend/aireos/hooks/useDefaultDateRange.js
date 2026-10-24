@@ -37,7 +37,8 @@ export default function useDefaultDateRange({
         const params = new URLSearchParams({ period, customer });
         if (mode) params.set('mode', mode);
         const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/api/sales/default-date-range?${params.toString()}`
+          `${process.env.NEXT_PUBLIC_API_URL}/api/sales/default-date-range?${params.toString()}`,
+          { credentials: 'include' },
         );
         const data = await res.json();
         if (!res.ok || cancelled) return;

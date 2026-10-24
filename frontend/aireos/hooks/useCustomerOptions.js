@@ -19,7 +19,9 @@ export default function useCustomerOptions({ dataVersion = 0 } = {}) {
 
     async function fetchOptions() {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/sales/customer-options`);
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/sales/customer-options`, {
+          credentials: 'include',
+        });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Failed to load customer options');
         if (!cancelled) {

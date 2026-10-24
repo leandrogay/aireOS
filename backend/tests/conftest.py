@@ -14,6 +14,14 @@ import datetime
 
 import pytest
 
+from app import config
+
+
+@pytest.fixture(autouse=True)
+def disable_authentication_by_default(monkeypatch):
+    """Keep domain tests independent of a developer's local SSO setting."""
+    monkeypatch.setattr(config, "AUTH_ENABLED", "false")
+
 
 class FakeResult:
     def __init__(self, rows):
