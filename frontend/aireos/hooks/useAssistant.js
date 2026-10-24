@@ -35,6 +35,8 @@ function assistantMessageFromResponse(data) {
     hasTable: data.has_table,
     tableColumns: data.table_columns,
     tableRows: data.table_rows,
+    // What the table's figures are as of (the forecast table's run time); '' otherwise.
+    tableNote: data.table_note || '',
     followUpPrompts: data.follow_up_prompts || [],
     hasDownload: data.has_download,
     downloadFilename: data.download_filename,
@@ -81,6 +83,7 @@ export default function useAssistant() {
             has_table: previousMessage.hasTable,
             table_columns: previousMessage.tableColumns,
             table_rows: previousMessage.tableRows,
+            table_note: previousMessage.tableNote,
           }
         : {};
       const lastChartMessage = [...messages].reverse().find((m) => m.hasChart || m.hasTable);
