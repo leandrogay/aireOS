@@ -50,6 +50,38 @@ Keep `AUTH_COOKIE_SECURE=false` and `AUTH_COOKIE_DOMAIN` blank on localhost. In 
 set `AUTH_COOKIE_SECURE=true`, and set `AUTH_COOKIE_DOMAIN` to a shared parent domain such as
 `.shop-aire.com` when the frontend and backend use separate subdomains.
 
+## Deploying (Cloud Run)
+
+Local development does not use any of this: it keeps `.env.backend` and `.env.frontend`.
+Each deployed environment has a folder under `deploy/` (`test` today; `prod` will be a copy):
+
+| File | Holds | Secret? |
+| --- | --- | --- |
+| `deploy/<env>/target.env` | Project, region, registry, service names and service accounts | No |
+| `deploy/<env>/api.env.yaml` | API runtime settings (replaces **all** env vars on each deploy) | No |
+| `deploy/<env>/api.secrets.yaml` | Secret **names** only (`AUTH_SESSION_SECRET`, `GOOGLE_OAUTH_CLIENT_SECRET`); values live in Secret Manager | Names only |
+| `deploy/<env>/web.build.env` | Frontend build args, compiled into the bundle and visible to visitors | No |
+
+Never put a secret in the env or build files; `backend/tests/test_deploy_config.py` fails CI if a
+setting named like one appears there. Change settings in these files, not in the Cloud Run console --
+the next deploy overwrites console edits.
+
+The web service forwards `/api/*` to the API (`BACKEND_API_URL`), so the browser, the session cookie
+and the Google sign-in callback all use the web service's URL.
+
+First time for an environment (PowerShell shown; `deploy.sh` / `setup-secrets.sh` are the bash versions):
+
+```powershell
+gcloud auth login
+./deploy/setup-secrets.ps1 -Env test   # creates the secrets; asks for the OAuth client secret
+./deploy/deploy.ps1 -Env test          # builds both images at HEAD, pushes, deploys
+```
+
+The Google OAuth client needs `GOOGLE_OAUTH_REDIRECT_URI` from `api.env.yaml` as an authorised redirect URI.
+After that, `deploy.ps1 -Env test` is the whole deploy; commit first, since the image tag is the commit hash.
+To rotate a secret: `./deploy/setup-secrets.ps1 -Env test -Name GOOGLE_OAUTH_CLIENT_SECRET`, then deploy.
+To roll back: `gcloud run services update-traffic <service> --region asia-southeast1 --to-revisions <revision>=100`.
+
 ## Mapping Workflow
 
 The upload flow reads and edits mappings through the backend instead of using local fixture data.

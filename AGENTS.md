@@ -15,6 +15,7 @@ stock, days of holding, DOH thresholds, a sell-in plan), and forecasts sell-out.
 ```
 aireOS/
 ├── .github/workflows/ci.yml       CI: backend pytest only (Python 3.11, no cloud creds)
+├── deploy/                        Cloud Run deploy: <env>/ settings + secret names, deploy & setup-secrets scripts (ps1 + sh)
 ├── .vscode/tasks.json             "Start Both Servers" task (uvicorn + next dev)
 ├── README.md                      Setup + the mapping workflow explanation
 ├── claude.md / agents.md          These files
@@ -330,8 +331,13 @@ Backend variables: `GOOGLE_APPLICATION_CREDENTIALS`, `SERVICE_ACCOUNT_KEY_PATH`,
 the Sales Dashboard and Inventory read the Cloud SQL `sellout` table directly now, not a BigQuery replica.)
 
 Frontend variables: `NEXT_PUBLIC_API_URL` (browser-visible, used everywhere),
-`NEXT_PUBLIC_AUTH_ENABLED` (enables the route guard), `BACKEND_API_URL`
-(present but unused — server-side only if ever needed).
+`NEXT_PUBLIC_AUTH_ENABLED` (enables the route guard), `BACKEND_API_URL` (deployed builds
+only: `next.config.mjs` forwards `/api/*` to it so the browser stays on one origin; unset locally).
+
+Deployment (Cloud Run) is configured in `deploy/<env>/` and never through the local env files:
+non-secret settings in `api.env.yaml` / `web.build.env` / `target.env`, secret **names** in
+`api.secrets.yaml` (values in Secret Manager), applied by `deploy/deploy.ps1` or `deploy.sh`.
+See README "Deploying"; `tests/test_deploy_config.py` keeps secrets out of the committed files.
 
 Running locally: VS Code task **Start Both Servers**, or two terminals per the READMEs.
 Tests: `cd backend && pytest`. Lint: `cd frontend/aireos && npm run lint`.

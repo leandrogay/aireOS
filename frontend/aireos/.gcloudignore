@@ -1,0 +1,12 @@
+# What `gcloud builds submit frontend/aireos` must NOT upload to Cloud Build:
+# local env files (the image writes its own .env.frontend from build args) and
+# anything the Docker build recreates.
+.gcloudignore
+.git
+
+.env*
+
+node_modules/
+.next/
+out/
+npm-debug.log*
