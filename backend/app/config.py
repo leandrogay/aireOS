@@ -168,7 +168,7 @@ CORS_ALLOWED_ORIGINS = parse_origins(
 # must mean "use the default".
 # gemini-2.5-* retired on Vertex AI on 2026-10-20; 3.8 Flash is Google's named
 # replacement and is listed as available until at least 2027-09-02.
-MAPPING_MODEL = os.environ.get("MAPPING_MODEL")
+MAPPING_MODEL = os.environ.get("MAPPING_MODEL") or "gemini-3.8-flash"
 # "global" is Vertex AI's any-region endpoint: best availability and the newest
 # models, but Google picks where the request is processed. Set a region such
 # as "asia-southeast1" (or "us" / "eu") if the sample values in a mapping
