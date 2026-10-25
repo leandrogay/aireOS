@@ -1,6 +1,6 @@
 from calendar import monthrange
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from functools import lru_cache
 
 from sqlalchemy import text
@@ -89,15 +89,9 @@ def _read_connection() -> Connection:
 # ============================================================
 
 
-# The business runs on Singapore time.
-_SINGAPORE_TZ = timezone(timedelta(hours=8))
-
-
-def _singapore_today() -> date:
-    # Not the UTC day: until 08:00 SGT on the 1st, UTC is still the last day of
-    # the month before, and recording that month's actuals would be refused as
-    # "not over yet". Not date.today() either, which follows the server's timezone.
-    return datetime.now(_SINGAPORE_TZ).date()
+def _utc_today() -> date:
+    # Not date.today(), which follows whatever timezone the server runs in.
+    return datetime.now(timezone.utc).date()
 
 
 def _iso(value: date | None) -> str | None:
@@ -1298,7 +1292,7 @@ def _notify_low_stock(conn: Connection, customer_id: int, skus: list[str], today
 
 
 def create_records(record, today: date | None = None) -> dict:
-    today = today or _singapore_today()
+    today = today or _utc_today()
     with _get_engine().begin() as conn:
         customers = _fetch_customers(conn)
         existing, product = _validate_record_target(conn, record, customers, today)
@@ -1315,7 +1309,7 @@ def create_records(record, today: date | None = None) -> dict:
 
 
 def update_records(record, today: date | None = None) -> dict:
-    today = today or _singapore_today()
+    today = today or _utc_today()
     with _get_engine().begin() as conn:
         customers = _fetch_customers(conn)
         existing, product = _validate_record_target(conn, record, customers, today)
@@ -1428,7 +1422,7 @@ def set_shipped_so_far(record, today: date | None = None) -> dict:
     already has actual data for that SKU, which belongs in create/edit.
     """
 
-    today = today or _singapore_today()
+    today = today or _utc_today()
     with _get_engine().begin() as conn:
         customers = _fetch_customers(conn)
         _require_customers(customers, record.customer_ids)
@@ -1565,7 +1559,7 @@ def _plan_sell_in_upload(conn: Connection, data: bytes, today: date) -> tuple[li
 
 
 def preview_sell_in_upload(data: bytes, today: date | None = None) -> dict:
-    today = today or _singapore_today()
+    today = today or _utc_today()
     with _read_connection() as conn:
         rows, skipped = _plan_sell_in_upload(conn, data, today)
 
@@ -1580,7 +1574,7 @@ def preview_sell_in_upload(data: bytes, today: date | None = None) -> dict:
 
 
 def apply_sell_in_upload(data: bytes, today: date | None = None) -> dict:
-    today = today or _singapore_today()
+    today = today or _utc_today()
     with _get_engine().begin() as conn:
         rows, _ = _plan_sell_in_upload(conn, data, today)
         changed = [row for row in rows if row["status"] != "unchanged"]

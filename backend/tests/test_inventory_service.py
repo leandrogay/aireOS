@@ -1019,16 +1019,6 @@ def test_a_month_ends_on_its_last_day(monkeypatch):
         inventory_service.create_records(_record(month="2026-09-01"), today=date(2026, 9, 30))
     inventory_service.create_records(_record(month="2026-09-01"), today=date(2026, 10, 1))
 
-
-def test_last_months_actuals_are_accepted_just_after_midnight_singapore_time(monkeypatch):
-    # 1 Oct 01:00 in Singapore is still 30 Sep in UTC; September is over for staff here.
-    monkeypatch.setattr(inventory_service, "datetime", FrozenDatetime)
-    conn = _install(monkeypatch, _write_router())
-
-    inventory_service.create_records(_record(month="2026-09-01"))
-
-    assert len(conn.sql_containing("INSERT INTO inventory_metrics")) == 1
-
     assert len(conn.sql_containing("INSERT INTO inventory_metrics")) == 1
 
 
@@ -1632,11 +1622,10 @@ def test_the_temporary_sell_in_refusal_names_the_product(monkeypatch):
 
 # ---- today ----------------------------------------------------------------
 
-def test_today_is_the_singapore_day_not_the_utc_day(monkeypatch):
-    # 30 Sep 17:00 UTC is already 1 Oct 01:00 in Singapore.
+def test_today_is_the_utc_day_not_the_server_day(monkeypatch):
     monkeypatch.setattr(inventory_service, "datetime", FrozenDatetime)
 
-    assert inventory_service._singapore_today() == date(2026, 10, 1)
+    assert inventory_service._utc_today() == date(2026, 9, 30)
 
 
 # ---- sell-in upload: preview/apply -----------------------------------------------
