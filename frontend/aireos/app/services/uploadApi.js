@@ -56,6 +56,7 @@ export async function uploadFile(file, { force = false, keepDuplicate = false, s
   try {
     response = await fetch(`${API_BASE}/api/uploads`, {
       method: 'POST',
+      credentials: 'include',
       body: formData,
       signal,
     });
@@ -96,6 +97,7 @@ export async function checkUpload(file) {
   try {
     response = await fetch(`${API_BASE}/api/uploads/check`, {
       method: 'POST',
+      credentials: 'include',
       body: formData,
       signal: AbortSignal.timeout(CHECK_TIMEOUT_MS),
     });
@@ -131,6 +133,7 @@ export async function fetchUploadHistory({ limit = 25, months } = {}) {
   let response;
   try {
     response = await fetch(`${API_BASE}/api/uploads/history?${params}`, {
+      credentials: 'include',
       signal: AbortSignal.timeout(HISTORY_TIMEOUT_MS),
     });
   } catch (error) {

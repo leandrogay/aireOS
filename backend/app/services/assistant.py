@@ -1156,7 +1156,7 @@ def _inventory_chart(chart_sources: list[tuple[str, dict, object]]) -> dict | No
             ],
             _customer_name_of,
         )
-    
+
         or _inventory_table(
             results("get_inventory_overview"),
             "skus",

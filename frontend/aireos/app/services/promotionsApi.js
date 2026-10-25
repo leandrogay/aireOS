@@ -67,6 +67,7 @@ export async function request(path, { method = 'GET', body } = {}) {
     const response = await fetch(url, {
       method,
       cache: 'no-store',
+      credentials: 'include',
       headers: body ? { 'Content-Type': 'application/json' } : undefined,
       body: body ? JSON.stringify(body) : undefined,
     });

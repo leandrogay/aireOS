@@ -12,7 +12,13 @@ async function request(baseUrl, path, { method = 'GET', body, headers, signal, o
   onLog?.('req', `${method} ${url}`);
 
   try {
-    const response = await fetch(url, { method, body, headers, signal });
+    const response = await fetch(url, {
+      method,
+      body,
+      headers,
+      signal,
+      credentials: 'include',
+    });
     const text = await response.text();
 
     let data;

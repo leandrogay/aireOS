@@ -89,6 +89,7 @@ export default function useAssistant() {
       try {
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/assistant/ask`, {
           method: 'POST',
+          credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             question: trimmed,
@@ -123,6 +124,7 @@ export default function useAssistant() {
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/assistant/digest`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       });
