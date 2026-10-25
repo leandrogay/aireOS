@@ -59,7 +59,8 @@ export default function useDashboardSummary({
         if (startDate) params.set('start_date', startDate);
         if (endDate) params.set('end_date', endDate);
         const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/api/sales/dashboard-summary?${params.toString()}`
+          `${process.env.NEXT_PUBLIC_API_URL}/api/sales/dashboard-summary?${params.toString()}`,
+          { credentials: 'include' },
         );
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Failed to load dashboard summary');

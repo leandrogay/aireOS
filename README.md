@@ -35,6 +35,21 @@ Frontend and Backend specific instructions are located in the respective folder 
 ### Environment variables
 Download the `.env.frontend` file from Google Drive and place it in `frontend\aireos\`.
 
+### Google Workspace SSO
+
+Authentication is disabled by default so tests and local development do not require live OAuth credentials.
+To enable it, create a Google OAuth 2.0 **Web application** client and add
+`http://localhost:8000/api/auth/callback` as an authorised redirect URI. Then configure:
+
+- Backend `.env.backend`: `AUTH_ENABLED=true`, a random `AUTH_SESSION_SECRET` of at least 32 characters,
+  `AUTH_ALLOWED_DOMAIN=shop-aire.com`, `AUTH_FRONTEND_URL`, `GOOGLE_OAUTH_CLIENT_ID`,
+  `GOOGLE_OAUTH_CLIENT_SECRET`, and `GOOGLE_OAUTH_REDIRECT_URI`.
+- Frontend `.env.frontend`: `NEXT_PUBLIC_AUTH_ENABLED=true`.
+
+Keep `AUTH_COOKIE_SECURE=false` and `AUTH_COOKIE_DOMAIN` blank on localhost. In production, use HTTPS,
+set `AUTH_COOKIE_SECURE=true`, and set `AUTH_COOKIE_DOMAIN` to a shared parent domain such as
+`.shop-aire.com` when the frontend and backend use separate subdomains.
+
 ## Mapping Workflow
 
 The upload flow reads and edits mappings through the backend instead of using local fixture data.

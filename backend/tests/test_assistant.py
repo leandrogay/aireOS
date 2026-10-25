@@ -1,3 +1,4 @@
+import io
 import json
 import base64
 import datetime
@@ -80,12 +81,14 @@ def _final_answer(
     follow_ups=None,
     export_format="none",
     chart_style=None,
+    uses_previous_chart=False,
 ):
     payload = {
         "answer": text,
         "grounded": grounded,
         "data_source": data_source,
         "follow_up_prompts": follow_ups or ["Break this down by store?", "Compare to last month?"],
+        "uses_previous_chart": uses_previous_chart,
         "export_format": export_format,
         "chart_style": chart_style or dict(assistant._DEFAULT_CHART_STYLE),
     }
@@ -850,6 +853,289 @@ def test_a_bigquery_outage_inside_an_inventory_tool_is_also_a_tool_error_not_a_c
     assert "Unable to reach the inventory database" in function_response["error"]
 
 
+# ---- ask(): forecast (get_demand_forecast) ------------------------------------
+
+def _forecast_result(**overrides):
+    result = {
+        "customer": "fairprice",
+        "product_name": "Aire Ultra Tape L",
+        "channel": "Online and offline combined",
+        "unit": "cartons",
+        "period": {"start": "2026-09-01", "end": "2026-10-01"},
+        "forecast_months_available": {"first": "2026-09-01", "last": "2027-08-01"},
+        "forecast_generated_at": "2026-10-04T17:14:40Z",
+        "forecast_generated_at_sgt": "5 Oct 2026, 1:14 am",
+        "actuals_loaded_at": "2026-10-06T05:05:11Z",
+        "actuals_loaded_at_sgt": "6 Oct 2026, 1:05 pm",
+        "series": [{
+            "customer": "fairprice",
+            "product_name": "Aire Ultra Tape L",
+            "sku": "13271338",
+            "confidence": {"band": "low", "label": "Low", "reason": "limited sales history, check before using", "detail": ""},
+            "forecast": [
+                {"month": "2026-09-01", "cartons": 52, "low_80": 32, "high_80": 79},
+                {"month": "2026-10-01", "cartons": 1052, "low_80": -2, "high_80": 1080},
+            ],
+            "actuals": [{"month": "2026-08-01", "cartons": 88, "month_to_date": False}],
+        }],
+        "monthly_totals": [],
+        "forecast_total_cartons": 1104,
+    }
+    return {**result, **overrides}
+
+
+def _ask_forecast(monkeypatch, answer, result=None):
+    seen = {}
+
+    def fake_forecast(**kwargs):
+        seen.update(kwargs)
+        return result or _forecast_result()
+
+    monkeypatch.setattr(assistant.forecast_summary, "get_demand_forecast", fake_forecast)
+    tool_call = _tool_call_response(("tu_1", "get_demand_forecast", {"product": "ultra tape l", "customer": "fairprice"}))
+    fake_client = _install_fake_client(monkeypatch, [tool_call, _final_answer(text=answer), _final_answer(text=answer)])
+    return assistant.ask("what is the forecast for ultra tape l?", history=None, customer="fairprice"), seen, fake_client
+
+
+def test_forecast_tool_passes_names_through_and_builds_labelled_table(monkeypatch):
+    result, seen, _ = _ask_forecast(monkeypatch, "Forecast for Sep 2026: 52 cartons.")
+
+    assert seen == {"product": "ultra tape l", "customer": "fairprice", "start_month": None, "end_month": None}
+    assert result["has_chart"] is False
+    assert result["table_columns"] == ["type", "month", "customer", "product", "cartons", "range_80", "confidence"]
+    assert result["table_rows"] == [
+        ["Actual", "Aug 2026", "Fairprice", "Aire Ultra Tape L (13271338)", "88", "—", "—"],
+        ["Forecast", "Sep 2026", "Fairprice", "Aire Ultra Tape L (13271338)", "52", "32 to 79", "Low"],
+        ["Forecast", "Oct 2026", "Fairprice", "Aire Ultra Tape L (13271338)", "1,052", "(2) to 1,080", "Low"],
+        ["Forecast total", "Sep 2026 – Oct 2026", "Fairprice", "Aire Ultra Tape L", "1,104", "—", "—"],
+    ]
+    assert result["table_note"] == (
+        "Forecast run: 5 Oct 2026, 1:14 am SGT · Actuals loaded: 6 Oct 2026, 1:05 pm SGT"
+        " · Cartons; online and offline combined, as on the Forecast page"
+    )
+
+
+def test_forecast_month_to_date_actual_is_labelled_as_such(monkeypatch):
+    forecast = _forecast_result()
+    forecast["series"][0]["actuals"] = [{"month": "2026-10-01", "cartons": 20, "month_to_date": True}]
+
+    result, _, _ = _ask_forecast(monkeypatch, "Forecast for Sep 2026: 52 cartons.", result=forecast)
+
+    assert result["table_rows"][0][0] == "Actual (month to date)"
+
+
+def test_forecast_with_many_series_shows_only_month_totals(monkeypatch):
+    series = [
+        {**_forecast_result()["series"][0], "product_name": f"SKU {i}", "sku": str(i)}
+        for i in range(assistant._MAX_FORECAST_SERIES_IN_TABLE + 1)
+    ]
+    totals = [{"month": "2026-09-01", "forecast_cartons": 520, "actual_cartons": None, "actual_month_to_date": False}]
+    forecast = _forecast_result(series=series, monthly_totals=totals, product_name=None, forecast_total_cartons=None)
+
+    result, _, _ = _ask_forecast(monkeypatch, "Forecast for Sep 2026: 520 cartons.", result=forecast)
+
+    assert result["table_rows"] == [["Forecast total", "Sep 2026", "Fairprice", "All SKUs", "520", "—", "—"]]
+
+
+def test_forecast_tool_bad_arguments_are_a_tool_error_not_a_crash(monkeypatch):
+    def unknown_customer(**kwargs):
+        raise ValueError("No forecast for customer 'nhg'.")
+
+    monkeypatch.setattr(assistant.forecast_summary, "get_demand_forecast", unknown_customer)
+    tool_call = _tool_call_response(("tu_1", "get_demand_forecast", {"customer": "nhg"}))
+    fake_client = _install_fake_client(monkeypatch, [tool_call, _final_answer(text="There is no forecast for NHG yet.")])
+
+    result = assistant.ask("forecast for nhg?", history=None, customer="fairprice")
+
+    tool_turn = _dump(fake_client.models.calls[1]["contents"][-1])
+    assert "Invalid arguments: No forecast for customer 'nhg'." in json.dumps(tool_turn)
+    assert result["has_table"] is False
+
+
+def test_forecast_table_wins_over_a_sales_lookup_made_alongside_it():
+    chart = assistant._build_chart(
+        [
+            ("get_sales_summary", {}, {"offline": {"periodTotal": [{"period_label": "Aug 2026", "revenue": 712.3}]}}),
+            ("get_demand_forecast", {}, _forecast_result()),
+        ],
+        "fairprice",
+    )
+
+    assert chart["has_table"] is True
+    assert chart["table_rows"][1][0] == "Forecast"
+
+
+def test_forecast_headline_cartons_matching_the_table_is_kept(monkeypatch):
+    result, _, fake_client = _ask_forecast(monkeypatch, "Forecast for Oct 2026: 1,052 cartons (Confidence: Low).")
+
+    assert len(fake_client.models.calls) == 2
+    assert result["has_table"] is True
+
+
+def test_forecast_headline_cartons_not_in_the_table_hides_the_table(monkeypatch):
+    result, _, fake_client = _ask_forecast(monkeypatch, "Forecast for Sep 2026: 60 cartons.")
+
+    # One correction retry, still wrong: the table that disagrees is left out.
+    assert len(fake_client.models.calls) == 3
+    assert result["has_table"] is False
+
+
+def _pptx_text(pptx_bytes):
+    from pptx import Presentation
+
+    texts = []
+    for slide in Presentation(io.BytesIO(pptx_bytes)).slides:
+        for shape in slide.shapes:
+            if shape.has_table:
+                texts.extend(" ".join(cell.text for cell in row.cells) for row in shape.table.rows)
+            elif shape.has_text_frame:
+                texts.append(shape.text_frame.text)
+    return texts
+
+
+def test_forecast_export_pdf_and_pptx_include_the_table_and_note():
+    chart = assistant._forecast_chart([("get_demand_forecast", {}, _forecast_result())])
+
+    pdf_bytes, _, _ = assistant.generate_export_file("pdf", "Forecast for Sep 2026: 52 cartons.", chart)
+    pptx_bytes, _, _ = assistant.generate_export_file("pptx", "Forecast for Sep 2026: 52 cartons.", chart)
+
+    assert pdf_bytes[:4] == b"%PDF"
+    texts = _pptx_text(pptx_bytes)
+    assert any(text.startswith("Forecast Sep 2026") and "52" in text for text in texts)
+    assert any(text.startswith("Actual Aug 2026") and "88" in text for text in texts)
+    assert any(text.startswith("Forecast run: 5 Oct 2026, 1:14 am SGT") for text in texts)
+
+
+def test_long_table_continues_on_further_slides_with_its_header():
+    from pptx import Presentation
+
+    rows = [[str(i), "x"] for i in range(assistant._MAX_TABLE_ROWS_PER_SLIDE + 3)]
+    chart = assistant._table_chart(["n", "v"], rows)
+
+    pptx_bytes, _, _ = assistant.generate_export_file("pptx", "Some answer.", chart)
+
+    tables = [shape.table for slide in Presentation(io.BytesIO(pptx_bytes)).slides for shape in slide.shapes if shape.has_table]
+    assert [len(table.rows) for table in tables] == [assistant._MAX_TABLE_ROWS_PER_SLIDE + 1, 4]
+    assert all(table.cell(0, 0).text == "n" for table in tables)
+
+
+def test_export_endpoint_passes_the_table_note_to_the_file(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    seen = {}
+
+    def fake_export(export_format, answer, chart, chart_style, trend_values):
+        seen["chart"] = chart
+        return b"%PDF", "application/pdf", "aireos-report.pdf"
+
+    monkeypatch.setattr(assistant, "generate_export_file", fake_export)
+
+    response = TestClient(app).post("/api/assistant/export", json={
+        "format": "pdf", "answer": "a", "has_table": True,
+        "table_columns": ["type"], "table_rows": [["Forecast"]], "table_note": "Forecast run: 5 Oct 2026",
+    })
+
+    assert response.status_code == 200
+    assert seen["chart"]["table_note"] == "Forecast run: 5 Oct 2026"
+
+
+def _priced_forecast_result():
+    forecast = _forecast_result()
+    forecast["series"][0]["forecast"][0]["revenue"] = 441.79
+    forecast["series"][0]["forecast"][1]["revenue"] = 8937.81
+    forecast["series"][0]["actuals"][0]["revenue"] = 712.3
+    forecast["forecast_total_revenue"] = 9379.6
+    return forecast
+
+
+def _ask_forecast_revenue(monkeypatch, answer):
+    monkeypatch.setattr(assistant.forecast_summary, "get_demand_forecast", lambda **kwargs: _priced_forecast_result())
+    tool_call = _tool_call_response(
+        ("tu_1", "get_demand_forecast", {"product": "ultra tape l", "customer": "fairprice", "include_revenue": True})
+    )
+    fake_client = _install_fake_client(monkeypatch, [tool_call, _final_answer(text=answer), _final_answer(text=answer)])
+    return assistant.ask("forecast revenue for ultra tape l?", history=None, customer="fairprice"), fake_client
+
+
+def test_forecast_revenue_question_shows_revenue_column_instead_of_range(monkeypatch):
+    result, _ = _ask_forecast_revenue(monkeypatch, "Forecast revenue for Sep 2026 is $441.79.")
+
+    assert result["table_columns"] == ["type", "month", "customer", "product", "cartons", "revenue", "confidence"]
+    assert result["table_rows"] == [
+        ["Actual", "Aug 2026", "Fairprice", "Aire Ultra Tape L (13271338)", "88", "$712.30", "—"],
+        ["Forecast", "Sep 2026", "Fairprice", "Aire Ultra Tape L (13271338)", "52", "$441.79", "Low"],
+        ["Forecast", "Oct 2026", "Fairprice", "Aire Ultra Tape L (13271338)", "1,052", "$8,937.81", "Low"],
+        ["Forecast total", "Sep 2026 – Oct 2026", "Fairprice", "Aire Ultra Tape L", "1,104", "$9,379.60", "—"],
+    ]
+    assert "realised price per carton" in result["table_note"]
+
+
+def test_forecast_revenue_headline_matching_the_tool_is_kept(monkeypatch):
+    result, fake_client = _ask_forecast_revenue(monkeypatch, "Forecast revenue for Sep–Oct 2026 is $9,379.60.")
+
+    assert len(fake_client.models.calls) == 2
+    assert result["has_table"] is True
+
+
+def test_forecast_revenue_headline_worked_out_by_the_model_hides_the_table(monkeypatch):
+    result, fake_client = _ask_forecast_revenue(monkeypatch, "Forecast revenue for Sep 2026 is $450.00.")
+
+    assert len(fake_client.models.calls) == 3
+    assert result["has_table"] is False
+
+
+def test_cartons_question_keeps_the_range_column(monkeypatch):
+    result, _, _ = _ask_forecast(monkeypatch, "Forecast for Sep 2026: 52 cartons.")
+
+    assert result["table_columns"][5] == "range_80"
+    assert "realised price" not in result["table_note"]
+
+
+# ---- Customer nicknames -------------------------------------------------------
+
+@pytest.mark.parametrize("typed", ["NTUC", "ntuc fairprice", "FP", "Fair Price", "FairPrice"])
+def test_customer_nicknames_resolve_to_the_stored_customer(typed):
+    assert assistant._customer_slug(typed) == "fairprice"
+
+
+def test_unknown_names_pass_through_unchanged():
+    assert assistant._customer_slug("Sheng Shiong") == "sheng_shiong"
+    assert assistant._customer_slug("Giant") == "giant"
+
+
+def test_forecast_tool_gets_the_resolved_customer_not_the_nickname(monkeypatch):
+    seen = {}
+
+    def fake_forecast(**kwargs):
+        seen.update(kwargs)
+        return _forecast_result()
+
+    monkeypatch.setattr(assistant.forecast_summary, "get_demand_forecast", fake_forecast)
+    tool_call = _tool_call_response(("tu_1", "get_demand_forecast", {"customer": "NTUC"}))
+    _install_fake_client(monkeypatch, [tool_call, _final_answer(text="Forecast for Sep 2026: 52 cartons.")])
+
+    assistant.ask("forecast for ntuc?", history=None, customer="fairprice")
+
+    assert seen["customer"] == "fairprice"
+
+
+def test_sales_tools_also_get_the_resolved_customer(monkeypatch):
+    seen = {}
+
+    def fake_summary(**kwargs):
+        seen.update(kwargs)
+        return {"offline": {"periodTotal": []}, "online": {"periodTotal": []}}
+
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", fake_summary)
+    tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"customer": "NTUC", "granularity": "month"}))
+    _install_fake_client(monkeypatch, [tool_call, _final_answer(text="No sales yet.")])
+
+    assistant.ask("ntuc sales?", history=None, customer="fairprice")
+
+    assert seen["customer"] == "fairprice"
+
+
 # ---- ask(): search fallback --------------------------------------------------
 #
 # Confirmed live against the real API, two separate constraints: (1) Gemini
@@ -995,8 +1281,11 @@ def test_correction_retry_still_wrong_keeps_original_answer(monkeypatch):
     result = assistant.ask("what were offline sales in august", history=None, customer="fairprice")
 
     # the retry didn't verify either -- keep the original rather than trust
-    # a second unverified guess just because it's the most recent one
-    assert result["answer"] == "Offline sales in August 2026 were $5,123.45."
+    # a second unverified guess just because it's the most recent one, and
+    # don't show a chart that disagrees with the figure in the text
+    assert result["answer"].startswith("Offline sales in August 2026 were $5,123.45.")
+    assert "verify" not in result["answer"]
+    assert result["has_chart"] is False
 
 
 def test_market_data_answers_are_not_checked_against_tool_figures(monkeypatch):
@@ -1054,7 +1343,8 @@ def test_correction_retry_refusal_keeps_original_answer(monkeypatch):
 
     result = assistant.ask("what were offline sales in august", history=None, customer="fairprice")
 
-    assert result["answer"] == "Offline sales in August 2026 were $5,123.45."
+    assert result["answer"].startswith("Offline sales in August 2026 were $5,123.45.")
+    assert result["has_chart"] is False
 
 
 # ---- ask(): PDF/PPTX export --------------------------------------------------
@@ -1309,14 +1599,49 @@ def test_refusal_returns_safe_fallback_instead_of_parsing_content(monkeypatch):
     assert result["has_chart"] is False
 
 
-def test_loop_raises_after_max_iterations_of_tool_use(monkeypatch):
+def test_a_loop_that_never_settles_falls_back_to_the_web_search(monkeypatch):
     tool_call = _tool_call_response(("tu_1", "list_customers", {}))
     monkeypatch.setattr(sellout_service, "get_customer_options", lambda: [])
-    responses = [tool_call] * (assistant.MAX_TOOL_ITERATIONS + 1)
+    responses = [tool_call] * (assistant.MAX_TOOL_ITERATIONS + 1) + [
+        _search_answer("Competitor news."),
+        _final_answer(grounded=True, data_source="market_data", text="A competitor launched a product."),
+    ]
+    fake_client = _install_fake_client(monkeypatch, responses)
+
+    result = assistant.ask("competitor news?", history=None, customer="fairprice")
+
+    assert result["answer"] == "A competitor launched a product."
+    assert result["data_source"] == "market_data"
+    # the dangling tool call from the failed last turn is not replayed to the search request
+    search_contents = fake_client.models.calls[-2]["contents"]
+    assert _dump(search_contents[-2])["parts"][0].get("function_response") is not None
+
+
+def test_a_loop_that_never_settles_and_a_search_that_finds_nothing_gives_a_plain_answer(monkeypatch):
+    tool_call = _tool_call_response(("tu_1", "list_customers", {}))
+    monkeypatch.setattr(sellout_service, "get_customer_options", lambda: [])
+    empty_search = FakeResponse(text=None, content={"role": "model", "parts": []})
+    responses = [tool_call] * (assistant.MAX_TOOL_ITERATIONS + 1) + [empty_search]
     _install_fake_client(monkeypatch, responses)
 
-    with pytest.raises(assistant.AssistantLoopError):
-        assistant.ask("infinite loop question", history=None, customer="fairprice")
+    result = assistant.ask("something unanswerable", history=None, customer="fairprice")
+
+    assert result["answer"] == "I couldn't find an answer to that."
+    assert result["has_chart"] is False and result["has_table"] is False
+
+
+def test_after_max_iterations_the_model_gets_one_last_turn_without_tools(monkeypatch):
+    tool_call = _tool_call_response(("tu_1", "list_customers", {}))
+    monkeypatch.setattr(sellout_service, "get_customer_options", lambda: [])
+    responses = [tool_call] * assistant.MAX_TOOL_ITERATIONS + [_final_answer(text="Here is what I found.", data_source="none")]
+    fake_client = _install_fake_client(monkeypatch, responses)
+
+    result = assistant.ask("a question the model keeps researching", history=None, customer="fairprice")
+
+    assert result["answer"] == "Here is what I found."
+    last_config = fake_client.models.calls[-1]["config"]
+    assert last_config.tool_config.function_calling_config.mode == "NONE"
+    assert len(fake_client.models.calls) == assistant.MAX_TOOL_ITERATIONS + 1
 
 
 # ---- get_client() config error ----------------------------------------------
@@ -1564,7 +1889,10 @@ def test_last_chart_carried_forward_when_no_tool_call_this_turn(monkeypatch):
     }
     _install_fake_client(
         monkeypatch,
-        [_final_answer(chart_style={"color": "#DC2626", "show_value_labels": False, "show_trend_line": False})],
+        [_final_answer(
+            uses_previous_chart=True,
+            chart_style={"color": "#DC2626", "show_value_labels": False, "show_trend_line": False},
+        )],
     )
 
     result = assistant.ask("make it red", history=None, customer="fairprice", last_chart=last_chart)
@@ -2414,13 +2742,577 @@ def test_sales_tool_database_outage_becomes_a_tool_error_not_a_crash(monkeypatch
 
 # ---- today and the report date ---------------------------------------------------
 
-def test_today_is_the_utc_day_not_the_server_day(monkeypatch):
+def test_today_is_the_singapore_day_not_the_utc_day(monkeypatch):
+    # 30 Sep 17:00 UTC is 1 Oct 01:00 in Singapore: "this month" is October.
     _freeze_clock(monkeypatch)
 
-    assert assistant._utc_today() == datetime.date(2026, 9, 30)
+    assert assistant._singapore_today() == datetime.date(2026, 10, 1)
+
+
+def test_system_prompt_gives_the_singapore_date(monkeypatch):
+    _freeze_clock(monkeypatch)
+
+    assert "Today's date is 2026-10-01." in assistant._system_prompt(dict(assistant._DEFAULT_CHART_STYLE))
 
 
 def test_report_date_is_the_singapore_day(monkeypatch):
     _freeze_clock(monkeypatch)
 
     assert assistant._report_date() == "October 01, 2026"
+
+
+# ---- ask(): the data shown always belongs to this turn's question -------------
+#
+# Regression for the supporting table lagging behind the question: a chart
+# from an earlier turn was carried over whenever a turn fetched nothing, and
+# earlier tool results were replayed to the model, which then answered from
+# them. These check the table/chart is only ever this turn's own data.
+
+_INVENTORY_CUSTOMERS = [
+    {"customer_id": 1, "customer_name": "fairprice"},
+    {"customer_id": 2, "customer_name": "sheng_shiong"},
+]
+
+
+def _customer_view(customer_id, doh, month="2026-07-01", product="Adult Pants L"):
+    name = {1: "fairprice", 2: "sheng_shiong"}[customer_id]
+    return {
+        "customer": {"customer_id": customer_id, "customer_name": name},
+        "threshold": {"target_doh": 30.0, "min_doh": 25.0, "max_doh": 35.0, "is_global_default": True},
+        "trend": [],
+        "skus": [
+            {"sku": "S1", "product_name": product, "month": month, "ending_stock": 663,
+             "doh": doh, "target_doh": 30.0, "doh_status": "above_max"},
+        ],
+    }
+
+
+_PREVIOUS_TABLE = {
+    "has_chart": False, "chart_type": "none", "chart_categories": [], "chart_series": [],
+    "has_table": True, "table_columns": ["month", "product", "ending_stock", "doh", "target_doh", "status"],
+    "table_rows": [["2026-06-01", "Old Product", "100", "10.0", "30.0", "Below min"]],
+}
+
+_PROMOTIONS = [{
+    "stores": [{"retailer": "fairprice", "store_name": "All"}], "period_label": "June",
+    "promo_type": "discount", "promotion_mechanic": "20% off",
+}]
+
+
+def test_an_answer_that_fetched_nothing_does_not_show_the_previous_table(monkeypatch):
+    _install_fake_client(monkeypatch, [_final_answer(text="Happy to help with anything else.")])
+
+    result = assistant.ask("thanks", history=None, customer="fairprice", last_chart=_PREVIOUS_TABLE)
+
+    assert result["has_table"] is False
+    assert result["table_rows"] == []
+
+
+def test_a_lookup_that_errors_does_not_fall_back_to_the_previous_table(monkeypatch):
+    monkeypatch.setattr(inventory_service, "list_customers", lambda: _INVENTORY_CUSTOMERS)
+    tool_call = _tool_call_response(("tu_1", "get_customer_inventory", {"customer": "cold storage"}))
+    _install_fake_client(
+        monkeypatch,
+        [tool_call, _final_answer(text="I could not find a customer called cold storage.")],
+    )
+
+    result = assistant.ask("what is cold storage's DOH?", history=None, customer="fairprice", last_chart=_PREVIOUS_TABLE)
+
+    assert result["has_table"] is False
+
+
+def test_a_follow_up_about_the_chart_on_screen_keeps_it(monkeypatch):
+    _install_fake_client(monkeypatch, [_final_answer(text="Because stock built up.", uses_previous_chart=True)])
+
+    result = assistant.ask("why is that?", history=None, customer="fairprice", last_chart=_PREVIOUS_TABLE)
+
+    assert result["table_rows"] == _PREVIOUS_TABLE["table_rows"]
+
+
+def test_a_fresh_lookup_replaces_the_previous_table_even_if_the_model_calls_it_a_follow_up(monkeypatch):
+    monkeypatch.setattr(inventory_service, "list_customers", lambda: _INVENTORY_CUSTOMERS)
+    monkeypatch.setattr(inventory_service, "get_customer_view", lambda **kwargs: _customer_view(2, 22.5))
+    tool_call = _tool_call_response(("tu_1", "get_customer_inventory", {"customer": "sheng shiong"}))
+    _install_fake_client(
+        monkeypatch,
+        [tool_call, _final_answer(text="Sheng Shiong is at 22.5 days.", uses_previous_chart=True)],
+    )
+
+    result = assistant.ask("and sheng shiong?", history=None, customer="fairprice", last_chart=_PREVIOUS_TABLE)
+
+    assert result["table_rows"][0][3] == "22.5"
+
+
+def test_earlier_tool_calls_and_results_are_not_replayed_to_the_model(monkeypatch):
+    fake_client = _install_fake_client(monkeypatch, [_final_answer(text="Okay.")])
+    history = [
+        {"role": "user", "parts": [{"text": "what is fairprice's DOH?"}]},
+        {"role": "model", "parts": [{"function_call": {"id": "tu_1", "name": "get_customer_inventory", "args": {}}}]},
+        {"role": "user", "parts": [{"function_response": {"name": "get_customer_inventory", "response": {"result": "{}"}}}]},
+        {"role": "model", "parts": [{"text": '{"answer": "39.8 days"}'}]},
+    ]
+
+    assistant.ask("and sheng shiong?", history=history, customer="fairprice")
+
+    sent = fake_client.models.calls[0]["contents"]
+    assert sent[:-1] == [history[0], history[3]]
+    assert not any("function_call" in part or "function_response" in part for c in sent for part in c["parts"])
+
+
+def test_a_model_turn_keeps_its_text_when_its_tool_call_is_dropped():
+    mixed = {"role": "model", "parts": [{"text": "Checking."}, {"function_call": {"id": "tu_1", "name": "x", "args": {}}}]}
+
+    assert assistant._text_only_history([mixed]) == [{"role": "model", "parts": [{"text": "Checking."}]}]
+
+
+# ---- ask(): more than one call to an inventory tool in one turn ---------------
+
+def test_two_customer_inventory_calls_show_both_customers_rows(monkeypatch):
+    monkeypatch.setattr(inventory_service, "list_customers", lambda: _INVENTORY_CUSTOMERS)
+    monkeypatch.setattr(
+        inventory_service, "get_customer_view",
+        lambda customer_id, **kwargs: _customer_view(customer_id, 39.8 if customer_id == 1 else 22.5),
+    )
+    tool_calls = _tool_call_response(
+        ("tu_1", "get_customer_inventory", {"customer": "fairprice"}),
+        ("tu_2", "get_customer_inventory", {"customer": "sheng shiong"}),
+    )
+    _install_fake_client(
+        monkeypatch,
+        [tool_calls, _final_answer(text="Fairprice is at 39.8 days and Sheng Shiong at 22.5 days.")],
+    )
+
+    result = assistant.ask("compare DOH", history=None, customer="fairprice")
+
+    assert result["table_columns"][0] == "customer"
+    assert [row[0] for row in result["table_rows"]] == ["fairprice", "sheng_shiong"]
+    assert [row[4] for row in result["table_rows"]] == ["39.8", "22.5"]
+
+
+def test_repeated_customer_inventory_calls_for_one_customer_show_each_row_once(monkeypatch):
+    monkeypatch.setattr(inventory_service, "list_customers", lambda: _INVENTORY_CUSTOMERS)
+    monkeypatch.setattr(
+        inventory_service, "get_customer_view",
+        lambda customer_id, **kwargs: _customer_view(customer_id, 39.8, month=kwargs["start_month"].isoformat()),
+    )
+    tool_calls = _tool_call_response(
+        ("tu_1", "get_customer_inventory", {"customer": "fairprice", "start_month": "2026-06-01"}),
+        ("tu_2", "get_customer_inventory", {"customer": "fairprice", "start_month": "2026-06-01"}),
+        ("tu_3", "get_customer_inventory", {"customer": "fairprice", "start_month": "2026-07-01"}),
+    )
+    _install_fake_client(monkeypatch, [tool_calls, _final_answer(text="Fairprice is at 39.8 days.")])
+
+    result = assistant.ask("DOH for June and July", history=None, customer="fairprice")
+
+    assert result["table_columns"][0] == "month"
+    assert [row[0] for row in result["table_rows"]] == ["2026-06-01", "2026-07-01"]
+
+
+def test_the_inventory_table_wins_over_promotions_when_both_are_fetched():
+    chart = assistant._build_chart(
+        [
+            ("get_customer_inventory", {}, _customer_view(1, 39.8)),
+            ("get_promotions", {}, _PROMOTIONS),
+        ],
+        "fairprice",
+    )
+
+    assert chart["table_columns"] == ["month", "product", "ending_stock", "doh", "target_doh", "status"]
+    assert chart["table_rows"][0][3] == "39.8"
+
+
+def test_promotions_are_shown_when_nothing_else_was_fetched():
+    chart = assistant._build_chart([("get_promotions", {}, _PROMOTIONS)], "fairprice")
+
+    assert chart["table_columns"] == ["stores", "period", "type", "mechanic"]
+
+
+# ---- ask(): the headline figure must be one the table shows -------------------
+
+def _inventory_turn(monkeypatch, doh=39.8):
+    monkeypatch.setattr(inventory_service, "list_customers", lambda: _INVENTORY_CUSTOMERS)
+    monkeypatch.setattr(inventory_service, "get_customer_view", lambda **kwargs: _customer_view(1, doh))
+    return _tool_call_response(("tu_1", "get_customer_inventory", {"customer": "fairprice"}))
+
+
+def test_a_doh_figure_that_matches_the_table_is_not_questioned(monkeypatch):
+    tool_call = _inventory_turn(monkeypatch)
+    fake_client = _install_fake_client(monkeypatch, [tool_call, _final_answer(text="Fairprice is at 39.8 days.")])
+
+    result = assistant.ask("what is fairprice's DOH?", history=None, customer="fairprice")
+
+    assert len(fake_client.models.calls) == 2
+    assert result["has_table"] is True
+
+
+def test_a_rounded_doh_figure_still_matches_the_table(monkeypatch):
+    tool_call = _inventory_turn(monkeypatch)
+    fake_client = _install_fake_client(monkeypatch, [tool_call, _final_answer(text="Fairprice is at about 40 days.")])
+
+    assistant.ask("what is fairprice's DOH?", history=None, customer="fairprice")
+
+    assert len(fake_client.models.calls) == 2
+
+
+def test_a_doh_figure_that_is_not_in_the_table_triggers_one_correction(monkeypatch):
+    tool_call = _inventory_turn(monkeypatch)
+    fake_client = _install_fake_client(
+        monkeypatch,
+        [
+            tool_call,
+            _final_answer(text="Fairprice is at 31.2 days."),
+            _final_answer(text="Fairprice is at 39.8 days."),
+        ],
+    )
+
+    result = assistant.ask("what is fairprice's DOH?", history=None, customer="fairprice")
+
+    assert result["answer"] == "Fairprice is at 39.8 days."
+    assert result["has_table"] is True
+    correction = fake_client.models.calls[2]["contents"][-1]["parts"][0]["text"]
+    assert "31.2 days" in correction and "39.8" in correction
+
+
+def test_a_doh_figure_that_stays_wrong_leaves_the_table_out_without_an_error_message(monkeypatch):
+    tool_call = _inventory_turn(monkeypatch)
+    _install_fake_client(
+        monkeypatch,
+        [
+            tool_call,
+            _final_answer(text="Fairprice is at 31.2 days."),
+            _final_answer(text="Fairprice is at 33.3 days."),
+        ],
+    )
+
+    result = assistant.ask("what is fairprice's DOH?", history=None, customer="fairprice")
+
+    assert result["has_table"] is False
+    assert result["answer"].startswith("Fairprice is at 31.2 days.")
+    assert "verify" not in result["answer"]
+
+
+def test_a_unit_figure_in_a_sales_answer_is_not_checked_against_inventory(monkeypatch):
+    summary = {
+        "offline": {"storeFormats": [], "periodTotal": [{"period_label": "August 2026", "period_start": "2026-08-01", "revenue": 5473.15, "units": 388}], "periodByFormat": []},
+        "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
+    }
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: summary)
+    tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"granularity": "month"}))
+    fake_client = _install_fake_client(monkeypatch, [tool_call, _final_answer(text="We sold 388 units in August.")])
+
+    result = assistant.ask("units in august", history=None, customer="fairprice")
+
+    assert len(fake_client.models.calls) == 2
+    assert result["has_chart"] is True
+
+
+# ---- ask(): figures quoted from memory are re-fetched --------------------------
+
+def test_quoting_a_figure_without_calling_a_tool_triggers_one_fresh_lookup(monkeypatch):
+    tool_call = _inventory_turn(monkeypatch, doh=22.5)
+    from_memory = _final_answer(text="Sheng Shiong is at 39.8 days.")
+    fresh = _final_answer(text="Fairprice is at 22.5 days.")
+    fake_client = _install_fake_client(monkeypatch, [from_memory, tool_call, fresh])
+
+    result = assistant.ask("what about now?", history=None, customer="fairprice")
+
+    assert len(fake_client.models.calls) == 3
+    assert "call the relevant tool" in fake_client.models.calls[1]["contents"][-1]["parts"][0]["text"]
+    assert result["table_rows"][0][3] == "22.5"
+    assert result["answer"] == "Fairprice is at 22.5 days."
+
+
+def test_a_follow_up_about_the_chart_on_screen_is_not_sent_back_to_fetch(monkeypatch):
+    fake_client = _install_fake_client(
+        monkeypatch, [_final_answer(text="It is at 10.0 days because stock was run down.", uses_previous_chart=True)]
+    )
+
+    assistant.ask("why is that?", history=None, customer="fairprice", last_chart=_PREVIOUS_TABLE)
+
+    assert len(fake_client.models.calls) == 1
+
+
+def test_a_web_search_answer_shows_no_table_from_earlier_tool_calls(monkeypatch):
+    tool_call = _inventory_turn(monkeypatch)
+    business_attempt = _final_answer(grounded=False, data_source="none", text="No internal data for that.")
+    search_attempt = _search_answer("Competitor news.")
+    reshaped = _final_answer(grounded=True, data_source="market_data", text="A competitor launched a product.")
+    _install_fake_client(monkeypatch, [tool_call, business_attempt, search_attempt, reshaped])
+
+    result = assistant.ask("any competitor news?", history=None, customer="fairprice")
+
+    assert result["has_table"] is False
+
+
+def test_a_thank_you_that_quotes_old_figures_gets_a_plain_reply_with_no_table_or_note(monkeypatch):
+    from_memory = _final_answer(text="You're welcome! Sheng Shiong is at 81.2 days.")
+    plain = _final_answer(text="You're welcome!", grounded=True, data_source="none")
+    fake_client = _install_fake_client(monkeypatch, [from_memory, plain])
+
+    result = assistant.ask("thanks", history=None, customer="fairprice", last_chart=_PREVIOUS_TABLE)
+
+    assert "thank-you" in fake_client.models.calls[1]["contents"][-1]["parts"][0]["text"]
+    assert result["answer"] == "You're welcome!"
+    assert result["has_table"] is False
+
+
+def test_an_unverifiable_figure_with_no_table_shows_the_answer_unchanged(monkeypatch):
+    still_from_memory = _final_answer(text="Sheng Shiong is at 81.2 days.")
+    fake_client = _install_fake_client(monkeypatch, [still_from_memory, still_from_memory])
+
+    result = assistant.ask("how are they doing?", history=None, customer="fairprice")
+
+    assert result["answer"] == "Sheng Shiong is at 81.2 days."
+    assert result["has_table"] is False
+
+
+# ---- the inventory table shows the current position, not the oldest rows ------
+
+def _history_view():
+    view = _customer_view(1, 5.3, month="2025-01-01", product="Old Month Pants")
+    view["skus"] += [
+        {"sku": "S1", "product_name": f"Pants {month}", "month": month, "ending_stock": 100,
+         "doh": 20.0 + i, "target_doh": 30.0, "doh_status": "below_min"}
+        for i, month in enumerate(["2025-02-01", "2026-06-01", "2026-07-01", "2026-07-01"])
+    ]
+    return view
+
+
+def test_a_customer_inventory_question_with_no_range_shows_only_the_newest_month():
+    chart = assistant._build_chart([("get_customer_inventory", {"customer": "fairprice"}, _history_view())], "fairprice")
+
+    assert {row[0] for row in chart["table_rows"]} == {"2026-07-01"}
+    assert len(chart["table_rows"]) == 2
+
+
+def test_a_customer_inventory_question_with_a_range_shows_the_newest_months_first():
+    chart = assistant._build_chart(
+        [("get_customer_inventory", {"customer": "fairprice", "start_month": "2025-01-01"}, _history_view())],
+        "fairprice",
+    )
+
+    months = [row[0] for row in chart["table_rows"]]
+    assert months == sorted(months, reverse=True)
+    assert months[0] == "2026-07-01"
+
+
+def test_the_customer_wide_doh_is_in_the_table_above_that_months_skus():
+    view = _customer_view(1, 39.8)
+    view["trend"] = [{"month": "2026-07-01", "ending_stock": 663, "sell_in": 0, "doh": 33.4,
+                      "target_doh": 30.0, "doh_status": "within"}]
+
+    chart = assistant._build_chart([("get_customer_inventory", {"customer": "fairprice"}, view)], "fairprice")
+
+    assert chart["table_rows"][0] == ["2026-07-01", "All products", "663", "33.4", "30.0", "Within range"]
+    assert chart["table_rows"][1][1] == "Adult Pants L"
+
+
+def test_an_answer_quoting_the_customer_wide_doh_keeps_its_table(monkeypatch):
+    view = _customer_view(1, 39.8)
+    view["trend"] = [{"month": "2026-07-01", "ending_stock": 663, "sell_in": 0, "doh": 33.4,
+                      "target_doh": 30.0, "doh_status": "within"}]
+    monkeypatch.setattr(inventory_service, "list_customers", lambda: _INVENTORY_CUSTOMERS)
+    monkeypatch.setattr(inventory_service, "get_customer_view", lambda **kwargs: view)
+    tool_call = _tool_call_response(("tu_1", "get_customer_inventory", {"customer": "fairprice"}))
+    fake_client = _install_fake_client(monkeypatch, [tool_call, _final_answer(text="Fairprice's DOH is 33.4 days.")])
+
+    result = assistant.ask("what is fairprice's DOH?", history=None, customer="fairprice")
+
+    assert len(fake_client.models.calls) == 2
+    assert result["has_table"] is True
+
+
+# ---- sales summary: a month with only monthly totals is not "no data" ---------
+
+def test_an_empty_weekly_summary_falls_back_to_monthly(monkeypatch):
+    monthly = {
+        "offline": {"storeFormats": [], "periodTotal": [{"period_label": "August 2026", "period_start": "2026-08-01", "revenue": 13225.35, "units": 1009}], "periodByFormat": []},
+        "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
+    }
+    empty = {"offline": {"periodTotal": []}, "online": {"periodTotal": []}}
+    granularities = []
+
+    def fake_summary(granularity, **kwargs):
+        granularities.append(granularity)
+        return monthly if granularity == "month" else empty
+
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", fake_summary)
+    tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"mode": "offline", "start_date": "2026-08-01", "end_date": "2026-08-31"}))
+    _install_fake_client(monkeypatch, [tool_call, _final_answer(text="Offline sales in August were $13,225.35.")])
+
+    result = assistant.ask("What were offline sales in August?", history=None, customer="fairprice")
+
+    assert granularities == ["week", "month"]
+    assert result["chart_categories"] == ["August 2026"]
+    assert result["chart_series"] == [{"label": "Revenue", "values": [13225.35]}]
+
+
+def test_a_weekly_summary_with_rows_is_not_re_queried_monthly(monkeypatch):
+    weekly = {"offline": {"periodTotal": [{"period_label": "Week 1", "period_start": "2026-08-03", "revenue": 100.0, "units": 1}]}, "online": {"periodTotal": []}}
+    granularities = []
+
+    def fake_summary(granularity, **kwargs):
+        granularities.append(granularity)
+        return weekly
+
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", fake_summary)
+    tool_call = _tool_call_response(("tu_1", "get_sales_summary", {"mode": "offline"}))
+    _install_fake_client(monkeypatch, [tool_call, _final_answer(text="Week 1 was $100.00.")])
+
+    assistant.ask("weekly sales", history=None, customer="fairprice")
+
+    assert granularities == ["week"]
+
+
+# ---- a restyle keeps the original answer for the PDF/PowerPoint ----------------
+
+_REVENUE_CHART = {
+    "has_chart": True, "chart_type": "bar", "chart_categories": ["August 2026"],
+    "chart_series": [{"label": "Revenue", "values": [13225.35]}],
+    "has_table": False, "table_columns": [], "table_rows": [],
+}
+_ORIGINAL_ANSWER = "Offline sales in August 2026 were $13,225.35 across 1,009 units."
+
+
+def test_a_restyle_exports_the_original_answer_not_the_confirmation(monkeypatch):
+    red = {**assistant._DEFAULT_CHART_STYLE, "color": "#DC2626"}
+    _install_fake_client(
+        monkeypatch, [_final_answer(text="The chart is now red.", uses_previous_chart=True, chart_style=red)]
+    )
+
+    result = assistant.ask(
+        "make it red", history=None, customer="fairprice",
+        last_chart=_REVENUE_CHART, last_answer=_ORIGINAL_ANSWER,
+    )
+
+    assert result["answer"] == "The chart is now red."
+    assert result["export_answer"] == _ORIGINAL_ANSWER
+    assert result["chart_series"] == _REVENUE_CHART["chart_series"]
+
+
+def test_a_follow_up_explanation_exports_its_own_answer(monkeypatch):
+    _install_fake_client(
+        monkeypatch, [_final_answer(text="Because a promotion ran.", uses_previous_chart=True)]
+    )
+
+    result = assistant.ask(
+        "why is that?", history=None, customer="fairprice",
+        last_chart=_REVENUE_CHART, last_answer=_ORIGINAL_ANSWER,
+    )
+
+    assert result["export_answer"] == "Because a promotion ran."
+
+
+def test_a_new_question_exports_its_own_answer(monkeypatch):
+    _install_fake_client(monkeypatch, [_final_answer(text="Hello!", data_source="none")])
+
+    result = assistant.ask("hi", history=None, customer="fairprice", last_answer=_ORIGINAL_ANSWER)
+
+    assert result["export_answer"] == "Hello!"
+
+
+# ---- customer names the way people write them, and restyles labelled "none" ---
+
+def test_a_customer_written_with_spaces_and_capitals_resolves_to_its_stored_name(monkeypatch):
+    monkeypatch.setattr(
+        inventory_service, "list_customers",
+        lambda: [{"customer_id": 1, "customer_name": "fairprice"}, {"customer_id": 9, "customer_name": "sheng_shiong"}],
+    )
+
+    assert assistant._resolve_inventory_customer_id("Sheng Shiong") == 9
+    assert assistant._resolve_inventory_customer_id("sheng-shiong") == 9
+    assert assistant._resolve_inventory_customer_id("sheng_shiong") == 9
+
+
+def test_a_sales_tool_receives_the_customer_as_a_slug(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: seen.update(kwargs) or {})
+
+    assistant._run_business_tool("get_sales_summary", {"customer": "Sheng Shiong"}, "fairprice")
+
+    assert seen["customer"] == "sheng_shiong"
+
+
+def test_a_restyle_keeps_the_chart_even_when_the_model_labels_it_data_source_none(monkeypatch):
+    red = {**assistant._DEFAULT_CHART_STYLE, "color": "#DC2626"}
+    _install_fake_client(
+        monkeypatch,
+        [_final_answer(text="Updated the colour.", data_source="none", uses_previous_chart=True, chart_style=red)],
+    )
+
+    result = assistant.ask(
+        "make it red", history=None, customer="fairprice",
+        last_chart=_REVENUE_CHART, last_answer=_ORIGINAL_ANSWER,
+    )
+
+    assert result["chart_series"] == _REVENUE_CHART["chart_series"]
+    assert result["export_answer"] == _ORIGINAL_ANSWER
+
+
+def test_the_doh_table_is_shown_when_the_stock_overview_was_fetched_too():
+    overview = {"skus": [{"month": "2026-08-01", "customer_name": "fairprice", "product_name": "Pants", "ending_stock": 500}]}
+    view = _customer_view(1, 39.8)
+
+    chart = assistant._build_chart(
+        [("get_inventory_overview", {}, overview), ("get_customer_inventory", {"customer": "fairprice"}, view)],
+        "fairprice",
+    )
+
+    assert "doh" in chart["table_columns"]
+
+
+def test_the_stock_overview_is_still_shown_when_it_is_the_only_inventory_tool_used():
+    overview = {"skus": [{"month": "2026-08-01", "customer_name": "fairprice", "product_name": "Pants", "ending_stock": 500}]}
+
+    chart = assistant._build_chart([("get_inventory_overview", {}, overview)], "fairprice")
+
+    assert chart["table_columns"] == ["month", "customer", "product", "ending_stock"]
+
+
+def test_a_thank_you_wrongly_flagged_as_about_the_chart_does_not_show_it(monkeypatch):
+    _install_fake_client(
+        monkeypatch,
+        [_final_answer(text="You're welcome!", data_source="none", uses_previous_chart=True)],
+    )
+
+    result = assistant.ask(
+        "thanks", history=None, customer="fairprice",
+        last_chart=_REVENUE_CHART, last_answer=_ORIGINAL_ANSWER,
+    )
+
+    assert result["has_chart"] is False
+    assert result["export_answer"] == "You're welcome!"
+
+
+# ---- a range total asked across several customers ------------------------------
+
+def _range_total(customer, revenue):
+    return (
+        {"customer": customer, "current_start": "2026-08-01", "current_end": "2026-08-31"},
+        {"current": {"start": "2026-08-01", "end": "2026-08-31", "revenue": revenue, "units": 1},
+         "previous": {"start": "2026-07-01", "end": "2026-07-31", "revenue": 1.0, "units": 1}},
+    )
+
+
+def test_a_range_total_for_several_customers_shows_one_bar_per_customer():
+    sources = [("compare_periods", *_range_total(c, r)) for c, r in
+               (("fairprice", 24052.28), ("nhg", 28155.5), ("sheng_siong", 0.0))]
+
+    chart = assistant._build_chart(sources, "fairprice")
+
+    assert chart["chart_categories"] == ["Fairprice", "Nhg", "Sheng Siong"]
+    assert chart["chart_series"] == [{"label": "Revenue", "values": [24052.28, 28155.5, 0.0]}]
+
+
+def test_a_comparison_across_several_customers_shows_the_pages_customer():
+    fair_input, fair_raw = _range_total("fairprice", 24052.28)
+    nhg_input, nhg_raw = _range_total("nhg", 28155.5)
+    fair_input = {**fair_input, "previous_start": "2026-07-01", "previous_end": "2026-07-31"}
+    nhg_input = {**nhg_input, "previous_start": "2026-07-01", "previous_end": "2026-07-31"}
+
+    chart = assistant._build_chart(
+        [("compare_periods", fair_input, fair_raw), ("compare_periods", nhg_input, nhg_raw)], "fairprice"
+    )
+
+    assert chart["chart_categories"] == ["Previous", "Current"]
+    assert chart["chart_series"][0]["values"] == [1.0, 24052.28]

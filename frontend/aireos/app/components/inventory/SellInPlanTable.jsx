@@ -4,6 +4,9 @@ import { formatDoh, formatMonth, formatUnits } from '@/app/utils/inventoryForm';
 import { cn } from '@/lib/utils';
 
 import InventoryTableFrame, {
+  inventoryHeadRowClass,
+  inventoryTableClass,
+  inventoryTheadClass,
   InventoryTableSkeleton,
   inventoryRowClass,
   inventoryTdClass,
@@ -26,9 +29,9 @@ export default function SellInDetailTable({ rows, loading = false }) {
   return (
     <InventoryTableFrame title="Sell-in plan by SKU and month" rows={rows} loading={loading}>
       {(visible, monthHeader) => (
-        <table className="w-full text-left text-xs text-deep-violet-blue">
-          <thead className="sticky top-0 z-10 bg-cream">
-            <tr className="border-b border-lavander">
+        <table className={inventoryTableClass}>
+          <thead className={inventoryTheadClass}>
+            <tr className={inventoryHeadRowClass}>
               {monthHeader}
               <th className={inventoryThClass}>Product</th>
               <th className={cn(inventoryThClass, numClass)}>Opening inventory</th>

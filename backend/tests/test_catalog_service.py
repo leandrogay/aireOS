@@ -1,3 +1,4 @@
+import datetime
 from decimal import Decimal
 
 import pytest
@@ -115,6 +116,22 @@ def test_returns_a_price_per_product_name(monkeypatch):
     assert prices == {"Widget": 14.0, "Gadget": 9.5}
     sql, _ = engine.conn.calls[0]
     assert "price IS NOT NULL" in sql
+
+
+def test_returns_prices_from_the_version_in_effect_on_a_past_date(monkeypatch):
+    engine = _install_fake_read_engine(
+        monkeypatch, lambda sql, params: [("Widget", 12.0), ("Gadget", 8.5)]
+    )
+    as_of_date = datetime.date(2026, 8, 31)
+
+    prices = catalog_service.get_product_prices(as_of_date=as_of_date)
+
+    assert prices == {"Widget": 12.0, "Gadget": 8.5}
+    sql, params = engine.conn.calls[0]
+    assert "FROM sku_history" in sql
+    assert "DISTINCT ON (sku)" in sql
+    assert "changed_at >= CAST(:as_of_date AS DATE)" in sql
+    assert params == {"as_of_date": as_of_date}
 
 
 # ---- SKU management ---------------------------------------------------------
@@ -239,7 +256,7 @@ def test_archive_sku_is_blocked_when_promotions_reference_it(monkeypatch):
         catalog_service.archive_sku("NEW-001")
 
 
-def test_archive_sku_copies_snapshot_and_marks_master_inactive(monkeypatch):
+def test_archive_sku_versions_snapshot_and_marks_master_inactive(monkeypatch):
     def respond(sql, params):
         if "FROM skus" in sql:
             return [SKU_ROW]
@@ -252,7 +269,8 @@ def test_archive_sku_copies_snapshot_and_marks_master_inactive(monkeypatch):
     archived = catalog_service.archive_sku("NEW-001")
 
     assert archived == SKU_ROW
-    assert len(engine.conn.sql_containing("INSERT INTO old_skus")) == 1
+    assert engine.conn.sql_containing("INSERT INTO archived_skus") == []
+    assert engine.conn.sql_containing("INSERT INTO old_skus") == []
     assert len(engine.conn.sql_containing("SET is_active = FALSE")) == 1
     assert engine.conn.sql_containing("INSERT INTO sku_history")[0][1]["action"] == "archived"
 

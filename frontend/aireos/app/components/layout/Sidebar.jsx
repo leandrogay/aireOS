@@ -1,12 +1,13 @@
-'use client';
+﻿'use client';
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { PanelLeft } from 'lucide-react';
+import { LogOut, PanelLeft } from 'lucide-react';
 
 import { NAV_ITEMS } from '@/components/layout/navItems';
+import { logout } from '@/app/services/authApi';
 import { cn } from '@/lib/utils';
 
 // A detail route (/mappings/abc123) still belongs to its tab.
@@ -19,19 +20,38 @@ function matchesPath(pathname, href) {
 // the full width.
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
+  const [logoutError, setLogoutError] = useState('');
+  const authEnabled = process.env.NEXT_PUBLIC_AUTH_ENABLED === 'true';
+
+  const handleLogout = async () => {
+    if (isSigningOut) return;
+
+    setIsSigningOut(true);
+    setLogoutError('');
+    try {
+      await logout();
+      router.replace('/login');
+      router.refresh();
+    } catch (error) {
+      setLogoutError(error.message || 'Unable to sign out. Please try again.');
+      setIsSigningOut(false);
+    }
+  };
 
   return (
     <nav
       className={cn(
-        'shrink-0 sticky top-0 self-start h-screen overflow-y-auto py-4 transition-[width] duration-150',
+        'sticky top-0 flex h-screen shrink-0 flex-col self-start overflow-y-auto py-4 transition-[width] duration-150',
         collapsed ? 'w-12 px-2' : 'w-56 px-3 border-r border-lavander bg-white',
       )}
     >
       <div
         className={cn(
           'mb-4 flex items-center',
-          collapsed ? 'justify-center' : 'justify-between pl-1',
+          collapsed ? 'flex-col justify-center gap-2' : 'justify-between pl-1',
         )}
       >
         {!collapsed && (
@@ -58,9 +78,10 @@ export default function Sidebar() {
       {!collapsed && (
         <ul className="space-y-0.5">
           {NAV_ITEMS.map((item) => {
-            const isActive = matchesPath(pathname, item.href);
             const childActive =
               item.children?.some((child) => matchesPath(pathname, child.href)) ?? false;
+            // Catalog shares its href with its first child; highlight the child only.
+            const isActive = matchesPath(pathname, item.href) && !childActive;
             // Show sub-items only while inside this section (parent or any child).
             const showChildren = !!item.children && (isActive || childActive);
             const Icon = item.icon;
@@ -107,6 +128,29 @@ export default function Sidebar() {
             );
           })}
         </ul>
+      )}
+
+      {authEnabled && (
+        <div className="mt-auto pt-4">
+          <button
+            type="button"
+            onClick={handleLogout}
+            disabled={isSigningOut}
+            title={collapsed ? 'Sign out' : undefined}
+            className={cn(
+              'flex w-full items-center rounded-lg py-2 text-sm text-deep-violet-blue/75 transition-colors hover:bg-lavander hover:text-deep-violet-blue disabled:cursor-wait disabled:opacity-60',
+              collapsed ? 'justify-center px-2' : 'gap-3 px-3',
+            )}
+          >
+            <LogOut className="size-4 shrink-0" />
+            {!collapsed && (isSigningOut ? 'Signing out...' : 'Sign out')}
+          </button>
+          {!collapsed && logoutError && (
+            <p className="mt-1 px-3 text-xs text-red-700" role="alert">
+              {logoutError}
+            </p>
+          )}
+        </div>
       )}
     </nav>
   );

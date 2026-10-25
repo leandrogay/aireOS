@@ -21,10 +21,12 @@ aireOS/
 │
 ├── backend/                       FastAPI app — run: uvicorn app.main:app --reload (:8000)
 │   ├── app/
-│   │   ├── main.py                FastAPI() instance, CORS (origins from config.CORS_ALLOWED_ORIGINS), include_router × 5, GET /
+│   │   ├── main.py                FastAPI() instance, credentialed CORS, protected routers, GET /
+│   │   ├── auth.py                Shared require_user dependency for protected API routers
 │   │   ├── middleware.py          UnhandledErrorMiddleware (turns unhandled exceptions into JSON 500s)
 │   │   ├── routers/               HTTP layer. One file per URL prefix.
 │   │   │   ├── uploads.py         /api/uploads        file ingest + mapping review (async)
+│   │   │   ├── auth.py            /api/auth           Google Workspace login/callback/session/logout
 │   │   │   ├── sales.py           /api/sales          BigQuery dashboard reads
 │   │   │   ├── catalog.py         /api/catalog        customer/retailer/store CRUD and links; SKU CRUD/search/filter/archive
 │   │   │   ├── promotions.py      /api/promotions     promotion CRUD + /health/db
@@ -43,6 +45,7 @@ aireOS/
 │   │   │   └── promotions.py      PromoType Literal, PromotionStoreRef, PromotionBase/Create/Update
 │   │   └── services/              All logic + all external I/O. Never imports fastapi.
 │   │       ├── sql.py             Cloud SQL connector → SQLAlchemy Engine singletons (rw + autocommit read)
+│   │       ├── auth_service.py    Google OIDC exchange, shop-aire.com checks, signed sessions
 │   │       ├── inventory_calc.py  PURE: ending-stock chain, DOH, DOH threshold status (band from DOH settings), sell-in plan
 │   │       ├── inventory_service.py inventory_metrics reads/writes + DOH thresholds via settings/doh (history by month) (raw SQL, one txn per write)
 │   │       ├── settings/common.py shared by every kind of setting: engines, CustomerNotFoundError, lock_customer
@@ -81,7 +84,8 @@ aireOS/
 └── frontend/aireos/               Next.js 16.3 App Router, React 19.2, JavaScript — run: npm run dev (:3000)
     ├── app/
     │   ├── layout.js              Root layout: DM Sans / DM Serif / Geist Mono fonts, globals.css
-    │   ├── page.js                Untouched create-next-app landing page (not linked from nav)
+    │   ├── page.js                Redirects the authenticated root route to /dashboard
+    │   ├── login/page.js          Enterprise SSO login and callback-error messages
     │   ├── globals.css            Tailwind v4 + shadcn tokens + "AIRE brand kit" CSS vars + .dark
     │   ├── upload/page.js         Production upload + mapping review screen (uses components/upload)
     │   ├── upload2/page.js        Developer "mapping harness" (uses components/upload2, manual API base URL)
@@ -109,7 +113,7 @@ aireOS/
     │   │   ├── customers/         CustomersView (state), CustomerTable → CustomerRow (expandable, retailers inside),
     │   │   │                      RetailerTable (nested TableGrid), columns.js (shared grid), NameFormDialog,
     │   │   │                      LinkRetailerDialog, UnlinkedRetailers
-    │   │   ├── skus/              SKU catalogue filters/table, create-edit form, details/history
+    │   │   ├── skus/              SKU catalog filters/table, create-edit form, details/history
     │   │   ├── forecast/          ForecastChart/Filters/Table, HeaderCheckboxFilter (shared)
     │   ├── services/              Backend API wrappers
     │   │   ├── promotionsApi.js   request() + parseApiError() + promotion/retailer/store endpoints
@@ -138,6 +142,7 @@ aireOS/
     │       ├── customerForm.js    normaliseName (mirrors backend slug), validateName, edit/delete block reasons
     │       ├── retailerLabel.js   shared display label for retailer/customer slugs (fairprice_online → Fairprice Online)
     │       └── mappingHelpers.js
+    ├── proxy.js                   Optimistic route guard: missing session cookie → /login
     ├── hooks/                     Data-fetching hooks (cancel-flag pattern; dashboard calls services/*Api.js)
     │   ├── useDataFreshness.js    polls /api/sales/last-updated → { channels, dataVersion, refreshing }
     │   ├── useCustomerOptions.js  /api/sales/customer-options
@@ -174,14 +179,16 @@ No test runner is installed on the frontend; linting (`npm run lint`) is the fro
 
 | Domain | Router | Service(s) | Storage | Frontend entry |
 | --- | --- | --- | --- | --- |
+| Authentication | `auth.py` | `auth_service`, shared `app.auth.require_user` dependency | Google Workspace OIDC; signed HTTP-only `aireos_session` cookie (no application password store) | `app/login`, root `proxy.js` |
 | Upload & mapping | `uploads.py` | `storage`, `mapping_service`, `generate_mapping`, `mapping_view`, `apply_contract`, `validation_service` | **GCS** bucket: `uploads/` files, `mappings/pending/<fp>.json`, `mappings/confirmed/<fp>.json` | `app/upload`, `app/upload2`, `services/mappingApi.js` |
 | Sales dashboard | `sales.py` | `sellout_service` | **Cloud SQL Postgres**: `sellout` (the source of truth -- every upload writes here first; `retailer_id`/`store_code`/`sku` rows, `period_type` `week` or `month`), joined to `retailers`/`stores`/`skus` for names (retailer name = `{customer}_{offline|online}`). A retailer+calendar-month with monthly-granularity rows uses only those (never both, see `EFFECTIVE_SELLOUT_CTE`); `granularity='week'` summary views read genuine weekly rows only. No more BigQuery/Datastream replication lag -- reads are real-time | `app/dashboard`, `hooks/use*.js`, `services/salesApi.js` |
-| Catalog | `catalog.py` | `catalog_service`, `customer_service` | **Cloud SQL Postgres**: `customers`, `customer_retailers`, `retailers`, `stores`, `skus`, `old_skus`, `sku_history`. Names are lowercase slugs, unique case-insensitively. A retailer with stores, or a customer with any such retailer or `inventory_metrics` rows, is `in_use` and can't be renamed or deleted. SKU archival keeps referenced master rows inactive and records history. | `app/customers`, `app/skus`, `services/catalogApi.js`; `services/promotionsApi.js` (getRetailers/getStores/getSkuRanges) |
+| Catalog | `catalog.py` | `catalog_service`, `customer_service` | **Cloud SQL Postgres**: `customers`, `customer_retailers`, `retailers`, `stores`, `skus`, `sku_history`. Names are lowercase slugs, unique case-insensitively. A retailer with stores, or a customer with any such retailer or `inventory_metrics` rows, is `in_use` and can't be renamed or deleted. `skus` keeps one stable foreign-key master row per code; `sku_history` stores its timestamped created/updated/archived versions. Historical price reads resolve the version effective on the requested date. | `app/customers`, `app/skus`, `services/catalogApi.js`; `services/promotionsApi.js` (getRetailers/getStores/getSkuRanges) |
 | Inventory | `inventory.py` | `inventory_service`, `inventory_calc`, `sellout_units`, `forecast_units` | **Cloud SQL Postgres**: `customers`, `customer_retailers`, `inventory_metrics` (long format; app writes carry `data_source='manual_entry'`; only sell-in, a first-month opening and building blocks (stock used outside sell-out) are read; workbook rows are never changed), `doh_settings` (read via `settings/doh.fetch_versions`; closed months use the version in effect at month end, the latest month, at-risk list and sell-in plan use the current one), `sellout` (sell-out, via `sellout_units`/`sellout_service`'s effective-sellout view, same monthly-preferred-over-weekly rule as the dashboard); **BigQuery** (read-only): the forecast table. Ending stock, DOH and the plan are computed, never stored | `app/inventory`, `services/inventoryApi.js` |
 | Settings (DOH) | `settings/doh.py` | `settings/doh`, `settings/common` | **Cloud SQL Postgres**: `doh_settings` (append-only: a change is an INSERT only when min/target/max differ from the newest row; newest by `updated_at DESC, setting_id DESC`; never UPDATE/DELETE, except that a new customer gets a global-default row; `customer_id` is ON DELETE CASCADE, so deleting a customer deletes its rows and DOH settings never block it), view `current_settings` (one row per customer), `customers.doh_alert_enabled` / `doh_alert_updated_at` (in-place toggle, no version). Also read by the inventory DOH calculations (`fetch_versions`, `thresholds_on`, `current_thresholds`) | `app/doh`, `services/settingsApi.js` |
 | Promotions | `promotions.py` | `promotion_service` (+ `catalog_service` seams) | **Cloud SQL Postgres**: `promotions`, `promotion_stores`, `promotion_skus`; enum `promo_type_enum`; trigger `trg_promotions_updated_at` | `app/promotions`, `services/promotionsApi.js` |
 | Forecast (P&L) | `forecast.py` (`/api/forecast`, read-only; writes are out of band via `scripts/refresh_forecast.py`) | `pl_forecast` (pure), `forecast_service`, `catalog_service` (product prices) | **BigQuery** (`Aire_Data_Analytics`, read-only): model learns from `v_sales_enriched` (weekly), page Actual line reads `v_customer_monthly_sales`; refresh MERGEs into `BQ_FORECAST_TABLE`. **Cloud SQL Postgres**: `skus.price` prices sell-out revenue | `app/forecast` |
 | AI mapping | (inside uploads) | `generate_mapping` | **Gemini on Vertex AI** (`google-genai`, `MAPPING_MODEL` default `gemini-3.8-flash`, signed in as the service account, no API key) | — |
+| Assistant | `assistant.py` (`/api/assistant`) | `assistant` | **Gemini on Vertex AI** (`GEMINI_ASSISTANT_MODEL`, default `gemini-3.8-flash`; `GCP_VERTEX_LOCATION`, default `global`), both set in `config.py` | floating widget (`components/assistant`) |
 
 Invariants that cross domains:
 - Mapping never writes to BigQuery. Ingestion into BigQuery is out of band.
@@ -193,7 +200,9 @@ Invariants that cross domains:
   The frontend shows every time in Singapore time through `lib/formatDate.js`, and uses
   `singaporeToday()` instead of `new Date()` for "today / this month / this year". Bare `YYYY-MM-DD`
   dates are calendar dates and are never shifted. (Exceptions by design: DOH month boundaries in
-  `settings/doh.py` and the date printed on assistant reports are Singapore days.)
+  `settings/doh.py`, the date printed on assistant reports, the assistant's "today" (so "this month" /
+  "next month" in a question mean the Singapore month) and `forecast_summary.py`'s month-to-date
+  check are Singapore days.)
 
 ---
 
@@ -201,11 +210,11 @@ Invariants that cross domains:
 
 ### 3.1 Transport
 
-- Browser → FastAPI over plain `fetch`, JSON bodies, base URL `NEXT_PUBLIC_API_URL`
-  (`http://localhost:8000` in dev). No auth, no cookies, no server-side Next.js data fetching —
-  every page that loads data is a `'use client'` tree.
-- CORS allows only `CORS_ALLOWED_ORIGINS` (`config.py`; default the local Next.js dev server).
-  Behind the cloud load balancer the browser calls the API same-origin, so production lists just the app's domain.
+- Browser → FastAPI over `fetch`, JSON bodies, base URL `NEXT_PUBLIC_API_URL`
+  (`http://localhost:8000` in dev). Protected requests include the signed HTTP-only session cookie;
+  every page that loads application data is a `'use client'` tree.
+- CORS is wide open only while authentication is disabled for development. With SSO enabled,
+  `main.py` allows the configured `AUTH_FRONTEND_URL` and credentials.
 - Uploads are `multipart/form-data` with field name `files` (many) and optional `force`.
 - Errors: FastAPI returns `{ "detail": string | [{loc,msg,...}] }`. The frontend
   `parseApiError()` flattens both to one message and the thrown `Error` carries `.status` and
@@ -308,16 +317,20 @@ Quirks:
   `ENOENT ... .env.frontend` if the file is missing. (Next.js still auto-loads a `.env.local` if
   one exists, but `.env.frontend` is the team's file.)
   Branches cut before `main`'s AO1-9 merge (`206949a`) still read `.env.local` instead.
-- `app/services/assistant.py` still calls `load_dotenv` itself — the one leftover; don't copy it.
 - Add new backend settings to `config.py`, not `os.environ.get` in a service.
 
 Backend variables: `GOOGLE_APPLICATION_CREDENTIALS`, `SERVICE_ACCOUNT_KEY_PATH`, `GCP_PROJECT_ID`,
 `GCS_BUCKET_NAME`, `GCS_DESTINATION_PREFIX`, `GCS_DESTINATION_PREFIX_MAPPING`,
-`BQ_FAIRPRICESELLOUT_TABLE` (legacy, unused), `BQ_FORECAST_OUTPUT_VIEW`, `MAPPING_MODEL`, `MAPPING_VERTEX_LOCATION`,
-`POSTGRESQL_INSTANCE_CONNECTION_NAME`, `DB_IAM_USER`, `DB_NAME`. (`BQ_SELLOUT_TABLE` was removed --
+`BQ_FAIRPRICESELLOUT_TABLE` (legacy, unused), `BQ_FORECAST_OUTPUT_VIEW`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`,
+`GEMINI_ASSISTANT_MODEL`, `GCP_VERTEX_LOCATION`, `POSTGRESQL_INSTANCE_CONNECTION_NAME`,
+`DB_IAM_USER`, `DB_NAME`, `AUTH_ENABLED`,
+`AUTH_SESSION_SECRET`, `AUTH_ALLOWED_DOMAIN`, `AUTH_FRONTEND_URL`, `AUTH_COOKIE_SECURE`,
+`AUTH_COOKIE_DOMAIN`, `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`,
+`GOOGLE_OAUTH_REDIRECT_URI`. (`BQ_SELLOUT_TABLE` was removed --
 the Sales Dashboard and Inventory read the Cloud SQL `sellout` table directly now, not a BigQuery replica.)
 
-Frontend variables: `NEXT_PUBLIC_API_URL` (browser-visible, used everywhere), `BACKEND_API_URL`
+Frontend variables: `NEXT_PUBLIC_API_URL` (browser-visible, used everywhere),
+`NEXT_PUBLIC_AUTH_ENABLED` (enables the route guard), `BACKEND_API_URL`
 (present but unused — server-side only if ever needed).
 
 Running locally: VS Code task **Start Both Servers**, or two terminals per the READMEs.
@@ -379,9 +392,8 @@ half first (it defines the contract), then the frontend half, then update §3.4 
 
 ## 6. Known debt (don't be surprised by it; don't fix it as a drive-by)
 
-- `app/page.js` is the stock create-next-app landing; nav starts at `/upload`.
+- `app/page.js` redirects to `/dashboard`; unauthenticated application routes are intercepted by `proxy.js`.
 - `FileUpload.jsx` and `PromotionList.jsx` are oversized; extract when already editing them.
 - Two fetch-wrapper styles (`promotionsApi.request` vs `mappingApi.request(baseUrl, …)`) and
   raw `fetch` in dashboard hooks. New code uses the `promotionsApi` style.
-- `assistant.py` still loads the env file itself instead of going through `config.py` (§4).
 - CI covers backend only.

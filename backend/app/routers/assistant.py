@@ -17,6 +17,7 @@ class AskRequest(BaseModel):
     customer: str = sellout_service.DEFAULT_CUSTOMER
     last_chart: dict = {}
     last_chart_style: dict = {}
+    last_answer: str = ""
 
 
 class DigestRequest(BaseModel):
@@ -39,6 +40,7 @@ class ExportRequest(BaseModel):
     has_table: bool = False
     table_columns: list = []
     table_rows: list = []
+    table_note: str = ""
     chart_style: dict = {}
     chart_trend_values: list = []
 
@@ -52,6 +54,7 @@ def ask(payload: AskRequest):
             customer=payload.customer,
             last_chart=payload.last_chart,
             last_chart_style=payload.last_chart_style,
+            last_answer=payload.last_answer,
         )
     except assistant.AssistantConfigError as e:
         raise HTTPException(status_code=503, detail=str(e))
@@ -101,6 +104,7 @@ def export(payload: ExportRequest):
         "has_table": payload.has_table,
         "table_columns": payload.table_columns,
         "table_rows": payload.table_rows,
+        "table_note": payload.table_note,
     }
     try:
         file_bytes, media_type, filename = assistant.generate_export_file(

@@ -1,4 +1,4 @@
-import { LayoutDashboard, Package, Tag, TrendingUp, Upload } from 'lucide-react';
+import { LayoutDashboard, Library, Package, Tag, TrendingUp, Upload } from 'lucide-react';
 
 // The app's sections, shared by the sidebar (components/layout/Sidebar.jsx)
 // and the landing page's section grid (components/landing/ModuleGrid.jsx), so
@@ -16,11 +16,7 @@ export const NAV_ITEMS = [
     href: '/upload',
     icon: Upload,
     description: 'Bring in retailer sell-out files. Layouts seen before load straight in.',
-    children: [
-      { label: 'Mappings', href: '/mappings' },
-      { label: 'SKUs', href: '/skus' },
-      { label: 'Customers', href: '/customers' },
-    ],
+    children: [{ label: 'Mappings', href: '/mappings' }],
   },
   {
     label: 'Dashboard',
@@ -46,5 +42,16 @@ export const NAV_ITEMS = [
     icon: Package,
     description: 'Ending stock, days of holding and a sell-in plan per customer.',
     children: [{ label: 'DOH settings', href: '/doh' }],
+  },
+  // Catalog has no page of its own, so it links to its first child.
+  {
+    label: 'Catalog',
+    href: '/skus',
+    icon: Library,
+    description: 'Maintain the SKU list and the customers that sell it.',
+    children: [
+      { label: 'SKUs', href: '/skus' },
+      { label: 'Customers', href: '/customers' },
+    ],
   },
 ];

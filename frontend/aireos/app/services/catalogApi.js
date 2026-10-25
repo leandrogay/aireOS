@@ -1,7 +1,7 @@
 import { request } from '@/app/services/promotionsApi';
 
 // Customer, retailer and SKU wrappers for backend app/routers/catalog.py.
-// Retailer/store catalogue reads used by Promotions stay in promotionsApi.js.
+// Retailer/store catalog reads used by Promotions stay in promotionsApi.js.
 
 // ============================================================
 // Customers: /api/catalog/customers

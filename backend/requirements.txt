@@ -1,9 +1,12 @@
-cloud-sql-python-connector[pg8000]
+# asyncpg: a connection that can wait for Postgres NOTIFY (push notifications); pg8000 cannot
+cloud-sql-python-connector[pg8000,asyncpg]
 db-dtypes
 fastapi
 google-api-core
 google-auth
 google-cloud-bigquery
+# Listens for the scheduled BigQuery forecast run finishing
+google-cloud-pubsub
 google-cloud-storage
 google-genai==2.23.0
 openpyxl
