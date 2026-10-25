@@ -1,10 +1,12 @@
 # aireOS web image (Next.js standalone server).
 #
 # Build from frontend/aireos/, passing the domain users open:
-#   docker build -t aireos-web --build-arg NEXT_PUBLIC_API_URL=https://aireos.example.com frontend/aireos
+#   docker build -t aireos-web \
+#     --build-arg NEXT_PUBLIC_API_URL=https://aireos.example.com \
+#     --build-arg NEXT_PUBLIC_AUTH_ENABLED=true frontend/aireos
 #
-# NEXT_PUBLIC_API_URL is compiled into the browser bundle, so it is a build
-# argument, not a Cloud Run env var. It must be the same domain the app is
+# NEXT_PUBLIC_* values are compiled into the browser bundle, so they are build
+# arguments, not Cloud Run env vars. It must be the same domain the app is
 # served from, so API calls are same-origin through the load balancer.
 
 # ---- Build ----
@@ -17,10 +19,14 @@ RUN npm ci
 COPY . .
 
 ARG NEXT_PUBLIC_API_URL
+# Compiled in like the API URL. "true" turns on the route guard (proxy.js) and
+# the Sign out button; it must match AUTH_ENABLED on the API.
+ARG NEXT_PUBLIC_AUTH_ENABLED=false
 # next.config.mjs loads .env.frontend (the one frontend env loader), so write
-# it from the build arg rather than adding a second way to pass settings.
+# it from the build args rather than adding a second way to pass settings.
 RUN test -n "$NEXT_PUBLIC_API_URL" || (echo "NEXT_PUBLIC_API_URL build arg is required" && exit 1)
-RUN printf 'NEXT_PUBLIC_API_URL=%s\n' "$NEXT_PUBLIC_API_URL" > .env.frontend \
+RUN printf 'NEXT_PUBLIC_API_URL=%s\nNEXT_PUBLIC_AUTH_ENABLED=%s\n' \
+        "$NEXT_PUBLIC_API_URL" "$NEXT_PUBLIC_AUTH_ENABLED" > .env.frontend \
     && npm run build
 
 # ---- Run ----
