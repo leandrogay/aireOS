@@ -4,7 +4,7 @@ import { Check } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 
-import InfoTooltip from './InfoTooltip';
+import InfoTooltip from '@/components/ui/InfoTooltip';
 import {
   inventoryHeadRowClass,
   inventoryRowClass,

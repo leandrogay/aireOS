@@ -23,6 +23,9 @@ dist/
 .eggs/
 
 # Testing / coverage
+# Real retailer sell-out files used by the golden tests -- commercial data,
+# kept on developers' machines only (tests skip when they are absent).
+backend/tests/fixtures/retailer_samples/
 .pytest_cache/
 .coverage
 htmlcov/

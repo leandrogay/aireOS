@@ -61,7 +61,10 @@ def create_customer(customer: CustomerCreate):
             customer
         )
 
-    except customer_service.CustomerNameTakenError as e:
+    except (
+        customer_service.CustomerNameTakenError,
+        customer_service.RetailerOwnedError,
+    ) as e:
         raise HTTPException(
             status_code=409,
             detail=str(e),

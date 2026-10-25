@@ -354,10 +354,20 @@ def move_pending_mapping_to_confirmed(fingerprint: str, envelope: dict) -> dict:
     duplicate is harmless -- every lookup checks confirmed/ first -- so the
     write comes first and the delete is allowed to fail.
 
-    Returns where it went, and whether the pending copy is actually gone.
+    An amendment never overwrites what was approved before: the version it
+    replaces is copied to mappings/history/<fingerprint>/v<n>.json first.
+
+    Returns where it went, where the previous version was kept, and whether the
+    pending copy is actually gone.
     """
     confirmed_path = confirmed_mapping_path(fingerprint)
     pending_path = pending_mapping_path(fingerprint)
+
+    archived_path = None
+    previous = download_json(confirmed_path)
+    if previous:
+        archived_path = history_mapping_path(fingerprint, int(previous.get("version") or 1))
+        upload_json(archived_path, previous)
 
     stored_at = upload_json(confirmed_path, envelope)
 
@@ -375,6 +385,7 @@ def move_pending_mapping_to_confirmed(fingerprint: str, envelope: dict) -> dict:
         "stored_at": stored_at,
         "confirmed_path": confirmed_path,
         "pending_path": pending_path,
+        "archived_path": archived_path,
         "removed_pending": removed_pending,
         "pending_error": pending_error,
     }
@@ -479,6 +490,11 @@ def pending_mapping_path(fingerprint: str) -> str:
 
 def confirmed_mapping_path(fingerprint: str) -> str:
     return f"{MAPPING_PREFIX}confirmed/{fingerprint}.json"
+
+
+def history_mapping_path(fingerprint: str, version: int) -> str:
+    """Where a superseded confirmed version is kept (see move_pending_mapping_to_confirmed)."""
+    return f"{MAPPING_PREFIX}history/{fingerprint}/v{version}.json"
 
 
 def _blob(path: str):

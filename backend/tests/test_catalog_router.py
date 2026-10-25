@@ -172,6 +172,39 @@ def test_a_taken_customer_name_is_409_with_the_message(monkeypatch):
     assert response.json()["detail"] == 'A customer named "giant" already exists.'
 
 
+def test_create_customer_sends_the_retailer_slugs(monkeypatch):
+    seen = {}
+
+    def fake(customer):
+        seen["retailers"] = customer.retailer_names
+        return CUSTOMER
+
+    monkeypatch.setattr(customer_service, "create_customer", fake)
+
+    response = client.post(
+        "/api/catalog/customers",
+        json={"customer_name": "Giant", "retailer_names": ["Giant Offline", "giant online"]},
+    )
+
+    assert response.status_code == 201
+    assert seen == {"retailers": ["giant_offline", "giant_online"]}
+
+
+def test_a_retailer_another_customer_owns_is_409_with_the_message(monkeypatch):
+    monkeypatch.setattr(
+        customer_service,
+        "create_customer",
+        _raises(customer_service.RetailerOwnedError('"giant_offline" already belongs to another customer.')),
+    )
+
+    response = client.post(
+        "/api/catalog/customers", json={"customer_name": "giant", "retailer_names": ["giant_offline"]}
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == '"giant_offline" already belongs to another customer.'
+
+
 def test_a_unique_violation_on_create_is_409(monkeypatch):
     monkeypatch.setattr(customer_service, "create_customer", _raises(_integrity_error()))
 
