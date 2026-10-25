@@ -200,7 +200,9 @@ Invariants that cross domains:
   The frontend shows every time in Singapore time through `lib/formatDate.js`, and uses
   `singaporeToday()` instead of `new Date()` for "today / this month / this year". Bare `YYYY-MM-DD`
   dates are calendar dates and are never shifted. (Exceptions by design: DOH month boundaries in
-  `settings/doh.py` and the date printed on assistant reports are Singapore days.)
+  `settings/doh.py`, the date printed on assistant reports, the assistant's "today" (so "this month" /
+  "next month" in a question mean the Singapore month) and `forecast_summary.py`'s month-to-date
+  check are Singapore days.)
 
 ---
 
