@@ -44,3 +44,16 @@ def test_blank_model_settings_fall_back_to_defaults(monkeypatch):
     finally:
         monkeypatch.undo()
         importlib.reload(config)
+
+
+def test_blank_assistant_settings_fall_back_to_defaults(monkeypatch):
+    # .env.example ships these blank, so a copied .env.backend sets them to "".
+    monkeypatch.setenv("GEMINI_ASSISTANT_MODEL", "")
+    monkeypatch.setenv("GCP_VERTEX_LOCATION", "")
+    reloaded = importlib.reload(config)
+    try:
+        assert reloaded.GEMINI_ASSISTANT_MODEL == "gemini-3.8-flash"
+        assert reloaded.GCP_VERTEX_LOCATION == "global"
+    finally:
+        monkeypatch.undo()
+        importlib.reload(config)

@@ -177,8 +177,9 @@ MAPPING_VERTEX_LOCATION = os.environ.get("MAPPING_VERTEX_LOCATION") or "global"
 
 # ---- Gemini (Vertex AI) -----------------------------------------------------
 
-GEMINI_ASSISTANT_MODEL = os.environ.get("GEMINI_ASSISTANT_MODEL", "gemini-3.8-flash")
-GCP_VERTEX_LOCATION = os.environ.get("GCP_VERTEX_LOCATION", "global")
+# `or`, not a get() default, for the same reason as the mapping settings above.
+GEMINI_ASSISTANT_MODEL = os.environ.get("GEMINI_ASSISTANT_MODEL") or "gemini-3.8-flash"
+GCP_VERTEX_LOCATION = os.environ.get("GCP_VERTEX_LOCATION") or "global"
 
 # ---- Authentication ---------------------------------------------------------
 
