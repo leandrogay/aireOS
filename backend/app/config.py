@@ -66,10 +66,8 @@ GOOGLE_APPLICATION_CREDENTIALS = _resolve_path("GOOGLE_APPLICATION_CREDENTIALS")
 
 GCP_PROJECT_ID = os.environ.get("GCP_PROJECT_ID")
 GCS_BUCKET_NAME = os.environ.get("GCS_BUCKET_NAME")
-GCS_DESTINATION_PREFIX = os.environ.get("GCS_DESTINATION_PREFIX", "uploads/")
-GCS_DESTINATION_PREFIX_MAPPING = os.environ.get(
-    "GCS_DESTINATION_PREFIX_MAPPING", "mappings/"
-)
+GCS_DESTINATION_PREFIX = os.environ.get("GCS_DESTINATION_PREFIX") or "uploads/"
+GCS_DESTINATION_PREFIX_MAPPING = os.environ.get("GCS_DESTINATION_PREFIX_MAPPING") or "mappings/"
 
 # Google's client libraries read this variable straight out of the environment
 # when falling back to Application Default Credentials, and they get no say in
@@ -80,43 +78,45 @@ if GOOGLE_APPLICATION_CREDENTIALS:
 
 # ---- BigQuery ---------------------------------------------------------------
 
-BQ_FAIRPRICESELLOUT_TABLE = os.environ.get(
-    "BQ_FAIRPRICESELLOUT_TABLE", "aire-data.Aire_Data.aireOS_fairprice"
+BQ_FAIRPRICESELLOUT_TABLE = (
+    os.environ.get("BQ_FAIRPRICESELLOUT_TABLE")
+    or "aire-data.Aire_Data.aireOS_fairprice"
 )
 
 # Final forecast the Forecast page reads: one row per customer x SKU x month
 # with the initial / previous / current lines, cartons only. Read-only; written
 # by the BigQuery procedure run_monthly_forecast_pipeline.
-BQ_FORECAST_OUTPUT_VIEW = os.environ.get(
-    "BQ_FORECAST_OUTPUT_VIEW",
-    "aire-data.Aire_Data_Analytics.aire_forecasting_output",
+BQ_FORECAST_OUTPUT_VIEW = (
+    os.environ.get("BQ_FORECAST_OUTPUT_VIEW")
+    or "aire-data.Aire_Data_Analytics.aire_forecasting_output"
 )
 
 # Weekly sell-out with catalog names joined on (built on the Datastream
 # replica of Cloud SQL sellout). The forecast model learns from this.
-BQ_SALES_ENRICHED_VIEW = os.environ.get(
-    "BQ_SALES_ENRICHED_VIEW",
-    "aire-data.Aire_Data_Analytics.v_sales_enriched",
+BQ_SALES_ENRICHED_VIEW = (
+    os.environ.get("BQ_SALES_ENRICHED_VIEW")
+    or "aire-data.Aire_Data_Analytics.v_sales_enriched"
 )
 
 # Forecast model output (predictions only; written out of band by
 # scripts/refresh_forecast.py).
-BQ_FORECAST_TABLE = os.environ.get(
-    "BQ_FORECAST_TABLE", "aire-data.Aire_Data.forecasting_output_xianhui_mock"
+BQ_FORECAST_TABLE = (
+    os.environ.get("BQ_FORECAST_TABLE")
+    or "aire-data.Aire_Data.forecasting_output_xianhui_mock"
 )
 
 # Closed monthly sell-out the Forecast page reads its Actual line from.
-BQ_MONTHLY_SALES_VIEW = os.environ.get(
-    "BQ_MONTHLY_SALES_VIEW",
-    "aire-data.Aire_Data_Analytics.v_customer_monthly_sales",
+BQ_MONTHLY_SALES_VIEW = (
+    os.environ.get("BQ_MONTHLY_SALES_VIEW")
+    or "aire-data.Aire_Data_Analytics.v_customer_monthly_sales"
 )
 
 # Final forecast the Forecast page reads: one row per customer x SKU x month
 # with the initial / previous / current lines, cartons only. Read-only; written
 # by the BigQuery procedure run_monthly_forecast_pipeline.
-BQ_FORECAST_OUTPUT_VIEW = os.environ.get(
-    "BQ_FORECAST_OUTPUT_VIEW",
-    "aire-data.Aire_Data_Analytics.aire_forecasting_output",
+BQ_FORECAST_OUTPUT_VIEW = (
+    os.environ.get("BQ_FORECAST_OUTPUT_VIEW")
+    or "aire-data.Aire_Data_Analytics.aire_forecasting_output"
 )
 
 # ---- Cloud SQL --------------------------------------------------------------
@@ -183,17 +183,17 @@ GCP_VERTEX_LOCATION = os.environ.get("GCP_VERTEX_LOCATION") or "global"
 
 # ---- Authentication ---------------------------------------------------------
 
-AUTH_ENABLED = os.environ.get("AUTH_ENABLED", "false")
+AUTH_ENABLED = os.environ.get("AUTH_ENABLED") or "false"
 AUTH_SESSION_SECRET = os.environ.get("AUTH_SESSION_SECRET")
-AUTH_ALLOWED_DOMAIN = os.environ.get("AUTH_ALLOWED_DOMAIN", "shop-aire.com")
-AUTH_FRONTEND_URL = os.environ.get("AUTH_FRONTEND_URL", "http://localhost:3000")
-AUTH_COOKIE_SECURE = os.environ.get("AUTH_COOKIE_SECURE", "false")
+AUTH_ALLOWED_DOMAIN = os.environ.get("AUTH_ALLOWED_DOMAIN") or "shop-aire.com"
+AUTH_FRONTEND_URL = os.environ.get("AUTH_FRONTEND_URL") or "http://localhost:3000"
+AUTH_COOKIE_SECURE = os.environ.get("AUTH_COOKIE_SECURE") or "false"
 AUTH_COOKIE_DOMAIN = os.environ.get("AUTH_COOKIE_DOMAIN")
 GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID")
 GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET")
-GOOGLE_OAUTH_REDIRECT_URI = os.environ.get(
-    "GOOGLE_OAUTH_REDIRECT_URI",
-    "http://localhost:8000/api/auth/callback",
+GOOGLE_OAUTH_REDIRECT_URI = (
+    os.environ.get("GOOGLE_OAUTH_REDIRECT_URI")
+    or "http://localhost:8000/api/auth/callback"
 )
 
 
@@ -221,13 +221,15 @@ def auth_cookie_secure() -> bool:
 FORECAST_PIPELINE_SUBSCRIPTION = os.environ.get("FORECAST_PIPELINE_SUBSCRIPTION", "")
 # Written by retrain_if_new_month: one row per run, retrained=TRUE only when a
 # new forecast was actually produced.
-BQ_TRAINING_RUN_LOG_TABLE = os.environ.get(
-    "BQ_TRAINING_RUN_LOG_TABLE", "aire-data.Aire_Data_Analytics.training_run_log"
+BQ_TRAINING_RUN_LOG_TABLE = (
+    os.environ.get("BQ_TRAINING_RUN_LOG_TABLE")
+    or "aire-data.Aire_Data_Analytics.training_run_log"
 )
 # The live forecast output (not the 12-hourly snapshot), so a notification
 # raised right after a run describes that run.
-BQ_FORECAST_PIPELINE_VIEW = os.environ.get(
-    "BQ_FORECAST_PIPELINE_VIEW", "aire-data.Aire_Data_Analytics.aire_forecasting_output"
+BQ_FORECAST_PIPELINE_VIEW = (
+    os.environ.get("BQ_FORECAST_PIPELINE_VIEW")
+    or "aire-data.Aire_Data_Analytics.aire_forecasting_output"
 )
 
 
