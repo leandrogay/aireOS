@@ -1,56 +1,48 @@
 import { Skeleton } from '@/components/ui/skeleton';
-import TableSkeleton from '@/components/ui/TableSkeleton';
 
-// Matches the header row of the column-mapping table in MappingReviewPanel.
-const COLUMN_HEADERS = ['Source column', 'Sample values', 'Becomes', 'Confidence', 'Review'];
+const card = 'rounded-lg border border-lavander bg-white p-3 shadow-sm';
+const bar = 'rounded bg-lavander';
 
 /**
  * Placeholder for MappingReviewPanel while GET /api/mappings/{id} is in
- * flight: the header card and the column-mapping table, in the same cards the
- * panel renders, so the page does not jump when the mapping arrives.
+ * flight: the header, the first two steps and the "What's left" list, in the
+ * same cards and grid the panel renders, so the page does not jump when the
+ * mapping arrives.
  */
 export default function MappingReviewSkeleton() {
   return (
     <div role="status" className="space-y-1">
       <span className="sr-only">Loading mapping…</span>
 
-      <section
-        aria-hidden="true"
-        className="rounded-lg border border-lavander bg-white p-6 shadow-sm"
-      >
-        <Skeleton className="h-5 w-32 rounded-full bg-lavander" />
-        <Skeleton className="mt-3 h-6 w-64 rounded bg-lavander" />
-        <Skeleton className="mt-2 h-4 w-48 rounded bg-lavander" />
+      <section aria-hidden="true" className={card}>
+        <Skeleton className="h-5 w-36 rounded-full bg-lavander" />
+        <Skeleton className={`mt-2 h-4 w-64 ${bar}`} />
+        <Skeleton className={`mt-2 h-4 w-full max-w-xl ${bar}`} />
       </section>
 
-      <section
-        aria-hidden="true"
-        className="rounded-lg border border-lavander bg-white p-6 shadow-sm"
-      >
-        <div className="mb-3">
-          <h3 className="font-serif text-lg text-deep-violet-blue">Column mapping</h3>
-          <p className="text-xs text-deep-violet-blue/70">
-            Least certain first — those are the ones worth your time.
-          </p>
+      <div className="grid gap-1 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start">
+        <div className="space-y-1">
+          {[3, 8].map((lines, index) => (
+            <section key={index} aria-hidden="true" className={card}>
+              <div className="mb-3 flex items-center gap-2.5">
+                <Skeleton className="size-6 rounded-full bg-lavander" />
+                <Skeleton className={`h-4 w-48 ${bar}`} />
+              </div>
+              {Array.from({ length: lines }, (_, line) => (
+                <Skeleton key={line} className={`mt-2 h-8 w-full ${bar}`} />
+              ))}
+            </section>
+          ))}
         </div>
 
-        <div className="overflow-x-auto rounded-lg border border-lavander">
-          <table className="min-w-full text-left text-sm">
-            <thead className="bg-lavander text-deep-violet-blue">
-              <tr>
-                {COLUMN_HEADERS.map((header) => (
-                  <th key={header} className="px-3 py-2 font-medium">
-                    {header}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              <TableSkeleton columns={COLUMN_HEADERS.length} cellClassName="px-3 py-2" />
-            </tbody>
-          </table>
-        </div>
-      </section>
+        <aside aria-hidden="true" className={card}>
+          <Skeleton className={`h-4 w-24 ${bar}`} />
+          {Array.from({ length: 6 }, (_, line) => (
+            <Skeleton key={line} className={`mt-3 h-3.5 w-full ${bar}`} />
+          ))}
+          <Skeleton className={`mt-4 h-8 w-full ${bar}`} />
+        </aside>
+      </div>
     </div>
   );
 }

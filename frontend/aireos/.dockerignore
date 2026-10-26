@@ -1,0 +1,12 @@
+# The build writes its own .env.frontend from the NEXT_PUBLIC_API_URL build
+# arg, so the local file (which points at localhost) must never be copied in.
+.env*
+
+node_modules/
+.next/
+out/
+npm-debug.log*
+
+Dockerfile
+.dockerignore
+README.md

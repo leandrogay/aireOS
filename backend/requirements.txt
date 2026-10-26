@@ -1,4 +1,3 @@
-anthropic==1.2.0
 # asyncpg: a connection that can wait for Postgres NOTIFY (push notifications); pg8000 cannot
 cloud-sql-python-connector[pg8000,asyncpg]
 db-dtypes

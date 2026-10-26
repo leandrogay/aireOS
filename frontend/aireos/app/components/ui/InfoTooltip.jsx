@@ -3,17 +3,19 @@
 import { Info } from 'lucide-react';
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { cn } from '@/lib/utils';
 
 /**
- * A small info icon that shows field help on hover, for a table column
- * header where a hint paragraph under every input (as the single-record form
- * uses) would not fit.
+ * A small info icon that shows help on hover, for a table column header or
+ * a compact form where a hint paragraph under every input (as the single-record
+ * inventory form uses) would not fit.
  *
  * @param {object} props
  * @param {string} props.label read by screen readers; not shown
- * @param {string} props.children the hint text
+ * @param {import('react').ReactNode} props.children the hint text, or a small card of it
+ * @param {string} [props.className] for the popup, e.g. a wider card
  */
-export default function InfoTooltip({ label, children }) {
+export default function InfoTooltip({ label, children, className }) {
   return (
     <Popover>
       <PopoverTrigger
@@ -25,7 +27,7 @@ export default function InfoTooltip({ label, children }) {
         <Info className="size-3.5" />
         <span className="sr-only">{label}</span>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-64 text-xs font-normal text-deep-violet-blue/80">
+      <PopoverContent align="start" className={cn('w-64 text-xs font-normal text-deep-violet-blue/80', className)}>
         {children}
       </PopoverContent>
     </Popover>

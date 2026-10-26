@@ -1,57 +1,14 @@
-'use client';
+﻿'use client';
 
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
-import {
-  LayoutDashboard,
-  Library,
-  LogOut,
-  Package,
-  PanelLeft,
-  Tag,
-  TrendingUp,
-  Upload,
-} from 'lucide-react';
+import { LogOut, PanelLeft } from 'lucide-react';
 
+import { NAV_ITEMS } from '@/components/layout/navItems';
 import { logout } from '@/app/services/authApi';
 import { cn } from '@/lib/utils';
-
-
-// Every tab links to a real (currently placeholder, for Forecast/Promotions/
-// Inventory — see app/forecast, app/promotions, app/inventory) page, so
-// nothing is blocked off. Sub-items (Mappings under Upload, SKUs/Customers
-// under Catalog) only appear while the user is inside that section. Catalog has
-// no page of its own, so it links to its first child.
-const NAV_ITEMS = [
-  {
-    label: 'Upload',
-    href: '/upload',
-    icon: Upload,
-    children: [
-      { label: 'Mappings', href: '/mappings' },
-    ],
-  },
-  { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { label: 'Forecast', href: '/forecast', icon: TrendingUp },
-  { label: 'Promotions', href: '/promotions', icon: Tag },
-  {
-    label: 'Inventory',
-    href: '/inventory',
-    icon: Package,
-    children: [{ label: 'DOH settings', href: '/doh' }],
-  },
-  {
-    label: 'Catalog',
-    href: '/skus',
-    icon: Library,
-    children: [
-      { label: 'SKUs', href: '/skus' },
-      { label: 'Customers', href: '/customers' },
-    ],
-  },
-];
 
 // A detail route (/mappings/abc123) still belongs to its tab.
 function matchesPath(pathname, href) {

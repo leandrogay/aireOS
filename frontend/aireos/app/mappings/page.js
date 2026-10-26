@@ -1,10 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import PageLayout from '@/components/layout/PageLayout';
 import BackLink from '@/components/ui/BackLink';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { MappingReview } from '@/components/mappings/MappingReview';
 import MappingSummaryTable from '@/components/mappings/MappingSummaryTable';
 import { normalizeBaseUrl } from '../utils/mappingHelpers';
 import { listMappings } from '../services/mappingApi';
@@ -15,12 +14,12 @@ import { listMappings } from '../services/mappingApi';
 const MAPPING_LOAD_TIMEOUT_MS = 20000;
 
 export default function MappingsPage() {
+  const router = useRouter();
   const baseUrl = normalizeBaseUrl(process.env.NEXT_PUBLIC_API_URL);
 
   const [mappingReviews, setMappingReviews] = useState([]);
   const [isLoadingMappings, setIsLoadingMappings] = useState(false);
   const [mappingLoadError, setMappingLoadError] = useState('');
-  const [openMappingId, setOpenMappingId] = useState(null);
 
   // ---- Loading ----------------------------------------------------------
 
@@ -54,23 +53,18 @@ export default function MappingsPage() {
     Promise.resolve().then(loadMappings);
   }, [loadMappings]);
 
-  // ---- Dialog -----------------------------------------------------------
+  // ---- Opening -----------------------------------------------------------
 
-  // The dialog is read-only: editing, approving and discarding all happen on
-  // the full review page, so there is nothing to snapshot, save or guard here.
-  const openMapping = (mappingId) => setOpenMappingId(mappingId);
-
-  const closeMapping = () => setOpenMappingId(null);
+  // A row opens the full review: everything about a mapping -- seeing it,
+  // changing it, approving it -- happens there, so a summary in between was
+  // one more click before anything could be done.
+  const openMapping = (mappingId) => router.push(`/mappings/${encodeURIComponent(mappingId)}`);
 
   // ---- Render -----------------------------------------------------------
 
-  const openMappingReview = mappingReviews.find(
-    (mapping) => mapping.mappingId === openMappingId,
-  );
-
   return (
     <PageLayout
-      title="Stored mappings"
+      title="Mappings"
       fitScreen
       headerExtra={
         <div className="ml-auto flex items-center gap-2">
@@ -85,29 +79,6 @@ export default function MappingsPage() {
         onOpen={openMapping}
         onRefresh={loadMappings}
       />
-
-      {/* Mounted only while a mapping is open, so the review inside never
-          renders against a mapping that has just been closed or reloaded away. */}
-      {openMappingReview && (
-        <Dialog
-          open
-          onOpenChange={(open) => {
-            if (!open) closeMapping();
-          }}
-        >
-          <DialogContent className="flex max-h-[90vh] flex-col gap-3 bg-cream sm:max-w-4xl">
-            <DialogHeader>
-              <DialogTitle className="pr-8 text-lg text-deep-violet-blue">
-                {openMappingReview.name || 'Unnamed mapping'}
-              </DialogTitle>
-            </DialogHeader>
-
-            <div className="-mx-4 overflow-y-auto px-4">
-              <MappingReview mapping={openMappingReview} />
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
     </PageLayout>
   );
 }

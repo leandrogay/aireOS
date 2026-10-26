@@ -12,7 +12,6 @@ from app.services import upload_check
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 
-
 def _mapping_annotations(mapping: dict | None) -> dict[str, str]:
     """Return the mapping outcome fields stored on an uploaded GCS blob."""
     if not mapping:
@@ -132,7 +131,7 @@ async def upload_files(
             return {
                 "status": "mapping_failed",
                 "reason": "bad_llm_output",
-                "error": str(exc),
+                "error": f"Unable to propose a mapping for {filename}: {exc}",
             }
         except contract_application.ContractApplicationError as exc:
             return {

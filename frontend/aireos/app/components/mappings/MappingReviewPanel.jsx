@@ -1,328 +1,178 @@
 'use client';
 
-import { Fragment, useCallback, useMemo, useState } from 'react';
-import BackLink from '@/components/ui/BackLink';
-import { AlertTriangle, EyeOff, Trash2 } from 'lucide-react';
-import StatusBadge from '../ui/StatusBadge';
-import ColumnMappingRow from './ColumnMappingRow';
-import ConfirmDiscardDialog from './ConfirmDiscardDialog';
-import FieldCoverage from './FieldCoverage';
-import ReviewProgress from './ReviewProgress';
+import { useEffect, useState } from 'react';
+import { Loader2, Play } from 'lucide-react';
+
+import { Button } from '@/components/ui/button';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import Disclosure from '@/components/ui/Disclosure';
+import { secondaryButtonClass } from '@/components/inventory/formStyles';
+import useCustomers from '@/hooks/useCustomers';
+import useMappingEdits from '@/hooks/useMappingEdits';
+import { createRetailer, linkRetailer } from '@/app/services/catalogApi';
+import { checkSummary } from '@/app/utils/mappingChecks';
 import {
-  toColumnRows,
-  toRules,
-  reviewIssues,
-  computeCoverage,
-  reviewProgress,
-  splitWarning,
-  withReviewed,
-} from '../../utils/mappingReview';
+  newCustomerDefaults,
+  retailerDecision,
+  retailerOutputs,
+  retailerStatuses,
+  suggestCustomerId,
+} from '@/app/utils/mappingCustomer';
+import { PROPOSER, reviewIssues } from '@/app/utils/mappingReview';
+import { SECTION_IDS, reviewChecklist } from '@/app/utils/reviewChecklist';
+import { codeRows, unknownCodes } from '@/app/utils/skuCodeTable';
+import { cn } from '@/lib/utils';
 
-const button =
-  'rounded-md border px-4 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-deep-violet-blue focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60';
-const primary = `${button} border-deep-violet-blue bg-deep-violet-blue text-white hover:opacity-90`;
-const secondary = `${button} border-violet bg-white text-deep-violet-blue hover:bg-lavander`;
-const destructive = `${button} border-red-300 bg-white text-red-700 hover:bg-red-50`;
+import ApprovedSummary from './ApprovedSummary';
+import ConfirmDiscardDialog from './ConfirmDiscardDialog';
+import CustomerStep from './CustomerStep';
+import FieldTable from './FieldTable';
+import MappingChecks from './MappingChecks';
+import NewCustomerDialog from './NewCustomerDialog';
+import OutputPreview from './OutputPreview';
+import ReviewChecklist from './ReviewChecklist';
+import ReviewHeader from './ReviewHeader';
+import ResetButton from './ResetButton';
+import ReviewSection from './ReviewSection';
+import SkuCodeTable from './SkuCodeTable';
+import UnusedColumns from './UnusedColumns';
 
-const STATE_BADGE = {
-  confirmed: { tone: 'ready', label: 'Confirmed mapping' },
-  pending: { tone: 'review', label: 'Awaiting approval' },
-};
-
-function OutputPreview({ preview, isLoading, error, onRefresh, disabled }) {
-  const rows = preview?.preview || [];
-  const columns = (preview?.columns || []).slice(0, 8);
-
-  return (
-    <section className="mt-6">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
-        <h3 className="font-serif text-lg text-deep-violet-blue">Output preview</h3>
-        <button type="button" onClick={onRefresh} disabled={isLoading || disabled} className={secondary}>
-          {isLoading ? 'Running…' : 'Preview these rules'}
-        </button>
-      </div>
-
-      {error && (
-        <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {error}
-        </p>
-      )}
-
-      {!error && !rows.length && !isLoading && (
-        <p className="text-sm text-deep-violet-blue/70">
-          Run a preview to see these rules applied to the file this mapping came from.
-        </p>
-      )}
-
-      {!error && !!rows.length && (
-        <>
-          <div className="overflow-x-auto rounded-lg border border-lavander">
-            <table className="min-w-full text-left text-xs">
-              <thead className="bg-lavander text-deep-violet-blue">
-                <tr>
-                  {columns.map((column) => (
-                    <th key={column} className="px-3 py-2 font-medium whitespace-nowrap">
-                      {column}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="text-deep-violet-blue">
-                {rows.map((row, index) => (
-                  <tr key={index} className="border-t border-lavander">
-                    {columns.map((column) => (
-                      <td key={column} className="px-3 py-2 whitespace-nowrap">
-                        {row[column] == null || row[column] === '' ? '—' : String(row[column])}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <p className="mt-1.5 text-xs text-deep-violet-blue/60">
-            {rows.length} of {preview.rows_total?.toLocaleString()} output rows
-            {preview.columns?.length > columns.length &&
-              ` · ${preview.columns.length - columns.length} more target fields`}
-          </p>
-        </>
-      )}
-    </section>
-  );
-}
+const done = (items, ids) => items.filter((item) => ids.includes(item.id)).every((item) => item.done);
 
 /**
- * The human-in-the-loop review: every source column, what the proposal thinks
- * it is, and how sure it was.
+ * The human-in-the-loop review of one mapping, as numbered steps in the
+ * order a reviewer works -- whose file it is, where each field comes from,
+ * which of our products each code is, and whether it all checks out -- with
+ * a "What's left" list beside them that says what approval still waits on.
  *
  * @param {{
  *   mapping: object,
- *   onApprove: (payload: { rules: object[], name: string, vendor: string }) => Promise<void>,
+ *   onApprove: (payload: { rules: object[], name: string, customer_id: number }) => Promise<object>,
  *   onDiscard?: () => Promise<void>,
  *   onPreview: (rules: object[]) => Promise<object>,
  * }} props
  */
 export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPreview }) {
-  // Each field carries its own `reviewed` flag, saved with the mapping, so a
-  // row confirmed once stays confirmed when the mapping is opened again.
-  const [rows, setRows] = useState(() => toColumnRows(mapping));
-  // Columns confirmed by a click on this visit -- the only sign-offs offered
-  // an Undo. One loaded already reviewed is a settled decision; reopening it is
-  // done by changing its fields, not by withdrawing it from a link.
-  const [undoableColumns, setUndoableColumns] = useState(() => new Set());
-  // The column whose review was just undone, so its Confirm button takes
-  // focus back instead of dropping the keyboard user at the top of the page.
-  const [justUndoneColumn, setJustUndoneColumn] = useState(null);
+  const edits = useMappingEdits({ mapping });
+  const customers = useCustomers();
   const [name, setName] = useState(mapping.name || '');
-  const [vendor, setVendor] = useState(mapping.vendor || '');
+  // null until the customers load; then the reviewer's pick, or a suggestion.
+  const [customerChoice, setCustomerChoice] = useState(null);
+  // The new-customer form, open with a name to start from ('' for the
+  // suggestion from the file), or null while closed.
+  const [newCustomerName, setNewCustomerName] = useState(null);
   const [busy, setBusy] = useState(null); // null | 'approve' | 'discard' | 'preview'
   const [message, setMessage] = useState('');
   const [approved, setApproved] = useState(null);
   const [preview, setPreview] = useState(null);
   const [previewError, setPreviewError] = useState('');
   const [isConfirmingDiscard, setIsConfirmingDiscard] = useState(false);
+  // The step whose Reset is waiting on "are you sure?": 'fields' | 'products' | null.
+  const [confirmingReset, setConfirmingReset] = useState(null);
   const [discardError, setDiscardError] = useState('');
 
-  const readOnly = mapping.editable === false;
-  // Only a proposal can be discarded — the backend has no delete for a
-  // confirmed mapping (DELETE /api/mappings/{fp}/pending only).
-  const canDiscard = !!onDiscard && mapping.state === 'pending';
-  const issues = useMemo(
-    () => reviewIssues(mapping, rows, mapping.requiredFields),
-    [mapping, rows],
-  );
-  const coverage = useMemo(() => computeCoverage(mapping, rows), [mapping, rows]);
-  const progress = reviewProgress(rows);
+  const decision = retailerDecision(mapping, edits.rows, edits.fieldEdits);
+  const outputs = retailerOutputs(decision);
 
-  // Which column already fills each field, so a row does not offer a field
-  // another column has taken. A column filling several fields is fine; a field
-  // filled by several columns is not.
-  const takenFields = useMemo(() => {
-    const taken = new Map();
-    rows.forEach((row) => {
-      row.fields.forEach((field) => {
-        if (!taken.has(field.targetField)) taken.set(field.targetField, row.column);
-      });
-    });
-    return taken;
-  }, [rows]);
+  // The starting customer is settled once, when the list arrives: the one the
+  // mapping was saved under, else one its retailers point at. Set during
+  // render (the one-time-default case) so the page never shows a blank
+  // customer it is about to fill in.
+  if (!customerChoice && !customers.loading) {
+    const suggestion = suggestCustomerId(mapping, customers.data, outputs);
+    setCustomerChoice({ id: suggestion, suggested: Boolean(suggestion) && !mapping.customerId });
+  }
+  const customer = customers.data.find((item) => item.customer_id === customerChoice?.id) || null;
+  const statuses = retailerStatuses(outputs, customer, customers.data, customers.unlinked);
 
-  // Undo only ever reverses a Confirm click. Once the row has been edited the
-  // edit is the decision, and an Undo that cleared the sign-off but kept the
-  // edit would not be undoing anything the reviewer just did.
-  const forgetUndo = useCallback((column) => {
-    setUndoableColumns((prev) => {
-      if (!prev.has(column)) return prev;
-      const next = new Set(prev);
-      next.delete(column);
-      return next;
-    });
-  }, []);
+  const issues = reviewIssues(mapping, edits.state);
 
-  // A column can fill several fields, so adding one appends rather than
-  // replacing what is there. A field moved off another column is taken off it,
-  // since two columns cannot fill the same field.
-  const handleAddField = useCallback((column, targetField) => {
-    setMessage('');
-    forgetUndo(column);
-    setRows((prev) =>
-      prev.map((row) => {
-        if (row.locked) return row;
+  // The product-code table lives on the sku field's transforms. Codes come
+  // from the latest run when there is one (the sku may have been repointed).
+  const skuField = edits.rows
+    .flatMap((row) => row.fields)
+    .find((field) => field.targetField === 'sku');
+  const masterAvailable = mapping.masterSkusAvailable !== false;
+  const codes = skuField ? codeRows(preview?.sku_codes || mapping.skuCodes, skuField.transform, mapping.masterSkus) : [];
+  const unknown = masterAvailable ? unknownCodes(codes) : [];
 
-        if (row.column === column) {
-          if (row.fields.some((field) => field.targetField === targetField)) return row;
-          // Editing a row is the reviewer taking responsibility for it, which
-          // is exactly what confirming it means. The proposal's confidence on
-          // the fields already there is left as it was.
-          return withReviewed(
-            {
-              ...row,
-              fields: [
-                ...row.fields,
-                // The reviewer chose it, so it is not a guess -- but the
-                // rationale says whose decision it was.
-                {
-                  targetField,
-                  confidence: 'high',
-                  rationale: 'Chosen by the reviewer.',
-                  reviewed: true,
-                  transform: null,
-                },
-              ],
-            },
-            true,
-          );
-        }
+  // Checks are the proposal's until the reviewer runs them, and go stale the
+  // moment the rules differ from the ones they ran on.
+  const rulesKey = JSON.stringify(edits.rules);
+  const checks = preview ? preview.checks : mapping.checks;
+  const stale = preview ? preview.rulesKey !== rulesKey : edits.changed;
+  const failed = checkSummary(checks).failed;
 
-        const without = row.fields.filter((field) => field.targetField !== targetField);
-        return without.length === row.fields.length ? row : { ...row, fields: without };
-      }),
-    );
-  }, [forgetUndo]);
+  const changed =
+    edits.changed || name.trim() !== (mapping.name || '') || (customer?.customer_id ?? null) !== (mapping.customerId ?? null);
 
-  const handleRemoveField = useCallback((column, targetField) => {
-    setMessage('');
-    forgetUndo(column);
-    setRows((prev) =>
-      prev.map((row) =>
-        row.column === column && !row.locked
-          ? withReviewed(
-              { ...row, fields: row.fields.filter((f) => f.targetField !== targetField) },
-              true,
-            )
-          : row,
-      ),
-    );
-  }, [forgetUndo]);
+  const items = reviewChecklist({
+    name,
+    customer,
+    outputs,
+    statuses,
+    issues,
+    codes,
+    unknownCodes: unknown,
+    masterAvailable,
+    checks: { failed, stale },
+  });
 
-  const setRowReviewed = useCallback((column, reviewed) => {
-    setRows((prev) =>
-      prev.map((row) => (row.column === column ? withReviewed(row, reviewed) : row)),
-    );
-  }, []);
+  // Leaving with unsaved edits loses them, so the browser asks first.
+  useEffect(() => {
+    if (!changed || approved) return undefined;
+    const warn = (event) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [changed, approved]);
 
-  const handleConfirmRow = useCallback(
-    (column) => {
-      setRowReviewed(column, true);
-      setUndoableColumns((prev) => new Set(prev).add(column));
-      setJustUndoneColumn(null);
-    },
-    [setRowReviewed],
-  );
+  // A retailer the mapping writes to, made the customer's: added when no
+  // retailer has the name, linked when an upload already made it.
+  async function fixRetailer(item) {
+    const result =
+      item.status === 'new'
+        ? await createRetailer({ retailer_name: item.name, customer_id: customer.customer_id })
+        : await linkRetailer(item.retailerId, { customer_id: customer.customer_id });
+    customers.applyCustomer(result.customer);
+  }
 
-  // A mis-click on Confirm is otherwise only undone by discarding the page.
-  const handleUndoReview = useCallback(
-    (column) => {
-      setRowReviewed(column, false);
-      forgetUndo(column);
-      setJustUndoneColumn(column);
-    },
-    [setRowReviewed, forgetUndo],
-  );
+  function handleCustomerCreated(created) {
+    customers.applyCustomer(created);
+    setCustomerChoice({ id: created.customer_id, suggested: false });
+    setNewCustomerName(null);
+  }
 
-  // The coverage panel reaches the same edit from the other end: pick the
-  // field first, then the column that holds it.
-  const handleAssignField = useCallback(
-    (field, column) => handleAddField(column, field),
-    [handleAddField],
-  );
-
-  const handleClearField = useCallback((field) => {
-    setMessage('');
-    setRows((prev) =>
-      prev.map((row) =>
-        row.locked
-          ? row
-          : { ...row, fields: row.fields.filter((f) => f.targetField !== field) },
-      ),
-    );
-  }, []);
-
-  const handleMeltGroupChange = useCallback((column, changes) => {
-    setRows((prev) => {
-      const edited = prev.find((row) => row.column === column);
-      if (!edited?.meltGroup) return prev;
-
-      // Every column in the group shares one melt group, so the edit lands on
-      // all of them — otherwise the rebuilt rule would depend on which row
-      // happened to be typed in.
-      return prev.map((row) =>
-        row.meltGroup && row.ruleIndex === edited.ruleIndex
-          ? { ...row, meltGroup: { ...row.meltGroup, ...changes } }
-          : row,
-      );
-    });
-  }, []);
-
-  const runPreview = useCallback(async () => {
+  async function runChecks() {
     setBusy('preview');
     setPreviewError('');
     try {
-      setPreview(await onPreview(toRules(mapping, rows)));
+      setPreview({ ...(await onPreview(edits.rules)), rulesKey });
     } catch (error) {
       setPreview(null);
       setPreviewError(error.message);
     } finally {
       setBusy(null);
     }
-  }, [mapping, onPreview, rows]);
+  }
 
-  const blockers = [
-    issues.missingRequired.length &&
-      `${issues.missingRequired.length} required field${
-        issues.missingRequired.length === 1 ? '' : 's'
-      } still missing`,
-    issues.unconfirmedLowConfidence.length &&
-      `${issues.unconfirmedLowConfidence.length} low-confidence column${
-        issues.unconfirmedLowConfidence.length === 1 ? '' : 's'
-      } still to confirm`,
-    issues.duplicateTargets.length &&
-      `Two columns both map to ${issues.duplicateTargets.join(', ')}`,
-    !name.trim() && 'A mapping name is needed',
-    !vendor.trim() && 'A vendor is needed',
-  ].filter(Boolean);
-
-  const handleApprove = useCallback(async () => {
+  async function handleApprove() {
     setBusy('approve');
     setMessage('');
     try {
-      setApproved(
-        await onApprove({
-          rules: toRules(mapping, rows),
-          name: name.trim(),
-          vendor: vendor.trim(),
-        }),
-      );
+      setApproved(await onApprove({ rules: edits.rules, name: name.trim(), customer_id: customer.customer_id }));
     } catch (error) {
       setMessage(error.message);
     } finally {
       setBusy(null);
     }
-  }, [mapping, name, onApprove, rows, vendor]);
+  }
 
   // Discard only runs from the confirm dialog. On success the page navigates
-  // away; on failure the dialog closes so the error beside the button shows.
-  const handleDiscard = useCallback(async () => {
+  // away; on failure the dialog closes so the error under the header shows.
+  async function handleDiscard() {
     setBusy('discard');
     setDiscardError('');
     try {
@@ -333,291 +183,224 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
     } finally {
       setBusy(null);
     }
-  }, [onDiscard]);
+  }
 
-  const badge = STATE_BADGE[mapping.state] || STATE_BADGE.pending;
+  if (approved) return <ApprovedSummary approved={approved} />;
 
-  // Approving moves the contract from mappings/pending/ to mappings/confirmed/
-  // and re-stamps the uploads that were waiting on it. Both of those happen out
-  // of sight, so the screen says so rather than just navigating away.
-  if (approved) {
-    return (
-      <section className="rounded-xl border border-green-300 bg-green-50 p-6 shadow-sm">
-        <StatusBadge tone="ready">Mapping confirmed</StatusBadge>
-        <h2 className="mt-2 font-serif text-xl text-deep-violet-blue">
-          {approved.name} · {approved.vendor}
-        </h2>
+  const disabled = busy !== null;
+  const steps = [SECTION_IDS.customer, SECTION_IDS.fields, ...(codes.length ? [SECTION_IDS.products] : []), SECTION_IDS.checks];
+  const stepOf = (id) => steps.indexOf(id) + 1;
+  const openFields = issues.coverage.filter(
+    (entry) => entry.decidable && (entry.status === 'unmapped' || entry.status === 'not_available'),
+  );
 
-        <ul className="mt-3 space-y-1 text-sm text-deep-violet-blue">
-          <li>
-            Moved to <span className="font-mono text-xs">{approved.moved_to}</span>
-            {approved.pending_removed === false && (
-              <span className="text-amber-900">
-                {' '}
-                — the old pending copy could not be deleted and is still in the bucket.
-                The confirmed copy takes precedence everywhere, but it is worth clearing up.
-              </span>
-            )}
-          </li>
-          <li>
-            {approved.uploads_updated > 0
-              ? `${approved.uploads_updated} recent upload${
-                  approved.uploads_updated === 1 ? '' : 's'
-                } now shown as mapped.`
-              : 'No earlier uploads were waiting on this mapping.'}
-          </li>
-          {approved.uploads_processed > 0 && (
-            <li>
-              {approved.uploads_processed} waiting upload
-              {approved.uploads_processed === 1 ? '' : 's'} transformed and processed.
-            </li>
-          )}
-        </ul>
+  // What each step's Reset puts back. Step 2 is every field in its table but
+  // the retailer, which step 1 resets; step 3 is the product codes.
+  const stepFields = issues.coverage
+    .filter((entry) => entry.decidable && entry.field !== 'retailer')
+    .map((entry) => entry.field);
+  const canResetFields = edits.canResetFields(stepFields);
+  const changedCodes = codes.map((row) => row.code).filter(edits.codeChanged);
 
-        {approved.uploads_failed > 0 && (
-          <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-            <p className="font-medium">
-              The mapping was saved, but {approved.uploads_failed} waiting upload
-              {approved.uploads_failed === 1 ? '' : 's'} could not be processed.
-            </p>
-            <ul className="mt-1 list-disc space-y-1 pl-5">
-              {(approved.processing || [])
-                .filter((item) => !item.success)
-                .map((item) => (
-                  <li key={item.blob_path}>
-                    <span className="font-mono text-xs">{item.blob_path}</span>: {item.error}
-                  </li>
-                ))}
-            </ul>
-          </div>
-        )}
-
-        {!!approved.warnings?.length && (
-          <ul className="mt-3 list-disc space-y-1 rounded-lg border border-amber-200 bg-amber-50 p-3 pl-7 text-sm text-amber-900">
-            {approved.warnings.map((warning, index) => (
-              <li key={index}>{warning}</li>
-            ))}
-          </ul>
-        )}
-
-        <BackLink href="/upload" className="mt-5">
-          Back to Upload
-        </BackLink>
-      </section>
-    );
+  function confirmReset() {
+    if (confirmingReset === 'fields') edits.resetFields(stepFields);
+    if (confirmingReset === 'products') edits.resetSkuCodes(changedCodes);
+    setConfirmingReset(null);
   }
 
   return (
     <div className="space-y-1">
-      <section className="rounded-lg border border-lavander bg-white p-6 shadow-sm">
-        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <StatusBadge tone={badge.tone}>{badge.label}</StatusBadge>
-            <h2 className="mt-2 font-serif text-xl text-deep-violet-blue">
-              {mapping.name || 'Unnamed mapping'}
-            </h2>
-            <p className="text-sm text-deep-violet-blue/70">
-              {mapping.vendor ? `${mapping.vendor} · ` : ''}
-              <span className="font-mono text-xs">{mapping.mappingId}</span>
-            </p>
-            {mapping.filename && (
-              <p className="mt-1 text-xs break-all text-deep-violet-blue/60">
-                From {mapping.filename}
-              </p>
-            )}
-          </div>
-
-          {/* Up here rather than beside Approve: discarding throws the whole
-              proposal away, so it sits apart from the save flow and is
-              reachable without scrolling past every column. */}
-          {canDiscard && (
-            <button
-              type="button"
-              onClick={() => {
-                setDiscardError('');
-                setIsConfirmingDiscard(true);
-              }}
-              disabled={busy !== null}
-              className={`${destructive} inline-flex items-center gap-2`}
-            >
-              <Trash2 aria-hidden="true" className="size-4" />
-              Discard proposal
-            </button>
-          )}
-        </div>
-
-        {discardError && (
-          <p className="mb-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-            {discardError}
-          </p>
-        )}
-
-        {readOnly && (
-          <p className="rounded-lg border border-violet bg-lavander/50 p-3 text-sm text-deep-violet-blue">
-            These rules run as code in the backend, so they are shown for reference and
-            cannot be edited here.
-          </p>
-        )}
-
-        {!!issues.missingRequired.length && (
-          <p className="mt-3 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-            <AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-            <span>
-              No column fills the required field
-              {issues.missingRequired.length === 1 ? '' : 's'}{' '}
-              <span className="font-mono text-xs">{issues.missingRequired.join(', ')}</span>.
-              The ingest step needs {issues.missingRequired.length === 1 ? 'it' : 'them'}.
-            </span>
-          </p>
-        )}
-
-        {!!issues.ignoredColumns.length && (
-          <p className="mt-3 flex items-start gap-2 rounded-lg border border-lavander bg-cream p-3 text-sm text-deep-violet-blue">
-            <EyeOff aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-            <span>
-              {issues.ignoredColumns.length} column
-              {issues.ignoredColumns.length === 1 ? '' : 's'} will be ignored:{' '}
-              <span className="font-mono text-xs">{issues.ignoredColumns.join(', ')}</span>
-            </span>
-          </p>
-        )}
-
-        {!!mapping.warnings?.length && (
-          <ul className="mt-3 flex items-start gap-2 rounded-lg border border-lavander bg-cream p-3 text-sm text-deep-violet-blue">
-            {mapping.warnings.map((warning, index) => (
-              <li key={index}>
-                {splitWarning(warning).map((part, partIndex) =>
-                  part.code ? (
-                    <span key={partIndex} className="font-mono text-xs">
-                      {part.text}
-                    </span>
-                  ) : (
-                    <Fragment key={partIndex}>{part.text}</Fragment>
-                  ),
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <FieldCoverage
-        coverage={coverage}
-        rows={rows}
-        onAssign={handleAssignField}
-        onClear={handleClearField}
-        readOnly={readOnly || busy !== null}
+      <ReviewHeader
+        mapping={mapping}
+        changed={changed}
+        canDiscard={!!onDiscard && mapping.state === 'pending'}
+        busy={busy}
+        discardError={discardError}
+        onDiscard={() => {
+          setDiscardError('');
+          setIsConfirmingDiscard(true);
+        }}
       />
 
-      <section className="rounded-lg border border-lavander bg-white p-6 shadow-sm">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h3 className="font-serif text-lg text-deep-violet-blue">Column mapping</h3>
-            <p className="text-xs text-deep-violet-blue/70">
-              Least certain first — those are the ones worth your time.
-            </p>
-          </div>
-          {!readOnly && <ReviewProgress {...progress} />}
-        </div>
+      <div className="grid gap-1 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start">
+        <div className="min-w-0 space-y-1">
+          <ReviewSection
+            id={SECTION_IDS.customer}
+            step={stepOf(SECTION_IDS.customer)}
+            title="Whose file is this?"
+            info="Name the mapping and choose the customer. Sales only reach the dashboard through the customer's retailers."
+            done={done(items, ['name', 'customer', 'retailers'])}
+          >
+            <CustomerStep
+              name={name}
+              onNameChange={setName}
+              customers={customers.data}
+              customersLoading={customers.loading}
+              customersError={customers.error}
+              customer={customer}
+              suggested={Boolean(customerChoice?.suggested)}
+              legacyVendor={!mapping.customerId && mapping.state === 'confirmed' ? mapping.vendor : null}
+              onCustomerChange={(id) => setCustomerChoice({ id, suggested: false })}
+              onNewCustomer={setNewCustomerName}
+              decision={decision}
+              outputs={outputs}
+              statuses={statuses}
+              onFixRetailer={fixRetailer}
+              onSetRetailerChoice={edits.setRetailerChoice}
+              onSetConstant={edits.setRetailerConstant}
+              retailerChanged={edits.retailerChanged}
+              onResetRetailer={edits.resetRetailer}
+              disabled={disabled}
+            />
+          </ReviewSection>
 
-        <div className="overflow-x-auto rounded-lg border border-lavander">
-          <table className="min-w-full text-left text-sm">
-            <thead className="bg-lavander text-deep-violet-blue">
-              <tr>
-                <th className="px-3 py-2 font-medium">Source column</th>
-                <th className="px-3 py-2 font-medium">Sample values</th>
-                <th className="px-3 py-2 font-medium">Becomes</th>
-                <th className="px-3 py-2 font-medium">Confidence</th>
-                <th className="px-3 py-2 font-medium">Review</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <ColumnMappingRow
-                  key={row.column}
-                  row={row}
-                  targetFields={mapping.targetFields || []}
-                  takenFields={takenFields}
-                  onAddField={handleAddField}
-                  onRemoveField={handleRemoveField}
-                  canUndoReview={undoableColumns.has(row.column)}
-                  focusConfirm={justUndoneColumn === row.column}
-                  onConfirm={handleConfirmRow}
-                  onUndoReview={handleUndoReview}
-                  onMeltGroupChange={handleMeltGroupChange}
-                  readOnly={readOnly}
-                  disabled={readOnly || busy !== null}
+          <ReviewSection
+            id={SECTION_IDS.fields}
+            step={stepOf(SECTION_IDS.fields)}
+            title="Where each field comes from"
+            info={`Change a field by choosing another column — or, for Units sold and Sales value, a group of period or outlet columns. Confirm the low-confidence ones with “Looks right”. Each field's ⓘ has its details.`}
+            done={done(items, ['required', 'confirm', 'duplicates'])}
+            action={
+              canResetFields && (
+                <ResetButton
+                  text="Reset step"
+                  label={`Reset every field in this step to the ${PROPOSER}'s proposal`}
+                  onClick={() => setConfirmingReset('fields')}
+                  disabled={disabled}
                 />
-              ))}
-            </tbody>
-          </table>
+              )
+            }
+          >
+            <FieldTable
+              coverage={issues.coverage}
+              mapping={mapping}
+              rows={edits.rows}
+              groups={edits.groups}
+              confirmedNow={edits.confirmedNow}
+              onAssign={edits.assignColumn}
+              onChooseGroup={edits.chooseGroup}
+              onClear={edits.clearField}
+              onConfirm={edits.confirmField}
+              onUndo={edits.undoConfirm}
+              onGroupSettingsChange={edits.changeGroupSettings}
+              canResetField={(field) => edits.canResetFields([field])}
+              onResetField={(field) => edits.resetFields([field])}
+              disabled={disabled}
+            />
+            <UnusedColumns
+              rows={issues.unusedColumns}
+              unusedGroups={issues.unusedGroups}
+              mapping={mapping}
+              groups={edits.groups}
+              openFields={openFields}
+              onAssign={edits.assignColumn}
+              onChooseGroup={edits.chooseGroup}
+              disabled={disabled}
+            />
+          </ReviewSection>
+
+          {codes.length > 0 && (
+            <ReviewSection
+              id={SECTION_IDS.products}
+              step={stepOf(SECTION_IDS.products)}
+              title="Which of our products each code is"
+              info="Every product code in the example file has to be one of our master SKUs. Pick the product for any code that is not, or add the product to the SKU master first."
+              done={done(items, ['products'])}
+              action={
+                changedCodes.length > 0 && (
+                  <ResetButton
+                    text="Reset step"
+                    label={`Reset every product code to the ${PROPOSER}'s proposal`}
+                    onClick={() => setConfirmingReset('products')}
+                    disabled={disabled}
+                  />
+                )
+              }
+            >
+              <SkuCodeTable
+                rows={codes}
+                masterSkus={mapping.masterSkus || []}
+                masterAvailable={masterAvailable}
+                onChange={edits.setSkuCode}
+                codeChanged={edits.codeChanged}
+                onResetCode={(code) => edits.resetSkuCodes([code])}
+                readOnly={disabled}
+              />
+            </ReviewSection>
+          )}
+
+          <ReviewSection
+            id={SECTION_IDS.checks}
+            step={stepOf(SECTION_IDS.checks)}
+            title="Check it on the example file"
+            info={`Runs the mapping on the whole example file and compares totals, periods and products with what the file says. ${preview ? 'Showing your last run.' : `Showing the results from when the ${PROPOSER} proposed it.`}`}
+            done={!failed && !stale}
+            doneLabel="Passing"
+            todoLabel={stale ? 'Out of date' : 'Failing'}
+            action={
+              <Button type="button" variant="outline" disabled={disabled} onClick={runChecks} className={cn(secondaryButtonClass, 'h-7 px-2.5 text-xs')}>
+                {busy === 'preview' ? <Loader2 aria-hidden="true" className="size-3.5 animate-spin" /> : <Play aria-hidden="true" className="size-3.5" />}
+                {busy === 'preview' ? 'Running…' : preview ? 'Run again' : 'Run checks'}
+              </Button>
+            }
+          >
+            {previewError && (
+              <p role="alert" className="mb-2 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+                {previewError}
+              </p>
+            )}
+            <MappingChecks checks={checks} />
+
+            {/* Only once a run has rows to show -- an empty fold is a click
+                that leads nowhere -- and open from the start then. */}
+            {preview?.preview?.length > 0 && (
+              <Disclosure open className="mt-2 rounded-md border border-lavander" summary="Sample sales rows">
+                <div className="border-t border-lavander p-2">
+                  <OutputPreview preview={preview} />
+                </div>
+              </Disclosure>
+            )}
+          </ReviewSection>
         </div>
 
-        <OutputPreview
-          preview={preview}
-          isLoading={busy === 'preview'}
-          error={previewError}
-          onRefresh={runPreview}
-          disabled={busy !== null && busy !== 'preview'}
+        <ReviewChecklist
+          items={items}
+          isConfirmed={mapping.state === 'confirmed'}
+          changed={changed}
+          busy={busy}
+          error={message}
+          onApprove={handleApprove}
         />
-      </section>
+      </div>
 
-      {!readOnly && (
-        <section className="rounded-lg border border-lavander bg-white p-6 shadow-sm">
-          <h3 className="mb-1 font-serif text-lg text-deep-violet-blue">Save for reuse</h3>
-          <p className="mb-4 text-sm text-deep-violet-blue/70">
-            Every future file with this column layout runs through these rules.
-          </p>
+      <NewCustomerDialog
+        open={newCustomerName !== null}
+        defaults={{
+          ...newCustomerDefaults(outputs),
+          // A name searched for and not found beats the guess from the file.
+          ...(newCustomerName ? { name: newCustomerName } : {}),
+        }}
+        customers={customers.data}
+        unlinked={customers.unlinked}
+        onCreated={handleCustomerCreated}
+        onClose={() => setNewCustomerName(null)}
+      />
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="block text-sm text-deep-violet-blue">
-              Mapping name
-              <input
-                type="text"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="e.g. XEL weekly sell-out"
-                className="mt-1 w-full rounded-md border border-violet bg-white px-3 py-2 text-sm text-deep-violet-blue focus:border-deep-violet-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-deep-violet-blue"
-              />
-            </label>
-            <label className="block text-sm text-deep-violet-blue">
-              Vendor
-              <input
-                type="text"
-                value={vendor}
-                onChange={(event) => setVendor(event.target.value)}
-                placeholder="e.g. FairPrice"
-                className="mt-1 w-full rounded-md border border-violet bg-white px-3 py-2 text-sm text-deep-violet-blue focus:border-deep-violet-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-deep-violet-blue"
-              />
-            </label>
-          </div>
-
-          {!!blockers.length && (
-            <ul className="mt-4 list-disc space-y-1 rounded-lg border border-amber-200 bg-amber-50 p-3 pl-7 text-sm text-amber-900">
-              {blockers.map((blocker) => (
-                <li key={blocker}>{blocker}</li>
-              ))}
-            </ul>
-          )}
-
-          {message && (
-            <p className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-              {message}
-            </p>
-          )}
-
-          <div className="mt-5 flex flex-wrap items-center justify-end gap-3">
-            <button
-              type="button"
-              onClick={handleApprove}
-              disabled={busy !== null || blockers.length > 0}
-              className={primary}
-            >
-              {busy === 'approve' ? 'Saving…' : 'Approve mapping'}
-            </button>
-          </div>
-        </section>
-      )}
+      {/* A whole step back to the proposal can undo many edits at once, so it
+          asks first; one field or code resets straight away. */}
+      <ConfirmDialog
+        open={confirmingReset !== null}
+        title={confirmingReset === 'products' ? 'Reset the product codes?' : 'Reset the fields?'}
+        description={
+          confirmingReset === 'products'
+            ? `${changedCodes.length} product code${changedCodes.length === 1 ? '' : 's'} go back to the master SKU the ${PROPOSER} proposed.`
+            : `Every field in step 2 goes back to the ${PROPOSER}'s proposal, including the product codes in step 3. The customer and retailer in step 1 are kept.`
+        }
+        confirmLabel="Reset"
+        tone="default"
+        onConfirm={confirmReset}
+        onCancel={() => setConfirmingReset(null)}
+      />
 
       <ConfirmDiscardDialog
         mapping={isConfirmingDiscard ? mapping : null}

@@ -32,12 +32,17 @@ def connect_with_connector() -> Engine:
         if _engine is not None:
             return _engine
 
-        credentials = service_account.Credentials.from_service_account_file(
-            config.require_file("GOOGLE_APPLICATION_CREDENTIALS"),
-            scopes=[
-                "https://www.googleapis.com/auth/sqlservice.admin"
-            ],
-        )
+        # None lets the connector use the runtime identity
+        # (see config.optional_key_file).
+        credentials = None
+        key_path = config.optional_key_file("GOOGLE_APPLICATION_CREDENTIALS")
+        if key_path:
+            credentials = service_account.Credentials.from_service_account_file(
+                key_path,
+                scopes=[
+                    "https://www.googleapis.com/auth/sqlservice.admin"
+                ],
+            )
 
         _connector = Connector(
             credentials=credentials,

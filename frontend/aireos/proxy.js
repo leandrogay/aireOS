@@ -17,5 +17,7 @@ export function proxy(request) {
 }
 
 export const config = {
-  matcher: ['/((?!login|_next/static|_next/image|favicon.ico|.*\\..*).*)'],
+  // api/ is excluded: in deployed builds /api/* is forwarded to the backend,
+  // which checks the session itself, and /api/auth/* must work signed out.
+  matcher: ['/((?!api/|login|_next/static|_next/image|favicon.ico|.*\\..*).*)'],
 };

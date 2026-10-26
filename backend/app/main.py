@@ -15,6 +15,16 @@ from app.services import forecast_pipeline_events
 logger = logging.getLogger("uvicorn.error")
 
 
+def _cors_origins() -> list[str]:
+    # The SSO frontend must always be allowed, even if CORS_ALLOWED_ORIGINS
+    # was left at its local-dev default.
+    origins = list(config.CORS_ALLOWED_ORIGINS)
+    frontend = config.AUTH_FRONTEND_URL.rstrip("/")
+    if config.auth_enabled() and frontend not in origins:
+        origins.append(frontend)
+    return origins
+
+
 def _start_forecast_run_listener():
     # Pub/Sub being unreachable must not stop the app from starting.
     try:
@@ -47,14 +57,12 @@ app = FastAPI(lifespan=lifespan)
 # appropriate CORS headers.
 app.add_middleware(UnhandledErrorMiddleware)
 
+# Only the listed origins (config.CORS_ALLOWED_ORIGINS) may call the API from
+# a browser. Credentials are allowed, so this must stay an explicit list --
+# never a wildcard or a catch-all regex.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=(
-        [config.AUTH_FRONTEND_URL.rstrip("/")]
-        if config.auth_enabled()
-        else []
-    ),
-    allow_origin_regex=None if config.auth_enabled() else ".*",  # dev only
+    allow_origins=_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

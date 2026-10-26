@@ -1,6 +1,34 @@
 """Map, validate, and store one upload through a confirmed GCS contract."""
 
-from app.services import apply_contract, sellout_service, validation_service
+import pandas as pd
+
+from app.services import (
+    apply_contract,
+    layout_detection,
+    mapping_contract,
+    sellout_service,
+    validation_service,
+)
+
+
+def transform_confirmed_upload(
+    filename: str,
+    data: bytes,
+    contract: dict,
+) -> pd.DataFrame:
+    """Read and transform one upload through either contract format."""
+    if mapping_contract.is_v2(contract):
+        try:
+            dataframe, _ = layout_detection.read_table(filename, data)
+        except layout_detection.LayoutError as exc:
+            raise apply_contract.ContractApplicationError(str(exc)) from exc
+    else:
+        dataframe = apply_contract.read_source_dataframe(filename, data)
+    return apply_contract.apply_contract(
+        dataframe,
+        contract,
+        source_file=filename,
+    )
 
 
 def process_confirmed_upload(
@@ -11,9 +39,7 @@ def process_confirmed_upload(
     replace_source: bool = False,
 ) -> dict:
     """Return processing details after safely loading valid rows to Cloud SQL."""
-    dataframe = apply_contract.read_source_dataframe(filename, data)
-    normalized = apply_contract.apply_contract(dataframe, contract)
-    normalized["source_file"] = filename
+    normalized = transform_confirmed_upload(filename, data, contract)
     validated = validation_service.validate_mapped_dataframe(normalized)
     valid_rows = validated["valid_df"]
 
@@ -21,6 +47,7 @@ def process_confirmed_upload(
         storage = sellout_service.load_clean_rows(
             valid_rows,
             replace_source=replace_source,
+            data_source=contract.get("data_source") or "aireos_upload",
         )
     else:
         storage = {

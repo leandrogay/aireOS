@@ -76,7 +76,7 @@ _client: genai.Client | None = None
 
 
 def get_client() -> genai.Client:
-    """Lazy singleton, mirrors generate_mapping.get_client()."""
+    """Lazy singleton, mirrors generate_mapping.get_gemini_client()."""
     global _client
     if _client is None:
         if not GCP_PROJECT_ID:
