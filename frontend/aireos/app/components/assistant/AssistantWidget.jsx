@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
+import { MessageCircle, X } from 'lucide-react';
 import { Bar, CartesianGrid, ComposedChart, Legend, Line, LabelList, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import useAssistant from '@/hooks/useAssistant';
@@ -347,9 +348,9 @@ export default function AssistantWidget() {
               type="button"
               onClick={() => setOpen(false)}
               aria-label="Close assistant"
-              className="text-deep-violet-blue/60 hover:text-deep-violet-blue"
+              className="-mr-1 rounded-md p-1 text-deep-violet-blue/60 hover:bg-lavander hover:text-deep-violet-blue"
             >
-              ✕
+              <X aria-hidden="true" className="size-4" />
             </button>
           </div>
 
@@ -404,7 +405,7 @@ export default function AssistantWidget() {
         aria-label={open ? 'Close AireOS assistant' : 'Open AireOS assistant'}
         className="fixed bottom-4 right-4 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-deep-violet-blue text-white shadow-lg hover:bg-deep-violet-blue/90"
       >
-        {open ? '✕' : '💬'}
+        {open ? <X aria-hidden="true" className="size-5" /> : <MessageCircle aria-hidden="true" className="size-5" />}
       </button>
     </>
   );

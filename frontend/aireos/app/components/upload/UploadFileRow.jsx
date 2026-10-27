@@ -117,7 +117,9 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoa
 
   return (
     <li className="rounded-lg border border-lavander bg-white px-4 py-3 shadow-sm">
-      <div className="flex items-center gap-3">
+      {/* Top-aligned, so the remove cross stays in the card's top-right corner
+          however tall the row grows (duplicate choice, mapping notes). */}
+      <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-deep-violet-blue" title={file.name}>
             {file.name}
@@ -303,7 +305,7 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoa
             onClick={() => onRemove(id)}
             aria-label={beforeUpload ? `Don't upload ${file.name}` : `Remove ${file.name} from the list`}
             title={beforeUpload ? "Don't upload" : 'Remove from list'}
-            className="shrink-0 text-deep-violet-blue/60 hover:bg-lavander hover:text-deep-violet-blue"
+            className="-mt-1.5 -mr-2 shrink-0 text-deep-violet-blue/60 hover:bg-lavander hover:text-deep-violet-blue"
           >
             <X aria-hidden="true" />
           </Button>
