@@ -18,7 +18,7 @@ import {
   retailerStatuses,
   suggestCustomerId,
 } from '@/app/utils/mappingCustomer';
-import { PROPOSER, reviewIssues } from '@/app/utils/mappingReview';
+import { PROPOSER, isAiProposal, reviewIssues } from '@/app/utils/mappingReview';
 import { SECTION_IDS, reviewChecklist } from '@/app/utils/reviewChecklist';
 import { codeRows, unknownCodes } from '@/app/utils/skuCodeTable';
 import { cn } from '@/lib/utils';
@@ -380,6 +380,7 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
         <ReviewChecklist
           items={items}
           isConfirmed={mapping.state === 'confirmed'}
+          aiProposed={isAiProposal(mapping.proposedBy)}
           changed={changed}
           busy={busy}
           error={message}
