@@ -26,16 +26,18 @@ const OPTIONS = [
 ];
 
 /**
- * What to do with a duplicate, chosen before Upload. Native radios under the
- * pills, so arrow keys, focus and screen-reader announcements behave like any
- * other choice. Once one is picked, the line underneath says what it will do;
- * before that the section's note asks for the choice, so the row does not
- * repeat it.
+ * What to do with a duplicate, chosen before Upload. Drawn as one segmented
+ * control -- the options share a track, like the dashboard's By week / By
+ * month switch -- so it reads as one-or-the-other rather than two buttons.
+ * Native radios underneath, so arrow keys, focus and screen-reader
+ * announcements behave like any other choice. It starts on "Replace earlier"
+ * (uploadFlow.duplicateDecision), and the line underneath says what the
+ * current choice will do.
  *
  * @param {{
  *   id: string,
  *   fileName: string,
- *   value: 'replace' | 'keep' | null,
+ *   value: 'replace' | 'keep',
  *   onChange: (value: 'replace' | 'keep') => void,
  * }} props
  */
@@ -45,7 +47,7 @@ export default function DuplicateChoice({ id, fileName, value, onChange }) {
   return (
     <fieldset className="mt-2">
       <legend className="sr-only">What to do with {fileName}</legend>
-      <div className="flex flex-wrap gap-1.5">
+      <div className="inline-flex gap-0.5 rounded-lg bg-lavander p-0.5">
         {OPTIONS.map(({ value: option, label, Icon }) => (
           <label key={option} className="cursor-pointer">
             <input
@@ -58,11 +60,11 @@ export default function DuplicateChoice({ id, fileName, value, onChange }) {
             />
             <span
               className={cn(
-                'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors',
+                'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
                 'peer-focus-visible:ring-3 peer-focus-visible:ring-ring/50',
                 value === option
-                  ? 'border-deep-violet-blue bg-deep-violet-blue text-white'
-                  : 'border-violet bg-white text-deep-violet-blue hover:bg-lavander',
+                  ? 'bg-deep-violet-blue text-white shadow-sm'
+                  : 'text-deep-violet-blue/70 hover:bg-white/60 hover:text-deep-violet-blue',
               )}
             >
               <Icon aria-hidden="true" className="size-3.5" />

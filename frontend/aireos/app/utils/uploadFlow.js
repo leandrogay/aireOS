@@ -201,7 +201,7 @@ export const FILE_GROUPS = [
   {
     key: 'duplicate',
     label: 'Already uploaded',
-    note: 'Choose whether each one replaces the earlier copy or is kept alongside it. To skip a file, remove it.',
+    note: 'Each one replaces the earlier copy unless you choose Keep both. To skip a file, remove it.',
   },
   {
     key: 'failed',
@@ -270,14 +270,27 @@ export function filesLabel(count) {
 }
 
 /**
- * Whether pressing Upload sends this file now: checked, not yet sent, and, if
- * it duplicates an earlier upload, with a decision made.
+ * What happens to a duplicate on Upload: the person's choice, else "replace
+ * earlier" -- re-uploading a corrected file is the usual reason for a
+ * duplicate. Null for a file that duplicates nothing, so it is never sent
+ * with `force` (which would skip the server's own duplicate check).
+ *
+ * @param {object} item
+ * @returns {'replace' | 'keep' | null}
+ */
+export function duplicateDecision(item) {
+  if (!item.check?.duplicate) return null;
+  return item.decision || 'replace';
+}
+
+/**
+ * Whether pressing Upload sends this file now: checked and not yet sent.
  *
  * @param {object} item
  * @returns {boolean}
  */
 export function isUploadable(item) {
-  return item.phase === 'ready' && (!item.check?.duplicate || Boolean(item.decision));
+  return item.phase === 'ready';
 }
 
 /**
@@ -288,15 +301,17 @@ export function isUploadable(item) {
  * @returns {{ force?: boolean, keepDuplicate?: boolean }}
  */
 export function uploadOptionsFor(item) {
-  if (item.decision === 'replace') return { force: true };
-  if (item.decision === 'keep') return { keepDuplicate: true };
+  const decision = duplicateDecision(item);
+  if (decision === 'replace') return { force: true };
+  if (decision === 'keep') return { keepDuplicate: true };
   return {};
 }
 
 /**
- * Why Upload cannot be pressed yet, or '' when nothing is in the way. Files
- * still being checked and duplicates without a decision hold it; a duplicate
- * the person does not want is one click away (its remove button).
+ * Why Upload cannot be pressed yet, or '' when nothing is in the way. Only
+ * files still being checked hold it: a duplicate always has a decision (see
+ * duplicateDecision), and one the person does not want is one click away
+ * (its remove button).
  *
  * @param {object[]} items
  * @returns {string}
@@ -304,15 +319,5 @@ export function uploadOptionsFor(item) {
 export function uploadBlocker(items) {
   const checking = items.filter((item) => item.phase === 'checking').length;
   if (checking) return `Checking ${checking} file${checking === 1 ? '' : 's'}…`;
-
-  const undecided = items.filter(
-    (item) => item.phase === 'ready' && item.check?.duplicate && !item.decision,
-  ).length;
-  if (undecided) {
-    return undecided === 1
-      ? 'Choose what to do with the file that was already uploaded.'
-      : `Choose what to do with the ${undecided} files that were already uploaded.`;
-  }
-
   return '';
 }

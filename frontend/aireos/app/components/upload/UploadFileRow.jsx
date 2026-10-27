@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import DuplicateChoice from '@/components/upload/DuplicateChoice';
 import UploadPreview from '@/components/upload/UploadPreview';
 import { formatFileSize, getFileExtension } from '@/app/utils/fileInspect';
-import { STAGES, fileKind } from '@/app/utils/uploadFlow';
+import { STAGES, duplicateDecision, fileKind } from '@/app/utils/uploadFlow';
 import { vendorLabel } from '@/app/utils/retailerLabel';
 
 const action =
@@ -148,7 +148,7 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoa
               <DuplicateChoice
                 id={id}
                 fileName={file.name}
-                value={item.decision}
+                value={duplicateDecision(item)}
                 onChange={(decision) => onDecide(id, decision)}
               />
             </>
