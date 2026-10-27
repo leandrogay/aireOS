@@ -70,6 +70,10 @@ function LowStockDetails({ payload }) {
 }
 
 function ForecastDetails({ payload, success }) {
+  // Every producer sends these arrays, but one hand-inserted row without them
+  // must not crash the whole page the bell sits on.
+  const customers = payload.customers ?? [];
+  const skus = payload.skus ?? [];
   return (
     <>
       <p className="text-deep-violet-blue/80">
@@ -85,14 +89,14 @@ function ForecastDetails({ payload, success }) {
         <Field
           label="Customers processed"
           value={
-            payload.customers.length
-              ? `${payload.customers.length}: ${payload.customers.map(retailerLabel).join(', ')}`
+            customers.length
+              ? `${customers.length}: ${customers.map(retailerLabel).join(', ')}`
               : '0'
           }
         />
         <Field
           label="SKUs forecasted"
-          value={payload.skus.length ? `${payload.skus.length}: ${payload.skus.join(', ')}` : '0'}
+          value={skus.length ? `${skus.length}: ${skus.join(', ')}` : '0'}
         />
         <Field label="Last updated" value={formatDateTime(payload.updated_at)} />
         <Field label="Started by" value={payload.source === 'scheduled' ? 'Scheduled run' : 'Forecast script'} />
