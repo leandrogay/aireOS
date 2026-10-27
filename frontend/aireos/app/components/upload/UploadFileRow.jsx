@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import DuplicateChoice from '@/components/upload/DuplicateChoice';
 import UploadPreview from '@/components/upload/UploadPreview';
-import { formatFileSize, getFileExtension } from '@/app/utils/fileInspect';
+import { fileTypeLabel, formatFileSize } from '@/app/utils/fileInspect';
 import { STAGES, duplicateDecision, fileKind } from '@/app/utils/uploadFlow';
 import { vendorLabel } from '@/app/utils/retailerLabel';
 
@@ -110,7 +110,7 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoa
   const [showPreview, setShowPreview] = useState(false);
   const { id, file, check, outcome } = item;
   const kind = fileKind(item);
-  const extension = getFileExtension(file.name);
+  const fileType = fileTypeLabel(file.name);
   const processing = kind === 'uploaded' ? outcome.processing : null;
   const hasPreview = Boolean(processing?.preview?.length);
   const beforeUpload = BEFORE_UPLOAD.has(kind);
@@ -125,7 +125,7 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoa
             {file.name}
           </p>
           <p className="text-xs text-deep-violet-blue/60">
-            {extension ? `.${extension} · ` : ''}
+            {fileType ? `${fileType} · ` : ''}
             {formatFileSize(file.size)}
           </p>
 
