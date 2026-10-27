@@ -84,6 +84,7 @@ def mark_uploads_after_approval(fingerprint: str, *, name: str, vendor: str, ver
             "filename": upload["filename"],
             "uploaded_at": upload["uploaded_at"],
             "mapping_status": status,
+            "loaded_version": upload.get("mapping_version"),
         }
         if status == READY_TO_LOAD:
             waiting.append(row)
@@ -183,13 +184,16 @@ def load_uploads(blob_paths: list[str]) -> list[dict]:
             processing = sellout_ingestion.process_confirmed_upload(
                 filename, data, envelope.get("contract") or {}, replace_source=True
             )
-            storage.annotate_upload(
-                blob_path,
-                {
-                    storage.MAPPING_STATUS_METADATA_KEY: LOADED,
-                    storage.MAPPING_VERSION_METADATA_KEY: str(envelope.get("version") or 1),
-                },
-            )
+            # With Cloud SQL loading switched off nothing was written, so the
+            # file keeps its loadable state rather than claiming a version.
+            if processing.get("storage_status") != "disabled":
+                storage.annotate_upload(
+                    blob_path,
+                    {
+                        storage.MAPPING_STATUS_METADATA_KEY: LOADED,
+                        storage.MAPPING_VERSION_METADATA_KEY: str(envelope.get("version") or 1),
+                    },
+                )
             results.append({**_file_row(upload, envelope), "success": True, "processing": processing})
         except Exception as exc:
             results.append({**_file_row(upload), "success": False, "error": str(exc)})

@@ -91,6 +91,7 @@ def test_a_new_version_offers_a_reload_for_files_loaded_with_an_older_one(monkey
     result = upload_loading.mark_uploads_after_approval("fp", name="XEL weekly", vendor="xel", version=3)
 
     assert [item["blob_path"] for item in result["outdated"]] == ["uploads/old.txt", "uploads/legacy.txt"]
+    assert [item["loaded_version"] for item in result["outdated"]] == ["2", None]
     assert result["waiting"] == []
     assert bucket.annotations["uploads/current.txt"][storage.MAPPING_STATUS_METADATA_KEY] == "mapped"
 
@@ -159,6 +160,20 @@ def test_loading_stamps_the_file_as_loaded_with_the_current_version(monkeypatch)
         storage.MAPPING_STATUS_METADATA_KEY: "mapped",
         storage.MAPPING_VERSION_METADATA_KEY: "3",
     }
+
+
+def test_a_load_that_saved_nothing_leaves_the_file_loadable(monkeypatch):
+    bucket = FakeBucket([_upload("uploads/a.txt", "reload_available", version="2")]).install(monkeypatch)
+    monkeypatch.setattr(
+        sellout_ingestion,
+        "process_confirmed_upload",
+        lambda filename, data, contract, *, replace_source=False: {"rows_stored": 0, "storage_status": "disabled"},
+    )
+
+    [result] = upload_loading.load_uploads(["uploads/a.txt"])
+
+    assert result["success"] is True
+    assert "uploads/a.txt" not in bucket.annotations
 
 
 def test_one_file_failing_to_load_leaves_the_others_to_load(monkeypatch):
