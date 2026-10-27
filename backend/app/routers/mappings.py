@@ -90,16 +90,34 @@ def _proposed_contract(envelope: dict, rules: list[dict] | None, contract: dict 
     return envelope.get("contract") or {}
 
 
-def _example_table(envelope: dict):
+def _replacement_example(fingerprint: str) -> tuple[str, bytes] | None:
+    """
+    The newest upload with this mapping's layout that is still in the bucket.
+
+    Re-uploading a file with "Replace earlier" deletes the copy a proposal
+    names as its example, but the new copy is stamped with the same mapping
+    fingerprint, so the mapping can still be tested on it.
+    """
+    for upload in reversed(storage.list_uploads_for_mapping(fingerprint)):
+        data = storage.download_bytes(upload["blob_path"])
+        if data is not None:
+            return upload["filename"], data
+    return None
+
+
+def _example_table(envelope: dict, fingerprint: str):
     """The example file's data table and layout, or None when it is not stored."""
     example_file = envelope.get("example_file")
     if not example_file:
         return None
     blob_path = storage.blob_path_from_uri(example_file)
     data = storage.download_bytes(blob_path)
-    if data is None:
-        raise FileNotFoundError(example_file)
     filename = envelope.get("source_filename") or blob_path.rsplit("/", 1)[-1]
+    if data is None:
+        replacement = _replacement_example(fingerprint)
+        if replacement is None:
+            raise FileNotFoundError(example_file)
+        filename, data = replacement
     try:
         frame, layout = layout_detection.read_table(filename, data)
     except layout_detection.LayoutError as exc:
@@ -213,7 +231,7 @@ async def preview_mapping(fingerprint: str, body: PreviewRequest):
     proposed = _proposed_contract(envelope, body.rules, body.contract)
 
     def build() -> dict:
-        filename, data, frame, layout = _example_table(envelope)
+        filename, data, frame, layout = _example_table(envelope, fingerprint)
         validated = mapping_contract.validate_contract(
             proposed,
             list(frame.columns),
@@ -264,7 +282,10 @@ async def preview_mapping(fingerprint: str, body: PreviewRequest):
     except FileNotFoundError:
         raise HTTPException(
             status_code=410,
-            detail="The example file for this mapping is no longer in the bucket.",
+            detail=(
+                "The file this mapping was made from has been replaced or deleted. "
+                "Upload a file with these columns to test the mapping."
+            ),
         )
     except contract_application.ContractApplicationError as exc:
         # A contract that cannot be applied is the reviewer's answer, not a
@@ -380,7 +401,7 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
     # The checks again, on the example file, against the SKU master as it is
     # now. Without an example file there is nothing to check against.
     def recheck() -> list[dict]:
-        table = _example_table(pending)
+        table = _example_table(pending, fingerprint)
         if table is None:
             return []
         filename, _, frame, layout = table

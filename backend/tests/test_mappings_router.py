@@ -452,3 +452,43 @@ def test_an_approval_still_succeeds_when_its_notification_cannot_be_written(monk
     response = client.post("/api/mappings/fp/confirm", json={"rules": rules})
 
     assert response.status_code == 200
+
+
+# ---- Testing a mapping on its example file -------------------------------------------
+
+EXAMPLE_CSV = b"SKU No.,Store Name,Vendor,Store Code,Sales | Month 1 | 01-08-2026,Qty | Month 1 | 01-08-2026\n13255043,A,V,1,10,1\n"
+
+
+def _serve_example(monkeypatch, blobs, uploads):
+    """Serve a pending envelope whose example file is uploads/old.csv, and these blobs and uploads."""
+    from app.services import generate_mapping
+
+    envelope = {**V2_ENVELOPE, "example_file": "uploads/old.csv", "source_filename": "old.csv"}
+    _serve_pending(monkeypatch, envelope)
+    monkeypatch.setattr(storage, "download_bytes", lambda path: blobs.get(path))
+    monkeypatch.setattr(storage, "list_uploads_for_mapping", lambda fingerprint: uploads if fingerprint == "fp" else [])
+    monkeypatch.setattr(generate_mapping.catalog_service, "get_skus", lambda: [{"sku": "13255043"}])
+
+
+def test_a_replaced_example_file_is_tested_on_the_newest_copy_of_its_layout(monkeypatch):
+    read = []
+    blobs = {"uploads/new.csv": EXAMPLE_CSV}
+    _serve_example(monkeypatch, blobs, [
+        {"blob_path": "uploads/older.csv", "filename": "older.csv"},
+        {"blob_path": "uploads/new.csv", "filename": "new.csv"},
+    ])
+    monkeypatch.setattr(storage, "download_bytes", lambda path: read.append(path) or blobs.get(path))
+
+    response = client.post("/api/mappings/fp/preview", json={})
+
+    assert response.status_code == 200
+    assert read == ["uploads/old.csv", "uploads/new.csv"]
+
+
+def test_testing_with_no_copy_of_the_example_file_left_is_410_and_says_what_to_do(monkeypatch):
+    _serve_example(monkeypatch, {}, [{"blob_path": "uploads/gone.csv", "filename": "gone.csv"}])
+
+    response = client.post("/api/mappings/fp/preview", json={})
+
+    assert response.status_code == 410
+    assert "Upload a file with these columns" in response.json()["detail"]
