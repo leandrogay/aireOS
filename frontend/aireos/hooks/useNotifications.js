@@ -66,7 +66,9 @@ export default function useNotifications() {
     }
 
     // `open` fires on the first connect and on every automatic reconnect.
-    const source = new EventSource(notificationsStreamUrl());
+    // withCredentials sends the session cookie cross-origin; without it the
+    // protected stream answers 401 when the API is on another origin.
+    const source = new EventSource(notificationsStreamUrl(), { withCredentials: true });
     source.addEventListener('open', loadNotifications);
     source.addEventListener('changed', loadNotifications);
 
