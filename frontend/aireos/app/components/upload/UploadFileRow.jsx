@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import DuplicateChoice from '@/components/upload/DuplicateChoice';
 import UploadPreview from '@/components/upload/UploadPreview';
 import { fileTypeLabel, formatFileSize } from '@/app/utils/fileInspect';
-import { STAGES, duplicateDecision, fileKind } from '@/app/utils/uploadFlow';
+import { STAGES, duplicateDecision, duplicateResult, fileKind } from '@/app/utils/uploadFlow';
 import { vendorLabel } from '@/app/utils/retailerLabel';
 
 const action =
@@ -102,7 +102,7 @@ function DuplicateNote({ duplicate, fileName }) {
  *   item: object,
  *   onRemove: (id: string) => void,
  *   onRetry: (id: string) => void,
- *   onDecide: (id: string, decision: 'replace' | 'keep') => void,
+ *   onDecide: (id: string, decision: 'replace' | 'keep' | 'skip') => void,
  *   onLoad: (ids: string[]) => void,
  * }} props
  */
@@ -151,6 +151,7 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoa
                 id={id}
                 fileName={file.name}
                 value={duplicateDecision(item)}
+                result={duplicateResult(item)}
                 onChange={(decision) => onDecide(id, decision)}
               />
             </>

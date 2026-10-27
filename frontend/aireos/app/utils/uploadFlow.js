@@ -201,7 +201,7 @@ export const FILE_GROUPS = [
   {
     key: 'duplicate',
     label: 'Already uploaded',
-    note: 'Each one replaces the earlier copy unless you choose Keep both. To skip a file, remove it.',
+    note: 'Choose for each one: replace the earlier copy, keep both, or skip it.',
   },
   {
     key: 'failed',
@@ -270,32 +270,59 @@ export function filesLabel(count) {
 }
 
 /**
- * What happens to a duplicate on Upload: the person's choice, else "replace
- * earlier" -- re-uploading a corrected file is the usual reason for a
- * duplicate. Null for a file that duplicates nothing, so it is never sent
- * with `force` (which would skip the server's own duplicate check).
+ * What happens to a duplicate on Upload: the person's choice, else the likely
+ * one. The same contents are already uploaded, so sending them again changes
+ * nothing: skip. Only the name matches, so it is usually a corrected
+ * re-export: replace the earlier copy. Null for a file that duplicates
+ * nothing, so it is never sent with `force` (which would skip the server's
+ * own duplicate check).
  *
  * @param {object} item
- * @returns {'replace' | 'keep' | null}
+ * @returns {'replace' | 'keep' | 'skip' | null}
  */
 export function duplicateDecision(item) {
-  if (!item.check?.duplicate) return null;
-  return item.decision || 'replace';
+  const duplicate = item.check?.duplicate;
+  if (!duplicate) return null;
+  return item.decision || (duplicate.matchedOn === 'content' ? 'skip' : 'replace');
 }
 
 /**
- * Whether pressing Upload sends this file now: checked and not yet sent.
+ * What the current duplicate decision will do, to the file and to sales data,
+ * said under the choice. Replace uploads with `force`: the earlier blob is
+ * deleted (storage.upload_file) and, when the file loads, the rows from a file
+ * of that name are deleted before its own are written (replace_source in
+ * sellout_service.load_clean_rows). Keep both only upserts. A file loads on
+ * upload only when it matches an approved mapping and loading needs no
+ * confirmation; otherwise the earlier rows stay until it is loaded.
+ *
+ * @param {object} item
+ * @returns {string}
+ */
+export function duplicateResult(item) {
+  const decision = duplicateDecision(item);
+  if (decision === 'skip') return 'Not uploaded. Nothing changes.';
+  if (decision === 'keep') return "Both kept. Where they overlap, this file's figures are used.";
+  const loadsOnUpload = item.check?.mapping?.status === 'mapped' && !item.check.loadRequiresConfirmation;
+  return loadsOnUpload
+    ? "Earlier copy deleted. Its sales figures are replaced by this file's."
+    : 'Earlier copy deleted. Its sales figures stay until this file is loaded.';
+}
+
+/**
+ * Whether pressing Upload sends this file now: checked, not yet sent, and not
+ * a duplicate set to Skip.
  *
  * @param {object} item
  * @returns {boolean}
  */
 export function isUploadable(item) {
-  return item.phase === 'ready';
+  return item.phase === 'ready' && duplicateDecision(item) !== 'skip';
 }
 
 /**
  * The uploadFile() flags for a file: a duplicate decision becomes `force`
- * (replace the earlier copy) or `keepDuplicate` (keep both).
+ * (replace the earlier copy) or `keepDuplicate` (keep both). A skipped file
+ * is never sent (isUploadable).
  *
  * @param {object} item
  * @returns {{ force?: boolean, keepDuplicate?: boolean }}
@@ -310,8 +337,7 @@ export function uploadOptionsFor(item) {
 /**
  * Why Upload cannot be pressed yet, or '' when nothing is in the way. Only
  * files still being checked hold it: a duplicate always has a decision (see
- * duplicateDecision), and one the person does not want is one click away
- * (its remove button).
+ * duplicateDecision), Skip among them.
  *
  * @param {object[]} items
  * @returns {string}

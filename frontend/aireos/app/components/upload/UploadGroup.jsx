@@ -39,7 +39,7 @@ const GROUP_ICONS = {
  *   group: { key: string, label: string, note?: string, items: object[] },
  *   onRemove: (id: string) => void,
  *   onRetry: (id: string) => void,
- *   onDecide: (id: string, decision: 'replace' | 'keep') => void,
+ *   onDecide: (id: string, decision: 'replace' | 'keep' | 'skip') => void,
  *   onLoad: (ids: string[]) => void,
  * }} props
  */
