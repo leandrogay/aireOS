@@ -258,7 +258,7 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
             id={SECTION_IDS.fields}
             step={stepOf(SECTION_IDS.fields)}
             title="Where each field comes from"
-            info={`Change a field by choosing another column — or, for Units sold and Sales value, a group of period or outlet columns. Confirm the low-confidence ones with “Looks right”. Each field's ⓘ has its details.`}
+            info={`Change a field by choosing another column — or, for Units sold and Sales value, a group of period or outlet columns. Medium and Low confidence fields are marked; confirm the Low ones with “Looks right”. An unmarked field passed the checks, but is still worth a glance. Each field's ⓘ has its details.`}
             done={done(items, ['required', 'confirm', 'duplicates'])}
             action={
               canResetFields && (

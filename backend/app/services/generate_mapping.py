@@ -285,7 +285,7 @@ def generate_mapping_contract(
             {"role": "user", "content": mapping_prompt.repair_prompt(failed, contract["warnings"])},
         ]
 
-    contract = mapping_checks.field_confidence(contract, checks)
+    contract = mapping_checks.field_confidence(contract, checks, columns)
     return {
         "contract": contract,
         "checks": checks,
