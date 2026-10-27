@@ -15,9 +15,11 @@ import {
   UPLOAD_HISTORY_MONTHS,
 } from '../config/upload';
 import { validateFile } from '../utils/fileInspect';
+import { wasSaved } from '../utils/loadPreview';
 import {
   STAGES,
   checkFromResult,
+  filesLabel,
   groupFiles,
   isUploadable,
   outcomeFromResult,
@@ -337,7 +339,8 @@ export default function UploadPage() {
       setItems((prev) =>
         prev.map((item) => {
           const result = item.outcome?.blobPath && byPath.get(item.outcome.blobPath);
-          if (!result?.success) return item;
+          // A check with saving switched off leaves the file waiting to load.
+          if (!wasSaved(result)) return item;
           return { ...item, outcome: { ...item.outcome, kind: 'mapped', processing: result.processing } };
         }),
       );
@@ -415,7 +418,7 @@ export default function UploadPage() {
               className="rounded-lg border border-deep-violet-blue bg-deep-violet-blue px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-violet focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {uploadableCount
-                ? `Upload ${uploadableCount} file${uploadableCount === 1 ? '' : 's'}`
+                ? `Upload ${filesLabel(uploadableCount)}`
                 : 'Upload'}
             </button>
           </div>

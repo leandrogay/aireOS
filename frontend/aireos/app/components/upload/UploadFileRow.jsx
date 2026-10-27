@@ -171,7 +171,7 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoa
               </p>
               {processing?.storage_status === 'disabled' && (
                 <p className="mt-1 text-xs text-amber-900">
-                  Preview only: loading into Cloud SQL is turned off.
+                  Not saved: saving is off in this environment, so nothing was written.
                 </p>
               )}
               {processing?.rejection_summary && (

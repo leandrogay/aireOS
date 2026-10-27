@@ -8,31 +8,43 @@ import Disclosure from '@/components/ui/Disclosure';
 import LoadConfirmDialog from '@/components/upload/LoadConfirmDialog';
 import { formatDateTime } from '@/lib/formatDate';
 import { retailerLabel } from '@/app/utils/retailerLabel';
+import { wasSaved } from '@/app/utils/loadPreview';
+import { filesLabel } from '@/app/utils/uploadFlow';
 import { cn } from '@/lib/utils';
 
 const action =
   'inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-deep-violet-blue focus-visible:ring-offset-2';
 const primary = `${action} border-deep-violet-blue bg-deep-violet-blue text-white hover:opacity-90`;
 const secondary = `${action} border-deep-violet-blue/30 bg-white text-deep-violet-blue hover:bg-cream`;
+// Leaving the page while a load is waiting: available, but never a peer of the load button.
+const quiet =
+  'inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium text-deep-violet-blue/70 underline-offset-2 hover:text-deep-violet-blue hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-deep-violet-blue';
 
 function plural(count, one, many) {
   return `${count.toLocaleString()} ${count === 1 ? one : many}`;
 }
 
+/** Which version a file's sales data came from; unknown for loads made before versions were recorded. */
+function loadedWith(file) {
+  return file.loaded_version ? `Loaded with v${file.loaded_version}` : 'Loaded with an earlier version';
+}
+
 /**
  * Files the approved mapping can load, with the one button that opens the
- * load confirmation for all of them.
+ * load confirmation for all of them. `detail` is the line on each file's right.
  */
-function LoadableFiles({ title, help, files, buttonLabel, Icon, onLoad }) {
+function LoadableFiles({ title, help, files, detail, buttonLabel, Icon, onLoad }) {
   return (
-    <div className="mt-4 rounded-md border border-lavander bg-cream/40 p-3">
+    <div className="rounded-md border border-deep-violet-blue/20 border-l-4 border-l-deep-violet-blue bg-cream/40 p-3">
       <p className="text-sm font-medium text-deep-violet-blue">{title}</p>
-      <p className="mt-0.5 text-xs text-deep-violet-blue/70">{help}</p>
+      <p className="mt-0.5 text-xs text-deep-violet-blue/75">{help}</p>
       <ul className="mt-2 space-y-0.5 text-xs text-deep-violet-blue">
         {files.map((file) => (
-          <li key={file.blob_path} className="flex flex-wrap justify-between gap-x-3">
-            <span className="truncate font-mono">{file.filename}</span>
-            <span className="text-deep-violet-blue/60">Uploaded {formatDateTime(file.uploaded_at)}</span>
+          <li key={file.blob_path} className="flex justify-between gap-x-3">
+            <span className="min-w-0 truncate font-mono" title={file.filename}>
+              {file.filename}
+            </span>
+            <span className="shrink-0 text-deep-violet-blue/70">{detail(file)}</span>
           </li>
         ))}
       </ul>
@@ -45,27 +57,32 @@ function LoadableFiles({ title, help, files, buttonLabel, Icon, onLoad }) {
 }
 
 /**
- * What approving did, in the reviewer's terms: the mapping is saved, and no
- * sales data has been loaded. Loading is the next, separate step -- the files
- * waiting on this mapping (and, after a new version, the ones loaded with an
- * older one) are listed with a button that opens the load confirmation
- * (LoadConfirmDialog), because a load cannot be undone and an approval can.
+ * What approving did, in the reviewer's terms: the new version is live for
+ * future uploads, and nothing already uploaded has been loaded with it. That
+ * is the next, separate step -- the files waiting on this mapping (and, after
+ * a new version, the ones loaded with an older one) are listed with a button
+ * that opens the load confirmation (LoadConfirmDialog), because a load cannot
+ * be undone and an approval can. Files loaded from here move to their own
+ * list rather than disappearing, so the screen shows the step was done.
  *
  * @param {{ approved: object }} props
  */
 export default function ApprovedSummary({ approved }) {
-  // Files loaded from this screen drop off its lists.
-  const [loadedPaths, setLoadedPaths] = useState(new Set());
+  // load_uploads results that wrote to sell-out from this screen.
+  const [loadedHere, setLoadedHere] = useState([]);
   const [dialog, setDialog] = useState(null); // null | { blobPaths, reload }
 
+  const loadedPaths = new Set(loadedHere.map((item) => item.blob_path));
   const waiting = (approved.waiting_uploads || []).filter((file) => !loadedPaths.has(file.blob_path));
   const outdated = (approved.outdated_uploads || []).filter((file) => !loadedPaths.has(file.blob_path));
   const customer = retailerLabel(approved.customer_name || approved.vendor);
-  const loadedHere = loadedPaths.size;
+  const version = approved.version;
+  const hasNextStep = waiting.length > 0 || outdated.length > 0;
 
   function handleLoaded(response) {
-    const done = (response?.results || []).filter((item) => item.success).map((item) => item.blob_path);
-    setLoadedPaths((prev) => new Set([...prev, ...done]));
+    // A check with saving switched off wrote nothing, so the file stays listed as loadable.
+    const saved = (response?.results || []).filter(wasSaved);
+    setLoadedHere((prev) => [...prev, ...saved]);
   }
 
   return (
@@ -73,44 +90,75 @@ export default function ApprovedSummary({ approved }) {
       <div className="flex items-start gap-3">
         <CheckCircle2 aria-hidden="true" className="mt-0.5 size-7 shrink-0 text-green-600" />
         <div className="min-w-0">
-          <h2 className="font-serif text-xl text-deep-violet-blue">Mapping approved</h2>
-          <p className="mt-0.5 text-sm text-deep-violet-blue/70">
-            {approved.name} · {customer} · version {approved.version}
+          <h2 className="flex flex-wrap items-center gap-2 font-serif text-xl text-deep-violet-blue">
+            Mapping approved
+            <span className="rounded-full border border-lavander bg-cream px-2 py-0.5 font-sans text-xs font-medium">
+              v{version}
+            </span>
+          </h2>
+          <p className="mt-0.5 text-sm text-deep-violet-blue/75">
+            {approved.name} · {customer}
+            {version > 1 && ` · replaces v${version - 1}`}
           </p>
           <p className="mt-2 text-sm text-deep-violet-blue">
-            {loadedHere
-              ? `${plural(loadedHere, 'file', 'files')} loaded into sales data from here.`
-              : 'No sales data has been loaded yet.'}{' '}
+            Version {version} is now live.{' '}
             {approved.load_requires_confirmation
-              ? 'From now on, files with these columns are matched to this mapping and wait for you to load them.'
-              : 'From now on, files with these columns load as soon as they are uploaded.'}
+              ? 'New uploads with these columns are matched to it and wait for you to load them.'
+              : 'New uploads with these columns load with it as soon as they are uploaded.'}
           </p>
         </div>
       </div>
 
-      {waiting.length > 0 && (
-        <LoadableFiles
-          title={`${plural(waiting.length, 'file is', 'files are')} waiting to load`}
-          help="They were uploaded before this mapping was approved. Check what loading them would change before it happens."
-          files={waiting}
-          buttonLabel={`Review and load ${plural(waiting.length, 'file', 'files')}`}
-          Icon={Database}
-          onLoad={() => setDialog({ blobPaths: waiting.map((file) => file.blob_path), reload: false })}
-        />
+      {hasNextStep && (
+        <div className="mt-5 space-y-3">
+          <p className="text-sm font-medium text-deep-violet-blue">Next step: load the sales data</p>
+
+          {waiting.length > 0 && (
+            <LoadableFiles
+              title={`${plural(waiting.length, 'file is', 'files are')} waiting to load`}
+              help={`Uploaded before this mapping was approved, so nothing from ${waiting.length === 1 ? 'it' : 'them'} is in sales data yet. You'll see what loading changes before anything is written.`}
+              files={waiting}
+              detail={(file) => `Uploaded ${formatDateTime(file.uploaded_at)}`}
+              buttonLabel={`Review and load ${filesLabel(waiting.length)}`}
+              Icon={Database}
+              onLoad={() => setDialog({ blobPaths: waiting.map((file) => file.blob_path), reload: false })}
+            />
+          )}
+
+          {outdated.length > 0 && (
+            <LoadableFiles
+              title={`${plural(outdated.length, 'file was', 'files were')} loaded with an older version`}
+              help={`The dashboard still shows what the older version read from ${outdated.length === 1 ? 'it' : 'them'}. Reloading replaces those figures with what version ${version} reads.`}
+              files={outdated}
+              detail={(file) => `${loadedWith(file)} · uploaded ${formatDateTime(file.uploaded_at)}`}
+              buttonLabel={`Reload ${filesLabel(outdated.length)} with v${version}`}
+              Icon={RefreshCw}
+              onLoad={() => setDialog({ blobPaths: outdated.map((file) => file.blob_path), reload: true })}
+            />
+          )}
+        </div>
       )}
 
-      {outdated.length > 0 && (
-        <LoadableFiles
-          title={`${plural(outdated.length, 'file was', 'files were')} loaded with an older version`}
-          help="Their sales data is unchanged. Reloading replaces it with what this version reads from the files."
-          files={outdated}
-          buttonLabel={`Reload ${plural(outdated.length, 'file', 'files')} with the new version`}
-          Icon={RefreshCw}
-          onLoad={() => setDialog({ blobPaths: outdated.map((file) => file.blob_path), reload: true })}
-        />
+      {loadedHere.length > 0 && (
+        <div className="mt-4 rounded-md border border-green-200 bg-green-50 p-3 text-green-900">
+          <p className="flex items-center gap-1.5 text-sm font-medium">
+            <CheckCircle2 aria-hidden="true" className="size-4 shrink-0 text-green-600" />
+            {plural(loadedHere.length, 'file', 'files')} loaded with v{version}
+          </p>
+          <ul className="mt-1.5 space-y-0.5 pl-5.5 text-xs">
+            {loadedHere.map((item) => (
+              <li key={item.blob_path} className="flex justify-between gap-x-3">
+                <span className="min-w-0 truncate font-mono" title={item.filename}>
+                  {item.filename}
+                </span>
+                <span className="shrink-0">{plural(item.processing?.rows_stored || 0, 'sales row', 'sales rows')}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
-      {!waiting.length && !outdated.length && !loadedHere && (
+      {!hasNextStep && !loadedHere.length && (
         <p className="mt-4 rounded-md border border-lavander bg-cream/40 px-3 py-2 text-sm text-deep-violet-blue/80">
           No uploads are waiting on this mapping. Upload a file with these columns to add its sales.
         </p>
@@ -129,21 +177,20 @@ export default function ApprovedSummary({ approved }) {
         </Disclosure>
       )}
 
+      {/* "Back to Mappings" sits in the page header (mappings/[id]/page.js).
+          The dashboard is offered only once a load from here wrote rows:
+          approving alone changes nothing it shows. */}
       <div className="mt-5 flex flex-wrap items-center gap-2">
-        <Link href="/upload" className={waiting.length || outdated.length ? secondary : primary}>
+        <Link href="/upload" className={hasNextStep ? quiet : loadedHere.length ? secondary : primary}>
           <Upload aria-hidden="true" className="size-4" />
           Upload more files
         </Link>
-        <Link href="/dashboard" className={secondary}>
-          View Sales Dashboard
-          <ArrowRight aria-hidden="true" className="size-4" />
-        </Link>
-        <Link
-          href="/mappings"
-          className="rounded-md px-2 py-1.5 text-sm font-medium text-deep-violet-blue/70 underline-offset-2 hover:text-deep-violet-blue hover:underline"
-        >
-          All mappings
-        </Link>
+        {loadedHere.length > 0 && (
+          <Link href="/dashboard" className={hasNextStep ? secondary : primary}>
+            View Sales Dashboard
+            <ArrowRight aria-hidden="true" className="size-4" />
+          </Link>
+        )}
       </div>
 
       <Disclosure variant="link" summary="Technical details" className="mt-4 text-xs text-deep-violet-blue/70">

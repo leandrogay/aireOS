@@ -259,6 +259,17 @@ export function groupFiles(items) {
 }
 
 /**
+ * The files a button acts on: "file" for one ("Upload file"), "3 files" for
+ * more. Buttons only -- a sentence keeps its count ("1 file is waiting").
+ *
+ * @param {number} count
+ * @returns {string}
+ */
+export function filesLabel(count) {
+  return count === 1 ? 'file' : `${count.toLocaleString()} files`;
+}
+
+/**
  * Whether pressing Upload sends this file now: checked, not yet sent, and, if
  * it duplicates an earlier upload, with a decision made.
  *
