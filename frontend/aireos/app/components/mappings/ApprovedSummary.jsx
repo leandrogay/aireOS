@@ -1,7 +1,12 @@
+'use client';
+
+import { useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, ArrowRight, CheckCircle2, Upload } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Database, RefreshCw, Upload } from 'lucide-react';
 
 import Disclosure from '@/components/ui/Disclosure';
+import LoadConfirmDialog from '@/components/upload/LoadConfirmDialog';
+import { formatDateTime } from '@/lib/formatDate';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
@@ -10,51 +15,58 @@ const action =
 const primary = `${action} border-deep-violet-blue bg-deep-violet-blue text-white hover:opacity-90`;
 const secondary = `${action} border-deep-violet-blue/30 bg-white text-deep-violet-blue hover:bg-cream`;
 
-function fileName(path) {
-  return String(path || '').split('/').pop();
-}
-
 function plural(count, one, many) {
   return `${count.toLocaleString()} ${count === 1 ? one : many}`;
 }
 
-/** One number and what it counts, in a tile. */
-function Stat({ value, label, tone = 'default' }) {
+/**
+ * Files the approved mapping can load, with the one button that opens the
+ * load confirmation for all of them.
+ */
+function LoadableFiles({ title, help, files, buttonLabel, Icon, onLoad }) {
   return (
-    <div
-      className={cn(
-        'rounded-md border px-3 py-2',
-        tone === 'warning' ? 'border-amber-200 bg-amber-50' : 'border-lavander bg-cream/40',
-      )}
-    >
-      <p className={cn('text-lg font-semibold', tone === 'warning' ? 'text-amber-900' : 'text-deep-violet-blue')}>
-        {value.toLocaleString()}
-      </p>
-      <p className="text-xs text-deep-violet-blue/70">{label}</p>
+    <div className="mt-4 rounded-md border border-lavander bg-cream/40 p-3">
+      <p className="text-sm font-medium text-deep-violet-blue">{title}</p>
+      <p className="mt-0.5 text-xs text-deep-violet-blue/70">{help}</p>
+      <ul className="mt-2 space-y-0.5 text-xs text-deep-violet-blue">
+        {files.map((file) => (
+          <li key={file.blob_path} className="flex flex-wrap justify-between gap-x-3">
+            <span className="truncate font-mono">{file.filename}</span>
+            <span className="text-deep-violet-blue/60">Uploaded {formatDateTime(file.uploaded_at)}</span>
+          </li>
+        ))}
+      </ul>
+      <button type="button" onClick={onLoad} className={cn(primary, 'mt-3')}>
+        <Icon aria-hidden="true" className="size-4" />
+        {buttonLabel}
+      </button>
     </div>
   );
 }
 
 /**
- * What approving did, in the reviewer's terms, the way a payment or import
- * "done" screen reads: a headline, what happens from now on, the results as
- * numbers (uploads imported, sales rows added, rows skipped), anything that
- * went wrong with what to do about it, and the next places to go. Where the
- * contract was stored in the bucket is kept for whoever needs it, folded away.
+ * What approving did, in the reviewer's terms: the mapping is saved, and no
+ * sales data has been loaded. Loading is the next, separate step -- the files
+ * waiting on this mapping (and, after a new version, the ones loaded with an
+ * older one) are listed with a button that opens the load confirmation
+ * (LoadConfirmDialog), because a load cannot be undone and an approval can.
  *
  * @param {{ approved: object }} props
  */
 export default function ApprovedSummary({ approved }) {
-  const processing = approved.processing || [];
-  const imported = processing.filter((item) => item.success);
-  const failed = processing.filter((item) => !item.success);
-  const rowsAdded = imported.reduce((total, item) => total + (item.processing?.rows_stored || 0), 0);
-  const rowsSkipped = imported.reduce((total, item) => total + (item.processing?.rows_rejected || 0), 0);
-  const skippedReasons = imported.map((item) => item.processing?.rejection_summary).filter(Boolean);
-  // Loading into Cloud SQL can be switched off (local development): the
-  // files were read, but nothing was saved.
-  const storageOff = imported.some((item) => item.processing?.storage_status === 'disabled');
+  // Files loaded from this screen drop off its lists.
+  const [loadedPaths, setLoadedPaths] = useState(new Set());
+  const [dialog, setDialog] = useState(null); // null | { blobPaths, reload }
+
+  const waiting = (approved.waiting_uploads || []).filter((file) => !loadedPaths.has(file.blob_path));
+  const outdated = (approved.outdated_uploads || []).filter((file) => !loadedPaths.has(file.blob_path));
   const customer = retailerLabel(approved.customer_name || approved.vendor);
+  const loadedHere = loadedPaths.size;
+
+  function handleLoaded(response) {
+    const done = (response?.results || []).filter((item) => item.success).map((item) => item.blob_path);
+    setLoadedPaths((prev) => new Set([...prev, ...done]));
+  }
 
   return (
     <section className="rounded-lg border border-lavander bg-white p-5 shadow-sm">
@@ -66,52 +78,42 @@ export default function ApprovedSummary({ approved }) {
             {approved.name} · {customer} · version {approved.version}
           </p>
           <p className="mt-2 text-sm text-deep-violet-blue">
-            From now on, files with these columns import automatically — no review needed.
+            {loadedHere
+              ? `${plural(loadedHere, 'file', 'files')} loaded into sales data from here.`
+              : 'No sales data has been loaded yet.'}{' '}
+            {approved.load_requires_confirmation
+              ? 'From now on, files with these columns are matched to this mapping and wait for you to load them.'
+              : 'From now on, files with these columns load as soon as they are uploaded.'}
           </p>
         </div>
       </div>
 
-      {processing.length > 0 ? (
-        <div className="mt-4 grid gap-2 sm:grid-cols-3">
-          <Stat value={imported.length} label={`Waiting upload${imported.length === 1 ? '' : 's'} imported`} />
-          <Stat value={rowsAdded} label="Sales rows added" />
-          {rowsSkipped > 0 ? (
-            <Stat value={rowsSkipped} label="Rows skipped" tone="warning" />
-          ) : (
-            <Stat value={failed.length} label="Uploads that failed" tone={failed.length ? 'warning' : 'default'} />
-          )}
-        </div>
-      ) : (
+      {waiting.length > 0 && (
+        <LoadableFiles
+          title={`${plural(waiting.length, 'file is', 'files are')} waiting to load`}
+          help="They were uploaded before this mapping was approved. Check what loading them would change before it happens."
+          files={waiting}
+          buttonLabel={`Review and load ${plural(waiting.length, 'file', 'files')}`}
+          Icon={Database}
+          onLoad={() => setDialog({ blobPaths: waiting.map((file) => file.blob_path), reload: false })}
+        />
+      )}
+
+      {outdated.length > 0 && (
+        <LoadableFiles
+          title={`${plural(outdated.length, 'file was', 'files were')} loaded with an older version`}
+          help="Their sales data is unchanged. Reloading replaces it with what this version reads from the files."
+          files={outdated}
+          buttonLabel={`Reload ${plural(outdated.length, 'file', 'files')} with the new version`}
+          Icon={RefreshCw}
+          onLoad={() => setDialog({ blobPaths: outdated.map((file) => file.blob_path), reload: true })}
+        />
+      )}
+
+      {!waiting.length && !outdated.length && !loadedHere && (
         <p className="mt-4 rounded-md border border-lavander bg-cream/40 px-3 py-2 text-sm text-deep-violet-blue/80">
-          No uploads were waiting on this mapping. Upload a file with these columns to add its sales.
+          No uploads are waiting on this mapping. Upload a file with these columns to add its sales.
         </p>
-      )}
-
-      {storageOff && (
-        <p className="mt-2 text-xs text-amber-900">
-          Loading into the database is switched off here, so the files were read but no sales were saved.
-        </p>
-      )}
-
-      {rowsSkipped > 0 && skippedReasons.length > 0 && (
-        <p className="mt-2 text-xs text-amber-900">Skipped rows: {skippedReasons.join(' ')}</p>
-      )}
-
-      {failed.length > 0 && (
-        <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-          <p className="flex items-center gap-1.5 font-medium">
-            <AlertTriangle aria-hidden="true" className="size-4 shrink-0" />
-            {plural(failed.length, 'upload', 'uploads')} could not be imported
-          </p>
-          <ul className="mt-1 space-y-1 pl-5.5 text-xs">
-            {failed.map((item) => (
-              <li key={item.blob_path}>
-                <span className="font-mono">{fileName(item.blob_path)}</span> — {item.error}
-              </li>
-            ))}
-          </ul>
-          <p className="mt-2 pl-5.5 text-xs">The mapping is saved. Fix the file and upload it again.</p>
-        </div>
       )}
 
       {!!approved.warnings?.length && (
@@ -128,7 +130,7 @@ export default function ApprovedSummary({ approved }) {
       )}
 
       <div className="mt-5 flex flex-wrap items-center gap-2">
-        <Link href="/upload" className={primary}>
+        <Link href="/upload" className={waiting.length || outdated.length ? secondary : primary}>
           <Upload aria-hidden="true" className="size-4" />
           Upload more files
         </Link>
@@ -161,6 +163,14 @@ export default function ApprovedSummary({ approved }) {
           </p>
         )}
       </Disclosure>
+
+      <LoadConfirmDialog
+        open={dialog !== null}
+        blobPaths={dialog?.blobPaths || []}
+        reload={Boolean(dialog?.reload)}
+        onClose={() => setDialog(null)}
+        onLoaded={handleLoaded}
+      />
     </section>
   );
 }

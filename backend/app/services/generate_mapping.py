@@ -400,6 +400,7 @@ def resolve_mapping(filename: str, data: bytes, uploaded_to: str | None = None) 
             "contract": confirmed.get("contract", {}),
             "name": confirmed.get("name"),
             "vendor": confirmed.get("vendor"),
+            "version": confirmed.get("version"),
             "source": "cache",
             "confirmed_at": confirmed.get("confirmed_at"),
         }

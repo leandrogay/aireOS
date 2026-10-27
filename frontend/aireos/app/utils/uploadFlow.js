@@ -16,12 +16,13 @@
 export const STAGES = [
   { key: 'uploading', label: 'Uploading', afterMs: 0 },
   { key: 'duplicates', label: 'Checking for duplicates', afterMs: 700 },
-  { key: 'matching', label: 'Matching mapping', afterMs: 1800 },
+  { key: 'matching', label: 'Processing file', afterMs: 1800 },
 ];
 
 /**
  * @typedef {(
  *   | { kind: 'mapped', mappingId: string, name: string?, vendor: string?, processing: object? }
+ *   | { kind: 'ready_to_load', mappingId: string, name: string?, vendor: string?, blobPath: string }
  *   | { kind: 'needs_review', why: 'new' | 'partial', mappingId: string?, matched: object? }
  *   | { kind: 'duplicate', matchedOn: 'content' | 'filename', existingFilename: string?, uploadedAt: string? }
  *   | { kind: 'failed', error: string }
@@ -67,6 +68,17 @@ export function outcomeFromResult(result) {
         processing: mapping.processing || null,
       };
 
+    // REQUIRE_LOAD_CONFIRMATION is on: matched to an approved mapping, but
+    // nothing loaded until a person confirms it (backend upload_loading).
+    case 'ready_to_load':
+      return {
+        kind: 'ready_to_load',
+        mappingId: mapping.fingerprint,
+        name: mapping.name || null,
+        vendor: mapping.vendor || null,
+        blobPath: result.blob_path,
+      };
+
     case 'partial_match':
       return {
         kind: 'needs_review',
@@ -92,6 +104,7 @@ export function outcomeFromResult(result) {
  *   error: string | null,
  *   mapping: { status: 'mapped' | 'partial_match' | 'new_layout', name: string?, vendor: string?, matched: object? } | null,
  *   duplicate: { matchedOn: 'content' | 'filename', existingFilename: string?, uploadedAt: string? } | null,
+ *   loadRequiresConfirmation: boolean,
  *   failed?: string,
  * }} FileCheck
  */
@@ -124,6 +137,7 @@ export function checkFromResult(result) {
           uploadedAt: duplicate.existing_uploaded_at || null,
         }
       : null,
+    loadRequiresConfirmation: Boolean(result?.load_requires_confirmation),
   };
 }
 
@@ -152,8 +166,8 @@ function beforeUploadKind(item) {
  * The one state a file row renders.
  *
  * @param {object} item
- * @returns {'checking' | 'uploading' | 'uploaded' | 'needs_review' | 'failed' |
- *   'duplicate' | 'ready' | 'near_match' | 'new_layout' | 'unchecked'}
+ * @returns {'checking' | 'uploading' | 'uploaded' | 'ready_to_load' | 'needs_review' |
+ *   'failed' | 'duplicate' | 'ready' | 'near_match' | 'new_layout' | 'unchecked'}
  */
 export function fileKind(item) {
   if (item.phase === 'checking') return 'checking';
@@ -174,8 +188,16 @@ export const FILE_GROUPS = [
     key: 'ready',
     label: 'Ready to upload',
     note: 'These match a saved mapping, so their data loads as soon as they are uploaded.',
+    // With REQUIRE_LOAD_CONFIRMATION on (said by the check), uploading does
+    // not load them, and the note must not promise it does.
+    confirmNote: "These match a saved mapping. After uploading, you'll check what loading them would change before their data loads.",
   },
   { key: 'uploaded', label: 'Uploaded' },
+  {
+    key: 'ready_to_load',
+    label: 'Ready to load',
+    note: "Uploaded and matched to an approved mapping. Their data isn't loaded until you check and load it.",
+  },
   {
     key: 'duplicate',
     label: 'Already uploaded',
@@ -229,10 +251,11 @@ export function fileGroup(item) {
  * @returns {Array<{ key: string, label: string, note?: string, items: object[] }>}
  */
 export function groupFiles(items) {
-  return FILE_GROUPS.map((group) => ({
-    ...group,
-    items: items.filter((item) => fileGroup(item) === group.key),
-  })).filter((group) => group.items.length);
+  return FILE_GROUPS.map(({ confirmNote, ...group }) => {
+    const members = items.filter((item) => fileGroup(item) === group.key);
+    const confirming = members.some((item) => item.check?.loadRequiresConfirmation);
+    return { ...group, note: confirming && confirmNote ? confirmNote : group.note, items: members };
+  }).filter((group) => group.items.length);
 }
 
 /**

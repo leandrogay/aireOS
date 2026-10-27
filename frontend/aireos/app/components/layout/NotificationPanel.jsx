@@ -122,13 +122,24 @@ function MappingDetails({ payload }) {
       <p className="text-deep-violet-blue/80">
         {payload.amended
           ? 'An approved file mapping was changed. Every future file with these columns will use the new version.'
-          : 'A new file mapping was approved. Every future file with these columns will be loaded with it.'}
+          : 'A new file mapping was approved. Every future file with these columns will be read with it.'}
       </p>
       <div className="mt-2 space-y-1">
         <Field label="Mapping" value={payload.name} />
         <Field label="Vendor" value={payload.vendor} />
-        <Field label="Waiting files loaded" value={payload.uploads_processed} />
-        {payload.uploads_failed > 0 && <Field label="Waiting files that failed" value={payload.uploads_failed} />}
+        {/* Approvals since loading became its own step say what waits to be
+            loaded (backend confirm_mapping); older ones said what they loaded. */}
+        {payload.uploads_waiting !== undefined ? (
+          <>
+            <Field label="Files waiting to load" value={payload.uploads_waiting} />
+            {payload.uploads_outdated > 0 && <Field label="Files to reload" value={payload.uploads_outdated} />}
+          </>
+        ) : (
+          <>
+            <Field label="Waiting files loaded" value={payload.uploads_processed} />
+            {payload.uploads_failed > 0 && <Field label="Waiting files that failed" value={payload.uploads_failed} />}
+          </>
+        )}
       </div>
     </>
   );

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { ChevronRight, RotateCw, X } from 'lucide-react';
+import { ChevronRight, Database, RotateCw, X } from 'lucide-react';
 
 import { formatDateTime } from '@/lib/formatDate';
 import { cn } from '@/lib/utils';
@@ -103,9 +103,10 @@ function DuplicateNote({ duplicate, fileName }) {
  *   onRemove: (id: string) => void,
  *   onRetry: (id: string) => void,
  *   onDecide: (id: string, decision: 'replace' | 'keep') => void,
+ *   onLoad: (ids: string[]) => void,
  * }} props
  */
-export default function UploadFileRow({ item, onRemove, onRetry, onDecide }) {
+export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoad }) {
   const [showPreview, setShowPreview] = useState(false);
   const { id, file, check, outcome } = item;
   const kind = fileKind(item);
@@ -195,6 +196,30 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide }) {
                   <Link
                     href={`/mappings/${outcome.mappingId}`}
                     className="rounded-md underline-offset-2 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+                  >
+                    View mapping
+                  </Link>
+                )}
+              </div>
+            </>
+          )}
+
+          {kind === 'ready_to_load' && (
+            <>
+              <p className="mt-1 text-xs text-deep-violet-blue">
+                <MappingName name={outcome.name} vendor={outcome.vendor} />
+                {' · '}
+                <span className="text-amber-900">not loaded yet</span>
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+                <button type="button" onClick={() => onLoad([id])} className={primaryAction}>
+                  <Database aria-hidden="true" className="size-3.5" />
+                  Review and load
+                </button>
+                {outcome.mappingId && (
+                  <Link
+                    href={`/mappings/${outcome.mappingId}`}
+                    className="rounded-md text-xs font-medium text-deep-violet-blue underline-offset-2 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
                   >
                     View mapping
                   </Link>

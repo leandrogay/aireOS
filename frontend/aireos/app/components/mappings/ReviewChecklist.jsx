@@ -94,9 +94,11 @@ export default function ReviewChecklist({ items, isConfirmed, changed, busy, err
           {busy === 'approve' ? 'Saving…' : isConfirmed ? 'Save new version' : 'Approve mapping'}
         </Button>
         <InfoTooltip label="What approving does">
+          {/* Approving saves instructions and loads nothing; loading is the
+              next, confirmed step (ApprovedSummary → LoadConfirmDialog). */}
           {isConfirmed
-            ? 'Every file already uploaded with this layout is processed again with the new version.'
-            : 'Files with this layout are read this way from now on, and any waiting uploads are processed.'}
+            ? 'Saves the new version. Sales data already loaded is left as it is; you can reload those files with the new version next.'
+            : 'Saves how files with this layout are read. No sales data is loaded yet: you check and load the waiting files next.'}
         </InfoTooltip>
       </div>
     </aside>
