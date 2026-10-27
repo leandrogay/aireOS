@@ -77,8 +77,8 @@ app/services/*.py   All business logic and every external call (SQL, BigQuery, G
 
 - External clients are process-wide singletons created lazily:
   `@lru_cache(maxsize=1)` on `get_bigquery_client()`, `get_storage_client()`, `_get_engine()`;
-  a guarded `global` in `generate_mapping.get_client()` and `sql.connect_with_connector()`.
-  Never construct a `bigquery.Client`, `storage.Client`, `Anthropic`, or SQLAlchemy `Engine`
+  a guarded `global` in `generate_mapping.get_gemini_client()` and `sql.connect_with_connector()`.
+  Never construct a `bigquery.Client`, `storage.Client`, `genai.Client`, or SQLAlchemy `Engine`
   inside a request path.
 - Reads that are a single `SELECT` use `sql.connect_with_connector_autocommit()` via
   `_get_read_engine()`; anything that writes uses `_get_engine().begin()` so it is one
@@ -88,7 +88,7 @@ app/services/*.py   All business logic and every external call (SQL, BigQuery, G
   first — do not mix styles inside one router file.
 - Read config from `os.environ` at call time, not module import time, unless it is a harmless
   default (`BQ_FORECAST_OUTPUT_VIEW`). A missing key should fail the one request that needs it
-  with a clear message, not crash app startup (`get_client()` in `generate_mapping.py` is the
+  with a clear message, not crash app startup (`get_gemini_client()` in `generate_mapping.py` is the
   model).
 
 ### 2.4 Sync vs async route handlers
@@ -245,7 +245,8 @@ Rules:
 4. **Validation tests prove no side effect:** install a `_no_client_allowed` fake that raises
    `AssertionError` and assert `pytest.raises(ValueError)`.
 5. **Pure modules get pure tests.** `mapping_view`, `apply_contract`, `validation_service`,
-   `mapping_service` need no fakes — feed a small dict/DataFrame, assert the result.
+   `mapping_contract`, `layout_detection`, `mapping_checks` need no fakes —
+   feed a small dict/DataFrame (or a synthetic file from `conftest.py`), assert the result.
 6. **Route tests (integration)** use `fastapi.testclient.TestClient(app)` and monkeypatch the
    *service* function the router calls (`monkeypatch.setattr(promotion_service, "get_promotion", lambda _id: None)`)
    to assert the status-code mapping in §2.5. Add one per new router; don't duplicate service
@@ -274,8 +275,8 @@ Rules:
 
 - Commit `gcp-key.json`, `.env*`, or any credential. `.gitignore` already blocks `*.json`
   at the root — do not weaken it.
-- Widen CORS beyond what `main.py` has without a comment; the current `allow_origin_regex=".*"`
-  is dev-only and must be tightened before any deployment.
+- Widen CORS beyond the explicit `CORS_ALLOWED_ORIGINS` list. Credentials are allowed, so
+  never a wildcard or a catch-all `allow_origin_regex`.
 - Insert rows into BigQuery, or modify `skus`/`stores`/`retailers` rows from a promotion write.
 - Add a second `components/` folder, a second icon library, a second fetch wrapper, or a
   second `.env` loader.

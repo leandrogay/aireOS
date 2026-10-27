@@ -1,0 +1,19 @@
+# Cloud Build config for the web image. `gcloud builds submit --tag` cannot pass
+# build arguments, and the web image needs three (see deploy/<env>/web.build.env),
+# so deploy.ps1 / deploy.sh build it with this file and --substitutions.
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - $_IMAGE
+      - --build-arg
+      - NEXT_PUBLIC_API_URL=$_NEXT_PUBLIC_API_URL
+      - --build-arg
+      - NEXT_PUBLIC_AUTH_ENABLED=$_NEXT_PUBLIC_AUTH_ENABLED
+      - --build-arg
+      - BACKEND_API_URL=$_BACKEND_API_URL
+      - .
+images:
+  - $_IMAGE

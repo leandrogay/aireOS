@@ -4,7 +4,7 @@ The pre-upload check behind POST /api/uploads/check.
 It answers "what will happen to this file?" the moment it is dropped, so the
 upload screen can sort files into ready / needs a decision before anything is
 sent. The promise that makes that safe is that it is read-only: it never
-writes to the bucket and never asks Claude for a mapping. Both are pinned here
+writes to the bucket and never asks the model for a mapping. Both are pinned here
 alongside the answers themselves.
 """
 
@@ -51,11 +51,11 @@ def _install(monkeypatch, blobs=None, confirmed=None, partial=None):
     def _no_writes(*args, **kwargs):
         raise AssertionError("the pre-upload check must not write")
 
-    def _no_claude(*args, **kwargs):
-        raise AssertionError("the pre-upload check must not call Claude")
+    def _no_model(*args, **kwargs):
+        raise AssertionError("the pre-upload check must not call the model")
 
     monkeypatch.setattr(storage, "upload_json", _no_writes)
-    monkeypatch.setattr(generate_mapping, "generate_mapping_contract", _no_claude)
+    monkeypatch.setattr(generate_mapping, "generate_mapping_contract", _no_model)
 
 
 # ---- Mapping preview ---------------------------------------------------------

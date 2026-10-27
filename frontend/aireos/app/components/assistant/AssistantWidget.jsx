@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { Bar, CartesianGrid, ComposedChart, Legend, Line, LabelList, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import useAssistant from '@/hooks/useAssistant';
@@ -179,6 +180,7 @@ function ExportButtons({ message }) {
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/assistant/export`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           format,
@@ -190,6 +192,7 @@ function ExportButtons({ message }) {
           has_table: message.hasTable,
           table_columns: message.tableColumns,
           table_rows: message.tableRows,
+          table_note: message.tableNote || '',
           chart_style: message.chartStyle || {},
           chart_trend_values: message.chartTrendValues || [],
         }),
@@ -270,6 +273,9 @@ function AssistantMessage({ message, onFollowUp }) {
         {!isUser && message.hasTable && (
           <div className="mt-2 rounded bg-white p-1">
             <AssistantTable columns={message.tableColumns} rows={message.tableRows} />
+            {message.tableNote && (
+              <p className="mt-1 text-[10px] italic text-deep-violet-blue/60">{message.tableNote}</p>
+            )}
           </div>
         )}
 
@@ -309,6 +315,7 @@ function AssistantMessage({ message, onFollowUp }) {
 // conversation state survives client-side navigation between pages instead
 // of resetting on every route change.
 export default function AssistantWidget() {
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const { messages, askQuestion, askDigest, loading, error } = useAssistant();
@@ -327,6 +334,8 @@ export default function AssistantWidget() {
     setDraft('');
     askQuestion(question);
   }
+
+  if (pathname === '/login') return null;
 
   return (
     <>

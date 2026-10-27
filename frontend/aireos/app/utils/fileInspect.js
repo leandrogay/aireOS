@@ -26,6 +26,16 @@ export function formatFileSize(bytes) {
 
 // ---- Minimal XLSX reader ----------------------------------------------------
 
+const OFFICE_RELATIONSHIPS_NAMESPACE =
+  'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+
+function elementsByLocalName(root, localName) {
+  if (typeof root.getElementsByTagNameNS === 'function') {
+    return Array.from(root.getElementsByTagNameNS('*', localName));
+  }
+  return Array.from(root.getElementsByTagName(localName));
+}
+
 function getCellColumnIndex(cellRef = '') {
   const match = cellRef.match(/[A-Z]+/i);
   if (!match) return -1;
@@ -106,28 +116,28 @@ function parseZipEntries(arrayBuffer) {
 function parseSharedStrings(sharedStringsXml) {
   const doc = new DOMParser().parseFromString(sharedStringsXml, 'application/xml');
 
-  return Array.from(doc.getElementsByTagName('si')).map((siNode) => {
-    const tNodes = Array.from(siNode.getElementsByTagName('t'));
+  return elementsByLocalName(doc, 'si').map((siNode) => {
+    const tNodes = elementsByLocalName(siNode, 't');
     return tNodes.map((tNode) => tNode.textContent || '').join('');
   });
 }
 
 function parseWorksheetRows(worksheetXml, sharedStrings, maxRows, maxCols) {
   const doc = new DOMParser().parseFromString(worksheetXml, 'application/xml');
-  const rowNodes = Array.from(doc.getElementsByTagName('row')).slice(0, maxRows);
+  const rowNodes = elementsByLocalName(doc, 'row').slice(0, maxRows);
 
   return rowNodes.map((rowNode) => {
     const rowValues = new Array(maxCols).fill('');
 
-    Array.from(rowNode.getElementsByTagName('c')).forEach((cellNode) => {
+    elementsByLocalName(rowNode, 'c').forEach((cellNode) => {
       const colIndex = getCellColumnIndex(cellNode.getAttribute('r') || '');
       if (colIndex < 0 || colIndex >= maxCols) return;
 
       const type = cellNode.getAttribute('t');
-      const valueNode = cellNode.getElementsByTagName('v')[0];
+      const valueNode = elementsByLocalName(cellNode, 'v')[0];
 
       if (!valueNode) {
-        rowValues[colIndex] = cellNode.getElementsByTagName('t')[0]?.textContent || '';
+        rowValues[colIndex] = elementsByLocalName(cellNode, 't')[0]?.textContent || '';
         return;
       }
 
@@ -149,7 +159,7 @@ async function readXlsxRows(file, maxRows = 10, maxCols = 5) {
 
   const workbookXml = decoder.decode(await decodeZipEntry(workbookEntry));
   const workbookDoc = new DOMParser().parseFromString(workbookXml, 'application/xml');
-  const sheetNodes = Array.from(workbookDoc.getElementsByTagName('sheet'));
+  const sheetNodes = elementsByLocalName(workbookDoc, 'sheet');
   const sheetNames = sheetNodes.map((node) => node.getAttribute('name') || '').filter(Boolean);
 
   const relsEntry = entries.get('xl/_rels/workbook.xml.rels');
@@ -158,14 +168,16 @@ async function readXlsxRows(file, maxRows = 10, maxCols = 5) {
   if (relsEntry) {
     const relsXml = decoder.decode(await decodeZipEntry(relsEntry));
     const relsDoc = new DOMParser().parseFromString(relsXml, 'application/xml');
-    Array.from(relsDoc.getElementsByTagName('Relationship')).forEach((relNode) => {
+    elementsByLocalName(relsDoc, 'Relationship').forEach((relNode) => {
       const id = relNode.getAttribute('Id');
       const target = relNode.getAttribute('Target');
       if (id && target) relsMap.set(id, target);
     });
   }
 
-  const firstSheetRelId = sheetNodes[0]?.getAttribute('r:id');
+  const firstSheetRelId =
+    sheetNodes[0]?.getAttributeNS(OFFICE_RELATIONSHIPS_NAMESPACE, 'id') ||
+    sheetNodes[0]?.getAttribute('r:id');
   const firstSheetTarget = firstSheetRelId ? relsMap.get(firstSheetRelId) : null;
   if (!firstSheetTarget) return { sheetNames, rows: [] };
 

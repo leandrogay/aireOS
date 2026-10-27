@@ -27,8 +27,8 @@ REQUIRED_COLUMNS = [
     "period_end",
     "period_type",
     "retailer",
-    "store_code",
     "sku",
+    "quantity_units",
 ]
 
 DATE_COLUMNS = ["period_start", "period_end"]

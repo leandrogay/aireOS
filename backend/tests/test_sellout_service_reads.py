@@ -49,6 +49,18 @@ def test_sku_ranking_reads_through_effective_sellout(monkeypatch):
     (sql, _params) = conn.calls[0]
     assert "effective_sellout" in sql
     assert "monthly_coverage" in sql
+    # A stored revenue is kept. A blank one is units times the catalog price.
+    assert "COALESCE(p.revenue, p.quantity_units * k.price)" in sql
+
+
+def test_week_summary_prices_a_blank_revenue_from_the_catalog(monkeypatch):
+    conn = _install(monkeypatch, lambda sql, params: [])
+
+    sellout_service.get_dashboard_summary(granularity="week", customer="fairprice")
+
+    (sql, _params) = conn.calls[0]
+    assert "effective_sellout" not in sql
+    assert "COALESCE(src.revenue, src.quantity_units * k.price)" in sql
 
 
 def test_sku_ranking_order_by_has_no_secondary_sort_key(monkeypatch):

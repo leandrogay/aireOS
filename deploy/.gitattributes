@@ -1,0 +1,3 @@
+# bash sources target.env / web.build.env and runs the .sh scripts; a Windows
+# checkout with CRLF endings would put a stray \r on every value.
+* text eol=lf

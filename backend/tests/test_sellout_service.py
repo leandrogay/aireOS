@@ -133,6 +133,44 @@ def test_master_references_delegate_to_shared_catalog_helpers(monkeypatch):
     )
 
 
+def test_customer_level_rows_use_an_explicit_all_stores_database_key(monkeypatch):
+    dataframe = _dataframe().iloc[[0]].copy()
+    dataframe.loc[:, "retailer"] = "nhg_offline"
+    dataframe.loc[:, "store_code"] = None
+    dataframe.loc[:, "store_name"] = None
+    retailer_helper = MagicMock(return_value={"nhg_offline": 8})
+    store_helper = MagicMock(return_value=[99])
+    monkeypatch.setattr(
+        sellout_service.catalog_service,
+        "get_or_create_retailers",
+        retailer_helper,
+    )
+    monkeypatch.setattr(
+        sellout_service.catalog_service,
+        "get_or_create_stores",
+        store_helper,
+    )
+    engine, connection = _fake_database()
+
+    sellout_service.load_clean_rows(dataframe, engine=engine)
+
+    store_helper.assert_called_once_with(
+        connection,
+        [{
+            "retailer_id": 8,
+            "store_code": sellout_service.ALL_STORES_CODE,
+            "store_name": sellout_service.ALL_STORES_NAME,
+            "store_format": "HYPER",
+        }],
+    )
+    fact_call = next(
+        call
+        for call in connection.execute.call_args_list
+        if "INSERT INTO sellout" in str(call.args[0])
+    )
+    assert fact_call.args[1][0]["store_code"] == sellout_service.ALL_STORES_CODE
+
+
 def test_replacement_deletes_old_source_rows_inside_same_transaction():
     engine, connection = _fake_database()
 

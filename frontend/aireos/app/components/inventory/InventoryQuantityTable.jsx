@@ -5,7 +5,14 @@ import { Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 import InfoTooltip from '@/components/ui/InfoTooltip';
-import { inventoryRowClass, inventoryTdClass, inventoryThClass } from './InventoryTableFrame';
+import {
+  inventoryHeadRowClass,
+  inventoryRowClass,
+  inventoryTableClass,
+  inventoryTdClass,
+  inventoryTheadClass,
+  inventoryThClass,
+} from './InventoryTableFrame';
 import { invalidInputClass } from './formStyles';
 import { formFieldClass } from './InventoryChrome';
 
@@ -122,9 +129,9 @@ export default function InventoryQuantityTable({
 
   return (
     <div className="max-h-[32rem] overflow-auto rounded-md border border-lavander">
-      <table className="w-full border-collapse text-left text-xs text-deep-violet-blue">
-        <thead className="sticky top-0 z-10 bg-cream">
-          <tr className="border-b border-lavander">
+      <table className={cn(inventoryTableClass, 'border-collapse')}>
+        <thead className={inventoryTheadClass}>
+          <tr className={inventoryHeadRowClass}>
             <th className={inventoryThClass}>Product</th>
             {columns.map((col) => (
               <th key={col.field} className={inventoryThClass}>

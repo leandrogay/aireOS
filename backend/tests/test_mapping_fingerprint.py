@@ -24,7 +24,13 @@ def test_genuinely_different_columns_fingerprint_differently():
     assert fingerprint(fairprice) != fingerprint(other_retailer)
 
 
-def test_column_order_does_not_affect_fingerprint():
+def test_column_order_is_part_of_the_header_signature():
     columns = _wide_columns([(1, "01-01-2026"), (2, "08-01-2026")])
 
-    assert fingerprint(columns) == fingerprint(list(reversed(columns)))
+    assert fingerprint(columns) != fingerprint(list(reversed(columns)))
+
+
+def test_filename_is_not_part_of_the_header_signature():
+    columns = _wide_columns([(1, "01-01-2026"), (2, "08-01-2026")])
+
+    assert fingerprint(columns) == fingerprint(list(columns))

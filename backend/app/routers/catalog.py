@@ -61,7 +61,10 @@ def create_customer(customer: CustomerCreate):
             customer
         )
 
-    except customer_service.CustomerNameTakenError as e:
+    except (
+        customer_service.CustomerNameTakenError,
+        customer_service.RetailerOwnedError,
+    ) as e:
         raise HTTPException(
             status_code=409,
             detail=str(e),
@@ -699,7 +702,7 @@ def archive_sku(sku: str):
             raise HTTPException(status_code=404, detail="SKU not found")
         return {
             "status": "ok",
-            "message": f"SKU {sku} was moved to the archived SKU catalogue.",
+            "message": f"SKU {sku} was archived.",
             "sku": sku,
         }
 

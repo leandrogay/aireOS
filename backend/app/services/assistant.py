@@ -50,7 +50,7 @@ from openpyxl.styles import Font as XlsxFont, Alignment as XlsxAlignment
 from app import config
 from app.config import ConfigError
 from app.schemas.catalog import normalise_name
-from app.services import inventory_service, promotion_service, sellout_service
+from app.services import forecast_summary, inventory_service, promotion_service, sellout_service
 
 GCP_PROJECT_ID = config.GCP_PROJECT_ID
 GCP_VERTEX_LOCATION = config.GCP_VERTEX_LOCATION
@@ -76,7 +76,7 @@ _client: genai.Client | None = None
 
 
 def get_client() -> genai.Client:
-    """Lazy singleton, mirrors generate_mapping.get_client()."""
+    """Lazy singleton, mirrors generate_mapping.get_gemini_client()."""
     global _client
     if _client is None:
         if not GCP_PROJECT_ID:
@@ -331,6 +331,44 @@ _FUNCTION_SCHEMAS = [
             "additionalProperties": False,
         },
     },
+    {
+        "name": "get_demand_forecast",
+        "description": (
+            "The sell-out FORECAST (future demand, in cartons) exactly as the "
+            "Forecast page shows it: per customer x SKU and month, the Current "
+            "forecast (with its 80% range, for the table -- only mention it if "
+            "asked) and the forecast's confidence rating "
+            "(High / Medium / Low / Not yet scored, with the reason the page "
+            "gives), plus the latest ACTUAL cartons for the months just before "
+            "for comparison -- the two are returned separately (series[].forecast "
+            "vs series[].actuals) and must never be mixed. Use for \"what is the "
+            "forecast/expected demand/projected sales for X\", \"how many cartons "
+            "will we sell next month\". Figures are whole cartons, already "
+            "rounded the way the page rounds them; quote them as given. "
+            "monthly_totals (only when several customers/SKUs are in scope) and "
+            "forecast_total_cartons are server-side sums -- quote those rather "
+            "than adding numbers yourself. Online and offline channels are "
+            "always combined, as on the Forecast page. Revenue is included "
+            "too, priced the way the page's Revenue view prices it "
+            "(revenue_basis): forecast[].revenue, actuals[].revenue, "
+            "monthly_totals[].forecast_revenue/actual_revenue and "
+            "forecast_total_revenue, in dollars; quote them as given. Set "
+            "include_revenue=true when the question is about revenue/sales "
+            "value/dollars, so the table shows revenue. Not for stock or "
+            "sell-in questions (use get_sell_in_plan)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "product": {"type": "string", "description": "Product name or SKU code, e.g. 'Aire Ultra Tape L' or '13271338'. A unique part of the name works ('ultra tape l'). Omit for every SKU."},
+                "customer": {"type": "string", "description": "Customer name, e.g. 'fairprice', 'sheng shiong', 'nhg'. Omit for every customer (does NOT default to the page's customer)."},
+                "start_month": {"type": "string", "description": "YYYY-MM, the first month asked about, e.g. '2026-11' for \"next month\" in October 2026. Omit when no period was named: the first 3 forecast months are returned."},
+                "end_month": {"type": "string", "description": "YYYY-MM, inclusive. Omit for a single month (just start_month)."},
+                "include_revenue": {"type": "boolean", "description": "True when the question asks about revenue, sales value or dollars rather than (or as well as) cartons: the table then shows a revenue column. Defaults to false."},
+            },
+            "additionalProperties": False,
+        },
+    },
 ]
 
 # Gemini rejects mixing custom function tools with Google
@@ -361,6 +399,7 @@ _SEARCH_TOOLS = [types.Tool(google_search=types.GoogleSearch())]
 _CHARTABLE_TOOLS = {
     "get_sales_summary", "compare_periods", "rank_skus", "get_promotions",
     "get_inventory_overview", "get_customer_inventory", "get_at_risk_inventory", "get_sell_in_plan",
+    "get_demand_forecast",
 }
 
 
@@ -377,15 +416,30 @@ _INVENTORY_TOOLS = {
 }
 
 
+# What staff call a customer -> the customer as stored. Only names that aren't
+# already contained in the stored one ("fairprice" already matches "FairPrice
+# Online"), and only ones that can't mean another customer.
+_CUSTOMER_ALIASES = {
+    "ntuc": "fairprice",
+    "ntuc_fairprice": "fairprice",
+    "fp": "fairprice",
+    "fair_price": "fairprice",
+    "fairprice_group": "fairprice",
+    "shengshiong": "sheng_shiong",
+}
+
+
 def _customer_slug(name: str) -> str:
     """'Sheng Shiong' -> 'sheng_shiong', the form customers are stored in. The
     model writes names the way people do, so every customer name it passes goes
-    through the same rule the catalog uses."""
+    through the same rule the catalog uses, and a nickname ('NTUC') becomes
+    the customer it means."""
 
     try:
-        return normalise_name(name)
+        slug = normalise_name(name)
     except ValueError:
-        return name.strip().lower()
+        slug = name.strip().lower()
+    return _CUSTOMER_ALIASES.get(slug, slug)
 
 
 def _resolve_inventory_customer_id(customer_name: str) -> int:
@@ -402,9 +456,11 @@ def _resolve_inventory_customer_id(customer_name: str) -> int:
     return matches[0]["customer_id"]
 
 
-def _utc_today() -> datetime.date:
-    # Not date.today(), which follows whatever timezone the server runs in.
-    return datetime.datetime.now(datetime.timezone.utc).date()
+def _singapore_today() -> datetime.date:
+    """Today as staff in Singapore see it. Not the UTC day, which is still
+    yesterday until 08:00 SGT (so on the 1st, "this month" would be last
+    month), and not date.today(), which follows the server's own timezone."""
+    return datetime.datetime.now(_SINGAPORE_TZ).date()
 
 
 def _report_date() -> str:
@@ -548,6 +604,18 @@ def _run_business_tool(name: str, tool_input: dict, default_customer: str):
                 return (f"Invalid arguments: {e}", True, None)
             except Exception as e:
                 return (f"Unable to reach the inventory database: {e}", True, None)
+        elif name == "get_demand_forecast":
+            try:
+                result = forecast_summary.get_demand_forecast(
+                    product=tool_input.get("product"),
+                    customer=_customer_slug(tool_input["customer"]) if tool_input.get("customer") else None,
+                    start_month=tool_input.get("start_month"),
+                    end_month=tool_input.get("end_month"),
+                )
+            except ValueError as e:
+                return (f"Invalid arguments: {e}", True, None)
+            except Exception as e:
+                return (f"Unable to reach the forecast data: {e}", True, None)
         else:
             return (f"Unknown tool: {name}", True, None)
     except ValueError as e:
@@ -638,7 +706,7 @@ def _filter_promotions(
 
 def _promotions_starting_or_ending_soon(promotions: list[dict], customer: str | None, days: int = 7) -> list[dict]:
     """Used by generate_digest -- promotions worth flagging as upcoming/wrapping up soon."""
-    today = _utc_today()
+    today = _singapore_today()
     horizon = today + datetime.timedelta(days=days)
     matches = []
     for promo in promotions:
@@ -893,6 +961,143 @@ def _table_cell(value) -> str:
     return "—" if value is None else str(value)
 
 
+# ---- Forecast table (get_demand_forecast) -----------------------------------
+#
+# A table, not a chart: the chart and the exported files draw one series, and
+# a forecast needs Actual and Forecast side by side without ever merging them
+# into one line. The "type" column carries that label on every row.
+
+_FORECAST_COLUMNS = ["type", "month", "customer", "product", "cartons", "range_80", "confidence"]
+# A revenue question swaps the cartons range for the dollar figure: the table
+# keeps its width (it already fills a PDF page), and the range is in cartons
+# so it says nothing about the dollars being asked about.
+_FORECAST_REVENUE_COLUMNS = ["type", "month", "customer", "product", "cartons", "revenue", "confidence"]
+
+# Above this many customer x SKU series in one call, only the month totals are
+# shown (the page's All SKUs / All customers view): a row per series per month
+# would be a wall of numbers in the chat and on a slide.
+_MAX_FORECAST_SERIES_IN_TABLE = 9
+
+
+def _customer_label(name: str | None) -> str:
+    """'sheng_shiong' -> 'Sheng Shiong', the way the Forecast page writes it (retailerLabel)."""
+    if not name:
+        return "All customers"
+    return " ".join(word.capitalize() for word in re.split(r"[_\s]+", name) if word)
+
+
+def _cartons_cell(value) -> str:
+    """Whole cartons with thousands separators; a negative range bound reads
+    as (2) rather than -2, as on the Forecast page (forecastPointDetails)."""
+    if value is None:
+        return "—"
+    return f"({-value:,})" if value < 0 else f"{value:,}"
+
+
+def _revenue_cell(value) -> str:
+    """Dollars to the cent, as the Forecast page's Revenue view shows them."""
+    return "—" if value is None else f"${value:,.2f}"
+
+
+def _actual_type(month_to_date: bool) -> str:
+    return "Actual (month to date)" if month_to_date else "Actual"
+
+
+def _forecast_rows(raw: dict, with_revenue: bool) -> list[list[str]]:
+    series = raw.get("series") or []
+    month = forecast_summary.month_label
+    rows: list[list[str]] = []
+    if len(series) <= _MAX_FORECAST_SERIES_IN_TABLE:
+        # Every series' actuals first, then every forecast, so the two read as
+        # separate blocks rather than alternating.
+        for item in series:
+            product = f"{item['product_name']} ({item['sku']})" if item.get("sku") else item["product_name"]
+            for entry in item["actuals"]:
+                rows.append([
+                    _actual_type(entry["month_to_date"]), month(entry["month"]), _customer_label(item["customer"]),
+                    product, _cartons_cell(entry["cartons"]),
+                    _revenue_cell(entry.get("revenue")) if with_revenue else "—", "—",
+                ])
+        for item in series:
+            product = f"{item['product_name']} ({item['sku']})" if item.get("sku") else item["product_name"]
+            confidence = (item.get("confidence") or {}).get("label", "—")
+            for entry in item["forecast"]:
+                if with_revenue:
+                    sixth = _revenue_cell(entry.get("revenue"))
+                elif entry.get("low_80") is not None and entry.get("high_80") is not None:
+                    sixth = f"{_cartons_cell(entry['low_80'])} to {_cartons_cell(entry['high_80'])}"
+                else:
+                    sixth = "—"
+                rows.append([
+                    "Forecast", month(entry["month"]), _customer_label(item["customer"]),
+                    product, _cartons_cell(entry["cartons"]), sixth, confidence,
+                ])
+
+    totals = raw.get("monthly_totals") or []
+    if totals:
+        # The page shows no range or confidence for a total: neither adds up across SKUs.
+        customer = _customer_label(raw.get("customer"))
+        product = raw.get("product_name") or "All SKUs"
+        for total in totals:
+            if total.get("actual_cartons") is not None:
+                rows.append([
+                    f"{_actual_type(total['actual_month_to_date'])} total", month(total["month"]), customer, product,
+                    _cartons_cell(total["actual_cartons"]),
+                    _revenue_cell(total.get("actual_revenue")) if with_revenue else "—", "—",
+                ])
+        for total in totals:
+            if total.get("forecast_cartons") is not None:
+                rows.append([
+                    "Forecast total", month(total["month"]), customer, product,
+                    _cartons_cell(total["forecast_cartons"]),
+                    _revenue_cell(total.get("forecast_revenue")) if with_revenue else "—", "—",
+                ])
+
+    forecast_months = sorted({entry["month"] for item in series for entry in item["forecast"]})
+    if len(forecast_months) > 1 and raw.get("forecast_total_cartons") is not None:
+        rows.append([
+            "Forecast total", f"{month(forecast_months[0])} – {month(forecast_months[-1])}",
+            _customer_label(raw.get("customer")), raw.get("product_name") or "All SKUs",
+            _cartons_cell(raw["forecast_total_cartons"]),
+            _revenue_cell(raw.get("forecast_total_revenue")) if with_revenue else "—", "—",
+        ])
+    return rows
+
+
+def _forecast_note(raw: dict, with_revenue: bool) -> str:
+    """What the figures are as of, so a downloaded copy says which forecast run
+    and which sales load it was taken from, and how revenue was priced."""
+    parts = []
+    if raw.get("forecast_generated_at_sgt"):
+        parts.append(f"Forecast run: {raw['forecast_generated_at_sgt']} SGT")
+    if raw.get("actuals_loaded_at_sgt"):
+        parts.append(f"Actuals loaded: {raw['actuals_loaded_at_sgt']} SGT")
+    parts.append(f"Cartons; {raw.get('channel', forecast_summary.CHANNEL).lower()}, as on the Forecast page")
+    if with_revenue:
+        parts.append(
+            "Forecast revenue = forecast cartons × realised price per carton "
+            f"(latest {forecast_summary.REALISED_PRICE_MONTHS} sales months)"
+        )
+    return " · ".join(parts)
+
+
+def _forecast_chart(chart_sources: list[tuple[str, dict, object]]) -> dict | None:
+    """One table from every get_demand_forecast call this turn (two customers
+    asked about separately both show), identical rows shown once. Any call
+    that asked for revenue puts the whole table in its revenue layout."""
+    calls = [(tool_input, raw) for name, tool_input, raw in chart_sources if name == "get_demand_forecast" and raw]
+    with_revenue = any(tool_input.get("include_revenue") for tool_input, _raw in calls)
+    table_rows: list[list[str]] = []
+    for _tool_input, raw in calls:
+        for row in _forecast_rows(raw, with_revenue):
+            if row not in table_rows:
+                table_rows.append(row)
+    if not table_rows:
+        return None
+    columns = _FORECAST_REVENUE_COLUMNS if with_revenue else _FORECAST_COLUMNS
+    return {**_table_chart(columns, table_rows), "table_note": _forecast_note(calls[-1][1], with_revenue)}
+
+
 def _build_chart(chart_sources: list[tuple[str, dict, object]], customer: str) -> dict:
     """
     Deterministic, backend-owned shaping -- the model never sees or produces
@@ -909,9 +1114,18 @@ def _build_chart(chart_sources: list[tuple[str, dict, object]], customer: str) -
     being cited: "why is Fairprice's DOH high, was there a promotion?" must
     still show the DOH table. Inventory (stock/DOH) and sales (revenue/units)
     are not both relevant to the same question.
+
+    get_demand_forecast comes before all of them: it is only called for a
+    question about future demand, and its table already carries the actuals
+    to compare against, so a sales lookup made alongside it for context must
+    not replace the forecast the answer is about.
     """
     if not chart_sources:
         return _empty_chart()
+
+    forecast_chart = _forecast_chart(chart_sources)
+    if forecast_chart is not None:
+        return forecast_chart
 
     compare_calls = [(tool_input, raw) for name, tool_input, raw in chart_sources if name == "compare_periods"]
     if compare_calls:
@@ -1015,6 +1229,7 @@ def _table_chart(columns: list[str], rows: list[list[str]]) -> dict:
         "has_table": True,
         "table_columns": columns,
         "table_rows": rows,
+        "table_note": "",
     }
 
 
@@ -1156,7 +1371,7 @@ def _inventory_chart(chart_sources: list[tuple[str, dict, object]]) -> dict | No
             ],
             _customer_name_of,
         )
-    
+
         or _inventory_table(
             results("get_inventory_overview"),
             "skus",
@@ -1181,6 +1396,10 @@ def _empty_chart() -> dict:
         "has_table": False,
         "table_columns": [],
         "table_rows": [],
+        # One line under a table saying what its figures are as of (the
+        # forecast table's run and sales-load times); shown in the chat and
+        # in the PDF/PowerPoint. Empty for every other table.
+        "table_note": "",
     }
 
 
@@ -1410,7 +1629,8 @@ def _build_pdf(answer_text: str, chart: dict, chart_style: dict | None = None, t
         elements.append(drawing)
     elif chart.get("has_table"):
         table_data = [chart["table_columns"]] + chart["table_rows"]
-        table = Table(table_data)
+        # repeatRows: a table that runs onto a second page keeps its header there.
+        table = Table(table_data, repeatRows=1)
         table.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), _AIRE_BRAND_COLOR),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
@@ -1418,6 +1638,9 @@ def _build_pdf(answer_text: str, chart: dict, chart_style: dict | None = None, t
             ("FONTSIZE", (0, 0), (-1, -1), 9),
         ]))
         elements.append(table)
+        if chart.get("table_note"):
+            elements.append(Spacer(1, 6))
+            elements.append(Paragraph(chart["table_note"], styles["Italic"]))
 
     doc.build(elements)
     return buf.getvalue()
@@ -1462,6 +1685,9 @@ def _build_excel(answer_text: str, chart: dict, chart_style: dict | None = None)
         for row_idx, row in enumerate(chart["table_rows"], start=header_row + 1):
             for col_idx, value in enumerate(row, start=1):
                 ws.cell(row=row_idx, column=col_idx, value=value)
+        if chart.get("table_note"):
+            note = ws.cell(row=header_row + len(chart["table_rows"]) + 2, column=1, value=chart["table_note"])
+            note.font = XlsxFont(italic=True)
 
     for column_cells in ws.columns:
         length = max((len(str(cell.value)) for cell in column_cells if cell.value is not None), default=10)
@@ -1473,6 +1699,7 @@ def _build_excel(answer_text: str, chart: dict, chart_style: dict | None = None)
 
 
 _MAX_BULLETS_PER_SLIDE = 4
+_MAX_TABLE_ROWS_PER_SLIDE = 12
 
 
 def _chunk_points(points: list[str]) -> list[list[str]]:
@@ -1668,18 +1895,34 @@ def _build_pptx(answer_text: str, chart: dict, chart_style: dict | None = None, 
         if trend_values and len(trend_values) == len(series["values"]):
             _add_pptx_trend_line(pptx_chart, style.get("chart_type") == "line", trend_values)
     elif chart.get("has_table"):
-        slide = prs.slides.add_slide(prs.slide_layouts[5])
         columns = chart["table_columns"]
         rows_data = chart["table_rows"]
-        table_shape = slide.shapes.add_table(
-            len(rows_data) + 1, len(columns), Inches(0.5), Inches(1.5), Inches(9), Inches(5),
-        )
-        table = table_shape.table
-        for col_idx, col_name in enumerate(columns):
-            table.cell(0, col_idx).text = str(col_name)
-        for row_idx, row in enumerate(rows_data, start=1):
-            for col_idx, value in enumerate(row):
-                table.cell(row_idx, col_idx).text = str(value)
+        # A slide fits about a dozen rows; more would run off its bottom edge,
+        # so a long table continues on further slides, header repeated.
+        chunks = [
+            rows_data[start:start + _MAX_TABLE_ROWS_PER_SLIDE]
+            for start in range(0, len(rows_data), _MAX_TABLE_ROWS_PER_SLIDE)
+        ] or [[]]
+        for chunk in chunks:
+            slide = prs.slides.add_slide(prs.slide_layouts[5])
+            table_shape = slide.shapes.add_table(
+                len(chunk) + 1, len(columns), Inches(0.5), Inches(1.5), Inches(9), Inches(0.4) * (len(chunk) + 1),
+            )
+            table = table_shape.table
+            for col_idx, col_name in enumerate(columns):
+                table.cell(0, col_idx).text = str(col_name)
+            for row_idx, row in enumerate(chunk, start=1):
+                for col_idx, value in enumerate(row):
+                    table.cell(row_idx, col_idx).text = str(value)
+            for cell in table.iter_cells():
+                for paragraph in cell.text_frame.paragraphs:
+                    paragraph.font.size = Pt(11)
+            if chart.get("table_note"):
+                note = slide.shapes.add_textbox(Inches(0.5), Inches(6.9), Inches(9), Inches(0.4)).text_frame
+                note.word_wrap = True
+                note.text = chart["table_note"]
+                note.paragraphs[0].font.size = Pt(10)
+                note.paragraphs[0].font.italic = True
 
     buf = io.BytesIO()
     prs.save(buf)
@@ -1818,6 +2061,17 @@ def _known_good_revenue_figures(chart: dict, chart_sources: list[tuple[str, dict
             for row in raw or []:
                 if row.get("value") is not None:
                     figures.add(round(float(row["value"]), 2))
+        elif name == "get_demand_forecast":
+            for item in raw.get("series") or []:
+                for entry in item.get("forecast", []) + item.get("actuals", []):
+                    if entry.get("revenue") is not None:
+                        figures.add(round(float(entry["revenue"]), 2))
+            for total in raw.get("monthly_totals") or []:
+                for key in ("forecast_revenue", "actual_revenue"):
+                    if total.get(key) is not None:
+                        figures.add(round(float(total[key]), 2))
+            if raw.get("forecast_total_revenue") is not None:
+                figures.add(round(float(raw["forecast_total_revenue"]), 2))
     return figures
 
 
@@ -1839,7 +2093,12 @@ def _displayed_figures(chart: dict) -> set[float]:
 
 
 def _involves_inventory(chart: dict, chart_sources: list[tuple[str, dict, object]]) -> bool:
-    if any(name in _INVENTORY_TOOLS and name != "list_inventory_skus" for name, _input, _raw in chart_sources):
+    """Whether the answer's headline is a quantity (days, units, cartons) to
+    check against the table: the inventory tools and the forecast."""
+    if any(
+        (name in _INVENTORY_TOOLS and name != "list_inventory_skus") or name == "get_demand_forecast"
+        for name, _input, _raw in chart_sources
+    ):
         return True
     return bool(_INVENTORY_COLUMNS & set(chart.get("table_columns") or []))
 
@@ -2096,7 +2355,7 @@ def _sanitize_chart_style(raw: dict | None) -> dict:
 
 
 def _system_prompt(current_style: dict) -> str:
-    today = _utc_today().isoformat()
+    today = _singapore_today().isoformat()
     style_desc = (
         f"color={current_style['color']}, show_value_labels={current_style['show_value_labels']}, "
         f"value_label_format={current_style['value_label_format']}, "
@@ -2125,10 +2384,46 @@ mechanic/SKUs for actual promotions run, no revenue figures), a separate
 inventory system (get_inventory_overview, get_customer_inventory,
 get_at_risk_inventory, get_sell_in_plan, list_inventory_skus -- ending stock,
 days of holding (DOH) against a min/max target band, at-risk SKUs and
-recommended sell-in quantities, no revenue figures either), and Google Search
-grounding for general market/competitor information.
+recommended sell-in quantities, no revenue figures either), the sell-out
+forecast (get_demand_forecast -- the same forecast cartons, 80% range and
+confidence the Forecast page shows, plus recent actual cartons), and Google
+Search grounding for general market/competitor information.
 
 Rules:
+- Future demand questions ("forecast", "expected/projected demand or sales",
+  "how many cartons will we sell next month") use get_demand_forecast. In the
+  answer:
+  - Call every forecast figure a "Forecast" and every past figure an
+    "Actual", in those words, and never blend the two into one number or
+    one sentence that could be misread (e.g. "Forecast for Nov 2026: 52
+    cartons. Actual for Aug 2026: 88 cartons.").
+  - State the SKU (product name and code), the customer, that it is online
+    and offline combined, the forecast month(s), and the forecast quantity in
+    cartons, exactly as the tool returned them.
+  - A question about forecast revenue / sales value / dollars ("how much
+    revenue will FairPrice bring in next month") is still get_demand_forecast,
+    with include_revenue=true: quote the revenue figures it returns as
+    "Forecast revenue" (and "Actual revenue" for past months), alongside the
+    cartons. Never work revenue out yourself from cartons and a price. If a
+    SKU's revenue is null it has no sales to price it from: say so rather
+    than leaving it out silently.
+  - Do not mention the 80% range (low_80/high_80) in the answer unless the
+    user asks about it: it is in the table for anyone who wants it, and in
+    the text it reads as a second forecast figure.
+  - State the confidence rating with the page's reason, e.g. "Confidence:
+    Low (limited sales history, check before using)".
+  - For a total across SKUs/customers or months, quote monthly_totals or
+    forecast_total_cartons -- never add the rows up yourself.
+  - When several SKUs/customers are in scope, lead with the total and do NOT
+    list every SKU in the answer: the table already shows each SKU's
+    forecast, range and confidence. Name at most the one or two SKUs that
+    matter most (the largest, or any rated Low), and sum up confidence in one
+    phrase (e.g. "confidence is High or Medium for most SKUs; Low for Ultra
+    Tape L and S/M -- see the table").
+  - If the user named no product or customer, still answer for everything in
+    scope; do not stop to ask.
+  For one SKU this can run a little past the 1-3 sentence limit, since those
+  facts all have to be there; keep each one short.
 - Inventory questions ("stock"/"ending stock", "DOH"/"days of holding",
   "at risk"/"low stock"/"overstock", "sell-in"/"replenishment plan") use the
   inventory tools, never the sales tools -- these are stock-position
