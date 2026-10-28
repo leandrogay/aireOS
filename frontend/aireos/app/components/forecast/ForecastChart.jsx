@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Area, ComposedChart, Line, ReferenceArea, ReferenceLine, XAxis, YAxis } from 'recharts';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -27,9 +27,13 @@ import {
 import { dotRevealDelay, lineSweepTimings } from '@/app/utils/lineAnimation';
 
 // All lines draw in with one left-to-right sweep (see lineSweepTimings), so
-// Actual, Initial and Current reach each month together.
+// Actual, Initial and Current reach each month together. The promo bands wipe
+// in with the same sweep (PromoBands).
 const LINE_SWEEP = { begin: 0, duration: 1200 };
 const SERIES_KEYS = FORECAST_SERIES.map((series) => series.key);
+
+// How long a promo band takes to wipe in when it is added after the first draw.
+const LATE_BAND_MS = 300;
 
 const chartConfig = Object.fromEntries(
   FORECAST_SERIES.map((series) => [series.key, { label: series.label, color: series.color }])
@@ -136,6 +140,59 @@ function SeriesDot({ cx, cy, color, shape, delay }) {
     );
   }
   return <circle cx={cx} cy={cy} r={3.5} fill={color} stroke="#fff" strokeWidth={1} {...reveal} />;
+}
+
+/**
+ * The promo bands behind the lines. On the chart's first draw each band wipes
+ * in left to right as the line sweep passes it: it starts at its left edge's
+ * moment and finishes at its right edge's, so the leading edge keeps pace with
+ * the lines. A band added later (a promo filter turned on) just wipes in
+ * quickly, rather than waiting for a sweep that is not happening. This mounts
+ * with the chart, so `settled` starts over whenever the chart is redrawn.
+ *
+ * @param {{ bands: Array<{ key: string, x1: number, x2: number, colors: string[], fillOpacity: number }>, span: number }} props
+ *   `span` is the x-axis length in months, what the sweep crosses
+ */
+function PromoBands({ bands, span }) {
+  const [settled, setSettled] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setSettled(true), LINE_SWEEP.begin + LINE_SWEEP.duration);
+    return () => clearTimeout(timer);
+  }, []);
+
+  return bands.map((band) => {
+    const timing = settled
+      ? { delay: 0, duration: LATE_BAND_MS }
+      : {
+          delay: LINE_SWEEP.begin + (LINE_SWEEP.duration * band.x1) / span,
+          duration: (LINE_SWEEP.duration * (band.x2 - band.x1)) / span,
+        };
+    return (
+      <ReferenceArea
+        key={band.key}
+        x1={band.x1}
+        x2={band.x2}
+        fill={band.colors.length > 1 ? `url(#${band.key})` : band.colors[0]}
+        fillOpacity={band.fillOpacity}
+        stroke="none"
+        ifOverflow="visible"
+        // Recharts passes the band's drawn rectangle; the shape is only here
+        // to put the wipe (.promo-band-in) on it.
+        shape={({ x, y, width, height, fill, fillOpacity }) => (
+          <rect
+            x={x}
+            y={y}
+            width={width}
+            height={height}
+            fill={fill}
+            fillOpacity={fillOpacity}
+            className="promo-band-in"
+            style={{ animationDelay: `${Math.round(timing.delay)}ms`, animationDuration: `${Math.round(timing.duration)}ms` }}
+          />
+        )}
+      />
+    );
+  });
 }
 
 function ScopeTag({ label, value }) {
@@ -459,17 +516,7 @@ export default function ForecastChart({
                       );
                     }}
                   />
-                  {overlayBands.map((band) => (
-                    <ReferenceArea
-                      key={band.key}
-                      x1={band.x1}
-                      x2={band.x2}
-                      fill={band.colors.length > 1 ? `url(#${band.key})` : band.colors[0]}
-                      fillOpacity={band.fillOpacity}
-                      stroke="none"
-                      ifOverflow="visible"
-                    />
-                  ))}
+                  <PromoBands bands={overlayBands} span={lastIndex + 1} />
                   {dividerXs.map((x) => (
                     <ReferenceLine
                       key={`promo-divider-${x}`}

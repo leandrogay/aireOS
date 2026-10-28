@@ -208,8 +208,24 @@
   animation: line-dot-in 250ms ease-out backwards;
 }
 
+/* A forecast promo band wipes in left to right, growing from its left edge.
+   Its delay and duration are set per band (ForecastChart.jsx PromoBands) so its
+   leading edge keeps pace with the line sweep. */
+@keyframes promo-band-in {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+.promo-band-in {
+  transform-box: fill-box;
+  transform-origin: left center;
+  animation: promo-band-in 300ms linear backwards;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .line-dot-in {
+  .line-dot-in,
+  .promo-band-in {
     animation: none;
   }
 }
