@@ -10,7 +10,7 @@ from app.schemas.catalog import _Base
 # ============================================================
 # SCENARIO PROMOTIONS
 #
-# Mirrors the scenario_promotions CHECKs (006), which stay as the
+# Mirrors the scenario_promotions CHECKs (007), which stay as the
 # backstop. Customer and product are named the way the Forecast page
 # names them, like building blocks; the service resolves them to
 # customer_id / sku. The frontend builds this body in
@@ -39,13 +39,11 @@ class ScenarioPromotionBase(_Base):
     # so a later settings change does not move a saved promotion.
     reference_uplift_pct: Decimal = Field(**_UPLIFT)
     reference_source: str = Field(min_length=1, max_length=20)
-    reference_by_sku: dict[str, Decimal] = Field(default_factory=dict)
 
     override_uplift_pct: Decimal | None = Field(default=None, **_UPLIFT)
 
     voucher: bool = False
     voucher_uplift_pct: Decimal = Field(default=Decimal("0"), **_UPLIFT)
-    voucher_by_sku: dict[str, Decimal] = Field(default_factory=dict)
 
     explanation: str | None = Field(default=None, max_length=2000)
 
@@ -84,10 +82,6 @@ class ScenarioPromotionBase(_Base):
                 or self.end_date.replace(day=1) != self.end_month
             ):
                 raise ValueError("start_month and end_month must be the months of start_date and end_date")
-
-        for values in (self.reference_by_sku, self.voucher_by_sku):
-            if any(value < Decimal("-90") or value > Decimal("300") for value in values.values()):
-                raise ValueError("Per-SKU uplifts must be between -90% and 300%")
 
         return self
 

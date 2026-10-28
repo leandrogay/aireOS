@@ -1,5 +1,3 @@
-import json
-from decimal import Decimal
 
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
@@ -7,7 +5,7 @@ from sqlalchemy.engine import Connection
 from app.services.scenario import building_blocks, common
 
 
-# Scenario builder promotions (scenario_promotions, migration 006): planned
+# Scenario builder promotions (scenario_promotions, migration 007): planned
 # promotions that only move the Scenario builder's Simulated line, saved
 # and switched on/off exactly like building blocks (building_blocks.py).
 # Nothing here reads or writes the forecast, the real `promotions` table,
@@ -34,11 +32,9 @@ _PROMOTION_SELECT = """
         promotion.mechanic_label,
         promotion.reference_uplift_pct,
         promotion.reference_source,
-        promotion.reference_by_sku,
         promotion.override_uplift_pct,
         promotion.voucher,
         promotion.voucher_uplift_pct,
-        promotion.voucher_by_sku,
         promotion.explanation,
         promotion.start_month,
         promotion.end_month,
@@ -62,10 +58,6 @@ def _number(value) -> float | None:
     return float(value) if value is not None else None
 
 
-def _by_sku_view(values: dict | None) -> dict[str, float]:
-    return {product: float(value) for product, value in (values or {}).items()}
-
-
 def _promotion_view(row: dict) -> dict:
     return {
         "promotion_id": row["promotion_id"],
@@ -77,11 +69,9 @@ def _promotion_view(row: dict) -> dict:
         "mechanic_label": row["mechanic_label"],
         "reference_uplift_pct": float(row["reference_uplift_pct"]),
         "reference_source": row["reference_source"],
-        "reference_by_sku": _by_sku_view(row["reference_by_sku"]),
         "override_uplift_pct": _number(row["override_uplift_pct"]),
         "voucher": row["voucher"],
         "voucher_uplift_pct": float(row["voucher_uplift_pct"]),
-        "voucher_by_sku": _by_sku_view(row["voucher_by_sku"]),
         "explanation": row["explanation"],
         "start_month": row["start_month"].isoformat(),
         "end_month": row["end_month"].isoformat(),
@@ -133,11 +123,6 @@ def list_scenario_promotions() -> list[dict]:
 # ============================================================
 
 
-def _by_sku_json(values: dict[str, Decimal]) -> str:
-    # JSONB holds plain numbers; the schema allows at most 2 decimals.
-    return json.dumps({product: float(value) for product, value in values.items()})
-
-
 def _write_params(conn: Connection, promotion: dict) -> dict:
     # Same name lookups as building blocks, so both kinds of item resolve
     # a customer or product the same way.
@@ -149,11 +134,9 @@ def _write_params(conn: Connection, promotion: dict) -> dict:
         "mechanic_label": promotion["mechanic_label"],
         "reference_uplift_pct": promotion["reference_uplift_pct"],
         "reference_source": promotion["reference_source"],
-        "reference_by_sku": _by_sku_json(promotion["reference_by_sku"]),
         "override_uplift_pct": promotion["override_uplift_pct"],
         "voucher": promotion["voucher"],
         "voucher_uplift_pct": promotion["voucher_uplift_pct"],
-        "voucher_by_sku": _by_sku_json(promotion["voucher_by_sku"]),
         "explanation": promotion["explanation"],
         "start_month": promotion["start_month"],
         "end_month": promotion["end_month"],
@@ -186,11 +169,9 @@ def create_scenario_promotion(promotion: dict) -> dict:
                     mechanic_label,
                     reference_uplift_pct,
                     reference_source,
-                    reference_by_sku,
                     override_uplift_pct,
                     voucher,
                     voucher_uplift_pct,
-                    voucher_by_sku,
                     explanation,
                     start_month,
                     end_month,
@@ -206,11 +187,9 @@ def create_scenario_promotion(promotion: dict) -> dict:
                     :mechanic_label,
                     :reference_uplift_pct,
                     :reference_source,
-                    CAST(:reference_by_sku AS JSONB),
                     :override_uplift_pct,
                     :voucher,
                     :voucher_uplift_pct,
-                    CAST(:voucher_by_sku AS JSONB),
                     :explanation,
                     :start_month,
                     :end_month,
@@ -244,11 +223,9 @@ def update_scenario_promotion(promotion_id: int, promotion: dict) -> dict | None
                     mechanic_label = :mechanic_label,
                     reference_uplift_pct = :reference_uplift_pct,
                     reference_source = :reference_source,
-                    reference_by_sku = CAST(:reference_by_sku AS JSONB),
                     override_uplift_pct = :override_uplift_pct,
                     voucher = :voucher,
                     voucher_uplift_pct = :voucher_uplift_pct,
-                    voucher_by_sku = CAST(:voucher_by_sku AS JSONB),
                     explanation = :explanation,
                     start_month = :start_month,
                     end_month = :end_month,

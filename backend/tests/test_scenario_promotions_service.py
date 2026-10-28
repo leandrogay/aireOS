@@ -1,4 +1,3 @@
-import json
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
@@ -24,12 +23,10 @@ def _promotion(**changes):
         "mechanic_key": "pct_off_30",
         "mechanic_label": "30% Off",
         "reference_uplift_pct": Decimal("4"),
-        "reference_source": "placeholder",
-        "reference_by_sku": {"Comfort Pants M": Decimal("6")},
+        "reference_source": "rule_based",
         "override_uplift_pct": None,
         "voucher": True,
         "voucher_uplift_pct": Decimal("3"),
-        "voucher_by_sku": {},
         "explanation": None,
         "start_month": date(2026, 11, 1),
         "end_month": date(2026, 12, 1),
@@ -62,8 +59,6 @@ class FakePromotionsDatabase:
             "customer_name": "fairprice",
             "product_name": product_name,
             # Postgres hands JSONB back already parsed.
-            "reference_by_sku": json.loads(stored["reference_by_sku"]),
-            "voucher_by_sku": json.loads(stored["voucher_by_sku"]),
             "created_at": STAMP,
             "updated_at": STAMP,
         }
@@ -124,7 +119,7 @@ def _install(monkeypatch, db):
 # ---- Create ------------------------------------------------------------------
 
 
-def test_create_resolves_names_and_stores_per_sku_values_as_json(monkeypatch):
+def test_create_resolves_the_customer_and_product_names(monkeypatch):
     conn = _install(monkeypatch, FakePromotionsDatabase())
 
     promotions_service.create_scenario_promotion(_promotion())
@@ -132,8 +127,7 @@ def test_create_resolves_names_and_stores_per_sku_values_as_json(monkeypatch):
     (_, params), = conn.sql_containing("INSERT INTO scenario_promotions")
     assert params["customer_id"] == 1
     assert params["sku"] == "SKU-A"
-    assert json.loads(params["reference_by_sku"]) == {"Comfort Pants M": 6.0}
-    assert json.loads(params["voucher_by_sku"]) == {}
+    assert "reference_by_sku" not in params
 
 
 def test_create_returns_the_promotion_with_the_uplifts_as_saved(monkeypatch):
@@ -145,7 +139,6 @@ def test_create_returns_the_promotion_with_the_uplifts_as_saved(monkeypatch):
     assert saved["customer_name"] == "fairprice"
     assert saved["sku"] == "SKU-A"
     assert saved["reference_uplift_pct"] == 4.0
-    assert saved["reference_by_sku"] == {"Comfort Pants M": 6.0}
     assert saved["override_uplift_pct"] is None
     assert saved["voucher_uplift_pct"] == 3.0
     assert saved["start_month"] == "2026-11-01"
