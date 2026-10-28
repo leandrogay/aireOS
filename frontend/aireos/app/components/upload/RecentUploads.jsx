@@ -164,6 +164,19 @@ export default function RecentUploads({
                         ) : (
                           <StatusBadge tone="neutral">{upload.mapping_status || 'Unknown'}</StatusBadge>
                         )}
+                        {upload.status === 'rolled_back' && (
+                          <div className="mt-1 max-w-[18rem] text-xs text-deep-violet-blue/65">
+                            <div>
+                              {upload.rolled_back_by || 'Unknown user'}
+                              {upload.rolled_back_at ? ` · ${formatDateTime(upload.rolled_back_at)}` : ''}
+                            </div>
+                            {upload.rollback_reason && (
+                              <div className="truncate" title={upload.rollback_reason}>
+                                {upload.rollback_reason}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-2.5">
                         {upload.mapping_fingerprint && upload.mapping_available ? (

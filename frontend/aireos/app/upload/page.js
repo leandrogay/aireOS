@@ -53,6 +53,7 @@ export default function UploadPage() {
   const [history, setHistory] = useState([]);
   const [historyError, setHistoryError] = useState('');
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [rollbackReason, setRollbackReason] = useState('');
   const { toast, notify, dismissToast } = useToast();
 
   // Stage timers keyed by item id, so a file that finishes early stops
@@ -121,7 +122,7 @@ export default function UploadPage() {
       try {
         const result = await rollbackUpload(
           upload.blob_path,
-          'Rolled back from the Recent uploads screen.',
+          rollbackReason.trim(),
         );
         notify(
           'warning',
@@ -133,6 +134,11 @@ export default function UploadPage() {
       }
     },
   });
+
+  function requestRollback(upload) {
+    setRollbackReason('');
+    rollback.request(upload);
+  }
 
   // ---- Selection and checking ---------------------------------------------
 
@@ -426,7 +432,7 @@ export default function UploadPage() {
           isLoading={isLoadingHistory}
           error={historyError}
           onRefresh={loadHistory}
-          onRollback={rollback.request}
+          onRollback={requestRollback}
           months={UPLOAD_HISTORY_MONTHS}
         />
         <ConfirmDialog
@@ -441,9 +447,27 @@ export default function UploadPage() {
           confirmLabel="Rollback upload"
           pendingLabel="Rolling back…"
           isPending={rollback.isPending}
+          confirmDisabled={rollbackReason.trim().length < 3}
           onConfirm={rollback.confirm}
           onCancel={rollback.cancel}
-        />
+        >
+          <label className="mt-3 block text-sm font-medium text-deep-violet-blue" htmlFor="rollback-reason">
+            Reason for rollback <span className="text-red-700">*</span>
+          </label>
+          <textarea
+            id="rollback-reason"
+            value={rollbackReason}
+            onChange={(event) => setRollbackReason(event.target.value)}
+            maxLength={500}
+            rows={3}
+            required
+            placeholder="For example: Uploaded under the wrong customer"
+            className="mt-1.5 w-full resize-y rounded-md border border-lavander bg-white px-3 py-2 text-sm text-deep-violet-blue outline-none placeholder:text-deep-violet-blue/40 focus:border-deep-violet-blue"
+          />
+          <p className="mt-1 text-xs text-deep-violet-blue/60">
+            This reason will be saved in the rollback audit trail.
+          </p>
+        </ConfirmDialog>
         <Toast toast={toast} onDismiss={dismissToast} />
       </div>
     </PageLayout>

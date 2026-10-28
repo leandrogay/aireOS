@@ -4,6 +4,7 @@ import datetime
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from app.routers import uploads as uploads_router
 from app.schemas.uploads import RollbackUploadRequest
@@ -190,6 +191,11 @@ def test_rollback_route_records_the_signed_in_user(monkeypatch):
     }
 
 
+def test_rollback_reason_is_required_and_cannot_be_blank():
+    with pytest.raises(ValidationError):
+        RollbackUploadRequest(blob_path="uploads/bad.xlsx", reason="  ")
+
+
 def test_rollback_route_returns_conflict_for_an_already_rolled_back_upload(monkeypatch):
     def rollback(*args, **kwargs):
         raise ingestion_service.IngestionAlreadyRolledBackError("Already rolled back.")
@@ -198,7 +204,10 @@ def test_rollback_route_returns_conflict_for_an_already_rolled_back_upload(monke
 
     with pytest.raises(HTTPException) as exc_info:
         uploads_router.rollback_upload(
-            RollbackUploadRequest(blob_path="uploads/bad.xlsx"),
+            RollbackUploadRequest(
+                blob_path="uploads/bad.xlsx",
+                reason="Duplicate upload",
+            ),
             user={"email": "staff@shop-aire.com"},
         )
 
