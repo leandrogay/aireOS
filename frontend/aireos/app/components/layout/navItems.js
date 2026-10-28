@@ -29,6 +29,10 @@ export const NAV_ITEMS = [
     href: '/forecast',
     icon: TrendingUp,
     description: 'Monthly sell-out forecast against actuals, by customer and SKU.',
+    children: [
+      { label: 'Scenario builder', href: '/scenario' },
+      { label: 'Promotion uplift settings', href: '/promo-uplift-settings' },
+    ],
   },
   {
     label: 'Promotions',

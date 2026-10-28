@@ -4,8 +4,6 @@ import { useState } from 'react';
 import { Percent, Plus, Trash2 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
-import { PROMO_UPLIFTS_DEMO } from '@/app/services/promoUpliftsApi';
-import { SCENARIO_PROMOTIONS_DEMO } from '@/app/services/scenarioPromotionsApi';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 import { monthSpanLabel } from '@/app/utils/scenarioPitch';
 import {
@@ -24,11 +22,13 @@ import {
   withReferences,
 } from '@/app/utils/scenarioPromotions';
 import { Button } from '@/components/ui/button';
+import InfoTooltip from '@/components/ui/InfoTooltip';
 import { Switch } from '@/components/ui/switch';
 import { primaryButtonClass, secondaryButtonClass } from '@/components/inventory/formStyles';
 import PromoHowItWorks from '@/components/scenario/PromoHowItWorks';
 import PromotionEditor from '@/components/scenario/PromotionEditor';
 import usePromoUplifts from '@/hooks/usePromoUplifts';
+import { PROMO_HINTS } from '@/app/utils/promoUpliftHints';
 
 // Changing any of these picks the setting values again (withReferences).
 const REFERENCE_FIELDS = ['customer', 'sku', 'mechanicKey'];
@@ -41,7 +41,7 @@ function SettingsChangedNote({ change, onUpdate }) {
   }
   return (
     <p className="rounded-md border border-violet/40 bg-lavander/40 px-2.5 py-2 text-[11px] text-deep-violet-blue">
-      Promotion Uplift Settings now say {parts.join(', ')}.{' '}
+      Promotion uplift settings now say {parts.join(', ')}.{' '}
       <button type="button" onClick={onUpdate} className="font-medium text-scenario underline-offset-2 hover:underline">
         Update
       </button>
@@ -107,8 +107,8 @@ export default function PromotionsSection({
   const selected = items.find((promotion) => promotion.id === selectedId) ?? items[0] ?? null;
   const addCustomer = defaultCustomer || customerOptions[0] || '';
   const canAdd = months.length > 0 && customerOptions.length > 0 && mechanicOptions(uplifts.data[addCustomer]).length > 0;
-  const placeholderInUse = Object.values(uplifts.data).some((resolved) =>
-    resolved.uplifts.some((row) => row.source === 'placeholder')
+  const ruleBasedInUse = Object.values(uplifts.data).some((resolved) =>
+    resolved.uplifts.some((row) => row.source === 'rule_based')
   );
 
   function addPromotion() {
@@ -207,26 +207,18 @@ export default function PromotionsSection({
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <p className="text-[11px] text-deep-violet-blue/70">Plan a promotion and see its uplift on the chart.</p>
-        {placeholderInUse ? (
-          <span className="shrink-0 rounded-full border border-violet/40 bg-cream px-2 py-0.5 text-[10px] font-medium text-deep-violet-blue/70">
-            Placeholder values
+        {ruleBasedInUse ? (
+          <span className="flex shrink-0 items-center gap-0.5">
+            <span className="rounded-full border border-violet/40 bg-cream px-2 py-0.5 text-[10px] font-medium text-deep-violet-blue/70">
+              Rule-based uplifts
+            </span>
+            <InfoTooltip label="About rule-based uplifts">{PROMO_HINTS.ruleBasedTag}</InfoTooltip>
           </span>
         ) : null}
       </div>
 
       <PromoHowItWorks />
 
-      {SCENARIO_PROMOTIONS_DEMO ? (
-        <p className="rounded-md border border-violet bg-lavander/50 px-2.5 py-2 text-[11px] text-deep-violet-blue">
-          Saving is in demo mode until the scenario promotions table is set up: saved promotions last until the
-          page is reloaded.
-        </p>
-      ) : null}
-      {PROMO_UPLIFTS_DEMO ? (
-        <p className="rounded-md border border-violet bg-lavander/50 px-2.5 py-2 text-[11px] text-deep-violet-blue">
-          Demo mode: uplift values come from the Promotion Uplift Settings demo (not saved).
-        </p>
-      ) : null}
       {uplifts.error ? (
         <p className="rounded-md border border-violet bg-lavander/50 px-2.5 py-2 text-xs text-deep-violet-blue" role="alert">
           Promotion uplift values could not be loaded: {uplifts.error}

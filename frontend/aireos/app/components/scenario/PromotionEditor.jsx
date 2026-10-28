@@ -2,8 +2,10 @@
 
 import { cn } from '@/lib/utils';
 import DateRangePicker from '@/components/ui/DateRangePicker';
+import InfoTooltip from '@/components/ui/InfoTooltip';
 import { formatMonthLabel, PROMO_OVERLAY_TYPES } from '@/app/utils/forecastView';
 import { retailerLabel } from '@/app/utils/retailerLabel';
+import { PROMO_HINTS } from '@/app/utils/promoUpliftHints';
 import { monthSpanLabel } from '@/app/utils/scenarioPitch';
 import {
   MAX_OVERRIDE_PCT,
@@ -15,7 +17,8 @@ import {
   mechanicUpliftPct,
   lastDayOf,
   SIDE_OFFER_TYPE,
-  sourceLabel,
+  sourceText,
+  upliftsForProduct,
   valuesAcrossSkus,
   voucherOption,
 } from '@/app/utils/scenarioPromotions';
@@ -65,8 +68,9 @@ export default function PromotionEditor({
   impact,
   skipped,
 }) {
-  const mechanics = mechanicOptions(resolved);
-  const voucherRow = voucherOption(resolved);
+  // With one SKU picked, its own (e.g. measured) values and sources are shown.
+  const mechanics = mechanicOptions(resolved, promotion.sku);
+  const voucherRow = voucherOption(resolved, promotion.sku);
   const anchor = resolved?.anchor ?? null;
   const allSkus = !promotion.sku;
   const overridden = promotion.overrideUpliftPct != null;
@@ -129,8 +133,14 @@ export default function PromotionEditor({
 
       <div>
         <div className="flex items-center justify-between">
-          <label className={labelClass} htmlFor="promo-mechanic">Mechanic</label>
-          <MechanicLookupPopover uplifts={resolved?.uplifts ?? []} anchorPct={anchor?.anchor_pct ?? null} />
+          <span className="flex items-center gap-1">
+            <label className={labelClass} htmlFor="promo-mechanic">Mechanic</label>
+            <InfoTooltip label="About the mechanic's uplift">{PROMO_HINTS.mechanic}</InfoTooltip>
+          </span>
+          <MechanicLookupPopover
+            uplifts={upliftsForProduct(resolved, promotion.sku)}
+            anchorPct={anchor?.anchor_pct ?? null}
+          />
         </div>
         <select
           id="promo-mechanic"
@@ -141,24 +151,20 @@ export default function PromotionEditor({
           {mechanics.map((row) => (
             <option key={row.mechanic_key} value={row.mechanic_key}>
               {row.mechanic_label} · {optionValue(row)}
-              {allSkus && valuesAcrossSkus(resolved, row).length > 1 ? ' by SKU' : ''} ({sourceLabel(row.source)})
+              {allSkus && valuesAcrossSkus(resolved, row).length > 1 ? ' by SKU' : ''} ({sourceText(row)})
             </option>
           ))}
         </select>
         {anchor ? (
           <p className="mt-0.5 text-[11px] text-deep-violet-blue/50">
             Ordinary month for {retailerLabel(promotion.customer)}: {anchor.anchor_pct}% off
-            {anchor.source === 'suggested' && anchor.suggested
-              ? ` (suggested from ${anchor.suggested.months_used} months of promotions)`
-              : anchor.source === 'manual'
-                ? ' (set on Promotion Uplift Settings)'
-                : ' (all-customers default)'}
           </p>
         ) : null}
       </div>
 
       <div>
-        <span className={labelClass}>
+        <span className={cn(labelClass, 'flex items-center gap-1')}>
+          <InfoTooltip label="About the voucher">{PROMO_HINTS.voucher}</InfoTooltip>
           Voucher{voucherRow ? ` · ${allSkus ? formatPctRange(valuesAcrossSkus(resolved, voucherRow)) : formatPct(promotion.voucherUpliftPct)}` : ''}
         </span>
         <div className="flex gap-1" role="group" aria-label="Voucher">
@@ -185,7 +191,10 @@ export default function PromotionEditor({
 
       <div className="space-y-1">
         <div className="flex items-center justify-between">
-          <label className={labelClass} htmlFor="promo-uplift">Mechanic uplift</label>
+          <span className="flex items-center gap-1">
+            <label className={labelClass} htmlFor="promo-uplift">Mechanic uplift</label>
+            <InfoTooltip label="About overriding the uplift">{PROMO_HINTS.override}</InfoTooltip>
+          </span>
           <output htmlFor="promo-uplift" className="font-serif text-lg text-scenario">
             {formatPct(sliderValue)}
           </output>
@@ -222,18 +231,11 @@ export default function PromotionEditor({
               Reset
             </button>
           </p>
-        ) : (
+        ) : bySkuCount ? (
           <p className="text-[11px] text-deep-violet-blue/50">
-            Reference value ({sourceLabel(promotion.referenceSource)}
-            {bySkuCount ? `; ${bySkuCount} SKU${bySkuCount === 1 ? ' has' : 's have'} its own value` : ''}). Move the
-            slider to override it for this promotion only.
+            {bySkuCount} SKU{bySkuCount === 1 ? ' has' : 's have'} its own uplift.
           </p>
-        )}
-        <p className="text-[11px] text-deep-violet-blue/50">
-          The forecast already reflects an ordinary month
-          {anchor ? ` for ${retailerLabel(promotion.customer)} (usual: ${anchor.anchor_pct}% off)` : ''}, so this is
-          the change on top of that, not the promotion&apos;s whole effect. Planning the usual discount adds about 0%.
-        </p>
+        ) : null}
         <p className="text-[11px] text-deep-violet-blue/70">
           Total uplift: <b>{formatPctRange(effectiveUpliftRange(promotion))}</b>
           {promotion.voucher ? ' (mechanic + voucher)' : ''}

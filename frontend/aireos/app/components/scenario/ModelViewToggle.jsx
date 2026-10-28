@@ -1,6 +1,8 @@
 'use client';
 
 import { cn } from '@/lib/utils';
+import InfoTooltip from '@/components/ui/InfoTooltip';
+import { PROMO_HINTS } from '@/app/utils/promoUpliftHints';
 import { formatMonthLabel } from '@/app/utils/forecastView';
 import { MODEL_VIEWS } from '@/app/utils/scenarioModelView';
 
@@ -10,17 +12,15 @@ const OPTIONS = [
 ];
 
 function message({ disabled, summary, value, loading, error }) {
-  if (disabled) {
-    return 'Not needed for this SKU: none of its forecast months already include an entered promotion (they are Tier 1 basic or Tier 0), so promotions can be planned for every month.';
-  }
+  if (disabled) return 'Not needed for this SKU: promotions can be planned for every month.';
   if (error) return `The forecast without the model's promotions could not be loaded: ${error}`;
-  const which = `${summary.modelMonths} of ${summary.totalMonths} forecast months (${summary.months.map(formatMonthLabel).join(', ')})`;
+  const which = `${summary.modelMonths} of ${summary.totalMonths} months (${summary.months.map(formatMonthLabel).join(', ')})`;
   if (value === MODEL_VIEWS.planned) {
     return loading
       ? 'Loading the forecast without the model’s promotions…'
-      : `${which} use the Tier 1 basic or Tier 0 forecast instead, so you can plan promotions there yourself. The grey dotted line is the official forecast.`;
+      : `${which} use Tier 1 basic or Tier 0, so you can plan promotions there.`;
   }
-  return `${which} are Tier 1 advanced and already include the promotion entered for them, so promotions you plan are not added there. Switch to Plan my own promotions to plan them yourself.`;
+  return `${which} already include an entered promotion, so planned ones aren't added there.`;
 }
 
 /**
@@ -66,7 +66,10 @@ export default function ModelViewToggle({ value, onChange, disabled = false, sum
           </button>
         ))}
       </div>
-      <p className="min-w-0 flex-1 text-[11px] text-deep-violet-blue/70">{text}</p>
+      <p className="flex min-w-0 flex-1 items-center gap-1 text-[11px] text-deep-violet-blue/70">
+        {text}
+        <InfoTooltip label="About the two views" className="w-80">{PROMO_HINTS.modelView}</InfoTooltip>
+      </p>
     </div>
   );
 }

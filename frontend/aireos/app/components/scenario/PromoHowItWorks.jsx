@@ -43,7 +43,7 @@ export default function PromoHowItWorks() {
             are not added there and nothing is counted twice. Switch to <b>Plan my own promotions</b> above the chart
             to use the forecast without it and plan those months yourself. Building blocks apply in both views.
           </li>
-          <li>All values are placeholders until they are measured from sales data.</li>
+          <li>Uplifts are rule-based (+0.4% per extra point of discount, by default) until they are measured from sales data.</li>
           <li>
             The Scenario builder is for exploring: the Simulated line is never saved into the official forecast.
             The Current forecast, Inventory and Dashboard change only through new sales data and the forecasting
