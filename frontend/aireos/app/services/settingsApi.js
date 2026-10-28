@@ -134,7 +134,7 @@ export async function revertDohThresholds(customerId, settingId) {
 // (backend app/routers/settings/promo_uplifts.py)
 //
 // Uplift per promotion mechanic, and each customer's ordinary-month discount
-// (the "anchor" placeholder uplifts are measured from). Percentages come back
+// (the "anchor" rule-based uplifts are worked out from), and the rule's rate. Percentages come back
 // as JSON numbers (4 means +4%). Writes answer with `{ changed, ... }`, like
 // the DOH wrappers above.
 // ============================================================
@@ -157,12 +157,13 @@ export async function getPromoUpliftSettings() {
  * GET /api/settings/promo-uplifts/resolved?customer=&product=
  *
  * The uplift of every mechanic for one customer (forecast family name) and
- * product name ('' = all SKUs), as the Scenario builder uses it: placeholder
- * values already recalculated from the customer's anchor. For all SKUs,
- * `product_uplifts` lists products whose own value differs.
+ * product name ('' = all SKUs), as the Scenario builder uses it: rule-based
+ * uplifts already worked out from the rule and the customer's anchor. For all SKUs,
+ * `product_uplifts` lists products whose own value differs and
+ * `product_sources` where each of those came from (e.g. measured).
  *
  * @param {{ customer: string, product?: string }} scope
- * @returns {Promise<{ customer_name: string, product_name: string | null, anchor: object, uplifts: object[], product_uplifts: Record<string, Record<string, number>> }>}
+ * @returns {Promise<{ customer_name: string, product_name: string | null, anchor: object, uplifts: object[], product_uplifts: Record<string, Record<string, number>>, product_sources: Record<string, Record<string, { source: string, evidence_months: number | null }>> }>}
  */
 export async function getResolvedPromoUplifts({ customer, product = '' }) {
   const search = new URLSearchParams({ customer });
@@ -174,7 +175,7 @@ export async function getResolvedPromoUplifts({ customer, product = '' }) {
  * PUT /api/settings/promo-uplifts/{settingId}
  *
  * Saves a typed value as a new version (source 'estimate', so it no longer
- * follows the anchor). Learned rows answer 409.
+ * follows the rule). Learned rows answer 409.
  *
  * @param {number} settingId
  * @param {{ uplift_pct: number, note?: string | null }} payload sent with `updated_by: UPDATED_BY`
@@ -190,7 +191,7 @@ export async function savePromoUplift(settingId, payload) {
 /**
  * POST /api/settings/promo-uplifts/{settingId}/reset
  *
- * An all-customers row goes back on the placeholder rule; a customer, range
+ * An all-customers row goes back to its rule-based uplift; a customer, range
  * or SKU override is retired (`setting` is then null).
  *
  * @param {number} settingId
@@ -200,6 +201,55 @@ export async function resetPromoUplift(settingId) {
   return request(`${PROMO_UPLIFTS}/${encodeURIComponent(settingId)}/reset`, {
     method: 'POST',
     body: { updated_by: UPDATED_BY },
+  });
+}
+
+/**
+ * POST /api/settings/promo-uplifts/{settingId}/archive
+ *
+ * Takes a value out of use without deleting it: archived rows are hidden from
+ * the Scenario builder and the measurement, and can be restored.
+ *
+ * @param {number} settingId
+ * @returns {Promise<{ changed: boolean, setting: object }>}
+ */
+export async function archivePromoUplift(settingId) {
+  return request(`${PROMO_UPLIFTS}/${encodeURIComponent(settingId)}/archive`, {
+    method: 'POST',
+    body: { updated_by: UPDATED_BY },
+  });
+}
+
+/**
+ * POST /api/settings/promo-uplifts/{settingId}/restore
+ *
+ * Puts an archived value back in use.
+ *
+ * @param {number} settingId
+ * @returns {Promise<{ changed: boolean, setting: object }>}
+ */
+export async function restorePromoUplift(settingId) {
+  return request(`${PROMO_UPLIFTS}/${encodeURIComponent(settingId)}/restore`, {
+    method: 'POST',
+    body: { updated_by: UPDATED_BY },
+  });
+}
+
+/**
+ * POST /api/settings/promo-uplifts/mechanics
+ *
+ * A new promotion mechanic or voucher with an all-customers value. Without
+ * `uplift_pct` it is a rule-based uplift that follows the rule. A promotion's key
+ * is read from its label ("35% Off", "Buy 3 Get 1 Free"); an unreadable label
+ * is a 422. 409 when the name is taken.
+ *
+ * @param {{ kind: 'promotion' | 'voucher', mechanic_label: string, effective_discount_pct?: number | null, uplift_pct?: number | null, note?: string | null }} payload
+ * @returns {Promise<{ changed: boolean, setting: object }>}
+ */
+export async function addPromoMechanic(payload) {
+  return request(`${PROMO_UPLIFTS}/mechanics`, {
+    method: 'POST',
+    body: { ...payload, updated_by: UPDATED_BY },
   });
 }
 
@@ -281,4 +331,133 @@ export async function resetPromoAnchor(customerId) {
  */
 export async function getPromoAnchorHistory(customerId) {
   return request(`${PROMO_UPLIFTS}/anchors/${encodeURIComponent(customerId)}/history`);
+}
+
+// ---- Measurement (backend app/services/settings/promo_measurement.py) ----------
+
+/**
+ * POST /api/settings/promo-uplifts/measure
+ *
+ * Re-measure now (the same job Cloud Scheduler runs daily). Answers the run
+ * summary; 409 while another run is going; status 'skipped_unchanged' when
+ * nothing changed since the last run.
+ *
+ * @returns {Promise<{ run_id: number, status: string, window_start: string | null, window_end: string | null, counts: object, warnings: string[] }>}
+ */
+export async function runPromoMeasurement() {
+  return request(`${PROMO_UPLIFTS}/measure`, { method: 'POST' });
+}
+
+/**
+ * GET /api/settings/promo-uplifts/measure/status
+ *
+ * Last run, last successful run, next scheduled run, whether values are stale
+ * (no successful run for `stale_days`), and how many notes are open.
+ *
+ * @returns {Promise<{ last_run: object | null, last_success: object | null, next_due: string, stale: boolean, stale_days: number, open_notes: number }>}
+ */
+export async function getPromoMeasurementStatus() {
+  return request(`${PROMO_UPLIFTS}/measure/status`);
+}
+
+/**
+ * GET /api/settings/promo-uplifts/{settingId}/evidence
+ *
+ * The latest measurement behind a customer or SKU value (`result` null for
+ * all-customers values or when none exists).
+ *
+ * @param {number} settingId
+ * @returns {Promise<{ setting_id: number, result: object | null }>}
+ */
+export async function getPromoUpliftEvidence(settingId) {
+  return request(`${PROMO_UPLIFTS}/${encodeURIComponent(settingId)}/evidence`);
+}
+
+/**
+ * GET /api/settings/promo-uplifts/notes
+ *
+ * Open notes: a measured value (or suggested ordinary-month discount) that
+ * differs from one a person typed.
+ *
+ * @returns {Promise<object[]>}
+ */
+export async function getPromoUpliftNotes() {
+  return request(`${PROMO_UPLIFTS}/notes`);
+}
+
+/**
+ * POST /api/settings/promo-uplifts/notes/{noteId}/use-measured
+ *
+ * The typed value is replaced by the measured one (a new version). 409 when the
+ * note was already dealt with or the value changed since.
+ *
+ * @param {number} noteId
+ * @returns {Promise<{ changed: boolean }>}
+ */
+export async function applyPromoMeasuredValue(noteId) {
+  return request(`${PROMO_UPLIFTS}/notes/${encodeURIComponent(noteId)}/use-measured`, {
+    method: 'POST',
+    body: { updated_by: UPDATED_BY },
+  });
+}
+
+/**
+ * POST /api/settings/promo-uplifts/notes/{noteId}/keep-mine
+ *
+ * Keeps the typed value; the note comes back only if the measured value moves
+ * by the re-ask threshold (2 points).
+ *
+ * @param {number} noteId
+ * @returns {Promise<{ changed: boolean }>}
+ */
+export async function keepPromoTypedValue(noteId) {
+  return request(`${PROMO_UPLIFTS}/notes/${encodeURIComponent(noteId)}/keep-mine`, {
+    method: 'POST',
+    body: { updated_by: UPDATED_BY },
+  });
+}
+
+// ---- The rule behind rule-based uplifts (one rate for all customers) ------------
+
+/**
+ * GET /api/settings/promo-uplifts/rule
+ *
+ * The rate (% sales rise per extra point of discount deeper than normal), the
+ * default 0.4, whether it is the default, a warning when it is above 1.0, and
+ * every version newest first.
+ *
+ * @returns {Promise<{ uplift_per_point_pct: number, default_uplift_per_point_pct: number, is_default: boolean, warning: string | null, changed_by: string | null, changed_at: string | null, history: object[] }>}
+ */
+export async function getPromoRule() {
+  return request(`${PROMO_UPLIFTS}/rule`);
+}
+
+/**
+ * PUT /api/settings/promo-uplifts/rule
+ *
+ * Saves a new rate as a new version (201; 200 when unchanged). More than 0 is
+ * required (422); a rate above 1.0 saves with a `warning`.
+ *
+ * @param {number} upliftPerPointPct
+ * @returns {Promise<{ changed: boolean, rule: object, warning: string | null }>}
+ */
+export async function savePromoRule(upliftPerPointPct) {
+  return request(`${PROMO_UPLIFTS}/rule`, {
+    method: 'PUT',
+    body: { uplift_per_point_pct: upliftPerPointPct, updated_by: UPDATED_BY },
+  });
+}
+
+/**
+ * POST /api/settings/promo-uplifts/rule/reset
+ *
+ * Back to the default 0.4% per point, as a new version.
+ *
+ * @returns {Promise<{ changed: boolean, rule: object, warning: string | null }>}
+ */
+export async function resetPromoRule() {
+  return request(`${PROMO_UPLIFTS}/rule/reset`, {
+    method: 'POST',
+    body: { updated_by: UPDATED_BY },
+  });
 }

@@ -9,7 +9,7 @@ import * as live from '@/app/services/settingsApi';
 //        works, nothing is saved, and the state resets on reload.
 // false: the real /api/settings/promo-uplifts endpoints (settingsApi.js).
 //
-// Go live once migration 006_create_promo_uplift_settings.sql has been run:
+// Go live once migrations 006 and 008 have been run (docs/promo-uplift-runbook.md):
 // set this to false, then delete promoUpliftsDemo.js and the `demo` import.
 export const PROMO_UPLIFTS_DEMO = true;
 
@@ -20,10 +20,22 @@ export const {
   getResolvedPromoUplifts,
   savePromoUplift,
   resetPromoUplift,
+  archivePromoUplift,
+  restorePromoUplift,
+  addPromoMechanic,
   addPromoUpliftOverride,
   getPromoUpliftHistory,
   getPromoAnchors,
   savePromoAnchor,
   resetPromoAnchor,
   getPromoAnchorHistory,
+  runPromoMeasurement,
+  getPromoMeasurementStatus,
+  getPromoUpliftEvidence,
+  getPromoUpliftNotes,
+  applyPromoMeasuredValue,
+  keepPromoTypedValue,
+  getPromoRule,
+  savePromoRule,
+  resetPromoRule,
 } = api;

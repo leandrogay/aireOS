@@ -14,7 +14,7 @@
 //     promoType,                            // 'monthly' | 'side_offer' | 'bundle' | 'others'
 //     mechanicKey, mechanicLabel,
 //     referenceUpliftPct, referenceSource,  // the setting's value and source when chosen
-//     referenceBySku,                       // all SKUs only: products whose own value differs
+//     referenceBySku,                       // all SKUs only (never saved): products whose own value differs
 //     overrideUpliftPct,                    // null unless the user moved the slider
 //     voucher, voucherUpliftPct,            // Yes/No, and the voucher's value when chosen
 //     voucherBySku,
@@ -28,7 +28,7 @@
 // Saved and switched on/off exactly like building blocks (scenarioBlocks.js):
 // edits show on the chart at once, `saved` is what Discard goes back to.
 // The reference values are saved with the promotion, so Promotion Uplift
-// Settings changes (including measured values replacing placeholders)
+// Settings changes (including measured uplifts replacing rule-based ones)
 // never move a promotion already saved.
 //
 // Reference values are copied in when the customer, SKU or mechanic is
@@ -51,6 +51,7 @@ export const VOUCHER_KEY = 'voucher';
 
 // Side offers run weekly, so they are planned on exact dates (dayShare).
 export const SIDE_OFFER_TYPE = 'side_offer';
+export const MONTHLY_TYPE = 'monthly';
 
 // The pipeline's ARIMA_PLUS_XREG model already reflects promotions in the
 // months it forecasts, so a promotion uplift there would count them twice
@@ -58,7 +59,7 @@ export const SIDE_OFFER_TYPE = 'side_offer';
 export const MODEL_INCLUDES_PROMOS = 'tier1_arimax';
 
 const SOURCE_LABELS = {
-  placeholder: 'Placeholder',
+  rule_based: 'Rule-based',
   measured: 'Measured',
   estimate: 'Estimate',
   learned: 'Learned by model',
@@ -71,6 +72,16 @@ const SOURCE_LABELS = {
  */
 export function sourceLabel(source) {
   return SOURCE_LABELS[source] ?? source ?? '';
+}
+
+/**
+ * A source tag with its evidence: "Measured · 7.4 months", or just "Rule-based".
+ *
+ * @param {{ source: string, evidence_months?: number | null }} row
+ */
+export function sourceText(row) {
+  const label = sourceLabel(row.source);
+  return row.source === 'measured' && row.evidence_months != null ? `${label} · ${row.evidence_months} months` : label;
 }
 
 /**
@@ -97,21 +108,50 @@ export function formatPctRange(values) {
 }
 
 /**
- * The mechanic rows of a resolved set (everything but the voucher).
+ * A resolved set's rows as one product sees them: where the product has its
+ * own value (a measured or typed SKU or range value, backend
+ * resolve_uplifts' product_uplifts / product_sources), that value and its
+ * source replace the customer's. No product = the customer's rows.
  *
  * @param {object | undefined} resolved
+ * @param {string} [product] a product_name
  */
-export function mechanicOptions(resolved) {
-  return (resolved?.uplifts ?? []).filter((row) => row.mechanic_key !== VOUCHER_KEY);
+export function upliftsForProduct(resolved, product) {
+  const rows = resolved?.uplifts ?? [];
+  if (!product) return rows;
+  const own = resolved?.product_uplifts?.[product] ?? {};
+  const sources = resolved?.product_sources?.[product] ?? {};
+  return rows.map((row) => {
+    if (own[row.mechanic_key] == null) return row;
+    const source = sources[row.mechanic_key];
+    return {
+      ...row,
+      uplift_pct: own[row.mechanic_key],
+      source: source?.source ?? row.source,
+      evidence_months: source?.evidence_months ?? null,
+    };
+  });
 }
 
 /**
- * The voucher row of a resolved set, or null.
+ * The mechanic rows of a resolved set (everything but the voucher), as the
+ * product sees them.
  *
  * @param {object | undefined} resolved
+ * @param {string} [product]
  */
-export function voucherOption(resolved) {
-  return (resolved?.uplifts ?? []).find((row) => row.mechanic_key === VOUCHER_KEY) ?? null;
+export function mechanicOptions(resolved, product) {
+  return upliftsForProduct(resolved, product).filter((row) => row.mechanic_key !== VOUCHER_KEY);
+}
+
+/**
+ * The voucher row of a resolved set, as the product sees it, or null.
+ *
+ * @param {object | undefined} resolved
+ * @param {string} [product]
+ */
+export function voucherOption(resolved, product) {
+  return upliftsForProduct(resolved, product).find((row) => row.mechanic_key === VOUCHER_KEY) ?? null;
 }
 
 /**
@@ -133,7 +173,10 @@ function valueFor(resolved, key, sku) {
   if (!base) return { value: null, source: '', bySku: {} };
 
   const products = resolved?.product_uplifts ?? {};
-  if (sku) return { value: products[sku]?.[key] ?? base.uplift_pct, source: base.source, bySku: {} };
+  if (sku) {
+    const own = upliftsForProduct(resolved, sku).find((row) => row.mechanic_key === key);
+    return { value: own.uplift_pct, source: own.source, bySku: {} };
+  }
 
   const bySku = {};
   for (const [product, values] of Object.entries(products)) {
@@ -169,16 +212,17 @@ export function withReferences(promotion, resolved) {
 
 /**
  * The mechanic a new promotion starts on: the one whose uplift for this
- * customer is nearest 0%, i.e. the customer's ordinary month. A fixed
- * "20% Off" would be -2% for a customer whose anchor is 25%, so adding a
- * promotion would drop the line before anything was chosen. Ties prefer
- * DEFAULT_MECHANIC_KEY, then the first in list order.
+ * customer (and product, when one is picked) is nearest 0%, i.e. an ordinary
+ * month. A fixed "20% Off" would be -2% for a customer whose anchor is 25%,
+ * so adding a promotion would drop the line before anything was chosen. Ties
+ * prefer DEFAULT_MECHANIC_KEY, then the first in list order.
  *
  * @param {object | undefined} resolved
+ * @param {string} [product]
  */
-export function defaultMechanic(resolved) {
+export function defaultMechanic(resolved, product) {
   let best = null;
-  for (const row of mechanicOptions(resolved)) {
+  for (const row of mechanicOptions(resolved, product)) {
     if (row.uplift_pct == null) continue;
     const distance = Math.abs(row.uplift_pct);
     const bestDistance = best ? Math.abs(best.uplift_pct) : Infinity;
@@ -186,7 +230,7 @@ export function defaultMechanic(resolved) {
       best = row;
     }
   }
-  return best ?? mechanicOptions(resolved)[0] ?? null;
+  return best ?? mechanicOptions(resolved, product)[0] ?? null;
 }
 
 /**
@@ -199,7 +243,7 @@ export function defaultMechanic(resolved) {
  * @param {{ customer: string, sku: string, months: string[], resolved: object | undefined }} defaults
  */
 export function newDraftPromotion({ customer = '', sku = '', months = [], resolved }) {
-  const mechanic = defaultMechanic(resolved);
+  const mechanic = defaultMechanic(resolved, sku);
   const promotion = {
     id: `promo-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     customer,
@@ -337,7 +381,10 @@ export const scenarioPromotionsSource = {
   // Rows are taken one product at a time, so an all-SKUs promotion applies
   // each product's own value.
   // A promotion running part of a month counts for that share of it
-  // (dayShare), the same day-weighting the anchor uses.
+  // (dayShare), the same day-weighting the anchor uses. A side offer, bundle
+  // or other promotion replaces the monthly one on its days (monthlyShare),
+  // the rule the measurement and the anchor read the data with: monthly +2%
+  // all month with a +4% side offer on 10 of 30 days = 2 x 2/3 + 4 x 1/3.
   deltas(promotions, rows) {
     const groups = new Map();
     for (const row of rows) {
@@ -351,7 +398,10 @@ export const scenarioPromotionsSource = {
         upliftDeltaCells(
           group.rows,
           promotion,
-          effectiveUpliftPct(promotion, group.product) * dayShare(promotion, group.month),
+          effectiveUpliftPct(promotion, group.product) *
+            (promotion.promoType === MONTHLY_TYPE
+              ? monthlyShare(promotion, promotions, group.product, group.month)
+              : dayShare(promotion, group.month)),
           'promotions'
         )
       )
@@ -477,12 +527,10 @@ export function buildScenarioPromotionPayload(promotion) {
     mechanic_key: promotion.mechanicKey,
     mechanic_label: promotion.mechanicLabel,
     reference_uplift_pct: Number(promotion.referenceUpliftPct) || 0,
-    reference_source: promotion.referenceSource || 'placeholder',
-    reference_by_sku: promotion.referenceBySku ?? {},
+    reference_source: promotion.referenceSource || 'rule_based',
     override_uplift_pct: promotion.overrideUpliftPct,
     voucher: promotion.voucher,
     voucher_uplift_pct: Number(promotion.voucherUpliftPct) || 0,
-    voucher_by_sku: promotion.voucherBySku ?? {},
     explanation: promotion.explanation.trim() || null,
     start_month: promotion.startMonth,
     end_month: promotion.endMonth,
@@ -510,11 +558,11 @@ export function scenarioPromotionFromApi(row) {
     mechanicLabel: row.mechanic_label,
     referenceUpliftPct: Number(row.reference_uplift_pct),
     referenceSource: row.reference_source,
-    referenceBySku: row.reference_by_sku ?? {},
+    referenceBySku: {},
     overrideUpliftPct: row.override_uplift_pct == null ? null : Number(row.override_uplift_pct),
     voucher: row.voucher,
     voucherUpliftPct: Number(row.voucher_uplift_pct),
-    voucherBySku: row.voucher_by_sku ?? {},
+    voucherBySku: {},
     explanation: row.explanation ?? '',
     startMonth: row.start_month,
     endMonth: row.end_month,
@@ -601,6 +649,32 @@ export function dayShare(promotion, month) {
   if (to < from) return 0;
   const days = (Date.parse(to) - Date.parse(from)) / 86400000 + 1;
   return days / daysInMonth(month);
+}
+
+function runsIn(promotion, month) {
+  return Boolean(promotion.startMonth && promotion.endMonth) && month >= promotion.startMonth && month <= promotion.endMonth;
+}
+
+/**
+ * The share of a month a monthly promotion still counts for once the other
+ * switched-on promotions of the same customer and product (side offers,
+ * bundles, others) have replaced it on their days. Overlapping ones are
+ * added, capped at the whole month.
+ *
+ * @param {object} monthly the monthly promotion
+ * @param {object[]} promotions every switched-on promotion
+ * @param {string} product a product_name
+ * @param {string} month 'YYYY-MM-01'
+ */
+export function monthlyShare(monthly, promotions, product, month) {
+  let replaced = 0;
+  for (const other of promotions) {
+    if (other.id === monthly.id || other.promoType === MONTHLY_TYPE) continue;
+    if (other.customer !== monthly.customer || (other.sku && other.sku !== product)) continue;
+    if (!runsIn(other, month)) continue;
+    replaced += dayShare(other, month);
+  }
+  return Math.max(0, 1 - Math.min(1, replaced));
 }
 
 // ============================================================

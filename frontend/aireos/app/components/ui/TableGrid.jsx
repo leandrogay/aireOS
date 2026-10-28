@@ -1,6 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
+import InfoTooltip from '@/components/ui/InfoTooltip';
 import SortHeader, { TABLE_HEADER_CLASS } from '@/components/ui/SortHeader';
 import TableSkeleton from '@/components/ui/TableSkeleton';
 
@@ -57,12 +58,13 @@ function columnStyle(width, isEdge, inset) {
  * nested or not (`inset`).
  *
  * A column with `sortField` gets a SortHeader driven by `sort` / `onSort`.
+ * A column with `hint` gets an InfoTooltip ("i") after its label.
  * `isLoading` (first load only) shows placeholder rows; `emptyState` replaces
  * the rows with a centred message, e.g. "No promotions match these filters".
  * DataTable wraps this in the standard card; use it alone for a nested table.
  *
  * @param {{
- *   columns: Array<{ key: string, label: string, width?: string, sortField?: string, hideLabel?: boolean }>,
+ *   columns: Array<{ key: string, label: string, width?: string, sortField?: string, hideLabel?: boolean, hint?: import('react').ReactNode }>,
  *   children?: import('react').ReactNode,
  *   variant?: 'card' | 'nested',
  *   minWidth?: string,
@@ -144,7 +146,14 @@ export default function TableGrid({
               }
               return (
                 <th key={column.key} scope="col" className={TABLE_HEADER_CLASS}>
-                  {column.label}
+                  {column.hint ? (
+                    <span className="inline-flex items-center gap-1">
+                      {column.label}
+                      <InfoTooltip label={`About ${column.label}`}>{column.hint}</InfoTooltip>
+                    </span>
+                  ) : (
+                    column.label
+                  )}
                 </th>
               );
             })}
