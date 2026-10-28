@@ -78,7 +78,7 @@ def test_a_voucher_mechanic_counts_as_a_voucher_even_with_no_amount():
     assert rules.voucher_flag(None, mechanic="Voucher") == 1
 
 
-# ---- placeholder_uplift ------------------------------------------------------------
+# ---- rule_based_uplift ------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -92,9 +92,9 @@ def test_a_voucher_mechanic_counts_as_a_voucher_even_with_no_amount():
         ("50", 12, 8),
     ],
 )
-def test_placeholder_uplift_moves_with_the_anchor(discount, anchor_20, anchor_30):
-    assert rules.placeholder_uplift(Decimal(discount), Decimal("20")) == anchor_20
-    assert rules.placeholder_uplift(Decimal(discount), Decimal("30")) == anchor_30
+def test_rule_based_uplift_moves_with_the_anchor(discount, anchor_20, anchor_30):
+    assert rules.rule_based_uplift(Decimal(discount), Decimal("20")) == anchor_20
+    assert rules.rule_based_uplift(Decimal(discount), Decimal("30")) == anchor_30
 
 
 # ---- monthly_discounts -------------------------------------------------------------
@@ -192,3 +192,25 @@ def test_the_suggestion_only_uses_the_last_24_months_up_to_the_latest_promotion(
 
 def test_no_months_means_no_suggestion():
     assert rules.suggest_anchor({}) is None
+
+
+# ---- the editable rate -------------------------------------------------------------
+
+
+@pytest.mark.parametrize("discount, expected", [("30", 2), ("50", 10), ("15", -4)])
+def test_the_default_rate_is_0_4_per_point(discount, expected):
+    # Fairprice's anchor 25: 30% Off is 5 points deeper -> +2.
+    assert rules.rule_based_uplift(Decimal(discount), Decimal("25")) == expected
+
+
+def test_a_rate_of_0_6_gives_3_for_5_points_deeper():
+    assert rules.rule_based_uplift(Decimal("30"), Decimal("25"), Decimal("0.6")) == 3
+
+
+def test_a_very_high_rate_is_kept_within_minus_90_and_300():
+    # 50% Off at a 20% anchor is 30 points deeper; at 20% per point that is +600.
+    assert rules.rule_based_uplift(Decimal("50"), Decimal("20"), Decimal("20")) == 300
+    assert rules.rule_based_uplift_capped(Decimal("50"), Decimal("20"), Decimal("20")) is True
+    # 5% Off at a 25% anchor is 20 points shallower: -400 -> -90.
+    assert rules.rule_based_uplift(Decimal("5"), Decimal("25"), Decimal("20")) == -90
+    assert rules.rule_based_uplift_capped(Decimal("30"), Decimal("25")) is False

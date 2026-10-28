@@ -6,8 +6,8 @@ from statistics import median
 
 # Pure rules behind Promotion Uplift Settings (Promotions Uplift design,
 # Sections 6.2 and 6.5): reading free-text mechanics and vouchers, the
-# placeholder formula, and the per-customer anchor suggestion. No database
-# here; promo_uplifts.py feeds these the rows it reads.
+# rule behind rule-based uplifts, and the per-customer anchor suggestion. No
+# database here; promo_uplifts.py feeds these the rows it reads.
 
 
 # ============================================================
@@ -16,10 +16,17 @@ from statistics import median
 
 VOUCHER_KEY = "voucher"
 
-# Placeholder rule: every ANCHOR_STEP_PCT points of effective discount away
-# from the customer's anchor move the uplift by UPLIFT_PER_STEP_PCT points.
-ANCHOR_STEP_PCT = Decimal("5")
-UPLIFT_PER_STEP_PCT = Decimal("2")
+# The rule behind rule-based uplifts: assume sales rise this many percent
+# for every percentage point of discount deeper than the customer's normal
+# (anchor) discount. 0.4 = 5 points deeper -> +2%. A deliberately small,
+# conservative starting assumption, not measured from Aire's data; users can
+# change it on the settings page (promo_rule_settings).
+DEFAULT_UPLIFT_PER_POINT_PCT = Decimal("0.4")
+
+# Every rule-based uplift is kept within the range the settings table allows
+# (the same as measured uplifts), so a large rate can never break a save.
+MIN_UPLIFT_PCT = Decimal("-90")
+MAX_UPLIFT_PCT = Decimal("300")
 
 # Used when nothing else gives an anchor (no manual value, no data, no
 # all-customers row).
@@ -78,6 +85,47 @@ def mechanic_key(label: str | None) -> str | None:
     return None
 
 
+_PCT_KEY = re.compile(r"^(?:b(\d+)_)?pct_off_(\d+(?:\.\d+)?)$")
+_FREE_KEY = re.compile(r"^b(\d+)g(\d+)$")
+
+
+def effective_discount(key: str | None) -> Decimal | None:
+    """
+    The discount per unit a mechanic key gives when the shopper takes the full
+    deal: pct_off_30 and b2_pct_off_30 -> 30; Buy N Get M Free -> M / (N + M),
+    so b1g1 -> 50 and b2g1 -> 33.3. None for the voucher and unknown keys.
+    """
+
+    if not key:
+        return None
+    match = _PCT_KEY.match(key)
+    if match:
+        return Decimal(match[2])
+    match = _FREE_KEY.match(key)
+    if match:
+        paid, free = int(match[1]), int(match[2])
+        if paid + free == 0:
+            return None
+        return (Decimal(100) * free / (paid + free)).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+    return None
+
+
+def label_for_key(key: str) -> str:
+    """The standard label for a key, e.g. 'b2_pct_off_25' -> 'Buy 2 Get 25% Off'."""
+
+    if key == VOUCHER_KEY:
+        return "Voucher"
+    match = _PCT_KEY.match(key)
+    if match and match[1]:
+        return f"Buy {match[1]} Get {match[2]}% Off"
+    if match:
+        return f"{match[2]}% Off"
+    match = _FREE_KEY.match(key)
+    if match:
+        return f"Buy {match[1]} Get {match[2]} Free"
+    return key
+
+
 def voucher_flag(voucher: str | None, mechanic: str | None = None) -> int:
     """
     1 when a promotion carries a voucher, else 0. promotions.voucher holds
@@ -92,15 +140,38 @@ def voucher_flag(voucher: str | None, mechanic: str | None = None) -> int:
 
 
 # ============================================================
-# PLACEHOLDER UPLIFT
+# RULE-BASED UPLIFT
 # ============================================================
 
 
-def placeholder_uplift(effective_discount_pct: Decimal, anchor_pct: Decimal) -> Decimal:
-    """(discount - anchor) / 5 x 2, to a whole percent: 30% Off at a 20% anchor is +4."""
+def _uncapped_rule_based_uplift(effective_discount_pct, anchor_pct, uplift_per_point_pct) -> Decimal:
+    points = Decimal(str(effective_discount_pct)) - Decimal(str(anchor_pct))
+    return (points * Decimal(str(uplift_per_point_pct))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
 
-    steps = (Decimal(effective_discount_pct) - Decimal(anchor_pct)) / ANCHOR_STEP_PCT
-    return (steps * UPLIFT_PER_STEP_PCT).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+
+def rule_based_uplift(
+    effective_discount_pct: Decimal,
+    anchor_pct: Decimal,
+    uplift_per_point_pct: Decimal = DEFAULT_UPLIFT_PER_POINT_PCT,
+) -> Decimal:
+    """
+    (discount - anchor) x rate, to a whole percent, halves away from zero, kept
+    within -90..+300. At the default 0.4: 30% Off at a 25% anchor is +2.
+    """
+
+    value = _uncapped_rule_based_uplift(effective_discount_pct, anchor_pct, uplift_per_point_pct)
+    return min(max(value, MIN_UPLIFT_PCT), MAX_UPLIFT_PCT)
+
+
+def rule_based_uplift_capped(
+    effective_discount_pct: Decimal,
+    anchor_pct: Decimal,
+    uplift_per_point_pct: Decimal = DEFAULT_UPLIFT_PER_POINT_PCT,
+) -> bool:
+    """True when the rule's answer had to be kept within -90..+300."""
+
+    value = _uncapped_rule_based_uplift(effective_discount_pct, anchor_pct, uplift_per_point_pct)
+    return not MIN_UPLIFT_PCT <= value <= MAX_UPLIFT_PCT
 
 
 # ============================================================
@@ -127,32 +198,69 @@ def _days(start: date, end: date):
         day += timedelta(days=1)
 
 
-def monthly_discounts(promotions: list[dict], discount_by_key: dict[str, Decimal]) -> dict[date, Decimal]:
+def active_by_store_day(
+    promotions: list[dict],
+    discount_by_key: dict[str, Decimal],
+    before: date | None = None,
+) -> dict[tuple, tuple[str, Decimal]]:
     """
-    One effective discount per month ({first of month: pct}), weighted by
-    days. Each promotion needs period_start, period_end (dates), promo_type
-    and promotion_mechanic; discount_by_key maps a mechanic key to its
-    effective discount.
+    The discount mechanic running at each store on each day: {(store, day):
+    (mechanic_key, discount)}. A monthly promotion sets the store's discount;
+    any other type (side offer, bundle, others) replaces it for its days; the
+    deepest wins when two of the same kind overlap. Promotions with no
+    percentage discount (a "Voucher" mechanic, an unreadable label) are left
+    out. Each promotion needs period_start, period_end, promo_type and either
+    mechanic_key or promotion_mechanic; `stores` is optional (missing = one
+    store, None). Days on or after `before` are left out.
     """
 
-    background: dict[date, Decimal] = {}
-    overlay: dict[date, Decimal] = {}
+    background: dict[tuple, tuple[str, Decimal]] = {}
+    overlay: dict[tuple, tuple[str, Decimal]] = {}
 
     for promotion in promotions:
-        discount = discount_by_key.get(mechanic_key(promotion.get("promotion_mechanic")))
+        key = promotion.get("mechanic_key") or mechanic_key(promotion.get("promotion_mechanic"))
+        discount = discount_by_key.get(key)
         if discount is None:
             continue
 
         target = background if _base_type(promotion.get("promo_type")) == _MONTHLY_TYPE else overlay
+        stores = promotion.get("stores") or (None,)
         for day in _days(promotion["period_start"], promotion["period_end"]):
-            target[day] = max(target.get(day, discount), discount)
+            if before is not None and day >= before:
+                break
+            for store in stores:
+                current = target.get((store, day))
+                if current is None or discount > current[1]:
+                    target[(store, day)] = (key, discount)
 
-    by_month: dict[date, list[Decimal]] = {}
-    for day in set(background) | set(overlay):
-        value = overlay.get(day, background.get(day))
-        by_month.setdefault(day.replace(day=1), []).append(value)
+    return {**background, **overlay}
 
-    return {month: sum(values) / len(values) for month, values in sorted(by_month.items())}
+
+def monthly_discounts(
+    promotions: list[dict],
+    discount_by_key: dict[str, Decimal],
+    store_weights: dict | None = None,
+    before: date | None = None,
+) -> dict[date, Decimal]:
+    """
+    One effective discount per month ({first of month: pct}): the average over
+    the store-days that had a discount, each store weighted by its share of
+    the customer's sales (store_weights), so a promotion in a few small stores
+    counts for little. Without store_weights every store counts the same.
+    Months on or after `before` are left out, so planned promotions never
+    shape the suggestion.
+    """
+
+    totals: dict[date, list[Decimal]] = {}
+    for (store, day), (_key, discount) in active_by_store_day(promotions, discount_by_key, before).items():
+        weight = Decimal(1) if not store_weights else Decimal(str(store_weights.get(store, 0)))
+        if weight <= 0:
+            continue
+        month_total = totals.setdefault(day.replace(day=1), [Decimal(0), Decimal(0)])
+        month_total[0] += weight * discount
+        month_total[1] += weight
+
+    return {month: total / weight for month, (total, weight) in sorted(totals.items())}
 
 
 def _months_back(month: date, count: int) -> date:
