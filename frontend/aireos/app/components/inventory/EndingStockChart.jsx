@@ -10,6 +10,7 @@ import {
 
 import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
 import { retailerLabel } from '@/app/utils/retailerLabel';
+import { BAR_ANIMATION } from '@/app/utils/trendChart';
 
 import { labelledTooltipRow } from './chartTooltip';
 
@@ -104,7 +105,7 @@ export default function EndingStockChart({ monthly }) {
                 fill={`var(--color-c${id})`}
                 radius={[4, 4, 0, 0]}
                 maxBarSize={MAX_BAR_SIZE}
-                isAnimationActive={false}
+                {...BAR_ANIMATION}
               />
             ))}
           </BarChart>

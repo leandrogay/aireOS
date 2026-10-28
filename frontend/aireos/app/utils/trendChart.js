@@ -88,7 +88,7 @@ export function sortFormatsByTotalDesc(periodByFormat) {
 // bars stays just as readable as before.
 export const MAX_BAR_SIZE = 56;
 
-// Spread onto every data <Bar> on the dashboard: bars grow up from 0 when a
+// Spread onto every data <Bar> on the dashboard and inventory charts: bars grow up from 0 when a
 // chart first draws, and move from their old heights to the new ones when the
 // data changes. Recharts only replays when the data does, not on a hover or
 // other re-render, and 'auto' skips it for prefers-reduced-motion.

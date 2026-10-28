@@ -194,3 +194,22 @@
     font-family: var(--font-numeric), var(--font-sans);
   }
 }
+
+/* A chart line's dots fade in as the line is drawn past them; the delay is set
+   per dot (inventory/SellInOutlookChart.jsx). `backwards` holds them hidden
+   until their delay is up. Reduced motion: no fade, the dots just show. */
+@keyframes line-dot-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.line-dot-in {
+  animation: line-dot-in 250ms ease-out backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .line-dot-in {
+    animation: none;
+  }
+}
