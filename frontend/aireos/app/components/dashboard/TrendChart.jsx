@@ -6,6 +6,7 @@ import { changePct } from '@/app/utils/periodComparison';
 import { formatColor, UNNAMED_FORMAT } from '@/app/utils/storeFormats';
 import {
   CHART_SIZE_CLASS,
+  BAR_ANIMATION,
   MAX_BAR_SIZE,
   TILTED_LABEL_LEFT_MARGIN,
   displayLabelFor,
@@ -121,7 +122,7 @@ export function FormatTrendChart({ periodByFormat, periodTotal, granularity }) {
             stackId="format"
             fill={`var(--color-${format})`}
             maxBarSize={MAX_BAR_SIZE}
-            isAnimationActive={false}
+            {...BAR_ANIMATION}
           />
         ))}
       </BarChart>
