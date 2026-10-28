@@ -24,6 +24,12 @@ import {
   promoPeriodDividerXs,
   promosOverlappingMonth,
 } from '@/app/utils/forecastView';
+import { dotRevealDelay, lineSweepTimings } from '@/app/utils/lineAnimation';
+
+// All lines draw in with one left-to-right sweep (see lineSweepTimings), so
+// Actual, Initial and Current reach each month together.
+const LINE_SWEEP = { begin: 0, duration: 1200 };
+const SERIES_KEYS = FORECAST_SERIES.map((series) => series.key);
 
 const chartConfig = Object.fromEntries(
   FORECAST_SERIES.map((series) => [series.key, { label: series.label, color: series.color }])
@@ -98,10 +104,14 @@ function OverlayDefs({ bands }) {
   );
 }
 
-function SeriesDot({ cx, cy, color, shape }) {
+// `delay` (ms) fades the dot in as its line is drawn past it (.line-dot-in).
+function SeriesDot({ cx, cy, color, shape, delay }) {
   if (cx == null || cy == null) return null;
+  const reveal = { className: 'line-dot-in', style: { animationDelay: `${delay}ms` } };
   if (shape === 'square') {
-    return <rect x={cx - 3.5} y={cy - 3.5} width={7} height={7} fill={color} stroke="#fff" strokeWidth={1} />;
+    return (
+      <rect x={cx - 3.5} y={cy - 3.5} width={7} height={7} fill={color} stroke="#fff" strokeWidth={1} {...reveal} />
+    );
   }
   if (shape === 'diamond') {
     return (
@@ -110,6 +120,7 @@ function SeriesDot({ cx, cy, color, shape }) {
         fill={color}
         stroke="#fff"
         strokeWidth={1}
+        {...reveal}
       />
     );
   }
@@ -120,10 +131,11 @@ function SeriesDot({ cx, cy, color, shape }) {
         fill={color}
         stroke="#fff"
         strokeWidth={1}
+        {...reveal}
       />
     );
   }
-  return <circle cx={cx} cy={cy} r={3.5} fill={color} stroke="#fff" strokeWidth={1} />;
+  return <circle cx={cx} cy={cy} r={3.5} fill={color} stroke="#fff" strokeWidth={1} {...reveal} />;
 }
 
 function ScopeTag({ label, value }) {
@@ -216,6 +228,7 @@ export default function ForecastChart({
       ]
     : chartData;
   const ticks = plotData.map((point) => point.x);
+  const lineTimings = lineSweepTimings(plotData, SERIES_KEYS, LINE_SWEEP);
 
   const showRange = Boolean(visibleSeries.current) && chartData.some((point) => point.range);
   const visibleValues = chartData.flatMap((point) => [
@@ -499,11 +512,12 @@ export default function ForecastChart({
                           cy={props.cy}
                           color={series.color}
                           shape={series.shape}
+                          delay={dotRevealDelay(lineTimings[series.key], props.points, props.cx)}
                         />
                       )}
                       activeDot={{ r: 5, fill: series.color }}
                       connectNulls={series.connectNulls ?? true}
-                      isAnimationActive={false}
+                      {...lineTimings[series.key]}
                     />
                   ))}
                 </ComposedChart>

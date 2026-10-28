@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/chart';
 
 import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
+import { dotRevealDelay, lineSweepTimings } from '@/app/utils/lineAnimation';
 import { BAR_ANIMATION } from '@/app/utils/trendChart';
 
 import { labelledTooltipRow } from './chartTooltip';
@@ -37,47 +38,14 @@ const TOOLTIP_ORDER = SERIES.map((series) => series.key);
 // The sell-out line draws in after the bars have started growing (BAR_ANIMATION
 // is 800 ms): the solid actual part first, then the dashed forecast carries on
 // from where it ended, so the line reads as one stroke from actual into plan.
-const LINE_BEGIN_MS = 500;
-const LINE_DRAW_MS = 900;
+const LINE_SWEEP = { begin: 500, duration: 900 };
 
-// Positions of the first and last row that have a value for `key`, or null.
-function indexRange(rows, key) {
-  const indexes = rows.flatMap((row, index) => (row[key] == null ? [] : [index]));
-  return indexes.length ? { first: indexes[0], last: indexes[indexes.length - 1] } : null;
-}
-
-// Splits LINE_DRAW_MS between the two lines in proportion to the months each
-// covers, so the pen moves at one speed across the join. Linear easing for the
-// same reason: easing each line separately would slow down and restart there.
-function lineTimings(rows) {
-  const actual = indexRange(rows, 'sell_out_actual');
-  const forecast = indexRange(rows, 'sell_out_forecast');
-  const start = actual?.first ?? forecast?.first ?? 0;
-  const end = forecast?.last ?? actual?.last ?? 0;
-  const span = Math.max(end - start, 1);
-  const actualMs = actual ? (LINE_DRAW_MS * (actual.last - actual.first)) / span : 0;
-  const forecastMs = forecast ? (LINE_DRAW_MS * (forecast.last - forecast.first)) / span : 0;
-  return {
-    actual: { animationBegin: LINE_BEGIN_MS, animationDuration: Math.max(actualMs, 1), animationEasing: 'linear' },
-    forecast: {
-      animationBegin: LINE_BEGIN_MS + actualMs,
-      animationDuration: Math.max(forecastMs, 1),
-      animationEasing: 'linear',
-    },
-  };
-}
-
-// A line's dots are drawn at once, ahead of the line. This one fades in
-// (.line-dot-in, globals.css) just as the line reaches it, timed from its
-// place along the line. Dot props are Recharts' own, `points` being the whole
-// line, which is not a valid attribute for one circle.
+// Recharts' dot, faded in as the line reaches it (dotRevealDelay). `points` is
+// the whole line, which is not a valid attribute for one circle.
 function timedDot(timing) {
   return function TimedDot({ points, ...dotProps }) {
-    const drawn = points.filter((point) => point.y != null);
-    const width = drawn.length > 1 ? drawn[drawn.length - 1].x - drawn[0].x : 0;
-    const progress = width > 0 ? (dotProps.cx - drawn[0].x) / width : 0;
-    const delay = timing.animationBegin + timing.animationDuration * progress;
-    return <Dot {...dotProps} className="line-dot-in" style={{ animationDelay: `${Math.round(delay)}ms` }} />;
+    const delay = dotRevealDelay(timing, points, dotProps.cx);
+    return <Dot {...dotProps} className="line-dot-in" style={{ animationDelay: `${delay}ms` }} />;
   };
 }
 
@@ -101,7 +69,7 @@ export default function SellInOutlookChart({ months, actualsThrough }) {
     sell_out_forecast: row.month === actualsThrough ? row.sell_out_actual : row.sell_out_forecast,
   }));
 
-  const timings = lineTimings(rows);
+  const timings = lineSweepTimings(rows, ['sell_out_actual', 'sell_out_forecast'], LINE_SWEEP);
 
   const formatRow = labelledTooltipRow(chartConfig, (value) => `${formatUnits(value)} units`);
   // The join point repeats the actual value on the forecast line; it is not a forecast.
@@ -147,10 +115,9 @@ export default function SellInOutlookChart({ months, actualsThrough }) {
               dataKey="sell_out_actual"
               stroke="var(--color-sell_out_actual)"
               strokeWidth={2}
-              dot={timedDot(timings.actual)}
+              dot={timedDot(timings.sell_out_actual)}
               connectNulls={false}
-              isAnimationActive="auto"
-              {...timings.actual}
+              {...timings.sell_out_actual}
             />
             <Line
               dataKey="sell_out_forecast"
@@ -159,8 +126,7 @@ export default function SellInOutlookChart({ months, actualsThrough }) {
               strokeDasharray="6 4"
               dot={false}
               connectNulls={false}
-              isAnimationActive="auto"
-              {...timings.forecast}
+              {...timings.sell_out_forecast}
             />
           </ComposedChart>
         </ChartContainer>
