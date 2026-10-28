@@ -199,8 +199,25 @@ def test_confirm_processes_uploads_that_were_waiting_for_approval(monkeypatch):
     )
     calls = []
 
-    def process(filename, data, contract, *, replace_source=False):
-        calls.append((filename, data, contract, replace_source))
+    def process(
+        filename,
+        data,
+        contract,
+        *,
+        replace_source=False,
+        source_blob=None,
+        mapping_fingerprint=None,
+    ):
+        calls.append(
+            (
+                filename,
+                data,
+                contract,
+                replace_source,
+                source_blob,
+                mapping_fingerprint,
+            )
+        )
         return {"rows_stored": 10, "storage_status": "completed"}
 
     monkeypatch.setattr(sellout_ingestion, "process_confirmed_upload", process)
@@ -220,6 +237,7 @@ def test_confirm_processes_uploads_that_were_waiting_for_approval(monkeypatch):
     assert body["processing"][0]["processing"]["rows_stored"] == 10
     assert calls[0][0:2] == ("file.txt", b"source bytes")
     assert calls[0][3] is True
+    assert calls[0][4:] == ("uploads/file.txt", "fp")
     assert "identity_mapping" in calls[0][2]
 
 
@@ -308,8 +326,25 @@ def test_a_version_2_mapping_is_confirmed_and_waiting_uploads_are_processed(monk
     monkeypatch.setattr(storage, "download_upload", lambda path: ("file.txt", b"source"))
     calls = []
 
-    def process(filename, data, contract, *, replace_source=False):
-        calls.append((filename, data, contract, replace_source))
+    def process(
+        filename,
+        data,
+        contract,
+        *,
+        replace_source=False,
+        source_blob=None,
+        mapping_fingerprint=None,
+    ):
+        calls.append(
+            (
+                filename,
+                data,
+                contract,
+                replace_source,
+                source_blob,
+                mapping_fingerprint,
+            )
+        )
         return {"rows_stored": 4, "storage_status": "completed"}
 
     monkeypatch.setattr(sellout_ingestion, "process_confirmed_upload", process)
@@ -324,6 +359,7 @@ def test_a_version_2_mapping_is_confirmed_and_waiting_uploads_are_processed(monk
     assert body["processing"][0]["processing"]["rows_stored"] == 4
     assert calls[0][0:2] == ("file.txt", b"source")
     assert calls[0][3] is True
+    assert calls[0][4:] == ("uploads/file.txt", "fp")
     # The roll-up instruction is kept although the rules do not carry it.
     assert stored["envelope"]["contract"]["aggregate"]["period"] == "month"
 

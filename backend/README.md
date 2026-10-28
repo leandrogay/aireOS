@@ -62,6 +62,14 @@ Normal uploads upsert the business key `(retailer_id, store_code, sku,
 period_start, period_type)`. Forced filename replacement deletes the previous
 facts for that `source_file` and inserts the new valid facts in one transaction.
 
+Apply `migrations/006_create_ingestion_rollback.sql` before enabling upload
+rollback. Each new transformed upload then records one `ingestion_runs` audit
+row and append-only `sellout_versions` rows in the same transaction as the
+`sellout` write. Staff can roll back a completed upload from Recent uploads;
+the service restores any prior values atomically while retaining the raw GCS
+file and mapping contract for traceability. Uploads completed before this
+migration are not retroactively reversible.
+
 The current fact schema does not retain sales UOM. FairPrice labels the source
 measure `Qty (in EA)`, while the established downstream forecasting contract
 currently treats the values as cartons. The pipeline performs no numeric unit

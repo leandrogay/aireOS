@@ -278,6 +278,43 @@ def test_historical_import_can_preserve_source_lineage():
     assert all(fact["data_source"] == "pipeline" for fact in fact_call.args[1])
 
 
+def test_uploaded_rows_are_versioned_in_the_same_transaction(monkeypatch):
+    engine, connection = _fake_database()
+    start = MagicMock(return_value=42)
+    record = MagicMock()
+    complete = MagicMock()
+    monkeypatch.setattr(sellout_service.ingestion_service, "start_run", start)
+    monkeypatch.setattr(sellout_service.ingestion_service, "record_versions", record)
+    monkeypatch.setattr(sellout_service.ingestion_service, "complete_run", complete)
+
+    result = sellout_service.load_clean_rows(
+        _dataframe(),
+        source_blob="uploads/2026-10-27_monthly.txt",
+        content_hash="abc123",
+        mapping_fingerprint="mapping123",
+        engine=engine,
+    )
+
+    assert result["ingestion_id"] == 42
+    start.assert_called_once_with(
+        connection,
+        source_blob="uploads/2026-10-27_monthly.txt",
+        source_file="monthly.txt",
+        content_hash="abc123",
+        mapping_fingerprint="mapping123",
+        loaded_at=start.call_args.kwargs["loaded_at"],
+    )
+    record.assert_called_once()
+    assert record.call_args.args[0:2] == (connection, 42)
+    assert len(record.call_args.args[2]) == 2
+    complete.assert_called_once_with(
+        connection,
+        42,
+        rows_stored=2,
+        rows_consolidated=0,
+    )
+
+
 def test_large_loads_use_batched_multi_row_upserts():
     connection = MagicMock()
     timestamp = datetime.datetime(2026, 9, 24, tzinfo=datetime.timezone.utc)

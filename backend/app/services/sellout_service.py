@@ -17,7 +17,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
 from app import config
-from app.services import catalog_service, sql
+from app.services import catalog_service, ingestion_service, sql
 
 
 class SelloutLoadError(RuntimeError):
@@ -242,10 +242,13 @@ def load_clean_rows(
     *,
     replace_source: bool = False,
     data_source: str = "aireos_upload",
+    source_blob: str | None = None,
+    content_hash: str | None = None,
+    mapping_fingerprint: str | None = None,
     engine: Engine | None = None,
     loaded_at: datetime.datetime | None = None,
 ) -> dict:
-    """Reuse catalog references, add missing SKUs, and upsert facts atomically."""
+    """Reuse catalog rows and version each upload before upserting its facts."""
     if dataframe.empty:
         return {
             "rows_stored": 0,
@@ -262,20 +265,6 @@ def load_clean_rows(
 
     try:
         with database.begin() as connection:
-            if replace_source:
-                source_files = sorted(
-                    {
-                        row["source_file"]
-                        for row in records
-                        if row.get("source_file")
-                    }
-                )
-                for source_file in source_files:
-                    connection.execute(
-                        text("DELETE FROM sellout WHERE source_file = :source_file"),
-                        {"source_file": source_file},
-                    )
-
             retailer_names = list(
                 dict.fromkeys(str(row["retailer"]) for row in records)
             )
@@ -331,15 +320,57 @@ def load_clean_rows(
                     }
                 )
 
+            ingestion_id = None
+            if source_blob:
+                ingestion_id = ingestion_service.start_run(
+                    connection,
+                    source_blob=source_blob,
+                    source_file=str(facts[0].get("source_file") or "unknown"),
+                    content_hash=content_hash,
+                    mapping_fingerprint=mapping_fingerprint,
+                    loaded_at=timestamp,
+                )
+                ingestion_service.record_versions(
+                    connection,
+                    ingestion_id,
+                    facts,
+                    replace_source=replace_source,
+                )
+
+            if replace_source:
+                source_files = sorted(
+                    {
+                        row["source_file"]
+                        for row in records
+                        if row.get("source_file")
+                    }
+                )
+                for source_file in source_files:
+                    connection.execute(
+                        text("DELETE FROM sellout WHERE source_file = :source_file"),
+                        {"source_file": source_file},
+                    )
+
             _upsert_sellout(connection, facts)
+
+            if ingestion_id is not None:
+                ingestion_service.complete_run(
+                    connection,
+                    ingestion_id,
+                    rows_stored=len(records),
+                    rows_consolidated=rows_consolidated,
+                )
     except Exception as exc:
         raise SelloutLoadError(f"Cloud SQL sell-out load failed: {exc}") from exc
 
-    return {
+    result = {
         "rows_stored": len(records),
         "rows_consolidated": rows_consolidated,
         "storage_status": "completed",
     }
+    if ingestion_id is not None:
+        result["ingestion_id"] = ingestion_id
+    return result
 
 
 # ============================================================

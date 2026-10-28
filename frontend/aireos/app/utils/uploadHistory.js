@@ -10,6 +10,8 @@ export const UPLOAD_STATUS_LABELS = {
   mapping_failed: { tone: 'failed', label: 'Mapping failed' },
 };
 
+export const ROLLED_BACK_STATUS = { tone: 'neutral', label: 'Rolled back' };
+
 /**
  * Uploads whose file name, vendor or mapping name contains the query.
  *

@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ListX } from 'lucide-react';
 import PageLayout from '@/components/layout/PageLayout';
+import { formatDateTime } from '@/lib/formatDate';
 import { Button } from '@/components/ui/button';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import Toast from '@/components/ui/Toast';
 import Dropzone from '../components/upload/Dropzone';
 import RejectedFiles from '../components/upload/RejectedFiles';
 import UploadGroup from '../components/upload/UploadGroup';
@@ -23,7 +26,14 @@ import {
   uploadBlocker,
   uploadOptionsFor,
 } from '../utils/uploadFlow';
-import { checkUpload, uploadFile, fetchUploadHistory } from '../services/uploadApi';
+import {
+  checkUpload,
+  uploadFile,
+  fetchUploadHistory,
+  rollbackUpload,
+} from '../services/uploadApi';
+import useConfirmAction from '@/hooks/useConfirmAction';
+import useToast from '@/hooks/useToast';
 
 let nextId = 0;
 const makeId = () => `file-${(nextId += 1)}`;
@@ -43,6 +53,7 @@ export default function UploadPage() {
   const [history, setHistory] = useState([]);
   const [historyError, setHistoryError] = useState('');
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const { toast, notify, dismissToast } = useToast();
 
   // Stage timers keyed by item id, so a file that finishes early stops
   // advancing its own labels without touching any other file's.
@@ -104,6 +115,24 @@ export default function UploadPage() {
     // lands, rather than re-rendering the page on the way into it.
     Promise.resolve().then(loadHistory);
   }, [loadHistory]);
+
+  const rollback = useConfirmAction({
+    onConfirm: async (upload) => {
+      try {
+        const result = await rollbackUpload(
+          upload.blob_path,
+          'Rolled back from the Recent uploads screen.',
+        );
+        notify(
+          'warning',
+          `${upload.filename} rolled back: ${result.rows_restored} restored, ${result.rows_removed} removed.`,
+        );
+        await loadHistory();
+      } catch (error) {
+        notify('error', error.message || 'Failed to roll back the upload.');
+      }
+    },
+  });
 
   // ---- Selection and checking ---------------------------------------------
 
@@ -397,8 +426,25 @@ export default function UploadPage() {
           isLoading={isLoadingHistory}
           error={historyError}
           onRefresh={loadHistory}
+          onRollback={rollback.request}
           months={UPLOAD_HISTORY_MONTHS}
         />
+        <ConfirmDialog
+          open={Boolean(rollback.target)}
+          title="Rollback this upload?"
+          description="Its transformed sell-out rows will be removed, and any older values it replaced will be restored. The raw file and mapping will be kept for audit."
+          details={rollback.target ? [
+            { label: 'File', value: rollback.target.filename },
+            { label: 'Rows loaded', value: rollback.target.rows_stored ?? '—' },
+            { label: 'Uploaded', value: formatDateTime(rollback.target.uploaded_at) },
+          ] : []}
+          confirmLabel="Rollback upload"
+          pendingLabel="Rolling back…"
+          isPending={rollback.isPending}
+          onConfirm={rollback.confirm}
+          onCancel={rollback.cancel}
+        />
+        <Toast toast={toast} onDismiss={dismissToast} />
       </div>
     </PageLayout>
   );

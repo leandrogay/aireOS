@@ -2,19 +2,26 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { Undo2 } from 'lucide-react';
 
 import { formatDateTime } from '@/lib/formatDate';
+import { Button } from '@/components/ui/button';
 import RefreshButton from '@/components/ui/RefreshButton';
 import SortHeader, { TABLE_HEADER_CLASS as headerClass } from '@/components/ui/SortHeader';
 import StatusBadge from '@/components/ui/StatusBadge';
 import TablePagination, { PAGE_SIZES } from '@/components/ui/TablePagination';
 import TableSearch from '@/components/ui/TableSearch';
 import TableSkeleton from '@/components/ui/TableSkeleton';
-import { UPLOAD_STATUS_LABELS, searchUploads, sortUploadsByDate } from '@/app/utils/uploadHistory';
+import {
+  ROLLED_BACK_STATUS,
+  UPLOAD_STATUS_LABELS,
+  searchUploads,
+  sortUploadsByDate,
+} from '@/app/utils/uploadHistory';
 import { nextSort, paginate, resultCountLabel } from '@/app/utils/tableView';
 import { vendorLabel } from '@/app/utils/retailerLabel';
 
-const COLUMN_COUNT = 5;
+const COLUMN_COUNT = 6;
 
 /**
  * Recent uploads (GET /api/uploads/history), laid out like the promotion
@@ -30,10 +37,18 @@ const COLUMN_COUNT = 5;
  *   isLoading: boolean,
  *   error: string,
  *   onRefresh: () => void,
+ *   onRollback: (upload: object) => void,
  *   months: number,
  * }} props
  */
-export default function RecentUploads({ uploads, isLoading, error, onRefresh, months }) {
+export default function RecentUploads({
+  uploads,
+  isLoading,
+  error,
+  onRefresh,
+  onRollback,
+  months,
+}) {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState({ field: 'uploaded_at', direction: 'desc' });
   const [page, setPage] = useState(1);
@@ -116,6 +131,7 @@ export default function RecentUploads({ uploads, isLoading, error, onRefresh, mo
                   />
                   <th scope="col" className={headerClass}>Status</th>
                   <th scope="col" className={headerClass}>Mapping</th>
+                  <th scope="col" className={headerClass}>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -128,7 +144,9 @@ export default function RecentUploads({ uploads, isLoading, error, onRefresh, mo
                   </tr>
                 )}
                 {pageRows.map((upload) => {
-                  const status = UPLOAD_STATUS_LABELS[upload.mapping_status];
+                  const status = upload.status === 'rolled_back'
+                    ? ROLLED_BACK_STATUS
+                    : UPLOAD_STATUS_LABELS[upload.mapping_status];
 
                   return (
                     <tr
@@ -158,6 +176,22 @@ export default function RecentUploads({ uploads, isLoading, error, onRefresh, mo
                                 is what identifies it here. */}
                             {upload.mapping_name || 'View mapping'}
                           </Link>
+                        ) : (
+                          <span className="text-deep-violet-blue/60">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        {upload.rollback_available ? (
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => onRollback(upload)}
+                            title="Remove this upload's transformed sales and restore any values it replaced"
+                          >
+                            <Undo2 aria-hidden="true" />
+                            Rollback
+                          </Button>
                         ) : (
                           <span className="text-deep-violet-blue/60">—</span>
                         )}

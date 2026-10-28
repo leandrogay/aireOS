@@ -116,7 +116,9 @@ def _foreign_retailers(contract: dict, customer: dict, envelope: dict) -> list[s
     return [name for name in outputs or [] if name not in own]
 
 
-def _ingest_waiting_uploads(blob_paths: list[str], contract: dict) -> list[dict]:
+def _ingest_waiting_uploads(
+    blob_paths: list[str], contract: dict, mapping_fingerprint: str
+) -> list[dict]:
     """Process files that were waiting for this mapping to be approved."""
     results = []
     for blob_path in blob_paths:
@@ -132,6 +134,8 @@ def _ingest_waiting_uploads(blob_paths: list[str], contract: dict) -> list[dict]
                 # Re-approval may change a business key. Replacing this
                 # source prevents stale rows from the old mapping remaining.
                 replace_source=True,
+                source_blob=blob_path,
+                mapping_fingerprint=mapping_fingerprint,
             )
             results.append(
                 {
@@ -483,6 +487,7 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
         _ingest_waiting_uploads,
         uploads.get("matched", []),
         stored_contract,
+        fingerprint,
     )
 
     # After everything above has been saved, and never failing the approval.

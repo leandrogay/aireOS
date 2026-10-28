@@ -147,3 +147,29 @@ export async function fetchUploadHistory({ limit = 25, months } = {}) {
   const data = await response.json().catch(() => null);
   return Array.isArray(data?.uploads) ? data.uploads : [];
 }
+
+// ========================================
+// API CALL
+// POST /api/uploads/rollback
+// Restores Cloud SQL to the version immediately before this GCS upload was
+// transformed. The raw GCS file and mapping are retained for audit.
+// ========================================
+export async function rollbackUpload(blobPath, reason) {
+  let response;
+  try {
+    response = await fetch(`${API_BASE}/api/uploads/rollback`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ blob_path: blobPath, reason }),
+    });
+  } catch (error) {
+    throw new Error(describeNetworkFailure(error));
+  }
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return response.json();
+}

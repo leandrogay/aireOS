@@ -37,6 +37,9 @@ def process_confirmed_upload(
     contract: dict,
     *,
     replace_source: bool = False,
+    source_blob: str | None = None,
+    content_hash: str | None = None,
+    mapping_fingerprint: str | None = None,
 ) -> dict:
     """Return processing details after safely loading valid rows to Cloud SQL."""
     normalized = transform_confirmed_upload(filename, data, contract)
@@ -48,6 +51,9 @@ def process_confirmed_upload(
             valid_rows,
             replace_source=replace_source,
             data_source=contract.get("data_source") or "aireos_upload",
+            source_blob=source_blob,
+            content_hash=content_hash,
+            mapping_fingerprint=mapping_fingerprint,
         )
     else:
         storage = {

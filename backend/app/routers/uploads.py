@@ -2,12 +2,14 @@ import asyncio
 import datetime
 from typing import List
 
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Query
 
+from app.auth import require_user
+from app.schemas.uploads import RollbackUploadRequest
 from app.services import storage
 from app.services import generate_mapping
 from app.services import apply_contract as contract_application
-from app.services import sellout_ingestion, sellout_service
+from app.services import ingestion_service, sellout_ingestion, sellout_service
 from app.services import upload_check
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
@@ -35,6 +37,8 @@ def resolve_and_apply_mapping(
     data: bytes,
     uploaded_to: str | None = None,
     replace_source: bool = False,
+    content_hash: str | None = None,
+    source_blob: str | None = None,
 ) -> dict:
     """Resolve one GCS mapping, then validate and store confirmed output."""
     resolved = generate_mapping.resolve_mapping(filename, data, uploaded_to)
@@ -46,6 +50,11 @@ def resolve_and_apply_mapping(
         data,
         resolved.get("contract") or {},
         replace_source=replace_source,
+        source_blob=source_blob or (
+            storage.blob_path_from_uri(uploaded_to) if uploaded_to else None
+        ),
+        content_hash=content_hash,
+        mapping_fingerprint=resolved.get("fingerprint"),
     )
     return resolved
 
@@ -71,7 +80,7 @@ def _list_upload_history(limit: int, months: int | None = None) -> list[dict]:
         *storage.list_mapping_fingerprints("pending"),
     }
 
-    return [
+    visible = [
         {
             **upload,
             "mapping_available": bool(upload.get("mapping_fingerprint")),
@@ -79,6 +88,25 @@ def _list_upload_history(limit: int, months: int | None = None) -> list[dict]:
         for upload in uploads
         if not upload.get("mapping_fingerprint")
         or upload["mapping_fingerprint"] in available_fingerprints
+    ]
+    blob_paths = [
+        upload["blob_path"]
+        for upload in visible
+        if upload.get("blob_path")
+    ]
+    states = (
+        ingestion_service.upload_states(blob_paths)
+        if sellout_service.cloud_sql_loading_enabled()
+        else {}
+    )
+    return [
+        {
+            **upload,
+            **states.get(upload.get("blob_path"), {}),
+            "rollback_available": states.get(upload.get("blob_path"), {}).get("status")
+            == "completed",
+        }
+        for upload in visible
     ]
 
 
@@ -114,6 +142,8 @@ async def upload_files(
                 data,
                 uploaded.get("destination"),
                 force,
+                uploaded.get("content_hash"),
+                uploaded.get("blob_path"),
             )
         except generate_mapping.UnreadableSourceFileError as exc:
             return {
@@ -215,3 +245,26 @@ async def upload_history(
             status_code=503,
             detail=f"Unable to read upload history: {exc}",
         )
+
+
+@router.post("/rollback")
+def rollback_upload(
+    payload: RollbackUploadRequest,
+    user: dict = Depends(require_user),
+):
+    """Restore the sell-out state from before one transformed upload."""
+    try:
+        return ingestion_service.rollback_upload(
+            payload.blob_path,
+            rolled_back_by=str(user.get("email") or user.get("sub") or "unknown"),
+            reason=payload.reason,
+        )
+    except ingestion_service.IngestionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (
+        ingestion_service.IngestionAlreadyRolledBackError,
+        ingestion_service.IngestionInProgressError,
+    ) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ingestion_service.IngestionRollbackError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
