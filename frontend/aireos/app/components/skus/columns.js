@@ -15,8 +15,8 @@ export const SKU_COLUMNS = [
   { key: 'size', label: 'Size', width: '7rem' },
   { key: 'brand', label: 'Brand', width: '8rem' },
   { key: 'uom', label: 'UOM', width: '5rem' },
-  { key: 'pack-size', label: 'Pack size', width: '6rem' },
-  { key: 'price', label: 'Price', width: '7rem' },
+  { key: 'pack-size', label: 'Pack size', width: '6rem', align: 'right' },
+  { key: 'price', label: 'Price', width: '7rem', align: 'right' },
   ACTIONS_COLUMN,
 ];
 
@@ -28,6 +28,6 @@ export const SKU_HISTORY_COLUMNS = [
   { key: 'size', label: 'Size', width: '5rem' },
   { key: 'brand', label: 'Brand', width: '6rem' },
   { key: 'uom', label: 'UOM', width: '5rem' },
-  { key: 'pack', label: 'Pack', width: '5rem' },
-  { key: 'price', label: 'Price', width: '7rem' },
+  { key: 'pack', label: 'Pack', width: '5rem', align: 'right' },
+  { key: 'price', label: 'Price', width: '7rem', align: 'right' },
 ];

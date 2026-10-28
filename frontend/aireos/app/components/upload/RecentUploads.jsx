@@ -148,7 +148,7 @@ export default function RecentUploads({ uploads, isLoading, error, onRefresh, on
                         <span className="block max-w-[18rem] truncate">{upload.filename}</span>
                       </td>
                       <td className="px-4 py-2.5">{vendorLabel(upload.vendor) || '—'}</td>
-                      <td className="px-4 py-2.5 tabular-nums">{formatDateTime(upload.uploaded_at)}</td>
+                      <td className="px-4 py-2.5">{formatDateTime(upload.uploaded_at)}</td>
                       <td className="px-4 py-2.5">
                         <div className="flex items-center gap-2">
                           {status ? (

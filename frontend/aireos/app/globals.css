@@ -176,4 +176,21 @@
   html {
     @apply font-sans;
   }
+  /* Recharts draws axis ticks as SVG text, out of reach of a className.
+     Fixed-width digits keep the value axis ("$1.2k" / "$11.8k") evenly set
+     and stop it shifting when the data changes. Only the y axis: the x axis
+     holds months and dates, which stay proportional. */
+  .recharts-yAxis .recharts-cartesian-axis-tick-value {
+    font-family: var(--font-numeric), var(--font-sans);
+    @apply tabular-nums;
+  }
+}
+
+/* DM Sans has no tabular figures, so tabular-nums alone changes nothing.
+   Anything marked tabular-nums switches to the numeric font, which has them
+   (see app/layout.js). font-mono keeps Geist Mono, already fixed-width. */
+@layer utilities {
+  .tabular-nums:not(.font-mono) {
+    font-family: var(--font-numeric), var(--font-sans);
+  }
 }
