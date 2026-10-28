@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { MessageCircle, X } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
@@ -17,6 +17,8 @@ import {
 } from '@/components/ui/message-scroller';
 import useAssistant from '@/hooks/useAssistant';
 import AssistantMessage from './AssistantMessage';
+// The words shown while the assistant works ("Pondering…"); edit the list there.
+import THINKING_WORDS from './thinkingWords';
 
 // Brand colours instead of the shadcn default (near-black `primary`), as the
 // other pages override the shared Button.
@@ -38,6 +40,55 @@ const SPRING_BOUNCE = {
 };
 
 const MotionMessageScrollerItem = motion.create(MessageScrollerItem);
+
+// Claude Code's spinner: a star that grows through these glyphs and shrinks
+// back (ping-pong), one frame every SPINNER_FRAME_MS.
+const SPINNER_GLYPHS = ['·', '✢', '✳', '✶', '✻', '✽'];
+const SPINNER_FRAMES = [...SPINNER_GLYPHS, ...SPINNER_GLYPHS.slice(1, -1).reverse()];
+const SPINNER_FRAME_MS = 120;
+
+// How often the thinking word changes during a long wait.
+const WORD_ROTATE_MS = 3000;
+
+// A random thinking word, never `current` again, so a change is always visible.
+function randomThinkingWord(current) {
+  const choices = THINKING_WORDS.filter((word) => word !== current);
+  return choices[Math.floor(Math.random() * choices.length)] ?? current ?? 'Thinking';
+}
+
+// "✻ Pondering…" while an answer is on its way: the spinner above, and a
+// highlight sweeping across the word (.thinking-shimmer, globals.css). It
+// mounts each time the assistant starts working, so every wait starts on a
+// fresh random word, which then changes to another every WORD_ROTATE_MS until
+// the answer arrives (picked in timers, never during a render). Reduced
+// motion: a still star and plain text; the word still changes, which is not
+// motion.
+function ThinkingIndicator() {
+  const [word, setWord] = useState(() => randomThinkingWord(null));
+  const [frame, setFrame] = useState(0);
+  const reduceMotion = useReducedMotion();
+
+  useEffect(() => {
+    if (reduceMotion) return undefined;
+    const timer = setInterval(() => setFrame((current) => (current + 1) % SPINNER_FRAMES.length), SPINNER_FRAME_MS);
+    return () => clearInterval(timer);
+  }, [reduceMotion]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setWord((current) => randomThinkingWord(current)), WORD_ROTATE_MS);
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <p role="status" className="flex items-center gap-1.5 text-xs">
+      {/* Fixed width: the glyphs differ in width, so the word would jitter. */}
+      <span aria-hidden="true" className="inline-block w-3 text-center text-deep-violet-blue">
+        {reduceMotion ? '✻' : SPINNER_FRAMES[frame]}
+      </span>
+      <span className="thinking-shimmer">{word}…</span>
+    </p>
+  );
+}
 
 // Floating chat widget, mounted once in app/layout.js (a real Next.js
 // layout, unlike AppShell -- see the plan this was built from) so its
@@ -133,9 +184,7 @@ export default function AssistantWidget() {
                     ))}
                     {loading && (
                       <MessageScrollerItem>
-                        <p role="status" className="text-xs text-deep-violet-blue/60">
-                          Thinking…
-                        </p>
+                        <ThinkingIndicator />
                       </MessageScrollerItem>
                     )}
                     {error && (

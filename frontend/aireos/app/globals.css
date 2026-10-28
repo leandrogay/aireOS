@@ -223,9 +223,44 @@
   animation: promo-band-in 300ms linear backwards;
 }
 
+/* The assistant's "Pondering…" word (AssistantWidget ThinkingIndicator): a
+   brighter band sweeps left to right across muted text, like Claude Code's
+   working indicator. The text is painted by its background gradient
+   (background-clip: text), which slides across it on a loop. */
+@keyframes thinking-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+.thinking-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--aire-deep-blue) 55%, transparent) 0%,
+    color-mix(in srgb, var(--aire-deep-blue) 55%, transparent) 40%,
+    var(--aire-deep-blue) 50%,
+    color-mix(in srgb, var(--aire-deep-blue) 55%, transparent) 60%,
+    color-mix(in srgb, var(--aire-deep-blue) 55%, transparent) 100%
+  );
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: thinking-shimmer 2s linear infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .line-dot-in,
   .promo-band-in {
     animation: none;
+  }
+
+  .thinking-shimmer {
+    animation: none;
+    background-image: none;
+    color: color-mix(in srgb, var(--aire-deep-blue) 60%, transparent);
   }
 }
