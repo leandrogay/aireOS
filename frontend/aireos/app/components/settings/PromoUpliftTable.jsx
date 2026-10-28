@@ -1,178 +1,163 @@
 'use client';
 
-import { useState } from 'react';
+import { ArchiveRestore, FileSearch, FolderArchive, History, Pencil, RotateCcw } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
+import RowActions from '@/components/ui/RowActions';
+import StatusPill from '@/components/ui/StatusPill';
+import TableGrid from '@/components/ui/TableGrid';
 import { formatDateTime } from '@/lib/formatDate';
-import { inputClass } from '@/components/inventory/formStyles';
-import { changedByLabel, parseUpliftInput, placeholderUplift, scopeLabel } from '@/app/utils/promoUpliftSettings';
+import {
+  cappedNote,
+  changedByLabel,
+  mechanicKind,
+  scopeLabel,
+  shownUplift,
+  shownUpliftCapped,
+} from '@/app/utils/promoUpliftSettings';
 import { formatPct, sourceLabel } from '@/app/utils/scenarioPromotions';
 import { cn } from '@/lib/utils';
 
-const thClass = 'bg-lavander px-2 py-1.5 text-left text-xs font-semibold text-deep-violet-blue';
-const tdClass = 'px-2 py-1.5 text-sm text-deep-violet-blue';
-const numClass = 'text-right tabular-nums';
-const actionClass = 'h-auto rounded-md px-2.5 py-1 text-xs font-medium';
+import { PROMO_UPLIFT_COLUMNS } from './promoUpliftColumns';
 
 const SOURCE_TAG_CLASS = {
-  placeholder: 'border-violet/40 bg-cream',
+  rule_based: 'border-violet/40 bg-cream',
   estimate: 'border-deep-violet-blue/30 bg-lavander',
   measured: 'border-emerald-600/30 bg-emerald-50',
   learned: 'border-sky-600/30 bg-sky-50',
 };
 
+const LEARNED_REASON = 'Set by the forecasting model after each retrain';
+
 /**
  * Every current uplift row: mechanic, effective discount, uplift, who it
- * applies to and where the value came from. Uplift is edited in place
- * (saved as an Estimate, which stops following the anchor); Reset puts a
- * value back on the placeholder rule, or retires an override. Learned rows
- * are read-only.
+ * applies to and where the value came from. Each row's "..." menu has Edit
+ * details and History (dialogs the view owns), Reset to the rule for an
+ * uplift someone typed, and Archive, which takes it out of use without
+ * deleting it. An archived row (shown only with "Show archived") can be
+ * restored. Learned rows are set by the model and cannot be edited. Customer
+ * and SKU uplifts also have Evidence: the measurement behind them.
  *
  * @param {object} props
- * @param {object[]} props.rows setting rows from getPromoUpliftSettings
- * @param {number} props.defaultAnchorPct placeholder values are shown at this anchor
+ * @param {object[]} props.rows setting rows from getPromoUpliftSettings, already filtered
+ * @param {number} props.anchorPct rule-based uplifts are shown at this anchor
+ * @param {number} props.rate the rule's rate (% per point)
+ * @param {boolean} props.isLoading first load: skeleton rows
+ * @param {import('react').ReactNode} props.emptyState shown instead of the rows when there are none
  * @param {boolean} props.readOnly sample values: no actions
- * @param {(row: object, upliftPct: number) => Promise<boolean>} props.onSave resolves true when saved
- * @param {(row: object) => void} props.onReset
+ * @param {(row: object) => void} props.onEdit
  * @param {(row: object) => void} props.onHistory
+ * @param {(row: object) => void} props.onReset
+ * @param {(row: object) => void} props.onArchive
+ * @param {(row: object) => void} props.onRestore
+ * @param {(row: object) => void} props.onEvidence
  */
-export default function PromoUpliftTable({ rows, defaultAnchorPct, readOnly, onSave, onReset, onHistory }) {
-  const [editing, setEditing] = useState(null);
-  const parsed = editing ? parseUpliftInput(editing.text) : null;
+export default function PromoUpliftTable({
+  rows,
+  anchorPct,
+  rate,
+  isLoading,
+  emptyState,
+  readOnly,
+  onEdit,
+  onHistory,
+  onReset,
+  onArchive,
+  onRestore,
+  onEvidence,
+}) {
+  function actionsFor(row) {
+    const history = { key: 'history', label: 'History', icon: History, onSelect: () => onHistory(row) };
+    if (row.archived_at) {
+      return [history, { key: 'restore', label: 'Restore', icon: ArchiveRestore, onSelect: () => onRestore(row) }];
+    }
 
-  async function save(row) {
-    if (parsed?.value == null) return;
-    setEditing((current) => ({ ...current, saving: true }));
-    const saved = await onSave(row, parsed.value);
-    setEditing(saved ? null : (current) => current && { ...current, saving: false });
-  }
-
-  function shownUplift(row) {
-    return row.follows_anchor ? placeholderUplift(row.effective_discount_pct, defaultAnchorPct) : row.uplift_pct;
+    const isLearned = row.source === 'learned';
+    const actions = [
+      {
+        key: 'edit',
+        label: 'Edit details',
+        icon: Pencil,
+        disabledReason: isLearned ? LEARNED_REASON : undefined,
+        onSelect: () => onEdit(row),
+      },
+      history,
+    ];
+    if (row.scope === 'customer' || row.scope === 'sku') {
+      actions.push({ key: 'evidence', label: 'Evidence', icon: FileSearch, onSelect: () => onEvidence(row) });
+    }
+    if (row.scope === 'all' && row.source !== 'rule_based' && !isLearned) {
+      actions.push({ key: 'reset', label: 'Reset to the rule', icon: RotateCcw, onSelect: () => onReset(row) });
+    }
+    actions.push({
+      key: 'archive',
+      label: 'Archive',
+      icon: FolderArchive,
+      destructive: true,
+      disabledReason: isLearned ? LEARNED_REASON : undefined,
+      onSelect: () => onArchive(row),
+    });
+    return actions;
   }
 
   return (
-    <div className="overflow-auto rounded-md border border-lavander">
-      <table className="w-full border-collapse">
-        <thead>
-          <tr>
-            <th className={thClass}>Mechanic</th>
-            <th className={cn(thClass, numClass)}>Discount</th>
-            <th className={cn(thClass, numClass)}>Uplift</th>
-            <th className={thClass}>Applies to</th>
-            <th className={thClass}>Source</th>
-            <th className={thClass}>Last changed</th>
-            <th className={thClass}>
-              <span className="sr-only">Actions</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => {
-            const isEditing = editing?.id === row.id;
-            return (
-              <tr key={row.id} className={cn('border-t border-lavander', isEditing && 'bg-cream')}>
-                <td className={cn(tdClass, 'font-medium')}>{row.mechanic_label}</td>
-                <td className={cn(tdClass, numClass)}>
-                  {row.effective_discount_pct != null ? `${row.effective_discount_pct}%` : '—'}
-                </td>
-                <td className={cn(tdClass, numClass)}>
-                  {isEditing ? (
-                    <div className="ml-auto w-24">
-                      <input
-                        aria-label={`Uplift for ${row.mechanic_label}`}
-                        value={editing.text}
-                        disabled={editing.saving}
-                        onChange={(e) => setEditing({ ...editing, text: e.target.value })}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') save(row);
-                          if (e.key === 'Escape') setEditing(null);
-                        }}
-                        className={cn(inputClass, 'py-1 text-right')}
-                      />
-                      {parsed?.error ? <p className="mt-0.5 text-[11px] text-red-700">{parsed.error}</p> : null}
-                    </div>
-                  ) : (
-                    <>
-                      {formatPct(shownUplift(row))}
-                      {row.follows_anchor ? (
-                        <span className="block text-[10px] text-deep-violet-blue/50">moves with anchor</span>
-                      ) : null}
-                    </>
-                  )}
-                </td>
-                <td className={cn(tdClass, 'text-xs')}>{scopeLabel(row)}</td>
-                <td className={tdClass}>
-                  <span
-                    className={cn(
-                      'whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px]',
-                      SOURCE_TAG_CLASS[row.source]
-                    )}
-                    title={row.note ?? undefined}
-                  >
-                    {sourceLabel(row.source)}
-                  </span>
-                </td>
-                <td className={cn(tdClass, 'whitespace-nowrap text-xs')}>
-                  {row.changed_at
-                    ? `${formatDateTime(row.changed_at)} · ${changedByLabel(row.changed_by)}`
-                    : changedByLabel(row.changed_by)}
-                </td>
-                <td className={tdClass}>
-                  {readOnly ? null : (
-                    <div className="flex justify-end gap-1.5">
-                      {isEditing ? (
-                        <>
-                          <Button size="sm" variant="ghost" className={actionClass} onClick={() => setEditing(null)}>
-                            Cancel
-                          </Button>
-                          <Button
-                            size="sm"
-                            disabled={editing.saving || parsed?.value == null}
-                            className={cn(actionClass, 'bg-deep-violet-blue text-white hover:bg-deep-violet-blue/90')}
-                            onClick={() => save(row)}
-                          >
-                            {editing.saving ? 'Saving…' : 'Save'}
-                          </Button>
-                        </>
-                      ) : (
-                        <>
-                          <Button size="sm" variant="ghost" className={actionClass} onClick={() => onHistory(row)}>
-                            History
-                          </Button>
-                          {row.source === 'learned' ? (
-                            <span
-                              className="px-2 py-1 text-[11px] text-deep-violet-blue/60"
-                              title="Set by the forecasting model after each retrain. Override it for a single promotion in the Scenario builder."
-                            >
-                              Set by model
-                            </span>
-                          ) : (
-                            <>
-                              {row.source !== 'placeholder' ? (
-                                <Button size="sm" variant="ghost" className={actionClass} onClick={() => onReset(row)}>
-                                  {row.scope === 'all' ? 'Reset to placeholder' : 'Remove'}
-                                </Button>
-                              ) : null}
-                              <Button
-                                size="sm"
-                                className={cn(actionClass, 'bg-deep-violet-blue text-white hover:bg-deep-violet-blue/90')}
-                                onClick={() => setEditing({ id: row.id, text: String(shownUplift(row)), saving: false })}
-                              >
-                                Edit
-                              </Button>
-                            </>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+    <TableGrid
+      variant="nested"
+      columns={PROMO_UPLIFT_COLUMNS}
+      minWidth="64rem"
+      isLoading={isLoading}
+      emptyState={emptyState}
+    >
+      {rows.map((row) => (
+        <tr
+          key={row.id}
+          className={cn(
+            'h-12 border-b border-lavander/80 last:border-b-0 hover:bg-cream/60',
+            row.archived_at && 'bg-cream/40 text-deep-violet-blue/60'
+          )}
+        >
+          <td className="truncate px-4 py-2 font-medium" title={row.mechanic_label}>
+            {row.mechanic_label}
+            {mechanicKind(row) === 'voucher' ? (
+              <span className="block text-[10px] font-normal text-deep-violet-blue/50">Voucher</span>
+            ) : null}
+          </td>
+          <td className="px-4 py-2 tabular-nums">
+            {row.effective_discount_pct != null ? `${row.effective_discount_pct}%` : '—'}
+          </td>
+          <td className="px-4 py-2 tabular-nums">
+            {formatPct(shownUplift(row, anchorPct, rate))}
+            {shownUpliftCapped(row, anchorPct, rate) ? (
+              <span className="block text-[10px] text-amber-800">{cappedNote(shownUplift(row, anchorPct, rate))}</span>
+            ) : null}
+          </td>
+          <td className="truncate px-4 py-2" title={scopeLabel(row)}>{scopeLabel(row)}</td>
+          <td className="px-4 py-2">
+            {row.archived_at ? (
+              <StatusPill tone="muted">Archived</StatusPill>
+            ) : (
+              <span
+                className={cn('whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px]', SOURCE_TAG_CLASS[row.source])}
+                title={row.note ?? undefined}
+              >
+                {sourceLabel(row.source)}
+              </span>
+            )}
+            {row.source === 'measured' && row.evidence_months != null && !row.archived_at ? (
+              <span className="block text-[10px] text-deep-violet-blue/50">{row.evidence_months} months of evidence</span>
+            ) : null}
+          </td>
+          <td className="truncate px-4 py-2 text-xs">
+            {row.changed_at
+              ? `${formatDateTime(row.changed_at)} · ${changedByLabel(row.changed_by)}`
+              : changedByLabel(row.changed_by)}
+          </td>
+          <td className="px-2 py-1 text-right">
+            {readOnly ? null : (
+              <RowActions label={`Actions for ${row.mechanic_label}, ${scopeLabel(row)}`} actions={actionsFor(row)} />
+            )}
+          </td>
+        </tr>
+      ))}
+    </TableGrid>
   );
 }

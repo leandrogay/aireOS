@@ -7,7 +7,7 @@ import PromoUpliftSettingsView from '@/components/settings/PromoUpliftSettingsVi
 // PromoUpliftSettingsView (backend /api/settings/promo-uplifts).
 export default function PromoUpliftSettingsPage() {
   return (
-    <PageLayout title="Promotion Uplift Settings">
+    <PageLayout title="Promotion uplift settings">
       <PromoUpliftSettingsView />
     </PageLayout>
   );

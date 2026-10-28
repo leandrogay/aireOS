@@ -4,32 +4,63 @@ import { useState } from 'react';
 import { Plus } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import InfoTooltip from '@/components/ui/InfoTooltip';
 import { cardClass, secondaryButtonClass } from '@/components/inventory/formStyles';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import FilterSelect from '@/components/ui/FilterSelect';
 import RefreshButton from '@/components/ui/RefreshButton';
+import { Switch } from '@/components/ui/switch';
 import Toast from '@/components/ui/Toast';
+import useConfirmAction from '@/hooks/useConfirmAction';
+import usePromoUpliftFilterOptions from '@/hooks/usePromoUpliftFilterOptions';
 import usePromoUpliftSettings from '@/hooks/usePromoUpliftSettings';
 import useToast from '@/hooks/useToast';
 import {
-  PROMO_UPLIFTS_DEMO,
+  archivePromoUplift,
   resetPromoAnchor,
+  resetPromoRule,
   resetPromoUplift,
+  restorePromoUplift,
   savePromoUplift,
 } from '@/app/services/promoUpliftsApi';
+import {
+  DEFAULT_UPLIFT_PER_POINT_PCT,
+  scopeLabel,
+  shownUplift,
+  upliftRowApplies,
+} from '@/app/utils/promoUpliftSettings';
+import { formatPct } from '@/app/utils/scenarioPromotions';
 import { retailerLabel } from '@/app/utils/retailerLabel';
+import { HOW_THIS_PAGE_WORKS, PROMO_HINTS } from '@/app/utils/promoUpliftHints';
 
 import PromoAnchorForm from './PromoAnchorForm';
 import PromoAnchorTable from './PromoAnchorTable';
-import PromoHistoryPanel from './PromoHistoryPanel';
-import PromoOverrideForm from './PromoOverrideForm';
+import PromoEvidenceDialog from './PromoEvidenceDialog';
+import PromoHistoryDialog from './PromoHistoryDialog';
+import PromoMeasurementPanel from './PromoMeasurementPanel';
+import PromoMechanicForm from './PromoMechanicForm';
+import PromoRuleCard from './PromoRuleCard';
+import PromoRuleDialog from './PromoRuleDialog';
+import PromoUpliftEditDialog from './PromoUpliftEditDialog';
 import PromoUpliftTable from './PromoUpliftTable';
 
+const EMPTY_FILTERS = { customer: '', sku: '' };
+
+function anchorEditTarget(row) {
+  return { customerId: row.customer_id, name: retailerLabel(row.customer_name), anchorPct: row.anchor_pct, row };
+}
+
 /**
- * The Promotion Uplift Settings page (Forecast > Promotion Uplift Settings):
+ * The Promotion uplift settings page (Forecast > Promotion uplift settings):
  * each customer's ordinary-month discount, the uplift per mechanic used when
- * planning future promotions in the Scenario builder, and promotion
- * mechanics that match no setting. Every write is a new version (nothing is
- * deleted), recorded as UPDATED_BY; after a write the page refetches, since
- * an anchor change moves every placeholder value.
+ * planning future promotions in the Scenario builder (filtered by customer
+ * and SKU, which come from the catalogue), and promotion mechanics that match
+ * no setting. New promotions and vouchers are added here; customers and SKUs
+ * never are. Every write is a new version (nothing is deleted, archiving
+ * included), recorded as UPDATED_BY; after a write the page refetches, since
+ * an anchor or rule change moves every rule-based uplift. Uplifts are
+ * measured from sales data daily (PromoMeasurementPanel); uplifts typed here
+ * are never overwritten by a measurement.
  *
  * While PROMO_UPLIFTS_DEMO is on (services/promoUpliftsApi.js), every
  * button works against an in-memory demo and nothing is saved.
@@ -37,15 +68,65 @@ import PromoUpliftTable from './PromoUpliftTable';
 export default function PromoUpliftSettingsView() {
   const [refreshKey, setRefreshKey] = useState(0);
   const { settings, anchors, loading, error } = usePromoUpliftSettings({ refreshKey });
+  const filterOptions = usePromoUpliftFilterOptions({ refreshKey });
   const readOnly = !settings;
   const [anchorTarget, setAnchorTarget] = useState(null);
-  const [addingOverride, setAddingOverride] = useState(false);
   const [historyTarget, setHistoryTarget] = useState(null);
+  const [editTarget, setEditTarget] = useState(null);
+  const [evidenceTarget, setEvidenceTarget] = useState(null);
+  const [editingRule, setEditingRule] = useState(false);
+  const [addingMechanic, setAddingMechanic] = useState(false);
+  const [filters, setFilters] = useState(EMPTY_FILTERS);
+  const [showArchived, setShowArchived] = useState(false);
   const { toast, notify, dismissToast } = useToast();
+  const reset = useConfirmAction({ onConfirm: handleUpliftReset });
+  const archive = useConfirmAction({ onConfirm: handleUpliftArchive });
 
   const refresh = () => setRefreshKey((key) => key + 1);
   const rows = settings?.settings ?? [];
-  const placeholderInUse = rows.some((row) => row.source === 'placeholder');
+  const rule = settings?.rule ?? null;
+  const rate = rule?.uplift_per_point_pct ?? DEFAULT_UPLIFT_PER_POINT_PCT;
+  const labelForKey = (key) => rows.find((row) => row.mechanic_key === key)?.mechanic_label ?? key;
+
+  // Rule-based uplifts follow the picked customer's own ordinary-month
+  // discount, as the Scenario builder uses them; otherwise the all-customers one.
+  const customerAnchor = anchors?.customers.find((row) => row.customer_name === filters.customer) ?? null;
+  const anchorPct = customerAnchor?.anchor_pct ?? settings?.default_anchor_pct ?? 20;
+  const skuRow = filterOptions.skus.find((row) => row.sku === filters.sku) ?? null;
+  const matchingRows = rows.filter((row) => upliftRowApplies(row, filters, skuRow));
+  const archivedCount = matchingRows.filter((row) => row.archived_at).length;
+  const shownRows = showArchived ? matchingRows : matchingRows.filter((row) => !row.archived_at);
+  const hasFilters = filters.customer !== '' || filters.sku !== '';
+  const customerOptions = filterOptions.customers.map((row) => ({
+    value: row.customer_name,
+    label: retailerLabel(row.customer_name),
+  }));
+  const skuOptions = filterOptions.skus.map((row) => ({ value: row.sku, label: `${row.product_name} · ${row.sku}` }));
+
+  function editUplift(row) {
+    setEditTarget({ row, shownUplift: shownUplift(row, anchorPct, rate) });
+  }
+
+  // History's "Edit details" button: only for a row its menu could edit.
+  function historyEdit(target) {
+    if (target.kind === 'rule') {
+      return () => {
+        setHistoryTarget(null);
+        setEditingRule(true);
+      };
+    }
+    if (target.kind === 'anchor') {
+      return () => {
+        setHistoryTarget(null);
+        setAnchorTarget(anchorEditTarget(target.row));
+      };
+    }
+    if (target.row.archived_at || target.row.source === 'learned') return null;
+    return () => {
+      setHistoryTarget(null);
+      editUplift(target.row);
+    };
+  }
 
   function handleAnchorSaved(result, target) {
     setAnchorTarget(null);
@@ -68,9 +149,10 @@ export default function PromoUpliftSettingsView() {
     }
   }
 
-  async function handleUpliftSave(row, upliftPct) {
+  async function handleUpliftSave(row, upliftPct, note) {
     try {
-      const result = await savePromoUplift(row.id, { uplift_pct: upliftPct, note: row.note });
+      const result = await savePromoUplift(row.id, { uplift_pct: upliftPct, note });
+      setEditTarget(null);
       refresh();
       notify('success', result.changed ? `${row.mechanic_label} saved as an Estimate` : 'No changes to save');
       return true;
@@ -84,78 +166,125 @@ export default function PromoUpliftSettingsView() {
     try {
       await resetPromoUplift(row.id);
       refresh();
-      notify('success', row.scope === 'all' ? `${row.mechanic_label} is a placeholder again` : 'Value removed');
+      notify('success', `${row.mechanic_label} follows the rule again`);
     } catch (err) {
       notify('error', err.message);
     }
   }
 
-  function handleOverrideSaved(result) {
-    setAddingOverride(false);
+  async function handleUpliftArchive(row) {
+    try {
+      await archivePromoUplift(row.id);
+      refresh();
+      notify('success', `${row.mechanic_label} archived. Turn on Show archived to see or restore it.`);
+    } catch (err) {
+      notify('error', err.message);
+    }
+  }
+
+  async function handleUpliftRestore(row) {
+    try {
+      await restorePromoUplift(row.id);
+      refresh();
+      notify('success', `${row.mechanic_label} restored`);
+    } catch (err) {
+      notify('error', err.message);
+    }
+  }
+
+  function handleRuleSaved(result) {
+    setEditingRule(false);
     refresh();
-    notify('success', `${result.setting.mechanic_label} value added`);
+    notify(
+      result.warning ? 'error' : 'success',
+      result.changed
+        ? `Rule saved: ${result.rule.uplift_per_point_pct}% per extra point of discount${result.warning ? `. ${result.warning}` : ''}`
+        : 'No changes to save: the rule already uses this rate'
+    );
+  }
+
+  async function handleRuleReset() {
+    try {
+      const result = await resetPromoRule();
+      refresh();
+      notify('success', result.changed ? `Rule back to the default ${DEFAULT_UPLIFT_PER_POINT_PCT}% per point` : 'The rule already uses the default');
+    } catch (err) {
+      notify('error', err.message);
+    }
+  }
+
+  function handleMechanicAdded(result) {
+    setAddingMechanic(false);
+    refresh();
+    notify('success', `${result.setting.mechanic_label} added`);
   }
 
   return (
     <div className="grid gap-1">
       <section className={cardClass}>
         <p className="text-sm text-deep-violet-blue/80">
-          Uplift is how much more or less a month with a promotion mechanic sells than an ordinary month. The forecast
-          already reflects an ordinary month. These values are used when planning <b>future</b> promotions in Forecast ›
-          Scenario builder.
+          How much a promotion lifts sales, used when planning <b>future</b> promotions in the Scenario builder.
         </p>
-        {PROMO_UPLIFTS_DEMO ? (
-          <p className="mt-2 rounded-md border border-violet bg-lavander/60 px-3 py-2 text-xs text-deep-violet-blue" role="status">
-            <b>Demo mode:</b> every button works, but nothing is saved. Changes last until you reload this tab, and the
-            suggested discounts are made up for the demo.
-          </p>
-        ) : null}
+        <details className="group mt-1 text-xs text-deep-violet-blue/70">
+          <summary className="cursor-pointer select-none font-medium text-deep-violet-blue/70 hover:text-deep-violet-blue">
+            How this page works
+          </summary>
+          <ul className="mt-1.5 list-disc space-y-1 pl-5">
+            {HOW_THIS_PAGE_WORKS.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </details>
         {error ? (
           <p className="mt-2 text-sm text-red-600" role="alert">
             {error}
           </p>
         ) : null}
-        {placeholderInUse ? (
-          <p className="mt-2 text-xs text-deep-violet-blue/60">
-            <b>Placeholder values</b> follow a simple rule and are not yet measured from sales data.
-          </p>
-        ) : null}
       </section>
+
+      <PromoMeasurementPanel
+        refreshKey={refreshKey}
+        readOnly={readOnly}
+        labelForKey={labelForKey}
+        onChanged={refresh}
+        notify={notify}
+      />
 
       <section className={cardClass}>
         <div className="mb-2 flex items-center justify-between gap-2">
-          <h2 className="text-sm font-medium text-deep-violet-blue">Ordinary-month discount by customer</h2>
+          <h2 className="flex items-center gap-1 text-sm font-medium text-deep-violet-blue">
+            Ordinary-month discount by customer
+            <InfoTooltip label="About the ordinary-month discount" className="w-80">{PROMO_HINTS.anchor}</InfoTooltip>
+          </h2>
           <RefreshButton onClick={refresh} isRefreshing={loading} label="Refresh promotion uplift settings" />
         </div>
         {anchors ? (
           <PromoAnchorTable
             anchors={anchors}
-            editingKey={anchorTarget?.key ?? null}
             readOnly={readOnly}
             onEdit={setAnchorTarget}
             onReset={handleAnchorReset}
-            onHistory={(row) =>
-              setHistoryTarget({ kind: 'anchor', id: row.customer_id, title: retailerLabel(row.customer_name) })
-            }
+            onHistory={(row) => setHistoryTarget({ kind: 'anchor', row })}
           />
         ) : (
           <p className="text-sm text-deep-violet-blue/60">Loading…</p>
         )}
       </section>
 
-      {anchorTarget ? (
-        <PromoAnchorForm
-          key={anchorTarget.key}
-          target={anchorTarget}
-          settings={rows}
-          onSaved={handleAnchorSaved}
-          onCancel={() => setAnchorTarget(null)}
-        />
-      ) : null}
+      <PromoRuleCard
+        rule={rule}
+        readOnly={readOnly}
+        onEdit={() => setEditingRule(true)}
+        onHistory={() => setHistoryTarget({ kind: 'rule', row: rule })}
+        onReset={handleRuleReset}
+      />
 
       {settings?.unmapped_mechanics?.length ? (
         <section className={cardClass} role="status">
-          <h2 className="text-sm font-medium text-deep-violet-blue">These promotion mechanics have no uplift value yet</h2>
+          <h2 className="flex items-center gap-1 text-sm font-medium text-deep-violet-blue">
+            These promotion mechanics have no uplift yet
+            <InfoTooltip label="About unmatched mechanics" className="w-80">{PROMO_HINTS.unmapped}</InfoTooltip>
+          </h2>
           <p className="mt-1 text-xs text-deep-violet-blue/70">
             {settings.unmapped_mechanics
               .map((row) => `${row.promotion_mechanic} (${row.promotions} promotion${row.promotions === 1 ? '' : 's'})`)
@@ -166,50 +295,168 @@ export default function PromoUpliftSettingsView() {
 
       <section className={cardClass}>
         <div className="mb-2 flex items-center justify-between gap-2">
-          <h2 className="text-sm font-medium text-deep-violet-blue">Uplift by mechanic</h2>
+          <h2 className="flex items-center gap-1 text-sm font-medium text-deep-violet-blue">
+            Uplift by mechanic
+            <InfoTooltip label="About uplift by mechanic" className="w-80">{PROMO_HINTS.upliftTable}</InfoTooltip>
+          </h2>
           {readOnly ? null : (
             <Button
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => setAddingOverride(true)}
+              onClick={() => setAddingMechanic(true)}
               className={secondaryButtonClass}
             >
               <Plus aria-hidden="true" />
-              Add customer / SKU value
+              Add promotion or voucher
             </Button>
           )}
         </div>
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+          <div
+            role="group"
+            aria-label="Filter uplift values"
+            className="grid w-full gap-3 sm:w-auto sm:grid-cols-[12rem_18rem]"
+          >
+            <FilterSelect
+              label="Customer"
+              value={filters.customer}
+              allLabel="All customers"
+              options={customerOptions}
+              onChange={(value) => setFilters((current) => ({ ...current, customer: value }))}
+            />
+            <FilterSelect
+              label="SKU"
+              value={filters.sku}
+              allLabel="All SKUs"
+              options={skuOptions}
+              onChange={(value) => setFilters((current) => ({ ...current, sku: value }))}
+            />
+          </div>
+          <label className="flex items-center gap-2 pb-2 text-xs font-medium text-deep-violet-blue/70">
+            <Switch checked={showArchived} onCheckedChange={setShowArchived} />
+            Show archived ({archivedCount})
+          </label>
+        </div>
+        {filterOptions.error ? (
+          <p className="mb-2 text-xs text-red-700" role="alert">
+            Could not load the customer and SKU filters: {filterOptions.error}
+          </p>
+        ) : null}
         <PromoUpliftTable
-          rows={rows}
-          defaultAnchorPct={settings?.default_anchor_pct ?? 20}
+          rows={shownRows}
+          anchorPct={anchorPct}
+          rate={rate}
+          isLoading={loading && !settings}
+          emptyState={
+            settings && shownRows.length === 0
+              ? hasFilters
+                ? 'No uplift values apply to this customer and SKU.'
+                : 'No uplift values yet.'
+              : null
+          }
           readOnly={readOnly}
-          onSave={handleUpliftSave}
-          onReset={handleUpliftReset}
-          onHistory={(row) => setHistoryTarget({ kind: 'mechanic', id: row.mechanic_key, title: row.mechanic_label })}
+          onEdit={editUplift}
+          onHistory={(row) => setHistoryTarget({ kind: 'mechanic', row, shownUplift: shownUplift(row, anchorPct, rate) })}
+          onReset={reset.request}
+          onArchive={archive.request}
+          onRestore={handleUpliftRestore}
+          onEvidence={setEvidenceTarget}
         />
-        <p className="mt-2 text-xs text-deep-violet-blue/60">
-          All-customers placeholder values are shown at the all-customers discount ({settings?.default_anchor_pct ?? 20}%);
-          the Scenario builder recalculates them from each customer&apos;s own ordinary-month discount.
-        </p>
       </section>
 
-      {addingOverride && anchors ? (
-        <PromoOverrideForm
-          mechanics={rows.filter((row) => row.scope === 'all')}
-          customers={anchors.customers}
-          onSaved={handleOverrideSaved}
-          onCancel={() => setAddingOverride(false)}
+      {anchorTarget ? (
+        <PromoAnchorForm
+          key={anchorTarget.customerId ?? 'default'}
+          target={anchorTarget}
+          settings={rows}
+          rate={rate}
+          onSaved={handleAnchorSaved}
+          onCancel={() => setAnchorTarget(null)}
         />
+      ) : null}
+
+      {editingRule ? (
+        <PromoRuleDialog
+          currentRate={rate}
+          settings={rows}
+          anchorPct={anchorPct}
+          anchorLabel={
+            customerAnchor
+              ? `${retailerLabel(customerAnchor.customer_name)}'s ordinary-month discount`
+              : 'the all-customers ordinary-month discount'
+          }
+          onSaved={handleRuleSaved}
+          onCancel={() => setEditingRule(false)}
+        />
+      ) : null}
+
+      {editTarget ? (
+        <PromoUpliftEditDialog
+          key={editTarget.row.id}
+          row={editTarget.row}
+          shownUplift={editTarget.shownUplift}
+          onSave={handleUpliftSave}
+          onClose={() => setEditTarget(null)}
+        />
+      ) : null}
+
+      {evidenceTarget ? (
+        <PromoEvidenceDialog key={evidenceTarget.id} row={evidenceTarget} onClose={() => setEvidenceTarget(null)} />
       ) : null}
 
       {historyTarget ? (
-        <PromoHistoryPanel
-          key={`${historyTarget.kind}-${historyTarget.id}`}
+        <PromoHistoryDialog
+          key={`${historyTarget.kind}-${historyTarget.row?.id ?? historyTarget.row?.customer_id ?? 'rule'}`}
           target={historyTarget}
+          onEdit={historyEdit(historyTarget)}
           onClose={() => setHistoryTarget(null)}
         />
       ) : null}
+
+      {addingMechanic ? (
+        <PromoMechanicForm onSaved={handleMechanicAdded} onCancel={() => setAddingMechanic(false)} />
+      ) : null}
+
+      <ConfirmDialog
+        open={Boolean(reset.target)}
+        title="Reset to the rule-based uplift?"
+        description="The uplift goes back to the rule and follows the rule and the ordinary-month discount again. Earlier versions stay in History."
+        details={
+          reset.target
+            ? [
+                { label: 'Mechanic', value: reset.target.mechanic_label },
+                { label: 'Uplift now', value: formatPct(reset.target.uplift_pct) },
+              ]
+            : []
+        }
+        confirmLabel="Reset value"
+        pendingLabel="Resetting…"
+        tone="default"
+        isPending={reset.isPending}
+        onConfirm={reset.confirm}
+        onCancel={reset.cancel}
+      />
+
+      <ConfirmDialog
+        open={Boolean(archive.target)}
+        title="Archive this value?"
+        description="The Scenario builder stops using it. Nothing is deleted: turn on Show archived to see it, and restore it from its menu."
+        details={
+          archive.target
+            ? [
+                { label: 'Mechanic', value: archive.target.mechanic_label },
+                { label: 'Applies to', value: scopeLabel(archive.target) },
+                { label: 'Uplift', value: formatPct(shownUplift(archive.target, anchorPct, rate)) },
+              ]
+            : []
+        }
+        confirmLabel="Archive"
+        pendingLabel="Archiving…"
+        isPending={archive.isPending}
+        onConfirm={archive.confirm}
+        onCancel={archive.cancel}
+      />
 
       <Toast toast={toast} onDismiss={dismissToast} />
     </div>
