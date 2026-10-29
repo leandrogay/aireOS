@@ -2662,6 +2662,28 @@ def test_store_summary_names_a_few_stores_and_counts_many():
     assert assistant._store_summary(many) == "53 fairprice_offline stores, 1 fairprice_online store"
 
 
+def test_change_words_says_up_down_or_unchanged_instead_of_signs():
+    assert assistant._change_words(120.0, 100.0) == "up 20.0%"
+    assert assistant._change_words(88.8, 100.0) == "down 11.2%"
+    assert assistant._change_words(100.01, 100.0) == "unchanged"
+    assert assistant._change_words(50.0, 0.0) is None
+
+
+def test_promotion_lines_give_a_count_and_readable_dates():
+    lines = assistant._digest_promotion_lines([{
+        "promotion_mechanic": "20% Off",
+        "promo_type": "monthly",
+        "stores": [{"retailer": "fairprice_offline", "store_name": "Bedok"}],
+        "period_start": datetime.date(2026, 11, 1),
+        "period_end": datetime.date(2026, 11, 30),
+    }])
+
+    assert lines == [
+        "- 1 promotion starting or ending in the next 7 days:",
+        "  - 20% Off (monthly) at fairprice_offline - Bedok, running 1 Nov 2026 to 30 Nov 2026.",
+    ]
+
+
 # ---- generate_digest: end-to-end ---------------------------------------------
 
 def _digest_answer(text="- Revenue trend was strong.", follow_ups=None):
@@ -2754,9 +2776,9 @@ def test_generate_digest_compares_the_latest_month_with_the_month_before(monkeyp
         ("2026-08-01", "2026-08-31", "2026-07-01", "2026-07-31")
     }
     facts = _facts_sent(fake_client)
-    assert "Aug 2026 vs Jul 2026: revenue $12,000.00 vs $10,000.00 (+20.0%)" in facts
-    assert "units 900 vs 800 (+12.5%)" in facts
-    assert "Offline $11,000.00 vs $9,000.00 (+22.2%); Online $1,000.00 vs $1,000.00 (+0.0%)" in facts
+    assert "Sales in Aug 2026: revenue was $12,000, up 20.0% from $10,000 in Jul 2026." in facts
+    assert "Units sold were 900, up 12.5% from 800 in Jul 2026." in facts
+    assert "In-store (offline) $11,000, up 22.2%; Online $1,000, unchanged." in facts
     assert result["chart_categories"] == ["Jul 2026", "Aug 2026"]
     assert result["chart_series"] == [{"label": "Revenue", "values": [10000.0, 12000.0]}]
     assert result["grounded"] is True
@@ -2779,9 +2801,9 @@ def test_generate_digest_names_the_best_seller_and_rank_movers(monkeypatch):
     assistant.generate_digest(customer="fairprice")
 
     facts = _facts_sent(fake_client)
-    assert "Best seller in Aug 2026: Widget A (A), $5,000.00" in facts
-    assert "Widget A (A) moved up, rank 5 -> 1" in facts
-    assert "Widget B" not in facts.split("rank movers")[1]
+    assert "Best-selling product in Aug 2026: Widget A, $5,000 in revenue." in facts
+    assert "Widget A rose from #5 to #1." in facts
+    assert "Widget B" not in facts.split("sales ranking")[1]
 
 
 def test_generate_digest_includes_stock_outside_its_range(monkeypatch):
@@ -2800,10 +2822,10 @@ def test_generate_digest_includes_stock_outside_its_range(monkeypatch):
     assistant.generate_digest(customer="fairprice")
 
     facts = _facts_sent(fake_client)
-    assert "Stock, as of Sep 2026: 2 SKU(s) below their minimum days of holding" in facts
-    assert "1 above their maximum" in facts
-    assert "Widget A (A): 5.0 days of holding, 20.0 days below the minimum" in facts
-    assert "Widget B (B): 50.0 days of holding, 15.0 days above the maximum" in facts
+    assert "Stock at the end of Sep 2026: 2 products running low (may run out)" in facts
+    assert "1 product with more stock than needed" in facts
+    assert "Widget A: 5 days of stock, 20 days short of the minimum." in facts
+    assert "Widget B: 50 days of stock, 15 days over the maximum." in facts
     assert "Widget D" not in facts  # only the three furthest out
 
 
@@ -2821,7 +2843,10 @@ def test_generate_digest_includes_the_next_forecast_month_against_the_last_full_
 
     assistant.generate_digest(customer="fairprice")
 
-    assert "Forecast for Nov 2026: 2,582 cartons, vs 2,400 cartons Actual in Aug 2026." in _facts_sent(fake_client)
+    assert (
+        "Forecast for Nov 2026: about 2,582 cartons expected to sell, "
+        "up 7.6% on the 2,400 cartons actually sold in Aug 2026."
+    ) in _facts_sent(fake_client)
 
 
 def test_generate_digest_includes_promotions_starting_soon(monkeypatch):
@@ -2855,8 +2880,17 @@ def test_generate_digest_leaves_out_an_area_it_cannot_read(monkeypatch):
     assert "Stock" not in facts
     assert "romotion" not in facts
     assert "connection refused" not in facts
-    assert "Aug 2026 vs Jul 2026" in facts  # the rest is still there
+    assert "Sales in Aug 2026" in facts  # the rest is still there
     assert result["has_chart"] is True
+
+
+def test_generate_digest_turns_a_literal_backslash_n_into_a_line_break(monkeypatch):
+    _install_digest_data(monkeypatch)
+    _install_fake_client(monkeypatch, [_digest_answer(text="- **Sales:** fell.\\n- **Stock:** fine.")])
+
+    result = assistant.generate_digest(customer="fairprice")
+
+    assert result["answer"] == "- **Sales:** fell.\n- **Stock:** fine."
 
 
 def test_generate_digest_with_no_sales_yet_has_no_chart(monkeypatch):

@@ -2606,20 +2606,29 @@ _DIGEST_SCHEMA = {
 def _digest_system_prompt() -> str:
     return """You are summarizing a fixed set of ALREADY-VERIFIED facts about AireOS's
 business (adult incontinence / hygiene care products) for a busy manager
-skimming on their phone. It is an overall view: sales, products, stock,
-forecast and promotions.
+skimming on their phone. They are not a data analyst: write the way you
+would tell a colleague, in plain everyday words and short sentences.
 
 Rules:
 - State ONLY the figures/facts given in the message below -- never estimate,
-  guess, or add a number that isn't there. Percentages are already worked
-  out; quote them, never compute your own.
-- One short bullet line per area, each starting with "- ", in the order the
-  facts are given. 3-6 bullets total. Lead each bullet with the headline
-  number/fact, not a preamble.
-- Always name the period a figure is for (e.g. "Aug 2026"), so it is clear
+  guess, or add a number that isn't there. Changes are already worked out
+  ("down 11.2%"); quote them, never compute your own.
+- One bullet per area, each starting with "- " and then a short bold label:
+  "**Sales:**", "**By channel:**", "**Top products:**", "**Stock:**",
+  "**Forecast:**", "**Promotions:**". Keep the order the facts are given in.
+  3-6 bullets total.
+- Keep each bullet to one or two short sentences (about 30 words at most).
+  Lead with what happened ("Revenue fell 11.2% to $24,052"), then the
+  comparison. Use "up"/"down"/"rose"/"fell", never "+"/"-" signs or "vs".
+- Always name the month a figure is for (e.g. "Aug 2026"), so it is clear
   how recent the data is.
-- Call forecast figures "Forecast" and sales figures "Actual" when both
-  appear in one bullet.
+- Use product names only, never product codes. Avoid jargon: say "days of
+  stock", not "DOH" or "days of holding", and say what it means
+  ("may run out", "more stock than needed").
+- When a bullet has both, make clear which figure is a forecast and which
+  is actual sales.
+- Several promotions in one bullet: give the count and the months, not
+  every promotion.
 - If a section says there's nothing notable, skip that bullet entirely
   rather than forcing a mention of "nothing changed."
 - No greeting, no closing sentence -- just the bullets.
@@ -2687,10 +2696,15 @@ def _latest_sales_period(customer: str) -> tuple[datetime.date, datetime.date] |
     return latest
 
 
-def _percent_change(current: float, previous: float) -> str | None:
+def _change_words(current: float, previous: float) -> str | None:
+    """'up 20.0%' / 'down 11.2%' / 'unchanged': words, not signs, so the
+    model quotes it as a reader would say it."""
     if not previous:
         return None
-    return f"{(current - previous) / previous * 100:+.1f}%"
+    change = (current - previous) / previous * 100
+    if round(change, 1) == 0:
+        return "unchanged"
+    return f"{'up' if change > 0 else 'down'} {abs(change):.1f}%"
 
 
 def _digest_sales(customer: str) -> dict | None:
@@ -2815,13 +2829,31 @@ def _gather_digest(customer: str) -> dict:
 
 
 def _money_text(value: float) -> str:
-    return f"${value:,.2f}"
+    # Whole dollars: cents only add digits to read past in a summary.
+    return f"${value:,.0f}"
 
 
-def _change_text(current: float, previous: float, as_money: bool = True) -> str:
-    shown = _money_text if as_money else (lambda v: f"{v:,.0f}")
-    change = _percent_change(current, previous)
-    return f"{shown(current)} vs {shown(previous)}" + (f" ({change})" if change else "")
+def _units_text(value: float) -> str:
+    return f"{value:,.0f}"
+
+
+def _count_text(count: int, noun: str) -> str:
+    return f"{count} {noun}{'' if count == 1 else 's'}"
+
+
+def _day_text(value) -> str:
+    day = value if isinstance(value, datetime.date) else datetime.date.fromisoformat(str(value)[:10])
+    return f"{day.day} {day:%b %Y}"
+
+
+def _change_sentence(current: float, previous: float, previous_label: str, shown) -> str:
+    """'down 11.2% from $27,098 in Jul 2026' -- the change, then what it is compared with."""
+    change = _change_words(current, previous)
+    if change is None:
+        return f"with nothing in {previous_label} to compare with"
+    if change == "unchanged":
+        return f"unchanged from {previous_label}"
+    return f"{change} from {shown(previous)} in {previous_label}"
 
 
 def _digest_sales_lines(sales: dict | None) -> list[str]:
@@ -2829,42 +2861,50 @@ def _digest_sales_lines(sales: dict | None) -> list[str]:
         return ["- Sales: no sales data loaded yet."]
     window, total = sales["window"], sales["total"]
     current, previous = total["current"], total["previous"]
-    period = f"{window['current_label']} vs {window['previous_label']}"
+    current_label, previous_label = window["current_label"], window["previous_label"]
     lines = []
     if previous.get("available"):
         lines.append(
-            f"- Sales (Actual), {period}: revenue {_change_text(current['revenue'], previous['revenue'])}; "
-            f"units {_change_text(current['units'], previous['units'], as_money=False)}."
+            f"- Sales in {current_label}: revenue was {_money_text(current['revenue'])}, "
+            f"{_change_sentence(current['revenue'], previous['revenue'], previous_label, _money_text)}. "
+            f"Units sold were {_units_text(current['units'])}, "
+            f"{_change_sentence(current['units'], previous['units'], previous_label, _units_text)}."
         )
     else:
         lines.append(
-            f"- Sales (Actual), {window['current_label']}: revenue {_money_text(current['revenue'])}; "
-            f"no sales loaded for {window['previous_label']} to compare with."
+            f"- Sales in {current_label}: revenue was {_money_text(current['revenue'])}; "
+            f"there are no sales for {previous_label} to compare with."
         )
     if not window["full_month"]:
-        lines.append(f"  - Sales data is loaded up to {window['current_end']}.")
+        lines.append(f"  - Sales are only loaded up to {_day_text(window['current_end'])} so far.")
 
+    channel_names = {"offline": "In-store (offline)", "online": "Online"}
     channel_parts = []
     for mode, comparison in sales["channels"].items():
         cur, prev = comparison["current"]["revenue"], comparison["previous"]["revenue"]
         if cur or prev:
-            channel_parts.append(f"{mode.capitalize()} {_change_text(cur, prev)}")
+            change = _change_words(cur, prev)
+            channel_parts.append(
+                f"{channel_names.get(mode, mode.capitalize())} {_money_text(cur)}" + (f", {change}" if change else "")
+            )
     if len(channel_parts) > 1:
-        lines.append(f"- Revenue by channel, {period}: " + "; ".join(channel_parts) + ".")
+        lines.append(
+            f"- Revenue by channel in {current_label} (changes compared with {previous_label}): "
+            + "; ".join(channel_parts) + "."
+        )
 
     top = sales["top_seller"]
     if top:
         lines.append(
-            f"- Best seller in {window['current_label']}: {top['product_name']} ({top['sku']}), "
-            f"{_money_text(float(top['value']))}."
+            f"- Best-selling product in {current_label}: {top['product_name']}, "
+            f"{_money_text(float(top['value']))} in revenue."
         )
     if sales["movers"]:
-        lines.append(f"- Biggest SKU rank movers, {period}:")
+        lines.append(f"- Products that changed place most in the sales ranking, {previous_label} to {current_label}:")
         for m in sales["movers"]:
-            direction = "up" if m["delta"] > 0 else "down"
+            direction = "rose" if m["delta"] > 0 else "fell"
             lines.append(
-                f"  - {m['product_name']} ({m['sku']}) moved {direction}, "
-                f"rank {m['previous_rank']} -> {m['current_rank']}."
+                f"  - {m['product_name']} {direction} from #{m['previous_rank']} to #{m['current_rank']}."
             )
     return lines
 
@@ -2876,16 +2916,19 @@ def _digest_stock_lines(stock: dict | None) -> list[str]:
     below = stock["counts"].get(inventory_calc.DOH_STATUS_BELOW_MIN, 0)
     above = stock["counts"].get(inventory_calc.DOH_STATUS_ABOVE_MAX, 0)
     if not below and not above:
-        return [f"- Stock, as of {as_of}: every SKU is within its days-of-holding range."]
+        return [f"- Stock at the end of {as_of}: every product has the right amount of stock."]
     lines = [
-        f"- Stock, as of {as_of}: {below} SKU(s) below their minimum days of holding (risk of running out), "
-        f"{above} above their maximum (overstocked). Furthest outside the range:"
+        f"- Stock at the end of {as_of}: {_count_text(below, 'product')} running low (may run out) and "
+        f"{_count_text(above, 'product')} with more stock than needed. Furthest off:"
     ]
     for item in stock["worst"]:
-        side = "below the minimum" if item["doh_status"] == inventory_calc.DOH_STATUS_BELOW_MIN else "above the maximum"
+        if item["doh_status"] == inventory_calc.DOH_STATUS_BELOW_MIN:
+            side = "short of the minimum"
+        else:
+            side = "over the maximum"
         lines.append(
-            f"  - {item['product_name']} ({item['sku']}): {item['doh']} days of holding, "
-            f"{item['days_outside_band']} days {side}."
+            f"  - {item['product_name']}: {item['doh']:,.0f} days of stock, "
+            f"{item['days_outside_band']:,.0f} days {side}."
         )
     return lines
 
@@ -2896,13 +2939,18 @@ def _digest_forecast_lines(forecast: dict | None) -> list[str]:
     upcoming = forecast["forecast"]
     line = (
         f"- Forecast for {forecast_summary.month_label(upcoming['month'])}: "
-        f"{upcoming['cartons']:,} cartons"
+        f"about {upcoming['cartons']:,} cartons expected to sell"
     )
     if upcoming.get("confidence"):
-        line += f" ({upcoming['confidence']} confidence)"
+        line += f" ({upcoming['confidence'].lower()} confidence)"
     actual = forecast["last_actual"]
     if actual and actual.get("cartons") is not None:
-        line += f", vs {actual['cartons']:,} cartons Actual in {forecast_summary.month_label(actual['month'])}"
+        change = _change_words(upcoming["cartons"], actual["cartons"])
+        compared = f"{change} on" if change and change != "unchanged" else "compared with"
+        line += (
+            f", {compared} the {actual['cartons']:,} cartons actually sold in "
+            f"{forecast_summary.month_label(actual['month'])}"
+        )
     return [line + "."]
 
 
@@ -2922,11 +2970,11 @@ def _digest_promotion_lines(promotions: list[dict] | None) -> list[str]:
         return []
     if not promotions:
         return ["- No promotions starting or ending in the next 7 days."]
-    lines = ["- Promotions starting or ending within the next 7 days:"]
+    lines = [f"- {_count_text(len(promotions), 'promotion')} starting or ending in the next 7 days:"]
     for p in promotions:
         lines.append(
-            f"  - {p.get('period_label')} ({p.get('promo_type')}, {p.get('promotion_mechanic')}) "
-            f"at {_store_summary(p.get('stores') or [])}: {p.get('period_start')} to {p.get('period_end')}."
+            f"  - {p.get('promotion_mechanic')} ({p.get('promo_type')}) at {_store_summary(p.get('stores') or [])}, "
+            f"running {_day_text(p['period_start'])} to {_day_text(p['period_end'])}."
         )
     return lines
 
@@ -2986,7 +3034,9 @@ def generate_digest(customer: str) -> dict:
             parsed = {"answer": "Here's what's changed, though I couldn't fully summarize it this time.", "follow_up_prompts": []}
 
     return {
-        "answer": parsed.get("answer", ""),
+        # The model sometimes double-escapes the line breaks between bullets,
+        # leaving a literal "\n" the chat window would print as-is.
+        "answer": parsed.get("answer", "").replace("\\n", "\n"),
         "grounded": True,
         "data_source": "aire_data",
         "follow_up_prompts": parsed.get("follow_up_prompts") or [],
