@@ -52,7 +52,7 @@ export default function SkusPage() {
         setOptions(values);
       })
       .catch((loadError) => {
-        if (!cancelled) setError(loadError.message || 'Failed to load the SKU catalogue.');
+        if (!cancelled) setError(loadError.message || 'Failed to load the SKU catalog.');
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -95,14 +95,14 @@ export default function SkusPage() {
     setEditor(null);
   };
 
-  const viewSku = async (sku) => {
+  const viewSkuHistory = async (sku) => {
     setDetails(sku);
     setDetailsLoading(true);
     setDetailsError('');
     try {
       setDetails(await getSku(sku.sku));
     } catch (viewError) {
-      setDetailsError(viewError.message || 'Failed to load SKU details.');
+      setDetailsError(viewError.message || 'Failed to load SKU history.');
     } finally {
       setDetailsLoading(false);
     }
@@ -112,7 +112,15 @@ export default function SkusPage() {
     try {
       await archiveSku(sku.sku);
       setSkus((current) => current.filter((item) => item.sku !== sku.sku));
-      notify('deleted', `SKU ${sku.sku} moved to the archived catalogue.`);
+      try {
+        setOptions(await getSkuOptions());
+      } catch (optionsError) {
+        setError(
+          optionsError.message ||
+            `SKU ${sku.sku} was archived, but the catalog options could not be refreshed.`,
+        );
+      }
+      notify('deleted', `SKU ${sku.sku} was archived.`);
     } catch (archiveError) {
       notify('error', archiveError.message || 'Failed to archive SKU.');
     }
@@ -120,9 +128,17 @@ export default function SkusPage() {
 
   return (
     <PageLayout
-      title="SKU catalogue"
+      title="SKU catalog"
       fitScreen
-      headerExtra={<Button onClick={() => setEditor({ sku: null })}><Plus />Create SKU</Button>}
+      headerExtra={(
+        <Button
+          onClick={() => setEditor({ sku: null })}
+          className="ml-auto bg-deep-violet-blue text-white hover:bg-deep-violet-blue/90"
+        >
+          <Plus data-icon="inline-start" />
+          Create SKU
+        </Button>
+      )}
     >
       <div className="flex min-h-0 flex-1 flex-col gap-3">
         <SkuFilters
@@ -144,7 +160,7 @@ export default function SkusPage() {
           totalPages={totalPages}
           onPageChange={setPage}
           onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
-          onView={viewSku}
+          onHistory={viewSkuHistory}
           onEdit={(sku) => setEditor({ sku })}
           onDelete={deletion.request}
           onRefresh={refreshCatalog}
@@ -167,12 +183,11 @@ export default function SkusPage() {
         loading={detailsLoading}
         error={detailsError}
         onClose={() => setDetails(null)}
-        onEdit={(sku) => { setDetails(null); setEditor({ sku }); }}
       />
       <ConfirmDialog
         open={Boolean(deletion.target)}
         title="Delete this SKU?"
-        description="It will leave the active catalogue but remain available to historical sales and inventory records."
+        description="It will leave the active catalog but remain available to historical sales and inventory records."
         details={deletion.target ? [
           { label: 'SKU', value: deletion.target.sku },
           { label: 'Product', value: deletion.target.product_name },

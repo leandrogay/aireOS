@@ -20,3 +20,16 @@ export function retailerLabel(value) {
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
     .join(' ');
 }
+
+/**
+ * Display label for a mapping's vendor. Since mappings are linked to a
+ * customer the vendor is the customer's slug (`giant` → `Giant`); one saved
+ * before then is free text a person typed ("FairPrice"), shown as typed.
+ *
+ * @param {string | null | undefined} value
+ * @returns {string}
+ */
+export function vendorLabel(value) {
+  if (!value) return '';
+  return /^[a-z0-9_]+$/.test(value) ? retailerLabel(value) : String(value);
+}

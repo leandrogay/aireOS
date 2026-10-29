@@ -27,6 +27,7 @@ import { cn } from '@/lib/utils';
  * @param {boolean} [props.invalid] red border after a failed submit
  * @param {boolean} [props.searchable]
  * @param {string} [props.searchPlaceholder]
+ * @param {(query: string) => void} [props.onSearchChange] optional consumer callback for user-entered search text
  * @param {string} [props.listClassName] classes for the option list; inventory passes no max-height so every SKU is visible
  * @param {React.ReactNode | ((query: string, close: () => void) => React.ReactNode)} props.children
  */
@@ -37,6 +38,7 @@ export default function CheckboxDropdown({
   invalid = false,
   searchable = false,
   searchPlaceholder = 'Search…',
+  onSearchChange = null,
   listClassName = 'max-h-52 overflow-auto p-2',
   children,
 }) {
@@ -90,7 +92,11 @@ export default function CheckboxDropdown({
               value={query}
               placeholder={searchPlaceholder}
               aria-label={searchPlaceholder}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => {
+                const nextQuery = event.target.value;
+                setQuery(nextQuery);
+                onSearchChange?.(nextQuery);
+              }}
               onKeyDown={(event) => {
                 if (event.key === 'Enter') {
                   event.preventDefault();

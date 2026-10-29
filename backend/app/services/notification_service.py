@@ -1,28 +1,39 @@
 """
 A single shared notification feed -- no per-user accounts exist anywhere in
 this app, so read state is shared across everyone rather than per-account.
-Two kinds of alert write here: low-stock/stockout (from inventory_service,
-when a SKU written via Create/Edit/Upload drops below its DOH threshold) and
-forecast pipeline success/failure (from scripts/refresh_forecast.py).
+What writes here: low-stock/stockout (from inventory_service, when a SKU
+written via Create/Edit/Upload drops below its DOH threshold), forecast
+pipeline success/failure (scripts/refresh_forecast.py, and the scheduled
+BigQuery run via forecast_pipeline_events), and an approved mapping.
 
 `payload` is structured JSON, not pre-rendered text, so the wording staff see
 lives in the frontend and can change without a migration. This module only
 knows how to store and query notifications; it has no DOH/forecast knowledge
-of its own (that stays in inventory_service / refresh_forecast.py, which call
-`insert` with data they have already worked out).
+of its own (callers pass `insert` data they have already worked out).
+
+Every change (a new notification, some marked read, expired ones deleted)
+also sends a Postgres NOTIFY on NOTIFY_CHANNEL, whichever process made it.
+app/notification_stream.py listens and pushes it to open browser tabs.
 """
 
 import json
+import logging
 from functools import lru_cache
 
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
+from app import config
 from app.services import sql
+
+logger = logging.getLogger("uvicorn.error")
 
 LOW_STOCK = "low_stock"
 FORECAST_SUCCESS = "forecast_success"
 FORECAST_FAILURE = "forecast_failure"
+MAPPING_UPLOADED = "mapping_uploaded"
+
+NOTIFY_CHANNEL = "notifications_changed"
 
 # SKU count at which one batch of low-stock alerts becomes a single
 # consolidated notification instead of one per SKU.
@@ -118,9 +129,34 @@ def already_alerted_skus(conn: Connection, customer_id: int) -> set[str]:
     return {row[0] for row in rows}
 
 
+def has_forecast_run(run_name: str) -> bool:
+    """Whether a notification already exists for this scheduled forecast run.
+    Pub/Sub can deliver one run's message more than once."""
+
+    with _read_connection() as conn:
+        return conn.execute(
+            text(
+                """
+                SELECT EXISTS (
+                    SELECT 1 FROM notifications
+                    WHERE notification_type IN (:success, :failure)
+                      AND payload->>'run_name' = :run_name
+                )
+                """
+            ),
+            {"success": FORECAST_SUCCESS, "failure": FORECAST_FAILURE, "run_name": run_name},
+        ).scalar_one()
+
+
 # ============================================================
 # WRITES
 # ============================================================
+
+
+def _announce(conn: Connection) -> None:
+    # Delivered to listeners only when the surrounding transaction commits,
+    # so a rolled-back write is never announced.
+    conn.execute(text("SELECT pg_notify(:channel, '')"), {"channel": NOTIFY_CHANNEL})
 
 
 def mark_read(notification_ids: list[int]) -> int:
@@ -141,6 +177,8 @@ def mark_read(notification_ids: list[int]) -> int:
             ),
             {"ids": notification_ids},
         )
+        if result.rowcount:
+            _announce(conn)
         return result.rowcount
 
 
@@ -166,6 +204,7 @@ def _insert(
             "payload": json.dumps(payload, default=str),
         },
     ).first()
+    _announce(conn)
     return row[0]
 
 
@@ -188,3 +227,18 @@ def insert(
         return _insert(conn, notification_type, payload, customer_id, skus)
     with _get_engine().begin() as new_conn:
         return _insert(new_conn, notification_type, payload, customer_id, skus)
+
+
+def insert_best_effort(notification_type: str, payload: dict) -> int | None:
+    """
+    Writes one notification in its own transaction, after the caller's work
+    has already been saved, and never raises: an upload or a mapping approval
+    must not fail because its notification could not be written (for example
+    before migration 004 allows its type). Returns the id, or None if skipped.
+    """
+
+    try:
+        return insert(notification_type, payload)
+    except Exception as exc:
+        logger.warning("Could not write a %s notification: %s", notification_type, exc)
+        return None

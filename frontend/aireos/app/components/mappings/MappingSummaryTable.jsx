@@ -14,15 +14,17 @@ import {
   MAPPING_STATE_LABELS,
   filterMappings,
   issueSummary,
-  mappingVendor,
+  mappingCustomer,
+  mappingTitle,
   searchMappings,
   sortMappings,
-  uniqueMappingVendors,
+  uniqueMappingCustomers,
 } from '@/app/utils/mappingList';
 import { nextSort, paginate, resultCountLabel } from '@/app/utils/tableView';
 
-// Keys match filterMappings() in app/utils/mappingList.js.
-const EMPTY_FILTERS = { vendor: '', status: '', issues: '' };
+// Keys match filterMappings() in app/utils/mappingList.js; each is the list of
+// values ticked, empty for "all".
+const EMPTY_FILTERS = { customer: [], status: [], issues: [] };
 
 const COLUMN_COUNT = 4;
 
@@ -53,7 +55,7 @@ export default function MappingSummaryTable({ mappings, isLoading, error, onOpen
   const sorted = sortMappings(matching, sort.field, sort.direction);
   const { pageRows, currentPage, totalPages } = paginate(sorted, page, pageSize);
 
-  const hasFilters = Object.values(filters).some(Boolean) || search.trim() !== '';
+  const hasFilters = Object.values(filters).some((values) => values.length > 0) || search.trim() !== '';
   const showTable = mappings.length > 0 || isLoading;
 
   // Any change to what is listed goes back to page 1, where the result starts.
@@ -89,7 +91,7 @@ export default function MappingSummaryTable({ mappings, isLoading, error, onOpen
     <div className="flex min-h-0 flex-1 flex-col gap-1">
       <MappingFilters
         filters={filters}
-        vendors={uniqueMappingVendors(mappings)}
+        customers={uniqueMappingCustomers(mappings)}
         hasFilters={hasFilters}
         onChange={changeFilter}
         onReset={resetFilters}
@@ -112,7 +114,7 @@ export default function MappingSummaryTable({ mappings, isLoading, error, onOpen
               value={search}
               onChange={changeSearch}
               label="Search mappings"
-              placeholder="Search mapping, file, vendor…"
+              placeholder="Search mapping, file, customer…"
             />
             <RefreshButton
               onClick={onRefresh}
@@ -151,8 +153,8 @@ export default function MappingSummaryTable({ mappings, isLoading, error, onOpen
                       onSort={changeSort}
                     />
                     <SortHeader
-                      label="Vendor"
-                      field="vendor"
+                      label="Customer"
+                      field="customer"
                       sortField={sort.field}
                       sortDirection={sort.direction}
                       onSort={changeSort}
@@ -198,9 +200,9 @@ export default function MappingSummaryTable({ mappings, isLoading, error, onOpen
                                 onOpen(mapping.mappingId);
                               }}
                               className="block max-w-full truncate rounded-md text-left font-medium underline-offset-2 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
-                              title={mapping.name || mapping.mappingId}
+                              title={mappingTitle(mapping)}
                             >
-                              {mapping.name || 'Unnamed mapping'}
+                              {mappingTitle(mapping)}
                             </button>
                             {mapping.filename && (
                               <p className="truncate text-xs text-deep-violet-blue/60" title={mapping.filename}>
@@ -209,7 +211,15 @@ export default function MappingSummaryTable({ mappings, isLoading, error, onOpen
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-2.5">{mappingVendor(mapping) || '—'}</td>
+                        <td className="px-4 py-2.5">
+                          {mappingCustomer(mapping) || '—'}
+                          {/* Approved before customers existed: its sales may
+                              sit on retailers no customer owns. Linked on its
+                              next save. */}
+                          {mapping.state === 'confirmed' && !mapping.customerId && (
+                            <span className="ml-1.5 text-xs text-amber-900">(not linked)</span>
+                          )}
+                        </td>
                         <td className="px-4 py-2.5">
                           {state ? (
                             <StatusBadge tone={state.tone}>{state.label}</StatusBadge>

@@ -66,8 +66,8 @@ export default function MappingReviewPage() {
   // were re-stamped — so the response is handed back rather than swallowed by
   // a redirect.
   const handleApprove = useCallback(
-    async ({ rules, name, vendor }) => {
-      const result = await confirmMapping(baseUrl, id, { rules, name, vendor });
+    async ({ rules, name, customer_id }) => {
+      const result = await confirmMapping(baseUrl, id, { rules, name, customer_id });
       setIsApproved(true);
       return result;
     },

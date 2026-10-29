@@ -1,0 +1,18 @@
+# What `gcloud builds submit backend` must NOT upload to Cloud Build. Without
+# this file gcloud uploads the whole folder -- including .env.backend and the
+# service-account key -- to the Cloud Build bucket, even though .dockerignore
+# keeps them out of the image.
+.gcloudignore
+.git
+
+gcp-key.json
+*.json
+.env*
+
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+scripts/out/
+tests/

@@ -11,6 +11,7 @@ import DuplicateChoice from '@/components/upload/DuplicateChoice';
 import UploadPreview from '@/components/upload/UploadPreview';
 import { formatFileSize, getFileExtension } from '@/app/utils/fileInspect';
 import { STAGES, fileKind } from '@/app/utils/uploadFlow';
+import { vendorLabel } from '@/app/utils/retailerLabel';
 
 const action =
   'inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-60';
@@ -25,7 +26,7 @@ function MappingName({ name, vendor }) {
   return (
     <>
       <span className="font-medium">{name || 'a saved mapping'}</span>
-      {vendor && <> · {vendor}</>}
+      {vendor && <> · {vendorLabel(vendor)}</>}
     </>
   );
 }

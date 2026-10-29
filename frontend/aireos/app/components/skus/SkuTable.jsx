@@ -19,7 +19,7 @@ export default function SkuTable({
   totalPages,
   onPageChange,
   onPageSizeChange,
-  onView,
+  onHistory,
   onEdit,
   onDelete,
   onRefresh,
@@ -27,7 +27,7 @@ export default function SkuTable({
 }) {
   return (
     <DataTable
-      label="SKU catalogue"
+      label="SKU catalog"
       noun="SKU"
       plural="SKUs"
       totalCount={totalCount}
@@ -63,7 +63,7 @@ export default function SkuTable({
         <SkuRow
           key={sku.sku}
           sku={sku}
-          onView={onView}
+          onHistory={onHistory}
           onEdit={onEdit}
           onDelete={onDelete}
         />

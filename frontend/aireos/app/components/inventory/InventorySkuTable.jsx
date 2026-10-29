@@ -11,6 +11,9 @@ import { retailerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
 import InventoryTableFrame, {
+  inventoryHeadRowClass,
+  inventoryTableClass,
+  inventoryTheadClass,
   InventoryTableSkeleton,
   inventoryRowClass,
   inventoryTdClass,
@@ -54,9 +57,9 @@ export default function InventorySkuTable({
   return (
     <InventoryTableFrame title={title} rows={sorted} loading={loading}>
       {(visible, monthHeader) => (
-        <table className="w-full text-left text-xs text-deep-violet-blue">
-          <thead className="sticky top-0 z-10 bg-cream">
-            <tr className="border-b border-lavander">
+        <table className={inventoryTableClass}>
+          <thead className={inventoryTheadClass}>
+            <tr className={inventoryHeadRowClass}>
               {showCustomer && <th className={inventoryThClass}>Customer</th>}
               {monthHeader}
               <th className={inventoryThClass}>SKU</th>

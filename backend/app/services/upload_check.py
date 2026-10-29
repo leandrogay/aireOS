@@ -5,7 +5,7 @@ The upload screen calls this the moment a file is dropped, so it can show
 which files are ready, which need a decision (a duplicate) and which cannot be
 uploaded at all, before anything is sent. Everything here is read-only: the
 bucket is listed but never written, and a new layout is reported as new rather
-than sent to Claude. The real upload (routers/uploads.upload_files) still runs
+than sent to the model. The real upload (routers/uploads.upload_files) still runs
 every check again, so nothing here has to be trusted.
 """
 

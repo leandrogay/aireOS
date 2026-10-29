@@ -1,23 +1,24 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import FilterSelect from '@/components/ui/FilterSelect';
+import MultiSelectDropdown from '@/components/ui/MultiSelectDropdown';
 import { MAPPING_ISSUE_OPTIONS, MAPPING_STATUS_OPTIONS } from '@/app/utils/mappingList';
 
 /**
  * Filter bar above the stored-mappings table, one dropdown per filterable
- * column. Same behaviour as PromotionFilters: filters apply as you pick them,
- * so there is a Reset but no Apply.
+ * column. Each takes any number of values -- Fairprice and NHG, say -- in the
+ * tick-box dropdown the promotion form uses. Filters apply as they are
+ * ticked, so there is a Reset but no Apply.
  *
  * @param {{
- *   filters: { vendor: string, status: string, issues: string },
- *   vendors: string[],
+ *   filters: { customer: string[], status: string[], issues: string[] },
+ *   customers: string[],
  *   hasFilters: boolean,
- *   onChange: (key: string, value: string) => void,
+ *   onChange: (key: string, values: string[]) => void,
  *   onReset: () => void,
  * }} props
  */
-export default function MappingFilters({ filters, vendors, hasFilters, onChange, onReset }) {
+export default function MappingFilters({ filters, customers, hasFilters, onChange, onReset }) {
   return (
     <section
       aria-label="Filter mappings"
@@ -25,26 +26,29 @@ export default function MappingFilters({ filters, vendors, hasFilters, onChange,
     >
       <div className="flex items-end gap-3">
         <div className="grid min-w-0 flex-1 grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-3">
-          <FilterSelect
-            label="Vendor"
-            value={filters.vendor}
-            allLabel="All vendors"
-            options={vendors.map((vendor) => ({ value: vendor, label: vendor }))}
-            onChange={(value) => onChange('vendor', value)}
+          <MultiSelectDropdown
+            label="Customer"
+            allLabel="All customers"
+            placeholder="No customers yet"
+            options={customers.map((customer) => ({ value: customer, label: customer }))}
+            values={filters.customer}
+            onChange={(values) => onChange('customer', values)}
+            searchable={customers.length > 8}
+            searchPlaceholder="Search customers…"
           />
-          <FilterSelect
+          <MultiSelectDropdown
             label="Status"
-            value={filters.status}
             allLabel="All statuses"
             options={MAPPING_STATUS_OPTIONS}
-            onChange={(value) => onChange('status', value)}
+            values={filters.status}
+            onChange={(values) => onChange('status', values)}
           />
-          <FilterSelect
+          <MultiSelectDropdown
             label="Issues"
-            value={filters.issues}
             allLabel="All mappings"
             options={MAPPING_ISSUE_OPTIONS}
-            onChange={(value) => onChange('issues', value)}
+            values={filters.issues}
+            onChange={(values) => onChange('issues', values)}
           />
         </div>
         <Button variant="outline" size="lg" onClick={onReset} disabled={!hasFilters}>

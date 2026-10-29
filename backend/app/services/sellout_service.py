@@ -40,6 +40,16 @@ SELLOUT_COLUMNS = (
 )
 _BULK_UPSERT_THRESHOLD = 100
 _BULK_UPSERT_BATCH_SIZE = 500
+# The sellout table's natural key requires a store code, while some retailer
+# exports are customer-level totals with no store dimension. Keep that absence
+# in the mapped preview, then use one explicit storage member for the database
+# key instead of inventing a real branch.
+ALL_STORES_CODE = "__all__"
+ALL_STORES_NAME = "All stores"
+
+
+def _is_blank(value) -> bool:
+    return value is None or pd.isna(value) or str(value).strip() == ""
 
 
 def _consolidate_records(records: list[dict]) -> list[dict]:
@@ -81,6 +91,10 @@ def _prepare_records(dataframe: pd.DataFrame) -> tuple[list[dict], int]:
         .where(dataframe.notna(), None)
         .to_dict("records")
     )
+    for row in input_records:
+        if _is_blank(row.get("store_code")):
+            row["store_code"] = ALL_STORES_CODE
+            row["store_name"] = ALL_STORES_NAME
     records = _consolidate_records(input_records)
     for row in records:
         for field in ("period_start", "period_end"):
@@ -353,12 +367,17 @@ def _get_read_engine() -> Engine:
 # team's rule. Public (no leading underscore): sellout_units.py reuses this
 # exact text so inventory and the dashboard can never disagree about which
 # rows are "the" sell-out for a given retailer+month.
+#
+# Revenue on each chosen row stays the ingested sellout.revenue. A blank
+# revenue (NULL, not an explicit 0) is quantity_units times skus.price, the
+# one current catalog list price for that SKU. Inventory reads only units
+# from this view, so the price join does not change stock figures.
 EFFECTIVE_SELLOUT_CTE = """
     WITH monthly_coverage AS (
         SELECT DISTINCT retailer_id, date_trunc('month', period_start)::date AS month
         FROM sellout WHERE period_type = 'month'
     ),
-    effective_sellout AS (
+    preferred_rows AS (
         SELECT retailer_id, store_code, sku, period_start, period_end,
                quantity_units, revenue, 'month' AS period_type
         FROM sellout WHERE period_type = 'month'
@@ -374,7 +393,28 @@ EFFECTIVE_SELLOUT_CTE = """
               WHERE mc.retailer_id = s.retailer_id
                 AND mc.month = date_trunc('month', s.period_start)::date
           )
+    ),
+    effective_sellout AS (
+        SELECT p.retailer_id, p.store_code, p.sku, p.period_start, p.period_end,
+               p.quantity_units,
+               COALESCE(p.revenue, p.quantity_units * k.price) AS revenue,
+               p.period_type
+        FROM preferred_rows p
+        LEFT JOIN skus k ON k.sku = p.sku
     )
+"""
+
+# Same revenue rule for a read that cannot use the view above, because it
+# must stay on genuine weekly rows (the By week chart and week-over-week).
+# The outer alias is `s`, matching the dashboard WHERE clauses.
+PRICED_SELLOUT_FROM = """
+(
+    SELECT src.retailer_id, src.store_code, src.sku, src.period_start, src.period_end,
+           src.period_type, src.quantity_units,
+           COALESCE(src.revenue, src.quantity_units * k.price) AS revenue
+    FROM sellout src
+    LEFT JOIN skus k ON k.sku = src.sku
+) s
 """
 
 
@@ -760,7 +800,7 @@ def get_dashboard_summary(
     else:
         source_cte = ""
         where_clauses.append("s.period_type = 'week'")
-        from_clause = "FROM sellout s"
+        from_clause = f"FROM {PRICED_SELLOUT_FROM}"
 
     query = text(
         source_cte
@@ -1182,7 +1222,7 @@ def get_period_comparison(
     # No mode means both of this customer's channels -- not every customer:
     # "Fairprice in August" must not add NHG's sales in.
     retailer_names = [retailer] if retailer else _customer_retailers(customer)
-    where_clauses = ["period_start BETWEEN CAST(:overall_start AS date) AND CAST(:overall_end AS date)"]
+    where_clauses = ["s.period_start BETWEEN CAST(:overall_start AS date) AND CAST(:overall_end AS date)"]
     params: dict = {
         "overall_start": overall_start.strftime("%Y-%m-%d"),
         "overall_end": overall_end.strftime("%Y-%m-%d"),
@@ -1192,37 +1232,37 @@ def get_period_comparison(
         "prev_end": prev_end.strftime("%Y-%m-%d"),
     }
     where_clauses.append(
-        "retailer_id IN (SELECT retailer_id FROM retailers WHERE retailer_name = ANY(CAST(:retailer_names AS text[])))"
+        "s.retailer_id IN (SELECT retailer_id FROM retailers WHERE retailer_name = ANY(CAST(:retailer_names AS text[])))"
     )
     params["retailer_names"] = retailer_names
     if sku:
-        where_clauses.append("sku = :sku")
+        where_clauses.append("s.sku = :sku")
         params["sku"] = sku
     if store:
-        where_clauses.append("store_code = :store")
+        where_clauses.append("s.store_code = :store")
         params["store"] = store
 
     if comparison_type == "wow":
         source_cte = ""
-        from_clause = "FROM sellout"
-        where_clauses.append("period_type = 'week'")
+        from_clause = f"FROM {PRICED_SELLOUT_FROM}"
+        where_clauses.append("s.period_type = 'week'")
     else:
         source_cte = EFFECTIVE_SELLOUT_CTE
-        from_clause = "FROM effective_sellout"
+        from_clause = "FROM effective_sellout s"
 
     query = text(
         source_cte
         + f"""
         SELECT
-          SUM(CASE WHEN period_start BETWEEN CAST(:cur_start AS date) AND CAST(:cur_end AS date)
-                   THEN revenue ELSE 0 END) AS current_revenue,
-          SUM(CASE WHEN period_start BETWEEN CAST(:cur_start AS date) AND CAST(:cur_end AS date)
-                   THEN quantity_units ELSE 0 END) AS current_units,
-          SUM(CASE WHEN period_start BETWEEN CAST(:prev_start AS date) AND CAST(:prev_end AS date)
-                   THEN revenue ELSE 0 END) AS previous_revenue,
-          SUM(CASE WHEN period_start BETWEEN CAST(:prev_start AS date) AND CAST(:prev_end AS date)
-                   THEN quantity_units ELSE 0 END) AS previous_units,
-          COUNT(*) FILTER (WHERE period_start BETWEEN CAST(:prev_start AS date) AND CAST(:prev_end AS date))
+          SUM(CASE WHEN s.period_start BETWEEN CAST(:cur_start AS date) AND CAST(:cur_end AS date)
+                   THEN s.revenue ELSE 0 END) AS current_revenue,
+          SUM(CASE WHEN s.period_start BETWEEN CAST(:cur_start AS date) AND CAST(:cur_end AS date)
+                   THEN s.quantity_units ELSE 0 END) AS current_units,
+          SUM(CASE WHEN s.period_start BETWEEN CAST(:prev_start AS date) AND CAST(:prev_end AS date)
+                   THEN s.revenue ELSE 0 END) AS previous_revenue,
+          SUM(CASE WHEN s.period_start BETWEEN CAST(:prev_start AS date) AND CAST(:prev_end AS date)
+                   THEN s.quantity_units ELSE 0 END) AS previous_units,
+          COUNT(*) FILTER (WHERE s.period_start BETWEEN CAST(:prev_start AS date) AND CAST(:prev_end AS date))
                    AS previous_row_count
         {from_clause}
         WHERE {' AND '.join(where_clauses)}

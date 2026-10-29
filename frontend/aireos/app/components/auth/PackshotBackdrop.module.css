@@ -1,0 +1,105 @@
+.backdrop {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.backdrop::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background: radial-gradient(
+    circle at center,
+    color-mix(in srgb, var(--aire-cream) 98%, transparent) 0%,
+    color-mix(in srgb, var(--aire-cream) 92%, transparent) 25%,
+    color-mix(in srgb, var(--aire-cream) 38%, transparent) 64%,
+    transparent 88%
+  );
+}
+
+.row {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  opacity: 0.42;
+}
+
+.row1 {
+  top: 2%;
+}
+
+.row2 {
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.row3 {
+  bottom: 2%;
+}
+
+.track {
+  display: flex;
+  width: max-content;
+  animation: packshots-left 42s linear infinite;
+  will-change: transform;
+}
+
+.track.reverse {
+  animation-name: packshots-right;
+  animation-duration: 48s;
+}
+
+.group {
+  display: flex;
+  width: 100vw;
+  flex: 0 0 100vw;
+  align-items: center;
+  justify-content: space-around;
+  padding-inline: 2vw;
+}
+
+.packshot {
+  width: clamp(5.5rem, 10vw, 9.375rem);
+  height: clamp(5.5rem, 10vw, 9.375rem);
+  object-fit: contain;
+  filter: saturate(0.88);
+  user-select: none;
+}
+
+@keyframes packshots-left {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes packshots-right {
+  from {
+    transform: translateX(-50%);
+  }
+
+  to {
+    transform: translateX(0);
+  }
+}
+
+@media (max-width: 639px) {
+  .row {
+    opacity: 0.3;
+  }
+
+  .packshot:nth-child(even) {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .track,
+  .track.reverse {
+    animation: none;
+  }
+}

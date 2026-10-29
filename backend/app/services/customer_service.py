@@ -38,6 +38,10 @@ class CustomerHasRetailersError(Exception):
     pass
 
 
+class RetailerOwnedError(Exception):
+    pass
+
+
 # ============================================================
 # ENGINE
 #
@@ -234,6 +238,97 @@ def _ensure_customer_name_free(
         )
 
 
+def _attach_retailer(
+    conn: Connection,
+    customer_id: int,
+    retailer_name: str,
+) -> None:
+    # A retailer an upload already created (get_or_create_retailers makes
+    # them with no customer) is linked rather than duplicated; one that
+    # another customer owns stays theirs.
+    existing = conn.execute(
+        text(
+            """
+            SELECT
+                r.retailer_id,
+                cr.customer_id
+
+            FROM retailers r
+
+            LEFT JOIN customer_retailers cr
+                ON cr.retailer_id = r.retailer_id
+
+            WHERE lower(r.retailer_name) = lower(:retailer_name)
+            """
+        ),
+        {
+            "retailer_name": retailer_name,
+        },
+    ).mappings().first()
+
+    if existing and existing["customer_id"] is not None:
+        raise RetailerOwnedError(
+            f'"{retailer_name}" already belongs to another customer.'
+        )
+
+    if existing:
+        retailer_id = existing["retailer_id"]
+    else:
+        retailer_id = conn.execute(
+            text(
+                """
+                INSERT INTO retailers (
+                    retailer_name
+                )
+                VALUES (
+                    :retailer_name
+                )
+
+                RETURNING retailer_id
+                """
+            ),
+            {
+                "retailer_name": retailer_name,
+            },
+        ).scalar_one()
+
+    conn.execute(
+        text(
+            """
+            INSERT INTO customer_retailers (
+                customer_id,
+                retailer_id
+            )
+            VALUES (
+                :customer_id,
+                :retailer_id
+            )
+            """
+        ),
+        {
+            "customer_id": customer_id,
+            "retailer_id": retailer_id,
+        },
+    )
+
+
+# ============================================================
+# CUSTOMER READ ONE
+# ============================================================
+
+
+def get_customer(
+    customer_id: int,
+) -> dict | None:
+    """One customer with its retailers (the list_customers shape), or None when there is no such customer."""
+
+    with _get_read_engine().connect() as conn:
+        return fetch_customer(
+            conn,
+            customer_id,
+        )
+
+
 # ============================================================
 # CUSTOMER READ ALL
 # ============================================================
@@ -298,6 +393,14 @@ def create_customer(
             conn,
             customer_id,
         )
+        # One transaction: a retailer that cannot be attached leaves no
+        # half-made customer behind.
+        for retailer_name in getattr(customer, "retailer_names", []):
+            _attach_retailer(
+                conn,
+                customer_id,
+                retailer_name,
+            )
 
         return fetch_customer(
             conn,

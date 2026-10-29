@@ -8,9 +8,11 @@ from app.services import bigquery, forecast_service
 router = APIRouter(prefix="/api/forecast", tags=["forecast"])
 
 _CREDENTIALS_DETAIL = (
-    "BigQuery credentials are not configured. Set "
+    "BigQuery credentials are not configured. Locally, set "
     "GOOGLE_APPLICATION_CREDENTIALS in backend/.env.backend to a service "
-    "account key with BigQuery Data Viewer + Job User access."
+    "account key or run `gcloud auth application-default login`; on Cloud "
+    "Run, check the service's service account. It needs BigQuery Data "
+    "Viewer + Job User access."
 )
 
 

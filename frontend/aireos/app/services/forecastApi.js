@@ -8,7 +8,10 @@ async function request(path) {
     throw new Error('NEXT_PUBLIC_API_URL is not set. Add it to frontend/aireos/.env.frontend.');
   }
 
-  const response = await fetch(`${baseUrl}${path}`, { cache: 'no-store' });
+  const response = await fetch(`${baseUrl}${path}`, {
+    cache: 'no-store',
+    credentials: 'include',
+  });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     const detail = typeof data.detail === 'string' ? data.detail : `Request failed (${response.status})`;
