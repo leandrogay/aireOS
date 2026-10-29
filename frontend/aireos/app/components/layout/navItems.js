@@ -24,11 +24,15 @@ export const NAV_ITEMS = [
     icon: LayoutDashboard,
     description: 'Revenue and units by customer, channel, store format and SKU.',
   },
-  {
+    {
     label: 'Forecast',
     href: '/forecast',
     icon: TrendingUp,
     description: 'Monthly sell-out forecast against actuals, by customer and SKU.',
+    children: [
+      { label: 'Scenario builder', href: '/scenario' },
+      { label: 'Promotion uplift settings', href: '/promo-uplift-settings' },
+    ],
   },
   {
     label: 'Promotions',
