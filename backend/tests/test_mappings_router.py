@@ -9,7 +9,7 @@ file with these headers, so it holds the same line itself.
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.services import customer_service, notification_service, sellout_ingestion, storage
+from app.services import customer_service, notification_service, sellout_ingestion, storage, upload_loading
 
 client = TestClient(app)
 
@@ -111,7 +111,9 @@ def _stub_storage(monkeypatch):
 
     monkeypatch.setattr(storage, "move_pending_mapping_to_confirmed", move)
     monkeypatch.setattr(
-        storage, "update_uploads_for_mapping", lambda fingerprint, metadata: {"updated": []}
+        upload_loading,
+        "mark_uploads_after_approval",
+        lambda fingerprint, **kwargs: {"waiting": [], "outdated": [], "updated": 0},
     )
     monkeypatch.setattr(
         customer_service, "get_customer", lambda customer_id: CUSTOMER if customer_id == 3 else None
@@ -182,45 +184,24 @@ def test_confirm_records_what_the_reviewer_changed_and_numbers_the_version(monke
     assert envelope["edited_by_user"] is True
 
 
-def test_confirm_processes_uploads_that_were_waiting_for_approval(monkeypatch):
+def _no_load_allowed(*args, **kwargs):
+    raise AssertionError("approving a mapping must not load anything into sell-out")
+
+
+def test_approval_marks_waiting_uploads_ready_and_loads_nothing(monkeypatch):
     _stub_storage(monkeypatch)
-    monkeypatch.setattr(
-        storage,
-        "update_uploads_for_mapping",
-        lambda fingerprint, metadata: {
-            "matched": ["uploads/file.txt"],
-            "updated": ["uploads/file.txt"],
-        },
-    )
-    monkeypatch.setattr(
-        storage,
-        "download_upload",
-        lambda path: ("file.txt", b"source bytes"),
-    )
-    calls = []
+    marked = []
 
-    def process(
-        filename,
-        data,
-        contract,
-        *,
-        replace_source=False,
-        source_blob=None,
-        mapping_fingerprint=None,
-    ):
-        calls.append(
-            (
-                filename,
-                data,
-                contract,
-                replace_source,
-                source_blob,
-                mapping_fingerprint,
-            )
-        )
-        return {"rows_stored": 10, "storage_status": "completed"}
+    def mark(fingerprint, *, name, vendor, version):
+        marked.append((fingerprint, name, vendor, version))
+        return {
+            "waiting": [{"blob_path": "uploads/file.txt", "filename": "file.txt", "uploaded_at": None, "mapping_status": "ready_to_load"}],
+            "outdated": [],
+            "updated": 1,
+        }
 
-    monkeypatch.setattr(sellout_ingestion, "process_confirmed_upload", process)
+    monkeypatch.setattr(upload_loading, "mark_uploads_after_approval", mark)
+    monkeypatch.setattr(sellout_ingestion, "process_confirmed_upload", _no_load_allowed)
     rules = [
         _rule("sku", "SKU No.", "high", False),
         _rule("store_name", "Store Name", "high", False),
@@ -232,13 +213,10 @@ def test_confirm_processes_uploads_that_were_waiting_for_approval(monkeypatch):
 
     assert response.status_code == 200
     body = response.json()
-    assert body["uploads_processed"] == 1
-    assert body["uploads_failed"] == 0
-    assert body["processing"][0]["processing"]["rows_stored"] == 10
-    assert calls[0][0:2] == ("file.txt", b"source bytes")
-    assert calls[0][3] is True
-    assert calls[0][4:] == ("uploads/file.txt", "fp")
-    assert "identity_mapping" in calls[0][2]
+    assert [item["blob_path"] for item in body["waiting_uploads"]] == ["uploads/file.txt"]
+    assert body["outdated_uploads"] == []
+    assert "processing" not in body
+    assert marked == [("fp", "Vendor weekly", "xel", 1)]
 
 
 # ---- A pending copy left behind after approval --------------------------------
@@ -313,41 +291,13 @@ V2_ENVELOPE = {
 }
 
 
-def test_a_version_2_mapping_is_confirmed_and_waiting_uploads_are_processed(monkeypatch):
+def test_a_version_2_mapping_is_confirmed_without_loading_its_uploads(monkeypatch):
     stored = _stub_storage(monkeypatch)
     monkeypatch.setattr(
         storage, "download_json",
         lambda path: V2_ENVELOPE if path == storage.pending_mapping_path("fp") else None,
     )
-    monkeypatch.setattr(
-        storage, "update_uploads_for_mapping",
-        lambda fingerprint, metadata: {"matched": ["uploads/file.txt"], "updated": ["uploads/file.txt"]},
-    )
-    monkeypatch.setattr(storage, "download_upload", lambda path: ("file.txt", b"source"))
-    calls = []
-
-    def process(
-        filename,
-        data,
-        contract,
-        *,
-        replace_source=False,
-        source_blob=None,
-        mapping_fingerprint=None,
-    ):
-        calls.append(
-            (
-                filename,
-                data,
-                contract,
-                replace_source,
-                source_blob,
-                mapping_fingerprint,
-            )
-        )
-        return {"rows_stored": 4, "storage_status": "completed"}
-
-    monkeypatch.setattr(sellout_ingestion, "process_confirmed_upload", process)
+    monkeypatch.setattr(sellout_ingestion, "process_confirmed_upload", _no_load_allowed)
 
     response = client.post("/api/mappings/fp/confirm", json={"rules": _complete_rules([_rule("sku", "SKU No.", "high", False)])})
 
@@ -355,11 +305,6 @@ def test_a_version_2_mapping_is_confirmed_and_waiting_uploads_are_processed(monk
     body = response.json()
     assert body["contract_format"] == 2
     assert "awaiting_transformation" not in body
-    assert body["uploads_processed"] == 1
-    assert body["processing"][0]["processing"]["rows_stored"] == 4
-    assert calls[0][0:2] == ("file.txt", b"source")
-    assert calls[0][3] is True
-    assert calls[0][4:] == ("uploads/file.txt", "fp")
     # The roll-up instruction is kept although the rules do not carry it.
     assert stored["envelope"]["contract"]["aggregate"]["period"] == "month"
 
@@ -484,7 +429,7 @@ def test_a_first_approval_raises_a_new_mapping_notification(monkeypatch):
     assert sent == [(
         "mapping_uploaded",
         # The vendor is the customer's name: approval writes it (see CUSTOMER).
-        {"name": "Vendor weekly", "vendor": "xel", "amended": False, "uploads_processed": 0, "uploads_failed": 0},
+        {"name": "Vendor weekly", "vendor": "xel", "amended": False, "uploads_waiting": 0, "uploads_outdated": 0},
     )]
 
 
@@ -507,3 +452,43 @@ def test_an_approval_still_succeeds_when_its_notification_cannot_be_written(monk
     response = client.post("/api/mappings/fp/confirm", json={"rules": rules})
 
     assert response.status_code == 200
+
+
+# ---- Testing a mapping on its example file -------------------------------------------
+
+EXAMPLE_CSV = b"SKU No.,Store Name,Vendor,Store Code,Sales | Month 1 | 01-08-2026,Qty | Month 1 | 01-08-2026\n13255043,A,V,1,10,1\n"
+
+
+def _serve_example(monkeypatch, blobs, uploads):
+    """Serve a pending envelope whose example file is uploads/old.csv, and these blobs and uploads."""
+    from app.services import generate_mapping
+
+    envelope = {**V2_ENVELOPE, "example_file": "uploads/old.csv", "source_filename": "old.csv"}
+    _serve_pending(monkeypatch, envelope)
+    monkeypatch.setattr(storage, "download_bytes", lambda path: blobs.get(path))
+    monkeypatch.setattr(storage, "list_uploads_for_mapping", lambda fingerprint: uploads if fingerprint == "fp" else [])
+    monkeypatch.setattr(generate_mapping.catalog_service, "get_skus", lambda: [{"sku": "13255043"}])
+
+
+def test_a_replaced_example_file_is_tested_on_the_newest_copy_of_its_layout(monkeypatch):
+    read = []
+    blobs = {"uploads/new.csv": EXAMPLE_CSV}
+    _serve_example(monkeypatch, blobs, [
+        {"blob_path": "uploads/older.csv", "filename": "older.csv"},
+        {"blob_path": "uploads/new.csv", "filename": "new.csv"},
+    ])
+    monkeypatch.setattr(storage, "download_bytes", lambda path: read.append(path) or blobs.get(path))
+
+    response = client.post("/api/mappings/fp/preview", json={})
+
+    assert response.status_code == 200
+    assert read == ["uploads/old.csv", "uploads/new.csv"]
+
+
+def test_testing_with_no_copy_of_the_example_file_left_is_410_and_says_what_to_do(monkeypatch):
+    _serve_example(monkeypatch, {}, [{"blob_path": "uploads/gone.csv", "filename": "gone.csv"}])
+
+    response = client.post("/api/mappings/fp/preview", json={})
+
+    assert response.status_code == 410
+    assert "Upload a file with these columns" in response.json()["detail"]

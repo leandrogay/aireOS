@@ -4,13 +4,15 @@ from typing import List
 
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Query
 
+from app import config
 from app.auth import require_user
-from app.schemas.uploads import RollbackUploadRequest
+from app.schemas.uploads import LoadRequest, RollbackUploadRequest
 from app.services import storage
 from app.services import generate_mapping
 from app.services import apply_contract as contract_application
 from app.services import ingestion_service, sellout_ingestion, sellout_service
 from app.services import upload_check
+from app.services import upload_loading
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 
@@ -20,7 +22,7 @@ def _mapping_annotations(mapping: dict | None) -> dict[str, str]:
         return {}
 
     status = mapping.get("status")
-    addressable = status in ("mapped", "pending_confirmation")
+    addressable = status in ("mapped", "ready_to_load", "pending_confirmation")
     fields = {
         storage.MAPPING_STATUS_METADATA_KEY: status,
         storage.MAPPING_FINGERPRINT_METADATA_KEY: (
@@ -28,6 +30,11 @@ def _mapping_annotations(mapping: dict | None) -> dict[str, str]:
         ),
         storage.MAPPING_NAME_METADATA_KEY: mapping.get("name"),
         storage.VENDOR_METADATA_KEY: mapping.get("vendor"),
+        # Which version's rows are in sell-out, so a later version can offer
+        # this file a reload (upload_loading.mark_uploads_after_approval).
+        storage.MAPPING_VERSION_METADATA_KEY: (
+            mapping.get("version") if status == "mapped" else None
+        ),
     }
     return {key: str(value) for key, value in fields.items() if value}
 
@@ -40,9 +47,17 @@ def resolve_and_apply_mapping(
     content_hash: str | None = None,
     source_blob: str | None = None,
 ) -> dict:
-    """Resolve one GCS mapping, then validate and store confirmed output."""
+    """
+    Resolve one GCS mapping, then validate and store confirmed output -- or,
+    with REQUIRE_LOAD_CONFIRMATION on, leave the file ready to load, for a
+    person to load after a dry run (upload_loading).
+    """
     resolved = generate_mapping.resolve_mapping(filename, data, uploaded_to)
     if resolved.get("status") != "mapped":
+        return resolved
+
+    if config.load_confirmation_required():
+        resolved["status"] = upload_loading.READY_TO_LOAD
         return resolved
 
     resolved["processing"] = sellout_ingestion.process_confirmed_upload(
@@ -268,3 +283,41 @@ def rollback_upload(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ingestion_service.IngestionRollbackError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+# ---- Loading into sell-out -------------------------------------------------
+#
+# Separate from uploading and approving a mapping. The screen previews, a
+# person confirms, then the versioned load can be rolled back if necessary.
+# Both endpoints answer 200 with one result per file, like upload_files.
+
+@router.post("/load/preview")
+async def preview_load(body: LoadRequest):
+    """Dry run: what loading each file would store, replace and overwrite."""
+    try:
+        return {"files": await asyncio.to_thread(upload_loading.preview_loads, body.blob_paths)}
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to preview the load: {type(exc).__name__}: {exc}",
+        )
+
+
+@router.post("/load")
+async def load_files(body: LoadRequest):
+    """Load each file into sell-out with the current version of its mapping."""
+    try:
+        results = await asyncio.to_thread(upload_loading.load_uploads, body.blob_paths)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to load files: {type(exc).__name__}: {exc}",
+        )
+
+    loaded = sum(1 for result in results if result["success"])
+    return {
+        "success": loaded == len(results),
+        "loaded": loaded,
+        "failed": len(results) - loaded,
+        "results": results,
+    }

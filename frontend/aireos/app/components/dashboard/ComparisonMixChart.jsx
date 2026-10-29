@@ -8,6 +8,7 @@ import { formatColor as colorFor, UNNAMED_FORMAT } from '@/app/utils/storeFormat
 import { HatchPattern, PeriodSwatch, edgeColor, hatchTint, patternId } from '@/components/dashboard/PeriodTexture';
 import {
   CHART_SIZE_CLASS,
+  BAR_ANIMATION,
   MAX_BAR_SIZE,
   bucketLabel,
   exactBucketLabel,
@@ -233,7 +234,9 @@ export default function ComparisonMixChart({ rows, periodNames, granularity }) {
               Compare to controls above. Each stack starts with an empty
               bar that carries its x-axis label; minPointSize keeps it as an
               invisible 1px bar, since Recharts drops a zero-value bar (and
-              its label) entirely. */}
+              its label) entirely. Those label bars stay unanimated, since
+              Recharts holds a bar's labels back until its animation ends;
+              only the data bars grow. */}
           <Bar
             dataKey="currentAxis"
             stackId="current"
@@ -251,7 +254,7 @@ export default function ComparisonMixChart({ rows, periodNames, granularity }) {
               stroke={edgeColor(colorFor(format))}
               strokeWidth={1}
               maxBarSize={MAX_BAR_SIZE}
-              isAnimationActive={false}
+              {...BAR_ANIMATION}
             />
           ))}
           <Bar
@@ -271,7 +274,7 @@ export default function ComparisonMixChart({ rows, periodNames, granularity }) {
               stroke={edgeColor(colorFor(format))}
               strokeWidth={1}
               maxBarSize={MAX_BAR_SIZE}
-              isAnimationActive={false}
+              {...BAR_ANIMATION}
             />
           ))}
         </BarChart>

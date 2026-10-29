@@ -12,10 +12,12 @@ import StatusBadge from '@/components/ui/StatusBadge';
 import TablePagination, { PAGE_SIZES } from '@/components/ui/TablePagination';
 import TableSearch from '@/components/ui/TableSearch';
 import TableSkeleton from '@/components/ui/TableSkeleton';
+import LoadConfirmDialog from '@/components/upload/LoadConfirmDialog';
 import RollbackDetailsDialog from '@/components/upload/RollbackDetailsDialog';
 import {
   ROLLED_BACK_STATUS,
   UPLOAD_STATUS_LABELS,
+  loadActionFor,
   searchUploads,
   sortUploadsByDate,
 } from '@/app/utils/uploadHistory';
@@ -33,12 +35,18 @@ const COLUMN_COUNT = 6;
  * `months` is the window the page fetched, shown in the count line; the
  * filtering itself happens on the backend.
  *
+ * A file whose mapping is approved but whose data is not loaded (or was
+ * loaded with an older version) has a Load / Reload button beside its
+ * status. It opens the load confirmation, so files are never forgotten once
+ * the approval screen is closed.
+ *
  * @param {{
  *   uploads: object[],
  *   isLoading: boolean,
  *   error: string,
  *   onRefresh: () => void,
  *   onRollback: (upload: object) => void,
+ *   onLoaded: (response: object) => void,
  *   months: number,
  * }} props
  */
@@ -48,6 +56,7 @@ export default function RecentUploads({
   error,
   onRefresh,
   onRollback,
+  onLoaded,
   months,
 }) {
   const [search, setSearch] = useState('');
@@ -55,6 +64,7 @@ export default function RecentUploads({
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
   const [rollbackDetails, setRollbackDetails] = useState(null);
+  const [loading, setLoading] = useState(null); // null | { blobPath, reload }
 
   const sorted = sortUploadsByDate(searchUploads(uploads, search), sort.direction);
   const { pageRows, currentPage, totalPages } = paginate(sorted, page, pageSize);
@@ -149,6 +159,7 @@ export default function RecentUploads({
                   const status = upload.status === 'rolled_back'
                     ? ROLLED_BACK_STATUS
                     : UPLOAD_STATUS_LABELS[upload.mapping_status];
+                  const load = loadActionFor(upload);
 
                   return (
                     <tr
@@ -159,9 +170,9 @@ export default function RecentUploads({
                         <span className="block max-w-[18rem] truncate">{upload.filename}</span>
                       </td>
                       <td className="px-4 py-2.5">{vendorLabel(upload.vendor) || '—'}</td>
-                      <td className="px-4 py-2.5 tabular-nums">{formatDateTime(upload.uploaded_at)}</td>
+                      <td className="px-4 py-2.5">{formatDateTime(upload.uploaded_at)}</td>
                       <td className="px-4 py-2.5">
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-2">
                           {status ? (
                             <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
                           ) : (
@@ -178,6 +189,18 @@ export default function RecentUploads({
                               className="text-deep-violet-blue/65 hover:bg-cream hover:text-deep-violet-blue"
                             >
                               <MoreHorizontal aria-hidden="true" />
+                            </Button>
+                          )}
+                          {load && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="xs"
+                              onClick={() => setLoading({ blobPath: upload.blob_path, reload: load.reload })}
+                              aria-label={`${load.label} ${upload.filename} into sales data`}
+                              className="border-deep-violet-blue/30 text-deep-violet-blue hover:bg-cream"
+                            >
+                              {load.label}…
                             </Button>
                           )}
                         </div>
@@ -234,6 +257,13 @@ export default function RecentUploads({
         open={Boolean(rollbackDetails)}
         upload={rollbackDetails}
         onClose={() => setRollbackDetails(null)}
+      />
+      <LoadConfirmDialog
+        open={loading !== null}
+        blobPaths={loading ? [loading.blobPath] : []}
+        reload={Boolean(loading?.reload)}
+        onClose={() => setLoading(null)}
+        onLoaded={onLoaded}
       />
     </section>
   );

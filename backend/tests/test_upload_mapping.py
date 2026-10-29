@@ -10,6 +10,7 @@ from app.routers import uploads
 def disable_live_cloud_sql(monkeypatch):
     """Unit tests must never inherit a developer's live-write setting."""
     monkeypatch.setenv("CLOUD_SQL_LOAD_ENABLED", "false")
+    monkeypatch.setenv("REQUIRE_LOAD_CONFIRMATION", "false")
 
 
 BASE_ROW = {

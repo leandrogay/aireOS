@@ -3,6 +3,8 @@
 // Each exported function is annotated with its HTTP method + endpoint.
 // ============================================================
 
+import { request } from '@/app/services/promotionsApi';
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL;
 
 // Listing the bucket is several round trips, so this is a floor for "the
@@ -155,21 +157,40 @@ export async function fetchUploadHistory({ limit = 25, months } = {}) {
 // transformed. The raw GCS file and mapping are retained for audit.
 // ========================================
 export async function rollbackUpload(blobPath, reason) {
-  let response;
-  try {
-    response = await fetch(`${API_BASE}/api/uploads/rollback`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ blob_path: blobPath, reason }),
-    });
-  } catch (error) {
-    throw new Error(describeNetworkFailure(error));
-  }
+  return request('/api/uploads/rollback', {
+    method: 'POST',
+    body: { blob_path: blobPath, reason },
+  });
+}
 
-  if (!response.ok) {
-    throw new Error(await readError(response));
-  }
+// ========================================
+// API CALL
+// POST /api/uploads/load/preview
+// Dry run of loading uploaded files into sell-out (backend
+// upload_loading.preview_loads): per file, the rows it would store, the
+// periods and retailers they cover, and the existing rows it would replace or
+// overwrite. Writes nothing. A file that cannot be loaded comes back with
+// `success: false` and an `error`, not as a failed request.
+// ========================================
+export async function previewLoad(blobPaths) {
+  const data = await request('/api/uploads/load/preview', {
+    method: 'POST',
+    body: { blob_paths: blobPaths },
+  });
+  return Array.isArray(data?.files) ? data.files : [];
+}
 
-  return response.json();
+// ========================================
+// API CALL
+// POST /api/uploads/load
+// Loads uploaded files into sell-out with the current version of their
+// approved mapping. Cannot be undone from the app, so only call it after the
+// person has confirmed the previewLoad() figures. Answers per file, like
+// upload: { loaded, failed, results: [{ blob_path, success, processing | error }] }.
+// ========================================
+export async function loadUploads(blobPaths) {
+  return request('/api/uploads/load', {
+    method: 'POST',
+    body: { blob_paths: blobPaths },
+  });
 }

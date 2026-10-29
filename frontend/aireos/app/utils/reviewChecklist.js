@@ -114,9 +114,9 @@ export function reviewChecklist({ name, customer, outputs, statuses, issues, cod
   }
 
   let checksDetail = '';
-  if (checks.failed && checks.stale) checksDetail = 'Run them again after your changes.';
+  if (checks.failed && checks.stale) checksDetail = 'Test your changes to see whether they still fail.';
   else if (checks.failed) checksDetail = `${checks.failed} failing`;
-  else if (checks.stale) checksDetail = 'You changed the mapping since they ran; approving runs them again.';
+  else if (checks.stale) checksDetail = 'Not tested since your changes; approving tests them.';
   items.push({
     id: 'checks',
     label: 'Checks pass on the example file',
