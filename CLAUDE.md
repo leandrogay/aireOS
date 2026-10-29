@@ -4,7 +4,7 @@
 These are standing instructions for any AI agent (and any human) writing code in this repo.
 Read [agents.md](agents.md) first for the architecture map; this file is the rulebook.
 
-aireOS is a FastAPI (Python 3.11) backend + Next.js 16 App Router (JavaScript, React 19) frontend
+aireOS is a FastAPI (Python 3.15) backend + Next.js 16 App Router (JavaScript, React 19) frontend
 for retail sales ingestion, dashboards, and promotion planning, backed by Google Cloud
 (BigQuery, Cloud SQL Postgres, Cloud Storage) and the Anthropic API.
 
@@ -134,7 +134,7 @@ Every error the client can see is `HTTPException(status_code=..., detail=...)`. 
 
 ### 2.7 Python style
 
-- Python 3.11: `str | None`, `list[dict]`, no `Optional`/`List` in new code.
+- Python 3.15: `str | None`, `list[dict]`, no `Optional`/`List` in new code.
 - Type-hint every public function signature. Docstrings on public functions state *what and
   why*, one paragraph, no Args/Returns boilerplate.
 - Module-private helpers start with `_`. Constants are `UPPER_SNAKE` at module top.

@@ -4,12 +4,12 @@
 
 ```powershell
 cd backend
-python -m venv venv
+py -3.15 -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
-On macOS/Linux, use `python3 -m venv venv` and `source venv/bin/activate`.
+On macOS/Linux, use `python3.15 -m venv venv` and `source venv/bin/activate`.
 
 ### Environment variables
 
