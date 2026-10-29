@@ -21,6 +21,8 @@ import json
 import copy
 import base64
 import datetime
+import logging
+from concurrent.futures import ThreadPoolExecutor
 
 from google import genai
 from google.genai import types
@@ -50,7 +52,9 @@ from openpyxl.styles import Font as XlsxFont, Alignment as XlsxAlignment
 from app import config
 from app.config import ConfigError
 from app.schemas.catalog import normalise_name
-from app.services import forecast_summary, inventory_service, promotion_service, sellout_service
+from app.services import forecast_summary, inventory_calc, inventory_service, promotion_service, sellout_service
+
+logger = logging.getLogger("uvicorn.error")
 
 GCP_PROJECT_ID = config.GCP_PROJECT_ID
 GCP_VERTEX_LOCATION = config.GCP_VERTEX_LOCATION
@@ -2602,87 +2606,368 @@ _DIGEST_SCHEMA = {
 def _digest_system_prompt() -> str:
     return """You are summarizing a fixed set of ALREADY-VERIFIED facts about AireOS's
 business (adult incontinence / hygiene care products) for a busy manager
-skimming on their phone.
+skimming on their phone. It is an overall view: sales, products, stock,
+forecast and promotions.
 
 Rules:
 - State ONLY the figures/facts given in the message below -- never estimate,
-  guess, or add a number that isn't there.
-- One short bullet line per fact, each starting with "- ". 2-4 bullets total.
-  Lead each bullet with the headline number/fact, not a preamble.
+  guess, or add a number that isn't there. Percentages are already worked
+  out; quote them, never compute your own.
+- One short bullet line per area, each starting with "- ", in the order the
+  facts are given. 3-6 bullets total. Lead each bullet with the headline
+  number/fact, not a preamble.
+- Always name the period a figure is for (e.g. "Aug 2026"), so it is clear
+  how recent the data is.
+- Call forecast figures "Forecast" and sales figures "Actual" when both
+  appear in one bullet.
 - If a section says there's nothing notable, skip that bullet entirely
   rather than forcing a mention of "nothing changed."
 - No greeting, no closing sentence -- just the bullets.
 """
 
 
-def _digest_facts_text(trend: dict, movers: list[dict], upcoming_promotions: list[dict]) -> str:
-    lines = ["Summarize these already-verified facts for the user:"]
+def _month_label(day: datetime.date) -> str:
+    return day.strftime("%b %Y")
 
-    current, previous = trend.get("current") or {}, trend.get("previous") or {}
-    if current.get("start") and previous.get("available"):
-        lines.append(
-            f"- Revenue trend: {current['start']} to {current['end']} was ${current['revenue']:,.2f}, "
-            f"vs {previous['start']} to {previous['end']}'s ${previous['revenue']:,.2f}."
+
+def _digest_window(latest_start: datetime.date, latest_end: datetime.date) -> dict:
+    """
+    The month the newest loaded sales fall in, and the same span of the month
+    before. A row counts by the day its period starts (as everywhere in
+    sellout_service), so the month is the newest period's start month. When
+    that month is only partly loaded (weekly data up to mid-month), both
+    sides cover the same number of days, so the comparison stays fair.
+    """
+    month_start = latest_start.replace(day=1)
+    next_month = (month_start + datetime.timedelta(days=32)).replace(day=1)
+    month_end = next_month - datetime.timedelta(days=1)
+    current_end = min(latest_end, month_end)
+
+    previous_start = (month_start - datetime.timedelta(days=1)).replace(day=1)
+    previous_month_end = month_start - datetime.timedelta(days=1)
+    previous_end = min(previous_start + (current_end - month_start), previous_month_end)
+
+    full_month = current_end == month_end
+    if full_month:
+        current_label, previous_label = _month_label(month_start), _month_label(previous_start)
+    else:
+        current_label = f"1-{current_end.day} {_month_label(month_start)} (month to date)"
+        previous_label = f"1-{previous_end.day} {_month_label(previous_start)}"
+    return {
+        "current_start": month_start.isoformat(),
+        "current_end": current_end.isoformat(),
+        "previous_start": previous_start.isoformat(),
+        "previous_end": previous_end.isoformat(),
+        "current_label": current_label,
+        "previous_label": previous_label,
+        "full_month": full_month,
+    }
+
+
+def _latest_sales_period(customer: str) -> tuple[datetime.date, datetime.date] | None:
+    """
+    The newest loaded period across this customer's two channels. Asked per
+    channel, because without one get_default_date_range looks across every
+    customer's data, and one customer's newer upload must not set another's month.
+    """
+    def latest_for(mode: str) -> dict:
+        return sellout_service.get_default_date_range(customer=customer, mode=mode, period="week")
+
+    with ThreadPoolExecutor(max_workers=len(sellout_service.DASHBOARD_MODES)) as pool:
+        periods = list(pool.map(latest_for, sellout_service.DASHBOARD_MODES))
+
+    latest = None
+    for period in periods:
+        if not period.get("start"):
+            continue
+        start = datetime.date.fromisoformat(period["start"])
+        end = datetime.date.fromisoformat(period["end"])
+        if latest is None or end > latest[1]:
+            latest = (start, end)
+    return latest
+
+
+def _percent_change(current: float, previous: float) -> str | None:
+    if not previous:
+        return None
+    return f"{(current - previous) / previous * 100:+.1f}%"
+
+
+def _digest_sales(customer: str) -> dict | None:
+    """The latest sales month against the month before: the total, each
+    channel, the best seller and the SKUs that moved most in the ranking."""
+    latest = _latest_sales_period(customer)
+    if latest is None:
+        return None
+    window = _digest_window(*latest)
+    dates = {key: window[key] for key in ("current_start", "current_end", "previous_start", "previous_end")}
+
+    # Five independent reads, side by side: one after another they take several seconds.
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        total_job = pool.submit(sellout_service.get_period_comparison, customer=customer, **dates)
+        channel_jobs = {
+            mode: pool.submit(sellout_service.get_period_comparison, customer=customer, mode=mode, **dates)
+            for mode in sellout_service.DASHBOARD_MODES
+        }
+        current_job = pool.submit(
+            sellout_service.get_sku_ranking,
+            customer=customer, start_date=window["current_start"], end_date=window["current_end"],
+        )
+        previous_job = pool.submit(
+            sellout_service.get_sku_ranking,
+            customer=customer, start_date=window["previous_start"], end_date=window["previous_end"],
+        )
+    total = total_job.result()
+    channels = {mode: job.result() for mode, job in channel_jobs.items()}
+    current_ranks = current_job.result().to_dict(orient="records")
+    previous_ranks = previous_job.result().to_dict(orient="records")
+
+    return {
+        "window": window,
+        "total": total,
+        "channels": channels,
+        "top_seller": current_ranks[0] if current_ranks else None,
+        "movers": _rank_movers(current_ranks, previous_ranks),
+    }
+
+
+def _digest_stock(customer: str) -> dict | None:
+    """SKUs outside their days-of-holding range at this customer, worst first.
+    None when the customer has no inventory set up."""
+    try:
+        customer_id = _resolve_inventory_customer_id(customer)
+    except ValueError:
+        return None
+    at_risk = inventory_service.get_at_risk(customer_ids=[customer_id])
+    if not at_risk.get("as_of"):
+        return None
+    return {"as_of": at_risk["as_of"], "counts": at_risk["counts"], "worst": at_risk["items"][:3]}
+
+
+def _next_month(today: datetime.date) -> str:
+    """'YYYY-MM' of the month after `today`."""
+    return (today.replace(day=1) + datetime.timedelta(days=32)).strftime("%Y-%m")
+
+
+def _digest_forecast(customer: str) -> dict | None:
+    """Next month's forecast total for this customer, with the latest full
+    month of actuals beside it. Next month, not the first month the forecast
+    has: that can already be in the past. None when there is no forecast for them."""
+    try:
+        summary = forecast_summary.get_demand_forecast(customer=customer, start_month=_next_month(_singapore_today()))
+    except ValueError:
+        return None
+
+    if summary.get("monthly_totals"):
+        forecast_months = [m for m in summary["monthly_totals"] if m.get("forecast_cartons") is not None]
+        actual_months = [
+            m for m in summary["monthly_totals"]
+            if m.get("actual_cartons") is not None and not m.get("actual_month_to_date")
+        ]
+        if not forecast_months:
+            return None
+        first = forecast_months[0]
+        forecast = {"month": first["month"], "cartons": first["forecast_cartons"], "confidence": None}
+        last_actual = (
+            {"month": actual_months[-1]["month"], "cartons": actual_months[-1]["actual_cartons"]}
+            if actual_months else None
         )
     else:
-        lines.append("- Revenue trend: not enough data yet to compare this week to last week.")
+        series = (summary.get("series") or [None])[0]
+        if not series or not series.get("forecast"):
+            return None
+        first = series["forecast"][0]
+        confidence = series.get("confidence") or {}
+        forecast = {"month": first["month"], "cartons": first["cartons"], "confidence": confidence.get("label")}
+        full_actuals = [a for a in series.get("actuals") or [] if not a.get("month_to_date")]
+        last_actual = {"month": full_actuals[-1]["month"], "cartons": full_actuals[-1]["cartons"]} if full_actuals else None
 
-    if movers:
-        lines.append("- Biggest SKU rank movers this week vs last week:")
-        for m in movers:
+    return {"forecast": forecast, "last_actual": last_actual}
+
+
+def _digest_promotions(customer: str) -> list[dict]:
+    return _promotions_starting_or_ending_soon(promotion_service.get_promotions(), customer)
+
+
+def _gather_digest(customer: str) -> dict:
+    """
+    Every area of the digest, read side by side (sales and stock are Cloud
+    SQL, the forecast is BigQuery). An area that can't be read is left out
+    rather than failing the digest: the rest is still worth showing, and an
+    answer never carries error text.
+    """
+    sections = {
+        "sales": _digest_sales,
+        "stock": _digest_stock,
+        "forecast": _digest_forecast,
+        "promotions": _digest_promotions,
+    }
+    with ThreadPoolExecutor(max_workers=len(sections)) as pool:
+        jobs = {name: pool.submit(read, customer) for name, read in sections.items()}
+    facts = {}
+    for name, job in jobs.items():
+        try:
+            facts[name] = job.result()
+        except Exception as exc:
+            logger.warning("Digest left out %s for %s: %s", name, customer, exc)
+            facts[name] = None
+    return facts
+
+
+def _money_text(value: float) -> str:
+    return f"${value:,.2f}"
+
+
+def _change_text(current: float, previous: float, as_money: bool = True) -> str:
+    shown = _money_text if as_money else (lambda v: f"{v:,.0f}")
+    change = _percent_change(current, previous)
+    return f"{shown(current)} vs {shown(previous)}" + (f" ({change})" if change else "")
+
+
+def _digest_sales_lines(sales: dict | None) -> list[str]:
+    if not sales:
+        return ["- Sales: no sales data loaded yet."]
+    window, total = sales["window"], sales["total"]
+    current, previous = total["current"], total["previous"]
+    period = f"{window['current_label']} vs {window['previous_label']}"
+    lines = []
+    if previous.get("available"):
+        lines.append(
+            f"- Sales (Actual), {period}: revenue {_change_text(current['revenue'], previous['revenue'])}; "
+            f"units {_change_text(current['units'], previous['units'], as_money=False)}."
+        )
+    else:
+        lines.append(
+            f"- Sales (Actual), {window['current_label']}: revenue {_money_text(current['revenue'])}; "
+            f"no sales loaded for {window['previous_label']} to compare with."
+        )
+    if not window["full_month"]:
+        lines.append(f"  - Sales data is loaded up to {window['current_end']}.")
+
+    channel_parts = []
+    for mode, comparison in sales["channels"].items():
+        cur, prev = comparison["current"]["revenue"], comparison["previous"]["revenue"]
+        if cur or prev:
+            channel_parts.append(f"{mode.capitalize()} {_change_text(cur, prev)}")
+    if len(channel_parts) > 1:
+        lines.append(f"- Revenue by channel, {period}: " + "; ".join(channel_parts) + ".")
+
+    top = sales["top_seller"]
+    if top:
+        lines.append(
+            f"- Best seller in {window['current_label']}: {top['product_name']} ({top['sku']}), "
+            f"{_money_text(float(top['value']))}."
+        )
+    if sales["movers"]:
+        lines.append(f"- Biggest SKU rank movers, {period}:")
+        for m in sales["movers"]:
             direction = "up" if m["delta"] > 0 else "down"
             lines.append(
                 f"  - {m['product_name']} ({m['sku']}) moved {direction}, "
                 f"rank {m['previous_rank']} -> {m['current_rank']}."
             )
-    else:
-        lines.append("- No notable SKU rank changes this week vs last week.")
+    return lines
 
-    if upcoming_promotions:
-        lines.append("- Promotions starting or ending within the next 7 days:")
-        for p in upcoming_promotions:
-            stores = ", ".join(f"{s['retailer']} - {s['store_name']}" for s in p.get("stores") or [])
-            lines.append(
-                f"  - {p.get('period_label')} ({p.get('promo_type')}, {p.get('promotion_mechanic')}) "
-                f"at {stores}: {p.get('period_start')} to {p.get('period_end')}."
-            )
-    else:
-        lines.append("- No promotions starting or ending in the next 7 days.")
 
-    return "\n".join(lines)
+def _digest_stock_lines(stock: dict | None) -> list[str]:
+    if not stock:
+        return []
+    as_of = _month_label(datetime.date.fromisoformat(stock["as_of"][:10]))
+    below = stock["counts"].get(inventory_calc.DOH_STATUS_BELOW_MIN, 0)
+    above = stock["counts"].get(inventory_calc.DOH_STATUS_ABOVE_MAX, 0)
+    if not below and not above:
+        return [f"- Stock, as of {as_of}: every SKU is within its days-of-holding range."]
+    lines = [
+        f"- Stock, as of {as_of}: {below} SKU(s) below their minimum days of holding (risk of running out), "
+        f"{above} above their maximum (overstocked). Furthest outside the range:"
+    ]
+    for item in stock["worst"]:
+        side = "below the minimum" if item["doh_status"] == inventory_calc.DOH_STATUS_BELOW_MIN else "above the maximum"
+        lines.append(
+            f"  - {item['product_name']} ({item['sku']}): {item['doh']} days of holding, "
+            f"{item['days_outside_band']} days {side}."
+        )
+    return lines
+
+
+def _digest_forecast_lines(forecast: dict | None) -> list[str]:
+    if not forecast:
+        return []
+    upcoming = forecast["forecast"]
+    line = (
+        f"- Forecast for {forecast_summary.month_label(upcoming['month'])}: "
+        f"{upcoming['cartons']:,} cartons"
+    )
+    if upcoming.get("confidence"):
+        line += f" ({upcoming['confidence']} confidence)"
+    actual = forecast["last_actual"]
+    if actual and actual.get("cartons") is not None:
+        line += f", vs {actual['cartons']:,} cartons Actual in {forecast_summary.month_label(actual['month'])}"
+    return [line + "."]
+
+
+def _store_summary(stores: list[dict]) -> str:
+    """A few stores by name; more than that as a count per retailer, since a
+    chain-wide promotion runs at dozens of stores."""
+    if len(stores) <= 3:
+        return ", ".join(f"{s['retailer']} - {s['store_name']}" for s in stores)
+    counts: dict[str, int] = {}
+    for store in stores:
+        counts[store["retailer"]] = counts.get(store["retailer"], 0) + 1
+    return ", ".join(f"{count} {retailer} store{'' if count == 1 else 's'}" for retailer, count in counts.items())
+
+
+def _digest_promotion_lines(promotions: list[dict] | None) -> list[str]:
+    if promotions is None:
+        return []
+    if not promotions:
+        return ["- No promotions starting or ending in the next 7 days."]
+    lines = ["- Promotions starting or ending within the next 7 days:"]
+    for p in promotions:
+        lines.append(
+            f"  - {p.get('period_label')} ({p.get('promo_type')}, {p.get('promotion_mechanic')}) "
+            f"at {_store_summary(p.get('stores') or [])}: {p.get('period_start')} to {p.get('period_end')}."
+        )
+    return lines
+
+
+def _digest_facts_text(facts: dict) -> str:
+    return "\n".join([
+        "Summarize these already-verified facts for the user:",
+        *_digest_sales_lines(facts.get("sales")),
+        *_digest_stock_lines(facts.get("stock")),
+        *_digest_forecast_lines(facts.get("forecast")),
+        *_digest_promotion_lines(facts.get("promotions")),
+    ])
+
+
+def _digest_chart(sales: dict | None) -> dict:
+    """Revenue for the two months compared, labelled with the months themselves."""
+    if not sales or not sales["total"]["previous"].get("available"):
+        return _empty_chart()
+    window, total = sales["window"], sales["total"]
+    return {
+        **_empty_chart(),
+        "has_chart": True,
+        "chart_type": "bar",
+        "chart_categories": [window["previous_label"], window["current_label"]],
+        "chart_series": [{"label": "Revenue", "values": [total["previous"]["revenue"], total["current"]["revenue"]]}],
+    }
 
 
 def generate_digest(customer: str) -> dict:
     """
-    Deterministic "what's changed" summary -- see the module comment above
-    this section for why this deliberately has no tool-calling loop. Returns
-    the same response shape ask() does, so it becomes valid `history` for a
-    natural follow-up question in the same conversation, and the frontend
-    renders it with the components it already has.
+    Deterministic "what's changed" overview: the figures are read here, and
+    the model only writes them up, so there's no tool-calling loop for it to
+    pick the wrong period in. Returns the same response shape ask() does, so
+    it becomes valid `history` for a natural follow-up question in the same
+    conversation, and the frontend renders it with the components it already has.
     """
     client = get_client()
+    customer = _customer_slug(customer)
+    facts = _gather_digest(customer)
 
-    trend = sellout_service.get_period_comparison(comparison_type="wow", customer=customer)
-    trend_chart = _build_chart([("compare_periods", {"comparison_type": "wow"}, trend)], customer)
-
-    movers: list[dict] = []
-    current, previous = trend.get("current") or {}, trend.get("previous") or {}
-    if current.get("start") and previous.get("start"):
-        current_ranks = sellout_service.get_sku_ranking(
-            customer=customer, start_date=current["start"], end_date=current["end"]
-        ).to_dict(orient="records")
-        previous_ranks = sellout_service.get_sku_ranking(
-            customer=customer, start_date=previous["start"], end_date=previous["end"]
-        ).to_dict(orient="records")
-        movers = _rank_movers(current_ranks, previous_ranks)
-
-    try:
-        promotions = promotion_service.get_promotions()
-        upcoming_promotions = _promotions_starting_or_ending_soon(promotions, customer)
-    except Exception:
-        upcoming_promotions = []
-
-    contents: list = [{"role": "user", "parts": [{"text": _digest_facts_text(trend, movers, upcoming_promotions)}]}]
+    contents: list = [{"role": "user", "parts": [{"text": _digest_facts_text(facts)}]}]
     config = types.GenerateContentConfig(
         system_instruction=_digest_system_prompt(),
         response_mime_type="application/json",
@@ -2707,7 +2992,7 @@ def generate_digest(customer: str) -> dict:
         "follow_up_prompts": parsed.get("follow_up_prompts") or [],
         "export_format": "none",
         "chart_style": dict(_DEFAULT_CHART_STYLE),
-        **trend_chart,
+        **_digest_chart(facts.get("sales")),
         "chart_trend_values": [],
         **_empty_download(),
         "messages": _serialize_contents(contents),
