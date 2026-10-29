@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { LogOut, PanelLeft } from 'lucide-react';
 
 import { NAV_ITEMS } from '@/components/layout/navItems';
@@ -25,6 +25,15 @@ export default function Sidebar() {
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [logoutError, setLogoutError] = useState('');
   const authEnabled = process.env.NEXT_PUBLIC_AUTH_ENABLED === 'true';
+
+  // The nav bar's width (w-12 / w-56 below) as --sidebar-width, so the
+  // assistant's full-screen panel can sit flush against it (AssistantWidget).
+  // Removed when a page without the nav bar is shown.
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty('--sidebar-width', collapsed ? '3rem' : '14rem');
+    return () => root.style.removeProperty('--sidebar-width');
+  }, [collapsed]);
 
   const handleLogout = async () => {
     if (isSigningOut) return;
@@ -60,7 +69,7 @@ export default function Sidebar() {
               src="/aire-logo.png"
               alt="AIRE"
               width={72}
-              height={29}
+              height={30}
               priority
             />
           </Link>

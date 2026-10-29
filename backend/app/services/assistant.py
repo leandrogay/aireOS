@@ -48,6 +48,7 @@ from lxml import etree
 from openpyxl import Workbook
 from openpyxl.chart import BarChart as XlsxBarChart, Reference
 from openpyxl.styles import Font as XlsxFont, Alignment as XlsxAlignment
+from openpyxl.utils import get_column_letter
 
 from app import config
 from app.config import ConfigError
@@ -765,15 +766,20 @@ def _sales_summary_periods(raw_result) -> list[dict]:
     a "total revenue" figure.
     """
     combined: dict[str, float] = {}
+    starts: dict[str, object] = {}
     order: list[str] = []
     for mode_data in (raw_result.get("offline"), raw_result.get("online")):
         for row in (mode_data or {}).get("periodTotal") or []:
             label = row["period_label"]
             if label not in combined:
                 combined[label] = 0.0
+                starts[label] = row.get("period_start")
                 order.append(label)
             combined[label] += row["revenue"]
-    return [{"period_label": label, "revenue": round(combined[label], 2)} for label in order]
+    return [
+        {"period_label": label, "period_start": starts[label], "revenue": round(combined[label], 2)}
+        for label in order
+    ]
 
 
 def _is_real_comparison(calls: list[tuple[dict, object]]) -> bool:
@@ -893,6 +899,64 @@ def _per_customer_total_chart(by_customer: dict[str, list]) -> dict | None:
         "table_columns": [],
         "table_rows": [],
     }
+
+
+def _grouped_bar_chart(categories: list[str], series: list[dict]) -> dict:
+    """Bars side by side per category, one series per customer, as the
+    dashboard compares (ComparisonMixChart): a question about two customers
+    reads across each month, not one customer's months then the other's."""
+    return {
+        "has_chart": True,
+        "chart_type": "bar",
+        "chart_categories": categories,
+        "chart_series": series,
+        "has_table": False,
+        "table_columns": [],
+        "table_rows": [],
+    }
+
+
+def _per_customer_comparison_chart(by_customer: dict[str, list]) -> dict | None:
+    """Previous and Current side by side for every customer compared
+    ("Fairprice vs NHG, this month vs last"), instead of only the first one."""
+
+    series = []
+    for slug, calls in by_customer.items():
+        totals = _compare_periods_totals(calls)
+        if totals is not None:
+            series.append({"label": _customer_label(slug), "values": [round(float(v), 2) for v in totals]})
+    if len(series) < 2:
+        return None
+    return _grouped_bar_chart(["Previous", "Current"], series)
+
+
+def _per_customer_trend_chart(summary_calls: list[tuple[dict, object]], customer: str) -> dict | None:
+    """
+    get_sales_summary for several customers ("FairPrice and NHG, May to
+    July"): one series per customer over the same periods, so each month's
+    bars stand side by side. Laid end to end, the months repeated along the
+    axis with no way to tell whose bar was whose. A period one customer has
+    no sales in is 0 for them.
+    """
+
+    by_customer: dict[str, dict[str, float]] = {}
+    starts: dict[str, object] = {}
+    for tool_input, raw in summary_calls:
+        slug = _customer_slug(tool_input.get("customer") or customer)
+        periods = by_customer.setdefault(slug, {})
+        for row in _sales_summary_periods(raw):
+            periods[row["period_label"]] = periods.get(row["period_label"], 0.0) + row["revenue"]
+            starts.setdefault(row["period_label"], row.get("period_start"))
+    if len(by_customer) < 2:
+        return None
+
+    # In date order, whichever customer a period first came from.
+    categories = sorted(starts, key=lambda label: (starts[label] is None, str(starts[label] or "")))
+    series = [
+        {"label": _customer_label(slug), "values": [round(periods.get(label, 0.0), 2) for label in categories]}
+        for slug, periods in by_customer.items()
+    ]
+    return _grouped_bar_chart(categories, series)
 
 
 def _range_total_breakdown_chart(compare_calls: list[tuple[dict, object]], customer: str, current_revenue: float, current_label: str) -> dict:
@@ -1139,8 +1203,12 @@ def _build_chart(chart_sources: list[tuple[str, dict, object]], customer: str) -
                 per_customer = _per_customer_total_chart(by_customer)
                 if per_customer is not None:
                     return per_customer
-            # A Previous-vs-Current chart has room for one customer: the
-            # page's own if it was asked about, otherwise the first one.
+            else:
+                per_customer = _per_customer_comparison_chart(by_customer)
+                if per_customer is not None:
+                    return per_customer
+            # Only one customer's comparison could be read: the page's own if
+            # it was asked about, otherwise the first one.
             compare_calls = by_customer.get(_customer_slug(customer)) or next(iter(by_customer.values()))
         totals = _compare_periods_totals(compare_calls)
         if totals is not None:
@@ -1161,7 +1229,11 @@ def _build_chart(chart_sources: list[tuple[str, dict, object]], customer: str) -
                 "table_rows": [],
             }
 
-    summary_results = [raw for name, tool_input, raw in chart_sources if name == "get_sales_summary"]
+    summary_calls = [(tool_input, raw) for name, tool_input, raw in chart_sources if name == "get_sales_summary"]
+    per_customer = _per_customer_trend_chart(summary_calls, customer)
+    if per_customer is not None:
+        return per_customer
+    summary_results = [raw for _tool_input, raw in summary_calls]
     if summary_results:
         categories: list[str] = []
         values: list[float] = []
@@ -1481,6 +1553,19 @@ def _linear_trend(values: list[float]) -> list[float]:
 _AIRE_BRAND_COLOR = colors.HexColor("#2b2560")
 
 
+# Colours for the second and later series of a chart comparing customers, the
+# AIRE palette the dashboard gives customers (storeFormats.js CUSTOMER_COLORS);
+# the first series keeps the chart's own colour.
+_SERIES_COLORS_HEX = ["A29BCC", "A7D2F2", "DFE4F7"]
+
+
+def _series_colors_hex(chart: dict, chart_style: dict | None) -> list[str]:
+    """Hex (no '#') per series of `chart`, first series first."""
+    count = len(chart.get("chart_series") or [])
+    extra = [_SERIES_COLORS_HEX[i % len(_SERIES_COLORS_HEX)] for i in range(max(count - 1, 0))]
+    return [_resolve_bar_color(chart_style), *extra]
+
+
 def _resolve_bar_color(chart_style: dict | None) -> str:
     """Hex string (no '#') for python-pptx, used alongside the reportlab
     colors.HexColor form separately -- 'default' or a missing style falls
@@ -1549,7 +1634,11 @@ def _build_pdf(answer_text: str, chart: dict, chart_style: dict | None = None, t
         r, g, b = (int(base_color[i:i + 2], 16) / 255 for i in (0, 2, 4))
         line_color = colors.Color(r, g, b, alpha=opacity)
         trend_color = colors.HexColor(f"#{_TREND_LINE_COLOR_HEX}")
-        has_trend = bool(trend_values) and len(trend_values) == len(values)
+        all_series = chart["chart_series"]
+        series_colors = [line_color] + [
+            colors.HexColor(f"#{hex_color}") for hex_color in _series_colors_hex(chart, style)[1:]
+        ]
+        has_trend = bool(trend_values) and len(trend_values) == len(values) and len(all_series) == 1
 
         if style.get("title"):
             elements.append(Paragraph(style["title"], styles["Heading3"]))
@@ -1560,11 +1649,12 @@ def _build_pdf(answer_text: str, chart: dict, chart_style: dict | None = None, t
             plot = LinePlot()
             plot.x, plot.y = 50, 50
             plot.width, plot.height = 180, 140
-            plot.data = [[(i, v) for i, v in enumerate(values)]]
-            plot.lines[0].strokeColor = line_color
-            plot.lines[0].strokeWidth = 2
-            if style.get("show_data_points"):
-                plot.lines[0].symbol = makeMarker("Circle")
+            plot.data = [[(i, v) for i, v in enumerate(series["values"])] for series in all_series]
+            for index, color in enumerate(series_colors):
+                plot.lines[index].strokeColor = color
+                plot.lines[index].strokeWidth = 2
+                if style.get("show_data_points"):
+                    plot.lines[index].symbol = makeMarker("Circle")
             if has_trend:
                 # LinePlot natively supports multiple data series -- much
                 # simpler than the bar case below, no manual coordinates
@@ -1596,7 +1686,7 @@ def _build_pdf(answer_text: str, chart: dict, chart_style: dict | None = None, t
             bar = VerticalBarChart()
             bar.x, bar.y = 50, 50
             bar.width, bar.height = 360, 180
-            bar.data = [values]
+            bar.data = [series["values"] for series in all_series]
             bar.categoryAxis.categoryNames = [str(c) for c in categories]
             bar.categoryAxis.labels.angle = 30
             bar.categoryAxis.labels.dy = -10
@@ -1610,7 +1700,8 @@ def _build_pdf(answer_text: str, chart: dict, chart_style: dict | None = None, t
                 # line below share one known scale. Verified this positions
                 # correctly against the bars' own coordinate space.
                 bar.valueAxis.valueMax = max(values + trend_values) * 1.15
-            bar.bars[0].fillColor = line_color
+            for index, color in enumerate(series_colors):
+                bar.bars[index].fillColor = color
             if style.get("show_gridlines"):
                 bar.valueAxis.visibleGrid = 1
                 bar.valueAxis.gridStrokeColor = colors.lightgrey
@@ -1631,6 +1722,15 @@ def _build_pdf(answer_text: str, chart: dict, chart_style: dict | None = None, t
                     points.extend([x, y])
                 drawing.add(PolyLine(points, strokeColor=trend_color, strokeWidth=1.5, strokeDashArray=[4, 2]))
         elements.append(drawing)
+        if len(all_series) > 1:
+            # Which colour is which customer.
+            elements.append(Paragraph(
+                "&nbsp;&nbsp;&nbsp;".join(
+                    f'<font color="{color.hexval().replace("0x", "#")}">&#9632;</font> {series["label"]}'
+                    for series, color in zip(all_series, series_colors)
+                ),
+                styles["Normal"],
+            ))
     elif chart.get("has_table"):
         table_data = [chart["table_columns"]] + chart["table_rows"]
         # repeatRows: a table that runs onto a second page keeps its header there.
@@ -1665,22 +1765,25 @@ def _build_excel(answer_text: str, chart: dict, chart_style: dict | None = None)
 
     if chart.get("has_chart"):
         categories = chart["chart_categories"]
-        values = chart["chart_series"][0]["values"]
+        all_series = chart["chart_series"]
         header_row = 5
         ws.cell(row=header_row, column=1, value="Period")
-        ws.cell(row=header_row, column=2, value=chart["chart_series"][0]["label"])
-        for i, (category, value) in enumerate(zip(categories, values)):
+        for i, category in enumerate(categories):
             ws.cell(row=header_row + 1 + i, column=1, value=str(category))
-            ws.cell(row=header_row + 1 + i, column=2, value=value)
+        # One column per series (one per customer when customers are compared).
+        for col, series in enumerate(all_series, start=2):
+            ws.cell(row=header_row, column=col, value=series["label"])
+            for i, value in enumerate(series["values"]):
+                ws.cell(row=header_row + 1 + i, column=col, value=value)
 
         xlsx_chart = XlsxBarChart()
         xlsx_chart.title = "Revenue"
         last_row = header_row + len(categories)
-        data_ref = Reference(ws, min_col=2, min_row=header_row, max_row=last_row)
+        data_ref = Reference(ws, min_col=2, max_col=1 + len(all_series), min_row=header_row, max_row=last_row)
         cats_ref = Reference(ws, min_col=1, min_row=header_row + 1, max_row=last_row)
         xlsx_chart.add_data(data_ref, titles_from_data=True)
         xlsx_chart.set_categories(cats_ref)
-        ws.add_chart(xlsx_chart, f"D{header_row}")
+        ws.add_chart(xlsx_chart, f"{get_column_letter(len(all_series) + 3)}{header_row}")
     elif chart.get("has_table"):
         header_row = 5
         for col_idx, col_name in enumerate(chart["table_columns"], start=1):
@@ -1858,8 +1961,9 @@ def _build_pptx(answer_text: str, chart: dict, chart_style: dict | None = None, 
         slide = prs.slides.add_slide(prs.slide_layouts[5])
         chart_data = CategoryChartData()
         chart_data.categories = [str(c) for c in chart["chart_categories"]]
-        series = chart["chart_series"][0]
-        chart_data.add_series(series["label"], series["values"])
+        all_series = chart["chart_series"]
+        for series in all_series:
+            chart_data.add_series(series["label"], series["values"])
         pptx_chart_type = XL_CHART_TYPE.LINE if style.get("chart_type") == "line" else XL_CHART_TYPE.COLUMN_CLUSTERED
         graphic_frame = slide.shapes.add_chart(
             pptx_chart_type, Inches(1), Inches(1.5), Inches(8), Inches(5), chart_data,
@@ -1874,7 +1978,8 @@ def _build_pptx(answer_text: str, chart: dict, chart_style: dict | None = None, 
             plot.data_labels.number_format_is_linked = False
             plot.data_labels.font.size = Pt(label_font_size)
         pptx_chart.value_axis.has_major_gridlines = bool(style.get("show_gridlines", True))
-        pptx_chart.has_legend = bool(style.get("show_legend"))
+        # Several series need the legend to say which colour is which customer.
+        pptx_chart.has_legend = bool(style.get("show_legend")) or len(all_series) > 1
         if style.get("title"):
             pptx_chart.has_title = True
             pptx_chart.chart_title.text_frame.text = style["title"]
@@ -1882,21 +1987,20 @@ def _build_pptx(answer_text: str, chart: dict, chart_style: dict | None = None, 
             pptx_chart.value_axis.has_title = True
             pptx_chart.value_axis.axis_title.text_frame.text = style["y_axis_label"]
 
-        chart_series = pptx_chart.series[0]
-        color_hex = _resolve_bar_color(style)
         # opacity has no equivalent in python-pptx 1.0.2's FillFormat (no
         # transparency property at all -- confirmed against the class, not
         # guessed) so it's not applied here, chat-preview/PDF only.
-        if style.get("chart_type") == "line":
-            chart_series.format.line.color.rgb = RGBColor.from_string(color_hex)
-            if style.get("show_data_points"):
-                chart_series.marker.style = XL_MARKER_STYLE.CIRCLE
-                chart_series.marker.size = 7
-        else:
-            chart_series.format.fill.solid()
-            chart_series.format.fill.fore_color.rgb = RGBColor.from_string(color_hex)
+        for chart_series, color_hex in zip(pptx_chart.series, _series_colors_hex(chart, style)):
+            if style.get("chart_type") == "line":
+                chart_series.format.line.color.rgb = RGBColor.from_string(color_hex)
+                if style.get("show_data_points"):
+                    chart_series.marker.style = XL_MARKER_STYLE.CIRCLE
+                    chart_series.marker.size = 7
+            else:
+                chart_series.format.fill.solid()
+                chart_series.format.fill.fore_color.rgb = RGBColor.from_string(color_hex)
 
-        if trend_values and len(trend_values) == len(series["values"]):
+        if len(all_series) == 1 and trend_values and len(trend_values) == len(all_series[0]["values"]):
             _add_pptx_trend_line(pptx_chart, style.get("chart_type") == "line", trend_values)
     elif chart.get("has_table"):
         columns = chart["table_columns"]
@@ -3226,7 +3330,8 @@ def ask(
 
     chart = _resolve_chart_type(chart, chart_style)
     trend_values: list[float] = []
-    if chart_style["show_trend_line"] and chart.get("chart_series"):
+    # One series only: across several customers there is no single trend to draw.
+    if chart_style["show_trend_line"] and len(chart.get("chart_series") or []) == 1:
         trend_values = _linear_trend(chart["chart_series"][0]["values"])
 
     # The report keeps the answer the chart was first made for.

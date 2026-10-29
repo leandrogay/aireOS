@@ -223,6 +223,20 @@
   animation: promo-band-in 300ms linear backwards;
 }
 
+/* An assistant answer's table rows fade in as each is added, top to bottom
+   (AssistantMessage.jsx AssistantTable adds them one at a time), timed like
+   .line-dot-in. */
+@keyframes table-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.table-row-in {
+  animation: table-row-in 250ms ease-out backwards;
+}
+
 /* The assistant's "Pondering…" word (AssistantWidget ThinkingIndicator): a
    brighter band sweeps left to right across muted text, like Claude Code's
    working indicator. The text is painted by its background gradient
@@ -254,7 +268,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .line-dot-in,
-  .promo-band-in {
+  .promo-band-in,
+  .table-row-in {
     animation: none;
   }
 

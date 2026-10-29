@@ -3504,7 +3504,7 @@ def test_a_range_total_for_several_customers_shows_one_bar_per_customer():
     assert chart["chart_series"] == [{"label": "Revenue", "values": [24052.28, 28155.5, 0.0]}]
 
 
-def test_a_comparison_across_several_customers_shows_the_pages_customer():
+def test_a_comparison_across_several_customers_puts_them_side_by_side():
     fair_input, fair_raw = _range_total("fairprice", 24052.28)
     nhg_input, nhg_raw = _range_total("nhg", 28155.5)
     fair_input = {**fair_input, "previous_start": "2026-07-01", "previous_end": "2026-07-31"}
@@ -3515,4 +3515,80 @@ def test_a_comparison_across_several_customers_shows_the_pages_customer():
     )
 
     assert chart["chart_categories"] == ["Previous", "Current"]
-    assert chart["chart_series"][0]["values"] == [1.0, 24052.28]
+    assert chart["chart_series"] == [
+        {"label": "Fairprice", "values": [1.0, 24052.28]},
+        {"label": "Nhg", "values": [1.0, 28155.5]},
+    ]
+
+
+def _monthly_summary(*months):
+    """get_sales_summary's result with offline revenue for each (label, start, revenue)."""
+    return {
+        "offline": {
+            "storeFormats": [],
+            "periodTotal": [
+                {"period_label": label, "period_start": start, "revenue": revenue, "units": 1}
+                for label, start, revenue in months
+            ],
+            "periodByFormat": [],
+        },
+        "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
+    }
+
+
+def test_a_monthly_breakdown_for_several_customers_puts_each_month_side_by_side():
+    # FairPrice has May to July, NHG only June and July: one series each over
+    # the same three months, NHG's May at 0, not the months laid end to end.
+    fairprice = _monthly_summary(
+        ("May 2026", "2026-05-01", 16616.02), ("June 2026", "2026-06-01", 17609.91), ("July 2026", "2026-07-01", 17639.95),
+    )
+    nhg = _monthly_summary(("June 2026", "2026-06-01", 9816.5), ("July 2026", "2026-07-01", 12000.5))
+
+    chart = assistant._build_chart(
+        [
+            ("get_sales_summary", {"customer": "nhg", "mode": "offline"}, nhg),
+            ("get_sales_summary", {"customer": "fairprice", "mode": "offline"}, fairprice),
+        ],
+        "fairprice",
+    )
+
+    assert chart["chart_categories"] == ["May 2026", "June 2026", "July 2026"]
+    assert chart["chart_series"] == [
+        {"label": "Nhg", "values": [0.0, 9816.5, 12000.5]},
+        {"label": "Fairprice", "values": [16616.02, 17609.91, 17639.95]},
+    ]
+
+
+def test_a_monthly_breakdown_for_one_customer_stays_a_single_series():
+    may = _monthly_summary(("May 2026", "2026-05-01", 100.0))
+    june = _monthly_summary(("June 2026", "2026-06-01", 200.0))
+
+    chart = assistant._build_chart(
+        [("get_sales_summary", {"customer": "fairprice"}, may), ("get_sales_summary", {}, june)], "fairprice"
+    )
+
+    assert chart["chart_series"] == [{"label": "Revenue", "values": [100.0, 200.0]}]
+
+
+def test_a_chart_comparing_customers_exports_every_series():
+    from openpyxl import load_workbook
+    from pptx import Presentation
+
+    chart = assistant._grouped_bar_chart(
+        ["May 2026", "June 2026"],
+        [{"label": "Fairprice", "values": [100.0, 200.0]}, {"label": "Nhg", "values": [0.0, 50.0]}],
+    )
+
+    pdf_bytes, _, _ = assistant.generate_export_file("pdf", "Fairprice sold more.", chart)
+    pptx_bytes, _, _ = assistant.generate_export_file("pptx", "Fairprice sold more.", chart)
+    xlsx_bytes, _, _ = assistant.generate_export_file("excel", "Fairprice sold more.", chart)
+
+    assert pdf_bytes[:4] == b"%PDF"
+    pptx_chart = next(
+        shape.chart for slide in Presentation(io.BytesIO(pptx_bytes)).slides for shape in slide.shapes if shape.has_chart
+    )
+    assert [series.name for series in pptx_chart.series] == ["Fairprice", "Nhg"]
+    assert pptx_chart.has_legend is True
+    sheet = load_workbook(io.BytesIO(xlsx_bytes)).active
+    assert [sheet.cell(row=5, column=col).value for col in (1, 2, 3)] == ["Period", "Fairprice", "Nhg"]
+    assert [sheet.cell(row=7, column=col).value for col in (1, 2, 3)] == ["June 2026", 200.0, 50.0]

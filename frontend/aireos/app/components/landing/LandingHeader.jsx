@@ -8,7 +8,7 @@ export default function LandingHeader() {
     <header className="border-b border-lavander bg-white">
       <div className="mx-auto flex h-14 max-w-6xl items-center px-4 sm:px-6">
         <Link href="/" aria-label="AireOS home" className="rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet">
-          <Image src="/aire-logo.png" alt="AIRE" width={72} height={29} priority />
+          <Image src="/aire-logo.png" alt="AIRE" width={72} height={30} priority />
         </Link>
       </div>
     </header>
