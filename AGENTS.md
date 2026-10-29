@@ -14,7 +14,7 @@ stock, days of holding, DOH thresholds, a sell-in plan), and forecasts sell-out.
 
 ```
 aireOS/
-├── .github/workflows/ci.yml       CI: backend pytest only (Python 3.11, no cloud creds)
+├── .github/workflows/ci.yml       CI: backend pytest only (Python 3.15, no cloud creds)
 ├── deploy/                        Cloud Run deploy: <env>/ settings + secret names, deploy & setup-secrets scripts (ps1 + sh)
 ├── .vscode/tasks.json             "Start Both Servers" task (uvicorn + next dev)
 ├── README.md                      Setup + the mapping workflow explanation
