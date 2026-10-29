@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { getPromoAnchors, getPromoUpliftSettings } from '@/app/services/promoUpliftsApi';
 
 /**
- * Everything the Promotion Uplift Settings page shows: the current uplift
+ * Everything the Promotion uplift settings page shows: the current uplift
  * rows with the unmapped mechanics (backend promo_uplifts.list_settings) and
  * every customer's anchor (list_anchors). `refreshKey` is bumped to refetch.
  *

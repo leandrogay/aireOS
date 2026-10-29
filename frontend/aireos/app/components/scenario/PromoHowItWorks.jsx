@@ -40,7 +40,7 @@ export default function PromoHowItWorks() {
           </li>
           <li>
             Some months&apos; official forecast already includes the promotion entered for them, so planned promotions
-            are not added there and nothing is counted twice. Switch to <b>Plan my own promotions</b> above the chart
+            are not added there and nothing is counted twice. Switch to <b>Simulate New Promotions</b> above the chart
             to use the forecast without it and plan those months yourself. Building blocks apply in both views.
           </li>
           <li>All values are placeholders until they are measured from sales data.</li>

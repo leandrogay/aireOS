@@ -151,7 +151,7 @@ export default function PromotionEditor({
             {anchor.source === 'suggested' && anchor.suggested
               ? ` (suggested from ${anchor.suggested.months_used} months of promotions)`
               : anchor.source === 'manual'
-                ? ' (set on Promotion Uplift Settings)'
+                ? ' (set on Promotion uplift settings)'
                 : ' (all-customers default)'}
           </p>
         ) : null}
@@ -325,7 +325,7 @@ export default function PromotionEditor({
             {monthSpanLabel(impact.months)}.
           </>
         ) : skipped.count ? (
-          'No change in the Official forecast: every SKU-month of this promotion already includes the promotion entered for it.'
+          'No change in Modify Planned Promotions: every SKU-month of this promotion already includes the promotion entered for it.'
         ) : (
           'Not in current chart view: change the filters to this customer and SKU to see its impact.'
         )}
@@ -333,7 +333,7 @@ export default function PromotionEditor({
       {promotion.sku && skipped.count ? (
         <p className="text-[11px] text-deep-violet-blue/70">
           Not applied for {skipped.count} SKU-{skipped.count === 1 ? 'month' : 'months'} ({monthSpanLabel(skipped.months)}):
-          the official forecast already includes the promotion entered for them. Switch to Plan my own promotions above
+          the official forecast already includes the promotion entered for them. Switch to Simulate New Promotions above
           the chart to plan them yourself.
         </p>
       ) : null}

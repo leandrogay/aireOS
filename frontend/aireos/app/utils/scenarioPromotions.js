@@ -298,7 +298,7 @@ function inPromotion(row, promotion) {
 /**
  * The SKU-months inside the promotion whose Current forecast already
  * includes the promotion entered for them (ARIMA_PLUS_XREG), so no uplift is
- * added there. In the "Plan my own promotions" view those rows have been
+ * added there. In the "Simulate New Promotions" view those rows have been
  * swapped (scenarioModelView.rowsForView), so this comes back empty.
  *
  * @param {object} promotion
@@ -608,7 +608,7 @@ export function dayShare(promotion, month) {
 // ============================================================
 
 /**
- * When Promotion Uplift Settings now give a different value than the one a
+ * When Promotion uplift settings now give a different value than the one a
  * saved promotion was set up with: { savedPct, currentPct, voucherChanged }.
  * Null when nothing changed, the promotion was never saved, or settings
  * aren't loaded. Saved promotions keep their value on purpose (so a

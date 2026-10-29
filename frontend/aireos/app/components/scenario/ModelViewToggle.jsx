@@ -5,8 +5,8 @@ import { formatMonthLabel } from '@/app/utils/forecastView';
 import { MODEL_VIEWS } from '@/app/utils/scenarioModelView';
 
 const OPTIONS = [
-  { value: MODEL_VIEWS.official, label: 'Official forecast' },
-  { value: MODEL_VIEWS.planned, label: 'Plan my own promotions' },
+  { value: MODEL_VIEWS.official, label: 'Modify Planned Promotions' },
+  { value: MODEL_VIEWS.planned, label: 'Simulate New Promotions' },
 ];
 
 function message({ disabled, summary, value, loading, error }) {
@@ -20,7 +20,7 @@ function message({ disabled, summary, value, loading, error }) {
       ? 'Loading the forecast without the model’s promotions…'
       : `${which} use the Tier 1 basic or Tier 0 forecast instead, so you can plan promotions there yourself. The grey dotted line is the official forecast.`;
   }
-  return `${which} are Tier 1 advanced and already include the promotion entered for them, so promotions you plan are not added there. Switch to Plan my own promotions to plan them yourself.`;
+  return `${which} are Tier 1 advanced and already include the promotion entered for them, so promotions you plan are not added there. Switch to Simulate New Promotions to plan them yourself.`;
 }
 
 /**

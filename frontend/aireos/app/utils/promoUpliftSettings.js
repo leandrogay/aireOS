@@ -2,7 +2,7 @@
 // PROMOTION UPLIFT SETTINGS -- pure helpers, no React
 // ============================================================
 //
-// Display and preview helpers for the Promotion Uplift Settings page
+// Display and preview helpers for the Promotion uplift settings page
 // (backend app/services/settings/promo_uplifts.py). The rule itself lives in
 // the backend (promo_uplift_rules.placeholder_uplift); placeholderUplift
 // below copies it only so the anchor form can preview a change before it is

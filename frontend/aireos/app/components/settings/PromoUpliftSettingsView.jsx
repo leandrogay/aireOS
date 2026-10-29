@@ -15,16 +15,18 @@ import {
   resetPromoUplift,
   savePromoUplift,
 } from '@/app/services/promoUpliftsApi';
+import { placeholderUplift } from '@/app/utils/promoUpliftSettings';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 
+import PromoAnchorDetails from './PromoAnchorDetails';
 import PromoAnchorForm from './PromoAnchorForm';
 import PromoAnchorTable from './PromoAnchorTable';
-import PromoHistoryPanel from './PromoHistoryPanel';
 import PromoOverrideForm from './PromoOverrideForm';
+import PromoUpliftDetails from './PromoUpliftDetails';
 import PromoUpliftTable from './PromoUpliftTable';
 
 /**
- * The Promotion Uplift Settings page (Forecast > Promotion Uplift Settings):
+ * The Promotion uplift settings page (Forecast > Promotion uplift settings):
  * each customer's ordinary-month discount, the uplift per mechanic used when
  * planning future promotions in the Scenario builder, and promotion
  * mechanics that match no setting. Every write is a new version (nothing is
@@ -40,12 +42,18 @@ export default function PromoUpliftSettingsView() {
   const readOnly = !settings;
   const [anchorTarget, setAnchorTarget] = useState(null);
   const [addingOverride, setAddingOverride] = useState(false);
-  const [historyTarget, setHistoryTarget] = useState(null);
+  const [anchorDetails, setAnchorDetails] = useState(null);
+  const [detailsTarget, setDetailsTarget] = useState(null);
   const { toast, notify, dismissToast } = useToast();
 
   const refresh = () => setRefreshKey((key) => key + 1);
   const rows = settings?.settings ?? [];
   const placeholderInUse = rows.some((row) => row.source === 'placeholder');
+  const defaultAnchorPct = settings?.default_anchor_pct ?? 20;
+
+  function shownUplift(row) {
+    return row.follows_anchor ? placeholderUplift(row.effective_discount_pct, defaultAnchorPct) : row.uplift_pct;
+  }
 
   function handleAnchorSaved(result, target) {
     setAnchorTarget(null);
@@ -61,6 +69,7 @@ export default function PromoUpliftSettingsView() {
   async function handleAnchorReset(row) {
     try {
       const result = await resetPromoAnchor(row.customer_id);
+      setAnchorDetails(null);
       refresh();
       notify('success', `${retailerLabel(row.customer_name)} now uses ${result.anchor.anchor_pct}% (from its data)`);
     } catch (err) {
@@ -71,6 +80,8 @@ export default function PromoUpliftSettingsView() {
   async function handleUpliftSave(row, upliftPct) {
     try {
       const result = await savePromoUplift(row.id, { uplift_pct: upliftPct, note: row.note });
+      // A save is a new version with a new id, so the open row is now stale.
+      setDetailsTarget(null);
       refresh();
       notify('success', result.changed ? `${row.mechanic_label} saved as an Estimate` : 'No changes to save');
       return true;
@@ -83,6 +94,7 @@ export default function PromoUpliftSettingsView() {
   async function handleUpliftReset(row) {
     try {
       await resetPromoUplift(row.id);
+      setDetailsTarget(null);
       refresh();
       notify('success', row.scope === 'all' ? `${row.mechanic_label} is a placeholder again` : 'Value removed');
     } catch (err) {
@@ -132,16 +144,28 @@ export default function PromoUpliftSettingsView() {
             anchors={anchors}
             editingKey={anchorTarget?.key ?? null}
             readOnly={readOnly}
+            onView={setAnchorDetails}
             onEdit={setAnchorTarget}
             onReset={handleAnchorReset}
-            onHistory={(row) =>
-              setHistoryTarget({ kind: 'anchor', id: row.customer_id, title: retailerLabel(row.customer_name) })
-            }
           />
         ) : (
           <p className="text-sm text-deep-violet-blue/60">Loading…</p>
         )}
       </section>
+
+      {anchorDetails ? (
+        <PromoAnchorDetails
+          key={anchorDetails.key}
+          target={anchorDetails}
+          readOnly={readOnly}
+          onEdit={(target) => {
+            setAnchorDetails(null);
+            setAnchorTarget(target);
+          }}
+          onReset={handleAnchorReset}
+          onClose={() => setAnchorDetails(null)}
+        />
+      ) : null}
 
       {anchorTarget ? (
         <PromoAnchorForm
@@ -182,14 +206,13 @@ export default function PromoUpliftSettingsView() {
         </div>
         <PromoUpliftTable
           rows={rows}
-          defaultAnchorPct={settings?.default_anchor_pct ?? 20}
+          shownUplift={shownUplift}
           readOnly={readOnly}
-          onSave={handleUpliftSave}
+          onView={(row, options) => setDetailsTarget({ row, editing: Boolean(options?.editing) })}
           onReset={handleUpliftReset}
-          onHistory={(row) => setHistoryTarget({ kind: 'mechanic', id: row.mechanic_key, title: row.mechanic_label })}
         />
         <p className="mt-2 text-xs text-deep-violet-blue/60">
-          All-customers placeholder values are shown at the all-customers discount ({settings?.default_anchor_pct ?? 20}%);
+          All-customers placeholder values are shown at the all-customers discount ({defaultAnchorPct}%);
           the Scenario builder recalculates them from each customer&apos;s own ordinary-month discount.
         </p>
       </section>
@@ -203,11 +226,16 @@ export default function PromoUpliftSettingsView() {
         />
       ) : null}
 
-      {historyTarget ? (
-        <PromoHistoryPanel
-          key={`${historyTarget.kind}-${historyTarget.id}`}
-          target={historyTarget}
-          onClose={() => setHistoryTarget(null)}
+      {detailsTarget ? (
+        <PromoUpliftDetails
+          key={detailsTarget.row.id}
+          row={detailsTarget.row}
+          shownUplift={shownUplift(detailsTarget.row)}
+          startEditing={detailsTarget.editing}
+          readOnly={readOnly}
+          onSave={handleUpliftSave}
+          onReset={handleUpliftReset}
+          onClose={() => setDetailsTarget(null)}
         />
       ) : null}
 

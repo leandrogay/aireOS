@@ -6,7 +6,7 @@ import { getForecastAlternatives } from '@/app/services/forecastApi';
 
 /**
  * The forecast without the model's promotions, for the Scenario builder's
- * "Plan my own promotions" view (backend /api/forecast/alternatives). Only
+ * "Simulate New Promotions" view (backend /api/forecast/alternatives). Only
  * fetched when `enabled` (the loaded rows have months whose Current line
  * already includes an entered promotion). Fetched for every month of the
  * customer/SKU, not just the chart's dates, so the year totals can use it too.

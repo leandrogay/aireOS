@@ -222,7 +222,7 @@ export default function ScenarioBuilder() {
   const simulatedYears = simulatedYearTotals(years, byMonth);
   const scenario = {
     // Simulated stays first: the chart takes its colour from series[0]. The
-    // grey Official reference only shows in the Plan my own promotions view.
+    // grey Official reference only shows in the Simulate New Promotions view.
     series: [...(hasSimulated ? [SIMULATED_SERIES] : []), ...(swapped ? [OFFICIAL_REFERENCE_SERIES] : [])],
     markers: hasSimulated ? itemMarkers(byItem) : [],
     promoBands: draftPromotionBands(activePromotions),

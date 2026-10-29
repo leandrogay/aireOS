@@ -41,7 +41,7 @@ function SettingsChangedNote({ change, onUpdate }) {
   }
   return (
     <p className="rounded-md border border-violet/40 bg-lavander/40 px-2.5 py-2 text-[11px] text-deep-violet-blue">
-      Promotion Uplift Settings now say {parts.join(', ')}.{' '}
+      Promotion uplift settings now say {parts.join(', ')}.{' '}
       <button type="button" onClick={onUpdate} className="font-medium text-scenario underline-offset-2 hover:underline">
         Update
       </button>
@@ -68,7 +68,7 @@ function promotionSummary(promotion) {
  * (useScenarioPromotions) are the only calls that reach the server, and a
  * switched-off promotion stays saved but leaves the Simulated line.
  *
- * Uplift values come from Promotion Uplift Settings through usePromoUplifts
+ * Uplift values come from Promotion uplift settings through usePromoUplifts
  * (the in-memory demo while PROMO_UPLIFTS_DEMO is on), never from this file. `rows` are the fetched forecast rows, used only to count the months
  * where no promotion uplift is added (design Section 6.4.5).
  *
@@ -224,7 +224,7 @@ export default function PromotionsSection({
       ) : null}
       {PROMO_UPLIFTS_DEMO ? (
         <p className="rounded-md border border-violet bg-lavander/50 px-2.5 py-2 text-[11px] text-deep-violet-blue">
-          Demo mode: uplift values come from the Promotion Uplift Settings demo (not saved).
+          Demo mode: uplift values come from the Promotion uplift settings demo (not saved).
         </p>
       ) : null}
       {uplifts.error ? (

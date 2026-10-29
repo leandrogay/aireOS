@@ -41,7 +41,7 @@ export default function MechanicLookupPopover({ uplifts, anchorPct }) {
           Relative to an ordinary month{anchorPct != null ? ` (${anchorPct}% off for this customer)` : ''}. Values are
           edited on{' '}
           <Link href="/promo-uplift-settings" className="font-medium text-scenario underline-offset-2 hover:underline">
-            Promotion Uplift Settings
+            Promotion uplift settings
           </Link>
           .
         </p>
