@@ -237,6 +237,35 @@ def _upsert_sellout_in_batches(connection: Connection, records: list[dict]) -> N
         )
 
 
+def _delete_replaced_rows(connection: Connection, rows: list[dict]) -> None:
+    """Delete only stale keys still owned by the exact upload being reloaded."""
+    if not rows:
+        return
+    connection.execute(
+        text(
+            """
+            DELETE FROM sellout
+            WHERE
+                retailer_id = :retailer_id
+                AND store_code = :store_code
+                AND sku = :sku
+                AND period_start = :period_start
+                AND period_type = :period_type
+            """
+        ),
+        [
+            {
+                "retailer_id": row["retailer_id"],
+                "store_code": row["store_code"],
+                "sku": row["sku"],
+                "period_start": row["period_start"],
+                "period_type": row["period_type"],
+            }
+            for row in rows
+        ],
+    )
+
+
 def load_clean_rows(
     dataframe: pd.DataFrame,
     *,
@@ -258,6 +287,8 @@ def load_clean_rows(
 
     if not data_source.strip():
         raise ValueError("data_source must not be blank")
+    if replace_source and not source_blob:
+        raise ValueError("replace_source requires a unique source_blob")
 
     database = engine or sql.connect_with_connector()
     timestamp = loaded_at or datetime.datetime.now(datetime.timezone.utc)
@@ -321,6 +352,7 @@ def load_clean_rows(
                 )
 
             ingestion_id = None
+            replaced_rows = []
             if source_blob:
                 ingestion_id = ingestion_service.start_run(
                     connection,
@@ -330,27 +362,14 @@ def load_clean_rows(
                     mapping_fingerprint=mapping_fingerprint,
                     loaded_at=timestamp,
                 )
-                ingestion_service.record_versions(
+                replaced_rows = ingestion_service.record_versions(
                     connection,
                     ingestion_id,
                     facts,
                     replace_source=replace_source,
                 )
 
-            if replace_source:
-                source_files = sorted(
-                    {
-                        row["source_file"]
-                        for row in records
-                        if row.get("source_file")
-                    }
-                )
-                for source_file in source_files:
-                    connection.execute(
-                        text("DELETE FROM sellout WHERE source_file = :source_file"),
-                        {"source_file": source_file},
-                    )
-
+            _delete_replaced_rows(connection, replaced_rows)
             _upsert_sellout(connection, facts)
 
             if ingestion_id is not None:

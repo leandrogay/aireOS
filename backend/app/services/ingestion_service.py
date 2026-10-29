@@ -97,28 +97,55 @@ def start_run(
     return int(result.scalar_one())
 
 
-def _rows_replaced_by_source(connection: Connection, facts: list[dict]) -> list[dict]:
-    source_files = sorted({row["source_file"] for row in facts if row.get("source_file")})
-    replaced: dict[tuple, dict] = {}
-    for source_file in source_files:
-        rows = connection.execute(
-            text(
-                """
-                SELECT
-                    retailer_id, period_start, period_end, period_type,
-                    store_code, sku, quantity_units, revenue, source_file,
-                    loaded_at, data_source
-                FROM sellout
-                WHERE source_file = :source_file
-                FOR UPDATE
-                """
+def _rows_replaced_by_upload(
+    connection: Connection,
+    ingestion_id: int,
+) -> list[dict]:
+    """Lock rows still owned by this GCS object's previous completed run."""
+    rows = connection.execute(
+        text(
+            """
+            WITH current_run AS (
+                SELECT source_blob
+                FROM ingestion_runs
+                WHERE ingestion_id = :ingestion_id
             ),
-            {"source_file": source_file},
-        ).mappings()
-        for row in rows:
-            item = dict(row)
-            replaced[_key(item)] = item
-    return list(replaced.values())
+            previous_run AS (
+                SELECT prior.ingestion_id
+                FROM ingestion_runs AS prior
+                JOIN current_run
+                    ON current_run.source_blob = prior.source_blob
+                WHERE
+                    prior.ingestion_id < :ingestion_id
+                    AND prior.status = 'completed'
+                ORDER BY prior.ingestion_id DESC
+                LIMIT 1
+            )
+            SELECT
+                current.retailer_id, current.period_start,
+                current.period_end, current.period_type,
+                current.store_code, current.sku,
+                current.quantity_units, current.revenue,
+                current.source_file, current.loaded_at,
+                current.data_source
+            FROM previous_run
+            JOIN sellout_versions AS previous
+                ON previous.ingestion_id = previous_run.ingestion_id
+                AND previous.is_deleted = FALSE
+            JOIN sellout AS current
+                ON current.retailer_id = previous.retailer_id
+                AND current.store_code = previous.store_code
+                AND current.sku = previous.sku
+                AND current.period_start = previous.period_start
+                AND current.period_type = previous.period_type
+                AND current.loaded_at = previous.loaded_at
+                AND current.source_file IS NOT DISTINCT FROM previous.source_file
+            FOR UPDATE OF current
+            """
+        ),
+        {"ingestion_id": ingestion_id},
+    ).mappings()
+    return [dict(row) for row in rows]
 
 
 def _capture_baselines(connection: Connection, rows: list[dict]) -> None:
@@ -187,9 +214,13 @@ def record_versions(
     facts: list[dict],
     *,
     replace_source: bool,
-) -> None:
-    """Record new values and any replacement deletions before changing sellout."""
-    replaced = _rows_replaced_by_source(connection, facts) if replace_source else []
+) -> list[dict]:
+    """Record this run and return exact stale rows removed by a reload."""
+    replaced = (
+        _rows_replaced_by_upload(connection, ingestion_id)
+        if replace_source
+        else []
+    )
     fact_keys = {_key(row) for row in facts}
     tombstones = [row for row in replaced if _key(row) not in fact_keys]
     affected = [*facts, *tombstones]
@@ -197,6 +228,7 @@ def record_versions(
     _capture_baselines(connection, affected)
     _insert_versions(connection, ingestion_id, tombstones, is_deleted=True)
     _insert_versions(connection, ingestion_id, facts, is_deleted=False)
+    return tombstones
 
 
 def complete_run(

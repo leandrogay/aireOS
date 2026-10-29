@@ -59,8 +59,10 @@ Database writes are disabled by default. Before enabling them:
 3. Set `CLOUD_SQL_LOAD_ENABLED=true` in `.env.backend` and restart the backend.
 
 Normal uploads upsert the business key `(retailer_id, store_code, sku,
-period_start, period_type)`. Forced filename replacement deletes the previous
-facts for that `source_file` and inserts the new valid facts in one transaction.
+period_start, period_type)`. A reload identifies the previous completed run by
+its unique GCS `source_blob`, removes only stale keys still owned by that run,
+and inserts the new valid facts in one transaction. Filenames are display
+metadata and are never used as a replacement identity.
 
 Apply `migrations/006_create_ingestion_rollback.sql` before enabling upload
 rollback. Each new transformed upload then records one `ingestion_runs` audit

@@ -283,7 +283,8 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 4. A completed, versioned upload can be reversed from Recent uploads through `POST /api/uploads/rollback`.
    The rollback marks its ingestion run as rolled back and rebuilds only its affected business keys from the latest
    still-active versions in one Cloud SQL transaction. The GCS source and mapping remain as an audit trail; uploads
-   from before the rollback migration have no rollback action.
+   from before the rollback migration have no rollback action. Reload replacement is likewise keyed by the unique
+   GCS `source_blob`, never the user-facing filename, and removes only stale keys still owned by that upload's prior run.
 
 **Dashboard** (`app/dashboard/page.js`)
 1. `useDataFreshness` polls `/api/sales/last-updated`; a change bumps `dataVersion`, which every

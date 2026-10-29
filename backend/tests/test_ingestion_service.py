@@ -31,14 +31,17 @@ class FakeResult:
 
 
 class FakeConnection:
-    def __init__(self, run, versions=None):
+    def __init__(self, run, versions=None, replaced_rows=None):
         self.run = run
         self.versions = versions or []
+        self.replaced_rows = replaced_rows or []
         self.calls = []
 
     def execute(self, statement, parameters=None):
         sql = str(statement)
         self.calls.append((sql, parameters))
+        if "WITH current_run AS" in sql:
+            return FakeResult(rows=self.replaced_rows)
         if "FROM ingestion_runs" in sql and "FOR UPDATE" in sql:
             return FakeResult(rows=[self.run] if self.run else [])
         if "SELECT DISTINCT ON" in sql and "FROM sellout_versions" in sql:
@@ -112,6 +115,38 @@ def test_record_versions_captures_absence_as_the_original_state():
     assert "LEFT JOIN sellout AS current" in baseline_sql
     assert "current.retailer_id IS NULL" in baseline_sql
     assert baseline_parameters[0]["sku"] == "13255043"
+
+
+def test_reload_matches_the_previous_run_by_source_blob_not_filename():
+    connection = FakeConnection(None, replaced_rows=[_baseline()])
+    replacement = {**_baseline(), "sku": "13255044"}
+
+    tombstones = ingestion_service.record_versions(
+        connection,
+        10,
+        [replacement],
+        replace_source=True,
+    )
+
+    lookup_sql, lookup_parameters = connection.calls[0]
+    assert "current_run.source_blob = prior.source_blob" in lookup_sql
+    assert "WHERE source_file" not in lookup_sql
+    assert lookup_parameters == {"ingestion_id": 10}
+    assert tombstones == [_baseline()]
+
+
+def test_first_load_has_no_replacement_even_when_reload_flag_is_true():
+    connection = FakeConnection(None)
+
+    tombstones = ingestion_service.record_versions(
+        connection,
+        10,
+        [_baseline()],
+        replace_source=True,
+    )
+
+    assert tombstones == []
+    assert not any("WHERE source_file" in sql for sql, _ in connection.calls)
 
 
 def test_rollback_marks_run_and_restores_latest_active_version():
