@@ -11,6 +11,7 @@ every check again, so nothing here has to be trusted.
 
 from pathlib import Path
 
+from app import config
 from app.services import generate_mapping, storage
 
 UNREADABLE_MESSAGE = "We couldn't read any columns. Check that it opens as a table in Excel."
@@ -29,6 +30,9 @@ def check_file(filename: str, data: bytes) -> dict:
         "error": None,
         "mapping": None,
         "duplicate": None,
+        # Whether a file matching an approved mapping loads when uploaded, or
+        # waits for a confirmed Load -- so the screen says which will happen.
+        "load_requires_confirmation": config.load_confirmation_required(),
     }
 
     ext = Path(filename).suffix.lower()

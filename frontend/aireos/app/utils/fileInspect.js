@@ -17,6 +17,20 @@ export function getFileExtension(fileName) {
   return parts.length > 1 ? parts.pop() : '';
 }
 
+// What a file is, in words, for the line under its name: the name already
+// shows the extension, so repeating ".txt" there tells the reader nothing.
+const FILE_TYPE_LABELS = {
+  xlsx: 'Excel workbook',
+  xlsm: 'Excel workbook',
+  csv: 'CSV file',
+  txt: 'Text file',
+};
+
+/** "Text file" for report.txt; '' for a type with no label. */
+export function fileTypeLabel(fileName) {
+  return FILE_TYPE_LABELS[getFileExtension(fileName)] || '';
+}
+
 export function formatFileSize(bytes) {
   if (bytes == null) return 'Unknown';
   if (bytes < 1024) return `${bytes} B`;

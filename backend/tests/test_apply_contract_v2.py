@@ -35,6 +35,7 @@ def test_fairprice_contract_melts_transforms_and_aggregates_rows():
                 "Article Description": "AIRE ADULT PANTS XL 10S",
                 "Brand": "AIRE",
                 "Dept Description": "TOILETRIES",
+                "MCH": "ADULT DIAPER PANTS",
                 "Sales UOM": "EA",
                 "SALES | Month 1 | 01-01-2026": "100",
                 "Qty (in EA) | Month 1 | 01-01-2026": "10",
@@ -47,6 +48,7 @@ def test_fairprice_contract_melts_transforms_and_aggregates_rows():
                 "Article Description": "AIRE ADULT PANTS XL 10S",
                 "Brand": "AIRE",
                 "Dept Description": "TOILETRIES",
+                "MCH": "ADULT DIAPER PANTS",
                 "Sales UOM": "CAR",
                 "SALES | Month 1 | 01-01-2026": "20",
                 "Qty (in EA) | Month 1 | 01-01-2026": "2",
@@ -65,6 +67,7 @@ def test_fairprice_contract_melts_transforms_and_aggregates_rows():
     assert row["retailer"] == "fairprice_online"
     assert row["sku"] == "13255043"
     assert row["size"] == "XL"
+    assert row["sku_range"] == "ADULT DIAPER PANTS"
     assert row["period_start"] == pd.Timestamp("2026-01-01")
     assert row["period_end"] == pd.Timestamp("2026-01-31")
     assert row["period_type"] == "month"

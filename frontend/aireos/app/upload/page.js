@@ -8,15 +8,18 @@ import Dropzone from '../components/upload/Dropzone';
 import RejectedFiles from '../components/upload/RejectedFiles';
 import UploadGroup from '../components/upload/UploadGroup';
 import RecentUploads from '../components/upload/RecentUploads';
+import LoadConfirmDialog from '../components/upload/LoadConfirmDialog';
 import {
   MAX_FILES_PER_BATCH,
   UPLOAD_HISTORY_LIMIT,
   UPLOAD_HISTORY_MONTHS,
 } from '../config/upload';
 import { validateFile } from '../utils/fileInspect';
+import { wasSaved } from '../utils/loadPreview';
 import {
   STAGES,
   checkFromResult,
+  filesLabel,
   groupFiles,
   isUploadable,
   outcomeFromResult,
@@ -32,7 +35,9 @@ const makeId = () => `file-${(nextId += 1)}`;
 //   checking   dropped; POST /api/uploads/check is answering what would happen
 //   ready      checked (or the check failed); waits for Upload
 //   uploading  POST /api/uploads in flight
-//   done       the upload answered; `outcome` says how it went
+//   done       the upload answered; `outcome` says how it went. With
+//              REQUIRE_LOAD_CONFIRMATION on, a known layout is done but
+//              `ready_to_load` until someone confirms a load from its row.
 // Files that cannot be uploaded never become rows; they are listed in the
 // RejectedFiles alert instead.
 
@@ -43,6 +48,8 @@ export default function UploadPage() {
   const [history, setHistory] = useState([]);
   const [historyError, setHistoryError] = useState('');
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  // The rows whose files the load confirmation is open for, or null.
+  const [loadingIds, setLoadingIds] = useState(null);
 
   // Stage timers keyed by item id, so a file that finishes early stops
   // advancing its own labels without touching any other file's.
@@ -322,6 +329,30 @@ export default function UploadPage() {
     [items, uploadItem],
   );
 
+  // ---- Loading ------------------------------------------------------------
+
+  // A file that loaded is an ordinary uploaded file from here on; one that
+  // did not stays ready to load, and the dialog said why.
+  const handleLoaded = useCallback(
+    (response) => {
+      const byPath = new Map((response?.results || []).map((result) => [result.blob_path, result]));
+      setItems((prev) =>
+        prev.map((item) => {
+          const result = item.outcome?.blobPath && byPath.get(item.outcome.blobPath);
+          // A check with saving switched off leaves the file waiting to load.
+          if (!wasSaved(result)) return item;
+          return { ...item, outcome: { ...item.outcome, kind: 'mapped', processing: result.processing } };
+        }),
+      );
+      loadHistory();
+    },
+    [loadHistory],
+  );
+
+  const loadingPaths = (loadingIds || [])
+    .map((id) => items.find((item) => item.id === id)?.outcome?.blobPath)
+    .filter(Boolean);
+
   // ---- Render -----------------------------------------------------------
 
   const uploadableCount = items.filter(isUploadable).length;
@@ -372,6 +403,7 @@ export default function UploadPage() {
               onRemove={removeItem}
               onRetry={retryItem}
               onDecide={decideDuplicate}
+              onLoad={setLoadingIds}
             />
           ))}
 
@@ -386,7 +418,7 @@ export default function UploadPage() {
               className="rounded-lg border border-deep-violet-blue bg-deep-violet-blue px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-violet focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {uploadableCount
-                ? `Upload ${uploadableCount} file${uploadableCount === 1 ? '' : 's'}`
+                ? `Upload ${filesLabel(uploadableCount)}`
                 : 'Upload'}
             </button>
           </div>
@@ -397,9 +429,17 @@ export default function UploadPage() {
           isLoading={isLoadingHistory}
           error={historyError}
           onRefresh={loadHistory}
+          onLoaded={handleLoaded}
           months={UPLOAD_HISTORY_MONTHS}
         />
       </div>
+
+      <LoadConfirmDialog
+        open={loadingIds !== null}
+        blobPaths={loadingPaths}
+        onClose={() => setLoadingIds(null)}
+        onLoaded={handleLoaded}
+      />
     </PageLayout>
   );
 }

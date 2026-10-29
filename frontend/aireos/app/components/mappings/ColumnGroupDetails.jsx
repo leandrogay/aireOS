@@ -45,7 +45,7 @@ export default function ColumnGroupDetails({ group, entry, onSettingsChange, dis
       </p>
 
       {edited && (
-        <p className="mt-1 text-[11px] text-amber-900">Settings changed — run the checks to see the result.</p>
+        <p className="mt-1 text-[11px] text-amber-900">Settings changed. Test your changes to see the result.</p>
       )}
 
       <Disclosure variant="link" summary="How the headings are read" className="mt-1 text-[11px] text-deep-violet-blue/70">

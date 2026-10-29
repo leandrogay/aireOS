@@ -137,6 +137,19 @@ def cloud_sql_loading_enabled() -> bool:
         "on",
     }
 
+
+def load_confirmation_required() -> bool:
+    """
+    Return whether a file matching an approved mapping waits for a person to
+    press Load instead of loading into sell-out the moment it is uploaded.
+
+    Off by default: uploading a known layout loads it, as it always has. On,
+    every load -- not only the first one after an approval -- is a separate,
+    confirmed step. Read at call time so a redeploy with the new value is all
+    it takes to switch.
+    """
+    return _enabled(os.environ.get("REQUIRE_LOAD_CONFIRMATION"))
+
 # ---- HTTP -------------------------------------------------------------------
 
 DEFAULT_CORS_ALLOWED_ORIGINS = "http://localhost:3000,http://127.0.0.1:3000"

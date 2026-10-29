@@ -19,7 +19,7 @@ import re
 import pandas as pd
 
 from app.schemas.sellout import BUSINESS_COLUMNS
-from app.services.mapping_contract import REQUIRED_FIELDS, resolve_selector, upgrade
+from app.services.mapping_contract import REQUIRED_FIELDS, group_columns, resolve_selector, upgrade
 
 # A column with one of these words in its name is a claim against the
 # supplier, a price or a cost -- never the gross sales value of units sold.
@@ -400,13 +400,27 @@ def failures(checks: list[dict]) -> list[dict]:
     return [c for c in checks if c["level"] == "error" and not c["passed"]]
 
 
-def field_confidence(contract: dict, checks: list[dict]) -> dict:
+def unused_columns(contract: dict, columns: list[str]) -> list[str]:
+    """The file's columns the contract never reads: no field, transform or melt group uses them."""
+    contract = upgrade(contract)
+    read = {column for selected in group_columns(contract, columns).values() for column in selected}
+    for entry in (contract.get("fields") or {}).values():
+        read.add(entry.get("source"))
+        read.update(transform.get("column") for transform in entry.get("transforms") or [])
+    return [column for column in columns if column not in read]
+
+
+def field_confidence(contract: dict, checks: list[dict], columns: list[str] | None = None) -> dict:
     """
     A copy of the contract whose confidence comes from the checks.
 
     A field implicated by a failed error check is "low", by a failed warning
     "medium". The proposal's own confidence can lower that but never raise it:
     a passing check is evidence, a model's "high" is not.
+
+    "Not in this file" is the one decision no check can test, so while the
+    file has `columns` the contract leaves unread it is at most "medium": one
+    of them may hold the field (FairPrice's MCH column is the product range).
     """
     contract = upgrade(contract)
     worst: dict[str, str] = {}
@@ -417,6 +431,10 @@ def field_confidence(contract: dict, checks: list[dict]) -> dict:
         for field in check["fields"]:
             if worst.get(field) != "low":
                 worst[field] = level
+    if columns and unused_columns(contract, columns):
+        for target, entry in (contract.get("fields") or {}).items():
+            if entry.get("status") == "not_available" and worst.get(target) != "low":
+                worst[target] = "medium"
 
     rank = {"low": 0, "medium": 1, "high": 2}
     for target, entry in (contract.get("fields") or {}).items():

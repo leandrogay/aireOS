@@ -57,8 +57,8 @@ export default function SkuDetails({ open, sku, loading, error, onClose }) {
                   <td className={cn(SKU_CELL_CLASS, 'px-4 py-2')}>{entry.size}</td>
                   <td className={cn(SKU_CELL_CLASS, 'px-4 py-2')}>{entry.brand}</td>
                   <td className={cn(SKU_CELL_CLASS, 'px-4 py-2')}>{entry.uom}</td>
-                  <td className={cn(SKU_CELL_CLASS, 'px-4 py-2 tabular-nums')}>{entry.pack_size}</td>
-                  <td className={cn(SKU_CELL_CLASS, 'px-4 py-2 tabular-nums')}>{money.format(Number(entry.price))}</td>
+                  <td className={cn(SKU_CELL_CLASS, 'px-4 py-2 text-right tabular-nums')}>{entry.pack_size}</td>
+                  <td className={cn(SKU_CELL_CLASS, 'px-4 py-2 text-right tabular-nums')}>{money.format(Number(entry.price))}</td>
                 </tr>
               ))}
             </TableGrid>
