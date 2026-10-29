@@ -5,7 +5,11 @@
 // scroll lock, Escape and backdrop close. Use it controlled from the page:
 // <Dialog open={...} onOpenChange={(open) => ...}>. Note the generator wrote
 // `import { cn } from "cn"` (and installed an unrelated npm package named
-// cn); the import is corrected to @/lib/utils below.
+// cn); the import is corrected to @/lib/utils below. DialogContent's grid also
+// gets `grid-cols-1` (minmax(0, 1fr)): with the default auto column, wide
+// content (a table) stretched the column past the popup, so a dialog drawn as
+// a card inside a transparent popup ran past it and the close button sat
+// short of the card's corner.
 
 import * as React from "react"
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog"
@@ -65,7 +69,7 @@ function DialogContent({
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "fixed top-1/2 left-1/2 z-50 grid w-full grid-cols-1 max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
         )}
         {...props}>

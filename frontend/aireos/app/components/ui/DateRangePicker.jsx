@@ -5,7 +5,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 
 const defaultInputClass =
-  'w-full min-w-0 max-w-full rounded-md border border-lavander bg-cream px-2.5 py-1 pr-8 text-sm tabular-nums text-deep-violet-blue focus:border-violet focus:outline-none disabled:cursor-not-allowed disabled:opacity-60';
+  'w-full min-w-0 max-w-full rounded-md border border-lavander bg-cream px-2.5 py-1 pr-8 text-sm text-deep-violet-blue focus:border-violet focus:outline-none disabled:cursor-not-allowed disabled:opacity-60';
 const defaultLabelClass = 'mb-0.5 block text-xs font-medium text-deep-violet-blue';
 const defaultErrorClass = 'mt-0.5 text-xs text-red-700';
 const ISO_YMD = /^(\d{4})-(\d{2})-(\d{2})$/;

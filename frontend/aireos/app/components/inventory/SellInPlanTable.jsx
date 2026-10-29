@@ -13,7 +13,7 @@ import InventoryTableFrame, {
   inventoryThClass,
 } from './InventoryTableFrame';
 
-const numClass = 'tabular-nums';
+const numClass = 'text-right tabular-nums';
 
 /**
  * The plan per SKU and month, in the order it is worked out: the opening

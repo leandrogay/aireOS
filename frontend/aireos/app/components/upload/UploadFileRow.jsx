@@ -2,15 +2,15 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { ChevronRight, RotateCw, X } from 'lucide-react';
+import { ChevronRight, Database, RotateCw, X } from 'lucide-react';
 
 import { formatDateTime } from '@/lib/formatDate';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import DuplicateChoice from '@/components/upload/DuplicateChoice';
 import UploadPreview from '@/components/upload/UploadPreview';
-import { formatFileSize, getFileExtension } from '@/app/utils/fileInspect';
-import { STAGES, fileKind } from '@/app/utils/uploadFlow';
+import { fileTypeLabel, formatFileSize } from '@/app/utils/fileInspect';
+import { STAGES, duplicateDecision, duplicateResult, fileKind } from '@/app/utils/uploadFlow';
 import { vendorLabel } from '@/app/utils/retailerLabel';
 
 const action =
@@ -102,27 +102,30 @@ function DuplicateNote({ duplicate, fileName }) {
  *   item: object,
  *   onRemove: (id: string) => void,
  *   onRetry: (id: string) => void,
- *   onDecide: (id: string, decision: 'replace' | 'keep') => void,
+ *   onDecide: (id: string, decision: 'replace' | 'keep' | 'skip') => void,
+ *   onLoad: (ids: string[]) => void,
  * }} props
  */
-export default function UploadFileRow({ item, onRemove, onRetry, onDecide }) {
+export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoad }) {
   const [showPreview, setShowPreview] = useState(false);
   const { id, file, check, outcome } = item;
   const kind = fileKind(item);
-  const extension = getFileExtension(file.name);
+  const fileType = fileTypeLabel(file.name);
   const processing = kind === 'uploaded' ? outcome.processing : null;
   const hasPreview = Boolean(processing?.preview?.length);
   const beforeUpload = BEFORE_UPLOAD.has(kind);
 
   return (
     <li className="rounded-lg border border-lavander bg-white px-4 py-3 shadow-sm">
-      <div className="flex items-center gap-3">
+      {/* Top-aligned, so the remove cross stays in the card's top-right corner
+          however tall the row grows (duplicate choice, mapping notes). */}
+      <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-deep-violet-blue" title={file.name}>
             {file.name}
           </p>
           <p className="text-xs text-deep-violet-blue/60">
-            {extension ? `.${extension} · ` : ''}
+            {fileType ? `${fileType} · ` : ''}
             {formatFileSize(file.size)}
           </p>
 
@@ -147,7 +150,8 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide }) {
               <DuplicateChoice
                 id={id}
                 fileName={file.name}
-                value={item.decision}
+                value={duplicateDecision(item)}
+                result={duplicateResult(item)}
                 onChange={(decision) => onDecide(id, decision)}
               />
             </>
@@ -170,7 +174,7 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide }) {
               </p>
               {processing?.storage_status === 'disabled' && (
                 <p className="mt-1 text-xs text-amber-900">
-                  Preview only: loading into Cloud SQL is turned off.
+                  Not saved: saving is off in this environment, so nothing was written.
                 </p>
               )}
               {processing?.rejection_summary && (
@@ -195,6 +199,30 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide }) {
                   <Link
                     href={`/mappings/${outcome.mappingId}`}
                     className="rounded-md underline-offset-2 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+                  >
+                    View mapping
+                  </Link>
+                )}
+              </div>
+            </>
+          )}
+
+          {kind === 'ready_to_load' && (
+            <>
+              <p className="mt-1 text-xs text-deep-violet-blue">
+                <MappingName name={outcome.name} vendor={outcome.vendor} />
+                {' · '}
+                <span className="text-amber-900">not loaded yet</span>
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+                <button type="button" onClick={() => onLoad([id])} className={primaryAction}>
+                  <Database aria-hidden="true" className="size-3.5" />
+                  Review and load
+                </button>
+                {outcome.mappingId && (
+                  <Link
+                    href={`/mappings/${outcome.mappingId}`}
+                    className="rounded-md text-xs font-medium text-deep-violet-blue underline-offset-2 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
                   >
                     View mapping
                   </Link>
@@ -278,7 +306,7 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide }) {
             onClick={() => onRemove(id)}
             aria-label={beforeUpload ? `Don't upload ${file.name}` : `Remove ${file.name} from the list`}
             title={beforeUpload ? "Don't upload" : 'Remove from list'}
-            className="shrink-0 text-deep-violet-blue/60 hover:bg-lavander hover:text-deep-violet-blue"
+            className="-mt-1.5 -mr-2 shrink-0 text-deep-violet-blue/60 hover:bg-lavander hover:text-deep-violet-blue"
           >
             <X aria-hidden="true" />
           </Button>

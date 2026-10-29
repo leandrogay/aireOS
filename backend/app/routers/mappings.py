@@ -8,9 +8,11 @@ the upload that proposed them. Uploading is one thing, curating the mappings
 uploads are run through is another, and they now have a router each.
 
 A contract is instructions for the transformation. Both stored contract
-formats are checked here, previewed through the same deterministic executor,
-and run after approval. Version 1 remains supported for mappings confirmed
-before the expanded contract format was introduced.
+formats are checked here and previewed through the same deterministic
+executor. Approving does not load anything: the files behind the mapping are
+marked ready, and loading them is a separate, confirmed step (POST
+/api/uploads/load, see upload_loading). Version 1 remains supported for
+mappings confirmed before the expanded contract format was introduced.
 """
 
 import asyncio
@@ -19,6 +21,7 @@ import datetime
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from app import config
 from app.services import storage
 from app.services import generate_mapping
 from app.services import mapping_view
@@ -27,6 +30,7 @@ from app.services import layout_detection, mapping_checks, mapping_contract
 from app.services import customer_service
 from app.services import sellout_ingestion
 from app.services import notification_service
+from app.services import upload_loading
 
 router = APIRouter(prefix="/api/mappings", tags=["mappings"])
 
@@ -86,16 +90,34 @@ def _proposed_contract(envelope: dict, rules: list[dict] | None, contract: dict 
     return envelope.get("contract") or {}
 
 
-def _example_table(envelope: dict):
+def _replacement_example(fingerprint: str) -> tuple[str, bytes] | None:
+    """
+    The newest upload with this mapping's layout that is still in the bucket.
+
+    Re-uploading a file with "Replace earlier" deletes the copy a proposal
+    names as its example, but the new copy is stamped with the same mapping
+    fingerprint, so the mapping can still be tested on it.
+    """
+    for upload in reversed(storage.list_uploads_for_mapping(fingerprint)):
+        data = storage.download_bytes(upload["blob_path"])
+        if data is not None:
+            return upload["filename"], data
+    return None
+
+
+def _example_table(envelope: dict, fingerprint: str):
     """The example file's data table and layout, or None when it is not stored."""
     example_file = envelope.get("example_file")
     if not example_file:
         return None
     blob_path = storage.blob_path_from_uri(example_file)
     data = storage.download_bytes(blob_path)
-    if data is None:
-        raise FileNotFoundError(example_file)
     filename = envelope.get("source_filename") or blob_path.rsplit("/", 1)[-1]
+    if data is None:
+        replacement = _replacement_example(fingerprint)
+        if replacement is None:
+            raise FileNotFoundError(example_file)
+        filename, data = replacement
     try:
         frame, layout = layout_detection.read_table(filename, data)
     except layout_detection.LayoutError as exc:
@@ -114,42 +136,6 @@ def _foreign_retailers(contract: dict, customer: dict, envelope: dict) -> list[s
     )
     own = {retailer["retailer_name"] for retailer in customer.get("retailers") or []}
     return [name for name in outputs or [] if name not in own]
-
-
-def _ingest_waiting_uploads(blob_paths: list[str], contract: dict) -> list[dict]:
-    """Process files that were waiting for this mapping to be approved."""
-    results = []
-    for blob_path in blob_paths:
-        try:
-            upload = storage.download_upload(blob_path)
-            if upload is None:
-                raise FileNotFoundError(blob_path)
-            filename, data = upload
-            processing = sellout_ingestion.process_confirmed_upload(
-                filename,
-                data,
-                contract,
-                # Re-approval may change a business key. Replacing this
-                # source prevents stale rows from the old mapping remaining.
-                replace_source=True,
-            )
-            results.append(
-                {
-                    "success": True,
-                    "blob_path": blob_path,
-                    "filename": filename,
-                    "processing": processing,
-                }
-            )
-        except Exception as exc:
-            results.append(
-                {
-                    "success": False,
-                    "blob_path": blob_path,
-                    "error": str(exc),
-                }
-            )
-    return results
 
 
 @router.get("")
@@ -245,7 +231,7 @@ async def preview_mapping(fingerprint: str, body: PreviewRequest):
     proposed = _proposed_contract(envelope, body.rules, body.contract)
 
     def build() -> dict:
-        filename, data, frame, layout = _example_table(envelope)
+        filename, data, frame, layout = _example_table(envelope, fingerprint)
         validated = mapping_contract.validate_contract(
             proposed,
             list(frame.columns),
@@ -296,7 +282,10 @@ async def preview_mapping(fingerprint: str, body: PreviewRequest):
     except FileNotFoundError:
         raise HTTPException(
             status_code=410,
-            detail="The example file for this mapping is no longer in the bucket.",
+            detail=(
+                "The file this mapping was made from has been replaced or deleted. "
+                "Upload a file with these columns to test the mapping."
+            ),
         )
     except contract_application.ContractApplicationError as exc:
         # A contract that cannot be applied is the reviewer's answer, not a
@@ -317,6 +306,9 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
     future file with this layout gets run through. A product code that is not
     a master SKU blocks it: the reviewer fixes the code table, or the product
     is added to the SKU master first.
+
+    Nothing is loaded into sell-out. The files behind the mapping are returned
+    as `waiting_uploads` / `outdated_uploads` for the screen to offer a load.
     """
     # Confirmed first, as every other lookup does: a pending copy whose cleanup
     # failed must not become the base of an amendment.
@@ -409,7 +401,7 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
     # The checks again, on the example file, against the SKU master as it is
     # now. Without an example file there is nothing to check against.
     def recheck() -> list[dict]:
-        table = _example_table(pending)
+        table = _example_table(pending, fingerprint)
         if table is None:
             return []
         filename, _, frame, layout = table
@@ -463,26 +455,15 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
         storage.move_pending_mapping_to_confirmed, fingerprint, envelope
     )
 
-    # Every file already uploaded against this fingerprint was recorded as
-    # awaiting review. It isn't any more, so the upload history is corrected
-    # here rather than left to say something that stopped being true.
+    # Every file already uploaded against this fingerprint recorded the state
+    # its mapping was in. Approval makes them loadable -- never loaded: that is
+    # a separate step a person confirms, because it cannot be undone.
     uploads = await asyncio.to_thread(
-        storage.update_uploads_for_mapping,
+        upload_loading.mark_uploads_after_approval,
         fingerprint,
-        {
-            storage.MAPPING_STATUS_METADATA_KEY: "mapped",
-            storage.MAPPING_NAME_METADATA_KEY: name,
-            storage.VENDOR_METADATA_KEY: vendor,
-        },
-    )
-
-    # Files uploaded before approval were intentionally held back. Apply the
-    # now-confirmed contract and load them without requiring a second upload,
-    # through the same executor used for every future recognised upload.
-    ingestion = await asyncio.to_thread(
-        _ingest_waiting_uploads,
-        uploads.get("matched", []),
-        stored_contract,
+        name=name,
+        vendor=vendor,
+        version=envelope["version"],
     )
 
     # After everything above has been saved, and never failing the approval.
@@ -493,8 +474,8 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
             "name": name,
             "vendor": vendor,
             "amended": state == "confirmed",
-            "uploads_processed": sum(item["success"] for item in ingestion),
-            "uploads_failed": sum(not item["success"] for item in ingestion),
+            "uploads_waiting": len(uploads["waiting"]),
+            "uploads_outdated": len(uploads["outdated"]),
         },
     )
 
@@ -512,10 +493,13 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
         "version": envelope["version"],
         "contract_format": 2 if mapping_contract.is_v2(stored_contract) else 1,
         "pending_removed": move["removed_pending"],
-        "uploads_updated": len(uploads["updated"]),
-        "uploads_processed": sum(item["success"] for item in ingestion),
-        "uploads_failed": sum(not item["success"] for item in ingestion),
-        "processing": ingestion,
+        "uploads_updated": uploads["updated"],
+        # Files the approved mapping can now load, for the screen to offer:
+        # never loaded, and loaded with an older version.
+        "waiting_uploads": uploads["waiting"],
+        "outdated_uploads": uploads["outdated"],
+        # Whether later files with this layout load on upload or wait too.
+        "load_requires_confirmation": config.load_confirmation_required(),
         "contract": stored_contract,
         "warnings": contract["warnings"],
     }

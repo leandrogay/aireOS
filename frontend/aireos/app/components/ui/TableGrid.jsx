@@ -57,12 +57,14 @@ function columnStyle(width, isEdge, inset) {
  * nested or not (`inset`).
  *
  * A column with `sortField` gets a SortHeader driven by `sort` / `onSort`.
+ * `align: 'right'` right-aligns the header, for numeric columns; the rows'
+ * cells pair it with `text-right tabular-nums` so the digits line up.
  * `isLoading` (first load only) shows placeholder rows; `emptyState` replaces
  * the rows with a centred message, e.g. "No promotions match these filters".
  * DataTable wraps this in the standard card; use it alone for a nested table.
  *
  * @param {{
- *   columns: Array<{ key: string, label: string, width?: string, sortField?: string, hideLabel?: boolean }>,
+ *   columns: Array<{ key: string, label: string, width?: string, sortField?: string, hideLabel?: boolean, align?: 'left' | 'right' }>,
  *   children?: import('react').ReactNode,
  *   variant?: 'card' | 'nested',
  *   minWidth?: string,
@@ -123,6 +125,7 @@ export default function TableGrid({
             )}
           >
             {columns.map((column) => {
+              const alignClass = column.align === 'right' ? 'text-right' : undefined;
               if (column.hideLabel) {
                 return (
                   <th key={column.key} scope="col" className="px-2 py-2">
@@ -139,11 +142,12 @@ export default function TableGrid({
                     sortField={sort?.field ?? null}
                     sortDirection={sort?.direction ?? 'asc'}
                     onSort={onSort}
+                    className={alignClass}
                   />
                 );
               }
               return (
-                <th key={column.key} scope="col" className={TABLE_HEADER_CLASS}>
+                <th key={column.key} scope="col" className={cn(TABLE_HEADER_CLASS, alignClass)}>
                   {column.label}
                 </th>
               );

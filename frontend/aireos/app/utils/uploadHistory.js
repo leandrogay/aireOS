@@ -1,14 +1,31 @@
 import { matchesSearch } from '@/app/utils/tableView';
 
-// The mapping status recorded on each blob at upload time, as something a
-// person reads. Anything unrecognised falls through to the raw value rather
-// than being hidden. Keys are backend storage.list_uploads mapping_status.
+// The mapping status recorded on each blob, as something a person reads.
+// Anything unrecognised falls through to the raw value rather than being
+// hidden. Keys are backend storage.list_uploads mapping_status; the load
+// states are backend upload_loading (`mapped` means loaded, and kept its name
+// so uploads stamped before loading was its own step still read right).
 export const UPLOAD_STATUS_LABELS = {
-  mapped: { tone: 'ready', label: 'Mapped' },
+  mapped: { tone: 'ready', label: 'Loaded' },
+  ready_to_load: { tone: 'review', label: 'Approved, not loaded' },
+  reload_available: { tone: 'review', label: 'Older version loaded' },
   pending_confirmation: { tone: 'review', label: 'Needs review' },
   partial_match: { tone: 'review', label: 'Needs review' },
   mapping_failed: { tone: 'failed', label: 'Mapping failed' },
 };
+
+/**
+ * The load an upload is waiting for, if any: a first load once its mapping
+ * is approved, or a reload after a new version. Null for every other state.
+ *
+ * @param {object} upload GET /api/uploads/history row
+ * @returns {{ label: string, reload: boolean } | null}
+ */
+export function loadActionFor(upload) {
+  if (upload.mapping_status === 'ready_to_load') return { label: 'Load', reload: false };
+  if (upload.mapping_status === 'reload_available') return { label: 'Reload', reload: true };
+  return null;
+}
 
 /**
  * Uploads whose file name, vendor or mapping name contains the query.
