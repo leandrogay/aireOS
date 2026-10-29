@@ -2,11 +2,11 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { MoreHorizontal, Undo2 } from 'lucide-react';
+import { Database, History, RefreshCw, Trash2, Undo2 } from 'lucide-react';
 
 import { formatDateTime } from '@/lib/formatDate';
-import { Button } from '@/components/ui/button';
 import RefreshButton from '@/components/ui/RefreshButton';
+import RowActions from '@/components/ui/RowActions';
 import SortHeader, { TABLE_HEADER_CLASS as headerClass } from '@/components/ui/SortHeader';
 import StatusBadge from '@/components/ui/StatusBadge';
 import TablePagination, { PAGE_SIZES } from '@/components/ui/TablePagination';
@@ -46,6 +46,7 @@ const COLUMN_COUNT = 6;
  *   error: string,
  *   onRefresh: () => void,
  *   onRollback: (upload: object) => void,
+ *   onDelete: (upload: object) => void,
  *   onLoaded: (response: object) => void,
  *   months: number,
  * }} props
@@ -56,6 +57,7 @@ export default function RecentUploads({
   error,
   onRefresh,
   onRollback,
+  onDelete,
   onLoaded,
   months,
 }) {
@@ -160,6 +162,52 @@ export default function RecentUploads({
                     ? ROLLED_BACK_STATUS
                     : UPLOAD_STATUS_LABELS[upload.mapping_status];
                   const load = loadActionFor(upload);
+                  const actions = [];
+
+                  if (load) {
+                    actions.push({
+                      key: load.reload ? 'reload' : 'load',
+                      label: load.label,
+                      icon: load.reload ? RefreshCw : Database,
+                      onSelect: () => setLoading({
+                        blobPath: upload.blob_path,
+                        reload: load.reload,
+                      }),
+                    });
+                  }
+                  if (upload.status === 'rolled_back') {
+                    actions.push({
+                      key: 'rollback-details',
+                      label: 'View rollback details',
+                      icon: History,
+                      onSelect: () => setRollbackDetails(upload),
+                    });
+                  }
+                  if (upload.rollback_available) {
+                    actions.push({
+                      key: 'rollback',
+                      label: 'Rollback upload',
+                      icon: Undo2,
+                      onSelect: () => onRollback(upload),
+                    });
+                  }
+                  const hasActiveLoad = upload.status !== 'rolled_back' && (
+                    upload.rollback_available
+                    || ['mapped', 'reload_available'].includes(upload.mapping_status)
+                  );
+                  const deletionBlocked = upload.status === 'processing'
+                    ? 'Wait for this load to finish'
+                    : hasActiveLoad
+                      ? 'Rollback this upload first'
+                      : null;
+                  actions.push({
+                    key: 'delete',
+                    label: 'Delete upload',
+                    icon: Trash2,
+                    onSelect: () => onDelete(upload),
+                    disabledReason: deletionBlocked,
+                    destructive: true,
+                  });
 
                   return (
                     <tr
@@ -172,38 +220,11 @@ export default function RecentUploads({
                       <td className="px-4 py-2.5">{vendorLabel(upload.vendor) || '—'}</td>
                       <td className="px-4 py-2.5">{formatDateTime(upload.uploaded_at)}</td>
                       <td className="px-4 py-2.5">
-                        <div className="flex items-center gap-2">
-                          {status ? (
-                            <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
-                          ) : (
-                            <StatusBadge tone="neutral">{upload.mapping_status || 'Unknown'}</StatusBadge>
-                          )}
-                          {upload.status === 'rolled_back' && (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon-sm"
-                              onClick={() => setRollbackDetails(upload)}
-                              aria-label={`View rollback details for ${upload.filename}`}
-                              title="View rollback details"
-                              className="text-deep-violet-blue/65 hover:bg-cream hover:text-deep-violet-blue"
-                            >
-                              <MoreHorizontal aria-hidden="true" />
-                            </Button>
-                          )}
-                          {load && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="xs"
-                              onClick={() => setLoading({ blobPath: upload.blob_path, reload: load.reload })}
-                              aria-label={`${load.label} ${upload.filename} into sales data`}
-                              className="border-deep-violet-blue/30 text-deep-violet-blue hover:bg-cream"
-                            >
-                              {load.label}…
-                            </Button>
-                          )}
-                        </div>
+                        {status ? (
+                          <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+                        ) : (
+                          <StatusBadge tone="neutral">{upload.mapping_status || 'Unknown'}</StatusBadge>
+                        )}
                       </td>
                       <td className="px-4 py-2.5">
                         {upload.mapping_fingerprint && upload.mapping_available ? (
@@ -221,21 +242,10 @@ export default function RecentUploads({
                         )}
                       </td>
                       <td className="px-4 py-2.5">
-                        {upload.rollback_available ? (
-                          <Button
-                            type="button"
-                            variant="destructive"
-                            size="sm"
-                            className="gap-1.5 leading-none"
-                            onClick={() => onRollback(upload)}
-                            title="Remove this upload's transformed sales and restore any values it replaced"
-                          >
-                            <Undo2 aria-hidden="true" className="size-3.5" />
-                            <span className="translate-y-px leading-none">Rollback</span>
-                          </Button>
-                        ) : (
-                          <span className="text-deep-violet-blue/60">—</span>
-                        )}
+                        <RowActions
+                          label={`Actions for upload ${upload.filename}`}
+                          actions={actions}
+                        />
                       </td>
                     </tr>
                   );

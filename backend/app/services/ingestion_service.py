@@ -10,7 +10,8 @@ import datetime
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
-from app.services import sql
+from app import config
+from app.services import sql, storage
 
 
 class IngestionNotFoundError(LookupError):
@@ -27,6 +28,14 @@ class IngestionInProgressError(RuntimeError):
 
 class IngestionRollbackError(RuntimeError):
     """The rollback could not be completed atomically."""
+
+
+class UploadSourceNotFoundError(LookupError):
+    """The requested raw upload object is no longer in GCS."""
+
+
+class UploadSourceStillLoadedError(RuntimeError):
+    """A raw upload cannot be deleted while its SQL values remain active."""
 
 
 VERSION_COLUMNS = (
@@ -283,6 +292,73 @@ def upload_states(
             parameters,
         ).mappings()
         return {row["source_blob"]: dict(row) for row in rows}
+
+
+def _latest_run(source_blob: str, *, engine: Engine | None = None) -> dict | None:
+    if not config.cloud_sql_loading_enabled():
+        return None
+    database = engine or sql.connect_with_connector_autocommit()
+    with database.connect() as connection:
+        row = connection.execute(
+            text(
+                """
+                SELECT ingestion_id, status, loaded_at, rolled_back_at
+                FROM ingestion_runs
+                WHERE source_blob = :source_blob
+                ORDER BY ingestion_id DESC
+                LIMIT 1
+                """
+            ),
+            {"source_blob": source_blob},
+        ).mappings().first()
+        return dict(row) if row else None
+
+
+def delete_upload_source(
+    source_blob: str,
+    *,
+    engine: Engine | None = None,
+) -> dict:
+    """Delete a raw GCS upload only when no active SQL load depends on it."""
+    upload = storage.get_upload(source_blob)
+    if upload is None:
+        raise UploadSourceNotFoundError("This upload is no longer in GCS.")
+
+    run = _latest_run(source_blob, engine=engine)
+    if run and run["status"] == "processing":
+        raise IngestionInProgressError(
+            "This upload is still being loaded and cannot be deleted yet."
+        )
+    if run and run["status"] == "completed":
+        raise UploadSourceStillLoadedError(
+            "Rollback this upload before deleting its raw GCS file."
+        )
+    if run is None and upload.get("mapping_status") in {
+        "mapped",
+        "reload_available",
+    }:
+        raise UploadSourceStillLoadedError(
+            "This upload may still have active SQL data and cannot be safely deleted."
+        )
+
+    if not storage.delete_upload(source_blob):
+        raise UploadSourceNotFoundError("This upload is no longer in GCS.")
+
+    pending_mapping_deleted = False
+    fingerprint = upload.get("mapping_fingerprint")
+    if upload.get("mapping_status") == "pending_confirmation" and fingerprint:
+        remaining = storage.list_uploads_for_mapping(fingerprint)
+        if not remaining:
+            pending_mapping_deleted = storage.delete_blob(
+                storage.pending_mapping_path(fingerprint)
+            )
+
+    return {
+        "success": True,
+        "blob_path": source_blob,
+        "filename": upload.get("filename"),
+        "pending_mapping_deleted": pending_mapping_deleted,
+    }
 
 
 def _latest_active_versions(connection: Connection, ingestion_id: int) -> list[dict]:

@@ -31,6 +31,7 @@ import {
 } from '../utils/uploadFlow';
 import {
   checkUpload,
+  deleteUpload,
   uploadFile,
   fetchUploadHistory,
   rollbackUpload,
@@ -146,6 +147,18 @@ export default function UploadPage() {
     setRollbackReason('');
     rollback.request(upload);
   }
+
+  const deletion = useConfirmAction({
+    onConfirm: async (upload) => {
+      try {
+        await deleteUpload(upload.blob_path);
+        notify('deleted', `${upload.filename} was deleted from GCS.`);
+        await loadHistory();
+      } catch (error) {
+        notify('error', error.message || 'Failed to delete the uploaded file.');
+      }
+    },
+  });
 
   // ---- Selection and checking ---------------------------------------------
 
@@ -465,6 +478,7 @@ export default function UploadPage() {
           error={historyError}
           onRefresh={loadHistory}
           onRollback={requestRollback}
+          onDelete={deletion.request}
           onLoaded={handleLoaded}
           months={UPLOAD_HISTORY_MONTHS}
         />
@@ -501,6 +515,21 @@ export default function UploadPage() {
             This reason will be saved in the rollback audit trail.
           </p>
         </ConfirmDialog>
+        <ConfirmDialog
+          open={Boolean(deletion.target)}
+          title="Delete this uploaded file?"
+          description="The raw source file will be permanently removed from GCS. Its confirmed mapping and retained ingestion audit will not be deleted."
+          details={deletion.target ? [
+            { label: 'File', value: deletion.target.filename },
+            { label: 'Customer', value: deletion.target.vendor || '—' },
+            { label: 'Uploaded', value: formatDateTime(deletion.target.uploaded_at) },
+          ] : []}
+          confirmLabel="Delete file"
+          pendingLabel="Deleting…"
+          isPending={deletion.isPending}
+          onConfirm={deletion.confirm}
+          onCancel={deletion.cancel}
+        />
         <Toast toast={toast} onDismiss={dismissToast} />
       </div>
 

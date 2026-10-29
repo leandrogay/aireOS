@@ -7,8 +7,8 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.routers import uploads as uploads_router
-from app.schemas.uploads import RollbackUploadRequest
-from app.services import ingestion_service
+from app.schemas.uploads import DeleteUploadRequest, RollbackUploadRequest
+from app.services import ingestion_service, storage
 
 
 class FakeResult:
@@ -248,3 +248,109 @@ def test_rollback_route_returns_conflict_for_an_already_rolled_back_upload(monke
 
     assert exc_info.value.status_code == 409
     assert exc_info.value.detail == "Already rolled back."
+
+
+# ---- Raw upload deletion ----------------------------------------------------
+
+
+def _upload(status="mapped"):
+    return {
+        "blob_path": "uploads/bad.xlsx",
+        "filename": "bad.xlsx",
+        "mapping_status": status,
+        "mapping_fingerprint": "fp",
+    }
+
+
+def test_loaded_upload_must_be_rolled_back_before_gcs_deletion(monkeypatch):
+    monkeypatch.setattr(storage, "get_upload", lambda path: _upload())
+    monkeypatch.setattr(
+        ingestion_service,
+        "_latest_run",
+        lambda path, engine=None: {"status": "completed"},
+    )
+    monkeypatch.setattr(
+        storage,
+        "delete_upload",
+        lambda path: pytest.fail("loaded source must not be deleted"),
+    )
+
+    with pytest.raises(ingestion_service.UploadSourceStillLoadedError):
+        ingestion_service.delete_upload_source("uploads/bad.xlsx")
+
+
+def test_rolled_back_upload_can_be_deleted_from_gcs(monkeypatch):
+    deleted = []
+    monkeypatch.setattr(storage, "get_upload", lambda path: _upload())
+    monkeypatch.setattr(
+        ingestion_service,
+        "_latest_run",
+        lambda path, engine=None: {"status": "rolled_back"},
+    )
+    monkeypatch.setattr(
+        storage,
+        "delete_upload",
+        lambda path: deleted.append(path) or True,
+    )
+
+    result = ingestion_service.delete_upload_source("uploads/bad.xlsx")
+
+    assert deleted == ["uploads/bad.xlsx"]
+    assert result == {
+        "success": True,
+        "blob_path": "uploads/bad.xlsx",
+        "filename": "bad.xlsx",
+        "pending_mapping_deleted": False,
+    }
+
+
+def test_deleting_the_only_pending_upload_removes_its_orphan_proposal(monkeypatch):
+    deleted = []
+    monkeypatch.setattr(
+        storage,
+        "get_upload",
+        lambda path: _upload("pending_confirmation"),
+    )
+    monkeypatch.setattr(
+        ingestion_service,
+        "_latest_run",
+        lambda path, engine=None: None,
+    )
+    monkeypatch.setattr(storage, "delete_upload", lambda path: True)
+    monkeypatch.setattr(storage, "list_uploads_for_mapping", lambda fingerprint: [])
+    monkeypatch.setattr(
+        storage,
+        "delete_blob",
+        lambda path: deleted.append(path) or True,
+    )
+
+    result = ingestion_service.delete_upload_source("uploads/bad.xlsx")
+
+    assert deleted == [storage.pending_mapping_path("fp")]
+    assert result["pending_mapping_deleted"] is True
+
+
+def test_storage_refuses_to_delete_outside_the_upload_prefix(monkeypatch):
+    monkeypatch.setattr(
+        storage,
+        "delete_blob",
+        lambda path: pytest.fail("mapping object must not be deleted as an upload"),
+    )
+
+    with pytest.raises(ValueError):
+        storage.delete_upload("mappings/confirmed/fp.json")
+
+
+def test_delete_route_maps_loaded_upload_to_conflict(monkeypatch):
+    def delete(path):
+        raise ingestion_service.UploadSourceStillLoadedError("Rollback first.")
+
+    monkeypatch.setattr(ingestion_service, "delete_upload_source", delete)
+
+    with pytest.raises(HTTPException) as exc_info:
+        uploads_router.delete_upload_source(
+            DeleteUploadRequest(blob_path="uploads/bad.xlsx")
+        )
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == "Rollback first."

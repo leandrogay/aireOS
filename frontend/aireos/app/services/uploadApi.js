@@ -165,6 +165,20 @@ export async function rollbackUpload(blobPath, reason) {
 
 // ========================================
 // API CALL
+// DELETE /api/uploads/source
+// Permanently removes one exact raw object from the GCS uploads/ prefix.
+// The backend refuses the request while that upload still owns active SQL
+// data, so a loaded file must be rolled back before it can be deleted.
+// ========================================
+export async function deleteUpload(blobPath) {
+  return request('/api/uploads/source', {
+    method: 'DELETE',
+    body: { blob_path: blobPath },
+  });
+}
+
+// ========================================
+// API CALL
 // POST /api/uploads/load/preview
 // Dry run of loading uploaded files into sell-out (backend
 // upload_loading.preview_loads): per file, the rows it would store, the

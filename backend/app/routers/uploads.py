@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Q
 
 from app import config
 from app.auth import require_user
-from app.schemas.uploads import LoadRequest, RollbackUploadRequest
+from app.schemas.uploads import DeleteUploadRequest, LoadRequest, RollbackUploadRequest
 from app.services import storage
 from app.services import generate_mapping
 from app.services import apply_contract as contract_application
@@ -282,6 +282,24 @@ def rollback_upload(
     ) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ingestion_service.IngestionRollbackError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.delete("/source")
+def delete_upload_source(payload: DeleteUploadRequest):
+    """Remove one raw GCS upload after any active SQL load is rolled back."""
+    try:
+        return ingestion_service.delete_upload_source(payload.blob_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ingestion_service.UploadSourceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (
+        ingestion_service.IngestionInProgressError,
+        ingestion_service.UploadSourceStillLoadedError,
+    ) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (storage.GCSUploadError, storage.GCSPermissionError) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
