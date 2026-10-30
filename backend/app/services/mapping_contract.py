@@ -50,10 +50,11 @@ Statuses:
   not_available  the file does not hold it; `reason` says why. Never invented.
 
 A melt group's key is what each melted column's header says (a period, a store
-code or a store name). Its `labels` read more from the rows above the header:
-{"rows_above": 1, "target": "store_code"} fills store_code from the cell
-directly above each melted column, where SingHealth writes the outlet's code
-over its name.
+code or a store name). Its `labels` read more of it: {"rows_above": 1,
+"target": "store_code"} fills store_code from the cell directly above each
+melted column, where SingHealth writes the outlet's code over its name, and
+{"rows_above": 0, "target": "store_name"} reads the header itself again, so one
+heading can fill both the store code and the store name.
 
 The sku field's value_map is the product-code table: each retailer code in the
 file and the master SKU it is. A field with no value_map uses the file's codes
@@ -94,9 +95,15 @@ DECIDABLE_FIELDS = tuple(
 )
 
 MEASURE_FIELDS = ("quantity_units", "revenue")
-MELT_KEY_TARGETS = ("period_start", "store_code", "store_name")
-# What a melt group's labels (the cells above its columns' headers) may fill.
-LABEL_TARGETS = ("store_code", "store_name")
+# What a melt group's headings -- or the cells above them (its labels) -- may
+# fill besides the period: any descriptive field. An outlet's code and name,
+# its format, the brand or product range a column stands for, the retailer
+# channel, even the product code of a file with one column per product.
+HEADING_FIELDS = tuple(
+    field for field in DECIDABLE_FIELDS if field not in ("period_start", "period_type", "pack_size", *MEASURE_FIELDS)
+)
+MELT_KEY_TARGETS = ("period_start", *HEADING_FIELDS)
+LABEL_TARGETS = HEADING_FIELDS
 # What a field may be read from in the file's layout rather than its table.
 LAYOUT_SOURCES = ("stated_period",)
 PERIOD_TYPES = ("month", "week")
@@ -535,13 +542,13 @@ def _validate_labels(raw, key_target: str, label: str, warnings: list[str]) -> l
     for item in raw:
         item = item if isinstance(item, dict) else {}
         rows_above, target = item.get("rows_above"), item.get("target")
-        if not isinstance(rows_above, int) or isinstance(rows_above, bool) or rows_above < 1:
-            warnings.append(f"Dropped melt group for {label!r} — a label's rows_above must be 1 or more")
+        if not isinstance(rows_above, int) or isinstance(rows_above, bool) or rows_above < 0:
+            warnings.append(f"Dropped melt group for {label!r} — a label's rows_above must be 0 (the header) or more")
             return None
         if target not in LABEL_TARGETS or target == key_target or any(c["target"] == target for c in clean):
             warnings.append(
-                f"Dropped melt group for {label!r} — each label fills one of {LABEL_TARGETS} "
-                "once, and not the field the key fills"
+                f"Dropped melt group for {label!r} — each label fills one descriptive field "
+                f"({', '.join(LABEL_TARGETS)}) once, and not the field the key fills"
             )
             return None
         clean.append({"rows_above": rows_above, "target": target})
@@ -975,12 +982,41 @@ def unreviewed_low_confidence(contract: dict) -> list[str]:
     return list(dict.fromkeys(fields + groups))
 
 
-def retailer_outputs(contract: dict, samples: dict[str, list] | None = None) -> list[str] | None:
+def _heading_values(contract: dict, entry: dict, target: str, columns: list[str], layout: dict | None) -> list[str] | None:
+    """
+    What a field read from a melt group's headings -- or the cells above them
+    -- is filled with, or None when that cannot be told without the file.
+    """
+    group = next((g for g in contract.get("melt_groups") or [] if g.get("id") == entry.get("melt_group")), None)
+    if group is None:
+        return None
+    try:
+        selected = resolve_selector(group.get("select") or {}, columns)
+    except (ValueError, re.error):
+        return None
+    label = next((item for item in group.get("labels") or [] if item.get("target") == target), None)
+    if (group.get("key") or {}).get("target") == target or (label and label.get("rows_above") == 0):
+        return selected
+    if label is None or layout is None:
+        return None
+    row = int(layout.get("header_row") or 1) - label["rows_above"]
+    cells = next((item["cells"] for item in layout.get("rows_above_header") or [] if item.get("row") == row), {})
+    return [cells[column] for column in selected if column in cells]
+
+
+def retailer_outputs(
+    contract: dict,
+    samples: dict[str, list] | None = None,
+    columns: list[str] | None = None,
+    layout: dict | None = None,
+) -> list[str] | None:
     """
     Every retailer name a contract writes sales to, read from its instructions
     without running them: a constant's value, or the outputs (and default) of
     the rules or code table that last translates the retailer. A column read
-    as it is writes the column's own values, taken from `samples` when given.
+    as it is writes the column's own values, taken from `samples` when given;
+    a group's headings read as they are write the headings, or the cells over
+    them, taken from the file's `columns` and `layout` when given.
 
     None when that cannot be known from the contract alone, so a caller can
     tell "writes to nothing" from "cannot say".
@@ -989,7 +1025,8 @@ def retailer_outputs(contract: dict, samples: dict[str, list] | None = None) -> 
     get_or_create_retailers) with no customer, which the dashboard then never
     finds, so approval checks these against the mapping's customer first.
     """
-    entry = (upgrade(contract).get("fields") or {}).get("retailer") or {}
+    contract = upgrade(contract)
+    entry = (contract.get("fields") or {}).get("retailer") or {}
     status = entry.get("status")
     if status == "constant":
         return [str(entry.get("value"))] if entry.get("value") not in (None, "") else []
@@ -1004,6 +1041,10 @@ def retailer_outputs(contract: dict, samples: dict[str, list] | None = None) -> 
         outputs = list((last.get("values") or {}).values())
     elif not transforms and samples and entry.get("source") in samples:
         outputs = list(samples[entry["source"]] or [])
+    elif not transforms and entry.get("melt_group") and columns is not None:
+        outputs = _heading_values(contract, entry, "retailer", columns, layout)
+        if outputs is None:
+            return None
     else:
         return None
 

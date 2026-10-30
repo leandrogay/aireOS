@@ -71,7 +71,10 @@ def _describe(target: str, entry: dict, groups: dict) -> str:
         return "Read from the period column headers"
     if status == "mapped" and entry.get("melt_group") in groups:
         group = groups[entry["melt_group"]]
-        if any(label["target"] == target for label in group.get("labels") or []):
+        label = next((item for item in group.get("labels") or [] if item["target"] == target), None)
+        if label and label["rows_above"] == 0:
+            return f"Read from the column headers of melt group {entry['melt_group']!r}"
+        if label:
             return f"Read from the cells above the column headers of melt group {entry['melt_group']!r}"
         return f"Read from the column headers of melt group {entry['melt_group']!r}"
     return STATUS_DESCRIPTIONS.get(status, status or "")
@@ -437,6 +440,16 @@ def envelope_to_packet(
         "proposedBy": {"provider": envelope.get("provider"), "model": envelope.get("model")},
         "columns": columns,
         "columnSamples": envelope.get("column_samples") or {},
+        # The first data rows lined up by column (older proposals have none;
+        # testing the mapping returns them).
+        "headRows": envelope.get("head_rows") or [],
+        # Each column's distinct values -- all of them when there are few, an
+        # even spread otherwise (column_profile) -- and how many there are, so
+        # the screen can say which rows a rule sends where.
+        "columnValues": {
+            column: {"values": entry.get("values") or [], "distinct": entry.get("distinct", len(entry.get("values") or []))}
+            for column, entry in (envelope.get("column_profile") or {}).items()
+        },
         # The fields a reviewer may point a column at. Sent with the mapping
         # rather than hardcoded in the UI, so the dropdown cannot offer a field
         # whose source is fixed (the file's name, the period's end and label).

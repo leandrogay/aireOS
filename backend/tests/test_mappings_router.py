@@ -492,3 +492,106 @@ def test_testing_with_no_copy_of_the_example_file_left_is_410_and_says_what_to_d
 
     assert response.status_code == 410
     assert "Upload a file with these columns" in response.json()["detail"]
+
+
+def test_testing_returns_sample_rows_even_while_a_check_fails(monkeypatch):
+    from app.services import generate_mapping
+
+    _serve_example(monkeypatch, {"uploads/old.csv": EXAMPLE_CSV}, [])
+    # 13255043 is not a master SKU here, so the product-code check fails.
+    monkeypatch.setattr(generate_mapping.catalog_service, "get_skus", lambda: [{"sku": "99999999"}])
+    rules = _complete_rules([_rule("sku", "SKU No.", "high", True)])
+
+    response = client.post("/api/mappings/fp/preview", json={"rules": rules})
+
+    body = response.json()
+    assert response.status_code == 200
+    assert any(check["id"] == "sku_codes" and not check["passed"] for check in body["checks"])
+    assert body["rows_total"] == 1
+    assert body["preview"][0]["sku"] == "13255043"
+    assert body["preview_error"] is None
+
+
+def test_testing_returns_the_example_files_layout_and_first_rows(monkeypatch):
+    _serve_example(monkeypatch, {"uploads/old.csv": EXAMPLE_CSV}, [])
+
+    body = client.post("/api/mappings/fp/preview", json={}).json()
+
+    assert body["layout"]["header_row"] == 1
+    assert body["head_rows"] == [["13255043", "A", "V", "1", "10", "1"]]
+
+
+def test_rules_that_cannot_run_report_why_beside_their_checks(monkeypatch):
+    _serve_example(monkeypatch, {"uploads/old.csv": EXAMPLE_CSV}, [])
+    monkeypatch.setattr(
+        sellout_ingestion,
+        "transform_confirmed_upload",
+        lambda *args: (_ for _ in ()).throw(sellout_ingestion.apply_contract.ContractApplicationError("no period stated")),
+    )
+
+    body = client.post("/api/mappings/fp/preview", json={}).json()
+
+    assert body["preview_error"] == "no period stated"
+    assert body["checks"]
+
+
+# ---- Contract-wide settings the reviewer changes -----------------------------------
+
+def test_the_reviewer_can_turn_the_monthly_roll_up_off_and_tag_a_claim_statement(monkeypatch):
+    stored = _stub_storage(monkeypatch)
+    _serve_pending(monkeypatch, V2_ENVELOPE)
+    rules = _complete_rules([_rule("sku", "SKU No.", "high", False)])
+
+    response = client.post(
+        "/api/mappings/fp/confirm",
+        json={"rules": rules, "instructions": {"aggregate": False, "data_source": "promo_claim"}},
+    )
+
+    assert response.status_code == 200
+    assert stored["envelope"]["contract"]["aggregate"] is None
+    assert stored["envelope"]["contract"]["data_source"] == "promo_claim"
+
+
+def test_settings_left_out_are_kept_as_stored(monkeypatch):
+    stored = _stub_storage(monkeypatch)
+    _serve_pending(monkeypatch, V2_ENVELOPE)
+    rules = _complete_rules([_rule("sku", "SKU No.", "high", False)])
+
+    response = client.post("/api/mappings/fp/confirm", json={"rules": rules, "instructions": {}})
+
+    assert response.status_code == 200
+    assert stored["envelope"]["contract"]["aggregate"]["period"] == "month"
+
+
+def test_an_unknown_data_type_is_rejected_with_422(monkeypatch):
+    _stub_storage(monkeypatch)
+
+    response = client.post("/api/mappings/fp/confirm", json={"rules": [], "instructions": {"data_source": "guess"}})
+
+    assert response.status_code == 422
+
+
+def test_a_retailer_read_from_outlet_headings_blocks_approval_naming_them(monkeypatch):
+    _stub_storage(monkeypatch)
+    envelope = {**V2_ENVELOPE, "raw_columns": ["SKU No.", "Month", "BEDOK", "ONLINE"]}
+    _serve_pending(monkeypatch, envelope)
+    group = {
+        "id": "outlets", "select": {"kind": "between", "after": "Month"}, "key": {"target": "retailer"},
+        "value_target": "quantity_units", "confidence": "high", "reviewed": True,
+    }
+    locked = lambda target, field, **extra: {
+        "targetField": target, "sourceColumn": "", "sourceColumns": [], "editable": False,
+        "confidence": "high", "reviewed": True, "field": field, **extra,
+    }
+    rules = [
+        _rule("sku", "SKU No.", "high", True),
+        {**_rule("period_start", "Month", "high", True), "transform": [{"type": "month_start"}]},
+        locked("period_type", {"status": "constant", "value": "month"}),
+        locked("quantity_units", {"status": "mapped", "melt_group": "outlets"}, meltGroup=group),
+        locked("retailer", {"status": "mapped", "melt_group": "outlets"}),
+    ]
+
+    response = client.post("/api/mappings/fp/confirm", json={"rules": rules})
+
+    assert response.status_code == 422
+    assert "BEDOK, ONLINE" in response.json()["detail"]["message"]

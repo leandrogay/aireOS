@@ -388,6 +388,16 @@ def load_clean_rows(
             retailer_names = list(
                 dict.fromkeys(str(row["retailer"]) for row in records)
             )
+            unowned = catalog_service.unowned_retailer_names(
+                connection,
+                retailer_names,
+            )
+            if unowned:
+                raise SelloutLoadError(
+                    f"No customer owns {', '.join(unowned)}. Create the customer "
+                    "with these retailers (or fix the retailer names in the "
+                    "mapping) before loading sales."
+                )
             retailer_ids = catalog_service.get_or_create_retailers(
                 connection,
                 retailer_names,
@@ -468,6 +478,8 @@ def load_clean_rows(
                     rows_stored=len(records),
                     rows_consolidated=rows_consolidated,
                 )
+    except SelloutLoadError:
+        raise
     except Exception as exc:
         raise SelloutLoadError(f"Cloud SQL sell-out load failed: {exc}") from exc
 

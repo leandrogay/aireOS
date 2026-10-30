@@ -262,3 +262,84 @@ def test_not_in_file_keeps_its_confidence_when_every_column_is_read():
     scored = mk.field_confidence(validated, checks, read)
 
     assert scored["fields"]["store_name"]["confidence"] == "high"
+
+
+def test_store_codes_read_from_above_the_header_are_the_inputs_of_a_rule_derived_from_them():
+    contract = reference_contracts.reference_contract("singhealth_er130")
+    contract["fields"]["retailer"]["from_field"] = "store_code"
+    contract["fields"]["retailer"]["transforms"][0]["rules"][0]["value"] = "88001"
+
+    checks, _, _ = _run("singhealth_er130", "XEL.xlsx", singhealth_xlsx(), contract)
+
+    rules = _by_id(checks)["rules_retailer"]
+    assert rules["passed"] is True
+    assert rules["evidence"]["matched"] == ["88001"]
+
+
+def test_rules_matching_none_of_the_values_are_a_warning_even_with_a_default():
+    contract = reference_contracts.reference_contract("singhealth_er130")
+    # Written for outlet names, read against the codes above them.
+    contract["fields"]["retailer"]["from_field"] = "store_code"
+
+    checks, _, _ = _run("singhealth_er130", "XEL.xlsx", singhealth_xlsx(), contract)
+
+    rules = _by_id(checks)["rules_retailer"]
+    assert (rules["level"], rules["passed"]) == ("warning", False)
+    assert "81001" in rules["message"]
+    assert mk.failures(checks) == []
+
+
+def test_headings_read_for_both_store_fields_need_no_row_above_and_feed_a_rule_on_either():
+    contract = reference_contracts.reference_contract("singhealth_er130")
+    contract["melt_groups"][0]["key"] = {"target": "store_code"}
+    contract["melt_groups"][0]["labels"] = [{"rows_above": 0, "target": "store_name"}]
+    contract["fields"]["retailer"]["from_field"] = "store_name"
+
+    checks, _, _ = _run("singhealth_er130", "XEL.xlsx", singhealth_xlsx(), contract)
+
+    assert mk.failures(checks) == []
+    assert not any(check["id"].startswith("labels_") for check in checks)
+    assert _by_id(checks)["rules_retailer"]["evidence"]["matched"] == ["ONLINE"]
+
+
+# ---- Product codes written over the column headings -----------------------------------
+
+def _products_per_column():
+    import pandas as pd
+
+    frame = pd.DataFrame([{"Month": "2026-08-14", "Store": "S1", "A1": "3", "B2": "5", "C3": "1"}])
+    contract = mapping_contract.validate_contract({
+        "version": 2,
+        "fields": {
+            "period_start": {"status": "mapped", "source": "Month", "transforms": [{"type": "month_start"}]},
+            "period_type": {"status": "constant", "value": "month"},
+            "retailer": {"status": "constant", "value": "acme_offline"},
+            "store_code": {"status": "mapped", "source": "Store"},
+            "sku": {"status": "mapped", "melt_group": "products", "transforms": [
+                {"type": "value_map", "values": {"A1": "13255043", "B2": "13255044", "C3": "99999999"}},
+            ]},
+            "quantity_units": {"status": "mapped", "melt_group": "products"},
+        },
+        "melt_groups": [{
+            "id": "products", "select": {"kind": "between", "after": "Store"},
+            "key": {"target": "sku"}, "value_target": "quantity_units",
+        }],
+    }, list(frame.columns), trust_review=True)
+    return frame, contract
+
+
+def test_product_codes_in_the_headings_are_listed_for_the_code_table():
+    frame, contract = _products_per_column()
+
+    codes = mk.sku_codes(frame, contract)
+
+    assert {item["code"]: item["sku"] for item in codes} == {"A1": "13255043", "B2": "13255044", "C3": "99999999"}
+
+
+def test_a_product_code_in_the_headings_that_is_not_a_master_sku_fails_the_check():
+    frame, contract = _products_per_column()
+
+    checks = _by_id(mk.run_checks(frame, {}, contract, "products.csv", MASTER))
+
+    assert checks["sku_codes"]["passed"] is False
+    assert [item["code"] for item in checks["sku_codes"]["evidence"]["unknown"]] == ["C3"]

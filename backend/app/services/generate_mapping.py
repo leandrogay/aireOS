@@ -35,6 +35,7 @@ from app.services.column_profile import (
     column_samples,
     detect_column_groups,
     fingerprint,
+    head_rows,
     header_template,
     layout_templates,
     legacy_fingerprint,
@@ -414,6 +415,9 @@ def resolve_mapping(filename: str, data: bytes, uploaded_to: str | None = None) 
         # confirmation, even if the user edits it in between.
         "raw_columns": columns,
         "column_samples": column_samples(frame),
+        # The first rows lined up by column, for the review's view of the top
+        # of the file (with layout's rows_above_header).
+        "head_rows": head_rows(frame),
         "column_profile": profile_columns(frame, layout),
         "layout": layout_summary(layout),
         "target_schema": TARGET_SCHEMA,
@@ -425,7 +429,7 @@ def resolve_mapping(filename: str, data: bytes, uploaded_to: str | None = None) 
         "attempts": proposal["attempts"],
         # Every product code in the file and what the code table makes of it,
         # for the review screen's code table.
-        "sku_codes": mapping_checks.sku_codes(frame, proposal["contract"]),
+        "sku_codes": mapping_checks.sku_codes(frame, proposal["contract"], layout),
         "example_file": uploaded_to,
         "source_filename": filename,
         "provider": proposal["provider"],

@@ -232,3 +232,70 @@ def test_prime_withdrawals_roll_up_to_one_row_per_outlet_and_sku_each_month():
     assert totals == {("106", "13255045"): 24, ("WLM", "13255044"): 32}
     assert set(result["retailer"]) == {"prime_offline"}
     assert set(result["period_start"]) == {pd.Timestamp("2026-08-01")}
+
+
+def test_one_outlet_heading_can_fill_both_the_store_code_and_the_store_name():
+    contract = copy.deepcopy(SINGHEALTH_ER130)
+    contract["melt_groups"][0]["key"] = {"target": "store_code"}
+    contract["melt_groups"][0]["labels"] = [{"rows_above": 0, "target": "store_name"}]
+    contract["fields"]["retailer"]["from_field"] = "store_code"
+
+    result = _transformed(contract, "XEL.xlsx", singhealth_xlsx())
+
+    assert set(zip(result["store_code"], result["store_name"])) == {("BEDOK", "BEDOK"), ("ONLINE", "ONLINE")}
+    assert set(result.loc[result["store_code"] == "ONLINE", "retailer"]) == {"singhealth_online"}
+
+
+# ---- Headings read for any descriptive field -----------------------------------------
+
+PRODUCTS_PER_COLUMN = {
+    "version": 2,
+    "fields": {
+        "period_start": {"status": "mapped", "source": "Month", "transforms": [{"type": "month_start"}]},
+        "period_type": {"status": "constant", "value": "month"},
+        "retailer": {"status": "constant", "value": "acme_offline"},
+        "store_code": {"status": "mapped", "source": "Store"},
+        "sku": {"status": "mapped", "melt_group": "products", "transforms": [
+            {"type": "value_map", "values": {"A1": "13255043", "B2": "13255044"}},
+        ]},
+        "quantity_units": {"status": "mapped", "melt_group": "products"},
+    },
+    "melt_groups": [{
+        "id": "products",
+        "select": {"kind": "between", "after": "Store"},
+        "key": {"target": "sku"},
+        "value_target": "quantity_units",
+    }],
+}
+
+
+def test_the_headings_can_also_fill_the_store_format_and_the_brand():
+    contract = copy.deepcopy(SINGHEALTH_ER130)
+    contract["melt_groups"][0]["labels"] = [
+        {"rows_above": 1, "target": "store_code"},
+        {"rows_above": 0, "target": "store_format"},
+        {"rows_above": 0, "target": "brand"},
+    ]
+    contract["fields"]["store_format"] = {"status": "mapped", "melt_group": "outlets"}
+    contract["fields"]["brand"] = {"status": "mapped", "melt_group": "outlets", "transforms": [
+        {"type": "rules", "rules": [{"op": "equals", "value": "ONLINE", "output": "web"}], "default": "shop"},
+    ]}
+
+    result = _transformed(contract, "XEL.xlsx", singhealth_xlsx())
+
+    assert set(zip(result["store_name"], result["store_format"], result["brand"])) == {
+        ("BEDOK", "BEDOK", "shop"), ("ONLINE", "ONLINE", "web"),
+    }
+
+
+def test_a_file_with_one_column_per_product_reads_its_product_codes_from_the_headings():
+    dataframe = pd.DataFrame([
+        {"Month": "2026-08-14", "Store": "S1", "A1": "3", "B2": "5"},
+        {"Month": "2026-08-20", "Store": "S2", "A1": "2", "B2": "0"},
+    ])
+
+    result = apply_contract.apply_contract(dataframe, _validated(PRODUCTS_PER_COLUMN, dataframe))
+
+    totals = result.groupby("sku")["quantity_units"].apply(lambda values: pd.to_numeric(values).sum()).to_dict()
+    assert totals == {"13255043": 5, "13255044": 5}
+    assert set(result["store_code"]) == {"S1", "S2"}

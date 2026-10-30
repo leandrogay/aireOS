@@ -4,6 +4,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
 from app.services import sql
+from app.services.name_lookalike import find_lookalike
 from app.services.settings import doh
 
 
@@ -39,6 +40,10 @@ class CustomerHasRetailersError(Exception):
 
 
 class RetailerOwnedError(Exception):
+    pass
+
+
+class SimilarNameError(Exception):
     pass
 
 
@@ -238,6 +243,56 @@ def _ensure_customer_name_free(
         )
 
 
+def ensure_no_lookalike(
+    conn: Connection,
+    names: list[str],
+    exclude_customer_id: int | None = None,
+) -> None:
+    """
+    Refuse a customer or retailer name that is a near miss of an existing one
+    ("sheng_shiong" next to "sheng_siong"), which would split one customer's
+    sales across two spellings. The customer being renamed, and its own
+    retailers, are left out so a typo can be corrected in place.
+    """
+    existing = conn.execute(
+        text(
+            """
+            SELECT customer_name AS name
+
+            FROM customers
+
+            WHERE customer_id IS DISTINCT FROM CAST(:exclude_id AS INTEGER)
+
+            UNION
+
+            SELECT retailer_name
+
+            FROM retailers
+
+            WHERE retailer_id NOT IN (
+                SELECT retailer_id
+
+                FROM customer_retailers
+
+                WHERE customer_id = CAST(:exclude_id AS INTEGER)
+            )
+            """
+        ),
+        {
+            "exclude_id": exclude_customer_id,
+        },
+    ).scalars().all()
+
+    for name in names:
+        other = find_lookalike(name, [*existing, *names])
+        if other:
+            raise SimilarNameError(
+                f'"{name}" looks like "{other}", which already exists. '
+                "Use that name, or correct the spelling, so the same "
+                "customer is not created twice."
+            )
+
+
 def _attach_retailer(
     conn: Connection,
     customer_id: int,
@@ -370,6 +425,10 @@ def create_customer(
             conn,
             customer.customer_name,
         )
+        ensure_no_lookalike(
+            conn,
+            [customer.customer_name, *getattr(customer, "retailer_names", [])],
+        )
 
         customer_id = conn.execute(
             text(
@@ -435,6 +494,11 @@ def update_customer(
         _ensure_customer_name_free(
             conn,
             customer.customer_name,
+            exclude_customer_id=customer_id,
+        )
+        ensure_no_lookalike(
+            conn,
+            [customer.customer_name],
             exclude_customer_id=customer_id,
         )
 

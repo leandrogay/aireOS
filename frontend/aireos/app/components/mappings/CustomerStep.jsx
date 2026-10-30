@@ -12,6 +12,7 @@ import { PROPOSER } from '@/app/utils/mappingReview';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
+import ChannelSplit from './ChannelSplit';
 import ResetButton from './ResetButton';
 
 const smallButton = 'h-7 border-deep-violet-blue/30 bg-white px-2 text-xs text-deep-violet-blue hover:bg-cream';
@@ -120,7 +121,12 @@ function decisionText(decision, outputs) {
   if (decision.status === 'constant') {
     return { short: 'One retailer for every row', long: 'Every row of the file is written to the same retailer.' };
   }
-  const from = decision.kind === 'column' ? `column “${decision.column}”` : 'another field';
+  const from =
+    decision.kind === 'column'
+      ? `column “${decision.column}”`
+      : decision.kind === 'headings'
+        ? 'the column headings'
+        : 'another field';
   if (!outputs) {
     return {
       short: `From ${from}`,
@@ -153,7 +159,10 @@ function decisionText(decision, outputs) {
  *   statuses: object[],
  *   onFixRetailer: (item: object) => Promise<void>,
  *   onSetRetailerChoice: (key: string, retailerName: string) => void,
- *   onSetConstant: (retailerName: string) => void,
+ *   onApplyRetailer: (decision: object) => void,
+ *   mapping: object,
+ *   state: object,
+ *   layout: object,
  *   retailerChanged: boolean,
  *   onResetRetailer: () => void,
  *   disabled: boolean,
@@ -175,20 +184,20 @@ export default function CustomerStep({
   statuses,
   onFixRetailer,
   onSetRetailerChoice,
-  onSetConstant,
+  onApplyRetailer,
+  mapping,
+  state,
+  layout,
   retailerChanged,
   onResetRetailer,
   disabled,
 }) {
   const retailers = customer?.retailers || [];
-  const isConstant = decision.status === 'constant';
   // One line per rule, code or constant, when the mapping writes the retailer
   // that way; otherwise one line per retailer it writes (a column read as it is).
   const choices = canRenameOutputs(decision) ? retailerChoices(decision) : [];
   const statusOf = (retailerName) =>
     statuses.find((item) => item.name === retailerName) || { name: retailerName, status: null };
-  // Sending every row to one retailer replaces whatever writes it now.
-  const offerConstant = Boolean(customer) && retailers.length > 0 && !isConstant;
   const where = decisionText(decision, outputs);
 
   // Said under the customer only when there is something to say.
@@ -315,23 +324,25 @@ export default function CustomerStep({
 
         {customer && !retailers.length && (
           <p className="mt-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900">
-            {retailerLabel(customer.customer_name)} has no retailers yet.
+            {retailerLabel(customer.customer_name)} has no retailers yet. Choose how rows split below, then add the
+            retailers it needs.
           </p>
         )}
 
-        {offerConstant && (
-          <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-deep-violet-blue">
-            <span>Or send every row to</span>
-            <SelectDropdown
-              value=""
-              onChange={onSetConstant}
-              size="sm"
-              placeholder="Choose a retailer…"
-              ariaLabel="Send every row to one retailer"
+        {customer && (
+          <div className="mt-2">
+            {/* Remounted when the decision or customer changes, so it starts
+                from what the mapping does now. */}
+            <ChannelSplit
+              key={`${customer.customer_id}:${JSON.stringify(decision.transforms)}:${decision.value ?? ''}:${decision.kind}`}
+              customer={customer}
+              decision={decision}
+              outputs={outputs}
+              mapping={mapping}
+              state={state}
+              layout={layout}
+              onApply={onApplyRetailer}
               disabled={disabled}
-              className="w-auto"
-              triggerClassName="font-mono"
-              options={retailers.map((retailer) => ({ value: retailer.retailer_name, label: retailer.retailer_name }))}
             />
           </div>
         )}

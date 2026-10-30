@@ -285,8 +285,8 @@ def test_a_label_cannot_fill_the_field_its_key_fills():
     assert any("label" in w for w in contract["warnings"])
 
 
-def test_a_label_needs_a_row_above_the_header():
-    group = {**OUTLETS, "labels": [{"rows_above": 0, "target": "store_code"}]}
+def test_a_label_needs_a_whole_number_of_rows_above_the_header():
+    group = {**OUTLETS, "labels": [{"rows_above": "1", "target": "store_code"}]}
 
     contract = _validate_outlets(_outlet_contract(group))
 
@@ -553,3 +553,35 @@ def test_a_retailer_not_in_the_file_writes_nothing():
     contract = _contract(retailer={"status": "not_available", "reason": "no retailer"})
 
     assert mc.retailer_outputs(contract) == []
+
+
+def test_a_label_of_zero_rows_above_reads_the_headings_again():
+    group = {**OUTLETS, "key": {"target": "store_code"}, "labels": [{"rows_above": 0, "target": "store_name"}]}
+
+    contract = _validate_outlets(_outlet_contract(group))
+
+    assert contract["warnings"] == []
+    assert contract["melt_groups"][0]["labels"] == [{"rows_above": 0, "target": "store_name"}]
+
+
+def test_a_label_cannot_read_a_negative_number_of_rows_above():
+    group = {**OUTLETS, "labels": [{"rows_above": -1, "target": "store_code"}]}
+
+    assert _validate_outlets(_outlet_contract(group))["melt_groups"] == []
+
+
+def test_a_retailer_read_from_the_headings_writes_the_headings():
+    group = {**OUTLETS, "key": {"target": "retailer"}, "labels": []}
+    contract = _validate_outlets(_outlet_contract(group, retailer={"status": "mapped", "melt_group": "outlets"}))
+
+    assert mc.retailer_outputs(contract, columns=OUTLET_COLUMNS) == ["BEDOK", "ONLINE"]
+    # Without the file's headings it cannot be told, rather than "nothing".
+    assert mc.retailer_outputs(contract) is None
+
+
+def test_a_retailer_read_from_the_cells_above_the_headings_writes_those_cells():
+    group = {**OUTLETS, "labels": [{"rows_above": 1, "target": "retailer"}]}
+    contract = _validate_outlets(_outlet_contract(group, retailer={"status": "mapped", "melt_group": "outlets"}))
+    layout = {"header_row": 2, "rows_above_header": [{"row": 1, "cells": {"BEDOK": "81001", "ONLINE": "88001"}}]}
+
+    assert mc.retailer_outputs(contract, columns=OUTLET_COLUMNS, layout=layout) == ["81001", "88001"]

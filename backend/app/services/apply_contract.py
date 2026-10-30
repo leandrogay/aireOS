@@ -274,6 +274,10 @@ def _labels(group: dict, layout: dict | None, columns: list[str]) -> dict[str, d
     header_row = int((layout or {}).get("header_row") or 1)
     above = {item["row"]: item["cells"] for item in (layout or {}).get("rows_above_header") or []}
     for label in group.get("labels") or []:
+        # No rows above: the header itself, read for a second field.
+        if label["rows_above"] == 0:
+            labels[label["target"]] = {column: column for column in columns}
+            continue
         row = header_row - label["rows_above"]
         cells = above.get(row) or {}
         missing = [column for column in columns if column not in cells]

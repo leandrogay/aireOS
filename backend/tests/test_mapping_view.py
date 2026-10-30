@@ -278,3 +278,19 @@ def test_the_packet_says_which_model_proposed_the_mapping():
     assert packet["proposedBy"] == {"provider": "gemini", "model": "gemini-3.8-flash"}
     # A mapping written before this was recorded has no model to name.
     assert mv.envelope_to_packet("fp", ENVELOPE, "pending")["proposedBy"] == {"provider": None, "model": None}
+
+
+def test_the_packet_carries_the_first_rows_of_the_file_lined_up_by_column():
+    packet = mv.envelope_to_packet("abc123", {**ENVELOPE, "head_rows": [["13255043", "AIRE", None]]}, "pending")
+
+    assert packet["headRows"] == [["13255043", "AIRE", None]]
+    assert mv.envelope_to_packet("abc123", ENVELOPE, "pending")["headRows"] == []
+
+
+def test_the_packet_carries_each_columns_distinct_values_and_how_many_there_are():
+    profile = {"Store Format": {"values": ["FPON", "HYPER", "SUPER"], "distinct": 3}}
+
+    packet = mv.envelope_to_packet("abc123", {**ENVELOPE, "column_profile": profile}, "pending")
+
+    assert packet["columnValues"] == {"Store Format": {"values": ["FPON", "HYPER", "SUPER"], "distinct": 3}}
+    assert mv.envelope_to_packet("abc123", ENVELOPE, "pending")["columnValues"] == {}

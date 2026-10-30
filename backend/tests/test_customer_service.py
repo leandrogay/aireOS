@@ -24,10 +24,12 @@ def _retailer(in_use=False):
     }
 
 
-def _respond(customer=None, name_taken=False, unlinked=()):
+def _respond(customer=None, name_taken=False, unlinked=(), existing_names=()):
     """Answers each statement customer_service sends, by its distinctive SQL."""
 
     def respond(sql, params):
+        if "UNION" in sql:
+            return [(name,) for name in existing_names]
         if "lower(customer_name)" in sql:
             return [(name_taken,)]
         if "FROM customers c" in sql:
@@ -158,6 +160,64 @@ def test_a_retailer_another_customer_owns_raises_without_linking_it(monkeypatch)
         customer_service.create_customer(CustomerCreate(customer_name="giant", retailer_names=["giant_offline"]))
 
     assert conn.sql_containing("INSERT INTO customer_retailers") == []
+
+
+def test_a_misspelt_copy_of_an_existing_customer_raises_without_inserting(monkeypatch):
+    conn = FakeConnection(_respond(existing_names=["sheng_siong", "sheng_siong_offline"]))
+    _install(monkeypatch, conn)
+
+    with pytest.raises(customer_service.SimilarNameError, match='"sheng_shiong" looks like "sheng_siong"'):
+        customer_service.create_customer(CustomerCreate(customer_name="Sheng Shiong"))
+
+    assert conn.sql_containing("INSERT INTO customers") == []
+
+
+def test_retailers_that_look_like_existing_ones_raise_without_inserting(monkeypatch):
+    conn = FakeConnection(_respond(existing_names=["sheng_siong_offline"]))
+    _install(monkeypatch, conn)
+
+    with pytest.raises(customer_service.SimilarNameError, match="sheng_siong_offline"):
+        customer_service.create_customer(
+            CustomerCreate(customer_name="Singapore Post", retailer_names=["sheng_shiong_offline"])
+        )
+
+    assert conn.sql_containing("INSERT INTO customers") == []
+
+
+def test_a_customers_own_channels_are_not_lookalikes_of_each_other(monkeypatch):
+    conn = FakeConnection(_respond_with_retailers({}))
+    _install(monkeypatch, conn)
+
+    customer_service.create_customer(
+        CustomerCreate(customer_name="Sheng Siong", retailer_names=["sheng_siong_offline", "sheng_siong_online"])
+    )
+
+    assert len(conn.sql_containing("INSERT INTO retailers")) == 2
+
+
+def test_two_spellings_in_one_request_raise(monkeypatch):
+    conn = FakeConnection(_respond())
+    _install(monkeypatch, conn)
+
+    with pytest.raises(customer_service.SimilarNameError):
+        customer_service.create_customer(
+            CustomerCreate(
+                customer_name="Sheng Siong",
+                retailer_names=["sheng_siong_offline", "sheng_shiong_online"],
+            )
+        )
+
+    assert conn.sql_containing("INSERT INTO customers") == []
+
+
+def test_renaming_a_customer_leaves_its_own_retailers_out_of_the_comparison(monkeypatch):
+    conn = FakeConnection(_respond(customer=_customer()))
+    _install(monkeypatch, conn)
+
+    customer_service.update_customer(3, CustomerUpdate(customer_name="Sheng Siong"))
+
+    _, params = conn.sql_containing("UNION")[0]
+    assert params == {"exclude_id": 3}
 
 
 # ---- read one ------------------------------------------------------------------

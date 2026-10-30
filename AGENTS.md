@@ -57,6 +57,8 @@ aireOS/
 │   │       │                      writes for the Customers page (always under a customer, blocked once it has stores)
 │   │       ├── customer_service.py customers CRUD + list_customers (customers with nested retailers, in_use flags,
 │   │       │                      unlinked retailers); a record with data can't be renamed/deleted (looked up by name)
+│   │       ├── name_lookalike.py  PURE: flags a customer/retailer name that is a typo of an existing one (sheng_shiong vs
+│   │       │                      sheng_siong); used by customer_service.ensure_no_lookalike → 409 SimilarNameError
 │   │       ├── promotion_service.py promotions + promotion_stores + promotion_skus, raw SQL, one txn per write
 │   │       ├── ingestion_service.py upload-run audit + append-only sell-out versions; atomically rolls back bad uploads
 │   │       ├── sellout_service.py Cloud SQL `sellout`: ingestion writes, plus the Sales Dashboard reads (SKU ranking,
@@ -352,6 +354,9 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | `CustomerCreate.retailer_names` (`customer_service._attach_retailer`: links a retailer an upload made, 409 for another customer's) | `NewCustomerDialog.jsx` |
 | `customer_service.list_customers` keys (`customers[].retailers[]`, `in_use`, `unlinked_retailers`), retailer writes' `{ retailer, customer }` | `useCustomers.js`, `components/customers/*` |
 | `schemas.catalog.normalise_name` slug rule, `in_use` rules | `customerForm.js` (`normaliseName`, `*BlockReason`) |
+| Contract vocabulary: `mapping_contract` statuses, `TRANSFORM_TYPES`, `RULE_OPS`, `MELT_KEY_TARGETS`/`LABEL_TARGETS` (melt-group `labels`; `rows_above: 0` = the headings again, so any descriptive field (`HEADING_FIELDS`) can read them), `from_layout: "stated_period"` | `utils/fieldDecision.js` (`fieldMethods`, `currentDecision`, `decisionEntry`, `withFieldDecision`), `utils/transformSteps.js` (`STEP_TYPES`, `RULE_OPS`), `FieldEditorDialog.jsx` |
+| `mappings.ContractSettings` (`instructions.aggregate`, `instructions.data_source` on preview/confirm); packet `instructions`, `headRows`; preview `layout`, `head_rows`, `preview_error` | `useMappingEdits` (`instructionsPayload`), `FileSettings.jsx`, `FileTop.jsx`, `MappingReviewPanel.jsx`, `mappingApi.previewMapping/confirmMapping` |
+| Retailer = `{customer}_online` / `{customer}_offline` (`sellout_service._retailer_for`); `mapping_contract.retailer_outputs` (incl. retailers read off headings, given `columns`/`layout`); packet `columnValues` | `utils/retailerSplit.js` (`splitDecision`, `withCustomerChannels`), `ChannelSplit.jsx`, `mappingCustomer.retailerDecision` |
 | `HTTPException.detail` shapes | `parseApiError()` |
 
 When you change the left column, grep the right column in the same PR.

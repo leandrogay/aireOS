@@ -78,7 +78,9 @@ export async function listMappings(baseUrl, { signal, onLog } = {}) {
 // API CALL
 // POST /api/mappings/:fingerprint/confirm
 // Approves a mapping and saves it for reuse. Body takes { rules } (what the
-// review screen edits), and { name, customer_id }, which are required the
+// review screen edits), { instructions } ({ aggregate, data_source }: the
+// file-wide settings the reviewer changed; left out, kept as stored), and
+// { name, customer_id }, which are required the
 // first time a mapping is approved. Every retailer the rules write to must
 // belong to that customer, or the answer is a 422 naming them.
 // ========================================
@@ -120,7 +122,9 @@ export async function lookupMapping(baseUrl, fingerprint, onLog) {
 // API CALL
 // POST /api/mappings/:fingerprint/preview
 // Runs the mapping's example file through a set of rules and returns a few
-// output rows. Pass the edited rules to see a change before approving it.
+// output rows, its checks, the example file's layout and first rows
+// (`layout`, `head_rows`), and `preview_error` when the rules cannot run.
+// Pass the edited { rules, instructions } to see a change before approving it.
 // ========================================
 export async function previewMapping(baseUrl, fingerprint, body, onLog) {
   return request(baseUrl, `/api/mappings/${encodeURIComponent(fingerprint)}/preview`, {

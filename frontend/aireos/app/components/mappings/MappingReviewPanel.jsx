@@ -26,7 +26,10 @@ import { cn } from '@/lib/utils';
 import ApprovedSummary from './ApprovedSummary';
 import ConfirmDiscardDialog from './ConfirmDiscardDialog';
 import CustomerStep from './CustomerStep';
+import FieldEditorDialog from './FieldEditorDialog';
 import FieldTable from './FieldTable';
+import FileSettings from './FileSettings';
+import FileTop from './FileTop';
 import MappingChecks from './MappingChecks';
 import NewCustomerDialog from './NewCustomerDialog';
 import OutputPreview from './OutputPreview';
@@ -39,6 +42,19 @@ import UnusedColumns from './UnusedColumns';
 
 const done = (items, ids) => items.filter((item) => ids.includes(item.id)).every((item) => item.done);
 
+// The fields worth reading in a test's sample rows: where each row is, which
+// product, and the figures -- the ones a reviewer is checking the mapping for.
+const PREVIEW_FIELDS = [
+  'period_start',
+  'period_type',
+  'retailer',
+  'store_code',
+  'store_name',
+  'sku',
+  'quantity_units',
+  'revenue',
+];
+
 /**
  * The human-in-the-loop review of one mapping, as numbered steps in the
  * order a reviewer works -- whose file it is, where each field comes from,
@@ -47,9 +63,9 @@ const done = (items, ids) => items.filter((item) => ids.includes(item.id)).every
  *
  * @param {{
  *   mapping: object,
- *   onApprove: (payload: { rules: object[], name: string, customer_id: number }) => Promise<object>,
+ *   onApprove: (payload: { rules: object[], instructions: object, name: string, customer_id: number }) => Promise<object>,
  *   onDiscard?: () => Promise<void>,
- *   onPreview: (rules: object[]) => Promise<object>,
+ *   onPreview: (payload: { rules: object[], instructions: object }) => Promise<object>,
  * }} props
  */
 export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPreview }) {
@@ -70,8 +86,10 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
   // The step whose Reset is waiting on "are you sure?": 'fields' | 'products' | null.
   const [confirmingReset, setConfirmingReset] = useState(null);
   const [discardError, setDiscardError] = useState('');
+  // The field whose editor is open (its coverage entry), or null.
+  const [editing, setEditing] = useState(null);
 
-  const decision = retailerDecision(mapping, edits.rows, edits.fieldEdits);
+  const decision = retailerDecision(mapping, edits.rows, edits.fieldEdits, edits.groups);
   const outputs = retailerOutputs(decision);
 
   // The starting customer is settled once, when the list arrives: the one the
@@ -98,10 +116,15 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
 
   // Checks are the proposal's until the reviewer runs them, and go stale the
   // moment the rules differ from the ones they ran on.
-  const rulesKey = JSON.stringify(edits.rules);
+  const rulesKey = JSON.stringify({ rules: edits.rules, instructions: edits.instructionsPayload });
   const checks = preview ? preview.checks : mapping.checks;
   const stale = preview ? preview.rulesKey !== rulesKey : edits.changed;
   const failed = checkSummary(checks).failed;
+
+  // Where the data sits in the example file, as last read: a test reads it
+  // again, which fills in what a proposal stored before it was kept.
+  const layout = preview?.layout || mapping.layout || {};
+  const headRows = preview?.head_rows?.length ? preview.head_rows : mapping.headRows || [];
 
   const changed =
     edits.changed || name.trim() !== (mapping.name || '') || (customer?.customer_id ?? null) !== (mapping.customerId ?? null);
@@ -149,7 +172,7 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
     setBusy('preview');
     setPreviewError('');
     try {
-      setPreview({ ...(await onPreview(edits.rules)), rulesKey });
+      setPreview({ ...(await onPreview({ rules: edits.rules, instructions: edits.instructionsPayload })), rulesKey });
     } catch (error) {
       setPreview(null);
       setPreviewError(error.message);
@@ -162,7 +185,14 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
     setBusy('approve');
     setMessage('');
     try {
-      setApproved(await onApprove({ rules: edits.rules, name: name.trim(), customer_id: customer.customer_id }));
+      setApproved(
+        await onApprove({
+          rules: edits.rules,
+          instructions: edits.instructionsPayload,
+          name: name.trim(),
+          customer_id: customer.customer_id,
+        }),
+      );
     } catch (error) {
       setMessage(error.message);
     } finally {
@@ -247,7 +277,10 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
               statuses={statuses}
               onFixRetailer={fixRetailer}
               onSetRetailerChoice={edits.setRetailerChoice}
-              onSetConstant={edits.setRetailerConstant}
+              onApplyRetailer={(retailer) => edits.setFieldDecision('retailer', retailer)}
+              mapping={mapping}
+              state={edits.state}
+              layout={layout}
               retailerChanged={edits.retailerChanged}
               onResetRetailer={edits.resetRetailer}
               disabled={disabled}
@@ -258,7 +291,7 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
             id={SECTION_IDS.fields}
             step={stepOf(SECTION_IDS.fields)}
             title="Where each field comes from"
-            info={`Change a field by choosing another column — or, for Units sold and Sales value, a group of period or outlet columns. Medium and Low confidence fields are marked; confirm the Low ones with “Looks right”. An unmarked field passed the checks, but is still worth a glance. Each field's ⓘ has its details.`}
+            info={`Change a field by choosing another column — or, for Units sold and Sales value, a group of period or outlet columns. Edit offers every other way: the headings or a row above them, the period in the title, units × a price, a fixed value, worked out from another field, and steps on the value. Medium and Low confidence fields are marked; confirm the Low ones with “Looks right”. Each field's ⓘ has its details.`}
             done={done(items, ['required', 'confirm', 'duplicates'])}
             action={
               canResetFields && (
@@ -283,6 +316,7 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
               onConfirm={edits.confirmField}
               onUndo={edits.undoConfirm}
               onGroupSettingsChange={edits.changeGroupSettings}
+              onEdit={setEditing}
               canResetField={(field) => edits.canResetFields([field])}
               onResetField={(field) => edits.resetFields([field])}
               disabled={disabled}
@@ -295,6 +329,14 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
               openFields={openFields}
               onAssign={edits.assignColumn}
               onChooseGroup={edits.chooseGroup}
+              disabled={disabled}
+            />
+            <FileTop columns={mapping.columns || []} layout={layout} headRows={headRows} />
+            <FileSettings
+              instructions={edits.instructions}
+              changed={edits.instructionsChanged}
+              onChange={edits.setInstruction}
+              onReset={edits.resetInstructions}
               disabled={disabled}
             />
           </ReviewSection>
@@ -363,6 +405,11 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
                 You&apos;ve changed the mapping since these results. Test your changes to see what they do.
               </p>
             )}
+            {preview?.preview_error && (
+              <p role="alert" className="mb-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+                No sample rows: {preview.preview_error}
+              </p>
+            )}
             <MappingChecks checks={checks} stale={stale} />
 
             {/* Only once a run has rows to show -- an empty fold is a click
@@ -370,7 +417,7 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
             {preview?.preview?.length > 0 && (
               <Disclosure open className="mt-2 rounded-md border border-lavander" summary="Sample sales rows">
                 <div className="border-t border-lavander p-2">
-                  <OutputPreview preview={preview} />
+                  <OutputPreview preview={preview} fields={PREVIEW_FIELDS} />
                 </div>
               </Disclosure>
             )}
@@ -415,6 +462,18 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
         tone="default"
         onConfirm={confirmReset}
         onCancel={() => setConfirmingReset(null)}
+      />
+
+      <FieldEditorDialog
+        entry={editing}
+        mapping={mapping}
+        state={edits.state}
+        layout={layout}
+        onApply={(field, decision) => {
+          edits.setFieldDecision(field, decision);
+          setEditing(null);
+        }}
+        onClose={() => setEditing(null)}
       />
 
       <ConfirmDiscardDialog

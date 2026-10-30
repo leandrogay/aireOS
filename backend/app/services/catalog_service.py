@@ -132,6 +132,45 @@ def get_or_create_retailers(
     }
 
 
+def unowned_retailer_names(
+    conn: Connection,
+    retailer_names: list[str],
+) -> list[str]:
+    """
+    The names that are not a retailer linked to a customer. A sell-out upload
+    must write to a customer's retailers: one that creates its own would
+    carry a spelling nobody reviewed, and the dashboard (which finds sales
+    through the customer) would never show it.
+    """
+
+    names = list(dict.fromkeys(retailer_names))
+
+    if not names:
+        return []
+
+    owned = set(
+        conn.execute(
+            text(
+                """
+                SELECT r.retailer_name
+
+                FROM retailers r
+
+                JOIN customer_retailers cr
+                    ON cr.retailer_id = r.retailer_id
+
+                WHERE r.retailer_name = ANY(CAST(:retailer_names AS text[]))
+                """
+            ),
+            {
+                "retailer_names": names,
+            },
+        ).scalars().all()
+    )
+
+    return [name for name in names if name not in owned]
+
+
 def _fetch_retailer(
     conn: Connection,
     retailer_id: int,
@@ -277,6 +316,10 @@ def create_retailer(
         _ensure_retailer_name_free(
             conn,
             retailer.retailer_name,
+        )
+        customer_service.ensure_no_lookalike(
+            conn,
+            [retailer.retailer_name],
         )
 
         retailer_id = conn.execute(
@@ -450,6 +493,11 @@ def link_retailer(
             raise RetailerAlreadyLinkedError(
                 f'"{current["retailer_name"]}" already belongs to a customer.'
             )
+
+        customer_service.ensure_no_lookalike(
+            conn,
+            [current["retailer_name"]],
+        )
 
         _link_to_customer(
             conn,

@@ -56,7 +56,7 @@ def envelope_for(key: str, path: Path) -> dict:
         "contract": contract,
         "proposal": contract,
         "checks": checks,
-        "sku_codes": mapping_checks.sku_codes(frame, contract),
+        "sku_codes": mapping_checks.sku_codes(frame, contract, layout),
         "source_filename": path.name,
         "model": "reference contract",
         "name": entry["name"],

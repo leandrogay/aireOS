@@ -17,6 +17,7 @@ mappings confirmed before the expanded contract format was introduced.
 
 import asyncio
 import datetime
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -26,12 +27,25 @@ from app.services import storage
 from app.services import generate_mapping
 from app.services import mapping_view
 from app.services import apply_contract as contract_application
-from app.services import layout_detection, mapping_checks, mapping_contract
+from app.services import column_profile, layout_detection, mapping_checks, mapping_contract
 from app.services import customer_service
+from app.services import sellout_ingestion
 from app.services import notification_service
 from app.services import upload_loading
 
 router = APIRouter(prefix="/api/mappings", tags=["mappings"])
+
+
+class ContractSettings(BaseModel):
+    """
+    The contract-wide instructions a reviewer may change besides its fields.
+    Left out (None), each is kept as the stored contract has it.
+    """
+
+    # Roll rows up to one per store, SKU and calendar month.
+    aggregate: bool | None = None
+    # mapping_contract.DATA_SOURCES: sell-out, or a promotion claim statement.
+    data_source: Literal["aireos_upload", "promo_claim"] | None = None
 
 
 class ConfirmRequest(BaseModel):
@@ -48,6 +62,7 @@ class ConfirmRequest(BaseModel):
     # leaves them as they were.
     name: str | None = Field(default=None, max_length=120)
     customer_id: int | None = Field(default=None, gt=0)
+    instructions: ContractSettings | None = None
 
 
 class PreviewRequest(BaseModel):
@@ -55,6 +70,7 @@ class PreviewRequest(BaseModel):
 
     rules: list[dict] | None = None
     contract: dict | None = None
+    instructions: ContractSettings | None = None
     limit: int = Field(default=5, ge=1, le=25)
 
 
@@ -71,22 +87,35 @@ def _load_envelope(fingerprint: str):
     return None, None
 
 
-def _proposed_contract(envelope: dict, rules: list[dict] | None, contract: dict | None) -> dict:
+def _proposed_contract(
+    envelope: dict,
+    rules: list[dict] | None,
+    contract: dict | None,
+    instructions: ContractSettings | None = None,
+) -> dict:
     """
     The contract a request asks for: rebuilt from the review screen's rules,
     sent whole, or the stored one. Rules carry fields, not the contract-wide
-    instructions, so those are kept from the stored contract: where the data
-    sits, whether rows roll up, and what kind of data it is (decision D8).
+    instructions, so those are kept from the stored contract -- where the data
+    sits, whether rows roll up, and what kind of data it is (decision D8) --
+    unless the reviewer changed the roll-up or the data type (`instructions`).
     """
     stored = mapping_contract.upgrade(envelope.get("contract") or {})
     if rules is not None:
         proposed = mapping_view.rules_to_contract(rules)
         for key in ("layout", "aggregate", "data_source"):
             proposed[key] = stored.get(key)
-        return proposed
-    if contract is not None:
+    elif contract is not None:
         return contract
-    return envelope.get("contract") or {}
+    else:
+        proposed = dict(envelope.get("contract") or {})
+
+    if instructions is not None:
+        if instructions.aggregate is not None:
+            proposed["aggregate"] = mapping_contract.monthly_aggregate() if instructions.aggregate else None
+        if instructions.data_source is not None:
+            proposed["data_source"] = instructions.data_source
+    return proposed
 
 
 def _replacement_example(fingerprint: str) -> tuple[str, bytes] | None:
@@ -131,7 +160,10 @@ def _foreign_retailers(contract: dict, customer: dict, envelope: dict) -> list[s
     dashboard -- which finds sales through the customer -- never shows them.
     """
     outputs = mapping_contract.retailer_outputs(
-        contract, samples=mapping_view.validation_values(envelope)
+        contract,
+        samples=mapping_view.validation_values(envelope),
+        columns=envelope.get("raw_columns") or [],
+        layout=envelope.get("layout"),
     )
     own = {retailer["retailer_name"] for retailer in customer.get("retailers") or []}
     return [name for name in outputs or [] if name not in own]
@@ -227,7 +259,7 @@ async def preview_mapping(fingerprint: str, body: PreviewRequest):
             detail="This mapping has no example file stored, so it cannot be previewed.",
         )
 
-    proposed = _proposed_contract(envelope, body.rules, body.contract)
+    proposed = _proposed_contract(envelope, body.rules, body.contract, body.instructions)
 
     def build() -> dict:
         filename, data, frame, layout = _example_table(envelope, fingerprint)
@@ -247,23 +279,32 @@ async def preview_mapping(fingerprint: str, body: PreviewRequest):
             "preview": [],
             "checks": checks,
             "warnings": validated["warnings"],
-            "sku_codes": mapping_checks.sku_codes(frame, validated),
+            "sku_codes": mapping_checks.sku_codes(frame, validated, layout),
+            # The example file as read now: the cells above its header, the
+            # period its title states and its first rows, for a proposal
+            # stored before those were kept with it.
+            "layout": generate_mapping.layout_summary(layout),
+            "head_rows": column_profile.head_rows(frame),
+            # Why no sample rows could be made, when the rules cannot run.
+            "preview_error": None,
         }
 
-        # Unsafe rules still return their structured checks to the reviewer;
-        # they are not executed merely to produce a preview.
-        if mapping_checks.failures(checks):
-            return result
-
+        # Sample rows are made even while checks fail -- nothing is stored, and
+        # seeing what the rules do is how the reviewer finds what to fix.
+        # Approval still holds the checks as a gate.
         executable = validated
         if not mapping_contract.is_v2(envelope.get("contract")):
             executable = mapping_contract.downgrade(validated)
         if executable is not None:
-            mapped = sellout_ingestion.transform_confirmed_upload(
-                filename,
-                data,
-                executable,
-            )
+            try:
+                mapped = sellout_ingestion.transform_confirmed_upload(
+                    filename,
+                    data,
+                    executable,
+                )
+            except contract_application.ContractApplicationError as exc:
+                result["preview_error"] = str(exc)
+                return result
             target_columns = [
                 column
                 for column in envelope.get("target_schema", generate_mapping.TARGET_SCHEMA)
@@ -337,7 +378,7 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
     # Written as the vendor too: upload history and older screens read it.
     vendor = customer["customer_name"]
 
-    proposed = _proposed_contract(pending, body.rules, body.contract)
+    proposed = _proposed_contract(pending, body.rules, body.contract, body.instructions)
 
     contract = generate_mapping.validate_contract(
         proposed,

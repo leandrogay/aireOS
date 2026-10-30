@@ -361,6 +361,16 @@ def profile_columns(frame: pd.DataFrame, layout: dict | None = None) -> dict[str
     return profile
 
 
+def head_rows(frame: pd.DataFrame, limit: int = 5) -> list[list[str | None]]:
+    """
+    The first data rows as they sit in the file, one list per row in column
+    order, for the review screen's view of the top of the file. Unlike
+    column_samples the values stay lined up, so a row reads across.
+    """
+    head = frame.head(limit).astype(object)
+    return [[None if pd.isna(value) else str(value) for value in row] for row in head.itertuples(index=False)]
+
+
 def column_samples(frame: pd.DataFrame, limit: int = 5) -> dict[str, list[str]]:
     """
     A few real values per source column, for the review screen.

@@ -172,6 +172,20 @@ def test_a_taken_customer_name_is_409_with_the_message(monkeypatch):
     assert response.json()["detail"] == 'A customer named "giant" already exists.'
 
 
+def test_a_lookalike_customer_name_is_409_with_the_message(monkeypatch):
+    message = '"sheng_shiong" looks like "sheng_siong", which already exists.'
+    monkeypatch.setattr(
+        customer_service,
+        "create_customer",
+        _raises(customer_service.SimilarNameError(message)),
+    )
+
+    response = client.post("/api/catalog/customers", json={"customer_name": "Sheng Shiong"})
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == message
+
+
 def test_create_customer_sends_the_retailer_slugs(monkeypatch):
     seen = {}
 

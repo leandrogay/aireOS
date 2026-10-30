@@ -2,6 +2,7 @@ import datetime
 from unittest.mock import MagicMock
 
 import pandas as pd
+import pytest
 
 from app.services import sellout_service
 
@@ -46,14 +47,19 @@ def _dataframe():
     )
 
 
-def _fake_database():
+def _fake_database(unowned=()):
     engine = MagicMock()
     connection = engine.begin.return_value.__enter__.return_value
 
     def execute(statement, parameters=None):
         result = MagicMock()
         sql = str(statement)
-        if "RETURNING" in sql and "retailer_name" in sql:
+        if "customer_retailers" in sql:
+            owned = [
+                name for name in parameters["retailer_names"] if name not in unowned
+            ]
+            result.scalars.return_value.all.return_value = owned
+        elif "RETURNING" in sql and "retailer_name" in sql:
             result.all.return_value = [("fairprice_offline", 7)]
         elif "RETURNING" in sql and "store_code" in sql:
             result.all.return_value = [(7, "420", 42)]
@@ -100,6 +106,16 @@ def test_load_clean_rows_reuses_master_rows_and_upserts_each_fact():
         fact["data_source"] == "aireos_upload" for fact in fact_call.args[1]
     )
     assert not any("DELETE FROM sellout" in sql for sql in sql_calls)
+
+
+def test_a_retailer_no_customer_owns_is_rejected_without_writing_anything():
+    engine, connection = _fake_database(unowned={"fairprice_offline"})
+
+    with pytest.raises(sellout_service.SelloutLoadError, match="No customer owns fairprice_offline"):
+        sellout_service.load_clean_rows(_dataframe(), engine=engine)
+
+    sql_calls = [str(call.args[0]) for call in connection.execute.call_args_list]
+    assert not any("INSERT INTO" in sql for sql in sql_calls)
 
 
 def test_master_references_delegate_to_shared_catalog_helpers(monkeypatch):

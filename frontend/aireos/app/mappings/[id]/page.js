@@ -55,7 +55,7 @@ export default function MappingReviewPage() {
   }, [baseUrl, id]);
 
   const handlePreview = useCallback(
-    (rules) => previewMapping(baseUrl, id, { rules }),
+    ({ rules, instructions }) => previewMapping(baseUrl, id, { rules, instructions }),
     [baseUrl, id],
   );
 
@@ -63,7 +63,7 @@ export default function MappingReviewPage() {
   // were re-stamped — so the response is handed back rather than swallowed by
   // a redirect.
   const handleApprove = useCallback(
-    ({ rules, name, customer_id }) => confirmMapping(baseUrl, id, { rules, name, customer_id }),
+    ({ rules, instructions, name, customer_id }) => confirmMapping(baseUrl, id, { rules, instructions, name, customer_id }),
     [baseUrl, id],
   );
 

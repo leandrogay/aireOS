@@ -2,9 +2,9 @@
 
 import { useState } from 'react';
 
+import { withFieldDecision, withGroupChosen } from '@/app/utils/fieldDecision';
 import { retailerDecision, withRetailerChoice } from '@/app/utils/mappingCustomer';
 import {
-  groupKind,
   rulesKeyFor,
   toColumnRows,
   toGroups,
@@ -21,13 +21,16 @@ function retailerKey(rules) {
   return JSON.stringify(rules.filter((rule) => rule.targetField === 'retailer'));
 }
 
-/** A melt group id no other group has, readable in the stored contract. */
-function freeGroupId(field, groups) {
-  const taken = new Set(groups.map((group) => group.id));
-  if (!taken.has(field)) return field;
-  let n = 2;
-  while (taken.has(`${field}_${n}`)) n += 1;
-  return `${field}_${n}`;
+/**
+ * The contract-wide settings as the mapping has them (packet `instructions`):
+ * whether rows roll up to one per month, and what kind of data the file is
+ * (backend mapping_contract.DATA_SOURCES).
+ */
+function loadedInstructions(mapping) {
+  return {
+    aggregate: Boolean(mapping?.instructions?.aggregate),
+    dataSource: mapping?.instructions?.dataSource || 'aireos_upload',
+  };
 }
 
 /**
@@ -41,10 +44,12 @@ function freeGroupId(field, groups) {
  *   fieldReviews  sign-offs on decisions made without a column (a field not
  *                 in this file), by field
  *   fieldEdits    decisions made without a column that the reviewer changed
- *                 -- the retailer, for now -- by field
+ *                 (a constant, a field worked out from another, the title's
+ *                 period, not in this file), by field
  * `rules` is all of it folded into what POST /api/mappings/{fp}/preview and
- * /confirm take (mappingReview.toRules), and `changed` says whether it
- * differs from what was loaded.
+ * /confirm take (mappingReview.toRules), and `changed` says whether it, or
+ * the contract-wide `instructions` (roll-up, data type), differ from what
+ * was loaded.
  *
  * Every action takes a field, not a column: the screen is laid out by field.
  *
@@ -62,9 +67,19 @@ export default function useMappingEdits({ mapping }) {
   const [original] = useState(() => ({ rows: toColumnRows(mapping), groups: toGroups(mapping) }));
   const [loadedRules] = useState(() => toRules(mapping, original));
   const loadedKey = JSON.stringify(loadedRules);
+  const [instructions, setInstructions] = useState(() => loadedInstructions(mapping));
 
   const state = { rows, groups, fieldReviews, fieldEdits };
   const rules = toRules(mapping, state);
+
+  // What preview and confirm take besides the rules: only the settings the
+  // reviewer changed, so one left alone stays as the server has it.
+  const loaded = loadedInstructions(mapping);
+  const instructionsPayload = {
+    ...(instructions.aggregate !== loaded.aggregate ? { aggregate: instructions.aggregate } : {}),
+    ...(instructions.dataSource !== loaded.dataSource ? { data_source: instructions.dataSource } : {}),
+  };
+  const instructionsChanged = Object.keys(instructionsPayload).length > 0;
 
   function dropEdit(field) {
     setFieldEdits((prev) => {
@@ -101,50 +116,37 @@ export default function useMappingEdits({ mapping }) {
           if (row.fields.some((item) => item.targetField === field)) return row;
           return { ...row, fields: [...row.fields, { targetField: field, ...REVIEWER, transform: null }] };
         }
-        const without = row.fields.filter((item) => item.targetField !== field);
-        return without.length === row.fields.length ? row : { ...row, fields: without };
+        const remaining = row.fields.filter((item) => item.targetField !== field);
+        return remaining.length === row.fields.length ? row : { ...row, fields: remaining };
       }),
     );
   }
 
-  // A measure read from a group of columns, one row per period or outlet: the
-  // group detected in the file (packet columnGroups), with its settings. It
-  // replaces whatever filled the measure, and takes its columns off anything
-  // else -- a column is read once.
+  function applyState(next) {
+    setRows(next.rows);
+    setGroups(next.groups);
+    setFieldEdits(next.fieldEdits);
+  }
+
+  // A measure read from a group of columns, one row per period or outlet
+  // (fieldDecision.withGroupChosen).
   function chooseGroup(field, entry) {
-    dropEdit(field);
     forgetConfirm(field);
-    const claimed = new Set(entry.columns);
-    setRows((prev) =>
-      prev.map((row) => {
-        const fields = row.fields.filter((item) => item.targetField !== field && !claimed.has(row.column));
-        return fields.length === row.fields.length ? row : { ...row, fields };
-      }),
-    );
-    setGroups((prev) => {
-      const kept = prev.filter(
-        (group) =>
-          group.field !== field &&
-          !group.columns.some((column) => claimed.has(column)) &&
-          // Groups are joined on their headings, so they all read one kind.
-          groupKind(group.settings) === entry.kind,
-      );
-      const id = entry.meltGroupId && !kept.some((group) => group.id === entry.meltGroupId)
-        ? entry.meltGroupId
-        : freeGroupId(field, kept);
-      return [
-        ...kept,
-        {
-          id,
-          field,
-          entryId: entry.id,
-          settings: entry.group,
-          columns: entry.columns,
-          fieldEntry: { status: 'mapped', melt_group: id },
-          ...REVIEWER,
-        },
-      ];
-    });
+    applyState(withGroupChosen(state, field, entry));
+  }
+
+  // Fill a field the way the field editor decided (fieldDecision.withFieldDecision).
+  function setFieldDecision(field, decision) {
+    forgetConfirm(field);
+    applyState(withFieldDecision(mapping, state, field, decision));
+  }
+
+  function setInstruction(name, value) {
+    setInstructions((prev) => ({ ...prev, [name]: value }));
+  }
+
+  function resetInstructions() {
+    setInstructions(loadedInstructions(mapping));
   }
 
   function clearField(field) {
@@ -249,24 +251,11 @@ export default function useMappingEdits({ mapping }) {
     );
   }
 
-  // Every row goes to one retailer: the retailer becomes a constant, and no
-  // column fills it any more (a column would win over the constant).
-  function setRetailerConstant(retailerName) {
-    forgetConfirm('retailer');
-    setRows((prev) =>
-      prev.map((row) => ({ ...row, fields: row.fields.filter((field) => field.targetField !== 'retailer') })),
-    );
-    setFieldEdits((prev) => ({
-      ...prev,
-      retailer: { status: 'constant', value: retailerName, confidence: 'high', reviewed: true },
-    }));
-  }
-
   // One choice the retailer is written by (mappingCustomer.retailerChoices
   // `key`: a rule, a code, the default, or the constant) writing another
   // retailer. Changed one at a time, so any of them can be changed back.
   function setRetailerChoice(key, to) {
-    const decision = retailerDecision(mapping, rows, fieldEdits);
+    const decision = retailerDecision(mapping, rows, fieldEdits, groups);
     forgetConfirm('retailer');
     if (decision.kind === 'column') {
       setRows((prev) =>
@@ -316,17 +305,22 @@ export default function useMappingEdits({ mapping }) {
     ...state,
     state,
     rules,
-    changed: JSON.stringify(rules) !== loadedKey,
+    instructions,
+    instructionsPayload,
+    instructionsChanged,
+    changed: JSON.stringify(rules) !== loadedKey || instructionsChanged,
     retailerChanged: retailerKey(rules) !== retailerKey(loadedRules),
     confirmedNow,
     assignColumn,
     chooseGroup,
+    setFieldDecision,
+    setInstruction,
+    resetInstructions,
     clearField,
     confirmField,
     undoConfirm,
     setSkuCode,
     changeGroupSettings,
-    setRetailerConstant,
     setRetailerChoice,
     resetRetailer,
     canResetFields,

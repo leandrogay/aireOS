@@ -64,6 +64,7 @@ def create_customer(customer: CustomerCreate):
     except (
         customer_service.CustomerNameTakenError,
         customer_service.RetailerOwnedError,
+        customer_service.SimilarNameError,
     ) as e:
         raise HTTPException(
             status_code=409,
@@ -108,6 +109,7 @@ def update_customer(customer_id: int, customer: CustomerUpdate):
     except (
         customer_service.CustomerNameTakenError,
         customer_service.CustomerInUseError,
+        customer_service.SimilarNameError,
     ) as e:
         raise HTTPException(
             status_code=409,
@@ -201,7 +203,10 @@ def create_retailer(retailer: RetailerCreate):
             detail=str(e),
         )
 
-    except catalog_service.RetailerNameTakenError as e:
+    except (
+        catalog_service.RetailerNameTakenError,
+        customer_service.SimilarNameError,
+    ) as e:
         raise HTTPException(
             status_code=409,
             detail=str(e),
@@ -335,7 +340,10 @@ def link_retailer(retailer_id: int, link: RetailerLink):
             detail=str(e),
         )
 
-    except catalog_service.RetailerAlreadyLinkedError as e:
+    except (
+        catalog_service.RetailerAlreadyLinkedError,
+        customer_service.SimilarNameError,
+    ) as e:
         raise HTTPException(
             status_code=409,
             detail=str(e),
