@@ -1,18 +1,18 @@
 # Forecasting: pipeline, backtest forecasts and promotion uplift
 
 **For:** Sandra (forecasting and promotions owner) and the team
-**Last updated:** 28 Oct 2026
+**Last updated:** 29 Oct 2026
 **Pages this covers:** Forecast, Forecast › Scenario builder, Forecast › Promotion Uplift Settings
 
 This is the one reference for everything forecasting-related in aireOS:
 
 - how the BigQuery forecasting pipeline works;
 - the change that keeps every backtest month's forecast;
-- how promotion uplift values are set, used and now **measured automatically**;
+- how promotion uplift values are set, used and now **measured automatically** (inside the API, from Cloud SQL only);
 - the read-only data checks behind those decisions;
 - what is built and what is still to do.
 
-The step-by-step instructions for **Nisha (migrations)** and **Google Cloud (the measurement job)** are in a separate runbook: [docs/promo-uplift-runbook.md](promo-uplift-runbook.md).
+The step-by-step instructions for **Nisha (migrations)** and for going live are in a separate runbook: [docs/promo-uplift-runbook.md](promo-uplift-runbook.md). There is no Google Cloud job or scheduler to set up (changed 29 Oct).
 
 ---
 
@@ -41,12 +41,12 @@ Only `.sql` files are ever pasted into a console, and each one says which consol
 |---|---|---|---|---|
 | Updated Run Order (Claude artifact) | Every BigQuery pipeline object (A1–A13) | BigQuery console | Sandra | Set up once; Part C adds to it |
 | Initial Yearly Forecast — Automation & Test Plan (Claude artifact) | Sandbox replay and live deploy of the pipeline | BigQuery console | Sandra | In progress |
-| SQL blocks in Part C of this document | Pipeline change (A3, A7, A8, A13) | BigQuery console, sandbox first, then live | Sandra | With the Initial plan's deploy |
+| SQL blocks in Part C of this document | Pipeline change (A3, A7, A8, A13) | BigQuery console, sandbox first, then live | Sandra | **On hold** (the backtest check is off, 29 Oct) |
 | `backend/migrations/checks/promo_measurement_checks_bigquery.sql` (B blocks) | Read-only checks on the forecasting data | BigQuery console | Sandra | Done 28 Oct |
 | `backend/migrations/checks/promo_measurement_checks_bigquery_promotions.sql` (C blocks) | Read-only checks on the promotion data | BigQuery console | Sandra | Done 28 Oct |
 | `backend/migrations/checks/promo_measurement_checks_cloudsql.sql` | The same C checks against Cloud SQL | Cloud SQL Studio | Nisha | Fallback only |
 | `backend/migrations/006_…`, `007_…`, `008_…` | Cloud SQL tables (PostgreSQL) | Cloud SQL Studio, instance `aireos-postgresql`, database `aireos` | Nisha or Sandra only | When the runbook says "ready to run" |
-| [docs/promo-uplift-runbook.md](promo-uplift-runbook.md) | Instructions for Nisha and the Google Cloud setup | Read it | Nisha, Sandra | Before go-live |
+| [docs/promo-uplift-runbook.md](promo-uplift-runbook.md) | Instructions for Nisha (migrations, grants) and for going live | Read it | Nisha, Sandra | Before go-live |
 
 The migrations are **Cloud SQL (PostgreSQL)**, not BigQuery. The application **never writes to BigQuery**; only the pipeline does.
 
@@ -56,12 +56,16 @@ The migrations are **Cloud SQL (PostgreSQL)**, not BigQuery. The application **n
 BIGQUERY (pipeline; the app only reads it)                CLOUD SQL (the app reads and writes)
   fc_training_input  ── sales history per customer+SKU+month   promotions, stores, sellout (source of truth)
   run_monthly_forecast_pipeline (nightly when a new month)     promo_uplift_settings / promo_anchor_settings (006)
-    ├─ holdout models → fc_model_quality_log (+ NEW fc_backtest_forecasts)
-    ├─ 13-month forecasts → aire_forecasting_runs → archive   scenario_promotions (007)
-    └─ aire_forecasting_output (what the Forecast page reads) promo_measurement_* tables (008)
-                    │                                                     ▲
-                    └──── read by the measurement job (daily 04:00 SGT) ──┘ writes measured values
+    ├─ holdout models → fc_model_quality_log                   scenario_promotions (007)
+    ├─ 13-month forecasts → aire_forecasting_runs → archive   promo_measurement_* tables (008)
+    └─ aire_forecasting_output (what the Forecast page reads)        ▲          │
+                                                                      │          │ sellout, promotions
+                                     the API's measurement ───────────┘◄─────────┘ (after an upload, a
+                                     writes measured values                          promotion change,
+                                                                                      Re-measure, page open)
 ```
+
+The measurement reads **only Cloud SQL** (since 29 Oct). It no longer reads `fc_training_input`, and the backtest check that would read `fc_backtest_forecasts` is switched off (Part C is on hold).
 
 ---
 
@@ -118,6 +122,8 @@ Created by data, not the calendar: the first clean run whose latest month is Nov
 ---
 
 ## Part C. Pipeline change: keep every backtest month's forecast
+
+> **On hold (29 Oct 2026).** The promotion uplift measurement now reads only Cloud SQL and its backtest check is switched off (`promo_measurement_config.backtest_enabled = FALSE`), so nothing reads `fc_backtest_forecasts` yet. Nothing in this part needs to be deployed with the Initial Yearly Forecast plan. To use it later: deploy this part, wait for a pipeline run (or run A13), then switch the check on with a new config version (runbook 4.2). The SQL below is kept as it was.
 
 ### C1. What and why
 
@@ -395,8 +401,8 @@ Every month in the training data had some promotion, so the forecast describes a
 | Source | Where it comes from | Changes when |
 |---|---|---|
 | **Rule-based** | The rule (D3), all-customers only | The rule's rate or the customer's anchor changes |
-| **Measured** | The measurement job (Part E), per customer and per SKU | The job finds new evidence (daily check) |
-| **Estimate** | Typed by a person on the settings page | Only when a person changes it. **Never overwritten by the job** |
+| **Measured** | The measurement (Part E), per customer and per SKU | New evidence after a sales upload or a promotion change |
+| **Estimate** | Typed by a person on the settings page | Only when a person changes it. **Never overwritten by the measurement** |
 | **Learned** | Reserved for a future model-learned value | (not used yet) |
 
 Archived uplifts are kept (history) but never offered or measured.
@@ -463,13 +469,13 @@ Only rule-based uplifts follow the anchor and the rule, plus measured uplifts wi
 | Section | What it does |
 |---|---|
 | Intro | One line on what uplift is for, and a collapsed "How this page works" (five short points) |
-| **Measured from sales data** (new) | Last measured / next run (daily 04:00 SGT); stale warning after 100 days without a successful run; last-run failure message; **Re-measure**; open **notes** ("Measured uplift is now X (n months). Your uplift Y. [Use measured] [Keep mine]"), and the same for typed anchors ([Use suggested] / [Keep mine]) |
+| **Measured from sales data** (new) | "Last measured …" (or "Not measured yet"), and "Checking for new sales and promotions…" while the page-load check runs; a line saying it measures automatically after new sales or promotion changes; a warning when the **latest run failed** (with the error and when uplifts were last measured); **Re-measure**; open **notes** ("Measured uplift is now X (n months). Your uplift Y. [Use measured] [Keep mine]"), and the same for typed anchors ([Use suggested] / [Keep mine]) |
 | Ordinary-month discount by customer | Each customer's anchor, its source and suggestion; edit (with a before/after preview of the rule-based uplifts), reset, history |
 | **Rule for rule-based uplifts** (new) | "Assume sales rise **0.4**% for every extra percentage point of discount deeper than the customer's normal discount", with "For example, 5 points deeper than normal → +2%"; Edit (one rate, a live before/after preview at the anchor the page is showing, a warning above 1.0), History, Reset to default |
 | Unmapped mechanics | Labels in the promotions data that match no uplift |
 | Uplift by mechanic | Filter by customer and SKU; source tags (Rule-based / Measured / Estimate / Learned / Archived); "capped at +300%" under a capped rule-based uplift; months of evidence under Measured; the row menu has Edit, History, **Evidence** (the measurement behind a customer or SKU uplift), Reset to the rule, Archive / Restore; Add promotion or voucher |
 
-All writes are new versions; nothing is deleted. Edits are recorded as `aireos` until there are user logins; the job records as `measurement`.
+All writes are new versions; nothing is deleted. Edits are recorded as `aireos` until there are user logins; the measurement records as `measurement`.
 
 **Hover hints ("i") and a tidy layout.** Explanations live in "i" bubbles and the collapsed "How this page works", not in paragraphs on the page. Short explanations sit next to the terms that need them:
 - **Settings page:**
@@ -491,7 +497,16 @@ Replace rule-based uplifts with uplifts **measured from Aire's own sales**, reca
 
 ### E2. How one uplift is measured
 
-For each customer + SKU + mechanic (and the voucher), over the months in `fc_training_input` (the **window**, the same months the forecast model learns from):
+For each customer + SKU + mechanic (and the voucher), over the **window**: the complete months of Cloud SQL sell-out (changed 29 Oct; before, `fc_training_input` in BigQuery).
+
+**Monthly sales** are added up in the API from `sellout` (`promo_measurement._read_monthly_sales` / `_monthly_sales`), close to but not exactly `fc_training_input`:
+- a customer's retailers count as one customer (Fairprice offline + online = Fairprice), through `customer_retailers`;
+- monthly rows win over weekly ones for a retailer and month, and a weekly row counts in the month it starts in (the dashboard's and Inventory's `EFFECTIVE_SELLOUT_CTE`);
+- months from **January 2025** only (sellout holds Fairprice from July 2024);
+- never the current month, and never a customer's month its data doesn't reach the last day of (the rule Inventory's `sellout_units` uses), so a part-uploaded month can't read as a drop in sales;
+- quantities are `quantity_units`, which for this data are cartons; each SKU is only compared with itself, so the unit doesn't change any uplift.
+
+Only promotions overlapping the window are read, and only their mechanic labels, so a promotion planned entirely in the future doesn't change the fingerprint (E3) and saving it skips quickly. The anchor ignores this month and later for the same reason (D3).
 
 **Step 1: compare each month with the SKU's trend.** A straight line through the SKU's monthly sales (needs ≥ 6 months; otherwise the flat average, `method = flat`). Each month's ratio = actual ÷ trend, and each month's lift = ratio ÷ average ratio − 1.
 
@@ -531,19 +546,19 @@ For each customer + SKU + mechanic (and the voucher), over the months in `fc_tra
 >
 > SKU's own uplift +40%, blended customer uplift +14%: n = 2 → **+24.4%**; n = 10 → **+34.0%**; n = 0 → **+14%**.
 
-**Step 5: backtest check.**
+**Step 5: backtest check. Switched off (29 Oct).** `promo_measurement_config.backtest_enabled` is FALSE: no BigQuery read, every result records "no check" (`backtest_pct` NULL) and nothing is `held_backtest`. The maths (`backtest_check`, `disagrees`) is kept and tested. When switched on (after Part C is deployed):
 - From `fc_backtest_forecasts` (Part C), ARIMA_PLUS, latest run: relative error = (actual − forecast) ÷ forecast, exposure-weighted over the backtest months where the mechanic counts.
 - If it points the **opposite way** from the blended uplift, **both by ≥ 1 point**, that uplift **keeps its previous uplift** this run (`held_backtest`). Smaller differences count as agreeing.
 - No backtest data → "no check", nothing held.
 
 ### E3. How values are written
 
-| Situation | What the job does |
+| Situation | What the measurement does |
 |---|---|
 | Evidence, no uplift at that scope yet | Inserts a **Measured** customer or SKU uplift (`changed_by = measurement`, months of evidence stored) |
 | Evidence, already Measured, same value (to 0.1) | Nothing (`unchanged`) |
 | Evidence, already Measured, new value | Supersedes it with a new Measured version |
-| Backtest disagrees | Keeps the previous value (`held_backtest`) |
+| Backtest disagrees (only with the check switched on) | Keeps the previous value (`held_backtest`) |
 | No evidence | Nothing (`no_evidence`); the value stays as it is |
 | A person typed a value at that scope (Estimate) | **Never overwritten.** A note: "[Use measured] / [Keep mine]". Re-asked after Keep mine only if the measured value moves ≥ 2 points, or the typed value changes |
 | A person typed a customer or range uplift above a SKU | No SKU uplift is written underneath it (`estimate_pending`) |
@@ -558,18 +573,30 @@ For each customer + SKU + mechanic (and the voucher), over the months in `fc_tra
 **Safety:**
 - **One transaction:** a failure changes nothing and is recorded as a `failed` run.
 - **One run at a time** (a Postgres advisory lock).
-- **The same inputs never write twice:** a fingerprint of every input; unchanged inputs record a `skipped_unchanged` run and stop.
+- **The fingerprint** covers every input except the measurement's own output (measured values and notes), but does include whether a Measured row is archived, so restoring one measures it again.
+- **The same inputs never write twice:** a fingerprint of every input; unchanged inputs record a `skipped_unchanged` run and stop (the page-load check records nothing).
 - **Append-only:** nothing is updated in place except `superseded_at`; nothing is deleted.
 
-### E4. How it runs
+### E4. How it runs (changed 29 Oct: no job, no scheduler)
+
+It runs **inside the API**, in the request that triggered it, as the API's own database user (`aireos-api`). Nothing runs on a schedule.
+
+| Trigger (`promo_measurement_runs.triggered_by`) | When |
+|---|---|
+| `upload` | After a sales upload has stored rows in `sellout`: `POST /api/uploads`, and confirming a mapping that loads files waiting for it (`POST /api/mappings/{fp}/confirm`). Once per request, not per file |
+| `promotion_change` | After a promotion is created, edited or deleted (`/api/promotions`), not on a 404 |
+| `button` | **Re-measure** on the settings page (`POST /api/settings/promo-uplifts/measure`; 409 while another run is going) |
+| `page_load` | When the settings page opens (`POST /api/settings/promo-uplifts/measure/if-changed`): measures only if the fingerprint differs from the last successful run, and records nothing when it doesn't |
+| `settings_change` | After a save on the settings page that wrote a new version (`changed: true`): the rule rate (update, reset), an anchor (a customer's set and reset, and the all-customers one), an uplift row (edit, typed override, reset to rule-based, archive, restore, add mechanic), and **Use measured / Use suggested** on a customer or anchor note. The save's response carries the run summary as `measurement`, and the page says "Updating measured uplifts…" while it runs. Left out because they provably can't change a measured value: **Keep mine** (only the notes table, which isn't an input) and **Use measured on a SKU note** (the row becomes Measured at the value the measurement would write, and nothing reads SKU-level typed values). Archive is included so the archived mechanic's open notes close straight away |
 
 | | |
 |---|---|
-| Schedule | Cloud Run Job `aireos-promo-measure`, started by Cloud Scheduler **daily 04:00 SGT** (2 hours after the 02:00 retrain) |
-| Account | `aireos-jobs@aire-data.iam.gserviceaccount.com` (its own, not the website's) |
-| On demand | **Re-measure** on the settings page (signed-in API, `POST /api/settings/promo-uplifts/measure`) |
-| Settings | `promo_measurement_config`: starting weight (k) 3, minimum exposure 0.23, re-ask 2 points, stale after 100 days, trend from 6 months, backtest tolerance 1 point. Versioned; change by inserting a new version (runbook) |
-| Failure alerts | Set up separately with teammates (not part of this build). The job exits with an error and logs at ERROR, so any Cloud Monitoring alert on the job will catch it |
+| Never failing the trigger | Upload, promotion, settings-save and page-load triggers go through `measure_after_change`, which never raises: a failure is recorded as a `failed` run, logged at ERROR, and shown on the settings page. A run already holding the lock → nothing recorded; the page-load check catches anything it missed |
+| How long | About 1.4 s of maths at today's size (Fairprice 9 SKUs × 20 months, ~150 stores, 59 promotions; 70 values, timed locally on synthetic data), plus the Cloud SQL reads and writes: an estimated **2–4 s** when something changed, **under 1 s** for a skip. The real time is `finished_at − started_at` in `promo_measurement_runs` |
+| Why in the request | Cloud Run (default, request-based billing) throttles CPU once the response is sent, so a background task could stall or be stopped. Running in the request needs no Cloud Run change; a background task would need `--no-cpu-throttling` on `aireos-api` (instance-based billing) |
+| Settings | `promo_measurement_config`: starting weight (k) 3, minimum exposure 0.23, re-ask 2 points, trend from 6 months, backtest tolerance 1 point, **backtest_enabled false**. Versioned; change by inserting a new version in SQL (runbook 4.2). Those SQL changes can't trigger a measurement; they are picked up at the next page open or Re-measure (they're part of the fingerprint) |
+| Stale | The latest run failed: the page shows the error and when uplifts were last measured. ("Not measured yet" when nothing has succeeded.) The 100-day rule is gone: with the page-load check, inputs that changed without a successful run since can only mean that run failed |
+| Failure alerts | Optional, separately with teammates: the API logs failures at ERROR (`Promotion uplift measurement failed`), so a Cloud Monitoring log alert on the `aireos-api` service catches them |
 | Bell notifications | Not in this version; how to add them later is in the runbook |
 
 ### E5. Why these choices
@@ -583,9 +610,10 @@ For each customer + SKU + mechanic (and the voucher), over the months in `fc_tra
 | Least-squares sharing | One month's change is split fairly between overlapping mechanics |
 | Rule-based uplift as the starting point | One early month shouldn't decide a customer's uplift |
 | No borrowing between customers | Customers run very different promotion mixes |
-| Backtest hold, with a 1-point tolerance | Catches seasonality or fluke months without freezing values over noise |
+| Backtest hold, with a 1-point tolerance (switched off for now) | Catches seasonality or fluke months without freezing values over noise, once the pipeline keeps backtest month forecasts (Part C) |
 | Estimates never overwritten | A person's judgement stays theirs; the note keeps it visible |
-| Daily, but skip when unchanged | The window always matches the model; "stale" means the job is broken, not that data didn't change |
+| Cloud SQL only, measured on change, skip when unchanged | No Google Cloud job, scheduler, BigQuery access or second database user to set up and hand over; values update as soon as the sales or promotions behind them change |
+| Future-only promotions don't count | They change nothing measured, so saving one skips in under a second |
 
 ---
 
@@ -625,7 +653,7 @@ The Cloud SQL C file is a fallback for Nisha (Cloud SQL Studio, instance `aireos
 
 ## Part G. What is built, and where in the code
 
-All uncommitted on branch `feat/AO5-18&19-promotion-uplift-settings`.
+On branch `feat/AO5-18&19-promotion-uplift-settings`. The 29 Oct change (Cloud SQL only, measured inside the API) is not committed yet.
 
 ### G1. Database (Cloud SQL migrations, not yet run)
 
@@ -633,7 +661,7 @@ All uncommitted on branch `feat/AO5-18&19-promotion-uplift-settings`.
 |---|---|
 | `006_create_promo_uplift_settings.sql` | `promo_uplift_settings` (sources `rule_based`/`measured`/`estimate`/`learned`, + `kind`, `archived_at`; `evidence_months` NUMERIC(6,2)), `promo_anchor_settings`, **`promo_rule_settings`** (the rate, default 0.4), 15 starting rows |
 | `007_create_scenario_promotions.sql` | `scenario_promotions` (dropped `reference_by_sku`/`voucher_by_sku`; check on `reference_source` incl. `rule_based`) |
-| `008_create_promo_measurement.sql` | `promo_measurement_config` (`starting_weight`), `promo_measurement_runs`, `promo_measurement_results` (`sku_own_pct`, `customer_own_pct`, `rule_based_pct`, `blended_customer_pct`, `starting_weight`, `blended_pct`), `promo_uplift_pending_notes` |
+| `008_create_promo_measurement.sql` | `promo_measurement_config` (`starting_weight`, **`backtest_enabled` default FALSE**; no `stale_days` since 29 Oct), `promo_measurement_runs` (`triggered_by` in `upload`, `promotion_change`, `button`, `page_load`), `promo_measurement_results` (`sku_own_pct`, `customer_own_pct`, `rule_based_pct`, `blended_customer_pct`, `starting_weight`, `blended_pct`), `promo_uplift_pending_notes` |
 
 ### G2. Backend
 
@@ -641,13 +669,14 @@ All uncommitted on branch `feat/AO5-18&19-promotion-uplift-settings`.
 |---|---|
 | `services/settings/promo_uplift_rules.py` | `effective_discount`, `label_for_key`; `active_by_store_day` (shared store-day rule); `monthly_discounts` with store weights and a `before` date; **`rule_based_uplift(discount, anchor, rate)`** (default 0.4, capped −90…+300) and `rule_based_uplift_capped` |
 | `services/settings/promo_measurement_rules.py` (new) | Pure maths: store weights, exposure, usual reach, trend, least-squares fit, shrinkage, backtest check, fingerprint |
-| `services/settings/promo_measurement.py` (new) | The job: reads, fingerprint, lock, measure, writes, notes, status, evidence, Use measured / Keep mine |
+| `services/settings/promo_measurement.py` (new) | The measurement: Cloud SQL monthly sales (`_read_monthly_sales`, `_monthly_sales`), fingerprint, lock, measure, writes, notes, status (stale = latest run failed), evidence, Use measured / Keep mine; `measure_after_change` for the automatic triggers (never raises); the BigQuery backtest read only when `backtest_enabled` |
 | `services/settings/promo_uplifts.py` | Store-weighted, past-only anchor; archived rows excluded; active-first SKU lookup; `product_sources`; archive, restore, add mechanic; **the rule**: `get_rule`, `set_rule` (warning above 1.0), `reset_rule`, used by the resolver, reset and add mechanic; `follows_rule` and `capped` on each uplift |
 | `schemas/settings/promo_uplifts.py` | `PromoMechanicCreate` (unreadable label → 422), `PromoUpliftArchive`, `PromoNoteDecision` |
-| `routers/settings/promo_uplifts.py` | `POST /measure`, `GET /measure/status`, `GET /notes`, `POST /notes/{id}/use-measured`, `POST /notes/{id}/keep-mine`, `POST /mechanics`, `POST /{id}/archive`, `POST /{id}/restore`, `GET /{id}/evidence`, **`GET /rule`, `PUT /rule`, `POST /rule/reset`** (rate ≤ 0 → 422) |
-| `scripts/measure_promo_uplifts.py` (new) | The Cloud Run Job entry point |
+| `routers/promotions.py`, `routers/uploads.py`, `routers/mappings.py` | Measure after a promotion change / after an upload stored rows (`measure_after_change`, after the write, never failing it) |
+| `routers/settings/promo_uplifts.py` | Every versioned settings write measures afterwards when `changed` (`_measured`, trigger `settings_change`; not Keep mine or a SKU note's Use measured); `POST /measure`, **`POST /measure/if-changed`** (page load), `GET /measure/status`, `GET /notes`, `POST /notes/{id}/use-measured`, `POST /notes/{id}/keep-mine`, `POST /mechanics`, `POST /{id}/archive`, `POST /{id}/restore`, `GET /{id}/evidence`, **`GET /rule`, `PUT /rule`, `POST /rule/reset`** (rate ≤ 0 → 422) |
+| `scripts/measure_promo_uplifts.py` | **Deleted** (29 Oct): no Cloud Run Job; Re-measure does the same |
 | `services|schemas/scenario/promotions.py` | Per-SKU JSON fields removed |
-| Tests | `test_promo_measurement_rules.py` (new), `test_promo_measurement_service.py` (new), additions to the settings service and router tests; scenario tests updated. **Full suite: 1,373 passed, 15 skipped** |
+| Tests | `test_promo_measurement_rules.py` (new, maths unchanged), `test_promo_measurement_service.py` (new: monthly sales, backtest off, triggers, future-only promotions, rule-rate change, archived Measured rows in the fingerprint, archive closing notes), `test_promo_measurement_triggers.py` (new: each trigger through HTTP, including every settings save; failures never fail the upload, promotion change or save), a confirm test in `test_mappings_router.py`, a `conftest.py` guard that blocks the real settings database; scenario tests updated. **Full suite: 1,442 passed, 15 skipped** |
 
 ### G3. Frontend
 
@@ -657,7 +686,8 @@ All uncommitted on branch `feat/AO5-18&19-promotion-uplift-settings`.
 | `utils/promoUpliftsDemo.js` | Same functions for demo mode (a made-up Fairprice result); per-SKU uplifts keyed by product name; the rule's rate with History and Reset |
 | `utils/promoUpliftSettings.js` | Evidence, status and note display helpers |
 | `hooks/usePromoMeasurement.js` (new) | Status + open notes |
-| `components/settings/PromoMeasurementPanel.jsx` (new), `PromoEvidenceDialog.jsx` (new) | Re-measure, status, stale warning, notes; evidence dialog |
+| `hooks/usePromoMeasureOnOpen.js` (new) | The page-load check (`measurePromoUpliftsIfChanged`); the page refetches when it measured |
+| `components/settings/PromoMeasurementPanel.jsx` (new), `PromoEvidenceDialog.jsx` (new) | Re-measure, "Last measured …", "Checking …", failed-run warning, notes; evidence dialog ("No check" while the backtest is off) |
 | `components/settings/PromoUpliftTable.jsx`, `PromoUpliftSettingsView.jsx` | Evidence action, months of evidence, the panel |
 | `utils/scenarioPromotions.js` | `upliftsForProduct`, SKU-aware options/default, `sourceText`, **side offer replaces monthly** (`monthlyShare`), payload without per-SKU maps |
 | `components/settings/PromoRuleCard.jsx`, `PromoRuleDialog.jsx`, `RulePreviewTable.jsx` (new) | The rule card (rate + "5 points deeper → +2%"), its edit dialog (live preview at the page's anchor, warning above 1.0), History (rule kind in `PromoHistoryDialog`), Reset to default; the shared before/after preview with "capped at +300%" |
@@ -672,17 +702,18 @@ All uncommitted on branch `feat/AO5-18&19-promotion-uplift-settings`.
 | # | Work | Who | Status |
 |---|---|---|---|
 | 1 | Data checks (B, C) | Sandra | ✅ Done 28 Oct |
-| 2 | Backend + frontend build, with tests | Dev | ✅ Done 28 Oct (uncommitted) |
-| 3 | Pipeline change (Part C) via the artifact prompt; sandbox; live with the 27 Oct A8; optional A13 | Sandra | To do |
-| 4 | Review and commit the branch | Sandra | To do |
-| 5 | Send 006 → 007 → 008 + grants to Nisha ([runbook](promo-uplift-runbook.md), Part 1) | Sandra → Nisha | To do |
-| 6 | Demo flags off, browser checks (runbook Part 3) | Sandra | After 5 |
-| 7 | Deploy the API (new endpoints) and the job; Cloud Scheduler (runbook Part 2) | Sandra | After 5 |
-| 8 | First run, check the page | Sandra | After 7 |
-| 9 | Failure alerting | Sandra + teammates | Separately |
+| 2 | Backend + frontend build, with tests | Dev | ✅ Done 28 Oct, committed |
+| 2b | Cloud SQL only, measured inside the API, backtest off, no job (29 Oct) | Dev | ✅ Done 29 Oct (uncommitted) |
+| 3 | Pipeline change (Part C) | Sandra | **On hold** (backtest check off) |
+| 4 | Review and commit the 29 Oct change | Sandra | To do |
+| 5 | Send 006 → 007 → 008 + `aireos-api` grants to Nisha ([runbook](promo-uplift-runbook.md), Part 1) | Sandra → Nisha | To do |
+| 6 | Demo flags off, deploy the API, browser checks (runbook Part 3) | Sandra | After 5 |
+| 7 | First measurement (open the settings page, or Re-measure), check the page | Sandra | After 6 |
+| 8 | Failure alerting (optional log alert on `aireos-api`) | Sandra + teammates | Separately |
 
 Open items:
-- Failure alert recipients (to be set up with teammates).
+- Failure alert recipients (optional; to be set up with teammates).
+- Switching the backtest check on later: deploy Part C, then a new config version with `backtest_enabled = TRUE`.
 - Bell notifications (later).
 - Update the Promotions Uplift design doc §6.5, §6.6, §7.1–7.7 to match Parts D–E.
 
@@ -695,7 +726,9 @@ Open items:
 - **Usual reach is per customer, not per SKU or channel.** A future online promotion would be measured relative to offline reach.
 - **Voucher evidence is thin** (per SKU), so the voucher stays close to +3% for now.
 - **Additive stacking** of several large uplifts can overstate their combined effect.
-- **The backtest window is recent** (about 6 months), so many mechanics have "no check".
+- **The backtest check is switched off**, so a fluke or seasonal month isn't caught by it; every result says "no check". (When switched on, its window is recent, about 6 months.)
+- **Sales come from Cloud SQL `sellout`, not `fc_training_input`**: the same rules (Jan 2025 onwards, complete months, monthly over weekly) but not guaranteed to match it row for row.
+- **A measurement adds a few seconds** to the upload or promotion save that triggers it (it runs in the request).
 - **Edits are recorded as `aireos`** until the app has user logins.
 
 ---
@@ -708,10 +741,10 @@ Open items:
 | Mechanic / key | The promotion form ("30% Off") and its standard key (`pct_off_30`) |
 | Anchor | A customer's ordinary-month discount; rule-based uplifts are worked out from it |
 | Rule (rate) | +0.4% sales per extra point of discount deeper than normal (editable); 5 points deeper → +2% |
-| Rule-based / Measured / Estimate / Learned | Where an uplift came from: the rule / the job / a person / the model (future) |
+| Rule-based / Measured / Estimate / Learned | Where an uplift came from: the rule / the measurement / a person / the model (future) |
 | SKU's own uplift / customer's own uplift | What one SKU's sales say / the customer's SKUs' own uplifts, volume-weighted |
 | Blended customer uplift / blended SKU uplift | The customer's own uplift leaning on the rule-based uplift / the SKU's own uplift leaning on the blended customer uplift |
-| Window | The months in `fc_training_input`; the measurement uses exactly these |
+| Window | The complete months of Cloud SQL sell-out the measurement uses: January 2025 to the last fully uploaded month before this one |
 | Exposure | How much of a month a mechanic counts for, at the customer's usual reach |
 | Usual reach | How much of a customer's sales an ordinary promotion month reaches |
 | Contrast | A SKU has months both with and without the mechanic |
