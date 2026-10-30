@@ -2,11 +2,9 @@
 Loading uploaded files into sell-out, as its own step after approval.
 
 Approving a mapping saves instructions; it can be amended or replaced at any
-time. Loading writes the file's rows into Cloud SQL `sellout`, which the Sales
-Dashboard and Inventory read, and an upsert there overwrites values other
-files loaded -- it cannot be undone from the app. So approval only marks the
-files behind a mapping as ready, and a person loads them here, after a dry run
-(preview_loads) has shown what the load would write, replace and overwrite.
+time. Loading writes rows into Cloud SQL `sellout` only after a person reviews
+a dry run. Each completed load is versioned by its unique GCS blob path so it
+can be reloaded safely or rolled back later.
 
 Each upload's state lives in its GCS metadata (storage.MAPPING_STATUS_METADATA_KEY):
 
@@ -141,8 +139,8 @@ def preview_loads(blob_paths: list[str]) -> list[dict]:
     """
     Dry run of load_uploads for each file, in the order given: the rows it
     would store, the periods and retailers they cover, and what in sell-out
-    the load would replace (rows from a file of the same name) or overwrite
-    (rows other files loaded under the same key). Nothing is written.
+    it would overwrite. A reload also previews replacement; a first load never
+    replaces rows merely because another upload shares its filename.
 
     One file failing -- unreadable, not approved, the bucket or database not
     answering -- is reported on that file (`success: False`, `error`) rather
@@ -154,8 +152,12 @@ def preview_loads(blob_paths: list[str]) -> list[dict]:
         try:
             upload, envelope = _loadable(blob_path)
             filename, data = _download(blob_path)
+            reload = upload.get("mapping_status") == RELOAD_AVAILABLE
             preview = sellout_ingestion.preview_confirmed_upload(
-                filename, data, envelope.get("contract") or {}, replace_source=True
+                filename,
+                data,
+                envelope.get("contract") or {},
+                replace_source=reload,
             )
             results.append({**_file_row(upload, envelope), "success": True, "preview": preview})
         except Exception as exc:
@@ -167,8 +169,8 @@ def load_uploads(blob_paths: list[str]) -> list[dict]:
     """
     Load each file into sell-out with the current version of its approved
     mapping, each in its own transaction, then stamp it as loaded with that
-    version. Rows loaded earlier from a file of the same name are replaced
-    (`replace_source`), so a reload leaves no rows from the old version behind.
+    version. A reload replaces only stale rows from the previous completed run
+    for the same GCS blob; a first load has no prior run to replace.
 
     Every file is checked again here rather than trusting the preview: its
     status may have changed since. One file failing is reported on that file
@@ -181,8 +183,15 @@ def load_uploads(blob_paths: list[str]) -> list[dict]:
         try:
             upload, envelope = _loadable(blob_path)
             filename, data = _download(blob_path)
+            reload = upload.get("mapping_status") == RELOAD_AVAILABLE
             processing = sellout_ingestion.process_confirmed_upload(
-                filename, data, envelope.get("contract") or {}, replace_source=True
+                filename,
+                data,
+                envelope.get("contract") or {},
+                replace_source=reload,
+                source_blob=blob_path,
+                content_hash=upload.get("content_hash"),
+                mapping_fingerprint=upload.get("mapping_fingerprint"),
             )
             # With Cloud SQL loading switched off nothing was written, so the
             # file keeps its loadable state rather than claiming a version.

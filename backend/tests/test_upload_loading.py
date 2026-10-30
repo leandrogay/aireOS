@@ -32,6 +32,7 @@ def _upload(blob_path, status, version=None, fingerprint="fp"):
         "mapping_status": status,
         "mapping_version": version,
         "mapping_name": "XEL weekly",
+        "content_hash": "abc123",
     }
 
 
@@ -114,7 +115,7 @@ def test_preview_runs_the_dry_run_with_the_approved_contract(monkeypatch):
     assert result["success"] is True
     assert result["preview"]["rows_to_store"] == 4
     assert result["mapping_version"] == 3
-    assert calls == [("a.txt", CONTRACT, True)]
+    assert calls == [("a.txt", CONTRACT, False)]
 
 
 def test_a_file_whose_mapping_is_not_approved_is_never_transformed(monkeypatch):
@@ -144,8 +145,19 @@ def test_loading_stamps_the_file_as_loaded_with_the_current_version(monkeypatch)
     bucket = FakeBucket([_upload("uploads/a.txt", "reload_available", version="2")]).install(monkeypatch)
     calls = []
 
-    def process(filename, data, contract, *, replace_source=False):
-        calls.append(replace_source)
+    def process(
+        filename,
+        data,
+        contract,
+        *,
+        replace_source=False,
+        source_blob=None,
+        content_hash=None,
+        mapping_fingerprint=None,
+    ):
+        calls.append(
+            (replace_source, source_blob, content_hash, mapping_fingerprint)
+        )
         return {"rows_stored": 4, "storage_status": "completed"}
 
     monkeypatch.setattr(sellout_ingestion, "process_confirmed_upload", process)
@@ -155,7 +167,7 @@ def test_loading_stamps_the_file_as_loaded_with_the_current_version(monkeypatch)
     assert result["success"] is True
     assert result["reload"] is True
     # A reload replaces the rows the older version wrote for this file.
-    assert calls == [True]
+    assert calls == [(True, "uploads/a.txt", "abc123", "fp")]
     assert bucket.annotations["uploads/a.txt"] == {
         storage.MAPPING_STATUS_METADATA_KEY: "mapped",
         storage.MAPPING_VERSION_METADATA_KEY: "3",
@@ -167,7 +179,7 @@ def test_a_load_that_saved_nothing_leaves_the_file_loadable(monkeypatch):
     monkeypatch.setattr(
         sellout_ingestion,
         "process_confirmed_upload",
-        lambda filename, data, contract, *, replace_source=False: {"rows_stored": 0, "storage_status": "disabled"},
+        lambda filename, data, contract, **kwargs: {"rows_stored": 0, "storage_status": "disabled"},
     )
 
     [result] = upload_loading.load_uploads(["uploads/a.txt"])
@@ -181,7 +193,7 @@ def test_one_file_failing_to_load_leaves_the_others_to_load(monkeypatch):
         [_upload("uploads/bad.txt", "ready_to_load"), _upload("uploads/good.txt", "ready_to_load")]
     ).install(monkeypatch)
 
-    def process(filename, data, contract, *, replace_source=False):
+    def process(filename, data, contract, **kwargs):
         if filename == "bad.txt":
             raise sellout_service.SelloutLoadError("Cloud SQL sell-out load failed: down")
         return {"rows_stored": 4, "storage_status": "completed"}

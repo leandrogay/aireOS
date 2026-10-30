@@ -171,10 +171,39 @@ def test_customer_level_rows_use_an_explicit_all_stores_database_key(monkeypatch
     assert fact_call.args[1][0]["store_code"] == sellout_service.ALL_STORES_CODE
 
 
-def test_replacement_deletes_old_source_rows_inside_same_transaction():
+def test_reload_deletes_only_stale_keys_returned_by_the_ingestion_run(monkeypatch):
     engine, connection = _fake_database()
+    timestamp = datetime.datetime(2026, 9, 6, tzinfo=datetime.timezone.utc)
+    stale = {
+        "retailer_id": 7,
+        "store_code": "420",
+        "sku": "13255043",
+        "period_start": datetime.date(2025, 12, 1),
+        "period_type": "month",
+    }
+    monkeypatch.setattr(
+        sellout_service.ingestion_service,
+        "start_run",
+        MagicMock(return_value=42),
+    )
+    monkeypatch.setattr(
+        sellout_service.ingestion_service,
+        "record_versions",
+        MagicMock(return_value=[stale]),
+    )
+    monkeypatch.setattr(
+        sellout_service.ingestion_service,
+        "complete_run",
+        MagicMock(),
+    )
 
-    sellout_service.load_clean_rows(_dataframe(), replace_source=True, engine=engine)
+    sellout_service.load_clean_rows(
+        _dataframe(),
+        replace_source=True,
+        source_blob="uploads/2026-10-29_monthly.txt",
+        loaded_at=timestamp,
+        engine=engine,
+    )
 
     sql_calls = [str(call.args[0]) for call in connection.execute.call_args_list]
     delete_index = next(
@@ -185,6 +214,35 @@ def test_replacement_deletes_old_source_rows_inside_same_transaction():
     )
     assert delete_index < insert_index
     assert sum("DELETE FROM sellout" in sql for sql in sql_calls) == 1
+    delete_call = next(
+        call
+        for call in connection.execute.call_args_list
+        if "DELETE FROM sellout" in str(call.args[0])
+    )
+    assert delete_call.args[1] == [{
+        "retailer_id": 7,
+        "store_code": "420",
+        "sku": "13255043",
+        "period_start": datetime.date(2025, 12, 1),
+        "period_type": "month",
+    }]
+
+
+def test_replace_source_without_a_unique_blob_is_rejected():
+    engine, connection = _fake_database()
+
+    try:
+        sellout_service.load_clean_rows(
+            _dataframe(),
+            replace_source=True,
+            engine=engine,
+        )
+    except ValueError as exc:
+        assert str(exc) == "replace_source requires a unique source_blob"
+    else:
+        raise AssertionError("A filename-only replacement must be rejected")
+
+    engine.begin.assert_not_called()
 
 
 def test_empty_dataframe_does_not_open_database_transaction():
@@ -276,6 +334,43 @@ def test_historical_import_can_preserve_source_lineage():
         if "INSERT INTO sellout" in str(call.args[0])
     )
     assert all(fact["data_source"] == "pipeline" for fact in fact_call.args[1])
+
+
+def test_uploaded_rows_are_versioned_in_the_same_transaction(monkeypatch):
+    engine, connection = _fake_database()
+    start = MagicMock(return_value=42)
+    record = MagicMock(return_value=[])
+    complete = MagicMock()
+    monkeypatch.setattr(sellout_service.ingestion_service, "start_run", start)
+    monkeypatch.setattr(sellout_service.ingestion_service, "record_versions", record)
+    monkeypatch.setattr(sellout_service.ingestion_service, "complete_run", complete)
+
+    result = sellout_service.load_clean_rows(
+        _dataframe(),
+        source_blob="uploads/2026-10-27_monthly.txt",
+        content_hash="abc123",
+        mapping_fingerprint="mapping123",
+        engine=engine,
+    )
+
+    assert result["ingestion_id"] == 42
+    start.assert_called_once_with(
+        connection,
+        source_blob="uploads/2026-10-27_monthly.txt",
+        source_file="monthly.txt",
+        content_hash="abc123",
+        mapping_fingerprint="mapping123",
+        loaded_at=start.call_args.kwargs["loaded_at"],
+    )
+    record.assert_called_once()
+    assert record.call_args.args[0:2] == (connection, 42)
+    assert len(record.call_args.args[2]) == 2
+    complete.assert_called_once_with(
+        connection,
+        42,
+        rows_stored=2,
+        rows_consolidated=0,
+    )
 
 
 def test_large_loads_use_batched_multi_row_upserts():

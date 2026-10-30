@@ -58,6 +58,7 @@ aireOS/
 │   │       ├── customer_service.py customers CRUD + list_customers (customers with nested retailers, in_use flags,
 │   │       │                      unlinked retailers); a record with data can't be renamed/deleted (looked up by name)
 │   │       ├── promotion_service.py promotions + promotion_stores + promotion_skus, raw SQL, one txn per write
+│   │       ├── ingestion_service.py upload-run audit + append-only sell-out versions; atomically rolls back bad uploads
 │   │       ├── sellout_service.py Cloud SQL `sellout`: ingestion writes, plus the Sales Dashboard reads (SKU ranking,
 │   │       │                      dashboard summary, period comparison, options, freshness) that used to go through
 │   │       │                      BigQuery -- reads Cloud SQL directly now (no replication lag), and both this and
@@ -193,7 +194,7 @@ No test runner is installed on the frontend; linting (`npm run lint`) is the fro
 | Domain | Router | Service(s) | Storage | Frontend entry |
 | --- | --- | --- | --- | --- |
 | Authentication | `auth.py` | `auth_service`, shared `app.auth.require_user` dependency | Google Workspace OIDC; signed HTTP-only `aireos_session` cookie (no application password store) | `app/login`, root `proxy.js` |
-| Upload & mapping | `uploads.py`, `mappings.py` | Generation: `layout_detection`, `column_profile`, `generate_mapping`, `mapping_prompt`, `mapping_contract`, `mapping_checks`, `mapping_view`. Transformation: `sellout_ingestion`, `apply_contract`, `validation_service` | **GCS** bucket: `uploads/` files, `mappings/pending/<fp>.json`, `mappings/confirmed/<fp>.json`, `mappings/history/<fp>/v<n>.json`. **Cloud SQL** `skus` read-only, to check product codes | `app/upload`, `app/mappings`, `services/mappingApi.js` |
+| Upload & mapping | `uploads.py`, `mappings.py` | Generation: `layout_detection`, `column_profile`, `generate_mapping`, `mapping_prompt`, `mapping_contract`, `mapping_checks`, `mapping_view`. Transformation: `sellout_ingestion`, `apply_contract`, `validation_service`; rollback: `ingestion_service` | **GCS** bucket: `uploads/` files, `mappings/pending/<fp>.json`, `mappings/confirmed/<fp>.json`, `mappings/history/<fp>/v<n>.json`. **Cloud SQL**: `skus` read-only during mapping checks; `ingestion_runs` + append-only `sellout_versions` audit transformed uploads and restore prior `sellout` values | `app/upload`, `app/mappings`, `services/mappingApi.js` |
 | Sales dashboard | `sales.py` | `sellout_service` | **Cloud SQL Postgres**: `sellout` (the source of truth -- every upload writes here first; `retailer_id`/`store_code`/`sku` rows, `period_type` `week` or `month`), joined to `retailers`/`stores`/`skus` for names (retailer name = `{customer}_{offline|online}`). A retailer+calendar-month with monthly-granularity rows uses only those (never both, see `EFFECTIVE_SELLOUT_CTE`); `granularity='week'` summary views read genuine weekly rows only. No more BigQuery/Datastream replication lag -- reads are real-time | `app/dashboard`, `hooks/use*.js`, `services/salesApi.js` |
 | Catalog | `catalog.py` | `catalog_service`, `customer_service` | **Cloud SQL Postgres**: `customers`, `customer_retailers`, `retailers`, `stores`, `skus`, `sku_history`. Names are lowercase slugs, unique case-insensitively. A retailer with stores, or a customer with any such retailer or `inventory_metrics` rows, is `in_use` and can't be renamed or deleted. `skus` keeps one stable foreign-key master row per code; `sku_history` stores its timestamped created/updated/archived versions. Historical price reads resolve the version effective on the requested date. | `app/customers`, `app/skus`, `services/catalogApi.js`; `services/promotionsApi.js` (getRetailers/getStores/getSkuRanges) |
 | Inventory | `inventory.py` | `inventory_service`, `inventory_calc`, `sellout_units`, `forecast_units` | **Cloud SQL Postgres**: `customers`, `customer_retailers`, `inventory_metrics` (long format; app writes carry `data_source='manual_entry'`; only sell-in, a first-month opening and building blocks (stock used outside sell-out) are read; workbook rows are never changed), `doh_settings` (read via `settings/doh.fetch_versions`; closed months use the version in effect at month end, the latest month, at-risk list and sell-in plan use the current one), `sellout` (sell-out, via `sellout_units`/`sellout_service`'s effective-sellout view, same monthly-preferred-over-weekly rule as the dashboard); **BigQuery** (read-only): the forecast table. Ending stock, DOH and the plan are computed, never stored | `app/inventory`, `services/inventoryApi.js` |
@@ -285,13 +286,15 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
    **Approving loads nothing.** `upload_loading.mark_uploads_after_approval` re-stamps the files behind the mapping
    (`ready_to_load`, or `reload_available` for files loaded with an older version) and confirm returns them as
    `waiting_uploads` / `outdated_uploads`.
-4. Loading is a separate step, because an upsert into `sellout` overwrites other files' values and cannot be undone
-   from the app. `LoadConfirmDialog` (from the approved screen, Recent uploads, or the upload row when the flag is on)
-   calls `POST /api/uploads/load/preview` -- a dry run per file: rows to store, periods, retailers, rows replaced
-   (same `source_file`) and rows overwritten per other file (`sellout_service.existing_overlap`) -- and only on the
-   person's confirmation `POST /api/uploads/load`, which re-checks each file, loads it with the current confirmed
-   version (`replace_source=True`) and stamps it `mapped` with `mapping_version`. Upload states: `pending_confirmation`
-   → `ready_to_load` → `mapped` (loaded) → `reload_available` after a new version.
+4. Loading is a separate, confirmed step. `LoadConfirmDialog` (from the approved screen, Recent uploads, or the
+   upload row when the flag is on) calls `POST /api/uploads/load/preview`, then `POST /api/uploads/load`. Each
+   successful write is versioned in `ingestion_runs` / `sellout_versions`. A reload matches the prior run by unique
+   GCS `source_blob`, never the user-facing filename, and removes only stale keys still owned by that run. Upload
+   states are `pending_confirmation` → `ready_to_load` → `mapped`, then `reload_available` after a new mapping version.
+5. A completed, versioned upload can be reversed from Recent uploads through `POST /api/uploads/rollback`.
+   The rollback marks its ingestion run as rolled back and rebuilds only its affected business keys from the latest
+   still-active versions in one Cloud SQL transaction. The GCS source and mapping remain as an audit trail; uploads
+   from before the rollback migration have no rollback action.
 
 **Dashboard** (`app/dashboard/page.js`)
 1. `useDataFreshness` polls `/api/sales/last-updated`; a change bumps `dataVersion`, which every
