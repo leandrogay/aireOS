@@ -1,6 +1,7 @@
 """
-What starts a promotion uplift measurement, through HTTP: a sales upload that
-stored rows, a promotion created / edited / deleted, the Re-measure button and
+What starts a promotion uplift measurement, through HTTP: a sales upload or a
+confirmed Load that stored rows (approving a mapping loads nothing, so it
+never measures), a promotion created / edited / deleted, the Re-measure button and
 the settings page opening, and settings saves that can change a measured
 value. A measurement failure never fails the upload, the promotion change or
 the save; it is recorded as a failed run instead.
@@ -12,7 +13,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.routers import uploads
-from app.services import promotion_service, storage
+from app.services import promotion_service, storage, upload_loading
 from app.services.settings import common
 from app.services.settings import promo_measurement as measurement
 from app.services.settings import promo_uplifts as uplift_service
@@ -148,6 +149,52 @@ def test_a_failed_measurement_does_not_fail_the_upload_and_is_recorded(monkeypat
 
     assert response.status_code == 200
     assert response.json()["results"][0]["mapping"]["processing"]["rows_stored"] == 12
+    (_, run), = conn.sql_containing("INSERT INTO promo_measurement_runs")
+    assert run["status"] == "failed"
+    assert run["triggered_by"] == "upload"
+
+
+# ---- confirmed loads (POST /api/uploads/load) ------------------------------------------------
+
+
+def _stub_load(monkeypatch, *rows_stored):
+    monkeypatch.setattr(upload_loading, "load_uploads", lambda blob_paths: [
+        {"blob_path": f"uploads/{index}.csv", "success": True, "processing": {"rows_stored": rows}}
+        for index, rows in enumerate(rows_stored)
+    ])
+
+
+def _load():
+    return client.post("/api/uploads/load", json={"blob_paths": ["uploads/0.csv", "uploads/1.csv"]})
+
+
+def test_a_load_that_stored_rows_measures_once(monkeypatch):
+    _stub_load(monkeypatch, 12, 5)
+    triggers = _record_triggers(monkeypatch)
+
+    response = _load()
+
+    assert response.status_code == 200
+    assert response.json()["loaded"] == 2
+    assert triggers == ["upload"]
+
+
+def test_a_load_that_stored_nothing_does_not_measure(monkeypatch):
+    _stub_load(monkeypatch, 0, 0)
+    triggers = _record_triggers(monkeypatch)
+
+    assert _load().status_code == 200
+    assert triggers == []
+
+
+def test_a_failed_measurement_does_not_fail_the_load_and_is_recorded(monkeypatch):
+    _stub_load(monkeypatch, 12)
+    conn = _failing_measurement(monkeypatch)
+
+    response = _load()
+
+    assert response.status_code == 200
+    assert response.json()["loaded"] == 1
     (_, run), = conn.sql_containing("INSERT INTO promo_measurement_runs")
     assert run["status"] == "failed"
     assert run["triggered_by"] == "upload"
