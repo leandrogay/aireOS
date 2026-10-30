@@ -6,7 +6,7 @@
 # No credentials go into the image: on Cloud Run every Google client uses the
 # service's own service account (see config.optional_key_file).
 
-FROM python:3.11-slim
+FROM python:3.15.2-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

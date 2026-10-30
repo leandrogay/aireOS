@@ -14,7 +14,7 @@ stock, days of holding, DOH thresholds, a sell-in plan), and forecasts sell-out.
 
 ```
 aireOS/
-├── .github/workflows/ci.yml       CI: backend pytest only (Python 3.11, no cloud creds)
+├── .github/workflows/ci.yml       CI: backend pytest only (Python 3.15, no cloud creds)
 ├── deploy/                        Cloud Run deploy: <env>/ settings + secret names, deploy & setup-secrets scripts (ps1 + sh)
 ├── .vscode/tasks.json             "Start Both Servers" task (uvicorn + next dev)
 ├── README.md                      Setup + the mapping workflow explanation
@@ -77,6 +77,8 @@ aireOS/
 │   │       │                      functions that used to live here moved to sellout_service.py
 │   │       ├── storage.py         GCS: upload files (duplicate detection), mapping JSON packets
 │   │       ├── upload_check.py    Read-only pre-upload check (POST /api/uploads/check): duplicate + mapping preview, no writes, no model call
+│   │       ├── upload_loading.py  Loading uploads into sell-out as its own confirmed step: per-upload load state after an approval,
+│   │       │                      dry run (rows, periods, rows replaced/overwritten) and the load itself (POST /api/uploads/load[/preview])
 │   │       ├── layout_detection.py PURE: finds the data table in an upload (sheet not a pivot, header row, preamble +
 │   │       │                      stated period, footer/total rows, total + spacer columns, merged cells filled down)
 │   │       ├── column_profile.py  PURE: whole-file column profile, repeated period/outlet column groups, template fingerprint
@@ -287,7 +289,8 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 2. Per file, concurrently (`asyncio.gather` → `to_thread(resolve_and_apply_mapping)`):
    `generate_mapping.resolve_mapping`: `layout_detection.read_table` → fingerprint the header templates →
    `mappings/confirmed/<fp>.json` (or a compatible legacy fingerprint) → `status: "mapped"`; either contract format
-   runs through `sellout_ingestion.process_confirmed_upload`. Else Gemini proposes a contract (structured output,
+   runs through `sellout_ingestion.process_confirmed_upload` -- unless `REQUIRE_LOAD_CONFIRMATION` is on, when the
+   file is left `ready_to_load` for step 4 instead. Else Gemini proposes a contract (structured output,
    schema built from this file's headers, SKU master listed),
    `mapping_checks` checks it statically against the file and the SKU master, failures go back for
    up to 2 repairs, and the result is stored in `mappings/pending/` with its checks and the file's product codes →
@@ -303,6 +306,16 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
    to (`mapping_contract.retailer_outputs`) is not that customer's -- otherwise uploads would create retailers no
    customer owns and the dashboard would never show their sales. A new customer is created from the page with its
    `<name>_offline`/`<name>_online` retailers in one transaction (`CustomerCreate.retailer_names`).
+   **Approving loads nothing.** `upload_loading.mark_uploads_after_approval` re-stamps the files behind the mapping
+   (`ready_to_load`, or `reload_available` for files loaded with an older version) and confirm returns them as
+   `waiting_uploads` / `outdated_uploads`.
+4. Loading is a separate step, because an upsert into `sellout` overwrites other files' values and cannot be undone
+   from the app. `LoadConfirmDialog` (from the approved screen, Recent uploads, or the upload row when the flag is on)
+   calls `POST /api/uploads/load/preview` -- a dry run per file: rows to store, periods, retailers, rows replaced
+   (same `source_file`) and rows overwritten per other file (`sellout_service.existing_overlap`) -- and only on the
+   person's confirmation `POST /api/uploads/load`, which re-checks each file, loads it with the current confirmed
+   version (`replace_source=True`) and stamps it `mapped` with `mapping_version`. Upload states: `pending_confirmation`
+   → `ready_to_load` → `mapped` (loaded) → `reload_available` after a new version.
 
 **Dashboard** (`app/dashboard/page.js`)
 1. `useDataFreshness` polls `/api/sales/last-updated`; a change bumps `dataVersion`, which every
@@ -346,7 +359,8 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | `mapping_view` packet/rule keys (`targetField`, `sourceColumn`, `editable`, `status`, `field`, `meltGroup`, `options`, `description`, `requiredMissing`, `checks`) | `utils/mappingReview.js`, `components/mappings/*` |
 | `mapping_checks` check shape (`id`, `level`, `passed`, `message`, `fields`, `evidence`) | `utils/mappingChecks.js`, `MappingChecks.jsx` |
 | packet `skuCodes`, `masterSkus`, `contractFormat`, `instructions`; processing preview/rejection fields | `utils/skuCodeTable.js`, `SkuCodeTable.jsx`, `MappingReviewPanel.jsx`, `UploadFileRow.jsx` |
-| `uploads.py` per-file `mapping.status` values (`mapped`, `pending_confirmation`, `mapping_failed`) | `FileUpload.jsx` result rendering |
+| `uploads.py` per-file `mapping.status` values (`mapped`, `ready_to_load`, `pending_confirmation`, `mapping_failed`) | `utils/uploadFlow.js` (`outcomeFromResult`) |
+| upload `mapping_status` load states (`ready_to_load`, `mapped`, `reload_available`, in `upload_loading`); load preview/result keys (`preview_loads`, `load_uploads`, `sellout_ingestion.preview_confirmed_upload`); confirm `waiting_uploads`/`outdated_uploads`/`load_requires_confirmation` | `utils/uploadHistory.js`, `utils/loadPreview.js` (`LOAD_PREVIEW_FIELDS`), `LoadConfirmDialog.jsx` → `LoadFileRow.jsx` (sample rows via `OutputPreview`), `ApprovedSummary.jsx` |
 | `settings/doh._settings_view` keys, `GLOBAL_DEFAULT_*_DOH` | `DohSettingsTable.jsx`, `dohSettingsForm.js` (`GLOBAL_DEFAULT_DOH`) |
 | `DohThresholdsUpdate` field names | `buildDohThresholdPayload` |
 | `ScenarioBuildingBlockBase` field names, `building_blocks._block_view` keys | `buildScenarioBlockPayload` / `scenarioBlockFromApi` in `scenarioBlocks.js` |
@@ -381,7 +395,8 @@ Backend variables: `GOOGLE_APPLICATION_CREDENTIALS`, `SERVICE_ACCOUNT_KEY_PATH`,
 `GCS_BUCKET_NAME`, `GCS_DESTINATION_PREFIX`, `GCS_DESTINATION_PREFIX_MAPPING`,
 `BQ_FAIRPRICESELLOUT_TABLE` (legacy, unused), `BQ_FORECAST_OUTPUT_VIEW`, `MAPPING_MODEL`, `MAPPING_VERTEX_LOCATION`,
 `GEMINI_ASSISTANT_MODEL`, `GCP_VERTEX_LOCATION`, `POSTGRESQL_INSTANCE_CONNECTION_NAME`,
-`DB_IAM_USER`, `DB_NAME`, `AUTH_ENABLED`,
+`DB_IAM_USER`, `DB_NAME`, `CLOUD_SQL_LOAD_ENABLED`, `REQUIRE_LOAD_CONFIRMATION` (default false: known layouts load on
+upload; true: they wait for a confirmed Load), `AUTH_ENABLED`,
 `AUTH_SESSION_SECRET`, `AUTH_ALLOWED_DOMAIN`, `AUTH_FRONTEND_URL`, `AUTH_COOKIE_SECURE`,
 `AUTH_COOKIE_DOMAIN`, `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`,
 `GOOGLE_OAUTH_REDIRECT_URI`. (`BQ_SELLOUT_TABLE` was removed --

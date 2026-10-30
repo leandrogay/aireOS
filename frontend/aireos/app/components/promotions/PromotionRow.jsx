@@ -84,8 +84,8 @@ export default function PromotionRow({
       <td className="px-4 py-2.5 font-medium" title={storeNames.join(', ') || undefined}>
         <span className="block truncate">{summariseNames(storeNames)}</span>
       </td>
-      <td className="px-4 py-2.5 tabular-nums">{formatDate(promotion.period_start)}</td>
-      <td className="px-4 py-2.5 tabular-nums">{formatDate(promotion.period_end)}</td>
+      <td className="px-4 py-2.5">{formatDate(promotion.period_start)}</td>
+      <td className="px-4 py-2.5">{formatDate(promotion.period_end)}</td>
       {/* Multi-week labels ("W20-2025, W21-2025, W22-2025") wrap instead of
           being cut off. Each word is nowrap so lines break only at spaces,
           never after the hyphen in "W21-2025". */}

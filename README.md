@@ -14,7 +14,7 @@ Team WIP x Aire - FYP
 
 Install these before doing anything else:
 
-- **Python 3.11+** — [python.org/downloads](https://www.python.org/downloads/)
+- **Python 3.15** — [python.org/downloads](https://www.python.org/downloads/)
 - **Node.js 18+ and npm** — [nodejs.org](https://nodejs.org/)
 - **Git**
 

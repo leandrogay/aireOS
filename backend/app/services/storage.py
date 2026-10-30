@@ -54,6 +54,10 @@ MAPPING_FINGERPRINT_METADATA_KEY = "mapping_fingerprint"
 MAPPING_STATUS_METADATA_KEY = "mapping_status"
 MAPPING_NAME_METADATA_KEY = "mapping_name"
 VENDOR_METADATA_KEY = "vendor"
+# The version of the mapping whose rows are in sell-out for this file. Set when
+# the file is loaded, so a later version of the mapping can tell which files
+# were loaded with an older one.
+MAPPING_VERSION_METADATA_KEY = "mapping_version"
 
 
 @lru_cache(maxsize=1)
@@ -302,45 +306,67 @@ def upload_many(
 
 # ---- Upload history ----------------------------------------------------------
 
-def update_uploads_for_mapping(
-    fingerprint: str, annotations: dict[str, str]
-) -> dict[str, list[str]]:
+def _upload_row(blob) -> dict:
+    """One uploaded blob as the history and the load screens read it."""
+    metadata = blob.metadata or {}
+    return {
+        "filename": metadata.get(ORIGINAL_FILENAME_METADATA_KEY)
+        or blob.name[len(DESTINATION_PREFIX):],
+        "blob_path": blob.name,
+        "destination": f"gs://{BUCKET_NAME}/{blob.name}",
+        "uploaded_at": blob.time_created.isoformat() if blob.time_created else None,
+        "size_bytes": blob.size,
+        "content_hash": metadata.get(CONTENT_HASH_METADATA_KEY),
+        "mapping_fingerprint": metadata.get(MAPPING_FINGERPRINT_METADATA_KEY),
+        "mapping_status": metadata.get(MAPPING_STATUS_METADATA_KEY),
+        "mapping_name": metadata.get(MAPPING_NAME_METADATA_KEY),
+        "mapping_version": metadata.get(MAPPING_VERSION_METADATA_KEY),
+        "vendor": metadata.get(VENDOR_METADATA_KEY),
+    }
+
+
+def list_uploads_for_mapping(fingerprint: str) -> list[dict]:
     """
-    Re-stamp every upload that went through one mapping.
+    Every upload that went through one mapping, oldest first.
 
-    An upload records the mapping it resolved to and the state that mapping was
-    in at the time. When a proposal is approved, that recorded state becomes
-    wrong for every file already uploaded against it -- the history would keep
-    showing "Needs review" for files whose mapping is now confirmed. This walks
-    the uploads and corrects them.
-
-    Returns `matched` (every upload that used this mapping) alongside `updated`
-    (the ones whose metadata was actually rewritten). They differ when a patch
-    fails, and the caller wants both: `matched` is the set of files now ready
-    to be transformed, while `updated` is what the history will show. Best
-    effort per blob, in keeping with annotate_upload -- a stale history label
-    is not a reason to fail the approval that prompted it.
+    An upload records the mapping it resolved to and the state it was in at
+    the time. When the mapping is approved, that state is out of date for every
+    file already uploaded against it, and what it should become depends on the
+    file -- waiting to be loaded, or loaded with an older version -- so the
+    caller gets the rows and re-stamps each one with annotate_upload.
     """
     try:
         blobs = list(get_storage_client().list_blobs(BUCKET_NAME, prefix=DESTINATION_PREFIX))
     except gcloud_exceptions.NotFound:
-        return {"matched": [], "updated": []}
+        return []
     except gcloud_exceptions.Forbidden as e:
         raise GCSPermissionError(f"List denied on {DESTINATION_PREFIX}. Details: {e}")
     except Exception as e:
         raise GCSUploadError(f"Failed listing {DESTINATION_PREFIX}: {e}")
 
-    matched: list[str] = []
-    updated: list[str] = []
+    oldest = datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
+    mine = [
+        blob for blob in blobs
+        if (blob.metadata or {}).get(MAPPING_FINGERPRINT_METADATA_KEY) == fingerprint
+    ]
+    mine.sort(key=lambda blob: blob.time_created or oldest)
+    return [_upload_row(blob) for blob in mine]
 
-    for blob in blobs:
-        if (blob.metadata or {}).get(MAPPING_FINGERPRINT_METADATA_KEY) != fingerprint:
-            continue
-        matched.append(blob.name)
-        if annotate_upload(blob.name, annotations):
-            updated.append(blob.name)
 
-    return {"matched": matched, "updated": updated}
+def get_upload(path: str) -> dict | None:
+    """One uploaded blob's history row, or None when it is not in the bucket."""
+    try:
+        blob = _blob(path)
+        if not blob.exists():
+            return None
+        # A bucket.blob() reference carries no metadata until it is reloaded.
+        if hasattr(blob, "reload"):
+            blob.reload()
+        return _upload_row(blob)
+    except gcloud_exceptions.Forbidden as e:
+        raise GCSPermissionError(f"Read denied on {path}. Details: {e}")
+    except Exception as e:
+        raise GCSUploadError(f"Failed reading {path}: {e}")
 
 
 def move_pending_mapping_to_confirmed(fingerprint: str, envelope: dict) -> dict:
@@ -458,24 +484,7 @@ def list_uploads(limit: int = 50, since: datetime.datetime | None = None) -> lis
     oldest = datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
     blobs.sort(key=lambda blob: blob.time_created or oldest, reverse=True)
 
-    uploads = []
-    for blob in blobs[:limit]:
-        metadata = blob.metadata or {}
-        uploads.append({
-            "filename": metadata.get(ORIGINAL_FILENAME_METADATA_KEY)
-            or blob.name[len(DESTINATION_PREFIX):],
-            "blob_path": blob.name,
-            "destination": f"gs://{BUCKET_NAME}/{blob.name}",
-            "uploaded_at": blob.time_created.isoformat() if blob.time_created else None,
-            "size_bytes": blob.size,
-            "content_hash": metadata.get(CONTENT_HASH_METADATA_KEY),
-            "mapping_fingerprint": metadata.get(MAPPING_FINGERPRINT_METADATA_KEY),
-            "mapping_status": metadata.get(MAPPING_STATUS_METADATA_KEY),
-            "mapping_name": metadata.get(MAPPING_NAME_METADATA_KEY),
-            "vendor": metadata.get(VENDOR_METADATA_KEY),
-        })
-
-    return uploads
+    return [_upload_row(blob) for blob in blobs[:limit]]
 
 
 # ---- Mapping contracts: JSON objects in the bucket --------------------------

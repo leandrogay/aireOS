@@ -137,6 +137,95 @@ def summarize_clean_rows(dataframe: pd.DataFrame) -> dict:
     }
 
 
+def existing_overlap(
+    dataframe: pd.DataFrame,
+    *,
+    replace_source: bool = False,
+    engine: Engine | None = None,
+) -> dict:
+    """
+    What loading these rows would do to sell-out already stored, without
+    writing anything: the rows deleted first because they came from a file of
+    the same name (``replace_source``, as load_clean_rows does), and the rows
+    other files loaded that the upsert would overwrite, counted per file.
+
+    Loading cannot be undone from the app, and an upsert replaces values
+    silently, so this is what the load confirmation shows before it happens.
+    Matched on the same business key and retailer name the load uses.
+    """
+    if dataframe.empty:
+        return {"rows_replaced": 0, "overwrites": []}
+
+    records, _ = _prepare_records(dataframe)
+    source_files = sorted({str(row["source_file"]) for row in records if row.get("source_file")})
+    keys = {
+        (str(row["retailer"]), str(row["store_code"]), str(row["sku"]), row["period_start"], row["period_type"])
+        for row in records
+    }
+    periods = [row["period_start"] for row in records]
+    database = engine or _get_read_engine()
+
+    with database.connect() as connection:
+        rows_replaced = 0
+        if replace_source and source_files:
+            rows_replaced = connection.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM sellout
+                    WHERE source_file = ANY(CAST(:source_files AS text[]))
+                    """
+                ),
+                {"source_files": source_files},
+            ).scalar_one()
+
+        existing = connection.execute(
+            text(
+                """
+                SELECT
+                    r.retailer_name,
+                    s.store_code,
+                    s.sku,
+                    s.period_start,
+                    s.period_type,
+                    s.source_file
+                FROM sellout s
+                JOIN retailers r ON r.retailer_id = s.retailer_id
+                WHERE r.retailer_name = ANY(CAST(:retailer_names AS text[]))
+                  AND s.period_start BETWEEN :first_period AND :last_period
+                """
+            ),
+            {
+                "retailer_names": sorted({key[0] for key in keys}),
+                "first_period": min(periods),
+                "last_period": max(periods),
+            },
+        ).mappings().all()
+
+    # Rows from a same-named file are deleted before the upsert when
+    # replacing, so they are counted as replaced above, not as overwritten.
+    deleted_first = set(source_files) if replace_source else set()
+    overwritten = Counter(
+        row["source_file"] or "Unknown file"
+        for row in existing
+        if row["source_file"] not in deleted_first
+        and (
+            row["retailer_name"],
+            str(row["store_code"]),
+            str(row["sku"]),
+            row["period_start"],
+            row["period_type"],
+        ) in keys
+    )
+    return {
+        "rows_replaced": int(rows_replaced),
+        "overwrites": [
+            {"source_file": source_file, "rows": count}
+            for source_file, count in overwritten.most_common()
+        ],
+    }
+
+
 def cloud_sql_loading_enabled() -> bool:
     return config.cloud_sql_loading_enabled()
 

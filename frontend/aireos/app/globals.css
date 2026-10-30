@@ -185,4 +185,91 @@
   html {
     @apply font-sans;
   }
+  /* Recharts draws axis ticks as SVG text, out of reach of a className.
+     Fixed-width digits keep the value axis ("$1.2k" / "$11.8k") evenly set
+     and stop it shifting when the data changes. Only the y axis: the x axis
+     holds months and dates, which stay proportional. */
+  .recharts-yAxis .recharts-cartesian-axis-tick-value {
+    font-family: var(--font-numeric), var(--font-sans);
+    @apply tabular-nums;
+  }
+}
+
+/* DM Sans has no tabular figures, so tabular-nums alone changes nothing.
+   Anything marked tabular-nums switches to the numeric font, which has them
+   (see app/layout.js). font-mono keeps Geist Mono, already fixed-width. */
+@layer utilities {
+  .tabular-nums:not(.font-mono) {
+    font-family: var(--font-numeric), var(--font-sans);
+  }
+}
+
+/* A chart line's dots fade in as the line is drawn past them; the delay is set
+   per dot (app/utils/lineAnimation.js dotRevealDelay). `backwards` holds them hidden
+   until their delay is up. Reduced motion: no fade, the dots just show. */
+@keyframes line-dot-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.line-dot-in {
+  animation: line-dot-in 250ms ease-out backwards;
+}
+
+/* A forecast promo band wipes in left to right, growing from its left edge.
+   Its delay and duration are set per band (ForecastChart.jsx PromoBands) so its
+   leading edge keeps pace with the line sweep. */
+@keyframes promo-band-in {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+.promo-band-in {
+  transform-box: fill-box;
+  transform-origin: left center;
+  animation: promo-band-in 300ms linear backwards;
+}
+
+/* The assistant's "Pondering…" word (AssistantWidget ThinkingIndicator): a
+   brighter band sweeps left to right across muted text, like Claude Code's
+   working indicator. The text is painted by its background gradient
+   (background-clip: text), which slides across it on a loop. */
+@keyframes thinking-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+.thinking-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--aire-deep-blue) 55%, transparent) 0%,
+    color-mix(in srgb, var(--aire-deep-blue) 55%, transparent) 40%,
+    var(--aire-deep-blue) 50%,
+    color-mix(in srgb, var(--aire-deep-blue) 55%, transparent) 60%,
+    color-mix(in srgb, var(--aire-deep-blue) 55%, transparent) 100%
+  );
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: thinking-shimmer 2s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .line-dot-in,
+  .promo-band-in {
+    animation: none;
+  }
+
+  .thinking-shimmer {
+    animation: none;
+    background-image: none;
+    color: color-mix(in srgb, var(--aire-deep-blue) 60%, transparent);
+  }
 }

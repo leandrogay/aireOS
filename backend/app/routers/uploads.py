@@ -4,11 +4,14 @@ from typing import List
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query
 
+from app import config
+from app.schemas.uploads import LoadRequest
 from app.services import storage
 from app.services import generate_mapping
 from app.services import apply_contract as contract_application
 from app.services import sellout_ingestion, sellout_service
 from app.services import upload_check
+from app.services import upload_loading
 from app.services.settings import promo_measurement
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
@@ -19,7 +22,7 @@ def _mapping_annotations(mapping: dict | None) -> dict[str, str]:
         return {}
 
     status = mapping.get("status")
-    addressable = status in ("mapped", "pending_confirmation")
+    addressable = status in ("mapped", "ready_to_load", "pending_confirmation")
     fields = {
         storage.MAPPING_STATUS_METADATA_KEY: status,
         storage.MAPPING_FINGERPRINT_METADATA_KEY: (
@@ -27,6 +30,11 @@ def _mapping_annotations(mapping: dict | None) -> dict[str, str]:
         ),
         storage.MAPPING_NAME_METADATA_KEY: mapping.get("name"),
         storage.VENDOR_METADATA_KEY: mapping.get("vendor"),
+        # Which version's rows are in sell-out, so a later version can offer
+        # this file a reload (upload_loading.mark_uploads_after_approval).
+        storage.MAPPING_VERSION_METADATA_KEY: (
+            mapping.get("version") if status == "mapped" else None
+        ),
     }
     return {key: str(value) for key, value in fields.items() if value}
 
@@ -37,9 +45,17 @@ def resolve_and_apply_mapping(
     uploaded_to: str | None = None,
     replace_source: bool = False,
 ) -> dict:
-    """Resolve one GCS mapping, then validate and store confirmed output."""
+    """
+    Resolve one GCS mapping, then validate and store confirmed output -- or,
+    with REQUIRE_LOAD_CONFIRMATION on, leave the file ready to load, for a
+    person to load after a dry run (upload_loading).
+    """
     resolved = generate_mapping.resolve_mapping(filename, data, uploaded_to)
     if resolved.get("status") != "mapped":
+        return resolved
+
+    if config.load_confirmation_required():
+        resolved["status"] = upload_loading.READY_TO_LOAD
         return resolved
 
     resolved["processing"] = sellout_ingestion.process_confirmed_upload(
@@ -221,3 +237,48 @@ async def upload_history(
             status_code=503,
             detail=f"Unable to read upload history: {exc}",
         )
+
+
+# ---- Loading into sell-out -------------------------------------------------
+#
+# Separate from uploading and from approving a mapping: both of those can be
+# changed later, a load cannot be undone from the app. The screen previews,
+# a person confirms, then it loads. Both endpoints answer 200 with one result
+# per file, like upload_files; a file that cannot be loaded says why on its
+# own row.
+
+@router.post("/load/preview")
+async def preview_load(body: LoadRequest):
+    """Dry run: what loading each file would store, replace and overwrite."""
+    try:
+        return {"files": await asyncio.to_thread(upload_loading.preview_loads, body.blob_paths)}
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to preview the load: {type(exc).__name__}: {exc}",
+        )
+
+
+@router.post("/load")
+async def load_files(body: LoadRequest):
+    """Load each file into sell-out with the current version of its mapping."""
+    try:
+        results = await asyncio.to_thread(upload_loading.load_uploads, body.blob_paths)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to load files: {type(exc).__name__}: {exc}",
+        )
+
+    # Once per request, after every file is loaded, and never failing the
+    # load: new sales can change the measured promotion uplifts.
+    if any(result["success"] and (result.get("processing") or {}).get("rows_stored") for result in results):
+        await asyncio.to_thread(promo_measurement.measure_after_change, "upload")
+
+    loaded = sum(1 for result in results if result["success"])
+    return {
+        "success": loaded == len(results),
+        "loaded": loaded,
+        "failed": len(results) - loaded,
+        "results": results,
+    }
