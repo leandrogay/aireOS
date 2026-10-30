@@ -129,11 +129,12 @@ def _no_real_notification_database(monkeypatch):
 
 # ---- Synthetic retailer files -----------------------------------------------
 #
-# Small copies of the three real layouts (FairPrice, NHG, Sheng Siong), built
-# in memory. The real sample files are commercial data and never in git, so
-# CI exercises every layout trait through these instead: NHG's pivot sheet
-# first, Sheng Siong's preamble / merged dates / spacer / total column /
-# footers, FairPrice's CAR + EA rows and blank cells.
+# Small copies of the real layouts (FairPrice, NHG, Sheng Siong, SingHealth,
+# Prime), built in memory. The real sample files are commercial data and never
+# in git, so CI exercises every layout trait through these instead: NHG's pivot
+# sheet first, Sheng Siong's preamble / merged dates / spacer / total column /
+# footers, FairPrice's CAR + EA rows and blank cells, SingHealth's stated
+# period and outlet codes above the header.
 
 import io
 
@@ -196,8 +197,11 @@ def nhg_xlsx(pivot_first: bool = True, extra_material: str | None = None) -> byt
 SHENG_SIONG_OUTLETS = ["2A", "6M_Ecomm", "TC"]
 
 
-def sheng_siong_xlsx(outlets=SHENG_SIONG_OUTLETS) -> bytes:
-    """A claim statement: title, key-value preamble, header on row 7, merged dates, footers."""
+def sheng_siong_xlsx(outlets=SHENG_SIONG_OUTLETS, claim_label: str = "Total Claim") -> bytes:
+    """
+    A claim statement: title, key-value preamble, header on row 7, merged dates,
+    footers. Newer statements label the claim lines "Supplier Claim ..." instead.
+    """
     import datetime as _dt
     workbook = openpyxl.Workbook()
     sheet = workbook.active
@@ -234,8 +238,44 @@ def sheng_siong_xlsx(outlets=SHENG_SIONG_OUTLETS) -> bytes:
         if row_number - first > 1:
             sheet.merge_cells(start_row=first, start_column=1, end_row=row_number - 1, end_column=1)
     sheet.append(["Total ", None, None, None, None, None, *footer, sum(footer)])
-    sheet.append([None, None, None, None, None, "Total Claim before GST", *[1.0] * len(outlets), 9.99])
-    sheet.append([None, None, None, None, None, "Total Claim After GST", *[1.1] * len(outlets), 10.89])
+    sheet.append([None, None, None, None, None, f"{claim_label} before GST", *[1.0] * len(outlets), 9.99])
+    sheet.append([None, None, None, None, None, f"{claim_label} After GST", *[1.1] * len(outlets), 10.89])
+    return _workbook_bytes(workbook)
+
+
+SINGHEALTH_OUTLETS = [("81001", "BEDOK"), ("88001", "ONLINE")]
+
+
+def singhealth_xlsx(outlets=SINGHEALTH_OUTLETS, period: str = "01 Aug 2026 TO 31 Aug 2026") -> bytes:
+    """An ER130 report: title and period lines, outlet codes above the header naming the outlets, unit costs."""
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.append(["Report : ER130 Sales Report Qty", "Printed by : Someone 09/02/26 12:41:15 PM"])
+    sheet.append([f"DATE : {period}"])
+    sheet.append([None] * 6 + [int(code) if code else None for code, _ in outlets])
+    sheet.append(["Product Code", "Product Name", "Vendor code", "Vendor Name", "Normal cost", "Promo cost", *[name for _, name in outlets]])
+    rows = [
+        ("0600-08-458-D", "AIRE ADULT PULL UP PANTS S/M 10S^", 7.15, 5.85, [2, 40]),
+        ("0600-08-466-D", "AIRE ADULT TAPE ULTRA XL 12S^", 9.5, 8.95, [0, 3]),
+    ]
+    for code, name, normal, promo, cells in rows:
+        cells = cells + [1] * (len(outlets) - len(cells))
+        sheet.append([code, name, 1000039995, "XEL LIFECARE PTE. LTD.^", normal, promo, *cells])
+    return _workbook_bytes(workbook)
+
+
+def prime_xlsx() -> bytes:
+    """A withdrawal report: one row per pallet sent from the distribution centre to an outlet."""
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.append([
+        "Delivery Date", "Supplier Code", "Supplier Name", "Product Code", "Product Description",
+        "Product Category", "Total Shipped Qty", "Total Shipped Qty UOM", "Total Shipped Qty (CTN)",
+        "Pack Size", "Customer code", "Pallet ID",
+    ])
+    sheet.append(["2026-08-07", "X007", "XEL LIFECARE PTE LTD (DC)", "0303001303", "AIRE ADULT PULL PANTS (L)", "0303", 8, "1X10S", 1, 8, "106", "T1"])
+    sheet.append(["2026-08-23", "X007", "XEL LIFECARE PTE LTD (DC)", "0303001303", "AIRE ADULT PULL PANTS (L)", "0303", 16, "1X10S", 2, 8, "106", "T2"])
+    sheet.append(["2026-08-20", "X007", "XEL LIFECARE PTE LTD (DC)", "0303001304", "AIRE ADULT PULL PANTS (S/M)", "0303", 32, "1X10S", 4, 8, "WLM", "T3"])
     return _workbook_bytes(workbook)
 
 
@@ -246,4 +286,6 @@ def retailer_files():
         "fairprice_monthly": ("XEL_VENDORS_BRANDS_MONTH_01-01-2026_01-02-2026_1.txt", fairprice_txt()),
         "nhg_sap": ("Aire Sell Out Aug 26.xlsx", nhg_xlsx()),
         "sheng_siong_claim": ("Claim_Sales_Summary_Report_XLPL_CSTANG_P100045355_03JUL26.xlsx", sheng_siong_xlsx()),
+        "singhealth_er130": ("XEL.xlsx", singhealth_xlsx()),
+        "prime_jkdc": ("XEL Lifecare JKDC Withdrawal Report (Aug'26).xlsx", prime_xlsx()),
     }

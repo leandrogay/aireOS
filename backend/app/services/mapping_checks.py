@@ -5,7 +5,8 @@ Static checks only: nothing here runs the contract (that is the
 transformation's job). Each check reads the contract's instructions and the
 file's own columns and values -- every field accounted for, the required ones
 filled, every product code a master SKU, every rule value covered, revenue not
-read from a claim or price column, periods inside the period the file states.
+read from a claim or price column, periods inside the period the file states,
+every store label above the header present.
 A check that fails names the fields it implicates, and those fields'
 confidence comes from the checks (see field_confidence), so a reviewer is
 pointed at what actually went wrong.
@@ -25,6 +26,11 @@ from app.services.mapping_contract import REQUIRED_FIELDS, group_columns, resolv
 # supplier, a price or a cost -- never the gross sales value of units sold.
 NOT_REVENUE = re.compile(
     r"claim|contra|rebate|price|cost|support|gst|discount|margin|allowance", re.IGNORECASE
+)
+# Units times a price or cost per unit is sales value (SingHealth's units x
+# Promo cost); units times a claim or rebate per unit is still a claim.
+NOT_A_UNIT_PRICE = re.compile(
+    r"claim|contra|rebate|support|discount|margin|allowance", re.IGNORECASE
 )
 # Above this share of negative quantities, sales are probably recorded as
 # negative (SAP postings) and the contract should negate them.
@@ -243,10 +249,14 @@ def _rule_inputs(frame: pd.DataFrame, contract: dict, entry: dict, transform: di
         return sorted(set(_present(frame[transform["column"]])))
     if entry.get("source") in frame:
         return sorted(set(_present(frame[entry["source"]])))
-    if entry.get("from_field") == "store_code":
-        store = (contract.get("fields") or {}).get("store_code") or {}
+    if entry.get("from_field") in ("store_code", "store_name"):
+        store = (contract.get("fields") or {}).get(entry["from_field"]) or {}
         group = next((g for g in contract.get("melt_groups") or [] if g["id"] == store.get("melt_group")), None)
         if group:
+            # Only a store the headers name can be read here; one read from
+            # the cells above them is not in the frame.
+            if group["key"]["target"] != entry["from_field"]:
+                return None
             return resolve_selector(group.get("select") or {}, list(frame.columns))
         if store.get("source") in frame:
             return sorted(set(_present(frame[store["source"]])))
@@ -293,6 +303,12 @@ def _measure_columns(frame: pd.DataFrame, contract: dict, field: str) -> list[st
 
 def _check_revenue(frame: pd.DataFrame, contract: dict) -> dict:
     suspect = [c for c in _measure_columns(frame, contract, "revenue") if NOT_REVENUE.search(c)]
+    entry = (contract.get("fields") or {}).get("revenue") or {}
+    suspect += [
+        t["column"]
+        for t in entry.get("transforms") or []
+        if t.get("type") == "multiply" and NOT_A_UNIT_PRICE.search(t["column"])
+    ]
     return _check(
         "revenue_source", "error", not suspect,
         "Revenue is not read from a claim, price or cost column." if not suspect
@@ -322,7 +338,30 @@ def _check_quantity_sign(frame: pd.DataFrame, contract: dict) -> dict:
     )
 
 
+def _check_stated_month(layout: dict) -> dict:
+    """A contract that reads its period from the file's title needs a title stating one month."""
+    stated = (layout or {}).get("stated_period")
+    if not stated:
+        return _check(
+            "period", "error", False,
+            "The period is read from the file's title, but this file's title states no period.",
+            ["period_start"], {"stated": None},
+        )
+    one_month = pd.Timestamp(stated["start"]).to_period("M") == pd.Timestamp(stated["end"]).to_period("M")
+    return _check(
+        "period", "error", one_month,
+        f"Every row is dated to the month the title states: {stated['start']} to {stated['end']}."
+        if one_month
+        else f"The title states {stated['start']} to {stated['end']}, more than one month, "
+             "so rows cannot be dated to a month from it.",
+        ["period_start"], {"stated": stated},
+    )
+
+
 def _check_period(frame: pd.DataFrame, layout: dict, contract: dict, filename: str) -> dict:
+    entry = (contract.get("fields") or {}).get("period_start") or {}
+    if entry.get("from_layout") == "stated_period":
+        return _check_stated_month(layout)
     stated = stated_period(layout, filename)
     dates = _period_dates(frame, contract)
     if stated is None or dates is None or dates.empty:
@@ -336,6 +375,28 @@ def _check_period(frame: pd.DataFrame, layout: dict, contract: dict, filename: s
         else f"Periods {', '.join(outside)} fall outside {stated['start']} to {stated['end']} ({stated['source']}).",
         ["period_start"], {"stated": stated, "outside": outside},
     )
+
+
+def _check_labels(frame: pd.DataFrame, layout: dict, contract: dict) -> list[dict]:
+    """Every column a melt group reads a label for has a cell in the label's row."""
+    checks = []
+    header_row = int((layout or {}).get("header_row") or 1)
+    above = {item["row"]: item["cells"] for item in (layout or {}).get("rows_above_header") or []}
+    for group in contract.get("melt_groups") or []:
+        columns = resolve_selector(group.get("select") or {}, list(frame.columns))
+        for label in group.get("labels") or []:
+            row = header_row - label["rows_above"]
+            cells = above.get(row) or {}
+            missing = [column for column in columns if column not in cells]
+            target = label["target"]
+            checks.append(_check(
+                f"labels_{target}", "error", not missing,
+                f"{target}: read from row {row} above all {len(columns)} columns." if not missing
+                else f"{target}: row {row} has nothing above {', '.join(missing[:10])}.",
+                [target],
+                {"row": row, "read": {c: cells[c] for c in columns[:20] if c in cells}, "missing": missing},
+            ))
+    return checks
 
 
 def _check_not_available(contract: dict) -> dict:
@@ -388,6 +449,7 @@ def run_checks(
         _check_revenue(frame, contract),
         _check_quantity_sign(frame, contract),
         _check_period(frame, layout, contract, filename),
+        *_check_labels(frame, layout, contract),
         _check_not_available(contract),
         _check_instructions(contract),
     ]

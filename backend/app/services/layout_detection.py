@@ -43,9 +43,11 @@ FOOTER_LABEL = re.compile(r"^(grand\s+)?total\b", re.IGNORECASE)
 SUBTOTAL_LABEL = re.compile(r"^(grand\s+|sub\s*)?total$", re.IGNORECASE)
 TOTAL_COLUMN = re.compile(r"^(grand\s+)?total$", re.IGNORECASE)
 
-# "CLAIM SALES SUMMARY FOR 1/6/2026 TO 30/6/2026"
+# "CLAIM SALES SUMMARY FOR 1/6/2026 TO 30/6/2026" (Sheng Siong) or
+# "DATE : 01 Aug 2026 TO 31 Aug 2026" (SingHealth).
+_STATED_DATE = r"\d{1,2}[/-]\d{1,2}[/-]\d{4}|\d{1,2}[ -][A-Za-z]{3,9}[ -]\d{4}"
 STATED_PERIOD = re.compile(
-    r"(\d{1,2}[/-]\d{1,2}[/-]\d{4})\s*(?:to|-|–)\s*(\d{1,2}[/-]\d{1,2}[/-]\d{4})",
+    rf"({_STATED_DATE})\s*(?:to|-|–)\s*({_STATED_DATE})",
     re.IGNORECASE,
 )
 NUMBER_LIKE = re.compile(r"^-?\d+(\.\d+)?$")
@@ -264,6 +266,43 @@ def _parse_preamble(rows: list[list]) -> dict:
     return {"title": title, "metadata": metadata, "stated_period": stated_period}
 
 
+def _rows_above_header(rows: list[list], headers: list[str], keep: list[int]) -> list[dict]:
+    """
+    The cells above the header, keyed by the header of the column they sit
+    in. SingHealth writes each outlet's code in the row above its name, so the
+    header alone does not say everything about a column.
+    """
+    above = []
+    for index, row in enumerate(rows):
+        cells = {
+            headers[column]: row[column]
+            for column in keep
+            if column < len(row) and row[column] is not None
+        }
+        if cells:
+            above.append({"row": index + 1, "cells": cells})
+    return above
+
+
+def _footer_label(row: list) -> str | None:
+    """The "Total ..." label that marks a footer row, if the row has one."""
+    return next((value for value in row if value and FOOTER_LABEL.match(value)), None)
+
+
+def _summary_label(row: list) -> str | None:
+    """
+    The label of a summary line: text that starts the row past its first
+    column, the way "Supplier Claim before GST" sits under Sheng Siong's
+    outlet columns. A data row starts in the first column.
+    """
+    if row[0] is not None:
+        return None
+    first = next((value for value in row if value is not None), None)
+    if first is None or _is_number_or_date(first):
+        return None
+    return first
+
+
 def _pivot_reason(sheet: dict, header_row: int | None) -> str | None:
     """
     Why a sheet is a pivot table, or None when it is not one: Excel's own pivot
@@ -333,18 +372,27 @@ def _table_on_sheet(sheet: dict) -> dict | None:
     indexed = [(header_index + 1 + offset, padded(row)) for offset, row in enumerate(body)]
     indexed = [(number, row) for number, row in indexed if _filled(row)]
 
-    # Footers: the run of rows at the very bottom whose label starts "Total".
-    footer_rows = []
-    while indexed:
-        _, row = indexed[-1]
-        label = next((value for value in row if value and FOOTER_LABEL.match(value)), None)
-        if label is None:
-            break
-        indexed.pop()
-        footer_rows.insert(0, {
-            "label": label,
+    # Footers: the rows at the very bottom from the last "Total" row down.
+    # Sheng Siong writes its claim lines under the total -- "Total Claim before
+    # GST" in older statements, "Supplier Claim before GST" in newer ones -- so
+    # a summary line below a total is a footer whatever it is labelled.
+    # Without a total above them, summary lines stay data.
+    tail = len(indexed)
+    while tail and _summary_label(indexed[tail - 1][1]) and not _footer_label(indexed[tail - 1][1]):
+        tail -= 1
+    start = tail
+    while start and _footer_label(indexed[start - 1][1]):
+        start -= 1
+    if start == tail:
+        start = len(indexed)
+    footer_rows = [
+        {
+            "label": _footer_label(row) or _summary_label(row),
             "values": {headers[i]: value for i, value in enumerate(row) if value is not None},
-        })
+        }
+        for _, row in indexed[start:]
+    ]
+    indexed = indexed[:start]
 
     subtotal_rows = 0
     data_rows = []
@@ -388,6 +436,7 @@ def _table_on_sheet(sheet: dict) -> dict | None:
         "total_columns": total_columns,
         "spacer_columns": spacer_columns,
         "filled_columns": filled_columns,
+        "rows_above_header": _rows_above_header(rows[:header_index], headers, keep),
         **_parse_preamble(rows[:header_index]),
     }
 
@@ -411,8 +460,9 @@ def read_table(filename: str, data: bytes) -> tuple[pd.DataFrame, dict]:
     Of a workbook's sheets the one chosen is the non-pivot sheet with the most
     data rows; every other sheet is listed in `rejected_sheets` with the
     reason. The layout also carries what was set aside so it can be checked
-    against: the preamble and any period it states, footer rows, total and
-    spacer columns, and a pivot sheet's grand totals.
+    against: the preamble and any period it states, the cells above the
+    header by column, footer rows, total and spacer columns, and a pivot
+    sheet's grand totals.
     """
     sheets = read_sheets(filename, data)
 

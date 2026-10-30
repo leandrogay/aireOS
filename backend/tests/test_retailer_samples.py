@@ -8,8 +8,9 @@ is skipped -- CI covers the same logic on the synthetic copies in conftest.
 
 Each file's reference contract is given the layout detection finds, validated
 against the file's headers and checked statically against the file and the
-hand-off's SKU master. Nothing is transformed: that is the transformation's
-job, which reads these contracts.
+hand-off's SKU master. The last section then runs every sample file through
+the transformation and reconciles what it would load against the totals the
+file states for itself.
 """
 
 import io
@@ -25,13 +26,19 @@ from app.services import (
     mapping_checks,
     mapping_contract,
     reference_contracts,
+    sellout_ingestion,
+    validation_service,
 )
 
 SAMPLES = Path(__file__).parent / "fixtures" / "retailer_samples"
+# Searched for anywhere under SAMPLES: the files sit in one folder per retailer.
 PATTERNS = {
     "fairprice_monthly": "XEL_VENDORS_BRANDS_MONTH_*",
+    "fairprice_weekly": "XEL_VENDORS_BRANDS_WEEK_*",
     "nhg_sap": "Aire*Sell*Out*",
     "sheng_siong_claim": "Claim_Sales_Summary_Report_*",
+    "singhealth_er130": "XEL [A-Z][a-z][a-z]2[0-9]*.xlsx",
+    "prime_jkdc": "XEL Lifecare JKDC Withdrawal Report*",
 }
 # The hand-off's SKU master (section 7).
 MASTER = {
@@ -40,11 +47,21 @@ MASTER = {
 }
 
 
-def _sample(name: str) -> tuple[str, bytes]:
-    matches = sorted(SAMPLES.glob(PATTERNS[name])) if SAMPLES.exists() else []
+def _paths(name: str) -> list[Path]:
+    return sorted(SAMPLES.rglob(PATTERNS[name])) if SAMPLES.exists() else []
+
+
+# Every sample file of every layout, for the tests that run them all.
+ALL_SAMPLES = [(name, path) for name in PATTERNS for path in _paths(name)]
+
+
+def _sample(name: str, latest: bool = False) -> tuple[str, bytes]:
+    """The first sample file of a layout, or its latest export (the FairPrice tests count its months)."""
+    matches = _paths(name)
     if not matches:
         pytest.skip(f"sample file for {name} not in {SAMPLES}")
-    return matches[0].name, matches[0].read_bytes()
+    path = matches[-1] if latest else matches[0]
+    return path.name, path.read_bytes()
 
 
 def _contract_for(name: str, filename: str, data: bytes):
@@ -75,10 +92,12 @@ def test_the_reference_contract_validates_cleanly_and_passes_every_check(name):
 
     assert contract["warnings"] == []
     assert mapping_checks.failures(list(checks.values())) == []
-    assert contract["aggregate"] == mapping_contract.monthly_aggregate()
+    assert contract["aggregate"] == reference_contracts.reference_contract(name).get("aggregate")
 
 
-@pytest.mark.parametrize("name, codes", [("fairprice_monthly", 9), ("nhg_sap", 9), ("sheng_siong_claim", 6)])
+@pytest.mark.parametrize("name, codes", [
+    ("fairprice_monthly", 9), ("nhg_sap", 9), ("sheng_siong_claim", 6), ("singhealth_er130", 9), ("prime_jkdc", 8),
+])
 def test_every_product_code_reads_as_a_master_sku(name, codes):
     frame, _, contract, checks = _contract_for(name, *_sample(name))
 
@@ -91,7 +110,7 @@ def test_every_product_code_reads_as_a_master_sku(name, codes):
 # ---- 3.1 / 8.1 FairPrice ------------------------------------------------------------------
 
 def test_fairprice_layout_and_raw_grain():
-    frame, layout, contract, checks = _contract_for("fairprice_monthly", *_sample("fairprice_monthly"))
+    frame, layout, contract, checks = _contract_for("fairprice_monthly", *_sample("fairprice_monthly", latest=True))
 
     assert (layout["header_row"], len(frame)) == (1, 166)
     assert not frame.duplicated(["SKU No.", "Store Code", "Sales UOM"]).any()
@@ -153,7 +172,7 @@ def test_sheng_siong_melts_the_20_outlets_and_never_reads_the_claim_as_revenue()
 # ---- 8.4 Robustness variants -----------------------------------------------------------------
 
 def test_a_month_shifted_fairprice_file_has_the_same_layout_and_contract():
-    filename, data = _sample("fairprice_monthly")
+    filename, data = _sample("fairprice_monthly", latest=True)
 
     def later(match):
         day, month, year = match.groups()
@@ -213,3 +232,62 @@ def test_an_unseen_nhg_code_fails_the_product_code_check():
     skus = checks["sku_codes"]
     assert skus["passed"] is False
     assert [item["code"] for item in skus["evidence"]["unknown"]] == ["0059-01-099-R"]
+
+
+# ---- Transforming every sample ----------------------------------------------------------
+
+def _transformed(name: str, path: Path):
+    """What loading this file through its reference contract would store, and its layout."""
+    data = path.read_bytes()
+    frame, layout, contract, _ = _contract_for(name, path.name, data)
+    rows = sellout_ingestion.transform_confirmed_upload(path.name, data, contract)
+    return validation_service.validate_mapped_dataframe(rows), frame, layout
+
+
+def _of(name: str) -> list[Path]:
+    return [path for key, path in ALL_SAMPLES if key == name]
+
+
+@pytest.mark.parametrize("name, path", ALL_SAMPLES, ids=[path.name for _, path in ALL_SAMPLES])
+def test_every_sample_file_transforms_with_no_row_rejected(name, path):
+    validated, _, _ = _transformed(name, path)
+
+    assert validated["rows_ingested"] > 0
+    assert validated["rejection_summary"] == ""
+
+
+@pytest.mark.parametrize("path", _of("sheng_siong_claim"), ids=lambda path: path.name)
+def test_sheng_siong_quantities_equal_the_statements_total_row(path):
+    validated, _, layout = _transformed("sheng_siong_claim", path)
+
+    total = next(row for row in layout["footer_rows"] if row["label"] == "Total")
+    assert validated["valid_df"]["quantity_units"].sum() == float(total["values"]["Total"])
+
+
+@pytest.mark.parametrize("path", _of("nhg_sap"), ids=lambda path: path.name)
+def test_nhg_quantities_equal_minus_the_pivot_grand_total(path):
+    validated, _, layout = _transformed("nhg_sap", path)
+
+    assert validated["valid_df"]["quantity_units"].sum() == -layout["pivot_totals"][0]["total"]
+
+
+@pytest.mark.parametrize("path", _of("singhealth_er130"), ids=lambda path: path.name)
+def test_singhealth_units_and_value_equal_the_outlet_grid(path):
+    validated, frame, layout = _transformed("singhealth_er130", path)
+    rows = validated["valid_df"]
+
+    outlets = mapping_contract.resolve_selector({"kind": "between", "after": "Promo cost"}, list(frame.columns))
+    units = frame[outlets].astype(float)
+    price = frame[reference_contracts.SINGHEALTH_PRICE_COLUMN].astype(float)
+    assert rows["quantity_units"].sum() == units.to_numpy().sum()
+    assert rows["revenue"].sum() == pytest.approx(units.mul(price, axis=0).to_numpy().sum())
+    assert set(rows["period_start"]) == {layout["stated_period"]["start"]}
+    codes = next(item["cells"] for item in layout["rows_above_header"] if item["row"] == layout["header_row"] - 1)
+    assert dict(zip(rows["store_name"], rows["store_code"])) == {name: codes[name] for name in set(rows["store_name"])}
+
+
+@pytest.mark.parametrize("path", _of("prime_jkdc"), ids=lambda path: path.name)
+def test_prime_quantities_equal_the_packs_shipped(path):
+    validated, frame, _ = _transformed("prime_jkdc", path)
+
+    assert validated["valid_df"]["quantity_units"].sum() == frame["Total Shipped Qty"].astype(float).sum()

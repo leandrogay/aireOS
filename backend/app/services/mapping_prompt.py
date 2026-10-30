@@ -316,7 +316,7 @@ def user_prompt(
     examples = "\n\n".join(
         _example(key, entry)
         for key, entry in REFERENCE_CONTRACTS.items()
-        if key not in exclude_examples
+        if key not in exclude_examples and entry.get("prompt_example", True)
     )
     master = [
         {key: product.get(key) for key in ("sku", "product_name", "sku_range", "size")}

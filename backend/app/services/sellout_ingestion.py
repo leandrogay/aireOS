@@ -21,9 +21,10 @@ def transform_confirmed_upload(
     contract: dict,
 ) -> pd.DataFrame:
     """Read and transform one upload through either contract format."""
+    layout = None
     if mapping_contract.is_v2(contract):
         try:
-            dataframe, _ = layout_detection.read_table(filename, data)
+            dataframe, layout = layout_detection.read_table(filename, data)
         except layout_detection.LayoutError as exc:
             raise apply_contract.ContractApplicationError(str(exc)) from exc
     else:
@@ -32,6 +33,7 @@ def transform_confirmed_upload(
         dataframe,
         contract,
         source_file=filename,
+        layout=layout,
     )
 
 

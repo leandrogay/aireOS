@@ -72,17 +72,22 @@ aireOS/
 │   │       ├── upload_loading.py  Loading uploads into sell-out as its own confirmed step: per-upload load state after an approval,
 │   │       │                      dry run (rows, periods, rows replaced/overwritten) and the load itself (POST /api/uploads/load[/preview])
 │   │       ├── layout_detection.py PURE: finds the data table in an upload (sheet not a pivot, header row, preamble +
-│   │       │                      stated period, footer/total rows, total + spacer columns, merged cells filled down)
+│   │       │                      stated period, cells above the header by column, footer/total rows (and summary
+│   │       │                      lines under a total), total + spacer columns, merged cells filled down)
 │   │       ├── column_profile.py  PURE: whole-file column profile, repeated period/outlet column groups, template fingerprint
 │   │       ├── mapping_contract.py PURE: contract v2 -- instructions only: one entry per target field (mapped/derived/
-│   │       │                      constant/system/not_available), layout, aggregate (monthly roll-up), sku code table;
-│   │       │                      upgrade()/downgrade() for v1, validate_contract, required fields, reviewer diff
+│   │       │                      constant/system/not_available), layout, aggregate (monthly roll-up), sku code table,
+│   │       │                      melt-group labels (cells above the header, e.g. store codes), period from the stated
+│   │       │                      period (from_layout), multiply (units x unit price); upgrade()/downgrade() for v1,
+│   │       │                      validate_contract, required fields, reviewer diff
 │   │       ├── generate_mapping.py Confirmed-contract lookup (template + legacy fingerprint), near-match, Gemini proposal with
 │   │       │                      check-and-repair loop for unknown layouts
 │   │       ├── mapping_prompt.py  PURE: field definitions, glossary, per-file JSON output schema, prompt text
 │   │       ├── mapping_checks.py  PURE: static checks of a contract against its file (never runs it): every product code a
-│   │       │                      master SKU, required fields, rule coverage, revenue-name guard, stated period; confidence
-│   │       ├── reference_contracts.py Hand-written v2 contracts for FairPrice / NHG / Sheng Siong (golden tests, prompt examples, eval)
+│   │       │                      master SKU, required fields, rule coverage, revenue-name guard, stated period, labels;
+│   │       │                      confidence
+│   │       ├── reference_contracts.py Hand-written v2 contracts for FairPrice (monthly, weekly) / NHG / Sheng Siong / SingHealth /
+│   │       │                      Prime (golden tests, eval; `prompt_example` ones are prompt examples)
 │   │       ├── mapping_view.py    Contracts <-> the review screen's "packet"/"rules" shape (one rule per target field)
 │   │       ├── apply_contract.py  Deterministic transformation executor for version 1 and version 2 mapping contracts
 │   │       ├── validation_service.py Row-level validation against TARGET_SCHEMA after mapping

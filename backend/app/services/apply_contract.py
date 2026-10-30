@@ -262,7 +262,31 @@ def _apply_v1_contract(
     return _apply_identity_mapping(result, identity_mapping, transformations)
 
 
-def _v2_melt(dataframe: pd.DataFrame, contract: dict) -> pd.DataFrame:
+def _labels(group: dict, layout: dict | None, columns: list[str]) -> dict[str, dict[str, str]]:
+    """
+    Each label field of a melt group and, per melted column, the cell above
+    that column's header it reads (SingHealth's outlet code over its name).
+
+    A melted column with no cell there fails the file: its rows would load
+    with no store code and be counted as the retailer's "all stores".
+    """
+    labels = {}
+    header_row = int((layout or {}).get("header_row") or 1)
+    above = {item["row"]: item["cells"] for item in (layout or {}).get("rows_above_header") or []}
+    for label in group.get("labels") or []:
+        row = header_row - label["rows_above"]
+        cells = above.get(row) or {}
+        missing = [column for column in columns if column not in cells]
+        if missing:
+            raise ContractApplicationError(
+                f"Melt group {group['id']!r} reads {label['target']!r} from row {row}, "
+                f"which has nothing above {missing[:3]}."
+            )
+        labels[label["target"]] = {column: cells[column] for column in columns}
+    return labels
+
+
+def _v2_melt(dataframe: pd.DataFrame, contract: dict, layout: dict | None) -> pd.DataFrame:
     """Reshape every approved melt group and retain its source row context."""
     groups = contract.get("melt_groups") or []
     source = dataframe.reset_index(drop=True).copy()
@@ -309,6 +333,8 @@ def _v2_melt(dataframe: pd.DataFrame, contract: dict) -> pd.DataFrame:
                 ) from exc
 
         melted[key["target"]] = key_values
+        for target, cells in _labels(group, layout, selected).items():
+            melted[target] = melted["_source_column"].map(cells)
         melted = melted.drop(columns=["_source_column"])
         if group.get("period_type"):
             melted["_period_type"] = group["period_type"]
@@ -441,6 +467,9 @@ def _apply_v2_transform(
             dtype="float64",
         )
         return numeric * factor_values
+    if operation == "multiply":
+        numeric = pd.to_numeric(series, errors="coerce")
+        return numeric * pd.to_numeric(context[transformation["column"]], errors="coerce")
     raise ContractApplicationError(
         f"Unsupported transformation type for {target!r}: {operation!r}"
     )
@@ -497,16 +526,37 @@ def _derive_period_fields(result: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
+def _stated_month(layout: dict | None) -> pd.Timestamp:
+    """
+    The calendar month the file states it covers above its table, for a
+    contract that reads its period from there. A statement spanning several
+    months cannot say which month a row belongs to.
+    """
+    stated = (layout or {}).get("stated_period")
+    if not stated:
+        raise ContractApplicationError(
+            "The mapping reads the period from the file's title, but this file states no period."
+        )
+    start, end = pd.Timestamp(stated["start"]), pd.Timestamp(stated["end"])
+    if start.to_period("M") != end.to_period("M"):
+        raise ContractApplicationError(
+            f"The file states the period {stated['start']} to {stated['end']}, which is more "
+            "than one month, so its rows cannot be dated to a month."
+        )
+    return start.to_period("M").to_timestamp()
+
+
 def _apply_v2_contract(
     dataframe: pd.DataFrame,
     contract: dict,
     source_file: str | None,
+    layout: dict | None,
 ) -> pd.DataFrame:
     """Execute every instruction in one approved version 2 contract."""
     if not contract.get("fields"):
         raise ContractApplicationError("Mapping contract is empty.")
 
-    working = _v2_melt(dataframe, contract)
+    working = _v2_melt(dataframe, contract, layout)
     fields = contract["fields"]
     output = pd.DataFrame(index=working.index)
 
@@ -525,6 +575,8 @@ def _apply_v2_contract(
             output[target] = source_file
         elif status == "not_available":
             output[target] = pd.NA
+        elif status == "derived" and entry.get("from_layout") == "stated_period":
+            output[target] = _stated_month(layout)
         elif target == "period_type" and status == "derived":
             if "_period_type" not in working:
                 raise ContractApplicationError(
@@ -572,10 +624,17 @@ def apply_contract(
     id_vars: list[str] | None = None,
     *,
     source_file: str | None = None,
+    layout: dict | None = None,
 ) -> pd.DataFrame:
-    """Apply an approved mapping contract deterministically without using AI."""
+    """
+    Apply an approved mapping contract deterministically without using AI.
+
+    `layout` is what layout detection found in the file (read_table); a
+    version 2 contract reads its stated period and the cells above its
+    header from there.
+    """
     if mapping_contract.is_v2(contract):
-        return _apply_v2_contract(dataframe, contract, source_file)
+        return _apply_v2_contract(dataframe, contract, source_file, layout)
     result = _apply_v1_contract(dataframe, contract, id_vars)
     if source_file is not None:
         result["source_file"] = source_file

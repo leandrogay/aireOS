@@ -1,17 +1,25 @@
 """Execution of approved version 2 mapping contracts."""
 
+import copy
+
 import pandas as pd
+import pytest
+from conftest import prime_xlsx, singhealth_xlsx
 
 from app.services import (
     apply_contract,
     column_profile,
+    layout_detection,
     mapping_contract,
+    sellout_ingestion,
     validation_service,
 )
 from app.services.reference_contracts import (
     FAIRPRICE_MONTHLY,
     NHG_SAP,
+    PRIME_JKDC,
     SHENG_SIONG_CLAIM,
+    SINGHEALTH_ER130,
 )
 
 
@@ -142,3 +150,85 @@ def test_sheng_siong_contract_melts_outlets_and_drops_zero_cells():
     assert row["quantity_units"] == 3
     assert row["period_start"] == pd.Timestamp("2026-06-01")
     assert row["source_file"] == "claim.xlsx"
+
+
+# ---- Instructions read from the layout -------------------------------------------
+
+def _transformed(contract: dict, filename: str, data: bytes) -> pd.DataFrame:
+    """One synthetic upload read and transformed the way a confirmed upload is."""
+    frame, layout = layout_detection.read_table(filename, data)
+    proposed = copy.deepcopy(contract)
+    proposed["layout"] = mapping_contract.layout_instructions(layout)
+    return sellout_ingestion.transform_confirmed_upload(filename, data, _validated(proposed, frame))
+
+
+def test_singhealth_reads_store_codes_above_the_header_and_names_from_it():
+    result = _transformed(SINGHEALTH_ER130, "XEL.xlsx", singhealth_xlsx())
+
+    stores = result.set_index("store_name")["store_code"].to_dict()
+    assert stores == {"BEDOK": "81001", "ONLINE": "88001"}
+    assert set(result.loc[result["store_name"] == "ONLINE", "retailer"]) == {"singhealth_online"}
+    assert set(result.loc[result["store_name"] == "BEDOK", "retailer"]) == {"singhealth_offline"}
+
+
+def test_singhealth_period_is_the_month_its_title_states():
+    result = _transformed(SINGHEALTH_ER130, "XEL.xlsx", singhealth_xlsx())
+
+    assert set(result["period_start"]) == {pd.Timestamp("2026-08-01")}
+    assert set(result["period_end"]) == {pd.Timestamp("2026-08-31")}
+    assert set(result["period_type"]) == {"month"}
+
+
+def test_singhealth_revenue_is_units_times_the_unit_price_column():
+    result = _transformed(SINGHEALTH_ER130, "XEL.xlsx", singhealth_xlsx())
+
+    by_store_sku = result.set_index(["store_name", "sku"])
+    assert by_store_sku.loc[("ONLINE", "13255044"), "quantity_units"] == 40
+    assert by_store_sku.loc[("ONLINE", "13255044"), "revenue"] == pytest.approx(40 * 5.85)
+    # A zero cell is no sale, not a row with nothing sold.
+    assert ("BEDOK", "13271342") not in by_store_sku.index
+    assert validation_service.validate_mapped_dataframe(result)["total_rejected"] == 0
+
+
+def test_a_reviewer_can_value_singhealth_units_at_normal_cost_instead():
+    contract = copy.deepcopy(SINGHEALTH_ER130)
+    contract["fields"]["revenue"]["transforms"] = [{"type": "multiply", "column": "Normal cost"}]
+
+    result = _transformed(contract, "XEL.xlsx", singhealth_xlsx())
+
+    by_store_sku = result.set_index(["store_name", "sku"])
+    assert by_store_sku.loc[("ONLINE", "13255044"), "revenue"] == pytest.approx(40 * 7.15)
+
+
+def test_a_title_spanning_several_months_fails_a_stated_period_contract():
+    data = singhealth_xlsx(period="01 Jul 2026 TO 31 Aug 2026")
+
+    with pytest.raises(apply_contract.ContractApplicationError, match="more than one month"):
+        _transformed(SINGHEALTH_ER130, "XEL.xlsx", data)
+
+
+def test_a_file_whose_title_states_no_period_fails_a_stated_period_contract():
+    dataframe = pd.DataFrame([{"Product Code": "0600-08-458-D", "Product Name": "X^", "Promo cost": "5", "BEDOK": "2"}])
+    contract = _validated(SINGHEALTH_ER130, dataframe)
+
+    with pytest.raises(apply_contract.ContractApplicationError, match="states no period"):
+        apply_contract.apply_contract(dataframe, contract, layout={
+            "header_row": 2,
+            "rows_above_header": [{"row": 1, "cells": {"BEDOK": "81001"}}],
+        })
+
+
+def test_an_outlet_with_no_code_above_it_fails_rather_than_loading_as_all_stores():
+    data = singhealth_xlsx(outlets=[("81001", "BEDOK"), ("", "NEWSTORE")])
+
+    with pytest.raises(apply_contract.ContractApplicationError, match="NEWSTORE"):
+        _transformed(SINGHEALTH_ER130, "XEL.xlsx", data)
+
+
+def test_prime_withdrawals_roll_up_to_one_row_per_outlet_and_sku_each_month():
+    result = _transformed(PRIME_JKDC, "XEL Lifecare JKDC Withdrawal Report (Aug'26).xlsx", prime_xlsx())
+
+    totals = result.set_index(["store_code", "sku"])["quantity_units"].to_dict()
+    assert totals == {("106", "13255045"): 24, ("WLM", "13255044"): 32}
+    assert set(result["retailer"]) == {"prime_offline"}
+    assert set(result["period_start"]) == {pd.Timestamp("2026-08-01")}

@@ -8,7 +8,7 @@ reference contracts must pass them all.
 """
 
 import pytest
-from conftest import fairprice_txt, nhg_xlsx, sheng_siong_xlsx
+from conftest import fairprice_txt, nhg_xlsx, sheng_siong_xlsx, singhealth_xlsx
 
 from app.services import layout_detection, mapping_checks as mk, mapping_contract, reference_contracts
 
@@ -27,7 +27,7 @@ def _by_id(checks):
     return {check["id"]: check for check in checks}
 
 
-@pytest.mark.parametrize("name", ["fairprice_monthly", "nhg_sap", "sheng_siong_claim"])
+@pytest.mark.parametrize("name", ["fairprice_monthly", "nhg_sap", "sheng_siong_claim", "singhealth_er130", "prime_jkdc"])
 def test_the_reference_contracts_pass_every_check(name, retailer_files):
     filename, data = retailer_files[name]
 
@@ -150,6 +150,56 @@ def test_outlet_codes_are_the_inputs_of_a_rule_derived_from_the_store():
     rules = _by_id(checks)["rules_retailer"]
     assert rules["evidence"]["matched"] == ["6M_Ecomm"]
     assert rules["evidence"]["default"] == ["2A", "TC"]
+
+
+def test_revenue_as_units_times_a_unit_cost_passes_the_revenue_check():
+    checks, _, _ = _run("singhealth_er130", "XEL.xlsx", singhealth_xlsx())
+
+    assert _by_id(checks)["revenue_source"]["passed"] is True
+
+
+def test_revenue_as_units_times_a_claim_per_unit_is_an_error():
+    contract = reference_contracts.reference_contract("sheng_siong_claim")
+    contract["fields"]["revenue"] = {
+        "status": "derived", "from_field": "quantity_units",
+        "transforms": [{"type": "multiply", "column": "Supplier Claim"}],
+    }
+
+    checks, _, _ = _run("sheng_siong_claim", "ss.xlsx", sheng_siong_xlsx(), contract)
+
+    revenue = _by_id(checks)["revenue_source"]
+    assert revenue["passed"] is False
+    assert revenue["evidence"]["columns"] == ["Supplier Claim"]
+
+
+def test_outlet_names_in_the_headers_are_the_inputs_of_a_rule_derived_from_them():
+    checks, _, _ = _run("singhealth_er130", "XEL.xlsx", singhealth_xlsx())
+
+    rules = _by_id(checks)["rules_retailer"]
+    assert rules["evidence"]["matched"] == ["ONLINE"]
+    assert rules["evidence"]["default"] == ["BEDOK"]
+
+
+def test_store_codes_read_from_above_the_header_are_checked_for_every_outlet():
+    checks, _, _ = _run("singhealth_er130", "XEL.xlsx", singhealth_xlsx(outlets=[("81001", "BEDOK"), ("", "NEWSTORE")]))
+
+    labels = _by_id(checks)["labels_store_code"]
+    assert labels["passed"] is False
+    assert labels["evidence"]["missing"] == ["NEWSTORE"]
+
+
+def test_a_period_read_from_the_title_needs_a_title_stating_one_month():
+    checks, _, _ = _run("singhealth_er130", "XEL.xlsx", singhealth_xlsx(period="01 Jul 2026 TO 31 Aug 2026"))
+
+    assert _by_id(checks)["period"]["passed"] is False
+
+
+def test_a_period_read_from_the_title_fails_when_the_file_states_none():
+    checks, _, _ = _run("singhealth_er130", "XEL.xlsx", singhealth_xlsx(period="(no period)"))
+
+    period = _by_id(checks)["period"]
+    assert period["passed"] is False
+    assert "states no period" in period["message"]
 
 
 def test_the_instructions_are_stated_in_words():

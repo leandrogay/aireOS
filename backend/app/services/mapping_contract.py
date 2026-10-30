@@ -40,11 +40,20 @@ file and whether rows are rolled up:
 Statuses:
   mapped         read from a source column, or from a melt group's key or value
   derived        computed: period_end / period_label from the period, period_type
-                 from the melt headers, or another field run through transforms
-                 (`from_field`, e.g. retailer from the outlet code's _Ecomm suffix)
+                 from the melt headers, another field run through transforms
+                 (`from_field`, e.g. retailer from the outlet code's _Ecomm suffix,
+                 revenue as quantity times a per-unit price column), or the
+                 period the file states above its table (`from_layout`:
+                 "stated_period", SingHealth's "DATE : 01 Aug 2026 TO 31 Aug 2026")
   constant       the same `value` on every row (NHG's retailer)
   system         written by the pipeline (source_file)
   not_available  the file does not hold it; `reason` says why. Never invented.
+
+A melt group's key is what each melted column's header says (a period, a store
+code or a store name). Its `labels` read more from the rows above the header:
+{"rows_above": 1, "target": "store_code"} fills store_code from the cell
+directly above each melted column, where SingHealth writes the outlet's code
+over its name.
 
 The sku field's value_map is the product-code table: each retailer code in the
 file and the master SKU it is. A field with no value_map uses the file's codes
@@ -85,7 +94,11 @@ DECIDABLE_FIELDS = tuple(
 )
 
 MEASURE_FIELDS = ("quantity_units", "revenue")
-MELT_KEY_TARGETS = ("period_start", "store_code")
+MELT_KEY_TARGETS = ("period_start", "store_code", "store_name")
+# What a melt group's labels (the cells above its columns' headers) may fill.
+LABEL_TARGETS = ("store_code", "store_name")
+# What a field may be read from in the file's layout rather than its table.
+LAYOUT_SOURCES = ("stated_period",)
 PERIOD_TYPES = ("month", "week")
 SELECTOR_KINDS = ("pattern", "between", "columns")
 DATA_SOURCES = ("aireos_upload", "promo_claim")
@@ -106,6 +119,7 @@ TRANSFORM_TYPES = (
     "rules",
     "negate",
     "uom_factor",
+    "multiply",
     "month_start",
     "forward_fill",
     "zero_as_empty",
@@ -445,6 +459,14 @@ def _validate_uom_factor(target, raw, raw_columns, reject):
     return {"type": "uom_factor", "column": column, "factors": factors, "default": default}
 
 
+def _validate_multiply(target, raw, raw_columns, reject):
+    """Each value times the same row's value in another column (units x price)."""
+    column = raw.get("column")
+    if column not in raw_columns:
+        return reject(f"Dropped transformation for {target!r} — multiply column {column!r} is not in the file")
+    return {"type": "multiply", "column": column}
+
+
 def validate_transforms(
     target: str,
     transforms,
@@ -486,6 +508,8 @@ def validate_transforms(
             transform = _validate_rules(target, raw, raw_columns, reject)
         elif operation == "uom_factor":
             transform = _validate_uom_factor(target, raw, raw_columns, reject)
+        elif operation == "multiply":
+            transform = _validate_multiply(target, raw, raw_columns, reject)
         elif operation == "month_start":
             transform = {"type": "month_start"}
             if raw.get("format"):
@@ -498,6 +522,36 @@ def validate_transforms(
             return None
         clean.append(transform)
     return clean
+
+
+def _validate_labels(raw, key_target: str, label: str, warnings: list[str]) -> list[dict] | None:
+    """A melt group's labels, cleaned: [] when it has none, None when unusable."""
+    if not raw:
+        return []
+    if not isinstance(raw, list):
+        warnings.append(f"Dropped melt group for {label!r} — labels must be a list")
+        return None
+    clean = []
+    for item in raw:
+        item = item if isinstance(item, dict) else {}
+        rows_above, target = item.get("rows_above"), item.get("target")
+        if not isinstance(rows_above, int) or isinstance(rows_above, bool) or rows_above < 1:
+            warnings.append(f"Dropped melt group for {label!r} — a label's rows_above must be 1 or more")
+            return None
+        if target not in LABEL_TARGETS or target == key_target or any(c["target"] == target for c in clean):
+            warnings.append(
+                f"Dropped melt group for {label!r} — each label fills one of {LABEL_TARGETS} "
+                "once, and not the field the key fills"
+            )
+            return None
+        clean.append({"rows_above": rows_above, "target": target})
+    return clean
+
+
+def _group_fills(group: dict) -> tuple[str, ...]:
+    """Every field one melt group fills: its key's, its values', its labels'."""
+    labels = tuple(label["target"] for label in group.get("labels") or [])
+    return (group["key"]["target"], group["value_target"], *labels)
 
 
 def _validate_group(group, raw_columns, target_schema, trust_review, warnings):
@@ -562,6 +616,10 @@ def _validate_group(group, raw_columns, target_schema, trust_review, warnings):
             )
             return None
 
+    labels = _validate_labels(group.get("labels"), key_target, label, warnings)
+    if labels is None:
+        return None
+
     select = dict(group.get("select") or {})
     clean = {
         "id": group_id,
@@ -570,6 +628,8 @@ def _validate_group(group, raw_columns, target_schema, trust_review, warnings):
         "value_target": value_target,
         **_clean_annotation(group, trust_review),
     }
+    if labels:
+        clean["labels"] = labels
     if date_format:
         clean["key"]["date_format"] = date_format
     period_type = str(group.get("period_type") or "").lower()
@@ -685,6 +745,18 @@ def validate_contract(
                     "which has no values"
                 )
                 fields[target] = _not_available(f"{source_field} is not available", entry, trust_review)
+
+    # A stated period is read as the one calendar month it covers, so the rows
+    # it dates must be monthly.
+    period_start, period_type = fields.get("period_start") or {}, fields.get("period_type") or {}
+    if period_start.get("from_layout") and (
+        period_type.get("status") != "constant" or period_type.get("value") != "month"
+    ):
+        warnings.append(
+            "Dropped field mapping — a period read from the file's stated period is a month, "
+            "so period_type must be the constant 'month'"
+        )
+        fields["period_start"] = _not_available("The stated period needs period_type 'month'.", period_start, trust_review)
 
     # A melt group no field reads would melt for nothing.
     used = {entry.get("melt_group") for entry in fields.values()}
@@ -809,6 +881,14 @@ def _validate_field(target, raw, raw_columns, raw_set, groups, group_cols, sampl
                 )
                 return _not_available("No period columns to read the period type from.", raw, trust_review)
             return {"status": "derived", **annotation}
+        if raw.get("from_layout"):
+            if target != "period_start" or raw["from_layout"] not in LAYOUT_SOURCES:
+                warnings.append(
+                    f"Dropped field mapping — only period_start can be read from the file's "
+                    f"stated period, not {target!r} from {raw['from_layout']!r}"
+                )
+                return _not_available("Only the period can be read from the file's title.", raw, trust_review)
+            return {"status": "derived", "from_layout": raw["from_layout"], **annotation}
         source_field = raw.get("from_field")
         if source_field not in BUSINESS_COLUMNS or source_field == target:
             warnings.append(f"Dropped field mapping — {target!r} is derived from an unknown field {source_field!r}")
@@ -829,10 +909,10 @@ def _validate_field(target, raw, raw_columns, raw_set, groups, group_cols, sampl
             if group is None:
                 warnings.append(f"Dropped field mapping — {target!r} reads melt group {group_id!r}, which was dropped")
                 return _not_available("Its melt group was dropped.", raw, trust_review)
-            if target not in (group["key"]["target"], group["value_target"]):
+            if target not in _group_fills(group):
                 warnings.append(
                     f"Dropped field mapping — melt group {group_id!r} fills "
-                    f"{group['key']['target']!r} and {group['value_target']!r}, not {target!r}"
+                    f"{', '.join(_group_fills(group))}, not {target!r}"
                 )
                 return _not_available("Its melt group fills other fields.", raw, trust_review)
             transforms = validate_transforms(target, transforms_raw, raw_columns, [], None, warnings)
@@ -932,7 +1012,7 @@ def retailer_outputs(contract: dict, samples: dict[str, list] | None = None) -> 
     return list(dict.fromkeys(str(output) for output in outputs if output not in (None, "")))
 
 
-DECISION_KEYS =("status", "source", "melt_group", "from_field", "value", "transforms")
+DECISION_KEYS = ("status", "source", "melt_group", "from_field", "from_layout", "value", "transforms")
 
 
 def contract_diff(before: dict | None, after: dict) -> list[dict]:
@@ -954,7 +1034,7 @@ def contract_diff(before: dict | None, after: dict) -> list[dict]:
                 "after": {k: v for k, v in b.items() if v is not None},
             })
 
-    group_keys = ("select", "key", "value_target", "period_type")
+    group_keys = ("select", "key", "labels", "value_target", "period_type")
     old_groups = {g.get("id"): g for g in old.get("melt_groups") or []}
     new_groups = {g.get("id"): g for g in new.get("melt_groups") or []}
     for group_id in dict.fromkeys([*old_groups, *new_groups]):
@@ -1001,6 +1081,8 @@ def downgrade(contract: dict) -> dict | None:
         select, key = group.get("select") or {}, group.get("key") or {}
         if select.get("kind") != "columns" or key.get("target") != "period_start" or not key.get("pattern"):
             return None
+        if group.get("labels"):
+            return None
         melt_groups.append({
             "target_field": group["value_target"],
             "columns": list(select.get("columns") or []),
@@ -1014,6 +1096,8 @@ def downgrade(contract: dict) -> dict | None:
     transformations: dict[str, dict] = {}
     for target, entry in (current.get("fields") or {}).items():
         status = entry.get("status")
+        if entry.get("from_layout"):
+            return None
         if status in ("not_available", "system") or (status == "derived" and not entry.get("from_field")):
             continue
         if status == "mapped" and entry.get("melt_group"):

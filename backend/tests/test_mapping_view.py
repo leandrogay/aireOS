@@ -1,4 +1,5 @@
-from app.services import mapping_view as mv
+from app.services import mapping_contract, mapping_view as mv
+from app.services.reference_contracts import SINGHEALTH_ER130
 
 
 CONTRACT = {
@@ -113,6 +114,23 @@ def test_editing_one_rule_leaves_melt_groups_untouched():
     group = contract["melt_groups"][0]
     assert group["select"] == {"kind": "columns", "columns": CONTRACT["melt_groups"][0]["columns"]}
     assert group["key"]["pattern"] == CONTRACT["melt_groups"][0]["period_extract_regex"]
+
+
+SINGHEALTH_COLUMNS = ["Product Code", "Product Name", "Vendor code", "Vendor Name", "Normal cost", "Promo cost", "BEDOK", "ONLINE"]
+
+
+def test_store_codes_above_the_header_and_a_stated_period_survive_review():
+    packet = mv.envelope_to_packet("sh", {"contract": SINGHEALTH_ER130, "raw_columns": SINGHEALTH_COLUMNS}, "pending")
+    by_field = {rule["targetField"]: rule for rule in packet["rules"]}
+
+    contract = mapping_contract.validate_contract(mv.rules_to_contract(packet["rules"]), SINGHEALTH_COLUMNS, trust_review=True)
+
+    assert contract["warnings"] == []
+    assert contract["melt_groups"][0]["labels"] == [{"rows_above": 1, "target": "store_code"}]
+    assert contract["fields"]["period_start"]["from_layout"] == "stated_period"
+    assert contract["fields"]["revenue"]["transforms"] == [{"type": "multiply", "column": "Promo cost"}]
+    assert by_field["store_code"]["description"].startswith("Read from the cells above the column headers")
+    assert by_field["period_start"]["description"] == "The month the file's title states"
 
 
 def test_packet_reports_unread_columns_and_missing_requirements():

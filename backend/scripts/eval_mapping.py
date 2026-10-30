@@ -112,7 +112,7 @@ def main() -> int:
     for key, pattern in PATTERNS.items():
         if args.only and key != args.only:
             continue
-        matches = sorted(SAMPLES.glob(pattern))
+        matches = sorted(SAMPLES.rglob(pattern))
         if not matches:
             print(f"{key:<20} skipped: no file matching {pattern} in {SAMPLES}")
             continue

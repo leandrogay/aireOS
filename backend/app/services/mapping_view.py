@@ -65,9 +65,14 @@ def _describe(target: str, entry: dict, groups: dict) -> str:
         return f"Not in this file: {entry.get('reason') or 'no reason given'}"
     if status == "derived" and entry.get("from_field"):
         return f"From {entry['from_field']}"
+    if status == "derived" and entry.get("from_layout") == "stated_period":
+        return "The month the file's title states"
     if status == "derived" and target == "period_type":
         return "Read from the period column headers"
     if status == "mapped" and entry.get("melt_group") in groups:
+        group = groups[entry["melt_group"]]
+        if any(label["target"] == target for label in group.get("labels") or []):
+            return f"Read from the cells above the column headers of melt group {entry['melt_group']!r}"
         return f"Read from the column headers of melt group {entry['melt_group']!r}"
     return STATUS_DESCRIPTIONS.get(status, status or "")
 
@@ -308,7 +313,7 @@ def _group_label(group: dict, columns: list[str]) -> str:
 def _group_entry(entry_id: str, group: dict, columns: list[str], samples: dict) -> dict:
     keys, problem = _read_keys(group, columns)
     kind = "period" if (group.get("key") or {}).get("target") == "period_start" else "store"
-    settings = {name: group[name] for name in ("select", "key", "period_type") if group.get(name)}
+    settings = {name: group[name] for name in ("select", "key", "labels", "period_type") if group.get(name)}
     if kind == "period" and keys and not settings.get("period_type"):
         settings["period_type"] = _period_type_from_dates(keys) or "month"
 

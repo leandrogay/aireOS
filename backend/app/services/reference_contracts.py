@@ -1,5 +1,5 @@
 """
-Hand-written mapping contracts for the three retailer layouts seen so far.
+Hand-written mapping contracts for the retailer layouts seen so far.
 
 They encode the business rules agreed with the product owner (mapping hand-off,
 sections 2-4), and are used three ways: as the contracts the golden tests check
@@ -17,6 +17,21 @@ Open decisions they assume, each a one-line change here:
   D3  retailer codes nhg_offline, sheng_siong_offline, sheng_siong_online
   D4  the product-code tables are the hand-off's proposed matches (section 7)
   D8  Sheng Siong claim quantities are tagged 'promo_claim'
+
+Decisions confirmed by the product owner (2026-10-30):
+  D9  retailers split into online and offline as the sales data shows them:
+      singhealth_offline / singhealth_online (the ONLINE outlet), prime_offline
+  D10 every retailer product code maps to a master SKU, matched by description
+      and size (the SingHealth and Prime tables below)
+  D11 SingHealth revenue is units x Promo cost by default; a reviewer may value
+      it at Normal cost instead (SINGHEALTH_PRICE_COLUMN)
+  D12 Prime's JKDC withdrawal report is sell-out: Total Shipped Qty (column G)
+      as the volume, no revenue
+
+SingHealth and Prime use instructions the mapping prompt cannot propose yet
+(a stated period, labels above the header, multiply), so they are not shown to
+the model as examples (`prompt_example`), nor is FairPrice weekly, which
+repeats the monthly example.
 """
 
 import copy
@@ -42,6 +57,22 @@ SHENG_SIONG_CODES = {
     "1909284": "13255045", "1909285": "13255044", "1909282": "13271340",
     "1909283": "13271339", "1909280": "13271338", "1909281": "13271341",
 }
+# D10
+SINGHEALTH_CODES = {
+    "0600-08-458-D": "13255044", "0600-08-459-D": "13255045", "0600-08-460-D": "13255043",
+    "0600-08-461-D": "13271339", "0600-08-462-D": "13271340", "0600-08-463-D": "13271337",
+    "0600-08-464-D": "13271341", "0600-08-465-D": "13271338", "0600-08-466-D": "13271342",
+}
+PRIME_CODES = {
+    "0303001304": "13255044", "0303001303": "13255045", "0303001327": "13255043",
+    "0303001344": "13271339", "0303001345": "13271340", "0303001376": "13271337",
+    "0303001342": "13271341", "0303001343": "13271338",
+}
+
+# D11: the per-unit price SingHealth's units are valued at by default. The
+# report does not say which units sold on promotion, so a reviewer may switch
+# the multiply column to "Normal cost".
+SINGHEALTH_PRICE_COLUMN = "Promo cost"
 
 # A size token read whole: "S/M" before its parts.
 SIZE_PATTERN = r"\b(S/M|XL|L)\b"
@@ -129,6 +160,21 @@ FAIRPRICE_MONTHLY = {
     "aggregate": monthly_aggregate(),
     "data_source": "aireos_upload",
 }
+
+
+def _weekly(monthly: dict) -> dict:
+    """The FairPrice weekly export: the monthly one's columns, a week per header."""
+    weekly = copy.deepcopy(monthly)
+    for group in weekly["melt_groups"]:
+        group["select"]["pattern"] = group["select"]["pattern"].replace("Month", "Week")
+        group["period_type"] = "week"
+    # Weeks are kept as weeks; a CAR and an EA row for the same week are
+    # summed when they are stored (sellout_service consolidation).
+    del weekly["aggregate"]
+    return weekly
+
+
+FAIRPRICE_WEEKLY = _weekly(FAIRPRICE_MONTHLY)
 
 
 NHG_SAP = {
@@ -224,12 +270,113 @@ SHENG_SIONG_CLAIM = {
 }
 
 
+SINGHEALTH_ER130 = {
+    "version": 2,
+    "fields": {
+        # No date column: "DATE : 01 Aug 2026 TO 31 Aug 2026" above the table.
+        "period_start": _field(status="derived", from_layout="stated_period"),
+        "period_type": _field(status="constant", value="month"),
+        # The ONLINE outlet is the online channel.
+        "retailer": _field(
+            status="derived",
+            from_field="store_name",
+            transforms=[{
+                "type": "rules",
+                "rules": [{"op": "equals", "value": "ONLINE", "output": "singhealth_online"}],
+                "default": "singhealth_offline",
+            }],
+        ),
+        # Each outlet column is headed by its name, with its code in the row above.
+        "store_code": _field(status="mapped", melt_group="outlets"),
+        "store_name": _field(status="mapped", melt_group="outlets"),
+        "store_format": _not_in_file("Outlets are named only."),
+        "sku": _field(
+            status="mapped", source="Product Code",
+            transforms=[{"type": "value_map", "values": dict(SINGHEALTH_CODES)}],
+        ),
+        # Every description ends in "^".
+        "product_name": _field(
+            status="mapped", source="Product Name",
+            transforms=[{"type": "regex_extract", "pattern": r"^([^^]+)", "group": 1}],
+        ),
+        "sku_range": _not_in_file("No range column."),
+        "size": _size_from("Product Name"),
+        "brand": _not_in_file("No brand column."),
+        "product_category": _not_in_file("No category column."),
+        "uom": _PACKS,
+        "pack_size": _not_in_file("No pack size column."),
+        # Outlets with no sales are written as 0.
+        "quantity_units": _field(
+            status="mapped", melt_group="outlets", transforms=[{"type": "zero_as_empty"}],
+        ),
+        # D11: the report has quantities and per-unit costs, no sales value.
+        "revenue": _field(
+            status="derived", from_field="quantity_units",
+            transforms=[{"type": "multiply", "column": SINGHEALTH_PRICE_COLUMN}],
+        ),
+    },
+    "melt_groups": [
+        {
+            "id": "outlets",
+            "select": {"kind": "between", "after": "Promo cost"},
+            "key": {"target": "store_name"},
+            "labels": [{"rows_above": 1, "target": "store_code"}],
+            "value_target": "quantity_units",
+            **_SURE,
+        },
+    ],
+    "aggregate": monthly_aggregate(),
+    "data_source": "aireos_upload",
+}
+
+
+PRIME_JKDC = {
+    "version": 2,
+    "fields": {
+        "period_start": _field(status="mapped", source="Delivery Date", transforms=[{"type": "month_start"}]),
+        "period_type": _field(status="constant", value="month"),
+        "retailer": _field(status="constant", value="prime_offline"),
+        # The outlet the distribution centre delivered to.
+        "store_code": _field(status="mapped", source="Customer code"),
+        "store_name": _not_in_file("Outlets are named by code only."),
+        "store_format": _not_in_file("Outlets are named by code only."),
+        "sku": _field(
+            status="mapped", source="Product Code",
+            transforms=[{"type": "value_map", "values": dict(PRIME_CODES)}],
+        ),
+        "product_name": _field(status="mapped", source="Product Description"),
+        "sku_range": _not_in_file("No range column."),
+        "size": _size_from("Product Description"),
+        "brand": _not_in_file("No brand column."),
+        "product_category": _not_in_file("Product Category is a numeric code, not a category name."),
+        "uom": _PACKS,
+        # As D2: cartons times this column is the packs shipped.
+        "pack_size": _not_in_file("Pack Size here is packs per carton, not pieces per pack."),
+        # Already in packs: Total Shipped Qty (CTN) x Pack Size.
+        "quantity_units": _field(status="mapped", source="Total Shipped Qty"),
+        "revenue": _not_in_file("A withdrawal report carries quantities only."),
+    },
+    "melt_groups": [],
+    # One row per pallet delivered, several a month per outlet and SKU.
+    "aggregate": monthly_aggregate(),
+    "data_source": "aireos_upload",
+}
+
+
 REFERENCE_CONTRACTS = {
     "fairprice_monthly": {
         "name": "FairPrice monthly sell-out",
         "vendor": "FairPrice",
         "description": "Tab-separated, one row per SKU x store x sales UOM, wide by month.",
         "contract": FAIRPRICE_MONTHLY,
+    },
+    "fairprice_weekly": {
+        "name": "FairPrice weekly sell-out",
+        "vendor": "FairPrice",
+        "description": "The monthly export's layout, wide by week; rows stay weekly.",
+        "contract": FAIRPRICE_WEEKLY,
+        # The monthly example already shows the model this layout.
+        "prompt_example": False,
     },
     "nhg_sap": {
         "name": "NHG SAP postings",
@@ -242,6 +389,20 @@ REFERENCE_CONTRACTS = {
         "vendor": "Sheng Siong",
         "description": "Promotion claim statement: preamble, header on row 7, merged dates, wide by outlet between OUTLET and Total, footer totals.",
         "contract": SHENG_SIONG_CLAIM,
+    },
+    "singhealth_er130": {
+        "name": "SingHealth ER130 sales report",
+        "vendor": "SingHealth",
+        "description": "Workbook: report title and period above a row of outlet codes, header on row 4 naming each outlet, wide by outlet, unit costs but no sales value.",
+        "contract": SINGHEALTH_ER130,
+        "prompt_example": False,
+    },
+    "prime_jkdc": {
+        "name": "Prime JKDC withdrawal report",
+        "vendor": "Prime",
+        "description": "One row per pallet withdrawn from the distribution centre to an outlet, quantity in packs, no revenue.",
+        "contract": PRIME_JKDC,
+        "prompt_example": False,
     },
 }
 

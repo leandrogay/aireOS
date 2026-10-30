@@ -229,6 +229,121 @@ def test_the_period_type_is_read_from_month_headers():
     assert contract["fields"]["period_type"]["status"] == "derived"
 
 
+# ---- Outlets, stated periods and unit prices (SingHealth) ---------------------------
+
+OUTLET_COLUMNS = ["Product Code", "Normal cost", "Promo cost", "BEDOK", "ONLINE"]
+OUTLETS = {
+    "id": "outlets",
+    "select": {"kind": "between", "after": "Promo cost"},
+    "key": {"target": "store_name"},
+    "labels": [{"rows_above": 1, "target": "store_code"}],
+    "value_target": "quantity_units",
+    "confidence": "high",
+}
+
+
+def _outlet_contract(group=None, **fields):
+    return {
+        "version": 2,
+        "fields": {
+            "period_start": {"status": "derived", "from_layout": "stated_period", "confidence": "high"},
+            "period_type": {"status": "constant", "value": "month", "confidence": "high"},
+            "retailer": {"status": "constant", "value": "singhealth_offline", "confidence": "high"},
+            "sku": {"status": "mapped", "source": "Product Code", "confidence": "high"},
+            "store_name": {"status": "mapped", "melt_group": "outlets", "confidence": "high"},
+            "store_code": {"status": "mapped", "melt_group": "outlets", "confidence": "high"},
+            "quantity_units": {"status": "mapped", "melt_group": "outlets", "confidence": "high"},
+            "revenue": {
+                "status": "derived", "from_field": "quantity_units", "confidence": "high",
+                "transforms": [{"type": "multiply", "column": "Promo cost"}],
+            },
+            **fields,
+        },
+        "melt_groups": [group or OUTLETS],
+    }
+
+
+def _validate_outlets(contract):
+    return mc.validate_contract(contract, OUTLET_COLUMNS)
+
+
+def test_an_outlet_group_keyed_by_name_with_codes_above_is_kept_whole():
+    contract = _validate_outlets(_outlet_contract())
+
+    assert contract["warnings"] == []
+    assert contract["melt_groups"][0]["key"] == {"target": "store_name"}
+    assert contract["melt_groups"][0]["labels"] == [{"rows_above": 1, "target": "store_code"}]
+    assert contract["fields"]["store_code"]["melt_group"] == "outlets"
+
+
+def test_a_label_cannot_fill_the_field_its_key_fills():
+    group = {**OUTLETS, "labels": [{"rows_above": 1, "target": "store_name"}]}
+
+    contract = _validate_outlets(_outlet_contract(group))
+
+    assert contract["melt_groups"] == []
+    assert any("label" in w for w in contract["warnings"])
+
+
+def test_a_label_needs_a_row_above_the_header():
+    group = {**OUTLETS, "labels": [{"rows_above": 0, "target": "store_code"}]}
+
+    contract = _validate_outlets(_outlet_contract(group))
+
+    assert contract["melt_groups"] == []
+
+
+def test_a_field_no_part_of_the_group_fills_cannot_read_it():
+    group = {**OUTLETS, "labels": []}
+
+    contract = _validate_outlets(_outlet_contract(group))
+
+    assert contract["fields"]["store_code"]["status"] == "not_available"
+    assert contract["fields"]["store_name"]["melt_group"] == "outlets"
+
+
+def test_revenue_can_be_units_times_a_unit_price_column():
+    contract = _validate_outlets(_outlet_contract())
+
+    assert contract["fields"]["revenue"]["transforms"] == [{"type": "multiply", "column": "Promo cost"}]
+
+
+def test_a_multiply_column_not_in_the_file_drops_the_field():
+    revenue = {
+        "status": "derived", "from_field": "quantity_units",
+        "transforms": [{"type": "multiply", "column": "List price"}],
+    }
+
+    contract = _validate_outlets(_outlet_contract(revenue=revenue))
+
+    assert contract["fields"]["revenue"]["status"] == "not_available"
+    assert any("List price" in w for w in contract["warnings"])
+
+
+def test_the_period_can_be_read_from_the_stated_period():
+    contract = _validate_outlets(_outlet_contract())
+
+    assert contract["fields"]["period_start"]["from_layout"] == "stated_period"
+    assert mc.required_missing_fields(contract) == []
+
+
+def test_a_stated_period_needs_a_constant_monthly_period_type():
+    contract = _validate_outlets(_outlet_contract(period_type={"status": "constant", "value": "week"}))
+
+    assert contract["fields"]["period_start"]["status"] == "not_available"
+    assert "period_start" in mc.required_missing_fields(contract)
+
+
+def test_only_the_period_can_be_read_from_the_stated_period():
+    contract = _validate_outlets(_outlet_contract(store_code={"status": "derived", "from_layout": "stated_period"}))
+
+    assert contract["fields"]["store_code"]["status"] == "not_available"
+
+
+def test_layout_readings_and_labels_do_not_downgrade_to_version_1():
+    assert mc.downgrade(_validate_outlets(_outlet_contract())) is None
+
+
 # ---- Confidence and review ----------------------------------------------------------
 
 def test_missing_or_unrecognised_confidence_becomes_low():
