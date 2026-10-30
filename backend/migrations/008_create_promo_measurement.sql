@@ -1,10 +1,12 @@
 -- To run this migration in Cloud SQL, in the `aireos` database on instance aireos-postgresql, after 006
 -- (instructions: docs/promo-uplift-runbook.md).
 --
--- Tables for the promotion uplift measurement job
--- (backend/app/services/settings/promo_measurement.py): the job measures each
--- mechanic's uplift from sales data and writes 'measured' rows into
--- promo_uplift_settings (006). These tables hold its settings, a record of
+-- Tables for the promotion uplift measurement
+-- (backend/app/services/settings/promo_measurement.py): the API measures each
+-- mechanic's uplift from sales data (Cloud SQL sellout), after a sales upload,
+-- a promotion change, a settings save, the Re-measure button or when the
+-- settings page opens,
+-- and writes 'measured' rows into promo_uplift_settings (006). These tables hold its settings, a record of
 -- every run, the evidence behind every measured uplift, and the notes shown
 -- where a measured uplift differs from one a person typed in.
 --
@@ -13,7 +15,7 @@
 -- and nothing is deleted.
 BEGIN;
 
--- The job's settings, versioned. One current row.
+-- The measurement's settings, versioned. One current row.
 CREATE TABLE IF NOT EXISTS promo_measurement_config (
     id BIGSERIAL PRIMARY KEY,
     -- Starting weight (k): the uplift a value leans on (the rule-based uplift
@@ -26,12 +28,13 @@ CREATE TABLE IF NOT EXISTS promo_measurement_config (
     -- A declined note ("Keep mine") is raised again only when the measured
     -- uplift moves this many points from the declined one.
     reask_points NUMERIC(5,2) NOT NULL CHECK (reask_points >= 0),
-    -- The settings page warns when there has been no successful run for this long.
-    stale_days INTEGER NOT NULL CHECK (stale_days > 0),
     -- Months of history a SKU needs before a trend line is fitted.
     trend_min_months INTEGER NOT NULL CHECK (trend_min_months >= 2),
     -- Backtest differences smaller than this many points count as agreeing.
     backtest_tolerance_points NUMERIC(5,2) NOT NULL CHECK (backtest_tolerance_points >= 0),
+    -- The backtest check reads BigQuery fc_backtest_forecasts. Off: no
+    -- BigQuery read, every result records no check and nothing is held.
+    backtest_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     changed_by VARCHAR(255) NOT NULL,
     changed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     superseded_at TIMESTAMPTZ
@@ -42,14 +45,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_promo_measurement_config_current
     WHERE superseded_at IS NULL;
 
 INSERT INTO promo_measurement_config
-    (starting_weight, min_exposure, reask_points, stale_days, trend_min_months, backtest_tolerance_points, changed_by)
-SELECT 3, 0.23, 2, 100, 6, 1, 'seed'
+    (starting_weight, min_exposure, reask_points, trend_min_months, backtest_tolerance_points, backtest_enabled, changed_by)
+SELECT 3, 0.23, 2, 6, 1, FALSE, 'seed'
 WHERE NOT EXISTS (SELECT 1 FROM promo_measurement_config);
 
 -- One row per run, written once when the run ends (never updated).
 CREATE TABLE IF NOT EXISTS promo_measurement_runs (
     run_id BIGSERIAL PRIMARY KEY,
-    triggered_by VARCHAR(20) NOT NULL CHECK (triggered_by IN ('scheduler', 'button')),
+    triggered_by VARCHAR(20) NOT NULL
+        CHECK (triggered_by IN ('upload', 'promotion_change', 'button', 'page_load', 'settings_change')),
     started_at TIMESTAMPTZ NOT NULL,
     finished_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     status VARCHAR(30) NOT NULL

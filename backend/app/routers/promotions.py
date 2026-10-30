@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from sqlalchemy.exc import IntegrityError
 
 from app.services import promotion_service
+from app.services.settings import promo_measurement
 from app.schemas.promotions import (
     PromotionCreate,
     PromotionUpdate,
@@ -44,7 +45,7 @@ def create_promotion(
     promotion: PromotionCreate,
 ):
     try:
-        return promotion_service.create_promotion(
+        created = promotion_service.create_promotion(
             promotion
         )
 
@@ -70,6 +71,10 @@ def create_promotion(
                 f"{type(e).__name__}: {e}"
             ),
         )
+
+    # After the promotion is saved, and never failing the save.
+    promo_measurement.measure_after_change("promotion_change")
+    return created
 
 
 # ============================================================
@@ -149,8 +154,6 @@ def update_promotion(
                 detail="Promotion not found",
             )
 
-        return updated
-
     except HTTPException:
         raise
 
@@ -177,6 +180,10 @@ def update_promotion(
             ),
         )
 
+    # After the promotion is saved, and never failing the save.
+    promo_measurement.measure_after_change("promotion_change")
+    return updated
+
 
 # ============================================================
 # PROMOTION DELETE
@@ -198,12 +205,6 @@ def delete_promotion(
                 detail="Promotion not found",
             )
 
-        return {
-            "status": "ok",
-            "message": "Promotion deleted successfully",
-            "promotion_id": promotion_id,
-        }
-
     except HTTPException:
         raise
 
@@ -215,3 +216,11 @@ def delete_promotion(
                 f"{type(e).__name__}: {e}"
             ),
         )
+
+    # After the promotion is deleted, and never failing the delete.
+    promo_measurement.measure_after_change("promotion_change")
+    return {
+        "status": "ok",
+        "message": "Promotion deleted successfully",
+        "promotion_id": promotion_id,
+    }

@@ -259,8 +259,9 @@ def test_measure_status_and_notes_are_200(monkeypatch):
     ],
 )
 def test_note_decisions_map_each_outcome(monkeypatch, error, status):
+    decided = {"changed": True, "note_type": "uplift", "sku": "SKU-L"}
     for name in ("use_measured", "keep_mine"):
-        monkeypatch.setattr(measurement, name, _raises(error) if error else (lambda note_id, by: {"changed": True}))
+        monkeypatch.setattr(measurement, name, _raises(error) if error else (lambda note_id, by: decided))
 
     for action in ("use-measured", "keep-mine"):
         assert client.post(f"{BASE}/notes/5/{action}").status_code == status

@@ -27,6 +27,7 @@ from app.services import layout_detection, mapping_checks, mapping_contract
 from app.services import customer_service
 from app.services import sellout_ingestion
 from app.services import notification_service
+from app.services.settings import promo_measurement
 
 router = APIRouter(prefix="/api/mappings", tags=["mappings"])
 
@@ -497,6 +498,11 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
             "uploads_failed": sum(not item["success"] for item in ingestion),
         },
     )
+
+    # Once, after the waiting files are stored, and never failing the approval:
+    # new sales can change the measured promotion uplifts.
+    if any(item["success"] and (item.get("processing") or {}).get("rows_stored") for item in ingestion):
+        await asyncio.to_thread(promo_measurement.measure_after_change, "upload")
 
     return {
         "success": True,

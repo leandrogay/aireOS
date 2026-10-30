@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.services import customer_service, notification_service, sellout_ingestion, storage
+from app.services.settings import promo_measurement
 
 client = TestClient(app)
 
@@ -221,6 +222,29 @@ def test_confirm_processes_uploads_that_were_waiting_for_approval(monkeypatch):
     assert calls[0][0:2] == ("file.txt", b"source bytes")
     assert calls[0][3] is True
     assert "identity_mapping" in calls[0][2]
+
+
+def test_storing_waiting_uploads_measures_promotion_uplifts_once(monkeypatch):
+    _stub_storage(monkeypatch)
+    monkeypatch.setattr(
+        storage,
+        "update_uploads_for_mapping",
+        lambda fingerprint, metadata: {"matched": ["uploads/a.txt", "uploads/b.txt"], "updated": []},
+    )
+    monkeypatch.setattr(storage, "download_upload", lambda path: (path, b"source bytes"))
+    monkeypatch.setattr(
+        sellout_ingestion,
+        "process_confirmed_upload",
+        lambda filename, data, contract, *, replace_source=False: {"rows_stored": 4, "storage_status": "completed"},
+    )
+    triggers = []
+    monkeypatch.setattr(promo_measurement, "measure_after_change", lambda trigger: triggers.append(trigger) or {})
+    rules = [_rule("sku", "SKU No.", "high", False), _rule("store_name", "Store Name", "high", False)]
+
+    response = client.post("/api/mappings/fp/confirm", json={"rules": _complete_rules(rules)})
+
+    assert response.status_code == 200
+    assert triggers == ["upload"]
 
 
 # ---- A pending copy left behind after approval --------------------------------

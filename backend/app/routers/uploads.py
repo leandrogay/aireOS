@@ -9,6 +9,7 @@ from app.services import generate_mapping
 from app.services import apply_contract as contract_application
 from app.services import sellout_ingestion, sellout_service
 from app.services import upload_check
+from app.services.settings import promo_measurement
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 
@@ -162,6 +163,11 @@ async def upload_files(
     for uploaded, mapping in zip(res["results"], mappings):
         if mapping is not None:
             uploaded["mapping"] = mapping
+
+    # Once per request, after every file is stored, and never failing the
+    # upload: new sales can change the measured promotion uplifts.
+    if any(((mapping or {}).get("processing") or {}).get("rows_stored") for mapping in mappings):
+        await asyncio.to_thread(promo_measurement.measure_after_change, "upload")
 
     await asyncio.gather(
         *[

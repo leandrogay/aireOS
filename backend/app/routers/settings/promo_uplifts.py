@@ -40,6 +40,20 @@ def _version_status(response: Response, result: dict) -> dict:
     return result
 
 
+def _measured(result: dict) -> dict:
+    """
+    After a settings save that wrote a new version, measure the promotion
+    uplifts again: the save changed an input (the rule, an anchor or an
+    uplift row), and its run summary goes back as `measurement` so the page
+    can say what moved. measure_after_change never raises, so this can't fail
+    the save; a failure is recorded as a failed run and shows on the page.
+    """
+
+    if result["changed"]:
+        result["measurement"] = measurement_service.measure_after_change("settings_change")
+    return result
+
+
 def _failed(action: str, e: Exception) -> HTTPException:
     return HTTPException(
         status_code=500,
@@ -47,9 +61,10 @@ def _failed(action: str, e: Exception) -> HTTPException:
     )
 
 
+# Only reachable with the backtest check switched on (promo_measurement_config.backtest_enabled).
 _UPSTREAM_DETAIL = (
-    "BigQuery could not be reached to read the sales history; check the service "
-    "account's BigQuery access and try again."
+    "BigQuery could not be reached to read the backtest forecasts; check the service "
+    "account's BigQuery access, or switch the backtest check off, and try again."
 )
 
 
@@ -74,6 +89,14 @@ def run_measurement():
 
     except Exception as e:
         raise _failed("measure the promotion uplifts", e)
+
+
+@router.post("/measure/if-changed")
+def measure_if_changed():
+    # Called when the settings page opens: measures only when the inputs
+    # changed since the last successful run, and never fails the page (a
+    # failure is recorded as a failed run and shows in the status).
+    return measurement_service.measure_after_change("page_load")
 
 
 @router.get("/measure/status")
@@ -113,9 +136,17 @@ def _decide_note(action, note_id: int, body: PromoNoteDecision | None, verb: str
 
 @router.post("/notes/{note_id}/use-measured")
 def use_measured(note_id: int, body: PromoNoteDecision | None = None):
-    return _decide_note(measurement_service.use_measured, note_id, body, "use the measured value")
+    result = _decide_note(measurement_service.use_measured, note_id, body, "use the measured value")
+    # A SKU uplift note provably moves no measured value (see use_measured);
+    # a customer note unblocks the SKU values below it and an anchor note
+    # moves the anchor, so those measure again.
+    if result["note_type"] == "uplift" and result["sku"] is not None:
+        return result
+    return _measured(result)
 
 
+# Keep mine only records the decision in the notes table, which is not an
+# input to the measurement, so it never measures.
 @router.post("/notes/{note_id}/keep-mine")
 def keep_mine(note_id: int, body: PromoNoteDecision | None = None):
     return _decide_note(measurement_service.keep_mine, note_id, body, "keep the typed value")
@@ -132,7 +163,7 @@ def add_mechanic(body: PromoMechanicCreate, response: Response):
             note=body.note,
             updated_by=body.updated_by,
         )
-        return _version_status(response, result)
+        return _version_status(response, _measured(result))
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -162,7 +193,7 @@ def get_rule():
 def set_rule(body: PromoRuleUpdate, response: Response):
     try:
         result = promo_uplift_service.set_rule(body.uplift_per_point_pct, body.updated_by)
-        return _version_status(response, result)
+        return _version_status(response, _measured(result))
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -175,7 +206,7 @@ def set_rule(body: PromoRuleUpdate, response: Response):
 def reset_rule(response: Response, body: PromoRuleReset | None = None):
     try:
         result = promo_uplift_service.reset_rule(body.updated_by if body is not None else None)
-        return _version_status(response, result)
+        return _version_status(response, _measured(result))
 
     except Exception as e:
         raise _failed("reset the rule", e)
@@ -229,7 +260,7 @@ def add_override(body: PromoUpliftOverrideCreate, response: Response):
             note=body.note,
             updated_by=body.updated_by,
         )
-        return _version_status(response, result)
+        return _version_status(response, _measured(result))
 
     except _NOT_FOUND as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -250,7 +281,7 @@ def update_uplift(setting_id: int, body: PromoUpliftUpdate, response: Response):
             note=body.note,
             updated_by=body.updated_by,
         )
-        return _version_status(response, result)
+        return _version_status(response, _measured(result))
 
     except _NOT_FOUND as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -269,7 +300,7 @@ def reset_uplift(setting_id: int, response: Response, body: PromoUpliftReset | N
             setting_id,
             body.updated_by if body is not None else None,
         )
-        return _version_status(response, result)
+        return _version_status(response, _measured(result))
 
     except _NOT_FOUND as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -285,7 +316,7 @@ def reset_uplift(setting_id: int, response: Response, body: PromoUpliftReset | N
 def archive_uplift(setting_id: int, response: Response, body: PromoUpliftArchive | None = None):
     try:
         result = promo_uplift_service.archive_uplift(setting_id, body.updated_by if body is not None else None)
-        return _version_status(response, result)
+        return _version_status(response, _measured(result))
 
     except _NOT_FOUND as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -301,7 +332,7 @@ def archive_uplift(setting_id: int, response: Response, body: PromoUpliftArchive
 def restore_uplift(setting_id: int, response: Response, body: PromoUpliftArchive | None = None):
     try:
         result = promo_uplift_service.restore_uplift(setting_id, body.updated_by if body is not None else None)
-        return _version_status(response, result)
+        return _version_status(response, _measured(result))
 
     except _NOT_FOUND as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -355,7 +386,7 @@ def list_anchors():
 def set_default_anchor(body: PromoAnchorUpdate, response: Response):
     try:
         result = promo_uplift_service.set_anchor(None, body.anchor_pct, body.updated_by)
-        return _version_status(response, result)
+        return _version_status(response, _measured(result))
 
     except Exception as e:
         raise _failed("save the all-customers ordinary-month discount", e)
@@ -377,7 +408,7 @@ def get_anchor(customer_id: int):
 def set_anchor(customer_id: int, body: PromoAnchorUpdate, response: Response):
     try:
         result = promo_uplift_service.set_anchor(customer_id, body.anchor_pct, body.updated_by)
-        return _version_status(response, result)
+        return _version_status(response, _measured(result))
 
     except CustomerNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -393,7 +424,7 @@ def reset_anchor(customer_id: int, response: Response, body: PromoAnchorReset | 
             customer_id,
             body.updated_by if body is not None else None,
         )
-        return _version_status(response, result)
+        return _version_status(response, _measured(result))
 
     except CustomerNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))

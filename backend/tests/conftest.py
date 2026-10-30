@@ -127,6 +127,28 @@ def _no_real_notification_database(monkeypatch):
     monkeypatch.setattr(notification_service, "_get_read_engine", blocked)
 
 
+# ---- No real promotion uplift measurement ----------------------------------
+
+@pytest.fixture(autouse=True)
+def _no_real_settings_database(monkeypatch):
+    """
+    Sales uploads and promotion changes measure promotion uplifts afterwards
+    (promo_measurement.measure_after_change), through the settings engines.
+    Without this, a test of one of them would open a real Cloud SQL
+    connection on any machine that has credentials; blocked, the measurement
+    fails quietly, as it must never fail what triggered it. Tests of the
+    settings services install their own fake engine over this.
+    """
+
+    from app.services.settings import common
+
+    def blocked():
+        raise AssertionError("tests must not reach the real settings tables")
+
+    monkeypatch.setattr(common, "get_engine", blocked)
+    monkeypatch.setattr(common, "get_read_engine", blocked)
+
+
 # ---- Synthetic retailer files -----------------------------------------------
 #
 # Small copies of the three real layouts (FairPrice, NHG, Sheng Siong), built

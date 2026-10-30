@@ -1,6 +1,6 @@
 import json
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from decimal import ROUND_HALF_UP, Decimal
 
 from google.api_core.exceptions import NotFound
@@ -15,14 +15,18 @@ from app.services.settings import promo_uplift_rules as rules
 from app.services.settings import promo_uplifts as uplifts
 
 
-# The promotion uplift measurement job: measures each mechanic's uplift from
+# The promotion uplift measurement: measures each mechanic's uplift from
 # sales data and keeps Promotion Uplift Settings up to date by itself
-# (plan and reasoning: docs/forecasting.md, Part E). Run daily by the Cloud
-# Run Job scripts/measure_promo_uplifts.py and by the settings page's
-# Re-measure button.
+# (plan and reasoning: docs/forecasting.md, Part E). Runs inside the API:
+# after a sales upload is stored, after a promotion is created, edited or
+# deleted, after a save on the settings page that can change a measured value,
+# from the settings page's Re-measure button, and when the settings page opens
+# and the inputs changed since the last successful run.
 #
-# Reads: BigQuery fc_training_input and fc_backtest_forecasts (read-only);
-# Cloud SQL promotions, stores, sell-out and the settings tables.
+# Reads: Cloud SQL only -- sell-out (summed per customer, SKU and month
+# here), promotions, stores and the settings tables. The backtest check
+# reads BigQuery fc_backtest_forecasts, but only when the config's
+# backtest_enabled is on (off by default).
 # Writes (Cloud SQL only, one transaction, append-only): 'measured' rows in
 # promo_uplift_settings, and the 008 tables (runs, results, notes).
 # The maths is pure and lives in promo_measurement_rules.py.
@@ -51,17 +55,16 @@ class NoteConflictError(Exception):
 # Constants
 # ============================================================
 
-TRIGGERS = ("scheduler", "button")
+TRIGGERS = ("upload", "promotion_change", "button", "page_load", "settings_change")
 CHANGED_BY = "measurement"
 
-# Bump when the maths changes, so the next run measures again even if no
-# input changed.
-CODE_VERSION = "2026-10-28"
+# Bump when the maths or its inputs change, so the next run measures again
+# even if no input changed.
+CODE_VERSION = "2026-10-29"
 
-# The Cloud Scheduler trigger runs the job daily at this hour, Singapore time
-# (docs/promo-uplift-runbook.md). Only used to show "next due".
-SCHEDULE_HOUR_SGT = 4
-_SINGAPORE = timezone(timedelta(hours=8))
+# Sales history starts here even when sellout holds older months: the same
+# start as the forecast's training data (docs/forecasting.md, Part B).
+FIRST_MONTH = date(2025, 1, 1)
 
 # Postgres advisory lock id: only one run at a time.
 _LOCK_KEY = 4_830_281
@@ -71,9 +74,9 @@ DEFAULT_CONFIG = {
     "starting_weight": 3.0,
     "min_exposure": 0.23,
     "reask_points": 2.0,
-    "stale_days": 100,
     "trend_min_months": 6,
     "backtest_tolerance_points": 1.0,
+    "backtest_enabled": False,
 }
 
 # A value and the one a person typed count as the same below this many points.
@@ -106,20 +109,12 @@ def _dataset() -> str:
     return bq._catalog_dataset()
 
 
-def _read_training() -> list[dict]:
-    client = bq.get_bigquery_client()
-    query = f"""
-        SELECT customer_id, sku, month_year, quantity_cartons
-        FROM `{_dataset()}.fc_training_input`
-    """
-    return [dict(row) for row in client.query(query).result()]
-
-
 def _read_backtest_errors() -> tuple[dict | None, list[str]]:
     """
     {(customer_id, sku, month): error %} from the latest run's ARIMA_PLUS
     backtest month forecasts (pipeline step 2c), averaged over the windows
     that tested the month. (None, [warning]) when the table doesn't exist yet.
+    Only read when the config's backtest_enabled is on.
     """
 
     client = bq.get_bigquery_client()
@@ -166,9 +161,9 @@ def _read_config(conn: Connection) -> dict:
                 starting_weight,
                 min_exposure,
                 reask_points,
-                stale_days,
                 trend_min_months,
-                backtest_tolerance_points
+                backtest_tolerance_points,
+                backtest_enabled
 
             FROM promo_measurement_config
 
@@ -184,9 +179,9 @@ def _read_config(conn: Connection) -> dict:
         "starting_weight": float(row["starting_weight"]),
         "min_exposure": float(row["min_exposure"]),
         "reask_points": float(row["reask_points"]),
-        "stale_days": int(row["stale_days"]),
         "trend_min_months": int(row["trend_min_months"]),
         "backtest_tolerance_points": float(row["backtest_tolerance_points"]),
+        "backtest_enabled": bool(row["backtest_enabled"]),
     }
 
 
@@ -252,8 +247,14 @@ def _read_promotions(conn: Connection, start: date, end: date) -> dict[int, list
     return by_customer
 
 
-def _read_store_units(conn: Connection, start: date, end: date) -> dict[tuple, dict]:
-    """{(customer_id, sku): {store: units}} over the window (monthly rows preferred, as on the dashboard)."""
+def _read_monthly_sales(conn: Connection, current_month: date) -> list[dict]:
+    """
+    Sell-out per customer, store, SKU and month, from FIRST_MONTH up to (not
+    including) the current month. Monthly rows are preferred over weekly ones
+    and a weekly row counts in the month it starts in, as on the dashboard
+    and in Inventory (EFFECTIVE_SELLOUT_CTE). data_through is the row's last
+    covered day, used to drop a month that isn't fully uploaded yet.
+    """
 
     rows = conn.execute(
         text(
@@ -264,31 +265,65 @@ def _read_store_units(conn: Connection, start: date, end: date) -> dict[tuple, d
                 es.retailer_id,
                 es.store_code,
                 es.sku,
-                SUM(es.quantity_units) AS units
+                date_trunc('month', es.period_start)::date AS month,
+                SUM(es.quantity_units) AS units,
+                MAX(es.period_end) AS data_through
 
             FROM effective_sellout es
             JOIN customer_retailers cr
                 ON cr.retailer_id = es.retailer_id
 
             WHERE
-                es.period_start >= :window_start
-                AND es.period_start <= :window_end
+                es.period_start >= :first_month
+                AND es.period_start < :current_month
 
             GROUP BY
                 cr.customer_id,
                 es.retailer_id,
                 es.store_code,
-                es.sku
+                es.sku,
+                month
             """
         ),
-        {"window_start": start, "window_end": end},
+        {"first_month": FIRST_MONTH, "current_month": current_month},
     ).mappings().all()
+    return [dict(row) for row in rows]
 
-    units: dict[tuple, dict] = {}
+
+def _as_date(value) -> date:
+    return value.date() if isinstance(value, datetime) else value
+
+
+def _monthly_sales(rows: list[dict]) -> tuple[dict[int, dict[str, dict[date, float]]], dict[tuple, dict]]:
+    """
+    ({customer_id: {sku: {month: units}}}, {(customer_id, sku): {store: units}})
+    from _read_monthly_sales rows: the customer's retailers (e.g. Fairprice
+    offline and online) add up into one customer, and a month only counts
+    once the customer's data reaches its last day (the same rule as
+    sellout_units for Inventory), so a part-uploaded month never reads as a
+    drop in sales. The store units cover the same complete months.
+    """
+
+    data_through: dict[int, date] = {}
     for row in rows:
+        customer_id, through = int(row["customer_id"]), _as_date(row["data_through"])
+        if customer_id not in data_through or through > data_through[customer_id]:
+            data_through[customer_id] = through
+
+    training: dict[int, dict[str, dict[date, float]]] = {}
+    store_units: dict[tuple, dict] = {}
+    for row in rows:
+        customer_id, sku, month = int(row["customer_id"]), str(row["sku"]), _as_date(row["month"])
+        if month.replace(day=mrules.days_in_month(month)) > data_through[customer_id]:
+            continue
+        # SUM() over an all-NULL group is NULL; count it as nothing sold, as sellout_units does.
+        units = float(row["units"]) if row["units"] is not None else 0.0
+        by_month = training.setdefault(customer_id, {}).setdefault(sku, {})
+        by_month[month] = by_month.get(month, 0.0) + units
         store = uplifts.store_key(row["retailer_id"], row["store_code"])
-        units.setdefault((row["customer_id"], row["sku"]), {})[store] = float(row["units"] or 0)
-    return units
+        by_store = store_units.setdefault((customer_id, sku), {})
+        by_store[store] = by_store.get(store, 0.0) + units
+    return training, store_units
 
 
 def _read_customer_stores(conn: Connection) -> dict[int, set]:
@@ -318,7 +353,13 @@ def _read_sku_ranges(conn: Connection) -> dict[str, str | None]:
     return {row["sku"]: row["sku_range"] for row in rows}
 
 
-def _read_mechanic_labels(conn: Connection) -> list[str]:
+def _read_mechanic_labels(conn: Connection, start: date, end: date) -> list[str]:
+    """
+    Mechanic labels of promotions overlapping the window, the same promotions
+    _read_promotions reads: a promotion entirely after the window changes
+    nothing measured, so it must not change the fingerprint either.
+    """
+
     rows = conn.execute(
         text(
             """
@@ -329,8 +370,11 @@ def _read_mechanic_labels(conn: Connection) -> list[str]:
 
             WHERE
                 promotion_mechanic IS NOT NULL
+                AND period_end >= :window_start
+                AND period_start <= :window_end
             """
-        )
+        ),
+        {"window_start": start, "window_end": end},
     ).all()
     return sorted(row[0] for row in rows)
 
@@ -1020,6 +1064,14 @@ def _fingerprint_payload(inputs: dict, config: dict) -> dict:
         ),
         "store_units": sorted((c, s, sorted(units.items())) for (c, s), units in inputs["store_units"].items()),
         "settings": settings,
+        # Whether a measured row is archived is a person's choice, not the
+        # measurement's output, so it counts: restoring an archived measured
+        # row must measure it again rather than keep its value from before.
+        "archived_measured": sorted(
+            (row["mechanic_key"], row["scope"], row["customer_id"], row["sku_range"], row["sku"])
+            for row in inputs["settings"]
+            if row["source"] == "measured" and row.get("archived_at") is not None
+        ),
         "anchors": sorted((c, str(a)) for c, a in inputs["anchors"].items()),
         # A change to the rule moves every rule-based starting point, so it
         # must trigger a re-measure.
@@ -1028,20 +1080,22 @@ def _fingerprint_payload(inputs: dict, config: dict) -> dict:
     }
 
 
-def _training_by_customer(rows: list[dict]) -> dict[int, dict[str, dict[date, float]]]:
-    training: dict[int, dict[str, dict[date, float]]] = {}
-    for row in rows:
-        if row["quantity_cartons"] is None:
-            continue
-        month = row["month_year"]
-        if isinstance(month, datetime):
-            month = month.date()
-        training.setdefault(int(row["customer_id"]), {}).setdefault(str(row["sku"]), {})[month] = float(row["quantity_cartons"])
-    return training
+def _read_inputs(conn: Connection) -> dict:
+    """
+    Everything a run measures from. The window is the complete months of
+    sales (FIRST_MONTH up to the last fully uploaded month before this one),
+    and only promotions overlapping it are read, so a promotion planned
+    entirely in the future leaves the fingerprint unchanged. The anchor
+    ignores this month and later for the same reason (promo_uplifts._anchor_view).
+    """
 
-
-def _read_inputs(conn: Connection, training: dict, backtest: dict | None) -> dict:
+    current_month = _utc_now().date().replace(day=1)
+    training, store_units = _monthly_sales(_read_monthly_sales(conn, current_month))
     months = [m for by_sku in training.values() for units in by_sku.values() for m in units]
+    if not months:
+        raise ValueError(
+            "sellout has no complete months from January 2025 before this month: there is nothing to measure."
+        )
     window_start = min(months)
     last_month = max(months)
     window_end = last_month.replace(day=mrules.days_in_month(last_month))
@@ -1051,22 +1105,22 @@ def _read_inputs(conn: Connection, training: dict, backtest: dict | None) -> dic
         "window_start": window_start,
         "window_end": window_end,
         "training": training,
-        "backtest": backtest,
+        "backtest": None,
         "settings": uplifts._current_uplift_rows(conn),
         "anchor_views": anchor_views,
         "anchors": {a["customer_id"]: Decimal(str(a["anchor_pct"])) for a in anchor_views},
         "anchor_rows": uplifts._current_anchor_rows(conn),
         "rule_rate": uplifts._current_rate(conn),
         "promotions": _read_promotions(conn, window_start, window_end),
-        "store_units": _read_store_units(conn, window_start, window_end),
+        "store_units": store_units,
         "customer_stores": _read_customer_stores(conn),
         "sku_ranges": _read_sku_ranges(conn),
-        "labels": _read_mechanic_labels(conn),
+        "labels": _read_mechanic_labels(conn, window_start, window_end),
         "notes": _read_current_notes(conn),
     }
 
 
-def _summary(run_id: int, status: str, inputs: dict | None, counts: dict | None, warnings: list[str]) -> dict:
+def _summary(run_id: int | None, status: str, inputs: dict | None, counts: dict | None, warnings: list[str]) -> dict:
     return {
         "run_id": run_id,
         "status": status,
@@ -1082,18 +1136,18 @@ def _json(value) -> str:
 
 
 def _run(triggered_by: str, started_at: datetime) -> dict:
-    training = _training_by_customer(_read_training())
-    if not training:
-        raise ValueError("fc_training_input has no rows: there is nothing to measure.")
-    backtest, warnings = _read_backtest_errors()
-
     with common.get_engine().begin() as conn:
         locked = conn.execute(text("SELECT pg_try_advisory_xact_lock(:lock_key)"), {"lock_key": _LOCK_KEY}).scalar()
         if not locked:
             raise MeasurementRunningError("A measurement run is already in progress; try again in a minute.")
 
         config = _read_config(conn)
-        inputs = _read_inputs(conn, training, backtest)
+        inputs = _read_inputs(conn)
+        warnings: list[str] = []
+        # Off by default: with it off no BigQuery client is created, every
+        # result records no backtest check and nothing is held.
+        if config["backtest_enabled"]:
+            inputs["backtest"], warnings = _read_backtest_errors()
         fingerprint = mrules.fingerprint(_fingerprint_payload(inputs, config))
 
         base_run = {
@@ -1106,6 +1160,9 @@ def _run(triggered_by: str, started_at: datetime) -> dict:
         }
 
         if fingerprint == _last_success_fingerprint(conn):
+            if triggered_by == "page_load":
+                # The page checks on every visit; only a run that measures is worth a row.
+                return _summary(None, "skipped_unchanged", inputs, None, warnings)
             run_id = _insert_run(conn, {**base_run, "status": "skipped_unchanged", "warnings": _json(warnings)})
             return _summary(run_id, "skipped_unchanged", inputs, None, warnings)
 
@@ -1139,12 +1196,13 @@ def _record_failure(triggered_by: str, started_at: datetime, error: Exception) -
         })
 
 
-def run_measurement(triggered_by: str = "scheduler") -> dict:
+def run_measurement(triggered_by: str) -> dict:
     """
     Measure every mechanic's uplift and update Promotion Uplift Settings, in
-    one transaction. Skips (and records the skip) when nothing changed since
-    the last successful run. A failure changes nothing: it is recorded as a
-    'failed' run, logged at ERROR level and raised.
+    one transaction. Skips when nothing changed since the last successful
+    run, recording the skip unless the page-load check asked. A failure
+    changes nothing: it is recorded as a 'failed' run, logged at ERROR level
+    and raised.
     """
 
     if triggered_by not in TRIGGERS:
@@ -1164,17 +1222,28 @@ def run_measurement(triggered_by: str = "scheduler") -> dict:
         raise
 
 
+def measure_after_change(triggered_by: str) -> dict:
+    """
+    run_measurement for the automatic triggers (a sales upload, a promotion
+    change, the settings page opening), which must never fail what triggered
+    them: this never raises. A failure is already recorded as a 'failed' run
+    and logged at ERROR by run_measurement, and shows on the settings page.
+    When another run holds the lock, nothing is recorded; the page-load
+    check measures anything that run missed.
+    """
+
+    try:
+        return run_measurement(triggered_by)
+    except MeasurementRunningError:
+        logger.info("Promotion uplift measurement (%s) skipped: another run is in progress", triggered_by)
+        return {"status": "in_progress"}
+    except Exception:
+        return {"status": "failed"}
+
+
 # ============================================================
 # STATUS, EVIDENCE AND NOTES (for the settings page)
 # ============================================================
-
-
-def _next_due(now: datetime) -> datetime:
-    local = now.astimezone(_SINGAPORE)
-    due = local.replace(hour=SCHEDULE_HOUR_SGT, minute=0, second=0, microsecond=0)
-    if due <= local:
-        due += timedelta(days=1)
-    return due.astimezone(timezone.utc)
 
 
 def _run_view(row) -> dict | None:
@@ -1209,11 +1278,13 @@ _RUN_COLUMNS = """
 
 
 def measurement_status() -> dict:
-    """Last run, last successful run, next scheduled run, stale flag and open notes, for the settings page."""
+    """
+    Last run, last successful run, stale flag and open notes, for the
+    settings page. Stale = the latest run failed, so the uplifts in use are
+    from the last successful run.
+    """
 
-    now = _utc_now()
     with common.read_connection() as conn:
-        config = _read_config(conn)
         last = conn.execute(
             text(f"SELECT {_RUN_COLUMNS} FROM promo_measurement_runs ORDER BY finished_at DESC, run_id DESC LIMIT 1")
         ).mappings().first()
@@ -1232,13 +1303,10 @@ def measurement_status() -> dict:
             text("SELECT COUNT(*) FROM promo_uplift_pending_notes WHERE superseded_at IS NULL AND status = 'open'")
         ).scalar()
 
-    stale = last_success is None or now - last_success["finished_at"] > timedelta(days=config["stale_days"])
     return {
         "last_run": _run_view(last),
         "last_success": _run_view(last_success),
-        "next_due": common.iso(_next_due(now)),
-        "stale": stale,
-        "stale_days": config["stale_days"],
+        "stale": last is not None and last["status"] == "failed",
         "open_notes": int(open_notes or 0),
     }
 
@@ -1459,7 +1527,11 @@ def use_measured(note_id: int, updated_by: str | None = None) -> dict:
 
         _decide(conn, note, "used_measured", updated_by)
 
-    return {"changed": True}
+    # Which note it was: the router measures afterwards unless it was a SKU
+    # uplift note, which provably changes no measured value (the row becomes
+    # Measured at the value the measurement would write, and nothing reads
+    # SKU-level typed values).
+    return {"changed": True, "note_type": note["note_type"], "sku": note["sku"]}
 
 
 def keep_mine(note_id: int, updated_by: str | None = None) -> dict:
