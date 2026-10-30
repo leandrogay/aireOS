@@ -206,7 +206,7 @@ DROP TABLE IF EXISTS promo_uplift_settings;
 
 | Before | Now |
 |---|---|
-| Cloud Run Job + Cloud Scheduler, daily 04:00 SGT | Inside the API, after a sales upload stores rows, after a promotion is created / edited / deleted, after a settings-page save that changed something (rule rate, anchors, uplift rows, Use measured), on **Re-measure**, and when the settings page opens if anything changed |
+| Cloud Run Job + Cloud Scheduler, daily 04:00 SGT | Inside the API, after a sales upload or a confirmed Load stores rows, after a promotion is created / edited / deleted, after a settings-page save that changed something (rule rate, anchors, uplift rows, Use measured), on **Re-measure**, and when the settings page opens if anything changed |
 | `aireos-jobs` service account and database user, its grants and IAM roles | Nothing new: the API's own `aireos-api` user (Part 1.5) |
 | BigQuery `fc_training_input` and `fc_backtest_forecasts` | Cloud SQL `sellout` only; the backtest check is off (`backtest_enabled = false`) |
 | `scripts/measure_promo_uplifts.py` | Deleted; Re-measure does the same |
@@ -249,7 +249,7 @@ After Nisha confirms Part 1:
    - **Change the rule rate** (Rule card → Edit → 0.6 → Save): the panel says "Updating measured uplifts…" while it saves, then a `settings_change` run appears (`succeeded`). The toast ends "· n measured uplifts updated" when Fairprice values moved; they move slightly (their starting point moved), while Rule-based rows move fully. Reset to default → another `settings_change` run. Saving the same rate again → "No changes to save" and **no** run.
    - **Archive a mechanic that has an open note** (type a Fairprice customer uplift first so a note exists): the note disappears in the same save, and the `settings_change` run's counts show `notes_closed`. **Keep mine** on a note adds no run.
    - **Re-measure:** with nothing changed → "Nothing has changed since the last measurement", and a `button` run with status `skipped_unchanged`.
-   - **Upload a sales file** (Upload page, a file with a confirmed mapping): the upload succeeds as before, and an `upload` run appears (`succeeded`, or `skipped_unchanged` if the file only repeated data already loaded).
+   - **Upload a sales file** (Upload page, a file with a confirmed mapping; if it waits as Ready to load, press Load and confirm): the upload or Load succeeds as before, and an `upload` run appears (`succeeded`, or `skipped_unchanged` if the file only repeated data already loaded).
    - **Edit a promotion inside the measured months** (e.g. change the mechanic of a past Fairprice promotion, then change it back): each save succeeds and a `promotion_change` run appears with status `succeeded`.
    - **Create a promotion entirely in the future** (e.g. next month or later): it saves at the usual speed and the run is `skipped_unchanged` (future promotions don't change any measured value). Delete it afterwards: another `skipped_unchanged`.
    - **A forced measurement failure doesn't fail the upload or the promotion change** (test environment only). Ask Nisha to run `REVOKE SELECT ON promo_measurement_config FROM "aireos-api@aire-data.iam";` then:

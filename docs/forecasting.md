@@ -583,7 +583,7 @@ It runs **inside the API**, in the request that triggered it, as the API's own d
 
 | Trigger (`promo_measurement_runs.triggered_by`) | When |
 |---|---|
-| `upload` | After a sales upload has stored rows in `sellout`: `POST /api/uploads`, and confirming a mapping that loads files waiting for it (`POST /api/mappings/{fp}/confirm`). Once per request, not per file |
+| `upload` | After sales rows are stored in `sellout`: `POST /api/uploads` (a known layout, when `REQUIRE_LOAD_CONFIRMATION` is off) and the confirmed Load (`POST /api/uploads/load`). Approving a mapping loads nothing, so it never measures. Once per request, not per file |
 | `promotion_change` | After a promotion is created, edited or deleted (`/api/promotions`), not on a 404 |
 | `button` | **Re-measure** on the settings page (`POST /api/settings/promo-uplifts/measure`; 409 while another run is going) |
 | `page_load` | When the settings page opens (`POST /api/settings/promo-uplifts/measure/if-changed`): measures only if the fingerprint differs from the last successful run, and records nothing when it doesn't |
@@ -672,7 +672,7 @@ On branch `feat/AO5-18&19-promotion-uplift-settings`. The 29 Oct change (Cloud S
 | `services/settings/promo_measurement.py` (new) | The measurement: Cloud SQL monthly sales (`_read_monthly_sales`, `_monthly_sales`), fingerprint, lock, measure, writes, notes, status (stale = latest run failed), evidence, Use measured / Keep mine; `measure_after_change` for the automatic triggers (never raises); the BigQuery backtest read only when `backtest_enabled` |
 | `services/settings/promo_uplifts.py` | Store-weighted, past-only anchor; archived rows excluded; active-first SKU lookup; `product_sources`; archive, restore, add mechanic; **the rule**: `get_rule`, `set_rule` (warning above 1.0), `reset_rule`, used by the resolver, reset and add mechanic; `follows_rule` and `capped` on each uplift |
 | `schemas/settings/promo_uplifts.py` | `PromoMechanicCreate` (unreadable label → 422), `PromoUpliftArchive`, `PromoNoteDecision` |
-| `routers/promotions.py`, `routers/uploads.py`, `routers/mappings.py` | Measure after a promotion change / after an upload stored rows (`measure_after_change`, after the write, never failing it) |
+| `routers/promotions.py`, `routers/uploads.py` | Measure after a promotion change / after an upload or a confirmed Load stored rows (`measure_after_change`, after the write, never failing it) |
 | `routers/settings/promo_uplifts.py` | Every versioned settings write measures afterwards when `changed` (`_measured`, trigger `settings_change`; not Keep mine or a SKU note's Use measured); `POST /measure`, **`POST /measure/if-changed`** (page load), `GET /measure/status`, `GET /notes`, `POST /notes/{id}/use-measured`, `POST /notes/{id}/keep-mine`, `POST /mechanics`, `POST /{id}/archive`, `POST /{id}/restore`, `GET /{id}/evidence`, **`GET /rule`, `PUT /rule`, `POST /rule/reset`** (rate ≤ 0 → 422) |
 | `scripts/measure_promo_uplifts.py` | **Deleted** (29 Oct): no Cloud Run Job; Re-measure does the same |
 | `services|schemas/scenario/promotions.py` | Per-SKU JSON fields removed |
