@@ -25,7 +25,9 @@ export const PROMO_HINTS = {
     'The median of the customer’s monthly discounts over the last 24 months before this one, each store weighted ' +
     'by its share of sales. Planned future promotions are left out.',
   measured:
-    'Every night, the job compares months with and without each promotion in the sales data. A SKU’s own uplift ' +
+    'Measured automatically after new sales are uploaded, a promotion is added, changed or deleted, or a ' +
+    'setting on this page is saved, and when this page opens if anything changed since. It compares months with and without each promotion in the sales ' +
+    'data from January 2025 to the last complete month. A SKU’s own uplift ' +
     'leans on the blended customer uplift, and the customer’s own uplift on the rule-based uplift, while their ' +
     'evidence is thin (starting weight: 3 months). Uplifts you type are never overwritten; you get a note instead.',
   notes:
@@ -87,19 +89,22 @@ export const EVIDENCE_HINTS = {
     'How many months of evidence the level above counts as. With 3, a level with 3 months of its own evidence ' +
     'is weighted half and half.',
   'Backtest check':
-    'How far past forecasts that knew nothing about promotions were off in months with this promotion. If it ' +
-    'points the opposite way by 1 point or more, the previous uplift is kept for that run.',
+    'Switched off for now, so every result says “No check”. When on, it shows how far past forecasts that knew ' +
+    'nothing about promotions were off in months with this promotion; if it points the opposite way by 1 point or ' +
+    'more, the previous uplift is kept for that run.',
   Trend:
     'Each month is compared with the SKU’s trend line, so growth isn’t mistaken for a promotion effect. Under ' +
     '6 months of history, the plain average is used instead.',
-  'Data window': 'The months the forecast model learns from; the measurement uses exactly the same months.',
+  'Data window':
+    'The months of sell-out measured: from January 2025 to the last month whose sales are fully uploaded, never ' +
+    'the current month.',
 };
 
 // "How this page works" on Promotion uplift settings, one short line each.
 export const HOW_THIS_PAGE_WORKS = [
   'Uplift = how much more (or less) a month with a promotion sells than an ordinary month. The forecast already reflects an ordinary month.',
   'Rule-based uplifts are the starting point: a simple rule from how much deeper a promotion is than the customer’s normal discount.',
-  'Measured uplifts replace them per customer and SKU once sales data has evidence (checked every night, or with Re-measure).',
+  'Measured uplifts replace them per customer and SKU once sales data has evidence (measured after new sales, promotion changes or saves on this page, or with Re-measure).',
   'Uplifts you type are never overwritten; when the data disagrees you get a note to Use measured or Keep mine.',
   'These uplifts are only used when planning future promotions in the Scenario builder; they never change the official forecast.',
 ];

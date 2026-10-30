@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { getPromoMeasurementStatus, getPromoUpliftNotes } from '@/app/services/promoUpliftsApi';
 
 /**
- * The measurement job's status (last run, next run, stale) and the open notes
+ * The measurement's status (last run, last successful run, stale) and the open notes
  * on typed values, for the Promotion Uplift Settings page (backend
  * promo_measurement.measurement_status / list_notes). `refreshKey` is bumped
  * to refetch, e.g. after Re-measure or a note decision.

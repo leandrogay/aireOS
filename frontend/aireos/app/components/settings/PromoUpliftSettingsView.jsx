@@ -12,6 +12,7 @@ import RefreshButton from '@/components/ui/RefreshButton';
 import { Switch } from '@/components/ui/switch';
 import Toast from '@/components/ui/Toast';
 import useConfirmAction from '@/hooks/useConfirmAction';
+import usePromoMeasureOnOpen from '@/hooks/usePromoMeasureOnOpen';
 import usePromoUpliftFilterOptions from '@/hooks/usePromoUpliftFilterOptions';
 import usePromoUpliftSettings from '@/hooks/usePromoUpliftSettings';
 import useToast from '@/hooks/useToast';
@@ -25,6 +26,7 @@ import {
 } from '@/app/services/promoUpliftsApi';
 import {
   DEFAULT_UPLIFT_PER_POINT_PCT,
+  measurementToastSuffix,
   scopeLabel,
   shownUplift,
   upliftRowApplies,
@@ -59,14 +61,22 @@ function anchorEditTarget(row) {
  * never are. Every write is a new version (nothing is deleted, archiving
  * included), recorded as UPDATED_BY; after a write the page refetches, since
  * an anchor or rule change moves every rule-based uplift. Uplifts are
- * measured from sales data daily (PromoMeasurementPanel); uplifts typed here
- * are never overwritten by a measurement.
+ * measured from sales data automatically after a sales upload or a promotion
+ * change, and when this page opens if anything changed since
+ * (PromoMeasurementPanel, usePromoMeasureOnOpen), and after any save here that
+ * can change a measured value: the backend measures in the same request, so
+ * the refetch after the save already shows the new values, and the toast says
+ * what moved. Uplifts typed here are never overwritten by a measurement.
  *
  * While PROMO_UPLIFTS_DEMO is on (services/promoUpliftsApi.js), every
  * button works against an in-memory demo and nothing is saved.
  */
 export default function PromoUpliftSettingsView() {
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [writes, setWrites] = useState(0);
+  const [savesInFlight, setSavesInFlight] = useState(0);
+  const openCheck = usePromoMeasureOnOpen();
+  // Refetch after any write here and after the page-load check measured.
+  const refreshKey = writes + openCheck.runs;
   const { settings, anchors, loading, error } = usePromoUpliftSettings({ refreshKey });
   const filterOptions = usePromoUpliftFilterOptions({ refreshKey });
   const readOnly = !settings;
@@ -82,7 +92,19 @@ export default function PromoUpliftSettingsView() {
   const reset = useConfirmAction({ onConfirm: handleUpliftReset });
   const archive = useConfirmAction({ onConfirm: handleUpliftArchive });
 
-  const refresh = () => setRefreshKey((key) => key + 1);
+  const refresh = () => setWrites((count) => count + 1);
+
+  // A save that wrote a new version measures promotion uplifts in the same
+  // request (backend _measured), so it can take a few seconds; the panel says
+  // "Updating measured uplifts…" meanwhile.
+  async function track(save) {
+    setSavesInFlight((count) => count + 1);
+    try {
+      return await save;
+    } finally {
+      setSavesInFlight((count) => count - 1);
+    }
+  }
   const rows = settings?.settings ?? [];
   const rule = settings?.rule ?? null;
   const rate = rule?.uplift_per_point_pct ?? DEFAULT_UPLIFT_PER_POINT_PCT;
@@ -134,16 +156,19 @@ export default function PromoUpliftSettingsView() {
     notify(
       'success',
       result.changed
-        ? `Ordinary-month discount for ${target.name} saved`
+        ? `Ordinary-month discount for ${target.name} saved${measurementToastSuffix(result.measurement)}`
         : 'No changes to save: the discount is already set to this value'
     );
   }
 
   async function handleAnchorReset(row) {
     try {
-      const result = await resetPromoAnchor(row.customer_id);
+      const result = await track(resetPromoAnchor(row.customer_id));
       refresh();
-      notify('success', `${retailerLabel(row.customer_name)} now uses ${result.anchor.anchor_pct}% (from its data)`);
+      notify(
+        'success',
+        `${retailerLabel(row.customer_name)} now uses ${result.anchor.anchor_pct}% (from its data)${measurementToastSuffix(result.measurement)}`
+      );
     } catch (err) {
       notify('error', err.message);
     }
@@ -151,10 +176,15 @@ export default function PromoUpliftSettingsView() {
 
   async function handleUpliftSave(row, upliftPct, note) {
     try {
-      const result = await savePromoUplift(row.id, { uplift_pct: upliftPct, note });
+      const result = await track(savePromoUplift(row.id, { uplift_pct: upliftPct, note }));
       setEditTarget(null);
       refresh();
-      notify('success', result.changed ? `${row.mechanic_label} saved as an Estimate` : 'No changes to save');
+      notify(
+        'success',
+        result.changed
+          ? `${row.mechanic_label} saved as an Estimate${measurementToastSuffix(result.measurement)}`
+          : 'No changes to save'
+      );
       return true;
     } catch (err) {
       notify('error', err.message);
@@ -164,9 +194,9 @@ export default function PromoUpliftSettingsView() {
 
   async function handleUpliftReset(row) {
     try {
-      await resetPromoUplift(row.id);
+      const result = await track(resetPromoUplift(row.id));
       refresh();
-      notify('success', `${row.mechanic_label} follows the rule again`);
+      notify('success', `${row.mechanic_label} follows the rule again${measurementToastSuffix(result.measurement)}`);
     } catch (err) {
       notify('error', err.message);
     }
@@ -174,9 +204,12 @@ export default function PromoUpliftSettingsView() {
 
   async function handleUpliftArchive(row) {
     try {
-      await archivePromoUplift(row.id);
+      const result = await track(archivePromoUplift(row.id));
       refresh();
-      notify('success', `${row.mechanic_label} archived. Turn on Show archived to see or restore it.`);
+      notify(
+        'success',
+        `${row.mechanic_label} archived. Turn on Show archived to see or restore it${measurementToastSuffix(result.measurement)}.`
+      );
     } catch (err) {
       notify('error', err.message);
     }
@@ -184,9 +217,9 @@ export default function PromoUpliftSettingsView() {
 
   async function handleUpliftRestore(row) {
     try {
-      await restorePromoUplift(row.id);
+      const result = await track(restorePromoUplift(row.id));
       refresh();
-      notify('success', `${row.mechanic_label} restored`);
+      notify('success', `${row.mechanic_label} restored${measurementToastSuffix(result.measurement)}`);
     } catch (err) {
       notify('error', err.message);
     }
@@ -198,16 +231,21 @@ export default function PromoUpliftSettingsView() {
     notify(
       result.warning ? 'error' : 'success',
       result.changed
-        ? `Rule saved: ${result.rule.uplift_per_point_pct}% per extra point of discount${result.warning ? `. ${result.warning}` : ''}`
+        ? `Rule saved: ${result.rule.uplift_per_point_pct}% per extra point of discount${measurementToastSuffix(result.measurement)}${result.warning ? `. ${result.warning}` : ''}`
         : 'No changes to save: the rule already uses this rate'
     );
   }
 
   async function handleRuleReset() {
     try {
-      const result = await resetPromoRule();
+      const result = await track(resetPromoRule());
       refresh();
-      notify('success', result.changed ? `Rule back to the default ${DEFAULT_UPLIFT_PER_POINT_PCT}% per point` : 'The rule already uses the default');
+      notify(
+        'success',
+        result.changed
+          ? `Rule back to the default ${DEFAULT_UPLIFT_PER_POINT_PCT}% per point${measurementToastSuffix(result.measurement)}`
+          : 'The rule already uses the default'
+      );
     } catch (err) {
       notify('error', err.message);
     }
@@ -216,7 +254,7 @@ export default function PromoUpliftSettingsView() {
   function handleMechanicAdded(result) {
     setAddingMechanic(false);
     refresh();
-    notify('success', `${result.setting.mechanic_label} added`);
+    notify('success', `${result.setting.mechanic_label} added${measurementToastSuffix(result.measurement)}`);
   }
 
   return (
@@ -244,6 +282,8 @@ export default function PromoUpliftSettingsView() {
 
       <PromoMeasurementPanel
         refreshKey={refreshKey}
+        checking={openCheck.checking}
+        updating={savesInFlight > 0}
         readOnly={readOnly}
         labelForKey={labelForKey}
         onChanged={refresh}
@@ -371,6 +411,7 @@ export default function PromoUpliftSettingsView() {
           target={anchorTarget}
           settings={rows}
           rate={rate}
+          track={track}
           onSaved={handleAnchorSaved}
           onCancel={() => setAnchorTarget(null)}
         />
@@ -386,6 +427,7 @@ export default function PromoUpliftSettingsView() {
               ? `${retailerLabel(customerAnchor.customer_name)}'s ordinary-month discount`
               : 'the all-customers ordinary-month discount'
           }
+          track={track}
           onSaved={handleRuleSaved}
           onCancel={() => setEditingRule(false)}
         />
@@ -415,7 +457,7 @@ export default function PromoUpliftSettingsView() {
       ) : null}
 
       {addingMechanic ? (
-        <PromoMechanicForm onSaved={handleMechanicAdded} onCancel={() => setAddingMechanic(false)} />
+        <PromoMechanicForm track={track} onSaved={handleMechanicAdded} onCancel={() => setAddingMechanic(false)} />
       ) : null}
 
       <ConfirmDialog

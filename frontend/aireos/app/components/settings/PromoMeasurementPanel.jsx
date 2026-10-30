@@ -12,7 +12,7 @@ import {
   runPromoMeasurement,
   applyPromoMeasuredValue,
 } from '@/app/services/promoUpliftsApi';
-import { measurementStatusLine, noteTitle } from '@/app/utils/promoUpliftSettings';
+import { measurementStatusLine, measurementToastSuffix, noteTitle } from '@/app/utils/promoUpliftSettings';
 import { formatPct } from '@/app/utils/scenarioPromotions';
 import { formatDateTime } from '@/lib/formatDate';
 import { PROMO_HINTS } from '@/app/utils/promoUpliftHints';
@@ -25,20 +25,25 @@ const RUN_MESSAGES = {
 
 /**
  * Measured uplifts on the Promotion uplift settings page: when they were last
- * measured and the next scheduled run (daily, 04:00 Singapore time), a stale
- * warning, the Re-measure button, and the notes where a measured uplift
- * differs from one somebody typed ([Use measured] / [Keep mine]).
+ * measured (automatically after new sales, a promotion change or a settings
+ * save, and when the page opens if anything changed), a warning when the
+ * latest run failed, the Re-measure button, and the notes where a measured
+ * uplift differs from one somebody typed ([Use measured] / [Keep mine]).
  *
  * @param {object} props
  * @param {number} props.refreshKey bumped by the page after any write
+ * @param {boolean} props.checking the page-load check (usePromoMeasureOnOpen) is still running
+ * @param {boolean} props.updating a settings save, which measures in the same request, is in flight
  * @param {boolean} props.readOnly no buttons
  * @param {(key: string) => string} props.labelForKey mechanic key -> its label
  * @param {() => void} props.onChanged refetch the page after a write here
  * @param {(tone: string, message: string) => void} props.notify
  */
-export default function PromoMeasurementPanel({ refreshKey, readOnly, labelForKey, onChanged, notify }) {
+export default function PromoMeasurementPanel({ refreshKey, checking, updating, readOnly, labelForKey, onChanged, notify }) {
   const { status, notes, loading, error } = usePromoMeasurement({ refreshKey });
   const [busy, setBusy] = useState(null);
+  // Use measured on a customer or anchor note measures in the same request, as a settings save does.
+  const measuringSave = updating || busy === 'use';
 
   async function remeasure() {
     setBusy('measure');
@@ -56,11 +61,15 @@ export default function PromoMeasurementPanel({ refreshKey, readOnly, labelForKe
   }
 
   async function decide(note, action) {
-    setBusy(note.id);
+    setBusy(action);
     try {
-      if (action === 'use') await applyPromoMeasuredValue(note.id);
-      else await keepPromoTypedValue(note.id);
-      notify('success', action === 'use' ? 'Measured uplift now in use' : 'Your uplift is kept');
+      if (action === 'use') {
+        const result = await applyPromoMeasuredValue(note.id);
+        notify('success', `Measured uplift now in use${measurementToastSuffix(result.measurement)}`);
+      } else {
+        await keepPromoTypedValue(note.id);
+        notify('success', 'Your uplift is kept');
+      }
       onChanged();
     } catch (err) {
       notify('error', err.message);
@@ -79,6 +88,12 @@ export default function PromoMeasurementPanel({ refreshKey, readOnly, labelForKe
           </h2>
           <p className="mt-0.5 text-xs text-deep-violet-blue/60">
             {loading && !status ? 'Loading…' : measurementStatusLine(status, formatDateTime)}
+            {checking ? ' · Checking for new sales and promotions…' : ''}
+            {measuringSave ? ' · Updating measured uplifts…' : ''}
+          </p>
+          <p className="mt-0.5 text-xs text-deep-violet-blue/60">
+            Measures automatically after new sales are uploaded, a promotion is added, changed or deleted, or a
+            setting on this page is saved.
           </p>
         </div>
         {readOnly ? null : (
@@ -87,7 +102,7 @@ export default function PromoMeasurementPanel({ refreshKey, readOnly, labelForKe
             variant="outline"
             size="sm"
             onClick={remeasure}
-            disabled={busy !== null}
+            disabled={busy !== null || checking || updating}
             className={secondaryButtonClass}
           >
             <RefreshCw aria-hidden="true" className={busy === 'measure' ? 'animate-spin' : undefined} />
@@ -102,17 +117,18 @@ export default function PromoMeasurementPanel({ refreshKey, readOnly, labelForKe
         </p>
       ) : null}
 
-      {status?.stale ? (
+      {status && !status.last_success && !status.stale ? (
         <p className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900" role="status">
-          {status.last_success
-            ? `No successful measurement for over ${status.stale_days} days. The daily job may have stopped; check it in Google Cloud (Cloud Run Jobs › aireos-promo-measure).`
-            : 'Uplifts have not been measured yet. They stay rule-based until the first run.'}
+          Uplifts have not been measured yet. They stay rule-based until the first run.
         </p>
       ) : null}
 
-      {status?.last_run?.status === 'failed' ? (
-        <p className="mt-2 text-xs text-red-700" role="alert">
-          The last run failed and changed nothing: {status.last_run.error}
+      {status?.stale ? (
+        <p className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900" role="alert">
+          {status.last_success
+            ? `The latest measurement failed and changed nothing, so measured uplifts are from ${formatDateTime(status.last_success.finished_at)}. `
+            : 'The first measurement failed, so uplifts are still rule-based. '}
+          Re-measure to try again. Error: {status.last_run.error}
         </p>
       ) : null}
 

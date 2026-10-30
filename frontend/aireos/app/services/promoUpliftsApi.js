@@ -30,6 +30,7 @@ export const {
   resetPromoAnchor,
   getPromoAnchorHistory,
   runPromoMeasurement,
+  measurePromoUpliftsIfChanged,
   getPromoMeasurementStatus,
   getPromoUpliftEvidence,
   getPromoUpliftNotes,

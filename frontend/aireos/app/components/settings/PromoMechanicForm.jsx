@@ -27,10 +27,11 @@ const KINDS = [
  * (Customers and SKUs pages) and reach this page's filters on their own.
  *
  * @param {object} props
+ * @param {(save: Promise<object>) => Promise<object>} props.track counts the save as in flight (it may measure)
  * @param {(result: object) => void} props.onSaved
  * @param {() => void} props.onCancel
  */
-export default function PromoMechanicForm({ onSaved, onCancel }) {
+export default function PromoMechanicForm({ track, onSaved, onCancel }) {
   const [form, setForm] = useState(EMPTY_MECHANIC_FORM);
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
@@ -50,7 +51,7 @@ export default function PromoMechanicForm({ onSaved, onCancel }) {
     setSubmitting(true);
     setRequestError(null);
     try {
-      onSaved(await addPromoMechanic(payload));
+      onSaved(await track(addPromoMechanic(payload)));
     } catch (err) {
       setRequestError(err.message);
       setSubmitting(false);

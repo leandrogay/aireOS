@@ -549,14 +549,6 @@ function runSummary(run) {
   });
 }
 
-function nextDue() {
-  // Next 04:00 Singapore time (20:00 UTC), as the real schedule.
-  const due = new Date();
-  due.setUTCHours(20, 0, 0, 0);
-  if (due <= new Date()) due.setUTCDate(due.getUTCDate() + 1);
-  return due.toISOString();
-}
-
 function measureOne(item, run, counts) {
   const customer = ensureCustomer(item.customer_name);
   const scope = item.sku ? 'sku' : 'customer';
@@ -583,8 +575,9 @@ function measureOne(item, run, counts) {
     blended_customer_pct: item.sku ? item.blendedCustomer : item.value,
     starting_weight: 3,
     blended_pct: item.value,
-    backtest_pct: 4.1,
-    backtest_months: 2,
+    // The backtest check is off by default (promo_measurement_config.backtest_enabled).
+    backtest_pct: null,
+    backtest_months: 0,
     outcome: 'applied',
     reason: null,
     window_start: run.window_start,
@@ -632,9 +625,15 @@ function measureOne(item, run, counts) {
   counts.applied += 1;
 }
 
+export async function measurePromoUpliftsIfChanged() {
+  // Nothing in the demo changes on its own, so the page-load check never
+  // measures and, like the real one, records nothing.
+  return { status: 'skipped_unchanged', run_id: null };
+}
+
 export async function runPromoMeasurement() {
   // Nothing in the demo changes between runs, so a second run is skipped, as
-  // the real job skips when no input changed.
+  // the real measurement skips when no input changed.
   if (measurement.runs.some((run) => run.status.startsWith('succeeded'))) {
     return runSummary(demoRun('skipped_unchanged', {}));
   }
@@ -660,9 +659,7 @@ export async function getPromoMeasurementStatus() {
   return copy({
     last_run: measurement.runs[0] ?? null,
     last_success: lastSuccess,
-    next_due: nextDue(),
-    stale: lastSuccess == null,
-    stale_days: 100,
+    stale: measurement.runs[0]?.status === 'failed',
     open_notes: measurement.notes.filter((note) => note.status === 'open').length,
   });
 }

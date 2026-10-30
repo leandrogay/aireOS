@@ -37,10 +37,11 @@ import RulePreviewTable from './RulePreviewTable';
  * @param {object[]} props.settings current setting rows
  * @param {number} props.anchorPct the anchor the preview is worked out at
  * @param {string} props.anchorLabel whose anchor that is, e.g. "Fairprice's ordinary-month discount"
+ * @param {(save: Promise<object>) => Promise<object>} props.track counts the save as in flight (it may measure)
  * @param {(result: object) => void} props.onSaved
  * @param {() => void} props.onCancel
  */
-export default function PromoRuleDialog({ currentRate, settings, anchorPct, anchorLabel, onSaved, onCancel }) {
+export default function PromoRuleDialog({ track, currentRate, settings, anchorPct, anchorLabel, onSaved, onCancel }) {
   const [text, setText] = useState(String(currentRate));
   const [submitting, setSubmitting] = useState(false);
   const [requestError, setRequestError] = useState(null);
@@ -55,7 +56,7 @@ export default function PromoRuleDialog({ currentRate, settings, anchorPct, anch
     setSubmitting(true);
     setRequestError(null);
     try {
-      onSaved(await savePromoRule(value));
+      onSaved(await track(savePromoRule(value)));
     } catch (err) {
       setRequestError(err.message);
       setSubmitting(false);

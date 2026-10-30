@@ -389,13 +389,29 @@ export function evidenceDetails(result) {
     ['Starting weight (k)', result.starting_weight == null ? '—' : String(result.starting_weight)],
     [
       'Backtest check',
-      result.backtest_pct == null ? 'No backtest months with it yet' : `${pct(result.backtest_pct)} over ${months(result.backtest_months)}`,
+      result.backtest_pct == null ? 'No check' : `${pct(result.backtest_pct)} over ${months(result.backtest_months)}`,
     ],
     ['Trend', result.method === 'flat' ? 'Flat average (under 6 months of history)' : result.method === 'trend' ? 'Trend line' : '—'],
     ['Data window', result.window_start ? `${result.window_start.slice(0, 7)} to ${result.window_end.slice(0, 7)}` : '—'],
   );
   if (result.reason) rows.push(['Why', result.reason]);
   return rows;
+}
+
+/**
+ * What a settings save's measurement did, as the end of its toast. A save
+ * that wrote a new version measures in the same request and answers its run
+ * summary as `measurement` (backend routers/settings/promo_uplifts._measured).
+ * Empty when nothing ran, the run was skipped or no value moved.
+ *
+ * @param {{ status: string, counts?: object } | undefined} measurement
+ */
+export function measurementToastSuffix(measurement) {
+  if (!measurement) return '';
+  if (measurement.status === 'failed') return ' · re-measuring failed, see Measured from sales data';
+  const applied = measurement.counts?.applied ?? 0;
+  if (!measurement.status.startsWith('succeeded') || applied === 0) return '';
+  return ` · ${applied} measured uplift${applied === 1 ? '' : 's'} updated`;
 }
 
 /**
@@ -407,8 +423,7 @@ export function evidenceDetails(result) {
 export function measurementStatusLine(status, formatDateTime) {
   if (!status) return '';
   const last = status.last_success;
-  const lastText = last ? `Last measured ${formatDateTime(last.finished_at)}` : 'Not measured yet';
-  return `${lastText} · next run ${formatDateTime(status.next_due)}`;
+  return last ? `Last measured ${formatDateTime(last.finished_at)}` : 'Not measured yet';
 }
 
 /**

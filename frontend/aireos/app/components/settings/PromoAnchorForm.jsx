@@ -30,10 +30,11 @@ import RulePreviewTable from './RulePreviewTable';
  *   `row` is the anchor row from getPromoAnchors, null for the all-customers value
  * @param {object[]} props.settings current setting rows
  * @param {number} props.rate the rule's rate (% per point)
+ * @param {(save: Promise<object>) => Promise<object>} props.track counts the save as in flight (it may measure)
  * @param {(result: object, target: object) => void} props.onSaved
  * @param {() => void} props.onCancel
  */
-export default function PromoAnchorForm({ target, settings, rate, onSaved, onCancel }) {
+export default function PromoAnchorForm({ track, target, settings, rate, onSaved, onCancel }) {
   const [text, setText] = useState(String(target.anchorPct));
   const [submitting, setSubmitting] = useState(false);
   const [requestError, setRequestError] = useState(null);
@@ -63,7 +64,7 @@ export default function PromoAnchorForm({ target, settings, rate, onSaved, onCan
     setSubmitting(true);
     setRequestError(null);
     try {
-      onSaved(await savePromoAnchor(target.customerId, value), target);
+      onSaved(await track(savePromoAnchor(target.customerId, value)), target);
     } catch (err) {
       setRequestError(err.message);
       setSubmitting(false);

@@ -136,7 +136,10 @@ export async function revertDohThresholds(customerId, settingId) {
 // Uplift per promotion mechanic, and each customer's ordinary-month discount
 // (the "anchor" rule-based uplifts are worked out from), and the rule's rate. Percentages come back
 // as JSON numbers (4 means +4%). Writes answer with `{ changed, ... }`, like
-// the DOH wrappers above.
+// the DOH wrappers above; a write that changed something (and Use measured on
+// a customer or anchor note) also measures the uplifts in the same request and
+// adds that run summary as `measurement` ({ status, counts, ... }, or
+// { status: "failed" }; see backend routers/settings/promo_uplifts._measured).
 // ============================================================
 
 const PROMO_UPLIFTS = '/api/settings/promo-uplifts';
@@ -338,9 +341,10 @@ export async function getPromoAnchorHistory(customerId) {
 /**
  * POST /api/settings/promo-uplifts/measure
  *
- * Re-measure now (the same job Cloud Scheduler runs daily). Answers the run
- * summary; 409 while another run is going; status 'skipped_unchanged' when
- * nothing changed since the last run.
+ * Re-measure now (the same measurement that runs by itself after a sales
+ * upload or a promotion change). Answers the run summary; 409 while another
+ * run is going; status 'skipped_unchanged' when nothing changed since the
+ * last successful run.
  *
  * @returns {Promise<{ run_id: number, status: string, window_start: string | null, window_end: string | null, counts: object, warnings: string[] }>}
  */
@@ -349,12 +353,27 @@ export async function runPromoMeasurement() {
 }
 
 /**
+ * POST /api/settings/promo-uplifts/measure/if-changed
+ *
+ * The settings page's check when it opens: measures only if sales,
+ * promotions or settings changed since the last successful run. Never fails:
+ * status 'skipped_unchanged' (nothing recorded), a run summary, 'failed'
+ * (recorded, shows in the status) or 'in_progress'.
+ *
+ * @returns {Promise<{ status: string, run_id?: number | null, counts?: object }>}
+ */
+export async function measurePromoUpliftsIfChanged() {
+  return request(`${PROMO_UPLIFTS}/measure/if-changed`, { method: 'POST' });
+}
+
+/**
  * GET /api/settings/promo-uplifts/measure/status
  *
- * Last run, last successful run, next scheduled run, whether values are stale
- * (no successful run for `stale_days`), and how many notes are open.
+ * Last run, last successful run, whether values are stale (the latest run
+ * failed, so the uplifts are from the last successful one), and how many
+ * notes are open.
  *
- * @returns {Promise<{ last_run: object | null, last_success: object | null, next_due: string, stale: boolean, stale_days: number, open_notes: number }>}
+ * @returns {Promise<{ last_run: object | null, last_success: object | null, stale: boolean, open_notes: number }>}
  */
 export async function getPromoMeasurementStatus() {
   return request(`${PROMO_UPLIFTS}/measure/status`);
