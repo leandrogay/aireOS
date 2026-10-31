@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { CircleAlert } from 'lucide-react';
+import { ChevronDown, CircleAlert } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
@@ -12,6 +12,7 @@ import {
   decisionSummary,
   dependentFields,
   fieldMethods,
+  methodSections,
   rowsAboveChoices,
 } from '@/app/utils/fieldDecision';
 import { fieldLabel } from '@/app/utils/mappingReview';
@@ -46,6 +47,41 @@ function startingDrafts(field, current, { groups, layout, columns }) {
   return drafts;
 }
 
+/** One way of filling the field, as a radio card; the way it is filled now says so. */
+function MethodOption({ item, checked, isCurrent, onChoose }) {
+  return (
+    <li>
+      <label
+        className={cn(
+          'flex cursor-pointer items-start gap-2 rounded-md border px-2 py-1.5 text-xs text-deep-violet-blue',
+          checked ? 'border-deep-violet-blue bg-lavander/40' : 'border-lavander hover:bg-cream/60',
+          item.reason && 'cursor-not-allowed opacity-60',
+        )}
+        title={item.reason || item.help}
+      >
+        <input
+          type="radio"
+          name="method"
+          value={item.method}
+          checked={checked}
+          disabled={Boolean(item.reason)}
+          onChange={() => onChoose(item.method)}
+          className="mt-0.5 size-3.5 accent-deep-violet-blue"
+        />
+        <span className="min-w-0 flex-1">
+          <span className="font-medium">{item.label}</span>
+          {isCurrent && (
+            <span className="ml-1.5 rounded-full bg-lavander px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/70">
+              Now
+            </span>
+          )}
+          {item.reason && <span className="block text-[11px] text-deep-violet-blue/60">{item.reason}</span>}
+        </span>
+      </label>
+    </li>
+  );
+}
+
 function EditorForm({ entry, mapping, state, layout, onApply, onClose }) {
   const field = entry.field;
   const current = currentDecision(mapping, state, field);
@@ -56,6 +92,11 @@ function EditorForm({ entry, mapping, state, layout, onApply, onClose }) {
   const [method, setMethod] = useState(() =>
     methods.some((item) => item.method === current.method) ? current.method : 'column',
   );
+
+  const { main, more } = methodSections(methods, current.method);
+  const [showMore, setShowMore] = useState(false);
+  // The chosen way never hides: while it is one of the more ways, they stay open.
+  const chosenInMore = more.some((item) => item.method === method);
 
   const draft = drafts[method];
   const dependents = method !== current.method ? dependentFields(mapping, state, field) : [];
@@ -79,35 +120,49 @@ function EditorForm({ entry, mapping, state, layout, onApply, onClose }) {
 
       <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto px-4 py-3 sm:grid-cols-[14rem_minmax(0,1fr)]">
         <fieldset className="min-w-0">
-          <legend className="sr-only">Ways to fill {entry.label}</legend>
+          <legend className="mb-1.5 text-xs font-medium text-deep-violet-blue">Where is it in this file?</legend>
           <ul className="space-y-1">
-            {methods.map((item) => (
-              <li key={item.method}>
-                <label
-                  className={cn(
-                    'flex cursor-pointer items-start gap-2 rounded-md border px-2 py-1.5 text-xs text-deep-violet-blue',
-                    method === item.method ? 'border-deep-violet-blue bg-lavander/40' : 'border-lavander hover:bg-cream/60',
-                    item.reason && 'cursor-not-allowed opacity-60',
-                  )}
-                  title={item.reason || item.help}
-                >
-                  <input
-                    type="radio"
-                    name="method"
-                    value={item.method}
-                    checked={method === item.method}
-                    disabled={Boolean(item.reason)}
-                    onChange={() => setMethod(item.method)}
-                    className="mt-0.5 size-3.5 accent-deep-violet-blue"
-                  />
-                  <span>
-                    <span className="font-medium">{item.label}</span>
-                    {item.reason && <span className="block text-[11px] text-deep-violet-blue/60">{item.reason}</span>}
-                  </span>
-                </label>
-              </li>
+            {main.map((item) => (
+              <MethodOption
+                key={item.method}
+                item={item}
+                checked={method === item.method}
+                isCurrent={item.method === current.method}
+                onChoose={setMethod}
+              />
             ))}
           </ul>
+          {more.length > 0 && (
+            <div className="mt-1.5">
+              {!chosenInMore && (
+                <button
+                  type="button"
+                  aria-expanded={showMore}
+                  onClick={() => setShowMore((open) => !open)}
+                  className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-deep-violet-blue/70 hover:bg-cream"
+                >
+                  <ChevronDown
+                    aria-hidden="true"
+                    className={cn('size-3 transition-transform', showMore && 'rotate-180')}
+                  />
+                  {showMore ? 'Fewer ways' : `More ways (${more.length})`}
+                </button>
+              )}
+              {(showMore || chosenInMore) && (
+                <ul className="mt-1 space-y-1">
+                  {more.map((item) => (
+                    <MethodOption
+                      key={item.method}
+                      item={item}
+                      checked={method === item.method}
+                      isCurrent={item.method === current.method}
+                      onChoose={setMethod}
+                    />
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
         </fieldset>
 
         <div className="min-w-0 space-y-2">
@@ -175,7 +230,10 @@ export default function FieldEditorDialog({ entry, mapping, state, layout, onApp
         if (!next) onClose();
       }}
     >
-      <DialogContent aria-label={entry ? `How ${entry.label} is filled` : 'Field'} className="bg-transparent p-0 ring-0 sm:max-w-3xl">
+      <DialogContent
+        aria-label={entry ? `How ${entry.label} is filled` : 'Field'}
+        className="bg-transparent p-0 ring-0 sm:max-w-3xl lg:max-w-5xl"
+      >
         {entry && (
           <EditorForm
             key={entry.field}

@@ -12,23 +12,23 @@ import { HEADING_FIELDS, MEASURE_FIELDS, STORE_FIELDS, fieldLabel, groupKind, he
 
 export const METHOD_INFO = {
   column: {
-    label: 'A column',
+    label: 'In a column',
     help: 'Read from one column of the file, one value per row.',
   },
   group: {
-    label: 'A group of period or outlet columns',
+    label: 'In a group of period or outlet columns',
     help: 'One row per column of the group: its heading says which period or outlet, its cells hold the figure.',
   },
   headings: {
-    label: 'The column headings',
+    label: 'In the column headings',
     help: 'The heading of each period or outlet column the figures are read from.',
   },
   above: {
-    label: 'A row above the column headings',
+    label: 'In a row above the column headings',
     help: 'The cell above each outlet heading — where some files write the outlet code over its name.',
   },
   title: {
-    label: "The period in the file's title",
+    label: "In the file's title",
     help: 'The month the title or the lines above the table state, e.g. “DATE : 01 Aug 2026 TO 31 Aug 2026”. Every row gets that month.',
   },
   price: {
@@ -81,6 +81,24 @@ export function fieldMethods(field, groups) {
   methods.push({ method: 'constant', reason: '' }, { method: 'derived', reason: '' }, { method: 'not_available', reason: '' });
 
   return methods.map((item) => ({ ...item, ...METHOD_INFO[item.method] }));
+}
+
+// Ways that are seldom the answer and take the most explaining. The editor
+// keeps them under "More ways" so the usual ones are not crowded out.
+const RARE_METHODS = ['derived'];
+
+/**
+ * The methods the editor lists first, and the rest for its "More ways": a
+ * method that cannot be chosen yet, or a rare one, waits there -- unless it
+ * is how the field is filled now, which always shows.
+ *
+ * @returns {{ main: object[], more: object[] }}
+ */
+export function methodSections(methods, currentMethod) {
+  const main = methods.filter(
+    (item) => item.method === currentMethod || (!item.reason && !RARE_METHODS.includes(item.method)),
+  );
+  return { main, more: methods.filter((item) => !main.includes(item)) };
 }
 
 // ============================================================

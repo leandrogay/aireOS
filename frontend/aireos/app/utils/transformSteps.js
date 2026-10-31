@@ -6,47 +6,90 @@
 // transformation on the whole file -- and steps that need the rest of the row
 // (multiply, unit conversion, fill from above) are left to it.
 
+import { MEASURE_FIELDS } from '@/app/utils/mappingReview';
+
 // ============================================================
 // The vocabulary
 // ============================================================
 
+// `kinds` are the fields a step makes sense for: 'text' (store, product…),
+// 'number' (units sold, sales value) and 'date' (the period). The add-a-step
+// menu lists those first; the rest stay reachable under a second heading.
 export const STEP_TYPES = [
   {
     type: 'regex_extract',
     label: 'Take part of the text',
     help: 'Keep only the part a pattern finds, e.g. the size in “AIRE PANTS XL 10S”.',
+    kinds: ['text', 'number', 'date'],
   },
   {
     type: 'value_map',
     label: 'Translate values',
     help: 'Swap each value for another from a table. Anything not listed gets the fallback, or is left empty.',
+    kinds: ['text', 'date'],
   },
   {
     type: 'rules',
     label: 'Set by rules',
     help: 'The first rule that matches decides the value. Anything no rule matches gets the fallback, or is left empty.',
+    kinds: ['text', 'date'],
   },
-  { type: 'negate', label: 'Flip the sign', help: 'For files that record sales as negative numbers.' },
-  { type: 'zero_as_empty', label: '0 means no sale', help: 'A 0 is left out instead of loaded as a row that sold nothing.' },
-  { type: 'month_start', label: 'Use the month of a date', help: 'A date becomes the month it falls in.' },
+  { type: 'negate', label: 'Flip the sign', help: 'For files that record sales as negative numbers.', kinds: ['number'] },
+  {
+    type: 'zero_as_empty',
+    label: '0 means no sale',
+    help: 'A 0 is left out instead of loaded as a row that sold nothing.',
+    kinds: ['number'],
+  },
+  { type: 'month_start', label: 'Use the month of a date', help: 'A date becomes the month it falls in.', kinds: ['date'] },
   {
     type: 'forward_fill',
     label: 'Fill blanks from above',
     help: 'A blank cell takes the value of the row above, as merged date cells need.',
+    kinds: ['text', 'number', 'date'],
   },
   {
     type: 'multiply',
     label: 'Multiply by a column',
     help: "Times the same row's value in another column, e.g. units × unit price.",
+    kinds: ['number'],
   },
   {
     type: 'uom_factor',
     label: 'Convert by unit of measure',
     help: 'Multiply by a factor that depends on a unit column, e.g. cartons to packs.',
+    kinds: ['number'],
   },
 ];
 
 const STEP_INFO = Object.fromEntries(STEP_TYPES.map((step) => [step.type, step]));
+
+// The field holding a date; the measures hold figures, every other field text.
+const DATE_FIELDS = ['period_start'];
+
+function fieldKind(field) {
+  if (MEASURE_FIELDS.includes(field)) return 'number';
+  if (DATE_FIELDS.includes(field)) return 'date';
+  return 'text';
+}
+
+/**
+ * The add-a-step menu for a field, as SelectDropdown groups: the steps that
+ * suit its kind of value first, then the rest under their own heading, so
+ * the usual ones are not buried and an unusual one is still there. A field
+ * not given lists every step at once.
+ */
+export function stepMenu(field) {
+  const option = (item) => ({ value: item.type, label: item.label, description: item.help });
+  if (!field) return [{ options: STEP_TYPES.map(option) }];
+  const kind = fieldKind(field);
+  const fits = STEP_TYPES.filter((item) => item.kinds.includes(kind));
+  const others = STEP_TYPES.filter((item) => !item.kinds.includes(kind));
+  return [
+    { options: fits.map(option) },
+    { label: `Usually for ${kind === 'number' ? 'text or dates' : kind === 'date' ? 'text or figures' : 'figures or dates'}`, options: others.map(option) },
+  ];
+}
 
 /** A step type's label, falling back to its stored name for one added later. */
 export function stepLabel(type) {

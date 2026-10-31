@@ -10,7 +10,14 @@ import StepsEditor from './StepsEditor';
 
 const note = 'rounded-md bg-cream/60 px-2 py-1.5 text-[11px] text-deep-violet-blue';
 
-function ColumnPicker({ value, columns, rows, onChange, ariaLabel, placeholder = 'Choose a column…' }) {
+/** A few of a column's values, as a picker's option says them. */
+function examples(values) {
+  return values?.length ? `e.g. ${values.slice(0, 3).join(' · ')}` : '';
+}
+
+// Each column offered with a few of its values, so it is chosen by what is
+// in it and not only by its heading.
+function ColumnPicker({ value, columns, rows, samples, onChange, ariaLabel, placeholder = 'Choose a column…' }) {
   const using = new Map(rows.map((row) => [row.column, row.fields.map((item) => fieldLabel(item.targetField))]));
   return (
     <SelectDropdown
@@ -25,6 +32,7 @@ function ColumnPicker({ value, columns, rows, onChange, ariaLabel, placeholder =
         value: column,
         label: column,
         hint: using.get(column)?.length ? `→ ${using.get(column).join(', ')}` : '',
+        description: examples(samples[column]),
       }))}
     />
   );
@@ -127,7 +135,7 @@ export default function FieldMethodSettings({ field, method, draft, onChange, ma
   const samples = mapping.columnSamples || {};
   const steps = (props) => (
     <div>
-      <p className={labelClass}>Steps applied to the value</p>
+      <p className={labelClass}>Change the value (optional)</p>
       <StepsEditor
         steps={draft.transforms || []}
         onChange={(transforms) => onChange({ ...draft, transforms })}
@@ -147,6 +155,7 @@ export default function FieldMethodSettings({ field, method, draft, onChange, ma
               value={draft.column}
               columns={columns}
               rows={rows}
+              samples={samples}
               onChange={(column) => onChange({ ...draft, column })}
               ariaLabel={`Column for ${fieldLabel(field)}`}
             />
@@ -236,6 +245,7 @@ export default function FieldMethodSettings({ field, method, draft, onChange, ma
             value={draft.column}
             columns={columns}
             rows={rows}
+            samples={samples}
             onChange={(column) => onChange({ ...draft, column })}
             ariaLabel="Price column"
             placeholder="Choose the price or cost column…"
@@ -272,7 +282,9 @@ export default function FieldMethodSettings({ field, method, draft, onChange, ma
       );
 
     case 'derived': {
-      const from = draft.fromField ? rows.find((row) => row.fields.some((item) => item.targetField === draft.fromField)) : null;
+      // The column a field is read from, whose values are what this one is worked out from.
+      const sourceOf = (other) => rows.find((row) => row.fields.some((item) => item.targetField === other));
+      const from = draft.fromField ? sourceOf(draft.fromField) : null;
       return (
         <div className="space-y-3">
           <SelectDropdown
@@ -283,7 +295,12 @@ export default function FieldMethodSettings({ field, method, draft, onChange, ma
             ariaLabel={`Field ${fieldLabel(field)} is worked out from`}
             options={(mapping.targetFields || [])
               .filter((item) => item !== field)
-              .map((item) => ({ value: item, label: fieldLabel(item), hint: MEASURE_FIELDS.includes(item) ? 'a figure' : '' }))}
+              .map((item) => ({
+                value: item,
+                label: fieldLabel(item),
+                hint: MEASURE_FIELDS.includes(item) ? 'a figure' : '',
+                description: examples(samples[sourceOf(item)?.column]),
+              }))}
           />
           {steps({ samples: from ? samples[from.column] || [] : [] })}
         </div>

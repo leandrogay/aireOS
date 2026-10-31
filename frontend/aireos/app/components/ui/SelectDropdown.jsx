@@ -18,7 +18,9 @@ const SIZES = {
  * so a scrolling container never clips it.
  *
  * Options come as `options`, or as `groups` with a heading each ("Columns not
- * used yet"). An option can be `disabled`, with a `hint` saying why. The
+ * used yet"). An option can be `disabled`, with a `hint` saying why. A
+ * `hint` is a few words beside the label; a `description` is a sentence under
+ * it, wrapped, for a list whose options need explaining. The
  * button shows the picked option's label, or `placeholder` when `value`
  * matches none -- which is also how an action menu works: keep `value` at ''
  * and the button keeps saying "Map to…" after every pick.
@@ -31,8 +33,8 @@ const SIZES = {
  * @param {{
  *   value: string,
  *   onChange: (value: string) => void,
- *   options?: Array<{ value: string, label: string, disabled?: boolean, hint?: string }>,
- *   groups?: Array<{ label?: string, options: Array<{ value: string, label: string, disabled?: boolean, hint?: string }> }>,
+ *   options?: Array<{ value: string, label: string, disabled?: boolean, hint?: string, description?: string }>,
+ *   groups?: Array<{ label?: string, options: Array<{ value: string, label: string, disabled?: boolean, hint?: string, description?: string }> }>,
  *   placeholder?: string,
  *   ariaLabel?: string,
  *   searchable?: boolean,
@@ -132,7 +134,7 @@ export default function SelectDropdown({
             />
           </div>
         )}
-        <div role="listbox" aria-label={ariaLabel} className="max-h-64 overflow-auto p-1.5">
+        <div role="listbox" aria-label={ariaLabel} className="max-h-72 overflow-y-auto overflow-x-hidden p-1.5">
           {shown.map((group, index) => (
             <div key={group.label || index} className={cn(index > 0 && 'mt-1 border-t border-lavander pt-1')}>
               {group.label && (
@@ -153,9 +155,27 @@ export default function SelectDropdown({
                       selected && 'font-medium',
                     )}
                   >
-                    <Check aria-hidden="true" className={cn('size-3.5 shrink-0', selected ? 'opacity-100' : 'opacity-0')} />
-                    <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                    {option.hint && <span className="shrink-0 text-[11px] text-deep-violet-blue/50">{option.hint}</span>}
+                    <Check
+                      aria-hidden="true"
+                      className={cn('size-3.5 shrink-0 self-start', option.description && 'mt-0.5', selected ? 'opacity-100' : 'opacity-0')}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex min-w-0 items-baseline gap-2">
+                        <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                        {/* A hint gives way before the label does, so a long
+                            one can never squeeze the label to "T…". */}
+                        {option.hint && (
+                          <span className="max-w-[45%] truncate text-[11px] text-deep-violet-blue/50" title={option.hint}>
+                            {option.hint}
+                          </span>
+                        )}
+                      </span>
+                      {option.description && (
+                        <span className="mt-0.5 block whitespace-normal text-[11px] leading-snug text-deep-violet-blue/55">
+                          {option.description}
+                        </span>
+                      )}
+                    </span>
                   </button>
                 );
               })}
