@@ -15,6 +15,7 @@ import {
   areAllRetailersSelected,
   areAllSkuRangesSelected,
   areAllStoresSelected,
+  estimatedMechanicDiscount,
   promoTypeLabel,
   promoTypePatch,
   retailerDropdownOptions,
@@ -106,29 +107,106 @@ function FormSection({ step, title, hint, children }) {
 }
 
 /**
- * Free-text mechanic, e.g. "25% off". The API stores one varchar.
+ * Structured inputs are saved as a canonical mechanic for existing rows/API.
  *
- * @param {{ value: string, onChange: (value: string) => void, error?: string }} props
+ * @param {{ form: object, onChange: (patch: object) => void, error?: string }} props
  */
-function PromotionMechanicField({ value, onChange, error }) {
+function PromotionMechanicField({ form, onChange, error }) {
+  const estimatedDiscount = estimatedMechanicDiscount(form);
+  const needsBuy = form.mechanicType === 'buy_get_free' || form.mechanicType === 'buy_get_percent';
+  const needsPercent = form.mechanicType === 'buy_get_percent' || form.mechanicType === 'percent_off';
   return (
-    <label>
-      <span className={labelClass}>
+    <fieldset className="sm:col-span-2 lg:col-span-3">
+      <legend className={labelClass}>
         Mechanic
         <RequiredMark />
-      </span>
-      <input
-        type="text"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
+      </legend>
+      <select
+        value={form.mechanicType}
+        onChange={(event) => onChange({
+          mechanicType: event.target.value,
+          buyQuantity: '',
+          getQuantity: '',
+          discountPercent: '',
+          legacyMechanic: '',
+        })}
         className={cn(inputClass, error && invalidInputClass)}
         aria-invalid={Boolean(error)}
-        placeholder="e.g. 25% off"
-        maxLength={255}
-        required
-      />
+        aria-label="Promotion mechanic"
+        required={!form.legacyMechanic}
+      >
+        <option value="">Choose a mechanic</option>
+        <option value="buy_get_free">Buy [items], get [free items]</option>
+        <option value="buy_get_percent">Buy [items], get [discount %] off one item</option>
+        <option value="percent_off">Get [discount %] off every item</option>
+      </select>
+      {!form.legacyMechanic && (
+        <p className={hintClass}>Choose an offer, then enter the bracketed values below.</p>
+      )}
+      {form.legacyMechanic && !form.mechanicType && (
+        <p className={hintClass}>Previously saved as “{form.legacyMechanic}”. Choose a supported mechanic to edit it.</p>
+      )}
+      {form.mechanicType && (
+        <div className={cn('mt-3 grid gap-3 sm:grid-cols-2', !needsBuy && 'sm:grid-cols-1 sm:max-w-xs')}>
+          {needsBuy && (
+            <label>
+              <span className={labelClass}>Items to buy</span>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={form.buyQuantity}
+                onChange={(event) => onChange({ buyQuantity: event.target.value })}
+                className={inputClass}
+                placeholder="e.g. 2"
+              />
+            </label>
+          )}
+          {form.mechanicType === 'buy_get_free' && (
+            <label>
+              <span className={labelClass}>Free items</span>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={form.getQuantity}
+                onChange={(event) => onChange({ getQuantity: event.target.value })}
+                className={inputClass}
+                placeholder="e.g. 1"
+              />
+            </label>
+          )}
+          {needsPercent && (
+            <label>
+              <span className={labelClass}>
+                {needsBuy ? 'Discount on one item' : 'Discount on every item'}
+              </span>
+              <span className="flex">
+                <input
+                  type="number"
+                  min="0.01"
+                  max="100"
+                  step="0.01"
+                  value={form.discountPercent}
+                  onChange={(event) => onChange({ discountPercent: event.target.value })}
+                  className={cn(inputClass, 'rounded-r-none')}
+                  placeholder="e.g. 30"
+                />
+                <span className="inline-flex items-center rounded-r-md border border-l-0 border-lavander bg-cream px-3 text-sm text-deep-violet-blue/65" aria-hidden="true">
+                  %
+                </span>
+              </span>
+            </label>
+          )}
+        </div>
+      )}
+      {estimatedDiscount !== null && (
+        <p className={hintClass}>
+          Average discount for revenue estimates: {Number(estimatedDiscount.toFixed(2))}% per item.
+        </p>
+      )}
       <FieldError message={error} />
-    </label>
+    </fieldset>
   );
 }
 
@@ -622,8 +700,8 @@ export default function PromotionForm({
             </fieldset>
 
             <PromotionMechanicField
-              value={form.promotionMechanic}
-              onChange={(promotionMechanic) => patchForm({ promotionMechanic })}
+              form={form}
+              onChange={patchForm}
               error={errors.promotionMechanic}
             />
 

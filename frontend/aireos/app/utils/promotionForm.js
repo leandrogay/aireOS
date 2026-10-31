@@ -44,7 +44,11 @@ export const EMPTY_PROMOTION_FORM = {
   periodLabel: '',
   promoType: 'monthly',
   packType: 'pack',
-  promotionMechanic: '',
+  mechanicType: '',
+  buyQuantity: '',
+  getQuantity: '',
+  discountPercent: '',
+  legacyMechanic: '',
   voucher: '',
   skuRanges: [],
 };
@@ -179,14 +183,50 @@ export function formatVoucher(value) {
 }
 
 /**
- * Trim promotion_mechanic text for the API. Blank becomes null.
+ * Serialize structured inputs to the existing promotion_mechanic column.
+ * An unchanged legacy value can still be saved while editing other fields.
  *
- * @param {string | null | undefined} value
+ * @param {typeof EMPTY_PROMOTION_FORM} form
  * @returns {string | null}
  */
-export function formatPromotionMechanic(value) {
+export function formatPromotionMechanic(form) {
+  if (form.mechanicType === 'buy_get_free') {
+    return `Buy ${form.buyQuantity} Get ${form.getQuantity} Free`;
+  }
+  if (form.mechanicType === 'buy_get_percent') {
+    return `Buy ${form.buyQuantity} Get ${form.discountPercent}% Off`;
+  }
+  if (form.mechanicType === 'percent_off') {
+    return `${form.discountPercent}% Off`;
+  }
+  return form.legacyMechanic || null;
+}
+
+export function parsePromotionMechanic(value) {
   const text = String(value ?? '').trim();
-  return text || null;
+  let match = /^buy\s+(\d+)\s+get\s+(\d+)\s+free$/i.exec(text);
+  if (match) return { mechanicType: 'buy_get_free', buyQuantity: match[1], getQuantity: match[2] };
+  match = /^buy\s+(\d+)\s+get\s+(\d+(?:\.\d+)?)\s*%\s*(?:off|free)?$/i.exec(text);
+  if (match) return { mechanicType: 'buy_get_percent', buyQuantity: match[1], discountPercent: match[2] };
+  match = /^(\d+(?:\.\d+)?)\s*%\s*off$/i.exec(text);
+  if (match) return { mechanicType: 'percent_off', discountPercent: match[1] };
+  return text ? { legacyMechanic: text } : {};
+}
+
+export function estimatedMechanicDiscount(form) {
+  const buy = Number(form.buyQuantity);
+  const get = Number(form.getQuantity);
+  const percent = Number(form.discountPercent);
+  if (form.mechanicType === 'buy_get_free' && buy > 0 && get > 0) {
+    return (get / (buy + get)) * 100;
+  }
+  if (form.mechanicType === 'buy_get_percent' && buy > 0 && percent > 0 && percent <= 100) {
+    return percent / buy;
+  }
+  if (form.mechanicType === 'percent_off' && percent > 0 && percent <= 100) {
+    return percent;
+  }
+  return null;
 }
 
 /**
@@ -252,7 +292,7 @@ export function formFromPromotion(promotion, retailers = []) {
     periodLabel: promotion.period_label ? String(promotion.period_label) : '',
     promoType,
     packType,
-    promotionMechanic: promotion.promotion_mechanic ? String(promotion.promotion_mechanic) : '',
+    ...parsePromotionMechanic(promotion.promotion_mechanic),
     voucher: promotion.voucher ? String(promotion.voucher) : '',
     skuRanges: uniqueSkuRangeLabels(promotion.skus),
   };
@@ -551,11 +591,21 @@ export function validatePromotionForm(form, retailers, stores = []) {
     errors.packType = 'Choose pack or carton.';
   }
 
-  const promotionMechanic = String(form.promotionMechanic ?? '').trim();
-  if (!promotionMechanic) {
-    errors.promotionMechanic = 'Enter a promo mechanic.';
-  } else if (promotionMechanic.length > 255) {
-    errors.promotionMechanic = 'Promo mechanic must be 255 characters or fewer.';
+  const buy = Number(form.buyQuantity);
+  const get = Number(form.getQuantity);
+  const percent = Number(form.discountPercent);
+  if (!['buy_get_free', 'buy_get_percent', 'percent_off'].includes(form.mechanicType)
+    && !form.legacyMechanic) {
+    errors.promotionMechanic = 'Choose a promo mechanic.';
+  } else if (
+    ((form.mechanicType === 'buy_get_free' || form.mechanicType === 'buy_get_percent') &&
+      (!Number.isSafeInteger(buy) || buy < 1 || !String(form.buyQuantity).trim())) ||
+    (form.mechanicType === 'buy_get_free' &&
+      (!Number.isSafeInteger(get) || get < 1 || !String(form.getQuantity).trim())) ||
+    ((form.mechanicType === 'buy_get_percent' || form.mechanicType === 'percent_off') &&
+      (!String(form.discountPercent).trim() || !Number.isFinite(percent) || percent <= 0 || percent > 100))
+  ) {
+    errors.promotionMechanic = 'Enter valid quantities and a percentage from 0 to 100.';
   }
 
   if (String(form.voucher ?? '').trim().length > 255) {
@@ -604,7 +654,7 @@ export function buildPromotionPayload(form, storeRefs, period) {
         ? period.periodLabel
         : formatPeriodLabel(form.periodLabel),
     promo_type: composePromoType(form.promoType, form.packType),
-    promotion_mechanic: formatPromotionMechanic(form.promotionMechanic),
+    promotion_mechanic: formatPromotionMechanic(form),
     voucher: formatVoucher(form.voucher),
     skus: form.skuRanges.map((range) => ({
       sku: range,
