@@ -78,7 +78,7 @@ export async function listMappings(baseUrl, { signal, onLog } = {}) {
 // API CALL
 // POST /api/mappings/:fingerprint/confirm
 // Approves a mapping and saves it for reuse. Body takes { rules } (what the
-// review screen edits), { instructions } ({ aggregate, data_source }: the
+// review screen edits), { instructions } ({ aggregate }: the
 // file-wide settings the reviewer changed; left out, kept as stored), and
 // { name, customer_id }, which are required the
 // first time a mapping is approved. Every retailer the rules write to must

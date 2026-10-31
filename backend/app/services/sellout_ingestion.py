@@ -95,7 +95,6 @@ def process_confirmed_upload(
         storage = sellout_service.load_clean_rows(
             valid_rows,
             replace_source=replace_source,
-            data_source=contract.get("data_source") or "aireos_upload",
             source_blob=source_blob,
             content_hash=content_hash,
             mapping_fingerprint=mapping_fingerprint,

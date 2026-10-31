@@ -166,7 +166,6 @@ def test_sheng_siong_melts_the_20_outlets_and_never_reads_the_claim_as_revenue()
     assert len(outlets) == 20 and "OUTLET" not in outlets and "Total" not in outlets
     assert checks["rules_retailer"]["evidence"]["matched"] == ["6M_Ecomm", "KL_Ecomm"]
     assert contract["fields"]["revenue"]["status"] == "not_available"
-    assert contract["data_source"] == "promo_claim"
 
 
 # ---- 8.4 Robustness variants -----------------------------------------------------------------

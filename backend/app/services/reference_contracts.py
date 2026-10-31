@@ -16,7 +16,6 @@ Open decisions they assume, each a one-line change here:
   D2  FairPrice "Pack Size" is packs per carton, not pieces per pack
   D3  retailer codes nhg_offline, sheng_siong_offline, sheng_siong_online
   D4  the product-code tables are the hand-off's proposed matches (section 7)
-  D8  Sheng Siong claim quantities are tagged 'promo_claim'
 
 Decisions confirmed by the product owner (2026-10-30):
   D9  retailers split into online and offline as the sales data shows them:
@@ -157,7 +156,6 @@ FAIRPRICE_MONTHLY = {
     ],
     # A store can report one SKU under both CAR and EA rows.
     "aggregate": monthly_aggregate(),
-    "data_source": "aireos_upload",
 }
 
 
@@ -205,7 +203,6 @@ NHG_SAP = {
     "melt_groups": [],
     # One row per SAP posting: several a day per SKU, rolled up to the month.
     "aggregate": monthly_aggregate(),
-    "data_source": "aireos_upload",
 }
 
 
@@ -263,7 +260,6 @@ SHENG_SIONG_CLAIM = {
     ],
     # One row per day per SKU, rolled up to the month.
     "aggregate": monthly_aggregate(),
-    "data_source": "promo_claim",
 }
 
 
@@ -322,7 +318,6 @@ SINGHEALTH_ER130 = {
         },
     ],
     "aggregate": monthly_aggregate(),
-    "data_source": "aireos_upload",
 }
 
 
@@ -354,7 +349,6 @@ PRIME_JKDC = {
     "melt_groups": [],
     # One row per pallet delivered, several a month per outlet and SKU.
     "aggregate": monthly_aggregate(),
-    "data_source": "aireos_upload",
 }
 
 

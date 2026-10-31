@@ -262,23 +262,6 @@ def test_listing_leaves_out_a_pending_copy_that_has_been_confirmed(monkeypatch):
     assert listed == [("fp", "confirmed"), ("new", "pending")]
 
 
-def test_confirming_edited_rules_keeps_the_contracts_data_source(monkeypatch):
-    stored = _stub_storage(monkeypatch)
-    monkeypatch.setattr(
-        storage,
-        "download_json",
-        lambda path: {**ENVELOPE, "contract": {"fields": {}, "melt_groups": [], "data_source": "promo_claim"}}
-        if path == storage.pending_mapping_path("fp")
-        else None,
-    )
-    rules = _complete_rules([_rule("sku", "SKU No.", "high", False)])
-
-    response = client.post("/api/mappings/fp/confirm", json={"rules": rules})
-
-    assert response.status_code == 200
-    assert stored["envelope"]["contract"]["data_source"] == "promo_claim"
-
-
 # ---- Contract-wide instructions ---------------------------------------------------------
 
 ROLL_UP_ENVELOPE = {
@@ -532,19 +515,18 @@ def test_rules_that_cannot_run_report_why_beside_their_checks(monkeypatch):
 
 # ---- Contract-wide settings the reviewer changes -----------------------------------
 
-def test_the_reviewer_can_turn_the_monthly_roll_up_off_and_tag_a_claim_statement(monkeypatch):
+def test_the_reviewer_can_turn_the_monthly_roll_up_off(monkeypatch):
     stored = _stub_storage(monkeypatch)
     _serve_pending(monkeypatch, ROLL_UP_ENVELOPE)
     rules = _complete_rules([_rule("sku", "SKU No.", "high", False)])
 
     response = client.post(
         "/api/mappings/fp/confirm",
-        json={"rules": rules, "instructions": {"aggregate": False, "data_source": "promo_claim"}},
+        json={"rules": rules, "instructions": {"aggregate": False}},
     )
 
     assert response.status_code == 200
     assert stored["envelope"]["contract"]["aggregate"] is None
-    assert stored["envelope"]["contract"]["data_source"] == "promo_claim"
 
 
 def test_settings_left_out_are_kept_as_stored(monkeypatch):
@@ -556,14 +538,6 @@ def test_settings_left_out_are_kept_as_stored(monkeypatch):
 
     assert response.status_code == 200
     assert stored["envelope"]["contract"]["aggregate"]["period"] == "month"
-
-
-def test_an_unknown_data_type_is_rejected_with_422(monkeypatch):
-    _stub_storage(monkeypatch)
-
-    response = client.post("/api/mappings/fp/confirm", json={"rules": [], "instructions": {"data_source": "guess"}})
-
-    assert response.status_code == 422
 
 
 def test_a_retailer_read_from_outlet_headings_blocks_approval_naming_them(monkeypatch):

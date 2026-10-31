@@ -1,27 +1,20 @@
 'use client';
 
-import SelectDropdown from '@/components/ui/SelectDropdown';
 import { Switch } from '@/components/ui/switch';
 import { PROPOSER } from '@/app/utils/mappingReview';
 
 import ResetButton from './ResetButton';
 
-// backend mapping_contract.DATA_SOURCES, in a reviewer's words.
-const DATA_SOURCES = [
-  { value: 'aireos_upload', label: 'Sell-out (sales to shoppers)' },
-  { value: 'promo_claim', label: 'Promotion claim statement' },
-];
-
 /**
  * The instructions that apply to the whole file rather than a field: whether
  * rows roll up to one per store, product and month (a file listing each day
- * or each delivery needs it), and what kind of data the file is. Sent with
- * the rules (backend ContractSettings); one left alone stays as stored.
+ * or each delivery needs it). Sent with the rules (backend ContractSettings);
+ * one left alone stays as stored.
  *
  * @param {{
- *   instructions: { aggregate: boolean, dataSource: string },
+ *   instructions: { aggregate: boolean },
  *   changed: boolean,
- *   onChange: (name: 'aggregate' | 'dataSource', value: boolean | string) => void,
+ *   onChange: (name: 'aggregate', value: boolean) => void,
  *   onReset: () => void,
  *   disabled: boolean,
  * }} props
@@ -53,18 +46,6 @@ export default function FileSettings({ instructions, changed, onChange, onReset,
             </span>
           </span>
         </label>
-
-        <div className="text-xs text-deep-violet-blue">
-          <p className="mb-1">What kind of data is this?</p>
-          <SelectDropdown
-            value={instructions.dataSource}
-            onChange={(value) => onChange('dataSource', value)}
-            size="sm"
-            ariaLabel="What kind of data the file is"
-            disabled={disabled}
-            options={DATA_SOURCES}
-          />
-        </div>
       </div>
     </div>
   );

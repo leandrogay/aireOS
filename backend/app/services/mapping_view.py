@@ -464,7 +464,6 @@ def envelope_to_packet(
         "instructions": {
             "layout": contract.get("layout"),
             "aggregate": contract.get("aggregate"),
-            "dataSource": contract.get("data_source"),
         },
         # Every product code in the example file, for the review screen's
         # code table (mapping_checks.sku_codes).

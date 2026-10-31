@@ -32,8 +32,7 @@ file and whether rows are rolled up:
                  "date_format": "%d-%m-%Y"},
          "value_target": "revenue", "period_type": "month"}
       ],
-      "aggregate": {"period": "month", "by": [...], "sum": ["quantity_units", "revenue"]},
-      "data_source": "aireos_upload"
+      "aggregate": {"period": "month", "by": [...], "sum": ["quantity_units", "revenue"]}
     }
 
 Statuses:
@@ -100,7 +99,6 @@ LABEL_TARGETS = HEADING_FIELDS
 LAYOUT_SOURCES = ("stated_period",)
 PERIOD_TYPES = ("month", "week")
 SELECTOR_KINDS = ("pattern", "between", "columns")
-DATA_SOURCES = ("aireos_upload", "promo_claim")
 
 # The roll-up instruction's grain: one row per these fields, measures summed.
 AGGREGATE_KEY = ("period_start", "period_type", "retailer", "store_code", "sku")
@@ -110,7 +108,6 @@ AGGREGATE_PERIODS = ("month",)
 # contract's layout so the transformation skips the same rows.
 FOOTER_LABEL_PATTERN = r"^(grand\s+)?total\b"
 SUBTOTAL_LABEL_PATTERN = r"^(grand\s+|sub\s*)?total$"
-DEFAULT_DATA_SOURCE = "aireos_upload"
 
 TRANSFORM_TYPES = (
     "regex_extract",
@@ -643,13 +640,11 @@ def validate_contract(
             warnings.append(f"Dropped melt group {group_id!r} — no field reads it")
             del groups[group_id]
 
-    data_source = proposed.get("data_source")
     return {
         "layout": _validate_layout(proposed.get("layout"), raw_set, warnings),
         "fields": fields,
         "melt_groups": list(groups.values()),
         "aggregate": _validate_aggregate(proposed.get("aggregate"), warnings),
-        "data_source": data_source if data_source in DATA_SOURCES else DEFAULT_DATA_SOURCE,
         "warnings": warnings,
     }
 

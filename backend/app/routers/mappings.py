@@ -17,7 +17,6 @@ replaces is archived (storage.move_pending_mapping_to_confirmed).
 
 import asyncio
 import datetime
-from typing import Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -44,8 +43,6 @@ class ContractSettings(BaseModel):
 
     # Roll rows up to one per store, SKU and calendar month.
     aggregate: bool | None = None
-    # mapping_contract.DATA_SOURCES: sell-out, or a promotion claim statement.
-    data_source: Literal["aireos_upload", "promo_claim"] | None = None
 
 
 class ConfirmRequest(BaseModel):
@@ -97,13 +94,13 @@ def _proposed_contract(
     The contract a request asks for: rebuilt from the review screen's rules,
     sent whole, or the stored one. Rules carry fields, not the contract-wide
     instructions, so those are kept from the stored contract -- where the data
-    sits, whether rows roll up, and what kind of data it is (decision D8) --
-    unless the reviewer changed the roll-up or the data type (`instructions`).
+    sits and whether rows roll up -- unless the reviewer changed the roll-up
+    (`instructions`).
     """
     stored = mapping_contract.read_contract(envelope.get("contract") or {})
     if rules is not None:
         proposed = mapping_view.rules_to_contract(rules)
-        for key in ("layout", "aggregate", "data_source"):
+        for key in ("layout", "aggregate"):
             proposed[key] = stored.get(key)
     elif contract is not None:
         return contract
@@ -113,8 +110,6 @@ def _proposed_contract(
     if instructions is not None:
         if instructions.aggregate is not None:
             proposed["aggregate"] = mapping_contract.monthly_aggregate() if instructions.aggregate else None
-        if instructions.data_source is not None:
-            proposed["data_source"] = instructions.data_source
     return proposed
 
 

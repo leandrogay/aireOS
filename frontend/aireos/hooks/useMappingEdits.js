@@ -23,13 +23,11 @@ function retailerKey(rules) {
 
 /**
  * The contract-wide settings as the mapping has them (packet `instructions`):
- * whether rows roll up to one per month, and what kind of data the file is
- * (backend mapping_contract.DATA_SOURCES).
+ * whether rows roll up to one per month.
  */
 function loadedInstructions(mapping) {
   return {
     aggregate: Boolean(mapping?.instructions?.aggregate),
-    dataSource: mapping?.instructions?.dataSource || 'aireos_upload',
   };
 }
 
@@ -48,7 +46,7 @@ function loadedInstructions(mapping) {
  *                 period, not in this file), by field
  * `rules` is all of it folded into what POST /api/mappings/{fp}/preview and
  * /confirm take (mappingReview.toRules), and `changed` says whether it, or
- * the contract-wide `instructions` (roll-up, data type), differ from what
+ * the contract-wide `instructions` (roll-up), differ from what
  * was loaded.
  *
  * Every action takes a field, not a column: the screen is laid out by field.
@@ -77,7 +75,6 @@ export default function useMappingEdits({ mapping }) {
   const loaded = loadedInstructions(mapping);
   const instructionsPayload = {
     ...(instructions.aggregate !== loaded.aggregate ? { aggregate: instructions.aggregate } : {}),
-    ...(instructions.dataSource !== loaded.dataSource ? { data_source: instructions.dataSource } : {}),
   };
   const instructionsChanged = Object.keys(instructionsPayload).length > 0;
 
