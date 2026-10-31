@@ -5,6 +5,7 @@ import { ArrowDown, ArrowUp, CircleAlert, Plus, X } from 'lucide-react';
 import SelectDropdown from '@/components/ui/SelectDropdown';
 import { newStep, runSamples, stepHelp, stepLabel, stepMenu, stepProblem } from '@/app/utils/transformSteps';
 
+import StepByExample from './StepByExample';
 import StepSettings from './StepSettings';
 
 const iconButton =
@@ -95,6 +96,11 @@ export default function StepsEditor({ steps, onChange, columns, samples = [], fi
     onChange(steps.map((item, i) => (i === index ? step : item)));
   }
 
+  // The sample values as a new step would get them: after the steps so far.
+  // While a step needs fixing that is not known, so nothing is suggested.
+  const broken = steps.some((step) => stepProblem(step, columns));
+  const values = broken ? [] : [...new Set(runSamples(samples, steps).map((row) => row.after).filter((value) => value !== null))];
+
   function move(index, by) {
     const next = [...steps];
     [next[index], next[index + by]] = [next[index + by], next[index]];
@@ -178,6 +184,17 @@ export default function StepsEditor({ steps, onChange, columns, samples = [], fi
             />
           </div>
         </div>
+
+        {/* Remounted when the steps change, so its examples are always
+            values the new step would see. */}
+        {values.length > 0 && (
+          <StepByExample
+            key={JSON.stringify(steps)}
+            values={values}
+            onAdd={(step) => onChange([...steps, step])}
+            disabled={disabled}
+          />
+        )}
       </div>
 
       {/* First on a narrow screen, beside the steps on a wide one: the result
