@@ -47,6 +47,9 @@ function assistantMessageFromResponse(data) {
   };
 }
 
+// The "What's changed?" button's label, shown as the question it asked.
+const DIGEST_QUESTION = "What's changed?";
+
 export default function useAssistant() {
   const [messages, setMessages] = useState([]);
   const [history, setHistory] = useState([]);
@@ -116,11 +119,13 @@ export default function useAssistant() {
     [history, loading, messages]
   );
 
-  // Deterministic "what's changed" summary -- unlike askQuestion, there's no
-  // user question to show, and it always starts a fresh conversation (it
+  // Deterministic "what's changed" summary. The button press shows as your own
+  // message, like a typed question, so the conversation records what you
+  // asked for. It always starts a fresh conversation for the backend (it
   // doesn't take `history`, matching generate_digest()'s signature backend-side).
   const askDigest = useCallback(async () => {
     if (loading) return;
+    setMessages((prev) => [...prev, { role: 'user', text: DIGEST_QUESTION }]);
     setLoading(true);
     setError(null);
 

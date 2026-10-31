@@ -1,23 +1,52 @@
 'use client';
 
-import { useState } from 'react';
-import { Bar, CartesianGrid, ComposedChart, Legend, Line, LabelList, XAxis, YAxis } from 'recharts';
+import { useEffect, useState } from 'react';
+import { Bar, CartesianGrid, ComposedChart, Dot, Legend, Line, LabelList, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import { Message, MessageContent } from '@/components/ui/message';
 import { cn } from '@/lib/utils';
+import { dotRevealDelay, lineSweepTimings } from '@/app/utils/lineAnimation';
+import { BAR_ANIMATION } from '@/app/utils/trendChart';
 
-const chartConfig = {
-  value: { label: 'Value', color: 'var(--aire-deep-blue)' },
-};
+// The same motion as the dashboard and forecast charts: bars grow up with
+// BAR_ANIMATION, a line chart draws in with the forecast chart's sweep, and a
+// trend line over bars starts once they're growing, as the sell-in outlook's does.
+const LINE_SWEEP = { begin: 0, duration: 1200 };
+const LINE_OVER_BARS_SWEEP = { begin: 500, duration: 900 };
+const NO_ANIMATION = { isAnimationActive: false };
 
-// Deliberately simple (single-series bar/line, plus an optional trend
-// overlay) -- the backend only ever builds one-series charts for this MVP
-// (see assistant.py's _build_chart), so this doesn't need RevenueTrendCard's
-// multi-format stacking logic. color/showValueLabels/trendValues come from
-// the backend's chart_style/chart_trend_values (see assistant.py's
-// chart_style schema field) -- 'default' color falls back to the same CSS
-// var used before this feature existed, so an unstyled chart looks
-// identical to today.
+// A table's rows are added one at a time, ROW_STAGGER_MS apart, so the table
+// grows and the transcript scrolls down with it. A long table spreads its rows
+// over ROW_REVEAL_MAX_MS (the line chart's sweep) instead, so it never drags.
+// With a chart above, the rows wait for the bars to finish growing.
+const ROW_STAGGER_MS = 60;
+const ROW_REVEAL_MAX_MS = LINE_SWEEP.duration;
+const ROWS_AFTER_CHART_MS = BAR_ANIMATION.animationDuration;
+
+// Once a chart has drawn in, Recharts' animation is switched off: left on, it
+// replays from the old layout every time the panel changes size (full screen
+// and back), so the bars and lines trail behind the panel. Off, they redraw
+// in place as it moves. The longest entrance is a line over bars.
+const CHART_ENTRANCE_MS = LINE_OVER_BARS_SWEEP.begin + LINE_OVER_BARS_SWEEP.duration;
+
+// Recharts' dot, faded in as the line reaches it (dotRevealDelay). `points` is
+// the whole line, which is not a valid attribute for one circle.
+function timedDot(timing) {
+  return function TimedDot({ points, ...dotProps }) {
+    const delay = dotRevealDelay(timing, points, dotProps.cx);
+    return <Dot {...dotProps} className="line-dot-in" style={{ animationDelay: `${delay}ms` }} />;
+  };
+}
+
+// One series, or one per customer when customers are compared (see
+// assistant.py's _grouped_bar_chart): their bars stand side by side in each
+// period, as on the dashboard, with a legend saying whose is whose.
+// color/showValueLabels/trendValues come from the backend's
+// chart_style/chart_trend_values (see assistant.py's chart_style schema
+// field) -- 'default' color falls back to the same CSS var used before this
+// feature existed, so an unstyled chart looks identical to today. The style's
+// colour is the first series'; the others take the AIRE palette in the order
+// the exported files use (assistant.py _SERIES_COLORS_HEX).
 // valueLabelFormat mirrors assistant.py's chart_style.value_label_format --
 // 'whole_number'/'decimal'/'currency' only change how a label is displayed,
 // never the underlying `value` the bar/point is actually plotted at.
@@ -33,26 +62,65 @@ function _formatValueLabel(format) {
 // exported files even though each renderer maps it independently.
 const FONT_SIZE_PX = { small: 7, medium: 9, large: 12 };
 
+// Second and later series, in assistant.py's _SERIES_COLORS_HEX order.
+const SERIES_COLORS = ['var(--aire-violet)', 'var(--aire-celest)', 'var(--aire-lavender)'];
+
+// dataKey per series; the first stays `value`, so a one-series chart is as before.
+function seriesKey(index) {
+  return index === 0 ? 'value' : `value${index}`;
+}
+
 function AssistantChart({
   type, categories, series, color, showValueLabels, valueLabelFormat, showGridlines, trendValues, title,
-  showLegend, yAxisLabel, opacity, cornerRadius, fontSize, showDataPoints,
+  showLegend, yAxisLabel, opacity, cornerRadius, fontSize, showDataPoints, animate, expanded,
 }) {
+  const [drawnIn, setDrawnIn] = useState(!animate);
+
+  useEffect(() => {
+    if (!animate) return undefined;
+    const timer = setTimeout(() => setDrawnIn(true), CHART_ENTRANCE_MS);
+    return () => clearTimeout(timer);
+  }, [animate]);
+
   if (!categories?.length || !series?.length) return null;
 
-  const resolvedColor = color && color !== 'default' ? color : 'var(--color-value)';
-  const hasTrend = trendValues?.length === categories.length;
+  const animating = animate && !drawnIn;
+  const resolvedColor = color && color !== 'default' ? color : 'var(--aire-deep-blue)';
+  const keys = series.map((_, i) => seriesKey(i));
+  const chartConfig = Object.fromEntries(
+    series.map((item, i) => [
+      keys[i],
+      { label: item.label, color: i === 0 ? resolvedColor : SERIES_COLORS[(i - 1) % SERIES_COLORS.length] },
+    ]),
+  );
+  const compared = series.length > 1;
+  const hasTrend = !compared && trendValues?.length === categories.length;
   const labelFormatter = _formatValueLabel(valueLabelFormat);
   const tickSize = FONT_SIZE_PX[fontSize] ?? FONT_SIZE_PX.medium;
   const data = categories.map((category, i) => ({
     category,
-    value: series[0].values[i],
+    ...Object.fromEntries(series.map((item, s) => [keys[s], item.values[i]])),
     ...(hasTrend ? { trend: trendValues[i] } : {}),
   }));
+  const timings = lineSweepTimings(data, [...keys, 'trend'], type === 'line' ? LINE_SWEEP : LINE_OVER_BARS_SWEEP);
+  const lineMotion = (key) => (animating ? timings[key] : NO_ANIMATION);
+  const lineDot = (key) => (showDataPoints && animating ? timedDot(timings[key]) : (showDataPoints ?? false));
+  const valueLabels = (key) =>
+    showValueLabels && <LabelList dataKey={key} position="top" style={{ fontSize: tickSize }} formatter={labelFormatter} />;
 
   return (
     <>
       {title && <p className="mb-1 text-center text-[11px] font-medium text-deep-violet-blue">{title}</p>}
-      <ChartContainer config={chartConfig} className="h-[140px] w-full">
+      {/* The height eases with the panel (AssistantWidget's 300 ms edge transition).
+          Clipped: Recharts redraws a frame after its box changes size, so while the
+          panel shrinks the previous, larger drawing would spill over the buttons. */}
+      <ChartContainer
+        config={chartConfig}
+        className={cn(
+          'w-full overflow-hidden transition-[height] duration-300 ease-out motion-reduce:transition-none',
+          expanded ? 'h-[280px]' : 'h-[140px]',
+        )}
+      >
         <ComposedChart data={data} margin={{ top: 4, bottom: 4, left: yAxisLabel ? 8 : 0 }}>
           {showGridlines !== false && <CartesianGrid vertical={false} />}
           <XAxis dataKey="category" tick={{ fontSize: tickSize }} />
@@ -62,30 +130,34 @@ function AssistantChart({
             label={yAxisLabel ? { value: yAxisLabel, angle: -90, position: 'insideLeft', style: { fontSize: tickSize } } : undefined}
           />
           <ChartTooltip content={<ChartTooltipContent />} />
-          {showLegend && <Legend wrapperStyle={{ fontSize: tickSize }} />}
-          {type === 'line' ? (
-            <Line
-              dataKey="value"
-              name={series[0].label}
-              stroke={resolvedColor}
-              strokeWidth={2}
-              strokeOpacity={opacity ?? 1}
-              dot={showDataPoints ?? false}
-              isAnimationActive={false}
-            >
-              {showValueLabels && <LabelList dataKey="value" position="top" style={{ fontSize: tickSize }} formatter={labelFormatter} />}
-            </Line>
-          ) : (
-            <Bar
-              dataKey="value"
-              name={series[0].label}
-              fill={resolvedColor}
-              fillOpacity={opacity ?? 1}
-              radius={cornerRadius ?? 0}
-              isAnimationActive={false}
-            >
-              {showValueLabels && <LabelList dataKey="value" position="top" style={{ fontSize: tickSize }} formatter={labelFormatter} />}
-            </Bar>
+          {(showLegend || compared) && <Legend wrapperStyle={{ fontSize: tickSize }} />}
+          {keys.map((key) =>
+            type === 'line' ? (
+              <Line
+                key={key}
+                dataKey={key}
+                name={chartConfig[key].label}
+                stroke={`var(--color-${key})`}
+                strokeWidth={2}
+                strokeOpacity={opacity ?? 1}
+                dot={lineDot(key)}
+                {...lineMotion(key)}
+              >
+                {valueLabels(key)}
+              </Line>
+            ) : (
+              <Bar
+                key={key}
+                dataKey={key}
+                name={chartConfig[key].label}
+                fill={`var(--color-${key})`}
+                fillOpacity={opacity ?? 1}
+                radius={cornerRadius ?? 0}
+                {...(animating ? BAR_ANIMATION : NO_ANIMATION)}
+              >
+                {valueLabels(key)}
+              </Bar>
+            ),
           )}
           {hasTrend && (
             <Line
@@ -95,7 +167,7 @@ function AssistantChart({
               strokeWidth={1.5}
               strokeDasharray="4 4"
               dot={false}
-              isAnimationActive={false}
+              {...lineMotion('trend')}
             />
           )}
         </ComposedChart>
@@ -104,7 +176,27 @@ function AssistantChart({
   );
 }
 
-function AssistantTable({ columns, rows }) {
+function AssistantTable({ columns, rows, animate, startDelay }) {
+  const [shownRows, setShownRows] = useState(animate ? 0 : rows.length);
+
+  useEffect(() => {
+    if (!animate || !rows.length) return undefined;
+    const step = Math.min(ROW_STAGGER_MS, ROW_REVEAL_MAX_MS / rows.length);
+    let shown = 0;
+    let interval;
+    const start = setTimeout(() => {
+      interval = setInterval(() => {
+        shown += 1;
+        setShownRows(shown);
+        if (shown >= rows.length) clearInterval(interval);
+      }, step);
+    }, startDelay);
+    return () => {
+      clearTimeout(start);
+      clearInterval(interval);
+    };
+  }, [animate, rows.length, startDelay]);
+
   if (!columns?.length) return null;
   return (
     <div className="overflow-x-auto">
@@ -119,8 +211,8 @@ function AssistantTable({ columns, rows }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, i) => (
-            <tr key={i} className="border-b border-lavander/50 last:border-0">
+          {rows.slice(0, shownRows).map((row, i) => (
+            <tr key={i} className={cn('border-b border-lavander/50 last:border-0', animate && 'table-row-in')}>
               {row.map((cell, j) => (
                 <td key={j} className="py-1 pr-3 text-deep-violet-blue">
                   {cell}
@@ -236,10 +328,13 @@ function ExportButtons({ message }) {
  * primitive: questions sit on the right, answers on the left, each in its own
  * bubble. An answer can carry a chart, a table, export buttons, a file to
  * download and follow-up prompts (see useAssistant's message shape).
+ * `animate` plays the chart's draw-in and the table's row fade-in; it's only
+ * set for a message that has just arrived (see AssistantWidget). `expanded`
+ * (full screen) gives the chart room to be twice as tall.
  *
- * @param {{ message: object, onFollowUp: (prompt: string) => void }} props
+ * @param {{ message: object, onFollowUp: (prompt: string) => void, animate?: boolean, expanded?: boolean }} props
  */
-export default function AssistantMessage({ message, onFollowUp }) {
+export default function AssistantMessage({ message, onFollowUp, animate = false, expanded = false }) {
   const isUser = message.role === 'user';
   return (
     <Message align={isUser ? 'end' : 'start'}>
@@ -276,13 +371,20 @@ export default function AssistantMessage({ message, onFollowUp }) {
                 cornerRadius={message.chartStyle?.corner_radius}
                 fontSize={message.chartStyle?.font_size}
                 showDataPoints={message.chartStyle?.show_data_points}
+                animate={animate}
+                expanded={expanded}
               />
             </div>
           )}
 
           {!isUser && message.hasTable && (
             <div className="mt-2 rounded bg-white p-1">
-              <AssistantTable columns={message.tableColumns} rows={message.tableRows} />
+              <AssistantTable
+                columns={message.tableColumns}
+                rows={message.tableRows}
+                animate={animate}
+                startDelay={message.hasChart ? ROWS_AFTER_CHART_MS : 0}
+              />
               {message.tableNote && (
                 <p className="mt-1 text-[10px] italic text-deep-violet-blue/60">{message.tableNote}</p>
               )}

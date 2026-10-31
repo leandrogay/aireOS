@@ -10,7 +10,7 @@ from conftest import FrozenDatetime
 
 from google.api_core.exceptions import ServiceUnavailable
 
-from app.services import assistant, inventory_service, promotion_service, sellout_service
+from app.services import assistant, forecast_summary, inventory_service, promotion_service, sellout_service
 
 
 def _freeze_clock(monkeypatch):
@@ -2613,6 +2613,77 @@ def test_promotions_starting_or_ending_soon_windows_by_date_and_customer():
     assert stores_seen == {"Jurong Point", "Orchard"}
 
 
+# ---- generate_digest: the month window ------------------------------------------
+
+def test_digest_window_compares_a_full_month_with_the_whole_month_before():
+    window = assistant._digest_window(datetime.date(2026, 8, 1), datetime.date(2026, 8, 31))
+
+    assert (window["current_start"], window["current_end"]) == ("2026-08-01", "2026-08-31")
+    assert (window["previous_start"], window["previous_end"]) == ("2026-07-01", "2026-07-31")
+    assert (window["previous_label"], window["current_label"]) == ("Jul 2026", "Aug 2026")
+    assert window["full_month"] is True
+
+
+def test_digest_window_compares_a_part_month_with_the_same_days_of_the_month_before():
+    # Weekly data up to 15 Sep: 1-15 Sep against 1-15 Aug, not against all of August.
+    window = assistant._digest_window(datetime.date(2026, 9, 9), datetime.date(2026, 9, 15))
+
+    assert (window["current_start"], window["current_end"]) == ("2026-09-01", "2026-09-15")
+    assert (window["previous_start"], window["previous_end"]) == ("2026-08-01", "2026-08-15")
+    assert window["current_label"] == "1-15 Sep 2026 (month to date)"
+    assert window["full_month"] is False
+
+
+def test_digest_window_never_runs_past_the_end_of_a_shorter_previous_month():
+    window = assistant._digest_window(datetime.date(2026, 3, 1), datetime.date(2026, 3, 31))
+
+    assert (window["previous_start"], window["previous_end"]) == ("2026-02-01", "2026-02-28")
+
+
+def test_digest_window_uses_the_month_a_week_starts_in():
+    # A week from 30 Jul to 5 Aug counts towards July, as every sales read does.
+    window = assistant._digest_window(datetime.date(2026, 7, 30), datetime.date(2026, 8, 5))
+
+    assert (window["current_start"], window["current_end"]) == ("2026-07-01", "2026-07-31")
+    assert window["full_month"] is True
+
+
+def test_next_month_rolls_over_the_year():
+    assert assistant._next_month(datetime.date(2026, 10, 29)) == "2026-11"
+    assert assistant._next_month(datetime.date(2026, 12, 31)) == "2027-01"
+
+
+def test_store_summary_names_a_few_stores_and_counts_many():
+    few = [{"retailer": "fairprice_offline", "store_name": "Bedok"}, {"retailer": "fairprice_online", "store_name": "Web"}]
+    many = [{"retailer": "fairprice_offline", "store_name": f"Store {i}"} for i in range(53)]
+    many.append({"retailer": "fairprice_online", "store_name": "Web"})
+
+    assert assistant._store_summary(few) == "fairprice_offline - Bedok, fairprice_online - Web"
+    assert assistant._store_summary(many) == "53 fairprice_offline stores, 1 fairprice_online store"
+
+
+def test_change_words_says_up_down_or_unchanged_instead_of_signs():
+    assert assistant._change_words(120.0, 100.0) == "up 20.0%"
+    assert assistant._change_words(88.8, 100.0) == "down 11.2%"
+    assert assistant._change_words(100.01, 100.0) == "unchanged"
+    assert assistant._change_words(50.0, 0.0) is None
+
+
+def test_promotion_lines_give_a_count_and_readable_dates():
+    lines = assistant._digest_promotion_lines([{
+        "promotion_mechanic": "20% Off",
+        "promo_type": "monthly",
+        "stores": [{"retailer": "fairprice_offline", "store_name": "Bedok"}],
+        "period_start": datetime.date(2026, 11, 1),
+        "period_end": datetime.date(2026, 11, 30),
+    }])
+
+    assert lines == [
+        "- 1 promotion starting or ending in the next 7 days:",
+        "  - 20% Off (monthly) at fairprice_offline - Bedok, running 1 Nov 2026 to 30 Nov 2026.",
+    ]
+
+
 # ---- generate_digest: end-to-end ---------------------------------------------
 
 def _digest_answer(text="- Revenue trend was strong.", follow_ups=None):
@@ -2626,85 +2697,214 @@ def _digest_answer(text="- Revenue trend was strong.", follow_ups=None):
     )
 
 
-def test_generate_digest_builds_chart_from_wow_comparison(monkeypatch):
-    trend = {
-        "current": {"start": "2026-09-08", "end": "2026-09-14", "revenue": 12000.0, "units": 900.0},
-        "previous": {"start": "2026-09-01", "end": "2026-09-07", "revenue": 10000.0, "units": 800.0, "available": True},
+def _comparison(current_revenue, previous_revenue, current_units=0.0, previous_units=0.0, available=True):
+    return {
+        "current": {"start": "2026-08-01", "end": "2026-08-31", "revenue": current_revenue, "units": current_units},
+        "previous": {
+            "start": "2026-07-01", "end": "2026-07-31",
+            "revenue": previous_revenue, "units": previous_units, "available": available,
+        },
     }
-    monkeypatch.setattr(sellout_service, "get_period_comparison", lambda **kwargs: trend)
-    monkeypatch.setattr(sellout_service, "get_sku_ranking", lambda **kwargs: pd.DataFrame([]))
-    monkeypatch.setattr(promotion_service, "get_promotions", lambda: [])
-    _install_fake_client(monkeypatch, [_digest_answer()])
+
+
+def _install_digest_data(
+    monkeypatch,
+    latest_by_channel=None,
+    comparisons=None,
+    rankings=None,
+    at_risk=None,
+    forecast=None,
+    promotions=None,
+):
+    """Every read generate_digest makes, faked. Returns the period comparison calls it saw."""
+    if latest_by_channel is None:
+        latest_by_channel = {
+            "offline": ("2026-08-01", "2026-08-31"),
+            "online": ("2026-07-30", "2026-08-05"),
+        }
+    comparisons = comparisons or {
+        None: _comparison(12000.0, 10000.0, 900.0, 800.0),
+        "offline": _comparison(11000.0, 9000.0),
+        "online": _comparison(1000.0, 1000.0),
+    }
+    comparison_calls = []
+
+    def fake_default_range(customer, mode, period):
+        start, end = latest_by_channel.get(mode) or (None, None)
+        return {"start": start, "end": end}
+
+    def fake_comparison(**kwargs):
+        comparison_calls.append(kwargs)
+        return comparisons[kwargs.get("mode")]
+
+    def fake_ranking(**kwargs):
+        rows = (rankings or {}).get(kwargs.get("start_date"), [])
+        return pd.DataFrame(rows)
+
+    monkeypatch.setattr(sellout_service, "get_default_date_range", fake_default_range)
+    monkeypatch.setattr(sellout_service, "get_period_comparison", fake_comparison)
+    monkeypatch.setattr(sellout_service, "get_sku_ranking", fake_ranking)
+    monkeypatch.setattr(inventory_service, "list_customers", lambda: [{"customer_id": 1, "customer_name": "fairprice"}])
+    monkeypatch.setattr(
+        inventory_service, "get_at_risk",
+        lambda customer_ids: at_risk or {"as_of": None, "counts": {}, "items": []},
+    )
+
+    def fake_forecast(customer, start_month):
+        if forecast is None:
+            raise ValueError("There is no forecast for that product and customer yet.")
+        return forecast
+
+    monkeypatch.setattr(forecast_summary, "get_demand_forecast", fake_forecast)
+    monkeypatch.setattr(promotion_service, "get_promotions", lambda: promotions or [])
+    return comparison_calls
+
+
+def _facts_sent(fake_client) -> str:
+    return fake_client.models.calls[0]["contents"][0]["parts"][0]["text"]
+
+
+def test_generate_digest_compares_the_latest_month_with_the_month_before(monkeypatch):
+    # Offline has all of August as a monthly total, online only weekly rows to
+    # 5 Aug: the newest data sets the month, so it's August vs July.
+    calls = _install_digest_data(monkeypatch)
+    fake_client = _install_fake_client(monkeypatch, [_digest_answer()])
 
     result = assistant.generate_digest(customer="fairprice")
 
-    assert result["has_chart"] is True
-    assert result["chart_categories"] == ["Previous", "Current"]
+    assert {(c["current_start"], c["current_end"], c["previous_start"], c["previous_end"]) for c in calls} == {
+        ("2026-08-01", "2026-08-31", "2026-07-01", "2026-07-31")
+    }
+    facts = _facts_sent(fake_client)
+    assert "Sales in Aug 2026: revenue was $12,000, up 20.0% from $10,000 in Jul 2026." in facts
+    assert "Units sold were 900, up 12.5% from 800 in Jul 2026." in facts
+    assert "In-store (offline) $11,000, up 22.2%; Online $1,000, unchanged." in facts
+    assert result["chart_categories"] == ["Jul 2026", "Aug 2026"]
     assert result["chart_series"] == [{"label": "Revenue", "values": [10000.0, 12000.0]}]
     assert result["grounded"] is True
-    assert result["data_source"] == "aire_data"
     assert result["answer"] == "- Revenue trend was strong."
 
 
-def test_generate_digest_includes_rank_movers_and_promotions_in_facts_sent_to_model(monkeypatch):
-    trend = {
-        "current": {"start": "2026-09-08", "end": "2026-09-14", "revenue": 12000.0, "units": 900.0},
-        "previous": {"start": "2026-09-01", "end": "2026-09-07", "revenue": 10000.0, "units": 800.0, "available": True},
-    }
-    monkeypatch.setattr(sellout_service, "get_period_comparison", lambda **kwargs: trend)
-
-    def fake_ranking(**kwargs):
-        if kwargs.get("start_date") == "2026-09-08":
-            return pd.DataFrame([{"sku": "A", "product_name": "Widget A", "rank": 1}])
-        return pd.DataFrame([{"sku": "A", "product_name": "Widget A", "rank": 5}])
-
-    monkeypatch.setattr(sellout_service, "get_sku_ranking", fake_ranking)
-
-    today = datetime.date.today()
-    promos = [_sample_promotion(
-        period_start=today + datetime.timedelta(days=1),
-        period_end=today + datetime.timedelta(days=10),
-        promotion_mechanic="20% off",
-        stores=[{"retailer": "FairPrice", "store_name": "Jurong Point"}],
-    )]
-    monkeypatch.setattr(promotion_service, "get_promotions", lambda: promos)
-
+def test_generate_digest_names_the_best_seller_and_rank_movers(monkeypatch):
+    _install_digest_data(monkeypatch, rankings={
+        "2026-08-01": [
+            {"sku": "A", "product_name": "Widget A", "rank": 1, "value": 5000.0},
+            {"sku": "B", "product_name": "Widget B", "rank": 2, "value": 3000.0},
+        ],
+        "2026-07-01": [
+            {"sku": "A", "product_name": "Widget A", "rank": 5, "value": 900.0},
+            {"sku": "B", "product_name": "Widget B", "rank": 2, "value": 3000.0},
+        ],
+    })
     fake_client = _install_fake_client(monkeypatch, [_digest_answer()])
 
     assistant.generate_digest(customer="fairprice")
 
-    facts_sent = fake_client.models.calls[0]["contents"][0]["parts"][0]["text"]
-    assert "Widget A" in facts_sent
-    assert "rank 5 -> 1" in facts_sent
-    assert "20% off" in facts_sent
+    facts = _facts_sent(fake_client)
+    assert "Best-selling product in Aug 2026: Widget A, $5,000 in revenue." in facts
+    assert "Widget A rose from #5 to #1." in facts
+    assert "Widget B" not in facts.split("sales ranking")[1]
 
 
-def test_generate_digest_promotions_db_failure_degrades_gracefully(monkeypatch):
-    trend = {
-        "current": {"start": None, "end": None, "revenue": 0.0, "units": 0.0},
-        "previous": {"start": None, "end": None, "revenue": 0.0, "units": 0.0, "available": False},
-    }
-    monkeypatch.setattr(sellout_service, "get_period_comparison", lambda **kwargs: trend)
+def test_generate_digest_includes_stock_outside_its_range(monkeypatch):
+    _install_digest_data(monkeypatch, at_risk={
+        "as_of": "2026-09-01",
+        "counts": {"below_min": 2, "above_max": 1},
+        "items": [
+            {"sku": "A", "product_name": "Widget A", "doh": 5.0, "doh_status": "below_min", "days_outside_band": 20.0},
+            {"sku": "B", "product_name": "Widget B", "doh": 50.0, "doh_status": "above_max", "days_outside_band": 15.0},
+            {"sku": "C", "product_name": "Widget C", "doh": 20.0, "doh_status": "below_min", "days_outside_band": 5.0},
+            {"sku": "D", "product_name": "Widget D", "doh": 21.0, "doh_status": "below_min", "days_outside_band": 4.0},
+        ],
+    })
+    fake_client = _install_fake_client(monkeypatch, [_digest_answer()])
 
-    def _raise():
+    assistant.generate_digest(customer="fairprice")
+
+    facts = _facts_sent(fake_client)
+    assert "Stock at the end of Sep 2026: 2 products running low (may run out)" in facts
+    assert "1 product with more stock than needed" in facts
+    assert "Widget A: 5 days of stock, 20 days short of the minimum." in facts
+    assert "Widget B: 50 days of stock, 15 days over the maximum." in facts
+    assert "Widget D" not in facts  # only the three furthest out
+
+
+def test_generate_digest_includes_the_next_forecast_month_against_the_last_full_actual_month(monkeypatch):
+    _install_digest_data(monkeypatch, forecast={
+        "series": [{}, {}],
+        "monthly_totals": [
+            {"month": "2026-08-01", "forecast_cartons": None, "actual_cartons": 2400, "actual_month_to_date": False},
+            {"month": "2026-09-01", "forecast_cartons": None, "actual_cartons": 300, "actual_month_to_date": True},
+            {"month": "2026-11-01", "forecast_cartons": 2582, "actual_cartons": None, "actual_month_to_date": False},
+            {"month": "2026-12-01", "forecast_cartons": 2700, "actual_cartons": None, "actual_month_to_date": False},
+        ],
+    })
+    fake_client = _install_fake_client(monkeypatch, [_digest_answer()])
+
+    assistant.generate_digest(customer="fairprice")
+
+    assert (
+        "Forecast for Nov 2026: about 2,582 cartons expected to sell, "
+        "up 7.6% on the 2,400 cartons actually sold in Aug 2026."
+    ) in _facts_sent(fake_client)
+
+
+def test_generate_digest_includes_promotions_starting_soon(monkeypatch):
+    today = datetime.date.today()
+    _install_digest_data(monkeypatch, promotions=[_sample_promotion(
+        period_start=today + datetime.timedelta(days=1),
+        period_end=today + datetime.timedelta(days=10),
+        promotion_mechanic="20% off",
+        stores=[{"retailer": "FairPrice", "store_name": "Jurong Point"}],
+    )])
+    fake_client = _install_fake_client(monkeypatch, [_digest_answer()])
+
+    assistant.generate_digest(customer="fairprice")
+
+    assert "20% off" in _facts_sent(fake_client)
+
+
+def test_generate_digest_leaves_out_an_area_it_cannot_read(monkeypatch):
+    _install_digest_data(monkeypatch)
+
+    def _down(**kwargs):
         raise RuntimeError("connection refused")
-    monkeypatch.setattr(promotion_service, "get_promotions", _raise)
-    _install_fake_client(monkeypatch, [_digest_answer()])
+
+    monkeypatch.setattr(inventory_service, "get_at_risk", _down)
+    monkeypatch.setattr(promotion_service, "get_promotions", lambda: _down())
+    fake_client = _install_fake_client(monkeypatch, [_digest_answer()])
 
     result = assistant.generate_digest(customer="fairprice")
 
-    assert result["answer"] == "- Revenue trend was strong."
+    facts = _facts_sent(fake_client)
+    assert "Stock" not in facts
+    assert "romotion" not in facts
+    assert "connection refused" not in facts
+    assert "Sales in Aug 2026" in facts  # the rest is still there
+    assert result["has_chart"] is True
+
+
+def test_generate_digest_turns_a_literal_backslash_n_into_a_line_break(monkeypatch):
+    _install_digest_data(monkeypatch)
+    _install_fake_client(monkeypatch, [_digest_answer(text="- **Sales:** fell.\\n- **Stock:** fine.")])
+
+    result = assistant.generate_digest(customer="fairprice")
+
+    assert result["answer"] == "- **Sales:** fell.\n- **Stock:** fine."
+
+
+def test_generate_digest_with_no_sales_yet_has_no_chart(monkeypatch):
+    _install_digest_data(monkeypatch, latest_by_channel={})
+    fake_client = _install_fake_client(monkeypatch, [_digest_answer()])
+
+    result = assistant.generate_digest(customer="fairprice")
+
+    assert "no sales data loaded yet" in _facts_sent(fake_client)
     assert result["has_chart"] is False
 
 
 def test_generate_digest_refusal_still_returns_a_usable_response(monkeypatch):
-    trend = {
-        "current": {"start": "2026-09-08", "end": "2026-09-14", "revenue": 12000.0, "units": 900.0},
-        "previous": {"start": "2026-09-01", "end": "2026-09-07", "revenue": 10000.0, "units": 800.0, "available": True},
-    }
-    monkeypatch.setattr(sellout_service, "get_period_comparison", lambda **kwargs: trend)
-    monkeypatch.setattr(sellout_service, "get_sku_ranking", lambda **kwargs: pd.DataFrame([]))
-    monkeypatch.setattr(promotion_service, "get_promotions", lambda: [])
+    _install_digest_data(monkeypatch)
     blocked = FakeResponse(finish_reason="SAFETY", content={"role": "model", "parts": []})
     _install_fake_client(monkeypatch, [blocked])
 
@@ -3304,7 +3504,7 @@ def test_a_range_total_for_several_customers_shows_one_bar_per_customer():
     assert chart["chart_series"] == [{"label": "Revenue", "values": [24052.28, 28155.5, 0.0]}]
 
 
-def test_a_comparison_across_several_customers_shows_the_pages_customer():
+def test_a_comparison_across_several_customers_puts_them_side_by_side():
     fair_input, fair_raw = _range_total("fairprice", 24052.28)
     nhg_input, nhg_raw = _range_total("nhg", 28155.5)
     fair_input = {**fair_input, "previous_start": "2026-07-01", "previous_end": "2026-07-31"}
@@ -3315,4 +3515,80 @@ def test_a_comparison_across_several_customers_shows_the_pages_customer():
     )
 
     assert chart["chart_categories"] == ["Previous", "Current"]
-    assert chart["chart_series"][0]["values"] == [1.0, 24052.28]
+    assert chart["chart_series"] == [
+        {"label": "Fairprice", "values": [1.0, 24052.28]},
+        {"label": "Nhg", "values": [1.0, 28155.5]},
+    ]
+
+
+def _monthly_summary(*months):
+    """get_sales_summary's result with offline revenue for each (label, start, revenue)."""
+    return {
+        "offline": {
+            "storeFormats": [],
+            "periodTotal": [
+                {"period_label": label, "period_start": start, "revenue": revenue, "units": 1}
+                for label, start, revenue in months
+            ],
+            "periodByFormat": [],
+        },
+        "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
+    }
+
+
+def test_a_monthly_breakdown_for_several_customers_puts_each_month_side_by_side():
+    # FairPrice has May to July, NHG only June and July: one series each over
+    # the same three months, NHG's May at 0, not the months laid end to end.
+    fairprice = _monthly_summary(
+        ("May 2026", "2026-05-01", 16616.02), ("June 2026", "2026-06-01", 17609.91), ("July 2026", "2026-07-01", 17639.95),
+    )
+    nhg = _monthly_summary(("June 2026", "2026-06-01", 9816.5), ("July 2026", "2026-07-01", 12000.5))
+
+    chart = assistant._build_chart(
+        [
+            ("get_sales_summary", {"customer": "nhg", "mode": "offline"}, nhg),
+            ("get_sales_summary", {"customer": "fairprice", "mode": "offline"}, fairprice),
+        ],
+        "fairprice",
+    )
+
+    assert chart["chart_categories"] == ["May 2026", "June 2026", "July 2026"]
+    assert chart["chart_series"] == [
+        {"label": "Nhg", "values": [0.0, 9816.5, 12000.5]},
+        {"label": "Fairprice", "values": [16616.02, 17609.91, 17639.95]},
+    ]
+
+
+def test_a_monthly_breakdown_for_one_customer_stays_a_single_series():
+    may = _monthly_summary(("May 2026", "2026-05-01", 100.0))
+    june = _monthly_summary(("June 2026", "2026-06-01", 200.0))
+
+    chart = assistant._build_chart(
+        [("get_sales_summary", {"customer": "fairprice"}, may), ("get_sales_summary", {}, june)], "fairprice"
+    )
+
+    assert chart["chart_series"] == [{"label": "Revenue", "values": [100.0, 200.0]}]
+
+
+def test_a_chart_comparing_customers_exports_every_series():
+    from openpyxl import load_workbook
+    from pptx import Presentation
+
+    chart = assistant._grouped_bar_chart(
+        ["May 2026", "June 2026"],
+        [{"label": "Fairprice", "values": [100.0, 200.0]}, {"label": "Nhg", "values": [0.0, 50.0]}],
+    )
+
+    pdf_bytes, _, _ = assistant.generate_export_file("pdf", "Fairprice sold more.", chart)
+    pptx_bytes, _, _ = assistant.generate_export_file("pptx", "Fairprice sold more.", chart)
+    xlsx_bytes, _, _ = assistant.generate_export_file("excel", "Fairprice sold more.", chart)
+
+    assert pdf_bytes[:4] == b"%PDF"
+    pptx_chart = next(
+        shape.chart for slide in Presentation(io.BytesIO(pptx_bytes)).slides for shape in slide.shapes if shape.has_chart
+    )
+    assert [series.name for series in pptx_chart.series] == ["Fairprice", "Nhg"]
+    assert pptx_chart.has_legend is True
+    sheet = load_workbook(io.BytesIO(xlsx_bytes)).active
+    assert [sheet.cell(row=5, column=col).value for col in (1, 2, 3)] == ["Period", "Fairprice", "Nhg"]
+    assert [sheet.cell(row=7, column=col).value for col in (1, 2, 3)] == ["June 2026", 200.0, 50.0]
