@@ -1,6 +1,6 @@
 'use client';
 
-import { Switch } from '@/components/ui/switch';
+import ToggleField from '@/components/ui/ToggleField';
 import { PROPOSER } from '@/app/utils/mappingReview';
 
 import ResetButton from './ResetButton';
@@ -29,23 +29,15 @@ export default function FileSettings({ instructions, changed, onChange, onReset,
         )}
       </div>
 
-      <div className="mt-1.5 grid gap-2 sm:grid-cols-2">
-        <label className="flex items-start gap-2 text-xs text-deep-violet-blue">
-          <Switch
-            checked={instructions.aggregate}
-            onCheckedChange={(checked) => onChange('aggregate', checked)}
-            disabled={disabled}
-            className="mt-0.5"
-          />
-          <span>
-            Roll up to one row per store, product and month
-            <span className="block text-[11px] text-deep-violet-blue/60">
-              {instructions.aggregate
-                ? 'Daily, weekly or per-delivery rows are added up into their month.'
-                : 'Rows load at the grain the file has, e.g. one per week.'}
-            </span>
-          </span>
-        </label>
+      <div className="mt-2">
+        <ToggleField
+          label="Add up rows into monthly totals"
+          checked={instructions.aggregate}
+          onChange={(checked) => onChange('aggregate', checked)}
+          onHint="Rows for the same store and product are added together, so each month loads as one row. Use it for daily, weekly or per-delivery files."
+          offHint="Every row loads as the file has it, for example one per week. Turn on if the file is not already monthly."
+          disabled={disabled}
+        />
       </div>
     </div>
   );
