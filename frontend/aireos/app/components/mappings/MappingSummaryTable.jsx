@@ -100,26 +100,26 @@ export default function MappingSummaryTable({ mappings, isLoading, error, onOpen
       {/* Sized by the window, not the row count, so filtering never resizes
           it; the rows scroll inside. Same as the promotion overview. */}
       <section
-        aria-label="Stored mappings"
+        aria-label="Stored nomenclatures"
         className="flex min-h-80 flex-1 flex-col overflow-hidden rounded-lg border border-lavander bg-white shadow-sm"
       >
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
           <p className="text-sm text-deep-violet-blue/70" aria-live="polite">
             {isLoading && !mappings.length
-              ? 'Loading mappings…'
+              ? 'Loading nomenclatures…'
               : resultCountLabel(sorted.length, mappings.length, 'mapping')}
           </p>
           <div className="flex items-center gap-2">
             <TableSearch
               value={search}
               onChange={changeSearch}
-              label="Search mappings"
-              placeholder="Search mapping, file, customer…"
+              label="Search nomenclatures"
+              placeholder="Search nomenclature, file, customer…"
             />
             <RefreshButton
               onClick={onRefresh}
               isRefreshing={isLoading}
-              label="Refresh mappings"
+              label="Refresh nomenclatures"
               className="rounded-md border-deep-violet-blue/30 bg-white text-deep-violet-blue hover:bg-cream"
             />
           </div>
@@ -132,7 +132,7 @@ export default function MappingSummaryTable({ mappings, isLoading, error, onOpen
         )}
 
         {!error && !showTable && (
-          <p className="px-4 pb-4 text-sm text-deep-violet-blue/80">No stored mappings found yet.</p>
+          <p className="px-4 pb-4 text-sm text-deep-violet-blue/80">No stored nomenclatures found yet.</p>
         )}
 
         {showTable && (
@@ -146,7 +146,7 @@ export default function MappingSummaryTable({ mappings, isLoading, error, onOpen
                 <thead className="sticky top-0 z-10 bg-white">
                   <tr className="h-10 bg-cream/60 [&>th]:shadow-[inset_0_-1px_0_var(--color-lavander)]">
                     <SortHeader
-                      label="Mapping"
+                      label="Nomenclature"
                       field="name"
                       sortField={sort.field}
                       sortDirection={sort.direction}
@@ -170,7 +170,7 @@ export default function MappingSummaryTable({ mappings, isLoading, error, onOpen
                   {!isLoading && mappings.length > 0 && sorted.length === 0 && (
                     <tr>
                       <td colSpan={COLUMN_COUNT} className="px-4 py-24 text-center text-deep-violet-blue/80">
-                        <p>No mappings match these filters.</p>
+                        <p>No nomenclatures match these filters.</p>
                         {hasFilters && (
                           <Button variant="outline" className="mt-3" onClick={resetFilters}>
                             Reset filters

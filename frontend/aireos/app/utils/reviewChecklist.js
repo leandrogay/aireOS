@@ -41,7 +41,7 @@ export function reviewChecklist({ name, customer, outputs, statuses, issues, cod
 
   items.push({
     id: 'name',
-    label: 'Name the mapping',
+    label: 'Name the nomenclature',
     done: Boolean(name.trim()),
     detail: '',
     href: customerHref,

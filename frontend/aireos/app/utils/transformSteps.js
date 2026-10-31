@@ -202,7 +202,7 @@ export function stepProblem(step, columns = []) {
 // Running the samples through
 // ============================================================
 
-const PER_ROW = 'Worked out row by row when you test the mapping.';
+const PER_ROW = 'Worked out row by row when you test the nomenclature.';
 
 function blank(value) {
   return value === null || value === undefined || String(value).trim() === '';

@@ -69,10 +69,10 @@ export default function ReviewHeader({ mapping, changed, canDiscard, busy, disca
       {/* One line; the why is behind the icon for whoever wants it. */}
       <p className="mt-2 flex items-center gap-1 text-sm text-deep-violet-blue">
         {isConfirmed ? 'In use for every file with these columns.' : 'Check each step, then approve.'}
-        <InfoTooltip label="About this mapping">
+        <InfoTooltip label="About this nomenclature">
           {isConfirmed
             ? 'Saving creates a new version. Files already uploaded with these columns are imported again using it.'
-            : 'Approving saves this mapping. Files with the same columns are then imported automatically, with no review. Any waiting uploads are imported now.'}
+            : 'Approving saves this nomenclature. Files with the same columns are then imported automatically, with no review. Any waiting uploads are imported now.'}
         </InfoTooltip>
       </p>
 

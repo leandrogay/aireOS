@@ -53,7 +53,7 @@ export function outcomeFromResult(result) {
   if (!mapping) {
     return {
       kind: 'failed',
-      error: 'The file uploaded, but the server returned no mapping result for it.',
+      error: 'The file uploaded, but the server returned no nomenclature result for it.',
     };
   }
 
@@ -93,7 +93,7 @@ export function outcomeFromResult(result) {
     default:
       return {
         kind: 'failed',
-        error: mapping.error || 'The file uploaded, but no mapping could be produced.',
+        error: mapping.error || 'The file uploaded, but no nomenclature could be produced.',
       };
   }
 }
@@ -187,16 +187,16 @@ export const FILE_GROUPS = [
   {
     key: 'ready',
     label: 'Ready to upload',
-    note: 'These match a saved mapping, so their data loads as soon as they are uploaded.',
+    note: 'These match a saved nomenclature, so their data loads as soon as they are uploaded.',
     // With REQUIRE_LOAD_CONFIRMATION on (said by the check), uploading does
     // not load them, and the note must not promise it does.
-    confirmNote: "These match a saved mapping. After uploading, you'll check what loading them would change before their data loads.",
+    confirmNote: "These match a saved nomenclature. After uploading, you'll check what loading them would change before their data loads.",
   },
   { key: 'uploaded', label: 'Uploaded' },
   {
     key: 'ready_to_load',
     label: 'Ready to load',
-    note: "Uploaded and matched to an approved mapping. Their data isn't loaded until you check and load it.",
+    note: "Uploaded and matched to an approved nomenclature. Their data isn't loaded until you check and load it.",
   },
   {
     key: 'duplicate',
@@ -210,18 +210,18 @@ export const FILE_GROUPS = [
   },
   {
     key: 'needs_review',
-    label: 'Mapping to review',
-    note: "Uploaded, but their data won't load until the mapping is reviewed.",
+    label: 'Nomenclature to review',
+    note: "Uploaded, but their data won't load until the nomenclature is reviewed.",
   },
   {
     key: 'near_match',
-    label: 'Close to a saved mapping',
-    note: "The columns differ slightly from a saved mapping. They will upload, but their data won't load until the mapping is checked.",
+    label: 'Close to a saved nomenclature',
+    note: "The columns differ slightly from a saved nomenclature. They will upload, but their data won't load until the nomenclature is checked.",
   },
   {
     key: 'new_layout',
     label: 'New layout',
-    note: "No saved mapping fits these yet. They will upload, and you'll review a suggested mapping before their data loads.",
+    note: "No saved nomenclature fits these yet. They will upload, and you'll review a suggested nomenclature before their data loads.",
   },
   {
     key: 'unchecked',

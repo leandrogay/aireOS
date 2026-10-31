@@ -95,7 +95,7 @@ function RowsAbove({ draft, onChange, groups, layout }) {
         </ul>
       ) : (
         <p className={note}>
-          No cells were found above these headings in the file as it was first read. Test the mapping to read the file
+          No cells were found above these headings in the file as it was first read. Test the nomenclature to read the file
           again, or say how many rows up to look.
         </p>
       )}
@@ -310,7 +310,7 @@ export default function FieldMethodSettings({ field, method, draft, onChange, ma
     case 'not_available':
       return (
         <label className="block text-[11px] text-deep-violet-blue/70">
-          Why it is not in the file (kept with the mapping)
+          Why it is not in the file (kept with the nomenclature)
           <input
             type="text"
             value={draft.reason || ''}

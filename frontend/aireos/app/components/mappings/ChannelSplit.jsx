@@ -152,7 +152,7 @@ export default function ChannelSplit({ customer, decision, outputs, mapping, sta
         <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900">
           <AlertTriangle aria-hidden="true" className="size-3.5 shrink-0" />
           <span>
-            The mapping writes <span className="font-mono">{foreign.join(', ')}</span>, which{' '}
+            The nomenclature writes <span className="font-mono">{foreign.join(', ')}</span>, which{' '}
             {foreign.length === 1 ? 'is' : 'are'} not {retailerLabel(name)}&apos;s.
           </span>
           <Button type="button" variant="outline" disabled={disabled} onClick={() => onApply(renamed)} className={cn(smallButton, 'ml-auto')}>
@@ -188,7 +188,7 @@ export default function ChannelSplit({ customer, decision, outputs, mapping, sta
       </div>
       {mode === 'custom' && (
         <p className="text-[11px] text-deep-violet-blue/60">
-          The mapping sets the retailer its own way, shown below. Choose one of these to replace it.
+          The nomenclature sets the retailer its own way, shown below. Choose one of these to replace it.
         </p>
       )}
 
@@ -276,7 +276,7 @@ export default function ChannelSplit({ customer, decision, outputs, mapping, sta
                 <Values title="Offline" values={preview.offline} partial={source.partial} />
               </div>
               {source.partial && (
-                <p className="text-[11px] text-deep-violet-blue/60">Some of its values. Testing the mapping checks every row.</p>
+                <p className="text-[11px] text-deep-violet-blue/60">Some of its values. Testing the nomenclature checks every row.</p>
               )}
             </>
           )}

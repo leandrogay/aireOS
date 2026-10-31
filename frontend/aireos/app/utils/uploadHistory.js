@@ -11,7 +11,7 @@ export const UPLOAD_STATUS_LABELS = {
   reload_available: { tone: 'review', label: 'Older version loaded' },
   pending_confirmation: { tone: 'review', label: 'Needs review' },
   partial_match: { tone: 'review', label: 'Needs review' },
-  mapping_failed: { tone: 'failed', label: 'Mapping failed' },
+  mapping_failed: { tone: 'failed', label: 'Nomenclature failed' },
 };
 
 export const ROLLED_BACK_STATUS = { tone: 'neutral', label: 'Rolled back' };

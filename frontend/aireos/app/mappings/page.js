@@ -40,7 +40,7 @@ export default function MappingsPage() {
       setMappingLoadError(
         error?.name === 'TimeoutError' || error?.name === 'AbortError'
           ? `No response from the backend at ${baseUrl} after ${MAPPING_LOAD_TIMEOUT_MS / 1000}s. Check that it is running.`
-          : error.message || 'Unable to load stored mappings.',
+          : error.message || 'Unable to load stored nomenclatures.',
       );
     } finally {
       setIsLoadingMappings(false);
@@ -64,7 +64,7 @@ export default function MappingsPage() {
 
   return (
     <PageLayout
-      title="Mappings"
+      title="Nomenclatures"
       fitScreen
       headerExtra={
         <div className="ml-auto flex items-center gap-2">

@@ -485,7 +485,7 @@ export default function UploadPage() {
         <ConfirmDialog
           open={Boolean(rollback.target)}
           title="Rollback this upload?"
-          description="Its transformed sell-out rows will be removed, and any older values it replaced will be restored. The raw file and mapping will be kept for audit."
+          description="Its transformed sell-out rows will be removed, and any older values it replaced will be restored. The raw file and nomenclature will be kept for audit."
           details={rollback.target ? [
             { label: 'File', value: rollback.target.filename },
             { label: 'Rows loaded', value: rollback.target.rows_stored ?? '—' },
@@ -518,7 +518,7 @@ export default function UploadPage() {
         <ConfirmDialog
           open={Boolean(deletion.target)}
           title="Delete this uploaded file?"
-          description="The raw source file will be permanently removed from GCS. Its confirmed mapping and retained ingestion audit will not be deleted."
+          description="The raw source file will be permanently removed from GCS. Its confirmed nomenclature and retained ingestion audit will not be deleted."
           details={deletion.target ? [
             { label: 'File', value: deletion.target.filename },
             { label: 'Customer', value: deletion.target.vendor || '—' },

@@ -39,8 +39,8 @@ export default function MappingReviewPage() {
         if (!cancelled) {
           setLoadError(
             error.status === 404
-              ? `No mapping is stored under "${id}".`
-              : error.message || 'Unable to load this mapping.',
+              ? `No nomenclature is stored under "${id}".`
+              : error.message || 'Unable to load this nomenclature.',
           );
         }
       } finally {
@@ -74,10 +74,10 @@ export default function MappingReviewPage() {
 
   return (
     <PageLayout
-      title="Review mapping"
+      title="Review nomenclature"
       headerExtra={
         <div className="ml-auto flex items-center gap-2">
-          <BackLink href="/mappings">Back to Mappings</BackLink>
+          <BackLink href="/mappings">Back to Nomenclatures</BackLink>
         </div>
       }
     >

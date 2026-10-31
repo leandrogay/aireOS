@@ -9,7 +9,7 @@ const STEPS = [
   },
   {
     title: 'Confirm new layouts',
-    body: 'A file with new columns gets an AI-proposed mapping that you review once.',
+    body: 'A file with new columns gets an AI-proposed nomenclature that you review once.',
   },
   {
     title: 'Read the numbers',

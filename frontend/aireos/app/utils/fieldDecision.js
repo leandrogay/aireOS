@@ -45,7 +45,7 @@ export const METHOD_INFO = {
   },
   not_available: {
     label: 'Not in this file',
-    help: 'Left empty, with the reason written down for whoever reads the mapping next.',
+    help: 'Left empty, with the reason written down for whoever reads the nomenclature next.',
   },
 };
 

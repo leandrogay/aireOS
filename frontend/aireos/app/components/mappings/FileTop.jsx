@@ -77,7 +77,7 @@ export default function FileTop({ columns, layout, headRows }) {
       </div>
       {!headRows.length && (
         <p className="border-t border-lavander px-2 py-1.5 text-[11px] text-deep-violet-blue/60">
-          This mapping was proposed before the first rows were kept. Test it to read them from the example file.
+          This nomenclature was proposed before the first rows were kept. Test it to read them from the example file.
         </p>
       )}
     </Disclosure>

@@ -91,7 +91,7 @@ export default function ApprovedSummary({ approved }) {
         <CheckCircle2 aria-hidden="true" className="mt-0.5 size-7 shrink-0 text-green-600" />
         <div className="min-w-0">
           <h2 className="flex flex-wrap items-center gap-2 font-serif text-xl text-deep-violet-blue">
-            Mapping approved
+            Nomenclature approved
             <span className="rounded-full border border-lavander bg-cream px-2 py-0.5 font-sans text-xs font-medium">
               v{version}
             </span>
@@ -116,7 +116,7 @@ export default function ApprovedSummary({ approved }) {
           {waiting.length > 0 && (
             <LoadableFiles
               title={`${plural(waiting.length, 'file is', 'files are')} waiting to load`}
-              help={`Uploaded before this mapping was approved, so nothing from ${waiting.length === 1 ? 'it' : 'them'} is in sales data yet. You'll see what loading changes before anything is written.`}
+              help={`Uploaded before this nomenclature was approved, so nothing from ${waiting.length === 1 ? 'it' : 'them'} is in sales data yet. You'll see what loading changes before anything is written.`}
               files={waiting}
               detail={(file) => `Uploaded ${formatDateTime(file.uploaded_at)}`}
               buttonLabel={`Review and load ${filesLabel(waiting.length)}`}
@@ -160,14 +160,14 @@ export default function ApprovedSummary({ approved }) {
 
       {!hasNextStep && !loadedHere.length && (
         <p className="mt-4 rounded-md border border-lavander bg-cream/40 px-3 py-2 text-sm text-deep-violet-blue/80">
-          No uploads are waiting on this mapping. Upload a file with these columns to add its sales.
+          No uploads are waiting on this nomenclature. Upload a file with these columns to add its sales.
         </p>
       )}
 
       {!!approved.warnings?.length && (
         <Disclosure
           className="mt-3 rounded-md border border-amber-200 bg-amber-50"
-          summary={<span className="text-amber-900">{plural(approved.warnings.length, 'note', 'notes')} on the mapping</span>}
+          summary={<span className="text-amber-900">{plural(approved.warnings.length, 'note', 'notes')} on the nomenclature</span>}
         >
           <ul className="list-disc space-y-1 border-t border-amber-200 px-3 py-2 pl-7 text-xs text-amber-900">
             {approved.warnings.map((warning, index) => (

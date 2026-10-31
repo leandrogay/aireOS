@@ -258,7 +258,7 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
             id={SECTION_IDS.customer}
             step={stepOf(SECTION_IDS.customer)}
             title="Whose file is this?"
-            info="Name the mapping and choose the customer. Sales only reach the dashboard through the customer's retailers."
+            info="Name the nomenclature and choose the customer. Sales only reach the dashboard through the customer's retailers."
             done={done(items, ['name', 'customer', 'retailers'])}
           >
             <CustomerStep
@@ -375,7 +375,7 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
             id={SECTION_IDS.checks}
             step={stepOf(SECTION_IDS.checks)}
             title="Test it on the example file"
-            info={`Applies the mapping to the whole example file, without saving anything, and compares totals, periods and products with what the file says. ${preview ? 'Showing your last test.' : `Showing the results from when the ${PROPOSER} proposed it.`}`}
+            info={`Applies the nomenclature to the whole example file, without saving anything, and compares totals, periods and products with what the file says. ${preview ? 'Showing your last test.' : `Showing the results from when the ${PROPOSER} proposed it.`}`}
             done={!failed && !stale}
             doneLabel="Passing"
             todoLabel={stale ? 'Changed since last test' : 'Failing'}
@@ -391,7 +391,7 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
                 className={cn(stale ? primaryButtonClass : secondaryButtonClass, 'h-7 px-2.5 text-xs')}
               >
                 {busy === 'preview' ? <Loader2 aria-hidden="true" className="size-3.5 animate-spin" /> : <Play aria-hidden="true" className="size-3.5" />}
-                {busy === 'preview' ? 'Testing…' : stale ? 'Test my changes' : preview ? 'Test again' : 'Test mapping'}
+                {busy === 'preview' ? 'Testing…' : stale ? 'Test my changes' : preview ? 'Test again' : 'Test nomenclature'}
               </Button>
             }
           >
@@ -402,7 +402,7 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
             )}
             {stale && (
               <p className="mb-2 text-xs text-amber-900">
-                You&apos;ve changed the mapping since these results. Test your changes to see what they do.
+                You&apos;ve changed the nomenclature since these results. Test your changes to see what they do.
               </p>
             )}
             {preview?.preview_error && (

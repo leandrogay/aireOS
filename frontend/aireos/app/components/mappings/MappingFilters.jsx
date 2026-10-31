@@ -21,7 +21,7 @@ import { MAPPING_ISSUE_OPTIONS, MAPPING_STATUS_OPTIONS } from '@/app/utils/mappi
 export default function MappingFilters({ filters, customers, hasFilters, onChange, onReset }) {
   return (
     <section
-      aria-label="Filter mappings"
+      aria-label="Filter nomenclatures"
       className="rounded-lg border border-lavander bg-white p-3 shadow-sm"
     >
       <div className="flex items-end gap-3">
@@ -45,7 +45,7 @@ export default function MappingFilters({ filters, customers, hasFilters, onChang
           />
           <MultiSelectDropdown
             label="Issues"
-            allLabel="All mappings"
+            allLabel="All nomenclatures"
             options={MAPPING_ISSUE_OPTIONS}
             values={filters.issues}
             onChange={(values) => onChange('issues', values)}

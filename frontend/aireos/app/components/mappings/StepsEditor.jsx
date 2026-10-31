@@ -68,7 +68,7 @@ function SampleRun({ samples, steps }) {
         </tbody>
       </table>
       <p className="border-t border-lavander px-2 py-1 text-[11px] text-deep-violet-blue/50">
-        A quick look at a few values. Test the mapping to run it on the whole file.
+        A quick look at a few values. Test the nomenclature to run it on the whole file.
       </p>
     </div>
   );

@@ -119,7 +119,7 @@ function decisionText(decision, outputs) {
   if (decision.kind === 'none' || decision.status === 'not_available' || decision.status === 'unmapped') {
     return {
       short: 'Not set',
-      long: 'Nothing in this mapping sets the retailer. Send every row to one of the customer’s retailers, or choose a column for Retailer in step 2.',
+      long: 'Nothing in this nomenclature sets the retailer. Send every row to one of the customer’s retailers, or choose a column for Retailer in step 2.',
     };
   }
   if (decision.status === 'constant') {
@@ -219,7 +219,7 @@ export default function CustomerStep({
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
           <label htmlFor="mapping-name" className={labelClass}>
-            Mapping name
+            Nomenclature name
             <span className="text-red-700" aria-hidden="true">
               {' '}
               *
