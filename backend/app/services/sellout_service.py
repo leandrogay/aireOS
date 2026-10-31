@@ -760,11 +760,16 @@ def get_sku_options(customer: str = DEFAULT_CUSTOMER) -> list[dict]:
     return [{"sku": option["sku"], "product_name": option["product_name"]} for option in options]
 
 
-def get_store_options(customer: str = DEFAULT_CUSTOMER) -> list[dict]:
+def get_store_options(customer: str = DEFAULT_CUSTOMER, mode: str | None = None) -> list[dict]:
     # Distinct stores (branches) with real sales data (week or month rows),
-    # keyed on store_code; a code shared by both channels shows once, using
-    # the first non-null name either channel has for it.
-    retailer_names = _customer_retailers(customer)
+    # keyed on store_code. With a mode, only that channel's stores: the
+    # dashboard shows one channel at a time, so an online outlet (Sheng
+    # Siong's "6M_Ecomm") is no choice on the offline view. Without one (the
+    # assistant), both channels, and a code in both shows once, using the
+    # first non-null name either channel has for it.
+    if mode is not None and mode not in DASHBOARD_MODES:
+        raise ValueError(f"mode must be one of {DASHBOARD_MODES}")
+    retailer_names = [_retailer_for(customer, mode)] if mode else _customer_retailers(customer)
     query = text(
         """
         SELECT DISTINCT s.store_code, st.store_name

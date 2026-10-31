@@ -203,6 +203,30 @@ def test_store_options_dedupe_by_code_keeping_first_name(monkeypatch):
     assert options == [{"store_code": "100", "store_name": "Main Branch"}]
 
 
+def test_store_options_for_a_channel_read_only_that_channels_retailer(monkeypatch):
+    conn = _install(monkeypatch, lambda sql, params: [])
+
+    sellout_service.get_store_options(customer="sheng_siong", mode="offline")
+
+    (_sql, params) = conn.calls[0]
+    assert params == {"retailer_names": ["sheng_siong_offline"]}
+
+
+def test_store_options_without_a_channel_read_both_retailers(monkeypatch):
+    conn = _install(monkeypatch, lambda sql, params: [])
+
+    sellout_service.get_store_options(customer="sheng_siong")
+
+    (_sql, params) = conn.calls[0]
+    assert params == {"retailer_names": ["sheng_siong_offline", "sheng_siong_online"]}
+
+
+def test_store_options_reject_an_unknown_channel_without_querying(monkeypatch):
+    _no_engine_allowed(monkeypatch)
+    with pytest.raises(ValueError, match="mode"):
+        sellout_service.get_store_options(customer="sheng_siong", mode="ecomm")
+
+
 def test_customer_options_have_no_period_type_filter(monkeypatch):
     conn = _install(monkeypatch, lambda sql, params: [])
 
