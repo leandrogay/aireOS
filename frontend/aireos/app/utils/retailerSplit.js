@@ -89,29 +89,74 @@ function splitRules(matches, customerName) {
   ];
 }
 
+/** Each of a source's distinct values, in file order, with the channel a split sends it to. */
+export function valueChannels(values, matches) {
+  const usable = matches.filter((match) => String(match.value).trim());
+  return [...new Set(values.map(String))].map((value) => {
+    const hit = usable.some((match) => ruleMatches({ ...match, value: match.value.trim() }, value, false));
+    return { value, channel: hit ? 'online' : 'offline' };
+  });
+}
+
 /** Which of a source's values a split sends online, and which offline. */
 export function splitPreview(values, matches) {
-  const usable = matches.filter((match) => String(match.value).trim());
-  const online = [];
-  const offline = [];
-  [...new Set(values.map(String))].forEach((value) => {
-    const hit = usable.some((match) => ruleMatches({ ...match, value: match.value.trim() }, value, false));
-    (hit ? online : offline).push(value);
-  });
-  return { online, offline };
+  const rows = valueChannels(values, matches);
+  return {
+    online: rows.filter((row) => row.channel === 'online').map((row) => row.value),
+    offline: rows.filter((row) => row.channel === 'offline').map((row) => row.value),
+  };
+}
+
+// ============================================================
+// Choosing value by value
+// ============================================================
+
+// Most values a source can have and still be shown one by one; past that a
+// list is too long to read, and the split is matched by pattern instead.
+const MAX_LISTED_VALUES = 30;
+
+/** Whether every value of a source is known and few enough to list. */
+export function listableSource(source) {
+  return Boolean(source) && !source.partial && source.values.length > 0 && source.values.length <= MAX_LISTED_VALUES;
 }
 
 /**
- * A first guess at the split: the first source with a value that names an
- * online channel, matched on that word. Null when nothing looks online.
+ * Whether a split reads as a list of values: each match is "is" one of the
+ * source's values, so ticking values says exactly what the rules do. A
+ * pattern ("contains online") or a value the file does not have would be
+ * lost in a list, so those stay patterns.
  */
+export function fitsValueList(source, matches) {
+  if (!listableSource(source)) return false;
+  const known = new Set(source.values.map((value) => String(value).toLowerCase()));
+  return matches
+    .filter((match) => String(match.value).trim())
+    .every((match) => match.op === 'equals' && known.has(match.value.trim().toLowerCase()));
+}
+
+/** The matches that send exactly these values online, one "is" each. */
+export function matchesForValues(online) {
+  return online.map((value) => ({ op: 'equals', value: String(value) }));
+}
+
+/**
+ * A first guess at what marks a source's rows online: its values that name
+ * an online channel, one by one when the source can be listed, else the word
+ * they share. Empty when nothing looks online.
+ */
+export function suggestedMatches(source) {
+  const online = source.values.map(String).filter((value) => ONLINE_WORDS.some((word) => value.toLowerCase().includes(word)));
+  if (!online.length) return [];
+  if (listableSource(source)) return matchesForValues(online);
+  const word = ONLINE_WORDS.find((item) => online.some((value) => value.toLowerCase().includes(item)));
+  return [{ op: 'contains', value: word }];
+}
+
+/** A first guess at the split: the first source with a value that looks online. Null when none does. */
 export function suggestSplit(sources) {
   for (const source of sources) {
-    for (const word of ONLINE_WORDS) {
-      if (source.values.some((value) => String(value).toLowerCase().includes(word))) {
-        return { mode: 'split', source: source.value, matches: [{ op: 'contains', value: word }] };
-      }
-    }
+    const matches = suggestedMatches(source);
+    if (matches.length) return { mode: 'split', source: source.value, matches };
   }
   return null;
 }
@@ -172,8 +217,10 @@ export function splitDecision(split, customerName) {
 /** Why a split cannot be used yet, or ''. */
 export function splitProblem(split) {
   if (split.mode !== 'split') return '';
-  if (!split.source) return 'Choose where to look.';
-  if (!split.matches.some((match) => String(match.value).trim())) return 'Say what marks a row online.';
+  if (!split.source) return 'Choose the column that says which rows are online.';
+  if (!split.matches.some((match) => String(match.value).trim())) {
+    return 'Nothing is online yet. Mark what is, or choose All offline.';
+  }
   return '';
 }
 
