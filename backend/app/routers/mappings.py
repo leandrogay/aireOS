@@ -233,6 +233,11 @@ async def get_mapping(fingerprint: str):
     }
 
 
+def _with_check(checks: list[dict], check: dict) -> list[dict]:
+    """The checks with one more, still most serious first (mapping_checks.run_checks order)."""
+    return sorted([*checks, check], key=lambda c: (c["passed"], mapping_checks.LEVEL_ORDER[c["level"]]))
+
+
 @router.post("/{fingerprint}/preview")
 async def preview_mapping(fingerprint: str, body: PreviewRequest):
     """
@@ -305,6 +310,7 @@ async def preview_mapping(fingerprint: str, body: PreviewRequest):
             "columns": target_columns,
             "rows_total": len(mapped),
             "preview": contract_application.preview_rows(mapped[target_columns], body.limit),
+            "checks": _with_check(checks, mapping_checks.check_store_channels(mapped)),
         })
         return result
 
@@ -435,10 +441,17 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
         table = _example_table(pending, fingerprint)
         if table is None:
             return []
-        filename, _, frame, layout = table
-        return generate_mapping.check_contract(
+        filename, data, frame, layout = table
+        checks = generate_mapping.check_contract(
             frame, layout, contract, filename, generate_mapping.fetch_master_skus()
         )
+        # Whether each store keeps to one retailer is only known once the
+        # rules have run; a contract that cannot run is caught on load.
+        try:
+            mapped = sellout_ingestion.transform_confirmed_upload(filename, data, contract)
+        except contract_application.ContractApplicationError:
+            return checks
+        return _with_check(checks, mapping_checks.check_store_channels(mapped))
 
     try:
         checks = await asyncio.to_thread(recheck)

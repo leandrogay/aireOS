@@ -6,7 +6,9 @@ transformation's job). Each check reads the contract's instructions and the
 file's own columns and values -- every field accounted for, the required ones
 filled, every product code a master SKU, every rule value covered, revenue not
 read from a claim or price column, periods inside the period the file states,
-every store label above the header present.
+every store label above the header present. (One check, a store keeping to
+one retailer, reads the rows the transformation made instead; it is called on
+them by whoever ran it -- see check_store_channels.)
 A check that fails names the fields it implicates, and those fields'
 confidence comes from the checks (see field_confidence), so a reviewer is
 pointed at what actually went wrong.
@@ -487,6 +489,61 @@ def _check_instructions(contract: dict) -> dict:
     parts.append(f"rolled up to one row per {', '.join(aggregate['by'])} each {aggregate['period']}"
                  if aggregate else "rows kept at the file's own grain")
     return _check("instructions", "info", True, "The transformation is told: " + "; ".join(parts) + ".")
+
+
+# ---- One retailer per store (on transformed rows) ---------------------------------------
+#
+# The one check here that reads the contract's output, not the file: whether a
+# store keeps to one channel can only be told once the retailer rule has run on
+# every row. It is not part of run_checks; the mapping test, approval and every
+# load call it on the rows the transformation made.
+
+# How many stores a message names before "and n more".
+STORES_NAMED = 5
+
+
+def store_channel_conflicts(rows: pd.DataFrame) -> dict[str, list[str]]:
+    """
+    Each store code these rows send to more than one retailer, with the
+    retailers. A store is sold through one of a customer's retailers -- a
+    shop is offline, a website online -- so a retailer rule that splits one
+    store's rows (by a column that varies within the store) would make it two
+    stores. Rows with no store code are customer-level totals, which each
+    channel has one of, so they are left out.
+    """
+    if rows.empty or "store_code" not in rows or "retailer" not in rows:
+        return {}
+    pairs = rows[["store_code", "retailer"]].dropna().astype(str)
+    pairs = pairs.assign(store_code=pairs["store_code"].str.strip(), retailer=pairs["retailer"].str.strip())
+    pairs = pairs[(pairs["store_code"] != "") & (pairs["retailer"] != "")]
+    retailers = pairs.groupby("store_code")["retailer"].unique()
+    return {
+        str(code): sorted(names)
+        for code, names in retailers.items()
+        if len(names) > 1
+    }
+
+
+def describe_store_conflicts(conflicts: dict[str, list[str]]) -> str:
+    """The conflicts in a sentence: "AJ goes to a and b; BK goes to …", the first few only."""
+    named = [f"{code} goes to {' and '.join(names)}" for code, names in list(conflicts.items())[:STORES_NAMED]]
+    more = len(conflicts) - len(named)
+    return "; ".join(named) + (f"; and {more} more" if more > 0 else "")
+
+
+def check_store_channels(rows: pd.DataFrame) -> dict:
+    """The store_channel_conflicts of the transformed rows, as a check that blocks approval."""
+    conflicts = store_channel_conflicts(rows)
+    if not conflicts:
+        return _check("store_channels", "error", True, "Every store goes to one retailer.", ["retailer", "store_code"])
+    return _check(
+        "store_channels", "error", False,
+        f"A store goes to more than one retailer: {describe_store_conflicts(conflicts)}. A store belongs to one "
+        "channel, so decide the retailer by something that names the store (its code, name or format), not by "
+        "something that changes from row to row within a store.",
+        ["retailer", "store_code"],
+        {"stores": [f"{code} → {', '.join(names)}" for code, names in conflicts.items()]},
+    )
 
 
 # ---- Running them ---------------------------------------------------------------------

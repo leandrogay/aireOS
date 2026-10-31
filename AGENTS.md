@@ -221,6 +221,12 @@ Invariants that cross domains:
   where the data sits is its `layout`, and a retailer's product codes become master SKUs through the `sku` field's
   `value_map` (the code table). A product code that is not a master SKU fails the contract's checks and blocks
   approval until the code table is fixed or the product is added to the SKU master.
+- A store is sold through one of its customer's retailers (`{customer}_offline` or `{customer}_online`), never both.
+  `mapping_checks.check_store_channels` runs on the transformed rows in the mapping test and on approval (422), and
+  `sellout_service.load_clean_rows` refuses a file whose rows split a store, or that sends a store to a different
+  retailer than its stored sales (`StoreChannelError`, the load dry run says so first). A reload with a corrected
+  rule moves its own stores: its earlier rows are deleted before the check. Rows with no store code are
+  customer-level totals and are exempt.
 - There is one contract format. The transformation (`sellout_ingestion` → `apply_contract`) executes its layout,
   field, melt, transform and aggregate instructions. "Version" means only a mapping's approval count: each approval
   stores the envelope with `version` + 1 and archives the one it replaces under `mappings/history/<fp>/v<n>.json`;

@@ -17,11 +17,15 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
 from app import config
-from app.services import catalog_service, ingestion_service, sql
+from app.services import catalog_service, ingestion_service, mapping_checks, sql
 
 
 class SelloutLoadError(RuntimeError):
     """Validated rows could not be stored atomically in Cloud SQL."""
+
+
+class StoreChannelError(SelloutLoadError):
+    """A store would be sold under two of one customer's retailers."""
 
 
 BUSINESS_KEY = ("retailer", "store_code", "sku", "period_start", "period_type")
@@ -226,6 +230,136 @@ def existing_overlap(
     }
 
 
+# ============================================================
+# ONE RETAILER PER STORE
+# ============================================================
+#
+# A store is sold through one of its customer's retailers: a shop is
+# {customer}_offline, a website {customer}_online. The mapping's retailer rule
+# decides which, and once a store's sales are stored under one, a file that
+# sends the same store code to the other would make it two stores (two catalog
+# rows, its sales split between channels). So a load is refused, in full, when
+# its own rows split a store, or when a store it writes already has sales under
+# another retailer of the same customer. Reloading a file with a corrected rule
+# still works: its own earlier rows are deleted before the check runs.
+
+
+def _store_pairs(dataframe: pd.DataFrame) -> pd.DataFrame:
+    """Each (retailer, store code) in the rows once; customer-level totals (no store code) are not stores."""
+    pairs = (
+        dataframe[["retailer", "store_code"]]
+        .dropna()
+        .astype(str)
+        .drop_duplicates()
+    )
+    return pairs[pairs["store_code"].str.strip() != ""]
+
+
+def _stored_under_other_retailer(
+    connection: Connection,
+    dataframe: pd.DataFrame,
+    *,
+    excluded_source_files: list[str] | None = None,
+) -> list[dict]:
+    """
+    For each store code in these rows, the other retailers of the same
+    customer that already hold its sales, with the files those came from.
+    Rows from `excluded_source_files` are left out (the ones a reload is
+    about to replace).
+    """
+    pairs = _store_pairs(dataframe)
+    if pairs.empty:
+        return []
+
+    rows = connection.execute(
+        text(
+            """
+            WITH incoming AS (
+                SELECT *
+                FROM unnest(
+                    CAST(:retailer_names AS text[]),
+                    CAST(:store_codes AS text[])
+                ) AS input(retailer_name, store_code)
+            )
+            SELECT
+                i.store_code,
+                i.retailer_name AS incoming_retailer,
+                other.retailer_name AS stored_retailer,
+                array_agg(DISTINCT COALESCE(s.source_file, 'an unnamed file')) AS source_files
+            FROM incoming i
+            JOIN retailers r ON r.retailer_name = i.retailer_name
+            JOIN customer_retailers cr ON cr.retailer_id = r.retailer_id
+            JOIN customer_retailers sibling
+                ON sibling.customer_id = cr.customer_id
+               AND sibling.retailer_id <> r.retailer_id
+            JOIN retailers other ON other.retailer_id = sibling.retailer_id
+            JOIN sellout s
+                ON s.retailer_id = sibling.retailer_id
+               AND s.store_code = i.store_code
+            WHERE COALESCE(s.source_file, '') <> ALL(CAST(:excluded AS text[]))
+            GROUP BY i.store_code, i.retailer_name, other.retailer_name
+            ORDER BY i.store_code
+            """
+        ),
+        {
+            "retailer_names": pairs["retailer"].tolist(),
+            "store_codes": pairs["store_code"].tolist(),
+            "excluded": list(excluded_source_files or []),
+        },
+    ).mappings().all()
+    return [dict(row) for row in rows]
+
+
+def _store_channel_message(dataframe: pd.DataFrame, stored: list[dict]) -> str:
+    """Why these rows would make a store two stores, or '' when they would not."""
+    within = mapping_checks.store_channel_conflicts(dataframe)
+    if within:
+        return (
+            f"This file sends a store to more than one retailer: "
+            f"{mapping_checks.describe_store_conflicts(within)}. A store belongs to one channel; "
+            "fix the mapping's retailer rule so each store goes to one of them."
+        )
+    if not stored:
+        return ""
+    named = stored[: mapping_checks.STORES_NAMED]
+    lines = "; ".join(
+        f"{row['store_code']} already has sales under {row['stored_retailer']} "
+        f"(from {', '.join(sorted(row['source_files']))}), and this file sends it to {row['incoming_retailer']}"
+        for row in named
+    )
+    more = len(stored) - len(named)
+    return (
+        f"{lines}{f'; and {more} more' if more > 0 else ''}. A store belongs to one channel. Change the mapping's "
+        "retailer rule to match, or, if the rule is now right, reload or roll back the earlier uploads first."
+    )
+
+
+def store_channel_problem(
+    dataframe: pd.DataFrame,
+    *,
+    replace_source: bool = False,
+    check_stored: bool = True,
+    engine: Engine | None = None,
+) -> str:
+    """
+    Why loading these rows would be refused for splitting a store across a
+    customer's retailers, or ''. A dry run of the check load_clean_rows makes,
+    for the load confirmation: a reload's own earlier rows are told apart by
+    file name here (the load itself uses its exact previous run). Without
+    `check_stored` only the rows themselves are checked, no database.
+    """
+    if dataframe.empty:
+        return ""
+    if mapping_checks.store_channel_conflicts(dataframe):
+        return _store_channel_message(dataframe, [])
+    if not check_stored or _store_pairs(dataframe).empty:
+        return ""
+    source_files = sorted({str(name) for name in dataframe["source_file"].dropna()}) if replace_source else []
+    with (engine or _get_read_engine()).connect() as connection:
+        stored = _stored_under_other_retailer(connection, dataframe, excluded_source_files=source_files)
+    return _store_channel_message(dataframe, stored)
+
+
 def cloud_sql_loading_enabled() -> bool:
     return config.cloud_sql_loading_enabled()
 
@@ -379,6 +513,11 @@ def load_clean_rows(
     if replace_source and not source_blob:
         raise ValueError("replace_source requires a unique source_blob")
 
+    # A file that splits a store between retailers is refused before the
+    # database is touched; one clashing with stored sales is refused below.
+    if mapping_checks.store_channel_conflicts(dataframe):
+        raise StoreChannelError(_store_channel_message(dataframe, []))
+
     database = engine or sql.connect_with_connector()
     timestamp = loaded_at or datetime.datetime.now(datetime.timezone.utc)
     records, rows_consolidated = _prepare_records(dataframe)
@@ -469,6 +608,15 @@ def load_clean_rows(
                 )
 
             _delete_replaced_rows(connection, replaced_rows)
+
+            # After the reload's own earlier rows are gone, so a file reloaded
+            # with a corrected retailer rule moves its stores, while another
+            # file's sales under the other channel still refuse the load (and
+            # roll back everything above).
+            stored = _stored_under_other_retailer(connection, dataframe)
+            if stored:
+                raise StoreChannelError(_store_channel_message(dataframe, stored))
+
             _upsert_sellout(connection, facts)
 
             if ingestion_id is not None:

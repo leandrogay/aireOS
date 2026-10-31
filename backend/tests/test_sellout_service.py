@@ -47,14 +47,17 @@ def _dataframe():
     )
 
 
-def _fake_database(unowned=()):
+def _fake_database(unowned=(), stored_elsewhere=()):
+    """`stored_elsewhere`: what the one-retailer-per-store query finds already stored."""
     engine = MagicMock()
     connection = engine.begin.return_value.__enter__.return_value
 
     def execute(statement, parameters=None):
         result = MagicMock()
         sql = str(statement)
-        if "customer_retailers" in sql:
+        if "sibling" in sql:
+            result.mappings.return_value.all.return_value = list(stored_elsewhere)
+        elif "customer_retailers" in sql:
             owned = [
                 name for name in parameters["retailer_names"] if name not in unowned
             ]
@@ -419,3 +422,102 @@ def test_large_loads_use_batched_multi_row_upserts():
     assert ":retailer_id_499" in first_sql
     assert first_parameters["store_code_499"] == "499"
     assert second_parameters["store_code_0"] == "500"
+
+
+# ---- One retailer per store ----------------------------------------------------
+
+def _split_store_dataframe():
+    rows = _dataframe()
+    rows.loc[1, "retailer"] = "fairprice_online"
+    return rows
+
+
+AJ_OFFLINE = {
+    "store_code": "420",
+    "incoming_retailer": "fairprice_offline",
+    "stored_retailer": "fairprice_online",
+    "source_files": ["weekly.xlsx"],
+}
+
+
+def test_a_file_splitting_a_store_between_retailers_is_refused_before_the_database():
+    engine, connection = _fake_database()
+
+    with pytest.raises(sellout_service.StoreChannelError, match="420 goes to fairprice_offline and fairprice_online"):
+        sellout_service.load_clean_rows(_split_store_dataframe(), engine=engine)
+
+    engine.begin.assert_not_called()
+
+
+def test_a_store_with_sales_under_the_other_channel_refuses_the_load_without_storing_sales():
+    engine, connection = _fake_database(stored_elsewhere=[AJ_OFFLINE])
+
+    with pytest.raises(sellout_service.StoreChannelError) as error:
+        sellout_service.load_clean_rows(_dataframe(), engine=engine)
+
+    assert "420 already has sales under fairprice_online (from weekly.xlsx)" in str(error.value)
+    assert "sends it to fairprice_offline" in str(error.value)
+    sql_calls = [str(call.args[0]) for call in connection.execute.call_args_list]
+    assert not any("INSERT INTO sellout" in sql for sql in sql_calls)
+
+
+def test_a_reload_checks_other_retailers_only_after_deleting_its_own_earlier_rows(monkeypatch):
+    engine, connection = _fake_database()
+    stale = {"retailer_id": 9, "store_code": "420", "sku": "13255043",
+             "period_start": datetime.date(2026, 1, 1), "period_type": "month"}
+    monkeypatch.setattr(sellout_service.ingestion_service, "start_run", MagicMock(return_value=42))
+    monkeypatch.setattr(sellout_service.ingestion_service, "record_versions", MagicMock(return_value=[stale]))
+    monkeypatch.setattr(sellout_service.ingestion_service, "complete_run", MagicMock())
+
+    sellout_service.load_clean_rows(
+        _dataframe(), replace_source=True, source_blob="uploads/2026-10-29_monthly.txt", engine=engine
+    )
+
+    sql_calls = [str(call.args[0]) for call in connection.execute.call_args_list]
+    delete_index = next(i for i, sql in enumerate(sql_calls) if "DELETE FROM sellout" in sql)
+    check_index = next(i for i, sql in enumerate(sql_calls) if "sibling" in sql)
+    insert_index = next(i for i, sql in enumerate(sql_calls) if "INSERT INTO sellout" in sql)
+    assert delete_index < check_index < insert_index
+
+
+def test_the_check_query_binds_each_store_and_its_retailer():
+    engine, connection = _fake_database()
+
+    sellout_service.load_clean_rows(_dataframe(), engine=engine)
+
+    check_call = next(call for call in connection.execute.call_args_list if "sibling" in str(call.args[0]))
+    assert check_call.args[1] == {
+        "retailer_names": ["fairprice_offline"],
+        "store_codes": ["420"],
+        "excluded": [],
+    }
+
+
+def test_customer_level_totals_under_both_channels_are_not_a_conflict():
+    rows = _dataframe()
+    rows["store_code"] = None
+    rows.loc[1, "retailer"] = "fairprice_online"
+    read_engine = MagicMock()
+
+    assert sellout_service.store_channel_problem(rows, engine=read_engine) == ""
+    read_engine.connect.assert_not_called()
+
+
+def test_the_dry_run_leaves_out_a_reloaded_files_own_rows_by_name():
+    read_engine = MagicMock()
+    connection = read_engine.connect.return_value.__enter__.return_value
+    connection.execute.return_value.mappings.return_value.all.return_value = []
+
+    problem = sellout_service.store_channel_problem(_dataframe(), replace_source=True, engine=read_engine)
+
+    assert problem == ""
+    assert connection.execute.call_args.args[1]["excluded"] == ["monthly.txt"]
+
+
+def test_the_dry_run_of_a_split_store_needs_no_database():
+    read_engine = MagicMock()
+
+    problem = sellout_service.store_channel_problem(_split_store_dataframe(), engine=read_engine)
+
+    assert "420 goes to fairprice_offline and fairprice_online" in problem
+    read_engine.connect.assert_not_called()

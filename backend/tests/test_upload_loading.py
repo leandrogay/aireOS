@@ -11,6 +11,7 @@ codes of the two endpoints.
 import datetime
 
 import pandas as pd
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -289,6 +290,15 @@ def test_the_dry_run_returns_sample_rows_and_writes_nothing(monkeypatch):
     assert preview["period_types"] == ["month"]
     assert preview["preview"][0]["sku"] == "13255043"
     assert "revenue" in preview["columns"]
+
+
+def test_the_dry_run_refuses_a_file_that_splits_a_store_between_retailers(monkeypatch):
+    monkeypatch.setenv("CLOUD_SQL_LOAD_ENABLED", "false")
+    split = pd.concat([_rows_to_load(), _rows_to_load().assign(retailer="xel_online", sku="13255044")])
+    monkeypatch.setattr(sellout_ingestion, "transform_confirmed_upload", lambda *args: split)
+
+    with pytest.raises(sellout_service.StoreChannelError, match="420 goes to xel_offline and xel_online"):
+        sellout_ingestion.preview_confirmed_upload("aug.txt", b"bytes", CONTRACT)
 
 
 def test_overlap_counts_rows_other_files_loaded_under_the_same_key():

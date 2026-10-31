@@ -342,3 +342,38 @@ def test_a_product_code_in_the_headings_that_is_not_a_master_sku_fails_the_check
 
     assert checks["sku_codes"]["passed"] is False
     assert [item["code"] for item in checks["sku_codes"]["evidence"]["unknown"]] == ["C3"]
+
+
+# ---- One retailer per store (on transformed rows) ---------------------------------------
+
+def _rows(*pairs):
+    import pandas as pd
+
+    return pd.DataFrame([{"store_code": code, "retailer": retailer} for code, retailer in pairs])
+
+
+def test_a_store_sent_to_two_retailers_is_a_conflict():
+    rows = _rows(("AJ", "sheng_siong_offline"), ("AJ", "sheng_siong_online"), ("BK", "sheng_siong_offline"))
+
+    assert mk.store_channel_conflicts(rows) == {"AJ": ["sheng_siong_offline", "sheng_siong_online"]}
+
+
+def test_rows_with_no_store_code_are_customer_totals_not_a_conflict():
+    rows = _rows((None, "fairprice_offline"), (None, "fairprice_online"), ("  ", "fairprice_online"))
+
+    assert mk.store_channel_conflicts(rows) == {}
+
+
+def test_the_store_channel_check_blocks_approval_and_names_the_store():
+    check = mk.check_store_channels(_rows(("AJ", "sheng_siong_offline"), ("AJ", "sheng_siong_online")))
+
+    assert check["id"] == "store_channels"
+    assert mk.failures([check]) == [check]
+    assert "AJ goes to sheng_siong_offline and sheng_siong_online" in check["message"]
+    assert check["evidence"] == {"stores": ["AJ → sheng_siong_offline, sheng_siong_online"]}
+
+
+def test_the_store_channel_check_passes_when_each_store_keeps_to_one_retailer():
+    check = mk.check_store_channels(_rows(("AJ", "sheng_siong_offline"), ("WEB", "sheng_siong_online")))
+
+    assert check["passed"] is True

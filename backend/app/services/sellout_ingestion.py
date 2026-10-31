@@ -47,6 +47,15 @@ def preview_confirmed_upload(
     normalized = transform_confirmed_upload(filename, data, contract)
     validated = validation_service.validate_mapped_dataframe(normalized)
     valid_rows = validated["valid_df"]
+
+    problem = sellout_service.store_channel_problem(
+        valid_rows,
+        replace_source=replace_source,
+        check_stored=sellout_service.cloud_sql_loading_enabled(),
+    )
+    if problem:
+        raise sellout_service.StoreChannelError(problem)
+
     summary = sellout_service.summarize_clean_rows(valid_rows)
 
     # Without the database there is nothing stored to overlap with, and the

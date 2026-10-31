@@ -306,6 +306,38 @@ def test_confirming_is_blocked_while_a_product_code_is_not_a_master_sku(monkeypa
     assert "envelope" not in stored
 
 
+def test_confirming_is_blocked_while_the_retailer_rule_splits_a_store(monkeypatch):
+    from app.services import generate_mapping
+
+    stored = _stub_storage(monkeypatch)
+    both_channels = {
+        **CUSTOMER,
+        "retailers": [
+            {"retailer_id": 8, "retailer_name": "xel_offline"},
+            {"retailer_id": 9, "retailer_name": "xel_online"},
+        ],
+    }
+    monkeypatch.setattr(customer_service, "get_customer", lambda customer_id: both_channels)
+    # Store 1 sells two products, and the retailer column puts one of them online.
+    csv = (
+        b"SKU No.,Store Name,Vendor,Store Code,Sales | Month 1 | 01-08-2026,Qty | Month 1 | 01-08-2026\n"
+        b"13255043,A,xel_offline,1,10,1\n"
+        b"13255044,A,xel_online,1,20,2\n"
+    )
+    envelope = {**ROLL_UP_ENVELOPE, "example_file": "uploads/x.csv", "source_filename": "x.csv"}
+    _serve_pending(monkeypatch, envelope)
+    monkeypatch.setattr(storage, "download_bytes", lambda path: csv)
+    monkeypatch.setattr(
+        generate_mapping.catalog_service, "get_skus", lambda: [{"sku": "13255043"}, {"sku": "13255044"}]
+    )
+
+    response = client.post("/api/mappings/fp/confirm", json={"rules": _complete_rules([_rule("sku", "SKU No.", "high", False)])})
+
+    assert response.status_code == 422
+    assert "1 goes to xel_offline and xel_online" in response.json()["detail"]["message"]
+    assert "envelope" not in stored
+
+
 # ---- The customer a mapping belongs to -------------------------------------------------
 
 def _serve_pending(monkeypatch, envelope):
