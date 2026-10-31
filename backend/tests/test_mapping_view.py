@@ -2,14 +2,24 @@ from app.services import mapping_contract, mapping_view as mv
 from app.services.reference_contracts import SINGHEALTH_ER130
 
 
+SALES_COLUMNS = ["SALES | Week 1 | 01-01-2026", "SALES | Week 2 | 08-01-2026"]
+PERIOD_PATTERN = r"(\d{2}-\d{2}-\d{4})"
+
 CONTRACT = {
-    "identity_mapping": {"SKU No.": "sku", "Brand": "brand"},
+    "fields": {
+        "sku": {"status": "mapped", "source": "SKU No."},
+        "brand": {"status": "mapped", "source": "Brand"},
+        "period_start": {"status": "mapped", "melt_group": "revenue"},
+        "period_type": {"status": "derived"},
+        "revenue": {"status": "mapped", "melt_group": "revenue"},
+    },
     "melt_groups": [
         {
-            "target_field": "revenue",
-            "columns": ["SALES | Week 1 | 01-01-2026", "SALES | Week 2 | 08-01-2026"],
-            "period_extract_regex": r"(\d{2}-\d{2}-\d{4})",
-            "date_format": "%d-%m-%Y",
+            "id": "revenue",
+            "select": {"kind": "columns", "columns": SALES_COLUMNS},
+            "key": {"target": "period_start", "pattern": PERIOD_PATTERN, "date_format": "%d-%m-%Y"},
+            "value_target": "revenue",
+            "period_type": "week",
         }
     ],
     "warnings": ["1 column(s) left unmapped: ['Vendor Code']"],
@@ -42,7 +52,7 @@ def test_melt_group_becomes_one_locked_rule():
 
     # Two period columns collapse into one rule, and it cannot be repointed at
     # a single column from a dropdown.
-    assert revenue["sourceColumns"] == CONTRACT["melt_groups"][0]["columns"]
+    assert revenue["sourceColumns"] == SALES_COLUMNS
     assert revenue["editable"] is False
     assert "melt 2 period columns" in revenue["transform"]
 
@@ -89,15 +99,13 @@ def test_the_packet_carries_the_code_table_and_the_instructions():
     envelope = {
         **ENVELOPE,
         "sku_codes": [{"code": "0059-01-025-R", "sku": "13255045", "description": "PANTS L", "rows": 3}],
-        "contract": {"version": 2, "fields": {}, "melt_groups": [], "aggregate": {"period": "month"}},
+        "contract": {"fields": {}, "melt_groups": [], "aggregate": {"period": "month"}},
     }
 
     packet = mv.envelope_to_packet("abc123", envelope, "pending")
 
     assert packet["skuCodes"] == envelope["sku_codes"]
     assert packet["instructions"]["aggregate"]["period"] == "month"
-    assert packet["contractFormat"] == 2
-    assert mv.envelope_to_packet("abc123", ENVELOPE, "pending")["contractFormat"] == 1
 
 
 def test_editing_one_rule_leaves_melt_groups_untouched():
@@ -112,8 +120,8 @@ def test_editing_one_rule_leaves_melt_groups_untouched():
 
     assert contract["fields"]["sku"]["source"] == "Vendor Code"
     group = contract["melt_groups"][0]
-    assert group["select"] == {"kind": "columns", "columns": CONTRACT["melt_groups"][0]["columns"]}
-    assert group["key"]["pattern"] == CONTRACT["melt_groups"][0]["period_extract_regex"]
+    assert group["select"] == {"kind": "columns", "columns": SALES_COLUMNS}
+    assert group["key"]["pattern"] == PERIOD_PATTERN
 
 
 SINGHEALTH_COLUMNS = ["Product Code", "Product Name", "Vendor code", "Vendor Name", "Normal cost", "Promo cost", "BEDOK", "ONLINE"]
@@ -188,7 +196,7 @@ SALES_GROUP = {
 
 
 def test_column_groups_say_which_measure_each_fills_and_how_its_headings_read():
-    contract = {"version": 2, "fields": {}, "melt_groups": [SALES_GROUP]}
+    contract = {"fields": {}, "melt_groups": [SALES_GROUP]}
 
     groups = mv.column_groups(V2_COLUMNS, contract, {"Qty | Month 1 | 01-01-2026": ["4"]})
 
@@ -205,7 +213,7 @@ def test_column_groups_say_which_measure_each_fills_and_how_its_headings_read():
 def test_weekly_spaced_headings_read_as_weeks():
     columns = ["Sales 05-01-2026", "Sales 12-01-2026", "Sales 19-01-2026"]
 
-    (group,) = mv.column_groups(columns, {"version": 2, "fields": {}, "melt_groups": []}, {})
+    (group,) = mv.column_groups(columns, {"fields": {}, "melt_groups": []}, {})
 
     assert group["group"]["period_type"] == "week"
 
@@ -213,7 +221,7 @@ def test_weekly_spaced_headings_read_as_weeks():
 def test_a_group_built_from_a_detected_one_validates_as_a_melt_group():
     # The rules the review screen sends when a reviewer picks a detected group
     # for Units sold: the group's settings, an id, the field it fills.
-    contract = {"version": 2, "fields": {}, "melt_groups": [SALES_GROUP]}
+    contract = {"fields": {}, "melt_groups": [SALES_GROUP]}
     qty = mv.column_groups(V2_COLUMNS, contract, {})[1]
     group = {**qty["group"], "id": "quantity_units", "value_target": "quantity_units"}
     rules = [
@@ -248,11 +256,10 @@ def test_a_month_named_group_offered_to_the_reviewer_runs_as_months():
     from app.services import apply_contract
 
     columns = ["Article", "Net Sales Jan 2026", "Net Sales Feb 2026"]
-    (entry,) = mv.column_groups(columns, {"version": 2, "fields": {}, "melt_groups": []}, {})
+    (entry,) = mv.column_groups(columns, {"fields": {}, "melt_groups": []}, {})
     group = {**entry["group"], "id": "revenue", "value_target": "revenue", "confidence": "high"}
     contract = mv.validate_contract(
         {
-            "version": 2,
             "melt_groups": [group],
             "fields": {
                 "revenue": {"status": "mapped", "melt_group": "revenue"},

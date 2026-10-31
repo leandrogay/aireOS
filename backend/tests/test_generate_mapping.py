@@ -340,7 +340,7 @@ def _bucket(monkeypatch, blobs):
 
 def test_next_months_file_resolves_to_the_confirmed_contract(monkeypatch):
     january = gm.read_header_columns("fp.txt", fairprice_txt())
-    _bucket(monkeypatch, {gm.storage.confirmed_mapping_path(gm.fingerprint(january)): {"contract": {"version": 2}, "name": "FP"}})
+    _bucket(monkeypatch, {gm.storage.confirmed_mapping_path(gm.fingerprint(january)): {"contract": {"fields": {}}, "name": "FP"}})
     _forbid_model_calls(monkeypatch)
 
     result = gm.resolve_mapping("fp.txt", fairprice_txt(["01-03-2026", "01-04-2026"]))
@@ -349,29 +349,11 @@ def test_next_months_file_resolves_to_the_confirmed_contract(monkeypatch):
     assert result["name"] == "FP"
 
 
-def test_a_contract_stored_under_the_old_fingerprint_is_still_found(monkeypatch):
+def test_reordered_headers_are_a_different_layout(monkeypatch):
     columns = gm.read_header_columns("fp.txt", fairprice_txt())
-    legacy = gm.legacy_fingerprint(columns)
     _bucket(monkeypatch, {
-        gm.storage.confirmed_mapping_path(legacy): {
-            "contract": {},
-            "name": "Old",
-            "raw_columns": columns,
-        }
-    })
-    _forbid_model_calls(monkeypatch)
-
-    result = gm.resolve_mapping("fp.txt", fairprice_txt())
-
-    assert (result["status"], result["fingerprint"]) == ("mapped", legacy)
-
-
-def test_reordered_headers_do_not_reuse_an_order_free_legacy_contract(monkeypatch):
-    columns = gm.read_header_columns("fp.txt", fairprice_txt())
-    old_key = gm.unordered_fingerprint(columns)
-    _bucket(monkeypatch, {
-        gm.storage.confirmed_mapping_path(old_key): {
-            "contract": {"version": 2},
+        gm.storage.confirmed_mapping_path(gm.fingerprint(columns)): {
+            "contract": {"fields": {}},
             "raw_columns": columns,
         }
     })

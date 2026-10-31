@@ -309,7 +309,6 @@ def _products_per_column():
 
     frame = pd.DataFrame([{"Month": "2026-08-14", "Store": "S1", "A1": "3", "B2": "5", "C3": "1"}])
     contract = mapping_contract.validate_contract({
-        "version": 2,
         "fields": {
             "period_start": {"status": "mapped", "source": "Month", "transforms": [{"type": "month_start"}]},
             "period_type": {"status": "constant", "value": "month"},

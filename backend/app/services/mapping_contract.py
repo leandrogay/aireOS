@@ -1,18 +1,17 @@
 """
-The mapping contract: what it may say, how an older one is read, and the
-validation that makes it safe to store.
+The mapping contract: what it may say, and the validation that makes it safe
+to store.
 
 A contract is a set of instructions and nothing else. Mapping generation writes
 it and a person reviews it; the transformation (a separate step) reads it and
 does exactly what it says -- no business rule lives outside the contract.
 
-A contract (version 2) has one entry per target field, saying how that field is
+A contract has one entry per target field, saying how that field is
 filled -- so a field is never left out by accident, and "not in this file" is a
 decision written down rather than an absence -- plus where the data sits in the
 file and whether rows are rolled up:
 
     {
-      "version": 2,
       "layout": {"sheet": "Sheet1", "sheet_position": 2, "header_row": 1,
                  "fill_down": [], "footer_label_pattern": "^(grand\\s+)?total\\b",
                  "subtotal_label_pattern": "^(grand\\s+|sub\\s*)?total$"},
@@ -60,11 +59,6 @@ The sku field's value_map is the product-code table: each retailer code in the
 file and the master SKU it is. A field with no value_map uses the file's codes
 as they are (FairPrice article numbers are the master codes).
 
-The first contracts (version 1: identity_mapping + melt_groups with exact column
-lists) are still stored in GCS. They are read through upgrade(), unchanged on
-disk, and downgrade() writes an amended one back in that shape when it fits, so
-existing mappings retain their stored format.
-
 Pure: no GCS, no database, no model.
 """
 
@@ -74,8 +68,6 @@ import re
 import pandas as pd
 
 from app.schemas.sellout import BUSINESS_COLUMNS
-
-CONTRACT_VERSION = 2
 
 FIELD_STATUSES = ("mapped", "derived", "constant", "system", "not_available")
 CONFIDENCE_LEVELS = ("high", "medium", "low")
@@ -136,137 +128,16 @@ RULE_OPS = ("equals", "startswith", "endswith", "contains", "regex")
 
 # ---- Reading a contract ----------------------------------------------------------
 
-def normalize_targets(value) -> list[str]:
+def read_contract(contract: dict | None) -> dict:
     """
-    Read one version 1 identity_mapping entry as the list of fields it fills.
-
-    Version 1 let one column feed several fields (an article description as
-    both product name and size). Version 2 gives each field its own entry, and
-    this is how the old shape is unpacked into it.
-    """
-    if value is None:
-        return []
-    if isinstance(value, str):
-        return [value]
-    if isinstance(value, (list, tuple)):
-        return [str(item) for item in value if item]
-    return []
-
-
-def _annotation(source: dict | None) -> dict:
-    raw = source or {}
-    out = {}
-    for key in ("confidence", "rationale", "reviewed"):
-        if key in raw:
-            out[key] = raw[key]
-    return out
-
-
-def _v1_period_type(group: dict) -> str | None:
-    declared = str(group.get("period_type") or "").lower()
-    if declared in PERIOD_TYPES:
-        return declared
-    headers = [str(column).lower() for column in group.get("columns") or []]
-    if headers and all("week" in header for header in headers):
-        return "week"
-    if headers and all("month" in header for header in headers):
-        return "month"
-    return None
-
-
-def upgrade(contract: dict | None) -> dict:
-    """
-    Any stored contract in version 2 shape. A version 2 contract is returned as
-    a copy; a version 1 one is translated field by field:
-
-      identity_mapping {column: field or [fields]}  -> one "mapped" entry per field
-      transformations {field: transform}            -> that entry's transforms list
-      melt_groups with exact column lists           -> "columns" selectors, the
-                                                       period read from each header
-      annotations                                   -> each entry's confidence
-
-    A field two columns both claimed keeps the first and records a warning,
-    which is what version 1 validation did.
+    A copy of a contract with its fields and melt groups present, so a reader
+    can look them up without checking for None. The caller's dict is never
+    changed.
     """
     contract = copy.deepcopy(contract or {})
-    if contract.get("version") == CONTRACT_VERSION or "fields" in contract:
-        contract.setdefault("version", CONTRACT_VERSION)
-        contract.setdefault("fields", {})
-        contract.setdefault("melt_groups", [])
-        return contract
-
-    annotations = contract.get("annotations") or {}
-    transformations = contract.get("transformations") or {}
-    warnings: list[str] = []
-    fields: dict[str, dict] = {}
-
-    for source, value in (contract.get("identity_mapping") or {}).items():
-        for target in normalize_targets(value):
-            if target in fields:
-                warnings.append(
-                    f"Dropped identity mapping — {target!r} is already filled by "
-                    f"{fields[target]['source']!r}, so {source!r} cannot also fill it"
-                )
-                continue
-            entry = {
-                "status": "mapped",
-                "source": source,
-                **_annotation(annotations.get(target) or annotations.get(source)),
-            }
-            if isinstance(transformations.get(target), dict):
-                entry["transforms"] = [transformations[target]]
-            fields[target] = entry
-
-    groups = []
-    for index, group in enumerate(contract.get("melt_groups") or []):
-        target = group.get("target_field")
-        group_id = str(target or f"group_{index + 1}")
-        if target in fields:
-            filled_by = fields[target].get("source") or f"melt group {fields[target].get('melt_group')}"
-            warnings.append(f"Dropped melt group — {target!r} is already filled by {filled_by!r}")
-            continue
-        upgraded = {
-            "id": group_id,
-            "select": {"kind": "columns", "columns": list(group.get("columns") or [])},
-            "key": {
-                "target": "period_start",
-                "pattern": group.get("period_extract_regex"),
-                "date_format": group.get("date_format"),
-            },
-            "value_target": target,
-            **_annotation(group),
-        }
-        period_type = _v1_period_type(group)
-        if period_type:
-            upgraded["period_type"] = period_type
-        groups.append(upgraded)
-        if target:
-            fields[target] = {"status": "mapped", "melt_group": group_id, **_annotation(group)}
-        if "period_start" not in fields:
-            fields["period_start"] = {
-                "status": "mapped",
-                "melt_group": group_id,
-                "confidence": "high",
-                "rationale": "Read from the period column headers.",
-            }
-            fields["period_type"] = {
-                "status": "derived",
-                "confidence": "high",
-                "rationale": "Read from the period column headers.",
-            }
-
-    upgraded = {
-        "version": CONTRACT_VERSION,
-        "fields": fields,
-        "melt_groups": groups,
-        "warnings": warnings,
-    }
-    # Contract-wide instructions are carried over as they are, should a
-    # version 1 shape ever carry them.
-    for key in ("layout", "aggregate", "data_source"):
-        if key in contract:
-            upgraded[key] = contract[key]
-    return upgraded
+    contract.setdefault("fields", {})
+    contract.setdefault("melt_groups", [])
+    return contract
 
 
 # ---- Selecting melt columns --------------------------------------------------------
@@ -282,7 +153,7 @@ def resolve_selector(select: dict, columns: list[str]) -> list[str]:
       pattern   every header the regex matches -- next month's dates match too
       between   every column strictly between two marker headers -- an outlet
                 added next month lands between them too
-      columns   exactly these names (version 1 contracts)
+      columns   exactly these names (a detected group the review screen offers)
 
     Raises ValueError when the selector cannot be applied to these headers.
     """
@@ -678,8 +549,8 @@ def validate_contract(
     samples: dict[str, list[str]] | None = None,
 ) -> dict:
     """
-    Defensive checks before trusting a contract. Returns a version 2 contract
-    with an entry for every target field, and a `warnings` list naming
+    Defensive checks before trusting a contract. Returns the contract with an
+    entry for every target field, and a `warnings` list naming
     everything that was dropped or overridden and why.
 
     Nothing unsafe is applied silently: a mapping whose source column is not in
@@ -691,7 +562,7 @@ def validate_contract(
     a reviewer; a freshly generated contract has every "reviewed" flag cleared.
     """
     target_schema = list(target_schema or BUSINESS_COLUMNS)
-    proposed = upgrade(contract)
+    proposed = read_contract(contract)
     warnings: list[str] = list(proposed.get("warnings") or [])
     samples = samples or {}
     raw_set = set(raw_columns)
@@ -727,7 +598,7 @@ def validate_contract(
     proposed_fields = proposed.get("fields") or {}
     for target in proposed_fields:
         if target not in target_schema:
-            warnings.append(f"Dropped identity mapping — target not in schema: {target!r}")
+            warnings.append(f"Dropped field mapping — target not in schema: {target!r}")
 
     fields: dict[str, dict] = {}
     for target in target_schema:
@@ -774,7 +645,6 @@ def validate_contract(
 
     data_source = proposed.get("data_source")
     return {
-        "version": CONTRACT_VERSION,
         "layout": _validate_layout(proposed.get("layout"), raw_set, warnings),
         "fields": fields,
         "melt_groups": list(groups.values()),
@@ -807,7 +677,7 @@ def layout_instructions(layout: dict) -> dict:
 
 
 def _validate_layout(raw, raw_set: set[str], warnings: list[str]) -> dict | None:
-    """The layout section, cleaned; None when the contract has none (version 1)."""
+    """The layout section, cleaned; None when the contract has none."""
     if raw is None:
         return None
     if not isinstance(raw, dict):
@@ -931,10 +801,10 @@ def _validate_field(target, raw, raw_columns, raw_set, groups, group_cols, sampl
             return entry
 
         if source not in raw_set:
-            warnings.append(f"Dropped identity mapping — source column not found: {source!r}")
+            warnings.append(f"Dropped field mapping — source column not found: {source!r}")
             return _not_available("Its source column is not in the file.", raw, trust_review)
         if any(source in columns for columns in group_cols.values()):
-            warnings.append(f"Dropped identity mapping — {source!r} is melted by a melt group")
+            warnings.append(f"Dropped field mapping — {source!r} is melted by a melt group")
             return _not_available("Its source column is melted.", raw, trust_review)
         transforms = validate_transforms(
             target, transforms_raw, raw_columns, samples.get(source, []), source, warnings
@@ -954,7 +824,7 @@ def _validate_field(target, raw, raw_columns, raw_set, groups, group_cols, sampl
 
 def required_missing_fields(contract: dict) -> list[str]:
     """Required fields a contract cannot produce."""
-    fields = upgrade(contract).get("fields") or {}
+    fields = read_contract(contract).get("fields") or {}
     return [
         field
         for field in REQUIRED_FIELDS
@@ -968,7 +838,7 @@ def unreviewed_low_confidence(contract: dict) -> list[str]:
     confirmed. The review screen will not approve while any exist, but that is
     the browser's word; this lets the confirm endpoint hold the same line.
     """
-    current = upgrade(contract)
+    current = read_contract(contract)
     fields = [
         target
         for target, entry in (current.get("fields") or {}).items()
@@ -1025,7 +895,7 @@ def retailer_outputs(
     get_or_create_retailers) with no customer, which the dashboard then never
     finds, so approval checks these against the mapping's customer first.
     """
-    contract = upgrade(contract)
+    contract = read_contract(contract)
     entry = (contract.get("fields") or {}).get("retailer") or {}
     status = entry.get("status")
     if status == "constant":
@@ -1062,7 +932,7 @@ def contract_diff(before: dict | None, after: dict) -> list[dict]:
     one entry per field or melt group that differs. Kept on the confirmed
     mapping so prompts can be improved from what people actually corrected.
     """
-    old, new = upgrade(before), upgrade(after)
+    old, new = read_contract(before), read_contract(after)
     changes = []
     old_fields, new_fields = old.get("fields") or {}, new.get("fields") or {}
     for target in dict.fromkeys([*old_fields, *new_fields]):
@@ -1084,82 +954,3 @@ def contract_diff(before: dict | None, after: dict) -> list[dict]:
         if a != b:
             changes.append({"melt_group": group_id, "before": a, "after": b})
     return changes
-
-
-# ---- Version 1 ----------------------------------------------------------------------
-
-V1_TRANSFORMS = ("regex_extract", "value_map")
-
-
-def is_v2(contract: dict | None) -> bool:
-    """Whether a stored contract is in the version 2 shape."""
-    return bool(contract) and (contract.get("version") == CONTRACT_VERSION or "fields" in contract)
-
-
-def downgrade(contract: dict) -> dict | None:
-    """
-    A version 2 contract in the version 1 shape, or None when it says something
-    version 1 cannot.
-
-    A mapping confirmed in version 1 is written back in that shape when a
-    reviewer amends it, preserving compatibility with existing stored
-    mappings. It fits only when the data starts on row 1 of
-    the first sheet, nothing is filled down or rolled up, melt groups list
-    exact period columns, and every field is read from a column with at most
-    one regex_extract or value_map (or is not available, or is the period type
-    read from the headers).
-    """
-    current = upgrade(contract)
-    layout = current.get("layout") or {}
-    if layout.get("header_row", 1) != 1 or layout.get("fill_down") or (layout.get("sheet_position") or 1) != 1:
-        return None
-    if current.get("aggregate"):
-        return None
-
-    groups = {group["id"]: group for group in current.get("melt_groups") or []}
-    melt_groups = []
-    for group in groups.values():
-        select, key = group.get("select") or {}, group.get("key") or {}
-        if select.get("kind") != "columns" or key.get("target") != "period_start" or not key.get("pattern"):
-            return None
-        if group.get("labels"):
-            return None
-        melt_groups.append({
-            "target_field": group["value_target"],
-            "columns": list(select.get("columns") or []),
-            "period_extract_regex": key["pattern"],
-            "date_format": key.get("date_format"),
-            **_annotation(group),
-        })
-
-    identity: dict[str, list[str]] = {}
-    annotations: dict[str, dict] = {}
-    transformations: dict[str, dict] = {}
-    for target, entry in (current.get("fields") or {}).items():
-        status = entry.get("status")
-        if entry.get("from_layout"):
-            return None
-        if status in ("not_available", "system") or (status == "derived" and not entry.get("from_field")):
-            continue
-        if status == "mapped" and entry.get("melt_group"):
-            if entry["melt_group"] not in groups or entry.get("transforms"):
-                return None
-            continue
-        if status != "mapped" or not entry.get("source"):
-            return None
-        transforms = entry.get("transforms") or []
-        if len(transforms) > 1 or any(t.get("type") not in V1_TRANSFORMS for t in transforms):
-            return None
-        identity.setdefault(entry["source"], []).append(target)
-        annotations[target] = _annotation(entry)
-        if transforms:
-            transformations[target] = transforms[0]
-
-    return {
-        "identity_mapping": {
-            source: targets[0] if len(targets) == 1 else targets for source, targets in identity.items()
-        },
-        "melt_groups": melt_groups,
-        "annotations": annotations,
-        "transformations": transformations,
-    }

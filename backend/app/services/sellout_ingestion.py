@@ -5,7 +5,6 @@ import pandas as pd
 from app.services import (
     apply_contract,
     layout_detection,
-    mapping_contract,
     sellout_service,
     validation_service,
 )
@@ -20,15 +19,11 @@ def transform_confirmed_upload(
     data: bytes,
     contract: dict,
 ) -> pd.DataFrame:
-    """Read and transform one upload through either contract format."""
-    layout = None
-    if mapping_contract.is_v2(contract):
-        try:
-            dataframe, layout = layout_detection.read_table(filename, data)
-        except layout_detection.LayoutError as exc:
-            raise apply_contract.ContractApplicationError(str(exc)) from exc
-    else:
-        dataframe = apply_contract.read_source_dataframe(filename, data)
+    """Read one upload's data table and transform it through its contract."""
+    try:
+        dataframe, layout = layout_detection.read_table(filename, data)
+    except layout_detection.LayoutError as exc:
+        raise apply_contract.ContractApplicationError(str(exc)) from exc
     return apply_contract.apply_contract(
         dataframe,
         contract,

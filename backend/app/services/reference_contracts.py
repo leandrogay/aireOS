@@ -100,7 +100,6 @@ _PACKS = _field(status="constant", value="EA")
 
 
 FAIRPRICE_MONTHLY = {
-    "version": 2,
     "fields": {
         "period_start": _field(status="mapped", melt_group="sales"),
         "period_type": _field(status="derived"),
@@ -178,7 +177,6 @@ FAIRPRICE_WEEKLY = _weekly(FAIRPRICE_MONTHLY)
 
 
 NHG_SAP = {
-    "version": 2,
     "fields": {
         "period_start": _field(status="mapped", source="Posting Date", transforms=[{"type": "month_start"}]),
         "period_type": _field(status="constant", value="month"),
@@ -212,7 +210,6 @@ NHG_SAP = {
 
 
 SHENG_SIONG_CLAIM = {
-    "version": 2,
     "fields": {
         # BusinessDate is merged across each date's rows (the layout fills it
         # down); forward_fill covers a file exported without the merge.
@@ -271,7 +268,6 @@ SHENG_SIONG_CLAIM = {
 
 
 SINGHEALTH_ER130 = {
-    "version": 2,
     "fields": {
         # No date column: "DATE : 01 Aug 2026 TO 31 Aug 2026" above the table.
         "period_start": _field(status="derived", from_layout="stated_period"),
@@ -331,7 +327,6 @@ SINGHEALTH_ER130 = {
 
 
 PRIME_JKDC = {
-    "version": 2,
     "fields": {
         "period_start": _field(status="mapped", source="Delivery Date", transforms=[{"type": "month_start"}]),
         "period_type": _field(status="constant", value="month"),

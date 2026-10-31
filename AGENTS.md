@@ -77,21 +77,21 @@ aireOS/
 │   │       │                      stated period, cells above the header by column, footer/total rows (and summary
 │   │       │                      lines under a total), total + spacer columns, merged cells filled down)
 │   │       ├── column_profile.py  PURE: whole-file column profile, repeated period/outlet column groups, template fingerprint
-│   │       ├── mapping_contract.py PURE: contract v2 -- instructions only: one entry per target field (mapped/derived/
+│   │       ├── mapping_contract.py PURE: the contract -- instructions only: one entry per target field (mapped/derived/
 │   │       │                      constant/system/not_available), layout, aggregate (monthly roll-up), sku code table,
 │   │       │                      melt-group labels (cells above the header, e.g. store codes), period from the stated
-│   │       │                      period (from_layout), multiply (units x unit price); upgrade()/downgrade() for v1,
-│   │       │                      validate_contract, required fields, reviewer diff
-│   │       ├── generate_mapping.py Confirmed-contract lookup (template + legacy fingerprint), near-match, Gemini proposal with
+│   │       │                      period (from_layout), multiply (units x unit price); read_contract, validate_contract,
+│   │       │                      required fields, reviewer diff
+│   │       ├── generate_mapping.py Confirmed-contract lookup (ordered template fingerprint), near-match, Gemini proposal with
 │   │       │                      check-and-repair loop for unknown layouts
 │   │       ├── mapping_prompt.py  PURE: field definitions, glossary, per-file JSON output schema, prompt text
 │   │       ├── mapping_checks.py  PURE: static checks of a contract against its file (never runs it): every product code a
 │   │       │                      master SKU, required fields, rule coverage, revenue-name guard, stated period, labels;
 │   │       │                      confidence
-│   │       ├── reference_contracts.py Hand-written v2 contracts for FairPrice (monthly, weekly) / NHG / Sheng Siong / SingHealth /
+│   │       ├── reference_contracts.py Hand-written contracts for FairPrice (monthly, weekly) / NHG / Sheng Siong / SingHealth /
 │   │       │                      Prime (golden tests, eval; `prompt_example` ones are prompt examples)
 │   │       ├── mapping_view.py    Contracts <-> the review screen's "packet"/"rules" shape (one rule per target field)
-│   │       ├── apply_contract.py  Deterministic transformation executor for version 1 and version 2 mapping contracts
+│   │       ├── apply_contract.py  Deterministic transformation executor for mapping contracts
 │   │       ├── validation_service.py Row-level validation against TARGET_SCHEMA after mapping
 │   │       ├── pl_forecast.py     Pure P&L sell-out forecast (base + building blocks), no I/O
 │   │       └── forecast_service.py BigQuery reads/MERGEs for the forecast table, refresh_forecast()
@@ -221,9 +221,10 @@ Invariants that cross domains:
   where the data sits is its `layout`, and a retailer's product codes become master SKUs through the `sku` field's
   `value_map` (the code table). A product code that is not a master SKU fails the contract's checks and blocks
   approval until the code table is fixed or the product is added to the SKU master.
-- The transformation (`sellout_ingestion` → `apply_contract`) runs both contract formats. Version 2 executes layout,
-  field, melt, transform and aggregate instructions; version 1 remains supported for existing mappings. An amended
-  version 1 mapping is written back in version 1 when it fits (`mapping_contract.downgrade`).
+- There is one contract format. The transformation (`sellout_ingestion` → `apply_contract`) executes its layout,
+  field, melt, transform and aggregate instructions. "Version" means only a mapping's approval count: each approval
+  stores the envelope with `version` + 1 and archives the one it replaces under `mappings/history/<fp>/v<n>.json`;
+  uploads record the `mapping_version` they were loaded with, which drives `reload_available`.
 - Time: the backend stores and returns instants in UTC (TIMESTAMPTZ, Postgres sessions pinned to UTC
   in `sql.py`, ISO strings with `Z`/`+00:00`) and takes "today" as the UTC day, never `date.today()`.
   The frontend shows every time in Singapore time through `lib/formatDate.js`, and uses
@@ -272,7 +273,7 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
    (duplicate-filename check unless `force`).
 2. Per file, concurrently (`asyncio.gather` → `to_thread(resolve_and_apply_mapping)`):
    `generate_mapping.resolve_mapping`: `layout_detection.read_table` → fingerprint the header templates →
-   `mappings/confirmed/<fp>.json` (or a compatible legacy fingerprint) → `status: "mapped"`; either contract format
+   `mappings/confirmed/<fp>.json` → `status: "mapped"`; the contract
    runs through `sellout_ingestion.process_confirmed_upload` -- unless `REQUIRE_LOAD_CONFIRMATION` is on, when the
    file is left `ready_to_load` for step 4 instead. Else Gemini proposes a contract (structured output,
    schema built from this file's headers, SKU master listed),
@@ -422,7 +423,7 @@ half first (it defines the contract), then the frontend half, then update §3.4 
   depends on them by name.
 
 ### `/backend/app/services/{layout_detection,column_profile,mapping_contract,mapping_checks,mapping_prompt,generate_mapping,mapping_view}` — Mapping generation
-- Think in DataFrames and contracts: a v2 contract has one entry per target field (`mapped` from a column or a melt
+- Think in DataFrames and contracts: a contract has one entry per target field (`mapped` from a column or a melt
   group, `derived`, `constant`, `system`, `not_available` with a reason), `melt_groups` that select columns by rule
   (`pattern` / `between`), never by exact name, a `layout` and an `aggregate` instruction.
 - Generation only writes and checks contracts; it never transforms or loads data, and its checks are static (it

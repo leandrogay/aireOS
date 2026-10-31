@@ -7,12 +7,12 @@ screen loads, edits, previews and approves mappings on their own, long after
 the upload that proposed them. Uploading is one thing, curating the mappings
 uploads are run through is another, and they now have a router each.
 
-A contract is instructions for the transformation. Both stored contract
-formats are checked here and previewed through the same deterministic
-executor. Approving does not load anything: the files behind the mapping are
-marked ready, and loading them is a separate, confirmed step (POST
-/api/uploads/load, see upload_loading). Version 1 remains supported for
-mappings confirmed before the expanded contract format was introduced.
+A contract is instructions for the transformation, checked here and
+previewed through the same deterministic executor that loads it. Approving
+does not load anything: the files behind the mapping are marked ready, and
+loading them is a separate, confirmed step (POST /api/uploads/load, see
+upload_loading). Each approval of a mapping is a new version of it; the one it
+replaces is archived (storage.move_pending_mapping_to_confirmed).
 """
 
 import asyncio
@@ -100,7 +100,7 @@ def _proposed_contract(
     sits, whether rows roll up, and what kind of data it is (decision D8) --
     unless the reviewer changed the roll-up or the data type (`instructions`).
     """
-    stored = mapping_contract.upgrade(envelope.get("contract") or {})
+    stored = mapping_contract.read_contract(envelope.get("contract") or {})
     if rules is not None:
         proposed = mapping_view.rules_to_contract(rules)
         for key in ("layout", "aggregate", "data_source"):
@@ -292,29 +292,25 @@ async def preview_mapping(fingerprint: str, body: PreviewRequest):
         # Sample rows are made even while checks fail -- nothing is stored, and
         # seeing what the rules do is how the reviewer finds what to fix.
         # Approval still holds the checks as a gate.
-        executable = validated
-        if not mapping_contract.is_v2(envelope.get("contract")):
-            executable = mapping_contract.downgrade(validated)
-        if executable is not None:
-            try:
-                mapped = sellout_ingestion.transform_confirmed_upload(
-                    filename,
-                    data,
-                    executable,
-                )
-            except contract_application.ContractApplicationError as exc:
-                result["preview_error"] = str(exc)
-                return result
-            target_columns = [
-                column
-                for column in envelope.get("target_schema", generate_mapping.TARGET_SCHEMA)
-                if column in mapped
-            ]
-            result.update({
-                "columns": target_columns,
-                "rows_total": len(mapped),
-                "preview": contract_application.preview_rows(mapped[target_columns], body.limit),
-            })
+        try:
+            mapped = sellout_ingestion.transform_confirmed_upload(
+                filename,
+                data,
+                validated,
+            )
+        except contract_application.ContractApplicationError as exc:
+            result["preview_error"] = str(exc)
+            return result
+        target_columns = [
+            column
+            for column in envelope.get("target_schema", generate_mapping.TARGET_SCHEMA)
+            if column in mapped
+        ]
+        result.update({
+            "columns": target_columns,
+            "rows_total": len(mapped),
+            "preview": contract_application.preview_rows(mapped[target_columns], body.limit),
+        })
         return result
 
     try:
@@ -470,11 +466,7 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
         pending.get("proposal") or pending.get("contract") or {}, contract
     )
 
-    # A mapping confirmed in version 1 is written back in that format when the
-    # amendment fits, preserving compatibility with already stored contracts.
     stored_contract = {key: value for key, value in contract.items() if key != "warnings"}
-    if not mapping_contract.is_v2(pending.get("contract")):
-        stored_contract = mapping_contract.downgrade(contract) or stored_contract
 
     envelope = {
         **pending,
@@ -531,7 +523,6 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
         "moved_to": move["confirmed_path"],
         "archived_previous": move.get("archived_path"),
         "version": envelope["version"],
-        "contract_format": 2 if mapping_contract.is_v2(stored_contract) else 1,
         "pending_removed": move["removed_pending"],
         "uploads_updated": uploads["updated"],
         # Files the approved mapping can now load, for the screen to offer:

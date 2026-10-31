@@ -367,7 +367,7 @@ def _used(value):
 def parse_proposal(answer: dict) -> dict:
     """
     The model's answer (lists, every parameter present, "" or 0 for unused) as
-    a version 2 contract (dicts, unused parameters left out).
+    a contract (dicts, unused parameters left out).
     """
     fields = {}
     for item in answer.get("fields") or []:
@@ -425,7 +425,7 @@ def parse_proposal(answer: dict) -> dict:
             group["period_type"] = item["period_type"]
         groups.append(group)
 
-    contract = {"version": 2, "fields": fields, "melt_groups": groups}
+    contract = {"fields": fields, "melt_groups": groups}
     if answer.get("aggregate_to_month"):
         contract["aggregate"] = {"period": "month"}
     return contract

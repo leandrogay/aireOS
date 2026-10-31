@@ -11,8 +11,8 @@ from app.services.column_profile import review_column_groups
 from app.services.mapping_contract import (
     DECIDABLE_FIELDS,
     REQUIRED_FIELDS,
+    read_contract,
     resolve_selector,
-    upgrade,
     validate_contract,
 )
 
@@ -111,7 +111,7 @@ def contract_to_rules(
     it off, and asking them to re-confirm rows they already confirmed is the
     bug the flag was added to fix.
     """
-    current = upgrade(contract)
+    current = read_contract(contract)
     columns = list(columns or [])
     groups = {group.get("id"): group for group in current.get("melt_groups") or []}
     fields = current.get("fields") or {}
@@ -193,18 +193,12 @@ def rules_to_contract(rules: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     fields: Dict[str, Dict[str, Any]] = {}
     groups: Dict[str, Dict[str, Any]] = {}
-    legacy_groups: List[Dict[str, Any]] = []
 
     for rule in rules:
         target = rule.get("targetField")
         if not target or rule.get("editable", True):
             continue
         group = rule.get("meltGroup")
-        if group and "target_field" in group:
-            # A rule from a version 1 review screen, still carrying the old
-            # group shape; upgraded with the rest of the contract below.
-            legacy_groups.append(group)
-            continue
         if group:
             groups[group.get("id")] = {**group, **_annotation(rule)}
         entry = rule.get("field")
@@ -226,15 +220,7 @@ def rules_to_contract(rules: List[Dict[str, Any]]) -> Dict[str, Any]:
             entry["transforms"] = transform
         fields[target] = entry
 
-    if legacy_groups:
-        upgraded = upgrade({"melt_groups": legacy_groups})
-        for group in upgraded["melt_groups"]:
-            groups[group["id"]] = group
-        for target, entry in upgraded["fields"].items():
-            fields.setdefault(target, entry)
-
     return {
-        "version": mapping_contract.CONTRACT_VERSION,
         "fields": fields,
         "melt_groups": list(groups.values()),
     }
@@ -378,7 +364,7 @@ def column_groups(columns: List[str], contract: Dict[str, Any], samples: Dict[st
     them. A contract group nothing detected is listed as it stands, so it can
     still be seen and taken off.
     """
-    current = upgrade(contract)
+    current = read_contract(contract)
     selected = mapping_contract.group_columns(current, columns)
     by_columns = {tuple(cols): group for group in current.get("melt_groups") or [] if (cols := selected.get(group["id"]))}
 
@@ -404,7 +390,7 @@ def envelope_to_packet(
     columns = envelope.get("raw_columns") or []
     confirmed = state == "confirmed"
 
-    stored = upgrade(envelope.get("contract") or {})
+    stored = read_contract(envelope.get("contract") or {})
     if confirmed:
         # Approved before the review flag existed: someone signed it off.
         for entry in [*stored.get("fields", {}).values(), *stored.get("melt_groups", [])]:
@@ -483,7 +469,6 @@ def envelope_to_packet(
         # Every product code in the example file, for the review screen's
         # code table (mapping_checks.sku_codes).
         "skuCodes": envelope.get("sku_codes") or [],
-        "contractFormat": 2 if mapping_contract.is_v2(envelope.get("contract")) else 1,
         "warnings": contract.get("warnings") or [],
         "editable": True,
         "validated": confirmed,

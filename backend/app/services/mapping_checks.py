@@ -21,7 +21,7 @@ from collections import Counter
 import pandas as pd
 
 from app.schemas.sellout import BUSINESS_COLUMNS
-from app.services.mapping_contract import REQUIRED_FIELDS, group_columns, resolve_selector, upgrade
+from app.services.mapping_contract import REQUIRED_FIELDS, group_columns, read_contract, resolve_selector
 
 # A column with one of these words in its name is a claim against the
 # supplier, a price or a cost -- never the gross sales value of units sold.
@@ -143,7 +143,7 @@ def sku_codes(frame: pd.DataFrame, contract: dict, layout: dict | None = None) -
     column), and how many rows carry it. What the review screen's code table
     is built from. `layout` lets codes written over the column headings be read.
     """
-    contract = upgrade(contract)
+    contract = read_contract(contract)
     fields = contract.get("fields") or {}
     entry = fields.get("sku") or {}
     source = entry.get("source")
@@ -502,7 +502,7 @@ def run_checks(
     Every static check, most serious first. `master_skus` is the SKU master's
     codes; None when it could not be read, which fails the product-code check.
     """
-    contract = upgrade(contract)
+    contract = read_contract(contract)
     checks = [
         _check_accounted(contract),
         *_check_required(contract),
@@ -526,7 +526,7 @@ def failures(checks: list[dict]) -> list[dict]:
 
 def unused_columns(contract: dict, columns: list[str]) -> list[str]:
     """The file's columns the contract never reads: no field, transform or melt group uses them."""
-    contract = upgrade(contract)
+    contract = read_contract(contract)
     read = {column for selected in group_columns(contract, columns).values() for column in selected}
     for entry in (contract.get("fields") or {}).values():
         read.add(entry.get("source"))
@@ -546,7 +546,7 @@ def field_confidence(contract: dict, checks: list[dict], columns: list[str] | No
     file has `columns` the contract leaves unread it is at most "medium": one
     of them may hold the field (FairPrice's MCH column is the product range).
     """
-    contract = upgrade(contract)
+    contract = read_contract(contract)
     worst: dict[str, str] = {}
     for check in checks:
         if check["passed"] or check["level"] == "info":

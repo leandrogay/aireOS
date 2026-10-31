@@ -12,7 +12,6 @@ from app.services import mapping_view as mv
 RAW_COLUMNS = ["SKU No.", "Store Code", "Sales | Week 1 | 01-01-2026"]
 
 CONTRACT = {
-    "version": 2,
     "fields": {
         "sku": {"status": "mapped", "source": "SKU No.", "confidence": "high", "rationale": "8-digit article numbers."},
         "store_code": {"status": "mapped", "source": "Store Code", "confidence": "medium", "rationale": "Could be a region."},
@@ -64,21 +63,20 @@ def test_the_reviewed_flag_round_trips_through_rules_and_contract():
     assert contract["fields"]["store_code"]["reviewed"] is True
 
 
-def test_a_contract_stored_before_confidence_existed_reads_as_low():
-    legacy = {"identity_mapping": {"SKU No.": "sku"}, "melt_groups": []}
+def test_a_field_with_no_confidence_reads_as_low():
+    contract = {"fields": {"sku": {"status": "mapped", "source": "SKU No."}}, "melt_groups": []}
 
-    rules = {rule["targetField"]: rule for rule in mv.contract_to_rules(legacy)}
+    rules = {rule["targetField"]: rule for rule in mv.contract_to_rules(contract)}
 
     assert rules["sku"]["confidence"] == "low"
 
 
-def test_a_mapping_approved_before_the_flag_existed_reads_as_reviewed():
-    legacy = {
-        "identity_mapping": {"Store Code": "store_code"},
+def test_a_confirmed_field_with_no_review_flag_reads_as_reviewed():
+    contract = {
+        "fields": {"store_code": {"status": "mapped", "source": "Store Code", "confidence": "low", "rationale": ""}},
         "melt_groups": [],
-        "annotations": {"store_code": {"confidence": "low", "rationale": ""}},
     }
-    envelope = {"contract": legacy, "raw_columns": ["Store Code"]}
+    envelope = {"contract": contract, "raw_columns": ["Store Code"]}
 
     confirmed = mv.envelope_to_packet("fp", envelope, "confirmed")
     pending = mv.envelope_to_packet("fp", envelope, "pending")

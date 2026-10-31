@@ -357,7 +357,7 @@ def test_period_fields_are_declared_as_filled_without_a_column():
 
 def test_stored_packets_carry_the_review_checklist():
     envelope = {
-        "contract": {"identity_mapping": {"SKU": "sku"}, "melt_groups": []},
+        "contract": {"fields": {"sku": {"status": "mapped", "source": "SKU"}}, "melt_groups": []},
         "raw_columns": ["SKU"],
         "target_schema": ["sku"],
     }

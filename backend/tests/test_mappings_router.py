@@ -22,7 +22,7 @@ ENVELOPE = {
         "Sales | Month 1 | 01-08-2026",
         "Qty | Month 1 | 01-08-2026",
     ],
-    "contract": {"identity_mapping": {}, "melt_groups": [], "annotations": {}},
+    "contract": {"fields": {}, "melt_groups": []},
     "name": "Vendor weekly",
     "vendor": "xel",
     "customer_id": 3,
@@ -49,44 +49,42 @@ def _rule(target, source, confidence, reviewed):
     }
 
 
+def _melt_rule(target, column):
+    """A locked rule for a measure read from one period column, as the review screen sends it."""
+    return {
+        "targetField": target,
+        "sourceColumn": column,
+        "sourceColumns": [column],
+        "editable": False,
+        "confidence": "high",
+        "reviewed": False,
+        "field": {"status": "mapped", "melt_group": target},
+        "meltGroup": {
+            "id": target,
+            "select": {"kind": "columns", "columns": [column]},
+            "key": {"target": "period_start", "pattern": r"(\d{2}-\d{2}-\d{4})$", "date_format": "%d-%m-%Y"},
+            "value_target": target,
+            "period_type": "month",
+            "confidence": "high",
+            "reviewed": False,
+        },
+    }
+
+
+def _locked_rule(target, field):
+    return {"targetField": target, "editable": False, "confidence": "high", "reviewed": False, "field": field}
+
+
 def _complete_rules(rules):
     """Add the other fields a contract needs before it may be approved."""
     return [
         *rules,
         _rule("retailer", "Vendor", "high", False),
         _rule("store_code", "Store Code", "high", False),
-        {
-            "targetField": "revenue",
-            "sourceColumn": "Sales | Month 1 | 01-08-2026",
-            "sourceColumns": ["Sales | Month 1 | 01-08-2026"],
-            "editable": False,
-            "confidence": "high",
-            "reviewed": False,
-            "meltGroup": {
-                "target_field": "revenue",
-                "columns": ["Sales | Month 1 | 01-08-2026"],
-                "period_extract_regex": r"(\d{2}-\d{2}-\d{4})$",
-                "date_format": "%d-%m-%Y",
-                "confidence": "high",
-                "reviewed": False,
-            },
-        },
-        {
-            "targetField": "quantity_units",
-            "sourceColumn": "Qty | Month 1 | 01-08-2026",
-            "sourceColumns": ["Qty | Month 1 | 01-08-2026"],
-            "editable": False,
-            "confidence": "high",
-            "reviewed": False,
-            "meltGroup": {
-                "target_field": "quantity_units",
-                "columns": ["Qty | Month 1 | 01-08-2026"],
-                "period_extract_regex": r"(\d{2}-\d{2}-\d{4})$",
-                "date_format": "%d-%m-%Y",
-                "confidence": "high",
-                "reviewed": False,
-            },
-        },
+        _locked_rule("period_start", {"status": "mapped", "melt_group": "revenue"}),
+        _locked_rule("period_type", {"status": "derived"}),
+        _melt_rule("revenue", "Sales | Month 1 | 01-08-2026"),
+        _melt_rule("quantity_units", "Qty | Month 1 | 01-08-2026"),
     ]
 
 
@@ -162,12 +160,10 @@ def test_confirm_stores_a_reviewed_low_confidence_field_as_reviewed(monkeypatch)
     )
 
     assert response.status_code == 200
-    # Confirmed in version 1, so stored back in version 1 for today's
-    # transformation.
-    contract = stored["envelope"]["contract"]
-    assert contract["identity_mapping"]["Store Name"] == "store_name"
-    assert contract["annotations"]["store_name"] == {"confidence": "low", "rationale": "", "reviewed": True}
-    assert response.json()["contract_format"] == 1
+    store_name = stored["envelope"]["contract"]["fields"]["store_name"]
+    assert store_name["source"] == "Store Name"
+    assert store_name["confidence"] == "low"
+    assert store_name["reviewed"] is True
 
 
 def test_confirm_records_what_the_reviewer_changed_and_numbers_the_version(monkeypatch):
@@ -271,7 +267,7 @@ def test_confirming_edited_rules_keeps_the_contracts_data_source(monkeypatch):
     monkeypatch.setattr(
         storage,
         "download_json",
-        lambda path: {**ENVELOPE, "contract": {"version": 2, "fields": {}, "melt_groups": [], "data_source": "promo_claim"}}
+        lambda path: {**ENVELOPE, "contract": {"fields": {}, "melt_groups": [], "data_source": "promo_claim"}}
         if path == storage.pending_mapping_path("fp")
         else None,
     )
@@ -283,19 +279,19 @@ def test_confirming_edited_rules_keeps_the_contracts_data_source(monkeypatch):
     assert stored["envelope"]["contract"]["data_source"] == "promo_claim"
 
 
-# ---- Version 2 contracts ---------------------------------------------------------------
+# ---- Contract-wide instructions ---------------------------------------------------------
 
-V2_ENVELOPE = {
+ROLL_UP_ENVELOPE = {
     **ENVELOPE,
-    "contract": {"version": 2, "fields": {}, "melt_groups": [], "aggregate": {"period": "month"}},
+    "contract": {"fields": {}, "melt_groups": [], "aggregate": {"period": "month"}},
 }
 
 
-def test_a_version_2_mapping_is_confirmed_without_loading_its_uploads(monkeypatch):
+def test_a_mapping_is_confirmed_without_loading_its_uploads(monkeypatch):
     stored = _stub_storage(monkeypatch)
     monkeypatch.setattr(
         storage, "download_json",
-        lambda path: V2_ENVELOPE if path == storage.pending_mapping_path("fp") else None,
+        lambda path: ROLL_UP_ENVELOPE if path == storage.pending_mapping_path("fp") else None,
     )
     monkeypatch.setattr(sellout_ingestion, "process_confirmed_upload", _no_load_allowed)
 
@@ -303,7 +299,6 @@ def test_a_version_2_mapping_is_confirmed_without_loading_its_uploads(monkeypatc
 
     assert response.status_code == 200
     body = response.json()
-    assert body["contract_format"] == 2
     assert "awaiting_transformation" not in body
     # The roll-up instruction is kept although the rules do not carry it.
     assert stored["envelope"]["contract"]["aggregate"]["period"] == "month"
@@ -316,7 +311,7 @@ def test_confirming_is_blocked_while_a_product_code_is_not_a_master_sku(monkeypa
 
     stored = _stub_storage(monkeypatch)
     csv = b"SKU No.,Store Name,Vendor,Store Code,Sales | Month 1 | 01-08-2026,Qty | Month 1 | 01-08-2026\n99999999,A,V,1,10,1\n"
-    envelope = {**V2_ENVELOPE, "example_file": "uploads/x.csv", "source_filename": "x.csv"}
+    envelope = {**ROLL_UP_ENVELOPE, "example_file": "uploads/x.csv", "source_filename": "x.csv"}
     monkeypatch.setattr(storage, "download_json", lambda path: envelope if path == storage.pending_mapping_path("fp") else None)
     monkeypatch.setattr(storage, "download_bytes", lambda path: csv)
     monkeypatch.setattr(generate_mapping.catalog_service, "get_skus", lambda: [{"sku": "13255043"}])
@@ -463,7 +458,7 @@ def _serve_example(monkeypatch, blobs, uploads):
     """Serve a pending envelope whose example file is uploads/old.csv, and these blobs and uploads."""
     from app.services import generate_mapping
 
-    envelope = {**V2_ENVELOPE, "example_file": "uploads/old.csv", "source_filename": "old.csv"}
+    envelope = {**ROLL_UP_ENVELOPE, "example_file": "uploads/old.csv", "source_filename": "old.csv"}
     _serve_pending(monkeypatch, envelope)
     monkeypatch.setattr(storage, "download_bytes", lambda path: blobs.get(path))
     monkeypatch.setattr(storage, "list_uploads_for_mapping", lambda fingerprint: uploads if fingerprint == "fp" else [])
@@ -539,7 +534,7 @@ def test_rules_that_cannot_run_report_why_beside_their_checks(monkeypatch):
 
 def test_the_reviewer_can_turn_the_monthly_roll_up_off_and_tag_a_claim_statement(monkeypatch):
     stored = _stub_storage(monkeypatch)
-    _serve_pending(monkeypatch, V2_ENVELOPE)
+    _serve_pending(monkeypatch, ROLL_UP_ENVELOPE)
     rules = _complete_rules([_rule("sku", "SKU No.", "high", False)])
 
     response = client.post(
@@ -554,7 +549,7 @@ def test_the_reviewer_can_turn_the_monthly_roll_up_off_and_tag_a_claim_statement
 
 def test_settings_left_out_are_kept_as_stored(monkeypatch):
     stored = _stub_storage(monkeypatch)
-    _serve_pending(monkeypatch, V2_ENVELOPE)
+    _serve_pending(monkeypatch, ROLL_UP_ENVELOPE)
     rules = _complete_rules([_rule("sku", "SKU No.", "high", False)])
 
     response = client.post("/api/mappings/fp/confirm", json={"rules": rules, "instructions": {}})
@@ -573,7 +568,7 @@ def test_an_unknown_data_type_is_rejected_with_422(monkeypatch):
 
 def test_a_retailer_read_from_outlet_headings_blocks_approval_naming_them(monkeypatch):
     _stub_storage(monkeypatch)
-    envelope = {**V2_ENVELOPE, "raw_columns": ["SKU No.", "Month", "BEDOK", "ONLINE"]}
+    envelope = {**ROLL_UP_ENVELOPE, "raw_columns": ["SKU No.", "Month", "BEDOK", "ONLINE"]}
     _serve_pending(monkeypatch, envelope)
     group = {
         "id": "outlets", "select": {"kind": "between", "after": "Month"}, "key": {"target": "retailer"},

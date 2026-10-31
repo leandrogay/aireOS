@@ -38,15 +38,12 @@ from app.services.column_profile import (
     head_rows,
     header_template,
     layout_templates,
-    legacy_fingerprint,
-    unordered_fingerprint,
     profile_columns,
     to_snake_case,
 )
 from app.services.mapping_contract import (
     CONFIDENCE_LEVELS,
     layout_instructions,
-    normalize_targets,
     unreviewed_low_confidence,
     validate_contract,
 )
@@ -56,8 +53,6 @@ __all__ = [
     "column_samples",
     "fingerprint",
     "header_template",
-    "legacy_fingerprint",
-    "normalize_targets",
     "to_snake_case",
     "unreviewed_low_confidence",
     "validate_contract",
@@ -299,29 +294,12 @@ def generate_mapping_contract(
 # ---- Stored mappings -------------------------------------------------------------
 
 def find_confirmed(columns: list[str]) -> tuple[str, dict] | tuple[None, None]:
-    """
-    The confirmed mapping for this layout and the fingerprint it is stored
-    under: the ordered template fingerprint first, then compatible historical
-    template/exact-header keys whose stored raw columns have the same order.
-    """
-    # Ordered signatures are authoritative. The other two keys keep contracts
-    # confirmed before this rule changed addressable without asking users to
-    # recreate them.
-    ordered_key = fingerprint(columns)
-    for key in dict.fromkeys([
-        ordered_key,
-        unordered_fingerprint(columns),
-        legacy_fingerprint(columns),
-    ]):
-        envelope = storage.download_json(storage.confirmed_mapping_path(key))
-        if not envelope:
-            continue
-        if key != ordered_key:
-            stored_columns = envelope.get("raw_columns") or []
-            if not stored_columns or fingerprint(stored_columns) != ordered_key:
-                continue
-        return key, envelope
-    return None, None
+    """The confirmed mapping for this layout and the fingerprint it is stored under."""
+    key = fingerprint(columns)
+    envelope = storage.download_json(storage.confirmed_mapping_path(key))
+    if not envelope:
+        return None, None
+    return key, envelope
 
 
 def find_partial_match(columns: list[str]) -> dict | None:

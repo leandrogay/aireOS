@@ -19,7 +19,7 @@ from app.services import sellout_ingestion, sellout_service, storage, upload_loa
 
 client = TestClient(app)
 
-CONTRACT = {"version": 2, "fields": {}}
+CONTRACT = {"fields": {}}
 ENVELOPE = {"name": "XEL weekly", "vendor": "xel", "version": 3, "contract": CONTRACT}
 
 
