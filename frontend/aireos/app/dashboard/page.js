@@ -78,7 +78,16 @@ export default function DashboardPage() {
   const freshnessLoaded = Object.keys(channels).length > 0;
   const onlineAvailable = customers.some((name) => Boolean(channels[`${name}_online`]));
   if (freshnessLoaded && mode === 'online' && customers.length > 0 && !onlineAvailable) {
-    setMode('offline');
+    handleModeChange('offline');
+  }
+
+  // A store is sold through one channel, and the Store list shows only the
+  // chart's channel (DashboardFilters), so a store picked on one channel is
+  // not a choice on the other: switching drops it.
+  function handleModeChange(next) {
+    if (next === mode) return;
+    setMode(next);
+    clearStore();
   }
   // "Compare to" baseline — none by default (DEFAULT_COMPARE); Clear Filters
   // returns to that. `customCompare` is only used while compareTo is
@@ -314,7 +323,7 @@ export default function DashboardPage() {
             weeklyGap={weeklyGap}
             weekAvailable={weekAvailable}
             mode={mode}
-            onModeChange={setMode}
+            onModeChange={handleModeChange}
             granularity={chartGranularity}
             onGranularityChange={setGranularityChoice}
             comparisonRows={comparingCustomers ? null : comparisonRows}
@@ -359,6 +368,7 @@ export default function DashboardPage() {
               onSkuChange={handleSkuChange}
               customers={customers}
               customer={customer}
+              mode={mode}
               storeDisabled={customers.length !== 1}
               store={store}
               onStoreChange={handleStoreChange}

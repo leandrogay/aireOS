@@ -69,6 +69,31 @@ def test_monthly_only_returns_the_months_per_channel(monkeypatch):
     assert response.json() == {"offline": ["2026-08-01"], "online": []}
 
 
+# ---- /api/sales/store-options ---------------------------------------------
+
+def test_store_options_maps_an_unknown_mode_to_400():
+    response = client.get("/api/sales/store-options?customer=sheng_siong&mode=ecomm")
+
+    assert response.status_code == 400
+    assert "mode" in response.json()["detail"]
+
+
+def test_store_options_passes_the_channel_to_the_service(monkeypatch):
+    calls = []
+
+    def _options(**kwargs):
+        calls.append(kwargs)
+        return [{"store_code": "6M_Ecomm", "store_name": "6M_Ecomm"}]
+
+    monkeypatch.setattr(sellout_service, "get_store_options", _options)
+
+    response = client.get("/api/sales/store-options?customer=sheng_siong&mode=online")
+
+    assert response.status_code == 200
+    assert calls == [{"customer": "sheng_siong", "mode": "online"}]
+    assert response.json() == {"options": [{"store_code": "6M_Ecomm", "store_name": "6M_Ecomm"}]}
+
+
 def test_skus_maps_blank_customers_to_400():
     response = client.get("/api/sales/skus?customers=,")
 
