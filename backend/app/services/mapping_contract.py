@@ -595,7 +595,7 @@ def validate_contract(
     proposed_fields = proposed.get("fields") or {}
     for target in proposed_fields:
         if target not in target_schema:
-            warnings.append(f"Dropped field mapping — target not in schema: {target!r}")
+            warnings.append(f"Dropped field nomenclature — target not in schema: {target!r}")
 
     fields: dict[str, dict] = {}
     for target in target_schema:
@@ -616,7 +616,7 @@ def validate_contract(
         if entry["status"] == "derived" and source_field:
             if fields.get(source_field, {}).get("status") in ("not_available", "derived", None):
                 warnings.append(
-                    f"Dropped field mapping — {target!r} is derived from {source_field!r}, "
+                    f"Dropped field nomenclature — {target!r} is derived from {source_field!r}, "
                     "which has no values"
                 )
                 fields[target] = _not_available(f"{source_field} is not available", entry, trust_review)
@@ -628,7 +628,7 @@ def validate_contract(
         period_type.get("status") != "constant" or period_type.get("value") != "month"
     ):
         warnings.append(
-            "Dropped field mapping — a period read from the file's stated period is a month, "
+            "Dropped field nomenclature — a period read from the file's stated period is a month, "
             "so period_type must be the constant 'month'"
         )
         fields["period_start"] = _not_available("The stated period needs period_type 'month'.", period_start, trust_review)
@@ -736,10 +736,10 @@ def _validate_field(target, raw, raw_columns, raw_set, groups, group_cols, sampl
     if status == "constant":
         value = str(raw.get("value") if raw.get("value") is not None else "").strip()
         if not value:
-            warnings.append(f"Dropped field mapping — {target!r} is constant but has no value")
+            warnings.append(f"Dropped field nomenclature — {target!r} is constant but has no value")
             return _not_available("A constant needs a value.", raw, trust_review)
         if target == "period_type" and value not in PERIOD_TYPES:
-            warnings.append(f"Dropped field mapping — period_type must be one of {PERIOD_TYPES}")
+            warnings.append(f"Dropped field nomenclature — period_type must be one of {PERIOD_TYPES}")
             return _not_available("Unknown period type.", raw, trust_review)
         return {"status": "constant", "value": value, **annotation}
 
@@ -748,7 +748,7 @@ def _validate_field(target, raw, raw_columns, raw_set, groups, group_cols, sampl
             period_groups = [g for g in groups.values() if g["key"]["target"] == "period_start"]
             if not period_groups or not all(g.get("period_type") for g in period_groups):
                 warnings.append(
-                    "Dropped field mapping — period_type can only be read from period column "
+                    "Dropped field nomenclature — period_type can only be read from period column "
                     "headers that say month or week"
                 )
                 return _not_available("No period columns to read the period type from.", raw, trust_review)
@@ -756,14 +756,14 @@ def _validate_field(target, raw, raw_columns, raw_set, groups, group_cols, sampl
         if raw.get("from_layout"):
             if target != "period_start" or raw["from_layout"] not in LAYOUT_SOURCES:
                 warnings.append(
-                    f"Dropped field mapping — only period_start can be read from the file's "
+                    f"Dropped field nomenclature — only period_start can be read from the file's "
                     f"stated period, not {target!r} from {raw['from_layout']!r}"
                 )
                 return _not_available("Only the period can be read from the file's title.", raw, trust_review)
             return {"status": "derived", "from_layout": raw["from_layout"], **annotation}
         source_field = raw.get("from_field")
         if source_field not in BUSINESS_COLUMNS or source_field == target:
-            warnings.append(f"Dropped field mapping — {target!r} is derived from an unknown field {source_field!r}")
+            warnings.append(f"Dropped field nomenclature — {target!r} is derived from an unknown field {source_field!r}")
             return _not_available("Derived from an unknown field.", raw, trust_review)
         transforms = validate_transforms(target, transforms_raw, raw_columns, [], None, warnings)
         if transforms is None:
@@ -779,11 +779,11 @@ def _validate_field(target, raw, raw_columns, raw_set, groups, group_cols, sampl
         if group_id:
             group = groups.get(group_id)
             if group is None:
-                warnings.append(f"Dropped field mapping — {target!r} reads melt group {group_id!r}, which was dropped")
+                warnings.append(f"Dropped field nomenclature — {target!r} reads melt group {group_id!r}, which was dropped")
                 return _not_available("Its melt group was dropped.", raw, trust_review)
             if target not in _group_fills(group):
                 warnings.append(
-                    f"Dropped field mapping — melt group {group_id!r} fills "
+                    f"Dropped field nomenclature — melt group {group_id!r} fills "
                     f"{', '.join(_group_fills(group))}, not {target!r}"
                 )
                 return _not_available("Its melt group fills other fields.", raw, trust_review)
@@ -796,10 +796,10 @@ def _validate_field(target, raw, raw_columns, raw_set, groups, group_cols, sampl
             return entry
 
         if source not in raw_set:
-            warnings.append(f"Dropped field mapping — source column not found: {source!r}")
+            warnings.append(f"Dropped field nomenclature — source column not found: {source!r}")
             return _not_available("Its source column is not in the file.", raw, trust_review)
         if any(source in columns for columns in group_cols.values()):
-            warnings.append(f"Dropped field mapping — {source!r} is melted by a melt group")
+            warnings.append(f"Dropped field nomenclature — {source!r} is melted by a melt group")
             return _not_available("Its source column is melted.", raw, trust_review)
         transforms = validate_transforms(
             target, transforms_raw, raw_columns, samples.get(source, []), source, warnings
@@ -811,7 +811,7 @@ def _validate_field(target, raw, raw_columns, raw_set, groups, group_cols, sampl
             entry["transforms"] = transforms
         return entry
 
-    warnings.append(f"Dropped field mapping — {target!r} has an unknown status {status!r}")
+    warnings.append(f"Dropped field nomenclature — {target!r} has an unknown status {status!r}")
     return _not_available("Unknown status.", raw, trust_review)
 
 

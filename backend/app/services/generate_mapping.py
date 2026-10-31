@@ -181,7 +181,7 @@ def _ask_gemini(messages: list[dict], schema: dict) -> str:
     # A prompt blocked outright comes back with no candidates at all.
     candidate = response.candidates[0] if response.candidates else None
     if candidate is None or candidate.finish_reason in _REFUSAL_FINISH_REASONS:
-        raise MappingGenerationError("Gemini declined to propose a mapping for this file.")
+        raise MappingGenerationError("Gemini declined to propose a nomenclature for this file.")
     if candidate.finish_reason == "MAX_TOKENS":
         raise MappingGenerationError("Gemini's proposal was cut off before it was complete.")
     text = response.text

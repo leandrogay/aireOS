@@ -108,16 +108,16 @@ def _loadable(blob_path: str) -> tuple[dict, dict]:
 
     status = upload.get("mapping_status")
     if status == LOADED:
-        raise UploadNotLoadableError("This file is already loaded with the current version of its mapping.")
+        raise UploadNotLoadableError("This file is already loaded with the current version of its nomenclature.")
     if status == PENDING_REVIEW:
-        raise UploadNotLoadableError("This file's mapping has not been approved yet.")
+        raise UploadNotLoadableError("This file's nomenclature has not been approved yet.")
     if status not in LOADABLE_STATUSES:
-        raise UploadNotLoadableError("This file has no approved mapping to load it with.")
+        raise UploadNotLoadableError("This file has no approved nomenclature to load it with.")
 
     fingerprint = upload.get("mapping_fingerprint")
     envelope = storage.download_json(storage.confirmed_mapping_path(fingerprint)) if fingerprint else None
     if not envelope:
-        raise UploadNotLoadableError("This file's mapping has not been approved yet.")
+        raise UploadNotLoadableError("This file's nomenclature has not been approved yet.")
     return upload, envelope
 
 

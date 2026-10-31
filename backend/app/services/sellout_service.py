@@ -317,7 +317,7 @@ def _store_channel_message(dataframe: pd.DataFrame, stored: list[dict]) -> str:
         return (
             f"This file sends a store to more than one retailer: "
             f"{mapping_checks.describe_store_conflicts(within)}. A store belongs to one channel; "
-            "fix the mapping's retailer rule so each store goes to one of them."
+            "fix the nomenclature's retailer rule so each store goes to one of them."
         )
     if not stored:
         return ""
@@ -329,7 +329,7 @@ def _store_channel_message(dataframe: pd.DataFrame, stored: list[dict]) -> str:
     )
     more = len(stored) - len(named)
     return (
-        f"{lines}{f'; and {more} more' if more > 0 else ''}. A store belongs to one channel. Change the mapping's "
+        f"{lines}{f'; and {more} more' if more > 0 else ''}. A store belongs to one channel. Change the nomenclature's "
         "retailer rule to match, or, if the rule is now right, reload or roll back the earlier uploads first."
     )
 
@@ -535,7 +535,7 @@ def load_clean_rows(
                 raise SelloutLoadError(
                     f"No customer owns {', '.join(unowned)}. Create the customer "
                     "with these retailers (or fix the retailer names in the "
-                    "mapping) before loading sales."
+                    "nomenclature) before loading sales."
                 )
             retailer_ids = catalog_service.get_or_create_retailers(
                 connection,

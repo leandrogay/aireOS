@@ -450,7 +450,7 @@ def read_sheets(filename: str, data: bytes) -> list[dict]:
         return _excel_sheets(data)
     if extension in TEXT_EXTENSIONS:
         return [_text_sheet(filename, data)]
-    raise LayoutError(f"Unsupported file format for mapping: {extension or '(none)'}")
+    raise LayoutError(f"Unsupported file format for nomenclature: {extension or '(none)'}")
 
 
 def read_table(filename: str, data: bytes) -> tuple[pd.DataFrame, dict]:

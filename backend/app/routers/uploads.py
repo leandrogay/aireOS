@@ -175,7 +175,7 @@ async def upload_files(
             return {
                 "status": "mapping_failed",
                 "reason": "bad_llm_output",
-                "error": f"Unable to propose a mapping for {filename}: {exc}",
+                "error": f"Unable to propose a nomenclature for {filename}: {exc}",
             }
         except contract_application.ContractApplicationError as exc:
             return {

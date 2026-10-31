@@ -32,7 +32,7 @@ def read_source_dataframe(filename: str, data: bytes) -> pd.DataFrame:
         ) from exc
 
     raise ContractApplicationError(
-        f"Unsupported file format for mapping: {extension or '(none)'}"
+        f"Unsupported file format for nomenclature: {extension or '(none)'}"
     )
 
 
@@ -328,7 +328,7 @@ def _stated_month(layout: dict | None) -> pd.Timestamp:
     stated = (layout or {}).get("stated_period")
     if not stated:
         raise ContractApplicationError(
-            "The mapping reads the period from the file's title, but this file states no period."
+            "The nomenclature reads the period from the file's title, but this file states no period."
         )
     start, end = pd.Timestamp(stated["start"]), pd.Timestamp(stated["end"])
     if start.to_period("M") != end.to_period("M"):
@@ -353,7 +353,7 @@ def apply_contract(
     its header from there.
     """
     if not contract.get("fields"):
-        raise ContractApplicationError("Mapping contract is empty.")
+        raise ContractApplicationError("Nomenclature contract is empty.")
 
     working = _melt(dataframe, contract, layout)
     fields = contract["fields"]

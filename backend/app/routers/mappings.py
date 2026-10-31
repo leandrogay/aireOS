@@ -199,7 +199,7 @@ async def list_mappings():
         return {"mappings": await asyncio.to_thread(collect)}
     except Exception as exc:
         raise HTTPException(
-            status_code=503, detail=f"Unable to read stored mappings: {exc}"
+            status_code=503, detail=f"Unable to read stored nomenclatures: {exc}"
         )
 
 
@@ -214,7 +214,7 @@ async def get_mapping(fingerprint: str):
     envelope, state = await asyncio.to_thread(_load_envelope, fingerprint)
     if not envelope:
         raise HTTPException(
-            status_code=404, detail="No mapping found for that fingerprint."
+            status_code=404, detail="No nomenclature found for that fingerprint."
         )
 
     # The SKU master (read-only) for the review screen's product-code table: a
@@ -251,12 +251,12 @@ async def preview_mapping(fingerprint: str, body: PreviewRequest):
     envelope, _ = await asyncio.to_thread(_load_envelope, fingerprint)
     if not envelope:
         raise HTTPException(
-            status_code=404, detail="No mapping found for that fingerprint."
+            status_code=404, detail="No nomenclature found for that fingerprint."
         )
     if not envelope.get("example_file"):
         raise HTTPException(
             status_code=409,
-            detail="This mapping has no example file stored, so it cannot be previewed.",
+            detail="This nomenclature has no example file stored, so it cannot be previewed.",
         )
 
     proposed = _proposed_contract(envelope, body.rules, body.contract, body.instructions)
@@ -320,8 +320,8 @@ async def preview_mapping(fingerprint: str, body: PreviewRequest):
         raise HTTPException(
             status_code=410,
             detail=(
-                "The file this mapping was made from has been replaced or deleted. "
-                "Upload a file with these columns to test the mapping."
+                "The file this nomenclature was made from has been replaced or deleted. "
+                "Upload a file with these columns to test the nomenclature."
             ),
         )
     except contract_application.ContractApplicationError as exc:
@@ -352,7 +352,7 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
     envelope_before, state = await asyncio.to_thread(_load_envelope, fingerprint)
     if not envelope_before:
         raise HTTPException(
-            status_code=404, detail="No mapping found for that fingerprint."
+            status_code=404, detail="No nomenclature found for that fingerprint."
         )
 
     pending = envelope_before
@@ -366,7 +366,7 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
     if not name or not customer_id:
         raise HTTPException(
             status_code=422,
-            detail="A mapping needs a name and a customer before it can be saved for reuse.",
+            detail="A nomenclature needs a name and a customer before it can be saved for reuse.",
         )
 
     customer = await asyncio.to_thread(customer_service.get_customer, customer_id)
@@ -413,7 +413,7 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
             status_code=422,
             detail={
                 "message": (
-                    f"This mapping writes sales to {', '.join(foreign)}, which "
+                    f"This nomenclature writes sales to {', '.join(foreign)}, which "
                     f"{'is not a retailer' if len(foreign) == 1 else 'are not retailers'} "
                     f"of {vendor}. Add {'it' if len(foreign) == 1 else 'them'} to the "
                     "customer or change the retailer."
@@ -552,6 +552,6 @@ async def discard_pending_mapping(fingerprint: str):
     )
     if not deleted:
         raise HTTPException(
-            status_code=404, detail="No pending mapping for that fingerprint."
+            status_code=404, detail="No pending nomenclature for that fingerprint."
         )
     return {"success": True, "fingerprint": fingerprint}
