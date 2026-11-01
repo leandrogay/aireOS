@@ -28,7 +28,6 @@ from app.services import mapping_view
 from app.services import apply_contract as contract_application
 from app.services import layout_detection, mapping_checks, mapping_contract
 from app.services import customer_service
-from app.services import sellout_ingestion
 from app.services import notification_service
 from app.services import upload_loading
 

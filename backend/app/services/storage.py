@@ -602,6 +602,15 @@ def delete_blob(path: str) -> bool:
         raise GCSUploadError(f"Failed deleting {path}: {e}")
 
 
+def delete_upload(path: str) -> bool:
+    """Delete one exact raw upload while refusing mapping or bucket paths."""
+    clean_path = path.strip()
+    upload_prefix = f"{DESTINATION_PREFIX.rstrip('/')}/"
+    if not clean_path.startswith(upload_prefix) or clean_path == upload_prefix:
+        raise ValueError("Only a specific object under the uploads prefix can be deleted")
+    return delete_blob(clean_path)
+
+
 def list_mapping_fingerprints(state: str) -> list[str]:
     """
     List the fingerprints stored under mappings/{state}/.

@@ -14,6 +14,8 @@ export const UPLOAD_STATUS_LABELS = {
   mapping_failed: { tone: 'failed', label: 'Mapping failed' },
 };
 
+export const ROLLED_BACK_STATUS = { tone: 'neutral', label: 'Rolled back' };
+
 /**
  * The load an upload is waiting for, if any: a first load once its mapping
  * is approved, or a reload after a new version. Null for every other state.

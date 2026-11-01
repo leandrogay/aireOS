@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ListX } from 'lucide-react';
 import PageLayout from '@/components/layout/PageLayout';
+import { formatDateTime } from '@/lib/formatDate';
 import { Button } from '@/components/ui/button';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import Toast from '@/components/ui/Toast';
 import Dropzone from '../components/upload/Dropzone';
 import RejectedFiles from '../components/upload/RejectedFiles';
 import UploadGroup from '../components/upload/UploadGroup';
@@ -26,7 +29,15 @@ import {
   uploadBlocker,
   uploadOptionsFor,
 } from '../utils/uploadFlow';
-import { checkUpload, uploadFile, fetchUploadHistory } from '../services/uploadApi';
+import {
+  checkUpload,
+  deleteUpload,
+  uploadFile,
+  fetchUploadHistory,
+  rollbackUpload,
+} from '../services/uploadApi';
+import useConfirmAction from '@/hooks/useConfirmAction';
+import useToast from '@/hooks/useToast';
 
 let nextId = 0;
 const makeId = () => `file-${(nextId += 1)}`;
@@ -48,6 +59,8 @@ export default function UploadPage() {
   const [history, setHistory] = useState([]);
   const [historyError, setHistoryError] = useState('');
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [rollbackReason, setRollbackReason] = useState('');
+  const { toast, notify, dismissToast } = useToast();
   // The rows whose files the load confirmation is open for, or null.
   const [loadingIds, setLoadingIds] = useState(null);
 
@@ -111,6 +124,41 @@ export default function UploadPage() {
     // lands, rather than re-rendering the page on the way into it.
     Promise.resolve().then(loadHistory);
   }, [loadHistory]);
+
+  const rollback = useConfirmAction({
+    onConfirm: async (upload) => {
+      try {
+        const result = await rollbackUpload(
+          upload.blob_path,
+          rollbackReason.trim(),
+        );
+        notify(
+          'warning',
+          `${upload.filename} rolled back: ${result.rows_restored} restored, ${result.rows_removed} removed.`,
+        );
+        await loadHistory();
+      } catch (error) {
+        notify('error', error.message || 'Failed to roll back the upload.');
+      }
+    },
+  });
+
+  function requestRollback(upload) {
+    setRollbackReason('');
+    rollback.request(upload);
+  }
+
+  const deletion = useConfirmAction({
+    onConfirm: async (upload) => {
+      try {
+        await deleteUpload(upload.blob_path);
+        notify('deleted', `${upload.filename} was deleted from GCS.`);
+        await loadHistory();
+      } catch (error) {
+        notify('error', error.message || 'Failed to delete the uploaded file.');
+      }
+    },
+  });
 
   // ---- Selection and checking ---------------------------------------------
 
@@ -429,9 +477,60 @@ export default function UploadPage() {
           isLoading={isLoadingHistory}
           error={historyError}
           onRefresh={loadHistory}
+          onRollback={requestRollback}
+          onDelete={deletion.request}
           onLoaded={handleLoaded}
           months={UPLOAD_HISTORY_MONTHS}
         />
+        <ConfirmDialog
+          open={Boolean(rollback.target)}
+          title="Rollback this upload?"
+          description="Its transformed sell-out rows will be removed, and any older values it replaced will be restored. The raw file and mapping will be kept for audit."
+          details={rollback.target ? [
+            { label: 'File', value: rollback.target.filename },
+            { label: 'Rows loaded', value: rollback.target.rows_stored ?? '—' },
+            { label: 'Uploaded', value: formatDateTime(rollback.target.uploaded_at) },
+          ] : []}
+          confirmLabel="Rollback upload"
+          pendingLabel="Rolling back…"
+          isPending={rollback.isPending}
+          confirmDisabled={rollbackReason.trim().length < 3}
+          onConfirm={rollback.confirm}
+          onCancel={rollback.cancel}
+        >
+          <label className="mt-3 block text-sm font-medium text-deep-violet-blue" htmlFor="rollback-reason">
+            Reason for rollback <span className="text-red-700">*</span>
+          </label>
+          <textarea
+            id="rollback-reason"
+            value={rollbackReason}
+            onChange={(event) => setRollbackReason(event.target.value)}
+            maxLength={500}
+            rows={3}
+            required
+            placeholder="For example: Uploaded under the wrong customer"
+            className="mt-1.5 w-full resize-y rounded-md border border-lavander bg-white px-3 py-2 text-sm text-deep-violet-blue outline-none placeholder:text-deep-violet-blue/40 focus:border-deep-violet-blue"
+          />
+          <p className="mt-1 text-xs text-deep-violet-blue/60">
+            This reason will be saved in the rollback audit trail.
+          </p>
+        </ConfirmDialog>
+        <ConfirmDialog
+          open={Boolean(deletion.target)}
+          title="Delete this uploaded file?"
+          description="The raw source file will be permanently removed from GCS. Its confirmed mapping and retained ingestion audit will not be deleted."
+          details={deletion.target ? [
+            { label: 'File', value: deletion.target.filename },
+            { label: 'Customer', value: deletion.target.vendor || '—' },
+            { label: 'Uploaded', value: formatDateTime(deletion.target.uploaded_at) },
+          ] : []}
+          confirmLabel="Delete file"
+          pendingLabel="Deleting…"
+          isPending={deletion.isPending}
+          onConfirm={deletion.confirm}
+          onCancel={deletion.cancel}
+        />
+        <Toast toast={toast} onDismiss={dismissToast} />
       </div>
 
       <LoadConfirmDialog

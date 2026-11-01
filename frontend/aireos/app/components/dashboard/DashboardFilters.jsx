@@ -9,7 +9,10 @@ import { useEffect, useState } from 'react';
 // (`hasPeriodChanges`). `customerControl` (a CustomerSelector owned by
 // page.js) renders first because it is the master scope: `customer` scopes
 // both dropdowns' own option lists, since a different customer has its own
-// SKUs and store chain. Each dropdown loads its own options list (refetching
+// SKUs and store chain. The Store list is also scoped to `mode`, the channel
+// the chart shows: a store is sold through one channel (an online outlet such
+// as Sheng Siong's "6M_Ecomm" is the online retailer's), so the offline view
+// lists only offline stores (see backend get_store_options). Each dropdown loads its own options list (refetching
 // on dataVersion so new data shows up without a reload) and reports both the
 // picked value and its display label up to the parent, since the parent
 // needs the label for the filter badge. Active filter badges render inside
@@ -20,6 +23,7 @@ export default function DashboardFilters({
   onSkuChange,
   customers = [],
   customer,
+  mode = 'offline',
   store,
   onStoreChange,
   storeDisabled = false,
@@ -29,17 +33,18 @@ export default function DashboardFilters({
   activeFilters = null,
   onClearFilters,
 }) {
-  // Each result remembers which customer it was fetched for, so a list is
-  // "loading" (derived during render) until the current customer's options
-  // arrive — switching customer never shows the previous customer's SKUs or
-  // stores. dataVersion refetches for the same customer stay silent.
+  // Each result remembers what it was fetched for, so a list is "loading"
+  // (derived during render) until the current scope's options arrive —
+  // switching customer (or, for stores, channel) never shows the previous
+  // one's SKUs or stores. dataVersion refetches for the same scope stay silent.
   const [skuResult, setSkuResult] = useState({ scope: '', options: [], error: null });
-  const [storeResult, setStoreResult] = useState({ customer: '', options: [], error: null });
+  const [storeResult, setStoreResult] = useState({ scope: '', options: [], error: null });
   const skuScope = customers.join('\0');
   const skuOptions = customers.length === 0 ? [] : skuResult.options;
   const skuLoading = customers.length > 0 && skuResult.scope !== skuScope;
+  const storeScope = `${customer}\0${mode}`;
   const storeOptions = customer ? storeResult.options : [];
-  const storeLoading = Boolean(customer) && storeResult.customer !== customer;
+  const storeLoading = Boolean(customer) && storeResult.scope !== storeScope;
 
   useEffect(() => {
     if (customers.length === 0) return undefined;
@@ -81,16 +86,16 @@ export default function DashboardFilters({
 
     async function fetchOptions() {
       try {
-        const params = new URLSearchParams({ customer });
+        const params = new URLSearchParams({ customer, mode });
         const res = await fetch(
           `${process.env.NEXT_PUBLIC_API_URL}/api/sales/store-options?${params.toString()}`,
           { credentials: 'include' },
         );
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Failed to load store options');
-        if (!cancelled) setStoreResult({ customer, options: data.options, error: null });
+        if (!cancelled) setStoreResult({ scope: `${customer}\0${mode}`, options: data.options, error: null });
       } catch (err) {
-        if (!cancelled) setStoreResult({ customer, options: [], error: err.message });
+        if (!cancelled) setStoreResult({ scope: `${customer}\0${mode}`, options: [], error: err.message });
       }
     }
 
@@ -98,7 +103,7 @@ export default function DashboardFilters({
     return () => {
       cancelled = true;
     };
-  }, [customer, dataVersion]);
+  }, [customer, mode, dataVersion]);
 
   const error = skuResult.error || storeResult.error;
 

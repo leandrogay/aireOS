@@ -216,11 +216,22 @@ def test_confirmed_contract_stores_valid_rows_when_enabled(monkeypatch):
     monkeypatch.setenv("CLOUD_SQL_LOAD_ENABLED", "true")
     captured = {}
 
-    def load(dataframe, *, replace_source=False, data_source="aireos_upload"):
+    def load(
+        dataframe,
+        *,
+        replace_source=False,
+        data_source="aireos_upload",
+        source_blob=None,
+        content_hash=None,
+        mapping_fingerprint=None,
+    ):
         captured["rows"] = len(dataframe)
         captured["replace_source"] = replace_source
         captured["period_type"] = dataframe.iloc[0]["period_type"]
         captured["data_source"] = data_source
+        captured["source_blob"] = source_blob
+        captured["content_hash"] = content_hash
+        captured["mapping_fingerprint"] = mapping_fingerprint
         return {
             "rows_stored": len(dataframe),
             "rows_consolidated": 0,
@@ -238,6 +249,7 @@ def test_confirmed_contract_stores_valid_rows_when_enabled(monkeypatch):
         _as_txt_bytes(dataframe),
         "gs://bucket/august.txt",
         replace_source=True,
+        source_blob="uploads/august.txt",
     )
 
     assert captured == {
@@ -245,6 +257,9 @@ def test_confirmed_contract_stores_valid_rows_when_enabled(monkeypatch):
         "replace_source": True,
         "period_type": "month",
         "data_source": "aireos_upload",
+        "source_blob": "uploads/august.txt",
+        "content_hash": None,
+        "mapping_fingerprint": "confirmed123",
     }
     assert result["processing"]["rows_stored"] == 1
     assert result["processing"]["storage_status"] == "completed"

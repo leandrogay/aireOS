@@ -46,6 +46,7 @@ const CONFIRM_TONES = {
  *   cancelLabel?: string,
  *   tone?: 'destructive' | 'default',
  *   isPending?: boolean,
+ *   confirmDisabled?: boolean,
  *   onConfirm: () => void,
  *   onCancel: () => void,
  * }} props
@@ -61,6 +62,7 @@ export default function ConfirmDialog({
   cancelLabel = 'Cancel',
   tone = 'destructive',
   isPending = false,
+  confirmDisabled = false,
   onConfirm,
   onCancel,
 }) {
@@ -133,7 +135,7 @@ export default function ConfirmDialog({
           <button
             type="button"
             onClick={onConfirm}
-            disabled={isPending}
+            disabled={isPending || confirmDisabled}
             className={cn(
               'rounded-md border px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60',
               CONFIRM_TONES[tone] || CONFIRM_TONES.destructive,
