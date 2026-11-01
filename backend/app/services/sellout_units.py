@@ -49,7 +49,8 @@ def get_monthly_sellout(
         GROUP BY sku, month
         """
     )
-    params = {"retailer_ids": retailer_ids}
+    # Only units are read, so no revenue is estimated.
+    params = {"retailer_ids": retailer_ids, "revenue_estimates": sellout_service.NO_REVENUE_ESTIMATES}
 
     if conn is not None:
         rows = conn.execute(query, params).mappings().all()

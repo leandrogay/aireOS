@@ -58,12 +58,16 @@ aireOS/
 │   │       ├── customer_service.py customers CRUD + list_customers (customers with nested retailers, in_use flags,
 │   │       │                      unlinked retailers); a record with data can't be renamed/deleted (looked up by name)
 │   │       ├── promotion_service.py promotions + promotion_stores + promotion_skus, raw SQL, one txn per write
+│   │       ├── promotion_pricing.py read-only estimated revenue for a blank-revenue sell-out row: SKU price on each sale
+│   │       │                      day, less the promotion mechanic and voucher (POST /api/promotions/revenue-estimate)
 │   │       ├── ingestion_service.py upload-run audit + append-only sell-out versions; atomically rolls back bad uploads
 │   │       ├── sellout_service.py Cloud SQL `sellout`: ingestion writes, plus the Sales Dashboard reads (SKU ranking,
 │   │       │                      dashboard summary, period comparison, options, freshness) that used to go through
 │   │       │                      BigQuery -- reads Cloud SQL directly now (no replication lag), and both this and
 │   │       │                      sellout_units.py prefer monthly-granularity rows over weekly ones for the same
-│   │       │                      retailer+month when both exist (EFFECTIVE_SELLOUT_CTE)
+│   │       │                      retailer+month when both exist (EFFECTIVE_SELLOUT_CTE). A blank revenue takes its
+│   │       │                      promotion_pricing estimate, bound per read as :revenue_estimates (never stored),
+│   │       │                      and units x current SKU price only when it has none
 │   │       ├── bigquery.py        Forecast reads only (get_forecast_output_rows, get_realised_prices, get_forecast_actuals,
 │   │       │                      get_forecast_options, get_sales_loaded_at) + get_bigquery_client; the Sales Dashboard
 │   │       │                      functions that used to live here moved to sellout_service.py

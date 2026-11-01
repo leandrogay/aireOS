@@ -8,6 +8,7 @@ reads that used to live in bigquery.py (further down).
 """
 
 import datetime
+import json
 import re
 from collections import Counter
 from functools import lru_cache
@@ -17,7 +18,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
 from app import config
-from app.services import catalog_service, ingestion_service, sql
+from app.services import catalog_service, ingestion_service, promotion_pricing, sql
 
 
 class SelloutLoadError(RuntimeError):
@@ -508,9 +509,26 @@ def _get_read_engine() -> Engine:
 # rows are "the" sell-out for a given retailer+month.
 #
 # Revenue on each chosen row stays the ingested sellout.revenue. A blank
-# revenue (NULL, not an explicit 0) is quantity_units times skus.price, the
-# one current catalog list price for that SKU. Inventory reads only units
-# from this view, so the price join does not change stock figures.
+# revenue (NULL, not an explicit 0) takes its estimate from
+# :revenue_estimates (see _REVENUE_ESTIMATES), and only a row with no
+# estimate falls back to quantity_units times skus.price, the one current
+# catalog list price for that SKU. Inventory reads only units from this view,
+# so it binds NO_REVENUE_ESTIMATES and the price join does not change stock
+# figures.
+#
+# Estimated revenue (promotion_pricing: the SKU price on each sale day, less
+# any promotion and voucher) is worked out in Python for each read, by
+# _revenue_estimates, and bound as one JSON parameter. It is a lookup table
+# for that one query only -- nothing is written back to sellout. It is keyed
+# by sellout's primary key.
+_REVENUE_ESTIMATES = """
+    jsonb_to_recordset(CAST(:revenue_estimates AS jsonb)) AS e(
+        retailer_id integer, store_code text, sku text, period_start date,
+        period_type text, estimated_revenue double precision
+    )
+"""
+NO_REVENUE_ESTIMATES = "[]"
+
 EFFECTIVE_SELLOUT_CTE = """
     WITH monthly_coverage AS (
         SELECT DISTINCT retailer_id, date_trunc('month', period_start)::date AS month
@@ -536,10 +554,13 @@ EFFECTIVE_SELLOUT_CTE = """
     effective_sellout AS (
         SELECT p.retailer_id, p.store_code, p.sku, p.period_start, p.period_end,
                p.quantity_units,
-               COALESCE(p.revenue, p.quantity_units * k.price) AS revenue,
+               COALESCE(p.revenue, e.estimated_revenue, p.quantity_units * k.price) AS revenue,
                p.period_type
         FROM preferred_rows p
         LEFT JOIN skus k ON k.sku = p.sku
+        LEFT JOIN """ + _REVENUE_ESTIMATES + """
+          ON e.retailer_id = p.retailer_id AND e.store_code = p.store_code AND e.sku = p.sku
+         AND e.period_start = p.period_start AND e.period_type = p.period_type
     )
 """
 
@@ -550,11 +571,62 @@ PRICED_SELLOUT_FROM = """
 (
     SELECT src.retailer_id, src.store_code, src.sku, src.period_start, src.period_end,
            src.period_type, src.quantity_units,
-           COALESCE(src.revenue, src.quantity_units * k.price) AS revenue
+           COALESCE(src.revenue, e.estimated_revenue, src.quantity_units * k.price) AS revenue
     FROM sellout src
     LEFT JOIN skus k ON k.sku = src.sku
+    LEFT JOIN """ + _REVENUE_ESTIMATES + """
+      ON e.retailer_id = src.retailer_id AND e.store_code = src.store_code AND e.sku = src.sku
+     AND e.period_start = src.period_start AND e.period_type = src.period_type
 ) s
 """
+
+
+def _revenue_estimates(retailer_names: list[str], start_date: str | None, end_date: str | None) -> str:
+    """
+    Estimated revenue for the blank-revenue sellout rows a dashboard read
+    could include, as the JSON :revenue_estimates takes. Scoped by retailer
+    and period start only: an estimate for a row the read then filters out
+    (another SKU or store) is simply never joined. A row promotion_pricing
+    can't price (overlapping promotions, unknown terms) is left out, so it
+    keeps the list-price fallback.
+    """
+    where_clauses = [
+        "s.revenue IS NULL",
+        "s.retailer_id IN (SELECT retailer_id FROM retailers WHERE retailer_name = ANY(CAST(:retailer_names AS text[])))",
+    ]
+    params: dict = {"retailer_names": retailer_names}
+    if start_date:
+        where_clauses.append("s.period_start >= CAST(:start_date AS date)")
+        params["start_date"] = start_date
+    if end_date:
+        where_clauses.append("s.period_start <= CAST(:end_date AS date)")
+        params["end_date"] = end_date
+    query = text(
+        f"""
+        SELECT s.retailer_id, s.store_code, s.sku, s.period_start, s.period_end,
+               s.period_type, s.quantity_units, s.revenue
+        FROM sellout s
+        WHERE {' AND '.join(where_clauses)}
+        """
+    )
+    with _get_read_engine().connect() as conn:
+        rows = [dict(row) for row in conn.execute(query, params).mappings().all()]
+    if not rows:
+        return NO_REVENUE_ESTIMATES
+
+    estimates = [
+        {
+            "retailer_id": row["retailer_id"],
+            "store_code": row["store_code"],
+            "sku": row["sku"],
+            "period_start": str(row["period_start"]),
+            "period_type": row["period_type"],
+            "estimated_revenue": row["estimated_revenue"],
+        }
+        for row in promotion_pricing.estimate_sales_revenue(rows)
+        if row["revenue_source"] == "estimated"
+    ]
+    return json.dumps(estimates)
 
 
 # ============================================================
@@ -689,6 +761,7 @@ def get_sku_ranking(
     if end_date:
         where_clauses.append("s.period_start <= CAST(:end_date AS date)")
         params["end_date"] = end_date
+    params["revenue_estimates"] = _revenue_estimates(retailer_names, start_date, end_date)
 
     # metric/sql_order are interpolated only after validation against the
     # fixed SKU_RANKING_METRICS / asc|desc lists above -- never raw input.
@@ -932,6 +1005,7 @@ def get_dashboard_summary(
     if granularity not in DASHBOARD_GRANULARITIES:
         raise ValueError(f"granularity must be one of {DASHBOARD_GRANULARITIES}")
     where_clauses, params = _dashboard_scope(customer, sku, store, start_date, end_date)
+    params["revenue_estimates"] = _revenue_estimates(params["retailer_names"], start_date, end_date)
 
     if granularity == "month":
         source_cte = EFFECTIVE_SELLOUT_CTE
@@ -1004,6 +1078,7 @@ def get_customer_totals(
     if end_date:
         where_clauses.append("s.period_start <= CAST(:end_date AS date)")
         params["end_date"] = end_date
+    params["revenue_estimates"] = _revenue_estimates(retailer_names, start_date, end_date)
 
     totals_query = text(
         EFFECTIVE_SELLOUT_CTE
@@ -1163,6 +1238,8 @@ def _latest_preferred_period(retailer: str | None) -> dict | None:
         where_clauses.append("retailer_id IN (SELECT retailer_id FROM retailers WHERE retailer_name = :retailer_name)")
         params["retailer_name"] = retailer
     where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+    # Only dates are read, so nothing is priced.
+    params["revenue_estimates"] = NO_REVENUE_ESTIMATES
     query = text(
         EFFECTIVE_SELLOUT_CTE
         + f"""
@@ -1380,6 +1457,9 @@ def get_period_comparison(
     if store:
         where_clauses.append("s.store_code = :store")
         params["store"] = store
+    params["revenue_estimates"] = _revenue_estimates(
+        retailer_names, params["overall_start"], params["overall_end"],
+    )
 
     if comparison_type == "wow":
         source_cte = ""

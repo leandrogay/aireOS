@@ -6,13 +6,26 @@ selection rule (EFFECTIVE_SELLOUT_CTE) for a retailer+month that has only
 monthly-granularity rows.
 """
 
+import json
 from datetime import date
 
 import pandas as pd
 import pytest
 from conftest import FakeConnection, FakeEngine
 
-from app.services import sellout_service
+from app.services import promotion_pricing, sellout_service
+
+# The real estimate lookup, kept before the fixture below replaces it.
+_real_revenue_estimates = sellout_service._revenue_estimates
+
+
+@pytest.fixture(autouse=True)
+def _no_revenue_estimates(monkeypatch):
+    # The dashboard reads look up estimated revenue for blank-revenue rows
+    # first (a query of its own, then promotion_pricing's reads). Off by
+    # default here, so each test sees only the read it is about; the
+    # "Estimated revenue" section below tests the lookup itself.
+    monkeypatch.setattr(sellout_service, "_revenue_estimates", lambda *args: "[]")
 
 
 def _install(monkeypatch, respond=None):
@@ -49,18 +62,19 @@ def test_sku_ranking_reads_through_effective_sellout(monkeypatch):
     (sql, _params) = conn.calls[0]
     assert "effective_sellout" in sql
     assert "monthly_coverage" in sql
-    # A stored revenue is kept. A blank one is units times the catalog price.
-    assert "COALESCE(p.revenue, p.quantity_units * k.price)" in sql
+    # A stored revenue is kept. A blank one takes its estimate, and units
+    # times the catalog price only when it has none.
+    assert "COALESCE(p.revenue, e.estimated_revenue, p.quantity_units * k.price)" in sql
 
 
-def test_week_summary_prices_a_blank_revenue_from_the_catalog(monkeypatch):
+def test_week_summary_prices_a_blank_revenue_from_its_estimate(monkeypatch):
     conn = _install(monkeypatch, lambda sql, params: [])
 
     sellout_service.get_dashboard_summary(granularity="week", customer="fairprice")
 
     (sql, _params) = conn.calls[0]
     assert "effective_sellout" not in sql
-    assert "COALESCE(src.revenue, src.quantity_units * k.price)" in sql
+    assert "COALESCE(src.revenue, e.estimated_revenue, src.quantity_units * k.price)" in sql
 
 
 def test_sku_ranking_order_by_has_no_secondary_sort_key(monkeypatch):
@@ -602,3 +616,133 @@ def test_period_comparison_available_is_true_only_when_previous_has_rows(monkeyp
     result = sellout_service.get_period_comparison(customer="fairprice", mode="offline")
 
     assert result["previous"]["available"] is False
+
+
+# ---- Estimated revenue for blank-revenue rows ---------------------------
+
+def _record_estimate_scopes(monkeypatch, estimates='[{"sku": "SKU-1"}]'):
+    scopes = []
+
+    def fake(retailer_names, start_date, end_date):
+        scopes.append((retailer_names, start_date, end_date))
+        return estimates
+
+    monkeypatch.setattr(sellout_service, "_revenue_estimates", fake)
+    return scopes
+
+
+def test_sku_ranking_binds_the_estimates_for_its_customers_and_dates(monkeypatch):
+    scopes = _record_estimate_scopes(monkeypatch)
+    conn = _install(monkeypatch, lambda sql, params: [])
+
+    sellout_service.get_sku_ranking(customer="fairprice", start_date="2026-08-01", end_date="2026-08-31")
+
+    assert scopes == [(["fairprice_offline", "fairprice_online"], "2026-08-01", "2026-08-31")]
+    (_sql, params) = conn.calls[0]
+    assert params["revenue_estimates"] == '[{"sku": "SKU-1"}]'
+
+
+def test_both_dashboard_summary_granularities_bind_the_estimates(monkeypatch):
+    for granularity in ("week", "month"):
+        scopes = _record_estimate_scopes(monkeypatch)
+        conn = _install(monkeypatch, lambda sql, params: [])
+
+        sellout_service.get_dashboard_summary(
+            granularity=granularity, customer="nhg", start_date="2026-01-01", end_date="2026-08-31",
+        )
+
+        assert scopes == [(["nhg_offline", "nhg_online"], "2026-01-01", "2026-08-31")]
+        assert conn.calls[0][1]["revenue_estimates"] == '[{"sku": "SKU-1"}]'
+
+
+def test_customer_totals_bind_the_estimates_for_every_customer(monkeypatch):
+    scopes = _record_estimate_scopes(monkeypatch)
+    conn = _install(monkeypatch, lambda sql, params: [])
+
+    sellout_service.get_customer_totals(["fairprice", "nhg"], start_date="2026-08-01")
+
+    assert scopes == [(["fairprice_offline", "fairprice_online", "nhg_offline", "nhg_online"], "2026-08-01", None)]
+    totals_sql, totals_params = conn.sql_containing("effective_sellout")[0]
+    assert totals_params["revenue_estimates"] == '[{"sku": "SKU-1"}]'
+
+
+def test_period_comparison_estimates_cover_both_periods(monkeypatch):
+    scopes = _record_estimate_scopes(monkeypatch)
+    conn = _install(monkeypatch, lambda sql, params: [])
+
+    sellout_service.get_period_comparison(
+        customer="fairprice", mode="online",
+        current_start="2026-08-01", current_end="2026-08-31",
+        previous_start="2026-07-01", previous_end="2026-07-31",
+    )
+
+    assert scopes == [(["fairprice_online"], "2026-07-01", "2026-08-31")]
+    assert conn.calls[-1][1]["revenue_estimates"] == '[{"sku": "SKU-1"}]'
+
+
+def test_latest_period_reads_bind_no_estimates(monkeypatch):
+    # Only dates are read there, so nothing is priced.
+    def no_estimates(*args):
+        raise AssertionError("A dates-only read must not price anything")
+
+    monkeypatch.setattr(sellout_service, "_revenue_estimates", no_estimates)
+    conn = _install(monkeypatch, lambda sql, params: [])
+
+    sellout_service.get_default_date_range(customer="fairprice")
+
+    assert all(params.get("revenue_estimates") in (None, "[]") for _sql, params in conn.calls)
+    assert any(params.get("revenue_estimates") == "[]" for _sql, params in conn.calls)
+
+
+def test_estimates_read_only_the_blank_revenue_rows_in_scope(monkeypatch):
+    monkeypatch.setattr(promotion_pricing, "estimate_sales_revenue", lambda rows: [])
+    conn = _install(monkeypatch, lambda sql, params: [])
+
+    _real_revenue_estimates(["sheng_siong_offline"], "2026-08-01", "2026-08-31")
+
+    (sql, params) = conn.calls[0]
+    assert sql.startswith("SELECT")
+    assert "s.revenue IS NULL" in sql
+    assert params == {
+        "retailer_names": ["sheng_siong_offline"],
+        "start_date": "2026-08-01",
+        "end_date": "2026-08-31",
+    }
+
+
+def test_no_blank_rows_skips_the_pricing_reads(monkeypatch):
+    def no_pricing(rows):
+        raise AssertionError("Nothing to price, so promotion_pricing must not read")
+
+    monkeypatch.setattr(promotion_pricing, "estimate_sales_revenue", no_pricing)
+    _install(monkeypatch, lambda sql, params: [])
+
+    assert _real_revenue_estimates(["fairprice_offline"], None, None) == "[]"
+
+
+def test_only_rows_that_could_be_estimated_are_bound(monkeypatch):
+    # A row promotion_pricing can't price (overlapping promotions, unknown
+    # terms) is left out, so the query falls back to units x list price.
+    blank_row = {
+        "retailer_id": 7, "store_code": "SS01", "sku": "SKU-1",
+        "period_start": date(2026, 8, 1), "period_end": date(2026, 8, 31),
+        "period_type": "month", "quantity_units": 31.0, "revenue": None,
+    }
+    priced = {**blank_row, "revenue_source": "estimated", "estimated_revenue": 248.0}
+    unpriced = {**blank_row, "sku": "SKU-2", "revenue_source": "unavailable", "estimated_revenue": None}
+    seen = []
+
+    def fake_pricing(rows):
+        seen.extend(rows)
+        return [priced, unpriced]
+
+    monkeypatch.setattr(promotion_pricing, "estimate_sales_revenue", fake_pricing)
+    _install(monkeypatch, lambda sql, params: [blank_row, {**blank_row, "sku": "SKU-2"}])
+
+    result = _real_revenue_estimates(["sheng_siong_offline"], None, None)
+
+    assert [row["sku"] for row in seen] == ["SKU-1", "SKU-2"]
+    assert json.loads(result) == [{
+        "retailer_id": 7, "store_code": "SS01", "sku": "SKU-1",
+        "period_start": "2026-08-01", "period_type": "month", "estimated_revenue": 248.0,
+    }]
