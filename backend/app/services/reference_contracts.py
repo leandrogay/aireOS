@@ -27,10 +27,9 @@ Decisions confirmed by the product owner (2026-10-30):
   D12 Prime's JKDC withdrawal report is sell-out: Total Shipped Qty (column G)
       as the volume, no revenue
 
-SingHealth and Prime use instructions the mapping prompt cannot propose yet
-(a stated period, labels above the header, multiply), so they are not shown to
-the model as examples (`prompt_example`), nor is FairPrice weekly, which
-repeats the monthly example.
+FairPrice weekly is not shown to the model as an example (`prompt_example`):
+it repeats the monthly example. SingHealth is the example of a stated period,
+labels above the header and multiply.
 """
 
 import copy
@@ -75,6 +74,8 @@ SINGHEALTH_PRICE_COLUMN = "Promo cost"
 
 # A size token read whole: "S/M" before its parts.
 SIZE_PATTERN = r"\b(S/M|XL|L)\b"
+# Pieces per pack at the end of a FairPrice description: "... XL 12S" -> 12.
+PACK_SIZE_PATTERN = r"(\d+)S\s*$"
 
 _SURE = {"confidence": "high", "rationale": "Reference contract.", "reviewed": True}
 
@@ -122,8 +123,12 @@ FAIRPRICE_MONTHLY = {
         "brand": _field(status="mapped", source="Brand"),
         "product_category": _field(status="mapped", source="Dept Description"),
         "uom": _PACKS,
-        # D2: this column is packs per carton, not pieces per pack.
-        "pack_size": _not_in_file("Pack Size here is packs per carton, not pieces per pack."),
+        # D2: the Pack Size column is packs per carton, not pieces per pack;
+        # the pieces are the "10S" / "12S" at the end of the description.
+        "pack_size": _field(
+            status="mapped", source="Article Description",
+            transforms=[{"type": "regex_extract", "pattern": PACK_SIZE_PATTERN, "group": 1}],
+        ),
         "quantity_units": _field(
             status="mapped",
             melt_group="qty",
@@ -384,14 +389,12 @@ REFERENCE_CONTRACTS = {
         "vendor": "SingHealth",
         "description": "Workbook: report title and period above a row of outlet codes, header on row 4 naming each outlet, wide by outlet, unit costs but no sales value.",
         "contract": SINGHEALTH_ER130,
-        "prompt_example": False,
     },
     "prime_jkdc": {
         "name": "Prime JKDC withdrawal report",
         "vendor": "Prime",
         "description": "One row per pallet withdrawn from the distribution centre to an outlet, quantity in packs, no revenue.",
         "contract": PRIME_JKDC,
-        "prompt_example": False,
     },
 }
 

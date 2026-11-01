@@ -16,27 +16,34 @@ import json
 
 import pandas as pd
 
-from app.services.mapping_contract import DECIDABLE_FIELDS, MEASURE_FIELDS, RULE_OPS
+from app.services.mapping_contract import (
+    DECIDABLE_FIELDS,
+    LABEL_TARGETS,
+    LAYOUT_SOURCES,
+    MEASURE_FIELDS,
+    MELT_KEY_TARGETS,
+    RULE_OPS,
+    TRANSFORM_TYPES,
+)
 from app.services.reference_contracts import REFERENCE_CONTRACTS
 
-# The field definitions agreed with the product owner (hand-off section 4).
 FIELD_DEFINITIONS = {
-    "period_start": "First day of the calendar month the sales fall in. Read from a period header, or from a transaction date with month_start.",
+    "period_start": "First day of the calendar month the sales fall in. Read from a period header, or from a transaction date with month_start. When the table has neither, derive it from_layout 'stated_period' (the period written above the table), with period_type the constant 'month'.",
     "period_type": "'month' for every retailer. Derived when period column headers say Month/Week; otherwise a constant.",
     "retailer": "Retailer + channel code, lower case: '<family>_online' or '<family>_offline' (fairprice_online, fairprice_offline, nhg_offline, sheng_siong_online, sheng_siong_offline). A supplier or vendor name is NOT the retailer.",
     "store_code": "The retailer's own store/outlet identifier. Not available when the file reports all stores together.",
     "store_name": "Human-readable store name. Not available when the file only has codes.",
-    "store_format": "The retailer's store format code (HYPER, SUPER, FPON...).",
+    "store_format": "The retailer's store format code (HYPER, SUPER, FPON...) which is used to categorize the business.",
     "sku": "The MASTER SKU code (listed under 'SKU master'). When the file's product codes are the master codes (FairPrice article numbers such as 13255043) map the column as it is. Otherwise add a value_map transform -- the product-code table -- giving, for every product code in the file, the master SKU it is, matched on the file's description (range and size). Leave out any code you cannot match; it is flagged for a person.",
     "product_name": "The product's name as the file describes it.",
     "sku_range": "The product range: the kind of product, a level above the SKU and without its size (ADULT DIAPER PANTS, ADULT DIAPER TAPED, Ultra Tape). May be a merchandise-hierarchy column such as MCH.",
     "size": "The product size (S/M, L, XL), from a size column or extracted from a description with regex_extract.",
-    "brand": "The brand, if the file has a brand column.",
-    "product_category": "The retailer's product category, e.g. a department description.",
+    "brand": "The brand, if the file has a brand column or extracted from a description with regex_extract.",
+    "product_category": "The retailer's product category, e.g. a department description which may be extracted from a description with regex_extract.",
     "uom": "Unit of quantity_units: always 'EA' (packs), as a constant -- carton rows are converted with uom_factor, not relabelled.",
     "pack_size": "Pieces per pack. Not a cartons-per-case or packs-per-carton figure.",
-    "quantity_units": "Net consumer packs sold in the period; returns reduce it. If sales are recorded as negative numbers, negate. If some rows count cartons, convert with uom_factor.",
-    "revenue": "Gross sales value of the units sold, in SGD. NOT a claim, contra, rebate, promotion support, unit price or cost.",
+    "quantity_units": "Net consumer packs sold in the period; returns reduce it. If sales are recorded as negative numbers, it may be counted as it is decreasing inventory from the retailer's point of view so should be counted as a sale. If some rows count cartons, convert with uom_factor.",
+    "revenue": "Gross sales value of the units sold, in SGD. NOT a claim, contra, rebate, promotion support, unit price or cost. When the file has units and a per-unit price but no sales value, derive it from quantity_units with multiply by the price column (confidence medium: a person confirms which price).",
 }
 
 GLOSSARY = {
@@ -44,7 +51,7 @@ GLOSSARY = {
     "Sales UOM EA / CAR": "each (one pack) / carton",
     "Un. of Entry": "SAP unit of entry",
     "Posting Date": "SAP transaction date",
-    "Contra / CMM / Supplier Claim": "a promotion claim against the supplier -- never revenue",
+    "Contra / Supplier Claim": "a promotion claim against the supplier -- never revenue",
     "_Ecomm suffix on an outlet code": "the online channel",
     "UT / ULT / ULTRA PROTECT": "Ultra",
     "AD": "Adult",
@@ -61,19 +68,32 @@ out exactly as written, so say everything it needs and nothing it cannot do.
 
 How the contract works
 - Every field listed in the schema gets exactly one entry, with a status:
-  mapped (from a source column, or from a melt group's key/value), derived
-  (period_type from period headers, or another field run through transforms
-  via from_field), constant (same value on every row), or not_available.
+  mapped (from a source column, or from a melt group's key, value or label),
+  derived (period_type from period headers; another field run through
+  transforms via from_field; or period_start from_layout 'stated_period'),
+  constant (same value on every row), or not_available.
 - not_available is the expected, correct answer when the file does not hold
   a field. Give the reason. Never force a column into a field it does not fit,
   and never invent a value the file does not support.
-- Wide columns become rows through melt_groups: a period group (one metric per
-  month column; key_target period_start) or a store group (one column per
-  outlet code; key_target store_code). Each group fills one measure
-  ({', '.join(MEASURE_FIELDS)}). Select a group's columns by rule, never by
-  listing them: select_kind 'pattern' with a regex that also matches next
-  month's headers, or 'between' two marker columns so a new outlet is picked up.
-- Columns named claim, contra, rebate, price, cost or support are never revenue.
+- Wide columns become rows through melt_groups. Each group fills one measure
+  ({', '.join(MEASURE_FIELDS)}) with its cells, and its key_target with each
+  column's heading: period_start for one column per month or week, or a
+  descriptive field ({', '.join(MELT_KEY_TARGETS[1:])}) for one column per
+  outlet, format, brand or product. key_pattern pulls one capture group out
+  of the heading. Fields a group fills are mapped with melt_group set to it.
+- A group's labels read more about each melted column: rows_above N fills a
+  descriptive field from the cell N rows above its heading (see
+  cells_above_header in the layout -- an outlet code written over the outlet
+  name), and rows_above 0 reads the heading again for a second field. A
+  melted column with nothing above it fails the file, so only label from a
+  row that has a cell over every melted column.
+- Select a group's columns by rule, never by listing them: select_kind
+  'pattern' with a regex that also matches next month's headers, or 'between'
+  two marker columns (select_before "" runs to the last column) so a new
+  outlet is picked up.
+- Columns named claim, contra, rebate, price, cost or support are never mapped
+  as revenue. A per-unit price may only be the multiply column of a revenue
+  derived from quantity_units.
 - Set aggregate_to_month true when rows must be added up to one row per
   retailer, store, SKU and calendar month: daily or per-transaction rows, or
   several rows for one store and SKU (a carton row and an each row).
@@ -88,7 +108,10 @@ Transforms (applied in order)
 - rules: map values by {', '.join(RULE_OPS)} with a default (FPON -> online;
   outlet codes ending _Ecomm -> online). 'column' tests another column instead.
 - negate: sales recorded as negative quantities.
-- uom_factor: multiply by a factor per unit in 'column' (factors list).
+- uom_factor: multiply by a factor per unit in 'column' (factors list); a
+  factor may instead be read from factor_column (e.g. pack size). 'default'
+  is the factor, as a number, for units not listed (1 if "").
+- multiply: times the same row's value in 'column' (units x unit price).
 - month_start: a date read as the first of its month ('format' if not ISO).
 - forward_fill: a value given only on the first row of its block.
 - zero_as_empty: crosstab cells where 0 means no sale.
@@ -101,7 +124,7 @@ Retailer glossary
 {json.dumps(GLOSSARY, indent=2)}
 
 Confidence is for each decision: high when the header and the values leave no
-real doubt, medium when likely, low when guessing. A person reviews every low.
+real doubt, medium when likely, low when guessing. A human reviews every low and medium.
 The contract is checked against the file and the SKU master afterwards; an
 honest not_available costs nothing, a wrong mapping is caught and sent back."""
 
@@ -143,10 +166,7 @@ def output_schema(columns: list[str]) -> dict:
             "case_sensitive", "column", "factors", "format",
         ],
         "properties": {
-            "type": {"type": "string", "enum": [
-                "value_map", "rules", "negate", "uom_factor", "month_start",
-                "forward_fill", "zero_as_empty", "regex_extract",
-            ]},
+            "type": {"type": "string", "enum": list(TRANSFORM_TYPES)},
             "pattern": {"type": "string"},
             "group": {"type": "integer"},
             "values": {
@@ -195,8 +215,8 @@ def output_schema(columns: list[str]) -> dict:
         "type": "object",
         "additionalProperties": False,
         "required": [
-            "target", "status", "source", "melt_group", "from_field", "value",
-            "reason", "transforms", "confidence", "rationale",
+            "target", "status", "source", "melt_group", "from_field", "from_layout",
+            "value", "reason", "transforms", "confidence", "rationale",
         ],
         "properties": {
             "target": {"type": "string", "enum": list(DECIDABLE_FIELDS)},
@@ -204,6 +224,7 @@ def output_schema(columns: list[str]) -> dict:
             "source": _optional(header),
             "melt_group": {"type": "string"},
             "from_field": _optional({"type": "string", "enum": list(DECIDABLE_FIELDS)}),
+            "from_layout": _optional({"type": "string", "enum": list(LAYOUT_SOURCES)}),
             "value": {"type": "string"},
             "reason": {"type": "string"},
             "transforms": {"type": "array", "items": transform},
@@ -218,7 +239,7 @@ def output_schema(columns: list[str]) -> dict:
         "required": [
             "id", "select_kind", "select_pattern", "select_after", "select_before",
             "key_target", "key_pattern", "date_format", "period_type", "value_target",
-            "confidence", "rationale",
+            "labels", "confidence", "rationale",
         ],
         "properties": {
             "id": {"type": "string"},
@@ -226,7 +247,19 @@ def output_schema(columns: list[str]) -> dict:
             "select_pattern": {"type": "string"},
             "select_after": _optional(header),
             "select_before": _optional(header),
-            "key_target": {"type": "string", "enum": ["period_start", "store_code"]},
+            "key_target": {"type": "string", "enum": list(MELT_KEY_TARGETS)},
+            "labels": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["rows_above", "target"],
+                    "properties": {
+                        "rows_above": {"type": "integer"},
+                        "target": {"type": "string", "enum": list(LABEL_TARGETS)},
+                    },
+                },
+            },
             "key_pattern": {"type": "string"},
             "date_format": {"type": "string"},
             "period_type": _optional({"type": "string", "enum": ["month", "week"]}),
@@ -312,6 +345,12 @@ def user_prompt(
     }
     if layout.get("footer_rows"):
         layout_notes["footer_rows"] = [row["label"] for row in layout["footer_rows"]]
+    # Counted up from the header, as a melt group's labels count them.
+    if layout.get("rows_above_header") and layout.get("header_row"):
+        layout_notes["cells_above_header"] = [
+            {"rows_above": int(layout["header_row"]) - item["row"], "cells": item["cells"]}
+            for item in layout["rows_above_header"]
+        ]
 
     examples = "\n\n".join(
         _example(key, entry)
@@ -342,8 +381,8 @@ SKU master (the sku field must end up as one of these codes):
 {json.dumps(master, indent=1)}
 
 {examples}
-
-Return the contract for this file."""
+Return ONLY valid, raw JSON. Do not use markdown formatting blocks (```json). Do not include any conversational text before or after the JSON object.
+"""
 
 
 def repair_prompt(failed: list[dict], warnings: list[str]) -> str:
@@ -375,7 +414,7 @@ def parse_proposal(answer: dict) -> dict:
         if not target or target in fields:
             continue
         entry = {"status": item.get("status")}
-        for key in ("source", "melt_group", "from_field", "value", "reason", "confidence", "rationale"):
+        for key in ("source", "melt_group", "from_field", "from_layout", "value", "reason", "confidence", "rationale"):
             if _used(item.get(key)) is not None:
                 entry[key] = item[key]
         transforms = []
@@ -397,6 +436,12 @@ def parse_proposal(answer: dict) -> dict:
                     )
                     for factor in transform["factors"]
                 }
+            # The schema's default is text; a uom_factor's default is a number.
+            if clean["type"] == "uom_factor" and "default" in clean:
+                try:
+                    clean["default"] = float(clean["default"])
+                except ValueError:
+                    del clean["default"]
             transforms.append(clean)
         if transforms:
             entry["transforms"] = transforms
@@ -423,6 +468,9 @@ def parse_proposal(answer: dict) -> dict:
         }
         if item.get("period_type"):
             group["period_type"] = item["period_type"]
+        # rows_above 0 is meaningful here (the heading again), so not _used().
+        if item.get("labels"):
+            group["labels"] = [{"rows_above": label["rows_above"], "target": label["target"]} for label in item["labels"]]
         groups.append(group)
 
     contract = {"fields": fields, "melt_groups": groups}

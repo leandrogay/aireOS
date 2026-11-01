@@ -152,6 +152,18 @@ def test_sheng_siong_contract_melts_outlets_and_drops_zero_cells():
     assert row["source_file"] == "claim.xlsx"
 
 
+def test_fairprice_pack_size_is_the_pieces_at_the_end_of_the_description():
+    descriptions = pd.Series([
+        "AIRE       ADULT PANTS  L       10S",
+        "AIRE       ULTRA ADULT PANTS XL 12S",
+    ])
+    [transform] = FAIRPRICE_MONTHLY["fields"]["pack_size"]["transforms"]
+
+    pack_sizes = apply_contract._apply_transform(descriptions, "pack_size", transform, pd.DataFrame())
+
+    assert pack_sizes.tolist() == ["10", "12"]
+
+
 # ---- Instructions read from the layout -------------------------------------------
 
 def _transformed(contract: dict, filename: str, data: bytes) -> pd.DataFrame:
