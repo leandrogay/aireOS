@@ -17,7 +17,8 @@ import {
   useMessageScroller,
 } from '@/components/ui/message-scroller';
 import { cn } from '@/lib/utils';
-import useAssistant from '@/hooks/useAssistant';
+import useAssistant, { ALL_CUSTOMERS } from '@/hooks/useAssistant';
+import useCustomerOptions from '@/hooks/useCustomerOptions';
 import AssistantMessage from './AssistantMessage';
 // The words shown while the assistant works ("Pondering…"); edit the list there.
 import THINKING_WORDS from './thinkingWords';
@@ -123,6 +124,35 @@ function FollowNewQuestions({ messages }) {
   return null;
 }
 
+// "What's changed?" for every customer or one: an "All customers" chip, then
+// one per customer with sales (backend get_customer_options, the dashboard's
+// own list), so a newly loaded customer gets a chip without a code change.
+// The list is read by AssistantWidget before the panel opens, so the chips are
+// there the moment it does.
+function DigestChips({ options, onAsk, loading }) {
+  const choices = [{ value: ALL_CUSTOMERS, label: 'All customers' }, ...options];
+
+  return (
+    <div className="space-y-1.5">
+      <p className="text-xs font-medium text-deep-violet-blue">What&apos;s changed?</p>
+      <div className="flex flex-wrap gap-1">
+        {choices.map((choice) => (
+          <Button
+            key={choice.value}
+            variant="outline"
+            size="xs"
+            onClick={() => onAsk({ customer: choice.value, label: choice.label })}
+            disabled={loading}
+            className={chipButtonClass}
+          >
+            {choice.label}
+          </Button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // The question box.
 function QuestionForm({ onAsk, loading }) {
   const [draft, setDraft] = useState('');
@@ -181,11 +211,21 @@ export default function AssistantWidget() {
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [animateFrom, setAnimateFrom] = useState(0);
+  const [timesOpened, setTimesOpened] = useState(0);
   const { messages, askQuestion, askDigest, loading, error } = useAssistant();
+  // Read on page load, not on opening, so the digest chips never pop in late.
+  // Each opening re-reads it quietly, for a customer loaded since then.
+  const { options: customerOptions } = useCustomerOptions({
+    dataVersion: timesOpened,
+    enabled: pathname !== '/login',
+  });
   const reduceMotion = useReducedMotion();
 
   function toggleOpen() {
-    if (!open) setAnimateFrom(messages.length);
+    if (!open) {
+      setAnimateFrom(messages.length);
+      setTimesOpened(timesOpened + 1);
+    }
     setOpen(!open);
   }
 
@@ -262,15 +302,7 @@ export default function AssistantWidget() {
                             Ask a plain-English question about your sales or inventory data, e.g. &quot;How did
                             revenue do last week?&quot; or &quot;What SKUs are at risk right now?&quot;
                           </p>
-                          <Button
-                            variant="outline"
-                            size="xs"
-                            onClick={askDigest}
-                            disabled={loading}
-                            className={chipButtonClass}
-                          >
-                            What&apos;s changed?
-                          </Button>
+                          <DigestChips options={customerOptions} onAsk={askDigest} loading={loading} />
                         </MessageScrollerItem>
                       )}
                       {messages.map((message, i) => (

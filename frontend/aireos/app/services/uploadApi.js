@@ -33,6 +33,41 @@ async function readError(response) {
   return `Upload failed (HTTP ${response.status}).`;
 }
 
+// A credentialed POST that says how much has been sent, which fetch cannot.
+// Resolves with a Response, and rejects the way fetch does (a TypeError for a
+// network failure, an AbortError for `signal`), so callers treat it like fetch.
+// Listening to upload progress makes a cross-origin request send a CORS
+// preflight first; the backend's CORSMiddleware answers it.
+function sendWithProgress(url, body, { signal, onProgress, onSent }) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('The upload was cancelled.', 'AbortError'));
+      return;
+    }
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url);
+    xhr.withCredentials = true;
+
+    let lastPercent = null;
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable) return;
+      const percent = Math.round((event.loaded / event.total) * 100);
+      if (percent === lastPercent) return;
+      lastPercent = percent;
+      onProgress?.(percent);
+    };
+    xhr.upload.onload = () => onSent?.();
+
+    xhr.onload = () => resolve(new Response(xhr.responseText || null, { status: xhr.status }));
+    xhr.onerror = () => reject(new TypeError('Network request failed'));
+    xhr.onabort = () => reject(new DOMException('The upload was cancelled.', 'AbortError'));
+
+    signal?.addEventListener('abort', () => xhr.abort(), { once: true });
+    xhr.send(body);
+  });
+}
+
 // ========================================
 // API CALL
 // POST /api/uploads
@@ -47,8 +82,14 @@ async function readError(response) {
 // `force` replaces a previous upload of the same file; `keepDuplicate` keeps
 // both copies. They are different answers to a duplicate, so they stay
 // separate flags rather than one "ignore the check" switch.
+//
+// `onProgress(percent)` reports the file being sent, and `onSent()` that the
+// server has it all and is working on it.
 // ========================================
-export async function uploadFile(file, { force = false, keepDuplicate = false, signal } = {}) {
+export async function uploadFile(
+  file,
+  { force = false, keepDuplicate = false, signal, onProgress, onSent } = {},
+) {
   const formData = new FormData();
   formData.append('files', file);
   formData.append('force', force ? 'true' : 'false');
@@ -56,12 +97,7 @@ export async function uploadFile(file, { force = false, keepDuplicate = false, s
 
   let response;
   try {
-    response = await fetch(`${API_BASE}/api/uploads`, {
-      method: 'POST',
-      credentials: 'include',
-      body: formData,
-      signal,
-    });
+    response = await sendWithProgress(`${API_BASE}/api/uploads`, formData, { signal, onProgress, onSent });
   } catch (error) {
     if (error?.name === 'AbortError') throw error;
     throw new Error(describeNetworkFailure(error));

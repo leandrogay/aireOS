@@ -7,14 +7,17 @@ import { useEffect, useState } from 'react';
  * page-header Customer selector — see backend get_customer_options, which
  * derives these from the retailer column rather than a hardcoded list, so a
  * newly ingested customer shows up here automatically. Refetches on
- * dataVersion so that happens without a page reload.
+ * dataVersion so that happens without a page reload. `enabled: false` holds
+ * off (a screen where the user isn't signed in yet); a refetch keeps showing
+ * the current list until the new one arrives.
  */
-export default function useCustomerOptions({ dataVersion = 0 } = {}) {
+export default function useCustomerOptions({ dataVersion = 0, enabled = true } = {}) {
   const [options, setOptions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    if (!enabled) return undefined;
     let cancelled = false;
 
     async function fetchOptions() {
@@ -39,7 +42,7 @@ export default function useCustomerOptions({ dataVersion = 0 } = {}) {
     return () => {
       cancelled = true;
     };
-  }, [dataVersion]);
+  }, [dataVersion, enabled]);
 
   return { options, loading, error };
 }

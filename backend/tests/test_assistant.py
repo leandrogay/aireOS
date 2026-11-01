@@ -508,6 +508,192 @@ def test_compare_periods_used_as_multi_month_range_total_shows_monthly_breakdown
     assert captured_kwargs["granularity"] == "month"
 
 
+def test_an_earlier_comparison_probe_does_not_turn_a_range_total_into_previous_vs_current(monkeypatch):
+    # Regression (live): "sales for fairprice offline for the past 3 months".
+    # The model probed with a month-over-month call to find where the data
+    # ends, then asked for June-August. The chart showed Previous (March-May,
+    # auto-filled) vs Current instead of the three months.
+    probe = (
+        {"comparison_type": "mom", "mode": "offline", "customer": "fairprice"},
+        {"current": {"start": "2026-08-01", "end": "2026-08-31", "revenue": 13225.35, "units": 1009},
+         "previous": {"start": "2026-07-01", "end": "2026-07-31", "revenue": 17639.95, "units": 1695, "available": True}},
+    )
+    range_total = (
+        {"current_start": "2026-06-01", "current_end": "2026-08-31", "mode": "offline", "customer": "fairprice"},
+        {"current": {"start": "2026-06-01", "end": "2026-08-31", "revenue": 48475.21, "units": 4544},
+         "previous": {"start": "2026-03-01", "end": "2026-05-31", "revenue": 51865.88, "units": 4800, "available": True}},
+    )
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: {
+        "offline": {
+            "storeFormats": [],
+            "periodTotal": [
+                {"period_label": "June 2026", "period_start": "2026-06-01", "revenue": 17609.91, "units": 1840},
+                {"period_label": "July 2026", "period_start": "2026-07-01", "revenue": 17639.95, "units": 1695},
+                {"period_label": "August 2026", "period_start": "2026-08-01", "revenue": 13225.35, "units": 1009},
+            ],
+            "periodByFormat": [],
+        },
+        "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
+    })
+
+    chart = assistant._build_chart([("compare_periods", *probe), ("compare_periods", *range_total)], "fairprice")
+
+    assert chart["chart_categories"] == ["June 2026", "July 2026", "August 2026"]
+    assert chart["chart_series"] == [{"label": "Revenue", "values": [17609.91, 17639.95, 13225.35]}]
+
+
+def _range_total_call(customer, start, end, revenue, mode=None):
+    tool_input = {"customer": customer, "current_start": start, "current_end": end, **({"mode": mode} if mode else {})}
+    raw = {"current": {"start": start, "end": end, "revenue": revenue, "units": 1},
+           "previous": {"start": "2026-03-01", "end": "2026-05-31", "revenue": 1.0, "units": 1, "available": True}}
+    return ("compare_periods", tool_input, raw)
+
+
+def _monthly_summary_call(customer, months, mode=None):
+    raw = {
+        "offline": {"storeFormats": [], "periodByFormat": [], "periodTotal": [
+            {"period_label": label, "period_start": start, "revenue": revenue, "units": 1} for label, start, revenue in months
+        ]},
+        "online": {"storeFormats": [], "periodTotal": [], "periodByFormat": []},
+    }
+    return ("get_sales_summary", {"customer": customer, "granularity": "month", **({"mode": mode} if mode else {})}, raw)
+
+
+_JUNE_TO_AUGUST = (("June 2026", "2026-06-01"), ("July 2026", "2026-07-01"), ("August 2026", "2026-08-01"))
+
+
+def test_customers_compared_over_three_months_get_each_month_side_by_side():
+    # Regression (live): "side by side comparison between fairprice and nhg in
+    # the past 3 months". The model also fetched each customer's 3-month total,
+    # which used to win: one bar per customer instead of the months.
+    sources = [
+        _range_total_call("fairprice", "2026-06-01", "2026-08-31", 78693.39),
+        _range_total_call("nhg", "2026-06-01", "2026-08-31", 49972.5),
+        _monthly_summary_call("fairprice", [(*m, v) for m, v in zip(_JUNE_TO_AUGUST, (27543.25, 27097.86, 24052.28))]),
+        _monthly_summary_call("nhg", [(*m, v) for m, v in zip(_JUNE_TO_AUGUST, (9816.5, 12000.5, 28155.5))]),
+    ]
+
+    chart = assistant._build_chart(sources, "fairprice")
+
+    assert chart["chart_categories"] == ["June 2026", "July 2026", "August 2026"]
+    assert chart["chart_series"] == [
+        {"label": "Fairprice", "values": [27543.25, 27097.86, 24052.28]},
+        {"label": "Nhg", "values": [9816.5, 12000.5, 28155.5]},
+    ]
+
+
+def test_one_month_totals_for_one_customer_do_not_hide_both_customers_months():
+    # Regression (live): the follow-up "comparison for each month" fetched both
+    # customers' months plus three one-month totals for FairPrice only, and got
+    # a single bar labelled June with August's revenue.
+    sources = [
+        _monthly_summary_call("fairprice", [(*m, v) for m, v in zip(_JUNE_TO_AUGUST, (27543.25, 27097.86, 24052.28))]),
+        _monthly_summary_call("nhg", [(*m, v) for m, v in zip(_JUNE_TO_AUGUST, (9816.5, 12000.5, 28155.5))]),
+        _range_total_call("fairprice", "2026-06-01", "2026-06-30", 27543.25),
+        _range_total_call("fairprice", "2026-07-01", "2026-07-31", 27097.86),
+        _range_total_call("fairprice", "2026-08-01", "2026-08-31", 24052.28),
+    ]
+
+    chart = assistant._build_chart(sources, "fairprice")
+
+    assert [series["label"] for series in chart["chart_series"]] == ["Fairprice", "Nhg"]
+    assert chart["chart_categories"] == ["June 2026", "July 2026", "August 2026"]
+
+
+def _dated_summary_call(customer, start, end, months, mode=None):
+    name, tool_input, raw = _monthly_summary_call(customer, months, mode)
+    return name, {**tool_input, "start_date": start, "end_date": end}, raw
+
+
+def test_a_month_read_twice_for_one_customer_is_counted_once():
+    # Regression (live): the model read August-October first (only August
+    # loaded), then June-August; August showed double ($48,105, not $24,052).
+    sources = [
+        _dated_summary_call("fairprice", "2026-08-01", "2026-10-31", [("August 2026", "2026-08-01", 24052.28)]),
+        _dated_summary_call("nhg", "2026-08-01", "2026-10-31", [("August 2026", "2026-08-01", 28155.5)]),
+        _dated_summary_call("fairprice", "2026-06-01", "2026-08-31",
+                            [(*m, v) for m, v in zip(_JUNE_TO_AUGUST, (27543.25, 27097.86, 24052.28))]),
+        _dated_summary_call("nhg", "2026-06-01", "2026-08-31",
+                            [(*m, v) for m, v in zip(_JUNE_TO_AUGUST, (9816.5, 12000.5, 28155.5))]),
+    ]
+
+    chart = assistant._build_chart(sources, "fairprice")
+
+    assert chart["chart_categories"] == ["June 2026", "July 2026", "August 2026"]
+    assert chart["chart_series"] == [
+        {"label": "Fairprice", "values": [27543.25, 27097.86, 24052.28]},
+        {"label": "Nhg", "values": [9816.5, 12000.5, 28155.5]},
+    ]
+
+
+def test_a_month_not_read_for_every_customer_is_left_out_rather_than_shown_as_zero():
+    # NHG was only asked about August: June and July are unknown for it, not $0.
+    sources = [
+        _dated_summary_call("fairprice", "2026-06-01", "2026-08-31",
+                            [(*m, v) for m, v in zip(_JUNE_TO_AUGUST, (27543.25, 27097.86, 24052.28))]),
+        _dated_summary_call("nhg", "2026-08-01", "2026-08-31", [("August 2026", "2026-08-01", 28155.5)]),
+    ]
+
+    chart = assistant._build_chart(sources, "fairprice")
+
+    assert chart["chart_categories"] == ["August 2026"]
+    assert chart["chart_series"] == [
+        {"label": "Fairprice", "values": [24052.28]},
+        {"label": "Nhg", "values": [28155.5]},
+    ]
+
+
+def test_separate_channel_reads_for_one_customer_add_up():
+    august = [("August 2026", "2026-08-01")]
+    sources = [
+        _dated_summary_call("fairprice", "2026-08-01", "2026-08-31", [(*august[0], 13225.35)], mode="offline"),
+        _dated_summary_call("fairprice", "2026-08-01", "2026-08-31", [(*august[0], 10826.93)], mode="online"),
+        _dated_summary_call("nhg", "2026-08-01", "2026-08-31", [(*august[0], 28155.5)]),
+    ]
+
+    chart = assistant._build_chart(sources, "fairprice")
+
+    assert chart["chart_series"][0] == {"label": "Fairprice", "values": [24052.28]}
+
+
+def test_a_breakdown_of_another_channel_does_not_replace_the_totals_chart(monkeypatch):
+    # The answer quotes the all-channel totals; offline-only months would not match them.
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: {})
+    sources = [
+        _range_total_call("fairprice", "2026-08-01", "2026-08-31", 24052.28),
+        _monthly_summary_call("fairprice", [("August 2026", "2026-08-01", 13225.35)], mode="offline"),
+    ]
+
+    chart = assistant._build_chart(sources, "fairprice")
+
+    assert chart["chart_series"] == [{"label": "Revenue", "values": [24052.28]}]
+
+
+def test_a_single_range_total_bar_is_labelled_with_its_own_dates():
+    sources = [
+        _range_total_call("fairprice", "2026-06-01", "2026-06-30", 27543.25),
+        _range_total_call("fairprice", "2026-08-01", "2026-08-31", 24052.28),
+    ]
+
+    chart = assistant._build_chart(sources, "fairprice")
+
+    assert chart["chart_categories"] == ["2026-08-01 to 2026-08-31"]
+    assert chart["chart_series"] == [{"label": "Revenue", "values": [24052.28]}]
+
+
+def test_a_comparison_made_last_is_still_charted_as_previous_vs_current():
+    range_probe = (
+        {"current_start": "2026-08-01", "current_end": "2026-08-31"},
+        {"current": {"start": "2026-08-01", "end": "2026-08-31", "revenue": 200.0, "units": 2},
+         "previous": {"start": "2026-07-01", "end": "2026-07-31", "revenue": 100.0, "units": 1, "available": True}},
+    )
+    month_on_month = ({"comparison_type": "mom"}, range_probe[1])
+
+    chart = assistant._build_chart([("compare_periods", *range_probe), ("compare_periods", *month_on_month)], "fairprice")
+
+    assert chart["chart_categories"] == ["Previous", "Current"]
+
+
 def test_multi_month_range_total_falls_back_to_single_bar_if_breakdown_fetch_fails(monkeypatch):
     range_total = {
         "current": {"start": "2026-01-01", "end": "2026-07-31", "revenue": 123860.85, "units": 12000},
@@ -2720,7 +2906,7 @@ def _install_digest_data(
     if latest_by_channel is None:
         latest_by_channel = {
             "offline": ("2026-08-01", "2026-08-31"),
-            "online": ("2026-07-30", "2026-08-05"),
+            "online": ("2026-08-01", "2026-08-31"),
         }
     comparisons = comparisons or {
         None: _comparison(12000.0, 10000.0, 900.0, 800.0),
@@ -2765,8 +2951,7 @@ def _facts_sent(fake_client) -> str:
 
 
 def test_generate_digest_compares_the_latest_month_with_the_month_before(monkeypatch):
-    # Offline has all of August as a monthly total, online only weekly rows to
-    # 5 Aug: the newest data sets the month, so it's August vs July.
+    # Both channels have all of August loaded, so it's August vs July.
     calls = _install_digest_data(monkeypatch)
     fake_client = _install_fake_client(monkeypatch, [_digest_answer()])
 
@@ -2783,6 +2968,95 @@ def test_generate_digest_compares_the_latest_month_with_the_month_before(monkeyp
     assert result["chart_series"] == [{"label": "Revenue", "values": [10000.0, 12000.0]}]
     assert result["grounded"] is True
     assert result["answer"] == "- Revenue trend was strong."
+
+
+def test_generate_digest_covers_the_period_every_channel_has_when_one_is_behind(monkeypatch):
+    # Offline is loaded to September, online only to August. Comparing
+    # September would read online as $0, "down 100%": cover August instead,
+    # and say offline is further on.
+    calls = _install_digest_data(monkeypatch, latest_by_channel={
+        "offline": ("2026-09-01", "2026-09-30"),
+        "online": ("2026-08-01", "2026-08-31"),
+    })
+    fake_client = _install_fake_client(monkeypatch, [_digest_answer()])
+
+    assistant.generate_digest(customer="fairprice")
+
+    assert {(c["current_start"], c["current_end"]) for c in calls} == {("2026-08-01", "2026-08-31")}
+    assert (
+        "In-store (offline) sales are already loaded to 30 Sep 2026; "
+        "these figures cover Aug 2026, the latest period every channel has."
+    ) in _facts_sent(fake_client)
+
+
+def test_a_channel_with_no_sales_does_not_hold_the_digest_back(monkeypatch):
+    # NHG sells offline only: its missing online channel is not "behind".
+    calls = _install_digest_data(monkeypatch, latest_by_channel={"offline": ("2026-08-01", "2026-08-31")})
+    fake_client = _install_fake_client(monkeypatch, [_digest_answer()])
+
+    assistant.generate_digest(customer="nhg")
+
+    assert {(c["current_start"], c["current_end"]) for c in calls} == {("2026-08-01", "2026-08-31")}
+    assert "already loaded" not in _facts_sent(fake_client)
+
+
+def _install_customers(monkeypatch, revenue_by_customer, latest_by_customer=None):
+    """Two or more customers with sales; get_period_comparison answers per customer."""
+    monkeypatch.setattr(
+        sellout_service, "get_customer_options",
+        lambda: [{"value": value, "label": label} for value, label in revenue_by_customer],
+    )
+    revenues = {value: revenue for (value, _label), revenue in revenue_by_customer.items()}
+
+    def fake_comparison(**kwargs):
+        previous, current = revenues[kwargs["customer"]]
+        return _comparison(current, previous) if kwargs.get("mode") is None else _comparison(0.0, 0.0)
+
+    monkeypatch.setattr(sellout_service, "get_period_comparison", fake_comparison)
+    if latest_by_customer:
+        monkeypatch.setattr(
+            sellout_service, "get_default_date_range",
+            lambda customer, mode, period: dict(zip(("start", "end"), latest_by_customer[customer])),
+        )
+
+
+def test_the_all_customers_digest_has_a_section_per_customer_and_promotions_once(monkeypatch):
+    today = datetime.date.today()
+    _install_digest_data(monkeypatch, promotions=[_sample_promotion(
+        period_start=today + datetime.timedelta(days=1),
+        period_end=today + datetime.timedelta(days=10),
+        promotion_mechanic="20% off",
+        stores=[{"retailer": "fairprice_offline", "store_name": "Bedok"}],
+    )])
+    _install_customers(monkeypatch, {("fairprice", "Fairprice"): (10000.0, 12000.0), ("nhg", "NHG"): (8000.0, 6000.0)})
+    fake_client = _install_fake_client(monkeypatch, [_digest_answer()])
+
+    result = assistant.generate_digest(customer=assistant.ALL_CUSTOMERS)
+
+    facts = _facts_sent(fake_client)
+    assert facts.index("## Fairprice") < facts.index("## NHG") < facts.index("## All customers")
+    assert "revenue was $12,000, up 20.0% from $10,000 in Jul 2026" in facts
+    assert "revenue was $6,000, down 25.0% from $8,000 in Jul 2026" in facts
+    assert facts.count("starting or ending in the next 7 days") == 1
+    assert result["chart_categories"] == ["Fairprice", "NHG"]
+    assert result["chart_series"] == [
+        {"label": "Jul 2026", "values": [10000.0, 8000.0]},
+        {"label": "Aug 2026", "values": [12000.0, 6000.0]},
+    ]
+
+
+def test_customers_loaded_to_different_months_are_charted_as_previous_and_latest(monkeypatch):
+    _install_digest_data(monkeypatch)
+    _install_customers(
+        monkeypatch,
+        {("fairprice", "Fairprice"): (10000.0, 12000.0), ("sheng_siong", "Sheng Siong"): (500.0, 700.0)},
+        latest_by_customer={"fairprice": ("2026-08-01", "2026-08-31"), "sheng_siong": ("2026-06-01", "2026-06-30")},
+    )
+    _install_fake_client(monkeypatch, [_digest_answer()])
+
+    result = assistant.generate_digest(customer="all")
+
+    assert [series["label"] for series in result["chart_series"]] == ["Previous period", "Latest period"]
 
 
 def test_generate_digest_names_the_best_seller_and_rank_movers(monkeypatch):

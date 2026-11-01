@@ -98,7 +98,10 @@ _FUNCTION_SCHEMAS = [
         "description": (
             "Revenue and units for a customer, bucketed by week or month, "
             "split into offline/online channels and store format. Use for "
-            "\"how is revenue/units trending\" questions over a date range."
+            "\"how is revenue/units trending\" questions over a date range. "
+            "To compare customers period by period (\"FairPrice vs NHG, month "
+            "by month\"), call it once per customer with the SAME start_date, "
+            "end_date and granularity, so the chart can set their periods side by side."
         ),
         "input_schema": {
             "type": "object",
@@ -794,17 +797,24 @@ def _is_real_comparison(calls: list[tuple[dict, object]]) -> bool:
     auto-derived "previous" side is real data, but showing it as a
     Previous-vs-Current chart for a question that was never a comparison
     misrepresents what was actually asked.
+
+    The latest call decides, as it is the one the answer is built from. The
+    model sometimes probes first ("mom" to find where the data ends) before
+    asking for the range it reports, and that probe must not turn "sales for
+    the past 3 months" into a Previous-vs-Current chart.
     """
-    return any(
-        tool_input.get("comparison_type") or (tool_input.get("previous_start") and tool_input.get("previous_end"))
-        for tool_input, _ in calls
-    )
+    if not calls:
+        return False
+    tool_input, _ = calls[-1]
+    return bool(tool_input.get("comparison_type") or (tool_input.get("previous_start") and tool_input.get("previous_end")))
 
 
 def _range_label(calls: list[tuple[dict, object]]) -> str | None:
-    """"start to end" from whichever call's current period has dates, for
-    labeling the single-bar range-total chart."""
-    for _, raw in calls:
+    """"start to end" from the latest call whose current period has dates, for
+    labeling the single-bar range-total chart. The latest, as the figure on
+    the bar is the latest call's (_compare_periods_totals): June's label over
+    August's revenue was the result of reading the first."""
+    for _, raw in reversed(calls):
         current = (raw or {}).get("current") or {}
         if current.get("start") and current.get("end"):
             return f"{current['start']} to {current['end']}"
@@ -930,33 +940,106 @@ def _per_customer_comparison_chart(by_customer: dict[str, list]) -> dict | None:
     return _grouped_bar_chart(["Previous", "Current"], series)
 
 
+def _covers(tool_input: dict, period_start) -> bool:
+    """Whether a get_sales_summary call's date range includes a period's start.
+    A call without dates read everything there is, so it covers every period."""
+    day = str(period_start or "")[:10]
+    start, end = tool_input.get("start_date"), tool_input.get("end_date")
+    return (not start or day >= start) and (not end or day <= end)
+
+
 def _per_customer_trend_chart(summary_calls: list[tuple[dict, object]], customer: str) -> dict | None:
     """
     get_sales_summary for several customers ("FairPrice and NHG, May to
     July"): one series per customer over the same periods, so each month's
     bars stand side by side. Laid end to end, the months repeated along the
-    axis with no way to tell whose bar was whose. A period one customer has
-    no sales in is 0 for them.
+    axis with no way to tell whose bar was whose.
+
+    The model often reads the same month twice (first August-October to find
+    where the data ends, then June-August), so a later call's figure replaces
+    an earlier one for the same customer and channel rather than adding to it;
+    calls for different channels of one customer add up. Only periods every
+    customer's calls covered are shown: there a missing figure is a real 0,
+    whereas outside it a customer simply wasn't asked about that month.
     """
 
-    by_customer: dict[str, dict[str, float]] = {}
+    # {customer: {channel: {period_label: revenue}}}
+    figures: dict[str, dict[str | None, dict[str, float]]] = {}
+    calls_by_customer: dict[str, list[dict]] = {}
     starts: dict[str, object] = {}
     for tool_input, raw in summary_calls:
         slug = _customer_slug(tool_input.get("customer") or customer)
-        periods = by_customer.setdefault(slug, {})
+        calls_by_customer.setdefault(slug, []).append(tool_input)
+        channel = figures.setdefault(slug, {}).setdefault(tool_input.get("mode"), {})
         for row in _sales_summary_periods(raw):
-            periods[row["period_label"]] = periods.get(row["period_label"], 0.0) + row["revenue"]
+            channel[row["period_label"]] = row["revenue"]
             starts.setdefault(row["period_label"], row.get("period_start"))
-    if len(by_customer) < 2:
+    if len(figures) < 2:
         return None
 
-    # In date order, whichever customer a period first came from.
-    categories = sorted(starts, key=lambda label: (starts[label] is None, str(starts[label] or "")))
+    covered = [
+        label for label in starts
+        if all(any(_covers(call, starts[label]) for call in calls) for calls in calls_by_customer.values())
+    ]
+    if not covered:
+        return None
+    categories = sorted(covered, key=lambda label: (starts[label] is None, str(starts[label] or "")))
     series = [
-        {"label": _customer_label(slug), "values": [round(periods.get(label, 0.0), 2) for label in categories]}
-        for slug, periods in by_customer.items()
+        {
+            "label": _customer_label(slug),
+            "values": [round(sum(periods.get(label, 0.0) for periods in channels.values()), 2) for label in categories],
+        }
+        for slug, channels in figures.items()
     ]
     return _grouped_bar_chart(categories, series)
+
+
+def _sales_summary_chart(summary_results: list) -> dict | None:
+    """One bar per period across every get_sales_summary result, in call order."""
+    categories: list[str] = []
+    values: list[float] = []
+    for raw_result in summary_results:
+        for row in _sales_summary_periods(raw_result):
+            categories.append(row["period_label"])
+            values.append(row["revenue"])
+    if not categories:
+        return None
+    return {
+        "has_chart": True,
+        "chart_type": "bar",
+        "chart_categories": categories,
+        "chart_series": [{"label": "Revenue", "values": values}],
+        "has_table": False,
+        "table_columns": [],
+        "table_rows": [],
+    }
+
+
+def _breakdown_over_range_totals(
+    compare_calls: list[tuple[dict, object]],
+    summary_calls: list[tuple[dict, object]],
+    customer: str,
+) -> dict | None:
+    """
+    The period-by-period breakdown, when compare_periods was only a range-total
+    calculator and get_sales_summary was asked for the periods too. "FairPrice
+    vs NHG over the past 3 months, month by month" is answered from both: the
+    3-month totals made one bar per customer (or a single bar), hiding the
+    months asked about. Several customers get their months side by side.
+    Only when both tools covered the same channels, so the bars are the same
+    figures the answer quotes. None leaves compare_periods' own chart.
+    """
+    if not summary_calls or _is_real_comparison(compare_calls):
+        return None
+    if {tool_input.get("mode") for tool_input, _ in compare_calls} != {
+        tool_input.get("mode") for tool_input, _ in summary_calls
+    }:
+        return None
+    per_customer = _per_customer_trend_chart(summary_calls, customer)
+    if per_customer is not None:
+        return per_customer
+    chart = _sales_summary_chart([raw for _, raw in summary_calls])
+    return chart if chart is not None and len(chart["chart_categories"]) > 1 else None
 
 
 def _range_total_breakdown_chart(compare_calls: list[tuple[dict, object]], customer: str, current_revenue: float, current_label: str) -> dict:
@@ -1196,7 +1279,11 @@ def _build_chart(chart_sources: list[tuple[str, dict, object]], customer: str) -
         return forecast_chart
 
     compare_calls = [(tool_input, raw) for name, tool_input, raw in chart_sources if name == "compare_periods"]
+    summary_calls = [(tool_input, raw) for name, tool_input, raw in chart_sources if name == "get_sales_summary"]
     if compare_calls:
+        breakdown = _breakdown_over_range_totals(compare_calls, summary_calls, customer)
+        if breakdown is not None:
+            return breakdown
         by_customer = _calls_by_customer(compare_calls, customer)
         if len(by_customer) > 1:
             if not _is_real_comparison(compare_calls):
@@ -1229,28 +1316,12 @@ def _build_chart(chart_sources: list[tuple[str, dict, object]], customer: str) -
                 "table_rows": [],
             }
 
-    summary_calls = [(tool_input, raw) for name, tool_input, raw in chart_sources if name == "get_sales_summary"]
     per_customer = _per_customer_trend_chart(summary_calls, customer)
     if per_customer is not None:
         return per_customer
-    summary_results = [raw for _tool_input, raw in summary_calls]
-    if summary_results:
-        categories: list[str] = []
-        values: list[float] = []
-        for raw_result in summary_results:
-            for row in _sales_summary_periods(raw_result):
-                categories.append(row["period_label"])
-                values.append(row["revenue"])
-        if categories:
-            return {
-                "has_chart": True,
-                "chart_type": "bar",
-                "chart_categories": categories,
-                "chart_series": [{"label": "Revenue", "values": values}],
-                "has_table": False,
-                "table_columns": [],
-                "table_rows": [],
-            }
+    summary_chart = _sales_summary_chart([raw for _tool_input, raw in summary_calls])
+    if summary_chart is not None:
+        return summary_chart
 
     rank_results = [raw for name, tool_input, raw in chart_sources if name == "rank_skus"]
     if rank_results:
@@ -2735,6 +2806,13 @@ Rules:
   every promotion.
 - If a section says there's nothing notable, skip that bullet entirely
   rather than forcing a mention of "nothing changed."
+- When the facts are grouped by customer under "## <customer>" headings,
+  write one bullet per customer instead, labelled with its name in bold
+  ("**Fairprice:**"): its sales change, then anything notable about its
+  stock or forecast, in two sentences at most. Then the "**Promotions:**"
+  bullet. Up to 8 bullets in all.
+- If the facts say a channel is loaded further than the period covered,
+  say so in a few words in that customer's sales bullet.
 - No greeting, no closing sentence -- just the bullets.
 """
 
@@ -2777,27 +2855,36 @@ def _digest_window(latest_start: datetime.date, latest_end: datetime.date) -> di
     }
 
 
-def _latest_sales_period(customer: str) -> tuple[datetime.date, datetime.date] | None:
+def _digest_sales_period(customer: str) -> dict | None:
     """
-    The newest loaded period across this customer's two channels. Asked per
-    channel, because without one get_default_date_range looks across every
-    customer's data, and one customer's newer upload must not set another's month.
+    The latest period EVERY channel of this customer has loaded: the newest
+    period of whichever channel is furthest behind. Taking the newest of all
+    of them compared a month one channel hasn't been loaded for yet, so that
+    channel read $0, "down 100%", and dragged the total down with it. A channel
+    with no sales at all (NHG has no online) is left out rather than holding
+    the others back. `ahead` is each channel loaded past the period covered.
+    Asked per channel, because without one get_default_date_range looks across
+    every customer's data, and one customer's newer upload must not set another's.
     """
     def latest_for(mode: str) -> dict:
         return sellout_service.get_default_date_range(customer=customer, mode=mode, period="week")
 
     with ThreadPoolExecutor(max_workers=len(sellout_service.DASHBOARD_MODES)) as pool:
-        periods = list(pool.map(latest_for, sellout_service.DASHBOARD_MODES))
+        periods = dict(zip(sellout_service.DASHBOARD_MODES, pool.map(latest_for, sellout_service.DASHBOARD_MODES)))
 
-    latest = None
-    for period in periods:
-        if not period.get("start"):
-            continue
-        start = datetime.date.fromisoformat(period["start"])
-        end = datetime.date.fromisoformat(period["end"])
-        if latest is None or end > latest[1]:
-            latest = (start, end)
-    return latest
+    loaded = {
+        mode: (datetime.date.fromisoformat(period["start"]), datetime.date.fromisoformat(period["end"]))
+        for mode, period in periods.items()
+        if period.get("start")
+    }
+    if not loaded:
+        return None
+    start, end = min(loaded.values(), key=lambda period: period[1])
+    return {
+        "start": start,
+        "end": end,
+        "ahead": [{"mode": mode, "end": period_end} for mode, (_, period_end) in loaded.items() if period_end > end],
+    }
 
 
 def _change_words(current: float, previous: float) -> str | None:
@@ -2814,10 +2901,10 @@ def _change_words(current: float, previous: float) -> str | None:
 def _digest_sales(customer: str) -> dict | None:
     """The latest sales month against the month before: the total, each
     channel, the best seller and the SKUs that moved most in the ranking."""
-    latest = _latest_sales_period(customer)
-    if latest is None:
+    period = _digest_sales_period(customer)
+    if period is None:
         return None
-    window = _digest_window(*latest)
+    window = _digest_window(period["start"], period["end"])
     dates = {key: window[key] for key in ("current_start", "current_end", "previous_start", "previous_end")}
 
     # Five independent reads, side by side: one after another they take several seconds.
@@ -2842,6 +2929,7 @@ def _digest_sales(customer: str) -> dict | None:
 
     return {
         "window": window,
+        "ahead": period["ahead"],
         "total": total,
         "channels": channels,
         "top_seller": current_ranks[0] if current_ranks else None,
@@ -2907,19 +2995,21 @@ def _digest_promotions(customer: str) -> list[dict]:
     return _promotions_starting_or_ending_soon(promotion_service.get_promotions(), customer)
 
 
-def _gather_digest(customer: str) -> dict:
+def _gather_digest(customer: str, with_promotions: bool = True) -> dict:
     """
     Every area of the digest, read side by side (sales and stock are Cloud
     SQL, the forecast is BigQuery). An area that can't be read is left out
     rather than failing the digest: the rest is still worth showing, and an
-    answer never carries error text.
+    answer never carries error text. The all-customers digest reads
+    promotions once for everyone instead (`with_promotions=False`).
     """
     sections = {
         "sales": _digest_sales,
         "stock": _digest_stock,
         "forecast": _digest_forecast,
-        "promotions": _digest_promotions,
     }
+    if with_promotions:
+        sections["promotions"] = _digest_promotions
     with ThreadPoolExecutor(max_workers=len(sections)) as pool:
         jobs = {name: pool.submit(read, customer) for name, read in sections.items()}
     facts = {}
@@ -2960,6 +3050,9 @@ def _change_sentence(current: float, previous: float, previous_label: str, shown
     return f"{change} from {shown(previous)} in {previous_label}"
 
 
+_CHANNEL_NAMES = {"offline": "In-store (offline)", "online": "Online"}
+
+
 def _digest_sales_lines(sales: dict | None) -> list[str]:
     if not sales:
         return ["- Sales: no sales data loaded yet."]
@@ -2981,15 +3074,19 @@ def _digest_sales_lines(sales: dict | None) -> list[str]:
         )
     if not window["full_month"]:
         lines.append(f"  - Sales are only loaded up to {_day_text(window['current_end'])} so far.")
+    for channel in sales.get("ahead") or []:
+        lines.append(
+            f"  - {_CHANNEL_NAMES.get(channel['mode'], channel['mode'].capitalize())} sales are already loaded to "
+            f"{_day_text(channel['end'])}; these figures cover {current_label}, the latest period every channel has."
+        )
 
-    channel_names = {"offline": "In-store (offline)", "online": "Online"}
     channel_parts = []
     for mode, comparison in sales["channels"].items():
         cur, prev = comparison["current"]["revenue"], comparison["previous"]["revenue"]
         if cur or prev:
             change = _change_words(cur, prev)
             channel_parts.append(
-                f"{channel_names.get(mode, mode.capitalize())} {_money_text(cur)}" + (f", {change}" if change else "")
+                f"{_CHANNEL_NAMES.get(mode, mode.capitalize())} {_money_text(cur)}" + (f", {change}" if change else "")
             )
     if len(channel_parts) > 1:
         lines.append(
@@ -3076,9 +3173,11 @@ def _digest_promotion_lines(promotions: list[dict] | None) -> list[str]:
         return ["- No promotions starting or ending in the next 7 days."]
     lines = [f"- {_count_text(len(promotions), 'promotion')} starting or ending in the next 7 days:"]
     for p in promotions:
+        # A promotion can be saved with no stores linked; leave out "at" then.
+        stores = _store_summary(p.get("stores") or [])
         lines.append(
-            f"  - {p.get('promotion_mechanic')} ({p.get('promo_type')}) at {_store_summary(p.get('stores') or [])}, "
-            f"running {_day_text(p['period_start'])} to {_day_text(p['period_end'])}."
+            f"  - {p.get('promotion_mechanic')} ({p.get('promo_type')})" + (f" at {stores}" if stores else "")
+            + f", running {_day_text(p['period_start'])} to {_day_text(p['period_end'])}."
         )
     return lines
 
@@ -3091,6 +3190,60 @@ def _digest_facts_text(facts: dict) -> str:
         *_digest_forecast_lines(facts.get("forecast")),
         *_digest_promotion_lines(facts.get("promotions")),
     ])
+
+
+def _all_customers_facts_text(facts: dict) -> str:
+    """One "## <customer>" section per customer, then promotions once."""
+    lines = ["Summarize these already-verified facts for the user. They cover every customer:"]
+    for label, customer_facts in facts["customers"].items():
+        lines.append(f"## {label}")
+        lines.extend(_digest_sales_lines(customer_facts.get("sales")))
+        lines.extend(_digest_stock_lines(customer_facts.get("stock")))
+        lines.extend(_digest_forecast_lines(customer_facts.get("forecast")))
+    lines.append("## All customers")
+    lines.extend(_digest_promotion_lines(facts.get("promotions")))
+    return "\n".join(lines)
+
+
+def _all_customers_chart(facts: dict) -> dict:
+    """
+    Each customer's previous and latest period side by side. Customers can be
+    loaded to different months (Sheng Siong to June, Fairprice to August), so
+    the series are named by month only when every customer's months match.
+    """
+    compared = {
+        label: customer_facts["sales"]
+        for label, customer_facts in facts["customers"].items()
+        if customer_facts.get("sales") and customer_facts["sales"]["total"]["previous"].get("available")
+    }
+    if not compared:
+        return _empty_chart()
+    windows = {(sales["window"]["previous_label"], sales["window"]["current_label"]) for sales in compared.values()}
+    previous_name, current_name = windows.pop() if len(windows) == 1 else ("Previous period", "Latest period")
+    return {
+        **_empty_chart(),
+        **_grouped_bar_chart(
+            list(compared),
+            [
+                {"label": previous_name, "values": [sales["total"]["previous"]["revenue"] for sales in compared.values()]},
+                {"label": current_name, "values": [sales["total"]["current"]["revenue"] for sales in compared.values()]},
+            ],
+        ),
+    }
+
+
+def _gather_all_customers_digest() -> dict:
+    """Every customer with sales, side by side, named as the dashboard names them."""
+    customers = {option["label"]: option["value"] for option in sellout_service.get_customer_options()}
+    with ThreadPoolExecutor(max_workers=len(customers) + 1) as pool:
+        jobs = {label: pool.submit(_gather_digest, value, False) for label, value in customers.items()}
+        promotions_job = pool.submit(_digest_promotions, None)
+    try:
+        promotions = promotions_job.result()
+    except Exception as exc:
+        logger.warning("Digest left out promotions for all customers: %s", exc)
+        promotions = None
+    return {"customers": {label: job.result() for label, job in jobs.items()}, "promotions": promotions}
 
 
 def _digest_chart(sales: dict | None) -> dict:
@@ -3107,9 +3260,14 @@ def _digest_chart(sales: dict | None) -> dict:
     }
 
 
+# The digest's "All customers" choice: every customer with sales, side by side.
+ALL_CUSTOMERS = "all"
+
+
 def generate_digest(customer: str) -> dict:
     """
-    Deterministic "what's changed" overview: the figures are read here, and
+    Deterministic "what's changed" overview, for one customer or every
+    customer (ALL_CUSTOMERS): the figures are read here, and
     the model only writes them up, so there's no tool-calling loop for it to
     pick the wrong period in. Returns the same response shape ask() does, so
     it becomes valid `history` for a natural follow-up question in the same
@@ -3117,9 +3275,14 @@ def generate_digest(customer: str) -> dict:
     """
     client = get_client()
     customer = _customer_slug(customer)
-    facts = _gather_digest(customer)
+    if customer == ALL_CUSTOMERS:
+        facts = _gather_all_customers_digest()
+        facts_text, chart = _all_customers_facts_text(facts), _all_customers_chart(facts)
+    else:
+        facts = _gather_digest(customer)
+        facts_text, chart = _digest_facts_text(facts), _digest_chart(facts.get("sales"))
 
-    contents: list = [{"role": "user", "parts": [{"text": _digest_facts_text(facts)}]}]
+    contents: list = [{"role": "user", "parts": [{"text": facts_text}]}]
     config = types.GenerateContentConfig(
         system_instruction=_digest_system_prompt(),
         response_mime_type="application/json",
@@ -3146,7 +3309,7 @@ def generate_digest(customer: str) -> dict:
         "follow_up_prompts": parsed.get("follow_up_prompts") or [],
         "export_format": "none",
         "chart_style": dict(_DEFAULT_CHART_STYLE),
-        **_digest_chart(facts.get("sales")),
+        **chart,
         "chart_trend_values": [],
         **_empty_download(),
         "messages": _serialize_contents(contents),
