@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import PageLayout from '@/components/layout/PageLayout';
-import BackLink from '@/components/ui/BackLink';
 import MappingReviewPanel from '../../components/mappings/MappingReviewPanel';
 import MappingReviewSkeleton from '../../components/mappings/MappingReviewSkeleton';
 import { normalizeBaseUrl } from '../../utils/mappingHelpers';
@@ -75,11 +74,7 @@ export default function MappingReviewPage() {
   return (
     <PageLayout
       title="Review nomenclature"
-      headerExtra={
-        <div className="ml-auto flex items-center gap-2">
-          <BackLink href="/mappings">Back to Nomenclatures</BackLink>
-        </div>
-      }
+      back={{ href: '/mappings', label: 'Nomenclatures' }}
     >
       {isLoading && <MappingReviewSkeleton />}
 

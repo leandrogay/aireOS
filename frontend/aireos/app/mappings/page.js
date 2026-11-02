@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import PageLayout from '@/components/layout/PageLayout';
-import BackLink from '@/components/ui/BackLink';
 import MappingSummaryTable from '@/components/mappings/MappingSummaryTable';
 import { normalizeBaseUrl } from '../utils/mappingHelpers';
 import { listMappings } from '../services/mappingApi';
@@ -66,11 +65,7 @@ export default function MappingsPage() {
     <PageLayout
       title="Nomenclatures"
       fitScreen
-      headerExtra={
-        <div className="ml-auto flex items-center gap-2">
-          <BackLink href="/upload">Back to Upload</BackLink>
-        </div>
-      }
+      back={{ href: '/upload', label: 'Upload' }}
     >
       <MappingSummaryTable
         mappings={mappingReviews}
