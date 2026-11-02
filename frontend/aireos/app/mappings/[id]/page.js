@@ -1,8 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
+import useUploads from '@/hooks/useUploads';
 import PageLayout from '@/components/layout/PageLayout';
+import { buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import MappingReviewPanel from '../../components/mappings/MappingReviewPanel';
 import MappingReviewSkeleton from '../../components/mappings/MappingReviewSkeleton';
 import { normalizeBaseUrl } from '../../utils/mappingHelpers';
@@ -19,10 +23,14 @@ import {
 export default function MappingReviewPage() {
   const { id } = useParams();
   const router = useRouter();
+  const { forgetMapping } = useUploads();
   const baseUrl = normalizeBaseUrl(process.env.NEXT_PUBLIC_API_URL);
 
   const [mapping, setMapping] = useState(null);
   const [loadError, setLoadError] = useState('');
+  // A proposal that was discarded (here or in another tab) is not an error to
+  // report, so the page says what happened and where to go instead.
+  const [isGone, setIsGone] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -31,16 +39,14 @@ export default function MappingReviewPage() {
     const load = async () => {
       setIsLoading(true);
       setLoadError('');
+      setIsGone(false);
       try {
         const data = await lookupMapping(baseUrl, id);
         if (!cancelled) setMapping(data);
       } catch (error) {
         if (!cancelled) {
-          setLoadError(
-            error.status === 404
-              ? `No nomenclature is stored under "${id}".`
-              : error.message || 'Unable to load this nomenclature.',
-          );
+          if (error.status === 404) setIsGone(true);
+          else setLoadError(error.message || 'Unable to load this nomenclature.');
         }
       } finally {
         if (!cancelled) setIsLoading(false);
@@ -66,10 +72,14 @@ export default function MappingReviewPage() {
     [baseUrl, id],
   );
 
+  // The server deleted the files that were waiting on this proposal, so the
+  // upload list drops their rows now rather than offering a review that no
+  // longer exists. The count rides to /mappings, which says it in a toast.
   const handleDiscard = useCallback(async () => {
-    await discardMapping(baseUrl, id);
-    router.push('/mappings');
-  }, [baseUrl, id, router]);
+    const result = await discardMapping(baseUrl, id);
+    forgetMapping(id);
+    router.push(`/mappings?discarded=${result?.removed_uploads?.length || 0}`);
+  }, [baseUrl, id, forgetMapping, router]);
 
   return (
     <PageLayout
@@ -78,13 +88,41 @@ export default function MappingReviewPage() {
     >
       {isLoading && <MappingReviewSkeleton />}
 
+      {isGone && (
+        <div className="space-y-3 rounded-xl border border-lavander bg-white p-6">
+          <div className="space-y-1">
+            <p className="font-serif text-lg text-deep-violet-blue">This proposal is no longer available</p>
+            <p className="text-sm text-deep-violet-blue/80">
+              It was discarded, or this link is out of date.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/upload"
+              className={cn(buttonVariants(), 'bg-deep-violet-blue text-white hover:bg-deep-violet-blue/90')}
+            >
+              Back to Upload
+            </Link>
+            <Link
+              href="/mappings"
+              className={cn(
+                buttonVariants({ variant: 'outline' }),
+                'border-violet/60 bg-white text-deep-violet-blue hover:bg-lavander',
+              )}
+            >
+              Nomenclatures
+            </Link>
+          </div>
+        </div>
+      )}
+
       {loadError && (
         <div className="rounded-xl border border-red-200 bg-red-50 p-6">
           <p className="text-sm text-red-700">{loadError}</p>
         </div>
       )}
 
-      {mapping && !loadError && (
+      {mapping && !loadError && !isGone && (
         <MappingReviewPanel
           mapping={mapping}
           onApprove={handleApprove}

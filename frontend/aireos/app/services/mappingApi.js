@@ -96,7 +96,9 @@ export async function confirmMapping(baseUrl, fingerprint, body, onLog) {
 // ========================================
 // API CALL
 // DELETE /api/mappings/:fingerprint/pending
-// Discards a pending proposal so the next upload regenerates it.
+// Discards a pending proposal and deletes the uploaded files waiting on it, so
+// the next upload regenerates it. Answers { removed_uploads: [{ blob_path,
+// filename }] }; the review packet's `waitingUploads` lists them beforehand.
 // ========================================
 export async function discardMapping(baseUrl, fingerprint, onLog) {
   return request(baseUrl, `/api/mappings/${encodeURIComponent(fingerprint)}/pending`, {

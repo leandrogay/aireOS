@@ -222,6 +222,19 @@ function UploadQueue({ showTray, children }) {
     setBatchError('');
   }, [clearStageTimers]);
 
+  // Called when a proposal is discarded: the server deletes the files that were
+  // waiting on it (DELETE /api/mappings/{fp}/pending), so their rows would
+  // otherwise keep offering a review that no longer exists.
+  const forgetMapping = useCallback((fingerprint) => {
+    const waiting = (item) =>
+      item.phase === 'done' &&
+      item.outcome.kind === 'needs_review' &&
+      item.outcome.mappingId === fingerprint;
+
+    itemsRef.current.filter(waiting).forEach((item) => pendingHashes.current.delete(item.id));
+    setItems((prev) => prev.filter((item) => !waiting(item)));
+  }, []);
+
   const decideDuplicate = useCallback(
     (id, decision) => patchItem(id, { decision }),
     [patchItem],
@@ -356,6 +369,7 @@ function UploadQueue({ showTray, children }) {
     addFiles,
     removeItem,
     clearAll,
+    forgetMapping,
     decideDuplicate,
     startUpload,
     retryItem,

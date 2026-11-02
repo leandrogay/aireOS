@@ -1,9 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import PageLayout from '@/components/layout/PageLayout';
 import MappingList from '@/components/mappings/MappingList';
+import Toast from '@/components/ui/Toast';
+import useToast from '@/hooks/useToast';
 import { normalizeBaseUrl } from '../utils/mappingHelpers';
 import { listMappings } from '../services/mappingApi';
 
@@ -12,8 +14,18 @@ import { listMappings } from '../services/mappingApi';
 // not a latency budget.
 const MAPPING_LOAD_TIMEOUT_MS = 20000;
 
+// useSearchParams (for the discard notice) wants a Suspense boundary above it.
 export default function MappingsPage() {
+  return (
+    <Suspense fallback={null}>
+      <MappingsView />
+    </Suspense>
+  );
+}
+
+function MappingsView() {
   const router = useRouter();
+  const { toast, notify, dismissToast } = useToast();
   const baseUrl = normalizeBaseUrl(process.env.NEXT_PUBLIC_API_URL);
 
   const [mappingReviews, setMappingReviews] = useState([]);
@@ -52,6 +64,24 @@ export default function MappingsPage() {
     Promise.resolve().then(loadMappings);
   }, [loadMappings]);
 
+  // ---- Discard notice ---------------------------------------------------
+
+  // The review page sends ?discarded=<files removed> after a discard. Say it
+  // once, then clear it so a refresh does not repeat it.
+  const discarded = useSearchParams().get('discarded');
+
+  useEffect(() => {
+    if (discarded === null) return;
+    const files = Number(discarded) || 0;
+    notify(
+      'deleted',
+      files
+        ? `Proposal discarded · ${files === 1 ? '1 file' : `${files} files`} removed`
+        : 'Proposal discarded',
+    );
+    router.replace('/mappings');
+  }, [discarded, notify, router]);
+
   // ---- Opening -----------------------------------------------------------
 
   // A row opens the full review: everything about a mapping -- seeing it,
@@ -74,6 +104,7 @@ export default function MappingsPage() {
         onOpen={openMapping}
         onRefresh={loadMappings}
       />
+      <Toast toast={toast} onDismiss={dismissToast} />
     </PageLayout>
   );
 }
