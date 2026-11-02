@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { ListX } from 'lucide-react';
+import { Eraser, ListX } from 'lucide-react';
 import PageLayout from '@/components/layout/PageLayout';
 import { formatDateTime } from '@/lib/formatDate';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,7 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import Toast from '@/components/ui/Toast';
 import Dropzone from '../components/upload/Dropzone';
 import RejectedFiles from '../components/upload/RejectedFiles';
+import UploadBatch from '../components/upload/UploadBatch';
 import UploadGroup from '../components/upload/UploadGroup';
 import RecentUploads from '../components/upload/RecentUploads';
 import LoadConfirmDialog from '../components/upload/LoadConfirmDialog';
@@ -19,7 +20,10 @@ import {
 import {
   filesLabel,
   groupFiles,
+  isSkipped,
+  isStaged,
   isUploadable,
+  uploadBatches,
   uploadBlocker,
 } from '../utils/uploadFlow';
 import {
@@ -41,7 +45,8 @@ export default function UploadPage() {
     uploadsFinished,
     addFiles,
     removeItem,
-    clearAll,
+    clearStaged,
+    clearFinished,
     decideDuplicate,
     startUpload,
     retryItem,
@@ -132,10 +137,17 @@ export default function UploadPage() {
 
   // ---- Render -----------------------------------------------------------
 
-  const uploadableCount = items.filter(isUploadable).length;
-  const clearableCount = items.filter((item) => item.phase !== 'uploading').length;
-  const blocker = uploadBlocker(items);
-  const groups = groupFiles(items);
+  // Two places, as file managers and cloud drives keep them: files added and
+  // not sent yet, under the drop zone with the Upload button that sends them;
+  // and what each Upload press came to, newest first, in its own card. A new
+  // drop never mixes with the results of the last one.
+  const staged = items.filter(isStaged);
+  const stagedGroups = groupFiles(staged, { newestFirst: true });
+  const batches = uploadBatches(items);
+  const uploadableCount = staged.filter(isUploadable).length;
+  const skippedCount = staged.filter(isSkipped).length;
+  const blocker = uploadBlocker(staged);
+  const finishedCount = items.filter((item) => item.batch && item.phase === 'done').length;
 
   return (
     <PageLayout title="Upload sales data">
@@ -153,30 +165,30 @@ export default function UploadPage() {
             </p>
           )}
 
-          {!!items.length && (
+          {!!staged.length && (
             <div className="mt-6 flex items-center justify-between gap-3 border-b border-lavander pb-2">
               <p className="text-sm font-medium text-deep-violet-blue">
-                {items.length} file{items.length === 1 ? '' : 's'}
+                {staged.length} new file{staged.length === 1 ? '' : 's'}
               </p>
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={clearAll}
-                disabled={!clearableCount}
-                title="Remove every file from this list. Nothing already uploaded is deleted."
+                onClick={clearStaged}
+                title="Take every file that hasn't been sent out of this list."
                 className="text-deep-violet-blue/70 hover:bg-lavander hover:text-deep-violet-blue"
               >
                 <ListX aria-hidden="true" />
-                Clear all
+                Remove all
               </Button>
             </div>
           )}
 
-          {groups.map((group) => (
+          {stagedGroups.map((group) => (
             <UploadGroup
               key={group.key}
               group={group}
+              idPrefix="staged"
               onRemove={removeItem}
               onRetry={retryItem}
               onDecide={decideDuplicate}
@@ -191,15 +203,56 @@ export default function UploadPage() {
             <button
               type="button"
               onClick={startUpload}
-              disabled={!uploadableCount || Boolean(blocker)}
+              disabled={!(uploadableCount || skippedCount) || Boolean(blocker)}
               className="rounded-lg border border-deep-violet-blue bg-deep-violet-blue px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-violet focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
             >
+              {/* Only skips left: pressing it files them under the batch. */}
               {uploadableCount
                 ? `Upload ${filesLabel(uploadableCount)}`
-                : 'Upload'}
+                : skippedCount
+                  ? `Skip ${filesLabel(skippedCount)}`
+                  : 'Upload'}
             </button>
           </div>
         </section>
+
+        {!!batches.length && (
+          <section
+            aria-labelledby="upload-results-heading"
+            className="rounded-lg border border-lavander bg-white p-6 shadow-sm"
+          >
+            <div className="mb-4 flex items-center justify-between gap-3 border-b border-lavander pb-2">
+              <h2 id="upload-results-heading" className="font-serif text-lg text-deep-violet-blue">
+                Uploaded this session
+              </h2>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={clearFinished}
+                disabled={!finishedCount}
+                title="Take finished uploads out of this list. They stay in Recent uploads."
+                className="text-deep-violet-blue/70 hover:bg-lavander hover:text-deep-violet-blue"
+              >
+                <Eraser aria-hidden="true" />
+                Clear finished
+              </Button>
+            </div>
+            <div className="space-y-4">
+              {batches.map((batch, index) => (
+                <UploadBatch
+                  key={batch.id}
+                  batch={batch}
+                  isLatest={index === 0}
+                  onRemove={removeItem}
+                  onRetry={retryItem}
+                  onDecide={decideDuplicate}
+                  onLoad={setLoadingIds}
+                />
+              ))}
+            </div>
+          </section>
+        )}
 
         <RecentUploads
           uploads={history}

@@ -178,11 +178,16 @@ export function fileKind(item) {
   return beforeUploadKind(item);
 }
 
-// Sections of the list, top to bottom: what is fine first, what needs the
-// person below it, most urgent first. One section per situation, so the
-// explanation (`note`) is said once above the files it applies to rather
-// than repeated on every row.
+// Sections of the list, top to bottom. The page shows them in two places,
+// the way file managers and cloud drives do: files just added and not sent
+// yet sit under the drop zone with the Upload button (STAGED), and every
+// Upload press becomes a batch of results below it (uploadBatches), newest
+// first. Staged sections go from what is fine to what needs a decision; a
+// batch's results put what needs the person first and what went through
+// last. One section per situation, so the explanation (`note`) is said once
+// above the files it applies to rather than repeated on every row.
 export const FILE_GROUPS = [
+  // ---- Not uploaded yet ----
   { key: 'checking', label: 'Checking' },
   {
     key: 'ready',
@@ -192,26 +197,10 @@ export const FILE_GROUPS = [
     // not load them, and the note must not promise it does.
     confirmNote: "These match a saved nomenclature. After uploading, you'll check what loading them would change before their data loads.",
   },
-  { key: 'uploaded', label: 'Uploaded' },
-  {
-    key: 'ready_to_load',
-    label: 'Ready to load',
-    note: "Uploaded and matched to an approved nomenclature. Their data isn't loaded until you check and load it.",
-  },
   {
     key: 'duplicate',
     label: 'Already uploaded',
     note: 'Choose for each one: replace the earlier copy, keep both, or skip it.',
-  },
-  {
-    key: 'failed',
-    label: "Didn't upload",
-    note: 'Try again, or remove the file.',
-  },
-  {
-    key: 'needs_review',
-    label: 'Nomenclature to review',
-    note: "Uploaded, but their data won't load until the nomenclature is reviewed.",
   },
   {
     key: 'near_match',
@@ -228,34 +217,103 @@ export const FILE_GROUPS = [
     label: 'Not checked yet',
     note: "We couldn't check these in advance. They'll be checked when you upload.",
   },
+  // ---- In a batch ----
+  { key: 'uploading', label: 'Uploading' },
+  {
+    key: 'failed',
+    label: "Didn't upload",
+    note: 'Try again, or remove the file.',
+  },
+  {
+    key: 'needs_review',
+    label: 'Nomenclature to review',
+    note: "Uploaded, but their data won't load until the nomenclature is reviewed.",
+  },
+  {
+    key: 'ready_to_load',
+    label: 'Ready to load',
+    note: "Uploaded and matched to an approved nomenclature. Their data isn't loaded until you check and load it.",
+  },
+  { key: 'uploaded', label: 'Uploaded' },
+  {
+    key: 'skipped',
+    label: 'Skipped',
+    note: "Already in the system, so these weren't uploaded. Nothing changed.",
+  },
 ];
 
 /**
- * The section a file is listed under: its kind, except that a file being
- * uploaded stays where it was before the upload started, so rows do not jump
- * while they work; they move once, when the result is in.
+ * Whether a file is still waiting under the drop zone: added, not sent. Upload
+ * moves it into a batch; a duplicate the upload sends back returns here.
  *
  * @param {object} item
- * @returns {string}
+ * @returns {boolean}
  */
-export function fileGroup(item) {
-  const kind = fileKind(item);
-  return kind === 'uploading' ? beforeUploadKind(item) : kind;
+export function isStaged(item) {
+  return !item.batch;
 }
 
 /**
- * The list split into its non-empty sections, in FILE_GROUPS order. Within a
- * section files keep the order they were added in.
+ * The files split into their non-empty sections, in FILE_GROUPS order. With
+ * `newestFirst` the file added last leads each section (the staged list, which
+ * can hold several drops); otherwise files keep the order they were added in.
  *
  * @param {object[]} items
+ * @param {{ newestFirst?: boolean }} [options]
  * @returns {Array<{ key: string, label: string, note?: string, items: object[] }>}
  */
-export function groupFiles(items) {
+export function groupFiles(items, { newestFirst = false } = {}) {
+  const ordered = newestFirst ? [...items].reverse() : items;
   return FILE_GROUPS.map(({ confirmNote, ...group }) => {
-    const members = items.filter((item) => fileGroup(item) === group.key);
+    const members = ordered.filter((item) => fileKind(item) === group.key);
     const confirming = members.some((item) => item.check?.loadRequiresConfirmation);
     return { ...group, note: confirming && confirmNote ? confirmNote : group.note, items: members };
   }).filter((group) => group.items.length);
+}
+
+// How each result reads in a batch's one-line summary, in FILE_GROUPS order.
+const SUMMARY_WORDS = {
+  uploading: 'uploading',
+  failed: 'failed',
+  needs_review: 'to review',
+  ready_to_load: 'ready to load',
+  uploaded: 'uploaded',
+  skipped: 'skipped',
+};
+
+/**
+ * One batch's results in a line, e.g. "3 uploaded · 1 to review · 1 failed".
+ *
+ * @param {Array<{ key: string, items: object[] }>} groups
+ * @returns {string}
+ */
+export function batchSummary(groups) {
+  return groups
+    .filter((group) => SUMMARY_WORDS[group.key])
+    .map((group) => `${group.items.length} ${SUMMARY_WORDS[group.key]}`)
+    .join(' · ');
+}
+
+/**
+ * The files sent so far, one batch per Upload press, newest batch first, so
+ * the latest results are always at the top and earlier ones stay apart.
+ *
+ * @param {object[]} items
+ * @returns {Array<{ id: string, startedAt: string, items: object[], groups: object[], summary: string }>}
+ */
+export function uploadBatches(items) {
+  const batches = new Map();
+  items.forEach((item) => {
+    if (!item.batch) return;
+    if (!batches.has(item.batch.id)) batches.set(item.batch.id, { ...item.batch, items: [] });
+    batches.get(item.batch.id).items.push(item);
+  });
+  return [...batches.values()]
+    .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+    .map((batch) => {
+      const groups = groupFiles(batch.items);
+      return { ...batch, groups, summary: batchSummary(groups) };
+    });
 }
 
 /**
@@ -306,6 +364,18 @@ export function duplicateResult(item) {
   return loadsOnUpload
     ? "Earlier copy deleted. Its sales figures are replaced by this file's."
     : 'Earlier copy deleted. Its sales figures stay until this file is loaded.';
+}
+
+/**
+ * Whether pressing Upload settles this file without sending it: a duplicate
+ * set to Skip. It joins the batch as `skipped`, so it is reported with the
+ * rest of that press instead of waiting under the drop zone as if undecided.
+ *
+ * @param {object} item
+ * @returns {boolean}
+ */
+export function isSkipped(item) {
+  return item.phase === 'ready' && duplicateDecision(item) === 'skip';
 }
 
 /**

@@ -129,6 +129,12 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoa
             </>
           )}
 
+          {kind === 'skipped' && check?.duplicate && (
+            <p className="mt-1 text-xs text-deep-violet-blue/70">
+              <DuplicateNote duplicate={check.duplicate} fileName={file.name} /> Not uploaded.
+            </p>
+          )}
+
           {kind === 'uploading' && <UploadProgress stage={item.stage} sendPercent={item.sendPercent} />}
 
           {kind === 'uploaded' && (
