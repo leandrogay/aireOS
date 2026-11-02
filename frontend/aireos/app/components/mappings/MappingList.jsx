@@ -36,7 +36,7 @@ const EMPTY_FILTERS = { customer: [], status: [], issues: [] };
  *   onRefresh: () => void,
  * }} props
  */
-export default function MappingSummaryTable({ mappings, isLoading, error, onOpen, onRefresh }) {
+export default function MappingList({ mappings, isLoading, error, onOpen, onRefresh }) {
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [search, setSearch] = useState('');
   // No sort to start with: the backend lists confirmed mappings first, then

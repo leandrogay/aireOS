@@ -11,6 +11,15 @@ import {
   mappingTitle,
 } from '@/app/utils/mappingList';
 
+// mappingStatus() kinds → StatusPill tones.
+const STATUS_TONES = {
+  confirmed: 'success',
+  pending: 'warning',
+  missing: 'danger',
+  warnings: 'warning',
+  unknown: 'muted',
+};
+
 /**
  * One stored mapping as a table row. Clicking anywhere on the row opens it
  * for review; the name button is the keyboard route to the same action.
@@ -55,7 +64,7 @@ export default function MappingRow({ mapping, onOpen }) {
         )}
       </td>
       <td className="px-4 py-2.5">
-        <StatusPill tone={status.tone}>{status.label}</StatusPill>
+        <StatusPill tone={STATUS_TONES[status.kind]}>{status.label}</StatusPill>
         {status.detail && <p className="mt-0.5 truncate text-xs text-amber-900">{status.detail}</p>}
       </td>
       <td className="px-4 py-2.5">{mapping.validatedAt ? formatDate(mapping.validatedAt) : '—'}</td>

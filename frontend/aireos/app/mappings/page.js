@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import PageLayout from '@/components/layout/PageLayout';
-import MappingSummaryTable from '@/components/mappings/MappingSummaryTable';
+import MappingList from '@/components/mappings/MappingList';
 import { normalizeBaseUrl } from '../utils/mappingHelpers';
 import { listMappings } from '../services/mappingApi';
 
@@ -67,7 +67,7 @@ export default function MappingsPage() {
       fitScreen
       back={{ href: '/upload', label: 'Upload' }}
     >
-      <MappingSummaryTable
+      <MappingList
         mappings={mappingReviews}
         isLoading={isLoadingMappings}
         error={mappingLoadError}
