@@ -36,15 +36,72 @@ def read_source_dataframe(filename: str, data: bytes) -> pd.DataFrame:
     )
 
 
+# What the sample should show of the file, with how much a first sighting of a
+# value is worth. The retailer outweighs the rest together, so the channel
+# split from step 1 is always visible before anything else is.
+SAMPLE_COVERAGE_WEIGHTS = {"retailer": 4, "store_code": 1, "sku": 1, "period_start": 1}
+# Rows a reviewer should look at but a plain spread finds only by luck.
+SAMPLE_NUMBER_COLUMNS = ("quantity_units", "revenue")
+# Only reserved when the sample is big enough to still show the spread.
+SAMPLE_ODD_ROW_MIN_LIMIT = 3
+
+
+def _odd_row_position(dataframe: pd.DataFrame) -> int | None:
+    """Position of the first row with a negative figure or a missing value, else None."""
+    odd = pd.Series(False, index=range(len(dataframe)))
+    for column in SAMPLE_NUMBER_COLUMNS:
+        if column in dataframe:
+            numbers = pd.to_numeric(dataframe[column], errors="coerce").reset_index(drop=True)
+            odd |= (numbers < 0) | numbers.isna()
+    for column in SAMPLE_COVERAGE_WEIGHTS:
+        if column in dataframe:
+            odd |= dataframe[column].isna().reset_index(drop=True)
+    positions = odd.to_numpy().nonzero()[0]
+    return int(positions[0]) if len(positions) else None
+
+
+def _sample_positions(dataframe: pd.DataFrame, limit: int) -> list[int]:
+    """
+    Row positions of up to `limit` rows, chosen to show as many distinct
+    retailers, stores, products and periods as possible: one unusual row first
+    (see _odd_row_position), then repeatedly the row that adds the most values
+    not shown yet. Ties go to the earlier row, so a file with nothing to spread
+    over gives its first rows. Kept in file order so the sample reads like the file.
+    """
+    columns = [column for column in SAMPLE_COVERAGE_WEIGHTS if column in dataframe]
+    values = {column: dataframe[column].reset_index(drop=True) for column in columns}
+    shown = {column: set() for column in columns}
+    chosen = []
+
+    def take(position: int) -> None:
+        chosen.append(position)
+        for column in columns:
+            shown[column].add(values[column].iloc[position])
+
+    if limit >= SAMPLE_ODD_ROW_MIN_LIMIT and (odd := _odd_row_position(dataframe)) is not None:
+        take(odd)
+
+    while len(chosen) < min(limit, len(dataframe)):
+        score = pd.Series(0, index=range(len(dataframe)))
+        for column in columns:
+            is_new = ~values[column].isin(shown[column]) & values[column].notna()
+            score += is_new * SAMPLE_COVERAGE_WEIGHTS[column]
+        score.iloc[chosen] = -1
+        take(int(score.to_numpy().argmax()))
+    return sorted(chosen)
+
+
 def preview_rows(dataframe: pd.DataFrame, limit: int = 3) -> list[dict[str, Any]]:
     """
     Return a small JSON-safe sample of mapped output without exposing the
-    whole upload.
+    whole upload. The sample spreads over retailers, stores, products and
+    periods and includes an unusual row if there is one, so a reviewer sees
+    every channel the rules produce rather than only the file's first rows.
 
     Dates are rendered as strings and NaN as null, because the caller is JSON
     and neither survives the trip otherwise.
     """
-    preview = dataframe.head(limit).copy()
+    preview = dataframe.iloc[_sample_positions(dataframe, limit)].copy()
     for column in preview.select_dtypes(include=["datetime", "datetimetz"]).columns:
         preview[column] = preview[column].dt.strftime("%Y-%m-%d")
     preview = preview.astype(object).where(preview.notna(), None)

@@ -310,3 +310,89 @@ def test_a_file_with_one_column_per_product_reads_its_product_codes_from_the_hea
     totals = result.groupby("sku")["quantity_units"].apply(lambda values: pd.to_numeric(values).sum()).to_dict()
     assert totals == {"13255043": 5, "13255044": 5}
     assert set(result["store_code"]) == {"S1", "S2"}
+
+
+# ---- Sample rows ----
+
+
+def test_preview_rows_cover_each_retailer_and_store_before_repeating_the_first_store():
+    frame = pd.DataFrame(
+        {
+            "retailer": ["x_offline"] * 4 + ["x_online"],
+            "store_code": ["1", "1", "1", "2", "9"],
+        }
+    )
+
+    rows = apply_contract.preview_rows(frame, 3)
+
+    assert [(r["retailer"], r["store_code"]) for r in rows] == [
+        ("x_offline", "1"),
+        ("x_offline", "2"),
+        ("x_online", "9"),
+    ]
+
+
+def test_preview_rows_fall_back_to_the_first_rows_without_spread_columns():
+    frame = pd.DataFrame({"sku": ["a", "b", "c", "d"]})
+
+    rows = apply_contract.preview_rows(frame, 2)
+
+    assert [r["sku"] for r in rows] == ["a", "b"]
+
+
+def test_preview_rows_pick_the_rows_that_add_the_most_new_values():
+    frame = pd.DataFrame(
+        {
+            "retailer": ["x_offline"] * 6,
+            "store_code": ["1", "1", "1", "1", "2", "3"],
+            "sku": ["a", "a", "b", "c", "a", "a"],
+        }
+    )
+
+    rows = apply_contract.preview_rows(frame, 3)
+
+    # Every pick adds a value not shown yet; a repeat of store 1 + product a never does.
+    assert len({(r["store_code"], r["sku"]) for r in rows}) == 3
+    assert [r["sku"] for r in rows][0] == "a"
+    assert len({r["sku"] for r in rows}) == 3
+
+
+def test_preview_rows_include_a_negative_quantity_when_the_file_has_one():
+    frame = pd.DataFrame(
+        {
+            "retailer": ["x_offline"] * 6,
+            "store_code": ["1"] * 6,
+            "quantity_units": [1, 2, 3, 4, 5, -2],
+        }
+    )
+
+    rows = apply_contract.preview_rows(frame, 3)
+
+    assert -2 in [r["quantity_units"] for r in rows]
+
+
+def test_preview_rows_include_a_row_with_a_missing_value():
+    frame = pd.DataFrame(
+        {
+            "retailer": ["x_offline"] * 4,
+            "store_code": ["1", "1", "1", None],
+            "quantity_units": [1, 2, 3, 4],
+        }
+    )
+
+    rows = apply_contract.preview_rows(frame, 3)
+
+    assert None in [r["store_code"] for r in rows]
+
+
+def test_preview_rows_keep_the_whole_sample_for_the_spread_when_it_is_tiny():
+    frame = pd.DataFrame(
+        {
+            "retailer": ["x_offline", "x_offline", "x_online"],
+            "quantity_units": [1, -1, 2],
+        }
+    )
+
+    rows = apply_contract.preview_rows(frame, 2)
+
+    assert {r["retailer"] for r in rows} == {"x_offline", "x_online"}
