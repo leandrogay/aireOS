@@ -516,6 +516,17 @@ def test_the_prompt_shows_the_cells_above_the_header_counted_up_from_it():
     assert '"rows_above": 3' in prompt
 
 
+def test_disable_examples_flag_leaves_every_reference_contract_out_of_the_prompt(monkeypatch):
+    monkeypatch.delenv("MAPPING_DISABLE_EXAMPLES", raising=False)
+    with_examples = gm.mapping_prompt.user_prompt("new.xlsx", {}, [], {}, 2, [], [])
+
+    monkeypatch.setenv("MAPPING_DISABLE_EXAMPLES", "true")
+    without_examples = gm.mapping_prompt.user_prompt("new.xlsx", {}, [], {}, 2, [], [])
+
+    assert len(without_examples) < len(with_examples)
+    assert "NHG" not in without_examples and "NHG" in with_examples
+
+
 def test_unused_parameters_written_as_empty_or_zero_are_left_out():
     answer = {
         "fields": [{

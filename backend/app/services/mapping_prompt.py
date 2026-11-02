@@ -25,6 +25,7 @@ from app.services.mapping_contract import (
     RULE_OPS,
     TRANSFORM_TYPES,
 )
+from app import config
 from app.services.reference_contracts import REFERENCE_CONTRACTS
 
 FIELD_DEFINITIONS = {
@@ -355,7 +356,9 @@ def user_prompt(
     examples = "\n\n".join(
         _example(key, entry)
         for key, entry in REFERENCE_CONTRACTS.items()
-        if key not in exclude_examples and entry.get("prompt_example", True)
+        if key not in exclude_examples
+        and entry.get("prompt_example", True)
+        and not config.mapping_examples_disabled()
     )
     master = [
         {key: product.get(key) for key in ("sku", "product_name", "sku_range", "size")}

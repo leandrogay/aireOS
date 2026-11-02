@@ -16,8 +16,6 @@ Open decisions they assume, each a one-line change here:
   D2  FairPrice "Pack Size" is packs per carton, not pieces per pack
   D3  retailer codes nhg_offline, sheng_siong_offline, sheng_siong_online
   D4  the product-code tables are the hand-off's proposed matches (section 7)
-
-Decisions confirmed by the product owner (2026-10-30):
   D9  retailers split into online and offline as the sales data shows them:
       singhealth_offline / singhealth_online (the ONLINE outlet), prime_offline
   D10 every retailer product code maps to a master SKU, matched by description
