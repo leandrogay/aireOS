@@ -241,13 +241,12 @@ function FieldRow({
   onEdit,
   disabled,
 }) {
-  // The retailer is reset in step 1, where it is changed.
-  const canReset = entry.field !== 'retailer' && canResetField(entry.field);
+  const canReset = canResetField(entry.field);
   const missing = isMissing(entry);
   const unsure = needsConfirm(entry);
   const group = groups.find((item) => item.id === entry.groupId);
   // A field filled without a column says how instead of offering columns:
-  // the retailer is changed in step 1, the headings' fields follow their group.
+  // the headings' fields follow their group.
   const picker = entry.status !== 'auto';
 
   return (
@@ -285,7 +284,6 @@ function FieldRow({
             ) : (
               <p className="pt-1 text-xs text-deep-violet-blue">
                 {entry.description}
-                {entry.field === 'retailer' && <span className="text-deep-violet-blue/60"> · its retailers are set in step 1</span>}
               </p>
             )}
           </div>
@@ -374,7 +372,9 @@ function FieldRow({
  * }} props
  */
 export default function FieldTable({ coverage, confirmedNow, ...props }) {
-  const decidable = coverage.filter((entry) => entry.decidable);
+  // The retailer follows the customer and channel chosen in step 1, so it is
+  // not offered again here.
+  const decidable = coverage.filter((entry) => entry.decidable && entry.field !== 'retailer');
   const required = decidable.filter((entry) => entry.required);
   const optional = decidable.filter((entry) => !entry.required);
   const automatic = coverage.filter((entry) => !entry.decidable);
