@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.routers import uploads as uploads_router
-from app.services import sellout_ingestion, sellout_service, storage, upload_loading
+from app.services import generate_mapping, sellout_ingestion, sellout_service, storage, upload_loading
 
 client = TestClient(app)
 
@@ -380,3 +380,97 @@ def test_preview_maps_an_unexpected_failure_to_500(monkeypatch):
 
     assert response.status_code == 500
     assert "boom" in response.json()["detail"]
+
+
+# ---- Discarding a proposal -----------------------------------------------------
+
+def _install_discard_fakes(monkeypatch, uploads, proposal_exists=True):
+    """Fake bucket for a discard: records which uploads and blobs were deleted."""
+    deleted = {"uploads": [], "blobs": []}
+    monkeypatch.setattr(storage, "list_uploads_for_mapping", lambda fingerprint: uploads)
+    monkeypatch.setattr(storage, "delete_upload", lambda path: deleted["uploads"].append(path) or True)
+
+    def delete_blob(path):
+        deleted["blobs"].append(path)
+        return proposal_exists
+
+    monkeypatch.setattr(storage, "delete_blob", delete_blob)
+    return deleted
+
+
+def test_discard_removes_files_waiting_on_the_proposal_and_the_proposal(monkeypatch):
+    deleted = _install_discard_fakes(
+        monkeypatch, [_upload("uploads/xel.xlsx", "pending_confirmation")]
+    )
+
+    result = upload_loading.discard_proposal("fp")
+
+    assert deleted["uploads"] == ["uploads/xel.xlsx"]
+    assert deleted["blobs"] == [storage.pending_mapping_path("fp")]
+    assert result["removed_uploads"] == [{"blob_path": "uploads/xel.xlsx", "filename": "xel.xlsx"}]
+
+
+def test_discard_keeps_files_that_are_already_loaded(monkeypatch):
+    deleted = _install_discard_fakes(
+        monkeypatch,
+        [
+            _upload("uploads/old.xlsx", "mapped", version="2"),
+            _upload("uploads/new.xlsx", "pending_confirmation"),
+        ],
+    )
+
+    result = upload_loading.discard_proposal("fp")
+
+    assert deleted["uploads"] == ["uploads/new.xlsx"]
+    assert [row["blob_path"] for row in result["removed_uploads"]] == ["uploads/new.xlsx"]
+
+
+def test_discard_route_lists_the_files_it_removed(monkeypatch):
+    _install_discard_fakes(monkeypatch, [_upload("uploads/xel.xlsx", "pending_confirmation")])
+
+    response = client.delete("/api/mappings/fp/pending")
+
+    assert response.status_code == 200
+    assert response.json()["removed_uploads"] == [{"blob_path": "uploads/xel.xlsx", "filename": "xel.xlsx"}]
+
+
+def test_discard_route_still_cleans_up_files_when_the_proposal_is_already_gone(monkeypatch):
+    _install_discard_fakes(
+        monkeypatch, [_upload("uploads/xel.xlsx", "pending_confirmation")], proposal_exists=False
+    )
+
+    response = client.delete("/api/mappings/fp/pending")
+
+    assert response.status_code == 200
+    assert len(response.json()["removed_uploads"]) == 1
+
+
+def test_discard_route_returns_404_when_there_is_nothing_to_discard(monkeypatch):
+    _install_discard_fakes(monkeypatch, [], proposal_exists=False)
+
+    response = client.delete("/api/mappings/fp/pending")
+
+    assert response.status_code == 404
+
+
+def test_pending_review_packet_names_the_files_a_discard_would_remove(monkeypatch):
+    pending = {"raw_columns": ["SKU No."], "contract": {"fields": {}, "melt_groups": []}}
+    monkeypatch.setattr(
+        storage,
+        "download_json",
+        lambda path: pending if path == storage.pending_mapping_path("fp") else None,
+    )
+    monkeypatch.setattr(generate_mapping, "fetch_master_skus", lambda: [])
+    monkeypatch.setattr(
+        storage,
+        "list_uploads_for_mapping",
+        lambda fingerprint: [
+            _upload("uploads/xel.xlsx", "pending_confirmation"),
+            _upload("uploads/old.xlsx", "mapped", version="1"),
+        ],
+    )
+
+    response = client.get("/api/mappings/fp")
+
+    assert response.status_code == 200
+    assert [file["filename"] for file in response.json()["waitingUploads"]] == ["xel.xlsx"]

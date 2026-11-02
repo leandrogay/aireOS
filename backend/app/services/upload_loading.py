@@ -93,6 +93,42 @@ def mark_uploads_after_approval(fingerprint: str, *, name: str, vendor: str, ver
 
 
 # ============================================================
+# Discarding a proposal
+# ============================================================
+
+def uploads_waiting_on_proposal(fingerprint: str) -> list[dict]:
+    """
+    The uploads still waiting for this proposal to be reviewed. Nothing was
+    loaded from them (loading needs an approved mapping), so they hold no
+    sales data.
+    """
+    return [
+        upload
+        for upload in storage.list_uploads_for_mapping(fingerprint)
+        if upload.get("mapping_status") == PENDING_REVIEW
+    ]
+
+
+def discard_proposal(fingerprint: str) -> dict:
+    """
+    Throw away a proposal together with the uploads waiting on it. A file whose
+    proposal is gone has no review to come back to and nothing to load with, and
+    re-uploading it would only be refused as a duplicate, so it goes too.
+
+    The files go first: if something fails halfway, the proposal is still
+    listed and the discard can be run again, instead of leaving files that
+    point at a proposal that no longer exists.
+    """
+    removed = []
+    for upload in uploads_waiting_on_proposal(fingerprint):
+        if storage.delete_upload(upload["blob_path"]):
+            removed.append({"blob_path": upload["blob_path"], "filename": upload["filename"]})
+
+    proposal_deleted = storage.delete_blob(storage.pending_mapping_path(fingerprint))
+    return {"proposal_deleted": proposal_deleted, "removed_uploads": removed}
+
+
+# ============================================================
 # Preview and load
 # ============================================================
 

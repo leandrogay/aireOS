@@ -224,8 +224,18 @@ async def get_mapping(fingerprint: str):
     # The raw contract rides along only here, not in the listing: it is what is
     # actually stored, and a single-mapping view is where seeing it is worth
     # the bytes.
+    # What discarding a proposal would remove, so the confirmation can name the files.
+    waiting_uploads = []
+    if state == "pending":
+        waiting = await asyncio.to_thread(upload_loading.uploads_waiting_on_proposal, fingerprint)
+        waiting_uploads = [
+            {"blob_path": upload["blob_path"], "filename": upload["filename"], "uploaded_at": upload["uploaded_at"]}
+            for upload in waiting
+        ]
+
     return {
         **mapping_view.envelope_to_packet(fingerprint, envelope, state),
+        "waitingUploads": waiting_uploads,
         "contract": envelope.get("contract") or {},
         "proposedAt": envelope.get("proposed_at"),
         "masterSkus": master_skus or [],
@@ -546,12 +556,18 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
 
 @router.delete("/{fingerprint}/pending")
 async def discard_pending_mapping(fingerprint: str):
-    """Throw away a proposal the user rejected, so the next upload regenerates it."""
-    deleted = await asyncio.to_thread(
-        storage.delete_blob, storage.pending_mapping_path(fingerprint)
-    )
-    if not deleted:
+    """
+    Throw away a proposal the user rejected, and the uploads waiting on it, so
+    the upload page no longer offers a review that does not exist.
+    """
+    result = await asyncio.to_thread(upload_loading.discard_proposal, fingerprint)
+    # Files left behind by an earlier discard still count as something to clean up.
+    if not result["proposal_deleted"] and not result["removed_uploads"]:
         raise HTTPException(
             status_code=404, detail="No pending nomenclature for that fingerprint."
         )
-    return {"success": True, "fingerprint": fingerprint}
+    return {
+        "success": True,
+        "fingerprint": fingerprint,
+        "removed_uploads": result["removed_uploads"],
+    }
