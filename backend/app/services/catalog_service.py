@@ -317,10 +317,6 @@ def create_retailer(
             conn,
             retailer.retailer_name,
         )
-        customer_service.ensure_no_lookalike(
-            conn,
-            [retailer.retailer_name],
-        )
 
         retailer_id = conn.execute(
             text(
@@ -493,11 +489,6 @@ def link_retailer(
             raise RetailerAlreadyLinkedError(
                 f'"{current["retailer_name"]}" already belongs to a customer.'
             )
-
-        customer_service.ensure_no_lookalike(
-            conn,
-            [current["retailer_name"]],
-        )
 
         _link_to_customer(
             conn,

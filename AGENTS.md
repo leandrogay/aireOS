@@ -57,8 +57,6 @@ aireOS/
 │   │       │                      writes for the Customers page (always under a customer, blocked once it has stores)
 │   │       ├── customer_service.py customers CRUD + list_customers (customers with nested retailers, in_use flags,
 │   │       │                      unlinked retailers); a record with data can't be renamed/deleted (looked up by name)
-│   │       ├── name_lookalike.py  PURE: flags a customer/retailer name that is a typo of an existing one (sheng_shiong vs
-│   │       │                      sheng_siong); used by customer_service.ensure_no_lookalike → 409 SimilarNameError
 │   │       ├── promotion_service.py promotions + promotion_stores + promotion_skus, raw SQL, one txn per write
 │   │       ├── ingestion_service.py upload-run audit + append-only sell-out versions; atomically rolls back bad uploads
 │   │       ├── sellout_service.py Cloud SQL `sellout`: ingestion writes, plus the Sales Dashboard reads (SKU ranking,
