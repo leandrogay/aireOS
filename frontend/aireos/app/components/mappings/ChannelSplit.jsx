@@ -54,7 +54,7 @@ function Values({ title, values, partial }) {
 }
 
 /**
- * The sales channel of each row. The dashboard reads a customer's sales from
+ * The retailer of each row. The dashboard reads a customer's sales from
  * {customer}_offline and {customer}_online, so that is all the reviewer
  * chooses: every row offline, every row online, or by a column -- each of its
  * values marked Online or Offline, or, for a column with too many values to
@@ -162,7 +162,7 @@ export default function ChannelSplit({ customer, decision, outputs, mapping, sta
         </div>
       )}
 
-      <div role="radiogroup" aria-label="Sales channel of each row" className="grid gap-2 sm:grid-cols-3">
+      <div role="radiogroup" aria-label="Retailer of each row" className="grid gap-2 sm:grid-cols-3">
         {options.map((option) => (
           <label
             key={option.mode}

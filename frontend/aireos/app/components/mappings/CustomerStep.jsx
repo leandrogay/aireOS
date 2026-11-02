@@ -278,8 +278,13 @@ export default function CustomerStep({
 
       <div>
         <div className="flex items-center gap-1 text-xs text-deep-violet-blue">
-          <span className="font-medium">Sales channel</span>
-          {!picked && <span className="text-deep-violet-blue/70">· {where.short}</span>}
+          <span className="font-medium">Retailer</span>
+          {/* The retailers a proposal names are another customer's until one is
+              chosen, and nothing here can be edited yet, so there is nothing to show. */}
+          {!customer && (
+            <span className="text-deep-violet-blue/70">· Choose the customer to set where the sales go</span>
+          )}
+          {customer && !picked && <span className="text-deep-violet-blue/70">· {where.short}</span>}
           <InfoTooltip label="Where the sales go">
             {picked
               ? `Rows are written to ${channelRetailerName(customer.customer_name, 'offline')} or ${channelRetailerName(customer.customer_name, 'online')}.`
@@ -338,14 +343,14 @@ export default function CustomerStep({
           </ul>
         )}
 
-        {!picked && choices.length > 0 && (
+        {customer && !picked && choices.length > 0 && (
           <ul className="mt-1.5 space-y-1">
             {choices.map((choice) => (
               <RetailerLine
                 key={choice.key}
-                item={customer ? statusOf(choice.output) : { name: choice.output, status: null }}
+                item={statusOf(choice.output)}
                 choice={choice}
-                customerName={customer?.customer_name}
+                customerName={customer.customer_name}
                 retailers={retailers}
                 onChoose={onSetRetailerChoice}
                 onFix={onFixRetailer}
@@ -353,12 +358,6 @@ export default function CustomerStep({
               />
             ))}
           </ul>
-        )}
-
-        {!customer && outputs?.length > 0 && !choices.length && (
-          <p className="mt-1 text-xs text-deep-violet-blue/70">
-            <span className="font-mono">{outputs.join(', ')}</span> · choose the customer to check these
-          </p>
         )}
 
         {customer && !picked && !choices.length && statuses.length > 0 && (
