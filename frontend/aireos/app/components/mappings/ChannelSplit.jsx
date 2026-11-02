@@ -140,14 +140,15 @@ export default function ChannelSplit({ customer, decision, outputs, mapping, sta
   }
 
   const options = [
+    // The split comes first: it is the usual choice, and its column panel opens right under it.
+    { mode: 'split', label: 'Varies by row', hint: 'Some rows online, some offline' },
     { mode: 'offline', label: 'All offline', hint: 'Every row is a physical store' },
     { mode: 'online', label: 'All online', hint: 'Every row is e-commerce' },
-    { mode: 'split', label: 'Depends on a column', hint: 'Some rows online, some offline' },
   ];
   const preview = source && !showList ? splitPreview(source.values, draft.matches) : null;
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       {renamed && (
         <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900">
           <AlertTriangle aria-hidden="true" className="size-3.5 shrink-0" />
@@ -161,14 +162,14 @@ export default function ChannelSplit({ customer, decision, outputs, mapping, sta
         </div>
       )}
 
-      <div role="radiogroup" aria-label="Sales channel of each row" className="grid gap-1 sm:grid-cols-3">
+      <div role="radiogroup" aria-label="Sales channel of each row" className="grid gap-2 sm:grid-cols-3">
         {options.map((option) => (
           <label
             key={option.mode}
             title={option.mode === 'split' ? undefined : `Written to ${channelRetailerName(name, option.mode)}`}
             className={cn(
-              'flex cursor-pointer items-start gap-2 rounded-md border px-2 py-1.5 text-xs text-deep-violet-blue',
-              mode === option.mode ? 'border-deep-violet-blue bg-lavander/40' : 'border-lavander hover:bg-cream/60',
+              'flex cursor-pointer items-start gap-2 rounded-md border px-3 py-2 text-xs text-deep-violet-blue',
+              mode === option.mode ? 'border-deep-violet-blue bg-lavander/40 ring-1 ring-deep-violet-blue' : 'border-lavander hover:bg-cream/60',
             )}
           >
             <input
@@ -193,7 +194,7 @@ export default function ChannelSplit({ customer, decision, outputs, mapping, sta
       )}
 
       {mode === 'split' && (
-        <div className="space-y-1.5 rounded-md border border-lavander p-2 text-xs text-deep-violet-blue">
+        <div className="space-y-1.5 rounded-md border border-lavander p-3 text-xs text-deep-violet-blue">
           <div className="flex flex-wrap items-center gap-1.5">
             <span>Column</span>
             <div className="min-w-48 flex-1">
