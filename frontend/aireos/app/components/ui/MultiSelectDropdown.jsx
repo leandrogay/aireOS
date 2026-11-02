@@ -1,6 +1,7 @@
 'use client';
 
 import { useId, useRef, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
@@ -35,7 +36,8 @@ function summaryOf(options, values, allLabel) {
  * both read as the `allLabel`, which is what a filter means by "all". The
  * panel is a Popover, so a scrolling container never clips it and it flips
  * above the button when there is no room below. `searchable` adds a search box
- * for a long list.
+ * for a long list. `compact` keeps `label` for screen readers only, for a
+ * dropdown that sits in a toolbar where its "all" text already says what it is.
  *
  * @param {{
  *   label?: string,
@@ -48,6 +50,7 @@ function summaryOf(options, values, allLabel) {
  *   searchPlaceholder?: string,
  *   disabled?: boolean,
  *   invalid?: boolean,
+ *   compact?: boolean,
  *   className?: string,
  * }} props
  */
@@ -62,6 +65,7 @@ export default function MultiSelectDropdown({
   searchPlaceholder = 'Search…',
   disabled = false,
   invalid = false,
+  compact = false,
   className,
 }) {
   const [open, setOpen] = useState(false);
@@ -90,7 +94,10 @@ export default function MultiSelectDropdown({
   return (
     <div className={cn('grid min-w-0 gap-1', className)}>
       {label && (
-        <span id={labelId} className="text-xs font-medium text-deep-violet-blue/70">
+        <span
+          id={labelId}
+          className={cn('text-xs font-medium text-deep-violet-blue/70', compact && 'sr-only')}
+        >
           {label}
         </span>
       )}
@@ -108,15 +115,18 @@ export default function MultiSelectDropdown({
           <span className={cn('min-w-0 flex-1 truncate', !options.length && 'text-deep-violet-blue/50')}>
             {options.length ? summary.text : placeholder}
           </span>
-          <span className="ml-2 shrink-0 text-[10px] text-deep-violet-blue/50" aria-hidden="true">
-            {open ? '▲' : '▼'}
-          </span>
+          <ChevronDown
+            aria-hidden="true"
+            className={cn('ml-2 size-4 shrink-0 text-deep-violet-blue/50', open && 'rotate-180')}
+          />
         </PopoverTrigger>
-        {/* As wide as the button. The caret goes straight into the search box when there is one. */}
+        {/* At least as wide as the button, wider when an option needs it so
+            labels are not cut off. The caret goes straight into the search
+            box when there is one. */}
         <PopoverContent
           align="start"
           initialFocus={searchable ? searchRef : undefined}
-          className="w-(--anchor-width) min-w-48 gap-0 overflow-hidden rounded-md border border-lavander bg-white p-0 text-deep-violet-blue ring-0"
+          className="w-max min-w-(--anchor-width) max-w-80 gap-0 overflow-hidden rounded-md border border-lavander bg-white p-0 text-deep-violet-blue ring-0"
         >
           {searchable && (
             <div className="border-b border-lavander p-2">

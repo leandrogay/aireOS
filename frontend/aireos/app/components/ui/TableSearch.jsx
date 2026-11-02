@@ -1,21 +1,25 @@
 'use client';
 
 import { Search } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 /**
  * Search box for a list table's toolbar. Filtering happens in the parent as
- * you type; the rows are already loaded, so there is no submit.
+ * you type; the rows are already loaded, so there is no submit. `className`
+ * sizes the box in a crowded toolbar (e.g. `min-w-40 flex-1 max-w-64` to
+ * shrink before it wraps).
  *
  * @param {{
  *   value: string,
  *   onChange: (value: string) => void,
  *   label: string,
  *   placeholder?: string,
+ *   className?: string,
  * }} props
  */
-export default function TableSearch({ value, onChange, label, placeholder = 'Search…' }) {
+export default function TableSearch({ value, onChange, label, placeholder = 'Search…', className }) {
   return (
-    <label className="relative">
+    <label className={cn('relative', className)}>
       <span className="sr-only">{label}</span>
       <Search
         aria-hidden="true"

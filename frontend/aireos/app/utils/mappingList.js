@@ -49,6 +49,39 @@ export function issueSummary(mapping) {
 }
 
 /**
+ * The one status the list shows for a mapping. An approved mapping that has
+ * problems shows the problem instead of "Confirmed", so the pill is the place
+ * to look; a proposal is always "Needs review", with its problem (if any) as
+ * `detail` under it.
+ *
+ * @param {object} mapping
+ * @returns {{ tone: string, label: string, detail: string | null }}
+ */
+export function mappingStatus(mapping) {
+  const state = MAPPING_STATE_LABELS[mapping.state];
+  const issues = issueSummary(mapping);
+  const issueTone = mappingIssueKind(mapping) === 'missing' ? 'failed' : 'review';
+
+  if (!state) return { tone: 'neutral', label: mapping.state || 'Unknown', detail: issues };
+  if (mapping.state === 'confirmed' && issues) return { tone: issueTone, label: issues, detail: null };
+  return { tone: state.tone, label: state.label, detail: issues };
+}
+
+/**
+ * The grey line under a mapping's name: the file it was made from and, once
+ * approved, its version -- not the storage path, which says nothing a person
+ * can use.
+ *
+ * @param {object} mapping
+ * @returns {string}
+ */
+export function mappingSourceLine(mapping) {
+  const file = mapping.sourceFilename || String(mapping.filename || '').split('/').pop();
+  const version = mapping.state === 'confirmed' ? `v${mapping.version || 1}` : '';
+  return [file, version].filter(Boolean).join(' · ');
+}
+
+/**
  * What a mapping is called in a list or a heading. A proposal has no name
  * until it is approved, so it is known by the file it was proposed for.
  *

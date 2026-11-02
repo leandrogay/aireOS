@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { ChevronRight } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import RefreshButton from '@/components/ui/RefreshButton';
@@ -10,28 +11,28 @@ import TablePagination, { PAGE_SIZES } from '@/components/ui/TablePagination';
 import TableSearch from '@/components/ui/TableSearch';
 import TableSkeleton from '@/components/ui/TableSkeleton';
 import MappingFilters from '@/components/mappings/MappingFilters';
+import { formatDate } from '@/lib/formatDate';
 import {
-  MAPPING_STATE_LABELS,
   filterMappings,
-  issueSummary,
   mappingCustomer,
+  mappingSourceLine,
+  mappingStatus,
   mappingTitle,
   searchMappings,
   sortMappings,
   uniqueMappingCustomers,
 } from '@/app/utils/mappingList';
-import { nextSort, paginate, resultCountLabel } from '@/app/utils/tableView';
+import { nextSort, paginate } from '@/app/utils/tableView';
 
 // Keys match filterMappings() in app/utils/mappingList.js; each is the list of
 // values ticked, empty for "all".
 const EMPTY_FILTERS = { customer: [], status: [], issues: [] };
 
-const COLUMN_COUNT = 4;
+const COLUMN_COUNT = 5;
 
 /**
  * Stored mappings (GET /api/mappings), laid out like the promotion overview:
- * a filter bar, then a card with count, search and refresh, the table, and
- * paging. Clicking a row opens it for review; the rules themselves are only
+ * one card with count, filters, search and refresh, the table, and paging. Clicking a row opens it for review; the rules themselves are only
  * shown there, so this list stays short.
  *
  * @param {{
@@ -86,35 +87,32 @@ export default function MappingSummaryTable({ mappings, isLoading, error, onOpen
   };
 
   return (
-    // Fills the height the page gives it (PageLayout fitScreen): the filter
-    // bar keeps its size and the table card takes the rest.
-    <div className="flex min-h-0 flex-1 flex-col gap-1">
-      <MappingFilters
-        filters={filters}
-        customers={uniqueMappingCustomers(mappings)}
-        hasFilters={hasFilters}
-        onChange={changeFilter}
-        onReset={resetFilters}
-      />
-
-      {/* Sized by the window, not the row count, so filtering never resizes
-          it; the rows scroll inside. Same as the promotion overview. */}
+    // Fills the height the page gives it (PageLayout fitScreen). Sized by the
+    // window, not the row count, so filtering never resizes it; the rows
+    // scroll inside. Same as the promotion overview.
+    <div className="flex min-h-0 flex-1 flex-col">
       <section
         aria-label="Stored nomenclatures"
         className="flex min-h-80 flex-1 flex-col overflow-hidden rounded-lg border border-lavander bg-white shadow-sm"
       >
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-          <p className="text-sm text-deep-violet-blue/70" aria-live="polite">
-            {isLoading && !mappings.length
-              ? 'Loading nomenclatures…'
-              : resultCountLabel(sorted.length, mappings.length, 'mapping')}
-          </p>
-          <div className="flex items-center gap-2">
+        {/* Filters left, search and refresh right. No count line: the
+            footer already says how many rows there are. The search box
+            shrinks before anything wraps. */}
+        <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+          <MappingFilters
+            filters={filters}
+            customers={uniqueMappingCustomers(mappings)}
+            hasFilters={hasFilters}
+            onChange={changeFilter}
+            onReset={resetFilters}
+          />
+          <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2">
             <TableSearch
               value={search}
               onChange={changeSearch}
               label="Search nomenclatures"
-              placeholder="Search nomenclature, file, customer…"
+              placeholder="Search nomenclatures…"
+              className="min-w-40 max-w-64 flex-1"
             />
             <RefreshButton
               onClick={onRefresh}
@@ -137,8 +135,19 @@ export default function MappingSummaryTable({ mappings, isLoading, error, onOpen
 
         {showTable && (
           <>
-            <div className="min-h-0 flex-1 overflow-auto border-t border-lavander">
-              <table className="w-full whitespace-nowrap text-left text-sm text-deep-violet-blue [&_td]:align-middle [&_th]:align-middle">
+            {/* relative: the sr-only header label is absolutely positioned and
+                would otherwise escape this scroll box. */}
+            <div className="relative min-h-0 flex-1 overflow-auto border-t border-lavander">
+              {/* Fixed widths so the columns stay put whatever the rows hold;
+                  the nomenclature column takes the rest. */}
+              <table className="w-full table-fixed whitespace-nowrap text-left text-sm text-deep-violet-blue [&_td]:align-middle [&_th]:align-middle">
+                <colgroup>
+                  <col />
+                  <col className="w-40" />
+                  <col className="w-40" />
+                  <col className="w-28" />
+                  <col className="w-10" />
+                </colgroup>
                 {/* Stays in view while the rows scroll. White under the cream
                     tint so rows do not show through; the bottom rule is an
                     inset shadow because a collapsed table border does not
@@ -160,7 +169,10 @@ export default function MappingSummaryTable({ mappings, isLoading, error, onOpen
                       onSort={changeSort}
                     />
                     <th scope="col" className={headerClass}>Status</th>
-                    <th scope="col" className={headerClass}>Issues</th>
+                    <th scope="col" className={headerClass}>Approved</th>
+                    <th scope="col" className="px-2">
+                      <span className="sr-only">Open</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -180,17 +192,17 @@ export default function MappingSummaryTable({ mappings, isLoading, error, onOpen
                     </tr>
                   )}
                   {pageRows.map((mapping) => {
-                    const state = MAPPING_STATE_LABELS[mapping.state];
-                    const issues = issueSummary(mapping);
+                    const status = mappingStatus(mapping);
+                    const sourceLine = mappingSourceLine(mapping);
 
                     return (
                       <tr
                         key={mapping.mappingId}
                         onClick={() => onOpen(mapping.mappingId)}
-                        className="h-14 cursor-pointer border-b border-lavander/80 bg-white transition-colors hover:bg-cream/50"
+                        className="group h-14 cursor-pointer border-b border-lavander/80 bg-white transition-colors focus-within:bg-cream/50 hover:bg-cream/50"
                       >
                         <td className="px-4 py-2.5">
-                          <div className="max-w-[24rem]">
+                          <div className="max-w-full">
                             {/* The button is the keyboard route in; the row click is
                                 the same action for a mouse. */}
                             <button
@@ -204,14 +216,14 @@ export default function MappingSummaryTable({ mappings, isLoading, error, onOpen
                             >
                               {mappingTitle(mapping)}
                             </button>
-                            {mapping.filename && (
-                              <p className="truncate text-xs text-deep-violet-blue/60" title={mapping.filename}>
-                                {mapping.filename}
+                            {sourceLine && (
+                              <p className="truncate text-xs text-deep-violet-blue/60" title={mapping.filename || sourceLine}>
+                                {sourceLine}
                               </p>
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-2.5">
+                        <td className="truncate px-4 py-2.5" title={mappingCustomer(mapping) || undefined}>
                           {mappingCustomer(mapping) || '—'}
                           {/* Approved before customers existed: its sales may
                               sit on retailers no customer owns. Linked on its
@@ -221,18 +233,19 @@ export default function MappingSummaryTable({ mappings, isLoading, error, onOpen
                           )}
                         </td>
                         <td className="px-4 py-2.5">
-                          {state ? (
-                            <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
-                          ) : (
-                            <StatusBadge tone="neutral">{mapping.state || 'Unknown'}</StatusBadge>
+                          <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+                          {status.detail && (
+                            <p className="mt-0.5 truncate text-xs text-amber-900">{status.detail}</p>
                           )}
                         </td>
-                        <td className="px-4 py-2.5">
-                          {issues ? (
-                            <span className="text-amber-900">{issues}</span>
-                          ) : (
-                            <span className="text-deep-violet-blue/60">—</span>
-                          )}
+                        <td className="px-4 py-2.5 text-deep-violet-blue/80">
+                          {mapping.validatedAt ? formatDate(mapping.validatedAt) : '—'}
+                        </td>
+                        <td className="px-2 py-2.5">
+                          <ChevronRight
+                            aria-hidden="true"
+                            className="size-4 text-deep-violet-blue/30 transition-colors group-focus-within:text-deep-violet-blue group-hover:text-deep-violet-blue"
+                          />
                         </td>
                       </tr>
                     );
