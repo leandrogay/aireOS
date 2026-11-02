@@ -145,11 +145,44 @@ function MappingDetails({ payload }) {
   );
 }
 
+// Written by backend ingestion_service.rollback_upload once a rollback has
+// committed, or when it failed (one transaction, so nothing was changed then).
+function RollbackDetails({ payload, success }) {
+  return (
+    <>
+      <p className="text-deep-violet-blue/80">
+        {success
+          ? 'An upload was rolled back. The sales figures it loaded were removed, and the values it had replaced were restored.'
+          : 'An attempt to roll back an upload did not complete. No sales data was changed.'}
+      </p>
+      <div className="mt-2 space-y-1">
+        <Field label="File" value={payload.source_file || '—'} />
+        <Field label={success ? 'Rolled back by' : 'Requested by'} value={payload.rolled_back_by || '—'} />
+        <Field label="Reason" value={payload.reason || '—'} />
+        {success && (
+          <>
+            <Field label="Rows restored" value={payload.rows_restored ?? 0} />
+            <Field label="Rows removed" value={payload.rows_removed ?? 0} />
+          </>
+        )}
+      </div>
+      {!success && (
+        <div className="mt-1">
+          <span className="text-deep-violet-blue/60">Errors / Warnings</span>
+          <p className="mt-0.5 text-deep-violet-blue">{payload.errors?.length ? payload.errors.join('; ') : 'None'}</p>
+        </div>
+      )}
+    </>
+  );
+}
+
 const TITLES = {
   low_stock: lowStockTitle,
   forecast_success: (payload) => forecastTitle(payload, true),
   forecast_failure: (payload) => forecastTitle(payload, false),
   mapping_uploaded: (payload) => `[MAPPING] ${payload.amended ? 'Mapping updated' : 'New mapping approved'} – ${payload.name}`,
+  rollback_success: (payload) => `[SUCCESS] Upload Rolled Back – ${payload.source_file}`,
+  rollback_failure: (payload) => `[FAILURE] Upload Rollback Failed – ${payload.source_file}`,
 };
 
 const MARK_READ_BUTTON_CLASS =
@@ -186,6 +219,8 @@ function NotificationCard({ notification, onMarkRead }) {
       {type === 'forecast_success' && <ForecastDetails payload={payload} success />}
       {type === 'forecast_failure' && <ForecastDetails payload={payload} success={false} />}
       {type === 'mapping_uploaded' && <MappingDetails payload={payload} />}
+      {type === 'rollback_success' && <RollbackDetails payload={payload} success />}
+      {type === 'rollback_failure' && <RollbackDetails payload={payload} success={false} />}
       <p className="mt-2 text-right text-[10px] text-deep-violet-blue/50">{formatDateTime(createdAt)}</p>
     </div>
   );

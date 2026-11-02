@@ -72,9 +72,11 @@ def get_sku_options(customer: str = sellout_service.DEFAULT_CUSTOMER):
     return {"options": options}
 
 @router.get("/store-options")
-def get_store_options(customer: str = sellout_service.DEFAULT_CUSTOMER):
+def get_store_options(customer: str = sellout_service.DEFAULT_CUSTOMER, mode: str | None = None):
     try:
-        options = sellout_service.get_store_options(customer=customer)
+        options = sellout_service.get_store_options(customer=customer, mode=mode)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except (SQLAlchemyError, config.ConfigError, GoogleAuthError) as e:
         raise _database_error(e)
 

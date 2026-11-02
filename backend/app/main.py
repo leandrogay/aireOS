@@ -2,7 +2,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import config, notification_stream
@@ -13,6 +13,17 @@ from app.routers import notifications, promotions, sales, settings, uploads
 from app.services import forecast_pipeline_events
 
 logger = logging.getLogger("uvicorn.error")
+
+
+class _SkipFaviconRequests(logging.Filter):
+    # A browser tab opened on the backend (the sign-in redirects, /docs) asks
+    # for a tab icon; that request says nothing about the API, so it isn't logged.
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args if isinstance(record.args, tuple) else ()
+        return not (len(args) >= 3 and str(args[2]).startswith("/favicon.ico"))
+
+
+logging.getLogger("uvicorn.access").addFilter(_SkipFaviconRequests())
 
 
 def _cors_origins() -> list[str]:
@@ -89,3 +100,9 @@ app.include_router(notifications.router, dependencies=protected)
 @app.get("/")
 def read_root():
     return {"status": "ok"}
+
+
+# The API has no tab icon; "no content" rather than a 404
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    return Response(status_code=204)
