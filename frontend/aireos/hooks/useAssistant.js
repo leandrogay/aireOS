@@ -47,6 +47,9 @@ function assistantMessageFromResponse(data) {
   };
 }
 
+// The digest's "All customers" choice (backend assistant.ALL_CUSTOMERS).
+export const ALL_CUSTOMERS = 'all';
+
 export default function useAssistant() {
   const [messages, setMessages] = useState([]);
   const [history, setHistory] = useState([]);
@@ -116,11 +119,15 @@ export default function useAssistant() {
     [history, loading, messages]
   );
 
-  // Deterministic "what's changed" summary -- unlike askQuestion, there's no
-  // user question to show, and it always starts a fresh conversation (it
-  // doesn't take `history`, matching generate_digest()'s signature backend-side).
-  const askDigest = useCallback(async () => {
+  // Deterministic "what's changed" summary, for one customer or ALL_CUSTOMERS.
+  // The chip press shows as your own message, like a typed question, so the
+  // conversation records what you asked for. It always starts a fresh
+  // conversation for the backend (it doesn't take `history`, matching
+  // generate_digest()'s signature backend-side).
+  const askDigest = useCallback(async ({ customer, label }) => {
     if (loading) return;
+    const question = customer === ALL_CUSTOMERS ? "What's changed across all customers?" : `What's changed for ${label}?`;
+    setMessages((prev) => [...prev, { role: 'user', text: question }]);
     setLoading(true);
     setError(null);
 
@@ -129,7 +136,7 @@ export default function useAssistant() {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ customer }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Failed to get the digest');

@@ -11,7 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
 from app import config
-from app.services import sql, storage
+from app.services import notification_service, sql, storage
 
 
 class IngestionNotFoundError(LookupError):
@@ -460,7 +460,55 @@ def rollback_upload(
     reason: str | None = None,
     engine: Engine | None = None,
 ) -> dict:
-    """Roll back the latest transformation of one GCS object atomically."""
+    """
+    Roll back the latest transformation of one GCS object atomically, and tell
+    the team in the notification feed whether it worked. Not found and already
+    rolled back are a stale screen, not a failed rollback, so they notify no one.
+    """
+    try:
+        result = _rollback_latest_run(source_blob, rolled_back_by=rolled_back_by, reason=reason, engine=engine)
+    except (IngestionInProgressError, IngestionRollbackError) as exc:
+        _notify_rollback_failed(source_blob, rolled_back_by, reason, exc)
+        raise
+    _notify_rolled_back(result, rolled_back_by, reason)
+    return result
+
+
+def _notify_rolled_back(result: dict, rolled_back_by: str, reason: str | None) -> None:
+    # After the rollback has committed, and never failing it (insert_best_effort).
+    notification_service.insert_best_effort(
+        notification_service.ROLLBACK_SUCCESS,
+        {
+            "source_file": result["source_file"],
+            "rolled_back_by": rolled_back_by,
+            "reason": reason,
+            "rows_restored": result["rows_restored"],
+            "rows_removed": result["rows_removed"],
+        },
+    )
+
+
+def _notify_rollback_failed(source_blob: str, rolled_back_by: str, reason: str | None, error: Exception) -> None:
+    # The run was never read back, so the file name comes from the GCS object.
+    notification_service.insert_best_effort(
+        notification_service.ROLLBACK_FAILURE,
+        {
+            "source_file": source_blob.rsplit("/", 1)[-1],
+            "rolled_back_by": rolled_back_by,
+            "reason": reason,
+            "errors": [str(error)],
+        },
+    )
+
+
+def _rollback_latest_run(
+    source_blob: str,
+    *,
+    rolled_back_by: str,
+    reason: str | None,
+    engine: Engine | None,
+) -> dict:
+    """The rollback itself, in one transaction: nothing changes unless all of it does."""
     database = engine or sql.connect_with_connector()
     try:
         with database.begin() as connection:

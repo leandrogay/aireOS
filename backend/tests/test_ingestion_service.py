@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from app.routers import uploads as uploads_router
 from app.schemas.uploads import DeleteUploadRequest, RollbackUploadRequest
-from app.services import ingestion_service, storage
+from app.services import ingestion_service, notification_service, storage
 
 
 class FakeResult:
@@ -68,6 +68,27 @@ class FakeEngine:
 
     def begin(self):
         return FakeTransaction(self.connection)
+
+
+class FailingConnection(FakeConnection):
+    """Finds the run, then the database goes away mid-rollback."""
+
+    def execute(self, statement, parameters=None):
+        if "DELETE FROM sellout AS current" in str(statement):
+            raise ConnectionError("server closed the connection")
+        return super().execute(statement, parameters)
+
+
+@pytest.fixture(autouse=True)
+def notifications(monkeypatch):
+    """Every notification a rollback writes, instead of writing it."""
+    written = []
+    monkeypatch.setattr(
+        notification_service,
+        "insert_best_effort",
+        lambda notification_type, payload: written.append((notification_type, payload)),
+    )
+    return written
 
 
 def _run(status="completed"):
@@ -198,6 +219,70 @@ def test_rollback_is_idempotently_rejected():
         )
 
     assert not any("DELETE FROM sellout" in sql for sql, _ in connection.calls)
+
+
+# ---- Rollback notifications ----
+
+
+def test_a_successful_rollback_notifies_the_team(notifications):
+    ingestion_service.rollback_upload(
+        "uploads/bad.xlsx",
+        rolled_back_by="staff@shop-aire.com",
+        reason="Wrong customer",
+        engine=FakeEngine(FakeConnection(_run(), [_baseline()])),
+    )
+
+    assert notifications == [(
+        notification_service.ROLLBACK_SUCCESS,
+        {
+            "source_file": "bad.xlsx",
+            "rolled_back_by": "staff@shop-aire.com",
+            "reason": "Wrong customer",
+            "rows_restored": 1,
+            "rows_removed": 1,
+        },
+    )]
+
+
+def test_a_rollback_that_fails_part_way_notifies_the_team_with_the_error(notifications):
+    with pytest.raises(ingestion_service.IngestionRollbackError):
+        ingestion_service.rollback_upload(
+            "uploads/2026/bad.xlsx",
+            rolled_back_by="staff@shop-aire.com",
+            reason="Wrong customer",
+            engine=FakeEngine(FailingConnection(_run(), [_baseline()])),
+        )
+
+    assert len(notifications) == 1
+    notification_type, payload = notifications[0]
+    assert notification_type == notification_service.ROLLBACK_FAILURE
+    assert payload["source_file"] == "bad.xlsx"
+    assert payload["rolled_back_by"] == "staff@shop-aire.com"
+    assert payload["reason"] == "Wrong customer"
+    assert "server closed the connection" in payload["errors"][0]
+
+
+def test_rolling_back_an_upload_still_loading_notifies_a_failure(notifications):
+    with pytest.raises(ingestion_service.IngestionInProgressError):
+        ingestion_service.rollback_upload(
+            "uploads/bad.xlsx",
+            rolled_back_by="staff@shop-aire.com",
+            engine=FakeEngine(FakeConnection(_run("processing"))),
+        )
+
+    assert [notification_type for notification_type, _ in notifications] == [notification_service.ROLLBACK_FAILURE]
+
+
+@pytest.mark.parametrize("run", [None, _run("rolled_back")])
+def test_an_unknown_or_already_rolled_back_upload_notifies_no_one(notifications, run):
+    with pytest.raises((ingestion_service.IngestionNotFoundError, ingestion_service.IngestionAlreadyRolledBackError)):
+        ingestion_service.rollback_upload(
+            "uploads/bad.xlsx",
+            rolled_back_by="staff@shop-aire.com",
+            engine=FakeEngine(FakeConnection(run)),
+        )
+
+    assert notifications == []
 
 
 def test_rollback_route_records_the_signed_in_user(monkeypatch):
