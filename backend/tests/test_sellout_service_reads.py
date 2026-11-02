@@ -116,8 +116,8 @@ def test_sku_ranking_shapes_rank_and_rounds_value(monkeypatch):
     # product_name's "no SKU in the catalog" fallback is SQL-side
     # (COALESCE(MAX(k.product_name), s.sku)), not re-applied in Python.
     rows = [
-        {"sku": "A1", "product_name": "Pants A", "volume": 100.0, "value": 500.123},
-        {"sku": "A2", "product_name": "Pants B", "volume": 50.0, "value": 200.0},
+        {"sku": "A1", "product_name": "Pants A", "volume": 100.0, "value": 500.123, "estimated_value": 0.0},
+        {"sku": "A2", "product_name": "Pants B", "volume": 50.0, "value": 200.0, "estimated_value": 0.0},
     ]
     _install(monkeypatch, lambda sql, params: rows)
 
@@ -138,7 +138,7 @@ def test_sku_ranking_empty_result_returns_the_right_columns(monkeypatch):
 
 def _catalog_row(sku, product_name, sku_range, size, value):
     return {"sku": sku, "product_name": product_name, "sku_range": sku_range, "size": size,
-            "volume": value / 10, "value": value}
+            "volume": value / 10, "value": value, "estimated_value": 0.0}
 
 
 def test_sku_ranking_product_order_lists_the_clients_order_and_keeps_metric_rank(monkeypatch):
@@ -304,8 +304,8 @@ def test_customer_totals_reports_channel_presence_and_period_sums(monkeypatch):
     def respond(sql, params):
         if "effective_sellout" in sql:
             return [
-                {"retailer_name": "fairprice_offline", "revenue": 100.126, "units": 10},
-                {"retailer_name": "nhg_offline", "revenue": 40, "units": 4},
+                {"retailer_name": "fairprice_offline", "revenue": 100.126, "units": 10, "estimated_revenue": 20.004},
+                {"retailer_name": "nhg_offline", "revenue": 40, "units": 4, "estimated_revenue": 0},
             ]
         return [
             {"retailer_name": "fairprice_offline"},
@@ -321,17 +321,17 @@ def test_customer_totals_reports_channel_presence_and_period_sums(monkeypatch):
         {
             "customer": "nhg",
             "label": "NHG",
-            "offline": {"revenue": 40.0, "units": 4.0},
+            "offline": {"revenue": 40.0, "units": 4.0, "estimated_revenue": 0.0},
             "has_offline": True,
-            "online": {"revenue": 0.0, "units": 0.0},
+            "online": {"revenue": 0.0, "units": 0.0, "estimated_revenue": 0.0},
             "has_online": False,
         },
         {
             "customer": "fairprice",
             "label": "Fairprice",
-            "offline": {"revenue": 100.13, "units": 10.0},
+            "offline": {"revenue": 100.13, "units": 10.0, "estimated_revenue": 20.0},
             "has_offline": True,
-            "online": {"revenue": 0.0, "units": 0.0},
+            "online": {"revenue": 0.0, "units": 0.0, "estimated_revenue": 0.0},
             "has_online": True,
         },
     ]
@@ -409,9 +409,9 @@ def test_dashboard_summary_empty_result_gives_empty_shape_for_both_modes(monkeyp
 def test_dashboard_summary_rolls_up_by_retailer_format_and_month(monkeypatch):
     rows = [
         {"retailer_id": 55, "retailer": "fairprice_online", "store_code": "001", "format": "ONLINE",
-         "period_start": date(2026, 1, 5), "revenue": 100.0, "units": 10.0},
+         "period_start": date(2026, 1, 5), "revenue": 100.0, "units": 10.0, "estimated_revenue": 0.0},
         {"retailer_id": 55, "retailer": "fairprice_online", "store_code": "001", "format": "ONLINE",
-         "period_start": date(2026, 1, 12), "revenue": 50.0, "units": 5.0},
+         "period_start": date(2026, 1, 12), "revenue": 50.0, "units": 5.0, "estimated_revenue": 0.0},
     ]
     _install(monkeypatch, lambda sql, params: rows)
 
@@ -770,3 +770,63 @@ def test_only_rows_that_could_be_estimated_are_bound(monkeypatch):
         "retailer_id": 7, "store_code": "SS01", "sku": "SKU-1",
         "period_start": "2026-08-01", "period_type": "month", "estimated_revenue": 248.0,
     }]
+
+
+
+# ---- Which revenue is estimated (the dashboard's EST sign) ----------------
+
+def test_both_sellout_sources_flag_rows_whose_revenue_was_blank():
+    assert "(p.revenue IS NULL) AS revenue_estimated" in sellout_service.EFFECTIVE_SELLOUT_CTE
+    assert "(src.revenue IS NULL) AS revenue_estimated" in sellout_service.PRICED_SELLOUT_FROM
+
+
+def test_dashboard_summary_carries_the_estimated_part_of_each_total(monkeypatch):
+    rows = [
+        {"retailer_id": 906, "retailer": "fairprice_offline", "store_code": "A", "format": "HYPER",
+         "period_start": date(2026, 8, 1), "revenue": 300.0, "units": 30.0, "estimated_revenue": 300.0},
+        {"retailer_id": 906, "retailer": "fairprice_offline", "store_code": "B", "format": "HYPER",
+         "period_start": date(2026, 8, 1), "revenue": 200.0, "units": 20.0, "estimated_revenue": 0.0},
+        {"retailer_id": 906, "retailer": "fairprice_offline", "store_code": "C", "format": "EXPRESS",
+         "period_start": date(2026, 8, 1), "revenue": 100.0, "units": 10.0, "estimated_revenue": 0.0},
+    ]
+    conn = _install(monkeypatch, lambda sql, params: rows)
+
+    result = sellout_service.get_dashboard_summary(granularity="month", customer="fairprice")
+
+    assert "CASE WHEN s.revenue_estimated THEN s.revenue ELSE 0 END" in conn.calls[0][0]
+    offline = result["offline"]
+    assert offline["periodTotal"][0]["revenue"] == 600.0
+    assert offline["periodTotal"][0]["estimated_revenue"] == 300.0
+    by_format = {row["format"]: row["estimated_revenue"] for row in offline["storeFormats"]}
+    assert by_format == {"HYPER": 300.0, "EXPRESS": 0.0}
+    assert {row["format"]: row["estimated_revenue"] for row in offline["periodByFormat"]} == by_format
+
+
+def test_week_summary_also_carries_the_estimated_part(monkeypatch):
+    conn = _install(monkeypatch, lambda sql, params: [])
+
+    sellout_service.get_dashboard_summary(granularity="week", customer="fairprice")
+
+    assert "CASE WHEN s.revenue_estimated THEN s.revenue ELSE 0 END" in conn.calls[0][0]
+
+
+def test_sku_ranking_returns_each_skus_estimated_value(monkeypatch):
+    rows = [
+        {"sku": "A1", "product_name": "Pants A", "volume": 100.0, "value": 500.0, "estimated_value": 120.456},
+        {"sku": "A2", "product_name": "Pants B", "volume": 50.0, "value": 200.0, "estimated_value": 0},
+    ]
+    conn = _install(monkeypatch, lambda sql, params: rows)
+
+    df = sellout_service.get_sku_ranking(customer="fairprice")
+
+    assert "CASE WHEN s.revenue_estimated THEN s.revenue ELSE 0 END" in conn.calls[0][0]
+    assert list(df["estimated_value"]) == [120.46, 0.0]
+
+
+def test_customer_totals_read_the_estimated_part(monkeypatch):
+    conn = _install(monkeypatch, lambda sql, params: [])
+
+    sellout_service.get_customer_totals(["fairprice"])
+
+    (totals_sql, _params) = conn.sql_containing("effective_sellout")[0]
+    assert "CASE WHEN s.revenue_estimated THEN s.revenue ELSE 0 END" in totals_sql

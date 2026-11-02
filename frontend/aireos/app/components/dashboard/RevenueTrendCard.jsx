@@ -5,12 +5,24 @@ import ChartLoading from "@/components/ui/ChartLoading"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import ComparisonMixChart from "@/components/dashboard/ComparisonMixChart"
 import CustomerComparisonChart from "@/components/dashboard/CustomerComparisonChart"
+import EstMark from "@/components/dashboard/EstMark"
 import { FormatTrendChart } from "@/components/dashboard/TrendChart"
 import { formatDateTime } from "@/lib/formatDate"
 import { relabelFormatRows } from "@/app/utils/storeFormats"
 
 const tabTriggerClass =
   "text-deep-violet-blue/70 hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white data-active:hover:text-white"
+
+// Under the chart: EST on the left when it includes estimated revenue, and
+// when the data was last updated on the right.
+function ChartFooter({ estimate, lastUpdated }) {
+  return (
+    <div className="mt-1 flex items-center justify-between gap-2">
+      <span>{estimate && <EstMark estimated={estimate.estimated} total={estimate.total} className="text-xs" />}</span>
+      <p className="text-xs text-deep-violet-blue/60">Last Updated: {formatDateTime(lastUpdated)}</p>
+    </div>
+  )
+}
 
 /**
  * Revenue trend card: offline/online mode switch, an optional `headerExtra`
@@ -27,6 +39,9 @@ const tabTriggerClass =
  * that format's colour.
  * With a comparison, `comparisonRows` comes pre-aligned from
  * alignComparisonBuckets, so the charts only render.
+ * `estimate` ({ estimated, total }, from page.js) puts one EST under the
+ * chart when anything it draws includes estimated revenue, however many bars
+ * do; hovering it says how much, and a bar's tooltip gives its own share.
  */
 export default function RevenueTrendCard({
   summaryByMode = {},
@@ -47,6 +62,7 @@ export default function RevenueTrendCard({
   periodNames = null,
   customerBars = null,
   onlineEnabled = true,
+  estimate = null,
 }) {
   const [metric, setMetric] = useState("revenue")
   const salesData = summaryByMode[mode]
@@ -117,9 +133,7 @@ export default function RevenueTrendCard({
       {!busy && !error && comparingCustomers && (
         <div className="flex flex-1 flex-col">
           <CustomerComparisonChart customers={customerBars} mode={mode} metric={metric} />
-          <p className="mt-1 text-right text-xs text-deep-violet-blue/60">
-            Last Updated: {formatDateTime(lastUpdated)}
-          </p>
+          <ChartFooter estimate={estimate} lastUpdated={lastUpdated} />
         </div>
       )}
       {!busy && !error && !comparingCustomers && salesData && (
@@ -133,9 +147,7 @@ export default function RevenueTrendCard({
               granularity={granularity}
             />
           )}
-          <p className="mt-1 text-right text-xs text-deep-violet-blue/60">
-            Last Updated: {formatDateTime(lastUpdated)}
-          </p>
+          <ChartFooter estimate={estimate} lastUpdated={lastUpdated} />
         </div>
       )}
     </div>

@@ -2,6 +2,7 @@
 
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip } from '@/components/ui/chart';
+import { hasEstimate } from '@/app/utils/estimatedRevenue';
 import { changePct } from '@/app/utils/periodComparison';
 import { formatColor, UNNAMED_FORMAT } from '@/app/utils/storeFormats';
 import {
@@ -28,7 +29,9 @@ function weekOrMonth(periodLabel) {
 // Reshapes the flat [{ period_label, period_start, format, revenue }] rows
 // the API returns into one row per period with a column per format, which
 // is the shape Recharts needs for a stacked bar, plus each period's % change
-// vs the one before it (from `periodTotal`) for the tooltip.
+// vs the one before it (from `periodTotal`) for the tooltip, and how much of
+// its revenue is estimated (`estimated`, said in the tooltip; the chart
+// itself carries one EST under it, RevenueTrendCard).
 function pivotByFormat(periodByFormat, periodTotal) {
   const byPeriod = new Map();
   for (const row of periodByFormat) {
@@ -43,7 +46,9 @@ function pivotByFormat(periodByFormat, periodTotal) {
   }
   periodTotal.forEach((row, index) => {
     const period = byPeriod.get(row.period_label);
-    if (period && index > 0) period.changePct = changePct(row.revenue, periodTotal[index - 1].revenue);
+    if (!period) return;
+    if (index > 0) period.changePct = changePct(row.revenue, periodTotal[index - 1].revenue);
+    period.estimated = row.estimated_revenue ?? 0;
   });
   return [...byPeriod.values()];
 }
@@ -53,12 +58,13 @@ function pivotByFormat(periodByFormat, periodTotal) {
 // something — a Total row when stacked, and the % change vs the previous bar.
 function TrendTooltip({ active, payload, granularity }) {
   if (!active || !payload?.length) return null;
+  const period = payload[0].payload;
   const total = payload.reduce((sum, item) => sum + (typeof item.value === 'number' ? item.value : 0), 0);
   const stacked = payload.length > 1;
 
   return (
     <div className="grid min-w-32 items-start gap-1.5 rounded-lg border border-lavander bg-white px-2.5 py-1.5 text-xs shadow-xl">
-      <div className="font-medium text-deep-violet-blue">{payload[0].payload.exactLabel}</div>
+      <div className="font-medium text-deep-violet-blue">{period.exactLabel}</div>
       <div className="grid gap-1.5">
         {payload.map((item) => (
           <div key={item.dataKey} className="flex w-full items-center justify-between gap-2">
@@ -84,7 +90,15 @@ function TrendTooltip({ active, payload, granularity }) {
             </span>
           </div>
         )}
-        <TooltipChange pct={payload[0].payload.changePct} suffix={`vs previous ${granularity}`} />
+        {hasEstimate(period.estimated) && (
+          <div className="flex w-full items-center justify-between gap-2">
+            <span className="font-medium text-deep-violet-blue">EST</span>
+            <span className="font-mono font-semibold text-deep-violet-blue tabular-nums">
+              {formatRevenue(period.estimated)}
+            </span>
+          </div>
+        )}
+        <TooltipChange pct={period.changePct} suffix={`vs previous ${granularity}`} />
       </div>
     </div>
   );
@@ -113,7 +127,8 @@ export function FormatTrendChart({ periodByFormat, periodTotal, granularity }) {
         <CartesianGrid vertical={false} />
         <XAxis dataKey="displayLabel" {...axisProps} />
         <YAxis tickFormatter={formatAxisCurrency} width={50} tick={{ fontSize: 10 }} />
-        <ChartTooltip content={<TrendTooltip granularity={granularity} />} />
+        {/* Above the legend, which is drawn after it and would show through. */}
+        <ChartTooltip content={<TrendTooltip granularity={granularity} />} wrapperStyle={{ zIndex: 10 }} />
         {!unnamedOnly && <ChartLegend content={<ChartLegendContent />} />}
         {formats.map((format) => (
           <Bar

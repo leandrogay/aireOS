@@ -529,6 +529,11 @@ _REVENUE_ESTIMATES = """
 """
 NO_REVENUE_ESTIMATES = "[]"
 
+# The part of a revenue total that was filled in rather than reported (either
+# fill above), so the dashboard can mark it EST. Both sources carry the
+# revenue_estimated flag it reads.
+_ESTIMATED_REVENUE_SUM = "SUM(CASE WHEN s.revenue_estimated THEN s.revenue ELSE 0 END)"
+
 EFFECTIVE_SELLOUT_CTE = """
     WITH monthly_coverage AS (
         SELECT DISTINCT retailer_id, date_trunc('month', period_start)::date AS month
@@ -555,6 +560,8 @@ EFFECTIVE_SELLOUT_CTE = """
         SELECT p.retailer_id, p.store_code, p.sku, p.period_start, p.period_end,
                p.quantity_units,
                COALESCE(p.revenue, e.estimated_revenue, p.quantity_units * k.price) AS revenue,
+               -- Either fill counts as estimated: the dashboard marks it EST.
+               (p.revenue IS NULL) AS revenue_estimated,
                p.period_type
         FROM preferred_rows p
         LEFT JOIN skus k ON k.sku = p.sku
@@ -571,7 +578,8 @@ PRICED_SELLOUT_FROM = """
 (
     SELECT src.retailer_id, src.store_code, src.sku, src.period_start, src.period_end,
            src.period_type, src.quantity_units,
-           COALESCE(src.revenue, e.estimated_revenue, src.quantity_units * k.price) AS revenue
+           COALESCE(src.revenue, e.estimated_revenue, src.quantity_units * k.price) AS revenue,
+           (src.revenue IS NULL) AS revenue_estimated
     FROM sellout src
     LEFT JOIN skus k ON k.sku = src.sku
     LEFT JOIN """ + _REVENUE_ESTIMATES + """
@@ -644,7 +652,7 @@ SKU_RANKING_ORDERS = ("product", "desc", "asc")
 # ones, alphabetically.
 SKU_RANGE_ORDER = ("Aire Adult Diaper Pants", "Aire Adult Diaper Ultra Tape", "Aire Adult Diaper Ultra Pants")
 SKU_SIZE_ORDER = ("S/M", "L", "XL")
-SKU_RANKING_COLUMNS = ["sku", "product_name", "volume", "value", "rank"]
+SKU_RANKING_COLUMNS = ["sku", "product_name", "volume", "value", "estimated_value", "rank"]
 DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 PERIOD_COMPARISON_TYPES = ("wow", "mom", "yoy")
 DASHBOARD_MODES = ("offline", "online")
@@ -774,7 +782,8 @@ def get_sku_ranking(
           MAX(k.sku_range) AS sku_range,
           MAX(k.size) AS size,
           COALESCE(SUM(s.quantity_units), 0) AS volume,
-          COALESCE(SUM(s.revenue), 0) AS value
+          COALESCE(SUM(s.revenue), 0) AS value,
+          COALESCE({_ESTIMATED_REVENUE_SUM}, 0) AS estimated_value
         FROM effective_sellout s
         LEFT JOIN skus k ON k.sku = s.sku
         WHERE {' AND '.join(where_clauses)}
@@ -791,6 +800,7 @@ def get_sku_ranking(
     ranked = pd.DataFrame([dict(row) for row in rows])
     ranked["volume"] = ranked["volume"].astype(float)
     ranked["value"] = ranked["value"].astype(float).round(2)
+    ranked["estimated_value"] = ranked["estimated_value"].astype(float).round(2)
     ranked = ranked.reset_index(drop=True)
     ranked["rank"] = ranked.index + 1
     if order == "product":
@@ -947,8 +957,10 @@ def _dashboard_rows(df: pd.DataFrame, granularity: str) -> pd.DataFrame:
         period_start=("period_start", "min"),
         revenue=("revenue", "sum"),
         units=("units", "sum"),
+        estimated_revenue=("estimated_revenue", "sum"),
     )
     rolled_up["revenue"] = rolled_up["revenue"].round(2)
+    rolled_up["estimated_revenue"] = rolled_up["estimated_revenue"].round(2)
     rolled_up["period_label"] = (
         rolled_up["period_key"].apply(lambda m: datetime.datetime.strptime(m, "%Y-%m").strftime("%B %Y"))
         if granularity == "month"
@@ -960,6 +972,8 @@ def _dashboard_rows(df: pd.DataFrame, granularity: str) -> pd.DataFrame:
 def _dashboard_mode_summary(df: pd.DataFrame, retailer: str) -> dict:
     # Splits the pre-aggregated per-period-by-format rows down to one
     # retailer, then reshapes into the three views the dashboard renders.
+    # Each carries estimated_revenue, the part of its revenue that was filled
+    # in rather than reported, for the dashboard's EST sign.
     if df.empty:
         return {"storeFormats": [], "periodTotal": [], "periodByFormat": []}
 
@@ -968,7 +982,7 @@ def _dashboard_mode_summary(df: pd.DataFrame, retailer: str) -> dict:
         return {"storeFormats": [], "periodTotal": [], "periodByFormat": []}
 
     store_formats = (
-        mode_df.groupby("format", as_index=False)[["revenue", "units"]]
+        mode_df.groupby("format", as_index=False)[["revenue", "units", "estimated_revenue"]]
         .sum()
         .sort_values("revenue", ascending=False)
     )
@@ -977,17 +991,24 @@ def _dashboard_mode_summary(df: pd.DataFrame, retailer: str) -> dict:
     # formats can have different MIN(period_start) within the same month.
     period_total = (
         mode_df.groupby("period_label", as_index=False)
-        .agg(period_start=("period_start", "min"), revenue=("revenue", "sum"), units=("units", "sum"))
+        .agg(
+            period_start=("period_start", "min"),
+            revenue=("revenue", "sum"),
+            units=("units", "sum"),
+            estimated_revenue=("estimated_revenue", "sum"),
+        )
         .sort_values("period_start")
     )
 
     period_by_format = mode_df.sort_values("period_start")[
-        ["period_label", "period_start", "format", "revenue", "units"]
+        ["period_label", "period_start", "format", "revenue", "units", "estimated_revenue"]
     ]
 
     return {
-        "storeFormats": store_formats[["format", "revenue", "units"]].to_dict(orient="records"),
-        "periodTotal": period_total[["period_label", "period_start", "revenue", "units"]].to_dict(orient="records"),
+        "storeFormats": store_formats[["format", "revenue", "units", "estimated_revenue"]].to_dict(orient="records"),
+        "periodTotal": period_total[
+            ["period_label", "period_start", "revenue", "units", "estimated_revenue"]
+        ].to_dict(orient="records"),
         "periodByFormat": period_by_format.to_dict(orient="records"),
     }
 
@@ -1027,7 +1048,8 @@ def get_dashboard_summary(
           s.retailer_id, r.retailer_name AS retailer, s.store_code,
           COALESCE(st.store_format, 'UNKNOWN') AS format,
           s.period_start,
-          SUM(s.revenue) AS revenue, SUM(s.quantity_units) AS units
+          SUM(s.revenue) AS revenue, SUM(s.quantity_units) AS units,
+          {_ESTIMATED_REVENUE_SUM} AS estimated_revenue
         {from_clause}
         JOIN retailers r ON r.retailer_id = s.retailer_id
         LEFT JOIN stores st ON st.retailer_id = s.retailer_id AND st.store_code = s.store_code
@@ -1042,6 +1064,7 @@ def get_dashboard_summary(
     if not df.empty:
         df["revenue"] = df["revenue"].astype(float)
         df["units"] = df["units"].astype(float)
+        df["estimated_revenue"] = df["estimated_revenue"].fillna(0).astype(float)
         df = _dashboard_rows(df, granularity)
 
     return {mode: _dashboard_mode_summary(df, _retailer_for(customer, mode)) for mode in DASHBOARD_MODES}
@@ -1091,6 +1114,7 @@ def get_customer_totals(
         SELECT
           r.retailer_name,
           COALESCE(SUM(s.revenue), 0) AS revenue,
+          COALESCE({_ESTIMATED_REVENUE_SUM}, 0) AS estimated_revenue,
           COALESCE(SUM(s.quantity_units), 0) AS units
         FROM effective_sellout s
         JOIN retailers r ON r.retailer_id = s.retailer_id
@@ -1124,6 +1148,7 @@ def get_customer_totals(
             entry[mode] = {
                 "revenue": round(float(row["revenue"] or 0), 2) if row else 0.0,
                 "units": float(row["units"] or 0) if row else 0.0,
+                "estimated_revenue": round(float(row["estimated_revenue"] or 0), 2) if row else 0.0,
             }
             entry[f"has_{mode}"] = retailer in present
         result.append(entry)

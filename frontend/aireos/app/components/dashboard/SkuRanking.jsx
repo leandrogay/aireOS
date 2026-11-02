@@ -6,6 +6,7 @@ import { ArrowDown, ArrowUp } from 'lucide-react';
 import TableSkeleton from '@/components/ui/TableSkeleton';
 import { changePct, formatChangePct } from '@/app/utils/periodComparison';
 import { formatRevenue } from '@/app/utils/trendChart';
+import EstMark from '@/components/dashboard/EstMark';
 
 const GRAINS = [
   { value: 'customer', label: 'Customers' },
@@ -161,6 +162,7 @@ function rankCustomers(rows, mode, metric, order) {
         label: row.label,
         volume: channel.units ?? 0,
         value: channel.revenue ?? 0,
+        estimatedValue: channel.estimated_revenue ?? 0,
       };
     });
   ranked.sort((a, b) => {
@@ -391,7 +393,9 @@ export default function SkuRanking({
               {!tableLoading && !tableError && showCustomers && customersRanked.map((row) => (
                 <tr key={row.customer} className="border-b border-lavander/80 bg-white last:border-b-0 hover:bg-cream/50">
                   <td className={`${cellClass} tabular-nums`}>{row.rank}</td>
-                  <td className={`${cellClass} truncate font-medium`}>{row.label}</td>
+                  <td className={cellClass}>
+                    <NameWithEst name={row.label} value={row.value} estimated={row.estimatedValue} />
+                  </td>
                   <td className={numCellClass}>{formatVolume(row.volume)}</td>
                   <td className={numCellClass}>{formatRevenue(row.value)}</td>
                 </tr>
@@ -399,7 +403,9 @@ export default function SkuRanking({
               {!tableLoading && !tableError && !showCustomers && skus.map((s) => (
                 <tr key={s.sku} className="border-b border-lavander/80 bg-white last:border-b-0 hover:bg-cream/50">
                   <td className={`${cellClass} tabular-nums`}>{s.rank}</td>
-                  <td className={`${cellClass} truncate font-medium`} title={s.product_name}>{s.product_name}</td>
+                  <td className={cellClass} title={s.product_name}>
+                    <NameWithEst name={s.product_name} value={s.value} estimated={s.estimated_value} />
+                  </td>
                   <td className={numCellClass}>{formatVolume(s.volume)}</td>
                   <td className={numCellClass}>{formatRevenue(s.value)}</td>
                   {baselineBySku && (
@@ -411,6 +417,18 @@ export default function SkuRanking({
           </table>
       </div>
     </section>
+  );
+}
+
+// A row's name, with EST a little after it (plain, at the table's text size)
+// when part of its revenue is estimated (backend estimated_value /
+// estimated_revenue). A long name truncates; EST always stays in view.
+function NameWithEst({ name, value, estimated }) {
+  return (
+    <span className="flex min-w-0 items-center gap-2.5">
+      <span className="truncate font-medium">{name}</span>
+      <EstMark estimated={estimated} total={value} className="text-[11px]" />
+    </span>
   );
 }
 

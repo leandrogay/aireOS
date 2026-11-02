@@ -26,6 +26,7 @@ import {
 import { DEFAULT_PRESET_ID, buildDateRangePresets } from "@/app/utils/dateRangePresets";
 import { rangeHasWeeklyMonths, weeklyGapMessage } from "@/app/utils/weeklyGaps";
 import { relabelFormatRows } from "@/app/utils/storeFormats";
+import { addEstimates, customersEstimate, summaryEstimate } from "@/app/utils/estimatedRevenue";
 
 const NO_CUSTOMERS = [];
 
@@ -264,6 +265,14 @@ export default function DashboardPage() {
         baselineWeeksByFormat: relabelFormatRows(baselineFormatRows, currentFormatRows),
       })
     : null;
+  // The chart's EST covers everything it draws: each customer's bar, or this
+  // period plus the comparison while comparing.
+  const chartEstimate = comparingCustomers
+    ? customersEstimate(customerTotals.rows, mode)
+    : addEstimates(
+        summaryEstimate(summary.summaryByMode[mode]),
+        baseline ? summaryEstimate(baselineSummary.summaryByMode[mode]) : null,
+      );
 
   const lastUpdated = customers
     .map((name) => channels[`${name}_${mode}`])
@@ -331,6 +340,7 @@ export default function DashboardPage() {
             comparisonLoading={baselineSummary.loading}
             customerBars={customers.length === 0 ? [] : (comparingCustomers ? customerTotals.rows : null)}
             onlineEnabled={!freshnessLoaded || onlineAvailable}
+            estimate={customers.length === 0 ? null : chartEstimate}
             headerExtra={
               <PeriodControls
                 start={effectiveStartDate}

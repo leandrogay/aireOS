@@ -115,7 +115,7 @@ aireOS/
     │   ├── inventory/page.js      Inventory: overview, by-customer DOH, at-risk list, sell-in plan, enter/edit data (components/inventory)
     │   ├── components/
     │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column), Sidebar (NAV_ITEMS)
-    │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, calendar, popover, DateRangePicker
+    │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, calendar, popover, tooltip, DateRangePicker
     │   │   │                      (typed date inputs, not a calendar); MonthGrid (year + 12-month grid, shared by
     │   │   │                      promotions MonthPicker and the dashboard month-range picker); Toast (+ hooks/useToast);
     │   │   │                      list-table kit (Customers + Promotions): DataTable (card: count, search slot, refresh,
@@ -155,6 +155,7 @@ aireOS/
     │       ├── trendChart.js      Trend chart labels, x-axis setup, bar sizing, format stack order
     │       ├── weeklyGaps.js      "No weekly data for …" message: monthly-only months merged into ranges, capped
     │       ├── priceMix.js        Avg-price change split into SKU price vs product mix
+    │       ├── estimatedRevenue.js EST sign: when a revenue figure includes estimated revenue, and its hover text
     │       ├── storeFormats.js    FORMAT_COLORS + formatColor() per store format
     │       ├── dohSettingsForm.js validate/build/formFrom helpers for the DOH threshold form, GLOBAL_DEFAULT_DOH
     │       ├── customerForm.js    normaliseName (mirrors backend slug), validateName, edit/delete block reasons
@@ -340,6 +341,7 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | `PromotionBase` field names | `buildPromotionPayload` / `formFromPromotion` |
 | `_PROMOTION_COLUMNS` (nested `stores`, `skus`) | `PromotionList.jsx`, `promotionOverview.js` |
 | `sales.py` query-param names (`start_date`, `end_date`, `granularity`, `customer`, `store`, `sku` …) | `URLSearchParams` keys in `hooks/*.js` and `services/salesApi.js` |
+| `sellout_service` estimated part of revenue: `estimated_revenue` (dashboard summary rows, customer totals), `estimated_value` (SKU ranking), from the `revenue_estimated` row flag | `utils/estimatedRevenue.js`, `EstMark.jsx` (one under the chart in `RevenueTrendCard`, top right of each `RevenueSummaryCards` tile, beside `SkuRanking` values; `TrendChart` tooltip) |
 | `mapping_view` packet/rule keys (`targetField`, `sourceColumn`, `editable`, `status`, `field`, `meltGroup`, `options`, `description`, `requiredMissing`, `checks`) | `utils/mappingReview.js`, `components/mappings/*` |
 | `mapping_checks` check shape (`id`, `level`, `passed`, `message`, `fields`, `evidence`) | `utils/mappingChecks.js`, `MappingChecks.jsx` |
 | packet `skuCodes`, `masterSkus`, `contractFormat`, `instructions`; processing preview/rejection fields | `utils/skuCodeTable.js`, `SkuCodeTable.jsx`, `MappingReviewPanel.jsx`, `UploadFileRow.jsx` |
