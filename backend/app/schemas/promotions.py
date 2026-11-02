@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import Field, model_validator
@@ -147,3 +148,25 @@ class PromotionCreate(PromotionBase):
 
 class PromotionUpdate(PromotionBase):
     pass
+
+
+class RevenueEstimateRow(_Base):
+    sku: str = Field(min_length=1)
+    retailer_id: int = Field(gt=0)
+    store_code: str = Field(min_length=1)
+    period_start: date
+    period_end: date
+    quantity_units: Decimal | None = None
+    revenue: Decimal | None = None
+
+    @model_validator(mode="after")
+    def validate_period(self):
+        if self.period_end < self.period_start:
+            raise ValueError("period_end cannot be earlier than period_start")
+        if (self.period_end - self.period_start).days > 366:
+            raise ValueError("A revenue estimate may cover at most 367 days")
+        return self
+
+
+class RevenueEstimateRequest(_Base):
+    rows: list[RevenueEstimateRow] = Field(min_length=1, max_length=100)

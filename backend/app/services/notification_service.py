@@ -4,7 +4,8 @@ this app, so read state is shared across everyone rather than per-account.
 What writes here: low-stock/stockout (from inventory_service, when a SKU
 written via Create/Edit/Upload drops below its DOH threshold), forecast
 pipeline success/failure (scripts/refresh_forecast.py, and the scheduled
-BigQuery run via forecast_pipeline_events), and an approved mapping.
+BigQuery run via forecast_pipeline_events), an approved mapping, and an upload
+rollback that succeeded or failed (ingestion_service.rollback_upload).
 
 `payload` is structured JSON, not pre-rendered text, so the wording staff see
 lives in the frontend and can change without a migration. This module only
@@ -32,6 +33,8 @@ LOW_STOCK = "low_stock"
 FORECAST_SUCCESS = "forecast_success"
 FORECAST_FAILURE = "forecast_failure"
 MAPPING_UPLOADED = "mapping_uploaded"
+ROLLBACK_SUCCESS = "rollback_success"
+ROLLBACK_FAILURE = "rollback_failure"
 
 NOTIFY_CHANNEL = "notifications_changed"
 

@@ -72,6 +72,11 @@ the service restores any prior values atomically while retaining the raw GCS
 file and mapping contract for traceability. Uploads completed before this
 migration are not retroactively reversible.
 
+Apply `migrations/007_add_rollback_notification_types.sql` so a rollback that
+succeeds or fails also appears in the notification bell (`rollback_success` /
+`rollback_failure`). Until then those notifications are skipped and logged; the
+rollback itself is unaffected.
+
 The current fact schema does not retain sales UOM. FairPrice labels the source
 measure `Qty (in EA)`, while the established downstream forecasting contract
 currently treats the values as cartons. The pipeline performs no numeric unit
