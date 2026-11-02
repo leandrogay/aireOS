@@ -66,10 +66,15 @@ export default function MappingReviewPage() {
 
   // The panel renders the outcome — what moved where, and how many uploads
   // were re-stamped — so the response is handed back rather than swallowed by
-  // a redirect.
+  // a redirect. The review is done, so the upload list drops the rows that were
+  // waiting on it; the files carry on in Recent uploads.
   const handleApprove = useCallback(
-    ({ rules, instructions, name, customer_id }) => confirmMapping(baseUrl, id, { rules, instructions, name, customer_id }),
-    [baseUrl, id],
+    async ({ rules, instructions, name, customer_id }) => {
+      const approved = await confirmMapping(baseUrl, id, { rules, instructions, name, customer_id });
+      forgetMapping(id);
+      return approved;
+    },
+    [baseUrl, id, forgetMapping],
   );
 
   // The server deleted the files that were waiting on this proposal, so the

@@ -222,9 +222,10 @@ function UploadQueue({ showTray, children }) {
     setBatchError('');
   }, [clearStageTimers]);
 
-  // Called when a proposal is discarded: the server deletes the files that were
-  // waiting on it (DELETE /api/mappings/{fp}/pending), so their rows would
-  // otherwise keep offering a review that no longer exists.
+  // Called when a proposal is discarded (the server deletes the files that were
+  // waiting on it, DELETE /api/mappings/{fp}/pending) or approved (the review is
+  // done and the files move on to Recent uploads, which tracks their load). Either
+  // way their rows would otherwise keep offering a review that no longer exists.
   const forgetMapping = useCallback((fingerprint) => {
     const waiting = (item) =>
       item.phase === 'done' &&
@@ -347,18 +348,17 @@ function UploadQueue({ showTray, children }) {
 
   // ---- Loading ------------------------------------------------------------
 
-  // A file that loaded is an ordinary uploaded file from here on; one that
-  // did not stays ready to load, and the dialog said why.
+  // A file that loaded is finished, so its row leaves the list and Recent
+  // uploads is where it is found; one that did not stays ready to load, and the
+  // dialog said why.
   const markLoaded = useCallback((response) => {
     const byPath = new Map((response?.results || []).map((result) => [result.blob_path, result]));
-    setItems((prev) =>
-      prev.map((item) => {
-        const result = item.outcome?.blobPath && byPath.get(item.outcome.blobPath);
-        // A check with saving switched off leaves the file waiting to load.
-        if (!wasSaved(result)) return item;
-        return { ...item, outcome: { ...item.outcome, kind: 'mapped', processing: result.processing } };
-      }),
-    );
+    const isLoaded = (item) => {
+      const result = item.outcome?.blobPath && byPath.get(item.outcome.blobPath);
+      // A check with saving switched off leaves the file waiting to load.
+      return wasSaved(result);
+    };
+    setItems((prev) => prev.filter((item) => !isLoaded(item)));
   }, []);
 
   const value = {
