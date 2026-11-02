@@ -294,7 +294,8 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
    checks, the product codes and the SKU master), the user edits **rules** and the product-code table,
    `POST /api/mappings/{fp}/preview` re-runs the checks, and `POST .../{fp}/confirm` rebuilds + re-validates and
    re-checks the contract (unknown product codes → 422), records the reviewer's diff against the proposal, archives
-   any previous version under `mappings/history/` and stores it under `confirmed/`. `DELETE .../{fp}/pending` discards.
+   any previous version under `mappings/history/` and stores it under `confirmed/`. `DELETE .../{fp}/pending` discards
+   the proposal **and the uploads still waiting on it** (`upload_loading.discard_proposal`; nothing was loaded from them).
    The page is numbered steps (customer → fields → product codes → checks) beside a "What's left" list
    (`utils/reviewChecklist.js`). A mapping belongs to a **customer**: confirm requires `customer_id` (stored as
    `customer_id`/`customer_name`, and as `vendor` for upload history) and 422s while any retailer the contract writes
@@ -360,6 +361,7 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | upload `mapping_status` load states (`ready_to_load`, `mapped`, `reload_available`, in `upload_loading`); load preview/result keys (`preview_loads`, `load_uploads`, `sellout_ingestion.preview_confirmed_upload`); confirm `waiting_uploads`/`outdated_uploads`/`load_requires_confirmation` | `utils/uploadHistory.js`, `utils/loadPreview.js` (`LOAD_PREVIEW_FIELDS`), `LoadConfirmDialog.jsx` → `LoadFileRow.jsx` (sample rows via `OutputPreview`), `ApprovedSummary.jsx` |
 | `settings/doh._settings_view` keys, `GLOBAL_DEFAULT_*_DOH` | `DohSettingsTable.jsx`, `dohSettingsForm.js` (`GLOBAL_DEFAULT_DOH`) |
 | `DohThresholdsUpdate` field names | `buildDohThresholdPayload` |
+| `DELETE /api/mappings/{fp}/pending` → `removed_uploads`; review packet `waitingUploads` (pending only, `upload_loading.uploads_waiting_on_proposal`) | `ConfirmDiscardDialog.jsx` (names the files), `UploadProvider.forgetMapping` (drops their `needs_review` rows), `app/mappings/page.js` (`?discarded=<n>` toast) |
 | `ConfirmRequest.customer_id`; packet `customerId`, `customerName`, `sourceFilename`; `mapping_contract.retailer_outputs` | `mappingApi.confirmMapping`, `utils/mappingCustomer.js` (`retailerOutputs` mirrors it), `utils/mappingList.js` |
 | packet `columnGroups` (`mapping_view.column_groups`: detected groups from `column_profile.review_column_groups`, with contract-ready `group` settings, `readings`, `meltGroupId`/`field`) and `measureFields` | `utils/mappingReview.js` (`toGroups`, `groupChoices`, `toRules`), `FieldTable.jsx`, `ColumnGroupDetails.jsx`, `UnusedColumns.jsx`. `review_column_groups` adds month-named headings for review only -- never fold them into `detect_column_groups`, which the layout fingerprint is built from |
 | `CustomerCreate.retailer_names` (`customer_service._attach_retailer`: links a retailer an upload made, 409 for another customer's) | `NewCustomerDialog.jsx` |
