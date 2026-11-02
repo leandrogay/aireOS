@@ -1,12 +1,12 @@
 import { matchesSearch } from '@/app/utils/tableView';
 import { retailerLabel, vendorLabel } from '@/app/utils/retailerLabel';
 
-// Mapping state as something a person reads. Anything unrecognised falls
-// through to the raw value rather than being hidden. Keys are the `state` of
-// a backend mapping_view packet.
+// Mapping state as something a person reads, with the StatusPill tone to draw
+// it in. Anything unrecognised falls through to the raw value rather than being
+// hidden. Keys are the `state` of a backend mapping_view packet.
 export const MAPPING_STATE_LABELS = {
-  confirmed: { tone: 'ready', label: 'Confirmed' },
-  pending: { tone: 'review', label: 'Needs review' },
+  confirmed: { tone: 'success', label: 'Confirmed' },
+  pending: { tone: 'warning', label: 'Needs review' },
 };
 
 export const MAPPING_STATUS_OPTIONS = Object.entries(MAPPING_STATE_LABELS).map(
@@ -55,14 +55,14 @@ export function issueSummary(mapping) {
  * `detail` under it.
  *
  * @param {object} mapping
- * @returns {{ tone: string, label: string, detail: string | null }}
+ * @returns {{ tone: 'success' | 'warning' | 'danger' | 'muted', label: string, detail: string | null }}
  */
 export function mappingStatus(mapping) {
   const state = MAPPING_STATE_LABELS[mapping.state];
   const issues = issueSummary(mapping);
-  const issueTone = mappingIssueKind(mapping) === 'missing' ? 'failed' : 'review';
+  const issueTone = mappingIssueKind(mapping) === 'missing' ? 'danger' : 'warning';
 
-  if (!state) return { tone: 'neutral', label: mapping.state || 'Unknown', detail: issues };
+  if (!state) return { tone: 'muted', label: mapping.state || 'Unknown', detail: issues };
   if (mapping.state === 'confirmed' && issues) return { tone: issueTone, label: issues, detail: null };
   return { tone: state.tone, label: state.label, detail: issues };
 }
