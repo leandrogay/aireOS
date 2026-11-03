@@ -5,15 +5,16 @@ import { retailerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
 // Unread notifications stand out; read ones stay in the list, greyed out.
-const CARD_CLASS = 'rounded-lg border px-3 py-2.5 text-xs transition-opacity';
+// wrap-anywhere: file and mapping names have no spaces, so they break to stay in the card.
+const CARD_CLASS = 'rounded-lg border px-3 py-2.5 text-xs wrap-anywhere transition-opacity';
 const UNREAD_CARD_CLASS = 'border-violet bg-lavander/40';
 const READ_CARD_CLASS = 'border-lavander bg-white opacity-60';
 
 function Field({ label, value }) {
   return (
     <div className="flex justify-between gap-3">
-      <span className="text-deep-violet-blue/60">{label}</span>
-      <span className="text-right font-medium text-deep-violet-blue">{value}</span>
+      <span className="max-w-[60%] shrink-0 text-deep-violet-blue/60">{label}</span>
+      <span className="min-w-0 text-right font-medium text-deep-violet-blue">{value}</span>
     </div>
   );
 }
@@ -181,8 +182,8 @@ const TITLES = {
   forecast_success: (payload) => forecastTitle(payload, true),
   forecast_failure: (payload) => forecastTitle(payload, false),
   mapping_uploaded: (payload) => `[MAPPING] ${payload.amended ? 'Mapping updated' : 'New mapping approved'} – ${payload.name}`,
-  rollback_success: (payload) => `[SUCCESS] Upload Rolled Back – ${payload.source_file}`,
-  rollback_failure: (payload) => `[FAILURE] Upload Rollback Failed – ${payload.source_file}`,
+  rollback_success: () => '[SUCCESS] Upload Rolled Back',
+  rollback_failure: () => '[FAILURE] Upload Rollback Failed',
 };
 
 const MARK_READ_BUTTON_CLASS =
