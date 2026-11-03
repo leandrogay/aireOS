@@ -11,8 +11,8 @@ from app.services.column_profile import review_column_groups
 from app.services.mapping_contract import (
     DECIDABLE_FIELDS,
     REQUIRED_FIELDS,
+    read_contract,
     resolve_selector,
-    upgrade,
     validate_contract,
 )
 
@@ -65,9 +65,17 @@ def _describe(target: str, entry: dict, groups: dict) -> str:
         return f"Not in this file: {entry.get('reason') or 'no reason given'}"
     if status == "derived" and entry.get("from_field"):
         return f"From {entry['from_field']}"
+    if status == "derived" and entry.get("from_layout") == "stated_period":
+        return "The month the file's title states"
     if status == "derived" and target == "period_type":
         return "Read from the period column headers"
     if status == "mapped" and entry.get("melt_group") in groups:
+        group = groups[entry["melt_group"]]
+        label = next((item for item in group.get("labels") or [] if item["target"] == target), None)
+        if label and label["rows_above"] == 0:
+            return f"Read from the column headers of melt group {entry['melt_group']!r}"
+        if label:
+            return f"Read from the cells above the column headers of melt group {entry['melt_group']!r}"
         return f"Read from the column headers of melt group {entry['melt_group']!r}"
     return STATUS_DESCRIPTIONS.get(status, status or "")
 
@@ -103,7 +111,7 @@ def contract_to_rules(
     it off, and asking them to re-confirm rows they already confirmed is the
     bug the flag was added to fix.
     """
-    current = upgrade(contract)
+    current = read_contract(contract)
     columns = list(columns or [])
     groups = {group.get("id"): group for group in current.get("melt_groups") or []}
     fields = current.get("fields") or {}
@@ -185,18 +193,12 @@ def rules_to_contract(rules: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     fields: Dict[str, Dict[str, Any]] = {}
     groups: Dict[str, Dict[str, Any]] = {}
-    legacy_groups: List[Dict[str, Any]] = []
 
     for rule in rules:
         target = rule.get("targetField")
         if not target or rule.get("editable", True):
             continue
         group = rule.get("meltGroup")
-        if group and "target_field" in group:
-            # A rule from a version 1 review screen, still carrying the old
-            # group shape; upgraded with the rest of the contract below.
-            legacy_groups.append(group)
-            continue
         if group:
             groups[group.get("id")] = {**group, **_annotation(rule)}
         entry = rule.get("field")
@@ -218,15 +220,7 @@ def rules_to_contract(rules: List[Dict[str, Any]]) -> Dict[str, Any]:
             entry["transforms"] = transform
         fields[target] = entry
 
-    if legacy_groups:
-        upgraded = upgrade({"melt_groups": legacy_groups})
-        for group in upgraded["melt_groups"]:
-            groups[group["id"]] = group
-        for target, entry in upgraded["fields"].items():
-            fields.setdefault(target, entry)
-
     return {
-        "version": mapping_contract.CONTRACT_VERSION,
         "fields": fields,
         "melt_groups": list(groups.values()),
     }
@@ -308,7 +302,7 @@ def _group_label(group: dict, columns: list[str]) -> str:
 def _group_entry(entry_id: str, group: dict, columns: list[str], samples: dict) -> dict:
     keys, problem = _read_keys(group, columns)
     kind = "period" if (group.get("key") or {}).get("target") == "period_start" else "store"
-    settings = {name: group[name] for name in ("select", "key", "period_type") if group.get(name)}
+    settings = {name: group[name] for name in ("select", "key", "labels", "period_type") if group.get(name)}
     if kind == "period" and keys and not settings.get("period_type"):
         settings["period_type"] = _period_type_from_dates(keys) or "month"
 
@@ -370,7 +364,7 @@ def column_groups(columns: List[str], contract: Dict[str, Any], samples: Dict[st
     them. A contract group nothing detected is listed as it stands, so it can
     still be seen and taken off.
     """
-    current = upgrade(contract)
+    current = read_contract(contract)
     selected = mapping_contract.group_columns(current, columns)
     by_columns = {tuple(cols): group for group in current.get("melt_groups") or [] if (cols := selected.get(group["id"]))}
 
@@ -396,7 +390,7 @@ def envelope_to_packet(
     columns = envelope.get("raw_columns") or []
     confirmed = state == "confirmed"
 
-    stored = upgrade(envelope.get("contract") or {})
+    stored = read_contract(envelope.get("contract") or {})
     if confirmed:
         # Approved before the review flag existed: someone signed it off.
         for entry in [*stored.get("fields", {}).values(), *stored.get("melt_groups", [])]:
@@ -432,6 +426,16 @@ def envelope_to_packet(
         "proposedBy": {"provider": envelope.get("provider"), "model": envelope.get("model")},
         "columns": columns,
         "columnSamples": envelope.get("column_samples") or {},
+        # The first data rows lined up by column (older proposals have none;
+        # testing the mapping returns them).
+        "headRows": envelope.get("head_rows") or [],
+        # Each column's distinct values -- all of them when there are few, an
+        # even spread otherwise (column_profile) -- and how many there are, so
+        # the screen can say which rows a rule sends where.
+        "columnValues": {
+            column: {"values": entry.get("values") or [], "distinct": entry.get("distinct", len(entry.get("values") or []))}
+            for column, entry in (envelope.get("column_profile") or {}).items()
+        },
         # The fields a reviewer may point a column at. Sent with the mapping
         # rather than hardcoded in the UI, so the dropdown cannot offer a field
         # whose source is fixed (the file's name, the period's end and label).
@@ -460,12 +464,10 @@ def envelope_to_packet(
         "instructions": {
             "layout": contract.get("layout"),
             "aggregate": contract.get("aggregate"),
-            "dataSource": contract.get("data_source"),
         },
         # Every product code in the example file, for the review screen's
         # code table (mapping_checks.sku_codes).
         "skuCodes": envelope.get("sku_codes") or [],
-        "contractFormat": 2 if mapping_contract.is_v2(envelope.get("contract")) else 1,
         "warnings": contract.get("warnings") or [],
         "editable": True,
         "validated": confirmed,

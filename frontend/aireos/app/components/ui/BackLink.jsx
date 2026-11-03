@@ -3,22 +3,27 @@ import { ArrowLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 /**
- * "Back to …" link for a page header, with a leading arrow so it reads as
- * navigation rather than an action. Sized to sit beside `RefreshButton`.
+ * Round back-arrow link that sits just left of a page title (see
+ * PageLayout's `back` prop), so it adds no height to the header. The arrow
+ * alone is the control; the destination is its tooltip and accessible name.
  *
- * @param {{ href: string, className?: string, children: import('react').ReactNode }} props
+ * @param {{ href: string, label: string, className?: string }} props
  */
-export default function BackLink({ href, className, children }) {
+export default function BackLink({ href, label, className }) {
   return (
     <Link
       href={href}
+      title={`Back to ${label}`}
+      aria-label={`Back to ${label}`}
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-md border border-violet bg-white px-3 py-1.5 text-xs font-medium text-deep-violet-blue transition hover:bg-lavander',
+        'group inline-flex size-8 shrink-0 items-center justify-center rounded-full text-deep-violet-blue transition-colors hover:bg-lavander',
         className,
       )}
     >
-      <ArrowLeft aria-hidden="true" className="size-3.5" />
-      {children}
+      <ArrowLeft
+        aria-hidden="true"
+        className="size-5 transition-transform group-hover:-translate-x-0.5"
+      />
     </Link>
   );
 }

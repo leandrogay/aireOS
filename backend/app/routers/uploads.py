@@ -77,10 +77,9 @@ def resolve_and_apply_mapping(
 def _list_upload_history(limit: int, months: int | None = None) -> list[dict]:
     """Return uploads whose referenced mapping still exists.
 
-    Older blobs can still contain metadata from the removed built-in mapper,
-    such as ``fairprice_wide_v1``. That identifier has no corresponding GCS
-    contract, so the stale history entry is omitted rather than presented as
-    an addressable mapping or as a new review state.
+    An upload whose mapping was discarded points at a fingerprint with no
+    GCS contract, so it is omitted rather than presented as an addressable
+    mapping or as a new review state.
 
     ``months`` keeps only uploads from that many calendar months back, counted
     from now in UTC.
@@ -176,7 +175,7 @@ async def upload_files(
             return {
                 "status": "mapping_failed",
                 "reason": "bad_llm_output",
-                "error": f"Unable to propose a mapping for {filename}: {exc}",
+                "error": f"Unable to propose a nomenclature for {filename}: {exc}",
             }
         except contract_application.ContractApplicationError as exc:
             return {

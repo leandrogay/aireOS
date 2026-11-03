@@ -1,7 +1,9 @@
 'use client';
 
 import { useId, useRef, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 
+import { filterControlClass } from '@/components/ui/filterControl';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 
@@ -35,7 +37,8 @@ function summaryOf(options, values, allLabel) {
  * both read as the `allLabel`, which is what a filter means by "all". The
  * panel is a Popover, so a scrolling container never clips it and it flips
  * above the button when there is no room below. `searchable` adds a search box
- * for a long list.
+ * for a long list. The closed button looks like FilterSelect's
+ * (filterControl.js), so the two can share a FilterBar.
  *
  * @param {{
  *   label?: string,
@@ -100,23 +103,26 @@ export default function MultiSelectDropdown({
           aria-labelledby={label ? labelId : undefined}
           title={summary.full}
           className={cn(
-            'flex h-9 w-full min-w-0 items-center justify-between overflow-hidden rounded-md border bg-cream px-2.5 text-left text-sm text-deep-violet-blue focus:border-violet focus:outline-none disabled:cursor-not-allowed disabled:opacity-60',
-            active ? 'border-deep-violet-blue' : 'border-lavander',
-            invalid && 'border-red-400 focus:border-red-500',
+            filterControlClass(active),
+            'flex items-center justify-between overflow-hidden text-left disabled:cursor-not-allowed disabled:opacity-60',
+            invalid && 'border-red-400 focus-visible:border-red-500',
           )}
         >
           <span className={cn('min-w-0 flex-1 truncate', !options.length && 'text-deep-violet-blue/50')}>
             {options.length ? summary.text : placeholder}
           </span>
-          <span className="ml-2 shrink-0 text-[10px] text-deep-violet-blue/50" aria-hidden="true">
-            {open ? '▲' : '▼'}
-          </span>
+          <ChevronDown
+            aria-hidden="true"
+            className={cn('ml-2 size-4 shrink-0 text-deep-violet-blue/50', open && 'rotate-180')}
+          />
         </PopoverTrigger>
-        {/* As wide as the button. The caret goes straight into the search box when there is one. */}
+        {/* At least as wide as the button, wider when an option needs it so
+            labels are not cut off. The caret goes straight into the search
+            box when there is one. */}
         <PopoverContent
           align="start"
           initialFocus={searchable ? searchRef : undefined}
-          className="w-(--anchor-width) min-w-48 gap-0 overflow-hidden rounded-md border border-lavander bg-white p-0 text-deep-violet-blue ring-0"
+          className="w-max min-w-(--anchor-width) max-w-80 gap-0 overflow-hidden rounded-md border border-lavander bg-white p-0 text-deep-violet-blue ring-0"
         >
           {searchable && (
             <div className="border-b border-lavander p-2">

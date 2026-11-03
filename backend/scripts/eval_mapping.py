@@ -23,6 +23,8 @@ To compare models, run it once per MAPPING_MODEL:
 
     python scripts/eval_mapping.py
     python scripts/eval_mapping.py --only nhg_sap --show-diff
+    python scripts/eval_mapping.py --no-examples --show-diff     # no reference contracts shown at all
+    python scripts/eval_mapping.py --file path/to/new_source.xlsx  # unseen file, no reference to score against
 """
 
 import argparse
@@ -41,6 +43,8 @@ PATTERNS = {
     "fairprice_monthly": "XEL_VENDORS_BRANDS_MONTH_*",
     "nhg_sap": "Aire*Sell*Out*",
     "sheng_siong_claim": "Claim_Sales_Summary_Report_*",
+    "singhealth_er130": "XEL Jul26*",
+    "prime_jkdc": "XEL Lifecare JKDC*Jul*",
 }
 
 
@@ -67,13 +71,36 @@ def _decision(contract: dict, columns: dict[str, list[str]], target: str) -> dic
     return {"status": status}
 
 
-def evaluate(key: str, path: Path, show_diff: bool) -> dict:
+def propose_unseen(path: Path) -> None:
+    """
+    Propose a contract for a file with no reference answer, with every example
+    hidden, and print what the model decided and which checks it failed -- a
+    stand-in for a data source nobody has mapped before.
+    """
+    frame, layout = layout_detection.read_table(path.name, path.read_bytes())
+    proposal = generate_mapping.generate_mapping_contract(
+        path.name, frame, layout, exclude_examples=tuple(reference_contracts.REFERENCE_CONTRACTS)
+    )
+    contract = proposal["contract"]
+    columns = group_columns(contract, list(frame.columns))
+    failed = mapping_checks.failures(proposal["checks"])
+    print(f"{path.name}: attempts {proposal['attempts']}, failed checks: {', '.join(c['id'] for c in failed) or 'none'}")
+    for target in DECIDABLE_FIELDS:
+        print(f"    {target}: {json.dumps(_decision(contract, columns, target), default=str)}")
+    print(f"    aggregate: {json.dumps(contract.get('aggregate'))}")
+    for check in failed:
+        print(f"    FAILED {check['id']}: {check['message']}")
+
+
+def evaluate(key: str, path: Path, show_diff: bool, no_examples: bool) -> dict:
     data = path.read_bytes()
     frame, layout = layout_detection.read_table(path.name, data)
     raw_columns = list(frame.columns)
 
+    # Cold start hides every reference, not just this retailer's own.
+    hidden = tuple(reference_contracts.REFERENCE_CONTRACTS) if no_examples else (key,)
     proposal = generate_mapping.generate_mapping_contract(
-        path.name, frame, layout, exclude_examples=(key,)
+        path.name, frame, layout, exclude_examples=hidden
     )
     proposed = proposal["contract"]
     reference = reference_contracts.reference_contract(key)
@@ -105,18 +132,25 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--only", choices=sorted(PATTERNS), help="evaluate one retailer only")
     parser.add_argument("--show-diff", action="store_true", help="print every field that disagrees")
+    parser.add_argument("--no-examples", action="store_true",
+                        help="cold start: show the model none of the reference contracts")
+    parser.add_argument("--file", type=Path,
+                        help="propose a contract for any file with no examples and no reference (a never-seen source)")
     args = parser.parse_args()
 
     print(f"model: {config.MAPPING_MODEL}")
+    if args.file:
+        propose_unseen(args.file)
+        return 0
     results = []
     for key, pattern in PATTERNS.items():
         if args.only and key != args.only:
             continue
-        matches = sorted(SAMPLES.glob(pattern))
+        matches = sorted(SAMPLES.rglob(pattern))
         if not matches:
             print(f"{key:<20} skipped: no file matching {pattern} in {SAMPLES}")
             continue
-        results.append(evaluate(key, matches[0], args.show_diff))
+        results.append(evaluate(key, matches[0], args.show_diff, args.no_examples))
 
     if results:
         agreed = sum(r["agreed"] for r in results)

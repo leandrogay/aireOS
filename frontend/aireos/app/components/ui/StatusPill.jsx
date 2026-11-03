@@ -6,6 +6,8 @@ const TONES = {
   success: 'border-emerald-200 bg-emerald-50 text-emerald-800',
   info: 'border-violet/40 bg-lavander text-deep-violet-blue',
   muted: 'border-lavander bg-cream text-deep-violet-blue/70',
+  warning: 'border-amber-300 bg-amber-50 text-amber-900',
+  danger: 'border-red-200 bg-red-50 text-red-800',
 };
 
 /**

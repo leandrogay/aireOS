@@ -38,7 +38,7 @@ function NextStep({ item, onRetry, onFollow }) {
   if (kind === 'needs_review' && item.outcome.mappingId) {
     return (
       <Link href={`/mappings/${item.outcome.mappingId}`} onClick={onFollow} className={LINK_CLASS}>
-        {item.outcome.why === 'partial' ? 'View closest mapping' : 'Review mapping'}
+        {item.outcome.why === 'partial' ? 'View closest nomenclature' : 'Review nomenclature'}
       </Link>
     );
   }

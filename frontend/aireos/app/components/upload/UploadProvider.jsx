@@ -8,6 +8,7 @@ import { wasSaved } from '@/app/utils/loadPreview';
 import {
   STAGES,
   checkFromResult,
+  isSkipped,
   isUploadable,
   outcomeFromResult,
   uploadOptionsFor,
@@ -17,6 +18,8 @@ import UploadTray from '@/components/upload/UploadTray';
 
 let nextId = 0;
 const makeId = () => `file-${(nextId += 1)}`;
+let nextBatchId = 0;
+const makeBatchId = () => `batch-${(nextBatchId += 1)}`;
 
 // A file in the list moves through phases:
 //   checking   dropped; POST /api/uploads/check is answering what would happen
@@ -25,6 +28,9 @@ const makeId = () => `file-${(nextId += 1)}`;
 //   done       the upload answered; `outcome` says how it went. With
 //              REQUIRE_LOAD_CONFIRMATION on, a known layout is done but
 //              `ready_to_load` until someone confirms a load from its row.
+// Pressing Upload stamps the files it sends with one `batch` ({ id,
+// startedAt }), so the page can show each press's results together and keep
+// them apart from files added after it (uploadFlow.uploadBatches).
 // Files that cannot be uploaded never become rows; they are listed in the
 // RejectedFiles alert instead.
 
@@ -204,23 +210,49 @@ function UploadQueue({ showTray, children }) {
     [clearStageTimers],
   );
 
-  // Empties the list in one go. Files mid-upload stay: their requests are
-  // already on the server and their rows report how they went. Nothing is
-  // deleted from the bucket; uploaded files stay in Recent uploads.
-  const clearAll = useCallback(() => {
-    const keep = itemsRef.current.filter((item) => item.phase === 'uploading');
-    const keepIds = new Set(keep.map((item) => item.id));
-
-    itemsRef.current.forEach((item) => {
-      if (keepIds.has(item.id)) return;
+  // Takes out every file that has not been sent: the "Remove all" of the
+  // files waiting under the drop zone. Sent files keep their results.
+  const clearStaged = useCallback(() => {
+    const staged = itemsRef.current.filter((item) => !item.batch);
+    staged.forEach((item) => {
       clearStageTimers(item.id);
       pendingHashes.current.delete(item.id);
     });
-
-    setItems((prev) => prev.filter((item) => keepIds.has(item.id)));
+    const stagedIds = new Set(staged.map((item) => item.id));
+    setItems((prev) => prev.filter((item) => !stagedIds.has(item.id)));
     setRejections([]);
     setBatchError('');
   }, [clearStageTimers]);
+
+  // Takes the finished results out of the list. Files mid-upload stay: their
+  // requests are already on the server and their rows report how they went.
+  // Nothing is deleted from the bucket; uploaded files stay in Recent uploads.
+  // A failed file was never stored, so clearing it also forgets its hash, or
+  // dropping it in again would be turned away as a copy of a row that is gone.
+  const clearFinished = useCallback(() => {
+    const finished = (item) => item.batch && item.phase === 'done';
+    itemsRef.current.filter(finished).forEach((item) => pendingHashes.current.delete(item.id));
+    setItems((prev) => prev.filter((item) => !finished(item)));
+  }, []);
+
+  // Called when a proposal is discarded (the server deletes the files that were
+  // waiting on it, DELETE /api/mappings/{fp}/pending) or approved (the review is
+  // done and the files move on to Recent uploads, which tracks their load). Either
+  // way their rows would otherwise keep offering a review that no longer exists.
+  // A near match ('partial') points at the closest saved mapping, not a proposal
+  // of its own: approving that mapping does not re-stamp this file (backend
+  // mark_uploads_after_approval goes by the file's own fingerprint), so its row
+  // stays and still needs a nomenclature.
+  const forgetMapping = useCallback((fingerprint) => {
+    const waiting = (item) =>
+      item.phase === 'done' &&
+      item.outcome.kind === 'needs_review' &&
+      item.outcome.why !== 'partial' &&
+      item.outcome.mappingId === fingerprint;
+
+    itemsRef.current.filter(waiting).forEach((item) => pendingHashes.current.delete(item.id));
+    setItems((prev) => prev.filter((item) => !waiting(item)));
+  }, []);
 
   const decideDuplicate = useCallback(
     (id, decision) => patchItem(id, { decision }),
@@ -238,9 +270,10 @@ function UploadQueue({ showTray, children }) {
   // has been sent (see STAGES). A large file would otherwise read "Processing
   // file" while most of it was still on its way.
   const uploadItem = useCallback(
-    async (item) => {
+    async (item, batch) => {
       clearStageTimers(item.id);
       patchItem(item.id, {
+        batch,
         phase: 'uploading',
         stage: STAGES[0].key,
         sendPercent: 0,
@@ -272,7 +305,10 @@ function UploadQueue({ showTray, children }) {
           // back to the list for the same decision as any other duplicate.
           // sentBack keeps it in the tray, which would otherwise lose a file
           // that still needs an answer from someone on another page.
+          // Out of its batch and back under the drop zone, where the
+          // decision is made.
           patchItem(item.id, {
+            batch: null,
             phase: 'ready',
             stage: null,
             sendPercent: null,
@@ -311,7 +347,8 @@ function UploadQueue({ showTray, children }) {
 
   const startUpload = useCallback(() => {
     const uploadable = items.filter(isUploadable);
-    if (!uploadable.length) return;
+    const skipped = items.filter(isSkipped);
+    if (!uploadable.length && !skipped.length) return;
 
     if (uploadable.length > MAX_FILES_PER_BATCH) {
       setBatchError(
@@ -321,31 +358,38 @@ function UploadQueue({ showTray, children }) {
     }
 
     setBatchError('');
-    uploadable.forEach((item) => uploadItem(item));
-  }, [items, uploadItem]);
+    const batch = { id: makeBatchId(), startedAt: new Date().toISOString() };
+    // Skipped duplicates are settled by this press too: reported in its batch,
+    // never sent.
+    skipped.forEach((item) => {
+      pendingHashes.current.delete(item.id);
+      patchItem(item.id, { batch, phase: 'done', outcome: { kind: 'skipped' } });
+    });
+    uploadable.forEach((item) => uploadItem(item, batch));
+  }, [items, patchItem, uploadItem]);
 
   const retryItem = useCallback(
     (id) => {
       const item = items.find((entry) => entry.id === id);
-      if (item) uploadItem(item);
+      // Tried again where it failed: in the batch it was sent with.
+      if (item) uploadItem(item, item.batch);
     },
     [items, uploadItem],
   );
 
   // ---- Loading ------------------------------------------------------------
 
-  // A file that loaded is an ordinary uploaded file from here on; one that
-  // did not stays ready to load, and the dialog said why.
+  // A file that loaded is finished, so its row leaves the list and Recent
+  // uploads is where it is found; one that did not stays ready to load, and the
+  // dialog said why.
   const markLoaded = useCallback((response) => {
     const byPath = new Map((response?.results || []).map((result) => [result.blob_path, result]));
-    setItems((prev) =>
-      prev.map((item) => {
-        const result = item.outcome?.blobPath && byPath.get(item.outcome.blobPath);
-        // A check with saving switched off leaves the file waiting to load.
-        if (!wasSaved(result)) return item;
-        return { ...item, outcome: { ...item.outcome, kind: 'mapped', processing: result.processing } };
-      }),
-    );
+    const isLoaded = (item) => {
+      const result = item.outcome?.blobPath && byPath.get(item.outcome.blobPath);
+      // A check with saving switched off leaves the file waiting to load.
+      return wasSaved(result);
+    };
+    setItems((prev) => prev.filter((item) => !isLoaded(item)));
   }, []);
 
   const value = {
@@ -355,7 +399,9 @@ function UploadQueue({ showTray, children }) {
     uploadsFinished,
     addFiles,
     removeItem,
-    clearAll,
+    clearStaged,
+    clearFinished,
+    forgetMapping,
     decideDuplicate,
     startUpload,
     retryItem,

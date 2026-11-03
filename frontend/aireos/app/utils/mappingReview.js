@@ -75,7 +75,10 @@ export const FIELD_INFO = {
   uom: { label: 'Unit of measure', help: 'Always packs (EA).' },
   pack_size: { label: 'Pack size', help: 'Pieces per pack.' },
   quantity_units: { label: 'Units sold', help: 'Packs sold in the period, after returns.' },
-  revenue: { label: 'Sales value', help: 'Gross sales in SGD — never a claim, rebate or unit price.' },
+  revenue: {
+    label: 'Sales value',
+    help: 'Gross sales in SGD — never a claim or rebate, and a unit price only as units sold × price.',
+  },
   source_file: { label: 'Source file', help: 'The name of the uploaded file.' },
   period_label: { label: 'Period label', help: 'Worked out from the period.' },
 };
@@ -94,13 +97,37 @@ export function withFieldReviewed(row, targetField, reviewed) {
 }
 
 // The fields a group of period or outlet columns can fill (backend
-// mapping_contract.MEASURE_FIELDS), and the fields its headings fill.
+// mapping_contract.MEASURE_FIELDS).
 export const MEASURE_FIELDS = ['quantity_units', 'revenue'];
-const KEY_FIELD = { period: 'period_start', store: 'store_code' };
 
-/** Which kind of heading a melt group reads: a period or an outlet. */
+// What a group's headings, or the cells above them, may fill besides the
+// period: any descriptive field (backend mapping_contract.HEADING_FIELDS).
+export const HEADING_FIELDS = [
+  'retailer',
+  'store_code',
+  'store_name',
+  'store_format',
+  'sku',
+  'product_name',
+  'sku_range',
+  'size',
+  'brand',
+  'product_category',
+  'uom',
+];
+
+// The store fields, which are what a group of outlet columns fills unless the
+// reviewer says otherwise.
+export const STORE_FIELDS = ['store_code', 'store_name'];
+
+/**
+ * Which kind of heading a melt group reads: a period, or anything else --
+ * outlets, brands, products (called 'store' for the outlet columns that are
+ * the common case). Groups are joined on their headings, so all read one kind.
+ */
 export function groupKind(settings) {
-  return settings?.key?.target === 'store_code' ? 'store' : 'period';
+  const target = settings?.key?.target;
+  return target && target !== 'period_start' ? 'store' : 'period';
 }
 
 /**
@@ -149,12 +176,17 @@ export function toGroups(mapping) {
   return (mapping?.rules || [])
     .filter((rule) => rule.meltGroup)
     .map((rule) => {
-      const { id, select, key, period_type: periodType } = rule.meltGroup;
+      const { id, select, key, labels, period_type: periodType } = rule.meltGroup;
       return {
         id,
         field: rule.targetField,
         entryId: entries.find((entry) => entry.meltGroupId === id)?.id || null,
-        settings: { select, key, ...(periodType ? { period_type: periodType } : {}) },
+        settings: {
+          select,
+          key,
+          ...(labels?.length ? { labels } : {}),
+          ...(periodType ? { period_type: periodType } : {}),
+        },
         columns: rule.sourceColumns || [],
         // The field's own contract entry: a measure read from a group can
         // carry transforms (negated sales, say), which must survive an edit.
@@ -185,35 +217,67 @@ function periodTypeRule(mapping) {
 }
 
 /**
- * The fields the groups' headings fill, and how: the period or the store
- * code from the headings, and the period type when every group knows it. A
- * column the reviewer chose for one of them wins, as it does on the server.
+ * The fields the groups' headings fill, and how: the period, or the store
+ * code or name, from the headings; a store code or name from the cells above
+ * them (a group's labels); and the period type when every group knows it. A
+ * field the reviewer filled some other way -- a column, or a decision made
+ * without one -- wins, as it does on the server.
  */
-function headingFields(mapping, state) {
+export function headingFields(mapping, state) {
   const { rows, groups, fieldReviews = {}, fieldEdits = {} } = state;
   if (!groups.length) return [];
-  const fromColumns = new Set(rows.flatMap((row) => row.fields.map((field) => field.targetField)));
+  const elsewhere = new Set([
+    ...rows.flatMap((row) => row.fields.map((field) => field.targetField)),
+    ...Object.keys(fieldEdits),
+  ]);
   const kind = groupKind(groups[0].settings);
-  const keyField = KEY_FIELD[kind];
+  const keyField = groups[0].settings.key?.target;
   const filled = [];
 
-  if (!fromColumns.has(keyField)) {
-    const original = headingRule(mapping, keyField);
+  // `anyGroup`: every group's headings fill the field alike, so the
+  // proposal's own group is kept while it is there -- naming another would
+  // show as a change on approval. A label is read by its own group only.
+  function fill(field, groupId, description, anyGroup = false) {
+    const original = headingRule(mapping, field);
+    const proposedGroup = original?.field?.melt_group;
+    const keep = anyGroup && groups.some((group) => group.id === proposedGroup);
     filled.push({
-      field: keyField,
-      entry: { ...(original?.field || {}), status: 'mapped', melt_group: groups[0].id },
-      description: kind === 'period' ? 'Read from the column headings' : 'The column headings are the store codes',
+      field,
+      entry: { ...(original?.field || {}), status: 'mapped', melt_group: keep ? proposedGroup : groupId },
+      description,
       confidence: original?.confidence || 'high',
       rationale: original?.rationale || '',
-      reviewed: original ? original.reviewed === true || fieldReviews[keyField] === true : true,
+      reviewed: original ? original.reviewed === true || fieldReviews[field] === true : true,
     });
   }
+
+  if (keyField && !elsewhere.has(keyField)) {
+    fill(
+      keyField,
+      groups[0].id,
+      'Read from the column headings',
+      true,
+    );
+  }
+  groups.forEach((group) => {
+    (group.settings.labels || []).forEach((label) => {
+      if (elsewhere.has(label.target) || filled.some((item) => item.field === label.target)) return;
+      const rows = label.rows_above === 1 ? 'the row' : `${label.rows_above} rows`;
+      fill(
+        label.target,
+        group.id,
+        label.rows_above === 0
+          ? 'Read from the column headings'
+          : `Read from ${rows} above the column headings`,
+      );
+    });
+  });
 
   const knowsPeriodType = kind === 'period' && groups.every((group) => group.settings.period_type);
   const ownPeriodType = (mapping?.rules || []).some(
     (rule) => rule.targetField === 'period_type' && rule.editable === false && rule !== periodTypeRule(mapping),
   );
-  if (knowsPeriodType && !fromColumns.has('period_type') && !ownPeriodType && !fieldEdits.period_type) {
+  if (knowsPeriodType && !elsewhere.has('period_type') && !ownPeriodType) {
     const original = periodTypeRule(mapping);
     filled.push({
       field: 'period_type',
@@ -335,9 +399,14 @@ function describeDecision(field, entry, fallback) {
       return "The uploaded file's name";
     case 'not_available':
       return 'Not in this file';
-    case 'derived':
+    case 'derived': {
+      if (entry.from_layout === 'stated_period') return "The month the file's title states";
+      const multiply = (entry.transforms || []).find((transform) => transform.type === 'multiply');
+      if (entry.from_field && multiply) return `${fieldLabel(entry.from_field)} × ${multiply.column}`;
       if (entry.from_field) return `Worked out from ${fieldLabel(entry.from_field)}`;
+      if (field === 'period_type') return 'Read from the column headings';
       return 'Worked out automatically';
+    }
     default:
       return fallback || '';
   }
@@ -487,7 +556,33 @@ export function isMissing(entry) {
   return entry.required && (entry.status === 'unmapped' || entry.status === 'not_available');
 }
 
-function without(object, keys) {
+/** The fields a group's headings and the cells above them fill. */
+function headingTargets(group) {
+  return [group?.settings.key?.target, ...(group?.settings.labels || []).map((label) => label.target)].filter(Boolean);
+}
+
+/**
+ * A kept group whose headings fill a field being reset gets back what its
+ * headings and labels filled in the proposal: the store code or name the
+ * reviewer moved between the headings and the row above them.
+ */
+function withHeadingsReset(group, originalGroups, reset) {
+  const proposed = originalGroups.find((item) => item.id === group.id) || originalGroups[0];
+  const touched = [...headingTargets(group), ...headingTargets(proposed)].some((field) => reset.has(field));
+  if (!proposed || !touched || groupKind(proposed.settings) !== groupKind(group.settings)) return group;
+  const settings = without(group.settings, ['labels']);
+  return {
+    ...group,
+    settings: {
+      ...settings,
+      key: { ...settings.key, target: proposed.settings.key?.target },
+      ...(proposed.id === group.id && proposed.settings.labels?.length ? { labels: proposed.settings.labels } : {}),
+    },
+  };
+}
+
+/** A copy of an object without some keys. */
+export function without(object, keys) {
   const next = { ...object };
   keys.forEach((key) => delete next[key]);
   return next;
@@ -525,11 +620,13 @@ export function withFieldsReset(state, original, fields) {
     rows.filter((row) => row.fields.some((field) => reset.has(field.targetField))).map((row) => row.column),
   );
   const groups = [
-    ...state.groups.filter(
-      (group) =>
-        !reset.has(group.field) &&
-        !group.columns.some((column) => groupColumns.has(column) || columnsBack.has(column)),
-    ),
+    ...state.groups
+      .filter(
+        (group) =>
+          !reset.has(group.field) &&
+          !group.columns.some((column) => groupColumns.has(column) || columnsBack.has(column)),
+      )
+      .map((group) => withHeadingsReset(group, original.groups, reset)),
     ...restoredGroups,
   ];
 
@@ -649,7 +746,9 @@ function describeTransform(transform) {
         .map(([uom, factor]) => `× ${typeof factor === 'object' ? factor.column : factor} when ${transform.column} is ${uom}`)
         .join(', ');
     case 'month_start':
-      return 'read as its month';
+      return transform.format ? `read as its month (dates like ${transform.format})` : 'read as its month';
+    case 'multiply':
+      return `× ${transform.column}`;
     case 'forward_fill':
       return 'a blank cell takes the value above';
     case 'zero_as_empty':
