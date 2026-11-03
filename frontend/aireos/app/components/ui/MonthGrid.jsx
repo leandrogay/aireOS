@@ -54,7 +54,7 @@ export default function MonthGrid({
         >
           <ChevronLeft className="size-4" />
         </button>
-        <span className="text-sm font-semibold tabular-nums text-deep-violet-blue" aria-live="polite">
+        <span className="text-sm font-semibold text-deep-violet-blue" aria-live="polite">
           {viewYear}
         </span>
         <button

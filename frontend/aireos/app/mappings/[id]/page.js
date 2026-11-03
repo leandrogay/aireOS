@@ -25,9 +25,6 @@ export default function MappingReviewPage() {
   const [mapping, setMapping] = useState(null);
   const [loadError, setLoadError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  // Once approved, the panel's own "Back to Upload" is the only way on, so
-  // the header's "Back to Mappings" steps aside.
-  const [isApproved, setIsApproved] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -66,11 +63,7 @@ export default function MappingReviewPage() {
   // were re-stamped — so the response is handed back rather than swallowed by
   // a redirect.
   const handleApprove = useCallback(
-    async ({ rules, name, customer_id }) => {
-      const result = await confirmMapping(baseUrl, id, { rules, name, customer_id });
-      setIsApproved(true);
-      return result;
-    },
+    ({ rules, name, customer_id }) => confirmMapping(baseUrl, id, { rules, name, customer_id }),
     [baseUrl, id],
   );
 
@@ -83,11 +76,9 @@ export default function MappingReviewPage() {
     <PageLayout
       title="Review mapping"
       headerExtra={
-        !isApproved && (
-          <div className="ml-auto flex items-center gap-2">
-            <BackLink href="/mappings">Back to Mappings</BackLink>
-          </div>
-        )
+        <div className="ml-auto flex items-center gap-2">
+          <BackLink href="/mappings">Back to Mappings</BackLink>
+        </div>
       }
     >
       {isLoading && <MappingReviewSkeleton />}

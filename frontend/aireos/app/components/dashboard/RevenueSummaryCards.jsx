@@ -110,7 +110,7 @@ function SummaryCard({
           )}
           {title}
           {share !== null && (
-            <span className="font-normal text-deep-violet-blue/60" title={shareLabel}>
+            <span className="font-normal tabular-nums text-deep-violet-blue/60" title={shareLabel}>
               {" "}
               · {share > 0 && share < 1 ? "<1" : share.toFixed(0)}%
             </span>

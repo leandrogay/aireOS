@@ -136,39 +136,29 @@ def test_confirmed_copy_is_written_before_the_pending_one_is_removed(monkeypatch
 
 # ---- the uploads behind the mapping ------------------------------------------
 
-def test_approval_restamps_only_the_uploads_that_used_that_mapping(monkeypatch):
+def test_only_the_uploads_that_used_a_mapping_are_listed_for_it(monkeypatch):
     mine = _upload_blob("week01.txt", "abc123", "pending_confirmation")
     other = _upload_blob("other.txt", "zzz999", "pending_confirmation")
     unmapped = _upload_blob("stray.txt")
     _install(monkeypatch, [mine, other, unmapped])
 
-    result = storage.update_uploads_for_mapping(
-        "abc123",
-        {
-            storage.MAPPING_STATUS_METADATA_KEY: "mapped",
-            storage.MAPPING_NAME_METADATA_KEY: "XEL weekly",
-        },
-    )
+    rows = storage.list_uploads_for_mapping("abc123")
 
-    assert result["matched"] == [mine.name]
-    assert result["updated"] == [mine.name]
-    assert mine.metadata[storage.MAPPING_STATUS_METADATA_KEY] == "mapped"
-    assert mine.metadata[storage.MAPPING_NAME_METADATA_KEY] == "XEL weekly"
-    # Untouched, including the one with no mapping at all.
-    assert other.metadata[storage.MAPPING_STATUS_METADATA_KEY] == "pending_confirmation"
-    assert storage.MAPPING_STATUS_METADATA_KEY not in unmapped.metadata
+    assert [row["blob_path"] for row in rows] == [mine.name]
+    assert rows[0]["filename"] == "week01.txt"
+    assert rows[0]["mapping_status"] == "pending_confirmation"
 
 
-def test_restamping_keeps_the_metadata_it_was_not_asked_to_change(monkeypatch):
-    blob = _upload_blob("week01.txt", "abc123", "pending_confirmation")
+def test_one_upload_is_read_back_with_its_metadata(monkeypatch):
+    blob = _upload_blob("week01.txt", "abc123", "mapped")
+    blob.metadata[storage.MAPPING_VERSION_METADATA_KEY] = "2"
     _install(monkeypatch, [blob])
 
-    storage.update_uploads_for_mapping(
-        "abc123", {storage.MAPPING_STATUS_METADATA_KEY: "mapped"}
-    )
+    row = storage.get_upload(blob.name)
 
-    assert blob.metadata[storage.ORIGINAL_FILENAME_METADATA_KEY] == "week01.txt"
-    assert blob.metadata[storage.MAPPING_FINGERPRINT_METADATA_KEY] == "abc123"
+    assert row["mapping_fingerprint"] == "abc123"
+    assert row["mapping_version"] == "2"
+    assert storage.get_upload("uploads/missing.txt") is None
 
 
 def test_history_reports_the_mapping_name_once_there_is_one(monkeypatch):

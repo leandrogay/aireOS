@@ -8,11 +8,21 @@ import { fieldLabel } from '../../utils/mappingReview';
  * approval and future recognised uploads. The run itself is started by the
  * review step this sits in, which shows this only once a run has rows.
  *
- * @param {{ preview: { preview: object[], columns: string[], rows_total: number } }} props
+ * The load confirmation (LoadConfirmDialog) shows the same table for each
+ * file it would load, naming the `fields` worth reading there -- the
+ * figures, not every column -- and the `total` it will store.
+ *
+ * @param {{
+ *   preview: { preview: object[], columns: string[], rows_total: number },
+ *   fields?: string[],
+ *   total?: number,
+ * }} props
  */
-export default function OutputPreview({ preview }) {
+export default function OutputPreview({ preview, fields, total = preview.rows_total }) {
   const rows = preview.preview;
-  const columns = (preview.columns || []).slice(0, 8);
+  const columns = fields
+    ? fields.filter((field) => (preview.columns || []).includes(field))
+    : (preview.columns || []).slice(0, 8);
 
   return (
     <div>
@@ -41,7 +51,7 @@ export default function OutputPreview({ preview }) {
         </table>
       </div>
       <p className="mt-1 text-[11px] text-deep-violet-blue/60">
-        First {rows.length} of {preview.rows_total?.toLocaleString()} sales rows
+        First {rows.length} of {total?.toLocaleString()} sales rows
         {preview.columns?.length > columns.length && ` · ${preview.columns.length - columns.length} more fields not shown`}
       </p>
     </div>

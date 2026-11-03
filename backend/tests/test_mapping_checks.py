@@ -190,3 +190,25 @@ def test_a_models_low_confidence_is_never_raised_by_passing_checks():
     checks, validated, _ = _run("nhg_sap", "nhg.xlsx", nhg_xlsx(), contract)
 
     assert mk.field_confidence(validated, checks)["fields"]["store_name"]["confidence"] == "low"
+
+
+def test_not_in_file_is_at_most_medium_while_a_column_goes_unread():
+    contract = reference_contracts.reference_contract("fairprice_monthly")
+    contract["fields"]["sku_range"] = {"status": "not_available", "reason": "No range column.", "confidence": "high"}
+    checks, validated, frame = _run("fairprice_monthly", "fp.txt", fairprice_txt(), contract)
+
+    assert "MCH" in mk.unused_columns(validated, list(frame.columns))
+    scored = mk.field_confidence(validated, checks, list(frame.columns))
+    assert scored["fields"]["sku_range"]["confidence"] == "medium"
+    assert scored["fields"]["product_name"]["confidence"] == "high"
+
+
+def test_not_in_file_keeps_its_confidence_when_every_column_is_read():
+    contract = reference_contracts.reference_contract("fairprice_monthly")
+    contract["fields"]["store_name"] = {"status": "not_available", "reason": "Codes only.", "confidence": "high"}
+    checks, validated, frame = _run("fairprice_monthly", "fp.txt", fairprice_txt(), contract)
+    read = [column for column in frame.columns if column not in mk.unused_columns(validated, list(frame.columns))]
+
+    scored = mk.field_confidence(validated, checks, read)
+
+    assert scored["fields"]["store_name"]["confidence"] == "high"

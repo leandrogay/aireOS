@@ -20,7 +20,7 @@ import InventoryTableFrame, {
 
 const RISK_LABELS = { below_min: 'Low stock', above_max: 'Overstock' };
 const RISK_CLASSES = { below_min: 'text-red-700', above_max: 'text-amber-700' };
-const numClass = 'tabular-nums';
+const numClass = 'text-right tabular-nums';
 
 /**
  * One list of every SKU at risk across all customers: days of holding below the

@@ -14,6 +14,17 @@
 export const PROPOSER = 'AI';
 
 /**
+ * Whether a model proposed this mapping: generate_mapping records its
+ * provider. Hand-written reference contracts (scripts/install_reference_contracts)
+ * record no provider, so they get no AI disclaimer.
+ *
+ * @param {{ provider?: string | null } | null | undefined} proposedBy
+ */
+export function isAiProposal(proposedBy) {
+  return Boolean(proposedBy?.provider);
+}
+
+/**
  * "Gemini 3.8 Flash" for the model that proposed a mapping (packet proposedBy,
  * from backend generate_mapping), or '' for one written before the model was
  * recorded. Mappings proposed by Claude before the move to Gemini still carry

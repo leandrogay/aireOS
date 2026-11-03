@@ -2,19 +2,29 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { Database, History, RefreshCw, Trash2, Undo2 } from 'lucide-react';
 
 import { formatDateTime } from '@/lib/formatDate';
 import RefreshButton from '@/components/ui/RefreshButton';
+import RowActions from '@/components/ui/RowActions';
 import SortHeader, { TABLE_HEADER_CLASS as headerClass } from '@/components/ui/SortHeader';
 import StatusBadge from '@/components/ui/StatusBadge';
 import TablePagination, { PAGE_SIZES } from '@/components/ui/TablePagination';
 import TableSearch from '@/components/ui/TableSearch';
 import TableSkeleton from '@/components/ui/TableSkeleton';
-import { UPLOAD_STATUS_LABELS, searchUploads, sortUploadsByDate } from '@/app/utils/uploadHistory';
+import LoadConfirmDialog from '@/components/upload/LoadConfirmDialog';
+import RollbackDetailsDialog from '@/components/upload/RollbackDetailsDialog';
+import {
+  ROLLED_BACK_STATUS,
+  UPLOAD_STATUS_LABELS,
+  loadActionFor,
+  searchUploads,
+  sortUploadsByDate,
+} from '@/app/utils/uploadHistory';
 import { nextSort, paginate, resultCountLabel } from '@/app/utils/tableView';
 import { vendorLabel } from '@/app/utils/retailerLabel';
 
-const COLUMN_COUNT = 5;
+const COLUMN_COUNT = 6;
 
 /**
  * Recent uploads (GET /api/uploads/history), laid out like the promotion
@@ -25,19 +35,38 @@ const COLUMN_COUNT = 5;
  * `months` is the window the page fetched, shown in the count line; the
  * filtering itself happens on the backend.
  *
+ * A file whose mapping is approved but whose data is not loaded (or was
+ * loaded with an older version) has a Load / Reload button beside its
+ * status. It opens the load confirmation, so files are never forgotten once
+ * the approval screen is closed.
+ *
  * @param {{
  *   uploads: object[],
  *   isLoading: boolean,
  *   error: string,
  *   onRefresh: () => void,
+ *   onRollback: (upload: object) => void,
+ *   onDelete: (upload: object) => void,
+ *   onLoaded: (response: object) => void,
  *   months: number,
  * }} props
  */
-export default function RecentUploads({ uploads, isLoading, error, onRefresh, months }) {
+export default function RecentUploads({
+  uploads,
+  isLoading,
+  error,
+  onRefresh,
+  onRollback,
+  onDelete,
+  onLoaded,
+  months,
+}) {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState({ field: 'uploaded_at', direction: 'desc' });
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
+  const [rollbackDetails, setRollbackDetails] = useState(null);
+  const [loading, setLoading] = useState(null); // null | { blobPath, reload }
 
   const sorted = sortUploadsByDate(searchUploads(uploads, search), sort.direction);
   const { pageRows, currentPage, totalPages } = paginate(sorted, page, pageSize);
@@ -116,6 +145,7 @@ export default function RecentUploads({ uploads, isLoading, error, onRefresh, mo
                   />
                   <th scope="col" className={headerClass}>Status</th>
                   <th scope="col" className={headerClass}>Mapping</th>
+                  <th scope="col" className={headerClass}>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -128,7 +158,56 @@ export default function RecentUploads({ uploads, isLoading, error, onRefresh, mo
                   </tr>
                 )}
                 {pageRows.map((upload) => {
-                  const status = UPLOAD_STATUS_LABELS[upload.mapping_status];
+                  const status = upload.status === 'rolled_back'
+                    ? ROLLED_BACK_STATUS
+                    : UPLOAD_STATUS_LABELS[upload.mapping_status];
+                  const load = loadActionFor(upload);
+                  const actions = [];
+
+                  if (load) {
+                    actions.push({
+                      key: load.reload ? 'reload' : 'load',
+                      label: load.label,
+                      icon: load.reload ? RefreshCw : Database,
+                      onSelect: () => setLoading({
+                        blobPath: upload.blob_path,
+                        reload: load.reload,
+                      }),
+                    });
+                  }
+                  if (upload.status === 'rolled_back') {
+                    actions.push({
+                      key: 'rollback-details',
+                      label: 'View rollback details',
+                      icon: History,
+                      onSelect: () => setRollbackDetails(upload),
+                    });
+                  }
+                  if (upload.rollback_available) {
+                    actions.push({
+                      key: 'rollback',
+                      label: 'Rollback upload',
+                      icon: Undo2,
+                      onSelect: () => onRollback(upload),
+                    });
+                  }
+                  const hasActiveLoad = upload.status !== 'rolled_back' && (
+                    upload.rollback_available
+                    || ['mapped', 'reload_available'].includes(upload.mapping_status)
+                  );
+                  const deletionBlocked = upload.status === 'processing'
+                    ? 'Wait for this load to finish'
+                    : hasActiveLoad
+                      ? 'Rollback this upload first'
+                      : null;
+                  actions.push({
+                    key: 'delete',
+                    label: 'Delete upload',
+                    icon: Trash2,
+                    onSelect: () => onDelete(upload),
+                    disabledReason: deletionBlocked,
+                    destructive: true,
+                  });
 
                   return (
                     <tr
@@ -139,7 +218,7 @@ export default function RecentUploads({ uploads, isLoading, error, onRefresh, mo
                         <span className="block max-w-[18rem] truncate">{upload.filename}</span>
                       </td>
                       <td className="px-4 py-2.5">{vendorLabel(upload.vendor) || '—'}</td>
-                      <td className="px-4 py-2.5 tabular-nums">{formatDateTime(upload.uploaded_at)}</td>
+                      <td className="px-4 py-2.5">{formatDateTime(upload.uploaded_at)}</td>
                       <td className="px-4 py-2.5">
                         {status ? (
                           <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
@@ -162,6 +241,12 @@ export default function RecentUploads({ uploads, isLoading, error, onRefresh, mo
                           <span className="text-deep-violet-blue/60">—</span>
                         )}
                       </td>
+                      <td className="px-4 py-2.5">
+                        <RowActions
+                          label={`Actions for upload ${upload.filename}`}
+                          actions={actions}
+                        />
+                      </td>
                     </tr>
                   );
                 })}
@@ -178,6 +263,18 @@ export default function RecentUploads({ uploads, isLoading, error, onRefresh, mo
           />
         </>
       )}
+      <RollbackDetailsDialog
+        open={Boolean(rollbackDetails)}
+        upload={rollbackDetails}
+        onClose={() => setRollbackDetails(null)}
+      />
+      <LoadConfirmDialog
+        open={loading !== null}
+        blobPaths={loading ? [loading.blobPath] : []}
+        reload={Boolean(loading?.reload)}
+        onClose={() => setLoading(null)}
+        onLoaded={onLoaded}
+      />
     </section>
   );
 }

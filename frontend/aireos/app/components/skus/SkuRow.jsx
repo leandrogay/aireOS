@@ -36,8 +36,8 @@ export default function SkuRow({ sku, onHistory, onEdit, onDelete }) {
       <td className={cn(SKU_CELL_CLASS, 'px-4 py-2.5')}>{sku.size}</td>
       <td className={cn(SKU_CELL_CLASS, 'px-4 py-2.5')}>{sku.brand}</td>
       <td className={cn(SKU_CELL_CLASS, 'px-4 py-2.5')}>{sku.uom}</td>
-      <td className={cn(SKU_CELL_CLASS, 'px-4 py-2.5 tabular-nums')}>{sku.pack_size}</td>
-      <td className={cn(SKU_CELL_CLASS, 'px-4 py-2.5 tabular-nums')}>{money.format(Number(sku.price))}</td>
+      <td className={cn(SKU_CELL_CLASS, 'px-4 py-2.5 text-right tabular-nums')}>{sku.pack_size}</td>
+      <td className={cn(SKU_CELL_CLASS, 'px-4 py-2.5 text-right tabular-nums')}>{money.format(Number(sku.price))}</td>
       <td className="px-2 py-1 text-right">
         <RowActions label={`Actions for SKU ${sku.sku}`} actions={actions} />
       </td>

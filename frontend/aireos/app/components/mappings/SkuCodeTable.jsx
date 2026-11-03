@@ -50,7 +50,7 @@ export default function SkuCodeTable({
             <tr>
               <th className="px-2 py-1.5 font-medium">Code in the file</th>
               <th className="px-2 py-1.5 font-medium">Description</th>
-              <th className="px-2 py-1.5 font-medium">Rows</th>
+              <th className="px-2 py-1.5 text-right font-medium">Rows</th>
               <th className="px-2 py-1.5 font-medium">Master SKU</th>
             </tr>
           </thead>
@@ -59,7 +59,7 @@ export default function SkuCodeTable({
               <tr key={row.code} className={cn('border-t border-lavander', row.known ? 'bg-white' : 'bg-amber-50')}>
                 <td className="px-2 py-1.5 font-mono text-deep-violet-blue">{row.code}</td>
                 <td className="px-2 py-1.5 text-deep-violet-blue/80">{row.description || '—'}</td>
-                <td className="px-2 py-1.5 text-deep-violet-blue/80">{row.rows.toLocaleString()}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums text-deep-violet-blue/80">{row.rows.toLocaleString()}</td>
                 <td className="px-2 py-1.5">
                   <div className="flex items-center gap-2">
                     <SelectDropdown

@@ -146,15 +146,15 @@ FAIRPRICE_MONTHS = ["01-01-2026", "01-02-2026"]
 def fairprice_txt(months=FAIRPRICE_MONTHS) -> bytes:
     """Two SKUs at two stores (one online), wide by month, a CAR and an EA row for one store."""
     header = [
-        "Vendor Code", "Vendor Name", "Dept Description", "SKU No.", "Article Description",
+        "Vendor Code", "Vendor Name", "Dept Description", "MCH", "SKU No.", "Article Description",
         "Sales UOM", "Pack Size", "Store Code", "Store Name", "Store Format",
     ]
     header += [f"SALES | Month {n} | {date}" for n, date in enumerate(months, start=1)]
     header += [f"Qty (in EA) | Month {n} | {date}" for n, date in enumerate(months, start=1)]
     rows = [
-        ["73697", "XEL LIFECARE PTE LTD", "TOILETRIES", "13255043", "AIRE ADULT PANTS XL 10S", "EA", "8", "4", "FAIRPRICE ON", "FPON", "100.00", "50.00", "10", "5"],
-        ["73697", "XEL LIFECARE PTE LTD", "TOILETRIES", "13255043", "AIRE ADULT PANTS XL 10S", "CAR", "8", "4", "FAIRPRICE ON", "FPON", "90.00", "", "10", ""],
-        ["73697", "XEL LIFECARE PTE LTD", "TOILETRIES", "13255044", "AIRE ADULT PANTS S/M 10S", "EA", "8", "358", "TAMPINES MALL", "SUPER", "", "24.00", "", "2"],
+        ["73697", "XEL LIFECARE PTE LTD", "TOILETRIES", "ADULT DIAPER PANTS", "13255043", "AIRE ADULT PANTS XL 10S", "EA", "8", "4", "FAIRPRICE ON", "FPON", "100.00", "50.00", "10", "5"],
+        ["73697", "XEL LIFECARE PTE LTD", "TOILETRIES", "ADULT DIAPER PANTS", "13255043", "AIRE ADULT PANTS XL 10S", "CAR", "8", "4", "FAIRPRICE ON", "FPON", "90.00", "", "10", ""],
+        ["73697", "XEL LIFECARE PTE LTD", "TOILETRIES", "ADULT DIAPER PANTS", "13255044", "AIRE ADULT PANTS S/M 10S", "EA", "8", "358", "TAMPINES MALL", "SUPER", "", "24.00", "", "2"],
     ]
     lines = ["\t".join(header)] + ["\t".join(row) for row in rows]
     return ("\n".join(lines) + "\n").encode("utf-8")

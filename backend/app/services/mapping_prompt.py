@@ -29,7 +29,7 @@ FIELD_DEFINITIONS = {
     "store_format": "The retailer's store format code (HYPER, SUPER, FPON...).",
     "sku": "The MASTER SKU code (listed under 'SKU master'). When the file's product codes are the master codes (FairPrice article numbers such as 13255043) map the column as it is. Otherwise add a value_map transform -- the product-code table -- giving, for every product code in the file, the master SKU it is, matched on the file's description (range and size). Leave out any code you cannot match; it is flagged for a person.",
     "product_name": "The product's name as the file describes it.",
-    "sku_range": "The product range, if the file names it.",
+    "sku_range": "The product range: the kind of product, a level above the SKU and without its size (ADULT DIAPER PANTS, ADULT DIAPER TAPED, Ultra Tape). May be a merchandise-hierarchy column such as MCH.",
     "size": "The product size (S/M, L, XL), from a size column or extracted from a description with regex_extract.",
     "brand": "The brand, if the file has a brand column.",
     "product_category": "The retailer's product category, e.g. a department description.",
@@ -40,7 +40,7 @@ FIELD_DEFINITIONS = {
 }
 
 GLOSSARY = {
-    "MCH": "merchandise category hierarchy (lowest category level)",
+    "MCH": "merchandise category hierarchy, the lowest level: the product range (ADULT DIAPER PANTS / TAPED) -> sku_range",
     "Sales UOM EA / CAR": "each (one pack) / carton",
     "Un. of Entry": "SAP unit of entry",
     "Posting Date": "SAP transaction date",

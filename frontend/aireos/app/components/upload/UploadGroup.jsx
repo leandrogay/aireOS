@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   CircleDashed,
   CopyCheck,
+  Database,
   FilePlus2,
   Loader2,
   XCircle,
@@ -21,6 +22,7 @@ const GROUP_ICONS = {
   checking: { Icon: Loader2, className: 'animate-spin text-violet motion-reduce:animate-none' },
   ready: { Icon: CheckCircle2, className: 'text-green-700' },
   uploaded: { Icon: CheckCircle2, className: 'text-green-700' },
+  ready_to_load: { Icon: Database, className: 'text-amber-700' },
   duplicate: { Icon: CopyCheck, className: 'text-amber-700' },
   failed: { Icon: XCircle, className: 'text-red-700' },
   needs_review: { Icon: AlertTriangle, className: 'text-amber-700' },
@@ -37,25 +39,40 @@ const GROUP_ICONS = {
  *   group: { key: string, label: string, note?: string, items: object[] },
  *   onRemove: (id: string) => void,
  *   onRetry: (id: string) => void,
- *   onDecide: (id: string, decision: 'replace' | 'keep') => void,
+ *   onDecide: (id: string, decision: 'replace' | 'keep' | 'skip') => void,
+ *   onLoad: (ids: string[]) => void,
  * }} props
  */
-export default function UploadGroup({ group, onRemove, onRetry, onDecide }) {
+export default function UploadGroup({ group, onRemove, onRetry, onDecide, onLoad }) {
   const { Icon, className } = GROUP_ICONS[group.key];
   const headingId = `upload-group-${group.key}`;
 
   return (
     <section aria-labelledby={headingId} className="mt-5">
-      <h2
-        id={headingId}
-        className="flex items-center gap-1.5 text-sm font-medium text-deep-violet-blue"
-      >
-        <Icon aria-hidden="true" className={cn('size-4 shrink-0', className)} />
-        {group.label}
-        <span className="font-normal text-deep-violet-blue/50 tabular-nums">
-          ({group.items.length})
-        </span>
-      </h2>
+      <div className="flex items-center gap-2">
+        <h2
+          id={headingId}
+          className="flex items-center gap-1.5 text-sm font-medium text-deep-violet-blue"
+        >
+          <Icon aria-hidden="true" className={cn('size-4 shrink-0', className)} />
+          {group.label}
+          <span className="font-normal text-deep-violet-blue/50 tabular-nums">
+            ({group.items.length})
+          </span>
+        </h2>
+        {/* Several files waiting is one decision, so one confirmation shows
+            them together; each row still has its own. */}
+        {group.key === 'ready_to_load' && group.items.length > 1 && (
+          <button
+            type="button"
+            onClick={() => onLoad(group.items.map((item) => item.id))}
+            className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-deep-violet-blue bg-deep-violet-blue px-3 py-1 text-xs font-medium text-white transition hover:opacity-90"
+          >
+            <Database aria-hidden="true" className="size-3.5" />
+            Review and load all {group.items.length}
+          </button>
+        )}
+      </div>
       {group.note && (
         <p className="mt-0.5 pl-5.5 text-xs text-deep-violet-blue/70">{group.note}</p>
       )}
@@ -67,6 +84,7 @@ export default function UploadGroup({ group, onRemove, onRetry, onDecide }) {
             onRemove={onRemove}
             onRetry={onRetry}
             onDecide={onDecide}
+            onLoad={onLoad}
           />
         ))}
       </ul>

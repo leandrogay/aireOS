@@ -20,7 +20,7 @@ import InventoryTableFrame, {
   inventoryThClass,
 } from './InventoryTableFrame';
 
-const numClass = 'tabular-nums';
+const numClass = 'text-right tabular-nums';
 
 const STATUS_CLASSES = {
   below_min: 'text-red-700',

@@ -285,7 +285,7 @@ def generate_mapping_contract(
             {"role": "user", "content": mapping_prompt.repair_prompt(failed, contract["warnings"])},
         ]
 
-    contract = mapping_checks.field_confidence(contract, checks)
+    contract = mapping_checks.field_confidence(contract, checks, columns)
     return {
         "contract": contract,
         "checks": checks,
@@ -400,6 +400,7 @@ def resolve_mapping(filename: str, data: bytes, uploaded_to: str | None = None) 
             "contract": confirmed.get("contract", {}),
             "name": confirmed.get("name"),
             "vendor": confirmed.get("vendor"),
+            "version": confirmed.get("version"),
             "source": "cache",
             "confirmed_at": confirmed.get("confirmed_at"),
         }

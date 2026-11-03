@@ -173,7 +173,7 @@ function FieldInfo({ entry }) {
 }
 
 /**
- * How sure the AI was, shown on every field it filled, and the sign-off on a
+ * How sure the AI was, shown on the fields it was not sure of, and the sign-off on a
  * low-confidence guess: "Looks right", then "Confirmed" (with Undo on this
  * visit). A field the reviewer changed -- or cleared -- also offers Reset,
  * back to what the AI proposed.
@@ -185,7 +185,9 @@ function Confidence({ entry, canUndo, onConfirm, onUndo, canReset, onReset, disa
 
   return (
     <div className="flex flex-wrap items-center gap-1.5 sm:flex-col sm:items-end">
-      {filled && <ConfidenceBadge level={level} />}
+      {/* Only the fields that need a look are badged: a green "High" on every
+          row became background and read as approval. High stays in the ⓘ card. */}
+      {filled && level !== 'high' && <ConfidenceBadge level={level} />}
       {guessed && !entry.reviewed && (
         <button type="button" disabled={disabled} onClick={() => onConfirm(entry)} className={smallButton}>
           Looks right

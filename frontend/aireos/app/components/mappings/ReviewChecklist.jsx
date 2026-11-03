@@ -17,13 +17,14 @@ import { cn } from '@/lib/utils';
  * @param {{
  *   items: { id: string, label: string, done: boolean, detail: string, href: string }[],
  *   isConfirmed: boolean,
+ *   aiProposed?: boolean,
  *   changed: boolean,
  *   busy: string | null,
  *   error: string,
  *   onApprove: () => void,
  * }} props
  */
-export default function ReviewChecklist({ items, isConfirmed, changed, busy, error, onApprove }) {
+export default function ReviewChecklist({ items, isConfirmed, aiProposed = false, changed, busy, error, onApprove }) {
   const left = items.filter((item) => !item.done).length;
   const ready = left === 0;
   // A live mapping with nothing changed has nothing to approve.
@@ -94,11 +95,22 @@ export default function ReviewChecklist({ items, isConfirmed, changed, busy, err
           {busy === 'approve' ? 'Saving…' : isConfirmed ? 'Save new version' : 'Approve mapping'}
         </Button>
         <InfoTooltip label="What approving does">
+          {/* Approving saves instructions and loads nothing; loading is the
+              next, confirmed step (ApprovedSummary → LoadConfirmDialog). */}
           {isConfirmed
-            ? 'Every file already uploaded with this layout is processed again with the new version.'
-            : 'Files with this layout are read this way from now on, and any waiting uploads are processed.'}
+            ? 'Saves the new version. Sales data already loaded is left as it is; you can reload those files with the new version next.'
+            : 'Saves how files with this layout are read. No sales data is loaded yet: you check and load the waiting files next.'}
         </InfoTooltip>
       </div>
+
+      {/* The AI disclaimer, as chat assistants put one under their input: at
+          the moment of approving, only for a proposal a model made. */}
+      {aiProposed && !isConfirmed && (
+        <p className="mt-2 text-center text-[11px] text-deep-violet-blue/60">
+          AI can make mistakes. <br/>
+          Check each field before approving.
+        </p>
+      )}
     </aside>
   );
 }

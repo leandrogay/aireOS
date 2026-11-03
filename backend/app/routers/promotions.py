@@ -1,10 +1,11 @@
 from fastapi import APIRouter, HTTPException
 from sqlalchemy.exc import IntegrityError
 
-from app.services import promotion_service
+from app.services import promotion_pricing, promotion_service
 from app.schemas.promotions import (
     PromotionCreate,
     PromotionUpdate,
+    RevenueEstimateRequest,
 )
 
 
@@ -12,6 +13,20 @@ router = APIRouter(
     prefix="/api/promotions",
     tags=["promotions"],
 )
+
+
+@router.post("/revenue-estimate")
+def estimate_revenue(request: RevenueEstimateRequest):
+    """Read-only estimate for sales rows; never rewrites sell-out revenue."""
+    try:
+        return promotion_pricing.estimate_sales_revenue(
+            [row.model_dump() for row in request.rows]
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to estimate promotion revenue: {type(e).__name__}: {e}",
+        )
 
 @router.get("/health/db")
 def check_db_connection():

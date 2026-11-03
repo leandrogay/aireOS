@@ -47,9 +47,12 @@ function CheckLine({ check }) {
  * approval; what passed is folded away. Shown inside its review step, which
  * carries the heading and says how fresh the results are.
  *
- * @param {{ checks: object[] }} props
+ * While `stale` (the mapping changed since they ran) the passes are said to be
+ * the old mapping's, muted, so they do not vouch for what is on screen now.
+ *
+ * @param {{ checks: object[], stale?: boolean }} props
  */
-export default function MappingChecks({ checks }) {
+export default function MappingChecks({ checks, stale = false }) {
   if (!checks?.length) {
     return <p className="text-xs text-deep-violet-blue/70">No checks have been run on this mapping yet.</p>;
   }
@@ -68,7 +71,11 @@ export default function MappingChecks({ checks }) {
       )}
 
       {done.length > 0 && (
-        <Disclosure variant="link" summary={`${done.length} check${done.length === 1 ? '' : 's'} passed`}>
+        <Disclosure
+          variant="link"
+          className={stale ? 'opacity-70' : undefined}
+          summary={`${done.length} check${done.length === 1 ? '' : 's'} passed${stale ? ' before your changes' : ''}`}
+        >
           <ul className="mt-2 space-y-1.5">
             {done.map((check) => (
               <CheckLine key={check.id} check={check} />

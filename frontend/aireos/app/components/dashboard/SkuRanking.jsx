@@ -286,6 +286,8 @@ export default function SkuRanking({
 
   const headerClass = 'px-2.5 py-2 text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60';
   const cellClass = 'px-2.5 py-2';
+  // Volume, value and change are right-aligned so their digits line up.
+  const numCellClass = `${cellClass} text-right tabular-nums`;
 
   function clickSort(columnMetric) {
     if (metric !== columnMetric) {
@@ -347,7 +349,7 @@ export default function SkuRanking({
                 ) : (
                   <th className={headerClass}>Product</th>
                 )}
-                <th className="px-1.5 py-2" aria-sort={metric === 'volume' ? (order === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                <th className="px-1.5 py-2 text-right" aria-sort={metric === 'volume' ? (order === 'asc' ? 'ascending' : 'descending') : 'none'}>
                   <SortHeader
                     label="Volume"
                     active={metric === 'volume'}
@@ -355,7 +357,7 @@ export default function SkuRanking({
                     onClick={() => clickSort('volume')}
                   />
                 </th>
-                <th className="px-1.5 py-2" aria-sort={metric === 'value' ? (order === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                <th className="px-1.5 py-2 text-right" aria-sort={metric === 'value' ? (order === 'asc' ? 'ascending' : 'descending') : 'none'}>
                   <SortHeader
                     label="Value"
                     active={metric === 'value'}
@@ -363,7 +365,7 @@ export default function SkuRanking({
                     onClick={() => clickSort('value')}
                   />
                 </th>
-                {showChange && <th className={headerClass}>Change {compareShort}</th>}
+                {showChange && <th className={`${headerClass} text-right`}>Change {compareShort}</th>}
               </tr>
             </thead>
             <tbody>
@@ -390,16 +392,16 @@ export default function SkuRanking({
                 <tr key={row.customer} className="border-b border-lavander/80 bg-white last:border-b-0 hover:bg-cream/50">
                   <td className={`${cellClass} tabular-nums`}>{row.rank}</td>
                   <td className={`${cellClass} truncate font-medium`}>{row.label}</td>
-                  <td className={`${cellClass} tabular-nums`}>{formatVolume(row.volume)}</td>
-                  <td className={`${cellClass} tabular-nums`}>{formatRevenue(row.value)}</td>
+                  <td className={numCellClass}>{formatVolume(row.volume)}</td>
+                  <td className={numCellClass}>{formatRevenue(row.value)}</td>
                 </tr>
               ))}
               {!tableLoading && !tableError && !showCustomers && skus.map((s) => (
                 <tr key={s.sku} className="border-b border-lavander/80 bg-white last:border-b-0 hover:bg-cream/50">
                   <td className={`${cellClass} tabular-nums`}>{s.rank}</td>
                   <td className={`${cellClass} truncate font-medium`} title={s.product_name}>{s.product_name}</td>
-                  <td className={`${cellClass} tabular-nums`}>{formatVolume(s.volume)}</td>
-                  <td className={`${cellClass} tabular-nums`}>{formatRevenue(s.value)}</td>
+                  <td className={numCellClass}>{formatVolume(s.volume)}</td>
+                  <td className={numCellClass}>{formatRevenue(s.value)}</td>
                   {baselineBySku && (
                     <SkuChange current={s[metric]} baseline={baselineBySku.get(s.sku)?.[metric] ?? 0} />
                   )}
@@ -416,11 +418,11 @@ export default function SkuRanking({
 // with no baseline sales shows "New" rather than an infinite percentage.
 function SkuChange({ current, baseline }) {
   if (!baseline) {
-    return <td className="px-2.5 py-2 text-deep-violet-blue/60">{current ? 'New' : '—'}</td>;
+    return <td className="px-2.5 py-2 text-right text-deep-violet-blue/60">{current ? 'New' : '—'}</td>;
   }
   const pct = changePct(current, baseline);
   return (
-    <td className={`px-2.5 py-2 font-medium tabular-nums ${changeColorClass(pct)}`}>
+    <td className={`px-2.5 py-2 text-right font-medium tabular-nums ${changeColorClass(pct)}`}>
       {pct > 0 ? '▲ ' : pct < 0 ? '▼ ' : ''}
       {formatChangePct(pct)}
     </td>

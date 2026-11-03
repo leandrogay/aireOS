@@ -16,12 +16,13 @@
 export const STAGES = [
   { key: 'uploading', label: 'Uploading', afterMs: 0 },
   { key: 'duplicates', label: 'Checking for duplicates', afterMs: 700 },
-  { key: 'matching', label: 'Matching mapping', afterMs: 1800 },
+  { key: 'matching', label: 'Processing file', afterMs: 1800 },
 ];
 
 /**
  * @typedef {(
  *   | { kind: 'mapped', mappingId: string, name: string?, vendor: string?, processing: object? }
+ *   | { kind: 'ready_to_load', mappingId: string, name: string?, vendor: string?, blobPath: string }
  *   | { kind: 'needs_review', why: 'new' | 'partial', mappingId: string?, matched: object? }
  *   | { kind: 'duplicate', matchedOn: 'content' | 'filename', existingFilename: string?, uploadedAt: string? }
  *   | { kind: 'failed', error: string }
@@ -67,6 +68,17 @@ export function outcomeFromResult(result) {
         processing: mapping.processing || null,
       };
 
+    // REQUIRE_LOAD_CONFIRMATION is on: matched to an approved mapping, but
+    // nothing loaded until a person confirms it (backend upload_loading).
+    case 'ready_to_load':
+      return {
+        kind: 'ready_to_load',
+        mappingId: mapping.fingerprint,
+        name: mapping.name || null,
+        vendor: mapping.vendor || null,
+        blobPath: result.blob_path,
+      };
+
     case 'partial_match':
       return {
         kind: 'needs_review',
@@ -92,6 +104,7 @@ export function outcomeFromResult(result) {
  *   error: string | null,
  *   mapping: { status: 'mapped' | 'partial_match' | 'new_layout', name: string?, vendor: string?, matched: object? } | null,
  *   duplicate: { matchedOn: 'content' | 'filename', existingFilename: string?, uploadedAt: string? } | null,
+ *   loadRequiresConfirmation: boolean,
  *   failed?: string,
  * }} FileCheck
  */
@@ -124,6 +137,7 @@ export function checkFromResult(result) {
           uploadedAt: duplicate.existing_uploaded_at || null,
         }
       : null,
+    loadRequiresConfirmation: Boolean(result?.load_requires_confirmation),
   };
 }
 
@@ -152,8 +166,8 @@ function beforeUploadKind(item) {
  * The one state a file row renders.
  *
  * @param {object} item
- * @returns {'checking' | 'uploading' | 'uploaded' | 'needs_review' | 'failed' |
- *   'duplicate' | 'ready' | 'near_match' | 'new_layout' | 'unchecked'}
+ * @returns {'checking' | 'uploading' | 'uploaded' | 'ready_to_load' | 'needs_review' |
+ *   'failed' | 'duplicate' | 'ready' | 'near_match' | 'new_layout' | 'unchecked'}
  */
 export function fileKind(item) {
   if (item.phase === 'checking') return 'checking';
@@ -174,12 +188,20 @@ export const FILE_GROUPS = [
     key: 'ready',
     label: 'Ready to upload',
     note: 'These match a saved mapping, so their data loads as soon as they are uploaded.',
+    // With REQUIRE_LOAD_CONFIRMATION on (said by the check), uploading does
+    // not load them, and the note must not promise it does.
+    confirmNote: "These match a saved mapping. After uploading, you'll check what loading them would change before their data loads.",
   },
   { key: 'uploaded', label: 'Uploaded' },
   {
+    key: 'ready_to_load',
+    label: 'Ready to load',
+    note: "Uploaded and matched to an approved mapping. Their data isn't loaded until you check and load it.",
+  },
+  {
     key: 'duplicate',
     label: 'Already uploaded',
-    note: 'Choose whether each one replaces the earlier copy or is kept alongside it. To skip a file, remove it.',
+    note: 'Choose for each one: replace the earlier copy, keep both, or skip it.',
   },
   {
     key: 'failed',
@@ -229,40 +251,93 @@ export function fileGroup(item) {
  * @returns {Array<{ key: string, label: string, note?: string, items: object[] }>}
  */
 export function groupFiles(items) {
-  return FILE_GROUPS.map((group) => ({
-    ...group,
-    items: items.filter((item) => fileGroup(item) === group.key),
-  })).filter((group) => group.items.length);
+  return FILE_GROUPS.map(({ confirmNote, ...group }) => {
+    const members = items.filter((item) => fileGroup(item) === group.key);
+    const confirming = members.some((item) => item.check?.loadRequiresConfirmation);
+    return { ...group, note: confirming && confirmNote ? confirmNote : group.note, items: members };
+  }).filter((group) => group.items.length);
 }
 
 /**
- * Whether pressing Upload sends this file now: checked, not yet sent, and, if
- * it duplicates an earlier upload, with a decision made.
+ * The files a button acts on: "file" for one ("Upload file"), "3 files" for
+ * more. Buttons only -- a sentence keeps its count ("1 file is waiting").
+ *
+ * @param {number} count
+ * @returns {string}
+ */
+export function filesLabel(count) {
+  return count === 1 ? 'file' : `${count.toLocaleString()} files`;
+}
+
+/**
+ * What happens to a duplicate on Upload: the person's choice, else the likely
+ * one. The same contents are already uploaded, so sending them again changes
+ * nothing: skip. Only the name matches, so it is usually a corrected
+ * re-export: replace the earlier copy. Null for a file that duplicates
+ * nothing, so it is never sent with `force` (which would skip the server's
+ * own duplicate check).
+ *
+ * @param {object} item
+ * @returns {'replace' | 'keep' | 'skip' | null}
+ */
+export function duplicateDecision(item) {
+  const duplicate = item.check?.duplicate;
+  if (!duplicate) return null;
+  return item.decision || (duplicate.matchedOn === 'content' ? 'skip' : 'replace');
+}
+
+/**
+ * What the current duplicate decision will do, to the file and to sales data,
+ * said under the choice. Replace uploads with `force`: the earlier blob is
+ * deleted (storage.upload_file) and, when the file loads, the rows from a file
+ * of that name are deleted before its own are written (replace_source in
+ * sellout_service.load_clean_rows). Keep both only upserts. A file loads on
+ * upload only when it matches an approved mapping and loading needs no
+ * confirmation; otherwise the earlier rows stay until it is loaded.
+ *
+ * @param {object} item
+ * @returns {string}
+ */
+export function duplicateResult(item) {
+  const decision = duplicateDecision(item);
+  if (decision === 'skip') return 'Not uploaded. Nothing changes.';
+  if (decision === 'keep') return "Both kept. Where they overlap, this file's figures are used.";
+  const loadsOnUpload = item.check?.mapping?.status === 'mapped' && !item.check.loadRequiresConfirmation;
+  return loadsOnUpload
+    ? "Earlier copy deleted. Its sales figures are replaced by this file's."
+    : 'Earlier copy deleted. Its sales figures stay until this file is loaded.';
+}
+
+/**
+ * Whether pressing Upload sends this file now: checked, not yet sent, and not
+ * a duplicate set to Skip.
  *
  * @param {object} item
  * @returns {boolean}
  */
 export function isUploadable(item) {
-  return item.phase === 'ready' && (!item.check?.duplicate || Boolean(item.decision));
+  return item.phase === 'ready' && duplicateDecision(item) !== 'skip';
 }
 
 /**
  * The uploadFile() flags for a file: a duplicate decision becomes `force`
- * (replace the earlier copy) or `keepDuplicate` (keep both).
+ * (replace the earlier copy) or `keepDuplicate` (keep both). A skipped file
+ * is never sent (isUploadable).
  *
  * @param {object} item
  * @returns {{ force?: boolean, keepDuplicate?: boolean }}
  */
 export function uploadOptionsFor(item) {
-  if (item.decision === 'replace') return { force: true };
-  if (item.decision === 'keep') return { keepDuplicate: true };
+  const decision = duplicateDecision(item);
+  if (decision === 'replace') return { force: true };
+  if (decision === 'keep') return { keepDuplicate: true };
   return {};
 }
 
 /**
- * Why Upload cannot be pressed yet, or '' when nothing is in the way. Files
- * still being checked and duplicates without a decision hold it; a duplicate
- * the person does not want is one click away (its remove button).
+ * Why Upload cannot be pressed yet, or '' when nothing is in the way. Only
+ * files still being checked hold it: a duplicate always has a decision (see
+ * duplicateDecision), Skip among them.
  *
  * @param {object[]} items
  * @returns {string}
@@ -270,15 +345,5 @@ export function uploadOptionsFor(item) {
 export function uploadBlocker(items) {
   const checking = items.filter((item) => item.phase === 'checking').length;
   if (checking) return `Checking ${checking} file${checking === 1 ? '' : 's'}…`;
-
-  const undecided = items.filter(
-    (item) => item.phase === 'ready' && item.check?.duplicate && !item.decision,
-  ).length;
-  if (undecided) {
-    return undecided === 1
-      ? 'Choose what to do with the file that was already uploaded.'
-      : `Choose what to do with the ${undecided} files that were already uploaded.`;
-  }
-
   return '';
 }

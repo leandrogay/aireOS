@@ -3,7 +3,7 @@
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
-import { CHART_SIZE_CLASS, MAX_BAR_SIZE, formatAxisCurrency, formatRevenue } from '@/app/utils/trendChart';
+import { BAR_ANIMATION, CHART_SIZE_CLASS, MAX_BAR_SIZE, formatAxisCurrency, formatRevenue } from '@/app/utils/trendChart';
 
 function formatAxisUnits(value) {
   if (typeof value !== 'number') return value;
@@ -83,7 +83,7 @@ export default function CustomerComparisonChart({ customers, mode, metric }) {
           tick={{ fontSize: 10 }}
         />
         <ChartTooltip content={<ComparisonTooltip metric={metric} />} />
-        <Bar dataKey="value" fill="var(--color-value)" maxBarSize={MAX_BAR_SIZE} isAnimationActive={false} />
+        <Bar dataKey="value" fill="var(--color-value)" maxBarSize={MAX_BAR_SIZE} {...BAR_ANIMATION} />
       </BarChart>
     </ChartContainer>
   );

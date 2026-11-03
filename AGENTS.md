@@ -14,7 +14,7 @@ stock, days of holding, DOH thresholds, a sell-in plan), and forecasts sell-out.
 
 ```
 aireOS/
-├── .github/workflows/ci.yml       CI: backend pytest only (Python 3.11, no cloud creds)
+├── .github/workflows/ci.yml       CI: backend pytest only (Python 3.15, no cloud creds)
 ├── deploy/                        Cloud Run deploy: <env>/ settings + secret names, deploy & setup-secrets scripts (ps1 + sh)
 ├── .vscode/tasks.json             "Start Both Servers" task (uvicorn + next dev)
 ├── README.md                      Setup + the mapping workflow explanation
@@ -63,6 +63,7 @@ aireOS/
 │   │       ├── customer_service.py customers CRUD + list_customers (customers with nested retailers, in_use flags,
 │   │       │                      unlinked retailers); a record with data can't be renamed/deleted (looked up by name)
 │   │       ├── promotion_service.py promotions + promotion_stores + promotion_skus, raw SQL, one txn per write
+│   │       ├── ingestion_service.py upload-run audit + append-only sell-out versions; atomically rolls back bad uploads
 │   │       ├── sellout_service.py Cloud SQL `sellout`: ingestion writes, plus the Sales Dashboard reads (SKU ranking,
 │   │       │                      dashboard summary, period comparison, options, freshness) that used to go through
 │   │       │                      BigQuery -- reads Cloud SQL directly now (no replication lag), and both this and
@@ -73,6 +74,8 @@ aireOS/
 │   │       │                      functions that used to live here moved to sellout_service.py
 │   │       ├── storage.py         GCS: upload files (duplicate detection), mapping JSON packets
 │   │       ├── upload_check.py    Read-only pre-upload check (POST /api/uploads/check): duplicate + mapping preview, no writes, no model call
+│   │       ├── upload_loading.py  Loading uploads into sell-out as its own confirmed step: per-upload load state after an approval,
+│   │       │                      dry run (rows, periods, rows replaced/overwritten) and the load itself (POST /api/uploads/load[/preview])
 │   │       ├── layout_detection.py PURE: finds the data table in an upload (sheet not a pivot, header row, preamble +
 │   │       │                      stated period, footer/total rows, total + spacer columns, merged cells filled down)
 │   │       ├── column_profile.py  PURE: whole-file column profile, repeated period/outlet column groups, template fingerprint
@@ -209,7 +212,7 @@ No test runner is installed on the frontend; linting (`npm run lint`) is the fro
 | Domain | Router | Service(s) | Storage | Frontend entry |
 | --- | --- | --- | --- | --- |
 | Authentication | `auth.py` | `auth_service`, shared `app.auth.require_user` dependency | Google Workspace OIDC; signed HTTP-only `aireos_session` cookie (no application password store) | `app/login`, root `proxy.js` |
-| Upload & mapping | `uploads.py`, `mappings.py` | Generation: `layout_detection`, `column_profile`, `generate_mapping`, `mapping_prompt`, `mapping_contract`, `mapping_checks`, `mapping_view`. Transformation: `sellout_ingestion`, `apply_contract`, `validation_service` | **GCS** bucket: `uploads/` files, `mappings/pending/<fp>.json`, `mappings/confirmed/<fp>.json`, `mappings/history/<fp>/v<n>.json`. **Cloud SQL** `skus` read-only, to check product codes | `app/upload`, `app/mappings`, `services/mappingApi.js` |
+| Upload & mapping | `uploads.py`, `mappings.py` | Generation: `layout_detection`, `column_profile`, `generate_mapping`, `mapping_prompt`, `mapping_contract`, `mapping_checks`, `mapping_view`. Transformation: `sellout_ingestion`, `apply_contract`, `validation_service`; rollback: `ingestion_service` | **GCS** bucket: `uploads/` files, `mappings/pending/<fp>.json`, `mappings/confirmed/<fp>.json`, `mappings/history/<fp>/v<n>.json`. **Cloud SQL**: `skus` read-only during mapping checks; `ingestion_runs` + append-only `sellout_versions` audit transformed uploads and restore prior `sellout` values | `app/upload`, `app/mappings`, `services/mappingApi.js` |
 | Sales dashboard | `sales.py` | `sellout_service` | **Cloud SQL Postgres**: `sellout` (the source of truth -- every upload writes here first; `retailer_id`/`store_code`/`sku` rows, `period_type` `week` or `month`), joined to `retailers`/`stores`/`skus` for names (retailer name = `{customer}_{offline|online}`). A retailer+calendar-month with monthly-granularity rows uses only those (never both, see `EFFECTIVE_SELLOUT_CTE`); `granularity='week'` summary views read genuine weekly rows only. No more BigQuery/Datastream replication lag -- reads are real-time | `app/dashboard`, `hooks/use*.js`, `services/salesApi.js` |
 | Catalog | `catalog.py` | `catalog_service`, `customer_service` | **Cloud SQL Postgres**: `customers`, `customer_retailers`, `retailers`, `stores`, `skus`, `sku_history`. Names are lowercase slugs, unique case-insensitively. A retailer with stores, or a customer with any such retailer or `inventory_metrics` rows, is `in_use` and can't be renamed or deleted. `skus` keeps one stable foreign-key master row per code; `sku_history` stores its timestamped created/updated/archived versions. Historical price reads resolve the version effective on the requested date. | `app/customers`, `app/skus`, `services/catalogApi.js`; `services/promotionsApi.js` (getRetailers/getStores/getSkuRanges) |
 | Inventory | `inventory.py` | `inventory_service`, `inventory_calc`, `sellout_units`, `forecast_units` | **Cloud SQL Postgres**: `customers`, `customer_retailers`, `inventory_metrics` (long format; app writes carry `data_source='manual_entry'`; only sell-in, a first-month opening and building blocks (stock used outside sell-out) are read; workbook rows are never changed), `doh_settings` (read via `settings/doh.fetch_versions`; closed months use the version in effect at month end, the latest month, at-risk list and sell-in plan use the current one), `sellout` (sell-out, via `sellout_units`/`sellout_service`'s effective-sellout view, same monthly-preferred-over-weekly rule as the dashboard); **BigQuery** (read-only): the forecast table. Ending stock, DOH and the plan are computed, never stored | `app/inventory`, `services/inventoryApi.js` |
@@ -282,7 +285,8 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 2. Per file, concurrently (`asyncio.gather` → `to_thread(resolve_and_apply_mapping)`):
    `generate_mapping.resolve_mapping`: `layout_detection.read_table` → fingerprint the header templates →
    `mappings/confirmed/<fp>.json` (or a compatible legacy fingerprint) → `status: "mapped"`; either contract format
-   runs through `sellout_ingestion.process_confirmed_upload`. Else Gemini proposes a contract (structured output,
+   runs through `sellout_ingestion.process_confirmed_upload` -- unless `REQUIRE_LOAD_CONFIRMATION` is on, when the
+   file is left `ready_to_load` for step 4 instead. Else Gemini proposes a contract (structured output,
    schema built from this file's headers, SKU master listed),
    `mapping_checks` checks it statically against the file and the SKU master, failures go back for
    up to 2 repairs, and the result is stored in `mappings/pending/` with its checks and the file's product codes →
@@ -298,6 +302,18 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
    to (`mapping_contract.retailer_outputs`) is not that customer's -- otherwise uploads would create retailers no
    customer owns and the dashboard would never show their sales. A new customer is created from the page with its
    `<name>_offline`/`<name>_online` retailers in one transaction (`CustomerCreate.retailer_names`).
+   **Approving loads nothing.** `upload_loading.mark_uploads_after_approval` re-stamps the files behind the mapping
+   (`ready_to_load`, or `reload_available` for files loaded with an older version) and confirm returns them as
+   `waiting_uploads` / `outdated_uploads`.
+4. Loading is a separate, confirmed step. `LoadConfirmDialog` (from the approved screen, Recent uploads, or the
+   upload row when the flag is on) calls `POST /api/uploads/load/preview`, then `POST /api/uploads/load`. Each
+   successful write is versioned in `ingestion_runs` / `sellout_versions`. A reload matches the prior run by unique
+   GCS `source_blob`, never the user-facing filename, and removes only stale keys still owned by that run. Upload
+   states are `pending_confirmation` → `ready_to_load` → `mapped`, then `reload_available` after a new mapping version.
+5. A completed, versioned upload can be reversed from Recent uploads through `POST /api/uploads/rollback`.
+   The rollback marks its ingestion run as rolled back and rebuilds only its affected business keys from the latest
+   still-active versions in one Cloud SQL transaction. The GCS source and mapping remain as an audit trail; uploads
+   from before the rollback migration have no rollback action.
 
 **Dashboard** (`app/dashboard/page.js`)
 1. `useDataFreshness` polls `/api/sales/last-updated`; a change bumps `dataVersion`, which every
@@ -341,7 +357,8 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | `mapping_view` packet/rule keys (`targetField`, `sourceColumn`, `editable`, `status`, `field`, `meltGroup`, `options`, `description`, `requiredMissing`, `checks`) | `utils/mappingReview.js`, `components/mappings/*` |
 | `mapping_checks` check shape (`id`, `level`, `passed`, `message`, `fields`, `evidence`) | `utils/mappingChecks.js`, `MappingChecks.jsx` |
 | packet `skuCodes`, `masterSkus`, `contractFormat`, `instructions`; processing preview/rejection fields | `utils/skuCodeTable.js`, `SkuCodeTable.jsx`, `MappingReviewPanel.jsx`, `UploadFileRow.jsx` |
-| `uploads.py` per-file `mapping.status` values (`mapped`, `pending_confirmation`, `mapping_failed`) | `FileUpload.jsx` result rendering |
+| `uploads.py` per-file `mapping.status` values (`mapped`, `ready_to_load`, `pending_confirmation`, `mapping_failed`) | `utils/uploadFlow.js` (`outcomeFromResult`) |
+| upload `mapping_status` load states (`ready_to_load`, `mapped`, `reload_available`, in `upload_loading`); load preview/result keys (`preview_loads`, `load_uploads`, `sellout_ingestion.preview_confirmed_upload`); confirm `waiting_uploads`/`outdated_uploads`/`load_requires_confirmation` | `utils/uploadHistory.js`, `utils/loadPreview.js` (`LOAD_PREVIEW_FIELDS`), `LoadConfirmDialog.jsx` → `LoadFileRow.jsx` (sample rows via `OutputPreview`), `ApprovedSummary.jsx` |
 | `settings/doh._settings_view` keys, `GLOBAL_DEFAULT_*_DOH` | `DohSettingsTable.jsx`, `dohSettingsForm.js` (`GLOBAL_DEFAULT_DOH`) |
 | `DohThresholdsUpdate` field names | `buildDohThresholdPayload` |
 | `ScenarioBuildingBlockBase` field names, `building_blocks._block_view` keys | `buildScenarioBlockPayload` / `scenarioBlockFromApi` in `scenarioBlocks.js` |
@@ -376,7 +393,8 @@ Backend variables: `GOOGLE_APPLICATION_CREDENTIALS`, `SERVICE_ACCOUNT_KEY_PATH`,
 `GCS_BUCKET_NAME`, `GCS_DESTINATION_PREFIX`, `GCS_DESTINATION_PREFIX_MAPPING`,
 `BQ_FAIRPRICESELLOUT_TABLE` (legacy, unused), `BQ_FORECAST_OUTPUT_VIEW`, `MAPPING_MODEL`, `MAPPING_VERTEX_LOCATION`,
 `GEMINI_ASSISTANT_MODEL`, `GCP_VERTEX_LOCATION`, `POSTGRESQL_INSTANCE_CONNECTION_NAME`,
-`DB_IAM_USER`, `DB_NAME`, `AUTH_ENABLED`,
+`DB_IAM_USER`, `DB_NAME`, `CLOUD_SQL_LOAD_ENABLED`, `REQUIRE_LOAD_CONFIRMATION` (default false: known layouts load on
+upload; true: they wait for a confirmed Load), `AUTH_ENABLED`,
 `AUTH_SESSION_SECRET`, `AUTH_ALLOWED_DOMAIN`, `AUTH_FRONTEND_URL`, `AUTH_COOKIE_SECURE`,
 `AUTH_COOKIE_DOMAIN`, `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`,
 `GOOGLE_OAUTH_REDIRECT_URI`. (`BQ_SELLOUT_TABLE` was removed --

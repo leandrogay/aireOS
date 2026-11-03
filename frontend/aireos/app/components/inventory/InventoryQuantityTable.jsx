@@ -115,7 +115,7 @@ export default function InventoryQuantityTable({
             onChange={(e) => onFieldChange(sku, field, e.target.value)}
             disabled={disabled}
             aria-invalid={Boolean(error)}
-            className={cn(formFieldClass, 'w-24', error && invalidInputClass)}
+            className={cn(formFieldClass, 'w-24 tabular-nums', error && invalidInputClass)}
           />
           {error && (
             <p className={FLOATING_ERROR_RIGHT_CLASS} role="alert" title={error}>

@@ -17,7 +17,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
 from app import config
-from app.services import catalog_service, sql
+from app.services import catalog_service, ingestion_service, sql
 
 
 class SelloutLoadError(RuntimeError):
@@ -137,6 +137,95 @@ def summarize_clean_rows(dataframe: pd.DataFrame) -> dict:
     }
 
 
+def existing_overlap(
+    dataframe: pd.DataFrame,
+    *,
+    replace_source: bool = False,
+    engine: Engine | None = None,
+) -> dict:
+    """
+    What loading these rows would do to sell-out already stored, without
+    writing anything: the rows deleted first because they came from a file of
+    the same name (``replace_source``, as load_clean_rows does), and the rows
+    other files loaded that the upsert would overwrite, counted per file.
+
+    Loading cannot be undone from the app, and an upsert replaces values
+    silently, so this is what the load confirmation shows before it happens.
+    Matched on the same business key and retailer name the load uses.
+    """
+    if dataframe.empty:
+        return {"rows_replaced": 0, "overwrites": []}
+
+    records, _ = _prepare_records(dataframe)
+    source_files = sorted({str(row["source_file"]) for row in records if row.get("source_file")})
+    keys = {
+        (str(row["retailer"]), str(row["store_code"]), str(row["sku"]), row["period_start"], row["period_type"])
+        for row in records
+    }
+    periods = [row["period_start"] for row in records]
+    database = engine or _get_read_engine()
+
+    with database.connect() as connection:
+        rows_replaced = 0
+        if replace_source and source_files:
+            rows_replaced = connection.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM sellout
+                    WHERE source_file = ANY(CAST(:source_files AS text[]))
+                    """
+                ),
+                {"source_files": source_files},
+            ).scalar_one()
+
+        existing = connection.execute(
+            text(
+                """
+                SELECT
+                    r.retailer_name,
+                    s.store_code,
+                    s.sku,
+                    s.period_start,
+                    s.period_type,
+                    s.source_file
+                FROM sellout s
+                JOIN retailers r ON r.retailer_id = s.retailer_id
+                WHERE r.retailer_name = ANY(CAST(:retailer_names AS text[]))
+                  AND s.period_start BETWEEN :first_period AND :last_period
+                """
+            ),
+            {
+                "retailer_names": sorted({key[0] for key in keys}),
+                "first_period": min(periods),
+                "last_period": max(periods),
+            },
+        ).mappings().all()
+
+    # Rows from a same-named file are deleted before the upsert when
+    # replacing, so they are counted as replaced above, not as overwritten.
+    deleted_first = set(source_files) if replace_source else set()
+    overwritten = Counter(
+        row["source_file"] or "Unknown file"
+        for row in existing
+        if row["source_file"] not in deleted_first
+        and (
+            row["retailer_name"],
+            str(row["store_code"]),
+            str(row["sku"]),
+            row["period_start"],
+            row["period_type"],
+        ) in keys
+    )
+    return {
+        "rows_replaced": int(rows_replaced),
+        "overwrites": [
+            {"source_file": source_file, "rows": count}
+            for source_file, count in overwritten.most_common()
+        ],
+    }
+
+
 def cloud_sql_loading_enabled() -> bool:
     return config.cloud_sql_loading_enabled()
 
@@ -237,15 +326,47 @@ def _upsert_sellout_in_batches(connection: Connection, records: list[dict]) -> N
         )
 
 
+def _delete_replaced_rows(connection: Connection, rows: list[dict]) -> None:
+    """Delete only stale keys still owned by the exact upload being reloaded."""
+    if not rows:
+        return
+    connection.execute(
+        text(
+            """
+            DELETE FROM sellout
+            WHERE
+                retailer_id = :retailer_id
+                AND store_code = :store_code
+                AND sku = :sku
+                AND period_start = :period_start
+                AND period_type = :period_type
+            """
+        ),
+        [
+            {
+                "retailer_id": row["retailer_id"],
+                "store_code": row["store_code"],
+                "sku": row["sku"],
+                "period_start": row["period_start"],
+                "period_type": row["period_type"],
+            }
+            for row in rows
+        ],
+    )
+
+
 def load_clean_rows(
     dataframe: pd.DataFrame,
     *,
     replace_source: bool = False,
     data_source: str = "aireos_upload",
+    source_blob: str | None = None,
+    content_hash: str | None = None,
+    mapping_fingerprint: str | None = None,
     engine: Engine | None = None,
     loaded_at: datetime.datetime | None = None,
 ) -> dict:
-    """Reuse catalog references, add missing SKUs, and upsert facts atomically."""
+    """Reuse catalog rows and version each upload before upserting its facts."""
     if dataframe.empty:
         return {
             "rows_stored": 0,
@@ -255,6 +376,8 @@ def load_clean_rows(
 
     if not data_source.strip():
         raise ValueError("data_source must not be blank")
+    if replace_source and not source_blob:
+        raise ValueError("replace_source requires a unique source_blob")
 
     database = engine or sql.connect_with_connector()
     timestamp = loaded_at or datetime.datetime.now(datetime.timezone.utc)
@@ -262,20 +385,6 @@ def load_clean_rows(
 
     try:
         with database.begin() as connection:
-            if replace_source:
-                source_files = sorted(
-                    {
-                        row["source_file"]
-                        for row in records
-                        if row.get("source_file")
-                    }
-                )
-                for source_file in source_files:
-                    connection.execute(
-                        text("DELETE FROM sellout WHERE source_file = :source_file"),
-                        {"source_file": source_file},
-                    )
-
             retailer_names = list(
                 dict.fromkeys(str(row["retailer"]) for row in records)
             )
@@ -331,15 +440,45 @@ def load_clean_rows(
                     }
                 )
 
+            ingestion_id = None
+            replaced_rows = []
+            if source_blob:
+                ingestion_id = ingestion_service.start_run(
+                    connection,
+                    source_blob=source_blob,
+                    source_file=str(facts[0].get("source_file") or "unknown"),
+                    content_hash=content_hash,
+                    mapping_fingerprint=mapping_fingerprint,
+                    loaded_at=timestamp,
+                )
+                replaced_rows = ingestion_service.record_versions(
+                    connection,
+                    ingestion_id,
+                    facts,
+                    replace_source=replace_source,
+                )
+
+            _delete_replaced_rows(connection, replaced_rows)
             _upsert_sellout(connection, facts)
+
+            if ingestion_id is not None:
+                ingestion_service.complete_run(
+                    connection,
+                    ingestion_id,
+                    rows_stored=len(records),
+                    rows_consolidated=rows_consolidated,
+                )
     except Exception as exc:
         raise SelloutLoadError(f"Cloud SQL sell-out load failed: {exc}") from exc
 
-    return {
+    result = {
         "rows_stored": len(records),
         "rows_consolidated": rows_consolidated,
         "storage_status": "completed",
     }
+    if ingestion_id is not None:
+        result["ingestion_id"] = ingestion_id
+    return result
 
 
 # ============================================================
@@ -621,11 +760,16 @@ def get_sku_options(customer: str = DEFAULT_CUSTOMER) -> list[dict]:
     return [{"sku": option["sku"], "product_name": option["product_name"]} for option in options]
 
 
-def get_store_options(customer: str = DEFAULT_CUSTOMER) -> list[dict]:
+def get_store_options(customer: str = DEFAULT_CUSTOMER, mode: str | None = None) -> list[dict]:
     # Distinct stores (branches) with real sales data (week or month rows),
-    # keyed on store_code; a code shared by both channels shows once, using
-    # the first non-null name either channel has for it.
-    retailer_names = _customer_retailers(customer)
+    # keyed on store_code. With a mode, only that channel's stores: the
+    # dashboard shows one channel at a time, so an online outlet (Sheng
+    # Siong's "6M_Ecomm") is no choice on the offline view. Without one (the
+    # assistant), both channels, and a code in both shows once, using the
+    # first non-null name either channel has for it.
+    if mode is not None and mode not in DASHBOARD_MODES:
+        raise ValueError(f"mode must be one of {DASHBOARD_MODES}")
+    retailer_names = [_retailer_for(customer, mode)] if mode else _customer_retailers(customer)
     query = text(
         """
         SELECT DISTINCT s.store_code, st.store_name

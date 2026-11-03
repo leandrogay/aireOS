@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/chart';
 
 import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
+import { BAR_ANIMATION } from '@/app/utils/trendChart';
 
 import { labelledTooltipRow } from './chartTooltip';
 
@@ -51,7 +52,7 @@ export default function SellInTrendChart({ trend }) {
               />
             }
           />
-          <Bar dataKey="sell_in" fill="var(--color-sell_in)" radius={[2, 2, 0, 0]} isAnimationActive={false} />
+          <Bar dataKey="sell_in" fill="var(--color-sell_in)" radius={[2, 2, 0, 0]} {...BAR_ANIMATION} />
         </BarChart>
       </ChartContainer>
     </div>

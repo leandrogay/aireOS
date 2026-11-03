@@ -97,7 +97,7 @@ export default function ForecastTable({ points, metric, visibleSeries }) {
                 {visibleColumns.map((series) => (
                   <th
                     key={series.key}
-                    className="px-2.5 py-2 text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60"
+                    className="px-2.5 py-2 text-right text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60"
                   >
                     {series.label}
                   </th>
@@ -122,7 +122,7 @@ export default function ForecastTable({ points, metric, visibleSeries }) {
                   >
                     <td className="px-2 py-2 font-medium">{point.label}</td>
                     {visibleColumns.map((series) => (
-                      <td key={series.key} className="px-1.5 py-2 tabular-nums">
+                      <td key={series.key} className="px-2.5 py-2 text-right tabular-nums">
                         {formatTableValue(point[series.key], metric)}
                       </td>
                     ))}

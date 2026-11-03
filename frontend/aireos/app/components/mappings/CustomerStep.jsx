@@ -215,7 +215,7 @@ export default function CustomerStep({
             required
             disabled={disabled}
             onChange={(event) => onNameChange(event.target.value)}
-            placeholder="e.g. Fairprice Weekly sell-out"
+            placeholder="e.g. Fairprice Monthly sell-out"
             className={inputClass}
           />
         </div>

@@ -49,7 +49,7 @@ export default async function LoginPage({ searchParams }) {
           <CardTitle className="mt-9 text-4xl tracking-tight text-deep-violet-blue sm:text-5xl">
             Welcome to AireOS
           </CardTitle>
-          <CardDescription className="mt-3 max-w-lg text-lg leading-8">
+          <CardDescription className="mt-3 max-w-lg text-lg leading-8 text-balance">
             Sign in securely with your Aire Google Workspace account to continue.
           </CardDescription>
         </CardHeader>

@@ -86,10 +86,9 @@ FAIRPRICE_MONTHLY = {
         "store_code": _field(status="mapped", source="Store Code"),
         "store_name": _field(status="mapped", source="Store Name"),
         "store_format": _field(status="mapped", source="Store Format"),
-        # FairPrice article numbers are the master SKU codes: no code table.
         "sku": _field(status="mapped", source="SKU No."),
         "product_name": _field(status="mapped", source="Article Description"),
-        "sku_range": _not_in_file("No range column."),
+        "sku_range": _field(status="mapped", source="MCH"),
         "size": _size_from("Article Description"),
         "brand": _field(status="mapped", source="Brand"),
         "product_category": _field(status="mapped", source="Dept Description"),

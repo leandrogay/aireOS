@@ -6,7 +6,7 @@ import { Loader2, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import Disclosure from '@/components/ui/Disclosure';
-import { secondaryButtonClass } from '@/components/inventory/formStyles';
+import { primaryButtonClass, secondaryButtonClass } from '@/components/inventory/formStyles';
 import useCustomers from '@/hooks/useCustomers';
 import useMappingEdits from '@/hooks/useMappingEdits';
 import { createRetailer, linkRetailer } from '@/app/services/catalogApi';
@@ -18,7 +18,7 @@ import {
   retailerStatuses,
   suggestCustomerId,
 } from '@/app/utils/mappingCustomer';
-import { PROPOSER, reviewIssues } from '@/app/utils/mappingReview';
+import { PROPOSER, isAiProposal, reviewIssues } from '@/app/utils/mappingReview';
 import { SECTION_IDS, reviewChecklist } from '@/app/utils/reviewChecklist';
 import { codeRows, unknownCodes } from '@/app/utils/skuCodeTable';
 import { cn } from '@/lib/utils';
@@ -258,7 +258,7 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
             id={SECTION_IDS.fields}
             step={stepOf(SECTION_IDS.fields)}
             title="Where each field comes from"
-            info={`Change a field by choosing another column — or, for Units sold and Sales value, a group of period or outlet columns. Confirm the low-confidence ones with “Looks right”. Each field's ⓘ has its details.`}
+            info={`Change a field by choosing another column — or, for Units sold and Sales value, a group of period or outlet columns. Medium and Low confidence fields are marked; confirm the Low ones with “Looks right”. An unmarked field passed the checks, but is still worth a glance. Each field's ⓘ has its details.`}
             done={done(items, ['required', 'confirm', 'duplicates'])}
             action={
               canResetFields && (
@@ -332,15 +332,24 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
           <ReviewSection
             id={SECTION_IDS.checks}
             step={stepOf(SECTION_IDS.checks)}
-            title="Check it on the example file"
-            info={`Runs the mapping on the whole example file and compares totals, periods and products with what the file says. ${preview ? 'Showing your last run.' : `Showing the results from when the ${PROPOSER} proposed it.`}`}
+            title="Test it on the example file"
+            info={`Applies the mapping to the whole example file, without saving anything, and compares totals, periods and products with what the file says. ${preview ? 'Showing your last test.' : `Showing the results from when the ${PROPOSER} proposed it.`}`}
             done={!failed && !stale}
             doneLabel="Passing"
-            todoLabel={stale ? 'Out of date' : 'Failing'}
+            todoLabel={stale ? 'Changed since last test' : 'Failing'}
             action={
-              <Button type="button" variant="outline" disabled={disabled} onClick={runChecks} className={cn(secondaryButtonClass, 'h-7 px-2.5 text-xs')}>
+              // Never run on its own: the reviewer tests when they are ready.
+              // Once edits make the results stale, testing them is the next
+              // step, so the button becomes the primary one.
+              <Button
+                type="button"
+                variant="outline"
+                disabled={disabled}
+                onClick={runChecks}
+                className={cn(stale ? primaryButtonClass : secondaryButtonClass, 'h-7 px-2.5 text-xs')}
+              >
                 {busy === 'preview' ? <Loader2 aria-hidden="true" className="size-3.5 animate-spin" /> : <Play aria-hidden="true" className="size-3.5" />}
-                {busy === 'preview' ? 'Running…' : preview ? 'Run again' : 'Run checks'}
+                {busy === 'preview' ? 'Testing…' : stale ? 'Test my changes' : preview ? 'Test again' : 'Test mapping'}
               </Button>
             }
           >
@@ -349,7 +358,12 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
                 {previewError}
               </p>
             )}
-            <MappingChecks checks={checks} />
+            {stale && (
+              <p className="mb-2 text-xs text-amber-900">
+                You&apos;ve changed the mapping since these results. Test your changes to see what they do.
+              </p>
+            )}
+            <MappingChecks checks={checks} stale={stale} />
 
             {/* Only once a run has rows to show -- an empty fold is a click
                 that leads nowhere -- and open from the start then. */}
@@ -366,6 +380,7 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
         <ReviewChecklist
           items={items}
           isConfirmed={mapping.state === 'confirmed'}
+          aiProposed={isAiProposal(mapping.proposedBy)}
           changed={changed}
           busy={busy}
           error={message}

@@ -167,8 +167,8 @@ export default function SellInUploadForm({ onSaved }) {
                     <th className={inventoryThClass}>Customer</th>
                     {monthHeader}
                     <th className={inventoryThClass}>Product</th>
-                    <th className={`${inventoryThClass} tabular-nums`}>Qty in packs</th>
-                    <th className={`${inventoryThClass} tabular-nums`}>Current</th>
+                    <th className={`${inventoryThClass} text-right`}>Qty in packs</th>
+                    <th className={`${inventoryThClass} text-right`}>Current</th>
                     <th className={inventoryThClass}>Status</th>
                   </tr>
                 </thead>
@@ -178,8 +178,8 @@ export default function SellInUploadForm({ onSaved }) {
                       <td className={inventoryTdClass}>{retailerLabel(row.customer_name)}</td>
                       <td className={inventoryTdClass}>{formatMonth(row.month)}</td>
                       <td className={inventoryTdClass}>{row.product_name}</td>
-                      <td className={`${inventoryTdClass} tabular-nums`}>{formatUnits(row.qty)}</td>
-                      <td className={`${inventoryTdClass} tabular-nums`}>
+                      <td className={`${inventoryTdClass} text-right tabular-nums`}>{formatUnits(row.qty)}</td>
+                      <td className={`${inventoryTdClass} text-right tabular-nums`}>
                         {row.current === null ? '—' : formatUnits(row.current)}
                       </td>
                       <td className={inventoryTdClass}>{STATUS_LABELS[row.status]}</td>
@@ -213,7 +213,7 @@ export default function SellInUploadForm({ onSaved }) {
                       <th className={inventoryThClass}>Customer</th>
                       <th className={inventoryThClass}>Month</th>
                       <th className={inventoryThClass}>Description</th>
-                      <th className={`${inventoryThClass} tabular-nums`}>Lines</th>
+                      <th className={`${inventoryThClass} text-right`}>Lines</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -223,7 +223,7 @@ export default function SellInUploadForm({ onSaved }) {
                         <td className={inventoryTdClass}>{item.customer_name}</td>
                         <td className={inventoryTdClass}>{item.month ? formatMonth(item.month) : '—'}</td>
                         <td className={inventoryTdClass}>{item.description || '—'}</td>
-                        <td className={`${inventoryTdClass} tabular-nums`}>{item.lines}</td>
+                        <td className={`${inventoryTdClass} text-right tabular-nums`}>{item.lines}</td>
                       </tr>
                     ))}
                   </tbody>
