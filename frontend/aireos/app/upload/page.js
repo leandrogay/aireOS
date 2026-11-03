@@ -231,7 +231,7 @@ export default function UploadPage() {
                 size="sm"
                 onClick={clearFinished}
                 disabled={!finishedCount}
-                title="Take finished uploads out of this list. They stay in Recent uploads."
+                title="Take finished uploads out of this list. Uploaded files stay in Recent uploads; failed ones can be dropped in again."
                 className="text-deep-violet-blue/70 hover:bg-lavander hover:text-deep-violet-blue"
               >
                 <Eraser aria-hidden="true" />

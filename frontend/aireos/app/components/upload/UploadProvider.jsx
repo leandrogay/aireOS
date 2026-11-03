@@ -227,18 +227,27 @@ function UploadQueue({ showTray, children }) {
   // Takes the finished results out of the list. Files mid-upload stay: their
   // requests are already on the server and their rows report how they went.
   // Nothing is deleted from the bucket; uploaded files stay in Recent uploads.
+  // A failed file was never stored, so clearing it also forgets its hash, or
+  // dropping it in again would be turned away as a copy of a row that is gone.
   const clearFinished = useCallback(() => {
-    setItems((prev) => prev.filter((item) => !(item.batch && item.phase === 'done')));
+    const finished = (item) => item.batch && item.phase === 'done';
+    itemsRef.current.filter(finished).forEach((item) => pendingHashes.current.delete(item.id));
+    setItems((prev) => prev.filter((item) => !finished(item)));
   }, []);
 
   // Called when a proposal is discarded (the server deletes the files that were
   // waiting on it, DELETE /api/mappings/{fp}/pending) or approved (the review is
   // done and the files move on to Recent uploads, which tracks their load). Either
   // way their rows would otherwise keep offering a review that no longer exists.
+  // A near match ('partial') points at the closest saved mapping, not a proposal
+  // of its own: approving that mapping does not re-stamp this file (backend
+  // mark_uploads_after_approval goes by the file's own fingerprint), so its row
+  // stays and still needs a nomenclature.
   const forgetMapping = useCallback((fingerprint) => {
     const waiting = (item) =>
       item.phase === 'done' &&
       item.outcome.kind === 'needs_review' &&
+      item.outcome.why !== 'partial' &&
       item.outcome.mappingId === fingerprint;
 
     itemsRef.current.filter(waiting).forEach((item) => pendingHashes.current.delete(item.id));
