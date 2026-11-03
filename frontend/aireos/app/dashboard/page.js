@@ -17,6 +17,7 @@ import useCustomerOptions from "@/hooks/useCustomerOptions";
 import useMonthlyOnly from "@/hooks/useMonthlyOnly";
 import usePriceMix from "@/hooks/usePriceMix";
 import useCustomerTotals from "@/hooks/useCustomerTotals";
+import useCustomerTrends from "@/hooks/useCustomerTrends";
 import {
   DEFAULT_COMPARE,
   alignComparisonBuckets,
@@ -26,15 +27,23 @@ import {
 import { DEFAULT_PRESET_ID, buildDateRangePresets } from "@/app/utils/dateRangePresets";
 import { rangeHasWeeklyMonths, weeklyGapMessage } from "@/app/utils/weeklyGaps";
 import { relabelFormatRows } from "@/app/utils/storeFormats";
-import { addEstimates, customersEstimate, summaryEstimate } from "@/app/utils/estimatedRevenue";
+import { addEstimates, customerTrendsEstimate, summaryEstimate } from "@/app/utils/estimatedRevenue";
+import { MAX_COMPARED_CUSTOMERS } from "@/app/utils/customerTrend";
 
 const NO_CUSTOMERS = [];
+
+// The customers ticked when the options first load, and after Clear: the
+// first MAX_COMPARED_CUSTOMERS in the option list.
+function defaultCustomers(options) {
+  return options.slice(0, MAX_COMPARED_CUSTOMERS).map((option) => option.value);
+}
 
 export default function DashboardPage() {
   const { channels, dataVersion, refreshing } = useDataFreshness();
 
-  // Customer ticks. null until the options arrive, then every customer is
-  // ticked (the cross-customer chart). [] is the user clearing every tick
+  // Customer ticks. null until the options arrive, then the first
+  // MAX_COMPARED_CUSTOMERS are ticked (the cross-customer chart compares at
+  // most that many). [] is the user clearing every tick
   // from the menu, and must not be filled back in on its own. Clear in the
   // filter card is the one action that ticks every customer again. The rest
   // of the page still reads one customer: the first ticked name in the
@@ -43,9 +52,13 @@ export default function DashboardPage() {
     useCustomerOptions({ dataVersion });
   const [selectedCustomers, setSelectedCustomers] = useState(null);
   if (selectedCustomers === null && customerOptions.length > 0) {
-    setSelectedCustomers(customerOptions.map((option) => option.value));
+    setSelectedCustomers(defaultCustomers(customerOptions));
   }
-  const customers = selectedCustomers ?? NO_CUSTOMERS;
+  // In the filter list's order, not the order they were ticked, so the chart,
+  // its legend and its tooltip list customers the way the filter does.
+  const customers = selectedCustomers
+    ? customerOptions.filter((option) => selectedCustomers.includes(option.value)).map((option) => option.value)
+    : NO_CUSTOMERS;
   const customer = customerOptions.find((option) => customers.includes(option.value))?.value ?? '';
   const comparingCustomers = customers.length > 1;
 
@@ -57,8 +70,8 @@ export default function DashboardPage() {
     const nextSingle = next.length === 1 ? next[0] : null;
     setSelectedCustomers(next);
     if (previousSingle && nextSingle && previousSingle !== nextSingle) clearSku();
-    // A store belongs to one customer, and a period comparison is a
-    // time series. Neither applies once the chart is one total per customer.
+    // A store belongs to one customer, and "Compare to" compares one
+    // customer's periods. Neither applies once the chart compares customers.
     if (next.length !== 1) {
       clearStore();
       setCompareTo(DEFAULT_COMPARE);
@@ -237,6 +250,18 @@ export default function DashboardPage() {
     enabled: comparingCustomers,
   });
 
+  // The chart's figures per customer per week or month; the tiles and the
+  // customer ranking keep customerTotals, one total per customer.
+  const customerTrends = useCustomerTrends({
+    dataVersion,
+    customers,
+    granularity: chartGranularity,
+    sku,
+    startDate: effectiveStartDate,
+    endDate: effectiveEndDate,
+    enabled: comparingCustomers && !granularityPending,
+  });
+
   const { priceMix } = usePriceMix({
     dataVersion,
     customer,
@@ -265,10 +290,10 @@ export default function DashboardPage() {
         baselineWeeksByFormat: relabelFormatRows(baselineFormatRows, currentFormatRows),
       })
     : null;
-  // The chart's EST covers everything it draws: each customer's bar, or this
-  // period plus the comparison while comparing.
+  // The chart's EST covers everything it draws: each customer's periods, or
+  // this period plus the comparison while comparing.
   const chartEstimate = comparingCustomers
-    ? customersEstimate(customerTotals.rows, mode)
+    ? customerTrendsEstimate(customerTrends.rows, mode)
     : addEstimates(
         summaryEstimate(summary.summaryByMode[mode]),
         baseline ? summaryEstimate(baselineSummary.summaryByMode[mode]) : null,
@@ -306,10 +331,10 @@ export default function DashboardPage() {
     handleDateRangeChange('', '');
     setCompareTo(DEFAULT_COMPARE);
     setCustomCompare({ start: '', end: '' });
-    // The filter box opens with every customer ticked. Clear puts that back,
-    // including when only one customer was chosen.
+    // Clear puts back the customers the filter box opens with, including
+    // when only one customer was chosen.
     if (customerOptions.length > 0) {
-      setSelectedCustomers(customerOptions.map((option) => option.value));
+      setSelectedCustomers(defaultCustomers(customerOptions));
     }
   }
 
@@ -324,9 +349,9 @@ export default function DashboardPage() {
         <div className="lg:col-span-2">
           <RevenueTrendCard
             summaryByMode={summary.summaryByMode}
-            loading={customers.length === 0 ? false : (comparingCustomers ? customerTotals.loading : summary.loading)}
+            loading={customers.length === 0 ? false : (comparingCustomers ? customerTrends.loading : summary.loading)}
             refreshing={summary.refreshing}
-            error={customers.length === 0 ? null : (comparingCustomers ? customerTotals.error : (summary.error || (baseline ? baselineSummary.error : null)))}
+            error={customers.length === 0 ? null : (comparingCustomers ? customerTrends.error : (summary.error || (baseline ? baselineSummary.error : null)))}
             freshnessRefreshing={refreshing}
             lastUpdated={lastUpdated}
             weeklyGap={weeklyGap}
@@ -338,7 +363,7 @@ export default function DashboardPage() {
             comparisonRows={comparingCustomers ? null : comparisonRows}
             periodNames={periodNames}
             comparisonLoading={baselineSummary.loading}
-            customerBars={customers.length === 0 ? [] : (comparingCustomers ? customerTotals.rows : null)}
+            customerBars={customers.length === 0 ? [] : (comparingCustomers ? customerTrends.rows : null)}
             onlineEnabled={!freshnessLoaded || onlineAvailable}
             estimate={customers.length === 0 ? null : chartEstimate}
             headerExtra={

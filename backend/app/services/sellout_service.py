@@ -1070,22 +1070,29 @@ def get_dashboard_summary(
     return {mode: _dashboard_mode_summary(df, _retailer_for(customer, mode)) for mode in DASHBOARD_MODES}
 
 
-def get_customer_totals(
-    customers: list[str],
-    sku: str | None = None,
-    start_date: str | None = None,
-    end_date: str | None = None,
-) -> dict:
-    """One period total per customer, split into offline and online.
+# Most customers the cross-customer chart compares at once: one bar or line
+# each, in its own colour (frontend storeFormats CUSTOMER_COLORS has four).
+MAX_COMPARED_CUSTOMERS = 3
 
-    This is the cross-customer bar chart: each bar is the sum of the
-    selected dates, not a week or a month. The effective-sellout view is
-    used so a retailer+month that has both weekly and monthly rows is
-    counted once. has_offline / has_online say whether that channel exists
-    for the customer at all, including outside the date range, so a
-    customer with no online sales (NHG) can be left off the Online chart
-    instead of drawn as a zero.
+# Which of these retailers have any sell-out at all, whatever the dates: a
+# customer with no online sales (NHG) is left off the Online chart rather
+# than drawn as a zero.
+_RETAILERS_WITH_SALES = text(
     """
+    SELECT DISTINCT r.retailer_name
+    FROM sellout s
+    JOIN retailers r ON r.retailer_id = s.retailer_id
+    WHERE r.retailer_name = ANY(CAST(:retailer_names AS text[]))
+    """
+)
+
+
+def _customers_scope(
+    customers: list[str], sku: str | None, start_date: str | None, end_date: str | None
+) -> tuple[list[str], list[str], list[str], dict]:
+    # The named customers (blank and repeated names dropped), both channels'
+    # retailers, and the WHERE clauses + bind params shared by
+    # get_customer_totals and get_customer_trends, estimates included.
     names = list(dict.fromkeys(name.strip() for name in customers if name and name.strip()))
     if not names:
         raise ValueError("customers must include at least one customer")
@@ -1107,6 +1114,26 @@ def get_customer_totals(
         where_clauses.append("s.period_start <= CAST(:end_date AS date)")
         params["end_date"] = end_date
     params["revenue_estimates"] = _revenue_estimates(retailer_names, start_date, end_date)
+    return names, retailer_names, where_clauses, params
+
+
+def get_customer_totals(
+    customers: list[str],
+    sku: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict:
+    """One period total per customer, split into offline and online.
+
+    This is the cross-customer bar chart: each bar is the sum of the
+    selected dates, not a week or a month. The effective-sellout view is
+    used so a retailer+month that has both weekly and monthly rows is
+    counted once. has_offline / has_online say whether that channel exists
+    for the customer at all, including outside the date range, so a
+    customer with no online sales (NHG) can be left off the Online chart
+    instead of drawn as a zero.
+    """
+    names, retailer_names, where_clauses, params = _customers_scope(customers, sku, start_date, end_date)
 
     totals_query = text(
         EFFECTIVE_SELLOUT_CTE
@@ -1122,17 +1149,9 @@ def get_customer_totals(
         GROUP BY r.retailer_name
         """
     )
-    presence_query = text(
-        """
-        SELECT DISTINCT r.retailer_name
-        FROM sellout s
-        JOIN retailers r ON r.retailer_id = s.retailer_id
-        WHERE r.retailer_name = ANY(CAST(:retailer_names AS text[]))
-        """
-    )
     with _get_read_engine().connect() as conn:
         total_rows = conn.execute(totals_query, params).mappings().all()
-        present_rows = conn.execute(presence_query, {"retailer_names": retailer_names}).mappings().all()
+        present_rows = conn.execute(_RETAILERS_WITH_SALES, {"retailer_names": retailer_names}).mappings().all()
 
     totals_by_retailer = {row["retailer_name"]: row for row in total_rows}
     present = {row["retailer_name"] for row in present_rows}
@@ -1153,6 +1172,77 @@ def get_customer_totals(
             entry[f"has_{mode}"] = retailer in present
         result.append(entry)
     return {"customers": result}
+
+
+def get_customer_trends(
+    customers: list[str],
+    granularity: str = "month",
+    sku: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict:
+    """Each named customer's revenue and units per week or month, split into
+    offline and online, for the cross-customer chart.
+
+    One figure per customer per period rather than one total for the whole
+    range, so customers can be compared month by month. At most
+    MAX_COMPARED_CUSTOMERS at once. Rows follow get_dashboard_summary: by
+    month the effective-sellout view, by week genuine weekly rows only.
+    Periods carry estimated_revenue like the dashboard summary, and
+    has_offline / has_online are as in get_customer_totals.
+    """
+    if granularity not in DASHBOARD_GRANULARITIES:
+        raise ValueError(f"granularity must be one of {DASHBOARD_GRANULARITIES}")
+    named = {name.strip() for name in customers if name and name.strip()}
+    if len(named) > MAX_COMPARED_CUSTOMERS:
+        raise ValueError(f"Compare at most {MAX_COMPARED_CUSTOMERS} customers at a time")
+    names, retailer_names, where_clauses, params = _customers_scope(customers, sku, start_date, end_date)
+
+    if granularity == "month":
+        source_cte = EFFECTIVE_SELLOUT_CTE
+        from_clause = "FROM effective_sellout s"
+    else:
+        source_cte = ""
+        where_clauses.append("s.period_type = 'week'")
+        from_clause = f"FROM {PRICED_SELLOUT_FROM}"
+
+    trends_query = text(
+        source_cte
+        + f"""
+        SELECT
+          r.retailer_name AS retailer,
+          s.period_start,
+          SUM(s.revenue) AS revenue, SUM(s.quantity_units) AS units,
+          {_ESTIMATED_REVENUE_SUM} AS estimated_revenue
+        {from_clause}
+        JOIN retailers r ON r.retailer_id = s.retailer_id
+        WHERE {' AND '.join(where_clauses)}
+        GROUP BY r.retailer_name, s.period_start
+        """
+    )
+    with _get_read_engine().connect() as conn:
+        rows = conn.execute(trends_query, params).mappings().all()
+        present_rows = conn.execute(_RETAILERS_WITH_SALES, {"retailer_names": retailer_names}).mappings().all()
+
+    df = pd.DataFrame([dict(row) for row in rows]) if rows else pd.DataFrame()
+    if not df.empty:
+        df["revenue"] = df["revenue"].fillna(0).astype(float)
+        df["units"] = df["units"].fillna(0).astype(float)
+        df["estimated_revenue"] = df["estimated_revenue"].fillna(0).astype(float)
+        # One series per customer, not split by store format.
+        df["format"] = ""
+        df = _dashboard_rows(df, granularity)
+
+    present = {row["retailer_name"] for row in present_rows}
+    result = []
+    for name in names:
+        entry = {"customer": name, "label": _customer_label(name)}
+        for mode in DASHBOARD_MODES:
+            retailer = _retailer_for(name, mode)
+            entry[mode] = _dashboard_mode_summary(df, retailer)["periodTotal"]
+            entry[f"has_{mode}"] = retailer in present
+        result.append(entry)
+    return {"granularity": granularity, "customers": result}
 
 
 def get_monthly_only_months(

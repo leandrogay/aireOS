@@ -4,7 +4,7 @@ import { useState } from "react"
 import ChartLoading from "@/components/ui/ChartLoading"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import ComparisonMixChart from "@/components/dashboard/ComparisonMixChart"
-import CustomerComparisonChart from "@/components/dashboard/CustomerComparisonChart"
+import CustomerTrendChart from "@/components/dashboard/CustomerTrendChart"
 import EstMark from "@/components/dashboard/EstMark"
 import { FormatTrendChart } from "@/components/dashboard/TrendChart"
 import { formatDateTime } from "@/lib/formatDate"
@@ -14,10 +14,10 @@ const tabTriggerClass =
   "text-deep-violet-blue/70 hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white data-active:hover:text-white"
 
 // Under the chart: EST on the left when it includes estimated revenue, and
-// when the data was last updated on the right.
+// when the data was last updated on the right, on one text line (baseline).
 function ChartFooter({ estimate, lastUpdated }) {
   return (
-    <div className="mt-1 flex items-center justify-between gap-2">
+    <div className="mt-1 flex items-baseline justify-between gap-2">
       <span>{estimate && <EstMark estimated={estimate.estimated} total={estimate.total} className="text-xs" />}</span>
       <p className="text-xs text-deep-violet-blue/60">Last Updated: {formatDateTime(lastUpdated)}</p>
     </div>
@@ -25,10 +25,11 @@ function ChartFooter({ estimate, lastUpdated }) {
 }
 
 /**
- * Revenue trend card: offline/online mode switch, an optional `headerExtra`
- * slot beside it (page.js puts the Period and Compare to controls there, so
- * the timeframe is read before the chart), a By week / By month switch, and
- * the revenue chart. Data comes from the shared useDashboardSummary hook
+ * Revenue trend card: an optional `headerExtra` row on top (page.js puts the
+ * Period and Compare to controls there, so the timeframe is read before the
+ * chart), then one row of same-size switches -- Offline / Online on the left,
+ * Volume / Revenue (comparing customers) and By week / By month on the right
+ * -- and the revenue chart. Data comes from the shared useDashboardSummary hook
  * (called in page.js) so this and RevenueSummaryCards don't each fetch the
  * same data independently.
  *
@@ -39,6 +40,9 @@ function ChartFooter({ estimate, lastUpdated }) {
  * that format's colour.
  * With a comparison, `comparisonRows` comes pre-aligned from
  * alignComparisonBuckets, so the charts only render.
+ * With two or more customers ticked, `customerBars` (get_customer_trends rows)
+ * draws CustomerTrendChart instead: each customer per week or month, with a
+ * Volume / Revenue switch beside By week / By month.
  * `estimate` ({ estimated, total }, from page.js) puts one EST under the
  * chart when anything it draws includes estimated revenue, however many bars
  * do; hovering it says how much, and a bar's tooltip gives its own share.
@@ -71,33 +75,21 @@ export default function RevenueTrendCard({
 
   return (
     <div className="bg-white rounded-lg border border-lavander shadow-sm p-3 h-full flex flex-col">
-      <div className="flex flex-wrap items-end gap-3 mb-2">
+      {headerExtra && <div className="mb-2">{headerExtra}</div>}
+
+      <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
         <Tabs value={mode} onValueChange={onModeChange}>
-          <TabsList className="bg-lavander">
-            <TabsTrigger value="offline" className={tabTriggerClass}>
+          <TabsList className="h-7 bg-lavander">
+            <TabsTrigger value="offline" className={`text-xs ${tabTriggerClass}`}>
               Offline
             </TabsTrigger>
-            <TabsTrigger value="online" disabled={!onlineEnabled} className={tabTriggerClass}>
+            <TabsTrigger value="online" disabled={!onlineEnabled} className={`text-xs ${tabTriggerClass}`}>
               Online
             </TabsTrigger>
           </TabsList>
         </Tabs>
-
-        {headerExtra && <div className="ml-auto">{headerExtra}</div>}
-      </div>
-
-      <div className="mb-1 flex items-center justify-between gap-2">
-        {/* weeklyGap (weeklyGapMessage) names at most a few month ranges;
-            its hover text lists them all. */}
-        <p className="text-xs text-deep-violet-blue/60" title={comparingCustomers ? undefined : weeklyGap?.detail}>
-          {(refreshing || freshnessRefreshing)
-            ? "Refreshing latest data…"
-            : comparingCustomers
-              ? "One total per customer for the selected period"
-              : (weeklyGap?.text ?? "")}
-        </p>
         <div className="flex items-center gap-2">
-          {comparingCustomers ? (
+          {comparingCustomers && (
             <Tabs value={metric} onValueChange={setMetric}>
               <TabsList className="h-7 bg-lavander">
                 <TabsTrigger value="units" className={`text-xs ${tabTriggerClass}`}>
@@ -108,22 +100,29 @@ export default function RevenueTrendCard({
                 </TabsTrigger>
               </TabsList>
             </Tabs>
-          ) : (
-            <Tabs value={granularity} onValueChange={onGranularityChange}>
-              <TabsList className="h-7 bg-lavander">
-                {/* Disabled (faded) when no month in the range has weekly rows
-                    (page.js weekAvailable). */}
-                <TabsTrigger value="week" disabled={!weekAvailable} className={`text-xs ${tabTriggerClass}`}>
-                  By week
-                </TabsTrigger>
-                <TabsTrigger value="month" className={`text-xs ${tabTriggerClass}`}>
-                  By month
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
           )}
+          <Tabs value={granularity} onValueChange={onGranularityChange}>
+            <TabsList className="h-7 bg-lavander">
+              {/* Disabled (faded) when no month in the range has weekly rows
+                  (page.js weekAvailable). */}
+              <TabsTrigger value="week" disabled={!weekAvailable} className={`text-xs ${tabTriggerClass}`}>
+                By week
+              </TabsTrigger>
+              <TabsTrigger value="month" className={`text-xs ${tabTriggerClass}`}>
+                By month
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
       </div>
+
+      {/* Only when there is something to say. weeklyGap (weeklyGapMessage)
+          names at most a few month ranges; its hover text lists them all. */}
+      {(refreshing || freshnessRefreshing || weeklyGap?.text) && (
+        <p className="mb-1 text-xs text-deep-violet-blue/60" title={weeklyGap?.detail}>
+          {(refreshing || freshnessRefreshing) ? "Refreshing latest data…" : weeklyGap.text}
+        </p>
+      )}
 
       {/* Always the full placeholder, never the overlay: a refetch can change
           the granularity or add a comparison, and the old bars would be
@@ -132,7 +131,7 @@ export default function RevenueTrendCard({
       {error && <p className="text-red-600 text-sm">{error}</p>}
       {!busy && !error && comparingCustomers && (
         <div className="flex flex-1 flex-col">
-          <CustomerComparisonChart customers={customerBars} mode={mode} metric={metric} />
+          <CustomerTrendChart customers={customerBars} mode={mode} metric={metric} granularity={granularity} />
           <ChartFooter estimate={estimate} lastUpdated={lastUpdated} />
         </div>
       )}

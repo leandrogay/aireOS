@@ -48,19 +48,16 @@ export function summaryEstimate(modeSummary) {
 }
 
 /**
- * Estimated and total revenue across every customer's figure on one channel
- * (backend get_customer_totals rows).
+ * Estimated and total revenue across every customer's periods on one channel
+ * (backend get_customer_trends rows).
  *
  * @param {Array<object>} rows
  * @param {'offline' | 'online'} mode
  * @returns {{ estimated: number, total: number }}
  */
-export function customersEstimate(rows, mode) {
+export function customerTrendsEstimate(rows, mode) {
   return (rows ?? []).reduce(
-    (acc, row) => ({
-      estimated: acc.estimated + (row[mode]?.estimated_revenue ?? 0),
-      total: acc.total + (row[mode]?.revenue ?? 0),
-    }),
+    (acc, row) => addEstimates(acc, summaryEstimate({ periodTotal: row[mode] ?? [] })),
     { estimated: 0, total: 0 },
   );
 }

@@ -830,3 +830,78 @@ def test_customer_totals_read_the_estimated_part(monkeypatch):
 
     (totals_sql, _params) = conn.sql_containing("effective_sellout")[0]
     assert "CASE WHEN s.revenue_estimated THEN s.revenue ELSE 0 END" in totals_sql
+
+
+
+# ---- get_customer_trends (each customer per week or month) ---------------
+
+def test_customer_trends_rejects_more_than_three_customers_without_querying(monkeypatch):
+    _no_engine_allowed(monkeypatch)
+    with pytest.raises(ValueError, match="at most 3"):
+        sellout_service.get_customer_trends(["a", "b", "c", "d"])
+
+
+def test_customer_trends_validates_customers_granularity_and_dates(monkeypatch):
+    _no_engine_allowed(monkeypatch)
+    with pytest.raises(ValueError, match="customers"):
+        sellout_service.get_customer_trends([" ", ""])
+    with pytest.raises(ValueError, match="granularity"):
+        sellout_service.get_customer_trends(["fairprice"], granularity="day")
+    with pytest.raises(ValueError, match="start_date"):
+        sellout_service.get_customer_trends(["fairprice"], start_date="Aug")
+
+
+def test_customer_trends_by_month_read_effective_sellout_with_estimates(monkeypatch):
+    scopes = _record_estimate_scopes(monkeypatch)
+    conn = _install(monkeypatch, lambda sql, params: [])
+
+    sellout_service.get_customer_trends(
+        ["fairprice", "nhg"], start_date="2026-05-01", end_date="2026-07-31",
+    )
+
+    assert scopes == [(["fairprice_offline", "fairprice_online", "nhg_offline", "nhg_online"],
+                       "2026-05-01", "2026-07-31")]
+    trend_sql, params = conn.sql_containing("GROUP BY r.retailer_name, s.period_start")[0]
+    assert "FROM effective_sellout s" in trend_sql
+    assert "CASE WHEN s.revenue_estimated THEN s.revenue ELSE 0 END" in trend_sql
+    assert params["revenue_estimates"] == '[{"sku": "SKU-1"}]'
+
+
+def test_customer_trends_by_week_read_genuine_weeks_only(monkeypatch):
+    conn = _install(monkeypatch, lambda sql, params: [])
+
+    sellout_service.get_customer_trends(["fairprice", "nhg"], granularity="week")
+
+    trend_sql, _params = conn.sql_containing("GROUP BY r.retailer_name, s.period_start")[0]
+    assert "effective_sellout" not in trend_sql
+    assert "s.period_type = 'week'" in trend_sql
+
+
+def test_customer_trends_give_each_customer_its_periods_per_channel(monkeypatch):
+    def respond(sql, params):
+        if "GROUP BY r.retailer_name, s.period_start" in sql:
+            return [
+                {"retailer": "fairprice_offline", "period_start": date(2026, 6, 1),
+                 "revenue": 100.0, "units": 10.0, "estimated_revenue": 0.0},
+                {"retailer": "fairprice_offline", "period_start": date(2026, 7, 1),
+                 "revenue": 120.0, "units": 12.0, "estimated_revenue": 30.0},
+                {"retailer": "nhg_offline", "period_start": date(2026, 7, 1),
+                 "revenue": 50.0, "units": 5.0, "estimated_revenue": 0.0},
+            ]
+        return [{"retailer_name": "fairprice_offline"}, {"retailer_name": "fairprice_online"},
+                {"retailer_name": "nhg_offline"}]
+
+    _install(monkeypatch, respond)
+
+    result = sellout_service.get_customer_trends(["fairprice", "nhg"])
+
+    assert result["granularity"] == "month"
+    fairprice, nhg = result["customers"]
+    assert (fairprice["customer"], fairprice["label"], nhg["label"]) == ("fairprice", "Fairprice", "NHG")
+    assert [(p["period_label"], p["revenue"], p["estimated_revenue"]) for p in fairprice["offline"]] == [
+        ("June 2026", 100.0, 0.0),
+        ("July 2026", 120.0, 30.0),
+    ]
+    assert fairprice["online"] == []
+    assert (fairprice["has_online"], nhg["has_online"]) == (True, False)
+    assert [p["revenue"] for p in nhg["offline"]] == [50.0]

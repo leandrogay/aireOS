@@ -106,7 +106,9 @@ function SummaryCard({
       // Highlight ring in the format's own mix-bar colour, so the tile and
       // its segment visibly belong together.
       style={highlighted && color ? { boxShadow: `0 0 0 2px ${color}` } : undefined}
-      className={`min-w-[8rem] rounded-lg bg-white px-2.5 py-1.5 text-deep-violet-blue transition-shadow ${
+      // A column, so in a row of tiles stretched to the tallest the figures
+      // still sit near each tile's bottom edge.
+      className={`flex min-w-[8rem] flex-col justify-between gap-1 rounded-lg bg-white px-2.5 pt-1.5 pb-1 text-deep-violet-blue transition-shadow ${
         emphasis ? "border-2 border-deep-violet-blue" : "border border-lavander"
       } ${className}`}
     >

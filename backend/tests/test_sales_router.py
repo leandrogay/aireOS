@@ -14,6 +14,7 @@ SALES_ENDPOINTS = [
     ("/api/sales/store-options", "get_store_options"),
     ("/api/sales/customer-options", "get_customer_options"),
     ("/api/sales/customer-totals", "get_customer_totals"),
+    ("/api/sales/customer-trends", "get_customer_trends"),
     ("/api/sales/dashboard-summary", "get_dashboard_summary"),
     ("/api/sales/monthly-only", "get_monthly_only_months"),
     ("/api/sales/period-comparison", "get_period_comparison"),
@@ -111,3 +112,39 @@ def test_customer_totals_maps_a_bad_date_to_400(monkeypatch):
 
     assert response.status_code == 400
     assert "start_date" in response.json()["detail"]
+
+
+def test_customer_trends_passes_its_filters_to_the_service(monkeypatch):
+    seen = {}
+
+    def fake(**kwargs):
+        seen.update(kwargs)
+        return {"granularity": "week", "customers": []}
+
+    monkeypatch.setattr(sellout_service, "get_customer_trends", fake)
+
+    response = client.get(
+        "/api/sales/customer-trends?customers=fairprice,nhg&granularity=week&sku=A1"
+        "&start_date=2026-05-01&end_date=2026-07-31"
+    )
+
+    assert response.status_code == 200
+    assert seen == {
+        "customers": ["fairprice", "nhg"],
+        "granularity": "week",
+        "sku": "A1",
+        "start_date": "2026-05-01",
+        "end_date": "2026-07-31",
+    }
+
+
+def test_customer_trends_maps_too_many_customers_to_400(monkeypatch):
+    def _too_many(**kwargs):
+        raise ValueError("Compare at most 3 customers at a time")
+
+    monkeypatch.setattr(sellout_service, "get_customer_trends", _too_many)
+
+    response = client.get("/api/sales/customer-trends?customers=a,b,c,d")
+
+    assert response.status_code == 400
+    assert "at most 3" in response.json()["detail"]
