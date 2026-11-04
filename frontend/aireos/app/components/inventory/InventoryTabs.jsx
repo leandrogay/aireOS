@@ -1,5 +1,6 @@
 'use client';
 
+import { MotionConfig, motion } from 'motion/react';
 import { useState } from 'react';
 
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -13,8 +14,11 @@ import InventoryDataManager from './InventoryDataManager';
 import InventoryOverview from './InventoryOverview';
 import SellInPlanView from './SellInPlanView';
 
+// `isolate` keeps the sliding highlight (-z-10) behind the label but above the list.
 const TAB_TRIGGER_CLASS =
-  'h-6 min-w-0 flex-1 rounded-md px-2.5 text-xs font-medium text-deep-violet-blue/65 transition hover:bg-cream hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white data-active:hover:bg-deep-violet-blue data-active:hover:text-white';
+  'isolate h-6 min-w-0 flex-1 rounded-md px-2.5 text-xs font-medium text-deep-violet-blue/65 transition hover:bg-cream hover:text-deep-violet-blue data-active:text-white data-active:hover:bg-transparent data-active:hover:text-white';
+
+const HIGHLIGHT_SPRING = { type: 'spring', stiffness: 500, damping: 40 };
 
 const TABS = [
   { value: 'overview', label: 'Overview' },
@@ -68,13 +72,24 @@ export default function InventoryTabs() {
   return (
     <div>
       <Tabs value={tab} onValueChange={handleTabChange} className="gap-0">
-        <TabsList className="h-8 w-full rounded-md border border-violet/40 bg-white p-0.5">
-          {TABS.map((t) => (
-            <TabsTrigger key={t.value} value={t.value} className={TAB_TRIGGER_CLASS}>
-              {t.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+        {/* The active background is one shared layoutId, so it slides between
+            tabs instead of jumping; reducedMotion="user" makes it instant for
+            users who ask for less motion. */}
+        <MotionConfig transition={HIGHLIGHT_SPRING} reducedMotion="user">
+          <TabsList className="h-8 w-full rounded-md border border-violet/40 bg-white p-0.5">
+            {TABS.map((t) => (
+              <TabsTrigger key={t.value} value={t.value} className={TAB_TRIGGER_CLASS}>
+                {tab === t.value && (
+                  <motion.span
+                    layoutId="inventory-tab-active"
+                    className="absolute inset-0 -z-10 rounded-md bg-deep-violet-blue"
+                  />
+                )}
+                {t.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </MotionConfig>
       </Tabs>
 
       <div className="mt-1 space-y-1">
