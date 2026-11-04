@@ -242,10 +242,10 @@ function NotificationItem({ notification, onMarkRead }) {
 }
 
 /**
- * The bell's dropdown contents: the shared feed, newest first, read and
- * unread together. An unread notification has a dot, a bold title and its own
- * "Mark as read"; once read it stays in the list in regular weight. "Mark all
- * as read" shows while anything is unread.
+ * The bell's dropdown contents: the shared feed, unread first and then read,
+ * each newest first. An unread notification has a tint, a bold title and its
+ * own "Mark as read"; once read it stays in the list in regular weight. "Mark
+ * all as read" shows while anything is unread.
  *
  * @param {{ notifications: object[], markRead: (ids: number[]) => void }} props
  */
@@ -254,7 +254,12 @@ export default function NotificationPanel({ notifications, markRead }) {
     return <p className="px-3 py-3 text-xs text-deep-violet-blue/75">No notifications yet.</p>;
   }
 
-  const unreadIds = notifications.filter((n) => !n.read_at).map((n) => n.notification_id);
+  const unread = notifications.filter((n) => !n.read_at);
+  const read = notifications.filter((n) => n.read_at);
+  const unreadIds = unread.map((n) => n.notification_id);
+  // Unread first, so what still needs attention is never buried under read
+  // items; each group keeps the feed's newest-first order.
+  const ordered = [...unread, ...read];
 
   // The popup has no padding of its own (see NotificationBell): the header and
   // the rows pad themselves with px-3, so unread tints run edge to edge.
@@ -273,7 +278,7 @@ export default function NotificationPanel({ notifications, markRead }) {
           Thin violet scrollbar (standard scrollbar-width/-color, no arrow
           buttons) instead of the default grey one. */}
       <ul className="max-h-[65vh] divide-y divide-lavander overflow-y-auto rounded-b-lg [scrollbar-color:var(--aire-violet)_transparent] [scrollbar-width:thin]">
-        {notifications.map((notification) => (
+        {ordered.map((notification) => (
           <NotificationItem
             key={notification.notification_id}
             notification={notification}
