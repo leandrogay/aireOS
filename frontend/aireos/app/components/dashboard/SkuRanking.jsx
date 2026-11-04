@@ -197,6 +197,9 @@ export default function SkuRanking({
   customerRows = [],
   customerRowsLoading = false,
   customerRowsError = null,
+  // The page is still loading (page.js pageStatus): placeholder rows, not
+  // "No SKU data available yet."
+  loading = false,
 }) {
   // Customers is the cross-customer default (one total per customer).
   // Products is one row per SKU, summed across whoever is ticked.
@@ -286,7 +289,7 @@ export default function SkuRanking({
   const customersRanked = showCustomers
     ? rankCustomers(customerRows, mode, metric, order)
     : [];
-  const tableLoading = showCustomers ? customerRowsLoading : productLoading;
+  const tableLoading = loading || (showCustomers ? customerRowsLoading : productLoading);
   const tableError = showCustomers ? customerRowsError : error;
   const channelLabel = mode === 'online' ? 'Online' : 'Offline';
 

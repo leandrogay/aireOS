@@ -10,24 +10,19 @@ import {
   CHART_SIZE_CLASS,
   MAX_BAR_SIZE,
   TILTED_LABEL_LEFT_MARGIN,
-  formatAxisCurrency,
-  formatRevenue,
-  xAxisProps,
+  formatMetric,
+  metricAxisFormatter,
+  periodAxisProps,
 } from '@/app/utils/trendChart';
 
-function formatAxisUnits(value) {
-  if (typeof value !== 'number') return value;
-  if (Math.abs(value) >= 1000) {
-    return `${(value / 1000).toLocaleString('en-US', { maximumFractionDigits: 1 })}k`;
-  }
-  return `${value}`;
-}
+// Past this many points a dot on every one crowds the line; the hovered
+// point still gets one (activeDot).
+const MAX_DOTTED_POINTS = 26;
 
 function formatValue(metric, value) {
   // No sales loaded for that customer and period.
   if (value === null || value === undefined) return '—';
-  if (metric === 'units') return Number(value).toLocaleString();
-  return formatRevenue(value);
+  return formatMetric(metric, value);
 }
 
 // The hovered period: every customer's figure in its colour, "(EST)" after
@@ -82,7 +77,7 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
   const rows = trendRows(customers, series, mode, metric, granularity);
   const kind = trendChartKind(rows.length);
   const chartConfig = Object.fromEntries(series.map((item) => [item.key, { label: item.label, color: item.color }]));
-  const axisProps = xAxisProps(rows.length, granularity);
+  const axisProps = periodAxisProps(rows, granularity);
   // Bars sit in the middle of their slot; a line's first and last points sit
   // on the plot's edges, so the line chart pads its x-axis and keeps room on
   // the right for its last point and label.
@@ -93,7 +88,7 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
   };
   const yAxis = (
     <YAxis
-      tickFormatter={metric === 'units' ? formatAxisUnits : formatAxisCurrency}
+      tickFormatter={metricAxisFormatter(metric)}
       width={50}
       tick={{ fontSize: 10 }}
     />
@@ -147,7 +142,7 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
                 type="linear"
                 stroke={`var(--color-${item.key})`}
                 strokeWidth={2}
-                dot={{ r: 2.5 }}
+                dot={rows.length > MAX_DOTTED_POINTS ? false : { r: 2.5 }}
                 activeDot={{ r: 4 }}
               />
             ))}

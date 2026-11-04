@@ -1,6 +1,5 @@
 "use client"
 
-import { useState } from "react"
 import ChartLoading from "@/components/ui/ChartLoading"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import ComparisonMixChart from "@/components/dashboard/ComparisonMixChart"
@@ -28,8 +27,8 @@ function ChartFooter({ estimate, lastUpdated }) {
  * Revenue trend card: an optional `headerExtra` row on top (page.js puts the
  * Period and Compare to controls there, so the timeframe is read before the
  * chart), then one row of same-size switches -- Offline / Online on the left,
- * Volume / Revenue (comparing customers) and By week / By month on the right
- * -- and the revenue chart. Data comes from the shared useDashboardSummary hook
+ * Volume / Revenue (`metric`, owned by page.js because the comparison rows are
+ * built for it) and By week / By month on the right -- and the chart. Data comes from the shared useDashboardSummary hook
  * (called in page.js) so this and RevenueSummaryCards don't each fetch the
  * same data independently.
  *
@@ -41,8 +40,7 @@ function ChartFooter({ estimate, lastUpdated }) {
  * With a comparison, `comparisonRows` comes pre-aligned from
  * alignComparisonBuckets, so the charts only render.
  * With two or more customers ticked, `customerBars` (get_customer_trends rows)
- * draws CustomerTrendChart instead: each customer per week or month, with a
- * Volume / Revenue switch beside By week / By month.
+ * draws CustomerTrendChart instead: each customer per week or month.
  * `estimate` ({ estimated, total }, from page.js) puts one EST under the
  * chart when anything it draws includes estimated revenue, however many bars
  * do; hovering it says how much, and a bar's tooltip gives its own share.
@@ -67,8 +65,11 @@ export default function RevenueTrendCard({
   customerBars = null,
   onlineEnabled = true,
   estimate = null,
+  metric = "revenue",
+  onMetricChange = () => {},
 }) {
-  const [metric, setMetric] = useState("revenue")
+  // Units are always reported, so EST only ever applies to the Revenue view.
+  const shownEstimate = metric === "revenue" ? estimate : null
   const salesData = summaryByMode[mode]
   const comparingCustomers = customerBars !== null
   const busy = loading || (!comparingCustomers && comparisonRows !== null && comparisonLoading)
@@ -89,18 +90,16 @@ export default function RevenueTrendCard({
           </TabsList>
         </Tabs>
         <div className="flex items-center gap-2">
-          {comparingCustomers && (
-            <Tabs value={metric} onValueChange={setMetric}>
-              <TabsList className="h-7 bg-lavander">
-                <TabsTrigger value="units" className={`text-xs ${tabTriggerClass}`}>
-                  Volume
-                </TabsTrigger>
-                <TabsTrigger value="revenue" className={`text-xs ${tabTriggerClass}`}>
-                  Revenue
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
-          )}
+          <Tabs value={metric} onValueChange={onMetricChange}>
+            <TabsList className="h-7 bg-lavander">
+              <TabsTrigger value="units" className={`text-xs ${tabTriggerClass}`}>
+                Volume
+              </TabsTrigger>
+              <TabsTrigger value="revenue" className={`text-xs ${tabTriggerClass}`}>
+                Revenue
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
           <Tabs value={granularity} onValueChange={onGranularityChange}>
             <TabsList className="h-7 bg-lavander">
               {/* Disabled (faded) when no month in the range has weekly rows
@@ -132,21 +131,22 @@ export default function RevenueTrendCard({
       {!busy && !error && comparingCustomers && (
         <div className="flex flex-1 flex-col">
           <CustomerTrendChart customers={customerBars} mode={mode} metric={metric} granularity={granularity} />
-          <ChartFooter estimate={estimate} lastUpdated={lastUpdated} />
+          <ChartFooter estimate={shownEstimate} lastUpdated={lastUpdated} />
         </div>
       )}
       {!busy && !error && !comparingCustomers && salesData && (
         <div className="flex flex-1 flex-col">
           {comparisonRows ? (
-            <ComparisonMixChart rows={comparisonRows} periodNames={periodNames} granularity={granularity} />
+            <ComparisonMixChart rows={comparisonRows} periodNames={periodNames} granularity={granularity} metric={metric} />
           ) : (
             <FormatTrendChart
               periodByFormat={relabelFormatRows(salesData.periodByFormat ?? [])}
               periodTotal={salesData.periodTotal}
               granularity={granularity}
+              metric={metric}
             />
           )}
-          <ChartFooter estimate={estimate} lastUpdated={lastUpdated} />
+          <ChartFooter estimate={shownEstimate} lastUpdated={lastUpdated} />
         </div>
       )}
     </div>

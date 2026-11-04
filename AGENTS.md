@@ -127,7 +127,8 @@ aireOS/
     │   │   │                      RevenueTrendCard (always by format) → TrendChart (FormatTrendChart),
     │   │   │                      ComparisonMixChart; PeriodTexture (hatched "past period" fills), TooltipChange,
     │   │   │                      PeriodComparisonDetail, RevenueSummaryCards + FormatMixBar, SkuRanking;
-    │   │   │                      CustomerTrendChart (2-3 customers: grouped bars per period, lines past 6 periods)
+    │   │   │                      CustomerTrendChart (2-3 customers: grouped bars per period, lines past 6 periods);
+    │   │   │                      DashboardStatus (whole-page card: sales data couldn't load / none uploaded yet)
     │   │   ├── promotions/        PromotionForm, PromotionList → PromotionRow (on ui/DataTable), columns.js, CheckboxDropdown
     │   │   ├── customers/         CustomersView (state), CustomerTable → CustomerRow (expandable, retailers inside),
     │   │   │                      RetailerTable (nested TableGrid), columns.js (shared grid), NameFormDialog,
@@ -153,7 +154,7 @@ aireOS/
     │       ├── dateRange.js       currentYearDateRange() -- shared default-date-range helper
     │       ├── periodComparison.js Compare-to baselines (comparisonSetup), week pairing for the comparison chart
     │       ├── dateRangePresets.js Period presets in whole months (Latest month … Past 12 months, YTD, Last year), anchored to the latest loaded month
-    │       ├── trendChart.js      Trend chart labels, x-axis setup, bar sizing, format stack order
+    │       ├── trendChart.js      Trend chart labels, x-axis setup (long week runs labelled by month), bar sizing, format stack order, Revenue/Volume formatting
     │       ├── weeklyGaps.js      "No weekly data for …" message: monthly-only months merged into ranges, capped
     │       ├── priceMix.js        Avg-price change split into SKU price vs product mix
     │       ├── estimatedRevenue.js EST sign: when a revenue figure includes estimated revenue, and its hover text

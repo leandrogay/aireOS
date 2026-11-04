@@ -12,42 +12,45 @@ import {
   TILTED_LABEL_LEFT_MARGIN,
   displayLabelFor,
   exactBucketLabel,
-  formatAxisCurrency,
+  formatMetric,
   formatRevenue,
+  metricAxisFormatter,
+  periodAxisProps,
   sortFormatsByTotalDesc,
-  xAxisProps,
 } from '@/app/utils/trendChart';
 import TooltipChange from '@/components/dashboard/TooltipChange';
 
-// The revenue trend with no comparison (FormatTrendChart), stacked by store
-// format; RevenueTrendCard uses ComparisonMixChart while comparing.
+// The trend with no comparison (FormatTrendChart), revenue or units (the
+// card's Revenue / Volume switch) stacked by store format; RevenueTrendCard
+// uses ComparisonMixChart while comparing.
 
 function weekOrMonth(periodLabel) {
   return periodLabel.startsWith('Week ') ? 'week' : 'month';
 }
 
-// Reshapes the flat [{ period_label, period_start, format, revenue }] rows
-// the API returns into one row per period with a column per format, which
-// is the shape Recharts needs for a stacked bar, plus each period's % change
-// vs the one before it (from `periodTotal`) for the tooltip, and how much of
-// its revenue is estimated (`estimated`, said in the tooltip; the chart
-// itself carries one EST under it, RevenueTrendCard).
-function pivotByFormat(periodByFormat, periodTotal) {
+// Reshapes the flat [{ period_label, period_start, format, revenue, units }]
+// rows the API returns into one row per period with a column per format
+// holding `metric`, which is the shape Recharts needs for a stacked bar, plus
+// each period's % change vs the one before it (from `periodTotal`) for the
+// tooltip, and how much of its revenue is estimated (`estimated`, said in the
+// tooltip; the chart itself carries one EST under it, RevenueTrendCard).
+function pivotByFormat(periodByFormat, periodTotal, metric) {
   const byPeriod = new Map();
   for (const row of periodByFormat) {
     if (!byPeriod.has(row.period_label)) {
       byPeriod.set(row.period_label, {
         period_label: row.period_label,
+        periodStart: row.period_start,
         displayLabel: displayLabelFor(row.period_label, row.period_start),
         exactLabel: exactBucketLabel(weekOrMonth(row.period_label), row.period_start),
       });
     }
-    byPeriod.get(row.period_label)[row.format] = row.revenue;
+    byPeriod.get(row.period_label)[row.format] = row[metric];
   }
   periodTotal.forEach((row, index) => {
     const period = byPeriod.get(row.period_label);
     if (!period) return;
-    if (index > 0) period.changePct = changePct(row.revenue, periodTotal[index - 1].revenue);
+    if (index > 0) period.changePct = changePct(row[metric], periodTotal[index - 1][metric]);
     period.estimated = row.estimated_revenue ?? 0;
   });
   return [...byPeriod.values()];
@@ -55,8 +58,9 @@ function pivotByFormat(periodByFormat, periodTotal) {
 
 // Titled with the hovered bar's exact dates, one row per series — with a
 // colour square only when the series are formats, where the colour means
-// something — a Total row when stacked, and the % change vs the previous bar.
-function TrendTooltip({ active, payload, granularity }) {
+// something — a Total row when stacked, the estimated revenue (Revenue view
+// only: units are always reported), and the % change vs the previous bar.
+function TrendTooltip({ active, payload, granularity, metric }) {
   if (!active || !payload?.length) return null;
   const period = payload[0].payload;
   const total = payload.reduce((sum, item) => sum + (typeof item.value === 'number' ? item.value : 0), 0);
@@ -77,8 +81,9 @@ function TrendTooltip({ active, payload, granularity }) {
               )}
               {item.name === UNNAMED_FORMAT ? 'Total' : item.name}
             </span>
-            <span className="font-mono font-medium text-deep-violet-blue tabular-nums">
-              {formatRevenue(item.value)}
+            {/* One series is the period's total, so it is bold like the Total row. */}
+            <span className={`font-mono text-deep-violet-blue tabular-nums ${stacked ? 'font-medium' : 'font-semibold'}`}>
+              {formatMetric(metric, item.value)}
             </span>
           </div>
         ))}
@@ -86,14 +91,14 @@ function TrendTooltip({ active, payload, granularity }) {
           <div className="mt-0.5 flex w-full items-center justify-between gap-2 border-t border-lavander pt-1">
             <span className="font-medium text-deep-violet-blue">Total</span>
             <span className="font-mono font-semibold text-deep-violet-blue tabular-nums">
-              {formatRevenue(total)}
+              {formatMetric(metric, total)}
             </span>
           </div>
         )}
-        {hasEstimate(period.estimated) && (
+        {metric === 'revenue' && hasEstimate(period.estimated) && (
           <div className="flex w-full items-center justify-between gap-2">
-            <span className="font-medium text-deep-violet-blue">EST</span>
-            <span className="font-mono font-semibold text-deep-violet-blue tabular-nums">
+            <span className="text-deep-violet-blue/70">EST</span>
+            <span className="font-mono font-medium text-deep-violet-blue tabular-nums">
               {formatRevenue(period.estimated)}
             </span>
           </div>
@@ -110,14 +115,14 @@ function TrendTooltip({ active, payload, granularity }) {
  * Each bar is labelled by its row's own type (weekOrMonth), so a
  * month-only row is never titled as a week in the tooltip.
  *
- * @param {{ periodByFormat: Array<object>, periodTotal: Array<object>, granularity: 'week' | 'month' }} props
+ * @param {{ periodByFormat: Array<object>, periodTotal: Array<object>, granularity: 'week' | 'month', metric?: 'revenue' | 'units' }} props
  */
-export function FormatTrendChart({ periodByFormat, periodTotal, granularity }) {
+export function FormatTrendChart({ periodByFormat, periodTotal, granularity, metric = 'revenue' }) {
   const formats = sortFormatsByTotalDesc(periodByFormat);
   const unnamedOnly = formats.length === 1 && formats[0] === UNNAMED_FORMAT;
   const chartConfig = Object.fromEntries(formats.map((format) => [format, { label: format, color: formatColor(format) }]));
-  const chartData = pivotByFormat(periodByFormat, periodTotal);
-  const axisProps = xAxisProps(chartData.length, granularity);
+  const chartData = pivotByFormat(periodByFormat, periodTotal, metric);
+  const axisProps = periodAxisProps(chartData, granularity);
   // Tilted labels run down-left from their bar, so the first needs room past the y-axis.
   const margin = axisProps.angle ? { bottom: 8, left: TILTED_LABEL_LEFT_MARGIN } : { bottom: 8 };
 
@@ -126,9 +131,9 @@ export function FormatTrendChart({ periodByFormat, periodTotal, granularity }) {
       <BarChart accessibilityLayer data={chartData} margin={margin}>
         <CartesianGrid vertical={false} />
         <XAxis dataKey="displayLabel" {...axisProps} />
-        <YAxis tickFormatter={formatAxisCurrency} width={50} tick={{ fontSize: 10 }} />
+        <YAxis tickFormatter={metricAxisFormatter(metric)} width={50} tick={{ fontSize: 10 }} />
         {/* Above the legend, which is drawn after it and would show through. */}
-        <ChartTooltip content={<TrendTooltip granularity={granularity} />} wrapperStyle={{ zIndex: 10 }} />
+        <ChartTooltip content={<TrendTooltip granularity={granularity} metric={metric} />} wrapperStyle={{ zIndex: 10 }} />
         {!unnamedOnly && <ChartLegend content={<ChartLegendContent />} />}
         {formats.map((format) => (
           <Bar

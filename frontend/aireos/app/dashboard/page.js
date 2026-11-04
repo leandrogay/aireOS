@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import PageLayout from "@/components/layout/PageLayout";
+import DashboardStatus from "@/components/dashboard/DashboardStatus";
 import SkuRanking from "@/components/dashboard/SkuRanking";
 import RevenueTrendCard from "@/components/dashboard/RevenueTrendCard";
 import RevenueSummaryCards from "@/components/dashboard/RevenueSummaryCards";
@@ -107,6 +108,9 @@ export default function DashboardPage() {
   // returns to that. `customCompare` is only used while compareTo is
   // 'custom'.
   const [compareTo, setCompareTo] = useState(DEFAULT_COMPARE);
+  // The chart's Revenue / Volume switch ('revenue' | 'units'). Here, not in
+  // the card, because the comparison rows below are built for it.
+  const [metric, setMetric] = useState('revenue');
   const [customCompare, setCustomCompare] = useState({ start: '', end: '' });
   // null = pick automatically from the range length (see autoGranularity).
   const [granularityChoice, setGranularityChoice] = useState(null);
@@ -145,6 +149,18 @@ export default function DashboardPage() {
   const hasExplicitDateFilter = Boolean(startDate && endDate);
   const effectiveStartDate = hasExplicitDateFilter ? startDate : defaultRange.start;
   const effectiveEndDate = hasExplicitDateFilter ? endDate : defaultRange.end;
+
+  // What the page can show yet. 'loading' until the customer list and the
+  // latest loaded period arrive: every section draws its placeholder then,
+  // never its "nothing here" message. 'failed' (the list couldn't be read)
+  // and 'empty' (no sales uploaded at all) show one DashboardStatus card
+  // instead of the sections.
+  let pageStatus = 'ready';
+  if (customerOptionsError && customerOptions.length === 0) pageStatus = 'failed';
+  else if (customerOptionsLoading) pageStatus = 'loading';
+  else if (customerOptions.length === 0) pageStatus = 'empty';
+  else if (customers.length > 0 && !latestPeriodStart) pageStatus = 'loading';
+  const pageLoading = pageStatus === 'loading';
 
   const rangeInputs = {
     start: effectiveStartDate,
@@ -287,6 +303,7 @@ export default function DashboardPage() {
         baselineStart: baseline.start,
         latestWeekStart,
         currentByFormat: relabelFormatRows(currentFormatRows, baselineFormatRows),
+        metric,
         baselineWeeksByFormat: relabelFormatRows(baselineFormatRows, currentFormatRows),
       })
     : null;
@@ -345,125 +362,132 @@ export default function DashboardPage() {
 
   return (
     <PageLayout title="Sales Dashboard">
-      <div className="grid grid-cols-1 gap-1 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <RevenueTrendCard
-            summaryByMode={summary.summaryByMode}
-            loading={customers.length === 0 ? false : (comparingCustomers ? customerTrends.loading : summary.loading)}
-            refreshing={summary.refreshing}
-            error={customers.length === 0 ? null : (comparingCustomers ? customerTrends.error : (summary.error || (baseline ? baselineSummary.error : null)))}
-            freshnessRefreshing={refreshing}
-            lastUpdated={lastUpdated}
-            weeklyGap={weeklyGap}
-            weekAvailable={weekAvailable}
-            mode={mode}
-            onModeChange={handleModeChange}
-            granularity={chartGranularity}
-            onGranularityChange={setGranularityChoice}
-            comparisonRows={comparingCustomers ? null : comparisonRows}
-            periodNames={periodNames}
-            comparisonLoading={baselineSummary.loading}
-            customerBars={customers.length === 0 ? [] : (comparingCustomers ? customerTrends.rows : null)}
-            onlineEnabled={!freshnessLoaded || onlineAvailable}
-            estimate={customers.length === 0 ? null : chartEstimate}
-            headerExtra={
-              <PeriodControls
-                start={effectiveStartDate}
-                end={effectiveEndDate}
-                presets={presets}
-                earliestDataStart={earliestDataStart}
-                latestDataEnd={latestDataEnd}
-                onDateRangeChange={handleDateRangeChange}
-                compareTo={compareTo}
-                compareOptions={compareOptions}
-                compareDisabled={comparingCustomers}
-                onCompareChange={handleCompareChange}
-              />
-            }
-          />
-        </div>
-
-        {/* Right column: scope (Filters) then the headline change (Comparison),
-            stacked beside the chart they explain. A grid rather than flex so
-            the Comparison card's h-full fills whatever height the chart row
-            leaves under the Filters. */}
-        <div className="grid grid-rows-[auto_1fr] gap-1">
-          <div>
-            <DashboardFilters
-              customerControl={
-                <CustomerSelector
-                  selected={customers}
-                  onChange={handleCustomersChange}
-                  options={customerOptions}
-                  loading={customerOptionsLoading}
-                  error={customerOptionsError}
+      {(pageStatus === 'failed' || pageStatus === 'empty') ? (
+        <DashboardStatus kind={pageStatus} error={customerOptionsError} />
+      ) : (
+        <div className="grid grid-cols-1 gap-1 lg:grid-cols-3">
+          <div className="lg:col-span-2">
+            <RevenueTrendCard
+              summaryByMode={summary.summaryByMode}
+              loading={pageLoading || (customers.length === 0 ? false : (comparingCustomers ? customerTrends.loading : summary.loading))}
+              refreshing={summary.refreshing}
+              error={customers.length === 0 ? null : (comparingCustomers ? customerTrends.error : (summary.error || (baseline ? baselineSummary.error : null)))}
+              freshnessRefreshing={refreshing}
+              lastUpdated={lastUpdated}
+              weeklyGap={weeklyGap}
+              weekAvailable={weekAvailable}
+              mode={mode}
+              onModeChange={handleModeChange}
+              granularity={chartGranularity}
+              onGranularityChange={setGranularityChoice}
+              comparisonRows={comparingCustomers ? null : comparisonRows}
+              periodNames={periodNames}
+              comparisonLoading={baselineSummary.loading}
+              customerBars={customers.length === 0 ? [] : (comparingCustomers ? customerTrends.rows : null)}
+              onlineEnabled={!freshnessLoaded || onlineAvailable}
+              estimate={customers.length === 0 ? null : chartEstimate}
+              metric={metric}
+              onMetricChange={setMetric}
+              headerExtra={
+                <PeriodControls
+                  start={effectiveStartDate}
+                  end={effectiveEndDate}
+                  presets={presets}
+                  earliestDataStart={earliestDataStart}
+                  latestDataEnd={latestDataEnd}
+                  onDateRangeChange={handleDateRangeChange}
+                  compareTo={compareTo}
+                  compareOptions={compareOptions}
+                  compareDisabled={comparingCustomers}
+                  onCompareChange={handleCompareChange}
                 />
               }
-              sku={sku}
-              onSkuChange={handleSkuChange}
-              customers={customers}
-              customer={customer}
-              mode={mode}
-              storeDisabled={customers.length !== 1}
-              store={store}
-              onStoreChange={handleStoreChange}
-              hasPeriodChanges={hasExplicitDateFilter || compareTo !== DEFAULT_COMPARE}
-              customersFiltered={customerOptions.length > 0 && customers.length !== customerOptions.length}
-              dataVersion={dataVersion}
-              activeFilters={badges.length > 0 && badges}
-              onClearFilters={clearAllFilters}
             />
           </div>
-          <div>
-            <PeriodComparisonDetail
-              active={Boolean(baseline)}
+
+          {/* Right column: scope (Filters) then the headline change (Comparison),
+              stacked beside the chart they explain. A grid rather than flex so
+              the Comparison card's h-full fills whatever height the chart row
+              leaves under the Filters. */}
+          <div className="grid grid-rows-[auto_1fr] gap-1">
+            <div>
+              <DashboardFilters
+                customerControl={
+                  <CustomerSelector
+                    selected={customers}
+                    onChange={handleCustomersChange}
+                    options={customerOptions}
+                    loading={customerOptionsLoading}
+                    error={customerOptionsError}
+                  />
+                }
+                sku={sku}
+                onSkuChange={handleSkuChange}
+                customers={customers}
+                customer={customer}
+                mode={mode}
+                storeDisabled={customers.length !== 1}
+                store={store}
+                onStoreChange={handleStoreChange}
+                hasPeriodChanges={hasExplicitDateFilter || compareTo !== DEFAULT_COMPARE}
+                customersFiltered={customerOptions.length > 0 && customers.length !== customerOptions.length}
+                dataVersion={dataVersion}
+                activeFilters={badges.length > 0 && badges}
+                onClearFilters={clearAllFilters}
+              />
+            </div>
+            <div>
+              <PeriodComparisonDetail
+                active={Boolean(baseline)}
+                periodNames={periodNames}
+                baseline={baseline}
+                currentTotals={sumPeriodTotals(currentTotals)}
+                baselineTotals={sumPeriodTotals(baselineTotals)}
+                currentAvailable={currentTotals.length > 0}
+                baselineAvailable={baselineTotals.length > 0}
+                priceMix={priceMix}
+                loading={summary.loading || baselineSummary.loading}
+                error={summary.error || baselineSummary.error}
+              />
+            </div>
+          </div>
+
+          {/* Full width so every format tile fits on one line (see RevenueSummaryCards). */}
+          <div className="lg:col-span-3">
+            <RevenueSummaryCards
+              summaryByMode={summary.summaryByMode}
+              baselineSummaryByMode={baseline && !baselineSummary.loading ? baselineSummary.summaryByMode : null}
               periodNames={periodNames}
-              baseline={baseline}
-              currentTotals={sumPeriodTotals(currentTotals)}
-              baselineTotals={sumPeriodTotals(baselineTotals)}
-              currentAvailable={currentTotals.length > 0}
-              baselineAvailable={baselineTotals.length > 0}
-              priceMix={priceMix}
-              loading={summary.loading || baselineSummary.loading}
-              error={summary.error || baselineSummary.error}
+              loading={pageLoading || (comparingCustomers ? customerTotals.loading : summary.loading)}
+              error={comparingCustomers ? customerTotals.error : summary.error}
+              mode={mode}
+              comparingCustomers={comparingCustomers}
+              customerRows={customerTotals.rows}
+            />
+          </div>
+
+          <div className="lg:col-span-3">
+            <SkuRanking
+              dataVersion={dataVersion}
+              sku={sku}
+              mode={mode}
+              customer={customer}
+              store={store}
+              startDate={effectiveStartDate}
+              endDate={effectiveEndDate}
+              comparisonStart={baseline?.start ?? ''}
+              comparisonEnd={baseline?.end ?? ''}
+              compareShort={compareShort}
+              comparingCustomers={comparingCustomers}
+              customers={customers}
+              customerRows={customerTotals.rows}
+              customerRowsLoading={customerTotals.loading}
+              customerRowsError={customerTotals.error}
+              loading={pageLoading}
             />
           </div>
         </div>
-
-        {/* Full width so every format tile fits on one line (see RevenueSummaryCards). */}
-        <div className="lg:col-span-3">
-          <RevenueSummaryCards
-            summaryByMode={summary.summaryByMode}
-            baselineSummaryByMode={baseline && !baselineSummary.loading ? baselineSummary.summaryByMode : null}
-            periodNames={periodNames}
-            loading={comparingCustomers ? customerTotals.loading : summary.loading}
-            error={comparingCustomers ? customerTotals.error : summary.error}
-            mode={mode}
-            comparingCustomers={comparingCustomers}
-            customerRows={customerTotals.rows}
-          />
-        </div>
-
-        <div className="lg:col-span-3">
-          <SkuRanking
-            dataVersion={dataVersion}
-            sku={sku}
-            mode={mode}
-            customer={customer}
-            store={store}
-            startDate={effectiveStartDate}
-            endDate={effectiveEndDate}
-            comparisonStart={baseline?.start ?? ''}
-            comparisonEnd={baseline?.end ?? ''}
-            compareShort={compareShort}
-            comparingCustomers={comparingCustomers}
-            customers={customers}
-            customerRows={customerTotals.rows}
-            customerRowsLoading={customerTotals.loading}
-            customerRowsError={customerTotals.error}
-          />
-        </div>
-      </div>
+      )}
     </PageLayout>
   );
 }
