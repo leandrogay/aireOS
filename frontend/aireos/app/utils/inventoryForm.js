@@ -202,6 +202,17 @@ export function monthInputToDate(monthValue) {
 }
 
 /**
+ * A month picked on ui/MonthGrid, in the filters' month format.
+ *
+ * @param {number} year
+ * @param {number} monthIndex 0 = January
+ * @returns {string} 'YYYY-MM'
+ */
+export function monthValue(year, monthIndex) {
+  return `${year}-${String(monthIndex + 1).padStart(2, '0')}`;
+}
+
+/**
  * The earliest month among rows. Paired with `latestMonthInput` so the
  * filter opens on the same span the chart draws.
  *
