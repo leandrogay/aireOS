@@ -141,7 +141,7 @@ export default function Sidebar() {
           type="button"
           onClick={() => setCollapsed((prev) => !prev)}
           aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
-          className="ml-auto flex size-8 items-center justify-center rounded-md text-deep-violet-blue/70 transition-colors hover:bg-lavander hover:text-deep-violet-blue"
+          className="ml-auto flex size-8 cursor-pointer items-center justify-center rounded-md text-deep-violet-blue/70 transition-colors hover:bg-lavander hover:text-deep-violet-blue"
         >
           <PanelLeft className="size-4" />
         </button>
@@ -256,7 +256,7 @@ export default function Sidebar() {
               type="button"
               onClick={handleLogout}
               disabled={isSigningOut}
-              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-deep-violet-blue/75 transition-colors hover:bg-lavander hover:text-deep-violet-blue disabled:cursor-wait disabled:opacity-60"
+              className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm text-deep-violet-blue/75 transition-colors hover:bg-lavander hover:text-deep-violet-blue disabled:cursor-wait disabled:opacity-60"
             >
               <LogOut className="size-4 shrink-0" />
               {isSigningOut ? 'Signing out...' : 'Sign out'}
