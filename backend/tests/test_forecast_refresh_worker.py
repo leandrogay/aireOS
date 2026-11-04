@@ -3,6 +3,8 @@ from decimal import Decimal
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from conftest import FakeConnection, FakeEngine
+from google.api_core.exceptions import NotFound
 
 from app.routers import internal_forecast
 from app.services import forecast_refresh_events, forecast_refresh_worker as worker
@@ -60,6 +62,48 @@ def test_worker_waits_when_cdc_has_not_landed(monkeypatch):
     assert worker.check_refresh() == {"status": "waiting"}
 
 
+def test_expired_cdc_wait_fails_batch_and_notifies(monkeypatch):
+    pending = [{
+        "id": 10, "kind": "sales_upload", "source": "sales:weekly.txt",
+        "created_at": datetime.now(timezone.utc) - timedelta(hours=3),
+    }]
+    conn = FakeConnection(lambda sql, params: [(10,)] if "UPDATE forecast_refresh_requests" in sql else [])
+    monkeypatch.setattr(worker.sql, "connect_with_connector_autocommit", lambda: FakeEngine(conn))
+    monkeypatch.setattr(worker.sql, "connect_with_connector", lambda: FakeEngine(conn))
+    monkeypatch.setattr(worker, "_running", lambda _: None)
+    monkeypatch.setattr(worker, "_pending", lambda _: pending)
+    monkeypatch.setattr(worker, "_inputs_landed", lambda *_: False)
+    monkeypatch.setattr(worker.config, "FORECAST_REFRESH_MAX_WAIT", "2h")
+    monkeypatch.setattr(worker.notification_service, "has_forecast_run", lambda _: False)
+    notifications = []
+    monkeypatch.setattr(worker.notification_service, "insert_best_effort", lambda kind, payload: notifications.append((kind, payload)))
+
+    assert worker.check_refresh()["status"] == "failed"
+    assert conn.sql_containing("UPDATE forecast_refresh_requests")[0][1]["ids"] == [10]
+    assert notifications[0][0] == "forecast_failure"
+    assert notifications[0][1]["stage"] == "refresh"
+    assert notifications[0][1]["run_name"] == "refresh-10"
+
+
+def test_sku_cdc_check_waits_for_archived_state(monkeypatch):
+    conn = FakeConnection(lambda sql, params: [{"sku": "A1", "is_active": False}])
+    monkeypatch.setattr(worker, "_query_bigquery", lambda *_: [{"sku": "A1", "is_active": True}])
+    assert worker._skus_landed(conn, ["A1"]) is False
+
+
+def test_forecast_page_recovery_queues_stale_request(monkeypatch):
+    conn = FakeConnection(lambda sql, params: [(True,)])
+    monkeypatch.setattr(worker.sql, "connect_with_connector_autocommit", lambda: FakeEngine(conn))
+    monkeypatch.setattr(forecast_refresh_events, "enabled", lambda: True)
+    queued = []
+    monkeypatch.setattr(forecast_refresh_events, "enqueue_check", lambda **kwargs: queued.append(kwargs))
+
+    worker.recover_best_effort()
+
+    assert queued[0]["delay_seconds"] == 0
+    assert queued[0]["key"].startswith("forecast-recovery-")
+
+
 def test_running_job_blocks_a_second_batch(monkeypatch):
     engine = _ReadEngine()
 
@@ -88,6 +132,29 @@ def test_batch_job_id_is_stable():
     assert worker._job_id([1, 2, 3], first) == first + "_retry1"
     assert worker._job_id([1, 2, 3], first + "_retry1") == first + "_retry2"
     assert worker._job_id([1, 2, 4], first) == worker._job_id([1, 2, 4])
+
+
+def test_event_job_targets_singapore_procedure_with_label(monkeypatch):
+    calls = []
+
+    class Client:
+        def get_job(self, *_args, **_kwargs):
+            raise NotFound("job does not exist")
+
+        def query(self, query, **kwargs):
+            calls.append((query, kwargs))
+            return object()
+
+    monkeypatch.setattr(worker, "get_bigquery_client", lambda: Client())
+    monkeypatch.setattr(worker.config, "BQ_FORECAST_DATASET", "aire-data.aireos_forecast_validation_sg")
+    monkeypatch.setattr(worker.config, "BQ_FORECAST_LOCATION", "asia-southeast1")
+
+    worker._ensure_job("event-1")
+
+    query, options = calls[0]
+    assert query == "CALL `aire-data.aireos_forecast_validation_sg.retrain_if_new_month`(TRUE)"
+    assert options["location"] == "asia-southeast1"
+    assert options["job_config"].labels == {"trigger": "fc_event"}
 
 
 def test_busy_forecast_leaves_request_pending_for_a_new_job(monkeypatch):
@@ -176,3 +243,22 @@ def test_internal_callback_runs_only_for_the_task_identity(monkeypatch):
     )
     assert response.status_code == 200
     assert response.json() == {"status": "idle"}
+
+
+def test_last_cloud_task_attempt_records_refresh_failure(monkeypatch):
+    monkeypatch.setattr(forecast_refresh_events, "enabled", lambda: True)
+    monkeypatch.setattr(internal_forecast, "_verify_task", lambda _: None)
+    monkeypatch.setattr(worker, "check_refresh", lambda: (_ for _ in ()).throw(RuntimeError("CDC unavailable")))
+    failures = []
+    monkeypatch.setattr(worker, "fail_unstarted_best_effort", failures.append)
+    app = FastAPI()
+    app.include_router(internal_forecast.router)
+
+    response = TestClient(app).post(
+        "/internal/forecast/refresh-check",
+        headers={"X-CloudTasks-TaskRetryCount": "9"},
+    )
+
+    assert response.status_code == 503
+    assert len(failures) == 1
+    assert "CDC unavailable" in failures[0]

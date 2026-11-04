@@ -1,6 +1,8 @@
 """Debounce SQL changes, wait for CDC, and run Sandra's existing forecast procedure."""
 
 import hashlib
+import logging
+import re
 import time
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -9,13 +11,11 @@ from google.api_core.exceptions import Conflict, NotFound
 from google.cloud import bigquery
 from sqlalchemy import text
 
+from app import config
 from app.services import forecast_pipeline_events, forecast_refresh_events, notification_service, sql
 from app.services.bigquery import get_bigquery_client
 
-DATASET = "aire-data.aireos_cdc_sg"
-PROCEDURE = "aire-data.Aire_Data_Analytics.retrain_if_new_month"
-RUN_LOG = "aire-data.Aire_Data_Analytics.training_run_log"
-JOB_LOCATION = "asia-southeast1"
+logger = logging.getLogger("uvicorn.error")
 LOCK_ID = 528047149
 SALES_COLUMNS = (
     "retailer_id", "store_code", "sku", "period_start", "period_end",
@@ -44,14 +44,14 @@ def _signature(rows, columns: tuple[str, ...]) -> list[tuple[str, ...]]:
 def _query_bigquery(query: str, parameters: list) -> list[dict]:
     job_config = bigquery.QueryJobConfig(query_parameters=parameters)
     return [dict(row) for row in get_bigquery_client().query(
-        query, job_config=job_config, location=JOB_LOCATION
+        query, job_config=job_config, location=config.BQ_FORECAST_LOCATION
     ).result()]
 
 
 def _cdc_has_requests(ids: list[int]) -> bool:
     try:
         rows = _query_bigquery(
-            f"SELECT id FROM `{DATASET}.public_forecast_refresh_requests` WHERE id IN UNNEST(@ids)",
+            f"SELECT id FROM `{config.BQ_CDC_DATASET}.public_forecast_refresh_requests` WHERE id IN UNNEST(@ids)",
             [bigquery.ArrayQueryParameter("ids", "INT64", ids)],
         )
     except NotFound:
@@ -67,7 +67,7 @@ def _sales_landed(conn, filenames: list[str]) -> bool:
         WHERE source_file = ANY(CAST(:files AS text[]))
     """), {"files": filenames}).mappings().all()
     copied = _query_bigquery(
-        f"SELECT {', '.join(SALES_COLUMNS)} FROM `{DATASET}.public_sellout` "
+        f"SELECT {', '.join(SALES_COLUMNS)} FROM `{config.BQ_CDC_DATASET}.public_sellout` "
         "WHERE source_file IN UNNEST(@files)",
         [bigquery.ArrayQueryParameter("files", "STRING", filenames)],
     )
@@ -83,7 +83,7 @@ def _promotions_landed(conn, promotion_ids: list[int]) -> bool:
         WHERE promotion_id = ANY(CAST(:ids AS integer[]))
     """), {"ids": promotion_ids}).mappings().all()
     copied_promotions = _query_bigquery(
-        f"SELECT {', '.join(PROMOTION_COLUMNS)} FROM `{DATASET}.public_promotions` "
+        f"SELECT {', '.join(PROMOTION_COLUMNS)} FROM `{config.BQ_CDC_DATASET}.public_promotions` "
         "WHERE promotion_id IN UNNEST(@ids)", parameters,
     )
     if _signature(local_promotions, PROMOTION_COLUMNS) != _signature(copied_promotions, PROMOTION_COLUMNS):
@@ -95,12 +95,27 @@ def _promotions_landed(conn, promotion_ids: list[int]) -> bool:
             WHERE promotion_id = ANY(CAST(:ids AS integer[]))
         """), {"ids": promotion_ids}).mappings().all()
         copied = _query_bigquery(
-            f"SELECT promotion_id, {column} FROM `{DATASET}.public_{table}` "
+            f"SELECT promotion_id, {column} FROM `{config.BQ_CDC_DATASET}.public_{table}` "
             "WHERE promotion_id IN UNNEST(@ids)", parameters,
         )
         if _signature(local, columns) != _signature(copied, columns):
             return False
     return True
+
+
+def _skus_landed(conn, skus: list[str]) -> bool:
+    if not skus:
+        return True
+    columns = ("sku", "is_active")
+    local = conn.execute(text("""
+        SELECT sku, is_active FROM skus WHERE sku = ANY(CAST(:skus AS text[]))
+    """), {"skus": skus}).mappings().all()
+    copied = _query_bigquery(
+        f"SELECT sku, is_active FROM `{config.BQ_CDC_DATASET}.public_skus` "
+        "WHERE sku IN UNNEST(@skus)",
+        [bigquery.ArrayQueryParameter("skus", "STRING", skus)],
+    )
+    return _signature(local, columns) == _signature(copied, columns)
 
 
 def _inputs_landed(conn, requests: list[dict]) -> bool:
@@ -109,15 +124,94 @@ def _inputs_landed(conn, requests: list[dict]) -> bool:
         return False
     sales = sorted({row["source"][6:] for row in requests if row["source"].startswith("sales:")})
     promotions = sorted({int(row["source"][10:]) for row in requests if row["source"].startswith("promotion:")})
-    if len(sales) + len(promotions) < len({row["source"] for row in requests}):
+    skus = sorted({row["source"][4:] for row in requests if row["source"].startswith("sku:")})
+    if len(sales) + len(promotions) + len(skus) < len({row["source"] for row in requests}):
         raise ValueError("Unknown forecast refresh source")
-    return _sales_landed(conn, sales) and _promotions_landed(conn, promotions)
+    return _sales_landed(conn, sales) and _promotions_landed(conn, promotions) and _skus_landed(conn, skus)
 
 
 def _retry_later() -> dict:
     minute = int((time.time() + 60) // 60)
     forecast_refresh_events.enqueue_check(key=f"forecast-poll-{minute}", delay_seconds=60)
     return {"status": "waiting"}
+
+
+def _max_wait() -> timedelta:
+    match = re.fullmatch(r"(\d+)([smh])", config.FORECAST_REFRESH_MAX_WAIT.strip().lower())
+    if not match or int(match[1]) <= 0:
+        raise ValueError("FORECAST_REFRESH_MAX_WAIT must be a positive duration such as 2h")
+    return timedelta(seconds=int(match[1]) * {"s": 1, "m": 60, "h": 3600}[match[2]])
+
+
+def _fail_pending(requests: list[dict], reason: str) -> dict:
+    ids = [row["id"] for row in requests]
+    with sql.connect_with_connector().begin() as conn:
+        failed = conn.execute(text("""
+            UPDATE forecast_refresh_requests
+            SET status = 'failed', finished_at = CURRENT_TIMESTAMP, last_error = :reason
+            WHERE id = ANY(CAST(:ids AS bigint[])) AND status = 'pending'
+            RETURNING id
+        """), {"ids": ids, "reason": reason}).scalars().all()
+    if not failed:
+        return {"status": "idle"}
+
+    run_name = f"refresh-{min(failed)}"
+    payload = {
+        "run_name": run_name,
+        "source": "event",
+        "stage": "refresh",
+        "reason": reason,
+        "errors": [],
+        "period_start": None,
+        "period_end": None,
+        "customers": [],
+        "skus": [],
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        if not notification_service.has_forecast_run(run_name):
+            notification_service.insert_best_effort(notification_service.FORECAST_FAILURE, payload)
+    except Exception as exc:
+        logger.warning("Could not notify forecast refresh failure %s: %s", run_name, exc)
+    return {"status": "failed", "reason": reason}
+
+
+def fail_unstarted_best_effort(reason: str) -> None:
+    """Record a final Cloud Tasks failure without hiding the original worker error."""
+    try:
+        with sql.connect_with_connector_autocommit().connect() as conn:
+            pending = _pending(conn)
+            running = _running(conn)
+        if pending:
+            _fail_pending(pending, reason)
+        elif running:
+            # A job already started; let a later task report its real outcome.
+            forecast_refresh_events.enqueue_check(
+                key=f"forecast-running-recovery-{int(time.time())}", delay_seconds=60
+            )
+    except Exception as exc:
+        logger.warning("Could not record final forecast refresh failure: %s", exc)
+
+
+def recover_best_effort() -> None:
+    """Wake a stalled refresh after the Forecast response has been sent."""
+    if not forecast_refresh_events.enabled():
+        return
+    try:
+        with sql.connect_with_connector_autocommit().connect() as conn:
+            stale = conn.execute(text("""
+                SELECT EXISTS (
+                    SELECT 1 FROM forecast_refresh_requests
+                    WHERE (status = 'pending' AND created_at < CURRENT_TIMESTAMP - INTERVAL '15 minutes')
+                       OR (status = 'running' AND dispatched_at < CURRENT_TIMESTAMP - INTERVAL '15 minutes')
+                )
+            """)).scalar_one()
+        if stale:
+            forecast_refresh_events.enqueue_check(
+                key=f"forecast-recovery-{int(time.time() // 60)}", delay_seconds=0
+            )
+    except Exception as exc:
+        logger.warning("Could not check stalled forecast refresh requests: %s", exc)
 
 
 def _pending(conn) -> list[dict]:
@@ -168,21 +262,24 @@ def _claim(ids: list[int], job_id: str) -> bool:
 def _ensure_job(job_id: str):
     client = get_bigquery_client()
     try:
-        return client.get_job(job_id, location=JOB_LOCATION)
+        return client.get_job(job_id, location=config.BQ_FORECAST_LOCATION)
     except NotFound:
         try:
             return client.query(
-                f"CALL `{PROCEDURE}`(TRUE)", job_id=job_id, location=JOB_LOCATION
+                f"CALL `{config.BQ_FORECAST_DATASET}.retrain_if_new_month`(TRUE)",
+                job_id=job_id,
+                location=config.BQ_FORECAST_LOCATION,
+                job_config=bigquery.QueryJobConfig(labels={"trigger": "fc_event"}),
             )
         except Conflict:
-            return client.get_job(job_id, location=JOB_LOCATION)
+            return client.get_job(job_id, location=config.BQ_FORECAST_LOCATION)
 
 
 def _run_outcome(job) -> tuple[bool, bool]:
     if not job.started or not job.ended:
         return False, False
     rows = _query_bigquery(
-        f"SELECT COUNT(*) AS checked, COUNTIF(retrained) AS retrained FROM `{RUN_LOG}` "
+        f"SELECT COUNT(*) AS checked, COUNTIF(retrained) AS retrained FROM `{config.BQ_TRAINING_RUN_LOG_TABLE}` "
         "WHERE checked_at BETWEEN @started AND @ended",
         [
             bigquery.ScalarQueryParameter("started", "TIMESTAMP", job.started),
@@ -209,7 +306,7 @@ def _finish(job_id: str, job) -> dict:
         if not notification_service.has_forecast_run(job_id):
             payload = {
                 **({"period_start": None, "period_end": None, "customers": [], "skus": []}
-                   if failed else forecast_pipeline_events._latest_forecast_summary()),
+                   if failed else forecast_pipeline_events.latest_forecast_summary()),
                 "updated_at": (job.ended or datetime.now(timezone.utc)).isoformat(),
                 "errors": [str(job.error_result)] if failed else [],
                 "source": "event",
@@ -248,11 +345,13 @@ def check_refresh() -> dict:
         pending = _pending(conn)
         if not pending:
             return {"status": "idle"}
+        oldest = min(row["created_at"] for row in pending)
+        expired = oldest <= datetime.now(timezone.utc) - _max_wait()
         newest = max(row["created_at"] for row in pending)
         if newest > datetime.now(timezone.utc) - timedelta(seconds=forecast_refresh_events.QUIET_SECONDS):
-            return _retry_later()
+            return _fail_pending(pending, "Forecast inputs did not settle before the refresh time limit") if expired else _retry_later()
         if not _inputs_landed(conn, pending):
-            return _retry_later()
+            return _fail_pending(pending, "Sales or catalog changes did not reach BigQuery before the refresh time limit") if expired else _retry_later()
 
     ids = [row["id"] for row in pending]
     previous_jobs = {row["job_id"] for row in pending if row.get("job_id")}

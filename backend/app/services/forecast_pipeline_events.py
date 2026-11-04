@@ -45,7 +45,7 @@ def _retrained_during(start_time: str, end_time: str) -> bool:
     return bool(rows and rows[0]["retrained"])
 
 
-def _latest_forecast_summary() -> dict:
+def latest_forecast_summary() -> dict:
     """Period, customers and products of the newest forecast run, named the way
     the script-run notification names them."""
 
@@ -106,7 +106,7 @@ def handle_transfer_run(run: dict) -> int | None:
     if not _retrained_during(run.get("startTime") or run.get("runTime"), finished_at):
         return None
     payload = {
-        **_latest_forecast_summary(),
+        **latest_forecast_summary(),
         "updated_at": finished_at,
         "errors": [],
         "source": SOURCE,

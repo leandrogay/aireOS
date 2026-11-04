@@ -24,7 +24,7 @@ def inserted(monkeypatch):
     rows = []
     monkeypatch.setattr(notification_service, "has_forecast_run", lambda name: False)
     monkeypatch.setattr(notification_service, "insert", lambda kind, payload: rows.append((kind, payload)) or len(rows))
-    monkeypatch.setattr(events, "_latest_forecast_summary", lambda: SUMMARY)
+    monkeypatch.setattr(events, "latest_forecast_summary", lambda: SUMMARY)
     return rows
 
 
@@ -165,7 +165,7 @@ def test_the_forecast_summary_names_customers_and_products(monkeypatch):
         {"sku": "S1", "product_name": "Pants L"}, {"sku": "S2", "product_name": "Tape XL"},
     ])
 
-    assert events._latest_forecast_summary() == {
+    assert events.latest_forecast_summary() == {
         "period_start": "2026-09-01",
         "period_end": "2027-08-01",
         "customers": ["fairprice", "nhg"],

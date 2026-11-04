@@ -25,7 +25,7 @@ def record_change(conn: Connection, kind: str, source: str) -> int | None:
     """Add one outbox row in the caller's sales or promotion transaction."""
     if not enabled():
         return None
-    if kind not in {"sales_upload", "promotion_change"} or not source:
+    if kind not in {"sales_upload", "promotion_change", "sku_change"} or not source:
         raise ValueError("Invalid forecast refresh source")
     return int(conn.execute(
         text("""

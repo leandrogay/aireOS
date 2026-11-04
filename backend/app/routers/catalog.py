@@ -717,3 +717,19 @@ def archive_sku(sku: str):
             status_code=500,
             detail=f"Failed to archive SKU: {type(e).__name__}: {e}",
         )
+
+
+@router.post("/skus/{sku}/restore")
+def restore_sku(sku: str):
+    try:
+        restored = catalog_service.restore_sku(sku)
+        if restored is None:
+            raise HTTPException(status_code=404, detail="Archived SKU not found")
+        return restored
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to restore SKU: {type(e).__name__}: {e}",
+        )

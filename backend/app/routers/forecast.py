@@ -1,9 +1,9 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from google.api_core.exceptions import GoogleAPICallError
 from google.auth.exceptions import DefaultCredentialsError
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.services import bigquery, forecast_service
+from app.services import bigquery, forecast_refresh_worker, forecast_service
 
 router = APIRouter(prefix="/api/forecast", tags=["forecast"])
 
@@ -18,11 +18,13 @@ _CREDENTIALS_DETAIL = (
 
 @router.get("/")
 def get_forecast(
+    background_tasks: BackgroundTasks,
     product_name: str | None = None,
     customer_name: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
 ):
+    background_tasks.add_task(forecast_refresh_worker.recover_best_effort)
     try:
         return forecast_service.get_forecast_view(
             product_name=product_name,

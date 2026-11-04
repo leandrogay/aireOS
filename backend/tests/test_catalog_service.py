@@ -275,6 +275,46 @@ def test_archive_sku_versions_snapshot_and_marks_master_inactive(monkeypatch):
     assert engine.conn.sql_containing("INSERT INTO sku_history")[0][1]["action"] == "archived"
 
 
+def test_archive_sku_records_refresh_in_its_transaction(monkeypatch):
+    from app.services import forecast_refresh_events
+
+    def respond(sql, params):
+        if "FROM skus" in sql:
+            return [SKU_ROW]
+        if "FROM promotion_skus" in sql:
+            return [(False,)]
+        return []
+
+    engine = _install_fake_write_engine(monkeypatch, respond)
+    recorded = []
+    queued = []
+    monkeypatch.setattr(forecast_refresh_events, "record_change", lambda conn, kind, source: recorded.append((conn, kind, source)) or 42)
+    monkeypatch.setattr(forecast_refresh_events, "enqueue_best_effort", queued.append)
+
+    catalog_service.archive_sku("NEW-001")
+
+    assert recorded == [(engine.conn, "sku_change", "sku:NEW-001")]
+    assert queued == [42]
+
+
+def test_restore_sku_records_history_and_refresh(monkeypatch):
+    from app.services import forecast_refresh_events
+
+    def respond(sql, params):
+        return [SKU_ROW] if "UPDATE skus" in sql else []
+
+    engine = _install_fake_write_engine(monkeypatch, respond)
+    recorded = []
+    queued = []
+    monkeypatch.setattr(forecast_refresh_events, "record_change", lambda conn, kind, source: recorded.append((kind, source)) or 43)
+    monkeypatch.setattr(forecast_refresh_events, "enqueue_best_effort", queued.append)
+
+    assert catalog_service.restore_sku("NEW-001") == SKU_ROW
+    assert engine.conn.sql_containing("INSERT INTO sku_history")[0][1]["action"] == "restored"
+    assert recorded == [("sku_change", "sku:NEW-001")]
+    assert queued == [43]
+
+
 # ---- retailers under a customer (Customers page) --------------------------------
 
 

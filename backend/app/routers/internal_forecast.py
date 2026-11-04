@@ -36,6 +36,14 @@ def refresh_check(request: Request):
     try:
         return forecast_refresh_worker.check_refresh()
     except Exception as exc:
+        try:
+            retry_count = int(request.headers.get("X-CloudTasks-TaskRetryCount", "0"))
+        except ValueError:
+            retry_count = 0
+        if retry_count >= 9:
+            forecast_refresh_worker.fail_unstarted_best_effort(
+                f"Forecast refresh could not start after Cloud Tasks retries: {type(exc).__name__}: {exc}"
+            )
         # Cloud Tasks retries 5xx. A source write has already committed and is
         # recorded in SQL, so a worker failure must not erase that request.
         raise HTTPException(
