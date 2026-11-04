@@ -37,7 +37,7 @@ export default function NotificationBell() {
           </span>
         )}
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-80 max-w-[90vw] p-2.5">
+      <PopoverContent align="end" className="w-[26rem] max-w-[90vw] p-2.5">
         <NotificationPanel notifications={notifications} markRead={markRead} />
       </PopoverContent>
     </Popover>

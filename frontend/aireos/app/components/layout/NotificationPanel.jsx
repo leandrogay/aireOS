@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 
 // Unread notifications stand out; read ones stay in the list, greyed out.
 // wrap-anywhere: file and mapping names have no spaces, so they break to stay in the card.
-const CARD_CLASS = 'rounded-lg border px-3 py-2.5 text-xs wrap-anywhere transition-opacity';
+const CARD_CLASS = 'rounded-lg border px-4 py-2.5 text-xs wrap-anywhere transition-opacity';
 const UNREAD_CARD_CLASS = 'border-violet bg-lavander/40';
 const READ_CARD_CLASS = 'border-lavander bg-white opacity-60';
 
@@ -206,10 +206,7 @@ function NotificationCard({ notification, onMarkRead }) {
   return (
     <div className={cn(CARD_CLASS, unread ? UNREAD_CARD_CLASS : READ_CARD_CLASS)}>
       <div className="flex items-start justify-between gap-2">
-        <p className="flex min-w-0 flex-1 items-start gap-1.5 font-serif text-sm text-deep-violet-blue">
-          {unread && <span aria-label="Unread" className="mt-1.5 size-2 shrink-0 rounded-full bg-red-600" />}
-          <span className="min-w-0">{title}</span>
-        </p>
+        <p className="min-w-0 flex-1 font-serif text-sm text-deep-violet-blue">{title}</p>
         {unread && (
           <button type="button" onClick={onMarkRead} className={cn(MARK_READ_BUTTON_CLASS, 'shrink-0')}>
             Mark as read
@@ -229,7 +226,7 @@ function NotificationCard({ notification, onMarkRead }) {
 
 /**
  * The bell's dropdown contents: the shared feed, newest first, read and
- * unread together. An unread notification has a dot and its own "Mark as
+ * unread together. An unread notification is tinted and has its own "Mark as
  * read"; once read it stays in the list, greyed out. "Mark all as read" shows
  * while anything is unread.
  *
@@ -252,7 +249,7 @@ export default function NotificationPanel({ notifications, markRead }) {
           </button>
         )}
       </div>
-      <div className="flex max-h-96 flex-col gap-1.5 overflow-y-auto">
+      <div className="flex max-h-[65vh] flex-col gap-1.5 overflow-y-auto">
         {notifications.map((notification) => (
           <NotificationCard
             key={notification.notification_id}
