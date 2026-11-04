@@ -37,7 +37,16 @@ export default function NotificationBell() {
           </span>
         )}
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-[26rem] max-w-[90vw] p-2.5">
+      {/* Two stacked shadows (tight edge + soft lift) tinted with deep violet blue
+          (#0F1E4A) rather than black, so the popup floats above the page. Set
+          here, not in ui/popover, so the other dropdowns keep their look. */}
+      <PopoverContent
+        align="end"
+        arrow
+        arrowClassName="data-[side=bottom]:border-lavander"
+        sideOffset={10}
+        className="w-[26rem] max-w-[90vw] p-2.5 ring-lavander shadow-[0_2px_4px_rgb(15_30_74/0.1),0_12px_32px_rgb(15_30_74/0.08)]"
+      >
         <NotificationPanel notifications={notifications} markRead={markRead} />
       </PopoverContent>
     </Popover>
