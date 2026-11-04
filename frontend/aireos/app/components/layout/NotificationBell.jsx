@@ -39,9 +39,13 @@ export default function NotificationBell() {
       </PopoverTrigger>
       {/* Two stacked shadows (tight edge + soft lift) tinted with deep violet blue
           (#0F1E4A) rather than black, so the popup floats above the page. Set
-          here, not in ui/popover, so the other dropdowns keep their look. */}
+          here, not in ui/popover, so the other dropdowns keep their look.
+          alignOffset: with align="end" a negative value slides the popup right, past the
+          page card's edge into the empty margin; Base UI's collision shift keeps it on
+          screen when the window is narrow, and the arrow stays on the bell. */}
       <PopoverContent
         align="end"
+        alignOffset={-96}
         arrow
         arrowClassName="data-[side=bottom]:border-lavander"
         sideOffset={10}
