@@ -5,14 +5,45 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { LogOut, PanelLeft } from 'lucide-react';
+import { AnimatePresence, MotionConfig, motion } from 'motion/react';
 
 import { NAV_ITEMS } from '@/components/layout/navItems';
 import { logout } from '@/app/services/authApi';
 import { cn } from '@/lib/utils';
 
+// Every row and the active highlight move on this one spring, so when a
+// sub-list opens or closes the highlight lands with the rows, not ahead of them.
+const LAYOUT_SPRING = { type: 'spring', stiffness: 500, damping: 40 };
+
+// A sub-list draws its guide line down, then fades its labels in one by one.
+// Closing is quick: the rows below are already sliding up over it.
+const SUB_LIST = {
+  hidden: { transition: { duration: 0.1 } },
+  shown: { transition: { staggerChildren: 0.08, delayChildren: 0.1 } },
+};
+const SUB_LINE = {
+  hidden: { scaleY: 0, transition: { duration: 0.1 } },
+  shown: { scaleY: 1, transition: { duration: 0.4, ease: 'easeOut' } },
+};
+const SUB_LABEL = {
+  hidden: { opacity: 0, x: -6, transition: { duration: 0.1 } },
+  shown: { opacity: 1, x: 0, transition: { duration: 0.4, ease: 'easeOut' } },
+};
+
 // A detail route (/mappings/abc123) still belongs to its tab.
 function matchesPath(pathname, href) {
   return pathname === href || !!pathname?.startsWith(`${href}/`);
+}
+
+// The active-tab background. One layoutId for parents and sub-items alike,
+// so it slides (and resizes) between the two levels instead of popping.
+function ActiveHighlight() {
+  return (
+    <motion.span
+      layoutId="nav-active"
+      className="absolute inset-0 -z-10 rounded-lg bg-lavander"
+    />
+  );
 }
 
 // Standardized left nav, shared across every app page via AppShell.
@@ -85,59 +116,88 @@ export default function Sidebar() {
         </button>
       </div>
 
+      {/* reducedMotion="user": slides and the line draw become instant for
+          users who ask for less motion; fades still run. */}
       {!collapsed && (
-        <ul className="space-y-0.5">
-          {NAV_ITEMS.map((item) => {
-            const childActive =
-              item.children?.some((child) => matchesPath(pathname, child.href)) ?? false;
-            // Catalog shares its href with its first child; highlight the child only.
-            const isActive = matchesPath(pathname, item.href) && !childActive;
-            // Show sub-items only while inside this section (parent or any child).
-            const showChildren = !!item.children && (isActive || childActive);
-            const Icon = item.icon;
+        <MotionConfig transition={LAYOUT_SPRING} reducedMotion="user">
+          <ul className="space-y-0.5">
+            {NAV_ITEMS.map((item) => {
+              const childActive =
+                item.children?.some((child) => matchesPath(pathname, child.href)) ?? false;
+              // Catalog shares its href with its first child; highlight the child only.
+              const isActive = matchesPath(pathname, item.href) && !childActive;
+              // Show sub-items only while inside this section (parent or any child).
+              const showChildren = !!item.children && (isActive || childActive);
+              const Icon = item.icon;
 
-            return (
-              <li key={item.label}>
-                <Link
-                  href={item.href}
-                  aria-current={isActive ? 'page' : undefined}
-                  className={cn(
-                    'flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-deep-violet-blue transition-colors hover:bg-lavander',
-                    isActive && 'bg-lavander font-medium',
-                    childActive && 'font-medium',
-                  )}
-                >
-                  <Icon className="size-4 shrink-0" />
-                  {item.label}
-                </Link>
+              return (
+                // layout="position": when a sub-list above opens or closes, this
+                // row slides to its new place instead of jumping.
+                <motion.li key={item.label} layout="position" className="relative">
+                  <Link
+                    href={item.href}
+                    aria-current={isActive ? 'page' : undefined}
+                    className={cn(
+                      'relative isolate flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-deep-violet-blue',
+                      (isActive || childActive) && 'font-medium',
+                    )}
+                  >
+                    {isActive && <ActiveHighlight />}
+                    <Icon className="size-4 shrink-0" />
+                    {item.label}
+                  </Link>
 
-                {showChildren && (
-                  <ul className="mt-0.5 ml-5 space-y-0.5 border-l border-violet/60 pl-2">
-                    {item.children.map((child) => {
-                      const isChildActive = matchesPath(pathname, child.href);
-                      return (
-                        <li key={child.label}>
-                          <Link
-                            href={child.href}
-                            aria-current={isChildActive ? 'page' : undefined}
-                            className={cn(
-                              'block rounded-lg px-3 py-1.5 text-xs transition-colors',
-                              isChildActive
-                                ? 'bg-lavander font-medium text-deep-violet-blue'
-                                : 'text-deep-violet-blue/70 hover:bg-lavander hover:text-deep-violet-blue',
-                            )}
-                          >
-                            {child.label}
-                          </Link>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+                  {/* popLayout takes a closing sub-list out of the flow at once,
+                      so the rows and the highlight all aim at their final places
+                      while it fades out. */}
+                  <AnimatePresence initial={false} mode="popLayout">
+                    {showChildren && (
+                      <motion.ul
+                        key="children"
+                        layout="position"
+                        variants={SUB_LIST}
+                        initial="hidden"
+                        animate="shown"
+                        exit="hidden"
+                        className="relative mt-0.5 ml-5 space-y-0.5 pl-2"
+                      >
+                        <motion.span
+                          aria-hidden
+                          variants={SUB_LINE}
+                          className="absolute inset-y-0 left-0 w-px origin-top bg-violet/60"
+                        />
+                        {item.children.map((child) => {
+                          const isChildActive = matchesPath(pathname, child.href);
+                          return (
+                            <li key={child.label}>
+                              <Link
+                                href={child.href}
+                                aria-current={isChildActive ? 'page' : undefined}
+                                className={cn(
+                                  'relative isolate block rounded-lg px-3 py-1.5 text-xs',
+                                  isChildActive
+                                    ? 'font-medium text-deep-violet-blue'
+                                    : 'text-deep-violet-blue/70',
+                                )}
+                              >
+                                {isChildActive && <ActiveHighlight />}
+                                {/* Only the label fades in, so a highlight sliding
+                                    into this row stays fully opaque. */}
+                                <motion.span variants={SUB_LABEL} className="block">
+                                  {child.label}
+                                </motion.span>
+                              </Link>
+                            </li>
+                          );
+                        })}
+                      </motion.ul>
+                    )}
+                  </AnimatePresence>
+                </motion.li>
+              );
+            })}
+          </ul>
+        </MotionConfig>
       )}
 
       {authEnabled && (
