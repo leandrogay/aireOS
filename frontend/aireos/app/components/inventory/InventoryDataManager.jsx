@@ -1,11 +1,9 @@
 'use client';
 
-import { MotionConfig, motion } from 'motion/react';
 import { useState } from 'react';
 
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
+import SegmentedControl from '@/components/ui/SegmentedControl';
 
 import InventoryBulkCreateForm from './InventoryBulkCreateForm';
 import InventoryBulkEditForm from './InventoryBulkEditForm';
@@ -18,13 +16,6 @@ const MODES = [
   { value: 'edit', label: 'Edit' },
   { value: 'shipped', label: 'Temporary sell-in' },
 ];
-
-// `isolate` keeps the sliding highlight (-z-10) behind the label but above the pill.
-const MODE_BUTTON_CLASS = 'relative isolate h-6 rounded-md px-2.5 text-[11px] text-deep-violet-blue/70 hover:text-deep-violet-blue';
-const MODE_BUTTON_ACTIVE_CLASS = 'text-white hover:bg-transparent hover:text-white';
-
-// Same spring as the inventory tabs and the sidebar.
-const HIGHLIGHT_SPRING = { type: 'spring', stiffness: 500, damping: 40 };
 
 /**
  * Create or edit inventory data, record temporary sell-in for this month
@@ -72,30 +63,7 @@ export default function InventoryDataManager({ customers, skus, editRow, onSaved
         <CardTitle className="font-serif text-base font-normal text-deep-violet-blue group-data-[size=sm]/card:text-base">
           {MODES.find((item) => item.value === mode)?.label} data
         </CardTitle>
-        {/* The active background is one shared layoutId, so it slides between
-            modes instead of jumping. */}
-        <MotionConfig transition={HIGHLIGHT_SPRING} reducedMotion="user">
-          <div className="inline-flex h-7 items-center rounded-lg bg-lavander p-0.5">
-            {MODES.map((item) => (
-              <Button
-                key={item.value}
-                type="button"
-                variant="ghost"
-                size="xs"
-                onClick={() => switchMode(item.value)}
-                className={cn(MODE_BUTTON_CLASS, mode === item.value && MODE_BUTTON_ACTIVE_CLASS)}
-              >
-                {mode === item.value && (
-                  <motion.span
-                    layoutId="inventory-mode-active"
-                    className="absolute inset-0 -z-10 rounded-md bg-deep-violet-blue"
-                  />
-                )}
-                {item.label}
-              </Button>
-            ))}
-          </div>
-        </MotionConfig>
+        <SegmentedControl value={mode} onChange={switchMode} options={MODES} ariaLabel="Data entry mode" />
       </CardHeader>
       <CardContent>
         {mode === 'create' && (

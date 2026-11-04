@@ -1,7 +1,7 @@
 'use client';
 
 import SelectDropdown from '@/components/ui/SelectDropdown';
-import { cn } from '@/lib/utils';
+import ToggleButton from '@/components/ui/ToggleButton';
 
 import MonthFilter from './MonthFilter';
 import SkuDropdown from './SkuDropdown';
@@ -96,19 +96,9 @@ export default function InventoryFilters({
       {onAtRiskChange && (
         <div>
           <span className={filterLabelClass}>At risk</span>
-          <button
-            type="button"
-            aria-pressed={atRiskOnly}
-            onClick={() => onAtRiskChange(!atRiskOnly)}
-            className={cn(
-              'h-8 w-full rounded-md border px-2 text-center text-xs font-medium shadow-sm transition',
-              atRiskOnly
-                ? 'border-deep-violet-blue bg-deep-violet-blue text-white hover:bg-deep-violet-blue/90'
-                : 'border-deep-violet-blue/40 bg-white text-deep-violet-blue hover:bg-cream',
-            )}
-          >
+          <ToggleButton pressed={atRiskOnly} onChange={onAtRiskChange}>
             At risk only
-          </button>
+          </ToggleButton>
         </div>
       )}
     </InventoryFilterCard>

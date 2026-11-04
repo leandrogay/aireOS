@@ -123,7 +123,10 @@ aireOS/
     │   │   │                      closed button, popover panel, optional `searchable`, `look` field/filter/compact) →
     │   │   │                      SelectDropdown (pick one, ✓ rows), MultiSelectDropdown (pick many, tick-box rows + "All",
     │   │   │                      `noneMeansAll`), MonthDropdown (one 'YYYY-MM' month, wrapped by promotions MonthPicker and
-    │   │   │                      inventory MonthFilter); build new pickers on these, not on a raw Popover; HeaderCheckboxFilter (table-header pill
+    │   │   │                      inventory MonthFilter); build new pickers on these, not on a raw Popover; toggle kit: SegmentedControl
+    │   │   │                      (pick one of a few, sliding highlight, `look` tint/outline), ToggleButton (one thing on/off,
+    │   │   │                      `look` compact/chip), ToggleField (switch + hint); app/testing shows both kits and lists the
+    │   │   │                      pages not migrated yet; HeaderCheckboxFilter (table-header pill
     │   │   │                      filter, forecast + inventory tables); formStyles.js (cream form input/label/button classes
     │   │   │                      shared by forms and dialogs); Toast (+ hooks/useToast);
     │   │   │                      list-table kit (Customers, Promotions, SKUs, Nomenclatures): DataTable (card: count, search slot,
