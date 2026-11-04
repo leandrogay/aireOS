@@ -7,9 +7,22 @@ import FilterSelect from '@/components/ui/FilterSelect';
 import MonthDropdown from '@/components/ui/MonthDropdown';
 import MultiSelectDropdown from '@/components/ui/MultiSelectDropdown';
 import SelectDropdown from '@/components/ui/SelectDropdown';
-import { filterControlClass as inventorySelectClass, filterLabelClass } from '@/components/inventory/InventoryChrome';
+import { filterLabelClass } from '@/components/inventory/InventoryChrome';
 
-// TEMPORARY: see app/testing/page.js.
+// A living reference for the dropdown kit; see app/testing/page.js.
+
+// How the Dashboard's filter card styles its native selects, shown for
+// comparison with the kit's dropdowns.
+const NATIVE_SELECT_CLASS =
+  'w-full px-2 py-1 text-xs rounded-md border bg-white text-deep-violet-blue border-violet disabled:opacity-50';
+
+// Which component to reach for; keep in step with ui/Dropdown and its children.
+const GUIDE = [
+  ['Pick one value from a list', 'SelectDropdown', 'value, onChange, options (or groups)'],
+  ['Pick any number from a list', 'MultiSelectDropdown', 'values, onChange, options, noneMeansAll'],
+  ['Pick one month', 'MonthDropdown', 'value (YYYY-MM), onChange, min / max'],
+  ['Something else in the panel', 'Dropdown', 'summary, children (query, close) => nodes'],
+];
 
 const CUSTOMERS = [
   { value: '1', label: 'Fairprice' },
@@ -124,10 +137,40 @@ export default function DropdownGallery() {
 
   return (
     <div>
-      <p className="mb-4 rounded-md border border-violet bg-lavander/50 px-3 py-2 text-sm text-deep-violet-blue">
-        Temporary page for reviewing the dropdown refactor. Every control below is the real shared component with
-        sample data; the line under each shows what it currently holds.
-      </p>
+      <section className="mb-4 rounded-lg border border-lavander bg-white p-4 shadow-sm">
+        <h2 className="font-serif text-lg text-deep-violet-blue">How to use this page</h2>
+        <p className="mb-3 text-xs text-deep-violet-blue/60">
+          Every control below is the real shared component with sample data, so click around: open them, search,
+          tick, pick. The line under each shows the value it currently holds and the props it was built with.
+          Build new dropdowns on these rather than on a raw Popover or a native select.
+        </p>
+        <div className="overflow-x-auto rounded-md border border-lavander">
+          <table className="w-full text-left text-xs text-deep-violet-blue">
+            <thead className="bg-cream">
+              <tr className="border-b border-lavander">
+                <th className="px-2.5 py-2 font-semibold">I need to…</th>
+                <th className="px-2.5 py-2 font-semibold">Use</th>
+                <th className="px-2.5 py-2 font-semibold">Main props</th>
+              </tr>
+            </thead>
+            <tbody>
+              {GUIDE.map(([need, component, props]) => (
+                <tr key={component} className="border-b border-lavander/80 last:border-b-0">
+                  <td className="px-2.5 py-2">{need}</td>
+                  <td className="px-2.5 py-2 font-mono">{component}</td>
+                  <td className="px-2.5 py-2 font-mono text-deep-violet-blue/70">{props}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-3 text-xs text-deep-violet-blue/70">
+          <span className="font-medium">look</span> sets where it sits: <span className="font-mono">field</span> in
+          forms and tables, <span className="font-mono">filter</span> in a FilterBar,{' '}
+          <span className="font-mono">compact</span> in the inventory filter cards. Turn on search with{' '}
+          <span className="font-mono">searchable</span> for long lists.
+        </p>
+      </section>
 
       <Section
         title="SelectDropdown — pick one"
@@ -288,7 +331,10 @@ export default function DropdownGallery() {
         </Variant>
       </Section>
 
-      <Section title="Native selects — not converted yet" note="For comparison: the browser draws these menus.">
+      <Section
+        title="Native selects — still used on some pages"
+        note="For comparison: the browser draws these menus. FilterSelect is on Promotions and SKUs; raw selects are on the Dashboard and Forecast filters."
+      >
         <Variant name="ui/FilterSelect (Promotions, SKUs)" props="native" value={native.filterSelect}>
           <FilterSelect
             label="Status"
@@ -298,12 +344,12 @@ export default function DropdownGallery() {
             onChange={(value) => setNative((prev) => ({ ...prev, filterSelect: value }))}
           />
         </Variant>
-        <Variant name="Raw <select> (At risk, Sell-in plan)" props="native + inventory filterControlClass" value={native.inventory}>
+        <Variant name="Raw <select> (Dashboard, Forecast)" props="native, plain classes" value={native.inventory}>
           <span className={filterLabelClass}>Customer</span>
           <select
             value={native.inventory}
             onChange={(event) => setNative((prev) => ({ ...prev, inventory: event.target.value }))}
-            className={inventorySelectClass}
+            className={NATIVE_SELECT_CLASS}
           >
             {CUSTOMERS.map((customer) => (
               <option key={customer.value} value={customer.value}>
