@@ -22,6 +22,9 @@ function PopoverContent({
   alignOffset = 0,
   side = "bottom",
   sideOffset = 4,
+  arrow = false,
+  arrowClassName,
+  children,
   ...props
 }) {
   return (
@@ -40,7 +43,20 @@ function PopoverContent({
             className
           )}
           {...props}
-        />
+        >
+          {/* A rotated square whose top and left borders form the tip, centred on the
+              trigger by Base UI. Only drawn for popups below their trigger (side="bottom"). */}
+          {arrow && (
+            <PopoverPrimitive.Arrow
+              data-slot="popover-arrow"
+              className={cn(
+                "size-2.5 rotate-45 bg-popover data-[side=bottom]:-top-[5px] data-[side=bottom]:border-t data-[side=bottom]:border-l data-[side=bottom]:border-foreground/10",
+                arrowClassName
+              )}
+            />
+          )}
+          {children}
+        </PopoverPrimitive.Popup>
       </PopoverPrimitive.Positioner>
     </PopoverPrimitive.Portal>
   )
