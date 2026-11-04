@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import PageLayout from '@/components/layout/PageLayout';
-import BackLink from '@/components/ui/BackLink';
-import MappingSummaryTable from '@/components/mappings/MappingSummaryTable';
+import MappingList from '@/components/mappings/MappingList';
+import Toast from '@/components/ui/Toast';
+import useToast from '@/hooks/useToast';
 import { normalizeBaseUrl } from '../utils/mappingHelpers';
 import { listMappings } from '../services/mappingApi';
 
@@ -13,8 +14,18 @@ import { listMappings } from '../services/mappingApi';
 // not a latency budget.
 const MAPPING_LOAD_TIMEOUT_MS = 20000;
 
+// useSearchParams (for the discard notice) wants a Suspense boundary above it.
 export default function MappingsPage() {
+  return (
+    <Suspense fallback={null}>
+      <MappingsView />
+    </Suspense>
+  );
+}
+
+function MappingsView() {
   const router = useRouter();
+  const { toast, notify, dismissToast } = useToast();
   const baseUrl = normalizeBaseUrl(process.env.NEXT_PUBLIC_API_URL);
 
   const [mappingReviews, setMappingReviews] = useState([]);
@@ -40,7 +51,7 @@ export default function MappingsPage() {
       setMappingLoadError(
         error?.name === 'TimeoutError' || error?.name === 'AbortError'
           ? `No response from the backend at ${baseUrl} after ${MAPPING_LOAD_TIMEOUT_MS / 1000}s. Check that it is running.`
-          : error.message || 'Unable to load stored mappings.',
+          : error.message || 'Unable to load stored nomenclatures.',
       );
     } finally {
       setIsLoadingMappings(false);
@@ -53,6 +64,24 @@ export default function MappingsPage() {
     Promise.resolve().then(loadMappings);
   }, [loadMappings]);
 
+  // ---- Discard notice ---------------------------------------------------
+
+  // The review page sends ?discarded=<files removed> after a discard. Say it
+  // once, then clear it so a refresh does not repeat it.
+  const discarded = useSearchParams().get('discarded');
+
+  useEffect(() => {
+    if (discarded === null) return;
+    const files = Number(discarded) || 0;
+    notify(
+      'deleted',
+      files
+        ? `Proposal discarded · ${files === 1 ? '1 file' : `${files} files`} removed`
+        : 'Proposal discarded',
+    );
+    router.replace('/mappings');
+  }, [discarded, notify, router]);
+
   // ---- Opening -----------------------------------------------------------
 
   // A row opens the full review: everything about a mapping -- seeing it,
@@ -64,21 +93,18 @@ export default function MappingsPage() {
 
   return (
     <PageLayout
-      title="Mappings"
+      title="Nomenclatures"
       fitScreen
-      headerExtra={
-        <div className="ml-auto flex items-center gap-2">
-          <BackLink href="/upload">Back to Upload</BackLink>
-        </div>
-      }
+      back={{ href: '/upload', label: 'Upload' }}
     >
-      <MappingSummaryTable
+      <MappingList
         mappings={mappingReviews}
         isLoading={isLoadingMappings}
         error={mappingLoadError}
         onOpen={openMapping}
         onRefresh={loadMappings}
       />
+      <Toast toast={toast} onDismiss={dismissToast} />
     </PageLayout>
   );
 }

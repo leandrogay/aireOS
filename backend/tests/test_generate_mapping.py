@@ -340,7 +340,7 @@ def _bucket(monkeypatch, blobs):
 
 def test_next_months_file_resolves_to_the_confirmed_contract(monkeypatch):
     january = gm.read_header_columns("fp.txt", fairprice_txt())
-    _bucket(monkeypatch, {gm.storage.confirmed_mapping_path(gm.fingerprint(january)): {"contract": {"version": 2}, "name": "FP"}})
+    _bucket(monkeypatch, {gm.storage.confirmed_mapping_path(gm.fingerprint(january)): {"contract": {"fields": {}}, "name": "FP"}})
     _forbid_model_calls(monkeypatch)
 
     result = gm.resolve_mapping("fp.txt", fairprice_txt(["01-03-2026", "01-04-2026"]))
@@ -349,29 +349,11 @@ def test_next_months_file_resolves_to_the_confirmed_contract(monkeypatch):
     assert result["name"] == "FP"
 
 
-def test_a_contract_stored_under_the_old_fingerprint_is_still_found(monkeypatch):
+def test_reordered_headers_are_a_different_layout(monkeypatch):
     columns = gm.read_header_columns("fp.txt", fairprice_txt())
-    legacy = gm.legacy_fingerprint(columns)
     _bucket(monkeypatch, {
-        gm.storage.confirmed_mapping_path(legacy): {
-            "contract": {},
-            "name": "Old",
-            "raw_columns": columns,
-        }
-    })
-    _forbid_model_calls(monkeypatch)
-
-    result = gm.resolve_mapping("fp.txt", fairprice_txt())
-
-    assert (result["status"], result["fingerprint"]) == ("mapped", legacy)
-
-
-def test_reordered_headers_do_not_reuse_an_order_free_legacy_contract(monkeypatch):
-    columns = gm.read_header_columns("fp.txt", fairprice_txt())
-    old_key = gm.unordered_fingerprint(columns)
-    _bucket(monkeypatch, {
-        gm.storage.confirmed_mapping_path(old_key): {
-            "contract": {"version": 2},
+        gm.storage.confirmed_mapping_path(gm.fingerprint(columns)): {
+            "contract": {"fields": {}},
             "raw_columns": columns,
         }
     })
@@ -439,6 +421,110 @@ def test_the_schema_stays_within_the_structured_output_union_limit():
     schema = gm.mapping_prompt.output_schema(["SKU No.", "Store Code", "Qty"])
 
     assert _unions(schema) == 0
+
+
+def _enum_at(schema: dict, *path: str) -> set:
+    for key in path:
+        schema = schema["properties"][key] if key != "items" else schema["items"]
+    return set(schema["enum"]) - {""}
+
+
+def test_the_schema_offers_everything_the_contract_accepts():
+    schema = gm.mapping_prompt.output_schema(["Product Code", "Qty"])
+
+    assert _enum_at(schema, "fields", "items", "transforms", "items", "type") == set(gm.mapping_prompt.TRANSFORM_TYPES)
+    assert _enum_at(schema, "fields", "items", "from_layout") == set(gm.mapping_prompt.LAYOUT_SOURCES)
+    assert _enum_at(schema, "melt_groups", "items", "key_target") == set(gm.mapping_prompt.MELT_KEY_TARGETS)
+    assert _enum_at(schema, "melt_groups", "items", "labels", "items", "target") == set(gm.mapping_prompt.LABEL_TARGETS)
+
+
+def _answer_field(target, status, **values):
+    return {
+        "target": target, "status": status, "source": "", "melt_group": "", "from_field": "",
+        "from_layout": "", "value": "", "reason": "", "transforms": [], "confidence": "high",
+        "rationale": "", **values,
+    }
+
+
+def _answer_transform(kind, **values):
+    return {
+        "type": kind, "pattern": "", "group": 0, "values": [], "rules": [], "default": "",
+        "case_sensitive": False, "column": "", "factors": [], "format": "", **values,
+    }
+
+
+def test_a_stated_period_labels_and_multiply_survive_parsing_and_validation():
+    columns = ["Product Code", "Promo cost", "WARD A", "ONLINE"]
+    answer = {
+        "fields": [
+            _answer_field("period_start", "derived", from_layout="stated_period"),
+            _answer_field("period_type", "constant", value="month"),
+            _answer_field("store_name", "mapped", melt_group="outlets"),
+            _answer_field("store_code", "mapped", melt_group="outlets"),
+            _answer_field("quantity_units", "mapped", melt_group="outlets"),
+            _answer_field(
+                "revenue", "derived", from_field="quantity_units",
+                transforms=[_answer_transform("multiply", column="Promo cost")],
+            ),
+        ],
+        "melt_groups": [{
+            "id": "outlets", "select_kind": "between", "select_pattern": "", "select_after": "Promo cost",
+            "select_before": "", "key_target": "store_name", "key_pattern": "", "date_format": "",
+            "period_type": "", "value_target": "quantity_units",
+            "labels": [{"rows_above": 1, "target": "store_code"}], "confidence": "high", "rationale": "",
+        }],
+        "aggregate_to_month": True,
+    }
+
+    contract = gm.validate_contract(gm.mapping_prompt.parse_proposal(answer), columns, gm.TARGET_SCHEMA)
+
+    assert contract["fields"]["period_start"]["from_layout"] == "stated_period"
+    assert contract["fields"]["revenue"]["transforms"] == [{"type": "multiply", "column": "Promo cost"}]
+    group = contract["melt_groups"][0]
+    assert group["key"]["target"] == "store_name"
+    assert group["labels"] == [{"rows_above": 1, "target": "store_code"}]
+    assert contract["warnings"] == []
+
+
+def test_a_uom_factor_default_written_as_text_is_read_as_a_number():
+    answer = {
+        "fields": [_answer_field(
+            "quantity_units", "mapped", source="Qty",
+            transforms=[_answer_transform(
+                "uom_factor", column="UOM", default="12",
+                factors=[{"uom": "EA", "factor": 1, "factor_column": ""}],
+            )],
+        )],
+        "melt_groups": [],
+        "aggregate_to_month": False,
+    }
+
+    transform = gm.mapping_prompt.parse_proposal(answer)["fields"]["quantity_units"]["transforms"][0]
+
+    assert transform["default"] == 12
+
+
+def test_the_prompt_shows_the_cells_above_the_header_counted_up_from_it():
+    layout = {
+        "header_row": 4,
+        "rows_above_header": [{"row": 3, "cells": {"WARD A": "W01"}}, {"row": 1, "cells": {"Product Code": "ER130"}}],
+    }
+
+    prompt = gm.mapping_prompt.user_prompt("er130.xlsx", {}, [], layout, 2, [], [])
+
+    assert '"rows_above": 1' in prompt and '"W01"' in prompt
+    assert '"rows_above": 3' in prompt
+
+
+def test_disable_examples_flag_leaves_every_reference_contract_out_of_the_prompt(monkeypatch):
+    monkeypatch.delenv("MAPPING_DISABLE_EXAMPLES", raising=False)
+    with_examples = gm.mapping_prompt.user_prompt("new.xlsx", {}, [], {}, 2, [], [])
+
+    monkeypatch.setenv("MAPPING_DISABLE_EXAMPLES", "true")
+    without_examples = gm.mapping_prompt.user_prompt("new.xlsx", {}, [], {}, 2, [], [])
+
+    assert len(without_examples) < len(with_examples)
+    assert "NHG" not in without_examples and "NHG" in with_examples
 
 
 def test_unused_parameters_written_as_empty_or_zero_are_left_out():

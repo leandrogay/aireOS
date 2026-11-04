@@ -105,7 +105,7 @@ export default function RecentUploads({
             value={search}
             onChange={changeSearch}
             label="Search uploads"
-            placeholder="Search file, customer, mapping…"
+            placeholder="Search file, customer, nomenclature…"
           />
           <RefreshButton
             onClick={onRefresh}
@@ -144,7 +144,7 @@ export default function RecentUploads({
                     onSort={changeSort}
                   />
                   <th scope="col" className={headerClass}>Status</th>
-                  <th scope="col" className={headerClass}>Mapping</th>
+                  <th scope="col" className={headerClass}>Nomenclature</th>
                   <th scope="col" className={headerClass}>Action</th>
                 </tr>
               </thead>
@@ -235,7 +235,7 @@ export default function RecentUploads({
                           >
                             {/* Once a mapping is approved under a name, that name
                                 is what identifies it here. */}
-                            {upload.mapping_name || 'View mapping'}
+                            {upload.mapping_name || 'View nomenclature'}
                           </Link>
                         ) : (
                           <span className="text-deep-violet-blue/60">—</span>

@@ -16,7 +16,7 @@ import InventoryTableFrame, {
   inventoryTheadClass,
   inventoryThClass,
 } from './InventoryTableFrame';
-import { primaryButtonClass, secondaryButtonClass } from './formStyles';
+import { primaryButtonClass, secondaryButtonClass } from '@/components/ui/formStyles';
 
 const STATUS_LABELS = { new: 'New', changed: 'Changed', unchanged: 'Same' };
 

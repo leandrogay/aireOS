@@ -47,10 +47,6 @@ def test_weekly_and_monthly_layouts_fingerprint_differently():
     assert cp.fingerprint(FAIRPRICE) != cp.fingerprint(weekly)
 
 
-def test_the_legacy_fingerprint_is_still_exact():
-    assert cp.legacy_fingerprint(FAIRPRICE) != cp.legacy_fingerprint(SHIFTED)
-
-
 # ---- Groups ------------------------------------------------------------------------
 
 def test_period_columns_are_grouped_with_a_pattern_that_matches_other_months():

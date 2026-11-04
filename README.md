@@ -111,7 +111,7 @@ it; the transformation reads it and does exactly what it says. See
 | `DELETE /api/uploads/mappings/{fingerprint}/pending` | Discard a rejected proposal |
 
 `POST /api/uploads` is the single ingestion entry point. A recognised layout
-runs through the deterministic transformation in either stored contract format
+runs through the deterministic transformation
 (`backend/app/services/sellout_ingestion.py` → `apply_contract.py`). A matching
 file is standardised, validated and loaded into Cloud SQL. Unrecognised layouts continue to the Gemini
 proposal and review workflow. Mapping does not insert rows into BigQuery.

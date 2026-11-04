@@ -40,9 +40,14 @@ export function trayTitle(rows) {
   if (inFlight) return `Uploading ${inFlight} of ${total} ${total === 1 ? 'file' : 'files'}`;
 
   const failed = rows.filter((item) => fileKind(item) === 'failed').length;
-  const finished = total - failed;
-  if (!failed) return `${finished} ${finished === 1 ? 'upload' : 'uploads'} finished`;
-  return finished ? `${finished} finished, ${failed} failed` : `${failed} ${failed === 1 ? 'upload' : 'uploads'} failed`;
+  const skipped = rows.filter((item) => fileKind(item) === 'skipped').length;
+  const finished = total - failed - skipped;
+  // A skipped duplicate was never sent, so it is not counted as an upload.
+  const parts = [];
+  if (finished) parts.push(`${finished} ${finished === 1 ? 'upload' : 'uploads'} finished`);
+  if (failed) parts.push(`${failed} failed`);
+  if (skipped) parts.push(`${skipped} skipped`);
+  return parts.join(', ');
 }
 
 /**
@@ -56,8 +61,9 @@ export function trayStatus(item) {
   if (kind === 'failed') return item.outcome.error;
   if (kind === 'ready_to_load') return 'Uploaded, not loaded yet';
   if (kind === 'duplicate') return 'Already uploaded. Choose what to do with it.';
+  if (kind === 'skipped') return 'Skipped: already uploaded';
   if (kind === 'needs_review') {
-    return item.outcome.why === 'partial' ? 'Close to a saved mapping' : 'Needs a mapping';
+    return item.outcome.why === 'partial' ? 'Close to a saved nomenclature' : 'Needs a nomenclature';
   }
   const processing = item.outcome?.processing;
   if (processing?.storage_status === 'completed') {

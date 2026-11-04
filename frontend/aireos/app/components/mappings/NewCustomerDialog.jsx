@@ -14,7 +14,7 @@ import {
   labelClass,
   primaryButtonClass,
   secondaryButtonClass,
-} from '@/components/inventory/formStyles';
+} from '@/components/ui/formStyles';
 import { createCustomer } from '@/app/services/catalogApi';
 import { normaliseName, validateName } from '@/app/utils/customerForm';
 import { CHANNELS, channelRetailerName } from '@/app/utils/mappingCustomer';

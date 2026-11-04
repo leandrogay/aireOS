@@ -2,6 +2,7 @@
 
 import { cn } from '@/lib/utils';
 
+import MonthFilter from './MonthFilter';
 import SkuDropdown from './SkuDropdown';
 import { filterControlClass, filterLabelClass, InventoryFilterCard } from './InventoryChrome';
 
@@ -21,8 +22,8 @@ import { filterControlClass, filterLabelClass, InventoryFilterCard } from './Inv
  * @param {(skus: string[]) => void} props.onSkusChange
  * @param {string} props.startMonth 'YYYY-MM' or ''
  * @param {string} props.endMonth 'YYYY-MM' or ''
- * @param {string} [props.defaultStart] 'YYYY-MM' the From picker opens on
- * @param {string} [props.defaultEnd] 'YYYY-MM' the To picker opens on; Clear stays off while both match
+ * @param {string} [props.defaultStart] 'YYYY-MM' the From picker opens on; earlier months are faded
+ * @param {string} [props.defaultEnd] 'YYYY-MM' the To picker opens on; later months are faded. Clear stays off while both match
  * @param {(value: string) => void} props.onStartMonthChange
  * @param {(value: string) => void} props.onEndMonthChange
  * @param {string} [props.status] '' or a doh_status value
@@ -60,29 +61,23 @@ export default function InventoryFilters({
 
       <SkuDropdown skuOptions={skuOptions} skus={skus} onChange={onSkusChange} />
 
-      <label htmlFor="inventory-from-month">
-        <span className={filterLabelClass}>From</span>
-        <input
-          id="inventory-from-month"
-          type="month"
-          value={startMonth}
-          max={endMonth || undefined}
-          onChange={(e) => onStartMonthChange(e.target.value)}
-          className={filterControlClass}
-        />
-      </label>
+      <MonthFilter
+        label="From"
+        value={startMonth}
+        max={endMonth}
+        dataStart={defaultStart}
+        dataEnd={defaultEnd}
+        onChange={onStartMonthChange}
+      />
 
-      <label htmlFor="inventory-to-month">
-        <span className={filterLabelClass}>To</span>
-        <input
-          id="inventory-to-month"
-          type="month"
-          value={endMonth}
-          min={startMonth || undefined}
-          onChange={(e) => onEndMonthChange(e.target.value)}
-          className={filterControlClass}
-        />
-      </label>
+      <MonthFilter
+        label="To"
+        value={endMonth}
+        min={startMonth}
+        dataStart={defaultStart}
+        dataEnd={defaultEnd}
+        onChange={onEndMonthChange}
+      />
 
       {statusOptions && (
         <label htmlFor="inventory-doh-status">

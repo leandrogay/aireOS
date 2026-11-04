@@ -1,6 +1,6 @@
 'use client';
 
-import { CheckCircle2, CircleAlert } from 'lucide-react';
+import { CheckCircle2, CircleAlert, SlidersHorizontal } from 'lucide-react';
 
 import InfoTooltip from '@/components/ui/InfoTooltip';
 import SelectDropdown from '@/components/ui/SelectDropdown';
@@ -238,15 +238,15 @@ function FieldRow({
   onConfirm,
   onUndo,
   onGroupSettingsChange,
+  onEdit,
   disabled,
 }) {
-  // The retailer is reset in step 1, where it is changed.
-  const canReset = entry.field !== 'retailer' && canResetField(entry.field);
+  const canReset = canResetField(entry.field);
   const missing = isMissing(entry);
   const unsure = needsConfirm(entry);
   const group = groups.find((item) => item.id === entry.groupId);
   // A field filled without a column says how instead of offering columns:
-  // the retailer is changed in step 1, the headings' fields follow their group.
+  // the headings' fields follow their group.
   const picker = entry.status !== 'auto';
 
   return (
@@ -268,27 +268,49 @@ function FieldRow({
       </div>
 
       <div className="min-w-0 space-y-1">
-        {picker ? (
-          <SourcePicker
-            entry={entry}
-            rows={rows}
-            mapping={mapping}
-            groups={groups}
-            onAssign={onAssign}
-            onChooseGroup={onChooseGroup}
-            onClear={onClear}
+        <div className="flex items-start gap-1.5">
+          <div className="min-w-0 flex-1">
+            {picker ? (
+              <SourcePicker
+                entry={entry}
+                rows={rows}
+                mapping={mapping}
+                groups={groups}
+                onAssign={onAssign}
+                onChooseGroup={onChooseGroup}
+                onClear={onClear}
+                disabled={disabled}
+              />
+            ) : (
+              <p className="pt-1 text-xs text-deep-violet-blue">
+                {entry.description}
+              </p>
+            )}
+          </div>
+          {/* Every way the field can be filled, and the steps on its value;
+              the dropdown beside it is the quick way to pick a column. */}
+          <button
+            type="button"
             disabled={disabled}
-          />
-        ) : (
-          <p className="pt-1 text-xs text-deep-violet-blue">
-            {entry.description}
-            {entry.field === 'retailer' && <span className="text-deep-violet-blue/60"> · set in step 1</span>}
+            onClick={() => onEdit(entry)}
+            aria-label={`Edit how ${entry.label} is filled`}
+            title={`Edit how ${entry.label} is filled`}
+            className={cn(smallButton, 'inline-flex items-center gap-1')}
+          >
+            <SlidersHorizontal aria-hidden="true" className="size-3" />
+            Edit
+          </button>
+        </div>
+        {entry.transform && entry.status !== 'auto' && (
+          <p className="truncate text-[11px] text-deep-violet-blue/60" title={summariseTransforms(entry.transform).join('; ')}>
+            Then: {summariseTransforms(entry.transform).join('; ')}
           </p>
         )}
         {group && (
           <ColumnGroupDetails
             group={group}
             entry={(mapping.columnGroups || []).find((item) => item.id === group.entryId) || null}
+            columns={mapping.columns || []}
             onSettingsChange={onGroupSettingsChange}
             disabled={disabled}
           />
@@ -322,9 +344,10 @@ function FieldRow({
 /**
  * Step 2: every field of the sell-out data and where this mapping reads it
  * from. A field is changed by choosing its source: a column, or for a measure
- * a column group read one row per period or outlet. A low-confidence guess
- * of is signed off with "Looks right". The details of each field are behind
- * its info icon.
+ * a column group read one row per period or outlet -- or, through Edit, any
+ * other way the backend can fill it, with steps applied to the value. A
+ * low-confidence guess is signed off with "Looks right". The details of each
+ * field are behind its info icon.
  *
  * Required fields are always shown. Optional ones are folded away unless one
  * of them needs the reviewer, and the fields the pipeline always fills itself
@@ -342,13 +365,16 @@ function FieldRow({
  *   onConfirm: (entry: object) => void,
  *   onUndo: (entry: object) => void,
  *   onGroupSettingsChange: (groupId: string, changes: object) => void,
+ *   onEdit: (entry: object) => void,
  *   canResetField: (field: string) => boolean,
  *   onResetField: (field: string) => void,
  *   disabled: boolean,
  * }} props
  */
 export default function FieldTable({ coverage, confirmedNow, ...props }) {
-  const decidable = coverage.filter((entry) => entry.decidable);
+  // The retailer follows the customer and channel chosen in step 1, so it is
+  // not offered again here.
+  const decidable = coverage.filter((entry) => entry.decidable && entry.field !== 'retailer');
   const required = decidable.filter((entry) => entry.required);
   const optional = decidable.filter((entry) => !entry.required);
   const automatic = coverage.filter((entry) => !entry.decidable);

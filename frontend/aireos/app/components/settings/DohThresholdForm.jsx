@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { CircleAlert, Loader2, RotateCcw } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { errorClass, inputClass, invalidInputClass, labelClass } from '@/components/inventory/formStyles';
+import { errorClass, inputClass, invalidInputClass, labelClass } from '@/components/ui/formStyles';
 import { saveDohThresholds } from '@/app/services/settingsApi';
 import {
   DEFAULT_DOH_THRESHOLD_FORM,

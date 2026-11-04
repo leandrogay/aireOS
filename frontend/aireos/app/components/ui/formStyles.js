@@ -1,6 +1,6 @@
-// Class strings shared by the inventory forms and filters. They match the
-// cream/lavender inputs in promotions/PromotionForm.jsx, which keeps its own
-// copies as local constants.
+// Class strings shared by the forms and dialogs across features (inventory,
+// customers, mappings, settings, upload). They match the cream/lavender inputs
+// in promotions/PromotionForm.jsx, which keeps its own copies as local constants.
 
 export const inputClass =
   'w-full min-w-0 max-w-full rounded-md border border-lavander bg-cream px-2.5 py-1.5 text-sm text-deep-violet-blue placeholder:text-deep-violet-blue/45 focus:border-violet focus:outline-none disabled:opacity-60';

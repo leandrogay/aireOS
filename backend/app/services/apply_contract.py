@@ -32,237 +32,111 @@ def read_source_dataframe(filename: str, data: bytes) -> pd.DataFrame:
         ) from exc
 
     raise ContractApplicationError(
-        f"Unsupported file format for mapping: {extension or '(none)'}"
+        f"Unsupported file format for nomenclature: {extension or '(none)'}"
     )
+
+
+# What the sample should show of the file, with how much a first sighting of a
+# value is worth. The retailer outweighs the rest together, so the channel
+# split from step 1 is always visible before anything else is.
+SAMPLE_COVERAGE_WEIGHTS = {"retailer": 4, "store_code": 1, "sku": 1, "period_start": 1}
+# Rows a reviewer should look at but a plain spread finds only by luck.
+SAMPLE_NUMBER_COLUMNS = ("quantity_units", "revenue")
+# Only reserved when the sample is big enough to still show the spread.
+SAMPLE_ODD_ROW_MIN_LIMIT = 3
+
+
+def _odd_row_position(dataframe: pd.DataFrame) -> int | None:
+    """Position of the first row with a negative figure or a missing value, else None."""
+    odd = pd.Series(False, index=range(len(dataframe)))
+    for column in SAMPLE_NUMBER_COLUMNS:
+        if column in dataframe:
+            numbers = pd.to_numeric(dataframe[column], errors="coerce").reset_index(drop=True)
+            odd |= (numbers < 0) | numbers.isna()
+    for column in SAMPLE_COVERAGE_WEIGHTS:
+        if column in dataframe:
+            odd |= dataframe[column].isna().reset_index(drop=True)
+    positions = odd.to_numpy().nonzero()[0]
+    return int(positions[0]) if len(positions) else None
+
+
+def _sample_positions(dataframe: pd.DataFrame, limit: int) -> list[int]:
+    """
+    Row positions of up to `limit` rows, chosen to show as many distinct
+    retailers, stores, products and periods as possible: one unusual row first
+    (see _odd_row_position), then repeatedly the row that adds the most values
+    not shown yet. Ties go to the earlier row, so a file with nothing to spread
+    over gives its first rows. Kept in file order so the sample reads like the file.
+    """
+    columns = [column for column in SAMPLE_COVERAGE_WEIGHTS if column in dataframe]
+    values = {column: dataframe[column].reset_index(drop=True) for column in columns}
+    shown = {column: set() for column in columns}
+    chosen = []
+
+    def take(position: int) -> None:
+        chosen.append(position)
+        for column in columns:
+            shown[column].add(values[column].iloc[position])
+
+    if limit >= SAMPLE_ODD_ROW_MIN_LIMIT and (odd := _odd_row_position(dataframe)) is not None:
+        take(odd)
+
+    while len(chosen) < min(limit, len(dataframe)):
+        score = pd.Series(0, index=range(len(dataframe)))
+        for column in columns:
+            is_new = ~values[column].isin(shown[column]) & values[column].notna()
+            score += is_new * SAMPLE_COVERAGE_WEIGHTS[column]
+        score.iloc[chosen] = -1
+        take(int(score.to_numpy().argmax()))
+    return sorted(chosen)
 
 
 def preview_rows(dataframe: pd.DataFrame, limit: int = 3) -> list[dict[str, Any]]:
     """
     Return a small JSON-safe sample of mapped output without exposing the
-    whole upload.
+    whole upload. The sample spreads over retailers, stores, products and
+    periods and includes an unusual row if there is one, so a reviewer sees
+    every channel the rules produce rather than only the file's first rows.
 
     Dates are rendered as strings and NaN as null, because the caller is JSON
     and neither survives the trip otherwise.
     """
-    preview = dataframe.head(limit).copy()
+    preview = dataframe.iloc[_sample_positions(dataframe, limit)].copy()
     for column in preview.select_dtypes(include=["datetime", "datetimetz"]).columns:
         preview[column] = preview[column].dt.strftime("%Y-%m-%d")
     preview = preview.astype(object).where(preview.notna(), None)
     return preview.to_dict(orient="records")
 
 
-def _apply_transformation(
-    series: pd.Series, target: str, transformation: dict[str, Any]
-) -> pd.Series:
-    """Apply one validated generic operation to a mapped target column."""
-    operation = transformation.get("type")
-
-    if operation == "regex_extract":
-        pattern = re.compile(transformation["pattern"])
-        group = transformation.get("group", 1)
-
-        def extract(value):
-            if pd.isna(value) or str(value).strip() == "":
-                return value
-            match = pattern.search(str(value))
-            return match.group(group) if match else pd.NA
-
-        result = series.map(extract)
-        unmatched = (
-            series.notna()
-            & series.astype("string").str.strip().ne("")
-            & result.isna()
-        )
-        if unmatched.any():
-            raise ContractApplicationError(
-                f"regex_extract for {target!r} did not match {int(unmatched.sum())} value(s)."
-            )
-        return result
-
-    if operation == "value_map":
-        case_sensitive = transformation.get("case_sensitive", False)
-        values = transformation.get("values") or {}
-        lookup = {
-            (key if case_sensitive else key.casefold()): value
-            for key, value in values.items()
-        }
-        has_default = "default" in transformation
-        default = transformation.get("default")
-        missing = []
-
-        def translate(value):
-            if pd.isna(value) or str(value).strip() == "":
-                return value
-            text = str(value).strip()
-            key = text if case_sensitive else text.casefold()
-            if key in lookup:
-                return lookup[key]
-            if has_default:
-                return default
-            missing.append(text)
-            return pd.NA
-
-        result = series.map(translate)
-        if missing:
-            examples = sorted(set(missing))[:3]
-            raise ContractApplicationError(
-                f"value_map for {target!r} has no mapping or default for: {examples}"
-            )
-        return result
-
-    raise ContractApplicationError(
-        f"Unsupported transformation type for {target!r}: {operation!r}"
-    )
-
-
-def _apply_identity_mapping(
-    frame: pd.DataFrame,
-    identity_mapping: dict[str, Any],
-    transformations: dict[str, dict] | None = None,
-) -> pd.DataFrame:
+def _labels(group: dict, layout: dict | None, columns: list[str]) -> dict[str, dict[str, str]]:
     """
-    Rename each source column to the target field it fills.
+    Each label field of a melt group and, per melted column, the cell above
+    that column's header it reads (SingHealth's outlet code over its name).
 
-    One column may fill several fields: an article description carries the
-    product name and the size in the same string. A rename cannot express
-    that -- it moves a column, it does not copy one -- so the first target is
-    renamed and every further target gets its own copy of the column.
-
-    Once every target has its own column, optional transformations are applied
-    by target name. Their configuration comes from the GCS contract.
+    A melted column with no cell there fails the file: its rows would load
+    with no store code and be counted as the retailer's "all stores".
     """
-    from app.services.generate_mapping import normalize_targets
-
-    renames: dict[str, str] = {}
-    copies: list[tuple[str, str]] = []
-
-    for source, value in identity_mapping.items():
-        targets = normalize_targets(value)
-        if not targets:
+    labels = {}
+    header_row = int((layout or {}).get("header_row") or 1)
+    above = {item["row"]: item["cells"] for item in (layout or {}).get("rows_above_header") or []}
+    for label in group.get("labels") or []:
+        # No rows above: the header itself, read for a second field.
+        if label["rows_above"] == 0:
+            labels[label["target"]] = {column: column for column in columns}
             continue
-        renames[source] = targets[0]
-        copies.extend((targets[0], extra) for extra in targets[1:])
-
-    result = frame.rename(columns=renames)
-
-    for filled, extra in copies:
-        result[extra] = result[filled]
-
-    for target, transformation in (transformations or {}).items():
-        if target not in result:
+        row = header_row - label["rows_above"]
+        cells = above.get(row) or {}
+        missing = [column for column in columns if column not in cells]
+        if missing:
             raise ContractApplicationError(
-                f"Transformation target is missing after mapping: {target!r}"
+                f"Melt group {group['id']!r} reads {label['target']!r} from row {row}, "
+                f"which has nothing above {missing[:3]}."
             )
-        result[target] = _apply_transformation(result[target], target, transformation)
-
-    return result
-
-
-def _period_type(group: dict[str, Any]) -> str | None:
-    declared = str(group.get("period_type") or "").lower()
-    if declared in ("week", "month"):
-        return declared
-
-    headers = [str(column).lower() for column in group.get("columns") or []]
-    if headers and all("week" in header for header in headers):
-        return "week"
-    if headers and all("month" in header for header in headers):
-        return "month"
-    return None
+        labels[label["target"]] = {column: cells[column] for column in columns}
+    return labels
 
 
-def _apply_v1_contract(
-    dataframe: pd.DataFrame,
-    contract: dict[str, Any],
-    id_vars: list[str] | None = None,
-) -> pd.DataFrame:
-    """Apply identity renames and wide-to-long melt groups without using AI."""
-    identity_mapping = contract.get("identity_mapping") or {}
-    melt_groups = contract.get("melt_groups") or []
-    transformations = contract.get("transformations") or {}
-    if not identity_mapping and not melt_groups:
-        raise ContractApplicationError("Mapping contract is empty.")
-
-    missing_identity = [column for column in identity_mapping if column not in dataframe]
-    if missing_identity:
-        raise ContractApplicationError(
-            f"Identity source columns are missing: {missing_identity}"
-        )
-
-    melt_columns = {
-        column
-        for group in melt_groups
-        for column in (group.get("columns") or [])
-    }
-    missing_melt = sorted(melt_columns - set(dataframe.columns))
-    if missing_melt:
-        raise ContractApplicationError(
-            f"Melt source columns are missing: {missing_melt}"
-        )
-
-    if id_vars is None:
-        id_vars = [column for column in dataframe.columns if column not in melt_columns]
-
-    if not melt_groups:
-        return _apply_identity_mapping(
-            dataframe[id_vars].copy(), identity_mapping, transformations
-        )
-
-    melted_tables = []
-    for group in melt_groups:
-        target_field = group.get("target_field")
-        columns = group.get("columns") or []
-        pattern = group.get("period_extract_regex")
-        date_format = group.get("date_format")
-        if not target_field or not columns or not pattern or not date_format:
-            raise ContractApplicationError(
-                "Each melt group requires target_field, columns, "
-                "period_extract_regex and date_format."
-            )
-
-        melted = pd.melt(
-            dataframe,
-            id_vars=id_vars,
-            value_vars=columns,
-            var_name="_source_column",
-            value_name=target_field,
-        )
-        extracted = melted["_source_column"].str.extract(pattern, expand=False)
-        if isinstance(extracted, pd.DataFrame):
-            extracted = extracted.iloc[:, 0]
-        if extracted.isna().any():
-            raise ContractApplicationError(
-                f"Period regex did not match every column for {target_field!r}."
-            )
-
-        melted["period_start"] = pd.to_datetime(
-            extracted, format=date_format, errors="raise"
-        )
-        melted["period_type"] = _period_type(group)
-        melted = melted.drop(columns=["_source_column"])
-        melted_tables.append(melted)
-
-    merge_keys = id_vars + ["period_start", "period_type"]
-    result = melted_tables[0]
-    for table in melted_tables[1:]:
-        result = pd.merge(result, table, on=merge_keys, how="outer")
-
-    metric_columns = [group["target_field"] for group in melt_groups]
-    result = result.dropna(subset=metric_columns, how="all")
-    result["period_end"] = result["period_start"]
-    weekly = result["period_type"].eq("week")
-    monthly = result["period_type"].eq("month")
-    result.loc[weekly, "period_end"] = (
-        result.loc[weekly, "period_start"] + pd.Timedelta(days=6)
-    )
-    result.loc[monthly, "period_end"] = (
-        result.loc[monthly, "period_start"] + pd.offsets.MonthEnd(0)
-    )
-
-    return _apply_identity_mapping(result, identity_mapping, transformations)
-
-
-def _v2_melt(dataframe: pd.DataFrame, contract: dict) -> pd.DataFrame:
+def _melt(dataframe: pd.DataFrame, contract: dict, layout: dict | None) -> pd.DataFrame:
     """Reshape every approved melt group and retain its source row context."""
     groups = contract.get("melt_groups") or []
     source = dataframe.reset_index(drop=True).copy()
@@ -309,6 +183,8 @@ def _v2_melt(dataframe: pd.DataFrame, contract: dict) -> pd.DataFrame:
                 ) from exc
 
         melted[key["target"]] = key_values
+        for target, cells in _labels(group, layout, selected).items():
+            melted[target] = melted["_source_column"].map(cells)
         melted = melted.drop(columns=["_source_column"])
         if group.get("period_type"):
             melted["_period_type"] = group["period_type"]
@@ -354,13 +230,13 @@ def _rule_matches(value: str, rule: dict, case_sensitive: bool) -> bool:
     return bool(re.search(expected, actual, flags=flags))
 
 
-def _apply_v2_transform(
+def _apply_transform(
     series: pd.Series,
     target: str,
     transformation: dict,
     context: pd.DataFrame,
 ) -> pd.Series:
-    """Apply one validated version 2 transform using source-row context."""
+    """Apply one validated transform using source-row context."""
     operation = transformation["type"]
     if operation == "regex_extract":
         pattern = re.compile(transformation["pattern"])
@@ -441,6 +317,9 @@ def _apply_v2_transform(
             dtype="float64",
         )
         return numeric * factor_values
+    if operation == "multiply":
+        numeric = pd.to_numeric(series, errors="coerce")
+        return numeric * pd.to_numeric(context[transformation["column"]], errors="coerce")
     raise ContractApplicationError(
         f"Unsupported transformation type for {target!r}: {operation!r}"
     )
@@ -454,11 +333,11 @@ def _transformed_field(
 ) -> pd.Series:
     result = series
     for transformation in entry.get("transforms") or []:
-        result = _apply_v2_transform(result, target, transformation, context)
+        result = _apply_transform(result, target, transformation, context)
     return result
 
 
-def _aggregate_v2(result: pd.DataFrame, aggregate: dict) -> pd.DataFrame:
+def _aggregate(result: pd.DataFrame, aggregate: dict) -> pd.DataFrame:
     """Roll mapped rows up to the contract's declared grain."""
     if aggregate.get("period") == "month":
         result["period_start"] = (
@@ -497,16 +376,43 @@ def _derive_period_fields(result: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
-def _apply_v2_contract(
+def _stated_month(layout: dict | None) -> pd.Timestamp:
+    """
+    The calendar month the file states it covers above its table, for a
+    contract that reads its period from there. A statement spanning several
+    months cannot say which month a row belongs to.
+    """
+    stated = (layout or {}).get("stated_period")
+    if not stated:
+        raise ContractApplicationError(
+            "The nomenclature reads the period from the file's title, but this file states no period."
+        )
+    start, end = pd.Timestamp(stated["start"]), pd.Timestamp(stated["end"])
+    if start.to_period("M") != end.to_period("M"):
+        raise ContractApplicationError(
+            f"The file states the period {stated['start']} to {stated['end']}, which is more "
+            "than one month, so its rows cannot be dated to a month."
+        )
+    return start.to_period("M").to_timestamp()
+
+
+def apply_contract(
     dataframe: pd.DataFrame,
     contract: dict,
-    source_file: str | None,
+    *,
+    source_file: str | None = None,
+    layout: dict | None = None,
 ) -> pd.DataFrame:
-    """Execute every instruction in one approved version 2 contract."""
+    """
+    Execute every instruction in one approved contract, deterministically and
+    without using AI. `layout` is what layout detection found in the file
+    (read_table); the contract reads its stated period and the cells above
+    its header from there.
+    """
     if not contract.get("fields"):
-        raise ContractApplicationError("Mapping contract is empty.")
+        raise ContractApplicationError("Nomenclature contract is empty.")
 
-    working = _v2_melt(dataframe, contract)
+    working = _melt(dataframe, contract, layout)
     fields = contract["fields"]
     output = pd.DataFrame(index=working.index)
 
@@ -525,6 +431,8 @@ def _apply_v2_contract(
             output[target] = source_file
         elif status == "not_available":
             output[target] = pd.NA
+        elif status == "derived" and entry.get("from_layout") == "stated_period":
+            output[target] = _stated_month(layout)
         elif target == "period_type" and status == "derived":
             if "_period_type" not in working:
                 raise ContractApplicationError(
@@ -561,22 +469,6 @@ def _apply_v2_contract(
     if measures:
         output = output.dropna(subset=measures, how="all")
     if contract.get("aggregate") and not output.empty:
-        output = _aggregate_v2(output, contract["aggregate"])
+        output = _aggregate(output, contract["aggregate"])
     output = _derive_period_fields(output)
     return output.reindex(columns=BUSINESS_COLUMNS).reset_index(drop=True)
-
-
-def apply_contract(
-    dataframe: pd.DataFrame,
-    contract: dict[str, Any],
-    id_vars: list[str] | None = None,
-    *,
-    source_file: str | None = None,
-) -> pd.DataFrame:
-    """Apply an approved mapping contract deterministically without using AI."""
-    if mapping_contract.is_v2(contract):
-        return _apply_v2_contract(dataframe, contract, source_file)
-    result = _apply_v1_contract(dataframe, contract, id_vars)
-    if source_file is not None:
-        result["source_file"] = source_file
-    return result

@@ -18,6 +18,14 @@ import { fieldLabel } from '../../utils/mappingReview';
  *   total?: number,
  * }} props
  */
+// Units x price leaves float noise (17.700000000000003); show money to cents.
+// Codes arrive as strings, so only real numbers are touched.
+function formatCell(value) {
+  if (value == null || value === '') return '—';
+  if (typeof value === 'number' && !Number.isInteger(value)) return String(Number(value.toFixed(2)));
+  return String(value);
+}
+
 export default function OutputPreview({ preview, fields, total = preview.rows_total }) {
   const rows = preview.preview;
   const columns = fields
@@ -42,7 +50,7 @@ export default function OutputPreview({ preview, fields, total = preview.rows_to
               <tr key={index} className="border-t border-lavander">
                 {columns.map((column) => (
                   <td key={column} className="whitespace-nowrap px-2 py-1.5">
-                    {row[column] == null || row[column] === '' ? '—' : String(row[column])}
+                    {formatCell(row[column])}
                   </td>
                 ))}
               </tr>

@@ -1,9 +1,9 @@
 'use client';
 
-import CheckboxDropdown from '@/app/components/promotions/CheckboxDropdown';
+import Dropdown from '@/components/ui/Dropdown';
 
 import { filterLabelClass } from './InventoryChrome';
-import { checkRowClass } from './formStyles';
+import { checkRowClass } from '@/components/ui/formStyles';
 
 /**
  * SKU multi-select with an "All SKUs" option at the top, shared by the
@@ -25,7 +25,7 @@ export default function SkuDropdown({ skuOptions, skus, onChange }) {
   return (
     <div className="min-w-0 [&_button]:h-8 [&_button]:rounded-md [&_button]:border-violet [&_button]:bg-white [&_button]:px-2 [&_button]:py-0 [&_button]:text-xs">
       <span className={filterLabelClass}>SKU</span>
-      <CheckboxDropdown
+      <Dropdown
         summary={skus.length ? `${skus.length} selected` : 'All SKUs'}
         searchable
         searchPlaceholder="Search SKUs…"
@@ -59,7 +59,7 @@ export default function SkuDropdown({ skuOptions, skus, onChange }) {
               ))}
           </>
         )}
-      </CheckboxDropdown>
+      </Dropdown>
     </div>
   );
 }

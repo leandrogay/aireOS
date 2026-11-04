@@ -35,17 +35,15 @@ from app.services.column_profile import (
     column_samples,
     detect_column_groups,
     fingerprint,
+    head_rows,
     header_template,
     layout_templates,
-    legacy_fingerprint,
-    unordered_fingerprint,
     profile_columns,
     to_snake_case,
 )
 from app.services.mapping_contract import (
     CONFIDENCE_LEVELS,
     layout_instructions,
-    normalize_targets,
     unreviewed_low_confidence,
     validate_contract,
 )
@@ -55,8 +53,6 @@ __all__ = [
     "column_samples",
     "fingerprint",
     "header_template",
-    "legacy_fingerprint",
-    "normalize_targets",
     "to_snake_case",
     "unreviewed_low_confidence",
     "validate_contract",
@@ -185,7 +181,7 @@ def _ask_gemini(messages: list[dict], schema: dict) -> str:
     # A prompt blocked outright comes back with no candidates at all.
     candidate = response.candidates[0] if response.candidates else None
     if candidate is None or candidate.finish_reason in _REFUSAL_FINISH_REASONS:
-        raise MappingGenerationError("Gemini declined to propose a mapping for this file.")
+        raise MappingGenerationError("Gemini declined to propose a nomenclature for this file.")
     if candidate.finish_reason == "MAX_TOKENS":
         raise MappingGenerationError("Gemini's proposal was cut off before it was complete.")
     text = response.text
@@ -298,29 +294,12 @@ def generate_mapping_contract(
 # ---- Stored mappings -------------------------------------------------------------
 
 def find_confirmed(columns: list[str]) -> tuple[str, dict] | tuple[None, None]:
-    """
-    The confirmed mapping for this layout and the fingerprint it is stored
-    under: the ordered template fingerprint first, then compatible historical
-    template/exact-header keys whose stored raw columns have the same order.
-    """
-    # Ordered signatures are authoritative. The other two keys keep contracts
-    # confirmed before this rule changed addressable without asking users to
-    # recreate them.
-    ordered_key = fingerprint(columns)
-    for key in dict.fromkeys([
-        ordered_key,
-        unordered_fingerprint(columns),
-        legacy_fingerprint(columns),
-    ]):
-        envelope = storage.download_json(storage.confirmed_mapping_path(key))
-        if not envelope:
-            continue
-        if key != ordered_key:
-            stored_columns = envelope.get("raw_columns") or []
-            if not stored_columns or fingerprint(stored_columns) != ordered_key:
-                continue
-        return key, envelope
-    return None, None
+    """The confirmed mapping for this layout and the fingerprint it is stored under."""
+    key = fingerprint(columns)
+    envelope = storage.download_json(storage.confirmed_mapping_path(key))
+    if not envelope:
+        return None, None
+    return key, envelope
 
 
 def find_partial_match(columns: list[str]) -> dict | None:
@@ -414,6 +393,9 @@ def resolve_mapping(filename: str, data: bytes, uploaded_to: str | None = None) 
         # confirmation, even if the user edits it in between.
         "raw_columns": columns,
         "column_samples": column_samples(frame),
+        # The first rows lined up by column, for the review's view of the top
+        # of the file (with layout's rows_above_header).
+        "head_rows": head_rows(frame),
         "column_profile": profile_columns(frame, layout),
         "layout": layout_summary(layout),
         "target_schema": TARGET_SCHEMA,
@@ -425,7 +407,7 @@ def resolve_mapping(filename: str, data: bytes, uploaded_to: str | None = None) 
         "attempts": proposal["attempts"],
         # Every product code in the file and what the code table makes of it,
         # for the review screen's code table.
-        "sku_codes": mapping_checks.sku_codes(frame, proposal["contract"]),
+        "sku_codes": mapping_checks.sku_codes(frame, proposal["contract"], layout),
         "example_file": uploaded_to,
         "source_filename": filename,
         "provider": proposal["provider"],

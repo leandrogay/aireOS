@@ -56,7 +56,7 @@ def envelope_for(key: str, path: Path) -> dict:
         "contract": contract,
         "proposal": contract,
         "checks": checks,
-        "sku_codes": mapping_checks.sku_codes(frame, contract),
+        "sku_codes": mapping_checks.sku_codes(frame, contract, layout),
         "source_filename": path.name,
         "model": "reference contract",
         "name": entry["name"],
@@ -75,7 +75,7 @@ def main() -> int:
     args = parser.parse_args()
 
     for key, pattern in PATTERNS.items():
-        matches = sorted(SAMPLES.glob(pattern))
+        matches = sorted(SAMPLES.rglob(pattern))
         if not matches:
             print(f"{key:<20} skipped: no file matching {pattern} in {SAMPLES}")
             continue

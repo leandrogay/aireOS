@@ -21,7 +21,7 @@ Reusable UI primitives already exist in `app/components/ui/`: `Button`, `Card`
 reload icon — pass the page's loading flag as `isRefreshing`), `Skeleton`
 (pulsing placeholder block), `TableSkeleton` (placeholder `<tr>` rows for a
 table's first load — pass the header's column count as `columns`), and the
-list-table kit the Customers and Promotions tables are built from: `DataTable`
+list-table kit the Customers, Promotions, SKUs and Nomenclatures tables are built from: `DataTable`
 (the card: count, refresh, Retry on error, empty state, `toolbar` and `footer`
 slots), which renders `TableGrid` (declare `columns` with optional `width` and
 `sortField`; widths make it `table-fixed` so columns never jump; use it alone
@@ -29,7 +29,9 @@ with `variant="nested"` and `inset` for a table inside an expanded row),
 `ExpandableRow` (chevron + details row + actions cell), `RowActions` ("..."
 menu; `disabledReason` explains a blocked action), `StatusPill`, `SortHeader`
 (+ `TABLE_HEADER_CLASS`), `TableSearch`, `TablePagination` (+ `PAGE_SIZES`)
-and `FilterSelect`, with `paginate`/`resultCountLabel`/`nextSort`/
+`FilterBar` (the filter card above a table: a wrapping grid plus Reset) with
+`FilterSelect` / `MultiSelectDropdown` inside it (their shared closed look is
+`filterControlClass` in `filterControl.js`), with `paginate`/`resultCountLabel`/`nextSort`/
 `summariseNames` in `app/utils/tableView.js` and the `hooks/useExpandedRows`
 and `hooks/useConfirmAction` (Delete → ConfirmDialog) hooks. A new table
 is `DataTable` + a `columns.js` + a row built on `ExpandableRow`; see
