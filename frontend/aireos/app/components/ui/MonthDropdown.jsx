@@ -36,6 +36,8 @@ function monthValue(year, monthIndex) {
  * @param {string} [props.summary] text on the closed button
  * @param {string} [props.placeholder]
  * @param {boolean} [props.invalid]
+ * @param {'field' | 'filter' | 'compact'} [props.look] see ui/Dropdown
+ * @param {string} [props.ariaLabel]
  */
 export default function MonthDropdown({
   value,
@@ -47,11 +49,22 @@ export default function MonthDropdown({
   summary,
   placeholder = 'Select month',
   invalid = false,
+  look = 'field',
+  ariaLabel,
 }) {
   const shownSummary = summary ?? (value ? MONTH_FORMAT.format(new Date(`${value}-01T00:00:00Z`)) : '');
 
   return (
-    <Dropdown summary={shownSummary} placeholder={placeholder} invalid={invalid} listClassName="p-2">
+    // Exactly the button's width and no scroll: the grid lays itself out to fit.
+    <Dropdown
+      summary={shownSummary}
+      placeholder={placeholder}
+      look={look}
+      ariaLabel={ariaLabel}
+      invalid={invalid}
+      panelClassName="w-(--anchor-width)"
+      listClassName="max-h-none p-2"
+    >
       {(_query, close) => (
         // MonthGrid only mounts while the dropdown is open, so every time it
         // opens it starts on the selected month's year (or this year).

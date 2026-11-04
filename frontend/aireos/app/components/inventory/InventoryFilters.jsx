@@ -1,10 +1,11 @@
 'use client';
 
+import SelectDropdown from '@/components/ui/SelectDropdown';
 import { cn } from '@/lib/utils';
 
 import MonthFilter from './MonthFilter';
 import SkuDropdown from './SkuDropdown';
-import { filterControlClass, filterLabelClass, InventoryFilterCard } from './InventoryChrome';
+import { filterLabelClass, InventoryFilterCard } from './InventoryChrome';
 
 /**
  * SKU multi-select and month range shared by the overview and the customer
@@ -80,22 +81,16 @@ export default function InventoryFilters({
       />
 
       {statusOptions && (
-        <label htmlFor="inventory-doh-status">
+        <div className="min-w-0">
           <span className={filterLabelClass}>DOH status</span>
-          <select
-            id="inventory-doh-status"
+          <SelectDropdown
             value={status}
-            onChange={(e) => onStatusChange(e.target.value)}
-            className={filterControlClass}
-          >
-            <option value="">All</option>
-            {statusOptions.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
+            onChange={onStatusChange}
+            options={[{ value: '', label: 'All' }, ...statusOptions]}
+            ariaLabel="DOH status"
+            look="compact"
+          />
+        </div>
       )}
 
       {onAtRiskChange && (
