@@ -668,8 +668,8 @@ def _get_read_engine() -> Engine:
 # rows are "the" sell-out for a given retailer+month.
 #
 # Revenue on each chosen row stays the ingested sellout.revenue. A blank
-# revenue (NULL, not an explicit 0) is quantity_units times skus.price, the
-# one current catalog list price for that SKU. Inventory reads only units
+# revenue (NULL, not an explicit 0) uses the average list price effective
+# across its sales days. Inventory reads only units
 # from this view, so the price join does not change stock figures.
 EFFECTIVE_SELLOUT_CTE = """
     WITH monthly_coverage AS (
@@ -696,10 +696,22 @@ EFFECTIVE_SELLOUT_CTE = """
     effective_sellout AS (
         SELECT p.retailer_id, p.store_code, p.sku, p.period_start, p.period_end,
                p.quantity_units,
-               COALESCE(p.revenue, p.quantity_units * k.price) AS revenue,
+               COALESCE(p.revenue, p.quantity_units * effective_price.price) AS revenue,
                p.period_type
         FROM preferred_rows p
-        LEFT JOIN skus k ON k.sku = p.sku
+        LEFT JOIN LATERAL (
+            SELECT CASE WHEN COUNT(*) = COUNT(day_price.price)
+                        THEN AVG(day_price.price) END AS price
+            FROM generate_series(p.period_start::date, p.period_end::date,
+                                 interval '1 day') AS sale_day(day_date)
+            LEFT JOIN LATERAL (
+                SELECT price FROM sku_price_periods
+                WHERE sku = p.sku AND effective_from <= sale_day.day_date::date
+                  AND (effective_to IS NULL OR effective_to >= sale_day.day_date::date)
+                ORDER BY effective_from DESC LIMIT 1
+            ) AS day_price ON TRUE
+            WHERE p.revenue IS NULL
+        ) AS effective_price ON TRUE
     )
 """
 
@@ -710,9 +722,21 @@ PRICED_SELLOUT_FROM = """
 (
     SELECT src.retailer_id, src.store_code, src.sku, src.period_start, src.period_end,
            src.period_type, src.quantity_units,
-           COALESCE(src.revenue, src.quantity_units * k.price) AS revenue
+           COALESCE(src.revenue, src.quantity_units * effective_price.price) AS revenue
     FROM sellout src
-    LEFT JOIN skus k ON k.sku = src.sku
+    LEFT JOIN LATERAL (
+        SELECT CASE WHEN COUNT(*) = COUNT(day_price.price)
+                    THEN AVG(day_price.price) END AS price
+        FROM generate_series(src.period_start::date, src.period_end::date,
+                             interval '1 day') AS sale_day(day_date)
+        LEFT JOIN LATERAL (
+            SELECT price FROM sku_price_periods
+            WHERE sku = src.sku AND effective_from <= sale_day.day_date::date
+              AND (effective_to IS NULL OR effective_to >= sale_day.day_date::date)
+            ORDER BY effective_from DESC LIMIT 1
+        ) AS day_price ON TRUE
+        WHERE src.revenue IS NULL
+    ) AS effective_price ON TRUE
 ) s
 """
 

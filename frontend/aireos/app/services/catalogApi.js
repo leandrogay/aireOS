@@ -107,6 +107,14 @@ export function updateSku(sku, payload) {
   });
 }
 
+/** PUT /api/catalog/skus/{sku}/price-periods/{periodId}. */
+export function correctSkuPricePeriod(sku, periodId, payload) {
+  return request(`/api/catalog/skus/${encodeURIComponent(sku)}/price-periods/${periodId}`, {
+    method: 'PUT',
+    body: payload,
+  });
+}
+
 /** DELETE /api/catalog/skus/{sku}; archives rather than removing history. */
 export function archiveSku(sku) {
   return request(`/api/catalog/skus/${encodeURIComponent(sku)}`, {

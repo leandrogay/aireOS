@@ -49,8 +49,10 @@ def test_sku_ranking_reads_through_effective_sellout(monkeypatch):
     (sql, _params) = conn.calls[0]
     assert "effective_sellout" in sql
     assert "monthly_coverage" in sql
-    # A stored revenue is kept. A blank one is units times the catalog price.
-    assert "COALESCE(p.revenue, p.quantity_units * k.price)" in sql
+    # A stored revenue is kept. A blank one uses the price on each sale day.
+    assert "COALESCE(p.revenue, p.quantity_units * effective_price.price)" in sql
+    assert "FROM sku_price_periods" in sql
+    assert "generate_series(p.period_start::date, p.period_end::date" in sql
 
 
 def test_week_summary_prices_a_blank_revenue_from_the_catalog(monkeypatch):
@@ -60,7 +62,8 @@ def test_week_summary_prices_a_blank_revenue_from_the_catalog(monkeypatch):
 
     (sql, _params) = conn.calls[0]
     assert "effective_sellout" not in sql
-    assert "COALESCE(src.revenue, src.quantity_units * k.price)" in sql
+    assert "COALESCE(src.revenue, src.quantity_units * effective_price.price)" in sql
+    assert "generate_series(src.period_start::date, src.period_end::date" in sql
 
 
 def test_sku_ranking_order_by_has_no_secondary_sort_key(monkeypatch):
@@ -543,7 +546,7 @@ def test_period_comparison_without_mode_covers_both_of_the_customers_channels(mo
     conn = _install(
         monkeypatch,
         lambda sql, params: [{"period_start": date(2026, 8, 1), "period_end": date(2026, 8, 31), "period_type": "month"}]
-        if "effective_sellout" in sql and "LIMIT 1" in sql
+        if "SELECT period_start, period_end, period_type FROM effective_sellout" in sql
         else [],
     )
 

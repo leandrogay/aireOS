@@ -1,7 +1,13 @@
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from sqlalchemy.exc import OperationalError
+
+from app.routers import promotions
 from app.services.promotion_pricing import (
+    _price_on_day,
     estimate_sales_revenue,
     estimate_sales_row,
     estimate_unit_price,
@@ -82,6 +88,17 @@ def test_historical_price_is_selected_by_sale_day():
     assert result["price_assumed_before_history"] is False
 
 
+def test_future_price_starts_on_its_effective_date():
+    periods = [
+        {"price": Decimal("10"), "effective_from": date(1900, 1, 1),
+         "effective_to": date(2026, 11, 30)},
+        {"price": Decimal("12"), "effective_from": date(2026, 12, 1),
+         "effective_to": None},
+    ]
+    assert _price_on_day(periods, date(2026, 11, 30), Decimal("12"))[0] == Decimal("10")
+    assert _price_on_day(periods, date(2026, 12, 1), Decimal("12"))[0] == Decimal("12")
+
+
 def test_actual_revenue_is_never_replaced_and_ambiguous_promos_are_flagged():
     sale = {
         "sku": "SKU-1", "retailer_id": 55, "store_code": "4",
@@ -120,3 +137,20 @@ def test_actual_only_batch_does_not_query_catalog(monkeypatch):
     result = estimate_sales_revenue(rows)
     assert result[0]["revenue"] == Decimal("25.00")
     assert result[0]["estimated_revenue"] is None
+
+
+def test_revenue_estimate_route_maps_database_outage_to_503(monkeypatch):
+    def unavailable(_rows):
+        raise OperationalError("SELECT 1", {}, RuntimeError("database unavailable"))
+
+    monkeypatch.setattr(promotions.promotion_pricing, "estimate_sales_revenue", unavailable)
+    app = FastAPI()
+    app.include_router(promotions.router)
+    response = TestClient(app).post("/api/promotions/revenue-estimate", json={"rows": [{
+        "sku": "SKU-1", "retailer_id": 55, "store_code": "4",
+        "period_start": "2026-01-01", "period_end": "2026-01-31",
+        "quantity_units": 10,
+    }]})
+
+    assert response.status_code == 503
+    assert "Unable to reach the pricing database" in response.json()["detail"]
