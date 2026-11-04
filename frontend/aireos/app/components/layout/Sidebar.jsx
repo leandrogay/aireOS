@@ -242,28 +242,33 @@ export default function Sidebar() {
         </AnimatePresence>
       </MotionConfig>
 
-      {authEnabled && (
-        <div className="mt-auto pt-4">
-          <button
-            type="button"
-            onClick={handleLogout}
-            disabled={isSigningOut}
-            title={collapsed ? 'Sign out' : undefined}
-            className={cn(
-              'flex w-full items-center rounded-lg py-2 text-sm text-deep-violet-blue/75 transition-colors hover:bg-lavander hover:text-deep-violet-blue disabled:cursor-wait disabled:opacity-60',
-              collapsed ? 'justify-center px-2' : 'gap-3 px-3',
-            )}
+      <AnimatePresence initial={false}>
+        {authEnabled && !collapsed && (
+          <motion.div
+            key="sign-out"
+            variants={NAV_CONTENT}
+            initial="hidden"
+            animate="shown"
+            exit="hidden"
+            className="mt-auto w-50 shrink-0 pt-4"
           >
-            <LogOut className="size-4 shrink-0" />
-            {!collapsed && (isSigningOut ? 'Signing out...' : 'Sign out')}
-          </button>
-          {!collapsed && logoutError && (
-            <p className="mt-1 px-3 text-xs text-red-700" role="alert">
-              {logoutError}
-            </p>
-          )}
-        </div>
-      )}
+            <button
+              type="button"
+              onClick={handleLogout}
+              disabled={isSigningOut}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-deep-violet-blue/75 transition-colors hover:bg-lavander hover:text-deep-violet-blue disabled:cursor-wait disabled:opacity-60"
+            >
+              <LogOut className="size-4 shrink-0" />
+              {isSigningOut ? 'Signing out...' : 'Sign out'}
+            </button>
+            {logoutError && (
+              <p className="mt-1 px-3 text-xs text-red-700" role="alert">
+                {logoutError}
+              </p>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.nav>
   );
 }
