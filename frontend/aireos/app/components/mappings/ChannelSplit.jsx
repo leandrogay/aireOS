@@ -5,7 +5,7 @@ import { AlertTriangle, Plus, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import SelectDropdown from '@/components/ui/SelectDropdown';
-import { inputClass } from '@/components/inventory/formStyles';
+import { inputClass } from '@/components/ui/formStyles';
 import { channelRetailerName } from '@/app/utils/mappingCustomer';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 import {

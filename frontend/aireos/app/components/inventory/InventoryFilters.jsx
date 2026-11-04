@@ -2,7 +2,7 @@
 
 import { cn } from '@/lib/utils';
 
-import MonthDropdown from './MonthDropdown';
+import MonthFilter from './MonthFilter';
 import SkuDropdown from './SkuDropdown';
 import { filterControlClass, filterLabelClass, InventoryFilterCard } from './InventoryChrome';
 
@@ -61,7 +61,7 @@ export default function InventoryFilters({
 
       <SkuDropdown skuOptions={skuOptions} skus={skus} onChange={onSkusChange} />
 
-      <MonthDropdown
+      <MonthFilter
         label="From"
         value={startMonth}
         max={endMonth}
@@ -70,7 +70,7 @@ export default function InventoryFilters({
         onChange={onStartMonthChange}
       />
 
-      <MonthDropdown
+      <MonthFilter
         label="To"
         value={endMonth}
         min={startMonth}

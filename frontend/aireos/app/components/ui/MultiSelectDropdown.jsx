@@ -29,8 +29,8 @@ function summaryOf(options, values, allLabel) {
 /**
  * Pick any number of options from a list, in a closed-by-default dropdown
  * whose menu is a tick-box list headed by an "All" row -- the look of the
- * promotion form's retailer and store pickers (components/promotions/
- * CheckboxDropdown), as a component any page can use.
+ * promotion form's retailer and store pickers (ui/Dropdown with a checkbox
+ * list inside), as a component any page can use.
  *
  * The selection is the parent's (`values`, `onChange`). Ticking "All" ticks
  * every option, unticking it clears them; nothing ticked and everything ticked

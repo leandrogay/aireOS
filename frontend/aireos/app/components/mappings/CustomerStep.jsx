@@ -6,7 +6,7 @@ import { AlertTriangle, CheckCircle2, Loader2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import InfoTooltip from '@/components/ui/InfoTooltip';
 import SelectDropdown from '@/components/ui/SelectDropdown';
-import { inputClass, labelClass } from '@/components/inventory/formStyles';
+import { inputClass, labelClass } from '@/components/ui/formStyles';
 import { canRenameOutputs, channelRetailerName, retailerChoices } from '@/app/utils/mappingCustomer';
 import { PROPOSER } from '@/app/utils/mappingReview';
 import { retailerLabel } from '@/app/utils/retailerLabel';

@@ -118,7 +118,11 @@ aireOS/
     │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column), Sidebar (NAV_ITEMS)
     │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, calendar, popover, DateRangePicker
     │   │   │                      (typed date inputs, not a calendar); MonthGrid (year + 12-month grid, shared by
-    │   │   │                      promotions MonthPicker and the dashboard month-range picker); Toast (+ hooks/useToast);
+    │   │   │                      MonthDropdown and the dashboard month-range picker); Dropdown (popover shell holding any
+    │   │   │                      content: checkbox lists, MonthGrid); MonthDropdown (one 'YYYY-MM' month, wrapped by
+    │   │   │                      promotions MonthPicker and inventory MonthFilter); HeaderCheckboxFilter (table-header pill
+    │   │   │                      filter, forecast + inventory tables); formStyles.js (cream form input/label/button classes
+    │   │   │                      shared by forms and dialogs); Toast (+ hooks/useToast);
     │   │   │                      list-table kit (Customers, Promotions, SKUs, Nomenclatures): DataTable (card: count, search slot,
     │   │   │                      refresh, Retry, empty state, footer) → TableGrid (column config → fixed widths, sort headers,
     │   │   │                      skeleton; `nested` variant + `inset` for tables inside rows), ExpandableRow, RowActions
@@ -131,14 +135,14 @@ aireOS/
     │   │   │                      RevenueTrendCard (always by format) → TrendChart (FormatTrendChart),
     │   │   │                      ComparisonMixChart; PeriodTexture (hatched "past period" fills), TooltipChange,
     │   │   │                      PeriodComparisonDetail, RevenueSummaryCards + FormatMixBar, SkuRanking
-    │   │   ├── promotions/        PromotionForm, PromotionList → PromotionRow (on ui/DataTable), columns.js, CheckboxDropdown
+    │   │   ├── promotions/        PromotionForm, PromotionList → PromotionRow (on ui/DataTable), columns.js, MonthPicker (on ui/MonthDropdown)
     │   │   ├── customers/         CustomersView (state), CustomerTable → CustomerRow (expandable, retailers inside),
     │   │   │                      RetailerTable (nested TableGrid), columns.js (shared grid), NameFormDialog,
     │   │   │                      LinkRetailerDialog, UnlinkedRetailers
     │   │   ├── skus/              SKU catalog filters/table, create-edit form, details/history
     │   │   ├── mappings/          Nomenclature list: MappingList (state) → MappingFilters (on ui/FilterBar), MappingRow (on
     │   │   │                      ui/DataTable), columns.js; plus the review screen (MappingReviewPanel and its steps)
-    │   │   ├── forecast/          ForecastChart/Filters/Table, HeaderCheckboxFilter (shared)
+    │   │   ├── forecast/          ForecastChart/Filters/Table
     │   ├── services/              Backend API wrappers
     │   │   ├── promotionsApi.js   request() + parseApiError() + promotion/retailer/store endpoints
     │   │   ├── catalogApi.js      SKU CRUD, details, options and archive API wrappers

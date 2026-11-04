@@ -13,7 +13,7 @@ import {
   labelClass,
   primaryButtonClass,
   secondaryButtonClass,
-} from '@/components/inventory/formStyles';
+} from '@/components/ui/formStyles';
 import { normaliseName, validateName } from '@/app/utils/customerForm';
 import { cn } from '@/lib/utils';
 

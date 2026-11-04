@@ -6,7 +6,7 @@ import { Loader2, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import Disclosure from '@/components/ui/Disclosure';
-import { primaryButtonClass, secondaryButtonClass } from '@/components/inventory/formStyles';
+import { primaryButtonClass, secondaryButtonClass } from '@/components/ui/formStyles';
 import useCustomers from '@/hooks/useCustomers';
 import useMappingEdits from '@/hooks/useMappingEdits';
 import { createRetailer, linkRetailer } from '@/app/services/catalogApi';
