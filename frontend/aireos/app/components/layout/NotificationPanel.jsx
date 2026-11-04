@@ -122,11 +122,11 @@ function MappingDetails({ payload }) {
     <>
       <p className="text-deep-violet-blue/80">
         {payload.amended
-          ? 'An approved file mapping was changed. Every future file with these columns will use the new version.'
-          : 'A new file mapping was approved. Every future file with these columns will be read with it.'}
+          ? 'An approved file nomenclature was changed. Every future file with these columns will use the new version.'
+          : 'A new file nomenclature was approved. Every future file with these columns will be read with it.'}
       </p>
       <div className="mt-2 space-y-1">
-        <Field label="Mapping" value={payload.name} />
+        <Field label="Nomenclature" value={payload.name} />
         <Field label="Vendor" value={payload.vendor} />
         {/* Approvals since loading became its own step say what waits to be
             loaded (backend confirm_mapping); older ones said what they loaded. */}
@@ -181,9 +181,9 @@ const TITLES = {
   low_stock: lowStockTitle,
   forecast_success: (payload) => forecastTitle(payload, true),
   forecast_failure: (payload) => forecastTitle(payload, false),
-  mapping_uploaded: (payload) => `[MAPPING] ${payload.amended ? 'Mapping updated' : 'New mapping approved'} – ${payload.name}`,
-  rollback_success: () => '[SUCCESS] Upload Rolled Back',
-  rollback_failure: () => '[FAILURE] Upload Rollback Failed',
+  mapping_uploaded: (payload) => `[NOMENCLATURE] ${payload.amended ? 'Nomenclature updated' : 'New nomenclature approved'} – ${payload.name}`,
+  rollback_success: () => `[SUCCESS] Upload Rolled Back`,
+  rollback_failure: () => `[FAILURE] Upload Rollback Failed`,
 };
 
 const MARK_READ_BUTTON_CLASS =

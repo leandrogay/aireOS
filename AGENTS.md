@@ -72,19 +72,24 @@ aireOS/
 │   │       ├── upload_loading.py  Loading uploads into sell-out as its own confirmed step: per-upload load state after an approval,
 │   │       │                      dry run (rows, periods, rows replaced/overwritten) and the load itself (POST /api/uploads/load[/preview])
 │   │       ├── layout_detection.py PURE: finds the data table in an upload (sheet not a pivot, header row, preamble +
-│   │       │                      stated period, footer/total rows, total + spacer columns, merged cells filled down)
+│   │       │                      stated period, cells above the header by column, footer/total rows (and summary
+│   │       │                      lines under a total), total + spacer columns, merged cells filled down)
 │   │       ├── column_profile.py  PURE: whole-file column profile, repeated period/outlet column groups, template fingerprint
-│   │       ├── mapping_contract.py PURE: contract v2 -- instructions only: one entry per target field (mapped/derived/
-│   │       │                      constant/system/not_available), layout, aggregate (monthly roll-up), sku code table;
-│   │       │                      upgrade()/downgrade() for v1, validate_contract, required fields, reviewer diff
-│   │       ├── generate_mapping.py Confirmed-contract lookup (template + legacy fingerprint), near-match, Gemini proposal with
+│   │       ├── mapping_contract.py PURE: the contract -- instructions only: one entry per target field (mapped/derived/
+│   │       │                      constant/system/not_available), layout, aggregate (monthly roll-up), sku code table,
+│   │       │                      melt-group labels (cells above the header, e.g. store codes), period from the stated
+│   │       │                      period (from_layout), multiply (units x unit price); read_contract, validate_contract,
+│   │       │                      required fields, reviewer diff
+│   │       ├── generate_mapping.py Confirmed-contract lookup (ordered template fingerprint), near-match, Gemini proposal with
 │   │       │                      check-and-repair loop for unknown layouts
 │   │       ├── mapping_prompt.py  PURE: field definitions, glossary, per-file JSON output schema, prompt text
 │   │       ├── mapping_checks.py  PURE: static checks of a contract against its file (never runs it): every product code a
-│   │       │                      master SKU, required fields, rule coverage, revenue-name guard, stated period; confidence
-│   │       ├── reference_contracts.py Hand-written v2 contracts for FairPrice / NHG / Sheng Siong (golden tests, prompt examples, eval)
+│   │       │                      master SKU, required fields, rule coverage, revenue-name guard, stated period, labels;
+│   │       │                      confidence
+│   │       ├── reference_contracts.py Hand-written contracts for FairPrice (monthly, weekly) / NHG / Sheng Siong / SingHealth /
+│   │       │                      Prime (golden tests, eval; `prompt_example` ones are prompt examples)
 │   │       ├── mapping_view.py    Contracts <-> the review screen's "packet"/"rules" shape (one rule per target field)
-│   │       ├── apply_contract.py  Deterministic transformation executor for version 1 and version 2 mapping contracts
+│   │       ├── apply_contract.py  Deterministic transformation executor for mapping contracts
 │   │       ├── validation_service.py Row-level validation against TARGET_SCHEMA after mapping
 │   │       ├── pl_forecast.py     Pure P&L sell-out forecast (base + building blocks), no I/O
 │   │       └── forecast_service.py BigQuery reads/MERGEs for the forecast table, refresh_forecast()
@@ -114,10 +119,13 @@ aireOS/
     │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, calendar, popover, DateRangePicker
     │   │   │                      (typed date inputs, not a calendar); MonthGrid (year + 12-month grid, shared by
     │   │   │                      promotions MonthPicker and the dashboard month-range picker); Toast (+ hooks/useToast);
-    │   │   │                      list-table kit (Customers + Promotions): DataTable (card: count, search slot, refresh,
-    │   │   │                      Retry, empty state, footer) → TableGrid (column config → fixed widths, sort headers,
+    │   │   │                      list-table kit (Customers, Promotions, SKUs, Nomenclatures): DataTable (card: count, search slot,
+    │   │   │                      refresh, Retry, empty state, footer) → TableGrid (column config → fixed widths, sort headers,
     │   │   │                      skeleton; `nested` variant + `inset` for tables inside rows), ExpandableRow, RowActions
-    │   │   │                      ("..." menu, disabledReason), StatusPill; + hooks/useExpandedRows, hooks/useConfirmAction
+    │   │   │                      ("..." menu, disabledReason), StatusPill (success/info/muted/warning/danger); + hooks/useExpandedRows,
+    │   │   │                      hooks/useConfirmAction; filter kit (Promotions, SKUs, Nomenclatures): FilterBar (card + grid +
+    │   │   │                      Reset) holding FilterSelect (single pick) / MultiSelectDropdown (tick-box), whose closed look
+    │   │   │                      comes from filterControl.js (filterControlClass)
     │   │   ├── dashboard/         DashboardFilters, CustomerSelector, FilterBadge, PeriodControls (Period /
     │   │   │                      Compare to: DateRangeControl, CompareControl, MonthRangeCalendar — whole months only),
     │   │   │                      RevenueTrendCard (always by format) → TrendChart (FormatTrendChart),
@@ -128,6 +136,8 @@ aireOS/
     │   │   │                      RetailerTable (nested TableGrid), columns.js (shared grid), NameFormDialog,
     │   │   │                      LinkRetailerDialog, UnlinkedRetailers
     │   │   ├── skus/              SKU catalog filters/table, create-edit form, details/history
+    │   │   ├── mappings/          Nomenclature list: MappingList (state) → MappingFilters (on ui/FilterBar), MappingRow (on
+    │   │   │                      ui/DataTable), columns.js; plus the review screen (MappingReviewPanel and its steps)
     │   │   ├── forecast/          ForecastChart/Filters/Table, HeaderCheckboxFilter (shared)
     │   ├── services/              Backend API wrappers
     │   │   ├── promotionsApi.js   request() + parseApiError() + promotion/retailer/store endpoints
@@ -215,9 +225,16 @@ Invariants that cross domains:
   where the data sits is its `layout`, and a retailer's product codes become master SKUs through the `sku` field's
   `value_map` (the code table). A product code that is not a master SKU fails the contract's checks and blocks
   approval until the code table is fixed or the product is added to the SKU master.
-- The transformation (`sellout_ingestion` → `apply_contract`) runs both contract formats. Version 2 executes layout,
-  field, melt, transform and aggregate instructions; version 1 remains supported for existing mappings. An amended
-  version 1 mapping is written back in version 1 when it fits (`mapping_contract.downgrade`).
+- A store is sold through one of its customer's retailers (`{customer}_offline` or `{customer}_online`), never both.
+  `mapping_checks.check_store_channels` runs on the transformed rows in the mapping test and on approval (422), and
+  `sellout_service.load_clean_rows` refuses a file whose rows split a store, or that sends a store to a different
+  retailer than its stored sales (`StoreChannelError`, the load dry run says so first). A reload with a corrected
+  rule moves its own stores: its earlier rows are deleted before the check. Rows with no store code are
+  customer-level totals and are exempt.
+- There is one contract format. The transformation (`sellout_ingestion` → `apply_contract`) executes its layout,
+  field, melt, transform and aggregate instructions. "Version" means only a mapping's approval count: each approval
+  stores the envelope with `version` + 1 and archives the one it replaces under `mappings/history/<fp>/v<n>.json`;
+  uploads record the `mapping_version` they were loaded with, which drives `reload_available`.
 - Time: the backend stores and returns instants in UTC (TIMESTAMPTZ, Postgres sessions pinned to UTC
   in `sql.py`, ISO strings with `Z`/`+00:00`) and takes "today" as the UTC day, never `date.today()`.
   The frontend shows every time in Singapore time through `lib/formatDate.js`, and uses
@@ -266,7 +283,7 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
    (duplicate-filename check unless `force`).
 2. Per file, concurrently (`asyncio.gather` → `to_thread(resolve_and_apply_mapping)`):
    `generate_mapping.resolve_mapping`: `layout_detection.read_table` → fingerprint the header templates →
-   `mappings/confirmed/<fp>.json` (or a compatible legacy fingerprint) → `status: "mapped"`; either contract format
+   `mappings/confirmed/<fp>.json` → `status: "mapped"`; the contract
    runs through `sellout_ingestion.process_confirmed_upload` -- unless `REQUIRE_LOAD_CONFIRMATION` is on, when the
    file is left `ready_to_load` for step 4 instead. Else Gemini proposes a contract (structured output,
    schema built from this file's headers, SKU master listed),
@@ -277,7 +294,8 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
    checks, the product codes and the SKU master), the user edits **rules** and the product-code table,
    `POST /api/mappings/{fp}/preview` re-runs the checks, and `POST .../{fp}/confirm` rebuilds + re-validates and
    re-checks the contract (unknown product codes → 422), records the reviewer's diff against the proposal, archives
-   any previous version under `mappings/history/` and stores it under `confirmed/`. `DELETE .../{fp}/pending` discards.
+   any previous version under `mappings/history/` and stores it under `confirmed/`. `DELETE .../{fp}/pending` discards
+   the proposal **and the uploads still waiting on it** (`upload_loading.discard_proposal`; nothing was loaded from them).
    The page is numbered steps (customer → fields → product codes → checks) beside a "What's left" list
    (`utils/reviewChecklist.js`). A mapping belongs to a **customer**: confirm requires `customer_id` (stored as
    `customer_id`/`customer_name`, and as `vendor` for upload history) and 422s while any retailer the contract writes
@@ -343,11 +361,15 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | upload `mapping_status` load states (`ready_to_load`, `mapped`, `reload_available`, in `upload_loading`); load preview/result keys (`preview_loads`, `load_uploads`, `sellout_ingestion.preview_confirmed_upload`); confirm `waiting_uploads`/`outdated_uploads`/`load_requires_confirmation` | `utils/uploadHistory.js`, `utils/loadPreview.js` (`LOAD_PREVIEW_FIELDS`), `LoadConfirmDialog.jsx` → `LoadFileRow.jsx` (sample rows via `OutputPreview`), `ApprovedSummary.jsx` |
 | `settings/doh._settings_view` keys, `GLOBAL_DEFAULT_*_DOH` | `DohSettingsTable.jsx`, `dohSettingsForm.js` (`GLOBAL_DEFAULT_DOH`) |
 | `DohThresholdsUpdate` field names | `buildDohThresholdPayload` |
+| `DELETE /api/mappings/{fp}/pending` → `removed_uploads`; review packet `waitingUploads` (pending only, `upload_loading.uploads_waiting_on_proposal`) | `ConfirmDiscardDialog.jsx` (names the files), `UploadProvider.forgetMapping` (drops their `needs_review` rows), `app/mappings/page.js` (`?discarded=<n>` toast) |
 | `ConfirmRequest.customer_id`; packet `customerId`, `customerName`, `sourceFilename`; `mapping_contract.retailer_outputs` | `mappingApi.confirmMapping`, `utils/mappingCustomer.js` (`retailerOutputs` mirrors it), `utils/mappingList.js` |
 | packet `columnGroups` (`mapping_view.column_groups`: detected groups from `column_profile.review_column_groups`, with contract-ready `group` settings, `readings`, `meltGroupId`/`field`) and `measureFields` | `utils/mappingReview.js` (`toGroups`, `groupChoices`, `toRules`), `FieldTable.jsx`, `ColumnGroupDetails.jsx`, `UnusedColumns.jsx`. `review_column_groups` adds month-named headings for review only -- never fold them into `detect_column_groups`, which the layout fingerprint is built from |
 | `CustomerCreate.retailer_names` (`customer_service._attach_retailer`: links a retailer an upload made, 409 for another customer's) | `NewCustomerDialog.jsx` |
 | `customer_service.list_customers` keys (`customers[].retailers[]`, `in_use`, `unlinked_retailers`), retailer writes' `{ retailer, customer }` | `useCustomers.js`, `components/customers/*` |
 | `schemas.catalog.normalise_name` slug rule, `in_use` rules | `customerForm.js` (`normaliseName`, `*BlockReason`) |
+| Contract vocabulary: `mapping_contract` statuses, `TRANSFORM_TYPES`, `RULE_OPS`, `MELT_KEY_TARGETS`/`LABEL_TARGETS` (melt-group `labels`; `rows_above: 0` = the headings again, so any descriptive field (`HEADING_FIELDS`) can read them), `from_layout: "stated_period"` | `utils/fieldDecision.js` (`fieldMethods`, `currentDecision`, `decisionEntry`, `withFieldDecision`), `utils/transformSteps.js` (`STEP_TYPES`, `RULE_OPS`), `FieldEditorDialog.jsx` |
+| `mappings.ContractSettings` (`instructions.aggregate` on preview/confirm); packet `instructions`, `headRows`; preview `layout`, `head_rows`, `preview_error` | `useMappingEdits` (`instructionsPayload`), `FileSettings.jsx`, `FileTop.jsx`, `MappingReviewPanel.jsx`, `mappingApi.previewMapping/confirmMapping` |
+| Retailer = `{customer}_online` / `{customer}_offline` (`sellout_service._retailer_for`); `mapping_contract.retailer_outputs` (incl. retailers read off headings, given `columns`/`layout`); packet `columnValues` | `utils/retailerSplit.js` (`splitDecision`, `withCustomerChannels`), `ChannelSplit.jsx`, `mappingCustomer.retailerDecision` |
 | `HTTPException.detail` shapes | `parseApiError()` |
 
 When you change the left column, grep the right column in the same PR.
@@ -413,7 +435,7 @@ half first (it defines the contract), then the frontend half, then update §3.4 
   depends on them by name.
 
 ### `/backend/app/services/{layout_detection,column_profile,mapping_contract,mapping_checks,mapping_prompt,generate_mapping,mapping_view}` — Mapping generation
-- Think in DataFrames and contracts: a v2 contract has one entry per target field (`mapped` from a column or a melt
+- Think in DataFrames and contracts: a contract has one entry per target field (`mapped` from a column or a melt
   group, `derived`, `constant`, `system`, `not_available` with a reason), `melt_groups` that select columns by rule
   (`pattern` / `between`), never by exact name, a `layout` and an `aggregate` instruction.
 - Generation only writes and checks contracts; it never transforms or loads data, and its checks are static (it

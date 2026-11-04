@@ -92,7 +92,7 @@ export default function ReviewChecklist({ items, isConfirmed, aiProposed = false
           className={cn(primaryButtonClass, 'flex-1')}
         >
           {busy === 'approve' && <Loader2 aria-hidden="true" className="size-4 animate-spin" />}
-          {busy === 'approve' ? 'Saving…' : isConfirmed ? 'Save new version' : 'Approve mapping'}
+          {busy === 'approve' ? 'Saving…' : isConfirmed ? 'Save new version' : 'Approve nomenclature'}
         </Button>
         <InfoTooltip label="What approving does">
           {/* Approving saves instructions and loads nothing; loading is the

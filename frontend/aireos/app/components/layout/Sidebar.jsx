@@ -70,6 +70,7 @@ export default function Sidebar() {
               alt="AIRE"
               width={72}
               height={30}
+              className="h-auto w-auto"
               priority
             />
           </Link>

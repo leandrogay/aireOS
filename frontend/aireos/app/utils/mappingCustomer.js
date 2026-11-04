@@ -1,4 +1,5 @@
 import { normaliseName } from '@/app/utils/customerForm';
+import { headingFields } from '@/app/utils/mappingReview';
 
 // The customer a mapping belongs to, and the retailers its file's sales are
 // written to. Pure helpers for the review screen, no React.
@@ -41,10 +42,11 @@ function asList(transforms) {
 
 /**
  * How the mapping fills the retailer field, wherever that lives on the
- * screen: on the column that reads it (`kind: 'column'`), or on a decision
+ * screen: on the column that reads it (`kind: 'column'`), on a group's
+ * headings or the cells above them (`kind: 'headings'`), or on a decision
  * made without a column, such as NHG's constant (`kind: 'locked'`).
  */
-export function retailerDecision(mapping, rows, fieldEdits = {}) {
+export function retailerDecision(mapping, rows, fieldEdits = {}, groups = []) {
   for (const row of rows) {
     const field = row.fields.find((item) => item.targetField === 'retailer');
     if (field) {
@@ -58,8 +60,26 @@ export function retailerDecision(mapping, rows, fieldEdits = {}) {
     }
   }
 
+  // Read off the headings: the headings themselves are what it writes,
+  // unless its steps translate them. The cells above them are only known to
+  // the server, which checks them on approval.
+  const heading = fieldEdits.retailer
+    ? null
+    : headingFields(mapping, { rows, groups, fieldEdits }).find((item) => item.field === 'retailer');
+  if (heading) {
+    const group = groups.find((item) => item.id === heading.entry.melt_group) || groups[0];
+    const label = (group?.settings.labels || []).find((item) => item.target === 'retailer');
+    return {
+      kind: 'headings',
+      status: 'mapped',
+      transforms: asList(heading.entry.transforms),
+      samples: !label || label.rows_above === 0 ? group?.columns || [] : null,
+    };
+  }
+
   const rule = (mapping?.rules || []).find(
-    (item) => item.targetField === 'retailer' && item.editable === false && !item.meltGroup,
+    (item) =>
+      item.targetField === 'retailer' && item.editable === false && !item.meltGroup && !item.field?.melt_group,
   );
   const entry = fieldEdits.retailer || rule?.field;
   if (!entry) return { kind: 'none', status: 'unmapped', transforms: [] };
@@ -82,8 +102,9 @@ export function retailerOutputs(decision) {
   let outputs;
   if (last?.type === 'rules') outputs = (last.rules || []).map((rule) => rule.output);
   else if (last?.type === 'value_map') outputs = Object.values(last.values || {});
-  else if (!decision.transforms.length && decision.kind === 'column') outputs = [...decision.samples];
-  else return null;
+  else if (!decision.transforms.length && (decision.kind === 'column' || decision.kind === 'headings') && decision.samples) {
+    outputs = [...decision.samples];
+  } else return null;
 
   if (last && last.default !== undefined && last.default !== null && last.default !== '') outputs.push(last.default);
   return [...new Set(outputs.filter((output) => output !== null && output !== undefined && output !== '').map(String))];

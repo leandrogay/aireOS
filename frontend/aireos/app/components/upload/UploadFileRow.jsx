@@ -26,7 +26,7 @@ const BEFORE_UPLOAD = new Set(['checking', 'ready', 'near_match', 'new_layout', 
 function MappingName({ name, vendor }) {
   return (
     <>
-      <span className="font-medium">{name || 'a saved mapping'}</span>
+      <span className="font-medium">{name || 'a saved nomenclature'}</span>
       {vendor && <> · {vendorLabel(vendor)}</>}
     </>
   );
@@ -129,6 +129,12 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoa
             </>
           )}
 
+          {kind === 'skipped' && check?.duplicate && (
+            <p className="mt-1 text-xs text-deep-violet-blue/70">
+              <DuplicateNote duplicate={check.duplicate} fileName={file.name} /> Not uploaded.
+            </p>
+          )}
+
           {kind === 'uploading' && <UploadProgress stage={item.stage} sendPercent={item.sendPercent} />}
 
           {kind === 'uploaded' && (
@@ -172,7 +178,7 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoa
                     href={`/mappings/${outcome.mappingId}`}
                     className="rounded-md underline-offset-2 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
                   >
-                    View mapping
+                    View nomenclature
                   </Link>
                 )}
               </div>
@@ -196,7 +202,7 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoa
                     href={`/mappings/${outcome.mappingId}`}
                     className="rounded-md text-xs font-medium text-deep-violet-blue underline-offset-2 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
                   >
-                    View mapping
+                    View nomenclature
                   </Link>
                 )}
               </div>
@@ -234,17 +240,17 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoa
                     <Link
                       href={`/mappings/${outcome.mappingId}`}
                       className={secondaryAction}
-                      aria-label={`View the closest mapping for ${file.name}`}
+                      aria-label={`View the closest nomenclature for ${file.name}`}
                     >
-                      View closest mapping
+                      View closest nomenclature
                     </Link>
                   ) : (
                     <Link
                       href={`/mappings/${outcome.mappingId}`}
                       className={primaryAction}
-                      aria-label={`Review the suggested mapping for ${file.name}`}
+                      aria-label={`Review the suggested nomenclature for ${file.name}`}
                     >
-                      Review mapping
+                      Review nomenclature
                     </Link>
                   )}
                 </div>

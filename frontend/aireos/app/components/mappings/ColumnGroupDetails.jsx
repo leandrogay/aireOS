@@ -2,8 +2,12 @@
 
 import { inputClass } from '@/components/inventory/formStyles';
 import Disclosure from '@/components/ui/Disclosure';
-import { periodLabel } from '@/app/utils/mappingReview';
+import SelectDropdown from '@/components/ui/SelectDropdown';
+import { fieldLabel, periodLabel } from '@/app/utils/mappingReview';
 import { cn } from '@/lib/utils';
+
+const LAST_COLUMN = '';
+const STORE_KEYS = ['store_code', 'store_name'];
 
 /**
  * A group of period (or outlet) columns read as one: how many, the periods it
@@ -13,29 +17,61 @@ import { cn } from '@/lib/utils';
  * the headings exactly as the transformation will.
  *
  * One line is always shown -- how many columns, which periods. How the
- * headings read and the hand-typed column pattern and date format are folded
- * under Details: what a typed pattern picks is only known once the checks run.
+ * headings read and the group's settings are folded under Details: the
+ * columns it takes (a pattern, or every column between two others), how a
+ * period heading is read and whether it is a month or a week. Which store
+ * fields an outlet heading fills is set on those fields (Edit). What changed
+ * settings pick is only known once the checks run.
  *
  * @param {{
  *   group: object,
  *   entry: object | null,
+ *   columns: string[],
  *   onSettingsChange: (groupId: string, changes: object) => void,
  *   disabled: boolean,
  * }} props
  */
-export default function ColumnGroupDetails({ group, entry, onSettingsChange, disabled }) {
+export default function ColumnGroupDetails({ group, entry, columns, onSettingsChange, disabled }) {
   const periodType = group.settings.period_type;
   const isPeriod = group.settings.key?.target === 'period_start';
   const readings = entry?.readings || [];
-  const edited =
-    entry && JSON.stringify({ select: entry.group.select, key: entry.group.key }) !==
-      JSON.stringify({ select: group.settings.select, key: group.settings.key });
+  // Which columns it takes and how a heading is read. What the headings fill
+  // (store code or name) is not a change to how they are read.
+  const readSettings = (settings) =>
+    JSON.stringify({
+      select: settings.select,
+      pattern: settings.key?.pattern,
+      format: settings.key?.date_format,
+      type: settings.period_type,
+    });
+  const edited = entry && readSettings(entry.group) !== readSettings(group.settings);
+  const select = group.settings.select || {};
+  const labels = group.settings.labels || [];
+
+  function setSelect(changes) {
+    onSettingsChange(group.id, { select: { ...select, ...changes } });
+  }
 
   return (
     <div className="rounded-md bg-cream/60 px-2 py-1.5">
       <p className="text-[11px] text-deep-violet-blue">
-        One row per {isPeriod ? (periodType === 'week' ? 'week' : 'month') : 'outlet'} from{' '}
+        One row per {isPeriod ? (periodType === 'week' ? 'week' : 'month') : STORE_KEYS.includes(group.settings.key?.target) ? 'outlet' : 'heading'} from{' '}
         <span className="font-medium">{group.columns.length} columns</span>
+        {!isPeriod && (
+          <>
+            {' '}
+            · headings are the {fieldLabel(group.settings.key?.target).toLowerCase()}s
+            {labels.map((label) =>
+              label.rows_above === 0 ? (
+                <span key={label.target}> and the {fieldLabel(label.target).toLowerCase()}s</span>
+              ) : (
+                <span key={label.target}>
+                  , {fieldLabel(label.target).toLowerCase()}s are {label.rows_above === 1 ? 'the row' : `${label.rows_above} rows`} above
+                </span>
+              ),
+            )}
+          </>
+        )}
         {isPeriod && entry?.first && (
           <>
             {' '}
@@ -91,14 +127,68 @@ export default function ColumnGroupDetails({ group, entry, onSettingsChange, dis
               />
             </label>
           )}
-          {group.settings.select?.kind === 'between' && (
-            <p>
-              Every column between <span className="font-mono">{group.settings.select.after}</span> and{' '}
-              <span className="font-mono">{group.settings.select.before || 'the last column'}</span>, so a new
-              outlet is picked up too.
-            </p>
+          {select.kind === 'between' && (
+            <div className="grid gap-1.5 sm:grid-cols-2">
+              <div>
+                <p>Every column after (a new outlet is picked up too)</p>
+                <SelectDropdown
+                  value={select.after || ''}
+                  onChange={(after) => setSelect({ after })}
+                  size="sm"
+                  searchable={columns.length > 8}
+                  ariaLabel="The group starts after this column"
+                  disabled={disabled}
+                  options={columns.map((column) => ({ value: column, label: column }))}
+                />
+              </div>
+              <div>
+                <p>and before</p>
+                <SelectDropdown
+                  value={select.before || LAST_COLUMN}
+                  onChange={(before) => setSelect({ before: before || undefined })}
+                  size="sm"
+                  searchable={columns.length > 8}
+                  ariaLabel="The group ends before this column"
+                  disabled={disabled}
+                  options={[
+                    { value: LAST_COLUMN, label: 'The end of the file' },
+                    ...columns.map((column) => ({ value: column, label: column })),
+                  ]}
+                />
+              </div>
+            </div>
           )}
           {group.settings.select?.kind === 'columns' && <p>Exactly these {group.columns.length} columns.</p>}
+          {isPeriod && (
+            <div className="grid gap-1.5 sm:grid-cols-2">
+              <label className="block">
+                Where the date is in a heading (advanced)
+                <input
+                  type="text"
+                  value={group.settings.key?.pattern || ''}
+                  disabled={disabled}
+                  onChange={(event) =>
+                    onSettingsChange(group.id, { key: { ...group.settings.key, pattern: event.target.value } })
+                  }
+                  className={cn(inputClass, 'mt-0.5 py-1 font-mono text-[11px]')}
+                />
+              </label>
+              <div>
+                <p>Each heading is a</p>
+                <SelectDropdown
+                  value={periodType || 'month'}
+                  onChange={(value) => onSettingsChange(group.id, { period_type: value })}
+                  size="sm"
+                  ariaLabel="Whether each heading is a month or a week"
+                  disabled={disabled}
+                  options={[
+                    { value: 'month', label: 'Month' },
+                    { value: 'week', label: 'Week' },
+                  ]}
+                />
+              </div>
+            </div>
+          )}
           {isPeriod && (
             <label className="block">
               Date format in the headings
