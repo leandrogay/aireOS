@@ -17,7 +17,7 @@ import { Section, Variant } from './GalleryParts';
 const GUIDE = [
   ['Pick one of a few, side by side', 'SegmentedControl', 'value, onChange, options, look, size, fullWidth'],
   ['Turn one thing on or off', 'ToggleButton', 'pressed, onChange, look'],
-  ['A setting with a switch and an explanation', 'ToggleField', 'label, checked, onChange, onHint, offHint'],
+  ['A setting with a switch and an explanation', 'ToggleField', 'label or ariaLabel, checked, onChange, showState, onHint, offHint'],
 ];
 
 // Controls that should move to the kit, page by page. Remove a row when its
@@ -29,7 +29,6 @@ const NOT_MIGRATED = [
   ['Promotions', 'promotions/PromotionDetails.jsx (FormatTab)', 'Hand-rolled chips with a count', 'ToggleButton look="chip"'],
   ['Upload', 'upload/DuplicateChoice.jsx', 'Radio inputs styled as a track, with icons', 'SegmentedControl with option icons'],
   ['Nomenclatures', 'mappings/ChannelValueList.jsx', 'Hand-rolled Online / Offline buttons', 'SegmentedControl'],
-  ['DOH Settings', 'settings/DohSettingsTable.jsx', 'Raw Switch with its own colour class', 'ToggleField (or its switch colours)'],
 ];
 
 // Pressed-looking controls that are not toggles, so they stay as they are.
@@ -117,9 +116,18 @@ export default function ToggleGallery() {
     duplicate: 'replace',
   });
   const [pressed, setPressed] = useState({ atRisk: false, formats: ['Hypermarket'] });
-  const [setting, setSetting] = useState(true);
+  // One value per ToggleField example, so each switch moves on its own.
+  const [settings, setSettings] = useState({
+    bare: true,
+    bareState: false,
+    label: true,
+    labelState: false,
+    labelHints: true,
+    full: false,
+  });
   const [legacy, setLegacy] = useState('week');
 
+  const setSetting = (key) => (value) => setSettings((prev) => ({ ...prev, [key]: value }));
   const setSegment = (key) => (value) => setSegments((prev) => ({ ...prev, [key]: value }));
 
   function toggleFormat(format) {
@@ -139,7 +147,7 @@ export default function ToggleGallery() {
         <h2 className="font-serif text-lg text-deep-violet-blue">How to use this kit</h2>
         <p className="mb-3 text-xs text-deep-violet-blue/60">
           Every control below is the real shared component. Build new switches and on/off buttons on these rather than
-          on ui/tabs or a hand-rolled button with aria-pressed. The Inventory page is the reference: it uses all of them.
+          on ui/tabs, a raw Switch or a hand-rolled button with aria-pressed. The Inventory page is the reference for SegmentedControl and ToggleButton; the DOH alerts and the nomenclature file settings use ToggleField.
         </p>
         <ReferenceTable head={['I need to…', 'Use', 'Main props']} rows={GUIDE} />
         <p className="mt-3 text-xs text-deep-violet-blue/70">
@@ -213,15 +221,56 @@ export default function ToggleGallery() {
         </Variant>
       </Section>
 
-      <Section title="ToggleField — a setting with a switch" note="Already shared. Used by the nomenclature file settings.">
-        <Variant name="With hints" props="label, onHint, offHint" value={setting}>
+      <Section
+        title="ToggleField — a setting with a switch"
+        note="Just the switch unless you give it a label; add showState for the On / Off pill. With no label, pass ariaLabel so screen readers can name it. Used by the nomenclature file settings and the DOH alerts."
+      >
+        <Variant name="Switch only (DOH table)" props="ariaLabel" value={settings.bare}>
+          <ToggleField ariaLabel="DOH alerts for Fairprice" checked={settings.bare} onChange={setSetting('bare')} />
+        </Variant>
+        <Variant name="Switch + state" props="ariaLabel showState" value={settings.bareState}>
           <ToggleField
-            label="Roll up to months"
-            checked={setting}
-            onChange={setSetting}
-            onHint="Weekly rows are added up into one row per month."
-            offHint="Rows are loaded at the file's own granularity."
+            ariaLabel="DOH alerts for Fairprice"
+            showState
+            checked={settings.bareState}
+            onChange={setSetting('bareState')}
           />
+        </Variant>
+        <Variant name="Label" props="label" value={settings.label}>
+          <ToggleField label="Send DOH alerts" checked={settings.label} onChange={setSetting('label')} />
+        </Variant>
+        <Variant name="Label + state" props="label showState" value={settings.labelState}>
+          <ToggleField
+            label="Send DOH alerts"
+            showState
+            checked={settings.labelState}
+            onChange={setSetting('labelState')}
+          />
+        </Variant>
+        <Variant name="Label + hints" props="label onHint offHint" value={settings.labelHints}>
+          <ToggleField
+            label="Send DOH alerts"
+            checked={settings.labelHints}
+            onChange={setSetting('labelHints')}
+            onHint="An alert is sent when a SKU falls below its min DOH."
+            offHint="No alerts for this customer."
+          />
+        </Variant>
+        <Variant name="Label + state + hints (file settings)" props="label showState onHint offHint" value={settings.full}>
+          <ToggleField
+            label="Add up rows into monthly totals"
+            showState
+            checked={settings.full}
+            onChange={setSetting('full')}
+            onHint="Rows for the same store and product are added together, so each month loads as one row."
+            offHint="Every row loads as the file has it, for example one per week."
+          />
+        </Variant>
+        <Variant name="Disabled (a save in flight)" props="disabled" value={true}>
+          <div className="space-y-2">
+            <ToggleField ariaLabel="DOH alerts for Fairprice" checked disabled onChange={() => {}} />
+            <ToggleField label="Send DOH alerts" showState checked disabled onChange={() => {}} />
+          </div>
         </Variant>
       </Section>
 
