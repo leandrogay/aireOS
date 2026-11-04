@@ -49,7 +49,11 @@ export default function NotificationBell() {
         arrow
         arrowClassName="data-[side=bottom]:border-lavander"
         sideOffset={10}
-        className="w-[26rem] max-w-[90vw] p-2.5 ring-lavander shadow-[0_2px_4px_rgb(15_30_74/0.1),0_12px_32px_rgb(15_30_74/0.08)]"
+        // fixed: placed against the viewport, so this tall popup never adds to
+        // the page's scroll height (with the default "absolute" the page could
+        // be scrolled past its end while the panel was open).
+        positionMethod="fixed"
+        className="w-[26rem] max-w-[90vw] gap-0 p-0 ring-lavander shadow-[0_2px_4px_rgb(15_30_74/0.1),0_12px_32px_rgb(15_30_74/0.08)]"
       >
         <NotificationPanel notifications={notifications} markRead={markRead} />
       </PopoverContent>

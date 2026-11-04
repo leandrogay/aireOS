@@ -251,14 +251,16 @@ function NotificationItem({ notification, onMarkRead }) {
  */
 export default function NotificationPanel({ notifications, markRead }) {
   if (notifications.length === 0) {
-    return <p className="px-1 py-2 text-xs text-deep-violet-blue/75">No notifications yet.</p>;
+    return <p className="px-3 py-3 text-xs text-deep-violet-blue/75">No notifications yet.</p>;
   }
 
   const unreadIds = notifications.filter((n) => !n.read_at).map((n) => n.notification_id);
 
+  // The popup has no padding of its own (see NotificationBell): the header and
+  // the rows pad themselves with px-3, so unread tints run edge to edge.
   return (
-    <div className="flex flex-col gap-2.5">
-      <div className="flex items-center justify-between px-1">
+    <div className="flex flex-col">
+      <div className="flex items-center justify-between border-b border-lavander px-3 py-2.5">
         <p className="font-serif text-sm text-deep-violet-blue">Notifications</p>
         {unreadIds.length > 0 && (
           <button type="button" onClick={() => markRead(unreadIds)} className={MARK_READ_BUTTON_CLASS}>
@@ -266,8 +268,11 @@ export default function NotificationPanel({ notifications, markRead }) {
           </button>
         )}
       </div>
-      {/* A divider between notifications; see the spacing note at the top. */}
-      <ul className="max-h-[65vh] divide-y divide-lavander overflow-y-auto border-y border-lavander">
+      {/* A divider between notifications; see the spacing note at the top.
+          rounded-b-lg clips the last row's tint to the popup's corners.
+          Thin violet scrollbar (standard scrollbar-width/-color, no arrow
+          buttons) instead of the default grey one. */}
+      <ul className="max-h-[65vh] divide-y divide-lavander overflow-y-auto rounded-b-lg [scrollbar-color:var(--aire-violet)_transparent] [scrollbar-width:thin]">
         {notifications.map((notification) => (
           <NotificationItem
             key={notification.notification_id}
