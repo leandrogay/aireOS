@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Loader2, Plus } from 'lucide-react';
 
-import CheckboxDropdown from '@/components/promotions/CheckboxDropdown';
+import Dropdown from '@/components/ui/Dropdown';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -113,7 +113,7 @@ function OptionField({
         {label}
         <RequiredMark />
       </legend>
-      <CheckboxDropdown
+      <Dropdown
         summary={String(value || '')}
         placeholder={`Select ${label.toLowerCase()}`}
         invalid={Boolean(error)}
@@ -206,7 +206,7 @@ function OptionField({
             </>
           );
         }}
-      </CheckboxDropdown>
+      </Dropdown>
       <p className={hintClass}>
         Choose an existing value or type a new one. Typed values are kept when the menu closes.
       </p>

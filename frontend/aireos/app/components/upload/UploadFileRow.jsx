@@ -8,9 +8,10 @@ import { formatDateTime } from '@/lib/formatDate';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import DuplicateChoice from '@/components/upload/DuplicateChoice';
+import UploadProgress from '@/components/upload/UploadProgress';
 import UploadPreview from '@/components/upload/UploadPreview';
 import { fileTypeLabel, formatFileSize } from '@/app/utils/fileInspect';
-import { STAGES, duplicateDecision, duplicateResult, fileKind } from '@/app/utils/uploadFlow';
+import { duplicateDecision, duplicateResult, fileKind } from '@/app/utils/uploadFlow';
 import { vendorLabel } from '@/app/utils/retailerLabel';
 
 const action =
@@ -25,38 +26,9 @@ const BEFORE_UPLOAD = new Set(['checking', 'ready', 'near_match', 'new_layout', 
 function MappingName({ name, vendor }) {
   return (
     <>
-      <span className="font-medium">{name || 'a saved mapping'}</span>
+      <span className="font-medium">{name || 'a saved nomenclature'}</span>
       {vendor && <> · {vendorLabel(vendor)}</>}
     </>
-  );
-}
-
-/**
- * The upload's server-side steps as a segmented bar. The steps are real; only
- * their timing is a guess (see STAGES), so there is no percentage to show.
- */
-function UploadProgress({ stage }) {
-  const current = Math.max(0, STAGES.findIndex((entry) => entry.key === stage));
-
-  return (
-    <div className="mt-2 max-w-sm">
-      <div className="flex gap-1" aria-hidden="true">
-        {STAGES.map((entry, index) => (
-          <span
-            key={entry.key}
-            className={cn(
-              'h-1.5 flex-1 rounded-full',
-              index < current && 'bg-deep-violet-blue',
-              index === current && 'animate-pulse bg-violet motion-reduce:animate-none',
-              index > current && 'bg-lavander',
-            )}
-          />
-        ))}
-      </div>
-      <p className="mt-1 text-xs text-deep-violet-blue/70">
-        Uploading, step {current + 1} of {STAGES.length}: {STAGES[current].label.toLowerCase()}…
-      </p>
-    </div>
   );
 }
 
@@ -157,7 +129,13 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoa
             </>
           )}
 
-          {kind === 'uploading' && <UploadProgress stage={item.stage} />}
+          {kind === 'skipped' && check?.duplicate && (
+            <p className="mt-1 text-xs text-deep-violet-blue/70">
+              <DuplicateNote duplicate={check.duplicate} fileName={file.name} /> Not uploaded.
+            </p>
+          )}
+
+          {kind === 'uploading' && <UploadProgress stage={item.stage} sendPercent={item.sendPercent} />}
 
           {kind === 'uploaded' && (
             <>
@@ -200,7 +178,7 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoa
                     href={`/mappings/${outcome.mappingId}`}
                     className="rounded-md underline-offset-2 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
                   >
-                    View mapping
+                    View nomenclature
                   </Link>
                 )}
               </div>
@@ -224,7 +202,7 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoa
                     href={`/mappings/${outcome.mappingId}`}
                     className="rounded-md text-xs font-medium text-deep-violet-blue underline-offset-2 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
                   >
-                    View mapping
+                    View nomenclature
                   </Link>
                 )}
               </div>
@@ -262,17 +240,17 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoa
                     <Link
                       href={`/mappings/${outcome.mappingId}`}
                       className={secondaryAction}
-                      aria-label={`View the closest mapping for ${file.name}`}
+                      aria-label={`View the closest nomenclature for ${file.name}`}
                     >
-                      View closest mapping
+                      View closest nomenclature
                     </Link>
                   ) : (
                     <Link
                       href={`/mappings/${outcome.mappingId}`}
                       className={primaryAction}
-                      aria-label={`Review the suggested mapping for ${file.name}`}
+                      aria-label={`Review the suggested nomenclature for ${file.name}`}
                     >
-                      Review mapping
+                      Review nomenclature
                     </Link>
                   )}
                 </div>

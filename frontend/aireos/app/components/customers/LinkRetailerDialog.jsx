@@ -12,7 +12,7 @@ import {
   labelClass,
   primaryButtonClass,
   secondaryButtonClass,
-} from '@/components/inventory/formStyles';
+} from '@/components/ui/formStyles';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 

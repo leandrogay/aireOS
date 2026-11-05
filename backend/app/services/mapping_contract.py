@@ -1,18 +1,17 @@
 """
-The mapping contract: what it may say, how an older one is read, and the
-validation that makes it safe to store.
+The mapping contract: what it may say, and the validation that makes it safe
+to store.
 
 A contract is a set of instructions and nothing else. Mapping generation writes
 it and a person reviews it; the transformation (a separate step) reads it and
 does exactly what it says -- no business rule lives outside the contract.
 
-A contract (version 2) has one entry per target field, saying how that field is
+A contract has one entry per target field, saying how that field is
 filled -- so a field is never left out by accident, and "not in this file" is a
 decision written down rather than an absence -- plus where the data sits in the
 file and whether rows are rolled up:
 
     {
-      "version": 2,
       "layout": {"sheet": "Sheet1", "sheet_position": 2, "header_row": 1,
                  "fill_down": [], "footer_label_pattern": "^(grand\\s+)?total\\b",
                  "subtotal_label_pattern": "^(grand\\s+|sub\\s*)?total$"},
@@ -33,27 +32,31 @@ file and whether rows are rolled up:
                  "date_format": "%d-%m-%Y"},
          "value_target": "revenue", "period_type": "month"}
       ],
-      "aggregate": {"period": "month", "by": [...], "sum": ["quantity_units", "revenue"]},
-      "data_source": "aireos_upload"
+      "aggregate": {"period": "month", "by": [...], "sum": ["quantity_units", "revenue"]}
     }
 
 Statuses:
   mapped         read from a source column, or from a melt group's key or value
   derived        computed: period_end / period_label from the period, period_type
-                 from the melt headers, or another field run through transforms
-                 (`from_field`, e.g. retailer from the outlet code's _Ecomm suffix)
+                 from the melt headers, another field run through transforms
+                 (`from_field`, e.g. retailer from the outlet code's _Ecomm suffix,
+                 revenue as quantity times a per-unit price column), or the
+                 period the file states above its table (`from_layout`:
+                 "stated_period", SingHealth's "DATE : 01 Aug 2026 TO 31 Aug 2026")
   constant       the same `value` on every row (NHG's retailer)
   system         written by the pipeline (source_file)
   not_available  the file does not hold it; `reason` says why. Never invented.
 
+A melt group's key is what each melted column's header says (a period, a store
+code or a store name). Its `labels` read more of it: {"rows_above": 1,
+"target": "store_code"} fills store_code from the cell directly above each
+melted column, where SingHealth writes the outlet's code over its name, and
+{"rows_above": 0, "target": "store_name"} reads the header itself again, so one
+heading can fill both the store code and the store name.
+
 The sku field's value_map is the product-code table: each retailer code in the
 file and the master SKU it is. A field with no value_map uses the file's codes
 as they are (FairPrice article numbers are the master codes).
-
-The first contracts (version 1: identity_mapping + melt_groups with exact column
-lists) are still stored in GCS. They are read through upgrade(), unchanged on
-disk, and downgrade() writes an amended one back in that shape when it fits, so
-existing mappings retain their stored format.
 
 Pure: no GCS, no database, no model.
 """
@@ -64,8 +67,6 @@ import re
 import pandas as pd
 
 from app.schemas.sellout import BUSINESS_COLUMNS
-
-CONTRACT_VERSION = 2
 
 FIELD_STATUSES = ("mapped", "derived", "constant", "system", "not_available")
 CONFIDENCE_LEVELS = ("high", "medium", "low")
@@ -85,10 +86,19 @@ DECIDABLE_FIELDS = tuple(
 )
 
 MEASURE_FIELDS = ("quantity_units", "revenue")
-MELT_KEY_TARGETS = ("period_start", "store_code")
+# What a melt group's headings -- or the cells above them (its labels) -- may
+# fill besides the period: any descriptive field. An outlet's code and name,
+# its format, the brand or product range a column stands for, the retailer
+# channel, even the product code of a file with one column per product.
+HEADING_FIELDS = tuple(
+    field for field in DECIDABLE_FIELDS if field not in ("period_start", "period_type", "pack_size", *MEASURE_FIELDS)
+)
+MELT_KEY_TARGETS = ("period_start", *HEADING_FIELDS)
+LABEL_TARGETS = HEADING_FIELDS
+# What a field may be read from in the file's layout rather than its table.
+LAYOUT_SOURCES = ("stated_period",)
 PERIOD_TYPES = ("month", "week")
 SELECTOR_KINDS = ("pattern", "between", "columns")
-DATA_SOURCES = ("aireos_upload", "promo_claim")
 
 # The roll-up instruction's grain: one row per these fields, measures summed.
 AGGREGATE_KEY = ("period_start", "period_type", "retailer", "store_code", "sku")
@@ -98,7 +108,6 @@ AGGREGATE_PERIODS = ("month",)
 # contract's layout so the transformation skips the same rows.
 FOOTER_LABEL_PATTERN = r"^(grand\s+)?total\b"
 SUBTOTAL_LABEL_PATTERN = r"^(grand\s+|sub\s*)?total$"
-DEFAULT_DATA_SOURCE = "aireos_upload"
 
 TRANSFORM_TYPES = (
     "regex_extract",
@@ -106,6 +115,7 @@ TRANSFORM_TYPES = (
     "rules",
     "negate",
     "uom_factor",
+    "multiply",
     "month_start",
     "forward_fill",
     "zero_as_empty",
@@ -115,137 +125,16 @@ RULE_OPS = ("equals", "startswith", "endswith", "contains", "regex")
 
 # ---- Reading a contract ----------------------------------------------------------
 
-def normalize_targets(value) -> list[str]:
+def read_contract(contract: dict | None) -> dict:
     """
-    Read one version 1 identity_mapping entry as the list of fields it fills.
-
-    Version 1 let one column feed several fields (an article description as
-    both product name and size). Version 2 gives each field its own entry, and
-    this is how the old shape is unpacked into it.
-    """
-    if value is None:
-        return []
-    if isinstance(value, str):
-        return [value]
-    if isinstance(value, (list, tuple)):
-        return [str(item) for item in value if item]
-    return []
-
-
-def _annotation(source: dict | None) -> dict:
-    raw = source or {}
-    out = {}
-    for key in ("confidence", "rationale", "reviewed"):
-        if key in raw:
-            out[key] = raw[key]
-    return out
-
-
-def _v1_period_type(group: dict) -> str | None:
-    declared = str(group.get("period_type") or "").lower()
-    if declared in PERIOD_TYPES:
-        return declared
-    headers = [str(column).lower() for column in group.get("columns") or []]
-    if headers and all("week" in header for header in headers):
-        return "week"
-    if headers and all("month" in header for header in headers):
-        return "month"
-    return None
-
-
-def upgrade(contract: dict | None) -> dict:
-    """
-    Any stored contract in version 2 shape. A version 2 contract is returned as
-    a copy; a version 1 one is translated field by field:
-
-      identity_mapping {column: field or [fields]}  -> one "mapped" entry per field
-      transformations {field: transform}            -> that entry's transforms list
-      melt_groups with exact column lists           -> "columns" selectors, the
-                                                       period read from each header
-      annotations                                   -> each entry's confidence
-
-    A field two columns both claimed keeps the first and records a warning,
-    which is what version 1 validation did.
+    A copy of a contract with its fields and melt groups present, so a reader
+    can look them up without checking for None. The caller's dict is never
+    changed.
     """
     contract = copy.deepcopy(contract or {})
-    if contract.get("version") == CONTRACT_VERSION or "fields" in contract:
-        contract.setdefault("version", CONTRACT_VERSION)
-        contract.setdefault("fields", {})
-        contract.setdefault("melt_groups", [])
-        return contract
-
-    annotations = contract.get("annotations") or {}
-    transformations = contract.get("transformations") or {}
-    warnings: list[str] = []
-    fields: dict[str, dict] = {}
-
-    for source, value in (contract.get("identity_mapping") or {}).items():
-        for target in normalize_targets(value):
-            if target in fields:
-                warnings.append(
-                    f"Dropped identity mapping — {target!r} is already filled by "
-                    f"{fields[target]['source']!r}, so {source!r} cannot also fill it"
-                )
-                continue
-            entry = {
-                "status": "mapped",
-                "source": source,
-                **_annotation(annotations.get(target) or annotations.get(source)),
-            }
-            if isinstance(transformations.get(target), dict):
-                entry["transforms"] = [transformations[target]]
-            fields[target] = entry
-
-    groups = []
-    for index, group in enumerate(contract.get("melt_groups") or []):
-        target = group.get("target_field")
-        group_id = str(target or f"group_{index + 1}")
-        if target in fields:
-            filled_by = fields[target].get("source") or f"melt group {fields[target].get('melt_group')}"
-            warnings.append(f"Dropped melt group — {target!r} is already filled by {filled_by!r}")
-            continue
-        upgraded = {
-            "id": group_id,
-            "select": {"kind": "columns", "columns": list(group.get("columns") or [])},
-            "key": {
-                "target": "period_start",
-                "pattern": group.get("period_extract_regex"),
-                "date_format": group.get("date_format"),
-            },
-            "value_target": target,
-            **_annotation(group),
-        }
-        period_type = _v1_period_type(group)
-        if period_type:
-            upgraded["period_type"] = period_type
-        groups.append(upgraded)
-        if target:
-            fields[target] = {"status": "mapped", "melt_group": group_id, **_annotation(group)}
-        if "period_start" not in fields:
-            fields["period_start"] = {
-                "status": "mapped",
-                "melt_group": group_id,
-                "confidence": "high",
-                "rationale": "Read from the period column headers.",
-            }
-            fields["period_type"] = {
-                "status": "derived",
-                "confidence": "high",
-                "rationale": "Read from the period column headers.",
-            }
-
-    upgraded = {
-        "version": CONTRACT_VERSION,
-        "fields": fields,
-        "melt_groups": groups,
-        "warnings": warnings,
-    }
-    # Contract-wide instructions are carried over as they are, should a
-    # version 1 shape ever carry them.
-    for key in ("layout", "aggregate", "data_source"):
-        if key in contract:
-            upgraded[key] = contract[key]
-    return upgraded
+    contract.setdefault("fields", {})
+    contract.setdefault("melt_groups", [])
+    return contract
 
 
 # ---- Selecting melt columns --------------------------------------------------------
@@ -261,7 +150,7 @@ def resolve_selector(select: dict, columns: list[str]) -> list[str]:
       pattern   every header the regex matches -- next month's dates match too
       between   every column strictly between two marker headers -- an outlet
                 added next month lands between them too
-      columns   exactly these names (version 1 contracts)
+      columns   exactly these names (a detected group the review screen offers)
 
     Raises ValueError when the selector cannot be applied to these headers.
     """
@@ -445,6 +334,14 @@ def _validate_uom_factor(target, raw, raw_columns, reject):
     return {"type": "uom_factor", "column": column, "factors": factors, "default": default}
 
 
+def _validate_multiply(target, raw, raw_columns, reject):
+    """Each value times the same row's value in another column (units x price)."""
+    column = raw.get("column")
+    if column not in raw_columns:
+        return reject(f"Dropped transformation for {target!r} — multiply column {column!r} is not in the file")
+    return {"type": "multiply", "column": column}
+
+
 def validate_transforms(
     target: str,
     transforms,
@@ -486,6 +383,8 @@ def validate_transforms(
             transform = _validate_rules(target, raw, raw_columns, reject)
         elif operation == "uom_factor":
             transform = _validate_uom_factor(target, raw, raw_columns, reject)
+        elif operation == "multiply":
+            transform = _validate_multiply(target, raw, raw_columns, reject)
         elif operation == "month_start":
             transform = {"type": "month_start"}
             if raw.get("format"):
@@ -498,6 +397,36 @@ def validate_transforms(
             return None
         clean.append(transform)
     return clean
+
+
+def _validate_labels(raw, key_target: str, label: str, warnings: list[str]) -> list[dict] | None:
+    """A melt group's labels, cleaned: [] when it has none, None when unusable."""
+    if not raw:
+        return []
+    if not isinstance(raw, list):
+        warnings.append(f"Dropped melt group for {label!r} — labels must be a list")
+        return None
+    clean = []
+    for item in raw:
+        item = item if isinstance(item, dict) else {}
+        rows_above, target = item.get("rows_above"), item.get("target")
+        if not isinstance(rows_above, int) or isinstance(rows_above, bool) or rows_above < 0:
+            warnings.append(f"Dropped melt group for {label!r} — a label's rows_above must be 0 (the header) or more")
+            return None
+        if target not in LABEL_TARGETS or target == key_target or any(c["target"] == target for c in clean):
+            warnings.append(
+                f"Dropped melt group for {label!r} — each label fills one descriptive field "
+                f"({', '.join(LABEL_TARGETS)}) once, and not the field the key fills"
+            )
+            return None
+        clean.append({"rows_above": rows_above, "target": target})
+    return clean
+
+
+def _group_fills(group: dict) -> tuple[str, ...]:
+    """Every field one melt group fills: its key's, its values', its labels'."""
+    labels = tuple(label["target"] for label in group.get("labels") or [])
+    return (group["key"]["target"], group["value_target"], *labels)
 
 
 def _validate_group(group, raw_columns, target_schema, trust_review, warnings):
@@ -562,6 +491,10 @@ def _validate_group(group, raw_columns, target_schema, trust_review, warnings):
             )
             return None
 
+    labels = _validate_labels(group.get("labels"), key_target, label, warnings)
+    if labels is None:
+        return None
+
     select = dict(group.get("select") or {})
     clean = {
         "id": group_id,
@@ -570,6 +503,8 @@ def _validate_group(group, raw_columns, target_schema, trust_review, warnings):
         "value_target": value_target,
         **_clean_annotation(group, trust_review),
     }
+    if labels:
+        clean["labels"] = labels
     if date_format:
         clean["key"]["date_format"] = date_format
     period_type = str(group.get("period_type") or "").lower()
@@ -611,8 +546,8 @@ def validate_contract(
     samples: dict[str, list[str]] | None = None,
 ) -> dict:
     """
-    Defensive checks before trusting a contract. Returns a version 2 contract
-    with an entry for every target field, and a `warnings` list naming
+    Defensive checks before trusting a contract. Returns the contract with an
+    entry for every target field, and a `warnings` list naming
     everything that was dropped or overridden and why.
 
     Nothing unsafe is applied silently: a mapping whose source column is not in
@@ -624,7 +559,7 @@ def validate_contract(
     a reviewer; a freshly generated contract has every "reviewed" flag cleared.
     """
     target_schema = list(target_schema or BUSINESS_COLUMNS)
-    proposed = upgrade(contract)
+    proposed = read_contract(contract)
     warnings: list[str] = list(proposed.get("warnings") or [])
     samples = samples or {}
     raw_set = set(raw_columns)
@@ -660,7 +595,7 @@ def validate_contract(
     proposed_fields = proposed.get("fields") or {}
     for target in proposed_fields:
         if target not in target_schema:
-            warnings.append(f"Dropped identity mapping — target not in schema: {target!r}")
+            warnings.append(f"Dropped field nomenclature — target not in schema: {target!r}")
 
     fields: dict[str, dict] = {}
     for target in target_schema:
@@ -681,10 +616,22 @@ def validate_contract(
         if entry["status"] == "derived" and source_field:
             if fields.get(source_field, {}).get("status") in ("not_available", "derived", None):
                 warnings.append(
-                    f"Dropped field mapping — {target!r} is derived from {source_field!r}, "
+                    f"Dropped field nomenclature — {target!r} is derived from {source_field!r}, "
                     "which has no values"
                 )
                 fields[target] = _not_available(f"{source_field} is not available", entry, trust_review)
+
+    # A stated period is read as the one calendar month it covers, so the rows
+    # it dates must be monthly.
+    period_start, period_type = fields.get("period_start") or {}, fields.get("period_type") or {}
+    if period_start.get("from_layout") and (
+        period_type.get("status") != "constant" or period_type.get("value") != "month"
+    ):
+        warnings.append(
+            "Dropped field nomenclature — a period read from the file's stated period is a month, "
+            "so period_type must be the constant 'month'"
+        )
+        fields["period_start"] = _not_available("The stated period needs period_type 'month'.", period_start, trust_review)
 
     # A melt group no field reads would melt for nothing.
     used = {entry.get("melt_group") for entry in fields.values()}
@@ -693,14 +640,11 @@ def validate_contract(
             warnings.append(f"Dropped melt group {group_id!r} — no field reads it")
             del groups[group_id]
 
-    data_source = proposed.get("data_source")
     return {
-        "version": CONTRACT_VERSION,
         "layout": _validate_layout(proposed.get("layout"), raw_set, warnings),
         "fields": fields,
         "melt_groups": list(groups.values()),
         "aggregate": _validate_aggregate(proposed.get("aggregate"), warnings),
-        "data_source": data_source if data_source in DATA_SOURCES else DEFAULT_DATA_SOURCE,
         "warnings": warnings,
     }
 
@@ -728,7 +672,7 @@ def layout_instructions(layout: dict) -> dict:
 
 
 def _validate_layout(raw, raw_set: set[str], warnings: list[str]) -> dict | None:
-    """The layout section, cleaned; None when the contract has none (version 1)."""
+    """The layout section, cleaned; None when the contract has none."""
     if raw is None:
         return None
     if not isinstance(raw, dict):
@@ -792,10 +736,10 @@ def _validate_field(target, raw, raw_columns, raw_set, groups, group_cols, sampl
     if status == "constant":
         value = str(raw.get("value") if raw.get("value") is not None else "").strip()
         if not value:
-            warnings.append(f"Dropped field mapping — {target!r} is constant but has no value")
+            warnings.append(f"Dropped field nomenclature — {target!r} is constant but has no value")
             return _not_available("A constant needs a value.", raw, trust_review)
         if target == "period_type" and value not in PERIOD_TYPES:
-            warnings.append(f"Dropped field mapping — period_type must be one of {PERIOD_TYPES}")
+            warnings.append(f"Dropped field nomenclature — period_type must be one of {PERIOD_TYPES}")
             return _not_available("Unknown period type.", raw, trust_review)
         return {"status": "constant", "value": value, **annotation}
 
@@ -804,14 +748,22 @@ def _validate_field(target, raw, raw_columns, raw_set, groups, group_cols, sampl
             period_groups = [g for g in groups.values() if g["key"]["target"] == "period_start"]
             if not period_groups or not all(g.get("period_type") for g in period_groups):
                 warnings.append(
-                    "Dropped field mapping — period_type can only be read from period column "
+                    "Dropped field nomenclature — period_type can only be read from period column "
                     "headers that say month or week"
                 )
                 return _not_available("No period columns to read the period type from.", raw, trust_review)
             return {"status": "derived", **annotation}
+        if raw.get("from_layout"):
+            if target != "period_start" or raw["from_layout"] not in LAYOUT_SOURCES:
+                warnings.append(
+                    f"Dropped field nomenclature — only period_start can be read from the file's "
+                    f"stated period, not {target!r} from {raw['from_layout']!r}"
+                )
+                return _not_available("Only the period can be read from the file's title.", raw, trust_review)
+            return {"status": "derived", "from_layout": raw["from_layout"], **annotation}
         source_field = raw.get("from_field")
         if source_field not in BUSINESS_COLUMNS or source_field == target:
-            warnings.append(f"Dropped field mapping — {target!r} is derived from an unknown field {source_field!r}")
+            warnings.append(f"Dropped field nomenclature — {target!r} is derived from an unknown field {source_field!r}")
             return _not_available("Derived from an unknown field.", raw, trust_review)
         transforms = validate_transforms(target, transforms_raw, raw_columns, [], None, warnings)
         if transforms is None:
@@ -827,12 +779,12 @@ def _validate_field(target, raw, raw_columns, raw_set, groups, group_cols, sampl
         if group_id:
             group = groups.get(group_id)
             if group is None:
-                warnings.append(f"Dropped field mapping — {target!r} reads melt group {group_id!r}, which was dropped")
+                warnings.append(f"Dropped field nomenclature — {target!r} reads melt group {group_id!r}, which was dropped")
                 return _not_available("Its melt group was dropped.", raw, trust_review)
-            if target not in (group["key"]["target"], group["value_target"]):
+            if target not in _group_fills(group):
                 warnings.append(
-                    f"Dropped field mapping — melt group {group_id!r} fills "
-                    f"{group['key']['target']!r} and {group['value_target']!r}, not {target!r}"
+                    f"Dropped field nomenclature — melt group {group_id!r} fills "
+                    f"{', '.join(_group_fills(group))}, not {target!r}"
                 )
                 return _not_available("Its melt group fills other fields.", raw, trust_review)
             transforms = validate_transforms(target, transforms_raw, raw_columns, [], None, warnings)
@@ -844,10 +796,10 @@ def _validate_field(target, raw, raw_columns, raw_set, groups, group_cols, sampl
             return entry
 
         if source not in raw_set:
-            warnings.append(f"Dropped identity mapping — source column not found: {source!r}")
+            warnings.append(f"Dropped field nomenclature — source column not found: {source!r}")
             return _not_available("Its source column is not in the file.", raw, trust_review)
         if any(source in columns for columns in group_cols.values()):
-            warnings.append(f"Dropped identity mapping — {source!r} is melted by a melt group")
+            warnings.append(f"Dropped field nomenclature — {source!r} is melted by a melt group")
             return _not_available("Its source column is melted.", raw, trust_review)
         transforms = validate_transforms(
             target, transforms_raw, raw_columns, samples.get(source, []), source, warnings
@@ -859,7 +811,7 @@ def _validate_field(target, raw, raw_columns, raw_set, groups, group_cols, sampl
             entry["transforms"] = transforms
         return entry
 
-    warnings.append(f"Dropped field mapping — {target!r} has an unknown status {status!r}")
+    warnings.append(f"Dropped field nomenclature — {target!r} has an unknown status {status!r}")
     return _not_available("Unknown status.", raw, trust_review)
 
 
@@ -867,7 +819,7 @@ def _validate_field(target, raw, raw_columns, raw_set, groups, group_cols, sampl
 
 def required_missing_fields(contract: dict) -> list[str]:
     """Required fields a contract cannot produce."""
-    fields = upgrade(contract).get("fields") or {}
+    fields = read_contract(contract).get("fields") or {}
     return [
         field
         for field in REQUIRED_FIELDS
@@ -881,7 +833,7 @@ def unreviewed_low_confidence(contract: dict) -> list[str]:
     confirmed. The review screen will not approve while any exist, but that is
     the browser's word; this lets the confirm endpoint hold the same line.
     """
-    current = upgrade(contract)
+    current = read_contract(contract)
     fields = [
         target
         for target, entry in (current.get("fields") or {}).items()
@@ -895,12 +847,41 @@ def unreviewed_low_confidence(contract: dict) -> list[str]:
     return list(dict.fromkeys(fields + groups))
 
 
-def retailer_outputs(contract: dict, samples: dict[str, list] | None = None) -> list[str] | None:
+def _heading_values(contract: dict, entry: dict, target: str, columns: list[str], layout: dict | None) -> list[str] | None:
+    """
+    What a field read from a melt group's headings -- or the cells above them
+    -- is filled with, or None when that cannot be told without the file.
+    """
+    group = next((g for g in contract.get("melt_groups") or [] if g.get("id") == entry.get("melt_group")), None)
+    if group is None:
+        return None
+    try:
+        selected = resolve_selector(group.get("select") or {}, columns)
+    except (ValueError, re.error):
+        return None
+    label = next((item for item in group.get("labels") or [] if item.get("target") == target), None)
+    if (group.get("key") or {}).get("target") == target or (label and label.get("rows_above") == 0):
+        return selected
+    if label is None or layout is None:
+        return None
+    row = int(layout.get("header_row") or 1) - label["rows_above"]
+    cells = next((item["cells"] for item in layout.get("rows_above_header") or [] if item.get("row") == row), {})
+    return [cells[column] for column in selected if column in cells]
+
+
+def retailer_outputs(
+    contract: dict,
+    samples: dict[str, list] | None = None,
+    columns: list[str] | None = None,
+    layout: dict | None = None,
+) -> list[str] | None:
     """
     Every retailer name a contract writes sales to, read from its instructions
     without running them: a constant's value, or the outputs (and default) of
     the rules or code table that last translates the retailer. A column read
-    as it is writes the column's own values, taken from `samples` when given.
+    as it is writes the column's own values, taken from `samples` when given;
+    a group's headings read as they are write the headings, or the cells over
+    them, taken from the file's `columns` and `layout` when given.
 
     None when that cannot be known from the contract alone, so a caller can
     tell "writes to nothing" from "cannot say".
@@ -909,7 +890,8 @@ def retailer_outputs(contract: dict, samples: dict[str, list] | None = None) -> 
     get_or_create_retailers) with no customer, which the dashboard then never
     finds, so approval checks these against the mapping's customer first.
     """
-    entry = (upgrade(contract).get("fields") or {}).get("retailer") or {}
+    contract = read_contract(contract)
+    entry = (contract.get("fields") or {}).get("retailer") or {}
     status = entry.get("status")
     if status == "constant":
         return [str(entry.get("value"))] if entry.get("value") not in (None, "") else []
@@ -924,6 +906,10 @@ def retailer_outputs(contract: dict, samples: dict[str, list] | None = None) -> 
         outputs = list((last.get("values") or {}).values())
     elif not transforms and samples and entry.get("source") in samples:
         outputs = list(samples[entry["source"]] or [])
+    elif not transforms and entry.get("melt_group") and columns is not None:
+        outputs = _heading_values(contract, entry, "retailer", columns, layout)
+        if outputs is None:
+            return None
     else:
         return None
 
@@ -932,7 +918,7 @@ def retailer_outputs(contract: dict, samples: dict[str, list] | None = None) -> 
     return list(dict.fromkeys(str(output) for output in outputs if output not in (None, "")))
 
 
-DECISION_KEYS =("status", "source", "melt_group", "from_field", "value", "transforms")
+DECISION_KEYS = ("status", "source", "melt_group", "from_field", "from_layout", "value", "transforms")
 
 
 def contract_diff(before: dict | None, after: dict) -> list[dict]:
@@ -941,7 +927,7 @@ def contract_diff(before: dict | None, after: dict) -> list[dict]:
     one entry per field or melt group that differs. Kept on the confirmed
     mapping so prompts can be improved from what people actually corrected.
     """
-    old, new = upgrade(before), upgrade(after)
+    old, new = read_contract(before), read_contract(after)
     changes = []
     old_fields, new_fields = old.get("fields") or {}, new.get("fields") or {}
     for target in dict.fromkeys([*old_fields, *new_fields]):
@@ -954,7 +940,7 @@ def contract_diff(before: dict | None, after: dict) -> list[dict]:
                 "after": {k: v for k, v in b.items() if v is not None},
             })
 
-    group_keys = ("select", "key", "value_target", "period_type")
+    group_keys = ("select", "key", "labels", "value_target", "period_type")
     old_groups = {g.get("id"): g for g in old.get("melt_groups") or []}
     new_groups = {g.get("id"): g for g in new.get("melt_groups") or []}
     for group_id in dict.fromkeys([*old_groups, *new_groups]):
@@ -963,78 +949,3 @@ def contract_diff(before: dict | None, after: dict) -> list[dict]:
         if a != b:
             changes.append({"melt_group": group_id, "before": a, "after": b})
     return changes
-
-
-# ---- Version 1 ----------------------------------------------------------------------
-
-V1_TRANSFORMS = ("regex_extract", "value_map")
-
-
-def is_v2(contract: dict | None) -> bool:
-    """Whether a stored contract is in the version 2 shape."""
-    return bool(contract) and (contract.get("version") == CONTRACT_VERSION or "fields" in contract)
-
-
-def downgrade(contract: dict) -> dict | None:
-    """
-    A version 2 contract in the version 1 shape, or None when it says something
-    version 1 cannot.
-
-    A mapping confirmed in version 1 is written back in that shape when a
-    reviewer amends it, preserving compatibility with existing stored
-    mappings. It fits only when the data starts on row 1 of
-    the first sheet, nothing is filled down or rolled up, melt groups list
-    exact period columns, and every field is read from a column with at most
-    one regex_extract or value_map (or is not available, or is the period type
-    read from the headers).
-    """
-    current = upgrade(contract)
-    layout = current.get("layout") or {}
-    if layout.get("header_row", 1) != 1 or layout.get("fill_down") or (layout.get("sheet_position") or 1) != 1:
-        return None
-    if current.get("aggregate"):
-        return None
-
-    groups = {group["id"]: group for group in current.get("melt_groups") or []}
-    melt_groups = []
-    for group in groups.values():
-        select, key = group.get("select") or {}, group.get("key") or {}
-        if select.get("kind") != "columns" or key.get("target") != "period_start" or not key.get("pattern"):
-            return None
-        melt_groups.append({
-            "target_field": group["value_target"],
-            "columns": list(select.get("columns") or []),
-            "period_extract_regex": key["pattern"],
-            "date_format": key.get("date_format"),
-            **_annotation(group),
-        })
-
-    identity: dict[str, list[str]] = {}
-    annotations: dict[str, dict] = {}
-    transformations: dict[str, dict] = {}
-    for target, entry in (current.get("fields") or {}).items():
-        status = entry.get("status")
-        if status in ("not_available", "system") or (status == "derived" and not entry.get("from_field")):
-            continue
-        if status == "mapped" and entry.get("melt_group"):
-            if entry["melt_group"] not in groups or entry.get("transforms"):
-                return None
-            continue
-        if status != "mapped" or not entry.get("source"):
-            return None
-        transforms = entry.get("transforms") or []
-        if len(transforms) > 1 or any(t.get("type") not in V1_TRANSFORMS for t in transforms):
-            return None
-        identity.setdefault(entry["source"], []).append(target)
-        annotations[target] = _annotation(entry)
-        if transforms:
-            transformations[target] = transforms[0]
-
-    return {
-        "identity_mapping": {
-            source: targets[0] if len(targets) == 1 else targets for source, targets in identity.items()
-        },
-        "melt_groups": melt_groups,
-        "annotations": annotations,
-        "transformations": transformations,
-    }

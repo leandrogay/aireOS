@@ -37,7 +37,24 @@ export default function NotificationBell() {
           </span>
         )}
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-80 max-w-[90vw] p-2.5">
+      {/* Two stacked shadows (tight edge + soft lift) tinted with deep violet blue
+          (#0F1E4A) rather than black, so the popup floats above the page. Set
+          here, not in ui/popover, so the other dropdowns keep their look.
+          alignOffset: with align="end" a negative value slides the popup right, past the
+          page card's edge into the empty margin; Base UI's collision shift keeps it on
+          screen when the window is narrow, and the arrow stays on the bell. */}
+      <PopoverContent
+        align="end"
+        alignOffset={-96}
+        arrow
+        arrowClassName="data-[side=bottom]:border-lavander"
+        sideOffset={10}
+        // fixed: placed against the viewport, so this tall popup never adds to
+        // the page's scroll height (with the default "absolute" the page could
+        // be scrolled past its end while the panel was open).
+        positionMethod="fixed"
+        className="w-[26rem] max-w-[90vw] gap-0 p-0 ring-lavander shadow-[0_2px_4px_rgb(15_30_74/0.1),0_12px_32px_rgb(15_30_74/0.08)]"
+      >
         <NotificationPanel notifications={notifications} markRead={markRead} />
       </PopoverContent>
     </Popover>

@@ -1,6 +1,7 @@
 import { Geist_Mono, DM_Sans, DM_Serif_Display, Figtree } from "next/font/google";
 import "./globals.css";
 import AssistantWidget from "./components/assistant/AssistantWidget";
+import UploadProvider from "./components/upload/UploadProvider";
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
@@ -40,7 +41,7 @@ export default function RootLayout({ children }) {
       className={`${dmSans.variable} ${dmSerif.variable} ${geistMono.variable} ${figtree.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col font-sans">
-        {children}
+        <UploadProvider>{children}</UploadProvider>
         <AssistantWidget />
       </body>
     </html>

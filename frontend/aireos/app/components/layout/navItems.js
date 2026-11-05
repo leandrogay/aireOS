@@ -16,7 +16,7 @@ export const NAV_ITEMS = [
     href: '/upload',
     icon: Upload,
     description: 'Bring in retailer sell-out files. Layouts seen before load straight in.',
-    children: [{ label: 'Mappings', href: '/mappings' }],
+    children: [{ label: 'Nomenclatures', href: '/mappings' }],
   },
   {
     label: 'Dashboard',

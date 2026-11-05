@@ -38,6 +38,29 @@ def test_no_retailer_names_skips_the_query():
     assert conn.calls == []
 
 
+# ---- unowned_retailer_names --------------------------------------------------
+
+
+def test_names_with_no_customer_are_reported_in_order():
+    conn = FakeConnection(lambda sql, params: [("fairprice_offline",)])
+
+    unowned = catalog_service.unowned_retailer_names(
+        conn, ["fairprice_offline", "sheng_shiong_online", "sheng_shiong_online"]
+    )
+
+    assert unowned == ["sheng_shiong_online"]
+    sql, params = conn.calls[0]
+    assert "JOIN customer_retailers" in sql
+    assert params == {"retailer_names": ["fairprice_offline", "sheng_shiong_online"]}
+
+
+def test_no_names_skips_the_ownership_query():
+    conn = FakeConnection()
+
+    assert catalog_service.unowned_retailer_names(conn, []) == []
+    assert conn.calls == []
+
+
 # ---- get_or_create_stores ----------------------------------------------------
 
 

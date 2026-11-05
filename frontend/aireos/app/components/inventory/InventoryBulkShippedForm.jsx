@@ -15,7 +15,7 @@ import {
 import CustomerDropdown from './CustomerDropdown';
 import { formFieldClass, formLabelClass } from './InventoryChrome';
 import InventoryQuantityTable from './InventoryQuantityTable';
-import { primaryButtonClass, secondaryButtonClass } from './formStyles';
+import { primaryButtonClass, secondaryButtonClass } from '@/components/ui/formStyles';
 
 const SHIPPED_COLUMNS = [
   {

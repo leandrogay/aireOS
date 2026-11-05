@@ -92,7 +92,7 @@ def test_unrecognised_file_continues_to_proposal_flow(monkeypatch):
     pending = {
         "status": "pending_confirmation",
         "fingerprint": "abc123",
-        "contract": {"identity_mapping": {}, "melt_groups": []},
+        "contract": {"fields": {}, "melt_groups": []},
     }
     monkeypatch.setattr(
         uploads.generate_mapping,
@@ -110,6 +110,32 @@ def test_unrecognised_file_continues_to_proposal_flow(monkeypatch):
     assert "processing" not in result
 
 
+def _sales_contract(period_type):
+    """SKU, retailer and store read from columns; sales and quantity melted from period columns."""
+
+    def group(group_id, prefix):
+        return {
+            "id": group_id,
+            "select": {"kind": "pattern", "pattern": rf"^{prefix} \| "},
+            "key": {"target": "period_start", "pattern": r"(\d{2}-\d{2}-\d{4})$", "date_format": "%d-%m-%Y"},
+            "value_target": group_id,
+            "period_type": period_type,
+        }
+
+    return {
+        "fields": {
+            "sku": {"status": "mapped", "source": "SKU"},
+            "retailer": {"status": "mapped", "source": "Retailer"},
+            "store_code": {"status": "mapped", "source": "Store Code"},
+            "period_start": {"status": "mapped", "melt_group": "revenue"},
+            "period_type": {"status": "derived"},
+            "revenue": {"status": "mapped", "melt_group": "revenue"},
+            "quantity_units": {"status": "mapped", "melt_group": "quantity_units"},
+        },
+        "melt_groups": [group("revenue", "Sales"), group("quantity_units", "Qty")],
+    }
+
+
 def test_confirmed_contract_is_applied_deterministically(monkeypatch):
     dataframe = pd.DataFrame(
         {
@@ -120,30 +146,7 @@ def test_confirmed_contract_is_applied_deterministically(monkeypatch):
             "Qty | Week 1 | 01-01-2026": ["2"],
         }
     )
-    contract = {
-        "identity_mapping": {
-            "SKU": "sku",
-            "Retailer": "retailer",
-            "Store Code": "store_code",
-        },
-        "melt_groups": [
-            {
-                "target_field": "revenue",
-                "columns": ["Sales | Week 1 | 01-01-2026"],
-                # Scoped to its own prefix, matching what Claude actually
-                # produces (see tests/test_apply_contract.py) -- a regex
-                # shared across groups would ambiguously match both.
-                "period_extract_regex": r"Sales \| Week \d+ \| (\d{2}-\d{2}-\d{4})$",
-                "date_format": "%d-%m-%Y",
-            },
-            {
-                "target_field": "quantity_units",
-                "columns": ["Qty | Week 1 | 01-01-2026"],
-                "period_extract_regex": r"Qty \| Week \d+ \| (\d{2}-\d{2}-\d{4})$",
-                "date_format": "%d-%m-%Y",
-            },
-        ],
-    }
+    contract = _sales_contract("week")
     monkeypatch.setattr(
         uploads.generate_mapping,
         "resolve_mapping",
@@ -183,27 +186,7 @@ def test_confirmed_contract_stores_valid_rows_when_enabled(monkeypatch):
             "Qty | Month 1 | 01-08-2026": ["2"],
         }
     )
-    contract = {
-        "identity_mapping": {
-            "SKU": "sku",
-            "Retailer": "retailer",
-            "Store Code": "store_code",
-        },
-        "melt_groups": [
-            {
-                "target_field": "revenue",
-                "columns": ["Sales | Month 1 | 01-08-2026"],
-                "period_extract_regex": r"(\d{2}-\d{2}-\d{4})$",
-                "date_format": "%d-%m-%Y",
-            },
-            {
-                "target_field": "quantity_units",
-                "columns": ["Qty | Month 1 | 01-08-2026"],
-                "period_extract_regex": r"(\d{2}-\d{2}-\d{4})$",
-                "date_format": "%d-%m-%Y",
-            },
-        ],
-    }
+    contract = _sales_contract("month")
     monkeypatch.setattr(
         uploads.generate_mapping,
         "resolve_mapping",
@@ -275,7 +258,6 @@ def test_a_version_2_contract_is_transformed_and_validated(monkeypatch):
         }
     )
     proposal = {
-        "version": 2,
         "fields": {
             "period_start": {
                 "status": "mapped",

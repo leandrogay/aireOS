@@ -13,7 +13,7 @@ import {
   inventoryTheadClass,
   inventoryThClass,
 } from './InventoryTableFrame';
-import { invalidInputClass } from './formStyles';
+import { invalidInputClass } from '@/components/ui/formStyles';
 import { formFieldClass } from './InventoryChrome';
 
 /**

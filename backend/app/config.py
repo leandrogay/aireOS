@@ -148,6 +148,17 @@ def load_confirmation_required() -> bool:
     """
     return _enabled(os.environ.get("REQUIRE_LOAD_CONFIRMATION"))
 
+
+def mapping_examples_disabled() -> bool:
+    """
+    Return whether the mapping prompt leaves out every reference contract.
+
+    A testing switch: on, the model proposes a contract for a new layout with
+    no worked examples, which is how a never-before-seen data source behaves.
+    Off by default. Read at call time so flipping it only needs a restart.
+    """
+    return _enabled(os.environ.get("MAPPING_DISABLE_EXAMPLES"))
+
 # ---- HTTP -------------------------------------------------------------------
 
 DEFAULT_CORS_ALLOWED_ORIGINS = "http://localhost:3000,http://127.0.0.1:3000"

@@ -6,7 +6,6 @@ from app.services import (
     apply_contract,
     forecast_refresh_events,
     layout_detection,
-    mapping_contract,
     sellout_service,
     validation_service,
 )
@@ -21,18 +20,16 @@ def transform_confirmed_upload(
     data: bytes,
     contract: dict,
 ) -> pd.DataFrame:
-    """Read and transform one upload through either contract format."""
-    if mapping_contract.is_v2(contract):
-        try:
-            dataframe, _ = layout_detection.read_table(filename, data)
-        except layout_detection.LayoutError as exc:
-            raise apply_contract.ContractApplicationError(str(exc)) from exc
-    else:
-        dataframe = apply_contract.read_source_dataframe(filename, data)
+    """Read one upload's data table and transform it through its contract."""
+    try:
+        dataframe, layout = layout_detection.read_table(filename, data)
+    except layout_detection.LayoutError as exc:
+        raise apply_contract.ContractApplicationError(str(exc)) from exc
     return apply_contract.apply_contract(
         dataframe,
         contract,
         source_file=filename,
+        layout=layout,
     )
 
 
@@ -51,6 +48,15 @@ def preview_confirmed_upload(
     normalized = transform_confirmed_upload(filename, data, contract)
     validated = validation_service.validate_mapped_dataframe(normalized)
     valid_rows = validated["valid_df"]
+
+    problem = sellout_service.store_channel_problem(
+        valid_rows,
+        replace_source=replace_source,
+        check_stored=sellout_service.cloud_sql_loading_enabled(),
+    )
+    if problem:
+        raise sellout_service.StoreChannelError(problem)
+
     summary = sellout_service.summarize_clean_rows(valid_rows)
 
     # Without the database there is nothing stored to overlap with, and the
@@ -99,7 +105,6 @@ def process_confirmed_upload(
         storage = sellout_service.load_clean_rows(
             valid_rows,
             replace_source=replace_source,
-            data_source=contract.get("data_source") or "aireos_upload",
             source_blob=source_blob,
             content_hash=content_hash,
             mapping_fingerprint=mapping_fingerprint,

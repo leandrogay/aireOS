@@ -5,7 +5,10 @@ Static checks only: nothing here runs the contract (that is the
 transformation's job). Each check reads the contract's instructions and the
 file's own columns and values -- every field accounted for, the required ones
 filled, every product code a master SKU, every rule value covered, revenue not
-read from a claim or price column, periods inside the period the file states.
+read from a claim or price column, periods inside the period the file states,
+every store label above the header present. (One check, a store keeping to
+one retailer, reads the rows the transformation made instead; it is called on
+them by whoever ran it -- see check_store_channels.)
 A check that fails names the fields it implicates, and those fields'
 confidence comes from the checks (see field_confidence), so a reviewer is
 pointed at what actually went wrong.
@@ -15,16 +18,22 @@ codes in; a list of checks out. No GCS, no database, no model.
 """
 
 import re
+from collections import Counter
 
 import pandas as pd
 
 from app.schemas.sellout import BUSINESS_COLUMNS
-from app.services.mapping_contract import REQUIRED_FIELDS, group_columns, resolve_selector, upgrade
+from app.services.mapping_contract import REQUIRED_FIELDS, group_columns, read_contract, resolve_selector
 
 # A column with one of these words in its name is a claim against the
 # supplier, a price or a cost -- never the gross sales value of units sold.
 NOT_REVENUE = re.compile(
     r"claim|contra|rebate|price|cost|support|gst|discount|margin|allowance", re.IGNORECASE
+)
+# Units times a price or cost per unit is sales value (SingHealth's units x
+# Promo cost); units times a claim or rebate per unit is still a claim.
+NOT_A_UNIT_PRICE = re.compile(
+    r"claim|contra|rebate|support|discount|margin|allowance", re.IGNORECASE
 )
 # Above this share of negative quantities, sales are probably recorded as
 # negative (SAP postings) and the contract should negate them.
@@ -100,16 +109,48 @@ def _translated_code(code: str, transforms: list[dict]) -> str:
     return value
 
 
-def sku_codes(frame: pd.DataFrame, contract: dict) -> list[dict]:
+def _heading_sku_codes(frame: pd.DataFrame, layout: dict | None, contract: dict, entry: dict) -> list[dict]:
+    """
+    The product codes of a file with one column per product: the codes are the
+    melt group's headings, or the cells above them. Each is counted once per
+    column carrying it, since there are no rows of codes to count.
+    """
+    group = next((g for g in contract.get("melt_groups") or [] if g["id"] == entry.get("melt_group")), None)
+    if group is None:
+        return []
+    columns = resolve_selector(group.get("select") or {}, list(frame.columns))
+    label = next((item for item in group.get("labels") or [] if item["target"] == "sku"), None)
+    if group["key"]["target"] == "sku" or (label and label["rows_above"] == 0):
+        pattern = group["key"].get("pattern") if group["key"]["target"] == "sku" else None
+        found = [re.search(pattern, column) if pattern else None for column in columns]
+        values = [match.group(1) if match else column for match, column in zip(found, columns)]
+    elif label:
+        row = int((layout or {}).get("header_row") or 1) - label["rows_above"]
+        cells = next((item["cells"] for item in (layout or {}).get("rows_above_header") or [] if item["row"] == row), {})
+        values = [cells.get(column) for column in columns]
+    else:
+        return []
+
+    transforms = entry.get("transforms") or []
+    return [
+        {"code": code, "sku": _translated_code(code, transforms), "description": None, "rows": count}
+        for code, count in Counter(value for value in values if value).items()
+    ]
+
+
+def sku_codes(frame: pd.DataFrame, contract: dict, layout: dict | None = None) -> list[dict]:
     """
     Every product code in the file, with what the contract's code table makes
     of it, the file's description of it (when product_name is read from a
     column), and how many rows carry it. What the review screen's code table
-    is built from.
+    is built from. `layout` lets codes written over the column headings be read.
     """
-    fields = upgrade(contract).get("fields") or {}
+    contract = read_contract(contract)
+    fields = contract.get("fields") or {}
     entry = fields.get("sku") or {}
     source = entry.get("source")
+    if entry.get("status") == "mapped" and entry.get("melt_group"):
+        return _heading_sku_codes(frame, layout, contract, entry)
     if entry.get("status") != "mapped" or source not in frame:
         return []
     name = fields.get("product_name") or {}
@@ -210,7 +251,7 @@ def _check_required(contract: dict) -> list[dict]:
     return checks
 
 
-def _check_skus(frame: pd.DataFrame, contract: dict, master_skus: set[str] | None) -> dict:
+def _check_skus(frame: pd.DataFrame, layout: dict, contract: dict, master_skus: set[str] | None) -> dict:
     """Every product code in the file reads, through the code table, as a master SKU."""
     if (contract.get("fields") or {}).get("sku", {}).get("status") != "mapped":
         return _check("sku_codes", "info", True, "The SKU is not read from the file.", ["sku"])
@@ -219,7 +260,7 @@ def _check_skus(frame: pd.DataFrame, contract: dict, master_skus: set[str] | Non
             "sku_codes", "error", False,
             "The SKU master could not be read, so the product codes could not be checked.", ["sku"],
         )
-    codes = sku_codes(frame, contract)
+    codes = sku_codes(frame, contract, layout)
     unknown = [item for item in codes if item["sku"] not in master_skus]
     if not unknown:
         return _check(
@@ -237,24 +278,46 @@ def _check_skus(frame: pd.DataFrame, contract: dict, master_skus: set[str] | Non
     )
 
 
-def _rule_inputs(frame: pd.DataFrame, contract: dict, entry: dict, transform: dict) -> list[str] | None:
+def _label_values(layout: dict, group: dict, target: str, columns: list[str]) -> list[str] | None:
+    """The cells a melt group's label reads above its columns (an outlet's code over its name)."""
+    label = next((item for item in group.get("labels") or [] if item["target"] == target), None)
+    if label is None:
+        return None
+    if label["rows_above"] == 0:
+        return sorted(columns)
+    row = int((layout or {}).get("header_row") or 1) - label["rows_above"]
+    cells = next((item["cells"] for item in (layout or {}).get("rows_above_header") or [] if item["row"] == row), {})
+    return sorted({cells[column] for column in columns if column in cells})
+
+
+def _rule_inputs(frame: pd.DataFrame, layout: dict, contract: dict, entry: dict, transform: dict) -> list[str] | None:
     """The distinct values a code-mapping rule is applied to, read from the file."""
     if transform.get("column") in frame:
         return sorted(set(_present(frame[transform["column"]])))
     if entry.get("source") in frame:
         return sorted(set(_present(frame[entry["source"]])))
-    if entry.get("from_field") == "store_code":
-        store = (contract.get("fields") or {}).get("store_code") or {}
+    if entry.get("from_field"):
+        store = (contract.get("fields") or {}).get(entry["from_field"]) or {}
         group = next((g for g in contract.get("melt_groups") or [] if g["id"] == store.get("melt_group")), None)
         if group:
-            return resolve_selector(group.get("select") or {}, list(frame.columns))
+            columns = resolve_selector(group.get("select") or {}, list(frame.columns))
+            # The headers hold the values, or the cells above them do.
+            if group["key"]["target"] != entry["from_field"]:
+                return _label_values(layout, group, entry["from_field"], columns)
+            return columns
         if store.get("source") in frame:
             return sorted(set(_present(frame[store["source"]])))
     return None
 
 
-def _check_rules(frame: pd.DataFrame, contract: dict) -> list[dict]:
-    """Every value a code-mapping rule meets is covered by a rule or its default."""
+def _check_rules(frame: pd.DataFrame, layout: dict, contract: dict) -> list[dict]:
+    """
+    Every value a code-mapping rule meets is covered by a rule or its default.
+
+    Rules that match none of the values while a default catches them all
+    are worth a warning: the rules were most likely written for other
+    values -- outlet names, say, after the field they read became codes.
+    """
     checks = []
     for target, entry in (contract.get("fields") or {}).items():
         if target == "sku":
@@ -262,13 +325,22 @@ def _check_rules(frame: pd.DataFrame, contract: dict) -> list[dict]:
         for transform in entry.get("transforms") or []:
             if transform["type"] not in ("rules", "value_map"):
                 continue
-            inputs = _rule_inputs(frame, contract, entry, transform)
+            inputs = _rule_inputs(frame, layout, contract, entry, transform)
             if inputs is None:
                 continue
             covered = [v for v in inputs if _lookup(v, {**transform, "default": None}) is not None]
             rest = [v for v in inputs if v not in covered]
             has_default = bool(transform.get("default"))
             ok = has_default or not rest
+            if ok and inputs and not covered and transform["type"] == "rules":
+                checks.append(_check(
+                    f"rules_{target}", "warning", False,
+                    f"{target}: none of the {len(inputs)} distinct values match a rule, so every row gets "
+                    f"{transform['default']!r}. Check the rules are written for these values: {', '.join(inputs[:10])}.",
+                    [target],
+                    {"matched": [], "default": rest[:20]},
+                ))
+                continue
             checks.append(_check(
                 f"rules_{target}", "info" if ok else "error", ok,
                 f"{target}: {len(covered)} of {len(inputs)} distinct values match a rule"
@@ -293,6 +365,12 @@ def _measure_columns(frame: pd.DataFrame, contract: dict, field: str) -> list[st
 
 def _check_revenue(frame: pd.DataFrame, contract: dict) -> dict:
     suspect = [c for c in _measure_columns(frame, contract, "revenue") if NOT_REVENUE.search(c)]
+    entry = (contract.get("fields") or {}).get("revenue") or {}
+    suspect += [
+        t["column"]
+        for t in entry.get("transforms") or []
+        if t.get("type") == "multiply" and NOT_A_UNIT_PRICE.search(t["column"])
+    ]
     return _check(
         "revenue_source", "error", not suspect,
         "Revenue is not read from a claim, price or cost column." if not suspect
@@ -322,7 +400,30 @@ def _check_quantity_sign(frame: pd.DataFrame, contract: dict) -> dict:
     )
 
 
+def _check_stated_month(layout: dict) -> dict:
+    """A contract that reads its period from the file's title needs a title stating one month."""
+    stated = (layout or {}).get("stated_period")
+    if not stated:
+        return _check(
+            "period", "error", False,
+            "The period is read from the file's title, but this file's title states no period.",
+            ["period_start"], {"stated": None},
+        )
+    one_month = pd.Timestamp(stated["start"]).to_period("M") == pd.Timestamp(stated["end"]).to_period("M")
+    return _check(
+        "period", "error", one_month,
+        f"Every row is dated to the month the title states: {stated['start']} to {stated['end']}."
+        if one_month
+        else f"The title states {stated['start']} to {stated['end']}, more than one month, "
+             "so rows cannot be dated to a month from it.",
+        ["period_start"], {"stated": stated},
+    )
+
+
 def _check_period(frame: pd.DataFrame, layout: dict, contract: dict, filename: str) -> dict:
+    entry = (contract.get("fields") or {}).get("period_start") or {}
+    if entry.get("from_layout") == "stated_period":
+        return _check_stated_month(layout)
     stated = stated_period(layout, filename)
     dates = _period_dates(frame, contract)
     if stated is None or dates is None or dates.empty:
@@ -336,6 +437,30 @@ def _check_period(frame: pd.DataFrame, layout: dict, contract: dict, filename: s
         else f"Periods {', '.join(outside)} fall outside {stated['start']} to {stated['end']} ({stated['source']}).",
         ["period_start"], {"stated": stated, "outside": outside},
     )
+
+
+def _check_labels(frame: pd.DataFrame, layout: dict, contract: dict) -> list[dict]:
+    """Every column a melt group reads a label for has a cell in the label's row."""
+    checks = []
+    header_row = int((layout or {}).get("header_row") or 1)
+    above = {item["row"]: item["cells"] for item in (layout or {}).get("rows_above_header") or []}
+    for group in contract.get("melt_groups") or []:
+        columns = resolve_selector(group.get("select") or {}, list(frame.columns))
+        for label in group.get("labels") or []:
+            if label["rows_above"] == 0:
+                continue  # the headings themselves are always there
+            row = header_row - label["rows_above"]
+            cells = above.get(row) or {}
+            missing = [column for column in columns if column not in cells]
+            target = label["target"]
+            checks.append(_check(
+                f"labels_{target}", "error", not missing,
+                f"{target}: read from row {row} above all {len(columns)} columns." if not missing
+                else f"{target}: row {row} has nothing above {', '.join(missing[:10])}.",
+                [target],
+                {"row": row, "read": {c: cells[c] for c in columns[:20] if c in cells}, "missing": missing},
+            ))
+    return checks
 
 
 def _check_not_available(contract: dict) -> dict:
@@ -366,6 +491,61 @@ def _check_instructions(contract: dict) -> dict:
     return _check("instructions", "info", True, "The transformation is told: " + "; ".join(parts) + ".")
 
 
+# ---- One retailer per store (on transformed rows) ---------------------------------------
+#
+# The one check here that reads the contract's output, not the file: whether a
+# store keeps to one channel can only be told once the retailer rule has run on
+# every row. It is not part of run_checks; the mapping test, approval and every
+# load call it on the rows the transformation made.
+
+# How many stores a message names before "and n more".
+STORES_NAMED = 5
+
+
+def store_channel_conflicts(rows: pd.DataFrame) -> dict[str, list[str]]:
+    """
+    Each store code these rows send to more than one retailer, with the
+    retailers. A store is sold through one of a customer's retailers -- a
+    shop is offline, a website online -- so a retailer rule that splits one
+    store's rows (by a column that varies within the store) would make it two
+    stores. Rows with no store code are customer-level totals, which each
+    channel has one of, so they are left out.
+    """
+    if rows.empty or "store_code" not in rows or "retailer" not in rows:
+        return {}
+    pairs = rows[["store_code", "retailer"]].dropna().astype(str)
+    pairs = pairs.assign(store_code=pairs["store_code"].str.strip(), retailer=pairs["retailer"].str.strip())
+    pairs = pairs[(pairs["store_code"] != "") & (pairs["retailer"] != "")]
+    retailers = pairs.groupby("store_code")["retailer"].unique()
+    return {
+        str(code): sorted(names)
+        for code, names in retailers.items()
+        if len(names) > 1
+    }
+
+
+def describe_store_conflicts(conflicts: dict[str, list[str]]) -> str:
+    """The conflicts in a sentence: "AJ goes to a and b; BK goes to …", the first few only."""
+    named = [f"{code} goes to {' and '.join(names)}" for code, names in list(conflicts.items())[:STORES_NAMED]]
+    more = len(conflicts) - len(named)
+    return "; ".join(named) + (f"; and {more} more" if more > 0 else "")
+
+
+def check_store_channels(rows: pd.DataFrame) -> dict:
+    """The store_channel_conflicts of the transformed rows, as a check that blocks approval."""
+    conflicts = store_channel_conflicts(rows)
+    if not conflicts:
+        return _check("store_channels", "error", True, "Every store goes to one retailer.", ["retailer", "store_code"])
+    return _check(
+        "store_channels", "error", False,
+        f"A store goes to more than one retailer: {describe_store_conflicts(conflicts)}. A store belongs to one "
+        "channel, so decide the retailer by something that names the store (its code, name or format), not by "
+        "something that changes from row to row within a store.",
+        ["retailer", "store_code"],
+        {"stores": [f"{code} → {', '.join(names)}" for code, names in conflicts.items()]},
+    )
+
+
 # ---- Running them ---------------------------------------------------------------------
 
 def run_checks(
@@ -379,15 +559,16 @@ def run_checks(
     Every static check, most serious first. `master_skus` is the SKU master's
     codes; None when it could not be read, which fails the product-code check.
     """
-    contract = upgrade(contract)
+    contract = read_contract(contract)
     checks = [
         _check_accounted(contract),
         *_check_required(contract),
-        _check_skus(frame, contract, master_skus),
-        *_check_rules(frame, contract),
+        _check_skus(frame, layout, contract, master_skus),
+        *_check_rules(frame, layout, contract),
         _check_revenue(frame, contract),
         _check_quantity_sign(frame, contract),
         _check_period(frame, layout, contract, filename),
+        *_check_labels(frame, layout, contract),
         _check_not_available(contract),
         _check_instructions(contract),
     ]
@@ -402,7 +583,7 @@ def failures(checks: list[dict]) -> list[dict]:
 
 def unused_columns(contract: dict, columns: list[str]) -> list[str]:
     """The file's columns the contract never reads: no field, transform or melt group uses them."""
-    contract = upgrade(contract)
+    contract = read_contract(contract)
     read = {column for selected in group_columns(contract, columns).values() for column in selected}
     for entry in (contract.get("fields") or {}).values():
         read.add(entry.get("source"))
@@ -422,7 +603,7 @@ def field_confidence(contract: dict, checks: list[dict], columns: list[str] | No
     file has `columns` the contract leaves unread it is at most "medium": one
     of them may hold the field (FairPrice's MCH column is the product range).
     """
-    contract = upgrade(contract)
+    contract = read_contract(contract)
     worst: dict[str, str] = {}
     for check in checks:
         if check["passed"] or check["level"] == "info":

@@ -280,23 +280,6 @@ def fingerprint(columns: list[str]) -> str:
     return hashlib.sha256(joined.encode("utf-8")).hexdigest()[:16]
 
 
-def unordered_fingerprint(columns: list[str]) -> str:
-    """The order-free template key used by early version 2 mappings."""
-    joined = "\x1f".join(sorted(layout_templates(columns)))
-    return hashlib.sha256(joined.encode("utf-8")).hexdigest()[:16]
-
-
-def legacy_fingerprint(columns: list[str]) -> str:
-    """
-    The fingerprint contracts were stored under before templates: the exact,
-    normalised header names. Still looked up so a contract confirmed then is
-    found for a file with exactly the same headers.
-    """
-    normalized = sorted(to_snake_case(c) for c in columns)
-    joined = "\x1f".join(normalized)
-    return hashlib.sha256(joined.encode("utf-8")).hexdigest()[:16]
-
-
 # ---- Column profile ------------------------------------------------------------
 
 def _spread(values: list[str]) -> list[str]:
@@ -359,6 +342,16 @@ def profile_columns(frame: pd.DataFrame, layout: dict | None = None) -> dict[str
         profile[str(column)] = entry
 
     return profile
+
+
+def head_rows(frame: pd.DataFrame, limit: int = 5) -> list[list[str | None]]:
+    """
+    The first data rows as they sit in the file, one list per row in column
+    order, for the review screen's view of the top of the file. Unlike
+    column_samples the values stay lined up, so a row reads across.
+    """
+    head = frame.head(limit).astype(object)
+    return [[None if pd.isna(value) else str(value) for value in row] for row in head.itertuples(index=False)]
 
 
 def column_samples(frame: pd.DataFrame, limit: int = 5) -> dict[str, list[str]]:

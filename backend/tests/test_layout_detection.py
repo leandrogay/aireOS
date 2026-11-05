@@ -10,7 +10,7 @@ import io
 
 import openpyxl
 import pytest
-from conftest import fairprice_txt, nhg_xlsx, sheng_siong_xlsx
+from conftest import fairprice_txt, nhg_xlsx, sheng_siong_xlsx, singhealth_xlsx
 
 from app.services import layout_detection as ld
 
@@ -92,6 +92,40 @@ def test_footer_rows_are_excluded_from_data_and_kept():
         "Total", "Total Claim before GST", "Total Claim After GST",
     ]
     assert layout["footer_rows"][0]["values"]["Total"] == "10"
+
+
+def test_claim_lines_under_the_total_are_footers_whatever_their_label():
+    frame, layout = ld.read_table("ss.xlsx", sheng_siong_xlsx(claim_label="Supplier Claim"))
+
+    assert len(frame) == 3
+    assert frame["ItemCode"].notna().all()
+    assert [row["label"] for row in layout["footer_rows"]] == [
+        "Total", "Supplier Claim before GST", "Supplier Claim After GST",
+    ]
+
+
+def test_a_summary_line_with_no_total_above_it_stays_data():
+    data = b"Date,Code,Qty\n2026-08-01,A1,3\n,Adjustment,1\n"
+
+    frame, layout = ld.read_table("adj.csv", data)
+
+    assert len(frame) == 2
+    assert layout["footer_rows"] == []
+
+
+def test_a_period_stated_with_month_names_is_read():
+    _, layout = ld.read_table("XEL.xlsx", singhealth_xlsx())
+
+    assert layout["stated_period"]["start"] == "2026-08-01"
+    assert layout["stated_period"]["end"] == "2026-08-31"
+
+
+def test_the_cells_above_the_header_are_kept_by_column():
+    _, layout = ld.read_table("XEL.xlsx", singhealth_xlsx())
+
+    assert layout["header_row"] == 4
+    codes = next(item for item in layout["rows_above_header"] if item["row"] == 3)
+    assert codes["cells"] == {"BEDOK": "81001", "ONLINE": "88001"}
 
 
 def test_merged_date_cells_are_filled_down():

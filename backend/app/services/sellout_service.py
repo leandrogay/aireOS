@@ -8,6 +8,7 @@ reads that used to live in bigquery.py (further down).
 """
 
 import datetime
+import json
 import re
 from collections import Counter
 from functools import lru_cache
@@ -17,11 +18,22 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
 from app import config
-from app.services import catalog_service, forecast_refresh_events, ingestion_service, sql
+from app.services import (
+    catalog_service,
+    forecast_refresh_events,
+    ingestion_service,
+    mapping_checks,
+    promotion_pricing,
+    sql,
+)
 
 
 class SelloutLoadError(RuntimeError):
     """Validated rows could not be stored atomically in Cloud SQL."""
+
+
+class StoreChannelError(SelloutLoadError):
+    """A store would be sold under two of one customer's retailers."""
 
 
 BUSINESS_KEY = ("retailer", "store_code", "sku", "period_start", "period_type")
@@ -226,6 +238,136 @@ def existing_overlap(
     }
 
 
+# ============================================================
+# ONE RETAILER PER STORE
+# ============================================================
+#
+# A store is sold through one of its customer's retailers: a shop is
+# {customer}_offline, a website {customer}_online. The mapping's retailer rule
+# decides which, and once a store's sales are stored under one, a file that
+# sends the same store code to the other would make it two stores (two catalog
+# rows, its sales split between channels). So a load is refused, in full, when
+# its own rows split a store, or when a store it writes already has sales under
+# another retailer of the same customer. Reloading a file with a corrected rule
+# still works: its own earlier rows are deleted before the check runs.
+
+
+def _store_pairs(dataframe: pd.DataFrame) -> pd.DataFrame:
+    """Each (retailer, store code) in the rows once; customer-level totals (no store code) are not stores."""
+    pairs = (
+        dataframe[["retailer", "store_code"]]
+        .dropna()
+        .astype(str)
+        .drop_duplicates()
+    )
+    return pairs[pairs["store_code"].str.strip() != ""]
+
+
+def _stored_under_other_retailer(
+    connection: Connection,
+    dataframe: pd.DataFrame,
+    *,
+    excluded_source_files: list[str] | None = None,
+) -> list[dict]:
+    """
+    For each store code in these rows, the other retailers of the same
+    customer that already hold its sales, with the files those came from.
+    Rows from `excluded_source_files` are left out (the ones a reload is
+    about to replace).
+    """
+    pairs = _store_pairs(dataframe)
+    if pairs.empty:
+        return []
+
+    rows = connection.execute(
+        text(
+            """
+            WITH incoming AS (
+                SELECT *
+                FROM unnest(
+                    CAST(:retailer_names AS text[]),
+                    CAST(:store_codes AS text[])
+                ) AS input(retailer_name, store_code)
+            )
+            SELECT
+                i.store_code,
+                i.retailer_name AS incoming_retailer,
+                other.retailer_name AS stored_retailer,
+                array_agg(DISTINCT COALESCE(s.source_file, 'an unnamed file')) AS source_files
+            FROM incoming i
+            JOIN retailers r ON r.retailer_name = i.retailer_name
+            JOIN customer_retailers cr ON cr.retailer_id = r.retailer_id
+            JOIN customer_retailers sibling
+                ON sibling.customer_id = cr.customer_id
+               AND sibling.retailer_id <> r.retailer_id
+            JOIN retailers other ON other.retailer_id = sibling.retailer_id
+            JOIN sellout s
+                ON s.retailer_id = sibling.retailer_id
+               AND s.store_code = i.store_code
+            WHERE COALESCE(s.source_file, '') <> ALL(CAST(:excluded AS text[]))
+            GROUP BY i.store_code, i.retailer_name, other.retailer_name
+            ORDER BY i.store_code
+            """
+        ),
+        {
+            "retailer_names": pairs["retailer"].tolist(),
+            "store_codes": pairs["store_code"].tolist(),
+            "excluded": list(excluded_source_files or []),
+        },
+    ).mappings().all()
+    return [dict(row) for row in rows]
+
+
+def _store_channel_message(dataframe: pd.DataFrame, stored: list[dict]) -> str:
+    """Why these rows would make a store two stores, or '' when they would not."""
+    within = mapping_checks.store_channel_conflicts(dataframe)
+    if within:
+        return (
+            f"This file sends a store to more than one retailer: "
+            f"{mapping_checks.describe_store_conflicts(within)}. A store belongs to one channel; "
+            "fix the nomenclature's retailer rule so each store goes to one of them."
+        )
+    if not stored:
+        return ""
+    named = stored[: mapping_checks.STORES_NAMED]
+    lines = "; ".join(
+        f"{row['store_code']} already has sales under {row['stored_retailer']} "
+        f"(from {', '.join(sorted(row['source_files']))}), and this file sends it to {row['incoming_retailer']}"
+        for row in named
+    )
+    more = len(stored) - len(named)
+    return (
+        f"{lines}{f'; and {more} more' if more > 0 else ''}. A store belongs to one channel. Change the nomenclature's "
+        "retailer rule to match, or, if the rule is now right, reload or roll back the earlier uploads first."
+    )
+
+
+def store_channel_problem(
+    dataframe: pd.DataFrame,
+    *,
+    replace_source: bool = False,
+    check_stored: bool = True,
+    engine: Engine | None = None,
+) -> str:
+    """
+    Why loading these rows would be refused for splitting a store across a
+    customer's retailers, or ''. A dry run of the check load_clean_rows makes,
+    for the load confirmation: a reload's own earlier rows are told apart by
+    file name here (the load itself uses its exact previous run). Without
+    `check_stored` only the rows themselves are checked, no database.
+    """
+    if dataframe.empty:
+        return ""
+    if mapping_checks.store_channel_conflicts(dataframe):
+        return _store_channel_message(dataframe, [])
+    if not check_stored or _store_pairs(dataframe).empty:
+        return ""
+    source_files = sorted({str(name) for name in dataframe["source_file"].dropna()}) if replace_source else []
+    with (engine or _get_read_engine()).connect() as connection:
+        stored = _stored_under_other_retailer(connection, dataframe, excluded_source_files=source_files)
+    return _store_channel_message(dataframe, stored)
+
+
 def cloud_sql_loading_enabled() -> bool:
     return config.cloud_sql_loading_enabled()
 
@@ -379,6 +521,11 @@ def load_clean_rows(
     if replace_source and not source_blob:
         raise ValueError("replace_source requires a unique source_blob")
 
+    # A file that splits a store between retailers is refused before the
+    # database is touched; one clashing with stored sales is refused below.
+    if mapping_checks.store_channel_conflicts(dataframe):
+        raise StoreChannelError(_store_channel_message(dataframe, []))
+
     database = engine or sql.connect_with_connector()
     timestamp = loaded_at or datetime.datetime.now(datetime.timezone.utc)
     records, rows_consolidated = _prepare_records(dataframe)
@@ -388,6 +535,16 @@ def load_clean_rows(
             retailer_names = list(
                 dict.fromkeys(str(row["retailer"]) for row in records)
             )
+            unowned = catalog_service.unowned_retailer_names(
+                connection,
+                retailer_names,
+            )
+            if unowned:
+                raise SelloutLoadError(
+                    f"No customer owns {', '.join(unowned)}. Create the customer "
+                    "with these retailers (or fix the retailer names in the "
+                    "nomenclature) before loading sales."
+                )
             retailer_ids = catalog_service.get_or_create_retailers(
                 connection,
                 retailer_names,
@@ -459,6 +616,15 @@ def load_clean_rows(
                 )
 
             _delete_replaced_rows(connection, replaced_rows)
+
+            # After the reload's own earlier rows are gone, so a file reloaded
+            # with a corrected retailer rule moves its stores, while another
+            # file's sales under the other channel still refuse the load (and
+            # roll back everything above).
+            stored = _stored_under_other_retailer(connection, dataframe)
+            if stored:
+                raise StoreChannelError(_store_channel_message(dataframe, stored))
+
             _upsert_sellout(connection, facts)
 
             if ingestion_id is not None:
@@ -473,6 +639,8 @@ def load_clean_rows(
                 "sales_upload",
                 f"sales:{facts[0].get('source_file') or 'unknown'}",
             )
+    except SelloutLoadError:
+        raise
     except Exception as exc:
         raise SelloutLoadError(f"Cloud SQL sell-out load failed: {exc}") from exc
 
@@ -515,9 +683,31 @@ def _get_read_engine() -> Engine:
 # rows are "the" sell-out for a given retailer+month.
 #
 # Revenue on each chosen row stays the ingested sellout.revenue. A blank
-# revenue (NULL, not an explicit 0) is quantity_units times skus.price, the
-# one current catalog list price for that SKU. Inventory reads only units
-# from this view, so the price join does not change stock figures.
+# revenue (NULL, not an explicit 0) takes its estimate from
+# :revenue_estimates (see _REVENUE_ESTIMATES), and only a row with no
+# estimate falls back to quantity_units times skus.price, the one current
+# catalog list price for that SKU. Inventory reads only units from this view,
+# so it binds NO_REVENUE_ESTIMATES and the price join does not change stock
+# figures.
+#
+# Estimated revenue (promotion_pricing: the SKU price on each sale day, less
+# any promotion and voucher) is worked out in Python for each read, by
+# _revenue_estimates, and bound as one JSON parameter. It is a lookup table
+# for that one query only -- nothing is written back to sellout. It is keyed
+# by sellout's primary key.
+_REVENUE_ESTIMATES = """
+    jsonb_to_recordset(CAST(:revenue_estimates AS jsonb)) AS e(
+        retailer_id integer, store_code text, sku text, period_start date,
+        period_type text, estimated_revenue double precision
+    )
+"""
+NO_REVENUE_ESTIMATES = "[]"
+
+# The part of a revenue total that was filled in rather than reported (either
+# fill above), so the dashboard can mark it EST. Both sources carry the
+# revenue_estimated flag it reads.
+_ESTIMATED_REVENUE_SUM = "SUM(CASE WHEN s.revenue_estimated THEN s.revenue ELSE 0 END)"
+
 EFFECTIVE_SELLOUT_CTE = """
     WITH monthly_coverage AS (
         SELECT DISTINCT retailer_id, date_trunc('month', period_start)::date AS month
@@ -543,10 +733,15 @@ EFFECTIVE_SELLOUT_CTE = """
     effective_sellout AS (
         SELECT p.retailer_id, p.store_code, p.sku, p.period_start, p.period_end,
                p.quantity_units,
-               COALESCE(p.revenue, p.quantity_units * k.price) AS revenue,
+               COALESCE(p.revenue, e.estimated_revenue, p.quantity_units * k.price) AS revenue,
+               -- Either fill counts as estimated: the dashboard marks it EST.
+               (p.revenue IS NULL) AS revenue_estimated,
                p.period_type
         FROM preferred_rows p
         LEFT JOIN skus k ON k.sku = p.sku
+        LEFT JOIN """ + _REVENUE_ESTIMATES + """
+          ON e.retailer_id = p.retailer_id AND e.store_code = p.store_code AND e.sku = p.sku
+         AND e.period_start = p.period_start AND e.period_type = p.period_type
     )
 """
 
@@ -557,11 +752,63 @@ PRICED_SELLOUT_FROM = """
 (
     SELECT src.retailer_id, src.store_code, src.sku, src.period_start, src.period_end,
            src.period_type, src.quantity_units,
-           COALESCE(src.revenue, src.quantity_units * k.price) AS revenue
+           COALESCE(src.revenue, e.estimated_revenue, src.quantity_units * k.price) AS revenue,
+           (src.revenue IS NULL) AS revenue_estimated
     FROM sellout src
     LEFT JOIN skus k ON k.sku = src.sku
+    LEFT JOIN """ + _REVENUE_ESTIMATES + """
+      ON e.retailer_id = src.retailer_id AND e.store_code = src.store_code AND e.sku = src.sku
+     AND e.period_start = src.period_start AND e.period_type = src.period_type
 ) s
 """
+
+
+def _revenue_estimates(retailer_names: list[str], start_date: str | None, end_date: str | None) -> str:
+    """
+    Estimated revenue for the blank-revenue sellout rows a dashboard read
+    could include, as the JSON :revenue_estimates takes. Scoped by retailer
+    and period start only: an estimate for a row the read then filters out
+    (another SKU or store) is simply never joined. A row promotion_pricing
+    can't price (overlapping promotions, unknown terms) is left out, so it
+    keeps the list-price fallback.
+    """
+    where_clauses = [
+        "s.revenue IS NULL",
+        "s.retailer_id IN (SELECT retailer_id FROM retailers WHERE retailer_name = ANY(CAST(:retailer_names AS text[])))",
+    ]
+    params: dict = {"retailer_names": retailer_names}
+    if start_date:
+        where_clauses.append("s.period_start >= CAST(:start_date AS date)")
+        params["start_date"] = start_date
+    if end_date:
+        where_clauses.append("s.period_start <= CAST(:end_date AS date)")
+        params["end_date"] = end_date
+    query = text(
+        f"""
+        SELECT s.retailer_id, s.store_code, s.sku, s.period_start, s.period_end,
+               s.period_type, s.quantity_units, s.revenue
+        FROM sellout s
+        WHERE {' AND '.join(where_clauses)}
+        """
+    )
+    with _get_read_engine().connect() as conn:
+        rows = [dict(row) for row in conn.execute(query, params).mappings().all()]
+    if not rows:
+        return NO_REVENUE_ESTIMATES
+
+    estimates = [
+        {
+            "retailer_id": row["retailer_id"],
+            "store_code": row["store_code"],
+            "sku": row["sku"],
+            "period_start": str(row["period_start"]),
+            "period_type": row["period_type"],
+            "estimated_revenue": row["estimated_revenue"],
+        }
+        for row in promotion_pricing.estimate_sales_revenue(rows)
+        if row["revenue_source"] == "estimated"
+    ]
+    return json.dumps(estimates)
 
 
 # ============================================================
@@ -579,7 +826,7 @@ SKU_RANKING_ORDERS = ("product", "desc", "asc")
 # ones, alphabetically.
 SKU_RANGE_ORDER = ("Aire Adult Diaper Pants", "Aire Adult Diaper Ultra Tape", "Aire Adult Diaper Ultra Pants")
 SKU_SIZE_ORDER = ("S/M", "L", "XL")
-SKU_RANKING_COLUMNS = ["sku", "product_name", "volume", "value", "rank"]
+SKU_RANKING_COLUMNS = ["sku", "product_name", "volume", "value", "estimated_value", "rank"]
 DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 PERIOD_COMPARISON_TYPES = ("wow", "mom", "yoy")
 DASHBOARD_MODES = ("offline", "online")
@@ -696,6 +943,7 @@ def get_sku_ranking(
     if end_date:
         where_clauses.append("s.period_start <= CAST(:end_date AS date)")
         params["end_date"] = end_date
+    params["revenue_estimates"] = _revenue_estimates(retailer_names, start_date, end_date)
 
     # metric/sql_order are interpolated only after validation against the
     # fixed SKU_RANKING_METRICS / asc|desc lists above -- never raw input.
@@ -708,7 +956,8 @@ def get_sku_ranking(
           MAX(k.sku_range) AS sku_range,
           MAX(k.size) AS size,
           COALESCE(SUM(s.quantity_units), 0) AS volume,
-          COALESCE(SUM(s.revenue), 0) AS value
+          COALESCE(SUM(s.revenue), 0) AS value,
+          COALESCE({_ESTIMATED_REVENUE_SUM}, 0) AS estimated_value
         FROM effective_sellout s
         LEFT JOIN skus k ON k.sku = s.sku
         WHERE {' AND '.join(where_clauses)}
@@ -725,6 +974,7 @@ def get_sku_ranking(
     ranked = pd.DataFrame([dict(row) for row in rows])
     ranked["volume"] = ranked["volume"].astype(float)
     ranked["value"] = ranked["value"].astype(float).round(2)
+    ranked["estimated_value"] = ranked["estimated_value"].astype(float).round(2)
     ranked = ranked.reset_index(drop=True)
     ranked["rank"] = ranked.index + 1
     if order == "product":
@@ -881,8 +1131,10 @@ def _dashboard_rows(df: pd.DataFrame, granularity: str) -> pd.DataFrame:
         period_start=("period_start", "min"),
         revenue=("revenue", "sum"),
         units=("units", "sum"),
+        estimated_revenue=("estimated_revenue", "sum"),
     )
     rolled_up["revenue"] = rolled_up["revenue"].round(2)
+    rolled_up["estimated_revenue"] = rolled_up["estimated_revenue"].round(2)
     rolled_up["period_label"] = (
         rolled_up["period_key"].apply(lambda m: datetime.datetime.strptime(m, "%Y-%m").strftime("%B %Y"))
         if granularity == "month"
@@ -894,6 +1146,8 @@ def _dashboard_rows(df: pd.DataFrame, granularity: str) -> pd.DataFrame:
 def _dashboard_mode_summary(df: pd.DataFrame, retailer: str) -> dict:
     # Splits the pre-aggregated per-period-by-format rows down to one
     # retailer, then reshapes into the three views the dashboard renders.
+    # Each carries estimated_revenue, the part of its revenue that was filled
+    # in rather than reported, for the dashboard's EST sign.
     if df.empty:
         return {"storeFormats": [], "periodTotal": [], "periodByFormat": []}
 
@@ -902,7 +1156,7 @@ def _dashboard_mode_summary(df: pd.DataFrame, retailer: str) -> dict:
         return {"storeFormats": [], "periodTotal": [], "periodByFormat": []}
 
     store_formats = (
-        mode_df.groupby("format", as_index=False)[["revenue", "units"]]
+        mode_df.groupby("format", as_index=False)[["revenue", "units", "estimated_revenue"]]
         .sum()
         .sort_values("revenue", ascending=False)
     )
@@ -911,17 +1165,24 @@ def _dashboard_mode_summary(df: pd.DataFrame, retailer: str) -> dict:
     # formats can have different MIN(period_start) within the same month.
     period_total = (
         mode_df.groupby("period_label", as_index=False)
-        .agg(period_start=("period_start", "min"), revenue=("revenue", "sum"), units=("units", "sum"))
+        .agg(
+            period_start=("period_start", "min"),
+            revenue=("revenue", "sum"),
+            units=("units", "sum"),
+            estimated_revenue=("estimated_revenue", "sum"),
+        )
         .sort_values("period_start")
     )
 
     period_by_format = mode_df.sort_values("period_start")[
-        ["period_label", "period_start", "format", "revenue", "units"]
+        ["period_label", "period_start", "format", "revenue", "units", "estimated_revenue"]
     ]
 
     return {
-        "storeFormats": store_formats[["format", "revenue", "units"]].to_dict(orient="records"),
-        "periodTotal": period_total[["period_label", "period_start", "revenue", "units"]].to_dict(orient="records"),
+        "storeFormats": store_formats[["format", "revenue", "units", "estimated_revenue"]].to_dict(orient="records"),
+        "periodTotal": period_total[
+            ["period_label", "period_start", "revenue", "units", "estimated_revenue"]
+        ].to_dict(orient="records"),
         "periodByFormat": period_by_format.to_dict(orient="records"),
     }
 
@@ -944,6 +1205,7 @@ def get_dashboard_summary(
     if granularity not in DASHBOARD_GRANULARITIES:
         raise ValueError(f"granularity must be one of {DASHBOARD_GRANULARITIES}")
     where_clauses, params = _dashboard_scope(customer, sku, store, start_date, end_date)
+    params["revenue_estimates"] = _revenue_estimates(params["retailer_names"], start_date, end_date)
 
     if granularity == "month":
         source_cte = EFFECTIVE_SELLOUT_CTE
@@ -960,7 +1222,8 @@ def get_dashboard_summary(
           s.retailer_id, r.retailer_name AS retailer, s.store_code,
           COALESCE(st.store_format, 'UNKNOWN') AS format,
           s.period_start,
-          SUM(s.revenue) AS revenue, SUM(s.quantity_units) AS units
+          SUM(s.revenue) AS revenue, SUM(s.quantity_units) AS units,
+          {_ESTIMATED_REVENUE_SUM} AS estimated_revenue
         {from_clause}
         JOIN retailers r ON r.retailer_id = s.retailer_id
         LEFT JOIN stores st ON st.retailer_id = s.retailer_id AND st.store_code = s.store_code
@@ -975,27 +1238,35 @@ def get_dashboard_summary(
     if not df.empty:
         df["revenue"] = df["revenue"].astype(float)
         df["units"] = df["units"].astype(float)
+        df["estimated_revenue"] = df["estimated_revenue"].fillna(0).astype(float)
         df = _dashboard_rows(df, granularity)
 
     return {mode: _dashboard_mode_summary(df, _retailer_for(customer, mode)) for mode in DASHBOARD_MODES}
 
 
-def get_customer_totals(
-    customers: list[str],
-    sku: str | None = None,
-    start_date: str | None = None,
-    end_date: str | None = None,
-) -> dict:
-    """One period total per customer, split into offline and online.
+# Most customers the cross-customer chart compares at once: one bar or line
+# each, in its own colour (frontend storeFormats CUSTOMER_COLORS has four).
+MAX_COMPARED_CUSTOMERS = 3
 
-    This is the cross-customer bar chart: each bar is the sum of the
-    selected dates, not a week or a month. The effective-sellout view is
-    used so a retailer+month that has both weekly and monthly rows is
-    counted once. has_offline / has_online say whether that channel exists
-    for the customer at all, including outside the date range, so a
-    customer with no online sales (NHG) can be left off the Online chart
-    instead of drawn as a zero.
+# Which of these retailers have any sell-out at all, whatever the dates: a
+# customer with no online sales (NHG) is left off the Online chart rather
+# than drawn as a zero.
+_RETAILERS_WITH_SALES = text(
     """
+    SELECT DISTINCT r.retailer_name
+    FROM sellout s
+    JOIN retailers r ON r.retailer_id = s.retailer_id
+    WHERE r.retailer_name = ANY(CAST(:retailer_names AS text[]))
+    """
+)
+
+
+def _customers_scope(
+    customers: list[str], sku: str | None, start_date: str | None, end_date: str | None
+) -> tuple[list[str], list[str], list[str], dict]:
+    # The named customers (blank and repeated names dropped), both channels'
+    # retailers, and the WHERE clauses + bind params shared by
+    # get_customer_totals and get_customer_trends, estimates included.
     names = list(dict.fromkeys(name.strip() for name in customers if name and name.strip()))
     if not names:
         raise ValueError("customers must include at least one customer")
@@ -1016,6 +1287,27 @@ def get_customer_totals(
     if end_date:
         where_clauses.append("s.period_start <= CAST(:end_date AS date)")
         params["end_date"] = end_date
+    params["revenue_estimates"] = _revenue_estimates(retailer_names, start_date, end_date)
+    return names, retailer_names, where_clauses, params
+
+
+def get_customer_totals(
+    customers: list[str],
+    sku: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict:
+    """One period total per customer, split into offline and online.
+
+    This is the cross-customer bar chart: each bar is the sum of the
+    selected dates, not a week or a month. The effective-sellout view is
+    used so a retailer+month that has both weekly and monthly rows is
+    counted once. has_offline / has_online say whether that channel exists
+    for the customer at all, including outside the date range, so a
+    customer with no online sales (NHG) can be left off the Online chart
+    instead of drawn as a zero.
+    """
+    names, retailer_names, where_clauses, params = _customers_scope(customers, sku, start_date, end_date)
 
     totals_query = text(
         EFFECTIVE_SELLOUT_CTE
@@ -1023,6 +1315,7 @@ def get_customer_totals(
         SELECT
           r.retailer_name,
           COALESCE(SUM(s.revenue), 0) AS revenue,
+          COALESCE({_ESTIMATED_REVENUE_SUM}, 0) AS estimated_revenue,
           COALESCE(SUM(s.quantity_units), 0) AS units
         FROM effective_sellout s
         JOIN retailers r ON r.retailer_id = s.retailer_id
@@ -1030,17 +1323,9 @@ def get_customer_totals(
         GROUP BY r.retailer_name
         """
     )
-    presence_query = text(
-        """
-        SELECT DISTINCT r.retailer_name
-        FROM sellout s
-        JOIN retailers r ON r.retailer_id = s.retailer_id
-        WHERE r.retailer_name = ANY(CAST(:retailer_names AS text[]))
-        """
-    )
     with _get_read_engine().connect() as conn:
         total_rows = conn.execute(totals_query, params).mappings().all()
-        present_rows = conn.execute(presence_query, {"retailer_names": retailer_names}).mappings().all()
+        present_rows = conn.execute(_RETAILERS_WITH_SALES, {"retailer_names": retailer_names}).mappings().all()
 
     totals_by_retailer = {row["retailer_name"]: row for row in total_rows}
     present = {row["retailer_name"] for row in present_rows}
@@ -1056,10 +1341,82 @@ def get_customer_totals(
             entry[mode] = {
                 "revenue": round(float(row["revenue"] or 0), 2) if row else 0.0,
                 "units": float(row["units"] or 0) if row else 0.0,
+                "estimated_revenue": round(float(row["estimated_revenue"] or 0), 2) if row else 0.0,
             }
             entry[f"has_{mode}"] = retailer in present
         result.append(entry)
     return {"customers": result}
+
+
+def get_customer_trends(
+    customers: list[str],
+    granularity: str = "month",
+    sku: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict:
+    """Each named customer's revenue and units per week or month, split into
+    offline and online, for the cross-customer chart.
+
+    One figure per customer per period rather than one total for the whole
+    range, so customers can be compared month by month. At most
+    MAX_COMPARED_CUSTOMERS at once. Rows follow get_dashboard_summary: by
+    month the effective-sellout view, by week genuine weekly rows only.
+    Periods carry estimated_revenue like the dashboard summary, and
+    has_offline / has_online are as in get_customer_totals.
+    """
+    if granularity not in DASHBOARD_GRANULARITIES:
+        raise ValueError(f"granularity must be one of {DASHBOARD_GRANULARITIES}")
+    named = {name.strip() for name in customers if name and name.strip()}
+    if len(named) > MAX_COMPARED_CUSTOMERS:
+        raise ValueError(f"Compare at most {MAX_COMPARED_CUSTOMERS} customers at a time")
+    names, retailer_names, where_clauses, params = _customers_scope(customers, sku, start_date, end_date)
+
+    if granularity == "month":
+        source_cte = EFFECTIVE_SELLOUT_CTE
+        from_clause = "FROM effective_sellout s"
+    else:
+        source_cte = ""
+        where_clauses.append("s.period_type = 'week'")
+        from_clause = f"FROM {PRICED_SELLOUT_FROM}"
+
+    trends_query = text(
+        source_cte
+        + f"""
+        SELECT
+          r.retailer_name AS retailer,
+          s.period_start,
+          SUM(s.revenue) AS revenue, SUM(s.quantity_units) AS units,
+          {_ESTIMATED_REVENUE_SUM} AS estimated_revenue
+        {from_clause}
+        JOIN retailers r ON r.retailer_id = s.retailer_id
+        WHERE {' AND '.join(where_clauses)}
+        GROUP BY r.retailer_name, s.period_start
+        """
+    )
+    with _get_read_engine().connect() as conn:
+        rows = conn.execute(trends_query, params).mappings().all()
+        present_rows = conn.execute(_RETAILERS_WITH_SALES, {"retailer_names": retailer_names}).mappings().all()
+
+    df = pd.DataFrame([dict(row) for row in rows]) if rows else pd.DataFrame()
+    if not df.empty:
+        df["revenue"] = df["revenue"].fillna(0).astype(float)
+        df["units"] = df["units"].fillna(0).astype(float)
+        df["estimated_revenue"] = df["estimated_revenue"].fillna(0).astype(float)
+        # One series per customer, not split by store format.
+        df["format"] = ""
+        df = _dashboard_rows(df, granularity)
+
+    present = {row["retailer_name"] for row in present_rows}
+    result = []
+    for name in names:
+        entry = {"customer": name, "label": _customer_label(name)}
+        for mode in DASHBOARD_MODES:
+            retailer = _retailer_for(name, mode)
+            entry[mode] = _dashboard_mode_summary(df, retailer)["periodTotal"]
+            entry[f"has_{mode}"] = retailer in present
+        result.append(entry)
+    return {"granularity": granularity, "customers": result}
 
 
 def get_monthly_only_months(
@@ -1175,6 +1532,8 @@ def _latest_preferred_period(retailer: str | None) -> dict | None:
         where_clauses.append("retailer_id IN (SELECT retailer_id FROM retailers WHERE retailer_name = :retailer_name)")
         params["retailer_name"] = retailer
     where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+    # Only dates are read, so nothing is priced.
+    params["revenue_estimates"] = NO_REVENUE_ESTIMATES
     query = text(
         EFFECTIVE_SELLOUT_CTE
         + f"""
@@ -1392,6 +1751,9 @@ def get_period_comparison(
     if store:
         where_clauses.append("s.store_code = :store")
         params["store"] = store
+    params["revenue_estimates"] = _revenue_estimates(
+        retailer_names, params["overall_start"], params["overall_end"],
+    )
 
     if comparison_type == "wow":
         source_cte = ""

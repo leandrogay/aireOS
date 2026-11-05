@@ -12,7 +12,7 @@ function toggleValue(selected, value) {
     : [...selected, value];
 }
 
-// Used by ForecastTable: a pill button that opens a portal-rendered checkbox
+// Used by ForecastTable and inventory's InventoryTableFrame: a pill button that opens a portal-rendered checkbox
 // list, positioned relative to the button so it still works inside a
 // scrolling/overflow-hidden table header.
 export default function HeaderCheckboxFilter({ id, label, selected, options, openId, setOpenId, onChange }) {

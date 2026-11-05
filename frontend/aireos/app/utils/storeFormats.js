@@ -55,8 +55,9 @@ export function formatsToShow(formats) {
     (acc, format) => ({
       revenue: acc.revenue + (format.revenue ?? 0),
       units: acc.units + (format.units ?? 0),
+      estimated_revenue: acc.estimated_revenue + (format.estimated_revenue ?? 0),
     }),
-    { revenue: 0, units: 0 },
+    { revenue: 0, units: 0, estimated_revenue: 0 },
   );
   return [...named, { format: 'Others', ...others }];
 }

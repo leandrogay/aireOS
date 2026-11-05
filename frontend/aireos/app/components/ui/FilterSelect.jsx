@@ -2,6 +2,9 @@
 
 import { ChevronDown } from 'lucide-react';
 
+import { filterControlClass } from '@/components/ui/filterControl';
+import { cn } from '@/lib/utils';
+
 /**
  * One labelled dropdown in a list's filter bar. An empty value means "all",
  * and a picked value gets the darker border so active filters stand out.
@@ -25,11 +28,7 @@ export default function FilterSelect({ label, value, allLabel, options, onChange
         <select
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          className={`h-9 w-full appearance-none truncate rounded-lg border bg-white pl-2.5 pr-8 text-sm font-normal outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50 ${
-            value
-              ? 'border-deep-violet-blue text-deep-violet-blue'
-              : 'border-lavander text-deep-violet-blue/70 hover:bg-cream/60'
-          }`}
+          className={cn(filterControlClass(Boolean(value)), 'appearance-none truncate pr-8')}
         >
           <option value="">{allLabel}</option>
           {options.map((option) => (

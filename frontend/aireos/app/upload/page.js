@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { ListX } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { Eraser, ListX } from 'lucide-react';
 import PageLayout from '@/components/layout/PageLayout';
 import { formatDateTime } from '@/lib/formatDate';
 import { Button } from '@/components/ui/button';
@@ -9,53 +9,49 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import Toast from '@/components/ui/Toast';
 import Dropzone from '../components/upload/Dropzone';
 import RejectedFiles from '../components/upload/RejectedFiles';
+import UploadBatch from '../components/upload/UploadBatch';
 import UploadGroup from '../components/upload/UploadGroup';
 import RecentUploads from '../components/upload/RecentUploads';
 import LoadConfirmDialog from '../components/upload/LoadConfirmDialog';
 import {
-  MAX_FILES_PER_BATCH,
   UPLOAD_HISTORY_LIMIT,
   UPLOAD_HISTORY_MONTHS,
 } from '../config/upload';
-import { validateFile } from '../utils/fileInspect';
-import { wasSaved } from '../utils/loadPreview';
 import {
-  STAGES,
-  checkFromResult,
   filesLabel,
   groupFiles,
+  isSkipped,
+  isStaged,
   isUploadable,
-  outcomeFromResult,
+  uploadBatches,
   uploadBlocker,
-  uploadOptionsFor,
 } from '../utils/uploadFlow';
 import {
-  checkUpload,
   deleteUpload,
-  uploadFile,
   fetchUploadHistory,
   rollbackUpload,
 } from '../services/uploadApi';
 import useConfirmAction from '@/hooks/useConfirmAction';
 import useToast from '@/hooks/useToast';
+import useUploads from '@/hooks/useUploads';
 
-let nextId = 0;
-const makeId = () => `file-${(nextId += 1)}`;
-
-// A file in the list moves through phases:
-//   checking   dropped; POST /api/uploads/check is answering what would happen
-//   ready      checked (or the check failed); waits for Upload
-//   uploading  POST /api/uploads in flight
-//   done       the upload answered; `outcome` says how it went. With
-//              REQUIRE_LOAD_CONFIRMATION on, a known layout is done but
-//              `ready_to_load` until someone confirms a load from its row.
-// Files that cannot be uploaded never become rows; they are listed in the
-// RejectedFiles alert instead.
-
+// The file list itself lives in UploadProvider, so uploads carry on while
+// people use other pages; this page shows it, plus Recent uploads.
 export default function UploadPage() {
-  const [items, setItems] = useState([]);
-  const [rejections, setRejections] = useState([]);
-  const [batchError, setBatchError] = useState('');
+  const {
+    items,
+    rejections,
+    batchError,
+    uploadsFinished,
+    addFiles,
+    removeItem,
+    clearStaged,
+    clearFinished,
+    decideDuplicate,
+    startUpload,
+    retryItem,
+    markLoaded,
+  } = useUploads();
   const [history, setHistory] = useState([]);
   const [historyError, setHistoryError] = useState('');
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -63,42 +59,6 @@ export default function UploadPage() {
   const { toast, notify, dismissToast } = useToast();
   // The rows whose files the load confirmation is open for, or null.
   const [loadingIds, setLoadingIds] = useState(null);
-
-  // Stage timers keyed by item id, so a file that finishes early stops
-  // advancing its own labels without touching any other file's.
-  const stageTimers = useRef(new Map());
-
-  // Validation and checks are async, so by the time one answers the list has
-  // moved on. This is what the duplicate-name and same-contents checks read.
-  const itemsRef = useRef(items);
-  useEffect(() => {
-    itemsRef.current = items;
-  }, [items]);
-
-  // Content hash of every checked file still waiting in the list, by id.
-  // Written the moment a check answers, so two copies of one file whose
-  // checks land together still find each other (itemsRef only catches up
-  // after a render).
-  const pendingHashes = useRef(new Map());
-
-  const patchItem = useCallback((id, changes) => {
-    setItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, ...changes } : item)),
-    );
-  }, []);
-
-  const clearStageTimers = useCallback((id) => {
-    (stageTimers.current.get(id) || []).forEach(clearTimeout);
-    stageTimers.current.delete(id);
-  }, []);
-
-  useEffect(() => {
-    const timers = stageTimers.current;
-    return () => {
-      timers.forEach((handles) => handles.forEach(clearTimeout));
-      timers.clear();
-    };
-  }, []);
 
   // ---- History ----------------------------------------------------------
 
@@ -123,7 +83,8 @@ export default function UploadPage() {
     // Deferred a tick so the first render commits before the loading state
     // lands, rather than re-rendering the page on the way into it.
     Promise.resolve().then(loadHistory);
-  }, [loadHistory]);
+    // uploadsFinished: an upload that answered belongs in Recent uploads.
+  }, [loadHistory, uploadsFinished]);
 
   const rollback = useConfirmAction({
     onConfirm: async (upload) => {
@@ -160,241 +121,14 @@ export default function UploadPage() {
     },
   });
 
-  // ---- Selection and checking ---------------------------------------------
-
-  // Takes a file out of the list and into the "can't be uploaded" alert.
-  const rejectItem = useCallback((id, name, reason) => {
-    pendingHashes.current.delete(id);
-    setItems((prev) => prev.filter((item) => item.id !== id));
-    setRejections((prev) => [...prev, { name, reason }]);
-  }, []);
-
-  // Asks the server what would happen to this file, so the row can say so
-  // before anything is uploaded. A failed check does not hold the file back:
-  // the upload runs every check again.
-  const checkItem = useCallback(
-    async (id, file) => {
-      let check;
-      try {
-        check = checkFromResult(await checkUpload(file));
-      } catch (error) {
-        patchItem(id, { phase: 'ready', check: { failed: error.message } });
-        return;
-      }
-
-      // Removed while it was being checked: nothing left to update.
-      if (!itemsRef.current.some((item) => item.id === id)) return;
-
-      if (check.error) {
-        rejectItem(id, file.name, check.error);
-        return;
-      }
-
-      // Two copies of one file under different names in one batch: keep the
-      // one dropped first and turn the other away, rather than upload the
-      // same data twice. Checks answer in any order, so "first" is list
-      // order, not whichever check came back first -- unless the other copy
-      // has already started uploading, which cannot be taken back.
-      const twinId = [...pendingHashes.current].find(
-        ([otherId, hash]) => otherId !== id && check.contentHash && hash === check.contentHash,
-      )?.[0];
-      if (twinId) {
-        const list = itemsRef.current;
-        const twin = list.find((item) => item.id === twinId);
-        const keepThis =
-          twin?.phase === 'ready' &&
-          list.findIndex((item) => item.id === id) < list.findIndex((item) => item.id === twinId);
-
-        if (!keepThis) {
-          rejectItem(
-            id,
-            file.name,
-            `Same contents as ${twin?.file.name || 'another file'}, which is already in the list.`,
-          );
-          return;
-        }
-        rejectItem(
-          twinId,
-          twin.file.name,
-          `Same contents as ${file.name}, which is already in the list.`,
-        );
-      }
-
-      if (check.contentHash) pendingHashes.current.set(id, check.contentHash);
-      patchItem(id, { phase: 'ready', check });
-    },
-    [patchItem, rejectItem],
-  );
-
-  const addFiles = useCallback(
-    async (incoming) => {
-      const files = Array.from(incoming || []);
-      if (!files.length) return;
-
-      // The alert is about the latest drop, so it starts again with each one.
-      setBatchError('');
-      setRejections([]);
-
-      // Names already waiting in the list, including ones added earlier in
-      // this same drop. Finished rows don't hold a name: dropping a file
-      // again after uploading it is a real question for the duplicate check.
-      const takenNames = new Set(
-        itemsRef.current.filter((item) => item.phase !== 'done').map((item) => item.file.name),
-      );
-
-      for (const file of files) {
-        if (takenNames.has(file.name)) {
-          setRejections((prev) => [
-            ...prev,
-            { name: file.name, reason: 'A file with this name is already in the list.' },
-          ]);
-          continue;
-        }
-
-        const validation = await validateFile(file);
-        if (!validation.ok) {
-          setRejections((prev) => [...prev, { name: file.name, reason: validation.reason }]);
-          continue;
-        }
-
-        takenNames.add(file.name);
-        const id = makeId();
-        setItems((prev) => [...prev, { id, file, phase: 'checking', check: null, decision: null }]);
-        checkItem(id, file);
-      }
-    },
-    [checkItem],
-  );
-
-  const removeItem = useCallback(
-    (id) => {
-      clearStageTimers(id);
-      pendingHashes.current.delete(id);
-      setItems((prev) => prev.filter((item) => item.id !== id));
-    },
-    [clearStageTimers],
-  );
-
-  // Empties the list in one go. Files mid-upload stay: their requests are
-  // already on the server and their rows report how they went. Nothing is
-  // deleted from the bucket; uploaded files stay in Recent uploads.
-  const clearAll = useCallback(() => {
-    const keep = itemsRef.current.filter((item) => item.phase === 'uploading');
-    const keepIds = new Set(keep.map((item) => item.id));
-
-    itemsRef.current.forEach((item) => {
-      if (keepIds.has(item.id)) return;
-      clearStageTimers(item.id);
-      pendingHashes.current.delete(item.id);
-    });
-
-    setItems((prev) => prev.filter((item) => keepIds.has(item.id)));
-    setRejections([]);
-    setBatchError('');
-  }, [clearStageTimers]);
-
-  const decideDuplicate = useCallback(
-    (id, decision) => patchItem(id, { decision }),
-    [patchItem],
-  );
-
-  // ---- Uploading ----------------------------------------------------------
-
-  // One request per file, started together and never awaited as a group: a
-  // file that fails, or one that takes a minute in Claude, leaves the others
-  // to finish and report on their own.
-  const uploadItem = useCallback(
-    async (item) => {
-      clearStageTimers(item.id);
-      patchItem(item.id, { phase: 'uploading', stage: STAGES[0].key, outcome: null });
-
-      const handles = STAGES.slice(1).map((stage) =>
-        setTimeout(() => patchItem(item.id, { stage: stage.key }), stage.afterMs),
-      );
-      stageTimers.current.set(item.id, handles);
-
-      try {
-        const outcome = outcomeFromResult(await uploadFile(item.file, uploadOptionsFor(item)));
-
-        if (outcome.kind === 'duplicate') {
-          // The upload found an earlier copy the check did not (the check
-          // failed, or another upload landed in between). Nothing was stored;
-          // back to the list for the same decision as any other duplicate.
-          patchItem(item.id, {
-            phase: 'ready',
-            stage: null,
-            decision: null,
-            check: {
-              ...item.check,
-              duplicate: {
-                matchedOn: outcome.matchedOn,
-                existingFilename: outcome.existingFilename,
-                uploadedAt: outcome.uploadedAt,
-              },
-            },
-          });
-        } else {
-          // Uploaded: no longer a pending copy that a new drop should be
-          // compared against (the server's duplicate check takes over). A
-          // failed file stays pending, since Try again can still send it.
-          if (outcome.kind !== 'failed') pendingHashes.current.delete(item.id);
-          patchItem(item.id, { phase: 'done', stage: null, outcome });
-          loadHistory();
-        }
-      } catch (error) {
-        patchItem(item.id, {
-          phase: 'done',
-          stage: null,
-          outcome: { kind: 'failed', error: error.message },
-        });
-      } finally {
-        clearStageTimers(item.id);
-      }
-    },
-    [clearStageTimers, loadHistory, patchItem],
-  );
-
-  const startUpload = useCallback(() => {
-    const uploadable = items.filter(isUploadable);
-    if (!uploadable.length) return;
-
-    if (uploadable.length > MAX_FILES_PER_BATCH) {
-      setBatchError(
-        `That is ${uploadable.length} files. Upload at most ${MAX_FILES_PER_BATCH} at a time.`,
-      );
-      return;
-    }
-
-    setBatchError('');
-    uploadable.forEach((item) => uploadItem(item));
-  }, [items, uploadItem]);
-
-  const retryItem = useCallback(
-    (id) => {
-      const item = items.find((entry) => entry.id === id);
-      if (item) uploadItem(item);
-    },
-    [items, uploadItem],
-  );
-
   // ---- Loading ------------------------------------------------------------
 
-  // A file that loaded is an ordinary uploaded file from here on; one that
-  // did not stays ready to load, and the dialog said why.
   const handleLoaded = useCallback(
     (response) => {
-      const byPath = new Map((response?.results || []).map((result) => [result.blob_path, result]));
-      setItems((prev) =>
-        prev.map((item) => {
-          const result = item.outcome?.blobPath && byPath.get(item.outcome.blobPath);
-          // A check with saving switched off leaves the file waiting to load.
-          if (!wasSaved(result)) return item;
-          return { ...item, outcome: { ...item.outcome, kind: 'mapped', processing: result.processing } };
-        }),
-      );
+      markLoaded(response);
       loadHistory();
     },
-    [loadHistory],
+    [loadHistory, markLoaded],
   );
 
   const loadingPaths = (loadingIds || [])
@@ -403,10 +137,17 @@ export default function UploadPage() {
 
   // ---- Render -----------------------------------------------------------
 
-  const uploadableCount = items.filter(isUploadable).length;
-  const clearableCount = items.filter((item) => item.phase !== 'uploading').length;
-  const blocker = uploadBlocker(items);
-  const groups = groupFiles(items);
+  // Two places, as file managers and cloud drives keep them: files added and
+  // not sent yet, under the drop zone with the Upload button that sends them;
+  // and what each Upload press came to, newest first, in its own card. A new
+  // drop never mixes with the results of the last one.
+  const staged = items.filter(isStaged);
+  const stagedGroups = groupFiles(staged, { newestFirst: true });
+  const batches = uploadBatches(items);
+  const uploadableCount = staged.filter(isUploadable).length;
+  const skippedCount = staged.filter(isSkipped).length;
+  const blocker = uploadBlocker(staged);
+  const finishedCount = items.filter((item) => item.batch && item.phase === 'done').length;
 
   return (
     <PageLayout title="Upload sales data">
@@ -424,30 +165,30 @@ export default function UploadPage() {
             </p>
           )}
 
-          {!!items.length && (
+          {!!staged.length && (
             <div className="mt-6 flex items-center justify-between gap-3 border-b border-lavander pb-2">
               <p className="text-sm font-medium text-deep-violet-blue">
-                {items.length} file{items.length === 1 ? '' : 's'}
+                {staged.length} new file{staged.length === 1 ? '' : 's'}
               </p>
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={clearAll}
-                disabled={!clearableCount}
-                title="Remove every file from this list. Nothing already uploaded is deleted."
+                onClick={clearStaged}
+                title="Take every file that hasn't been sent out of this list."
                 className="text-deep-violet-blue/70 hover:bg-lavander hover:text-deep-violet-blue"
               >
                 <ListX aria-hidden="true" />
-                Clear all
+                Remove all
               </Button>
             </div>
           )}
 
-          {groups.map((group) => (
+          {stagedGroups.map((group) => (
             <UploadGroup
               key={group.key}
               group={group}
+              idPrefix="staged"
               onRemove={removeItem}
               onRetry={retryItem}
               onDecide={decideDuplicate}
@@ -462,15 +203,56 @@ export default function UploadPage() {
             <button
               type="button"
               onClick={startUpload}
-              disabled={!uploadableCount || Boolean(blocker)}
+              disabled={!(uploadableCount || skippedCount) || Boolean(blocker)}
               className="rounded-lg border border-deep-violet-blue bg-deep-violet-blue px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-violet focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
             >
+              {/* Only skips left: pressing it files them under the batch. */}
               {uploadableCount
                 ? `Upload ${filesLabel(uploadableCount)}`
-                : 'Upload'}
+                : skippedCount
+                  ? `Skip ${filesLabel(skippedCount)}`
+                  : 'Upload'}
             </button>
           </div>
         </section>
+
+        {!!batches.length && (
+          <section
+            aria-labelledby="upload-results-heading"
+            className="rounded-lg border border-lavander bg-white p-6 shadow-sm"
+          >
+            <div className="mb-4 flex items-center justify-between gap-3 border-b border-lavander pb-2">
+              <h2 id="upload-results-heading" className="font-serif text-lg text-deep-violet-blue">
+                Uploaded this session
+              </h2>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={clearFinished}
+                disabled={!finishedCount}
+                title="Take finished uploads out of this list. Uploaded files stay in Recent uploads; failed ones can be dropped in again."
+                className="text-deep-violet-blue/70 hover:bg-lavander hover:text-deep-violet-blue"
+              >
+                <Eraser aria-hidden="true" />
+                Clear finished
+              </Button>
+            </div>
+            <div className="space-y-4">
+              {batches.map((batch, index) => (
+                <UploadBatch
+                  key={batch.id}
+                  batch={batch}
+                  isLatest={index === 0}
+                  onRemove={removeItem}
+                  onRetry={retryItem}
+                  onDecide={decideDuplicate}
+                  onLoad={setLoadingIds}
+                />
+              ))}
+            </div>
+          </section>
+        )}
 
         <RecentUploads
           uploads={history}
@@ -485,7 +267,7 @@ export default function UploadPage() {
         <ConfirmDialog
           open={Boolean(rollback.target)}
           title="Rollback this upload?"
-          description="Its transformed sell-out rows will be removed, and any older values it replaced will be restored. The raw file and mapping will be kept for audit."
+          description="Its transformed sell-out rows will be removed, and any older values it replaced will be restored. The raw file and nomenclature will be kept for audit."
           details={rollback.target ? [
             { label: 'File', value: rollback.target.filename },
             { label: 'Rows loaded', value: rollback.target.rows_stored ?? '—' },
@@ -518,7 +300,7 @@ export default function UploadPage() {
         <ConfirmDialog
           open={Boolean(deletion.target)}
           title="Delete this uploaded file?"
-          description="The raw source file will be permanently removed from GCS. Its confirmed mapping and retained ingestion audit will not be deleted."
+          description="The raw source file will be permanently removed from GCS. Its confirmed nomenclature and retained ingestion audit will not be deleted."
           details={deletion.target ? [
             { label: 'File', value: deletion.target.filename },
             { label: 'Customer', value: deletion.target.vendor || '—' },

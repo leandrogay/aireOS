@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-import { cardClass } from '@/components/inventory/formStyles';
+import { cardClass } from '@/components/ui/formStyles';
 import RefreshButton from '@/components/ui/RefreshButton';
 import Toast from '@/components/ui/Toast';
 import useDohSettings from '@/hooks/useDohSettings';
