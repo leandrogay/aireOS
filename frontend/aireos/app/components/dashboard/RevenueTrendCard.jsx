@@ -24,13 +24,12 @@ function ChartFooter({ estimate, lastUpdated }) {
 }
 
 /**
- * Revenue trend card: an optional `headerExtra` row on top (page.js puts the
- * Period and Compare to controls there, so the timeframe is read before the
- * chart), then one row of same-size switches -- Offline / Online on the left,
- * Volume / Revenue (`metric`, owned by page.js because the comparison rows are
- * built for it) and By week / By month on the right -- and the chart. Data comes from the shared useDashboardSummary hook
- * (called in page.js) so this and RevenueSummaryCards don't each fetch the
- * same data independently.
+ * Revenue trend card: one control row -- an optional `headerExtra` on the left
+ * (page.js puts the Period and Compare to controls there, so the timeframe is
+ * read before the chart) and same-size switches on the right, Volume / Revenue
+ * (`metric`, owned by page.js because the comparison rows are built for it)
+ * and By week / By month -- then the chart. Offline / Online (`mode`) is chosen
+ * beside the page title (ChannelSwitch), since it changes the whole page.
  *
  * The chart is always stacked by store format, in the format colours, so a
  * colour always means one format: FormatTrendChart with no comparison, and
@@ -55,7 +54,6 @@ export default function RevenueTrendCard({
   weeklyGap = null,
   weekAvailable = true,
   mode = "offline",
-  onModeChange = () => {},
   headerExtra = null,
   granularity = "week",
   onGranularityChange = () => {},
@@ -63,7 +61,6 @@ export default function RevenueTrendCard({
   comparisonLoading = false,
   periodNames = null,
   customerBars = null,
-  onlineEnabled = true,
   estimate = null,
   metric = "revenue",
   onMetricChange = () => {},
@@ -76,20 +73,13 @@ export default function RevenueTrendCard({
 
   return (
     <div className="bg-white rounded-lg border border-lavander shadow-sm p-3 h-full flex flex-col">
-      {headerExtra && <div className="mb-2">{headerExtra}</div>}
-
-      <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-        <Tabs value={mode} onValueChange={onModeChange}>
-          <TabsList className="h-7 bg-lavander">
-            <TabsTrigger value="offline" className={`text-xs ${tabTriggerClass}`}>
-              Offline
-            </TabsTrigger>
-            <TabsTrigger value="online" disabled={!onlineEnabled} className={`text-xs ${tabTriggerClass}`}>
-              Online
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-        <div className="flex items-center gap-2">
+      {/* One row: the period controls on the left, the view switches on the
+          right, lined up on their bottom edge. On a narrow card the switches
+          wrap to their own line, still on the right (ml-auto), and on a very
+          narrow one onto a line each. */}
+      <div className="mb-2 flex flex-wrap items-end gap-x-3 gap-y-2">
+        {headerExtra}
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
           <Tabs value={metric} onValueChange={onMetricChange}>
             <TabsList className="h-7 bg-lavander">
               <TabsTrigger value="units" className={`text-xs ${tabTriggerClass}`}>

@@ -47,9 +47,11 @@ export default function PromotionsPage() {
   const [storesError, setStoresError] = useState('');
   const [skuRangeOptions, setSkuRangeOptions] = useState([]);
   const [skuRangesError, setSkuRangesError] = useState('');
-  const [isLoadingRetailers, setIsLoadingRetailers] = useState(false);
-  const [isLoadingStores, setIsLoadingStores] = useState(false);
-  const [isLoadingSkuRanges, setIsLoadingSkuRanges] = useState(false);
+  // True from the start, like isLoadingList: all three load on mount, and
+  // the loaders only set state after their request returns.
+  const [isLoadingRetailers, setIsLoadingRetailers] = useState(true);
+  const [isLoadingStores, setIsLoadingStores] = useState(true);
+  const [isLoadingSkuRanges, setIsLoadingSkuRanges] = useState(true);
   const [promotions, setPromotions] = useState([]);
   const [listError, setListError] = useState('');
   // True from the start: the list loads on mount, so the first paint shows
@@ -63,6 +65,9 @@ export default function PromotionsPage() {
   const [highlightIds, setHighlightIds] = useState([]);
   const expanded = useExpandedRows();
   const [editingPromotion, setEditingPromotion] = useState(null);
+  // Edit was opened before the retailer list arrived, so the form's retailer
+  // ticks are still empty (formFromPromotion matches against `retailers`).
+  const [needsRetailerPrefill, setNeedsRetailerPrefill] = useState(false);
   // The create / edit form opens in a modal over the overview.
   const [isFormOpen, setIsFormOpen] = useState(false);
 
@@ -70,12 +75,10 @@ export default function PromotionsPage() {
    * Load retailers for All / Specific scope from GET /api/catalog/retailers.
    */
   const loadRetailers = useCallback(async () => {
-    setIsLoadingRetailers(true);
-    setRetailersError('');
-
     try {
       const data = await getRetailers();
       setRetailers(data);
+      setRetailersError('');
     } catch (error) {
       setRetailers([]);
       setRetailersError(error.message || 'Failed to load retailers.');
@@ -89,12 +92,10 @@ export default function PromotionsPage() {
    * in the form, because the same store can exist under every retailer.
    */
   const loadStores = useCallback(async () => {
-    setIsLoadingStores(true);
-    setStoresError('');
-
     try {
       const data = await getStores();
       setStores(data);
+      setStoresError('');
     } catch (error) {
       setStores([]);
       setStoresError(error.message || 'Failed to load stores.');
@@ -107,12 +108,10 @@ export default function PromotionsPage() {
    * Load distinct SKU ranges from GET /api/catalog/sku-ranges.
    */
   const loadSkuRanges = useCallback(async () => {
-    setIsLoadingSkuRanges(true);
-    setSkuRangesError('');
-
     try {
       const data = await getSkuRanges();
       setSkuRangeOptions(data);
+      setSkuRangesError('');
     } catch (error) {
       setSkuRangeOptions([]);
       setSkuRangesError(error.message || 'Failed to load SKU ranges.');
@@ -143,46 +142,49 @@ export default function PromotionsPage() {
   };
 
   /**
-   * Load the promotion overview from GET /api/promotions.
-   *
-   * @param {{ silent?: boolean }} [options]
+   * Load the promotion overview from GET /api/promotions. Silent: it sets
+   * state only once the request returns (refreshPromotions shows the
+   * placeholder rows first).
    */
-  const loadPromotions = useCallback(async ({ silent = false } = {}) => {
-    if (!silent) setIsLoadingList(true);
-    setListError('');
-
+  const loadPromotions = useCallback(async () => {
     try {
       const data = await getPromotions();
       setPromotions(data);
+      setListError('');
     } catch (error) {
       // Rows already loaded stay on screen under the error and its Retry.
       setListError(error.message || 'Failed to load promotions.');
     } finally {
-      if (!silent) setIsLoadingList(false);
+      setIsLoadingList(false);
     }
   }, []);
 
-  useEffect(() => {
-    loadRetailers();
-    loadStores();
-    loadSkuRanges();
+  /**
+   * Refresh / Retry on the overview: placeholder rows, then reload.
+   */
+  const refreshPromotions = () => {
+    setIsLoadingList(true);
     loadPromotions();
+  };
+
+  useEffect(() => {
+    async function loadPage() {
+      await Promise.all([loadRetailers(), loadStores(), loadSkuRanges(), loadPromotions()]);
+    }
+
+    loadPage();
   }, [loadRetailers, loadStores, loadSkuRanges, loadPromotions]);
 
-  useEffect(() => {
-    if (!editingPromotion || !retailers.length) return;
-
-    const prefilled = formFromPromotion(editingPromotion, retailers);
-    if (!prefilled.selectedRetailerIds.length) return;
-
-    setForm((current) => {
-      if (current.selectedRetailerIds.length) return current;
-      return {
-        ...current,
-        selectedRetailerIds: prefilled.selectedRetailerIds,
-      };
-    });
-  }, [editingPromotion, retailers]);
+  // Adjust state during render, once: when the retailer list arrives after
+  // Edit was opened, tick the promotion's retailers unless the user already
+  // ticked some.
+  if (needsRetailerPrefill && editingPromotion && retailers.length) {
+    setNeedsRetailerPrefill(false);
+    const { selectedRetailerIds } = formFromPromotion(editingPromotion, retailers);
+    if (selectedRetailerIds.length && !form.selectedRetailerIds.length) {
+      setForm({ ...form, selectedRetailerIds });
+    }
+  }
 
   /**
    * Update the form. After a failed submit, re-validate so a filled
@@ -203,6 +205,7 @@ export default function PromotionsPage() {
    */
   const handleCreate = () => {
     setEditingPromotion(null);
+    setNeedsRetailerPrefill(false);
     setForm(blankPromotionForm());
     setErrors({});
     setSubmitError('');
@@ -216,6 +219,7 @@ export default function PromotionsPage() {
    */
   const handleEdit = (promotion) => {
     setEditingPromotion(promotion);
+    setNeedsRetailerPrefill(retailers.length === 0);
     setForm(formFromPromotion(promotion, retailers));
     setErrors({});
     setSubmitError('');
@@ -231,6 +235,7 @@ export default function PromotionsPage() {
     if (isSubmitting) return;
     setIsFormOpen(false);
     setEditingPromotion(null);
+    setNeedsRetailerPrefill(false);
     setForm(blankPromotionForm());
     setErrors({});
     setSubmitError('');
@@ -261,7 +266,7 @@ export default function PromotionsPage() {
       }
 
       notify('deleted', 'Promotion deleted');
-      await loadPromotions({ silent: true });
+      await loadPromotions();
     } catch (error) {
       notify('error', error.message || 'Failed to delete promotion.');
     }
@@ -322,7 +327,7 @@ export default function PromotionsPage() {
         setForm(blankPromotionForm());
         setErrors({});
         notify('updated', 'Promotion updated');
-        await loadPromotions({ silent: true });
+        await loadPromotions();
       } catch (error) {
         setSubmitError(error.message || 'Failed to update promotion.');
       } finally {
@@ -384,7 +389,7 @@ export default function PromotionsPage() {
       setErrors({});
 
       await Promise.all([
-        loadPromotions({ silent: true }),
+        loadPromotions(),
         loadRetailers(),
         loadStores(),
       ]);
@@ -420,7 +425,7 @@ export default function PromotionsPage() {
           onToggle={expanded.toggle}
           onEdit={handleEdit}
           onDelete={handleDelete}
-          onRefresh={loadPromotions}
+          onRefresh={refreshPromotions}
         />
       </div>
 
