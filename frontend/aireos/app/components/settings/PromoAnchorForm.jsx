@@ -17,21 +17,22 @@ import {
   labelClass,
   primaryButtonClass,
   secondaryButtonClass,
-} from '@/components/inventory/formStyles';
+} from '@/components/ui/formStyles';
 import { savePromoAnchor } from '@/app/services/promoUpliftsApi';
 import { anchorPreview, parseAnchorInput } from '@/app/utils/promoUpliftSettings';
 import { formatPct } from '@/app/utils/scenarioPromotions';
 import { cn } from '@/lib/utils';
 
 /**
- * Edit one customer's ordinary-month discount (or the all-customers value),
+ * Type in an ordinary-month discount (a customer's SKU range or a customer
+ * with too few moments to recommend an anchor, or the all-customers value),
  * with a live preview of how every placeholder uplift would shift before it
  * is saved. Values typed by hand on a mechanic do not move (they are not
  * placeholders), so they are not in the preview. A dialog, opened from
  * PromoAnchorDetails or the row's "..." menu (as SkuForm is on the SKU page).
  *
  * @param {object} props
- * @param {{ key: string, customerId: number | null, name: string, anchorPct: number }} props.target
+ * @param {{ key: string, customerId: number | null, skuRange: string | null, name: string, anchorPct: number }} props.target
  * @param {object[]} props.settings current setting rows
  * @param {(result: object) => void} props.onSaved
  * @param {() => void} props.onCancel
@@ -49,7 +50,7 @@ export default function PromoAnchorForm({ target, settings, onSaved, onCancel })
     setSubmitting(true);
     setRequestError(null);
     try {
-      onSaved(await savePromoAnchor(target.customerId, value), target);
+      onSaved(await savePromoAnchor(target.customerId, value, target.skuRange), target);
     } catch (err) {
       setRequestError(err.message);
     } finally {
@@ -61,7 +62,7 @@ export default function PromoAnchorForm({ target, settings, onSaved, onCancel })
     <Dialog open onOpenChange={(next) => { if (!next && !submitting) onCancel(); }}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Ordinary-month discount · {target.name}</DialogTitle>
+          <DialogTitle>Type a discount · {target.name}</DialogTitle>
           <DialogDescription>
             The discount an ordinary month already has: a mechanic at this discount counts as 0% uplift. Every 5 points
             deeper adds 2 points of uplift.

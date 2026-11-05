@@ -4,7 +4,7 @@ import { Trash2 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { primaryButtonClass, secondaryButtonClass } from '@/components/inventory/formStyles';
+import { primaryButtonClass, secondaryButtonClass } from '@/components/ui/formStyles';
 import UpliftField from '@/components/scenario/UpliftField';
 import { formatMonthLabel } from '@/app/utils/forecastView';
 import { retailerLabel } from '@/app/utils/retailerLabel';
@@ -26,10 +26,6 @@ function formatUnits(value) {
   return Math.round(value).toLocaleString('en-US');
 }
 
-function formatDollars(value) {
-  return `$${Math.round(value).toLocaleString('en-US')}`;
-}
-
 function FieldError({ message }) {
   return message ? <p className={errorClass}>{message}</p> : null;
 }
@@ -47,7 +43,7 @@ function ImpactNote({ block, impact }) {
   const pctOfCurrent = impact.baseUnits ? Math.round((impact.deltaUnits / impact.baseUnits) * 100) : null;
   return (
     <>
-      This block adds <b>+{formatUnits(impact.deltaUnits)} units</b> (<b>+{formatDollars(impact.deltaRevenue)}</b>)
+      This block adds <b>+{formatUnits(impact.deltaUnits)} units</b>
       {pctOfCurrent == null ? '' : `, or +${pctOfCurrent}% on Current,`} to {retailerLabel(block.customer)} sell-out
       across {monthSpanLabel(impact.months)}.
     </>
@@ -79,7 +75,7 @@ function unitsWarning(block, impact) {
  *   customerOptions: string[],
  *   productOptions: string[],
  *   months: string[],
- *   impact: { deltaUnits: number, deltaRevenue: number, months: string[] } | undefined,
+ *   impact: { baseUnits: number, deltaUnits: number, months: string[] } | undefined,
  * }} props
  */
 export default function BlockEditor({

@@ -3,11 +3,8 @@ import { request } from '@/app/services/promotionsApi';
 // Wrappers for /api/settings (backend app/routers/settings/), one section per
 // kind of customer-level setting.
 
-// Who every settings change made from the frontend is recorded as (the
-// backend's optional `updated_by`). The wrappers below attach it themselves so
-// no caller can leave it out.
-// TODO: replace with the signed-in user once authentication is added.
-export const UPDATED_BY = 'aireos';
+// Writes send no `updated_by`: the backend records the signed-in user's email
+// from the session cookie (app.auth.current_user_email).
 
 // ============================================================
 // DOH settings: /api/settings/doh (backend app/routers/settings/doh.py)
@@ -48,13 +45,13 @@ export async function getCustomerDohSettings(customerId) {
  * at most 2 decimal places and must satisfy min <= target <= max.
  *
  * @param {number} customerId
- * @param {{ min_doh: number, target_doh: number, max_doh: number }} payload sent with `updated_by: UPDATED_BY`
+ * @param {{ min_doh: number, target_doh: number, max_doh: number }} payload
  * @returns {Promise<{ changed: boolean, settings: object }>}
  */
 export async function saveDohThresholds(customerId, payload) {
   return request(`/api/settings/doh/${encodeURIComponent(customerId)}/thresholds`, {
     method: 'PUT',
-    body: { ...payload, updated_by: UPDATED_BY },
+    body: payload,
   });
 }
 
@@ -62,8 +59,7 @@ export async function saveDohThresholds(customerId, payload) {
  * POST /api/settings/doh/{customerId}/reset
  *
  * Puts the customer back on the global default thresholds (saved as a new
- * version; `changed` is false when it was already on them). Recorded as
- * updated by UPDATED_BY.
+ * version; `changed` is false when it was already on them).
  *
  * @param {number} customerId
  * @returns {Promise<{ changed: boolean, settings: object }>}
@@ -71,15 +67,14 @@ export async function saveDohThresholds(customerId, payload) {
 export async function resetDohThresholds(customerId) {
   return request(`/api/settings/doh/${encodeURIComponent(customerId)}/reset`, {
     method: 'POST',
-    body: { updated_by: UPDATED_BY },
   });
 }
 
 /**
  * PUT /api/settings/doh/{customerId}/alert
  *
- * Sends no `updated_by`: the alert flag lives on customers, which only
- * records when it changed (doh_alert_updated_at), not who changed it.
+ * The alert flag lives on customers, which only records when it changed
+ * (doh_alert_updated_at), not who changed it.
  *
  * @param {number} customerId
  * @param {{ doh_alert_enabled: boolean }} payload
@@ -116,7 +111,7 @@ export async function getDohHistory(customerId, { limit, offset } = {}) {
  * POST /api/settings/doh/{customerId}/history/{settingId}/revert
  *
  * Makes an older version current by saving a copy of its values as a new
- * version; the old version is kept. Recorded as updated by UPDATED_BY.
+ * version; the old version is kept.
  *
  * @param {number} customerId
  * @param {number} settingId
@@ -125,7 +120,7 @@ export async function getDohHistory(customerId, { limit, offset } = {}) {
 export async function revertDohThresholds(customerId, settingId) {
   return request(
     `/api/settings/doh/${encodeURIComponent(customerId)}/history/${encodeURIComponent(settingId)}/revert`,
-    { method: 'POST', body: { updated_by: UPDATED_BY } },
+    { method: 'POST' },
   );
 }
 
@@ -177,13 +172,13 @@ export async function getResolvedPromoUplifts({ customer, product = '' }) {
  * follows the anchor). Learned rows answer 409.
  *
  * @param {number} settingId
- * @param {{ uplift_pct: number, note?: string | null }} payload sent with `updated_by: UPDATED_BY`
+ * @param {{ uplift_pct: number, note?: string | null }} payload
  * @returns {Promise<{ changed: boolean, setting: object }>}
  */
 export async function savePromoUplift(settingId, payload) {
   return request(`${PROMO_UPLIFTS}/${encodeURIComponent(settingId)}`, {
     method: 'PUT',
-    body: { ...payload, updated_by: UPDATED_BY },
+    body: payload,
   });
 }
 
@@ -199,7 +194,6 @@ export async function savePromoUplift(settingId, payload) {
 export async function resetPromoUplift(settingId) {
   return request(`${PROMO_UPLIFTS}/${encodeURIComponent(settingId)}/reset`, {
     method: 'POST',
-    body: { updated_by: UPDATED_BY },
   });
 }
 
@@ -215,8 +209,23 @@ export async function resetPromoUplift(settingId) {
 export async function addPromoUpliftOverride(payload) {
   return request(PROMO_UPLIFTS, {
     method: 'POST',
-    body: { ...payload, updated_by: UPDATED_BY },
+    body: payload,
   });
+}
+
+/**
+ * GET /api/settings/promo-uplifts/moments
+ *
+ * Every offline moment (a customer x SKU x month with one whole-month monthly
+ * promotion and nothing else, backend promo_moment_rules.find_moments) with
+ * its uplift against the customer x SKU's most common mechanic, and the
+ * Recommended Uplift per customer x SKU x mechanic (average of the latest
+ * `recommend_from` moments). Months are 'YYYY-MM-01'.
+ *
+ * @returns {Promise<{ baseline_method: string, recommend_from: number, moments: object[], recommendations: object[] }>}
+ */
+export async function getPromoMoments() {
+  return request(`${PROMO_UPLIFTS}/moments`);
 }
 
 /**
@@ -244,41 +253,47 @@ export async function getPromoAnchors() {
 
 /**
  * PUT /api/settings/promo-uplifts/anchors/{customerId}, or .../anchors/default
- * when customerId is null (the all-customers value).
+ * when customerId is null (the all-customers value). `skuRange` sets one of
+ * the customer's SKU ranges instead of the whole customer.
  *
  * @param {number | null} customerId
  * @param {number} anchorPct 0-100
+ * @param {string | null} [skuRange]
  * @returns {Promise<{ changed: boolean, anchor?: object, default_anchor_pct?: number }>}
  */
-export async function savePromoAnchor(customerId, anchorPct) {
+export async function savePromoAnchor(customerId, anchorPct, skuRange = null) {
   const target = customerId == null ? 'default' : encodeURIComponent(customerId);
   return request(`${PROMO_UPLIFTS}/anchors/${target}`, {
     method: 'PUT',
-    body: { anchor_pct: anchorPct, updated_by: UPDATED_BY },
+    body: { anchor_pct: anchorPct, sku_range: skuRange ?? undefined },
   });
 }
 
 /**
- * POST /api/settings/promo-uplifts/anchors/{customerId}/reset
+ * POST /api/settings/promo-uplifts/anchors/{customerId}/adopt
  *
- * Back to the suggestion from the customer's own promotions.
+ * Save what the data recommends now (the customer's or range's most common
+ * mechanic) as its anchor.
  *
  * @param {number} customerId
+ * @param {string | null} [skuRange]
  * @returns {Promise<{ changed: boolean, anchor: object }>}
  */
-export async function resetPromoAnchor(customerId) {
-  return request(`${PROMO_UPLIFTS}/anchors/${encodeURIComponent(customerId)}/reset`, {
+export async function adoptPromoAnchor(customerId, skuRange = null) {
+  return request(`${PROMO_UPLIFTS}/anchors/${encodeURIComponent(customerId)}/adopt`, {
     method: 'POST',
-    body: { updated_by: UPDATED_BY },
+    body: { sku_range: skuRange ?? undefined },
   });
 }
 
 /**
- * GET /api/settings/promo-uplifts/anchors/{customerId}/history
+ * GET /api/settings/promo-uplifts/anchors/{customerId}/history[?sku_range=]
  *
  * @param {number} customerId
+ * @param {string | null} [skuRange]
  * @returns {Promise<Array<{ id: number, anchor_pct: number | null, source: string, changed_by: string, changed_at: string, is_current: boolean }>>}
  */
-export async function getPromoAnchorHistory(customerId) {
-  return request(`${PROMO_UPLIFTS}/anchors/${encodeURIComponent(customerId)}/history`);
+export async function getPromoAnchorHistory(customerId, skuRange = null) {
+  const query = skuRange ? `?${new URLSearchParams({ sku_range: skuRange })}` : '';
+  return request(`${PROMO_UPLIFTS}/anchors/${encodeURIComponent(customerId)}/history${query}`);
 }

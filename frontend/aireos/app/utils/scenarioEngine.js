@@ -13,9 +13,14 @@
 //   {
 //     itemId, source,              // which item, and which source made it
 //     customer, sku, month_year,   // customer_name / product_name / 'YYYY-MM-01', as on forecast rows
-//     baseUnits, baseRevenue,      // the Current forecast for this cell
-//     deltaUnits, deltaRevenue,    // what the item adds on top of it
+//     baseUnits,                   // the Current forecast for this cell
+//     deltaUnits,                  // what the item adds on top of it
 //   }
+//
+// Volume only: the Scenario builder predicts units, never revenue. A
+// promotion's discount changes the price as well as the volume, and the
+// forecast's realised price can't tell how, so a revenue figure would be
+// overstated by the depth of every discount.
 //
 // A source (registered in scenarioSources.js):
 //   {
@@ -39,11 +44,7 @@ export const SIMULATED_SERIES = {
   connectNulls: false,
 };
 
-// Revenue uses the realised price already on each forecast row (backend
-// forecast_service.add_forecast_revenue), the same price the chart's Revenue
-// tab shows. Whether to switch to list price is open question 2.
 const CURRENT_UNITS = 'forecast_current';
-const CURRENT_REVENUE = 'forecast_current_revenue';
 
 // The forecast rows an item applies to: its customer, its SKU (or every SKU
 // when sku === ''), its months, and only rows with a Current value (months
@@ -61,21 +62,14 @@ function itemRows(rows, item) {
 }
 
 function deltaCell(row, item, source, deltaUnits) {
-  const baseUnits = row[CURRENT_UNITS];
-  const baseRevenue = row[CURRENT_REVENUE] ?? null;
-  // Added units are priced like the row's own Current units, i.e. this
-  // customer's price for this SKU.
-  const price = baseRevenue != null && baseUnits ? baseRevenue / baseUnits : null;
   return {
     itemId: item.id,
     source,
     customer: row.customer_name,
     sku: row.product_name,
     month_year: row.month_year,
-    baseUnits,
-    baseRevenue,
+    baseUnits: row[CURRENT_UNITS],
     deltaUnits,
-    deltaRevenue: price == null ? null : deltaUnits * price,
   };
 }
 
@@ -196,20 +190,18 @@ export function unitsDeltaCells(rows, item, units, source, view) {
 
 function addTo(totals, key, cell) {
   if (!totals.has(key)) {
-    totals.set(key, { baseUnits: 0, baseRevenue: 0, deltaUnits: 0, deltaRevenue: 0, months: [] });
+    totals.set(key, { baseUnits: 0, deltaUnits: 0, months: [] });
   }
   const entry = totals.get(key);
   entry.baseUnits += cell.baseUnits;
-  entry.baseRevenue += cell.baseRevenue ?? 0;
   entry.deltaUnits += cell.deltaUnits;
-  entry.deltaRevenue += cell.deltaRevenue ?? 0;
   if (!entry.months.includes(cell.month_year)) entry.months.push(cell.month_year);
   return entry;
 }
 
 /**
  * The cells regrouped by month, then by item: Map month_year → Map itemId →
- * { baseUnits, baseRevenue, deltaUnits, deltaRevenue }. For the chart
+ * { source, baseUnits, deltaUnits }. For the chart
  * tooltip (which blocks add to a month), the comparison table (how many
  * blocks are active in a period) and the blocks table's by-month detail.
  *
@@ -221,13 +213,11 @@ export function cellsByMonth(cells) {
     if (!months.has(cell.month_year)) months.set(cell.month_year, new Map());
     const items = months.get(cell.month_year);
     if (!items.has(cell.itemId)) {
-      items.set(cell.itemId, { baseUnits: 0, baseRevenue: 0, deltaUnits: 0, deltaRevenue: 0 });
+      items.set(cell.itemId, { source: cell.source, baseUnits: 0, deltaUnits: 0 });
     }
     const entry = items.get(cell.itemId);
     entry.baseUnits += cell.baseUnits;
-    entry.baseRevenue += cell.baseRevenue ?? 0;
     entry.deltaUnits += cell.deltaUnits;
-    entry.deltaRevenue += cell.deltaRevenue ?? 0;
   }
   return months;
 }
@@ -262,23 +252,21 @@ export function simulate(rows, items, sources, view) {
  * wherever there is a Current value. `simulatedGap` is the [Current,
  * Simulated] pair the chart shades between the two lines.
  *
- * @param {object[]} points buildMonthlyPoints output for one metric
+ * @param {object[]} points buildMonthlyPoints(..., 'units')
  * @param {Map} byMonth simulate().byMonth
- * @param {'units'|'revenue'} metric
  */
-export function withSimulatedLine(points, byMonth, metric) {
+export function withSimulatedLine(points, byMonth) {
   return points.map((point) => {
     if (point.current == null) return { ...point, simulated: null, simulatedGap: null };
-    const totals = byMonth.get(point.month_year);
-    const delta = totals ? (metric === 'revenue' ? totals.deltaRevenue : totals.deltaUnits) : 0;
-    const simulated = point.current + delta;
+    const simulated = point.current + (byMonth.get(point.month_year)?.deltaUnits ?? 0);
     return { ...point, simulated, simulatedGap: [point.current, simulated] };
   });
 }
 
 /**
- * Year totals with the items' deltas added to the forecast side, for the
- * "Simulated" rows under the year table. Same shape as buildYearlyTotals.
+ * Year totals with the items' deltas added to the forecast side's volume,
+ * for the comparison table under the chart. Same shape as buildYearlyTotals;
+ * revenue is left as it is, since the scenario predicts volume only.
  *
  * @param {object[]} years buildYearlyTotals output
  * @param {Map} byMonth simulate().byMonth
@@ -286,11 +274,9 @@ export function withSimulatedLine(points, byMonth, metric) {
 export function simulatedYearTotals(years, byMonth) {
   return years.map((year) => {
     let units = 0;
-    let revenue = 0;
     for (const [monthYear, totals] of byMonth) {
       if (monthYear.slice(0, 4) !== year.year) continue;
       units += totals.deltaUnits;
-      revenue += totals.deltaRevenue;
     }
     const plus = (value, delta) => (value == null ? (delta ? delta : null) : value + delta);
     return {
@@ -300,13 +286,7 @@ export function simulatedYearTotals(years, byMonth) {
         forecast: plus(year.volume.forecast, units),
         total: plus(year.volume.total, units),
       },
-      revenue: {
-        actual: year.revenue.actual,
-        forecast: plus(year.revenue.forecast, revenue),
-        total: plus(year.revenue.total, revenue),
-      },
       deltaUnits: units,
-      deltaRevenue: revenue,
     };
   });
 }

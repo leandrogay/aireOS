@@ -20,7 +20,7 @@ function message({ disabled, summary, value, loading, error }) {
       ? 'Loading the forecast without the model’s promotions…'
       : `${which} use the Tier 1 basic or Tier 0 forecast instead, so you can plan promotions there yourself. The grey dotted line is the official forecast.`;
   }
-  return `${which} are Tier 1 advanced and already include the promotion entered for them, so promotions you plan are not added there. Switch to Simulate New Promotions to plan them yourself.`;
+  return `${which} are Tier 1 advanced and already include the promotion entered for them; promotions you plan are added on top of it. Switch to Simulate New Promotions to plan from the forecast without it.`;
 }
 
 /**

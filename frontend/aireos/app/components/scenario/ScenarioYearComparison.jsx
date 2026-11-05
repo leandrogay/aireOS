@@ -3,18 +3,20 @@
 import { cn } from '@/lib/utils';
 import { HEADER_RULE } from '@/components/forecast/ForecastYearTotals';
 
-function formatFigure(value, metric) {
+function formatFigure(value) {
   if (value == null) return '—';
-  const whole = Math.round(value).toLocaleString('en-US');
-  return metric === 'revenue' ? `$${whole}` : whole;
+  return Math.round(value).toLocaleString('en-US');
 }
 
-function signedFigure(value, metric) {
-  return `${value < 0 ? '−' : '+'}${formatFigure(Math.abs(value), metric)}`;
+function signedFigure(value) {
+  return `${value < 0 ? '−' : '+'}${formatFigure(Math.abs(value))}`;
 }
 
-function blocksActiveLabel(count) {
-  return `${count} ${count === 1 ? 'block' : 'blocks'} active`;
+function itemsActiveLabel({ blocks, promotions }) {
+  const parts = [];
+  if (blocks) parts.push(`${blocks} ${blocks === 1 ? 'block' : 'blocks'}`);
+  if (promotions) parts.push(`${promotions} ${promotions === 1 ? 'promotion' : 'promotions'}`);
+  return `${parts.join(' · ')} active`;
 }
 
 const headerCell = cn(
@@ -23,28 +25,27 @@ const headerCell = cn(
 );
 
 /**
- * Scenario builder's comparison table, under the chart: one metric at a
- * time (the chart's Volume | Revenue), each year in view and the next 12
+ * Scenario builder's comparison table, under the chart, in units (the
+ * scenario predicts volume only): each year in view and the next 12
  * months, Current against Simulated with the change. Styled like
  * ForecastYearTotals, whose /forecast table it stands in for here.
  *
- * Until a switched-on block changes something in view (`rows` all carry
- * zero blocks), it shows Current only: no Simulated, Δ or Δ% columns.
+ * Until a switched-on block or promotion changes something in view (`rows`
+ * all carry zero of both), it shows Current only: no Simulated, Δ or Δ% columns.
  *
  * @param {{
- *   metric: 'units' | 'revenue',
  *   rows: Array<{ key: string, label: string, caption?: string,
- *     current: number | null, delta: number, blocks: number }>,
+ *     current: number | null, delta: number, blocks: number, promotions: number }>,
  *   loading?: boolean,
  * }} props
  */
-export default function ScenarioYearComparison({ metric, rows, loading = false }) {
+export default function ScenarioYearComparison({ rows, loading = false }) {
   if (loading) {
     return <div className="h-12 animate-pulse rounded-md border border-lavander bg-white" />;
   }
   if (!rows.length) return null;
 
-  const compare = rows.some((row) => row.blocks > 0);
+  const compare = rows.some((row) => row.blocks + row.promotions > 0);
 
   return (
     <section aria-label="Current and simulated totals" className="overflow-x-auto rounded-md border border-lavander">
@@ -75,19 +76,19 @@ export default function ScenarioYearComparison({ metric, rows, loading = false }
                     <span className="ml-1.5 text-[10px] font-normal text-deep-violet-blue/50">{row.caption}</span>
                   ) : null}
                 </td>
-                <td className={cell}>{formatFigure(row.current, metric)}</td>
+                <td className={cell}>{formatFigure(row.current)}</td>
                 {compare ? (
                   <>
                     <td className={cell}>
-                      {row.blocks > 0 ? (
+                      {row.blocks + row.promotions > 0 ? (
                         <span className="mr-1.5 inline-block rounded-full bg-scenario-soft px-2 py-px align-[1px] text-[10px] font-semibold text-scenario-ink">
-                          {blocksActiveLabel(row.blocks)}
+                          {itemsActiveLabel(row)}
                         </span>
                       ) : null}
-                      {row.current == null ? '—' : formatFigure(row.current + row.delta, metric)}
+                      {row.current == null ? '—' : formatFigure(row.current + row.delta)}
                     </td>
                     <td className={cn(cell, changed ? 'font-semibold text-scenario-ink' : 'text-deep-violet-blue/45')}>
-                      {changed ? signedFigure(row.delta, metric) : '—'}
+                      {changed ? signedFigure(row.delta) : '—'}
                     </td>
                     <td className={cn(cell, changed ? 'font-semibold text-scenario-ink' : 'text-deep-violet-blue/45')}>
                       {changed && row.current

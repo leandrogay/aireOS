@@ -6,10 +6,6 @@ function formatUnits(value) {
   return Math.round(value).toLocaleString('en-US');
 }
 
-function formatDollars(value) {
-  return `$${Math.round(value).toLocaleString('en-US')}`;
-}
-
 function signedPct(share) {
   return `${share < 0 ? '−' : '+'}${Math.abs(share * 100).toFixed(1)}%`;
 }
@@ -42,7 +38,7 @@ function Tile({ label, children }) {
 
 /**
  * What the switched-on building blocks add (above the chart), gains first:
- * volume added, revenue added, and how much of the gap to the Initial
+ * volume added and how much of the gap to the Initial
  * Yearly Forecast they close. Each gain carries its share of the year(s)
  * it lands in, not of the months it touches, so a +10% month on a whole
  * year reads as the +0.8% it is. Numbers from pitchMetrics; `years` gives
@@ -50,22 +46,22 @@ function Tile({ label, children }) {
  *
  * @param {{
  *   metrics: object,
- *   years: Array<{ year: string, unitsPct: number | null, revenuePct: number | null }>,
+ *   years: Array<{ year: string, unitsPct: number | null }>,
  *   loading: boolean,
  * }} props
  */
 export default function ImpactStrip({ metrics, years, loading }) {
   if (loading) {
     return (
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3" aria-busy="true">
-        {[0, 1, 2].map((index) => (
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" aria-busy="true">
+        {[0, 1].map((index) => (
           <Skeleton key={index} className="h-[66px] rounded-lg bg-lavander/60" />
         ))}
       </div>
     );
   }
 
-  if (!metrics.revenue.months.length) {
+  if (!metrics.units.months.length) {
     return (
       <p className="rounded-lg border border-lavander bg-white px-3 py-2 text-xs text-deep-violet-blue/60">
         No building blocks or promotions fall inside the current filters.
@@ -73,21 +69,18 @@ export default function ImpactStrip({ metrics, years, loading }) {
     );
   }
 
-  const { units, revenue, gap } = metrics;
+  const { units, gap } = metrics;
   const closed = gap.shortfall ? Math.min(1, gap.share ?? 0) : null;
   const left = gap.shortfall ? gap.shortfall * (1 - closed) : 0;
 
   return (
-    <dl className="grid grid-cols-1 overflow-hidden rounded-lg border border-lavander bg-white text-deep-violet-blue sm:grid-cols-3">
+    <dl className="grid grid-cols-1 overflow-hidden rounded-lg border border-lavander bg-white text-deep-violet-blue sm:grid-cols-2">
       <Tile label="Volume added">
         <p className="font-serif text-xl leading-tight tabular-nums text-scenario-ink">
-          +{formatUnits(units.added)} <span className="font-sans text-xs font-semibold">units</span>
+          {units.added < 0 ? '−' : '+'}
+          {formatUnits(Math.abs(units.added))} <span className="font-sans text-xs font-semibold">units</span>
         </p>
         <YearChips years={years} field="unitsPct" />
-      </Tile>
-      <Tile label="Revenue added">
-        <p className="font-serif text-xl leading-tight tabular-nums text-scenario-ink">+{formatDollars(revenue.added)}</p>
-        <YearChips years={years} field="revenuePct" />
       </Tile>
       <Tile label="Gap to target">
         {closed == null ? (

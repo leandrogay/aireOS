@@ -17,26 +17,12 @@ function units(value) {
   return Math.round(value).toLocaleString('en-US');
 }
 
-function dollars(value) {
-  return `$${Math.round(value).toLocaleString('en-US')}`;
-}
-
 function signed(value, format) {
   return `${value < 0 ? '−' : '+'}${format(Math.abs(value))}`;
 }
 
 function percent(share) {
   return share == null ? '—' : `${share < 0 ? '−' : '+'}${Math.abs(share * 100).toFixed(1)}%`;
-}
-
-// Units on top, revenue underneath: every figure cell in the table.
-function Pair({ top, bottom, className }) {
-  return (
-    <span className={cn('block leading-tight', className)}>
-      <span className="block font-semibold">{top}</span>
-      <span className="block text-[11px] opacity-80">{bottom}</span>
-    </span>
-  );
 }
 
 function Header({ label, hint, align = 'right' }) {
@@ -90,7 +76,7 @@ function BlockLinks({ items, onOpen }) {
 /**
  * The Scenario builder's monthly plan for the filters' scope: one row per
  * forecast month with Last year actual, Model forecast, Building blocks and
- * Adjusted forecast (units over revenue), and the variance against last
+ * Adjusted forecast in units, and the variance against last
  * year. Months a switched-on block changes are shaded, and a block's name
  * opens it in the panel (new blocks are added there). All numbers come from
  * scenarioPlan.buildPlanRows.
@@ -114,7 +100,7 @@ export default function MonthlyPlanTable({ rows, lastYearLoading, onOpenItem, sc
   return (
     <section aria-label="Monthly plan" className="space-y-1.5">
       <p className="text-[11px] text-deep-violet-blue/60">
-        <span className="font-semibold text-deep-violet-blue">{scope}</span> · Units on top, revenue underneath.
+        <span className="font-semibold text-deep-violet-blue">{scope}</span> · Units.
         Shaded months have a switched-on building block.
       </p>
       <div className="overflow-x-auto rounded-md border border-lavander">
@@ -131,7 +117,7 @@ export default function MonthlyPlanTable({ rows, lastYearLoading, onOpenItem, sc
               />
               <Header
                 label="vs last year"
-                hint="Adjusted forecast minus last year's actual. Last year's revenue is what was sold; forecast revenue is priced at the realised price, so part of a revenue change can be price alone."
+                hint="Adjusted forecast minus last year's actual."
               />
               <Header label="%" hint="The change against last year as a share of last year's actual." />
             </tr>
@@ -157,22 +143,18 @@ export default function MonthlyPlanTable({ rows, lastYearLoading, onOpenItem, sc
                   </td>
                   <td className={cell}>
                     {row.lastYear ? (
-                      <Pair top={units(row.lastYear.units)} bottom={dollars(row.lastYear.revenue)} />
+                      <span className="font-semibold">{units(row.lastYear.units)}</span>
                     ) : (
                       <span className="text-deep-violet-blue/45">{lastYearLoading ? '…' : 'No sales'}</span>
                     )}
                   </td>
                   <td className={cell}>
-                    <Pair top={units(row.model.units)} bottom={dollars(row.model.revenue)} />
+                    <span className="font-semibold">{units(row.model.units)}</span>
                   </td>
                   <td className={cell}>
                     {marked ? (
                       <>
-                        <Pair
-                          top={signed(row.blocks.units, units)}
-                          bottom={signed(row.blocks.revenue, dollars)}
-                          className="text-scenario-ink"
-                        />
+                        <span className="block font-semibold text-scenario-ink">{signed(row.blocks.units, units)}</span>
                         <BlockLinks items={row.items} onOpen={onOpenItem} />
                       </>
                     ) : (
@@ -180,33 +162,15 @@ export default function MonthlyPlanTable({ rows, lastYearLoading, onOpenItem, sc
                     )}
                   </td>
                   <td className={cell}>
-                    <Pair
-                      top={units(row.adjusted.units)}
-                      bottom={dollars(row.adjusted.revenue)}
-                      className={marked ? 'text-scenario-ink' : undefined}
-                    />
+                    <span className={cn('font-semibold', marked && 'text-scenario-ink')}>{units(row.adjusted.units)}</span>
                   </td>
                   {change ? (
                     <>
                       <td className={cell}>
-                        <span className="block leading-tight">
-                          <span className={cn('block font-semibold', tone(change.units))}>
-                            {signed(change.units, units)}
-                          </span>
-                          <span className={cn('block text-[11px]', tone(change.revenue))}>
-                            {signed(change.revenue, dollars)}
-                          </span>
-                        </span>
+                        <span className={cn('font-semibold', tone(change.units))}>{signed(change.units, units)}</span>
                       </td>
                       <td className={cell}>
-                        <span className="block leading-tight">
-                          <span className={cn('block font-semibold', tone(change.units))}>
-                            {percent(change.unitsPct)}
-                          </span>
-                          <span className={cn('block text-[11px]', tone(change.revenue))}>
-                            {percent(change.revenuePct)}
-                          </span>
-                        </span>
+                        <span className={cn('font-semibold', tone(change.units))}>{percent(change.unitsPct)}</span>
                       </td>
                     </>
                   ) : (

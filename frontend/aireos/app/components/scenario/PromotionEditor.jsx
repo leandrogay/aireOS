@@ -30,9 +30,13 @@ function signedUnits(value) {
   return `${rounded < 0 ? '−' : '+'}${Math.abs(rounded).toLocaleString('en-US')}`;
 }
 
-function signedDollars(value) {
-  const rounded = Math.round(value);
-  return `${rounded < 0 ? '−' : '+'}$${Math.abs(rounded).toLocaleString('en-US')}`;
+// Where the ordinary month comes from (backend promo_uplifts anchors). A
+// product whose range has its own anchor only carries its discount.
+function anchorNote(anchor, ownRange) {
+  if (ownRange) return " (this SKU range's anchor)";
+  if (anchor.source === 'default') return ' (all-customers default)';
+  const mechanic = anchor.mechanic_label ? `, ${anchor.mechanic_label}` : '';
+  return anchor.source === 'manual' ? ' (typed in on Promotion uplift settings)' : ` (usual mechanic${mechanic})`;
 }
 
 /**
@@ -51,8 +55,8 @@ function signedDollars(value) {
  *   customerOptions: string[],
  *   productOptions: string[],
  *   months: string[],
- *   impact: { deltaUnits: number, deltaRevenue: number, months: string[] } | null | undefined,
- *   skipped: { count: number, months: string[] },
+ *   impact: { deltaUnits: number, months: string[] } | null | undefined,
+ *   stacked: { count: number, months: string[] },
  * }} props
  */
 export default function PromotionEditor({
@@ -63,11 +67,15 @@ export default function PromotionEditor({
   productOptions,
   months,
   impact,
-  skipped,
+  stacked,
 }) {
   const mechanics = mechanicOptions(resolved);
   const voucherRow = voucherOption(resolved);
-  const anchor = resolved?.anchor ?? null;
+  // One product's ordinary month is its SKU range's, when that differs from
+  // the customer's (backend resolve_uplifts product_anchors).
+  const anchor = resolved?.anchor
+    ? { ...resolved.anchor, anchor_pct: resolved.product_anchors?.[promotion.sku] ?? resolved.anchor.anchor_pct }
+    : null;
   const allSkus = !promotion.sku;
   const overridden = promotion.overrideUpliftPct != null;
   const sliderValue = mechanicUpliftPct(promotion);
@@ -148,11 +156,7 @@ export default function PromotionEditor({
         {anchor ? (
           <p className="mt-0.5 text-[11px] text-deep-violet-blue/50">
             Ordinary month for {retailerLabel(promotion.customer)}: {anchor.anchor_pct}% off
-            {anchor.source === 'suggested' && anchor.suggested
-              ? ` (suggested from ${anchor.suggested.months_used} months of promotions)`
-              : anchor.source === 'manual'
-                ? ' (set on Promotion uplift settings)'
-                : ' (all-customers default)'}
+            {anchorNote(anchor, Boolean(resolved.product_anchors?.[promotion.sku]))}
           </p>
         ) : null}
       </div>
@@ -321,20 +325,18 @@ export default function PromotionEditor({
         ) : impact ? (
           <>
             This promotion changes {retailerLabel(promotion.customer)} sell-out by{' '}
-            <b>{signedUnits(impact.deltaUnits)} units</b> (<b>{signedDollars(impact.deltaRevenue)}</b>) across{' '}
+            <b>{signedUnits(impact.deltaUnits)} units</b> across{' '}
             {monthSpanLabel(impact.months)}.
           </>
-        ) : skipped.count ? (
-          'No change in Modify Planned Promotions: every SKU-month of this promotion already includes the promotion entered for it.'
         ) : (
           'Not in current chart view: change the filters to this customer and SKU to see its impact.'
         )}
       </p>
-      {promotion.sku && skipped.count ? (
+      {promotion.sku && stacked.count ? (
         <p className="text-[11px] text-deep-violet-blue/70">
-          Not applied for {skipped.count} SKU-{skipped.count === 1 ? 'month' : 'months'} ({monthSpanLabel(skipped.months)}):
-          the official forecast already includes the promotion entered for them. Switch to Simulate New Promotions above
-          the chart to plan them yourself.
+          Added on top of the promotion already in the forecast for {stacked.count} SKU-
+          {stacked.count === 1 ? 'month' : 'months'} ({monthSpanLabel(stacked.months)}). Switch to Simulate New
+          Promotions above the chart to plan from the forecast without it.
         </p>
       ) : null}
     </div>

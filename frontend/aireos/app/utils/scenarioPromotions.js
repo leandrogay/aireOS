@@ -52,9 +52,10 @@ export const VOUCHER_KEY = 'voucher';
 // Side offers run weekly, so they are planned on exact dates (dayShare).
 export const SIDE_OFFER_TYPE = 'side_offer';
 
-// The pipeline's ARIMA_PLUS_XREG model already reflects promotions in the
-// months it forecasts, so a promotion uplift there would count them twice
-// (design Section 6.4.5). Building blocks still apply in those months.
+// The pipeline's ARIMA_PLUS_XREG model already reflects the promotion
+// entered for the months it forecasts. A planned promotion is still added on
+// top there (Modify Planned Promotions); Simulate New Promotions swaps those
+// months for the forecast without it (scenarioModelView.rowsForView).
 export const MODEL_INCLUDES_PROMOS = 'tier1_arimax';
 
 const SOURCE_LABELS = {
@@ -297,15 +298,16 @@ function inPromotion(row, promotion) {
 
 /**
  * The SKU-months inside the promotion whose Current forecast already
- * includes the promotion entered for them (ARIMA_PLUS_XREG), so no uplift is
- * added there. In the "Simulate New Promotions" view those rows have been
- * swapped (scenarioModelView.rowsForView), so this comes back empty.
+ * includes the promotion entered for them (ARIMA_PLUS_XREG): the planned
+ * promotion's uplift is added on top of that one there. In the "Simulate New
+ * Promotions" view those rows have been swapped
+ * (scenarioModelView.rowsForView), so this comes back empty.
  *
  * @param {object} promotion
  * @param {object[]} rows the forecast rows of the current view
  * @returns {{ count: number, months: string[] }}
  */
-export function skippedModelCells(promotion, rows) {
+export function stackedModelCells(promotion, rows) {
   const months = new Set();
   let count = 0;
   for (const row of rows) {
@@ -341,7 +343,6 @@ export const scenarioPromotionsSource = {
   deltas(promotions, rows) {
     const groups = new Map();
     for (const row of rows) {
-      if (row.current_source_model === MODEL_INCLUDES_PROMOS) continue;
       const key = `${row.product_name}|${row.month_year}`;
       if (!groups.has(key)) groups.set(key, { product: row.product_name, month: row.month_year, rows: [] });
       groups.get(key).rows.push(row);

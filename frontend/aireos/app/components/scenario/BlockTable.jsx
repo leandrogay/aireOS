@@ -21,10 +21,6 @@ function wholeUnits(value) {
   return Math.round(value).toLocaleString('en-US');
 }
 
-function wholeDollars(value) {
-  return `$${Math.round(value).toLocaleString('en-US')}`;
-}
-
 function signed(value, format) {
   return `${value < 0 ? '−' : '+'}${format(Math.abs(value))}`;
 }
@@ -52,8 +48,7 @@ function sortBlocks(blocks, field, direction) {
   return [...blocks].sort((a, b) => String(a[field] ?? '').localeCompare(String(b[field] ?? '')) * sign);
 }
 
-function BlockDetails({ block, months, metric }) {
-  const format = metric === 'revenue' ? wholeDollars : wholeUnits;
+function BlockDetails({ block, months }) {
   return (
     <div className="grid gap-4 text-xs md:grid-cols-2">
       <div>
@@ -62,7 +57,7 @@ function BlockDetails({ block, months, metric }) {
       </div>
       <div>
         <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">
-          By month · {metric === 'revenue' ? 'revenue' : 'volume'}
+          By month · volume
         </p>
         {months.length ? (
           <table className="tabular-nums">
@@ -75,18 +70,16 @@ function BlockDetails({ block, months, metric }) {
               </tr>
             </thead>
             <tbody>
-              {months.map((month) => {
-                const base = metric === 'revenue' ? month.baseRevenue : month.baseUnits;
-                const delta = metric === 'revenue' ? month.deltaRevenue : month.deltaUnits;
-                return (
-                  <tr key={month.month_year}>
-                    <td className="py-0.5 pr-4">{monthLabel(month.month_year)}</td>
-                    <td className="py-0.5 pr-4 text-right">{format(base)}</td>
-                    <td className="py-0.5 pr-4 text-right">{format(base + delta)}</td>
-                    <td className="py-0.5 text-right font-semibold text-scenario-ink">{signed(delta, format)}</td>
-                  </tr>
-                );
-              })}
+              {months.map((month) => (
+                <tr key={month.month_year}>
+                  <td className="py-0.5 pr-4">{monthLabel(month.month_year)}</td>
+                  <td className="py-0.5 pr-4 text-right">{wholeUnits(month.baseUnits)}</td>
+                  <td className="py-0.5 pr-4 text-right">{wholeUnits(month.baseUnits + month.deltaUnits)}</td>
+                  <td className="py-0.5 text-right font-semibold text-scenario-ink">
+                    {signed(month.deltaUnits, wholeUnits)}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         ) : (
@@ -110,9 +103,8 @@ function BlockDetails({ block, months, metric }) {
  * @param {{
  *   blocks: object[],                 saved blocks
  *   view: ReturnType<import('@/app/utils/scenarioEngine').chartView>,
- *   impacts: Map<string, { deltaUnits: number, deltaRevenue: number }>,
+ *   impacts: Map<string, { deltaUnits: number }>,
  *   monthsByItem: Map<string, object[]>,
- *   metric: 'units' | 'revenue',
  *   isLoading: boolean,
  *   error?: string,
  *   editingId: string | null,
@@ -131,7 +123,6 @@ export default function BlockTable({
   view,
   impacts,
   monthsByItem,
-  metric,
   isLoading,
   error = '',
   editingId,
@@ -242,7 +233,7 @@ export default function BlockTable({
             title={block.name}
             toggleLabel={isExpanded(block.id) ? `Hide details for ${block.name}` : `Show details for ${block.name}`}
             actions={<RowActions label={`Actions for ${block.name}`} actions={actions} />}
-            details={<BlockDetails block={block} months={monthsByItem.get(block.id) ?? []} metric={metric} />}
+            details={<BlockDetails block={block} months={monthsByItem.get(block.id) ?? []} />}
           >
             <td className="truncate px-4 py-2.5" title={appliesTo}>{appliesTo}</td>
             <td className="whitespace-nowrap px-4 py-2.5 tabular-nums">
@@ -251,10 +242,7 @@ export default function BlockTable({
             <td className="whitespace-nowrap px-4 py-2.5 tabular-nums">{upliftLabel(block)}</td>
             <td className="whitespace-nowrap px-4 py-2.5 tabular-nums">
               {impact ? (
-                <span className="block leading-tight text-scenario-ink">
-                  <span className="block font-semibold">{signed(impact.deltaUnits, wholeUnits)} units</span>
-                  <span className="block text-[11px]">{signed(impact.deltaRevenue, wholeDollars)}</span>
-                </span>
+                <span className="font-semibold text-scenario-ink">{signed(impact.deltaUnits, wholeUnits)} units</span>
               ) : (
                 <span className="text-deep-violet-blue/45">{block.isActive ? 'Outside chart filters' : 'Off'}</span>
               )}

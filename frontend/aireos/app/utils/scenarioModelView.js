@@ -2,13 +2,13 @@
 // SCENARIO MODEL VIEW -- pure, no React
 // ============================================================
 //
-// Two ways to look at the forecast in the Scenario builder, so a promotion
-// is never counted twice (Promotions Uplift design, Section 6.4):
+// Two ways to look at the forecast in the Scenario builder (Promotions
+// Uplift design, Section 6.4):
 //
 //   'official' -- the Current forecast as the pipeline published it. In
 //                 months where its model already includes the promotion
-//                 entered for that month (ARIMA_PLUS_XREG), planned
-//                 promotions are not added (scenarioPromotions.deltas).
+//                 entered for that month (ARIMA_PLUS_XREG), a planned
+//                 promotion is added on top of the entered one.
 //   'planned'  -- in those months, the forecast the pipeline would have
 //                 picked without that model (GET /api/forecast/alternatives),
 //                 so every planned promotion is added and the entered one is

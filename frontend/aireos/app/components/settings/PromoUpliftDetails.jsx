@@ -13,12 +13,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { inputClass } from '@/components/inventory/formStyles';
+import { inputClass } from '@/components/ui/formStyles';
 import { getPromoUpliftHistory } from '@/app/services/promoUpliftsApi';
 import { changedByLabel, parseUpliftInput, scopeLabel } from '@/app/utils/promoUpliftSettings';
 import { formatPct, sourceLabel } from '@/app/utils/scenarioPromotions';
 import { formatDateTime } from '@/lib/formatDate';
 import { cn } from '@/lib/utils';
+
+import RecommendedReadout from './RecommendedReadout';
 
 const HISTORY_COLUMNS = [
   { key: 'uplift', label: 'Uplift', width: '6rem' },
@@ -41,6 +43,7 @@ function changedLabel(row) {
  * @param {{
  *   row: object,
  *   shownUplift: number | null,
+ *   moments: object | null,
  *   startEditing?: boolean,
  *   readOnly: boolean,
  *   onSave: (row: object, upliftPct: number) => Promise<boolean>,
@@ -48,7 +51,7 @@ function changedLabel(row) {
  *   onClose: () => void,
  * }} props
  */
-export default function PromoUpliftDetails({ row, shownUplift, startEditing = false, readOnly, onSave, onReset, onClose }) {
+export default function PromoUpliftDetails({ row, shownUplift, moments, startEditing = false, readOnly, onSave, onReset, onClose }) {
   const [history, setHistory] = useState({ rows: [], loading: true, error: null });
   const [editing, setEditing] = useState(startEditing ? { text: String(shownUplift), saving: false } : null);
   const parsed = editing ? parseUpliftInput(editing.text) : null;
@@ -89,14 +92,15 @@ export default function PromoUpliftDetails({ row, shownUplift, startEditing = fa
           <DialogTitle>{row.mechanic_label}</DialogTitle>
           <DialogDescription>Current uplift value and every saved version of this mechanic.</DialogDescription>
         </DialogHeader>
+        <RecommendedReadout scopeRow={row.view ?? row} moments={moments} />
         <dl className="grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg border border-border p-4">
           <div>
-            <dt className="text-xs text-muted-foreground">Uplift</dt>
+            <dt className="text-xs text-muted-foreground">{editing ? 'Manual Uplift (%)' : 'Uplift in use'}</dt>
             <dd className="mt-0.5 font-medium">
               {editing ? (
                 <div className="w-28">
                   <input
-                    aria-label={`Uplift for ${row.mechanic_label}`}
+                    aria-label={`Manual uplift for ${row.mechanic_label}`}
                     value={editing.text}
                     disabled={editing.saving}
                     autoFocus
@@ -173,7 +177,7 @@ export default function PromoUpliftDetails({ row, shownUplift, startEditing = fa
             <>
               <Button variant="outline" disabled={editing.saving} onClick={() => setEditing(null)}>Cancel</Button>
               <Button disabled={editing.saving || parsed?.value == null} onClick={save}>
-                {editing.saving ? 'Saving…' : 'Save uplift'}
+                {editing.saving ? 'Saving…' : 'Save manual uplift'}
               </Button>
             </>
           ) : (
@@ -185,7 +189,7 @@ export default function PromoUpliftDetails({ row, shownUplift, startEditing = fa
                 </Button>
               ) : null}
               {canChange ? (
-                <Button onClick={() => setEditing({ text: String(shownUplift), saving: false })}>Edit uplift</Button>
+                <Button onClick={() => setEditing({ text: String(shownUplift), saving: false })}>Set manual uplift</Button>
               ) : null}
             </>
           )}

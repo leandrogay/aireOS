@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { Percent, Plus, Trash2 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
-import { PROMO_UPLIFTS_DEMO } from '@/app/services/promoUpliftsApi';
 import { SCENARIO_PROMOTIONS_DEMO } from '@/app/services/scenarioPromotionsApi';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 import { monthSpanLabel } from '@/app/utils/scenarioPitch';
@@ -17,15 +16,16 @@ import {
   mechanicOptions,
   newDraftPromotion,
   settingsChange,
-  skippedModelCells,
+  stackedModelCells,
   updateDraftPromotion,
   formatPct,
   validateScenarioPromotion,
   withReferences,
 } from '@/app/utils/scenarioPromotions';
 import { Button } from '@/components/ui/button';
+import InfoTooltip from '@/components/ui/InfoTooltip';
 import { Switch } from '@/components/ui/switch';
-import { primaryButtonClass, secondaryButtonClass } from '@/components/inventory/formStyles';
+import { primaryButtonClass, secondaryButtonClass } from '@/components/ui/formStyles';
 import PromoHowItWorks from '@/components/scenario/PromoHowItWorks';
 import PromotionEditor from '@/components/scenario/PromotionEditor';
 import usePromoUplifts from '@/hooks/usePromoUplifts';
@@ -68,8 +68,8 @@ function promotionSummary(promotion) {
  * (useScenarioPromotions) are the only calls that reach the server, and a
  * switched-off promotion stays saved but leaves the Simulated line.
  *
- * Uplift values come from Promotion uplift settings through usePromoUplifts
- * (the in-memory demo while PROMO_UPLIFTS_DEMO is on), never from this file. `rows` are the fetched forecast rows, used only to count the months
+ * Uplift values come from Promotion uplift settings through usePromoUplifts,
+ * never from this file. `rows` are the fetched forecast rows, used only to count the months
  * where no promotion uplift is added (design Section 6.4.5).
  *
  * @param {{
@@ -82,7 +82,7 @@ function promotionSummary(promotion) {
  *   months: string[],
  *   defaultCustomer: string,
  *   defaultSku: string,
- *   impacts: Map<string, { deltaUnits: number, deltaRevenue: number, months: string[] }>,
+ *   impacts: Map<string, { deltaUnits: number, months: string[] }>,
  *   rows: object[],
  * }} props
  */
@@ -206,7 +206,17 @@ export default function PromotionsSection({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[11px] text-deep-violet-blue/70">Plan a promotion and see its uplift on the chart.</p>
+        <p className="flex items-center gap-1 text-[11px] text-deep-violet-blue/70">
+          Plan a promotion and see its uplift on the chart.
+          {SCENARIO_PROMOTIONS_DEMO ? (
+            <InfoTooltip label="About demo mode">
+              <p>
+                Saving is in demo mode until the scenario promotions table is set up: saved promotions last until the
+                page is reloaded.
+              </p>
+            </InfoTooltip>
+          ) : null}
+        </p>
         {placeholderInUse ? (
           <span className="shrink-0 rounded-full border border-violet/40 bg-cream px-2 py-0.5 text-[10px] font-medium text-deep-violet-blue/70">
             Placeholder values
@@ -216,17 +226,6 @@ export default function PromotionsSection({
 
       <PromoHowItWorks />
 
-      {SCENARIO_PROMOTIONS_DEMO ? (
-        <p className="rounded-md border border-violet bg-lavander/50 px-2.5 py-2 text-[11px] text-deep-violet-blue">
-          Saving is in demo mode until the scenario promotions table is set up: saved promotions last until the
-          page is reloaded.
-        </p>
-      ) : null}
-      {PROMO_UPLIFTS_DEMO ? (
-        <p className="rounded-md border border-violet bg-lavander/50 px-2.5 py-2 text-[11px] text-deep-violet-blue">
-          Demo mode: uplift values come from the Promotion uplift settings demo (not saved).
-        </p>
-      ) : null}
       {uplifts.error ? (
         <p className="rounded-md border border-violet bg-lavander/50 px-2.5 py-2 text-xs text-deep-violet-blue" role="alert">
           Promotion uplift values could not be loaded: {uplifts.error}
@@ -271,7 +270,7 @@ export default function PromotionsSection({
                 >
                   {statusText(promotion)}
                 </span>
-                {impacts.has(promotion.id) || skippedModelCells(promotion, rows).count ? null : (
+                {impacts.has(promotion.id) ? null : (
                   <span className="block text-[11px] italic text-deep-violet-blue/50">
                     Not in current chart view
                   </span>
@@ -337,7 +336,7 @@ export default function PromotionsSection({
           productOptions={productOptions}
           months={months}
           impact={impacts.get(selected.id)}
-          skipped={skippedModelCells(selected, rows)}
+          stacked={stackedModelCells(selected, rows)}
         />
       ) : null}
 

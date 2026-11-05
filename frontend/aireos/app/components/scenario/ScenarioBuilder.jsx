@@ -64,12 +64,15 @@ import useScenarioPromotions from '@/hooks/useScenarioPromotions';
 import useUnitsSplitBasis from '@/hooks/useUnitsSplitBasis';
 
 // Distinct items with cells in any of these months.
-function itemsInMonths(monthCells, months) {
+// Switched-on items changing anything in these months, split by source so
+// the year table can name them ("1 block · 1 promotion active").
+function itemsInMonths(monthCells, months, promotionIds) {
   const ids = new Set();
   for (const month of months) {
     for (const id of monthCells.get(month)?.keys() ?? []) ids.add(id);
   }
-  return ids.size;
+  const promotions = [...ids].filter((id) => promotionIds.has(id)).length;
+  return { blocks: ids.size - promotions, promotions };
 }
 
 /**
@@ -87,7 +90,6 @@ function itemsInMonths(monthCells, months) {
 export default function ScenarioBuilder() {
   const filters = useForecastFilters();
   const { productName, customerName, startDate, endDate, ready } = filters;
-  const [metric, setMetric] = useState('units');
   const [selectedPromoTypes, setSelectedPromoTypes] = useState(ALL_PROMO_TYPE_VALUES);
   const [selectedPackTypes, setSelectedPackTypes] = useState(ALL_PACK_TYPE_VALUES);
   const [visibleSeries, setVisibleSeries] = useState({
@@ -102,7 +104,8 @@ export default function ScenarioBuilder() {
 
   // Months whose official forecast already includes the promotion entered
   // for them can be swapped for the forecast without it, so planned
-  // promotions are never counted twice (app/utils/scenarioModelView.js).
+  // promotions start from no promotion rather than stacking on the entered
+  // one (app/utils/scenarioModelView.js).
   // Only for one customer and one SKU: across several, the months mix models
   // and the toggle would be too hard to read. Greyed out when that SKU has no
   // such month.
@@ -170,19 +173,19 @@ export default function ScenarioBuilder() {
     );
   }
 
+  // Volume only (scenarioEngine.js): the chart, tables and impact strip all
+  // read units.
   const singleSeries = Boolean(productName && customerName);
   const unitPoints = buildMonthlyPoints(rows, actuals, 'units', { singleSeries });
-  const revenuePoints = buildMonthlyPoints(rows, actuals, 'revenue', { singleSeries });
   const swapped = rows !== officialRows;
-  const officialPoints = swapped
-    ? buildMonthlyPoints(officialRows, actuals, metric === 'revenue' ? 'revenue' : 'units', { singleSeries })
-    : null;
-  const viewPoints = metric === 'revenue' ? revenuePoints : unitPoints;
-  const basePoints = swapped ? withOfficialReference(viewPoints, officialPoints) : viewPoints;
+  const basePoints = swapped
+    ? withOfficialReference(unitPoints, buildMonthlyPoints(officialRows, actuals, 'units', { singleSeries }))
+    : unitPoints;
 
   // Only switched-on blocks and promotions count, on the chart and in the tables.
   const allBlocks = scenarioBlocks.blocks;
   const activePromotions = activeScenarioPromotions(scenarioPromotions.promotions);
+  const promotionIds = new Set(activePromotions.map((promotion) => promotion.id));
   const counted = { blocks: activeScenarioBlocks(allBlocks), promotions: activePromotions };
   const { cells, byMonth, byItem } = simulate(rows, counted, SCENARIO_SOURCES, chartView(filters, splitBasis.basis));
   // Nothing simulated until a switched-on item changes something in view:
@@ -227,29 +230,29 @@ export default function ScenarioBuilder() {
     markers: hasSimulated ? itemMarkers(byItem) : [],
     promoBands: draftPromotionBands(activePromotions),
     seasonalAverage: seasonalAverage(basePoints),
-    simulatedYears: hasSimulated ? simulatedYears : [],
     monthItems,
+    // Planned promotions sit on top of the month's entered ones unless the
+    // Simulate New Promotions view swapped in the forecast without them.
+    stacksOnEntered: !swapped,
     selectedBand:
       selectedBlock && byItem.has(selectedBlock.id)
         ? { startMonth: selectedBlock.startMonth, endMonth: selectedBlock.endMonth, label: selectedBlock.name }
         : null,
   };
-  const metrics = pitchMetrics(unitPoints, revenuePoints, byMonth);
+  const metrics = pitchMetrics(unitPoints, byMonth);
   const yearShares = simulatedYears
-    .filter((year) => year.deltaUnits || year.deltaRevenue)
+    .filter((year) => year.deltaUnits)
     .map((year) => {
       const base = years.find((item) => item.year === year.year);
       return {
         year: year.year,
         unitsPct: base?.volume.total ? year.deltaUnits / base.volume.total : null,
-        revenuePct: base?.revenue.total ? year.deltaRevenue / base.revenue.total : null,
       };
     });
 
   // Comparison table rows: each year in view, then the next 12 months (the
   // months the Current line covers).
   const horizonMonths = basePoints.filter((point) => point.current != null).map((point) => point.month_year);
-  const deltaKey = metric === 'revenue' ? 'deltaRevenue' : 'deltaUnits';
   const comparisonRows = [
     ...simulatedYears.map((year) => {
       const base = years.find((item) => item.year === year.year);
@@ -258,9 +261,9 @@ export default function ScenarioBuilder() {
         key: year.year,
         label: year.year,
         caption: base ? mixCaption(base) : '',
-        current: metric === 'revenue' ? base?.revenue.total ?? null : base?.volume.total ?? null,
-        delta: year[deltaKey] ?? 0,
-        blocks: itemsInMonths(monthCells, yearMonths),
+        current: base?.volume.total ?? null,
+        delta: year.deltaUnits,
+        ...itemsInMonths(monthCells, yearMonths, promotionIds),
       };
     }),
     ...(horizonMonths.length
@@ -269,8 +272,8 @@ export default function ScenarioBuilder() {
             key: 'next-12',
             label: 'Next 12 months',
             current: sumHorizonForecast(basePoints),
-            delta: horizonMonths.reduce((total, month) => total + (byMonth.get(month)?.[deltaKey] ?? 0), 0),
-            blocks: itemsInMonths(monthCells, horizonMonths),
+            delta: horizonMonths.reduce((total, month) => total + (byMonth.get(month)?.deltaUnits ?? 0), 0),
+            ...itemsInMonths(monthCells, horizonMonths, promotionIds),
           },
         ]
       : []),
@@ -359,11 +362,10 @@ export default function ScenarioBuilder() {
           ) : null}
 
           <ForecastChart
-            points={hasSimulated ? withSimulatedLine(basePoints, byMonth, metric) : basePoints}
+            points={hasSimulated ? withSimulatedLine(basePoints, byMonth) : basePoints}
             startDate={startDate}
             endDate={endDate}
-            metric={metric}
-            onMetricChange={setMetric}
+            metric="units"
             singleSeries={singleSeries}
             scopeTags={[]}
             toolbar={
@@ -391,7 +393,6 @@ export default function ScenarioBuilder() {
                 singleSeries={singleSeries}
                 yearTable={
                   <ScenarioYearComparison
-                    metric={metric}
                     rows={comparisonRows}
                     loading={yearTotalsLoading || view.loading}
                   />
@@ -427,7 +428,6 @@ export default function ScenarioBuilder() {
             yearTotals={years}
             yearTotalsLoading={yearTotalsLoading}
             horizonVolume={sumHorizonForecast(unitPoints)}
-            horizonRevenue={sumHorizonForecast(revenuePoints)}
             loading={view.loading}
             scenario={scenario}
           />
@@ -491,7 +491,6 @@ export default function ScenarioBuilder() {
         view={chartView(filters)}
         impacts={byItem}
         monthsByItem={monthsByItem}
-        metric={metric}
         isLoading={scenarioBlocks.loading}
         editingId={selectedBlock?.saved ? selectedBlock.id : null}
         newIds={newIds}

@@ -14,11 +14,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { getPromoAnchorHistory } from '@/app/services/promoUpliftsApi';
-import { anchorSourceLabel, changedByLabel } from '@/app/utils/promoUpliftSettings';
+import {
+  anchorLabel,
+  anchorSourceLabel,
+  changedByLabel,
+  recommendedAnchorLabel,
+} from '@/app/utils/promoUpliftSettings';
 import { formatDateTime } from '@/lib/formatDate';
 
 const HISTORY_COLUMNS = [
-  { key: 'discount', label: 'Discount', width: '12rem' },
+  { key: 'anchor', label: 'Anchor', width: '16rem' },
   { key: 'source', label: 'Source' },
   { key: 'when', label: 'When', width: '15rem' },
 ];
@@ -28,28 +33,30 @@ function changedLabel(row) {
 }
 
 /**
- * One ordinary-month discount clicked open (the SKU catalogue's SkuDetails
- * is the model): its current value, the suggestion from the customer's own
- * promotions and every saved version, newest first. Edit hands over to
- * PromoAnchorForm, as SkuDetails hands over to SkuForm. The all-customers
- * value (`target.row` null) has no per-customer history to show.
+ * One anchor clicked open (the SKU catalogue's SkuDetails is the model): a
+ * customer's or SKU range's current anchor, what the data recommends now,
+ * and every saved version, newest first. Adopt saves the recommendation;
+ * a discount can be typed (PromoAnchorForm) only with too few moments to
+ * recommend from. The all-customers value (`target.row` null) has no
+ * history to show.
  *
  * @param {{
- *   target: { key: string, customerId: number | null, name: string, anchorPct: number, row: object | null },
+ *   target: { key: string, customerId: number | null, skuRange: string | null, name: string, anchorPct: number, row: object | null },
+ *   windowMonths: number,
  *   readOnly: boolean,
  *   onEdit: (target: object) => void,
- *   onReset: (row: object) => void,
+ *   onAdopt: (target: object) => void,
  *   onClose: () => void,
  * }} props
  */
-export default function PromoAnchorDetails({ target, readOnly, onEdit, onReset, onClose }) {
+export default function PromoAnchorDetails({ target, windowMonths, readOnly, onEdit, onAdopt, onClose }) {
   const { row } = target;
   const [history, setHistory] = useState({ rows: [], loading: Boolean(row), error: null });
 
   useEffect(() => {
     if (target.customerId == null) return undefined;
     let cancelled = false;
-    getPromoAnchorHistory(target.customerId)
+    getPromoAnchorHistory(target.customerId, target.skuRange)
       .then((rows) => {
         if (!cancelled) setHistory({ rows, loading: false, error: null });
       })
@@ -59,23 +66,18 @@ export default function PromoAnchorDetails({ target, readOnly, onEdit, onReset, 
     return () => {
       cancelled = true;
     };
-  }, [target.customerId]);
+  }, [target.customerId, target.skuRange]);
 
   const fields = row
     ? [
-        ['Ordinary-month discount', `${row.anchor_pct}%`],
+        ['Anchor', anchorLabel(row)],
         ['Source', anchorSourceLabel(row.source)],
-        [
-          'Suggested from data',
-          row.suggested
-            ? `${row.suggested.anchor_pct}% (median of ${row.suggested.months_used} months)`
-            : 'No usable promotions yet',
-        ],
+        ['Recommended now', recommendedAnchorLabel(row, windowMonths)],
         ['Last changed', row.changed_at ? formatDateTime(row.changed_at) : '—'],
       ]
     : [
-        ['Ordinary-month discount', `${target.anchorPct}%`],
-        ['Used for', 'A customer with no promotions to suggest from'],
+        ['Anchor', `${target.anchorPct}% off`],
+        ['Used for', 'A customer with no anchor of its own'],
       ];
 
   return (
@@ -85,8 +87,8 @@ export default function PromoAnchorDetails({ target, readOnly, onEdit, onReset, 
           <DialogTitle>{row ? target.name : 'All customers (fallback)'}</DialogTitle>
           <DialogDescription>
             {row
-              ? 'Current ordinary-month discount and its recorded update history.'
-              : 'The ordinary-month discount used when a customer has nothing to suggest from.'}
+              ? 'The mechanic an ordinary month runs, which uplifts are measured from. It only changes when you adopt a new recommendation.'
+              : 'The ordinary-month discount used when a customer has no anchor of its own.'}
           </DialogDescription>
         </DialogHeader>
         <dl className="grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg border border-border p-4">
@@ -112,7 +114,7 @@ export default function PromoAnchorDetails({ target, readOnly, onEdit, onReset, 
                 {history.rows.map((entry) => (
                   <tr key={entry.id} className="h-11 border-b border-lavander/80 last:border-b-0">
                     <td className="px-4 py-2 tabular-nums">
-                      <span className="font-medium">{entry.anchor_pct != null ? `${entry.anchor_pct}%` : 'Use suggestion'}</span>
+                      <span className="font-medium">{anchorLabel(entry)}</span>
                       {entry.is_current ? (
                         <span className="ml-1.5">
                           <StatusPill tone="success">Current</StatusPill>
@@ -129,10 +131,12 @@ export default function PromoAnchorDetails({ target, readOnly, onEdit, onReset, 
         ) : null}
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Close</Button>
-          {!readOnly && row?.source === 'manual' ? (
-            <Button variant="outline" onClick={() => onReset(row)}>Use suggestion</Button>
+          {!readOnly && (!row || row.manual_allowed) ? (
+            <Button variant="outline" onClick={() => onEdit(target)}>Type a discount</Button>
           ) : null}
-          {readOnly ? null : <Button onClick={() => onEdit(target)}>Edit discount</Button>}
+          {!readOnly && row?.recommendation_differs ? (
+            <Button onClick={() => onAdopt(target)}>Adopt {row.recommended.mechanic_label}</Button>
+          ) : null}
         </DialogFooter>
       </DialogContent>
     </Dialog>

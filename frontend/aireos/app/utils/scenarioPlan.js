@@ -5,12 +5,11 @@
 // The Scenario builder's planning view: one row per forecast month, summed
 // over whatever the filters select (one SKU, or all SKUs and customers),
 // with Last year actual, Model forecast (the Current line), Building blocks
-// applied and Adjusted forecast (= the Simulated line), each in units and
-// revenue, plus the variance of Adjusted against last year. Months with actuals are left out: blocks only apply to
-// forecast months.
+// applied and Adjusted forecast (= the Simulated line), in units (the
+// scenario predicts volume only), plus the variance of Adjusted against last
+// year. Months with actuals are left out: blocks only apply to forecast months.
 
 const CURRENT_UNITS = 'forecast_current';
-const CURRENT_REVENUE = 'forecast_current_revenue';
 
 /**
  * 'YYYY-MM-01' moved by whole months (negative = back).
@@ -25,19 +24,13 @@ export function shiftMonth(monthYear, months) {
   return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}-01`;
 }
 
-function emptyPair() {
-  return { units: 0, revenue: 0 };
-}
-
-// Totals per month_year of two fields, or null for a month with no rows.
-function totalsByMonth(rows, unitsKey, revenueKey) {
+// Units per month_year; a month with no rows is missing.
+function totalsByMonth(rows, unitsKey) {
   const totals = new Map();
   for (const row of rows) {
     if (!row.month_year || row[unitsKey] == null) continue;
-    if (!totals.has(row.month_year)) totals.set(row.month_year, emptyPair());
-    const entry = totals.get(row.month_year);
-    entry.units += row[unitsKey];
-    entry.revenue += row[revenueKey] ?? 0;
+    if (!totals.has(row.month_year)) totals.set(row.month_year, { units: 0 });
+    totals.get(row.month_year).units += row[unitsKey];
   }
   return totals;
 }
@@ -45,13 +38,7 @@ function totalsByMonth(rows, unitsKey, revenueKey) {
 function variance(adjusted, lastYear) {
   if (!lastYear) return null;
   const units = adjusted.units - lastYear.units;
-  const revenue = adjusted.revenue - lastYear.revenue;
-  return {
-    units,
-    revenue,
-    unitsPct: lastYear.units ? units / lastYear.units : null,
-    revenuePct: lastYear.revenue ? revenue / lastYear.revenue : null,
-  };
+  return { units, unitsPct: lastYear.units ? units / lastYear.units : null };
 }
 
 /**
@@ -59,11 +46,11 @@ function variance(adjusted, lastYear) {
  *
  *   {
  *     month_year,
- *     lastYear: { units, revenue } | null,   // null: no sales that month last year
- *     model: { units, revenue },             // Current forecast
- *     blocks: { units, revenue },            // switched-on items' uplift
- *     adjusted: { units, revenue },          // model + blocks
- *     variance: { units, revenue, unitsPct, revenuePct } | null,
+ *     lastYear: { units } | null,            // null: no sales that month last year
+ *     model: { units },                      // Current forecast
+ *     blocks: { units },                     // switched-on items' uplift
+ *     adjusted: { units },                   // model + blocks
+ *     variance: { units, unitsPct } | null,
  *     items: [{ itemId, name }],             // what adds to this month
  *   }
  *
@@ -75,14 +62,14 @@ function variance(adjusted, lastYear) {
  * }} input
  */
 export function buildPlanRows({ rows, lastYearActuals, byMonth, monthItems }) {
-  const model = totalsByMonth(rows, CURRENT_UNITS, CURRENT_REVENUE);
-  const lastYear = totalsByMonth(lastYearActuals, 'quantity_cartons', 'revenue');
+  const model = totalsByMonth(rows, CURRENT_UNITS);
+  const lastYear = totalsByMonth(lastYearActuals, 'quantity_cartons');
 
   return [...model.keys()].sort().map((monthYear) => {
     const base = model.get(monthYear);
     const delta = byMonth.get(monthYear);
-    const blocks = { units: delta?.deltaUnits ?? 0, revenue: delta?.deltaRevenue ?? 0 };
-    const adjusted = { units: base.units + blocks.units, revenue: base.revenue + blocks.revenue };
+    const blocks = { units: delta?.deltaUnits ?? 0 };
+    const adjusted = { units: base.units + blocks.units };
     const previous = lastYear.get(shiftMonth(monthYear, -12)) ?? null;
     return {
       month_year: monthYear,

@@ -16,9 +16,7 @@ function blockSummary(block) {
 // What the block adds on the Simulated line, when it is on it.
 function impactLine(impact) {
   if (!impact) return null;
-  const units = Math.round(impact.deltaUnits).toLocaleString('en-US');
-  const dollars = Math.round(impact.deltaRevenue).toLocaleString('en-US');
-  return `+${units} units · +$${dollars}`;
+  return `+${Math.round(impact.deltaUnits).toLocaleString('en-US')} units`;
 }
 
 // One short status line per block, most important first: an unsaved block

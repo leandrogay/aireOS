@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Area, ComposedChart, Line, ReferenceArea, ReferenceLine, XAxis, YAxis } from 'recharts';
+import { Area, ComposedChart, Line, ReferenceArea, ReferenceDot, ReferenceLine, XAxis, YAxis } from 'recharts';
 
+import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import ChartLoading from '@/components/ui/ChartLoading';
@@ -30,7 +31,6 @@ import { dotRevealDelay, lineSweepTimings } from '@/app/utils/lineAnimation';
 // Actual, Initial and Current reach each month together. The promo bands wipe
 // in with the same sweep (PromoBands).
 const LINE_SWEEP = { begin: 0, duration: 1200 };
-const SERIES_KEYS = FORECAST_SERIES.map((series) => series.key);
 
 // How long a promo band takes to wipe in when it is added after the first draw.
 const LATE_BAND_MS = 300;
@@ -214,42 +214,55 @@ function promoPanelLeft(originX, wrapWidth) {
   return Math.max(PROMO_PANEL_EDGE, Math.min(left, maxLeft));
 }
 
-// Tooltip footer in the Scenario builder: how far Simulated sits from
-// Current this month, and which switched-on blocks add to it.
-function ScenarioPointDetails({ point, items, metric, formatValue }) {
-  if (point.simulated == null || point.current == null) return null;
+// The Scenario builder's switched-on items, one group per source, in the
+// order the panel's tabs show them.
+const SCENARIO_ITEM_GROUPS = [
+  { source: 'blocks', title: 'Building blocks added' },
+  { source: 'promotions', title: 'Planned promotions added' },
+];
+
+// Scenario section of the hover card (and of the entered-promotions panel,
+// which replaces the card in months with an entered promotion): how far
+// Simulated sits from Current this month, and every switched-on building
+// block and planned promotion in it, even one that adds 0%. With
+// `hasEntered`, planned promotions are added on top of the month's entered
+// ones (scenarioPromotions.stackedModelCells), so the card says so.
+function ScenarioPointDetails({ point, items, formatValue, hasEntered = false, className }) {
+  if (point?.simulated == null || point.current == null) return null;
   const delta = point.simulated - point.current;
-  if (!delta) return null;
+  if (!delta && !items.length) return null;
   const pct = point.current ? ` (${delta < 0 ? '−' : '+'}${Math.abs((delta / point.current) * 100).toFixed(1)}%)` : '';
-  // Sign written here, figure unsigned, so revenue reads "+$2,555.00".
+  // Sign written here, figure unsigned, so it reads "+2,555".
   const signed = (value) => `${value < 0 ? '−' : '+'}${formatValue(Math.abs(value))}`;
   return (
-    <div className="mt-1 space-y-0.5 border-t border-lavander pt-1.5 text-[11px] tabular-nums">
+    <div className={cn('space-y-0.5 text-[11px] tabular-nums', className)}>
       <div className="flex justify-between gap-3">
-        <span>Difference</span>
+        <span>Difference from Current</span>
         <span className="font-semibold text-scenario-ink">
           {signed(delta)}
           {pct}
         </span>
       </div>
-      {items.length ? (
-        <>
-          <p className="pt-1 text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/50">
-            What adds to this month
-          </p>
-          {items.map((item) => {
-            const value = metric === 'revenue' ? item.deltaRevenue : item.deltaUnits;
-            return (
+      {SCENARIO_ITEM_GROUPS.map((group) => {
+        const groupItems = items.filter((item) => item.source === group.source);
+        if (!groupItems.length) return null;
+        return (
+          <div key={group.source}>
+            <p className="pt-1 text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/50">
+              {group.title}
+            </p>
+            {groupItems.map((item) => (
               <div key={item.itemId} className="flex justify-between gap-3">
                 <span className="truncate">{item.name}</span>
-                <span className="font-semibold text-scenario-ink">
-                  {signed(value)}
-                </span>
+                <span className="font-semibold text-scenario-ink">{signed(item.deltaUnits)}</span>
               </div>
-            );
-          })}
-        </>
-      ) : null}
+            ))}
+            {group.source === 'promotions' && hasEntered ? (
+              <p className="text-[10px] text-deep-violet-blue/60">On top of the entered promotions below.</p>
+            ) : null}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -281,7 +294,8 @@ export default function ForecastChart({
   scenario = null,
   // Scenario builder only (all default off, so /forecast is unchanged):
   // `toolbar` renders under the card header, `summary` right under the
-  // chart; `yearTable` replaces ForecastYearTotals.
+  // chart; `yearTable` replaces ForecastYearTotals. Without `onMetricChange`
+  // the Volume | Revenue tabs are hidden (the Scenario builder is volume only).
   toolbar = null,
   summary = null,
   yearTable = null,
@@ -343,7 +357,8 @@ export default function ForecastChart({
       ]
     : chartData;
   const ticks = plotData.map((point) => point.x);
-  const lineTimings = lineSweepTimings(plotData, SERIES_KEYS, LINE_SWEEP);
+  // Every line drawn, including the Scenario builder's, needs a timing.
+  const lineTimings = lineSweepTimings(plotData, allSeries.map((series) => series.key), LINE_SWEEP);
 
   const showRange = Boolean(visibleSeries.current) && chartData.some((point) => point.range);
   const visibleValues = chartData.flatMap((point) => [
@@ -492,22 +507,24 @@ export default function ForecastChart({
             </div>
           ) : null}
         </div>
-        <Tabs value={metric} onValueChange={onMetricChange}>
-          <TabsList className="h-7 bg-lavander p-0.5">
-            <TabsTrigger
-              value="units"
-              className="h-6 px-2.5 text-[11px] text-deep-violet-blue/70 hover:bg-white hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white data-active:hover:bg-deep-violet-blue data-active:hover:text-white"
-            >
-              Volume
-            </TabsTrigger>
-            <TabsTrigger
-              value="revenue"
-              className="h-6 px-2.5 text-[11px] text-deep-violet-blue/70 hover:bg-white hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white data-active:hover:bg-deep-violet-blue data-active:hover:text-white"
-            >
-              Revenue
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+        {onMetricChange ? (
+          <Tabs value={metric} onValueChange={onMetricChange}>
+            <TabsList className="h-7 bg-lavander p-0.5">
+              <TabsTrigger
+                value="units"
+                className="h-6 px-2.5 text-[11px] text-deep-violet-blue/70 hover:bg-white hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white data-active:hover:bg-deep-violet-blue data-active:hover:text-white"
+              >
+                Volume
+              </TabsTrigger>
+              <TabsTrigger
+                value="revenue"
+                className="h-6 px-2.5 text-[11px] text-deep-violet-blue/70 hover:bg-white hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white data-active:hover:bg-deep-violet-blue data-active:hover:text-white"
+              >
+                Revenue
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        ) : null}
       </CardHeader>
       <CardContent className="space-y-3">
         {toolbar}
@@ -597,8 +614,8 @@ export default function ForecastChart({
                                 <ScenarioPointDetails
                                   point={point}
                                   items={scenario.monthItems?.get(point.month_year) ?? []}
-                                  metric={metric}
                                   formatValue={formatValue}
+                                  className="mt-1 border-t border-lavander pt-1.5"
                                 />
                               ) : null}
                               <ForecastPointDetails
@@ -752,6 +769,16 @@ export default function ForecastChart({
                     seriesValues={seriesValues}
                     details={forecastPointDetails(hoverPoint, metric, formatValue)}
                     formatValue={formatValue}
+                    scenarioDetails={
+                      showSimulated ? (
+                        <ScenarioPointDetails
+                          point={hoverPoint}
+                          items={scenario.monthItems?.get(hoverMonth) ?? []}
+                          formatValue={formatValue}
+                          hasEntered={scenario.stacksOnEntered}
+                        />
+                      ) : null
+                    }
                     promos={hoverPromos}
                     openPromoId={openPromoId}
                     onTogglePromo={(key) =>

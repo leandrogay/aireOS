@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Plus } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { primaryButtonClass } from '@/components/inventory/formStyles';
+import { primaryButtonClass } from '@/components/ui/formStyles';
 import BlockEditor from '@/components/scenario/BlockEditor';
 import BlockList from '@/components/scenario/BlockList';
 import {
@@ -41,7 +41,7 @@ import {
  *   months: string[],
  *   defaultCustomer: string,
  *   defaultSku: string,
- *   impacts: Map<string, { deltaUnits: number, deltaRevenue: number, months: string[] }>,
+ *   impacts: Map<string, { deltaUnits: number, months: string[] }>,
  * }} props
  */
 export default function BuildingBlocksSection({

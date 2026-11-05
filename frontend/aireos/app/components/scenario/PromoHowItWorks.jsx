@@ -39,9 +39,9 @@ export default function PromoHowItWorks() {
             the same Current forecast and the results are added, not multiplied.
           </li>
           <li>
-            Some months&apos; official forecast already includes the promotion entered for them, so planned promotions
-            are not added there and nothing is counted twice. Switch to <b>Simulate New Promotions</b> above the chart
-            to use the forecast without it and plan those months yourself. Building blocks apply in both views.
+            Some months&apos; official forecast already includes the promotion entered for them. In <b>Modify Planned
+            Promotions</b> your promotion is added on top of that one; switch to <b>Simulate New Promotions</b> above the
+            chart to start from the forecast without it instead. Building blocks apply in both views.
           </li>
           <li>All values are placeholders until they are measured from sales data.</li>
           <li>

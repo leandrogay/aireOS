@@ -3,10 +3,10 @@
 // ============================================================
 //
 // The scenario's measures (blueprint Part 2.1; the impact summary above the
-// chart shows units, revenue and gap, and its pitch summary is gone). They read the
+// chart shows volume and gap, and its pitch summary is gone). They read the
 // monthly points the chart plots plus the engine's per-month deltas, never
 // the items, so draft promotions count the moment their source returns
-// cells. Dip, gap and attainment are in units; revenue impact is in dollars.
+// cells. Everything is in units: the scenario predicts volume only.
 
 import { formatMonthLabel } from '@/app/utils/forecastView';
 
@@ -38,29 +38,19 @@ export function seasonalAverage(points) {
  * Every pitch-card number for the months in view.
  *
  * @param {object[]} unitPoints buildMonthlyPoints(..., 'units')
- * @param {object[]} revenuePoints buildMonthlyPoints(..., 'revenue')
  * @param {Map} byMonth simulate().byMonth
  */
-export function pitchMetrics(unitPoints, revenuePoints, byMonth) {
-  // Top-line revenue impact: revenue added, as a share of Current revenue in
-  // the months the items cover.
-  let revenueAdded = 0;
-  let revenueBase = 0;
-  const impactMonths = [];
-  // Volume added: the same months, read in units (the impact strip).
+export function pitchMetrics(unitPoints, byMonth) {
+  // Volume added: units added, as a share of Current in the months the
+  // items cover.
   let unitsAdded = 0;
   let unitsBase = 0;
+  const impactMonths = [];
   for (const point of unitPoints) {
     const delta = deltaFor(byMonth, point.month_year, 'deltaUnits');
     if (!delta) continue;
     unitsAdded += delta;
     unitsBase += point.current ?? 0;
-  }
-  for (const point of revenuePoints) {
-    const delta = deltaFor(byMonth, point.month_year, 'deltaRevenue');
-    if (!delta) continue;
-    revenueAdded += delta;
-    revenueBase += point.current ?? 0;
     impactMonths.push(point.month_year);
   }
 
@@ -105,10 +95,6 @@ export function pitchMetrics(unitPoints, revenuePoints, byMonth) {
     units: {
       added: unitsAdded,
       pctOfCurrent: unitsBase ? unitsAdded / unitsBase : null,
-    },
-    revenue: {
-      added: revenueAdded,
-      pctOfCurrent: revenueBase ? revenueAdded / revenueBase : null,
       months: impactMonths,
     },
     dip: {
