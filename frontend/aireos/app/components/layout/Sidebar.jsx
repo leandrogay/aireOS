@@ -144,7 +144,7 @@ export default function Sidebar() {
         hidden ? 'border-transparent bg-transparent' : 'border-lavander bg-white',
       )}
     >
-      <div className="relative mb-4 flex h-8 items-center">
+      <div className="relative mt-2 mb-4 flex h-8 items-center">
         {/* Absolute, so the logo coming and going never pushes the toggle
             around; it just fades over the row. */}
         <AnimatePresence initial={false}>
@@ -163,7 +163,7 @@ export default function Sidebar() {
                   alt="AIRE"
                   width={72}
                   height={30}
-                  className="h-auto w-auto"
+                  className="h-7 w-auto"
                   priority
                 />
               </Link>
