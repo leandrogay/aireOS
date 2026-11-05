@@ -26,17 +26,52 @@ const MISSING_FORMAT = 'UNKNOWN';
 // off the legend, because there is no format to call it.
 export const UNNAMED_FORMAT = 'Total';
 
+// AIRE brand colours and their shades first, then the other colours the forecast
+// lines and promotion types use. Cream is second by design choice, though it and
+// lavender are the hardest to see on a white chart.
 const CUSTOMER_COLORS = [
-  'var(--aire-deep-blue)',
   'var(--aire-violet)',
+  'var(--aire-cream)',
   'var(--aire-celest)',
+  '#2E7BA6',
+  '#5C5299',
   'var(--aire-lavender)',
+  '#0D9488',
+  '#4F7A3A',
+  '#7C3AED',
+  '#8A7460',
+  '#C4B6A6',
+  '#C45C26',
+  '#E8922A',
 ];
 
-// Stable colour per customer label, so the mix bar can tell them apart.
-export function customerColor(label, labels) {
-  const index = [...labels].sort((a, b) => a.localeCompare(b)).indexOf(label);
-  return CUSTOMER_COLORS[(index < 0 ? 0 : index) % CUSTOMER_COLORS.length];
+// Past the palette, each customer still gets a colour of its own: this angle
+// keeps successive hues far apart without ever landing on the same one twice.
+const GOLDEN_ANGLE_DEGREES = 137.508;
+
+function extraCustomerColor(position) {
+  return `hsl(${(position * GOLDEN_ANGLE_DEGREES) % 360} 55% 45%)`;
+}
+
+/**
+ * The order customers take colours in: by customer_id, so a new customer takes
+ * the next colour and nobody else's changes. `otherNames` are customers with
+ * sales but no customer record; they go last, so they can't shift anyone either.
+ *
+ * @param {Array<{ customer_id: number, customer_name: string }>} customers every customer (GET /api/inventory/customers)
+ * @param {string[]} [otherNames] customer slugs that may not be in `customers`
+ * @returns {string[]} customer slugs
+ */
+export function customerColorOrder(customers, otherNames = []) {
+  const byId = [...customers].sort((a, b) => a.customer_id - b.customer_id);
+  return [...new Set([...byId.map((customer) => customer.customer_name), ...otherNames])];
+}
+
+// One customer's colour, the same on every page. No two customers in `order`
+// (customerColorOrder) share a colour, however many there are.
+export function customerColor(customerName, order) {
+  const index = Math.max(order.indexOf(customerName), 0);
+  return CUSTOMER_COLORS[index] ?? extraCustomerColor(index - CUSTOMER_COLORS.length);
 }
 
 // Named formats stay as they are. Rows with no format become one "Others"

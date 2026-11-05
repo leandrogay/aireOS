@@ -22,7 +22,7 @@ export default function InfoTooltip({ label, children, className }) {
         openOnHover
         delay={150}
         closeDelay={100}
-        className="rounded-full p-0.5 text-deep-violet-blue/50 hover:text-deep-violet-blue"
+        className="cursor-pointer rounded-full p-0.5 text-deep-violet-blue/50 hover:text-deep-violet-blue"
       >
         <Info className="size-3.5" />
         <span className="sr-only">{label}</span>

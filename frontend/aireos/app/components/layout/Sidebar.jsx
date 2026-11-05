@@ -143,13 +143,13 @@ export default function Sidebar() {
               exit="hidden"
               className="absolute top-1/2 left-1 -translate-y-1/2"
             >
-              <Link href="/dashboard" aria-label="AIRE home">
+              <Link href="/dashboard" aria-label="AireOS home">
                 <Image
-                  src="/aire-logo.png"
-                  alt="AIRE"
-                  width={72}
-                  height={30}
-                  className="h-7 w-auto"
+                  src="/aireos-wordmark.svg"
+                  alt="AireOS"
+                  width={120}
+                  height={36}
+                  className="h-auto"
                   priority
                 />
               </Link>

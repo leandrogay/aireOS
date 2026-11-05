@@ -39,7 +39,7 @@ export default function ToggleButton({ pressed, onChange, look = 'compact', disa
       title={title}
       className={cn(
         'inline-flex items-center gap-1.5 font-medium text-deep-violet-blue outline-none transition',
-        'focus-visible:ring-2 focus-visible:ring-violet disabled:cursor-not-allowed disabled:opacity-50',
+        'cursor-pointer focus-visible:ring-2 focus-visible:ring-violet disabled:cursor-not-allowed disabled:opacity-50',
         LOOK[look],
         className,
       )}
