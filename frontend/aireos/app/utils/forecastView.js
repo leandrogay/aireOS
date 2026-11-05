@@ -174,6 +174,46 @@ function columnValue(row, column, metric) {
   return row[key] ?? null;
 }
 
+export function formatAxisValue(value, metric) {
+  if (typeof value !== 'number') return value;
+  if (metric === 'revenue') {
+    if (Math.abs(value) >= 1000) {
+      return `$${(value / 1000).toLocaleString('en-US', { maximumFractionDigits: 1 })}k`;
+    }
+    return `$${value}`;
+  }
+  if (Math.abs(value) >= 1000) {
+    return `${(value / 1000).toLocaleString('en-US', { maximumFractionDigits: 1 })}k`;
+  }
+  return `${value}`;
+}
+
+export function niceYDomain(values) {
+  const dataMin = Math.min(...values);
+  const dataMax = Math.max(...values);
+  const span = dataMax - dataMin;
+  const padding = span * 0.1 || Math.abs(dataMax) * 0.1 || 1;
+  let low = dataMin - padding;
+  let high = dataMax + padding;
+  if (low < 0 && dataMin >= 0) low = 0;
+  const rawStep = (high - low) / 4;
+  const magnitude = 10 ** Math.floor(Math.log10(rawStep || 1));
+  const residual = rawStep / magnitude;
+  const step = residual >= 5 ? 10 * magnitude : residual >= 2 ? 5 * magnitude : 2 * magnitude;
+  return [Math.floor(low / step) * step, Math.ceil(high / step) * step];
+}
+
+export function formatTooltipValue(value, metric) {
+  if (typeof value !== 'number') return value;
+  if (metric === 'revenue') {
+    return `$${value.toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  }
+  return Math.round(value).toLocaleString('en-US');
+}
+
 export function formatMonthLabel(monthYear) {
   if (!monthYear) return '';
   return new Date(`${monthYear}T00:00:00`).toLocaleDateString('en-US', {

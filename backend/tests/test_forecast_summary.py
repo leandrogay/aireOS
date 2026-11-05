@@ -248,3 +248,67 @@ def test_get_demand_forecast_with_no_forecast_raises_without_reading_actuals(mon
 
     with pytest.raises(ValueError, match="no forecast"):
         forecast_summary.get_demand_forecast(customer="fairprice")
+
+
+# ---- Chart lines ------------------------------------------------------------
+
+def test_chart_lines_hold_actual_initial_and_current_for_the_months_asked_about():
+    rows = [
+        {**_row("2026-08-01", current=None), "forecast_initial": 70.4},
+        {**_row("2026-09-01", current=52.4), "forecast_initial": 60.5},
+        _row("2026-10-01", current=99.0),
+    ]
+    actuals = [_actual("2026-08-01", 88.0), _actual("2026-09-01", 20.0)]
+
+    result = forecast_summary.summarise(
+        rows, actuals, None, None, _window("2026-09-01", "2026-10-01"), _FRESHNESS, _TODAY, {(1, "13271338"): 10.0},
+    )
+
+    lines = {line["month"]: line for line in result["chart_lines"]}
+    assert sorted(lines) == ["2026-09-01", "2026-10-01"]
+    assert (lines["2026-09-01"]["actual_cartons"], lines["2026-09-01"]["initial_cartons"], lines["2026-09-01"]["current_cartons"]) == (20, 61, 52)
+    assert lines["2026-09-01"]["initial_revenue"] == 605.0
+    assert lines["2026-10-01"]["initial_cartons"] is None
+
+
+def test_chart_lines_add_up_several_series_as_the_rounded_sum():
+    rows = [
+        {**_row("2026-09-01", current=1.4), "forecast_initial": 1.3},
+        {**_row("2026-09-01", product="Other", sku="2", current=1.4), "forecast_initial": 1.3},
+    ]
+
+    result = forecast_summary.summarise(rows, [], None, None, _window("2026-09-01", "2026-09-01"), _FRESHNESS, _TODAY)
+
+    assert result["chart_lines"][0]["current_cartons"] == 3
+    assert result["chart_lines"][0]["initial_cartons"] == 3
+
+
+def test_chart_lines_show_only_the_month_asked_about():
+    # "Next month" is December, sales stop at August: the earlier months stay off the chart.
+    rows = [
+        {**_row(month, current=current), "forecast_initial": 100.0}
+        for month, current in [("2026-08-01", None), ("2026-11-01", 70.0), ("2026-12-01", 80.0)]
+    ]
+    actuals = [_actual("2026-07-01", 42.0), _actual("2026-08-01", 44.0)]
+
+    result = forecast_summary.summarise(rows, actuals, None, None, _window("2026-12-01", "2026-12-01"), _FRESHNESS, _TODAY)
+
+    assert [line["month"] for line in result["chart_lines"]] == ["2026-12-01"]
+    assert result["chart_lines"][0]["actual_cartons"] is None
+    assert result["chart_lines"][0]["initial_cartons"] == 100
+    assert result["chart_lines"][0]["current_cartons"] == 80
+
+
+def test_chart_lines_cover_every_month_of_a_range_asked_about():
+    rows = [_row("2026-09-01", current=50.0), _row("2026-11-01", current=70.0)]
+
+    result = forecast_summary.summarise(rows, [], None, None, _window("2026-09-01", "2026-11-01"), _FRESHNESS, _TODAY)
+
+    assert [line["month"] for line in result["chart_lines"]] == ["2026-09-01", "2026-10-01", "2026-11-01"]
+    assert [line["current_cartons"] for line in result["chart_lines"]] == [50, None, 70]
+
+
+def test_chart_lines_are_empty_with_no_forecast_in_the_months_asked_about():
+    result = forecast_summary.summarise([_row("2026-09-01")], [], None, None, _window("2027-01-01", "2027-01-01"), _FRESHNESS, _TODAY)
+
+    assert result["chart_lines"] == []

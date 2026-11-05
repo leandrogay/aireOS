@@ -25,6 +25,7 @@ aireOS/
 │   │   ├── main.py                FastAPI() instance, credentialed CORS, protected routers, GET /
 │   │   ├── auth.py                Shared require_user dependency for protected API routers
 │   │   ├── middleware.py          UnhandledErrorMiddleware (turns unhandled exceptions into JSON 500s)
+│   │   ├── assets/                aire-logo.png: the AIRE logo on exported PDFs and slides (copy of the frontend's)
 │   │   ├── routers/               HTTP layer. One file per URL prefix.
 │   │   │   ├── uploads.py         /api/uploads        file ingest + mapping review (async)
 │   │   │   ├── auth.py            /api/auth           Google Workspace login/callback/session/logout
@@ -386,6 +387,7 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | Contract vocabulary: `mapping_contract` statuses, `TRANSFORM_TYPES`, `RULE_OPS`, `MELT_KEY_TARGETS`/`LABEL_TARGETS` (melt-group `labels`; `rows_above: 0` = the headings again, so any descriptive field (`HEADING_FIELDS`) can read them), `from_layout: "stated_period"` | `utils/fieldDecision.js` (`fieldMethods`, `currentDecision`, `decisionEntry`, `withFieldDecision`), `utils/transformSteps.js` (`STEP_TYPES`, `RULE_OPS`), `FieldEditorDialog.jsx` |
 | `mappings.ContractSettings` (`instructions.aggregate` on preview/confirm); packet `instructions`, `headRows`; preview `layout`, `head_rows`, `preview_error` | `useMappingEdits` (`instructionsPayload`), `FileSettings.jsx`, `FileTop.jsx`, `MappingReviewPanel.jsx`, `mappingApi.previewMapping/confirmMapping` |
 | Retailer = `{customer}_online` / `{customer}_offline` (`sellout_service._retailer_for`); `mapping_contract.retailer_outputs` (incl. retailers read off headings, given `columns`/`layout`); packet `columnValues` | `utils/retailerSplit.js` (`splitDecision`, `withCustomerChannels`), `ChannelSplit.jsx`, `mappingCustomer.retailerDecision` |
+| `assistant._FORECAST_LINES` (keys, labels, export colours; `chart_series[].key`/`unit`), `forecast_summary` `chart_lines` | `FORECAST_SERIES` in `utils/forecastView.js`, `AssistantChart` in `assistant/AssistantMessage.jsx` |
 | `HTTPException.detail` shapes | `parseApiError()` |
 
 When you change the left column, grep the right column in the same PR.

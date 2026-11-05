@@ -9,6 +9,8 @@ import pytest
 from conftest import FrozenDatetime
 
 from google.api_core.exceptions import ServiceUnavailable
+from pptx.enum.shapes import MSO_SHAPE_TYPE
+from pptx.util import Inches
 
 from app.services import assistant, forecast_summary, inventory_service, promotion_service, sellout_service
 
@@ -542,6 +544,51 @@ def test_an_earlier_comparison_probe_does_not_turn_a_range_total_into_previous_v
     assert chart["chart_series"] == [{"label": "Revenue", "values": [17609.91, 17639.95, 13225.35]}]
 
 
+def _months_summary_call(months, mode="offline"):
+    return _monthly_summary_call("fairprice", months, mode=mode)
+
+
+_JUN_TO_AUG = [("June 2026", "2026-06-01", 17609.91), ("July 2026", "2026-07-01", 17639.95), ("August 2026", "2026-08-01", 13225.35)]
+
+
+def test_a_whole_history_probe_is_not_charted_with_the_months_asked_about():
+    # Regression (live): "fairprice offline sales for the past 3 months" showed
+    # every month since 2025, with June-August repeated at the end.
+    history = _months_summary_call([("January 2025", "2025-01-01", 1500.0), *_JUN_TO_AUG])
+
+    chart = assistant._build_chart([history, _months_summary_call(_JUN_TO_AUG)], "fairprice")
+
+    assert chart["chart_categories"] == ["June 2026", "July 2026", "August 2026"]
+    assert chart["chart_series"][0]["values"] == [17609.91, 17639.95, 13225.35]
+
+
+def test_a_monthly_probe_is_dropped_for_a_later_weekly_call_over_the_same_months():
+    history = _months_summary_call(_JUN_TO_AUG)
+    weekly = _months_summary_call([("Week of 3 Aug", "2026-08-03", 3000.0), ("Week of 10 Aug", "2026-08-10", 3200.0)])
+
+    chart = assistant._build_chart([history, weekly], "fairprice")
+
+    assert chart["chart_categories"] == ["Week of 3 Aug", "Week of 10 Aug"]
+
+
+def test_summary_calls_for_separate_months_are_all_charted():
+    june = _months_summary_call([("June 2026", "2026-06-01", 10.0)])
+    august = _months_summary_call([("August 2026", "2026-08-01", 20.0)])
+
+    chart = assistant._build_chart([june, august], "fairprice")
+
+    assert chart["chart_categories"] == ["June 2026", "August 2026"]
+
+
+def test_summary_calls_for_each_channel_are_not_treated_as_probes():
+    offline = _months_summary_call([("June 2026", "2026-06-01", 10.0)], mode="offline")
+    online = _months_summary_call([("June 2026", "2026-06-01", 20.0)], mode="online")
+
+    chart = assistant._build_chart([offline, online], "fairprice")
+
+    assert chart["chart_series"][0]["values"] == [10.0, 20.0]
+
+
 def _range_total_call(customer, start, end, revenue, mode=None):
     tool_input = {"customer": customer, "current_start": start, "current_end": end, **({"mode": mode} if mode else {})}
     raw = {"current": {"start": start, "end": end, "revenue": revenue, "units": 1},
@@ -1066,6 +1113,11 @@ def _forecast_result(**overrides):
         }],
         "monthly_totals": [],
         "forecast_total_cartons": 1104,
+        "chart_lines": [
+            {"month": "2026-08-01", "actual_cartons": 88, "actual_revenue": 712.3, "initial_cartons": 70, "initial_revenue": 560.0, "current_cartons": None, "current_revenue": None},
+            {"month": "2026-09-01", "actual_cartons": None, "actual_revenue": None, "initial_cartons": 60, "initial_revenue": 480.0, "current_cartons": 52, "current_revenue": 441.79},
+            {"month": "2026-10-01", "actual_cartons": None, "actual_revenue": None, "initial_cartons": None, "initial_revenue": None, "current_cartons": 1052, "current_revenue": 8937.81},
+        ],
     }
     return {**result, **overrides}
 
@@ -1087,7 +1139,7 @@ def test_forecast_tool_passes_names_through_and_builds_labelled_table(monkeypatc
     result, seen, _ = _ask_forecast(monkeypatch, "Forecast for Sep 2026: 52 cartons.")
 
     assert seen == {"product": "ultra tape l", "customer": "fairprice", "start_month": None, "end_month": None}
-    assert result["has_chart"] is False
+    assert result["has_table"] is True
     assert result["table_columns"] == ["type", "month", "customer", "product", "cartons", "range_80", "confidence"]
     assert result["table_rows"] == [
         ["Actual", "Aug 2026", "Fairprice", "Aire Ultra Tape L (13271338)", "88", "—", "—"],
@@ -1099,6 +1151,140 @@ def test_forecast_tool_passes_names_through_and_builds_labelled_table(monkeypatc
         "Forecast run: 5 Oct 2026, 1:14 am SGT · Actuals loaded: 6 Oct 2026, 1:05 pm SGT"
         " · Cartons; online and offline combined, as on the Forecast page"
     )
+
+
+def test_forecast_answer_has_the_forecast_page_lines_above_its_table(monkeypatch):
+    result, _, _ = _ask_forecast(monkeypatch, "Forecast for Sep 2026: 52 cartons.")
+
+    assert result["has_chart"] is True
+    assert result["has_table"] is True
+    assert result["chart_type"] == "line"
+    assert result["chart_categories"] == ["Aug 26", "Sep 26", "Oct 26"]
+    assert result["chart_series"] == [
+        {"key": "actual", "label": "Actual", "unit": "cartons", "values": [88, None, None]},
+        {"key": "initial", "label": "Initial Yearly Forecast", "unit": "cartons", "values": [70, 60, None]},
+        {"key": "current", "label": "Current Forecast", "unit": "cartons", "values": [None, 52, 1052]},
+    ]
+
+
+def _one_month_forecast():
+    return _forecast_result(chart_lines=[
+        {"month": "2026-12-01", "actual_cartons": None, "actual_revenue": None, "initial_cartons": 3000, "initial_revenue": 37800.0, "current_cartons": 2612, "current_revenue": 26767.76},
+    ])
+
+
+def test_one_month_forecast_is_a_bar_per_line():
+    chart = assistant._forecast_chart([("get_demand_forecast", {}, _one_month_forecast())])
+
+    assert chart["chart_type"] == "bar"
+    assert chart["chart_categories"] == ["Dec 26"]
+    assert [(series["key"], series["values"]) for series in chart["chart_series"]] == [("initial", [3000]), ("current", [2612])]
+
+
+def test_one_month_forecast_exports_as_bars_in_the_page_colours():
+    from pptx import Presentation
+    from pptx.enum.chart import XL_CHART_TYPE
+
+    chart = assistant._forecast_chart([("get_demand_forecast", {}, _one_month_forecast())])
+
+    pdf_bytes, _, _ = assistant.generate_export_file("pdf", "Forecast for Dec 2026: 2,612 cartons.", chart)
+    pptx_bytes, _, _ = assistant.generate_export_file("pptx", "Forecast for Dec 2026: 2,612 cartons.", chart)
+    excel_bytes, _, _ = assistant.generate_export_file("excel", "Forecast for Dec 2026: 2,612 cartons.", chart)
+
+    assert pdf_bytes[:4] == b"%PDF"
+    assert excel_bytes[:2] == b"PK"
+    pptx_chart = next(shape.chart for slide in Presentation(io.BytesIO(pptx_bytes)).slides for shape in slide.shapes if shape.has_chart)
+    assert pptx_chart.chart_type == XL_CHART_TYPE.COLUMN_CLUSTERED
+    assert [str(series.format.fill.fore_color.rgb) for series in pptx_chart.plots[0].series] == ["E8922A", "0D9488"]
+
+
+def test_forecast_revenue_question_charts_revenue(monkeypatch):
+    result, _ = _ask_forecast_revenue(monkeypatch, "Forecast revenue for Sep 2026 is $441.79.")
+
+    current = next(series for series in result["chart_series"] if series["key"] == "current")
+    assert current == {"key": "current", "label": "Current Forecast", "unit": "revenue", "values": [None, 441.79, 8937.81]}
+
+
+def test_forecast_line_with_no_values_is_left_out():
+    lines = [{**line, "initial_cartons": None} for line in _forecast_result()["chart_lines"]]
+
+    chart = assistant._forecast_chart([("get_demand_forecast", {}, _forecast_result(chart_lines=lines))])
+
+    assert [series["key"] for series in chart["chart_series"]] == ["actual", "current"]
+
+
+def test_two_forecast_calls_show_the_table_without_a_chart():
+    other = _forecast_result(customer="giant")
+    other["series"] = [{**other["series"][0], "customer": "giant"}]
+
+    chart = assistant._forecast_chart([("get_demand_forecast", {}, _forecast_result()), ("get_demand_forecast", {}, other)])
+
+    assert chart["has_table"] is True
+    assert chart["has_chart"] is False
+
+
+def _forecast_months_result(months, cartons=52):
+    """A forecast call's result covering exactly `months` ('YYYY-MM-01')."""
+    return _forecast_result(
+        series=[{
+            **_forecast_result()["series"][0],
+            "forecast": [{"month": month, "cartons": cartons, "low_80": 1, "high_80": 2} for month in months],
+            "actuals": [],
+        }],
+        forecast_total_cartons=cartons * len(months),
+        chart_lines=[
+            {"month": month, "actual_cartons": None, "actual_revenue": None, "initial_cartons": None, "initial_revenue": None, "current_cartons": cartons, "current_revenue": None}
+            for month in months
+        ],
+    )
+
+
+def test_a_default_forecast_read_before_the_months_asked_about_is_dropped():
+    # Regression (live): "next 3 months" sometimes read the default Sep-Nov
+    # first, then Nov-Jan: no chart, and Sep and Oct rows nobody asked for.
+    probe = ("get_demand_forecast", {"customer": "fairprice"}, _forecast_months_result(["2026-09-01", "2026-10-01", "2026-11-01"]))
+    asked = (
+        "get_demand_forecast",
+        {"customer": "fairprice", "start_month": "2026-11", "end_month": "2027-01"},
+        _forecast_months_result(["2026-11-01", "2026-12-01", "2027-01-01"]),
+    )
+
+    chart = assistant._forecast_chart([probe, asked])
+
+    assert chart["has_chart"] is True
+    assert chart["chart_type"] == "line"
+    assert chart["chart_categories"] == ["Nov 26", "Dec 26", "Jan 27"]
+    assert not any(row[1] in ("Sep 2026", "Oct 2026") for row in chart["table_rows"])
+
+
+def test_a_default_forecast_read_with_no_month_in_common_is_dropped_too():
+    probe = ("get_demand_forecast", {"customer": "fairprice"}, _forecast_months_result(["2026-09-01", "2026-10-01"]))
+    asked = ("get_demand_forecast", {"customer": "fairprice", "start_month": "2026-12"}, _forecast_months_result(["2026-12-01"]))
+
+    chart = assistant._forecast_chart([probe, asked])
+
+    assert chart["chart_categories"] == ["Dec 26"]
+    assert chart["chart_type"] == "bar"
+
+
+def test_separately_read_forecast_months_chart_together():
+    first = ("get_demand_forecast", {"customer": "fairprice", "start_month": "2026-12"}, _forecast_months_result(["2026-12-01"]))
+    second = ("get_demand_forecast", {"customer": "fairprice", "start_month": "2026-11"}, _forecast_months_result(["2026-11-01"]))
+
+    chart = assistant._forecast_chart([first, second])
+
+    assert chart["chart_categories"] == ["Nov 26", "Dec 26"]
+    assert chart["chart_type"] == "line"
+
+
+def test_forecast_chart_lines_are_not_sent_to_the_model(monkeypatch):
+    monkeypatch.setattr(assistant.forecast_summary, "get_demand_forecast", lambda **kwargs: _forecast_result())
+
+    content, is_error, raw = assistant._run_business_tool("get_demand_forecast", {"customer": "fairprice"}, "fairprice")
+
+    assert is_error is False
+    assert "chart_lines" not in json.loads(content)
+    assert raw["chart_lines"]
 
 
 def test_forecast_month_to_date_actual_is_labelled_as_such(monkeypatch):
@@ -1164,6 +1350,7 @@ def test_forecast_headline_cartons_not_in_the_table_hides_the_table(monkeypatch)
     # One correction retry, still wrong: the table that disagrees is left out.
     assert len(fake_client.models.calls) == 3
     assert result["has_table"] is False
+    assert result["has_chart"] is False
 
 
 def _pptx_text(pptx_bytes):
@@ -1192,6 +1379,309 @@ def test_forecast_export_pdf_and_pptx_include_the_table_and_note():
     assert any(text.startswith("Forecast run: 5 Oct 2026, 1:14 am SGT") for text in texts)
 
 
+def test_forecast_export_pptx_draws_the_page_lines_in_the_page_colours():
+    from pptx import Presentation
+    from pptx.enum.chart import XL_CHART_TYPE
+
+    chart = assistant._forecast_chart([("get_demand_forecast", {}, _forecast_result())])
+
+    pptx_bytes, _, _ = assistant.generate_export_file("pptx", "Forecast for Sep 2026: 52 cartons.", chart)
+
+    charts = [shape.chart for slide in Presentation(io.BytesIO(pptx_bytes)).slides for shape in slide.shapes if shape.has_chart]
+    assert len(charts) == 1
+    assert charts[0].chart_type in (XL_CHART_TYPE.LINE, XL_CHART_TYPE.LINE_MARKERS)
+    assert [series.name for series in charts[0].plots[0].series] == ["Actual", "Initial Yearly Forecast", "Current Forecast"]
+    assert [str(series.format.line.color.rgb) for series in charts[0].plots[0].series] == ["3A4369", "E8922A", "0D9488"]
+
+
+def test_forecast_export_excel_has_the_chart_data_and_the_table():
+    from openpyxl import load_workbook
+
+    chart = assistant._forecast_chart([("get_demand_forecast", {}, _forecast_result())])
+
+    excel_bytes, _, _ = assistant.generate_export_file("excel", "Forecast for Sep 2026: 52 cartons.", chart)
+
+    sheet = load_workbook(io.BytesIO(excel_bytes)).active
+    cells = [cell.value for row in sheet.iter_rows() for cell in row]
+    assert "Initial Yearly Forecast" in cells
+    assert "confidence" in cells
+    assert len(sheet._charts) == 1
+
+
+# ---- PowerPoint layout: neat, and nothing lost --------------------------------
+
+def _deck(answer, chart=None, style=None, trend_values=None):
+    from pptx import Presentation
+
+    pptx_bytes, _, _ = assistant.generate_export_file("pptx", answer, chart or assistant._empty_chart(), style, trend_values)
+    return Presentation(io.BytesIO(pptx_bytes))
+
+
+def _long_forecast_chart():
+    months = [f"2026-{month:02d}-01" for month in range(1, 13)]
+    series = [
+        {**_forecast_result()["series"][0], "product_name": f"Aire Product With A Long Name {i}", "sku": str(13255000 + i),
+         "forecast": [{"month": month, "cartons": 1000 + i, "low_80": 1, "high_80": 2} for month in months], "actuals": []}
+        for i in range(3)
+    ]
+    return assistant._forecast_chart([("get_demand_forecast", {}, _forecast_result(series=series))])
+
+
+def _overlaps(first, second):
+    return (
+        first.left < second.left + second.width and second.left < first.left + first.width
+        and first.top < second.top + second.height and second.top < first.top + first.height
+    )
+
+
+def test_nothing_on_any_slide_runs_off_it_or_overlaps():
+    long_answer = " ".join(f"Sentence number {i} says something useful about the forecast figures this month." for i in range(40))
+
+    prs = _deck(long_answer, _long_forecast_chart())
+
+    assert len(prs.slides) > 3
+    for slide in prs.slides:
+        shapes = list(slide.shapes)
+        for shape in shapes:
+            assert shape.left >= 0 and shape.left + shape.width <= prs.slide_width
+            assert shape.top >= 0 and shape.top + shape.height <= prs.slide_height
+        for index, shape in enumerate(shapes):
+            for other in shapes[index + 1:]:
+                assert not _overlaps(shape, other), f"{shape.name} overlaps {other.name}"
+
+
+def test_every_slide_has_a_title_and_no_empty_placeholder():
+    prs = _deck("Forecast is 52 cartons.", _forecast_chart_for_deck())
+
+    assert [slide.shapes.title.text for slide in prs.slides] == ["AireOS Report", "Forecast (cartons)", "Details"]
+    for slide in prs.slides:
+        for placeholder in slide.placeholders:
+            assert placeholder.text_frame.text.strip()
+
+
+def _forecast_chart_for_deck():
+    return assistant._forecast_chart([("get_demand_forecast", {}, _forecast_result())])
+
+
+def test_a_long_answer_keeps_every_word_across_slides():
+    sentences = [f"Sentence number {i} cites ${i},234.56 in revenue, up {i}.5% on July." for i in range(30)]
+
+    prs = _deck(" ".join(sentences))
+
+    body = [p.text for slide in prs.slides for p in slide.placeholders[1].text_frame.paragraphs]
+    assert body == sentences
+
+
+def test_splitting_an_answer_never_breaks_a_figure():
+    answer = "Revenue was $26,767.76 on 2,612 cartons. Confidence fell 4.3% to Low (see the table). Sales rose."
+
+    assert " ".join(assistant._slide_points(answer)) == answer
+    assert assistant._slide_points(answer)[0] == "Revenue was $26,767.76 on 2,612 cartons."
+
+
+def test_every_table_row_and_figure_survives_paging_unchanged():
+    chart = _long_forecast_chart()
+
+    prs = _deck("Forecast.", chart)
+
+    tables = [shape.table for slide in prs.slides for shape in slide.shapes if shape.has_table]
+    shown = [[cell.text for cell in row.cells] for table in tables for row in list(table.rows)[1:]]
+    assert shown == chart["table_rows"]
+    assert len(tables) > 1
+    assert all(table.cell(0, 3).text == "Product" for table in tables)
+
+
+def test_chart_slide_plots_the_same_figures_as_the_chart():
+    chart = _forecast_chart_for_deck()
+
+    prs = _deck("Forecast.", chart)
+
+    pptx_chart = next(shape.chart for shape in prs.slides[1].shapes if shape.has_chart)
+    assert list(pptx_chart.plots[0].categories) == chart["chart_categories"]
+    for pptx_series, series in zip(pptx_chart.plots[0].series, chart["chart_series"]):
+        assert list(pptx_series.values) == series["values"]
+
+
+def test_table_gives_the_longest_cells_the_widest_column_and_fills_the_slide():
+    prs = _deck("Forecast.", _forecast_chart_for_deck())
+
+    table_shape = next(shape for shape in prs.slides[2].shapes if shape.has_table)
+    widths = [column.width for column in table_shape.table.columns]
+    assert widths.index(max(widths)) == 3  # product
+    assert abs(sum(widths) - table_shape.width) < 100
+
+
+def test_a_column_of_long_text_never_squeezes_its_neighbours_mid_word():
+    headings = ["Stores", "Period", "Type", "Mechanic"]
+    rows = [["fairprice_offline - Store Number 1 Very Long Name; " * 4, "Nov 2026", "Monthly", "Buy 2 get 1 free on all adult pants"]]
+
+    widths = assistant._table_column_widths(headings, rows)
+
+    assert abs(sum(widths) - assistant._CONTENT_WIDTH) < 0.001
+    room = assistant._TABLE_CHAR_WIDTH * len("Monthly") + assistant._TABLE_CELL_PADDING
+    assert widths[2] >= room
+    assert widths[1] >= assistant._TABLE_CHAR_WIDTH * len("Period") + assistant._TABLE_CELL_PADDING
+
+
+def test_table_headings_are_readable_and_figures_are_right_aligned():
+    from pptx.enum.text import PP_ALIGN
+
+    prs = _deck("Forecast.", _forecast_chart_for_deck())
+
+    table = next(shape.table for shape in prs.slides[2].shapes if shape.has_table)
+    assert [cell.text for cell in table.rows[0].cells] == ["Type", "Month", "Customer", "Product", "Cartons", "80% range", "Confidence"]
+    assert table.cell(1, 4).text_frame.paragraphs[0].alignment == PP_ALIGN.RIGHT
+    assert table.cell(1, 3).text_frame.paragraphs[0].alignment == PP_ALIGN.LEFT
+
+
+def test_bold_in_an_answer_is_bold_not_asterisks():
+    prs = _deck("- **Fairprice:** Revenue fell.\n- **NHG:** Revenue rose.")
+
+    paragraph = prs.slides[0].placeholders[1].text_frame.paragraphs[0]
+    assert paragraph.text == "Fairprice: Revenue fell."
+    assert [(run.text, run.font.bold) for run in paragraph.runs] == [("Fairprice:", True), (" Revenue fell.", False)]
+
+
+def test_one_series_chart_legend_names_the_series_not_the_month():
+    lines = [{"month": "2027-01-01", "actual_cartons": None, "actual_revenue": None, "initial_cartons": None, "initial_revenue": None, "current_cartons": 2499, "current_revenue": None}]
+    chart = assistant._forecast_chart([("get_demand_forecast", {}, _forecast_result(chart_lines=lines))])
+
+    prs = _deck("Forecast.", chart)
+
+    pptx_chart = next(shape.chart for shape in prs.slides[1].shapes if shape.has_chart)
+    assert pptx_chart.has_legend is True
+    assert pptx_chart.plots[0].vary_by_categories is False
+    assert pptx_chart.has_title is False
+
+
+def test_every_slide_has_the_logo_in_its_top_right_corner():
+    prs = _deck("Forecast is 52 cartons.", _long_forecast_chart())
+
+    assert len(prs.slides) > 2
+    logo_bytes = assistant._LOGO_PATH.read_bytes()
+    for slide in prs.slides:
+        logos = [shape for shape in slide.shapes if shape.shape_type == MSO_SHAPE_TYPE.PICTURE]
+        assert len(logos) == 1
+        logo = logos[0]
+        assert logo.image.blob == logo_bytes
+        assert logo.left + logo.width == pytest.approx(prs.slide_width - Inches(assistant._SLIDE_MARGIN), abs=2000)
+        assert logo.left > prs.slide_width / 2
+        assert logo.top + logo.height < Inches(assistant._RULE_TOP)
+        assert logo.width / logo.height == pytest.approx(assistant._LOGO_ASPECT_RATIO, abs=0.01)
+
+
+def test_logo_constant_matches_the_file_and_is_high_res_for_its_size():
+    from PIL import Image
+
+    with Image.open(assistant._LOGO_PATH) as logo:
+        assert logo.mode == "RGBA"
+        assert logo.size[0] / logo.size[1] == pytest.approx(assistant._LOGO_ASPECT_RATIO, abs=0.01)
+        # At least 300 dpi at the size it's placed on a slide.
+        assert logo.size[0] >= assistant._SLIDE_LOGO_WIDTH * 300
+
+
+def test_every_pdf_page_draws_the_logo_inside_the_top_right_margin():
+    seen = []
+
+    class FakeCanvas:
+        def drawImage(self, path, x, y, width, height, mask):
+            seen.append({"path": path, "x": x, "y": y, "width": width, "height": height, "mask": mask})
+
+    class Doc:
+        pagesize = (612, 792)
+
+    assistant._draw_pdf_logo(FakeCanvas(), Doc())
+
+    logo = seen[0]
+    assert logo["path"] == str(assistant._LOGO_PATH)
+    assert logo["mask"] == "auto"
+    assert logo["x"] + logo["width"] == 612 - assistant._PDF_LOGO_RIGHT
+    assert logo["y"] >= 792 - 72  # wholly inside the top margin, above the content
+
+
+def test_pdf_export_embeds_the_logo_on_each_page():
+    rows = [[str(i), "x"] for i in range(200)]
+    chart = assistant._table_chart(["n", "v"], rows)
+
+    pdf_bytes, _, _ = assistant.generate_export_file("pdf", "Some answer.", chart)
+
+    # reportlab stores the image once; each page's own drawing names it.
+    assert b"/Subtype /Image" in pdf_bytes
+    assert pdf_bytes.count(b"/Contents ") > 1  # more than one page
+
+
+def _paragraph_text(paragraph):
+    return "".join(fragment.text for fragment in paragraph.frags)
+
+
+def test_pdf_table_keeps_every_row_and_figure_unchanged():
+    chart = _long_forecast_chart()
+
+    table = assistant._pdf_table(chart)
+
+    shown = [[_paragraph_text(cell) for cell in row] for row in table._cellvalues]
+    assert shown[0] == ["Type", "Month", "Customer", "Product", "Cartons", "80% range", "Confidence"]
+    assert shown[1:] == chart["table_rows"]
+
+
+def test_pdf_table_fills_the_content_width_and_repeats_its_header():
+    table = assistant._pdf_table(_long_forecast_chart())
+
+    assert sum(table._colWidths) == pytest.approx(assistant._PDF_CONTENT_WIDTH)
+    assert table.repeatRows == 1
+
+
+def test_pdf_summary_keeps_every_word_and_figure():
+    answer = "Revenue was $26,767.76 on 2,612 cartons. Confidence fell 4.3% to Low & High (see the table)."
+
+    paragraphs = assistant._pdf_summary(answer)
+
+    assert " ".join(_paragraph_text(paragraph) for paragraph in paragraphs) == answer
+
+
+def test_pdf_bold_is_bold_not_asterisks():
+    paragraph = assistant._pdf_summary("- **Fairprice:** Revenue fell.\n- **NHG:** Revenue rose.")[0]
+
+    assert [(fragment.text, fragment.fontName) for fragment in paragraph.frags][0] == ("Fairprice:", "Helvetica-Bold")
+    assert _paragraph_text(paragraph) == "Fairprice: Revenue fell."
+
+
+def test_pdf_line_chart_plots_the_same_figures_and_leaves_gaps_for_blanks():
+    chart = _forecast_chart_for_deck()
+    style = {"chart_type": "line", "show_data_points": True}
+
+    plot = assistant._pdf_line_plot(chart, style, assistant._pdf_series_colors(chart, style), None, 48)
+
+    assert plot.data == [
+        [(0, 88)],
+        [(0, 70), (1, 60)],
+        [(1, 52), (2, 1052)],
+    ]
+    assert plot.width == assistant._PDF_CONTENT_WIDTH - 48 - 8
+
+
+def test_pdf_logo_is_smaller_and_stays_in_the_header():
+    assert assistant._PDF_LOGO_WIDTH < 90
+    logo_height = assistant._PDF_LOGO_WIDTH / assistant._LOGO_ASPECT_RATIO
+    assert assistant._PDF_LOGO_TOP + logo_height < assistant._PDF_RULE_TOP < assistant._PDF_CONTENT_TOP
+
+
+def test_nice_axis_is_round_and_covers_the_highest_value():
+    assert assistant._nice_axis(37812.0) == (40000, 10000)
+    assert assistant._nice_axis(2499) == (2500, 500)
+    assert assistant._nice_axis(0) == (1, 1)
+
+
+def test_pdf_builds_with_every_chart_shape_and_text_that_looks_like_markup():
+    bar = {**_forecast_chart_for_deck(), "chart_type": "bar"}
+    line = _forecast_chart_for_deck()
+    style = {"chart_type": "auto", "title": "A <b> & C", "y_axis_label": "Cartons", "show_value_labels": True, "show_gridlines": True}
+
+    for chart, chart_style in ((bar, style), (line, {"chart_type": "line", "show_data_points": True})):
+        pdf_bytes = assistant._build_pdf("Sales & margin were < plan. **Bold** stays.", chart, chart_style)
+        assert pdf_bytes[:4] == b"%PDF"
+
+
 def test_long_table_continues_on_further_slides_with_its_header():
     from pptx import Presentation
 
@@ -1202,7 +1692,7 @@ def test_long_table_continues_on_further_slides_with_its_header():
 
     tables = [shape.table for slide in Presentation(io.BytesIO(pptx_bytes)).slides for shape in slide.shapes if shape.has_table]
     assert [len(table.rows) for table in tables] == [assistant._MAX_TABLE_ROWS_PER_SLIDE + 1, 4]
-    assert all(table.cell(0, 0).text == "n" for table in tables)
+    assert all(table.cell(0, 0).text == "N" for table in tables)
 
 
 def test_export_endpoint_passes_the_table_note_to_the_file(monkeypatch):
@@ -3136,6 +3626,43 @@ def test_generate_digest_includes_promotions_starting_soon(monkeypatch):
     assistant.generate_digest(customer="fairprice")
 
     assert "20% off" in _facts_sent(fake_client)
+
+
+def test_digest_promotion_bullet_always_says_next_7_days_whatever_the_model_wrote():
+    # Regression (live): "6 promotions starting or ending in Nov 2026", when 26 ran that month.
+    answer = "- **Sales:** Revenue fell.\n- **Promotions:** There are 6 promotions starting or ending in Nov 2026."
+
+    result = assistant._with_digest_promotion_bullet(answer, [{}] * 6)
+
+    assert result == "- **Sales:** Revenue fell.\n- **Promotions:** 6 promotions starting or ending in the next 7 days."
+
+
+def test_digest_promotion_bullet_is_added_when_the_model_leaves_it_out():
+    result = assistant._with_digest_promotion_bullet("- **Sales:** Revenue fell.", [{}])
+
+    assert result == "- **Sales:** Revenue fell.\n- **Promotions:** 1 promotion starting or ending in the next 7 days."
+
+
+@pytest.mark.parametrize("promotions", [[], None])
+def test_digest_has_no_promotion_bullet_with_nothing_soon_or_unreadable(promotions):
+    answer = "- **Sales:** Revenue fell.\n- **Promotions:** No promotions."
+
+    assert assistant._with_digest_promotion_bullet(answer, promotions) == "- **Sales:** Revenue fell."
+
+
+def test_generate_digest_answer_says_next_7_days(monkeypatch):
+    today = datetime.date.today()
+    _install_digest_data(monkeypatch, promotions=[_sample_promotion(
+        period_start=today + datetime.timedelta(days=1),
+        period_end=today + datetime.timedelta(days=10),
+        promotion_mechanic="20% off",
+        stores=[{"retailer": "FairPrice", "store_name": "Jurong Point"}],
+    )])
+    _install_fake_client(monkeypatch, [_digest_answer()])
+
+    result = assistant.generate_digest(customer="fairprice")
+
+    assert "**Promotions:** 1 promotion starting or ending in the next 7 days." in result["answer"]
 
 
 def test_generate_digest_leaves_out_an_area_it_cannot_read(monkeypatch):
