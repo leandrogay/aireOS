@@ -181,9 +181,10 @@ def _name_and_date_filters(
 
 
 def _catalog_dataset() -> str:
-    # public_customers / public_skus are replicated into the same dataset as
-    # the output view.
-    return BQ_FORECAST_OUTPUT_VIEW.rsplit(".", 1)[0]
+    # public_customers / public_skus are Datastream's copies of Cloud SQL, which
+    # land in the CDC dataset -- not the forecast dataset the output view is in.
+    # Read at call time so a test (or a redeploy) can point it elsewhere.
+    return config.BQ_CDC_DATASET
 
 
 # The view is keyed by customer_id + sku; the page filters by name, so names
