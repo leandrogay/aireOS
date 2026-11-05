@@ -12,13 +12,17 @@ import ForecastPointDetails from '@/components/forecast/ForecastPointDetails';
 import ForecastPromoPanel from '@/components/forecast/ForecastPromoPanel';
 import ForecastPromoToggle from '@/components/forecast/ForecastPromoToggle';
 import ForecastTable from '@/components/forecast/ForecastTable';
+import SeriesDot from '@/components/forecast/SeriesDot';
 import ForecastYearTotals from '@/components/forecast/ForecastYearTotals';
 import ForecastLegendFooter from '@/components/forecast/ForecastLegendFooter';
 import {
   FORECAST_SERIES,
   buildPromoOverlayBands,
   forecastPointDetails,
+  formatAxisValue,
   formatMonthLabel,
+  formatTooltipValue,
+  niceYDomain,
   nextMonthYear,
   padMonthlyPoints,
   promoPeriodDividerXs,
@@ -38,46 +42,6 @@ const LATE_BAND_MS = 300;
 const chartConfig = Object.fromEntries(
   FORECAST_SERIES.map((series) => [series.key, { label: series.label, color: series.color }])
 );
-
-function formatAxisValue(value, metric) {
-  if (typeof value !== 'number') return value;
-  if (metric === 'revenue') {
-    if (Math.abs(value) >= 1000) {
-      return `$${(value / 1000).toLocaleString('en-US', { maximumFractionDigits: 1 })}k`;
-    }
-    return `$${value}`;
-  }
-  if (Math.abs(value) >= 1000) {
-    return `${(value / 1000).toLocaleString('en-US', { maximumFractionDigits: 1 })}k`;
-  }
-  return `${value}`;
-}
-
-function niceYDomain(values) {
-  const dataMin = Math.min(...values);
-  const dataMax = Math.max(...values);
-  const span = dataMax - dataMin;
-  const padding = span * 0.1 || Math.abs(dataMax) * 0.1 || 1;
-  let low = dataMin - padding;
-  let high = dataMax + padding;
-  if (low < 0 && dataMin >= 0) low = 0;
-  const rawStep = (high - low) / 4;
-  const magnitude = 10 ** Math.floor(Math.log10(rawStep || 1));
-  const residual = rawStep / magnitude;
-  const step = residual >= 5 ? 10 * magnitude : residual >= 2 ? 5 * magnitude : 2 * magnitude;
-  return [Math.floor(low / step) * step, Math.ceil(high / step) * step];
-}
-
-function formatTooltipValue(value, metric) {
-  if (typeof value !== 'number') return value;
-  if (metric === 'revenue') {
-    return `$${value.toLocaleString('en-US', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}`;
-  }
-  return Math.round(value).toLocaleString('en-US');
-}
 
 function OverlayDefs({ bands }) {
   return (
@@ -106,40 +70,6 @@ function OverlayDefs({ bands }) {
         ))}
     </defs>
   );
-}
-
-// `delay` (ms) fades the dot in as its line is drawn past it (.line-dot-in).
-function SeriesDot({ cx, cy, color, shape, delay }) {
-  if (cx == null || cy == null) return null;
-  const reveal = { className: 'line-dot-in', style: { animationDelay: `${delay}ms` } };
-  if (shape === 'square') {
-    return (
-      <rect x={cx - 3.5} y={cy - 3.5} width={7} height={7} fill={color} stroke="#fff" strokeWidth={1} {...reveal} />
-    );
-  }
-  if (shape === 'diamond') {
-    return (
-      <polygon
-        points={`${cx},${cy - 5} ${cx + 5},${cy} ${cx},${cy + 5} ${cx - 5},${cy}`}
-        fill={color}
-        stroke="#fff"
-        strokeWidth={1}
-        {...reveal}
-      />
-    );
-  }
-  if (shape === 'triangle') {
-    return (
-      <polygon
-        points={`${cx},${cy - 5} ${cx + 5},${cy + 4} ${cx - 5},${cy + 4}`}
-        fill={color}
-        stroke="#fff"
-        strokeWidth={1}
-        {...reveal}
-      />
-    );
-  }
-  return <circle cx={cx} cy={cy} r={3.5} fill={color} stroke="#fff" strokeWidth={1} {...reveal} />;
 }
 
 /**

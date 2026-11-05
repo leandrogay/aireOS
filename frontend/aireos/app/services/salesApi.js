@@ -58,3 +58,22 @@ export async function getCustomerTotals({ customers, sku, startDate, endDate }) 
   params.set('end_date', endDate);
   return request(`/api/sales/customer-totals?${params.toString()}`);
 }
+
+/**
+ * GET /api/sales/customer-trends
+ *
+ * Each ticked customer's revenue and units per week or month, split into
+ * offline and online — see backend get_customer_trends. At most 3 customers
+ * (MAX_COMPARED_CUSTOMERS). Every period carries estimated_revenue, the part
+ * of its revenue that was filled in rather than reported.
+ *
+ * @param {{ customers: string[], granularity: 'week' | 'month', sku?: string, startDate: string, endDate: string }} filters
+ * @returns {Promise<{ granularity: string, customers: Array<{ customer: string, label: string, has_offline: boolean, has_online: boolean, offline: Array<object>, online: Array<object> }> }>}
+ */
+export async function getCustomerTrends({ customers, granularity, sku, startDate, endDate }) {
+  const params = new URLSearchParams({ customers: customers.join(','), granularity });
+  if (sku) params.set('sku', sku);
+  params.set('start_date', startDate);
+  params.set('end_date', endDate);
+  return request(`/api/sales/customer-trends?${params.toString()}`);
+}

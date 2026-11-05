@@ -12,8 +12,8 @@ import {
   MAX_BAR_SIZE,
   bucketLabel,
   exactBucketLabel,
-  formatAxisCurrency,
-  formatRevenue,
+  formatMetric,
+  metricAxisFormatter,
   TILTED_LABEL_LEFT_MARGIN,
   comparisonAxisProps,
   sortFormatsByTotalDesc,
@@ -23,10 +23,6 @@ import {
 // hatched (see PeriodTexture): a 50% tint with stripes and an outline in the
 // format's darker edge colour. This period's segments are solid with the
 // same edge, so a pale segment (UNITY) still has a visible boundary.
-
-function formatMoney(value) {
-  return formatRevenue(value);
-}
 
 function ChangeCell({ current, baseline }) {
   const pct = current === null ? null : changePct(current, baseline);
@@ -45,7 +41,7 @@ function ChangeCell({ current, baseline }) {
 // eight stacked "format · period" lines. The value columns are headed by
 // the hovered bar's exact dates, which also serve as the tooltip's title;
 // colour squares appear only on the format rows, where colour means format.
-function MixTooltip({ active, payload, formats }) {
+function MixTooltip({ active, payload, formats, metric }) {
   if (!active || !payload?.length) return null;
   const row = payload[0].payload;
   const lines = formats.map((format) => ({
@@ -77,10 +73,10 @@ function MixTooltip({ active, payload, formats }) {
                 </span>
               </td>
               <td className="pl-3 text-right font-mono tabular-nums">
-                {line.current === null ? '—' : formatMoney(line.current)}
+                {line.current === null ? '—' : formatMetric(metric, line.current)}
               </td>
               <td className="pl-3 text-right font-mono tabular-nums text-deep-violet-blue/70">
-                {line.baseline === null ? '—' : formatMoney(line.baseline)}
+                {line.baseline === null ? '—' : formatMetric(metric, line.baseline)}
               </td>
               <ChangeCell current={line.current} baseline={line.baseline} />
             </tr>
@@ -88,10 +84,10 @@ function MixTooltip({ active, payload, formats }) {
           <tr className="border-t border-lavander font-semibold">
             <td className="pt-1">Total</td>
             <td className="pl-3 pt-1 text-right font-mono tabular-nums">
-              {row.currentTotal === null ? 'No data' : formatMoney(row.currentTotal)}
+              {row.currentTotal === null ? 'No data' : formatMetric(metric, row.currentTotal)}
             </td>
             <td className="pl-3 pt-1 text-right font-mono tabular-nums text-deep-violet-blue/70">
-              {row.baselineTotal === null ? 'No data' : formatMoney(row.baselineTotal)}
+              {row.baselineTotal === null ? 'No data' : formatMetric(metric, row.baselineTotal)}
             </td>
             <ChangeCell current={row.currentTotal} baseline={row.baselineTotal} />
           </tr>
@@ -161,17 +157,19 @@ function formatsWithSales(formats, rows, side) {
  * The comparison chart: per bucket, the comparison
  * period's stack (hatched, right) beside this period's (solid, left), each
  * split by store format. `rows` come from alignComparisonBuckets, whose
- * `currentFormats` / `baselineFormats` hold revenue per format for the
- * paired weeks, so both stacks cover exactly matching weeks.
+ * `currentFormats` / `baselineFormats` hold `metric` (revenue or units, the
+ * same one passed there) per format for the paired weeks, so both stacks
+ * cover exactly matching weeks.
  *
  * @param {{
  *   rows: Array<{ axisStart: string, current: object | null, baseline: object | null,
  *     currentFormats: Record<string, number>, baselineFormats: Record<string, number> }>,
  *   periodNames: { current: string, baseline: string },
  *   granularity: 'week' | 'month',
+ *   metric?: 'revenue' | 'units',
  * }} props
  */
-export default function ComparisonMixChart({ rows, periodNames, granularity }) {
+export default function ComparisonMixChart({ rows, periodNames, granularity, metric = 'revenue' }) {
   const baseId = useId();
   const formats = sortFormatsByTotalDesc(
     rows
@@ -186,8 +184,8 @@ export default function ComparisonMixChart({ rows, periodNames, granularity }) {
       baselineLabel: row.baseline?.label ?? null,
       // Short like axisLabel (no year on a week), for BarAxisLabel.
       baselineAxisLabel: row.baseline ? bucketLabel(granularity, row.baseline.firstWeekStart) : '',
-      currentTotal: row.current?.revenue ?? null,
-      baselineTotal: row.baseline?.revenue ?? null,
+      currentTotal: row.current?.[metric] ?? null,
+      baselineTotal: row.baseline?.[metric] ?? null,
       currentFormats: row.currentFormats,
       baselineFormats: row.baselineFormats,
       // The empty bars BarAxisLabel hangs from.
@@ -217,8 +215,8 @@ export default function ComparisonMixChart({ rows, periodNames, granularity }) {
             {...axisProps}
             tick={false}
           />
-          <YAxis tickFormatter={formatAxisCurrency} width={50} tick={{ fontSize: 10 }} />
-          <ChartTooltip content={<MixTooltip formats={formats} />} />
+          <YAxis tickFormatter={metricAxisFormatter(metric)} width={50} tick={{ fontSize: 10 }} />
+          <ChartTooltip content={<MixTooltip formats={formats} metric={metric} />} />
           <defs>
             {formats.map((format) => (
               <HatchPattern

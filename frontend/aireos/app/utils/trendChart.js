@@ -35,6 +35,33 @@ export function xAxisProps(count, granularity) {
   return { interval: 0, angle: -45, textAnchor: 'end', height: tiltedAxisHeight(granularity) };
 }
 
+// Past this many weeks a label per week runs together (a year by week is 52),
+// so the axis names each month once instead, under its first week. The
+// tooltip still gives each week's own dates.
+const MAX_LABELLED_WEEKS = 13;
+
+/**
+ * xAxisProps for a chart with one point per period, from its rows (in date
+ * order, each with `periodStart`). A long run of weeks is labelled by month.
+ *
+ * @param {Array<{ periodStart: string }>} rows
+ * @param {'week' | 'month'} granularity
+ */
+export function periodAxisProps(rows, granularity) {
+  if (granularity !== 'week' || rows.length <= MAX_LABELLED_WEEKS) return xAxisProps(rows.length, granularity);
+  let previousMonth = '';
+  const labels = rows.map((row) => {
+    const month = String(row.periodStart).slice(0, 7);
+    if (month === previousMonth) return '';
+    previousMonth = month;
+    return bucketLabel('month', row.periodStart);
+  });
+  return {
+    ...xAxisProps(labels.filter(Boolean).length, 'month'),
+    tickFormatter: (_value, index) => labels[index] ?? '',
+  };
+}
+
 // The comparison chart labels both bars of every bucket, which never fit
 // flat side by side, so its labels are always tilted and never skipped.
 export function comparisonAxisProps(granularity) {
@@ -65,6 +92,28 @@ export function formatRevenue(value) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
+}
+
+// A units figure for the charts' Volume view: grouped, whole units.
+export function formatUnits(value) {
+  return Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 });
+}
+
+function formatAxisUnits(value) {
+  if (typeof value !== 'number') return value;
+  if (Math.abs(value) >= 1000) {
+    return `${(value / 1000).toLocaleString('en-US', { maximumFractionDigits: 1 })}k`;
+  }
+  return `${value}`;
+}
+
+// The charts' Revenue / Volume switch: 'revenue' or 'units'.
+export function formatMetric(metric, value) {
+  return metric === 'units' ? formatUnits(value) : formatRevenue(value);
+}
+
+export function metricAxisFormatter(metric) {
+  return metric === 'units' ? formatAxisUnits : formatAxisCurrency;
 }
 
 // Stack order for the per-format bar: Recharts stacks <Bar> elements bottom-up
