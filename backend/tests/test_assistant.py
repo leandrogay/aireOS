@@ -874,7 +874,7 @@ def test_compare_periods_wins_over_get_sales_summary_when_both_called(monkeypatc
     assert result["chart_series"] == [{"label": "Revenue", "values": [23702.80, 25915.28]}]
 
 
-def test_rank_skus_builds_table_not_chart(monkeypatch):
+def test_rank_skus_builds_a_chart_and_a_table(monkeypatch):
     df = pd.DataFrame(
         [
             {"sku": "A", "product_name": "Widget", "volume": 10, "value": 100.0, "rank": 1},
@@ -888,10 +888,12 @@ def test_rank_skus_builds_table_not_chart(monkeypatch):
 
     result = assistant.ask("best sellers?", history=None, customer="fairprice")
 
-    assert result["has_chart"] is False
+    assert result["has_chart"] is True
+    assert result["chart_categories"] == ["Widget", "Gadget"]
+    assert result["chart_series"][0]["values"] == [100.0, 50.0]
     assert result["has_table"] is True
     assert result["table_columns"] == ["rank", "product_name", "volume", "value"]
-    assert result["table_rows"][0] == ["1", "Widget", "10", "100.0"]
+    assert result["table_rows"][0] == ["1", "Widget", "10", "$100.00"]
 
 
 # ---- ask(): inventory tools --------------------------------------------------
@@ -4393,3 +4395,200 @@ def test_a_chart_comparing_customers_exports_every_series():
     sheet = load_workbook(io.BytesIO(xlsx_bytes)).active
     assert [sheet.cell(row=5, column=col).value for col in (1, 2, 3)] == ["Period", "Fairprice", "Nhg"]
     assert [sheet.cell(row=7, column=col).value for col in (1, 2, 3)] == ["June 2026", 200.0, 50.0]
+
+
+# ---- Historic sales answers: a chart and a table of the same figures --------
+
+def _period(label, start, revenue, units):
+    return {"period_label": label, "period_start": start, "revenue": revenue, "units": units, "estimated_revenue": 0.0}
+
+
+def _summary_call(customer, periods, **tool_input):
+    mode = tool_input.get("mode")
+    raw = {mode or "offline": {"periodTotal": periods}}
+    return ("get_sales_summary", {"customer": customer, **tool_input}, raw)
+
+
+def _comparison_call(customer, previous, current, **tool_input):
+    raw = {
+        "previous": {"start": "2026-07-01", "end": "2026-07-31", "revenue": previous[0], "units": previous[1], "available": True},
+        "current": {"start": "2026-08-01", "end": "2026-08-31", "revenue": current[0], "units": current[1]},
+    }
+    return ("compare_periods", {"customer": customer, **tool_input}, raw)
+
+
+_JUNE = _period("June 2026", "2026-06-01", 100.5, 10.0)
+_JULY = _period("July 2026", "2026-07-01", 1250.0, 1200.0)
+
+
+def test_sales_over_months_shows_a_chart_and_a_table_of_the_same_figures():
+    chart = assistant._build_chart([_summary_call("fairprice", [_JUNE, _JULY], start_date="2026-06-01")], "fairprice")
+
+    assert chart["has_chart"] is True
+    assert chart["chart_series"] == [{"label": "Revenue", "values": [100.5, 1250.0]}]
+    assert chart["has_table"] is True
+    assert chart["table_columns"] == ["period", "customer", "units", "revenue"]
+    assert chart["table_rows"] == [
+        ["June 2026", "Fairprice", "10", "$100.50"],
+        ["July 2026", "Fairprice", "1,200", "$1,250.00"],
+    ]
+
+
+def test_sales_table_adds_offline_and_online_like_the_chart():
+    raw = {
+        "offline": {"periodTotal": [_JUNE]},
+        "online": {"periodTotal": [_period("June 2026", "2026-06-01", 50.0, 5.0)]},
+    }
+
+    chart = assistant._build_chart([("get_sales_summary", {"customer": "fairprice"}, raw)], "fairprice")
+
+    assert chart["chart_series"][0]["values"] == [150.5]
+    assert chart["table_rows"] == [["June 2026", "Fairprice", "15", "$150.50"]]
+
+
+def test_sales_table_names_the_channel_product_and_store_only_when_asked_about():
+    call = _summary_call("fairprice", [_JUNE], mode="offline", sku="SKU1", store="S01")
+
+    chart = assistant._build_chart([call], "fairprice")
+
+    assert chart["table_columns"] == ["period", "customer", "channel", "product", "store", "units", "revenue"]
+    assert chart["table_rows"] == [["June 2026", "Fairprice", "Offline", "SKU1", "S01", "10", "$100.50"]]
+
+
+def test_customers_compared_by_month_get_a_row_each_month():
+    sources = [_summary_call("fairprice", [_JUNE, _JULY]), _summary_call("nhg", [_JULY])]
+
+    chart = assistant._build_chart(sources, "fairprice")
+
+    assert chart["chart_series"][1] == {"label": "Nhg", "values": [0.0, 1250.0]}
+    assert chart["table_rows"] == [
+        ["June 2026", "Fairprice", "10", "$100.50"],
+        ["June 2026", "Nhg", "0", "$0.00"],
+        ["July 2026", "Fairprice", "1,200", "$1,250.00"],
+        ["July 2026", "Nhg", "1,200", "$1,250.00"],
+    ]
+
+
+def test_a_comparison_table_shows_the_dates_of_both_periods():
+    call = _comparison_call("fairprice", (900.0, 90.0), (1000.0, 100.0), comparison_type="mom")
+
+    chart = assistant._build_chart([call], "fairprice")
+
+    assert chart["chart_categories"] == ["Previous", "Current"]
+    assert chart["table_rows"] == [
+        ["Previous (2026-07-01 to 2026-07-31)", "Fairprice", "90", "$900.00"],
+        ["Current (2026-08-01 to 2026-08-31)", "Fairprice", "100", "$1,000.00"],
+    ]
+
+
+def test_a_comparison_across_customers_has_both_periods_for_each():
+    sources = [
+        _comparison_call("fairprice", (900.0, 90.0), (1000.0, 100.0), comparison_type="mom"),
+        _comparison_call("nhg", (20.0, 2.0), (30.0, 3.0), comparison_type="mom"),
+    ]
+
+    chart = assistant._build_chart(sources, "fairprice")
+
+    assert [row[1:] for row in chart["table_rows"]] == [
+        ["Fairprice", "90", "$900.00"],
+        ["Fairprice", "100", "$1,000.00"],
+        ["Nhg", "2", "$20.00"],
+        ["Nhg", "3", "$30.00"],
+    ]
+
+
+def test_channel_comparisons_added_together_have_combined_units_and_no_channel_column():
+    sources = [
+        _comparison_call("fairprice", (900.0, 90.0), (1000.0, 100.0), comparison_type="mom", mode="offline"),
+        _comparison_call("fairprice", (10.0, 1.0), (20.0, 2.0), comparison_type="mom", mode="online"),
+    ]
+
+    chart = assistant._build_chart(sources, "fairprice")
+
+    assert chart["table_columns"] == ["period", "customer", "units", "revenue"]
+    assert chart["table_rows"][1][2:] == ["102", "$1,020.00"]
+
+
+def test_a_range_total_has_a_one_row_table_with_its_dates():
+    chart = assistant._build_chart([_comparison_call("fairprice", (0.0, 0.0), (1000.0, 100.0))], "fairprice")
+
+    assert chart["chart_series"][0]["values"] == [1000.0]
+    assert chart["table_rows"] == [["2026-08-01 to 2026-08-31", "Fairprice", "100", "$1,000.00"]]
+
+
+def test_a_range_total_across_customers_has_a_row_each():
+    sources = [_comparison_call("fairprice", (0.0, 0.0), (1000.0, 100.0)), _comparison_call("nhg", (0.0, 0.0), (30.0, 3.0))]
+
+    chart = assistant._build_chart(sources, "fairprice")
+
+    assert [row[1:] for row in chart["table_rows"]] == [["Fairprice", "100", "$1,000.00"], ["Nhg", "3", "$30.00"]]
+
+
+def test_a_long_range_total_broken_into_months_has_a_row_each_month(monkeypatch):
+    summary = {"offline": {"periodTotal": [_JUNE, _JULY]}}
+    monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: summary)
+    raw = {
+        "previous": {"start": None, "end": None, "revenue": 0.0, "units": 0.0},
+        "current": {"start": "2026-06-01", "end": "2026-07-31", "revenue": 1350.5, "units": 1210.0},
+    }
+
+    chart = assistant._build_chart([("compare_periods", {"customer": "fairprice"}, raw)], "fairprice")
+
+    assert chart["chart_categories"] == ["June 2026", "July 2026"]
+    assert [row[0] for row in chart["table_rows"]] == ["June 2026", "July 2026"]
+
+
+def test_a_comparison_with_no_data_still_has_no_chart_or_table():
+    empty = {"current": {"start": None, "end": None, "revenue": 0.0, "units": 0.0}, "previous": {}}
+
+    chart = assistant._build_chart([("compare_periods", {"customer": "fairprice"}, empty)], "fairprice")
+
+    assert chart["has_chart"] is False
+    assert chart["has_table"] is False
+
+
+_RANKED = [
+    {"rank": 1, "product_name": "Widget", "volume": 1500.0, "value": 2500.5},
+    {"rank": 2, "product_name": "Gadget", "volume": 5.0, "value": 50.0},
+]
+
+
+def test_a_units_ranking_charts_units_and_exports_without_a_dollar_sign():
+    chart = assistant._build_chart([("rank_skus", {"metric": "volume"}, _RANKED)], "fairprice")
+
+    assert chart["chart_series"] == [{"label": "Units", "unit": "units", "values": [1500.0, 5.0]}]
+    assert assistant._chart_axis_format(chart) == "#,##0"
+    assert assistant._chart_slide_title(chart) == "Units"
+
+
+def test_a_revenue_ranking_charts_revenue_above_its_table():
+    chart = assistant._build_chart([("rank_skus", {"metric": "value"}, _RANKED)], "fairprice")
+
+    assert chart["chart_categories"] == ["Widget", "Gadget"]
+    assert chart["chart_series"] == [{"label": "Revenue", "values": [2500.5, 50.0]}]
+    assert assistant._chart_axis_format(chart) == '"$"#,##0'
+
+
+def test_a_units_ranking_cannot_back_a_dollar_figure():
+    chart = assistant._build_chart([("rank_skus", {"metric": "volume"}, _RANKED)], "fairprice")
+
+    assert 1500.0 not in assistant._known_good_revenue_figures(chart, [])
+
+
+@pytest.mark.parametrize("extension,builder", [("pdf", "_build_pdf"), ("pptx", "_build_pptx"), ("xlsx", "_build_excel")])
+def test_sales_chart_and_table_export_together(extension, builder):
+    chart = assistant._build_chart([_summary_call("fairprice", [_JUNE, _JULY])], "fairprice")
+
+    assert getattr(assistant, builder)("Sales rose in July.", chart)
+
+
+def test_pdf_labels_wrap_on_word_gaps_to_fit_their_bar():
+    assert assistant._pdf_wrapped_label("Aire Adult Pants S/M", 50) == "Aire Adult\nPants S/M"
+
+
+def test_pdf_label_that_fits_stays_on_one_line():
+    assert assistant._pdf_wrapped_label("June 2026", 200) == "June 2026"
+
+
+def test_pdf_label_longer_than_its_bar_keeps_the_word_whole():
+    assert assistant._pdf_wrapped_label("Extraordinarily", 10) == "Extraordinarily"
