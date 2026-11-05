@@ -25,6 +25,7 @@ aireOS/
 │   │   ├── main.py                FastAPI() instance, credentialed CORS, protected routers, GET /
 │   │   ├── auth.py                Shared require_user dependency for protected API routers
 │   │   ├── middleware.py          UnhandledErrorMiddleware (turns unhandled exceptions into JSON 500s)
+│   │   ├── assets/                aire-logo.png: the AIRE logo on exported PDFs and slides (copy of the frontend's)
 │   │   ├── routers/               HTTP layer. One file per URL prefix.
 │   │   │   ├── uploads.py         /api/uploads        file ingest + mapping review (async)
 │   │   │   ├── auth.py            /api/auth           Google Workspace login/callback/session/logout
@@ -119,12 +120,18 @@ aireOS/
     │   ├── doh/page.js            DOH Settings: per-customer thresholds, alert toggle, edit, reset to global default (components/settings)
     │   ├── inventory/page.js      Inventory: overview, by-customer DOH, at-risk list, sell-in plan, enter/edit data (components/inventory)
     │   ├── components/
-    │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column), Sidebar (NAV_ITEMS)
-    │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, calendar, popover, tooltip, DateRangePicker
+    │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column), Sidebar (NAV_ITEMS; collapses
+    │   │   │                      to an icon rail, hidden on narrow screens), RailFlyout (a rail section's sub-pages)
+    │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, calendar, popover, DateRangePicker
     │   │   │                      (typed date inputs, not a calendar); MonthGrid (year + 12-month grid, shared by
-    │   │   │                      MonthDropdown and the dashboard month-range picker); Dropdown (popover shell holding any
-    │   │   │                      content: checkbox lists, MonthGrid); MonthDropdown (one 'YYYY-MM' month, wrapped by
-    │   │   │                      promotions MonthPicker and inventory MonthFilter); HeaderCheckboxFilter (table-header pill
+    │   │   │                      MonthDropdown and the dashboard month-range picker); dropdown kit: Dropdown (the one shell:
+    │   │   │                      closed button, popover panel, optional `searchable`, `look` field/filter/compact) →
+    │   │   │                      SelectDropdown (pick one, ✓ rows), MultiSelectDropdown (pick many, tick-box rows + "All",
+    │   │   │                      `noneMeansAll`), MonthDropdown (one 'YYYY-MM' month, wrapped by promotions MonthPicker and
+    │   │   │                      inventory MonthFilter); build new pickers on these, not on a raw Popover; toggle kit: SegmentedControl
+    │   │   │                      (pick one of a few, sliding highlight, `look` tint/outline), ToggleButton (one thing on/off,
+    │   │   │                      `look` compact/chip), ToggleField (switch; `label` / `showState` / hints opt in, `ariaLabel` when unlabelled; used by DOH alerts and nomenclature file settings); app/testing shows both kits and lists the
+    │   │   │                      pages not migrated yet; HeaderCheckboxFilter (table-header pill
     │   │   │                      filter, forecast + inventory tables); formStyles.js (cream form input/label/button classes
     │   │   │                      shared by forms and dialogs); Toast (+ hooks/useToast);
     │   │   │                      list-table kit (Customers, Promotions, SKUs, Nomenclatures): DataTable (card: count, search slot,
@@ -134,7 +141,8 @@ aireOS/
     │   │   │                      hooks/useConfirmAction; filter kit (Promotions, SKUs, Nomenclatures): FilterBar (card + grid +
     │   │   │                      Reset) holding FilterSelect (single pick) / MultiSelectDropdown (tick-box), whose closed look
     │   │   │                      comes from filterControl.js (filterControlClass)
-    │   │   ├── dashboard/         DashboardFilters, CustomerSelector, FilterBadge, PeriodControls (Period /
+    │   │   ├── dashboard/         ChannelSwitch (Offline / Online, beside the page title), DashboardFilters,
+    │   │   │                      CustomerSelector, FilterBadge, PeriodControls (Period /
     │   │   │                      Compare to: DateRangeControl, CompareControl, MonthRangeCalendar — whole months only),
     │   │   │                      RevenueTrendCard (always by format) → TrendChart (FormatTrendChart),
     │   │   │                      ComparisonMixChart; PeriodTexture (hatched "past period" fills), TooltipChange,
@@ -173,7 +181,7 @@ aireOS/
     │       ├── priceMix.js        Avg-price change split into SKU price vs product mix
     │       ├── estimatedRevenue.js EST sign: when a revenue figure includes estimated revenue, and its hover text
     │       ├── customerTrend.js   Cross-customer chart: MAX_COMPARED_CUSTOMERS (3), bars up to MAX_BAR_PERIODS (6) then lines, series/rows
-    │       ├── storeFormats.js    FORMAT_COLORS + formatColor() per store format
+    │       ├── storeFormats.js    FORMAT_COLORS + formatColor() per store format; customerColor + customerColorOrder (one colour per customer on every page, by customer_id)
     │       ├── dohSettingsForm.js validate/build/formFrom helpers for the DOH threshold form, GLOBAL_DEFAULT_DOH
     │       ├── customerForm.js    normaliseName (mirrors backend slug), validateName, edit/delete block reasons
     │       ├── retailerLabel.js   shared display label for retailer/customer slugs (fairprice_online → Fairprice Online)
@@ -182,6 +190,7 @@ aireOS/
     ├── hooks/                     Data-fetching hooks (cancel-flag pattern; dashboard calls services/*Api.js)
     │   ├── useDataFreshness.js    polls /api/sales/last-updated → { channels, dataVersion, refreshing }
     │   ├── useCustomerOptions.js  /api/sales/customer-options
+    │   ├── useAllCustomers.js     /api/inventory/customers via inventoryApi (every customer, for customerColorOrder)
     │   ├── useCustomerTrends.js   /api/sales/customer-trends via salesApi.getCustomerTrends (2-3 customers ticked: each per week/month)
     │   ├── useDashboardSummary.js /api/sales/dashboard-summary (silent refresh on dataVersion)
     │   ├── useDefaultDateRange.js /api/sales/default-date-range
@@ -193,6 +202,7 @@ aireOS/
     │   ├── useCustomers.js        /api/catalog/customers (+ applyCustomer / removeCustomer for the row a write returns)
     │   ├── useExpandedRows.js     { isExpanded, toggle, expand } for ui/ExpandableRow (several open by default)
     │   ├── useConfirmAction.js    { target, isPending, request, cancel, confirm } for ui/ConfirmDialog (e.g. Delete)
+    │   ├── useMediaQuery.js       boolean for a CSS media query (Sidebar: rail vs hidden when collapsed)
     │   └── useToast.js            { toast, notify, dismissToast } for components/ui/Toast
     ├── lib/                       cn() (clsx + tailwind-merge), formatDateRange, formatDate/formatDateTime (shared date display,
     │                              Singapore time), singaporeTime (singaporeDateTimeParts, singaporeToday)
@@ -387,6 +397,7 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | `mappings.ContractSettings` (`instructions.aggregate` on preview/confirm); packet `instructions`, `headRows`; preview `layout`, `head_rows`, `preview_error` | `useMappingEdits` (`instructionsPayload`), `FileSettings.jsx`, `FileTop.jsx`, `MappingReviewPanel.jsx`, `mappingApi.previewMapping/confirmMapping` |
 | Retailer = `{customer}_online` / `{customer}_offline` (`sellout_service._retailer_for`); `mapping_contract.retailer_outputs` (incl. retailers read off headings, given `columns`/`layout`); packet `columnValues` | `utils/retailerSplit.js` (`splitDecision`, `withCustomerChannels`), `ChannelSplit.jsx`, `mappingCustomer.retailerDecision` |
 | `forecast_notifications` payload (`run_name`, `source` event/scheduled/script, `stage` pipeline/refresh, `reason`, `errors`, `period_*`, `customers`, `skus`, `updated_at`) | `utils/forecastNotificationText.js`, `NotificationPanel.jsx` |
+| `assistant._FORECAST_LINES` (keys, labels, export colours; `chart_series[].key`/`unit`), `forecast_summary` `chart_lines` | `FORECAST_SERIES` in `utils/forecastView.js`, `AssistantChart` in `assistant/AssistantMessage.jsx` |
 | `HTTPException.detail` shapes | `parseApiError()` |
 
 When you change the left column, grep the right column in the same PR.

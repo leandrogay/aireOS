@@ -2,12 +2,13 @@
 
 import { useState } from 'react';
 
+import SelectDropdown from '@/components/ui/SelectDropdown';
 import useAtRisk from '@/hooks/useAtRisk';
 import { formatDoh, formatMonth, formatUnits } from '@/app/utils/inventoryForm';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
-import { filterControlClass, filterLabelClass, InventoryFilterCard, StatTag } from './InventoryChrome';
+import { filterLabelClass, InventoryFilterCard, StatTag } from './InventoryChrome';
 import InventoryTableFrame, {
   inventoryHeadRowClass,
   inventoryTableClass,
@@ -20,6 +21,11 @@ import InventoryTableFrame, {
 
 const RISK_LABELS = { below_min: 'Low stock', above_max: 'Overstock' };
 const RISK_CLASSES = { below_min: 'text-red-700', above_max: 'text-amber-700' };
+const RISK_OPTIONS = [
+  { value: '', label: 'All at-risk SKUs' },
+  { value: 'below_min', label: 'Low stock (below min)' },
+  { value: 'above_max', label: 'Overstock (above max)' },
+];
 const numClass = 'text-right tabular-nums';
 
 /**
@@ -60,36 +66,24 @@ export default function AtRiskView({ customers, refreshKey }) {
           </>
         ) : null}
       >
-        <label htmlFor="inventory-risk-customer">
+        <div className="min-w-0">
           <span className={filterLabelClass}>Customer</span>
-          <select
-            id="inventory-risk-customer"
+          <SelectDropdown
             value={customerId}
-            onChange={(e) => setCustomerId(e.target.value)}
-            className={filterControlClass}
-          >
-            <option value="">All customers</option>
-            {customers.map((c) => (
-              <option key={c.customer_id} value={c.customer_id}>
-                {retailerLabel(c.customer_name)}
-              </option>
-            ))}
-          </select>
-        </label>
+            onChange={setCustomerId}
+            options={[
+              { value: '', label: 'All customers' },
+              ...customers.map((c) => ({ value: String(c.customer_id), label: retailerLabel(c.customer_name) })),
+            ]}
+            ariaLabel="Customer"
+            look="compact"
+          />
+        </div>
 
-        <label htmlFor="inventory-risk">
+        <div className="min-w-0">
           <span className={filterLabelClass}>Risk</span>
-          <select
-            id="inventory-risk"
-            value={risk}
-            onChange={(e) => setRisk(e.target.value)}
-            className={filterControlClass}
-          >
-            <option value="">All at-risk SKUs</option>
-            <option value="below_min">Low stock (below min)</option>
-            <option value="above_max">Overstock (above max)</option>
-          </select>
-        </label>
+          <SelectDropdown value={risk} onChange={setRisk} options={RISK_OPTIONS} ariaLabel="Risk" look="compact" />
+        </div>
       </InventoryFilterCard>
 
       {error && (

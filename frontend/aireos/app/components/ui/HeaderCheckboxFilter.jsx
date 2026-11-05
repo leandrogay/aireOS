@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 const pillClass =
-  'inline-flex w-max max-w-[11rem] items-center gap-1 whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide';
+  'inline-flex w-max max-w-[11rem] cursor-pointer items-center gap-1 whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide';
 
 function toggleValue(selected, value) {
   return selected.includes(value)
@@ -101,7 +101,7 @@ export default function HeaderCheckboxFilter({ id, label, selected, options, ope
               <button
                 type="button"
                 onClick={() => onChange([])}
-                className="shrink-0 border-b border-lavander bg-white px-3 py-1.5 text-left text-[11px] font-medium text-deep-violet-blue hover:bg-cream"
+                className="shrink-0 cursor-pointer border-b border-lavander bg-white px-3 py-1.5 text-left text-[11px] font-medium text-deep-violet-blue hover:bg-cream"
               >
                 Clear
               </button>

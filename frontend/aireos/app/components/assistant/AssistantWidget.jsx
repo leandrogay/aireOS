@@ -6,6 +6,7 @@ import { Maximize2, MessageCircle, Minimize2, X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { DIALOG_BACKDROP_CLASS } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import {
   MessageScroller,
@@ -243,6 +244,18 @@ export default function AssistantWidget() {
   return (
     <>
       <AnimatePresence>
+        {open && expanded && (
+          <motion.div
+            key="assistant-backdrop"
+            aria-hidden="true"
+            initial={reduceMotion ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={reduceMotion ? undefined : { opacity: 0 }}
+            transition={{ duration: 0.1 }}
+            onClick={() => setExpanded(false)}
+            className={DIALOG_BACKDROP_CLASS}
+          />
+        )}
         {open && (
           <MotionCard
             key="assistant-panel"
@@ -253,19 +266,18 @@ export default function AssistantWidget() {
             exit={reduceMotion ? undefined : 'closed'}
             style={{ transformOrigin: 'bottom right' }}
             className={cn(
-              'fixed z-50 gap-0 bg-white py-0 ring-0',
+              'fixed z-50 gap-0 rounded-lg border border-lavander bg-white py-0 shadow-xl ring-0',
               // Placed by its four edges (not width/height) so the move between the
               // two sizes can be animated; 100% is the window, scrollbar excluded.
               'transition-[top,left,right,bottom] duration-300 ease-out motion-reduce:transition-none',
-              // Full screen covers the page edge to edge beside the nav bar, open or
-              // collapsed (--sidebar-width, set by Sidebar), so you can still move
-              // between pages. A page with no nav bar is covered completely.
+              // Full screen is centred and exactly as wide as the messages inside it
+              // (max-w-3xl, 48rem on MessageScrollerContent), over the blurred page.
               expanded
-                ? 'top-0 right-0 bottom-0 left-[var(--sidebar-width,0px)] rounded-none border-0 shadow-none'
-                : 'top-[max(1rem,calc(100%-5rem-480px))] right-4 bottom-20 left-[max(1rem,calc(100%-1rem-360px))] rounded-lg border border-lavander shadow-xl',
+                ? 'top-4 right-[max(1rem,calc(50%-24rem))] bottom-4 left-[max(1rem,calc(50%-24rem))]'
+                : 'top-[max(1rem,calc(100%-5rem-480px))] right-4 bottom-20 left-[max(1rem,calc(100%-1rem-360px))]',
             )}
           >
-            <CardHeader className="flex items-center justify-between bg-deep-violet-blue py-2">
+            <CardHeader className="flex items-center justify-between rounded-t-none bg-deep-violet-blue py-2">
               <CardTitle className="font-sans text-sm text-white">Ask AireOS</CardTitle>
               <div className="-mr-1 flex items-center gap-1">
                 <Button
@@ -299,8 +311,7 @@ export default function AssistantWidget() {
                       {messages.length === 0 && (
                         <MessageScrollerItem className="space-y-2">
                           <p className="text-xs text-deep-violet-blue/60">
-                            Ask a plain-English question about your sales or inventory data, e.g. &quot;How did
-                            revenue do last week?&quot; or &quot;What SKUs are at risk right now?&quot;
+                            Ask a plain-English question about your sales or inventory data
                           </p>
                           <DigestChips options={customerOptions} onAsk={askDigest} loading={loading} />
                         </MessageScrollerItem>

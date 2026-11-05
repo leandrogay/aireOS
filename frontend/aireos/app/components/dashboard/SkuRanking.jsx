@@ -153,17 +153,15 @@ function SortHeader({ label, active, order, onClick }) {
 // first unless order is 'asc'. A customer with no sales in the period stays,
 // at 0, so the bottom of the list is the quiet one. Rank is the row number
 // after that sort.
-function rankCustomers(rows, mode, metric, order) {
+function rankCustomers(rows, mode, metric, order, colorOrder) {
   const shown = rows.filter((row) => (mode === 'online' ? row.has_online : row.has_offline));
-  // The colour the chart and summary tiles give the same customer.
-  const labels = shown.map((row) => row.label);
   const ranked = shown
     .map((row) => {
       const channel = row[mode] ?? { revenue: 0, units: 0 };
       return {
         customer: row.customer,
         label: row.label,
-        color: customerColor(row.label, labels),
+        color: customerColor(row.customer, colorOrder),
         volume: channel.units ?? 0,
         value: channel.revenue ?? 0,
         estimatedValue: channel.estimated_revenue ?? 0,
@@ -197,6 +195,7 @@ export default function SkuRanking({
   customerRows = [],
   customerRowsLoading = false,
   customerRowsError = null,
+  customerColorOrder = [],
   // The page is still loading (page.js pageStatus): placeholder rows, not
   // "No SKU data available yet."
   loading = false,
@@ -287,7 +286,7 @@ export default function SkuRanking({
   // not the previous result, so the skeleton has the columns the data will.
   const showChange = !showCustomers && (productLoading ? Boolean(comparisonStart && comparisonEnd) : baselineBySku !== null);
   const customersRanked = showCustomers
-    ? rankCustomers(customerRows, mode, metric, order)
+    ? rankCustomers(customerRows, mode, metric, order, customerColorOrder)
     : [];
   const tableLoading = loading || (showCustomers ? customerRowsLoading : productLoading);
   const tableError = showCustomers ? customerRowsError : error;

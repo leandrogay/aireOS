@@ -149,6 +149,11 @@ def month_label(month_year: str) -> str:
     return datetime.date.fromisoformat(month_year[:10]).strftime("%b %Y")
 
 
+def short_month_label(month_year: str) -> str:
+    """'2026-09-01' -> 'Sep 26', the Forecast chart's axis label (formatMonthLabel)."""
+    return datetime.date.fromisoformat(month_year[:10]).strftime("%b %y")
+
+
 # ============================================================
 # SCOPE (which customer, SKU and months)
 # ============================================================
@@ -236,6 +241,53 @@ def _sum_money(values: list) -> float | None:
 
 def _in_window(month_year: str | None, start: datetime.date, end: datetime.date) -> bool:
     return bool(month_year) and start <= datetime.date.fromisoformat(month_year[:10]) <= end
+
+
+def _chart_lines(
+    scoped: list[dict],
+    actuals: list[dict],
+    series_keys: list[tuple[str, str]],
+    start: datetime.date,
+    end: datetime.date,
+    prices: dict[tuple[int, str], float] | None,
+) -> list[dict]:
+    """The Forecast chart's Actual, Initial Yearly Forecast and Current lines
+    per month, for exactly the months asked about: the chart shows what was
+    specified and nothing around it, so one month is one dot per line. Totals
+    are the rounded sum, as elsewhere."""
+    if not series_keys:
+        return []
+    month = start
+    months = []
+    while month <= end:
+        months.append(month.isoformat())
+        month = _add_months(month, 1)
+
+    priced_rows = forecast_service.add_forecast_revenue(
+        [
+            row for row in scoped
+            if (row.get("month_year") or "")[:10] in months
+            and (row.get("customer_name"), row.get("product_name")) in series_keys
+        ],
+        prices or {},
+    )
+
+    lines = []
+    for month_year in months:
+        sales = [row for row in actuals if row["month_year"][:10] == month_year]
+        forecasts = [row for row in priced_rows if row["month_year"][:10] == month_year]
+        initials = [row for row in forecasts if row.get("forecast_initial") is not None]
+        currents = [row for row in forecasts if row.get("forecast_current") is not None]
+        lines.append({
+            "month": month_year,
+            "actual_cartons": whole_cartons(sum(row["quantity_cartons"] for row in sales)) if sales else None,
+            "actual_revenue": _sum_money([row.get("revenue") for row in sales]),
+            "initial_cartons": whole_cartons(sum(row["forecast_initial"] for row in initials)) if initials else None,
+            "initial_revenue": _sum_money([row["forecast_initial_revenue"] for row in initials]),
+            "current_cartons": whole_cartons(sum(row["forecast_current"] for row in currents)) if currents else None,
+            "current_revenue": _sum_money([row["forecast_current_revenue"] for row in currents]),
+        })
+    return lines
 
 
 def summarise(
@@ -381,6 +433,8 @@ def summarise(
         "forecast_total_cartons": whole_cartons(forecast_total) if series else None,
         "forecast_total_revenue": forecast_total_revenue,
         "revenue_basis": REVENUE_BASIS,
+        # Drawn by the assistant's chart; kept out of what the model reads (assistant._run_business_tool).
+        "chart_lines": _chart_lines(scoped, in_scope_actuals, series_keys, start, end, prices),
     }
 
 

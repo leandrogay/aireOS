@@ -23,20 +23,19 @@ export function trendChartKind(periodCount) {
 
 /**
  * The customers that sell through `mode`, as chart series: dataKey is the
- * customer slug, in the colour the summary tiles and ranking give the same
- * customer (customerColor over the same labels).
+ * customer slug, in the colour that customer has on every page (customerColor).
  *
  * @param {Array<object>} customers get_customer_trends rows
  * @param {'offline' | 'online'} mode
+ * @param {string[]} colorOrder from customerColorOrder
  * @returns {Array<{ key: string, label: string, color: string }>}
  */
-export function trendSeries(customers, mode) {
+export function trendSeries(customers, mode, colorOrder) {
   const shown = customers.filter((customer) => (mode === 'online' ? customer.has_online : customer.has_offline));
-  const labels = shown.map((customer) => customer.label);
   return shown.map((customer) => ({
     key: customer.customer,
     label: customer.label,
-    color: customerColor(customer.label, labels),
+    color: customerColor(customer.customer, colorOrder),
   }));
 }
 
