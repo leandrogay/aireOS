@@ -209,7 +209,8 @@ aireOS/
 Key dependencies: `@base-ui/react`, `shadcn`, `class-variance-authority`, `clsx`,
 `tailwind-merge`, `lucide-react`, `recharts`, `react-day-picker` (+ its `date-fns`, behind
 `ui/calendar`), `tw-animate-css`, `babel-plugin-react-compiler`.
-No test runner is installed on the frontend; linting (`npm run lint`) is the frontend check.
+No test framework is installed on the frontend: `npm run lint` is the main check, and `npm test` runs
+Node's built-in test runner (`node --test`, no packages) over `tests/*.test.mjs` for pure `app/utils/` helpers.
 
 ---
 
@@ -385,6 +386,7 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | Contract vocabulary: `mapping_contract` statuses, `TRANSFORM_TYPES`, `RULE_OPS`, `MELT_KEY_TARGETS`/`LABEL_TARGETS` (melt-group `labels`; `rows_above: 0` = the headings again, so any descriptive field (`HEADING_FIELDS`) can read them), `from_layout: "stated_period"` | `utils/fieldDecision.js` (`fieldMethods`, `currentDecision`, `decisionEntry`, `withFieldDecision`), `utils/transformSteps.js` (`STEP_TYPES`, `RULE_OPS`), `FieldEditorDialog.jsx` |
 | `mappings.ContractSettings` (`instructions.aggregate` on preview/confirm); packet `instructions`, `headRows`; preview `layout`, `head_rows`, `preview_error` | `useMappingEdits` (`instructionsPayload`), `FileSettings.jsx`, `FileTop.jsx`, `MappingReviewPanel.jsx`, `mappingApi.previewMapping/confirmMapping` |
 | Retailer = `{customer}_online` / `{customer}_offline` (`sellout_service._retailer_for`); `mapping_contract.retailer_outputs` (incl. retailers read off headings, given `columns`/`layout`); packet `columnValues` | `utils/retailerSplit.js` (`splitDecision`, `withCustomerChannels`), `ChannelSplit.jsx`, `mappingCustomer.retailerDecision` |
+| `forecast_notifications` payload (`run_name`, `source` event/scheduled/script, `stage` pipeline/refresh, `reason`, `errors`, `period_*`, `customers`, `skus`, `updated_at`) | `utils/forecastNotificationText.js`, `NotificationPanel.jsx` |
 | `HTTPException.detail` shapes | `parseApiError()` |
 
 When you change the left column, grep the right column in the same PR.
@@ -428,7 +430,7 @@ non-secret settings in `api.env.yaml` / `web.build.env` / `target.env`, secret *
 See README "Deploying"; `tests/test_deploy_config.py` keeps secrets out of the committed files.
 
 Running locally: VS Code task **Start Both Servers**, or two terminals per the READMEs.
-Tests: `cd backend && pytest`. Lint: `cd frontend/aireos && npm run lint`.
+Tests: `cd backend && pytest`; `cd frontend/aireos && npm test`. Lint: `cd frontend/aireos && npm run lint`.
 
 ---
 
