@@ -275,8 +275,8 @@ function DateField({
   const [slots, setSlots] = useState(() => isoToSlots(value));
   const [selTick, setSelTick] = useState(0);
 
-  slotsRef.current = slots;
-
+  // slotsRef is kept in step with `slots` wherever setSlots is called, so
+  // event handlers read the latest value without writing the ref in render.
   useEffect(() => {
     if (focusedRef.current) return;
     const next = isoToSlots(value);
