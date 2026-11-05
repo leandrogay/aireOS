@@ -2,7 +2,7 @@
 
 import { Plus, X } from 'lucide-react';
 
-import { inputClass } from '@/components/inventory/formStyles';
+import { inputClass } from '@/components/ui/formStyles';
 import SelectDropdown from '@/components/ui/SelectDropdown';
 import { without } from '@/app/utils/mappingReview';
 import { REGEX_PRESETS, RULE_OPS } from '@/app/utils/transformSteps';

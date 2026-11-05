@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 
-import HeaderCheckboxFilter from '@/components/forecast/HeaderCheckboxFilter';
+import HeaderCheckboxFilter from '@/components/ui/HeaderCheckboxFilter';
 import { FORECAST_SERIES, formatModelMix, uniqueMonthOptions } from '@/app/utils/forecastView';
 
 function formatTableValue(value, metric) {

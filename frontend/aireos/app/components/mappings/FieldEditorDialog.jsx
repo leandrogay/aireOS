@@ -5,7 +5,7 @@ import { ChevronDown, CircleAlert } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { primaryButtonClass, secondaryButtonClass } from '@/components/inventory/formStyles';
+import { primaryButtonClass, secondaryButtonClass } from '@/components/ui/formStyles';
 import {
   currentDecision,
   decisionProblem,

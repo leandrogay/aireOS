@@ -2,7 +2,7 @@
 
 import { Link2, Pencil, Trash2 } from 'lucide-react';
 
-import { cardClass } from '@/components/inventory/formStyles';
+import { cardClass } from '@/components/ui/formStyles';
 import { CARD_INSET } from '@/components/ui/TableGrid';
 import { retailerBlockReason } from '@/app/utils/customerForm';
 

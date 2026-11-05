@@ -112,6 +112,28 @@ def get_customer_totals(
     except (SQLAlchemyError, config.ConfigError, GoogleAuthError) as e:
         raise _database_error(e)
 
+@router.get("/customer-trends")
+def get_customer_trends(
+    customers: str = "",
+    granularity: str = "month",
+    sku: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+):
+    """Each named customer's figures per week or month, for the cross-customer chart."""
+    try:
+        return sellout_service.get_customer_trends(
+            customers=[part.strip() for part in customers.split(",")],
+            granularity=granularity,
+            sku=sku,
+            start_date=start_date,
+            end_date=end_date,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except (SQLAlchemyError, config.ConfigError, GoogleAuthError) as e:
+        raise _database_error(e)
+
 @router.get("/dashboard-summary")
 def get_dashboard_summary(
     granularity: str = "week",

@@ -5,7 +5,9 @@ import { createPortal } from 'react-dom';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import TableSkeleton from '@/components/ui/TableSkeleton';
 import { changePct, formatChangePct } from '@/app/utils/periodComparison';
+import { customerColor } from '@/app/utils/storeFormats';
 import { formatRevenue } from '@/app/utils/trendChart';
+import EstMark from '@/components/dashboard/EstMark';
 
 const GRAINS = [
   { value: 'customer', label: 'Customers' },
@@ -152,15 +154,19 @@ function SortHeader({ label, active, order, onClick }) {
 // at 0, so the bottom of the list is the quiet one. Rank is the row number
 // after that sort.
 function rankCustomers(rows, mode, metric, order) {
-  const ranked = rows
-    .filter((row) => (mode === 'online' ? row.has_online : row.has_offline))
+  const shown = rows.filter((row) => (mode === 'online' ? row.has_online : row.has_offline));
+  // The colour the chart and summary tiles give the same customer.
+  const labels = shown.map((row) => row.label);
+  const ranked = shown
     .map((row) => {
       const channel = row[mode] ?? { revenue: 0, units: 0 };
       return {
         customer: row.customer,
         label: row.label,
+        color: customerColor(row.label, labels),
         volume: channel.units ?? 0,
         value: channel.revenue ?? 0,
+        estimatedValue: channel.estimated_revenue ?? 0,
       };
     });
   ranked.sort((a, b) => {
@@ -191,6 +197,9 @@ export default function SkuRanking({
   customerRows = [],
   customerRowsLoading = false,
   customerRowsError = null,
+  // The page is still loading (page.js pageStatus): placeholder rows, not
+  // "No SKU data available yet."
+  loading = false,
 }) {
   // Customers is the cross-customer default (one total per customer).
   // Products is one row per SKU, summed across whoever is ticked.
@@ -280,7 +289,7 @@ export default function SkuRanking({
   const customersRanked = showCustomers
     ? rankCustomers(customerRows, mode, metric, order)
     : [];
-  const tableLoading = showCustomers ? customerRowsLoading : productLoading;
+  const tableLoading = loading || (showCustomers ? customerRowsLoading : productLoading);
   const tableError = showCustomers ? customerRowsError : error;
   const channelLabel = mode === 'online' ? 'Online' : 'Offline';
 
@@ -391,7 +400,9 @@ export default function SkuRanking({
               {!tableLoading && !tableError && showCustomers && customersRanked.map((row) => (
                 <tr key={row.customer} className="border-b border-lavander/80 bg-white last:border-b-0 hover:bg-cream/50">
                   <td className={`${cellClass} tabular-nums`}>{row.rank}</td>
-                  <td className={`${cellClass} truncate font-medium`}>{row.label}</td>
+                  <td className={cellClass}>
+                    <NameWithEst name={row.label} value={row.value} estimated={row.estimatedValue} color={row.color} />
+                  </td>
                   <td className={numCellClass}>{formatVolume(row.volume)}</td>
                   <td className={numCellClass}>{formatRevenue(row.value)}</td>
                 </tr>
@@ -399,7 +410,9 @@ export default function SkuRanking({
               {!tableLoading && !tableError && !showCustomers && skus.map((s) => (
                 <tr key={s.sku} className="border-b border-lavander/80 bg-white last:border-b-0 hover:bg-cream/50">
                   <td className={`${cellClass} tabular-nums`}>{s.rank}</td>
-                  <td className={`${cellClass} truncate font-medium`} title={s.product_name}>{s.product_name}</td>
+                  <td className={cellClass} title={s.product_name}>
+                    <NameWithEst name={s.product_name} value={s.value} estimated={s.estimated_value} />
+                  </td>
                   <td className={numCellClass}>{formatVolume(s.volume)}</td>
                   <td className={numCellClass}>{formatRevenue(s.value)}</td>
                   {baselineBySku && (
@@ -411,6 +424,20 @@ export default function SkuRanking({
           </table>
       </div>
     </section>
+  );
+}
+
+// A row's name, with EST a little after it (plain, at the table's text size)
+// when part of its revenue is estimated (backend estimated_value /
+// estimated_revenue). A long name truncates; EST always stays in view. A
+// customer row leads with its chart colour (`color`).
+function NameWithEst({ name, value, estimated, color = null }) {
+  return (
+    <span className="flex min-w-0 items-center gap-2.5">
+      {color && <span className="-mr-1 size-2 shrink-0 rounded-full" style={{ backgroundColor: color }} aria-hidden="true" />}
+      <span className="truncate font-medium">{name}</span>
+      <EstMark estimated={estimated} total={value} className="text-[11px]" />
+    </span>
   );
 }
 

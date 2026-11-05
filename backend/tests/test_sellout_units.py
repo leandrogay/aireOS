@@ -38,6 +38,16 @@ def test_the_query_reads_through_the_shared_effective_sellout_view(monkeypatch):
     assert "FROM effective_sellout" in sql
 
 
+def test_units_only_reads_bind_no_revenue_estimates(monkeypatch):
+    # Inventory reads only units from the view, so nothing is priced.
+    conn = _install(monkeypatch)
+
+    sellout_units.get_monthly_sellout([55])
+
+    (_sql, params) = conn.calls[0]
+    assert params["revenue_estimates"] == "[]"
+
+
 def test_weeks_are_counted_in_the_month_they_start_in(monkeypatch):
     conn = _install(monkeypatch)
 

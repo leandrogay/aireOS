@@ -296,7 +296,17 @@ def estimate_sales_revenue(rows: list[dict]) -> list[dict]:
             "effective_from": item["effective_from"],
             "effective_to": item["effective_to"],
         })
+    # Each row is checked against its own store's promotions only, not the
+    # whole batch's: the dashboard prices a month's rows on every read, and
+    # scanning every promotion for every day of every row took seconds.
+    promotions_by_store: dict[tuple, list[dict]] = {}
+    for promo in promotion_rows:
+        key = (promo["sku"], promo["retailer_id"], promo["store_code"])
+        promotions_by_store.setdefault(key, []).append(dict(promo))
     return [
-        estimate_sales_row(row, versions, current_prices, list(promotion_rows))
+        estimate_sales_row(
+            row, versions, current_prices,
+            promotions_by_store.get((row["sku"], row["retailer_id"], row["store_code"]), []),
+        )
         for row in rows
     ]

@@ -154,3 +154,52 @@ def test_revenue_estimate_route_maps_database_outage_to_503(monkeypatch):
 
     assert response.status_code == 503
     assert "Unable to reach the pricing database" in response.json()["detail"]
+
+
+def test_batch_applies_only_promotions_at_the_rows_own_store(monkeypatch):
+    sale = {
+        "sku": "SKU-1", "retailer_id": 55, "store_code": "4",
+        "period_start": date(2026, 1, 1), "period_end": date(2026, 1, 10),
+        "quantity_units": 10, "revenue": None,
+    }
+    other_store = {
+        "promotion_id": 9, "sku": "SKU-1", "retailer_id": 55, "store_code": "5",
+        "period_start": date(2026, 1, 1), "period_end": date(2026, 1, 31),
+        "promo_type": "monthly", "promotion_mechanic": "50% Off", "voucher": None,
+    }
+
+    class _Result:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def mappings(self):
+            return self
+
+        def all(self):
+            return self._rows
+
+    class _Conn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def execute(self, statement, params):
+            sql = str(statement)
+            if "FROM skus" in sql:
+                return _Result([{"sku": "SKU-1", "price": Decimal(10)}])
+            if "FROM promotions" in sql:
+                return _Result([other_store])
+            return _Result([])
+
+    class _Engine:
+        def connect(self):
+            return _Conn()
+
+    monkeypatch.setattr("app.services.promotion_pricing._get_read_engine", lambda: _Engine())
+
+    (result,) = estimate_sales_revenue([sale])
+
+    assert result["estimated_revenue"] == 100.0
+    assert result["promotion_ids"] == []

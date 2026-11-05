@@ -287,7 +287,8 @@ const MONTH_YEAR_SHORT = { month: 'short', year: 'numeric' };
  * - `current`: this period's `periodTotal` row, or null.
  * - `baseline`: `{ revenue, units, label }` summed over the placed weeks,
  *   `label` naming them ("Jul 31 – Aug 6, 2025", "Aug 2024"), or null.
- * - `currentFormats` / `baselineFormats`: revenue per store format
+ * - `currentFormats` / `baselineFormats`: `metric` ('revenue' or 'units',
+ *   the chart's Revenue / Volume switch) per store format
  *   (`{ HYPER: 1234.5, … }`) from the optional `*ByFormat` rows, for the
  *   "By format" view; empty objects when not given.
  */
@@ -304,6 +305,7 @@ export function alignComparisonBuckets(
     latestWeekStart,
     currentByFormat = [],
     baselineWeeksByFormat = [],
+    metric = 'revenue',
   },
 ) {
   const firstCurrentWeek = latestWeekStart ? firstWeekOnOrAfter(currentStart, latestWeekStart) : currentStart;
@@ -362,13 +364,13 @@ export function alignComparisonBuckets(
   }
   for (const row of currentByFormat) {
     const formats = rowAt(currentIndex(row.period_start)).currentFormats;
-    formats[row.format] = (formats[row.format] ?? 0) + row.revenue;
+    formats[row.format] = (formats[row.format] ?? 0) + row[metric];
   }
   for (const row of baselineWeeksByFormat) {
     const index = baselineIndex(row.period_start);
     if (index === null) continue;
     const formats = rowAt(index).baselineFormats;
-    formats[row.format] = (formats[row.format] ?? 0) + row.revenue;
+    formats[row.format] = (formats[row.format] ?? 0) + row[metric];
   }
 
   const aligned = [...rows.values()].sort((a, b) => a.index - b.index);

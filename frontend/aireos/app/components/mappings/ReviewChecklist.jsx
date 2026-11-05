@@ -4,7 +4,7 @@ import { CheckCircle2, Circle, Loader2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import InfoTooltip from '@/components/ui/InfoTooltip';
-import { primaryButtonClass } from '@/components/inventory/formStyles';
+import { primaryButtonClass } from '@/components/ui/formStyles';
 import { cn } from '@/lib/utils';
 
 /**

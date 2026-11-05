@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { AlertTriangle, ArrowRight, CheckCircle2, XCircle } from 'lucide-react';
 
-import { primaryButtonClass } from '@/components/inventory/formStyles';
+import { primaryButtonClass } from '@/components/ui/formStyles';
 import { cn } from '@/lib/utils';
 
 function plural(count, one, many) {

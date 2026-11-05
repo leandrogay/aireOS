@@ -16,7 +16,7 @@ import {
 import CustomerDropdown from './CustomerDropdown';
 import { formFieldClass, formLabelClass } from './InventoryChrome';
 import InventoryQuantityTable, { INVENTORY_QUANTITY_COLUMNS } from './InventoryQuantityTable';
-import { primaryButtonClass, secondaryButtonClass } from './formStyles';
+import { primaryButtonClass, secondaryButtonClass } from '@/components/ui/formStyles';
 
 /**
  * @param {{ sell_in: number, building_blocks: number | null }} row

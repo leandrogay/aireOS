@@ -1,6 +1,6 @@
 'use client';
 
-import { inputClass } from '@/components/inventory/formStyles';
+import { inputClass } from '@/components/ui/formStyles';
 import Disclosure from '@/components/ui/Disclosure';
 import SelectDropdown from '@/components/ui/SelectDropdown';
 import { fieldLabel, periodLabel } from '@/app/utils/mappingReview';

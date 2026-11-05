@@ -5,7 +5,7 @@ import { Plus, Sparkles, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import SelectDropdown from '@/components/ui/SelectDropdown';
-import { inputClass } from '@/components/inventory/formStyles';
+import { inputClass } from '@/components/ui/formStyles';
 import { suggestSteps } from '@/app/utils/stepByExample';
 import { cn } from '@/lib/utils';
 
