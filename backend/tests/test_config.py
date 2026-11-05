@@ -52,6 +52,12 @@ DEFAULTED_SETTINGS = {
 @pytest.mark.parametrize("name", sorted(DEFAULTED_SETTINGS))
 def test_a_blank_setting_falls_back_to_its_default(monkeypatch, name):
     monkeypatch.setenv(name, "")
+    # Several BigQuery defaults are built from another BQ setting (the forecast
+    # dataset, or the output view), so blank all of them: otherwise a value in
+    # someone's local .env.backend leaks into the default being checked.
+    for other in DEFAULTED_SETTINGS:
+        if other.startswith("BQ_"):
+            monkeypatch.setenv(other, "")
     reloaded = importlib.reload(config)
     try:
         assert getattr(reloaded, name) == DEFAULTED_SETTINGS[name]
