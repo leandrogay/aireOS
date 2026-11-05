@@ -27,6 +27,25 @@ def _verify_task(request: Request) -> None:
         raise HTTPException(status_code=403, detail="Task caller is not allowed")
 
 
+def _max_attempts() -> int:
+    # A bad value falls back to the queue's configured 10 rather than turning
+    # every failed check into a "last attempt".
+    try:
+        attempts = int(config.FORECAST_REFRESH_MAX_ATTEMPTS)
+    except (TypeError, ValueError):
+        return 10
+    return attempts if attempts > 0 else 10
+
+
+def _is_last_attempt(request: Request) -> bool:
+    # Cloud Tasks counts retries from 0, so the last of N attempts is retry N - 1.
+    try:
+        retry_count = int(request.headers.get("X-CloudTasks-TaskRetryCount", "0"))
+    except ValueError:
+        retry_count = 0
+    return retry_count >= _max_attempts() - 1
+
+
 @router.post("/refresh-check")
 def refresh_check(request: Request):
     """Only the dedicated Cloud Tasks identity may start a forecast check."""
@@ -36,11 +55,7 @@ def refresh_check(request: Request):
     try:
         return forecast_refresh_worker.check_refresh()
     except Exception as exc:
-        try:
-            retry_count = int(request.headers.get("X-CloudTasks-TaskRetryCount", "0"))
-        except ValueError:
-            retry_count = 0
-        if retry_count >= 9:
+        if _is_last_attempt(request):
             forecast_refresh_worker.fail_unstarted_best_effort(
                 f"Forecast refresh could not start after Cloud Tasks retries: {type(exc).__name__}: {exc}"
             )

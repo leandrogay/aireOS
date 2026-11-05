@@ -151,6 +151,23 @@ def _max_wait() -> timedelta:
     return timedelta(seconds=int(match[1]) * {"s": 1, "m": 60, "h": 3600}[match[2]])
 
 
+def _max_wait_text() -> str:
+    # "2 hours" for the default 2h, for the reason shown in the bell.
+    seconds = int(_max_wait().total_seconds())
+    for size, unit in ((3600, "hour"), (60, "minute"), (1, "second")):
+        if seconds % size == 0:
+            count = seconds // size
+            return f"{count} {unit}" + ("" if count == 1 else "s")
+    return f"{seconds} seconds"
+
+
+def _waited_too_long(requests: list[dict]) -> bool:
+    # Measured from the newest save in the batch, like the CDC wait in
+    # check_refresh, so an old request never fails a fresh one.
+    newest = max(row["created_at"] for row in requests)
+    return newest <= datetime.now(timezone.utc) - _max_wait()
+
+
 def _fail_pending(requests: list[dict], reason: str) -> dict:
     ids = [row["id"] for row in requests]
     with sql.connect_with_connector().begin() as conn:
@@ -210,6 +227,32 @@ def recover_best_effort() -> None:
             )
     except Exception as exc:
         logger.warning("Could not check stalled forecast refresh requests: %s", exc)
+
+
+def refresh_status_best_effort() -> dict:
+    """Whether a forecast refresh is waiting or running, for the Forecast page badge.
+
+    One read of the outbox; any failure (or event refresh switched off, when
+    nothing would ever process a waiting row) reads as not updating, so the
+    badge can only ever be missing, never stuck or an error.
+    """
+    if not forecast_refresh_events.enabled():
+        return {"updating": False, "since": None}
+    try:
+        with sql.connect_with_connector_autocommit().connect() as conn:
+            since = conn.execute(text("""
+                SELECT MIN(created_at) FROM forecast_refresh_requests
+                WHERE status IN ('pending', 'running')
+            """)).scalar()
+    except Exception as exc:
+        logger.warning("Could not read the forecast refresh status: %s", exc)
+        return {"updating": False, "since": None}
+    if since is None:
+        return {"updating": False, "since": None}
+    return {
+        "updating": True,
+        "since": since.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+    }
 
 
 def _pending(conn) -> list[dict]:
@@ -319,13 +362,20 @@ def _finish(job_id: str, job) -> dict:
     checked, retrained = _run_outcome(job) if not failed else (False, False)
     if not failed and not checked:
         # The routine returns without logging when another forecast is busy.
-        # Keep the outbox pending and use a new BigQuery job ID on the next try.
+        # Keep the outbox pending and use a new BigQuery job ID on the next try,
+        # unless the batch has already waited past FORECAST_REFRESH_MAX_WAIT:
+        # then stop retrying and tell the bell the refresh couldn't start.
         with sql.connect_with_connector().begin() as conn:
-            conn.execute(text("""
+            requeued = [dict(row) for row in conn.execute(text("""
                 UPDATE forecast_refresh_requests
                 SET status = 'pending', dispatched_at = NULL
                 WHERE job_id = :job_id AND status = 'running'
-            """), {"job_id": job_id})
+                RETURNING id, created_at
+            """), {"job_id": job_id}).mappings().all()]
+        if requeued and _waited_too_long(requeued):
+            return _fail_pending(
+                requeued, f"Another forecast run was still in progress after {_max_wait_text()}"
+            )
         return _retry_later()
     if failed or retrained:
         # Best effort and deduped on the job id: the batch status below must be

@@ -24,8 +24,10 @@ when write=True. They are meant to be triggered out of band
 (scripts/refresh_forecast.py), not from a request path.
 """
 
+import logging
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 
 import pandas as pd
 from google.cloud import bigquery
@@ -34,6 +36,8 @@ from app.services import catalog_service, pl_forecast, promotion_service
 from app.services import bigquery as bigquery_service
 from app import config
 from app.services.bigquery import get_bigquery_client
+
+logger = logging.getLogger("uvicorn.error")
 
 FORECAST_TABLE = bigquery_service.BQ_FORECAST_TABLE
 SALES_ENRICHED_VIEW = config.BQ_SALES_ENRICHED_VIEW
@@ -193,6 +197,34 @@ def get_forecast_view(
             **forecast_stamps_from_rows(rows),
             "latest_sales_loaded_at": sales_loaded_at,
         },
+    }
+
+
+def _is_past(stamp: str | None, now: datetime) -> bool:
+    if not stamp:
+        return False
+    return datetime.fromisoformat(stamp.replace("Z", "+00:00")) < now
+
+
+def get_initial_status() -> dict:
+    """Whether each year's Initial Yearly Forecast is still updating or locked.
+
+    Best effort, behind its own endpoint: the note it feeds is extra detail,
+    so a failed read logs and returns no years rather than failing the page.
+    `locked` is decided here on the server's UTC clock (open while now <=
+    lock_at), so a viewer's wrong clock can't flip it.
+    """
+    try:
+        meta = bigquery_service.get_initial_meta()
+    except Exception as exc:
+        logger.warning("Could not read the Initial Yearly Forecast status: %s", exc)
+        return {"years": []}
+    now = datetime.now(timezone.utc)
+    return {
+        "years": [
+            {**row, "locked": _is_past(row["lock_at"], now)}
+            for row in meta
+        ]
     }
 
 

@@ -209,35 +209,74 @@ def test_event_job_targets_singapore_procedure_with_label(monkeypatch):
     assert options["job_config"].labels == {"trigger": "fc_event"}
 
 
-def test_busy_forecast_leaves_request_pending_for_a_new_job(monkeypatch):
-    statements = []
-
-    class Engine:
-        def begin(self):
-            engine = self
-
-            class Context:
-                def __enter__(self):
-                    return engine
-
-                def __exit__(self, *_):
-                    pass
-
-            return Context()
-
-        def execute(self, statement, parameters):
-            statements.append((str(statement), parameters))
-
-    monkeypatch.setattr(worker.sql, "connect_with_connector", lambda: Engine())
+def _busy_finish(monkeypatch, waited: timedelta):
+    """Run _finish for a job the procedure skipped as busy; returns (result, conn, failures)."""
+    created_at = datetime.now(timezone.utc) - waited
+    conn = FakeConnection(
+        lambda sql, params: [{"id": 7, "created_at": created_at}] if "RETURNING id, created_at" in sql else []
+    )
+    failures = []
+    monkeypatch.setattr(worker.sql, "connect_with_connector", lambda: FakeEngine(conn))
     monkeypatch.setattr(worker, "_run_outcome", lambda _: (False, False))
     monkeypatch.setattr(worker, "_retry_later", lambda: {"status": "waiting"})
+    monkeypatch.setattr(worker, "_fail_pending", lambda requests, reason: failures.append((requests, reason)) or {"status": "failed"})
+    monkeypatch.setattr(worker.config, "FORECAST_REFRESH_MAX_WAIT", "2h")
 
     class Job:
         error_result = None
 
-    assert worker._finish("busy-job", Job()) == {"status": "waiting"}
-    assert "status = 'pending'" in statements[0][0]
-    assert statements[0][1]["job_id"] == "busy-job"
+    return worker._finish("busy-job", Job()), conn, failures
+
+
+def test_busy_forecast_leaves_request_pending_for_a_new_job(monkeypatch):
+    result, conn, failures = _busy_finish(monkeypatch, timedelta(minutes=20))
+
+    assert result == {"status": "waiting"}
+    sql, params = conn.sql_containing("status = 'pending'")[0]
+    assert params["job_id"] == "busy-job"
+    assert failures == []
+
+
+def test_busy_forecast_past_the_wait_limit_stops_retrying_and_fails(monkeypatch):
+    result, _conn, failures = _busy_finish(monkeypatch, timedelta(hours=3))
+
+    assert result == {"status": "failed"}
+    requests, reason = failures[0]
+    assert [row["id"] for row in requests] == [7]
+    assert reason == "Another forecast run was still in progress after 2 hours"
+
+
+def test_busy_failure_reason_follows_the_wait_setting(monkeypatch):
+    monkeypatch.setattr(worker.config, "FORECAST_REFRESH_MAX_WAIT", "30m")
+    assert worker._max_wait_text() == "30 minutes"
+    monkeypatch.setattr(worker.config, "FORECAST_REFRESH_MAX_WAIT", "1h")
+    assert worker._max_wait_text() == "1 hour"
+
+
+def test_busy_failure_writes_the_couldnt_start_notification(monkeypatch):
+    created_at = datetime.now(timezone.utc) - timedelta(hours=3)
+    conn = FakeConnection(
+        lambda sql, params: [{"id": 7, "created_at": created_at}] if "RETURNING id, created_at" in sql
+        else [(7,)] if "status = 'failed'" in sql else []
+    )
+    notifications = []
+    monkeypatch.setattr(worker.sql, "connect_with_connector", lambda: FakeEngine(conn))
+    monkeypatch.setattr(worker, "_run_outcome", lambda _: (False, False))
+    monkeypatch.setattr(worker.config, "FORECAST_REFRESH_MAX_WAIT", "2h")
+    monkeypatch.setattr(
+        worker.forecast_notifications, "notify_once", lambda kind, payload: notifications.append((kind, payload))
+    )
+
+    class Job:
+        error_result = None
+
+    assert worker._finish("busy-job", Job())["status"] == "failed"
+    kind, payload = notifications[0]
+    assert kind == "forecast_failure"
+    assert payload["stage"] == "refresh"
+    assert payload["source"] == "event"
+    assert payload["run_name"] == "refresh-7"
+    assert payload["reason"] == "Another forecast run was still in progress after 2 hours"
 
 
 def test_task_uses_delayed_oidc_request(monkeypatch):

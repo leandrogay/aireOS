@@ -273,6 +273,50 @@ def test_an_earlier_attempt_leaves_the_retry_to_cloud_tasks(monkeypatch):
     assert recorded == []
 
 
+def test_retry_eight_of_ten_attempts_is_not_the_last(monkeypatch):
+    recorded = []
+    monkeypatch.setattr(worker, "fail_unstarted_best_effort", recorded.append)
+    monkeypatch.setattr(internal_forecast.config, "FORECAST_REFRESH_MAX_ATTEMPTS", "10")
+
+    response = _post_failing_check(monkeypatch, "8")
+
+    assert response.status_code == 503
+    assert recorded == []
+
+
+def test_retry_nine_of_ten_attempts_is_the_last(monkeypatch):
+    recorded = []
+    monkeypatch.setattr(worker, "fail_unstarted_best_effort", recorded.append)
+    monkeypatch.setattr(internal_forecast.config, "FORECAST_REFRESH_MAX_ATTEMPTS", "10")
+
+    response = _post_failing_check(monkeypatch, "9")
+
+    assert response.status_code == 503
+    assert len(recorded) == 1
+
+
+def test_a_custom_max_attempts_moves_the_last_attempt(monkeypatch):
+    recorded = []
+    monkeypatch.setattr(worker, "fail_unstarted_best_effort", recorded.append)
+    monkeypatch.setattr(internal_forecast.config, "FORECAST_REFRESH_MAX_ATTEMPTS", "5")
+
+    _post_failing_check(monkeypatch, "3")
+    assert recorded == []
+    _post_failing_check(monkeypatch, "4")
+    assert len(recorded) == 1
+
+
+def test_an_unreadable_max_attempts_falls_back_to_ten(monkeypatch):
+    recorded = []
+    monkeypatch.setattr(worker, "fail_unstarted_best_effort", recorded.append)
+    monkeypatch.setattr(internal_forecast.config, "FORECAST_REFRESH_MAX_ATTEMPTS", "ten")
+
+    _post_failing_check(monkeypatch, "8")
+    assert recorded == []
+    _post_failing_check(monkeypatch, "9")
+    assert len(recorded) == 1
+
+
 def test_last_attempt_writes_a_refresh_failure_for_the_waiting_requests(written, monkeypatch):
     pending = [{"id": 7, "kind": "promotion_change", "source": "promotion:3", "created_at": ENDED, "job_id": None}]
     conn = FakeConnection(lambda sql, params: [(7,)] if "UPDATE forecast_refresh_requests" in sql else [])

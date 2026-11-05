@@ -53,3 +53,18 @@ def get_forecast_options():
         raise HTTPException(status_code=503, detail=_CREDENTIALS_DETAIL)
     except GoogleAPICallError as e:
         raise HTTPException(status_code=503, detail=f"Unable to reach BigQuery: {e.message}")
+
+
+# Both below are best effort (the services never raise): they feed small
+# notes on the Forecast page, so they sit outside GET / and can't slow or
+# fail the chart.
+@router.get("/initial-status")
+def get_initial_status():
+    """Per-year Initial Yearly Forecast lock state, for the note under the chart."""
+    return forecast_service.get_initial_status()
+
+
+@router.get("/refresh-status")
+def get_refresh_status():
+    """Whether an event forecast refresh is waiting or running ("Forecast updating…")."""
+    return forecast_refresh_worker.refresh_status_best_effort()
