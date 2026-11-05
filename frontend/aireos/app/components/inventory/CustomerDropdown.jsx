@@ -4,7 +4,7 @@ import { retailerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
 import { formFieldClass, formLabelClass } from './InventoryChrome';
-import { errorClass, invalidInputClass } from './formStyles';
+import { errorClass, invalidInputClass } from '@/components/ui/formStyles';
 
 /**
  * Customer picker, shared by the create form, the edit picker and temporary

@@ -8,6 +8,7 @@ import {
   Database,
   FilePlus2,
   Loader2,
+  SkipForward,
   XCircle,
 } from 'lucide-react';
 
@@ -20,6 +21,7 @@ import UploadFileRow from '@/components/upload/UploadFileRow';
 // the words' meaning in a shape, so it never rests on colour alone.
 const GROUP_ICONS = {
   checking: { Icon: Loader2, className: 'animate-spin text-violet motion-reduce:animate-none' },
+  uploading: { Icon: Loader2, className: 'animate-spin text-violet motion-reduce:animate-none' },
   ready: { Icon: CheckCircle2, className: 'text-green-700' },
   uploaded: { Icon: CheckCircle2, className: 'text-green-700' },
   ready_to_load: { Icon: Database, className: 'text-amber-700' },
@@ -29,7 +31,16 @@ const GROUP_ICONS = {
   near_match: { Icon: AlertTriangle, className: 'text-amber-700' },
   new_layout: { Icon: FilePlus2, className: 'text-amber-700' },
   unchecked: { Icon: CircleDashed, className: 'text-deep-violet-blue/60' },
+  skipped: { Icon: SkipForward, className: 'text-deep-violet-blue/60' },
 };
+
+// "Apply to all" for duplicates, as a file manager offers it once several
+// files clash: same choices as each row's DuplicateChoice, said shorter.
+const DECIDE_ALL = [
+  { value: 'replace', label: 'Replace all' },
+  { value: 'keep', label: 'Keep all' },
+  { value: 'skip', label: 'Skip all' },
+];
 
 /**
  * One section of the upload list: a heading with the state and a count, the
@@ -37,15 +48,17 @@ const GROUP_ICONS = {
  *
  * @param {{
  *   group: { key: string, label: string, note?: string, items: object[] },
+ *   idPrefix?: string,
  *   onRemove: (id: string) => void,
  *   onRetry: (id: string) => void,
  *   onDecide: (id: string, decision: 'replace' | 'keep' | 'skip') => void,
  *   onLoad: (ids: string[]) => void,
  * }} props
  */
-export default function UploadGroup({ group, onRemove, onRetry, onDecide, onLoad }) {
+export default function UploadGroup({ group, idPrefix = 'upload', onRemove, onRetry, onDecide, onLoad }) {
   const { Icon, className } = GROUP_ICONS[group.key];
-  const headingId = `upload-group-${group.key}`;
+  // The same section can appear in several batches, so its id says which.
+  const headingId = `${idPrefix}-group-${group.key}`;
 
   return (
     <section aria-labelledby={headingId} className="mt-5">
@@ -71,6 +84,20 @@ export default function UploadGroup({ group, onRemove, onRetry, onDecide, onLoad
             <Database aria-hidden="true" className="size-3.5" />
             Review and load all {group.items.length}
           </button>
+        )}
+        {group.key === 'duplicate' && group.items.length > 1 && (
+          <div role="group" aria-label="Choose for every file in this section" className="ml-auto flex items-center gap-1">
+            {DECIDE_ALL.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => group.items.forEach((item) => onDecide(item.id, option.value))}
+                className="rounded-md px-2 py-0.5 text-xs font-medium text-deep-violet-blue/70 transition hover:bg-lavander hover:text-deep-violet-blue"
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
         )}
       </div>
       {group.note && (

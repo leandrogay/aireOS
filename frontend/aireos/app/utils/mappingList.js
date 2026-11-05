@@ -5,8 +5,8 @@ import { retailerLabel, vendorLabel } from '@/app/utils/retailerLabel';
 // through to the raw value rather than being hidden. Keys are the `state` of
 // a backend mapping_view packet.
 export const MAPPING_STATE_LABELS = {
-  confirmed: { tone: 'ready', label: 'Confirmed' },
-  pending: { tone: 'review', label: 'Needs review' },
+  confirmed: { label: 'Confirmed' },
+  pending: { label: 'Needs review' },
 };
 
 export const MAPPING_STATUS_OPTIONS = Object.entries(MAPPING_STATE_LABELS).map(
@@ -46,6 +46,41 @@ export function issueSummary(mapping) {
   if (missing) return `${missing} required field${missing === 1 ? '' : 's'} missing`;
   if (warnings) return `${warnings} warning${warnings === 1 ? '' : 's'}`;
   return null;
+}
+
+/**
+ * The one status the list shows for a mapping. An approved mapping that has
+ * problems shows the problem instead of "Confirmed", so the pill is the place
+ * to look; a proposal is always "Needs review", with its problem (if any) as
+ * `detail` under it. `kind` says which of these it is, for the row to pick
+ * a colour from.
+ *
+ * @param {object} mapping
+ * @returns {{ kind: 'confirmed' | 'pending' | 'missing' | 'warnings' | 'unknown', label: string, detail: string | null }}
+ */
+export function mappingStatus(mapping) {
+  const state = MAPPING_STATE_LABELS[mapping.state];
+  const issues = issueSummary(mapping);
+
+  if (!state) return { kind: 'unknown', label: mapping.state || 'Unknown', detail: issues };
+  if (mapping.state === 'confirmed' && issues) {
+    return { kind: mappingIssueKind(mapping), label: issues, detail: null };
+  }
+  return { kind: mapping.state, label: state.label, detail: issues };
+}
+
+/**
+ * The grey line under a mapping's name: the file it was made from and, once
+ * approved, its version -- not the storage path, which says nothing a person
+ * can use.
+ *
+ * @param {object} mapping
+ * @returns {string}
+ */
+export function mappingSourceLine(mapping) {
+  const file = mapping.sourceFilename || String(mapping.filename || '').split('/').pop();
+  const version = mapping.state === 'confirmed' ? `v${mapping.version || 1}` : '';
+  return [file, version].filter(Boolean).join(' · ');
 }
 
 /**

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { AlertTriangle, ArrowRight, CheckCircle2, XCircle } from 'lucide-react';
 
-import { primaryButtonClass } from '@/components/inventory/formStyles';
+import { primaryButtonClass } from '@/components/ui/formStyles';
 import { cn } from '@/lib/utils';
 
 function plural(count, one, many) {
@@ -86,7 +86,7 @@ export default function LoadResult({ outcome }) {
             Icon={AlertTriangle}
             iconClass="text-amber-700"
             label="Not saved"
-            note="Saving is off in this environment, so these were read with the approved mapping and nothing was written. They're still waiting to load."
+            note="Saving is off in this environment, so these were read with the approved nomenclature and nothing was written. They're still waiting to load."
             items={outcome.checkedOnly}
           >
             {(item) => (

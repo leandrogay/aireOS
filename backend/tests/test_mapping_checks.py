@@ -8,7 +8,7 @@ reference contracts must pass them all.
 """
 
 import pytest
-from conftest import fairprice_txt, nhg_xlsx, sheng_siong_xlsx
+from conftest import fairprice_txt, nhg_xlsx, sheng_siong_xlsx, singhealth_xlsx
 
 from app.services import layout_detection, mapping_checks as mk, mapping_contract, reference_contracts
 
@@ -27,7 +27,7 @@ def _by_id(checks):
     return {check["id"]: check for check in checks}
 
 
-@pytest.mark.parametrize("name", ["fairprice_monthly", "nhg_sap", "sheng_siong_claim"])
+@pytest.mark.parametrize("name", ["fairprice_monthly", "nhg_sap", "sheng_siong_claim", "singhealth_er130", "prime_jkdc"])
 def test_the_reference_contracts_pass_every_check(name, retailer_files):
     filename, data = retailer_files[name]
 
@@ -152,6 +152,56 @@ def test_outlet_codes_are_the_inputs_of_a_rule_derived_from_the_store():
     assert rules["evidence"]["default"] == ["2A", "TC"]
 
 
+def test_revenue_as_units_times_a_unit_cost_passes_the_revenue_check():
+    checks, _, _ = _run("singhealth_er130", "XEL.xlsx", singhealth_xlsx())
+
+    assert _by_id(checks)["revenue_source"]["passed"] is True
+
+
+def test_revenue_as_units_times_a_claim_per_unit_is_an_error():
+    contract = reference_contracts.reference_contract("sheng_siong_claim")
+    contract["fields"]["revenue"] = {
+        "status": "derived", "from_field": "quantity_units",
+        "transforms": [{"type": "multiply", "column": "Supplier Claim"}],
+    }
+
+    checks, _, _ = _run("sheng_siong_claim", "ss.xlsx", sheng_siong_xlsx(), contract)
+
+    revenue = _by_id(checks)["revenue_source"]
+    assert revenue["passed"] is False
+    assert revenue["evidence"]["columns"] == ["Supplier Claim"]
+
+
+def test_outlet_names_in_the_headers_are_the_inputs_of_a_rule_derived_from_them():
+    checks, _, _ = _run("singhealth_er130", "XEL.xlsx", singhealth_xlsx())
+
+    rules = _by_id(checks)["rules_retailer"]
+    assert rules["evidence"]["matched"] == ["ONLINE"]
+    assert rules["evidence"]["default"] == ["BEDOK"]
+
+
+def test_store_codes_read_from_above_the_header_are_checked_for_every_outlet():
+    checks, _, _ = _run("singhealth_er130", "XEL.xlsx", singhealth_xlsx(outlets=[("81001", "BEDOK"), ("", "NEWSTORE")]))
+
+    labels = _by_id(checks)["labels_store_code"]
+    assert labels["passed"] is False
+    assert labels["evidence"]["missing"] == ["NEWSTORE"]
+
+
+def test_a_period_read_from_the_title_needs_a_title_stating_one_month():
+    checks, _, _ = _run("singhealth_er130", "XEL.xlsx", singhealth_xlsx(period="01 Jul 2026 TO 31 Aug 2026"))
+
+    assert _by_id(checks)["period"]["passed"] is False
+
+
+def test_a_period_read_from_the_title_fails_when_the_file_states_none():
+    checks, _, _ = _run("singhealth_er130", "XEL.xlsx", singhealth_xlsx(period="(no period)"))
+
+    period = _by_id(checks)["period"]
+    assert period["passed"] is False
+    assert "states no period" in period["message"]
+
+
 def test_the_instructions_are_stated_in_words():
     checks, _, _ = _run("sheng_siong_claim", "ss.xlsx", sheng_siong_xlsx())
 
@@ -212,3 +262,118 @@ def test_not_in_file_keeps_its_confidence_when_every_column_is_read():
     scored = mk.field_confidence(validated, checks, read)
 
     assert scored["fields"]["store_name"]["confidence"] == "high"
+
+
+def test_store_codes_read_from_above_the_header_are_the_inputs_of_a_rule_derived_from_them():
+    contract = reference_contracts.reference_contract("singhealth_er130")
+    contract["fields"]["retailer"]["from_field"] = "store_code"
+    contract["fields"]["retailer"]["transforms"][0]["rules"][0]["value"] = "88001"
+
+    checks, _, _ = _run("singhealth_er130", "XEL.xlsx", singhealth_xlsx(), contract)
+
+    rules = _by_id(checks)["rules_retailer"]
+    assert rules["passed"] is True
+    assert rules["evidence"]["matched"] == ["88001"]
+
+
+def test_rules_matching_none_of_the_values_are_a_warning_even_with_a_default():
+    contract = reference_contracts.reference_contract("singhealth_er130")
+    # Written for outlet names, read against the codes above them.
+    contract["fields"]["retailer"]["from_field"] = "store_code"
+
+    checks, _, _ = _run("singhealth_er130", "XEL.xlsx", singhealth_xlsx(), contract)
+
+    rules = _by_id(checks)["rules_retailer"]
+    assert (rules["level"], rules["passed"]) == ("warning", False)
+    assert "81001" in rules["message"]
+    assert mk.failures(checks) == []
+
+
+def test_headings_read_for_both_store_fields_need_no_row_above_and_feed_a_rule_on_either():
+    contract = reference_contracts.reference_contract("singhealth_er130")
+    contract["melt_groups"][0]["key"] = {"target": "store_code"}
+    contract["melt_groups"][0]["labels"] = [{"rows_above": 0, "target": "store_name"}]
+    contract["fields"]["retailer"]["from_field"] = "store_name"
+
+    checks, _, _ = _run("singhealth_er130", "XEL.xlsx", singhealth_xlsx(), contract)
+
+    assert mk.failures(checks) == []
+    assert not any(check["id"].startswith("labels_") for check in checks)
+    assert _by_id(checks)["rules_retailer"]["evidence"]["matched"] == ["ONLINE"]
+
+
+# ---- Product codes written over the column headings -----------------------------------
+
+def _products_per_column():
+    import pandas as pd
+
+    frame = pd.DataFrame([{"Month": "2026-08-14", "Store": "S1", "A1": "3", "B2": "5", "C3": "1"}])
+    contract = mapping_contract.validate_contract({
+        "fields": {
+            "period_start": {"status": "mapped", "source": "Month", "transforms": [{"type": "month_start"}]},
+            "period_type": {"status": "constant", "value": "month"},
+            "retailer": {"status": "constant", "value": "acme_offline"},
+            "store_code": {"status": "mapped", "source": "Store"},
+            "sku": {"status": "mapped", "melt_group": "products", "transforms": [
+                {"type": "value_map", "values": {"A1": "13255043", "B2": "13255044", "C3": "99999999"}},
+            ]},
+            "quantity_units": {"status": "mapped", "melt_group": "products"},
+        },
+        "melt_groups": [{
+            "id": "products", "select": {"kind": "between", "after": "Store"},
+            "key": {"target": "sku"}, "value_target": "quantity_units",
+        }],
+    }, list(frame.columns), trust_review=True)
+    return frame, contract
+
+
+def test_product_codes_in_the_headings_are_listed_for_the_code_table():
+    frame, contract = _products_per_column()
+
+    codes = mk.sku_codes(frame, contract)
+
+    assert {item["code"]: item["sku"] for item in codes} == {"A1": "13255043", "B2": "13255044", "C3": "99999999"}
+
+
+def test_a_product_code_in_the_headings_that_is_not_a_master_sku_fails_the_check():
+    frame, contract = _products_per_column()
+
+    checks = _by_id(mk.run_checks(frame, {}, contract, "products.csv", MASTER))
+
+    assert checks["sku_codes"]["passed"] is False
+    assert [item["code"] for item in checks["sku_codes"]["evidence"]["unknown"]] == ["C3"]
+
+
+# ---- One retailer per store (on transformed rows) ---------------------------------------
+
+def _rows(*pairs):
+    import pandas as pd
+
+    return pd.DataFrame([{"store_code": code, "retailer": retailer} for code, retailer in pairs])
+
+
+def test_a_store_sent_to_two_retailers_is_a_conflict():
+    rows = _rows(("AJ", "sheng_siong_offline"), ("AJ", "sheng_siong_online"), ("BK", "sheng_siong_offline"))
+
+    assert mk.store_channel_conflicts(rows) == {"AJ": ["sheng_siong_offline", "sheng_siong_online"]}
+
+
+def test_rows_with_no_store_code_are_customer_totals_not_a_conflict():
+    rows = _rows((None, "fairprice_offline"), (None, "fairprice_online"), ("  ", "fairprice_online"))
+
+    assert mk.store_channel_conflicts(rows) == {}
+
+
+def test_the_store_channel_check_blocks_approval_and_names_the_store():
+    check = mk.check_store_channels(_rows(("AJ", "sheng_siong_offline"), ("AJ", "sheng_siong_online")))
+
+    assert check["id"] == "store_channels"
+    assert mk.failures([check]) == [check]
+    assert "AJ goes to sheng_siong_offline and sheng_siong_online" in check["message"]
+    assert check["evidence"] == {"stores": ["AJ → sheng_siong_offline, sheng_siong_online"]}
+
+
+def test_the_store_channel_check_passes_when_each_store_keeps_to_one_retailer():
+    check = mk.check_store_channels(_rows(("AJ", "sheng_siong_offline"), ("WEB", "sheng_siong_online")))
+
+    assert check["passed"] is True

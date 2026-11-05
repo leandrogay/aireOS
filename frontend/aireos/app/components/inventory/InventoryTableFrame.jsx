@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-import HeaderCheckboxFilter from '@/components/forecast/HeaderCheckboxFilter';
+import HeaderCheckboxFilter from '@/components/ui/HeaderCheckboxFilter';
 import { Button } from '@/components/ui/button';
 import { TABLE_HEADER_CLASS } from '@/components/ui/SortHeader';
 import { Skeleton } from '@/components/ui/skeleton';

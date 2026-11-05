@@ -7,12 +7,12 @@ screen loads, edits, previews and approves mappings on their own, long after
 the upload that proposed them. Uploading is one thing, curating the mappings
 uploads are run through is another, and they now have a router each.
 
-A contract is instructions for the transformation. Both stored contract
-formats are checked here and previewed through the same deterministic
-executor. Approving does not load anything: the files behind the mapping are
-marked ready, and loading them is a separate, confirmed step (POST
-/api/uploads/load, see upload_loading). Version 1 remains supported for
-mappings confirmed before the expanded contract format was introduced.
+A contract is instructions for the transformation, checked here and
+previewed through the same deterministic executor that loads it. Approving
+does not load anything: the files behind the mapping are marked ready, and
+loading them is a separate, confirmed step (POST /api/uploads/load, see
+upload_loading). Each approval of a mapping is a new version of it; the one it
+replaces is archived (storage.move_pending_mapping_to_confirmed).
 """
 
 import asyncio
@@ -26,12 +26,23 @@ from app.services import storage
 from app.services import generate_mapping
 from app.services import mapping_view
 from app.services import apply_contract as contract_application
-from app.services import layout_detection, mapping_checks, mapping_contract
+from app.services import column_profile, layout_detection, mapping_checks, mapping_contract
 from app.services import customer_service
+from app.services import sellout_ingestion
 from app.services import notification_service
 from app.services import upload_loading
 
 router = APIRouter(prefix="/api/mappings", tags=["mappings"])
+
+
+class ContractSettings(BaseModel):
+    """
+    The contract-wide instructions a reviewer may change besides its fields.
+    Left out (None), each is kept as the stored contract has it.
+    """
+
+    # Roll rows up to one per store, SKU and calendar month.
+    aggregate: bool | None = None
 
 
 class ConfirmRequest(BaseModel):
@@ -48,6 +59,7 @@ class ConfirmRequest(BaseModel):
     # leaves them as they were.
     name: str | None = Field(default=None, max_length=120)
     customer_id: int | None = Field(default=None, gt=0)
+    instructions: ContractSettings | None = None
 
 
 class PreviewRequest(BaseModel):
@@ -55,6 +67,7 @@ class PreviewRequest(BaseModel):
 
     rules: list[dict] | None = None
     contract: dict | None = None
+    instructions: ContractSettings | None = None
     limit: int = Field(default=5, ge=1, le=25)
 
 
@@ -71,22 +84,33 @@ def _load_envelope(fingerprint: str):
     return None, None
 
 
-def _proposed_contract(envelope: dict, rules: list[dict] | None, contract: dict | None) -> dict:
+def _proposed_contract(
+    envelope: dict,
+    rules: list[dict] | None,
+    contract: dict | None,
+    instructions: ContractSettings | None = None,
+) -> dict:
     """
     The contract a request asks for: rebuilt from the review screen's rules,
     sent whole, or the stored one. Rules carry fields, not the contract-wide
-    instructions, so those are kept from the stored contract: where the data
-    sits, whether rows roll up, and what kind of data it is (decision D8).
+    instructions, so those are kept from the stored contract -- where the data
+    sits and whether rows roll up -- unless the reviewer changed the roll-up
+    (`instructions`).
     """
-    stored = mapping_contract.upgrade(envelope.get("contract") or {})
+    stored = mapping_contract.read_contract(envelope.get("contract") or {})
     if rules is not None:
         proposed = mapping_view.rules_to_contract(rules)
-        for key in ("layout", "aggregate", "data_source"):
+        for key in ("layout", "aggregate"):
             proposed[key] = stored.get(key)
-        return proposed
-    if contract is not None:
+    elif contract is not None:
         return contract
-    return envelope.get("contract") or {}
+    else:
+        proposed = dict(envelope.get("contract") or {})
+
+    if instructions is not None:
+        if instructions.aggregate is not None:
+            proposed["aggregate"] = mapping_contract.monthly_aggregate() if instructions.aggregate else None
+    return proposed
 
 
 def _replacement_example(fingerprint: str) -> tuple[str, bytes] | None:
@@ -131,7 +155,10 @@ def _foreign_retailers(contract: dict, customer: dict, envelope: dict) -> list[s
     dashboard -- which finds sales through the customer -- never shows them.
     """
     outputs = mapping_contract.retailer_outputs(
-        contract, samples=mapping_view.validation_values(envelope)
+        contract,
+        samples=mapping_view.validation_values(envelope),
+        columns=envelope.get("raw_columns") or [],
+        layout=envelope.get("layout"),
     )
     own = {retailer["retailer_name"] for retailer in customer.get("retailers") or []}
     return [name for name in outputs or [] if name not in own]
@@ -172,7 +199,7 @@ async def list_mappings():
         return {"mappings": await asyncio.to_thread(collect)}
     except Exception as exc:
         raise HTTPException(
-            status_code=503, detail=f"Unable to read stored mappings: {exc}"
+            status_code=503, detail=f"Unable to read stored nomenclatures: {exc}"
         )
 
 
@@ -187,7 +214,7 @@ async def get_mapping(fingerprint: str):
     envelope, state = await asyncio.to_thread(_load_envelope, fingerprint)
     if not envelope:
         raise HTTPException(
-            status_code=404, detail="No mapping found for that fingerprint."
+            status_code=404, detail="No nomenclature found for that fingerprint."
         )
 
     # The SKU master (read-only) for the review screen's product-code table: a
@@ -197,13 +224,28 @@ async def get_mapping(fingerprint: str):
     # The raw contract rides along only here, not in the listing: it is what is
     # actually stored, and a single-mapping view is where seeing it is worth
     # the bytes.
+    # What discarding a proposal would remove, so the confirmation can name the files.
+    waiting_uploads = []
+    if state == "pending":
+        waiting = await asyncio.to_thread(upload_loading.uploads_waiting_on_proposal, fingerprint)
+        waiting_uploads = [
+            {"blob_path": upload["blob_path"], "filename": upload["filename"], "uploaded_at": upload["uploaded_at"]}
+            for upload in waiting
+        ]
+
     return {
         **mapping_view.envelope_to_packet(fingerprint, envelope, state),
+        "waitingUploads": waiting_uploads,
         "contract": envelope.get("contract") or {},
         "proposedAt": envelope.get("proposed_at"),
         "masterSkus": master_skus or [],
         "masterSkusAvailable": master_skus is not None,
     }
+
+
+def _with_check(checks: list[dict], check: dict) -> list[dict]:
+    """The checks with one more, still most serious first (mapping_checks.run_checks order)."""
+    return sorted([*checks, check], key=lambda c: (c["passed"], mapping_checks.LEVEL_ORDER[c["level"]]))
 
 
 @router.post("/{fingerprint}/preview")
@@ -219,15 +261,15 @@ async def preview_mapping(fingerprint: str, body: PreviewRequest):
     envelope, _ = await asyncio.to_thread(_load_envelope, fingerprint)
     if not envelope:
         raise HTTPException(
-            status_code=404, detail="No mapping found for that fingerprint."
+            status_code=404, detail="No nomenclature found for that fingerprint."
         )
     if not envelope.get("example_file"):
         raise HTTPException(
             status_code=409,
-            detail="This mapping has no example file stored, so it cannot be previewed.",
+            detail="This nomenclature has no example file stored, so it cannot be previewed.",
         )
 
-    proposed = _proposed_contract(envelope, body.rules, body.contract)
+    proposed = _proposed_contract(envelope, body.rules, body.contract, body.instructions)
 
     def build() -> dict:
         filename, data, frame, layout = _example_table(envelope, fingerprint)
@@ -247,33 +289,39 @@ async def preview_mapping(fingerprint: str, body: PreviewRequest):
             "preview": [],
             "checks": checks,
             "warnings": validated["warnings"],
-            "sku_codes": mapping_checks.sku_codes(frame, validated),
+            "sku_codes": mapping_checks.sku_codes(frame, validated, layout),
+            # The example file as read now: the cells above its header, the
+            # period its title states and its first rows, for a proposal
+            # stored before those were kept with it.
+            "layout": generate_mapping.layout_summary(layout),
+            "head_rows": column_profile.head_rows(frame),
+            # Why no sample rows could be made, when the rules cannot run.
+            "preview_error": None,
         }
 
-        # Unsafe rules still return their structured checks to the reviewer;
-        # they are not executed merely to produce a preview.
-        if mapping_checks.failures(checks):
-            return result
-
-        executable = validated
-        if not mapping_contract.is_v2(envelope.get("contract")):
-            executable = mapping_contract.downgrade(validated)
-        if executable is not None:
+        # Sample rows are made even while checks fail -- nothing is stored, and
+        # seeing what the rules do is how the reviewer finds what to fix.
+        # Approval still holds the checks as a gate.
+        try:
             mapped = sellout_ingestion.transform_confirmed_upload(
                 filename,
                 data,
-                executable,
+                validated,
             )
-            target_columns = [
-                column
-                for column in envelope.get("target_schema", generate_mapping.TARGET_SCHEMA)
-                if column in mapped
-            ]
-            result.update({
-                "columns": target_columns,
-                "rows_total": len(mapped),
-                "preview": contract_application.preview_rows(mapped[target_columns], body.limit),
-            })
+        except contract_application.ContractApplicationError as exc:
+            result["preview_error"] = str(exc)
+            return result
+        target_columns = [
+            column
+            for column in envelope.get("target_schema", generate_mapping.TARGET_SCHEMA)
+            if column in mapped
+        ]
+        result.update({
+            "columns": target_columns,
+            "rows_total": len(mapped),
+            "preview": contract_application.preview_rows(mapped[target_columns], body.limit),
+            "checks": _with_check(checks, mapping_checks.check_store_channels(mapped)),
+        })
         return result
 
     try:
@@ -282,8 +330,8 @@ async def preview_mapping(fingerprint: str, body: PreviewRequest):
         raise HTTPException(
             status_code=410,
             detail=(
-                "The file this mapping was made from has been replaced or deleted. "
-                "Upload a file with these columns to test the mapping."
+                "The file this nomenclature was made from has been replaced or deleted. "
+                "Upload a file with these columns to test the nomenclature."
             ),
         )
     except contract_application.ContractApplicationError as exc:
@@ -314,7 +362,7 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
     envelope_before, state = await asyncio.to_thread(_load_envelope, fingerprint)
     if not envelope_before:
         raise HTTPException(
-            status_code=404, detail="No mapping found for that fingerprint."
+            status_code=404, detail="No nomenclature found for that fingerprint."
         )
 
     pending = envelope_before
@@ -328,7 +376,7 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
     if not name or not customer_id:
         raise HTTPException(
             status_code=422,
-            detail="A mapping needs a name and a customer before it can be saved for reuse.",
+            detail="A nomenclature needs a name and a customer before it can be saved for reuse.",
         )
 
     customer = await asyncio.to_thread(customer_service.get_customer, customer_id)
@@ -337,7 +385,7 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
     # Written as the vendor too: upload history and older screens read it.
     vendor = customer["customer_name"]
 
-    proposed = _proposed_contract(pending, body.rules, body.contract)
+    proposed = _proposed_contract(pending, body.rules, body.contract, body.instructions)
 
     contract = generate_mapping.validate_contract(
         proposed,
@@ -375,7 +423,7 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
             status_code=422,
             detail={
                 "message": (
-                    f"This mapping writes sales to {', '.join(foreign)}, which "
+                    f"This nomenclature writes sales to {', '.join(foreign)}, which "
                     f"{'is not a retailer' if len(foreign) == 1 else 'are not retailers'} "
                     f"of {vendor}. Add {'it' if len(foreign) == 1 else 'them'} to the "
                     "customer or change the retailer."
@@ -403,10 +451,17 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
         table = _example_table(pending, fingerprint)
         if table is None:
             return []
-        filename, _, frame, layout = table
-        return generate_mapping.check_contract(
+        filename, data, frame, layout = table
+        checks = generate_mapping.check_contract(
             frame, layout, contract, filename, generate_mapping.fetch_master_skus()
         )
+        # Whether each store keeps to one retailer is only known once the
+        # rules have run; a contract that cannot run is caught on load.
+        try:
+            mapped = sellout_ingestion.transform_confirmed_upload(filename, data, contract)
+        except contract_application.ContractApplicationError:
+            return checks
+        return _with_check(checks, mapping_checks.check_store_channels(mapped))
 
     try:
         checks = await asyncio.to_thread(recheck)
@@ -429,11 +484,7 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
         pending.get("proposal") or pending.get("contract") or {}, contract
     )
 
-    # A mapping confirmed in version 1 is written back in that format when the
-    # amendment fits, preserving compatibility with already stored contracts.
     stored_contract = {key: value for key, value in contract.items() if key != "warnings"}
-    if not mapping_contract.is_v2(pending.get("contract")):
-        stored_contract = mapping_contract.downgrade(contract) or stored_contract
 
     envelope = {
         **pending,
@@ -490,7 +541,6 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
         "moved_to": move["confirmed_path"],
         "archived_previous": move.get("archived_path"),
         "version": envelope["version"],
-        "contract_format": 2 if mapping_contract.is_v2(stored_contract) else 1,
         "pending_removed": move["removed_pending"],
         "uploads_updated": uploads["updated"],
         # Files the approved mapping can now load, for the screen to offer:
@@ -506,12 +556,18 @@ async def confirm_mapping(fingerprint: str, body: ConfirmRequest):
 
 @router.delete("/{fingerprint}/pending")
 async def discard_pending_mapping(fingerprint: str):
-    """Throw away a proposal the user rejected, so the next upload regenerates it."""
-    deleted = await asyncio.to_thread(
-        storage.delete_blob, storage.pending_mapping_path(fingerprint)
-    )
-    if not deleted:
+    """
+    Throw away a proposal the user rejected, and the uploads waiting on it, so
+    the upload page no longer offers a review that does not exist.
+    """
+    result = await asyncio.to_thread(upload_loading.discard_proposal, fingerprint)
+    # Files left behind by an earlier discard still count as something to clean up.
+    if not result["proposal_deleted"] and not result["removed_uploads"]:
         raise HTTPException(
-            status_code=404, detail="No pending mapping for that fingerprint."
+            status_code=404, detail="No pending nomenclature for that fingerprint."
         )
-    return {"success": True, "fingerprint": fingerprint}
+    return {
+        "success": True,
+        "fingerprint": fingerprint,
+        "removed_uploads": result["removed_uploads"],
+    }

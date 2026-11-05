@@ -1,5 +1,6 @@
 import AppShell from "./AppShell";
 import NotificationBell from "./NotificationBell";
+import BackLink from "@/components/ui/BackLink";
 import { cn } from "@/lib/utils";
 
 /**
@@ -11,15 +12,18 @@ import { cn } from "@/lib/utils";
  * `headerExtra` renders inline to the right of the title (e.g. a selector);
  * give it `ml-auto` to push it to the right, just before the bell.
  *
+ * `back` ({ href, label }) puts a back arrow just left of the title, for
+ * pages one level below another (a detail page under its list).
+ *
  * `fitScreen` makes the page exactly the window's height instead of growing
  * with its content: the content column becomes a flex column, so one child
  * can take `min-h-0 flex-1` and scroll inside itself (the promotions table).
  * If the window is too short for the content, the page scrolls as a fallback
  * rather than clipping it.
  *
- * @param {{ title: import('react').ReactNode, headerExtra?: import('react').ReactNode, fitScreen?: boolean, children: import('react').ReactNode }} props
+ * @param {{ title: import('react').ReactNode, headerExtra?: import('react').ReactNode, back?: { href: string, label: string }, fitScreen?: boolean, children: import('react').ReactNode }} props
  */
-export default function PageLayout({ title, headerExtra, fitScreen = false, children }) {
+export default function PageLayout({ title, headerExtra, back, fitScreen = false, children }) {
   return (
     <AppShell>
       <main
@@ -33,6 +37,9 @@ export default function PageLayout({ title, headerExtra, fitScreen = false, chil
             {/* The title and any page controls share this growing block, so a
                 control pushed right with ml-auto stays just left of the bell. */}
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+              {back && (
+                <BackLink href={back.href} label={back.label} className="-mr-1.5 -ml-1" />
+              )}
               <h1 className="font-serif text-2xl text-deep-violet-blue">
                 {title}
               </h1>

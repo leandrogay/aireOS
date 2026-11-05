@@ -54,7 +54,7 @@ function CheckLine({ check }) {
  */
 export default function MappingChecks({ checks, stale = false }) {
   if (!checks?.length) {
-    return <p className="text-xs text-deep-violet-blue/70">No checks have been run on this mapping yet.</p>;
+    return <p className="text-xs text-deep-violet-blue/70">No checks have been run on this nomenclature yet.</p>;
   }
   const sorted = sortChecks(checks);
   const open = sorted.filter((check) => !check.passed);

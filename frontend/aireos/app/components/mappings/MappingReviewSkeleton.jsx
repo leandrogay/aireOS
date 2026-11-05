@@ -12,7 +12,7 @@ const bar = 'rounded bg-lavander';
 export default function MappingReviewSkeleton() {
   return (
     <div role="status" className="space-y-1">
-      <span className="sr-only">Loading mapping…</span>
+      <span className="sr-only">Loading nomenclature…</span>
 
       <section aria-hidden="true" className={card}>
         <Skeleton className="h-5 w-36 rounded-full bg-lavander" />

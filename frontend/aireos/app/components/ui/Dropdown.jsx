@@ -6,7 +6,10 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { cn } from '@/lib/utils';
 
 /**
- * Closed-by-default dropdown whose menu is a checkbox list.
+ * Closed-by-default dropdown whose panel holds whatever the parent puts in it:
+ * a checkbox list (the promotion form's pickers, inventory's SkuDropdown) or a
+ * month grid (MonthDropdown). For a plain list of options, ui/SelectDropdown
+ * (pick one) and ui/MultiSelectDropdown (pick many) already do the rows.
  *
  * The trigger looks like the other cream/lavender inputs. Clicking it opens
  * the panel; clicking outside or Escape closes it. Selection stays in the
@@ -31,7 +34,7 @@ import { cn } from '@/lib/utils';
  * @param {string} [props.listClassName] classes for the option list; inventory passes no max-height so every SKU is visible
  * @param {React.ReactNode | ((query: string, close: () => void) => React.ReactNode)} props.children
  */
-export default function CheckboxDropdown({
+export default function Dropdown({
   summary,
   placeholder = 'Select…',
   disabled = false,

@@ -1,11 +1,10 @@
 """
 The mapping contract: one decision per target field, validated before it is
-trusted, and older contracts still readable.
+trusted.
 
 What must hold: every target field is accounted for (a field the file lacks
-says so, with a reason), nothing unsafe is applied silently, product
-attributes always come from the SKU master, and a contract stored in the first
-shape reads the same as before.
+says so, with a reason), nothing unsafe is applied silently, and product
+attributes always come from the SKU master.
 """
 
 from app.schemas.sellout import BUSINESS_COLUMNS
@@ -30,7 +29,6 @@ QTY = {**SALES, "id": "qty", "select": {"kind": "pattern", "pattern": r"^Qty \(i
 
 def _contract(**fields):
     return {
-        "version": 2,
         "fields": {
             "period_start": {"status": "mapped", "melt_group": "sales", "confidence": "high"},
             "period_type": {"status": "derived", "confidence": "high"},
@@ -46,6 +44,17 @@ def _contract(**fields):
 
 def _validate(contract, **kwargs):
     return mc.validate_contract(contract, COLUMNS, samples=SAMPLES, **kwargs)
+
+
+# ---- Reading a contract ----------------------------------------------------------
+
+def test_reading_a_contract_fills_missing_sections_without_changing_it():
+    stored = {"aggregate": {"period": "month"}}
+
+    contract = mc.read_contract(stored)
+
+    assert contract == {"aggregate": {"period": "month"}, "fields": {}, "melt_groups": []}
+    assert stored == {"aggregate": {"period": "month"}}
 
 
 # ---- Every field accounted for ---------------------------------------------------
@@ -229,6 +238,116 @@ def test_the_period_type_is_read_from_month_headers():
     assert contract["fields"]["period_type"]["status"] == "derived"
 
 
+# ---- Outlets, stated periods and unit prices (SingHealth) ---------------------------
+
+OUTLET_COLUMNS = ["Product Code", "Normal cost", "Promo cost", "BEDOK", "ONLINE"]
+OUTLETS = {
+    "id": "outlets",
+    "select": {"kind": "between", "after": "Promo cost"},
+    "key": {"target": "store_name"},
+    "labels": [{"rows_above": 1, "target": "store_code"}],
+    "value_target": "quantity_units",
+    "confidence": "high",
+}
+
+
+def _outlet_contract(group=None, **fields):
+    return {
+        "fields": {
+            "period_start": {"status": "derived", "from_layout": "stated_period", "confidence": "high"},
+            "period_type": {"status": "constant", "value": "month", "confidence": "high"},
+            "retailer": {"status": "constant", "value": "singhealth_offline", "confidence": "high"},
+            "sku": {"status": "mapped", "source": "Product Code", "confidence": "high"},
+            "store_name": {"status": "mapped", "melt_group": "outlets", "confidence": "high"},
+            "store_code": {"status": "mapped", "melt_group": "outlets", "confidence": "high"},
+            "quantity_units": {"status": "mapped", "melt_group": "outlets", "confidence": "high"},
+            "revenue": {
+                "status": "derived", "from_field": "quantity_units", "confidence": "high",
+                "transforms": [{"type": "multiply", "column": "Promo cost"}],
+            },
+            **fields,
+        },
+        "melt_groups": [group or OUTLETS],
+    }
+
+
+def _validate_outlets(contract):
+    return mc.validate_contract(contract, OUTLET_COLUMNS)
+
+
+def test_an_outlet_group_keyed_by_name_with_codes_above_is_kept_whole():
+    contract = _validate_outlets(_outlet_contract())
+
+    assert contract["warnings"] == []
+    assert contract["melt_groups"][0]["key"] == {"target": "store_name"}
+    assert contract["melt_groups"][0]["labels"] == [{"rows_above": 1, "target": "store_code"}]
+    assert contract["fields"]["store_code"]["melt_group"] == "outlets"
+
+
+def test_a_label_cannot_fill_the_field_its_key_fills():
+    group = {**OUTLETS, "labels": [{"rows_above": 1, "target": "store_name"}]}
+
+    contract = _validate_outlets(_outlet_contract(group))
+
+    assert contract["melt_groups"] == []
+    assert any("label" in w for w in contract["warnings"])
+
+
+def test_a_label_needs_a_whole_number_of_rows_above_the_header():
+    group = {**OUTLETS, "labels": [{"rows_above": "1", "target": "store_code"}]}
+
+    contract = _validate_outlets(_outlet_contract(group))
+
+    assert contract["melt_groups"] == []
+
+
+def test_a_field_no_part_of_the_group_fills_cannot_read_it():
+    group = {**OUTLETS, "labels": []}
+
+    contract = _validate_outlets(_outlet_contract(group))
+
+    assert contract["fields"]["store_code"]["status"] == "not_available"
+    assert contract["fields"]["store_name"]["melt_group"] == "outlets"
+
+
+def test_revenue_can_be_units_times_a_unit_price_column():
+    contract = _validate_outlets(_outlet_contract())
+
+    assert contract["fields"]["revenue"]["transforms"] == [{"type": "multiply", "column": "Promo cost"}]
+
+
+def test_a_multiply_column_not_in_the_file_drops_the_field():
+    revenue = {
+        "status": "derived", "from_field": "quantity_units",
+        "transforms": [{"type": "multiply", "column": "List price"}],
+    }
+
+    contract = _validate_outlets(_outlet_contract(revenue=revenue))
+
+    assert contract["fields"]["revenue"]["status"] == "not_available"
+    assert any("List price" in w for w in contract["warnings"])
+
+
+def test_the_period_can_be_read_from_the_stated_period():
+    contract = _validate_outlets(_outlet_contract())
+
+    assert contract["fields"]["period_start"]["from_layout"] == "stated_period"
+    assert mc.required_missing_fields(contract) == []
+
+
+def test_a_stated_period_needs_a_constant_monthly_period_type():
+    contract = _validate_outlets(_outlet_contract(period_type={"status": "constant", "value": "week"}))
+
+    assert contract["fields"]["period_start"]["status"] == "not_available"
+    assert "period_start" in mc.required_missing_fields(contract)
+
+
+def test_only_the_period_can_be_read_from_the_stated_period():
+    contract = _validate_outlets(_outlet_contract(store_code={"status": "derived", "from_layout": "stated_period"}))
+
+    assert contract["fields"]["store_code"]["status"] == "not_available"
+
+
 # ---- Confidence and review ----------------------------------------------------------
 
 def test_missing_or_unrecognised_confidence_becomes_low():
@@ -257,61 +376,6 @@ def test_unreviewed_low_confidence_lists_only_unconfirmed_guesses():
     )
 
     assert mc.unreviewed_low_confidence(_validate(proposed, trust_review=True)) == ["store_format"]
-
-
-# ---- Version 1 contracts ---------------------------------------------------------
-
-V1 = {
-    "identity_mapping": {
-        "SKU No.": "sku",
-        "Article Description": ["product_name", "size"],
-        "Store Format": ["store_format", "retailer"],
-    },
-    "melt_groups": [{
-        "target_field": "revenue",
-        "columns": ["SALES | Month 1 | 01-01-2026", "SALES | Month 2 | 01-02-2026"],
-        "period_extract_regex": r"(\d{2}-\d{2}-\d{4})",
-        "date_format": "%d-%m-%Y",
-        "confidence": "high",
-    }],
-    "annotations": {"retailer": {"confidence": "medium", "rationale": "FPON is online."}},
-    "transformations": {"retailer": {"type": "value_map", "values": {"FPON": "fairprice_online"}, "default": "fairprice_offline"}},
-}
-
-
-def test_a_column_feeding_two_fields_becomes_two_entries():
-    upgraded = mc.upgrade(V1)
-
-    assert upgraded["fields"]["store_format"]["source"] == "Store Format"
-    assert upgraded["fields"]["retailer"]["source"] == "Store Format"
-    assert upgraded["fields"]["retailer"]["transforms"] == [V1["transformations"]["retailer"]]
-    assert upgraded["fields"]["retailer"]["confidence"] == "medium"
-
-
-def test_a_v1_melt_group_becomes_a_columns_selector_and_fills_the_period():
-    upgraded = mc.upgrade(V1)
-
-    group = upgraded["melt_groups"][0]
-    assert group["select"] == {"kind": "columns", "columns": V1["melt_groups"][0]["columns"]}
-    assert group["period_type"] == "month"
-    assert upgraded["fields"]["period_start"]["melt_group"] == "revenue"
-    assert upgraded["fields"]["period_type"]["status"] == "derived"
-
-
-def test_a_v1_field_claimed_twice_keeps_the_first_with_a_warning():
-    upgraded = mc.upgrade({"identity_mapping": {"SKU No.": "sku", "Brand": "sku"}})
-
-    assert upgraded["fields"]["sku"]["source"] == "SKU No."
-    assert any("already filled by" in w for w in upgraded["warnings"])
-
-
-def test_a_v1_contract_validates_to_version_2():
-    contract = _validate(V1)
-
-    assert contract["version"] == 2
-    assert contract["fields"]["retailer"]["status"] == "mapped"
-    assert contract["fields"]["product_name"]["source"] == "Article Description"
-    assert contract["layout"] is None and contract["aggregate"] is None
 
 
 # ---- Reviewer diff ---------------------------------------------------------------
@@ -374,32 +438,6 @@ def test_a_sku_code_table_is_a_value_map_on_the_sku_field():
     assert contract["fields"]["sku"]["transforms"] == [{**table, "case_sensitive": False}]
 
 
-# ---- Writing an amended version 1 mapping back -------------------------------------
-
-def test_a_v1_contract_round_trips_through_version_2():
-    v1 = mc.downgrade(_validate(V1, trust_review=True))
-
-    assert set(v1["identity_mapping"]["Store Format"]) == {"store_format", "retailer"}
-    assert v1["transformations"]["retailer"] == {**V1["transformations"]["retailer"], "case_sensitive": False}
-    assert v1["melt_groups"][0]["columns"] == V1["melt_groups"][0]["columns"]
-    assert v1["melt_groups"][0]["period_extract_regex"] == V1["melt_groups"][0]["period_extract_regex"]
-
-
-def test_a_contract_needing_version_2_instructions_does_not_downgrade():
-    assert mc.downgrade(_validate(_contract())) is None  # pattern selectors
-    assert mc.downgrade(_validate({**V1, "aggregate": {"period": "month"}})) is None
-    assert mc.downgrade(_validate({**V1, "layout": {"header_row": 7}})) is None
-    constant = _validate(V1)
-    constant["fields"]["store_code"] = {"status": "constant", "value": "x"}
-    assert mc.downgrade(constant) is None
-
-
-def test_the_version_is_told_by_the_shape():
-    assert mc.is_v2(_contract())
-    assert not mc.is_v2(V1)
-    assert not mc.is_v2({})
-
-
 # ---- Which retailers a contract writes to ---------------------------------------------
 
 def test_a_constant_retailer_writes_its_value():
@@ -438,3 +476,35 @@ def test_a_retailer_not_in_the_file_writes_nothing():
     contract = _contract(retailer={"status": "not_available", "reason": "no retailer"})
 
     assert mc.retailer_outputs(contract) == []
+
+
+def test_a_label_of_zero_rows_above_reads_the_headings_again():
+    group = {**OUTLETS, "key": {"target": "store_code"}, "labels": [{"rows_above": 0, "target": "store_name"}]}
+
+    contract = _validate_outlets(_outlet_contract(group))
+
+    assert contract["warnings"] == []
+    assert contract["melt_groups"][0]["labels"] == [{"rows_above": 0, "target": "store_name"}]
+
+
+def test_a_label_cannot_read_a_negative_number_of_rows_above():
+    group = {**OUTLETS, "labels": [{"rows_above": -1, "target": "store_code"}]}
+
+    assert _validate_outlets(_outlet_contract(group))["melt_groups"] == []
+
+
+def test_a_retailer_read_from_the_headings_writes_the_headings():
+    group = {**OUTLETS, "key": {"target": "retailer"}, "labels": []}
+    contract = _validate_outlets(_outlet_contract(group, retailer={"status": "mapped", "melt_group": "outlets"}))
+
+    assert mc.retailer_outputs(contract, columns=OUTLET_COLUMNS) == ["BEDOK", "ONLINE"]
+    # Without the file's headings it cannot be told, rather than "nothing".
+    assert mc.retailer_outputs(contract) is None
+
+
+def test_a_retailer_read_from_the_cells_above_the_headings_writes_those_cells():
+    group = {**OUTLETS, "labels": [{"rows_above": 1, "target": "retailer"}]}
+    contract = _validate_outlets(_outlet_contract(group, retailer={"status": "mapped", "melt_group": "outlets"}))
+    layout = {"header_row": 2, "rows_above_header": [{"row": 1, "cells": {"BEDOK": "81001", "ONLINE": "88001"}}]}
+
+    assert mc.retailer_outputs(contract, columns=OUTLET_COLUMNS, layout=layout) == ["81001", "88001"]

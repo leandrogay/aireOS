@@ -6,15 +6,20 @@ import { AlertTriangle, CheckCircle2, Loader2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import InfoTooltip from '@/components/ui/InfoTooltip';
 import SelectDropdown from '@/components/ui/SelectDropdown';
-import { inputClass, labelClass } from '@/components/inventory/formStyles';
-import { canRenameOutputs, retailerChoices } from '@/app/utils/mappingCustomer';
+import { inputClass, labelClass } from '@/components/ui/formStyles';
+import { canRenameOutputs, channelRetailerName, retailerChoices } from '@/app/utils/mappingCustomer';
 import { PROPOSER } from '@/app/utils/mappingReview';
 import { retailerLabel } from '@/app/utils/retailerLabel';
+import { splitFromDecision } from '@/app/utils/retailerSplit';
 import { cn } from '@/lib/utils';
 
+import ChannelSplit from './ChannelSplit';
 import ResetButton from './ResetButton';
 
 const smallButton = 'h-7 border-deep-violet-blue/30 bg-white px-2 text-xs text-deep-violet-blue hover:bg-cream';
+
+// The retailer decisions ChannelSplit can show (retailerSplit.splitFromDecision).
+const SPLIT_MODES = ['offline', 'online', 'split'];
 
 // What is wrong with a retailer, in a few words. A retailer that is fine says
 // nothing: its tick is enough.
@@ -114,13 +119,18 @@ function decisionText(decision, outputs) {
   if (decision.kind === 'none' || decision.status === 'not_available' || decision.status === 'unmapped') {
     return {
       short: 'Not set',
-      long: 'Nothing in this mapping sets the retailer. Send every row to one of the customer’s retailers, or choose a column for Retailer in step 2.',
+      long: 'Nothing in this nomenclature sets the retailer. Send every row to one of the customer’s retailers, or choose a column for Retailer in step 2.',
     };
   }
   if (decision.status === 'constant') {
     return { short: 'One retailer for every row', long: 'Every row of the file is written to the same retailer.' };
   }
-  const from = decision.kind === 'column' ? `column “${decision.column}”` : 'another field';
+  const from =
+    decision.kind === 'column'
+      ? `column “${decision.column}”`
+      : decision.kind === 'headings'
+        ? 'the column headings'
+        : 'another field';
   if (!outputs) {
     return {
       short: `From ${from}`,
@@ -153,7 +163,10 @@ function decisionText(decision, outputs) {
  *   statuses: object[],
  *   onFixRetailer: (item: object) => Promise<void>,
  *   onSetRetailerChoice: (key: string, retailerName: string) => void,
- *   onSetConstant: (retailerName: string) => void,
+ *   onApplyRetailer: (decision: object) => void,
+ *   mapping: object,
+ *   state: object,
+ *   layout: object,
  *   retailerChanged: boolean,
  *   onResetRetailer: () => void,
  *   disabled: boolean,
@@ -175,21 +188,26 @@ export default function CustomerStep({
   statuses,
   onFixRetailer,
   onSetRetailerChoice,
-  onSetConstant,
+  onApplyRetailer,
+  mapping,
+  state,
+  layout,
   retailerChanged,
   onResetRetailer,
   disabled,
 }) {
   const retailers = customer?.retailers || [];
-  const isConstant = decision.status === 'constant';
   // One line per rule, code or constant, when the mapping writes the retailer
   // that way; otherwise one line per retailer it writes (a column read as it is).
   const choices = canRenameOutputs(decision) ? retailerChoices(decision) : [];
   const statusOf = (retailerName) =>
     statuses.find((item) => item.name === retailerName) || { name: retailerName, status: null };
-  // Sending every row to one retailer replaces whatever writes it now.
-  const offerConstant = Boolean(customer) && retailers.length > 0 && !isConstant;
   const where = decisionText(decision, outputs);
+  // All offline, all online or split by a column: the channel picker shows
+  // and edits it whole. Anything else keeps its rule-by-rule lines.
+  const picked = Boolean(customer) && SPLIT_MODES.includes(splitFromDecision(decision).mode);
+  // Another customer's retailer is already flagged, with its fix, by the picker.
+  const problems = statuses.filter((item) => item.status !== 'ok' && item.status !== 'other');
 
   // Said under the customer only when there is something to say.
   let customerNote = '';
@@ -201,7 +219,7 @@ export default function CustomerStep({
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
           <label htmlFor="mapping-name" className={labelClass}>
-            Mapping name
+            Nomenclature name
             <span className="text-red-700" aria-hidden="true">
               {' '}
               *
@@ -260,10 +278,18 @@ export default function CustomerStep({
 
       <div>
         <div className="flex items-center gap-1 text-xs text-deep-violet-blue">
-          <span className="font-medium">Sales go to:</span>
-          <span className="text-deep-violet-blue/70">{where.short}</span>
+          <span className="font-medium">Retailer</span>
+          {/* The retailers a proposal names are another customer's until one is
+              chosen, and nothing here can be edited yet, so there is nothing to show. */}
+          {!customer && (
+            <span className="text-deep-violet-blue/70">· Choose the customer to set where the sales go</span>
+          )}
+          {customer && !picked && <span className="text-deep-violet-blue/70">· {where.short}</span>}
           <InfoTooltip label="Where the sales go">
-            {where.long} Sales only reach the dashboard through the customer&apos;s retailers.
+            {picked
+              ? `Rows are written to ${channelRetailerName(customer.customer_name, 'offline')} or ${channelRetailerName(customer.customer_name, 'online')}.`
+              : where.long}{' '}
+            Sales only reach the dashboard through the customer&apos;s retailers.
           </InfoTooltip>
           {retailerChanged && (
             <ResetButton
@@ -275,32 +301,36 @@ export default function CustomerStep({
           )}
         </div>
 
-        {choices.length > 0 && (
-          <ul className="mt-1 space-y-1">
-            {choices.map((choice) => (
-              <RetailerLine
-                key={choice.key}
-                item={customer ? statusOf(choice.output) : { name: choice.output, status: null }}
-                choice={choice}
-                customerName={customer?.customer_name}
-                retailers={retailers}
-                onChoose={onSetRetailerChoice}
-                onFix={onFixRetailer}
-                disabled={disabled}
-              />
-            ))}
-          </ul>
-        )}
-
-        {!customer && outputs?.length > 0 && !choices.length && (
-          <p className="mt-1 text-xs text-deep-violet-blue/70">
-            <span className="font-mono">{outputs.join(', ')}</span> · choose the customer to check these
+        {customer && !retailers.length && (
+          <p className="mt-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900">
+            {retailerLabel(customer.customer_name)} has no retailers yet. Choose how rows split below, then add the
+            retailers it needs.
           </p>
         )}
 
-        {customer && !choices.length && statuses.length > 0 && (
-          <ul className="mt-1 space-y-1">
-            {statuses.map((item) => (
+        {customer && (
+          <div className="mt-1.5">
+            {/* Remounted when the decision or customer changes, so it starts
+                from what the mapping does now. */}
+            <ChannelSplit
+              key={`${customer.customer_id}:${JSON.stringify(decision.transforms)}:${decision.value ?? ''}:${decision.kind}`}
+              customer={customer}
+              decision={decision}
+              outputs={outputs}
+              mapping={mapping}
+              state={state}
+              layout={layout}
+              onApply={onApplyRetailer}
+              disabled={disabled}
+            />
+          </div>
+        )}
+
+        {/* The channel picker above already shows what the mapping does, so
+            only a retailer that needs fixing is listed under it. */}
+        {picked && problems.length > 0 && (
+          <ul className="mt-1.5 space-y-1">
+            {problems.map((item) => (
               <RetailerLine
                 key={item.name}
                 item={item}
@@ -313,27 +343,36 @@ export default function CustomerStep({
           </ul>
         )}
 
-        {customer && !retailers.length && (
-          <p className="mt-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900">
-            {retailerLabel(customer.customer_name)} has no retailers yet.
-          </p>
+        {customer && !picked && choices.length > 0 && (
+          <ul className="mt-1.5 space-y-1">
+            {choices.map((choice) => (
+              <RetailerLine
+                key={choice.key}
+                item={statusOf(choice.output)}
+                choice={choice}
+                customerName={customer.customer_name}
+                retailers={retailers}
+                onChoose={onSetRetailerChoice}
+                onFix={onFixRetailer}
+                disabled={disabled}
+              />
+            ))}
+          </ul>
         )}
 
-        {offerConstant && (
-          <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-deep-violet-blue">
-            <span>Or send every row to</span>
-            <SelectDropdown
-              value=""
-              onChange={onSetConstant}
-              size="sm"
-              placeholder="Choose a retailer…"
-              ariaLabel="Send every row to one retailer"
-              disabled={disabled}
-              className="w-auto"
-              triggerClassName="font-mono"
-              options={retailers.map((retailer) => ({ value: retailer.retailer_name, label: retailer.retailer_name }))}
-            />
-          </div>
+        {customer && !picked && !choices.length && statuses.length > 0 && (
+          <ul className="mt-1.5 space-y-1">
+            {statuses.map((item) => (
+              <RetailerLine
+                key={item.name}
+                item={item}
+                customerName={customer.customer_name}
+                retailers={retailers}
+                onFix={onFixRetailer}
+                disabled={disabled}
+              />
+            ))}
+          </ul>
         )}
       </div>
     </div>

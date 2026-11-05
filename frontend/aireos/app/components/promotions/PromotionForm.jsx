@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import DateRangePicker from '@/components/ui/DateRangePicker';
-import CheckboxDropdown from '@/components/promotions/CheckboxDropdown';
+import Dropdown from '@/components/ui/Dropdown';
 import MonthPicker from '@/components/promotions/MonthPicker';
 import { formatDate } from '@/lib/formatDate';
 import { cn } from '@/lib/utils';
@@ -511,7 +511,7 @@ export default function PromotionForm({
                 Retailers
                 <RequiredMark />
               </legend>
-              <CheckboxDropdown
+              <Dropdown
                 summary={retailerSummary}
                 placeholder={
                   isLoadingRetailers ? 'Loading retailers…' : 'Select retailers'
@@ -543,7 +543,7 @@ export default function PromotionForm({
                     </span>
                   </label>
                 ))}
-              </CheckboxDropdown>
+              </Dropdown>
               {retailersError && <p className={errorClass}>{retailersError}</p>}
               {!isLoadingRetailers && !retailersError && retailerOptions.length === 0 && (
                 <p className={hintClass}>No retailers yet.</p>
@@ -556,7 +556,7 @@ export default function PromotionForm({
                 Stores
                 <RequiredMark />
               </legend>
-              <CheckboxDropdown
+              <Dropdown
                 summary={storeSummary}
                 placeholder={
                   isLoadingStores
@@ -617,7 +617,7 @@ export default function PromotionForm({
                     </>
                   );
                 }}
-              </CheckboxDropdown>
+              </Dropdown>
               {storesError && <p className={errorClass}>{storesError}</p>}
               {!isLoadingStores && !storesError && (
                 // Always rendered so the line does not vanish (and shift the
@@ -647,7 +647,7 @@ export default function PromotionForm({
                 Promo type
                 <RequiredMark />
               </legend>
-              <CheckboxDropdown
+              <Dropdown
                 summary={promoTypeLabel(form.promoType)}
                 placeholder="Select promo type"
                 invalid={Boolean(errors.promoType)}
@@ -670,7 +670,7 @@ export default function PromotionForm({
                     </label>
                   ))
                 }
-              </CheckboxDropdown>
+              </Dropdown>
               <FieldError message={errors.promoType} />
             </fieldset>
 
@@ -773,7 +773,7 @@ export default function PromotionForm({
               SKU range
               <RequiredMark />
             </legend>
-            <CheckboxDropdown
+            <Dropdown
               summary={skuSummary}
               placeholder={
                 isLoadingSkuRanges ? 'Loading SKU ranges…' : 'Select SKU ranges'
@@ -801,7 +801,7 @@ export default function PromotionForm({
                   <span className="min-w-0 truncate">{range}</span>
                 </label>
               ))}
-            </CheckboxDropdown>
+            </Dropdown>
             {skuRangesError && <p className={errorClass}>{skuRangesError}</p>}
             {!isLoadingSkuRanges && !skuRangesError && skuRangeOptions.length === 0 && (
               <p className={hintClass}>No SKU ranges yet.</p>
