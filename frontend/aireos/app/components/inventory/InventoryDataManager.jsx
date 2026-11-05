@@ -2,9 +2,8 @@
 
 import { useState } from 'react';
 
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
+import SegmentedControl from '@/components/ui/SegmentedControl';
 
 import InventoryBulkCreateForm from './InventoryBulkCreateForm';
 import InventoryBulkEditForm from './InventoryBulkEditForm';
@@ -17,9 +16,6 @@ const MODES = [
   { value: 'edit', label: 'Edit' },
   { value: 'shipped', label: 'Temporary sell-in' },
 ];
-
-const MODE_BUTTON_CLASS = 'h-6 rounded-md px-2.5 text-[11px] text-deep-violet-blue/70 hover:text-deep-violet-blue';
-const MODE_BUTTON_ACTIVE_CLASS = 'bg-deep-violet-blue text-white hover:bg-deep-violet-blue hover:text-white';
 
 /**
  * Create or edit inventory data, record temporary sell-in for this month
@@ -67,20 +63,7 @@ export default function InventoryDataManager({ customers, skus, editRow, onSaved
         <CardTitle className="font-serif text-base font-normal text-deep-violet-blue group-data-[size=sm]/card:text-base">
           {MODES.find((item) => item.value === mode)?.label} data
         </CardTitle>
-        <div className="inline-flex h-7 items-center rounded-lg bg-lavander p-0.5">
-          {MODES.map((item) => (
-            <Button
-              key={item.value}
-              type="button"
-              variant="ghost"
-              size="xs"
-              onClick={() => switchMode(item.value)}
-              className={cn(MODE_BUTTON_CLASS, mode === item.value && MODE_BUTTON_ACTIVE_CLASS)}
-            >
-              {item.label}
-            </Button>
-          ))}
-        </div>
+        <SegmentedControl value={mode} onChange={switchMode} options={MODES} ariaLabel="Data entry mode" />
       </CardHeader>
       <CardContent>
         {mode === 'create' && (

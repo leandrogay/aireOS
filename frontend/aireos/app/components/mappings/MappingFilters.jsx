@@ -22,6 +22,7 @@ export default function MappingFilters({ filters, customers, hasFilters, onChang
   return (
     <FilterBar label="Filter nomenclatures" hasFilters={hasFilters} onReset={onReset}>
       <MultiSelectDropdown
+        look="filter"
         label="Customer"
         allLabel="All customers"
         placeholder="No customers yet"
@@ -32,6 +33,7 @@ export default function MappingFilters({ filters, customers, hasFilters, onChang
         searchPlaceholder="Search customers…"
       />
       <MultiSelectDropdown
+        look="filter"
         label="Status"
         allLabel="All statuses"
         options={MAPPING_STATUS_OPTIONS}
@@ -39,6 +41,7 @@ export default function MappingFilters({ filters, customers, hasFilters, onChang
         onChange={(values) => onChange('status', values)}
       />
       <MultiSelectDropdown
+        look="filter"
         label="Issues"
         allLabel="All issues"
         options={MAPPING_ISSUE_OPTIONS}
