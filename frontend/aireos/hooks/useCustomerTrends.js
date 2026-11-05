@@ -34,10 +34,14 @@ export default function useCustomerTrends({
     if (!canFetch) return undefined;
 
     let cancelled = false;
+    // Read the filters back from filterKey: callers build `customers` fresh
+    // each render, so depending on the array itself refetched after every
+    // response, forever.
+    const filters = JSON.parse(filterKey);
 
     async function fetchTrends() {
       try {
-        const data = await getCustomerTrends({ customers, granularity, sku, startDate, endDate });
+        const data = await getCustomerTrends(filters);
         if (cancelled) return;
         setRows(data.customers ?? []);
         setFetchedKey(filterKey);
@@ -54,7 +58,7 @@ export default function useCustomerTrends({
     return () => {
       cancelled = true;
     };
-  }, [dataVersion, filterKey, customers, granularity, sku, startDate, endDate, canFetch]);
+  }, [dataVersion, filterKey, canFetch]);
 
   return { rows, loading, error };
 }
