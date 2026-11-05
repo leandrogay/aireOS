@@ -197,7 +197,7 @@ const TITLES = {
 
 // min-h-6: WCAG 2.5.8 asks for pointer targets of at least 24 x 24 CSS px.
 const MARK_READ_BUTTON_CLASS =
-  'inline-flex min-h-6 shrink-0 items-center rounded-md border border-violet/40 bg-white px-2 text-[11px] font-medium text-deep-violet-blue transition hover:bg-cream';
+  'inline-flex min-h-6 shrink-0 cursor-pointer items-center rounded-md border border-violet/40 bg-white px-2 text-[11px] font-medium text-deep-violet-blue transition hover:bg-cream';
 
 /**
  * One notification's rendered wording, by notification_type, with when it

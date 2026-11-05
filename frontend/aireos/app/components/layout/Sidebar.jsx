@@ -64,13 +64,13 @@ export default function Sidebar() {
         )}
       >
         {!collapsed && (
-          <Link href="/dashboard" aria-label="AIRE home">
+          <Link href="/dashboard" aria-label="AireOS home">
             <Image
-              src="/aire-logo.png"
-              alt="AIRE"
-              width={72}
-              height={30}
-              className="h-auto w-auto"
+              src="/aireos-wordmark.svg"
+              alt="AireOS"
+              width={120}
+              height={36}
+              className="h-auto"
               priority
             />
           </Link>
@@ -79,7 +79,7 @@ export default function Sidebar() {
           type="button"
           onClick={() => setCollapsed((prev) => !prev)}
           aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
-          className="flex size-8 items-center justify-center rounded-md text-deep-violet-blue/70 transition-colors hover:bg-lavander hover:text-deep-violet-blue"
+          className="flex size-8 cursor-pointer items-center justify-center rounded-md text-deep-violet-blue/70 transition-colors hover:bg-lavander hover:text-deep-violet-blue"
         >
           <PanelLeft className="size-4" />
         </button>
@@ -148,7 +148,7 @@ export default function Sidebar() {
             disabled={isSigningOut}
             title={collapsed ? 'Sign out' : undefined}
             className={cn(
-              'flex w-full items-center rounded-lg py-2 text-sm text-deep-violet-blue/75 transition-colors hover:bg-lavander hover:text-deep-violet-blue disabled:cursor-wait disabled:opacity-60',
+              'flex w-full cursor-pointer items-center rounded-lg py-2 text-sm text-deep-violet-blue/75 transition-colors hover:bg-lavander hover:text-deep-violet-blue disabled:cursor-wait disabled:opacity-60',
               collapsed ? 'justify-center px-2' : 'gap-3 px-3',
             )}
           >

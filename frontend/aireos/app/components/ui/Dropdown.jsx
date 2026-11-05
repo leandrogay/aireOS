@@ -69,7 +69,7 @@ export default function Dropdown({
         disabled={disabled}
         title={summary || undefined}
         className={cn(
-          'flex w-full min-w-0 max-w-full items-center justify-between overflow-hidden rounded-md border border-lavander bg-cream px-2.5 py-1.5 text-left text-sm text-deep-violet-blue focus:border-violet focus:outline-none disabled:cursor-not-allowed disabled:opacity-60',
+          'flex w-full min-w-0 max-w-full cursor-pointer items-center justify-between overflow-hidden rounded-md border border-lavander bg-cream px-2.5 py-1.5 text-left text-sm text-deep-violet-blue focus:border-violet focus:outline-none disabled:cursor-not-allowed disabled:opacity-60',
           invalid && 'border-red-400 focus:border-red-500',
         )}
       >

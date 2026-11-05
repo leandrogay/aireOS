@@ -1,5 +1,6 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 import MonthFilter from './MonthFilter';
@@ -101,19 +102,20 @@ export default function InventoryFilters({
       {onAtRiskChange && (
         <div>
           <span className={filterLabelClass}>At risk</span>
-          <button
+          <Button
             type="button"
+            variant="outline"
             aria-pressed={atRiskOnly}
             onClick={() => onAtRiskChange(!atRiskOnly)}
             className={cn(
-              'h-8 w-full rounded-md border px-2 text-center text-xs font-medium shadow-sm transition',
+              'h-8 w-full rounded-md px-2 text-center text-xs font-medium shadow-sm transition',
               atRiskOnly
-                ? 'border-deep-violet-blue bg-deep-violet-blue text-white hover:bg-deep-violet-blue/90'
-                : 'border-deep-violet-blue/40 bg-white text-deep-violet-blue hover:bg-cream',
+                ? 'border-deep-violet-blue bg-deep-violet-blue text-white hover:bg-deep-violet-blue/90 hover:text-white'
+                : 'border-deep-violet-blue/40 bg-white text-deep-violet-blue hover:bg-cream hover:text-deep-violet-blue',
             )}
           >
             At risk only
-          </button>
+          </Button>
         </div>
       )}
     </InventoryFilterCard>

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Bar, CartesianGrid, ComposedChart, Dot, Legend, Line, LabelList, XAxis, YAxis } from 'recharts';
+import { Button } from '@/components/ui/button';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import { Message, MessageContent } from '@/components/ui/message';
 import SeriesDot from '@/components/forecast/SeriesDot';
@@ -13,6 +14,9 @@ import { BAR_ANIMATION } from '@/app/utils/trendChart';
 // The same motion as the dashboard and forecast charts: bars grow up with
 // BAR_ANIMATION, a line chart draws in with the forecast chart's sweep, and a
 // trend line over bars starts once they're growing, as the sell-in outlook's does.
+const DOWNLOAD_BUTTON_CLASS =
+  'h-auto w-fit rounded-md border-violet bg-white px-2 py-1 text-[11px] font-medium text-deep-violet-blue hover:bg-lavander hover:text-deep-violet-blue';
+
 const LINE_SWEEP = { begin: 0, duration: 1200 };
 const LINE_OVER_BARS_SWEEP = { begin: 500, duration: 900 };
 const NO_ANIMATION = { isAnimationActive: false };
@@ -366,15 +370,17 @@ function ExportButtons({ message }) {
   return (
     <div className="mt-2 flex gap-1">
       {['pdf', 'pptx'].map((format) => (
-        <button
+        <Button
           key={format}
           type="button"
+          variant="outline"
+          size="xs"
           onClick={() => handleExport(format)}
           disabled={pending !== null}
-          className="flex items-center gap-1 rounded-md border border-violet bg-white px-2 py-1 text-[11px] font-medium text-deep-violet-blue hover:bg-lavander disabled:opacity-50"
+          className={DOWNLOAD_BUTTON_CLASS}
         >
           ⬇ {pending === format ? 'Generating…' : format === 'pdf' ? 'PDF' : 'PowerPoint'}
-        </button>
+        </Button>
       ))}
     </div>
   );
@@ -451,26 +457,30 @@ export default function AssistantMessage({ message, onFollowUp, animate = false,
           {!isUser && (message.hasChart || message.hasTable) && <ExportButtons message={message} />}
 
           {!isUser && message.hasDownload && (
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="xs"
               onClick={() => triggerDownload(message.downloadBase64, message.downloadMimeType, message.downloadFilename)}
-              className="mt-2 flex items-center gap-1 rounded-md border border-violet bg-white px-2 py-1 text-[11px] font-medium text-deep-violet-blue hover:bg-lavander"
+              className={cn('mt-2', DOWNLOAD_BUTTON_CLASS)}
             >
               ⬇ Download {message.downloadFilename}
-            </button>
+            </Button>
           )}
 
           {!isUser && message.followUpPrompts?.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1">
               {message.followUpPrompts.map((prompt) => (
-                <button
+                <Button
                   key={prompt}
                   type="button"
+                  variant="outline"
+                  size="xs"
                   onClick={() => onFollowUp(prompt)}
-                  className="rounded-full border border-violet bg-white px-2 py-1 text-[11px] text-deep-violet-blue hover:bg-lavander"
+                  className="h-auto max-w-full shrink rounded-full border-violet bg-white px-2 py-1 text-[11px] font-normal whitespace-normal text-deep-violet-blue hover:bg-lavander hover:text-deep-violet-blue"
                 >
                   {prompt}
-                </button>
+                </Button>
               ))}
             </div>
           )}
