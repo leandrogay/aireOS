@@ -12,10 +12,18 @@ from google.cloud import bigquery
 from sqlalchemy import text
 
 from app import config
-from app.services import forecast_pipeline_events, forecast_refresh_events, notification_service, sql
+from app.services import (
+    forecast_notifications,
+    forecast_pipeline_events,
+    forecast_refresh_events,
+    notification_service,
+    sql,
+)
 from app.services.bigquery import get_bigquery_client
 
 logger = logging.getLogger("uvicorn.error")
+# "Started by" in the bell: a save in the app (sales, promotion or SKU).
+EVENT_SOURCE = "event"
 LOCK_ID = 528047149
 SALES_COLUMNS = (
     "retailer_id", "store_code", "sku", "period_start", "period_end",
@@ -155,24 +163,14 @@ def _fail_pending(requests: list[dict], reason: str) -> dict:
     if not failed:
         return {"status": "idle"}
 
-    run_name = f"refresh-{min(failed)}"
-    payload = {
-        "run_name": run_name,
-        "source": "event",
-        "stage": "refresh",
-        "reason": reason,
-        "errors": [],
-        "period_start": None,
-        "period_end": None,
-        "customers": [],
-        "skus": [],
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }
-    try:
-        if not notification_service.has_forecast_run(run_name):
-            notification_service.insert_best_effort(notification_service.FORECAST_FAILURE, payload)
-    except Exception as exc:
-        logger.warning("Could not notify forecast refresh failure %s: %s", run_name, exc)
+    payload = forecast_notifications.failure_payload(
+        run_name=f"refresh-{min(failed)}",
+        source=EVENT_SOURCE,
+        updated_at=datetime.now(timezone.utc),
+        stage="refresh",
+        reason=reason,
+    )
+    forecast_notifications.notify_once(notification_service.FORECAST_FAILURE, payload)
     return {"status": "failed", "reason": reason}
 
 
@@ -289,6 +287,33 @@ def _run_outcome(job) -> tuple[bool, bool]:
     return bool(rows and rows[0]["checked"]), bool(rows and rows[0]["retrained"])
 
 
+def _summary_best_effort() -> dict:
+    # A retrain that succeeded is still worth announcing when the summary
+    # query behind its detail lines fails.
+    try:
+        return forecast_pipeline_events.latest_forecast_summary()
+    except Exception as exc:
+        logger.warning("Could not summarise the latest forecast run: %s", exc)
+        return forecast_notifications.EMPTY_SUMMARY
+
+
+def _notify_outcome(job_id: str, job, failed: bool) -> None:
+    updated_at = job.ended or datetime.now(timezone.utc)
+    if failed:
+        reason, errors = forecast_notifications.job_failure(job)
+        payload = forecast_notifications.failure_payload(
+            run_name=job_id, source=EVENT_SOURCE, updated_at=updated_at,
+            stage="pipeline", reason=reason, errors=errors,
+        )
+        forecast_notifications.notify_once(notification_service.FORECAST_FAILURE, payload)
+        return
+    payload = forecast_notifications.success_payload(
+        run_name=job_id, source=EVENT_SOURCE, updated_at=updated_at,
+        summary=_summary_best_effort(),
+    )
+    forecast_notifications.notify_once(notification_service.FORECAST_SUCCESS, payload)
+
+
 def _finish(job_id: str, job) -> dict:
     failed = bool(job.error_result)
     checked, retrained = _run_outcome(job) if not failed else (False, False)
@@ -303,19 +328,10 @@ def _finish(job_id: str, job) -> dict:
             """), {"job_id": job_id})
         return _retry_later()
     if failed or retrained:
-        if not notification_service.has_forecast_run(job_id):
-            payload = {
-                **({"period_start": None, "period_end": None, "customers": [], "skus": []}
-                   if failed else forecast_pipeline_events.latest_forecast_summary()),
-                "updated_at": (job.ended or datetime.now(timezone.utc)).isoformat(),
-                "errors": [str(job.error_result)] if failed else [],
-                "source": "event",
-                "run_name": job_id,
-            }
-            notification_service.insert(
-                notification_service.FORECAST_FAILURE if failed else notification_service.FORECAST_SUCCESS,
-                payload,
-            )
+        # Best effort and deduped on the job id: the batch status below must be
+        # recorded even when the bell can't be written, and a Cloud Tasks retry
+        # of this same job must not notify twice.
+        _notify_outcome(job_id, job, failed)
     with sql.connect_with_connector().begin() as conn:
         conn.execute(text("""
             UPDATE forecast_refresh_requests

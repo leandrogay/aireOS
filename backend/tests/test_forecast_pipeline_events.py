@@ -37,6 +37,8 @@ def test_a_failed_run_raises_a_failure_with_its_error(inserted):
     kind, payload = inserted[0]
     assert kind == "forecast_failure"
     assert payload["errors"] == ["Data checks failed"]
+    assert payload["reason"] == "Data checks failed"
+    assert payload["stage"] == "pipeline"
     assert payload["run_name"] == RUN
     assert payload["source"] == "scheduled"
     assert payload["updated_at"] == "2026-10-23T02:09:00Z"
@@ -55,7 +57,15 @@ def test_a_run_that_retrained_raises_a_success_describing_the_new_forecast(inser
 
     kind, payload = inserted[0]
     assert kind == "forecast_success"
-    assert payload == {**SUMMARY, "updated_at": "2026-10-23T02:09:00Z", "errors": [], "source": "scheduled", "run_name": RUN}
+    assert payload == {
+        **SUMMARY,
+        "updated_at": "2026-10-23T02:09:00Z",
+        "errors": [],
+        "source": "scheduled",
+        "stage": "pipeline",
+        "reason": None,
+        "run_name": RUN,
+    }
 
 
 def test_a_daily_run_with_no_new_month_raises_nothing(inserted, monkeypatch):

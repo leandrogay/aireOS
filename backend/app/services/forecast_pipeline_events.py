@@ -21,7 +21,7 @@ from google.cloud import pubsub_v1
 from google.oauth2 import service_account
 
 from app import config
-from app.services import catalog_service, inventory_service, notification_service
+from app.services import catalog_service, forecast_notifications, inventory_service, notification_service
 from app.services.bigquery import get_bigquery_client
 
 logger = logging.getLogger("uvicorn.error")
@@ -89,29 +89,28 @@ def handle_transfer_run(run: dict) -> int | None:
         return None
 
     finished_at = run.get("endTime") or run.get("updateTime")
+    # notification_service.insert (not best effort) on purpose: a failed write
+    # raises, the message is nacked, and Pub/Sub redelivers it.
     if state == "FAILED":
         message = (run.get("errorStatus") or {}).get("message") or "The scheduled forecast run failed."
-        payload = {
-            "period_start": None,
-            "period_end": None,
-            "customers": [],
-            "skus": [],
-            "updated_at": finished_at,
-            "errors": [message],
-            "source": SOURCE,
-            "run_name": run_name,
-        }
+        payload = forecast_notifications.failure_payload(
+            run_name=run_name,
+            source=SOURCE,
+            updated_at=finished_at,
+            stage="pipeline",
+            reason=message,
+            errors=[message],
+        )
         return notification_service.insert(notification_service.FORECAST_FAILURE, payload)
 
     if not _retrained_during(run.get("startTime") or run.get("runTime"), finished_at):
         return None
-    payload = {
-        **latest_forecast_summary(),
-        "updated_at": finished_at,
-        "errors": [],
-        "source": SOURCE,
-        "run_name": run_name,
-    }
+    payload = forecast_notifications.success_payload(
+        run_name=run_name,
+        source=SOURCE,
+        updated_at=finished_at,
+        summary=latest_forecast_summary(),
+    )
     return notification_service.insert(notification_service.FORECAST_SUCCESS, payload)
 
 
