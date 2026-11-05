@@ -47,13 +47,17 @@ export default function DashboardFilters({
   const storeLoading = Boolean(customer) && storeResult.scope !== storeScope;
 
   useEffect(() => {
-    if (customers.length === 0) return undefined;
+    if (skuScope === '') return undefined;
 
     let cancelled = false;
+    // Read the names back from skuScope: the page builds `customers` fresh
+    // each render, so depending on the array itself refetched after every
+    // response, forever.
+    const scopeCustomers = skuScope.split('\0');
 
     async function fetchOptions() {
       try {
-        const lists = await Promise.all(customers.map(async (name) => {
+        const lists = await Promise.all(scopeCustomers.map(async (name) => {
           const params = new URLSearchParams({ customer: name });
           const res = await fetch(
             `${process.env.NEXT_PUBLIC_API_URL}/api/sales/sku-options?${params.toString()}`,
@@ -77,7 +81,7 @@ export default function DashboardFilters({
     return () => {
       cancelled = true;
     };
-  }, [customers, skuScope, dataVersion]);
+  }, [skuScope, dataVersion]);
 
   useEffect(() => {
     if (!customer) return undefined;

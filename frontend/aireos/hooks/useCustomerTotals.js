@@ -33,10 +33,14 @@ export default function useCustomerTotals({
     if (!canFetch) return undefined;
 
     let cancelled = false;
+    // Read the filters back from filterKey: callers build `customers` fresh
+    // each render, so depending on the array itself refetched after every
+    // response, forever.
+    const filters = JSON.parse(filterKey);
 
     async function fetchTotals() {
       try {
-        const data = await getCustomerTotals({ customers, sku, startDate, endDate });
+        const data = await getCustomerTotals(filters);
         if (cancelled) return;
         setRows(data.customers ?? []);
         setFetchedKey(filterKey);
@@ -53,7 +57,7 @@ export default function useCustomerTotals({
     return () => {
       cancelled = true;
     };
-  }, [dataVersion, filterKey, customers, sku, startDate, endDate, canFetch]);
+  }, [dataVersion, filterKey, canFetch]);
 
   return { rows, loading, error };
 }

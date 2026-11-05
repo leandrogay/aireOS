@@ -3,6 +3,7 @@
 import { useState } from "react";
 import PageLayout from "@/components/layout/PageLayout";
 import DashboardStatus from "@/components/dashboard/DashboardStatus";
+import ChannelSwitch from "@/components/dashboard/ChannelSwitch";
 import SkuRanking from "@/components/dashboard/SkuRanking";
 import RevenueTrendCard from "@/components/dashboard/RevenueTrendCard";
 import RevenueSummaryCards from "@/components/dashboard/RevenueSummaryCards";
@@ -361,7 +362,18 @@ export default function DashboardPage() {
   ].filter(Boolean);
 
   return (
-    <PageLayout title="Sales Dashboard">
+    <PageLayout
+      title="Sales Dashboard"
+      headerExtra={
+        (pageStatus === 'failed' || pageStatus === 'empty') ? null : (
+          <ChannelSwitch
+            mode={mode}
+            onChange={handleModeChange}
+            onlineEnabled={!freshnessLoaded || onlineAvailable}
+          />
+        )
+      }
+    >
       {(pageStatus === 'failed' || pageStatus === 'empty') ? (
         <DashboardStatus kind={pageStatus} error={customerOptionsError} />
       ) : (
@@ -377,14 +389,12 @@ export default function DashboardPage() {
               weeklyGap={weeklyGap}
               weekAvailable={weekAvailable}
               mode={mode}
-              onModeChange={handleModeChange}
               granularity={chartGranularity}
               onGranularityChange={setGranularityChoice}
               comparisonRows={comparingCustomers ? null : comparisonRows}
               periodNames={periodNames}
               comparisonLoading={baselineSummary.loading}
               customerBars={customers.length === 0 ? [] : (comparingCustomers ? customerTrends.rows : null)}
-              onlineEnabled={!freshnessLoaded || onlineAvailable}
               estimate={customers.length === 0 ? null : chartEstimate}
               metric={metric}
               onMetricChange={setMetric}
