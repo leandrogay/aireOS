@@ -85,6 +85,58 @@ def test_expired_cdc_wait_fails_batch_and_notifies(monkeypatch):
     assert notifications[0][1]["run_name"] == "refresh-10"
 
 
+def test_old_request_does_not_expire_batch_with_recent_save(monkeypatch):
+    now = datetime.now(timezone.utc)
+    pending = [
+        {"id": 10, "created_at": now - timedelta(hours=3)},
+        {"id": 11, "created_at": now - timedelta(minutes=10)},
+    ]
+    monkeypatch.setattr(worker.sql, "connect_with_connector_autocommit", _ReadEngine)
+    monkeypatch.setattr(worker, "_running", lambda _: None)
+    monkeypatch.setattr(worker, "_pending", lambda _: pending)
+    monkeypatch.setattr(worker, "_inputs_landed", lambda *_: False)
+    monkeypatch.setattr(worker, "_retry_later", lambda: {"status": "waiting"})
+    monkeypatch.setattr(worker, "_fail_pending", lambda *_: (_ for _ in ()).throw(AssertionError("failed recent save")))
+    monkeypatch.setattr(worker.config, "FORECAST_REFRESH_MAX_WAIT", "2h")
+
+    assert worker.check_refresh() == {"status": "waiting"}
+
+
+def test_old_request_does_not_fail_new_save_during_quiet_period(monkeypatch):
+    now = datetime.now(timezone.utc)
+    pending = [
+        {"id": 10, "created_at": now - timedelta(hours=3)},
+        {"id": 11, "created_at": now - timedelta(minutes=1)},
+    ]
+    monkeypatch.setattr(worker.sql, "connect_with_connector_autocommit", _ReadEngine)
+    monkeypatch.setattr(worker, "_running", lambda _: None)
+    monkeypatch.setattr(worker, "_pending", lambda _: pending)
+    monkeypatch.setattr(worker, "_inputs_landed", lambda *_: (_ for _ in ()).throw(AssertionError("checked CDC during quiet period")))
+    monkeypatch.setattr(worker, "_retry_later", lambda: {"status": "waiting"})
+    monkeypatch.setattr(worker, "_fail_pending", lambda *_: (_ for _ in ()).throw(AssertionError("failed recent save")))
+    monkeypatch.setattr(worker.config, "FORECAST_REFRESH_MAX_WAIT", "2h")
+
+    assert worker.check_refresh() == {"status": "waiting"}
+
+
+def test_landed_data_starts_even_after_wait_limit(monkeypatch):
+    pending = [{
+        "id": 10, "created_at": datetime.now(timezone.utc) - timedelta(hours=3),
+    }]
+    claimed = []
+    monkeypatch.setattr(worker.sql, "connect_with_connector_autocommit", _ReadEngine)
+    monkeypatch.setattr(worker, "_running", lambda _: None)
+    monkeypatch.setattr(worker, "_pending", lambda _: pending)
+    monkeypatch.setattr(worker, "_inputs_landed", lambda *_: True)
+    monkeypatch.setattr(worker, "_max_wait", lambda: (_ for _ in ()).throw(AssertionError("checked limit after landing")))
+    monkeypatch.setattr(worker, "_claim", lambda ids, job_id: claimed.append(ids) or True)
+    monkeypatch.setattr(worker, "_ensure_job", lambda _: type("Job", (), {"done": lambda self: False})())
+    monkeypatch.setattr(worker, "_retry_later", lambda: {"status": "waiting"})
+
+    assert worker.check_refresh() == {"status": "waiting"}
+    assert claimed == [[10]]
+
+
 def test_sku_cdc_check_waits_for_archived_state(monkeypatch):
     conn = FakeConnection(lambda sql, params: [{"sku": "A1", "is_active": False}])
     monkeypatch.setattr(worker, "_query_bigquery", lambda *_: [{"sku": "A1", "is_active": True}])

@@ -361,12 +361,12 @@ def check_refresh() -> dict:
         pending = _pending(conn)
         if not pending:
             return {"status": "idle"}
-        oldest = min(row["created_at"] for row in pending)
-        expired = oldest <= datetime.now(timezone.utc) - _max_wait()
         newest = max(row["created_at"] for row in pending)
-        if newest > datetime.now(timezone.utc) - timedelta(seconds=forecast_refresh_events.QUIET_SECONDS):
-            return _fail_pending(pending, "Forecast inputs did not settle before the refresh time limit") if expired else _retry_later()
+        now = datetime.now(timezone.utc)
+        if newest > now - timedelta(seconds=forecast_refresh_events.QUIET_SECONDS):
+            return _retry_later()
         if not _inputs_landed(conn, pending):
+            expired = newest <= now - _max_wait()
             return _fail_pending(pending, "Sales or catalog changes did not reach BigQuery before the refresh time limit") if expired else _retry_later()
 
     ids = [row["id"] for row in pending]
