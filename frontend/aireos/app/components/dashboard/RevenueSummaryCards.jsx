@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import EstMark from "@/components/dashboard/EstMark"
 import FormatMixBar from "@/components/dashboard/FormatMixBar"
 import { Skeleton } from "@/components/ui/skeleton"
 import { changePct, formatChangePct } from "@/app/utils/periodComparison"
@@ -13,8 +14,12 @@ const TILE_GRID_CLASS =
 
 function sumFormats(storeFormats = []) {
   return storeFormats.reduce(
-    (acc, format) => ({ revenue: acc.revenue + format.revenue, units: acc.units + format.units }),
-    { revenue: 0, units: 0 }
+    (acc, format) => ({
+      revenue: acc.revenue + format.revenue,
+      units: acc.units + format.units,
+      estimated_revenue: acc.estimated_revenue + (format.estimated_revenue ?? 0),
+    }),
+    { revenue: 0, units: 0, estimated_revenue: 0 }
   )
 }
 
@@ -77,6 +82,8 @@ function PeriodFigures({ totals, periodName, hatched = false, comparing, color =
 // these tall. Lines wrap rather than clip if a tile gets very narrow.
 // `available` / `baselineAvailable` say whether each period has sales rows
 // for this tile; without both there is no fair change, so it reads "N/A".
+// EST sits top right when the tile's revenue (either period) includes
+// estimated revenue; tiles with none show nothing there.
 function SummaryCard({
   title,
   totals,
@@ -99,7 +106,9 @@ function SummaryCard({
       // Highlight ring in the format's own mix-bar colour, so the tile and
       // its segment visibly belong together.
       style={highlighted && color ? { boxShadow: `0 0 0 2px ${color}` } : undefined}
-      className={`min-w-[8rem] rounded-lg bg-white px-2.5 py-1.5 text-deep-violet-blue transition-shadow ${
+      // A column, so in a row of tiles stretched to the tallest the figures
+      // still sit near each tile's bottom edge.
+      className={`flex min-w-[8rem] flex-col justify-between gap-1 rounded-lg bg-white px-2.5 pt-1.5 pb-1 text-deep-violet-blue transition-shadow ${
         emphasis ? "border-2 border-deep-violet-blue" : "border border-lavander"
       } ${className}`}
     >
@@ -116,11 +125,17 @@ function SummaryCard({
             </span>
           )}
         </p>
-        <CardChange
-          current={totals.revenue}
-          baseline={baselineTotals?.revenue ?? null}
-          available={available && baselineAvailable}
-        />
+        <div className="flex items-baseline gap-1.5">
+          <CardChange
+            current={totals.revenue}
+            baseline={baselineTotals?.revenue ?? null}
+            available={available && baselineAvailable}
+          />
+          <EstMark
+            estimated={(totals.estimated_revenue ?? 0) + (baselineTotals?.estimated_revenue ?? 0)}
+            total={totals.revenue + (baselineTotals?.revenue ?? 0)}
+          />
+        </div>
       </div>
       <PeriodFigures
         totals={totals}
@@ -212,7 +227,12 @@ export default function RevenueSummaryCards({
     .filter((row) => (mode === "online" ? row.has_online : row.has_offline))
     .map((row) => {
       const channel = row[mode] ?? { revenue: 0, units: 0 }
-      return { format: row.label, revenue: channel.revenue ?? 0, units: channel.units ?? 0 }
+      return {
+        format: row.label,
+        revenue: channel.revenue ?? 0,
+        units: channel.units ?? 0,
+        estimated_revenue: channel.estimated_revenue ?? 0,
+      }
     })
     .sort((a, b) => (b.revenue ?? 0) - (a.revenue ?? 0))
   const tileFormats = comparingCustomers ? customerTiles : shownFormats

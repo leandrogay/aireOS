@@ -58,12 +58,16 @@ aireOS/
 │   │       ├── customer_service.py customers CRUD + list_customers (customers with nested retailers, in_use flags,
 │   │       │                      unlinked retailers); a record with data can't be renamed/deleted (looked up by name)
 │   │       ├── promotion_service.py promotions + promotion_stores + promotion_skus, raw SQL, one txn per write
+│   │       ├── promotion_pricing.py read-only estimated revenue for a blank-revenue sell-out row: SKU price on each sale
+│   │       │                      day, less the promotion mechanic and voucher (POST /api/promotions/revenue-estimate)
 │   │       ├── ingestion_service.py upload-run audit + append-only sell-out versions; atomically rolls back bad uploads
 │   │       ├── sellout_service.py Cloud SQL `sellout`: ingestion writes, plus the Sales Dashboard reads (SKU ranking,
 │   │       │                      dashboard summary, period comparison, options, freshness) that used to go through
 │   │       │                      BigQuery -- reads Cloud SQL directly now (no replication lag), and both this and
 │   │       │                      sellout_units.py prefer monthly-granularity rows over weekly ones for the same
-│   │       │                      retailer+month when both exist (EFFECTIVE_SELLOUT_CTE)
+│   │       │                      retailer+month when both exist (EFFECTIVE_SELLOUT_CTE). A blank revenue takes its
+│   │       │                      promotion_pricing estimate, bound per read as :revenue_estimates (never stored),
+│   │       │                      and units x current SKU price only when it has none
 │   │       ├── bigquery.py        Forecast reads only (get_forecast_output_rows, get_realised_prices, get_forecast_actuals,
 │   │       │                      get_forecast_options, get_sales_loaded_at) + get_bigquery_client; the Sales Dashboard
 │   │       │                      functions that used to live here moved to sellout_service.py
@@ -116,7 +120,7 @@ aireOS/
     │   ├── inventory/page.js      Inventory: overview, by-customer DOH, at-risk list, sell-in plan, enter/edit data (components/inventory)
     │   ├── components/
     │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column), Sidebar (NAV_ITEMS)
-    │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, calendar, popover, DateRangePicker
+    │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, calendar, popover, tooltip, DateRangePicker
     │   │   │                      (typed date inputs, not a calendar); MonthGrid (year + 12-month grid, shared by
     │   │   │                      MonthDropdown and the dashboard month-range picker); Dropdown (popover shell holding any
     │   │   │                      content: checkbox lists, MonthGrid); MonthDropdown (one 'YYYY-MM' month, wrapped by
@@ -134,7 +138,9 @@ aireOS/
     │   │   │                      Compare to: DateRangeControl, CompareControl, MonthRangeCalendar — whole months only),
     │   │   │                      RevenueTrendCard (always by format) → TrendChart (FormatTrendChart),
     │   │   │                      ComparisonMixChart; PeriodTexture (hatched "past period" fills), TooltipChange,
-    │   │   │                      PeriodComparisonDetail, RevenueSummaryCards + FormatMixBar, SkuRanking
+    │   │   │                      PeriodComparisonDetail, RevenueSummaryCards + FormatMixBar, SkuRanking;
+    │   │   │                      CustomerTrendChart (2-3 customers: grouped bars per period, lines past 6 periods);
+    │   │   │                      DashboardStatus (whole-page card: sales data couldn't load / none uploaded yet)
     │   │   ├── promotions/        PromotionForm, PromotionList → PromotionRow (on ui/DataTable), columns.js, MonthPicker (on ui/MonthDropdown)
     │   │   ├── customers/         CustomersView (state), CustomerTable → CustomerRow (expandable, retailers inside),
     │   │   │                      RetailerTable (nested TableGrid), columns.js (shared grid), NameFormDialog,
@@ -162,9 +168,11 @@ aireOS/
     │       ├── dateRange.js       currentYearDateRange() -- shared default-date-range helper
     │       ├── periodComparison.js Compare-to baselines (comparisonSetup), week pairing for the comparison chart
     │       ├── dateRangePresets.js Period presets in whole months (Latest month … Past 12 months, YTD, Last year), anchored to the latest loaded month
-    │       ├── trendChart.js      Trend chart labels, x-axis setup, bar sizing, format stack order
+    │       ├── trendChart.js      Trend chart labels, x-axis setup (long week runs labelled by month), bar sizing, format stack order, Revenue/Volume formatting
     │       ├── weeklyGaps.js      "No weekly data for …" message: monthly-only months merged into ranges, capped
     │       ├── priceMix.js        Avg-price change split into SKU price vs product mix
+    │       ├── estimatedRevenue.js EST sign: when a revenue figure includes estimated revenue, and its hover text
+    │       ├── customerTrend.js   Cross-customer chart: MAX_COMPARED_CUSTOMERS (3), bars up to MAX_BAR_PERIODS (6) then lines, series/rows
     │       ├── storeFormats.js    FORMAT_COLORS + formatColor() per store format
     │       ├── dohSettingsForm.js validate/build/formFrom helpers for the DOH threshold form, GLOBAL_DEFAULT_DOH
     │       ├── customerForm.js    normaliseName (mirrors backend slug), validateName, edit/delete block reasons
@@ -174,6 +182,7 @@ aireOS/
     ├── hooks/                     Data-fetching hooks (cancel-flag pattern; dashboard calls services/*Api.js)
     │   ├── useDataFreshness.js    polls /api/sales/last-updated → { channels, dataVersion, refreshing }
     │   ├── useCustomerOptions.js  /api/sales/customer-options
+    │   ├── useCustomerTrends.js   /api/sales/customer-trends via salesApi.getCustomerTrends (2-3 customers ticked: each per week/month)
     │   ├── useDashboardSummary.js /api/sales/dashboard-summary (silent refresh on dataVersion)
     │   ├── useDefaultDateRange.js /api/sales/default-date-range
     │   ├── useSkuSales.js         /api/sales/skus via salesApi.getSkuSales
@@ -358,6 +367,8 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | `PromotionBase` field names | `buildPromotionPayload` / `formFromPromotion` |
 | `_PROMOTION_COLUMNS` (nested `stores`, `skus`) | `PromotionList.jsx`, `promotionOverview.js` |
 | `sales.py` query-param names (`start_date`, `end_date`, `granularity`, `customer`, `store`, `sku` …) | `URLSearchParams` keys in `hooks/*.js` and `services/salesApi.js` |
+| `sellout_service.get_customer_trends` (`/api/sales/customer-trends`: `customers[]` with `offline`/`online` period lists, `has_*`), `MAX_COMPARED_CUSTOMERS` | `salesApi.getCustomerTrends`, `useCustomerTrends.js`, `utils/customerTrend.js` (`MAX_COMPARED_CUSTOMERS`), `CustomerTrendChart.jsx`, `CustomerSelector.jsx` |
+| `sellout_service` estimated part of revenue: `estimated_revenue` (dashboard summary rows, customer totals), `estimated_value` (SKU ranking), from the `revenue_estimated` row flag | `utils/estimatedRevenue.js`, `EstMark.jsx` (one under the chart in `RevenueTrendCard`, top right of each `RevenueSummaryCards` tile, beside `SkuRanking` values; `TrendChart` tooltip) |
 | `mapping_view` packet/rule keys (`targetField`, `sourceColumn`, `editable`, `status`, `field`, `meltGroup`, `options`, `description`, `requiredMissing`, `checks`) | `utils/mappingReview.js`, `components/mappings/*` |
 | `mapping_checks` check shape (`id`, `level`, `passed`, `message`, `fields`, `evidence`) | `utils/mappingChecks.js`, `MappingChecks.jsx` |
 | packet `skuCodes`, `masterSkus`, `contractFormat`, `instructions`; processing preview/rejection fields | `utils/skuCodeTable.js`, `SkuCodeTable.jsx`, `MappingReviewPanel.jsx`, `UploadFileRow.jsx` |
