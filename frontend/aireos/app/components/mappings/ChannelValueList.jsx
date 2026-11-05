@@ -1,30 +1,20 @@
 'use client';
 
 import { CHANNELS } from '@/app/utils/mappingCustomer';
-import { cn } from '@/lib/utils';
+import SegmentedControl from '@/components/ui/SegmentedControl';
 
-/** Online | Offline for one value of the file. */
+/** Offline | Online for one value of the file. */
 function ChannelToggle({ value, channel, onChange, disabled }) {
+  const options = CHANNELS.map((option) => ({ value: option.value, label: option.label, disabled }));
   return (
-    <div role="group" aria-label={`Channel for ${value}`} className="flex shrink-0 rounded-md border border-lavander p-0.5">
-      {CHANNELS.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          aria-pressed={channel === option.value}
-          disabled={disabled}
-          onClick={() => onChange(option.value)}
-          className={cn(
-            'rounded px-2 py-0.5 text-[11px] font-medium',
-            channel === option.value
-              ? 'bg-deep-violet-blue text-white'
-              : 'text-deep-violet-blue/60 hover:bg-cream hover:text-deep-violet-blue',
-          )}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
+    <SegmentedControl
+      value={channel}
+      onChange={onChange}
+      options={options}
+      look="outline"
+      ariaLabel={`Channel for ${value}`}
+      className="shrink-0"
+    />
   );
 }
 

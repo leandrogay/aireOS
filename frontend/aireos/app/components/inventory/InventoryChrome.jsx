@@ -8,8 +8,6 @@ import { formatMonth } from '@/app/utils/inventoryForm';
 // Same compact field styling as ForecastFilters, so the inventory filter
 // card lines up with the sell-out forecast page.
 export const filterLabelClass = 'mb-0.5 block text-[11px] text-deep-violet-blue/70';
-export const filterControlClass =
-  'h-8 w-full cursor-pointer rounded-md border border-violet bg-white px-2 text-xs text-deep-violet-blue disabled:cursor-not-allowed disabled:opacity-50';
 
 // Data-entry fields. Same white/violet treatment as the filter bar, with the
 // roomier size the forms need. Kept off formStyles.js because DOH Settings

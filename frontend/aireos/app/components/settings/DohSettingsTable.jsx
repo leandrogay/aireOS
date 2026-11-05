@@ -1,8 +1,8 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
 import TableSkeleton from '@/components/ui/TableSkeleton';
+import ToggleField from '@/components/ui/ToggleField';
 import { formatDohDays } from '@/app/utils/dohSettingsForm';
 import { formatDateTime } from '@/lib/formatDate';
 import { retailerLabel } from '@/app/utils/retailerLabel';
@@ -11,10 +11,6 @@ import { cn } from '@/lib/utils';
 const thClass = 'bg-lavander px-2 py-1.5 text-left text-xs font-semibold text-deep-violet-blue';
 const tdClass = 'px-2 py-1.5 text-sm text-deep-violet-blue';
 const numClass = 'text-right tabular-nums';
-
-// Brand colours instead of the shadcn default (near-black `primary`), the
-// same override InventoryTabs uses for its active tab.
-const switchClass = 'data-checked:bg-deep-violet-blue data-unchecked:bg-lavander';
 
 // Same look as the promotions list's Edit button (PromotionList.jsx
 // actionButtonClass): filled deep violet, and violet "Editing" on the row
@@ -94,18 +90,12 @@ export default function DohSettingsTable({
                 <td className={cn(tdClass, numClass)}>{formatDohDays(row.max_doh)}</td>
                 <td className={cn(tdClass, 'whitespace-nowrap')}>{formatDateTime(row.thresholds_updated_at)}</td>
                 <td className={tdClass}>
-                  <div className="inline-flex items-center gap-2">
-                    <Switch
-                      checked={alertOn}
-                      disabled={alertPending}
-                      onCheckedChange={(checked) => onToggleAlert(row, checked)}
-                      aria-label={`DOH alerts for ${retailerLabel(row.customer_name)}`}
-                      className={switchClass}
-                    />
-                    <span className="text-xs" aria-hidden="true">
-                      {alertOn ? 'On' : 'Off'}
-                    </span>
-                  </div>
+                  <ToggleField
+                    ariaLabel={`DOH alerts for ${retailerLabel(row.customer_name)}`}
+                    checked={alertOn}
+                    disabled={alertPending}
+                    onChange={(checked) => onToggleAlert(row, checked)}
+                  />
                 </td>
                 <td className={tdClass}>
                   <div className="flex justify-end">

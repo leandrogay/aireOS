@@ -120,12 +120,18 @@ aireOS/
     │   ├── doh/page.js            DOH Settings: per-customer thresholds, alert toggle, edit, reset to global default (components/settings)
     │   ├── inventory/page.js      Inventory: overview, by-customer DOH, at-risk list, sell-in plan, enter/edit data (components/inventory)
     │   ├── components/
-    │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column), Sidebar (NAV_ITEMS)
-    │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, calendar, popover, tooltip, DateRangePicker
+    │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column), Sidebar (NAV_ITEMS; collapses
+    │   │   │                      to an icon rail, hidden on narrow screens), RailFlyout (a rail section's sub-pages)
+    │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, calendar, popover, DateRangePicker
     │   │   │                      (typed date inputs, not a calendar); MonthGrid (year + 12-month grid, shared by
-    │   │   │                      MonthDropdown and the dashboard month-range picker); Dropdown (popover shell holding any
-    │   │   │                      content: checkbox lists, MonthGrid); MonthDropdown (one 'YYYY-MM' month, wrapped by
-    │   │   │                      promotions MonthPicker and inventory MonthFilter); HeaderCheckboxFilter (table-header pill
+    │   │   │                      MonthDropdown and the dashboard month-range picker); dropdown kit: Dropdown (the one shell:
+    │   │   │                      closed button, popover panel, optional `searchable`, `look` field/filter/compact) →
+    │   │   │                      SelectDropdown (pick one, ✓ rows), MultiSelectDropdown (pick many, tick-box rows + "All",
+    │   │   │                      `noneMeansAll`), MonthDropdown (one 'YYYY-MM' month, wrapped by promotions MonthPicker and
+    │   │   │                      inventory MonthFilter); build new pickers on these, not on a raw Popover; toggle kit: SegmentedControl
+    │   │   │                      (pick one of a few, sliding highlight, `look` tint/outline), ToggleButton (one thing on/off,
+    │   │   │                      `look` compact/chip), ToggleField (switch; `label` / `showState` / hints opt in, `ariaLabel` when unlabelled; used by DOH alerts and nomenclature file settings); app/testing shows both kits and lists the
+    │   │   │                      pages not migrated yet; HeaderCheckboxFilter (table-header pill
     │   │   │                      filter, forecast + inventory tables); formStyles.js (cream form input/label/button classes
     │   │   │                      shared by forms and dialogs); Toast (+ hooks/useToast);
     │   │   │                      list-table kit (Customers, Promotions, SKUs, Nomenclatures): DataTable (card: count, search slot,
@@ -196,6 +202,7 @@ aireOS/
     │   ├── useCustomers.js        /api/catalog/customers (+ applyCustomer / removeCustomer for the row a write returns)
     │   ├── useExpandedRows.js     { isExpanded, toggle, expand } for ui/ExpandableRow (several open by default)
     │   ├── useConfirmAction.js    { target, isPending, request, cancel, confirm } for ui/ConfirmDialog (e.g. Delete)
+    │   ├── useMediaQuery.js       boolean for a CSS media query (Sidebar: rail vs hidden when collapsed)
     │   └── useToast.js            { toast, notify, dismissToast } for components/ui/Toast
     ├── lib/                       cn() (clsx + tailwind-merge), formatDateRange, formatDate/formatDateTime (shared date display,
     │                              Singapore time), singaporeTime (singaporeDateTimeParts, singaporeToday)
