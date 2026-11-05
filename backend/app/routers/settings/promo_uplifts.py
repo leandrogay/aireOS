@@ -1,19 +1,22 @@
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
+
+from app.auth import current_user_email
 
 from app.schemas.settings.promo_uplifts import (
-    PromoAnchorReset,
+    PromoAnchorAdopt,
     PromoAnchorUpdate,
     PromoUpliftOverrideCreate,
-    PromoUpliftReset,
     PromoUpliftUpdate,
 )
+from app.services.settings import promo_moments as promo_moment_service
 from app.services.settings import promo_uplifts as promo_uplift_service
 from app.services.settings.common import CustomerNotFoundError
 
 
 # Promotion Uplift Settings (uplift per mechanic, and each customer's
 # ordinary-month discount) are under /api/settings/promo-uplifts (the
-# /api/settings prefix comes from __init__.py)
+# /api/settings prefix comes from __init__.py). Every write records the
+# signed-in user's email as updated_by, never a name sent in the body.
 router = APIRouter(
     prefix="/promo-uplifts",
     tags=["settings"],
@@ -74,8 +77,21 @@ def match_mechanic(mechanic: str):
         raise _failed("match the promotion mechanic", e)
 
 
+@router.get("/moments")
+def list_moments():
+    try:
+        return promo_moment_service.list_moments()
+
+    except Exception as e:
+        raise _failed("retrieve promotion moments", e)
+
+
 @router.post("")
-def add_override(body: PromoUpliftOverrideCreate, response: Response):
+def add_override(
+    body: PromoUpliftOverrideCreate,
+    response: Response,
+    updated_by: str = Depends(current_user_email),
+):
     try:
         result = promo_uplift_service.add_override(
             body.mechanic_key,
@@ -85,7 +101,7 @@ def add_override(body: PromoUpliftOverrideCreate, response: Response):
             sku_range=body.sku_range,
             sku=body.sku,
             note=body.note,
-            updated_by=body.updated_by,
+            updated_by=updated_by,
         )
         return _version_status(response, result)
 
@@ -100,13 +116,18 @@ def add_override(body: PromoUpliftOverrideCreate, response: Response):
 
 
 @router.put("/{setting_id}")
-def update_uplift(setting_id: int, body: PromoUpliftUpdate, response: Response):
+def update_uplift(
+    setting_id: int,
+    body: PromoUpliftUpdate,
+    response: Response,
+    updated_by: str = Depends(current_user_email),
+):
     try:
         result = promo_uplift_service.update_uplift(
             setting_id,
             body.uplift_pct,
             note=body.note,
-            updated_by=body.updated_by,
+            updated_by=updated_by,
         )
         return _version_status(response, result)
 
@@ -121,11 +142,15 @@ def update_uplift(setting_id: int, body: PromoUpliftUpdate, response: Response):
 
 
 @router.post("/{setting_id}/reset")
-def reset_uplift(setting_id: int, response: Response, body: PromoUpliftReset | None = None):
+def reset_uplift(
+    setting_id: int,
+    response: Response,
+    updated_by: str = Depends(current_user_email),
+):
     try:
         result = promo_uplift_service.reset_uplift(
             setting_id,
-            body.updated_by if body is not None else None,
+            updated_by,
         )
         return _version_status(response, result)
 
@@ -166,10 +191,17 @@ def list_anchors():
 
 
 @router.put("/anchors/default")
-def set_default_anchor(body: PromoAnchorUpdate, response: Response):
+def set_default_anchor(
+    body: PromoAnchorUpdate,
+    response: Response,
+    updated_by: str = Depends(current_user_email),
+):
     try:
-        result = promo_uplift_service.set_anchor(None, body.anchor_pct, body.updated_by)
+        result = promo_uplift_service.set_anchor(None, body.anchor_pct, body.sku_range, updated_by)
         return _version_status(response, result)
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     except Exception as e:
         raise _failed("save the all-customers ordinary-month discount", e)
@@ -188,38 +220,61 @@ def get_anchor(customer_id: int):
 
 
 @router.put("/anchors/{customer_id}")
-def set_anchor(customer_id: int, body: PromoAnchorUpdate, response: Response):
+def set_anchor(
+    customer_id: int,
+    body: PromoAnchorUpdate,
+    response: Response,
+    updated_by: str = Depends(current_user_email),
+):
     try:
-        result = promo_uplift_service.set_anchor(customer_id, body.anchor_pct, body.updated_by)
+        result = promo_uplift_service.set_anchor(customer_id, body.anchor_pct, body.sku_range, updated_by)
         return _version_status(response, result)
 
     except CustomerNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    except promo_uplift_service.UpliftSettingConflictError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
     except Exception as e:
         raise _failed("save the ordinary-month discount", e)
 
 
-@router.post("/anchors/{customer_id}/reset")
-def reset_anchor(customer_id: int, response: Response, body: PromoAnchorReset | None = None):
+@router.post("/anchors/{customer_id}/adopt")
+def adopt_anchor(
+    customer_id: int,
+    response: Response,
+    body: PromoAnchorAdopt | None = None,
+    updated_by: str = Depends(current_user_email),
+):
     try:
-        result = promo_uplift_service.reset_anchor(
+        result = promo_uplift_service.adopt_anchor(
             customer_id,
-            body.updated_by if body is not None else None,
+            body.sku_range if body is not None else None,
+            updated_by,
         )
         return _version_status(response, result)
 
     except CustomerNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    except promo_uplift_service.UpliftSettingConflictError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
     except Exception as e:
-        raise _failed("reset the ordinary-month discount", e)
+        raise _failed("adopt the recommended anchor", e)
 
 
 @router.get("/anchors/{customer_id}/history")
-def anchor_history(customer_id: int):
+def anchor_history(customer_id: int, sku_range: str | None = None):
     try:
-        return promo_uplift_service.anchor_history(customer_id)
+        return promo_uplift_service.anchor_history(customer_id, sku_range)
 
     except CustomerNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))

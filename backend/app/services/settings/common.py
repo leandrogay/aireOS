@@ -53,6 +53,21 @@ def iso(value: datetime | None) -> str | None:
     return value.isoformat() if value is not None else None
 
 
+def newest(rows: list[dict], target) -> dict[tuple, dict]:
+    """
+    The newest row per target, for append-only settings tables whose current
+    value is the latest version (updated_at, then id): rows need both keys.
+    """
+
+    latest: dict[tuple, dict] = {}
+    for row in rows:
+        key = target(row)
+        current = latest.get(key)
+        if current is None or (row["updated_at"], row["id"]) > (current["updated_at"], current["id"]):
+            latest[key] = row
+    return latest
+
+
 def lock_customer(conn: Connection, customer_id: int) -> None:
     """
     404 check for every settings write, and a lock on the customer's row

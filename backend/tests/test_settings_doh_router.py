@@ -39,7 +39,7 @@ def _not_found(*args, **kwargs):
 # ---- saving thresholds ----------------------------------------------------------
 
 
-def test_a_new_threshold_version_is_201(monkeypatch):
+def test_a_new_threshold_version_is_201(monkeypatch, signed_in):
     seen = {}
 
     def fake(customer_id, min_doh, target_doh, max_doh, updated_by):
@@ -50,7 +50,7 @@ def test_a_new_threshold_version_is_201(monkeypatch):
 
     response = client.put(
         "/api/settings/doh/1/thresholds",
-        json={"min_doh": 25, "target_doh": 30.5, "max_doh": "35.00", "updated_by": "ops@aire"},
+        json={"min_doh": 25, "target_doh": 30.5, "max_doh": "35.00"},
     )
 
     assert response.status_code == 201
@@ -58,7 +58,7 @@ def test_a_new_threshold_version_is_201(monkeypatch):
     assert seen == {
         "customer_id": 1,
         "values": (Decimal("25"), Decimal("30.5"), Decimal("35.00")),
-        "updated_by": "ops@aire",
+        "updated_by": signed_in,
     }
     assert all(isinstance(value, Decimal) for value in seen["values"])
 
@@ -84,7 +84,7 @@ def test_threshold_values_come_back_as_json_numbers(monkeypatch):
     assert (body["min_doh"], body["target_doh"], body["max_doh"]) == (25, 30.5, 35)
 
 
-def test_updated_by_is_optional(monkeypatch):
+def test_a_name_sent_in_the_body_is_ignored_for_the_signed_in_user(monkeypatch, signed_in):
     seen = {}
 
     def fake(customer_id, min_doh, target_doh, max_doh, updated_by):
@@ -93,8 +93,24 @@ def test_updated_by_is_optional(monkeypatch):
 
     monkeypatch.setattr(doh_service, "save_thresholds", fake)
 
-    assert client.put("/api/settings/doh/1/thresholds", json=THRESHOLDS).status_code == 201
-    assert seen["updated_by"] is None
+    response = client.put("/api/settings/doh/1/thresholds", json={**THRESHOLDS, "updated_by": "someone-else"})
+
+    assert response.status_code == 201
+    assert seen["updated_by"] == signed_in
+
+
+def test_with_login_switched_off_changes_are_recorded_as_the_local_user(monkeypatch):
+    seen = {}
+
+    def fake(customer_id, min_doh, target_doh, max_doh, updated_by):
+        seen["updated_by"] = updated_by
+        return {"changed": True, "settings": SETTINGS}
+
+    monkeypatch.setattr(doh_service, "save_thresholds", fake)
+
+    client.put("/api/settings/doh/1/thresholds", json=THRESHOLDS)
+
+    assert seen["updated_by"] == "local@shop-aire.com"
 
 
 @pytest.mark.parametrize(
@@ -107,7 +123,6 @@ def test_updated_by_is_optional(monkeypatch):
         {"max_doh": 10000},
         {"target_doh": "abc"},
         {"target_doh": None},
-        {"updated_by": "   "},
     ],
     ids=[
         "min_above_target",
@@ -117,7 +132,6 @@ def test_updated_by_is_optional(monkeypatch):
         "too_large_for_numeric_6_2",
         "not_a_number",
         "missing_value",
-        "blank_updated_by",
     ],
 )
 def test_invalid_thresholds_are_422_before_reaching_the_service(monkeypatch, change):
@@ -143,7 +157,7 @@ def test_min_equal_to_target_equal_to_max_is_allowed(monkeypatch):
 # ---- revert ----------------------------------------------------------------------
 
 
-def test_revert_is_201_and_needs_no_body(monkeypatch):
+def test_revert_is_201_and_needs_no_body(monkeypatch, signed_in):
     seen = {}
 
     def fake(customer_id, setting_id, updated_by):
@@ -155,7 +169,7 @@ def test_revert_is_201_and_needs_no_body(monkeypatch):
     response = client.post("/api/settings/doh/1/history/3/revert")
 
     assert response.status_code == 201
-    assert seen == {"customer_id": 1, "setting_id": 3, "updated_by": None}
+    assert seen == {"customer_id": 1, "setting_id": 3, "updated_by": signed_in}
 
 
 def test_revert_to_the_current_values_is_200(monkeypatch):
@@ -165,7 +179,7 @@ def test_revert_to_the_current_values_is_200(monkeypatch):
         lambda *args: {"changed": False, "settings": SETTINGS},
     )
 
-    response = client.post("/api/settings/doh/1/history/4/revert", json={"updated_by": "ops@aire"})
+    response = client.post("/api/settings/doh/1/history/4/revert")
 
     assert response.status_code == 200
 
@@ -186,7 +200,7 @@ def test_revert_to_a_version_of_another_customer_is_404(monkeypatch):
 # ---- reset to global default -------------------------------------------------------
 
 
-def test_reset_is_201_when_a_version_is_saved_and_needs_no_body(monkeypatch):
+def test_reset_is_201_when_a_version_is_saved_and_needs_no_body(monkeypatch, signed_in):
     seen = {}
 
     def fake(customer_id, updated_by):
@@ -198,7 +212,7 @@ def test_reset_is_201_when_a_version_is_saved_and_needs_no_body(monkeypatch):
     response = client.post("/api/settings/doh/1/reset")
 
     assert response.status_code == 201
-    assert seen == {"customer_id": 1, "updated_by": None}
+    assert seen == {"customer_id": 1, "updated_by": signed_in}
 
 
 def test_reset_of_a_customer_already_on_the_default_is_200(monkeypatch):
@@ -208,7 +222,7 @@ def test_reset_of_a_customer_already_on_the_default_is_200(monkeypatch):
         lambda *args: {"changed": False, "settings": SETTINGS},
     )
 
-    response = client.post("/api/settings/doh/1/reset", json={"updated_by": "ops@aire"})
+    response = client.post("/api/settings/doh/1/reset")
 
     assert response.status_code == 200
     assert response.json()["changed"] is False

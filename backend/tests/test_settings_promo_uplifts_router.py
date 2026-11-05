@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.services.settings import common
+from app.services.settings import promo_moments as moment_service
 from app.services.settings import promo_uplifts as service
 
 client = TestClient(app)
@@ -95,7 +96,7 @@ def test_a_new_uplift_version_is_201_and_unchanged_is_200(monkeypatch):
     assert client.put(f"{BASE}/8", json={"uplift_pct": 6}).status_code == 200
 
 
-def test_updated_by_is_passed_through(monkeypatch):
+def test_the_signed_in_user_is_recorded_not_a_name_in_the_body(monkeypatch, signed_in):
     seen = {}
 
     def fake(setting_id, uplift_pct, note=None, updated_by=None):
@@ -104,9 +105,9 @@ def test_updated_by_is_passed_through(monkeypatch):
 
     monkeypatch.setattr(service, "update_uplift", fake)
 
-    client.put(f"{BASE}/8", json={"uplift_pct": 6, "note": "  seen in July  ", "updated_by": "aireos"})
+    client.put(f"{BASE}/8", json={"uplift_pct": 6, "note": "  seen in July  ", "updated_by": "someone-else"})
 
-    assert seen == {"setting_id": 8, "note": "seen in July", "updated_by": "aireos"}
+    assert seen == {"setting_id": 8, "note": "seen in July", "updated_by": signed_in}
 
 
 @pytest.mark.parametrize("uplift_pct", [-91, 301, 4.123])
@@ -164,23 +165,54 @@ def test_a_duplicate_override_is_409(monkeypatch):
 # ---- anchors -----------------------------------------------------------------------
 
 
-def test_setting_an_anchor_is_201_and_passes_the_customer(monkeypatch):
+def test_setting_an_anchor_is_201_and_passes_the_customer(monkeypatch, signed_in):
     seen = {}
 
-    def fake(customer_id, anchor_pct, updated_by):
-        seen.update(customer_id=customer_id, anchor_pct=float(anchor_pct))
+    def fake(customer_id, anchor_pct, sku_range, updated_by):
+        seen.update(customer_id=customer_id, anchor_pct=float(anchor_pct), sku_range=sku_range, updated_by=updated_by)
         return {"changed": True, "anchor": ANCHOR}
 
     monkeypatch.setattr(service, "set_anchor", fake)
 
     assert client.put(f"{BASE}/anchors/1", json={"anchor_pct": 25}).status_code == 201
-    assert seen == {"customer_id": 1, "anchor_pct": 25.0}
+    assert seen == {"customer_id": 1, "anchor_pct": 25.0, "sku_range": None, "updated_by": signed_in}
+
+
+def test_a_range_anchor_passes_its_range(monkeypatch):
+    seen = {}
+
+    def fake(customer_id, anchor_pct, sku_range, updated_by):
+        seen.update(customer_id=customer_id, sku_range=sku_range)
+        return {"changed": True, "anchor": ANCHOR}
+
+    monkeypatch.setattr(service, "set_anchor", fake)
+
+    assert client.put(f"{BASE}/anchors/1", json={"anchor_pct": 25, "sku_range": "Pants"}).status_code == 201
+    assert seen == {"customer_id": 1, "sku_range": "Pants"}
+
+
+def test_an_unknown_range_anchor_is_400(monkeypatch):
+    bad_range = _raises(ValueError("SKU range Socks is not in the catalogue."))
+    monkeypatch.setattr(service, "set_anchor", bad_range)
+    monkeypatch.setattr(service, "adopt_anchor", bad_range)
+
+    assert client.put(f"{BASE}/anchors/1", json={"anchor_pct": 25, "sku_range": "Socks"}).status_code == 400
+    assert client.post(f"{BASE}/anchors/1/adopt", json={"sku_range": "Socks"}).status_code == 400
+
+
+def test_typing_an_anchor_the_data_can_recommend_is_409(monkeypatch):
+    blocked = _raises(service.UpliftSettingConflictError("adopt the recommended anchor instead"))
+    monkeypatch.setattr(service, "set_anchor", blocked)
+    monkeypatch.setattr(service, "adopt_anchor", blocked)
+
+    assert client.put(f"{BASE}/anchors/1", json={"anchor_pct": 25}).status_code == 409
+    assert client.post(f"{BASE}/anchors/1/adopt").status_code == 409
 
 
 def test_the_default_anchor_is_saved_with_no_customer(monkeypatch):
     seen = {}
 
-    def fake(customer_id, anchor_pct, updated_by):
+    def fake(customer_id, anchor_pct, sku_range, updated_by):
         seen.update(customer_id=customer_id)
         return {"changed": True, "default_anchor_pct": 30.0}
 
@@ -197,16 +229,61 @@ def test_anchors_outside_0_to_100_are_422(anchor_pct):
 
 def test_anchor_endpoints_for_an_unknown_customer_are_404(monkeypatch):
     not_found = _raises(common.CustomerNotFoundError("Customer 9 does not exist."))
-    for name in ("get_anchor", "set_anchor", "reset_anchor", "anchor_history"):
+    for name in ("get_anchor", "set_anchor", "adopt_anchor", "anchor_history"):
         monkeypatch.setattr(service, name, not_found)
 
     assert client.get(f"{BASE}/anchors/9").status_code == 404
     assert client.put(f"{BASE}/anchors/9", json={"anchor_pct": 25}).status_code == 404
-    assert client.post(f"{BASE}/anchors/9/reset").status_code == 404
+    assert client.post(f"{BASE}/anchors/9/adopt").status_code == 404
     assert client.get(f"{BASE}/anchors/9/history").status_code == 404
 
 
-def test_resetting_an_anchor_already_on_the_suggestion_is_200(monkeypatch):
-    monkeypatch.setattr(service, "reset_anchor", lambda *a, **k: {"changed": False, "anchor": ANCHOR})
+@pytest.mark.parametrize(
+    "service_name, method, path, body",
+    [
+        ("add_override", "post", "", {"mechanic_key": "pct_off_30", "scope": "customer", "customer_id": 1, "uplift_pct": 7}),
+        ("reset_uplift", "post", "/8/reset", None),
+        ("set_anchor", "put", "/anchors/default", {"anchor_pct": 30}),
+        ("adopt_anchor", "post", "/anchors/1/adopt", {"sku_range": "Pants"}),
+    ],
+)
+def test_every_write_records_the_signed_in_user(monkeypatch, signed_in, service_name, method, path, body):
+    seen = {}
 
-    assert client.post(f"{BASE}/anchors/1/reset").status_code == 200
+    def fake(*args, **kwargs):
+        seen["updated_by"] = kwargs.get("updated_by", args[-1])
+        return {"changed": True, "setting": SETTING, "anchor": ANCHOR}
+
+    monkeypatch.setattr(service, service_name, fake)
+
+    client.request(method, f"{BASE}{path}", json=body)
+
+    assert seen == {"updated_by": signed_in}
+
+
+def test_adopting_an_anchor_already_adopted_is_200(monkeypatch):
+    monkeypatch.setattr(service, "adopt_anchor", lambda *a, **k: {"changed": False, "anchor": ANCHOR})
+
+    assert client.post(f"{BASE}/anchors/1/adopt").status_code == 200
+
+
+# ---- moments -----------------------------------------------------------------------
+
+
+def test_list_moments_is_200(monkeypatch):
+    body = {"baseline_method": "common_discount", "recommend_from": 3, "moments": [], "recommendations": []}
+    monkeypatch.setattr(moment_service, "list_moments", lambda: body)
+
+    response = client.get(f"{BASE}/moments")
+
+    assert response.status_code == 200
+    assert response.json() == body
+
+
+def test_list_moments_failure_is_500(monkeypatch):
+    monkeypatch.setattr(moment_service, "list_moments", _raises(RuntimeError("db down")))
+
+    response = client.get(f"{BASE}/moments")
+
+    assert response.status_code == 500
+    assert "Failed to retrieve promotion moments" in response.json()["detail"]

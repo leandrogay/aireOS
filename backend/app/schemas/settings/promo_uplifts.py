@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
-from app.schemas.settings.common import SettingsChangeBase
+from app.schemas.catalog import _Base
 
 
 # ============================================================
@@ -15,16 +15,12 @@ from app.schemas.settings.common import SettingsChangeBase
 # the backstop.
 # ============================================================
 
-class PromoUpliftUpdate(SettingsChangeBase):
+class PromoUpliftUpdate(_Base):
     uplift_pct: Decimal = Field(ge=-90, le=300, max_digits=6, decimal_places=2)
     note: str | None = Field(default=None, max_length=1000)
 
 
-class PromoUpliftReset(SettingsChangeBase):
-    pass
-
-
-class PromoUpliftOverrideCreate(SettingsChangeBase):
+class PromoUpliftOverrideCreate(_Base):
     mechanic_key: str = Field(min_length=1, max_length=50)
     scope: Literal["customer", "range", "sku"]
     customer_id: int
@@ -47,9 +43,11 @@ class PromoUpliftOverrideCreate(SettingsChangeBase):
         return self
 
 
-class PromoAnchorUpdate(SettingsChangeBase):
+# sku_range: one of the customer's SKU ranges; None = the whole customer.
+class PromoAnchorUpdate(_Base):
     anchor_pct: Decimal = Field(ge=0, le=100, max_digits=5, decimal_places=2)
+    sku_range: str | None = Field(default=None, min_length=1, max_length=255)
 
 
-class PromoAnchorReset(SettingsChangeBase):
-    pass
+class PromoAnchorAdopt(_Base):
+    sku_range: str | None = Field(default=None, min_length=1, max_length=255)

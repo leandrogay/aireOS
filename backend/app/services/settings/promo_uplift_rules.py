@@ -1,13 +1,11 @@
 import re
-from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
-from statistics import median
 
 
 # Pure rules behind Promotion Uplift Settings (Promotions Uplift design,
 # Sections 6.2 and 6.5): reading free-text mechanics and vouchers, the
-# placeholder formula, and the per-customer anchor suggestion. No database
-# here; promo_uplifts.py feeds these the rows it reads.
+# placeholder formula. The anchor recommendation is a moment rule
+# (promo_moment_rules.recommend_anchors). No database here.
 
 
 # ============================================================
@@ -21,17 +19,12 @@ VOUCHER_KEY = "voucher"
 ANCHOR_STEP_PCT = Decimal("5")
 UPLIFT_PER_STEP_PCT = Decimal("2")
 
-# Used when nothing else gives an anchor (no manual value, no data, no
-# all-customers row).
+# Used when nothing else gives an anchor (nothing saved for the customer,
+# its range or all customers).
 FALLBACK_ANCHOR_PCT = Decimal("20")
-
-# The suggestion looks at the customer's most recent months of promotions.
-ANCHOR_WINDOW_MONTHS = 24
 
 # Free text typed into promotions.voucher that means "no voucher".
 _NO_VOUCHER_VALUES = {"", "no", "none", "n/a", "na", "-", "0"}
-
-_MONTHLY_TYPE = "monthly"
 
 
 # ============================================================
@@ -101,83 +94,3 @@ def placeholder_uplift(effective_discount_pct: Decimal, anchor_pct: Decimal) -> 
 
     steps = (Decimal(effective_discount_pct) - Decimal(anchor_pct)) / ANCHOR_STEP_PCT
     return (steps * UPLIFT_PER_STEP_PCT).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-
-
-# ============================================================
-# ANCHOR SUGGESTION
-#
-# A customer's ordinary-month discount, from its own promotions. Within a
-# month, a monthly promotion sets the discount and any other promotion
-# (side offer, bundle, others) replaces it for the days it runs; the deepest
-# wins when promotions of the same kind overlap. Days covered only by a
-# promotion with no percentage discount (a "Voucher" mechanic, or a label
-# that cannot be read) are left out, as are days with no promotion.
-# ============================================================
-
-
-def _base_type(promo_type: str | None) -> str:
-    # carton_monthly is a monthly promotion for a different pack.
-    return (promo_type or "").removeprefix("carton_")
-
-
-def _days(start: date, end: date):
-    day = start
-    while day <= end:
-        yield day
-        day += timedelta(days=1)
-
-
-def monthly_discounts(promotions: list[dict], discount_by_key: dict[str, Decimal]) -> dict[date, Decimal]:
-    """
-    One effective discount per month ({first of month: pct}), weighted by
-    days. Each promotion needs period_start, period_end (dates), promo_type
-    and promotion_mechanic; discount_by_key maps a mechanic key to its
-    effective discount.
-    """
-
-    background: dict[date, Decimal] = {}
-    overlay: dict[date, Decimal] = {}
-
-    for promotion in promotions:
-        discount = discount_by_key.get(mechanic_key(promotion.get("promotion_mechanic")))
-        if discount is None:
-            continue
-
-        target = background if _base_type(promotion.get("promo_type")) == _MONTHLY_TYPE else overlay
-        for day in _days(promotion["period_start"], promotion["period_end"]):
-            target[day] = max(target.get(day, discount), discount)
-
-    by_month: dict[date, list[Decimal]] = {}
-    for day in set(background) | set(overlay):
-        value = overlay.get(day, background.get(day))
-        by_month.setdefault(day.replace(day=1), []).append(value)
-
-    return {month: sum(values) / len(values) for month, values in sorted(by_month.items())}
-
-
-def _months_back(month: date, count: int) -> date:
-    index = month.year * 12 + month.month - 1 - count
-    return date(index // 12, index % 12 + 1, 1)
-
-
-def suggest_anchor(monthly: dict[date, Decimal]) -> dict | None:
-    """
-    The median monthly discount over the ANCHOR_WINDOW_MONTHS months up to
-    the latest month with a value, to a whole percent, with the months it
-    used. None when there is no month to go on.
-    """
-
-    if not monthly:
-        return None
-
-    latest = max(monthly)
-    first_allowed = _months_back(latest, ANCHOR_WINDOW_MONTHS - 1)
-    months = sorted(month for month in monthly if month >= first_allowed)
-    value = Decimal(median(monthly[month] for month in months))
-
-    return {
-        "anchor_pct": value.quantize(Decimal("1"), rounding=ROUND_HALF_UP),
-        "months_used": len(months),
-        "first_month": months[0].isoformat(),
-        "last_month": months[-1].isoformat(),
-    }
