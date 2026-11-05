@@ -32,6 +32,7 @@ export default function FileSettings({ instructions, changed, onChange, onReset,
       <div className="mt-2">
         <ToggleField
           label="Add up rows into monthly totals"
+          showState
           checked={instructions.aggregate}
           onChange={(checked) => onChange('aggregate', checked)}
           onHint="Rows for the same store and product are added together, so each month loads as one row. Use it for daily, weekly or per-delivery files."

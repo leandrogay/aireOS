@@ -1,22 +1,22 @@
 'use client';
 
-import { useId, useRef, useState } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { useId } from 'react';
 
-import { filterControlClass } from '@/components/ui/filterControl';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import Dropdown from '@/components/ui/Dropdown';
 import { cn } from '@/lib/utils';
 
 const checkRowClass =
   'flex min-w-0 cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2 py-1 text-sm text-deep-violet-blue hover:bg-cream';
 
 /**
- * What the closed button says: the "all" label when nothing narrows the list
- * (none ticked, or every one ticked), the names when one or two are, and a
- * count past that -- the full list is in the button's tooltip.
+ * What the closed button says: the "all" label when nothing narrows the list,
+ * the names when one or two are picked, and a count past that -- the full
+ * list is in the button's tooltip. With `noneMeansAll` off, nothing picked is
+ * '' so the button shows its placeholder.
  */
-function summaryOf(options, values, allLabel) {
+function summaryOf(options, values, allLabel, noneMeansAll) {
   const picked = options.filter((option) => values.includes(option.value));
+  if (!picked.length && !noneMeansAll) return { text: '', all: false, full: '' };
   if (!picked.length || picked.length === options.length) return { text: allLabel, all: true, full: allLabel };
   const names = picked.map((option) => option.label);
   return {
@@ -27,28 +27,34 @@ function summaryOf(options, values, allLabel) {
 }
 
 /**
- * Pick any number of options from a list, in a closed-by-default dropdown
- * whose menu is a tick-box list headed by an "All" row -- the look of the
- * promotion form's retailer and store pickers (ui/Dropdown with a checkbox
- * list inside), as a component any page can use.
+ * Pick any number of options from a list, on the shared ui/Dropdown shell
+ * (ui/SelectDropdown is the pick-one version). The menu is a tick-box list
+ * headed by an "All" row.
  *
- * The selection is the parent's (`values`, `onChange`). Ticking "All" ticks
- * every option, unticking it clears them; nothing ticked and everything ticked
- * both read as the `allLabel`, which is what a filter means by "all". The
- * panel is a Popover, so a scrolling container never clips it and it flips
- * above the button when there is no room below. `searchable` adds a search box
- * for a long list. The closed button looks like FilterSelect's
- * (filterControl.js), so the two can share a FilterBar.
+ * Two meanings of "nothing ticked", picked with `noneMeansAll`:
+ * - true (filters, the default): nothing ticked is "all". The "All" row is
+ *   ticked then, and ticking every option by hand collapses back to [], so a
+ *   filter that lets everything through is always [].
+ * - false (a required form field): nothing ticked is nothing; the button
+ *   shows `placeholder`, and the "All" row ticks or clears every option.
+ *
+ * `searchable` adds a search box for a long list; it matches an option's
+ * label and its `hint` (a few words shown at the right of the row, e.g. a
+ * store code).
  *
  * @param {{
  *   label?: string,
- *   options: Array<{ value: string, label: string }>,
+ *   ariaLabel?: string,
+ *   options: Array<{ value: string, label: string, hint?: string }>,
  *   values: string[],
  *   onChange: (values: string[]) => void,
  *   allLabel?: string,
+ *   noneMeansAll?: boolean,
  *   placeholder?: string,
+ *   look?: 'field' | 'filter' | 'compact',
  *   searchable?: boolean,
  *   searchPlaceholder?: string,
+ *   listClassName?: string,
  *   disabled?: boolean,
  *   invalid?: boolean,
  *   className?: string,
@@ -56,38 +62,35 @@ function summaryOf(options, values, allLabel) {
  */
 export default function MultiSelectDropdown({
   label,
+  ariaLabel,
   options,
   values,
   onChange,
   allLabel = 'All',
+  noneMeansAll = true,
   placeholder = 'Select…',
+  look = 'field',
   searchable = false,
   searchPlaceholder = 'Search…',
+  listClassName,
   disabled = false,
   invalid = false,
   className,
 }) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const searchRef = useRef(null);
   const labelId = useId();
 
-  const summary = summaryOf(options, values, allLabel);
-  // A filter narrowed to some options stands out, as FilterSelect's does.
-  const active = !summary.all;
+  const summary = summaryOf(options, values, allLabel, noneMeansAll);
   const everything = options.length > 0 && options.every((option) => values.includes(option.value));
-  const shown = query.trim()
-    ? options.filter((option) => option.label.toLowerCase().includes(query.trim().toLowerCase()))
-    : options;
-
-  // Closing clears any search text, so the list opens whole next time.
-  function handleOpenChange(next) {
-    setOpen(next);
-    if (!next) setQuery('');
-  }
+  const allTicked = everything || (noneMeansAll && values.length === 0);
 
   function toggle(value) {
-    onChange(values.includes(value) ? values.filter((item) => item !== value) : [...values, value]);
+    const next = values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
+    onChange(noneMeansAll && next.length === options.length ? [] : next);
+  }
+
+  function toggleAll(checked) {
+    if (noneMeansAll) onChange([]);
+    else onChange(checked ? options.map((option) => option.value) : []);
   }
 
   return (
@@ -97,76 +100,61 @@ export default function MultiSelectDropdown({
           {label}
         </span>
       )}
-      <Popover open={open} onOpenChange={handleOpenChange}>
-        <PopoverTrigger
-          disabled={disabled}
-          aria-labelledby={label ? labelId : undefined}
-          title={summary.full}
-          className={cn(
-            filterControlClass(active),
-            'flex items-center justify-between overflow-hidden text-left disabled:cursor-not-allowed disabled:opacity-60',
-            invalid && 'border-red-400 focus-visible:border-red-500',
-          )}
-        >
-          <span className={cn('min-w-0 flex-1 truncate', !options.length && 'text-deep-violet-blue/50')}>
-            {options.length ? summary.text : placeholder}
-          </span>
-          <ChevronDown
-            aria-hidden="true"
-            className={cn('ml-2 size-4 shrink-0 text-deep-violet-blue/50', open && 'rotate-180')}
-          />
-        </PopoverTrigger>
-        {/* At least as wide as the button, wider when an option needs it so
-            labels are not cut off. The caret goes straight into the search
-            box when there is one. */}
-        <PopoverContent
-          align="start"
-          initialFocus={searchable ? searchRef : undefined}
-          className="w-max min-w-(--anchor-width) max-w-80 gap-0 overflow-hidden rounded-md border border-lavander bg-white p-0 text-deep-violet-blue ring-0"
-        >
-          {searchable && (
-            <div className="border-b border-lavander p-2">
-              <input
-                ref={searchRef}
-                type="search"
-                value={query}
-                placeholder={searchPlaceholder}
-                aria-label={searchPlaceholder}
-                onChange={(event) => setQuery(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') event.preventDefault();
-                }}
-                className="w-full rounded-md border border-lavander bg-cream px-2 py-1 text-sm text-deep-violet-blue placeholder:text-deep-violet-blue/45 focus:border-violet focus:outline-none"
-              />
-            </div>
-          )}
-          <div className="max-h-52 overflow-auto p-2">
-            {!query.trim() && (
-              <label className={cn(checkRowClass, 'font-medium')}>
-                <input
-                  type="checkbox"
-                  checked={everything}
-                  onChange={(event) => onChange(event.target.checked ? options.map((option) => option.value) : [])}
-                  className="size-3.5 accent-deep-violet-blue"
-                />
-                {allLabel}
-              </label>
-            )}
-            {shown.map((option) => (
-              <label key={option.value} className={checkRowClass}>
-                <input
-                  type="checkbox"
-                  checked={values.includes(option.value)}
-                  onChange={() => toggle(option.value)}
-                  className="size-3.5 accent-deep-violet-blue"
-                />
-                <span className="min-w-0 truncate">{option.label}</span>
-              </label>
-            ))}
-            {!shown.length && <p className="px-2 py-1 text-sm text-deep-violet-blue/60">No matches</p>}
-          </div>
-        </PopoverContent>
-      </Popover>
+      <Dropdown
+        summary={options.length ? summary.text : ''}
+        title={summary.full || undefined}
+        placeholder={placeholder}
+        look={look}
+        // A filter narrowed to some options stands out, as FilterSelect's does.
+        active={Boolean(summary.text) && !summary.all}
+        disabled={disabled}
+        invalid={invalid}
+        ariaLabel={label ? undefined : ariaLabel}
+        ariaLabelledby={label ? labelId : undefined}
+        searchable={searchable}
+        searchPlaceholder={searchPlaceholder}
+        listClassName={listClassName}
+      >
+        {(query) => {
+          const needle = query.trim().toLowerCase();
+          const shown = needle
+            ? options.filter((option) => `${option.label} ${option.hint || ''}`.toLowerCase().includes(needle))
+            : options;
+
+          return (
+            <>
+              {!needle && (
+                <label className={cn(checkRowClass, 'font-medium')}>
+                  <input
+                    type="checkbox"
+                    checked={allTicked}
+                    onChange={(event) => toggleAll(event.target.checked)}
+                    className="size-3.5 accent-deep-violet-blue"
+                  />
+                  {allLabel}
+                </label>
+              )}
+              {shown.map((option) => (
+                <label key={option.value} className={checkRowClass}>
+                  <input
+                    type="checkbox"
+                    checked={values.includes(option.value)}
+                    onChange={() => toggle(option.value)}
+                    className="size-3.5 accent-deep-violet-blue"
+                  />
+                  <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                  {option.hint && (
+                    <span className="max-w-[45%] shrink-0 truncate text-[11px] text-deep-violet-blue/50">
+                      {option.hint}
+                    </span>
+                  )}
+                </label>
+              ))}
+              {!shown.length && <p className="px-2 py-1 text-sm text-deep-violet-blue/60">No matches</p>}
+            </>
+          );
+        }}
+      </Dropdown>
     </div>
   );
 }

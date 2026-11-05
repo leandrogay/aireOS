@@ -55,3 +55,9 @@ export const NAV_ITEMS = [
     ],
   },
 ];
+
+// Whether a nav link is the current page. A detail route (/mappings/abc123)
+// still belongs to its tab.
+export function matchesPath(pathname, href) {
+  return pathname === href || !!pathname?.startsWith(`${href}/`);
+}
