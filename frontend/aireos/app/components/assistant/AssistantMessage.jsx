@@ -4,7 +4,9 @@ import { useEffect, useState } from 'react';
 import { Bar, CartesianGrid, ComposedChart, Dot, Legend, Line, LabelList, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import { Message, MessageContent } from '@/components/ui/message';
+import SeriesDot from '@/components/forecast/SeriesDot';
 import { cn } from '@/lib/utils';
+import { FORECAST_SERIES, formatAxisValue, formatTooltipValue, niceYDomain } from '@/app/utils/forecastView';
 import { dotRevealDelay, lineSweepTimings } from '@/app/utils/lineAnimation';
 import { BAR_ANIMATION } from '@/app/utils/trendChart';
 
@@ -70,6 +72,25 @@ function seriesKey(index) {
   return index === 0 ? 'value' : `value${index}`;
 }
 
+// Up to this many labels, every one is shown (customers, a few months); past
+// it Recharts drops some, as long runs of months have no room for them all.
+const MAX_LABELS_ALWAYS_SHOWN = 6;
+
+// An axis label split at its spaces, so "Sheng Shiong" takes two short lines
+// and fits the narrow panel beside its neighbours.
+function WrappedAxisTick({ x, y, payload, fontSize }) {
+  return (
+    <text x={x} y={y} textAnchor="middle" fontSize={fontSize} fill="currentColor">
+      {String(payload.value).split(' ').map((word, i) => (
+        // The first line's dy clears the axis's tick mark, which runs through a label placed at y.
+        <tspan key={i} x={x} dy={i === 0 ? fontSize : fontSize + 1}>
+          {word}
+        </tspan>
+      ))}
+    </text>
+  );
+}
+
 function AssistantChart({
   type, categories, series, color, showValueLabels, valueLabelFormat, showGridlines, trendValues, title,
   showLegend, yAxisLabel, opacity, cornerRadius, fontSize, showDataPoints, animate, expanded,
@@ -85,18 +106,27 @@ function AssistantChart({
   if (!categories?.length || !series?.length) return null;
 
   const animating = animate && !drawnIn;
-  const resolvedColor = color && color !== 'default' ? color : 'var(--aire-deep-blue)';
+  const customColor = color && color !== 'default' ? color : null;
   const keys = series.map((_, i) => seriesKey(i));
+  // A forecast answer's series name their Forecast page line (assistant.py
+  // _forecast_series), which sets their colour, dash and marker.
+  const forecastLines = series.map((item) => FORECAST_SERIES.find((line) => line.key === item.key));
+  const isForecast = forecastLines.every(Boolean);
+  const unit = series[0].unit;
   const chartConfig = Object.fromEntries(
-    series.map((item, i) => [
-      keys[i],
-      { label: item.label, color: i === 0 ? resolvedColor : SERIES_COLORS[(i - 1) % SERIES_COLORS.length] },
-    ]),
+    series.map((item, i) => {
+      const paletteColor = i === 0 ? 'var(--aire-deep-blue)' : SERIES_COLORS[(i - 1) % SERIES_COLORS.length];
+      const defaultColor = forecastLines[i]?.color ?? paletteColor;
+      return [keys[i], { label: item.label, color: i === 0 && customColor ? customColor : defaultColor }];
+    }),
   );
   const compared = series.length > 1;
   const hasTrend = !compared && trendValues?.length === categories.length;
   const labelFormatter = _formatValueLabel(valueLabelFormat);
   const tickSize = FONT_SIZE_PX[fontSize] ?? FONT_SIZE_PX.medium;
+  // Full screen has room for one line; so does a label with no space to split at.
+  const wrapLabels =
+    !expanded && categories.length > 2 && categories.length <= MAX_LABELS_ALWAYS_SHOWN && categories.some((c) => String(c).length > 7);
   const data = categories.map((category, i) => ({
     category,
     ...Object.fromEntries(series.map((item, s) => [keys[s], item.values[i]])),
@@ -105,6 +135,15 @@ function AssistantChart({
   const timings = lineSweepTimings(data, [...keys, 'trend'], type === 'line' ? LINE_SWEEP : LINE_OVER_BARS_SWEEP);
   const lineMotion = (key) => (animating ? timings[key] : NO_ANIMATION);
   const lineDot = (key) => (showDataPoints && animating ? timedDot(timings[key]) : (showDataPoints ?? false));
+  const forecastDot = (key, line) =>
+    function ForecastDot({ cx, cy, points }) {
+      const delay = animating ? dotRevealDelay(timings[key], points, cx) : 0;
+      return <SeriesDot cx={cx} cy={cy} color={chartConfig[key].color} shape={line.shape} delay={delay} />;
+    };
+  // The Forecast page's scale; bars must keep starting from zero if the line chart is restyled.
+  const forecastDomain = isForecast && type === 'line'
+    ? niceYDomain(series.flatMap((item) => item.values).filter((value) => typeof value === 'number'))
+    : null;
   const valueLabels = (key) =>
     showValueLabels && <LabelList dataKey={key} position="top" style={{ fontSize: tickSize }} formatter={labelFormatter} />;
 
@@ -118,29 +157,45 @@ function AssistantChart({
         config={chartConfig}
         className={cn(
           'w-full overflow-hidden transition-[height] duration-300 ease-out motion-reduce:transition-none',
-          expanded ? 'h-[280px]' : 'h-[140px]',
+          expanded ? 'h-[280px]' : isForecast ? 'h-[200px]' : 'h-[140px]',
         )}
       >
-        <ComposedChart data={data} margin={{ top: 4, bottom: 4, left: yAxisLabel ? 8 : 0 }}>
-          {showGridlines !== false && <CartesianGrid vertical={false} />}
-          <XAxis dataKey="category" tick={{ fontSize: tickSize }} />
+        <ComposedChart data={data} margin={{ top: 4, bottom: 4, left: yAxisLabel ? 8 : 0, ...(isForecast ? { right: 14 } : {}) }}>
+          {showGridlines !== false && !isForecast && <CartesianGrid vertical={false} />}
+          <XAxis
+            dataKey="category"
+            interval={categories.length <= MAX_LABELS_ALWAYS_SHOWN ? 0 : undefined}
+            tick={wrapLabels ? <WrappedAxisTick fontSize={tickSize} /> : { fontSize: tickSize }}
+            height={wrapLabels ? tickSize * 2 + 22 : undefined}
+          />
           <YAxis
             tick={{ fontSize: tickSize }}
-            width={40}
+            width={isForecast && unit === 'revenue' ? 52 : 40}
+            domain={forecastDomain ?? undefined}
+            allowDataOverflow={Boolean(forecastDomain)}
+            tickFormatter={isForecast ? (value) => formatAxisValue(value, unit) : undefined}
             label={yAxisLabel ? { value: yAxisLabel, angle: -90, position: 'insideLeft', style: { fontSize: tickSize } } : undefined}
           />
-          <ChartTooltip content={<ChartTooltipContent />} />
-          {(showLegend || compared) && <Legend wrapperStyle={{ fontSize: tickSize }} />}
-          {keys.map((key) =>
+          <ChartTooltip
+            content={
+              <ChartTooltipContent valueFormatter={isForecast ? (value) => formatTooltipValue(value, unit) : undefined} />
+            }
+          />
+          {/* itemSorter: series order (Actual, Initial, Current), not alphabetical. */}
+          {(showLegend || compared || isForecast) && <Legend itemSorter={null} wrapperStyle={{ fontSize: tickSize }} />}
+          {keys.map((key, index) =>
             type === 'line' ? (
               <Line
                 key={key}
                 dataKey={key}
                 name={chartConfig[key].label}
+                type={forecastLines[index] ? 'monotone' : undefined}
                 stroke={`var(--color-${key})`}
-                strokeWidth={2}
+                strokeWidth={forecastLines[index] ? 2.4 : 2}
                 strokeOpacity={opacity ?? 1}
-                dot={lineDot(key)}
+                strokeDasharray={forecastLines[index]?.dash}
+                connectNulls={forecastLines[index]?.connectNulls ?? Boolean(forecastLines[index])}
+                dot={forecastLines[index] ? forecastDot(key, forecastLines[index]) : lineDot(key)}
                 {...lineMotion(key)}
               >
                 {valueLabels(key)}
@@ -153,6 +208,8 @@ function AssistantChart({
                 fill={`var(--color-${key})`}
                 fillOpacity={opacity ?? 1}
                 radius={cornerRadius ?? 0}
+                // A one-month forecast has the whole width to itself; keep its bars bar-shaped.
+                maxBarSize={isForecast ? 64 : undefined}
                 {...(animating ? BAR_ANIMATION : NO_ANIMATION)}
               >
                 {valueLabels(key)}
