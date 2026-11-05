@@ -7,6 +7,11 @@ import ForecastChart from '@/components/forecast/ForecastChart';
 import ForecastFilters from '@/components/forecast/ForecastFilters';
 import { EMPTY_FORECAST_FRESHNESS, getForecastOptions, getForecastView } from '@/app/services/forecastApi';
 import { retailerLabel } from '@/app/utils/retailerLabel';
+import {
+  forecastUpdatingBadge,
+  initialStatusNotes,
+  yearsInRange,
+} from '@/app/utils/forecastLineText';
 import { currentYearDateRange, readForecastDateSession, writeForecastDateSession } from '@/app/utils/dateRange';
 import {
   ALL_PACK_TYPE_VALUES,
@@ -14,10 +19,13 @@ import {
   ALL_SERIES_VISIBLE,
   buildMonthlyPoints,
   forecastConfidence,
+  formatSgtTimestamp,
   sumHorizonForecast,
   toggleSelectedValue,
   toggleSeriesVisibility,
 } from '@/app/utils/forecastView';
+import useForecastInitialStatus from '@/hooks/useForecastInitialStatus';
+import useForecastRefreshStatus from '@/hooks/useForecastRefreshStatus';
 import useForecastYearTotals from '@/hooks/useForecastYearTotals';
 
 export default function ForecastPage() {
@@ -130,8 +138,8 @@ export default function ForecastPage() {
   // When the pipeline produced the Current line for this customer
   // (MAX(current_generated_at) over the fetched rows, see backend
   // forecast_service.forecast_stamps_from_rows).
-  // previous_generated_at is archived with the Previous line; it still
-  // arrives in `freshness` for when that line comes back.
+  // A retrain replaces the Current line, so this is when the forecast last
+  // updated (shown as "Forecast last updated").
   const lastRun = freshness.current_generated_at;
   const salesLabel = customerName ? `${retailerLabel(customerName)} sales` : 'All customers sales';
   const confidence = singleSeries ? forecastConfidence(rows) : null;
@@ -146,6 +154,19 @@ export default function ForecastPage() {
     bounds: dateBounds,
     rows,
     actuals,
+  });
+
+  // Both are best-effort extras: a failed read just leaves them out.
+  const { data: initialMeta } = useForecastInitialStatus();
+  const { data: refreshStatus } = useForecastRefreshStatus();
+  const updatingBadge = forecastUpdatingBadge(refreshStatus);
+  const initialNotes = initialStatusNotes({
+    rangeYears: yearsInRange(startDate, endDate),
+    meta: initialMeta,
+    yearsWithInitial: unitPoints
+      .filter((point) => point.initial != null)
+      .map((point) => Number(point.month_year.slice(0, 4))),
+    formatStamp: formatSgtTimestamp,
   });
 
   const scopeTags = [
@@ -217,6 +238,8 @@ export default function ForecastPage() {
           salesLabel={salesLabel}
           salesLoadedAt={freshness.latest_sales_loaded_at}
           confidence={confidence}
+          updatingBadge={updatingBadge}
+          initialNotes={initialNotes}
           yearTotals={yearTotals}
           yearTotalsLoading={yearTotalsLoading}
           horizonVolume={horizonVolume}

@@ -65,3 +65,24 @@ export async function getForecastView({
     freshness: data.freshness ?? EMPTY_FORECAST_FRESHNESS,
   };
 }
+
+/**
+ * GET /api/forecast/initial-status
+ * One entry per Initial Yearly Forecast year in aire_forecasting_initial_meta:
+ * { forecast_year, lock_at, refreshed_at, locked }. Best effort on the backend
+ * (forecast_service.get_initial_status): a failed read returns no years.
+ */
+export async function getForecastInitialStatus() {
+  const data = await request('/api/forecast/initial-status');
+  return data.years ?? [];
+}
+
+/**
+ * GET /api/forecast/refresh-status
+ * { updating, since }: whether an event forecast refresh is waiting or
+ * running (backend forecast_refresh_worker.refresh_status_best_effort).
+ * Always false while event refresh is switched off.
+ */
+export async function getForecastRefreshStatus() {
+  return request('/api/forecast/refresh-status');
+}
