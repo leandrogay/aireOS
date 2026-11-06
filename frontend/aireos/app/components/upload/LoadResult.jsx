@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { AlertTriangle, ArrowRight, CheckCircle2, XCircle } from 'lucide-react';
 
-import { primaryButtonClass } from '@/components/ui/formStyles';
+import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 function plural(count, one, many) {
@@ -117,15 +117,9 @@ export default function LoadResult({ outcome }) {
           is the dashboard, once rows were written; closing is the dialog's X. */}
       {outcome.saved.length > 0 && (
         <div className="flex items-center justify-end gap-2 rounded-b-lg border-t border-lavander bg-cream/40 px-4 py-3">
-          <Link
-            href="/dashboard"
-            className={cn(
-              primaryButtonClass,
-              'inline-flex items-center gap-1 rounded-md border text-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50',
-            )}
-          >
+          <Link href="/dashboard" className={buttonVariants()}>
             View Sales Dashboard
-            <ArrowRight aria-hidden="true" className="size-4" />
+            <ArrowRight aria-hidden="true" />
           </Link>
         </div>
       )}
