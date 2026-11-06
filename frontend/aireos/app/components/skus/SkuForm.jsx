@@ -222,6 +222,8 @@ export default function SkuForm({ open, sku, options = {}, onSave, onClose }) {
   const [submitError, setSubmitError] = useState('');
   const [saving, setSaving] = useState(false);
   const errorCount = Object.values(errors).filter(Boolean).length;
+  const priceChanged = !isEdit || (form.price !== '' &&
+    (sku.price == null || Number(form.price) !== Number(sku.price)));
 
   const change = (key, value) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -230,14 +232,14 @@ export default function SkuForm({ open, sku, options = {}, onSave, onClose }) {
 
   const submit = async (event) => {
     event.preventDefault();
-    const nextErrors = validateSkuForm(form);
+    const nextErrors = validateSkuForm(form, priceChanged);
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length) return;
 
     setSaving(true);
     setSubmitError('');
     try {
-      await onSave(buildSkuPayload(form, !isEdit));
+      await onSave(buildSkuPayload(form, !isEdit, priceChanged));
     } catch (error) {
       setSubmitError(error.message || 'Unable to save SKU.');
     } finally {
@@ -388,7 +390,49 @@ export default function SkuForm({ open, sku, options = {}, onSave, onClose }) {
                     className={cn(inputClass, errors.price && invalidInputClass)}
                     placeholder="0.00"
                   />
+                  {isEdit && (
+                    <span className={cn(hintClass, 'block')}>
+                      Change the price to set a new price with its own effective dates.
+                    </span>
+                  )}
                   <FieldError message={errors.price} />
+                </label>
+                <label>
+                  <span className={labelClass}>
+                    Effective from
+                    {priceChanged && <RequiredMark />}
+                  </span>
+                  <input
+                    type="date"
+                    required={priceChanged}
+                    disabled={!priceChanged}
+                    value={form.price_effective_from}
+                    onChange={(event) => change('price_effective_from', event.target.value)}
+                    aria-invalid={Boolean(errors.price_effective_from)}
+                    className={cn(inputClass, errors.price_effective_from && invalidInputClass)}
+                  />
+                  <span className={cn(hintClass, 'block')}>
+                    {priceChanged
+                      ? 'The new price starts on this date.'
+                      : 'To correct a saved price or its dates, use History > Price periods.'}
+                  </span>
+                  <FieldError message={errors.price_effective_from} />
+                </label>
+                <label>
+                  <span className={labelClass}>Effective to (optional)</span>
+                  <input
+                    type="date"
+                    disabled={!priceChanged}
+                    min={form.price_effective_from || undefined}
+                    value={form.price_effective_to}
+                    onChange={(event) => change('price_effective_to', event.target.value)}
+                    aria-invalid={Boolean(errors.price_effective_to)}
+                    className={cn(inputClass, errors.price_effective_to && invalidInputClass)}
+                  />
+                  <span className={cn(hintClass, 'block')}>
+                    Leave blank to keep this price until the next price change.
+                  </span>
+                  <FieldError message={errors.price_effective_to} />
                 </label>
               </div>
             </FormSection>

@@ -12,7 +12,7 @@ back to `sellout` or BigQuery. An estimated row also provides
 `estimated_discount_percent` for the requested period.
 
 For pack sales, `quantity_units` is treated as packs and the catalog price as
-the price per pack. The estimated price per unit is the SKU history price on the
+the price per pack. The estimated price per unit is the SKU price period on the
 sale date, multiplied by the promotion mechanic and then by the voucher:
 
 | Mechanic | Paid share per unit |
@@ -31,10 +31,10 @@ the days of the sales period; the side offer replaces the monthly mechanic on
 its active days. A monthly voucher still stacks when the side offer has no
 voucher of its own. Carton promotions are ignored for pack sell-out. Conflicting
 offers at the same priority return `pricing_issue` rather than a guessed
-discount. The first available SKU history snapshot is used for sales predating
-the start of price history, with `price_assumed_before_history: true` in the
-response. Later SKU price edits cannot reprice periods covered by earlier
-history snapshots.
+discount. If any sale day has no effective SKU price, the estimate remains
+unavailable and reports that date in `pricing_issue`. An audited correction to a
+past price period can change a later estimate, but never overwrites supplied
+revenue.
 
 Example body:
 
@@ -48,12 +48,11 @@ Example body:
 }
 ```
 
-The dashboard currently uses `COALESCE(sellout.revenue, quantity_units *
-skus.price)` in `sellout_service.py`. That hides which source revenues are
-NULL and uses the current catalog price. A dashboard integration must feed
-**raw** sell-out rows to this service before that fallback, then choose actual
-or estimated revenue for display. This branch leaves dashboard behavior to its
-owner.
+The dashboard currently uses supplied revenue when present, or a price-period
+estimate across the sale dates when revenue is NULL. It does not apply the
+promotion multiplier. A promotion-aware dashboard integration must feed **raw**
+sell-out rows to this service, then choose actual or estimated revenue for
+display. This branch leaves that integration to its owner.
 
 ## Reviewed calendar import
 
