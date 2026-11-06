@@ -128,7 +128,9 @@ aireOS/
     │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column), Sidebar (NAV_ITEMS; collapses
     │   │   │                      to an icon rail, hidden on narrow screens), RailFlyout (a rail section's sub-pages)
     │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, calendar, popover, DateRangePicker
-    │   │   │                      (typed date inputs, not a calendar); MonthGrid (year + 12-month grid, shared by
+    │   │   │                      (typed date inputs, not a calendar); ChartLoading (spinner placeholder / refetch overlay)
+    │   │   │                      and chart skeletons (first-load placeholders on ui/skeleton): ChartSkeletonFrame (shared
+    │   │   │                      axes/gridlines/legend/status) → BarChartSkeleton (`groups` per category); MonthGrid (year + 12-month grid, shared by
     │   │   │                      MonthDropdown and the dashboard month-range picker); dropdown kit: Dropdown (the one shell:
     │   │   │                      closed button, popover panel, optional `searchable`, `look` field/filter/compact) →
     │   │   │                      SelectDropdown (pick one, ✓ rows), MultiSelectDropdown (pick many, tick-box rows + "All",
