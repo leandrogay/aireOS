@@ -17,7 +17,7 @@ import { NotMigrated, Section, Variant, WhichToUse } from './GalleryParts';
 const GUIDE = [
   ['Pick one of a few, side by side', 'SegmentedControl', 'value, onChange, options, look, size, fullWidth'],
   ['Turn one thing on or off', 'ToggleButton', 'pressed, onChange, look'],
-  ['A setting with a switch and an explanation', 'ToggleField', 'label or ariaLabel, checked, onChange, showState, onHint, offHint'],
+  ['A setting with a switch and an explanation', 'ToggleField', 'label or ariaLabel, checked, onChange, showState, onHint, offHint, tone'],
 ];
 
 // Controls that should move to the kit, page by page. Remove a row when its
@@ -92,6 +92,7 @@ export default function ToggleGallery() {
     labelState: false,
     labelHints: true,
     full: false,
+    scenario: true,
   });
   const [legacy, setLegacy] = useState('week');
 
@@ -225,6 +226,15 @@ export default function ToggleGallery() {
             onChange={setSetting('full')}
             onHint="Rows for the same store and product are added together, so each month loads as one row."
             offHint="Every row loads as the file has it, for example one per week."
+          />
+        </Variant>
+        <Variant name="Scenario tone (Scenario builder pink)" props={'label showState tone="scenario"'} value={settings.scenario}>
+          <ToggleField
+            label="Show on the Simulated line"
+            showState
+            tone="scenario"
+            checked={settings.scenario}
+            onChange={setSetting('scenario')}
           />
         </Variant>
         <Variant name="Disabled (a save in flight)" props="disabled" value={true}>
