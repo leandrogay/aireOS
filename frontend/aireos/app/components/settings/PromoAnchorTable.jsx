@@ -4,11 +4,12 @@ import { Check, Eye, Pencil } from 'lucide-react';
 
 import ExpandableRow from '@/components/ui/ExpandableRow';
 import RowActions from '@/components/ui/RowActions';
+import StatusPill from '@/components/ui/StatusPill';
 import TableGrid, { ACTIONS_COLUMN, EXPANDED_ROW_INSET } from '@/components/ui/TableGrid';
 import useExpandedRows from '@/hooks/useExpandedRows';
 import { formatDateTime } from '@/lib/formatDate';
 import { retailerLabel } from '@/app/utils/retailerLabel';
-import { anchorLabel, anchorSourceLabel, recommendedAnchorLabel } from '@/app/utils/promoUpliftSettings';
+import { anchorLabel, anchorSourceLabel, recommendedAnchorLabel, sourceTone } from '@/app/utils/promoUpliftSettings';
 import { cn } from '@/lib/utils';
 
 // One column grid for the customer table and each range table under it, so
@@ -17,7 +18,7 @@ function columns(firstLabel) {
   return [
     { key: 'name', label: firstLabel, width: '13rem' },
     { key: 'anchor', label: 'Anchor' },
-    { key: 'source', label: 'Source', width: '9.5rem' },
+    { key: 'source', label: 'Source', width: '12rem' },
     { key: 'recommended', label: 'Recommended now' },
     { key: 'changed', label: 'Last changed', width: '10rem' },
     ACTIONS_COLUMN,
@@ -84,7 +85,9 @@ export default function PromoAnchorTable({ anchors, editingKey, readOnly, onView
     return (
       <>
         <td className={cn(tdClass, 'truncate font-medium')} title={anchorLabel(row)}>{anchorLabel(row)}</td>
-        <td className={tdClass}>{anchorSourceLabel(row.source)}</td>
+        <td className={cn(tdClass, 'whitespace-nowrap')}>
+          <StatusPill tone={sourceTone(row.source)}>{anchorSourceLabel(row.source)}</StatusPill>
+        </td>
         <td className={cn(tdClass, 'truncate')} title={recommendedAnchorLabel(row, windowMonths)}>
           <span className={row.recommendation_differs ? 'text-amber-700' : 'text-deep-violet-blue/70'}>
             {recommendedAnchorLabel(row, windowMonths)}

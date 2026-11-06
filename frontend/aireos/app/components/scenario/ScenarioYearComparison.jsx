@@ -2,6 +2,7 @@
 
 import { cn } from '@/lib/utils';
 import { HEADER_RULE } from '@/components/forecast/ForecastYearTotals';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 function formatFigure(value) {
   if (value == null) return '—';
@@ -12,11 +13,58 @@ function signedFigure(value) {
   return `${value < 0 ? '−' : '+'}${formatFigure(Math.abs(value))}`;
 }
 
-function itemsActiveLabel({ blocks, promotions }) {
-  const parts = [];
-  if (blocks) parts.push(`${blocks} ${blocks === 1 ? 'block' : 'blocks'}`);
-  if (promotions) parts.push(`${promotions} ${promotions === 1 ? 'promotion' : 'promotions'}`);
-  return `${parts.join(' · ')} active`;
+// Saved items first, then the ones only on screen: never saved, or saved
+// with edits not saved yet.
+const ITEM_STATES = [
+  { key: 'saved', label: 'saved', hover: 'Saved' },
+  { key: 'draft', label: 'draft', hover: 'Unsaved draft' },
+  { key: 'edited', label: 'edited', hover: 'Unsaved edits' },
+];
+
+const pillClass = 'inline-block rounded-full px-2 py-px align-[1px] text-[10px] font-semibold';
+
+// "1 saved active" or "1 saved + 1 draft": what makes up the row's
+// Simulated figure. Drafts and unsaved edits get an outlined pill, since
+// they change the line but aren't saved; hovering lists every item.
+function ItemsBadge({ items }) {
+  const groups = ITEM_STATES.map((state) => ({
+    ...state,
+    items: items.filter((item) => item.state === state.key),
+  })).filter((group) => group.items.length);
+
+  return (
+    <Tooltip>
+      <TooltipTrigger delay={150} closeDelay={100} className="mr-1.5 inline-flex items-center gap-1 align-[1px]">
+        {groups.map((group, index) => (
+          <span key={group.key} className="inline-flex items-center gap-1">
+            {index ? <span className="text-[10px] text-deep-violet-blue/50">+</span> : null}
+            <span
+              className={cn(
+                pillClass,
+                group.key === 'saved'
+                  ? 'bg-scenario-soft text-scenario-ink'
+                  : 'border border-dashed border-scenario/60 bg-white text-scenario-ink'
+              )}
+            >
+              {group.items.length} {group.label}
+              {groups.length === 1 && group.key === 'saved' ? ' active' : ''}
+            </span>
+          </span>
+        ))}
+      </TooltipTrigger>
+      <TooltipContent className="block max-w-72 text-left font-normal leading-snug">
+        <ul className="space-y-0.5">
+          {groups.flatMap((group) =>
+            group.items.map((item) => (
+              <li key={item.id} className="tabular-nums">
+                • {group.hover} {item.kind}: {item.name || 'Untitled'} ({signedFigure(item.deltaUnits)} units)
+              </li>
+            ))
+          )}
+        </ul>
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
 const headerCell = cn(
@@ -35,7 +83,9 @@ const headerCell = cn(
  *
  * @param {{
  *   rows: Array<{ key: string, label: string, caption?: string,
- *     current: number | null, delta: number, blocks: number, promotions: number }>,
+ *     current: number | null, delta: number,
+ *     items: Array<{ id: string, name: string, kind: 'block' | 'promotion',
+ *       state: 'saved' | 'draft' | 'edited', deltaUnits: number }> }>,
  *   loading?: boolean,
  * }} props
  */
@@ -45,7 +95,7 @@ export default function ScenarioYearComparison({ rows, loading = false }) {
   }
   if (!rows.length) return null;
 
-  const compare = rows.some((row) => row.blocks + row.promotions > 0);
+  const compare = rows.some((row) => row.items.length > 0);
 
   return (
     <section aria-label="Current and simulated totals" className="overflow-x-auto rounded-md border border-lavander">
@@ -80,11 +130,7 @@ export default function ScenarioYearComparison({ rows, loading = false }) {
                 {compare ? (
                   <>
                     <td className={cell}>
-                      {row.blocks + row.promotions > 0 ? (
-                        <span className="mr-1.5 inline-block rounded-full bg-scenario-soft px-2 py-px align-[1px] text-[10px] font-semibold text-scenario-ink">
-                          {itemsActiveLabel(row)}
-                        </span>
-                      ) : null}
+                      {row.items.length ? <ItemsBadge items={row.items} /> : null}
                       {row.current == null ? '—' : formatFigure(row.current + row.delta)}
                     </td>
                     <td className={cn(cell, changed ? 'font-semibold text-scenario-ink' : 'text-deep-violet-blue/45')}>

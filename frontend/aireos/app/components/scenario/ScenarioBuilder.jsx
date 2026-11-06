@@ -46,7 +46,11 @@ import {
   rowsForView,
   withOfficialReference,
 } from '@/app/utils/scenarioModelView';
-import { activeScenarioPromotions, draftPromotionBands } from '@/app/utils/scenarioPromotions';
+import {
+  activeScenarioPromotions,
+  draftPromotionBands,
+  hasUnsavedPromotionChanges,
+} from '@/app/utils/scenarioPromotions';
 import {
   activeScenarioBlocks,
   hasUnsavedChanges,
@@ -63,16 +67,25 @@ import useScenarioBlocks from '@/hooks/useScenarioBlocks';
 import useScenarioPromotions from '@/hooks/useScenarioPromotions';
 import useUnitsSplitBasis from '@/hooks/useUnitsSplitBasis';
 
-// Distinct items with cells in any of these months.
-// Switched-on items changing anything in these months, split by source so
-// the year table can name them ("1 block · 1 promotion active").
-function itemsInMonths(monthCells, months, promotionIds) {
-  const ids = new Set();
+// Whether an item on the line is saved, never saved (a draft), or saved
+// with unsaved edits -- the line shows what is on screen, not what is saved.
+function itemState(item, isPromotion) {
+  if (!item.saved) return 'draft';
+  const edited = isPromotion ? hasUnsavedPromotionChanges(item) : hasUnsavedChanges(item);
+  return edited ? 'edited' : 'saved';
+}
+
+// Switched-on items changing anything in these months, each with its units
+// over them, so the year table can say what makes up its Simulated figure
+// ("1 saved + 1 draft", and per item on hover).
+function itemsInMonths(monthCells, months, itemInfo) {
+  const units = new Map();
   for (const month of months) {
-    for (const id of monthCells.get(month)?.keys() ?? []) ids.add(id);
+    for (const [id, totals] of monthCells.get(month) ?? []) {
+      units.set(id, (units.get(id) ?? 0) + totals.deltaUnits);
+    }
   }
-  const promotions = [...ids].filter((id) => promotionIds.has(id)).length;
-  return { blocks: ids.size - promotions, promotions };
+  return { items: [...units].map(([id, deltaUnits]) => ({ id, ...itemInfo.get(id), deltaUnits })) };
 }
 
 /**
@@ -185,8 +198,14 @@ export default function ScenarioBuilder() {
   // Only switched-on blocks and promotions count, on the chart and in the tables.
   const allBlocks = scenarioBlocks.blocks;
   const activePromotions = activeScenarioPromotions(scenarioPromotions.promotions);
-  const promotionIds = new Set(activePromotions.map((promotion) => promotion.id));
   const counted = { blocks: activeScenarioBlocks(allBlocks), promotions: activePromotions };
+  const itemInfo = new Map([
+    ...counted.blocks.map((block) => [block.id, { name: block.name, kind: 'block', state: itemState(block, false) }]),
+    ...activePromotions.map((promotion) => [
+      promotion.id,
+      { name: promotion.mechanicLabel, kind: 'promotion', state: itemState(promotion, true) },
+    ]),
+  ]);
   const { cells, byMonth, byItem } = simulate(rows, counted, SCENARIO_SOURCES, chartView(filters, splitBasis.basis));
   // Nothing simulated until a switched-on item changes something in view:
   // no Simulated line, legend entry or table columns before that.
@@ -263,7 +282,7 @@ export default function ScenarioBuilder() {
         caption: base ? mixCaption(base) : '',
         current: base?.volume.total ?? null,
         delta: year.deltaUnits,
-        ...itemsInMonths(monthCells, yearMonths, promotionIds),
+        ...itemsInMonths(monthCells, yearMonths, itemInfo),
       };
     }),
     ...(horizonMonths.length
@@ -273,7 +292,7 @@ export default function ScenarioBuilder() {
             label: 'Next 12 months',
             current: sumHorizonForecast(basePoints),
             delta: horizonMonths.reduce((total, month) => total + (byMonth.get(month)?.deltaUnits ?? 0), 0),
-            ...itemsInMonths(monthCells, horizonMonths, promotionIds),
+            ...itemsInMonths(monthCells, horizonMonths, itemInfo),
           },
         ]
       : []),

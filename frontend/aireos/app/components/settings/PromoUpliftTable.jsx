@@ -4,6 +4,7 @@ import { Eye, Pencil, RotateCcw } from 'lucide-react';
 
 import InfoTooltip from '@/components/ui/InfoTooltip';
 import RowActions from '@/components/ui/RowActions';
+import StatusPill from '@/components/ui/StatusPill';
 import TableGrid, { ACTIONS_COLUMN } from '@/components/ui/TableGrid';
 import {
   customerColumn,
@@ -137,13 +138,13 @@ export default function PromoUpliftTable({ rows, shownUplift, moments, productNa
               {row.effective_discount_pct != null ? `${row.effective_discount_pct}%` : '—'}
             </td>
             <td className={cn(tdClass, numClass)}>
-              {recommended?.value != null ? formatPct(recommended.value) : emptyCell}
+              <RecommendedCell row={row} recommended={recommended} recommendFrom={recommendFrom} />
             </td>
             <td className={cn(tdClass, numClass)} title={row.note ?? undefined}>
               <ManualCell row={row} manual={manual} fallback={shownUplift(row)} inherited={inherited} />
             </td>
             <td className={cn(tdClass, numClass)}>
-              <MomentsCell row={row} recommended={recommended} recommendFrom={recommendFrom} />
+              <MomentsCell row={row} recommended={recommended} />
             </td>
             <td className={tdClass}>{recommended?.latestMonth ? formatMonthLabel(recommended.latestMonth) : emptyCell}</td>
             <td className="px-2 py-1 text-right" onClick={(event) => event.stopPropagation()}>
@@ -175,16 +176,25 @@ function ManualCell({ row, manual, fallback, inherited }) {
   );
 }
 
-function MomentsCell({ row, recommended, recommendFrom }) {
+// No value yet means too few moments, not 0%, so it says so rather than
+// showing a dash (or a +0% that could pass for a real value).
+function RecommendedCell({ row, recommended, recommendFrom }) {
+  if (recommended?.value != null) return formatPct(recommended.value);
+  if (!recommended || row.mechanic_key === 'voucher') return emptyCell;
+  return (
+    <span className="whitespace-nowrap">
+      <StatusPill tone="muted">Needs {recommendFrom}+</StatusPill>
+    </span>
+  );
+}
+
+function MomentsCell({ row, recommended }) {
   if (!recommended) return emptyCell;
   // Vouchers matter online and only offline is measured (promo_moment_rules).
   if (row.mechanic_key === 'voucher') return <span className="text-deep-violet-blue/50">Not measured</span>;
   return (
-    <>
-      <span title={recommended.counts.total ? formatMomentCounts(recommended.counts) : undefined}>
-        {recommended.counts.total}
-      </span>
-      {recommended.enoughData ? null : <span className={subClass}>Needs {recommendFrom}+</span>}
-    </>
+    <span title={recommended.counts.total ? formatMomentCounts(recommended.counts) : undefined}>
+      {recommended.counts.total}
+    </span>
   );
 }

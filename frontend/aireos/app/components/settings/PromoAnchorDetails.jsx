@@ -17,6 +17,7 @@ import { getPromoAnchorHistory } from '@/app/services/promoUpliftsApi';
 import {
   anchorLabel,
   anchorSourceLabel,
+  sourceTone,
   changedByLabel,
   recommendedAnchorLabel,
 } from '@/app/utils/promoUpliftSettings';
@@ -71,7 +72,7 @@ export default function PromoAnchorDetails({ target, windowMonths, readOnly, onE
   const fields = row
     ? [
         ['Anchor', anchorLabel(row)],
-        ['Source', anchorSourceLabel(row.source)],
+        ['Source', <StatusPill key="source" tone={sourceTone(row.source)}>{anchorSourceLabel(row.source)}</StatusPill>],
         ['Recommended now', recommendedAnchorLabel(row, windowMonths)],
         ['Last changed', row.changed_at ? formatDateTime(row.changed_at) : '—'],
       ]
@@ -114,14 +115,18 @@ export default function PromoAnchorDetails({ target, windowMonths, readOnly, onE
                 {history.rows.map((entry) => (
                   <tr key={entry.id} className="h-11 border-b border-lavander/80 last:border-b-0">
                     <td className="px-4 py-2 tabular-nums">
-                      <span className="font-medium">{anchorLabel(entry)}</span>
-                      {entry.is_current ? (
-                        <span className="ml-1.5">
-                          <StatusPill tone="success">Current</StatusPill>
-                        </span>
-                      ) : null}
+                      <span className="inline-flex max-w-full items-center gap-1.5">
+                        <span className="truncate font-medium" title={anchorLabel(entry)}>{anchorLabel(entry)}</span>
+                        {entry.is_current ? (
+                          <span className="shrink-0">
+                            <StatusPill tone="success">Current</StatusPill>
+                          </span>
+                        ) : null}
+                      </span>
                     </td>
-                    <td className="px-4 py-2">{anchorSourceLabel(entry.source)}</td>
+                    <td className="whitespace-nowrap px-4 py-2">
+                      <StatusPill tone={sourceTone(entry.source)}>{anchorSourceLabel(entry.source)}</StatusPill>
+                    </td>
                     <td className="px-4 py-2 text-muted-foreground">{changedLabel(entry)}</td>
                   </tr>
                 ))}

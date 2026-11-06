@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/dialog';
 import { inputClass } from '@/components/ui/formStyles';
 import { getPromoUpliftHistory } from '@/app/services/promoUpliftsApi';
-import { changedByLabel, parseUpliftInput, scopeLabel } from '@/app/utils/promoUpliftSettings';
+import { changedByLabel, parseUpliftInput, scopeLabel, sourceTone } from '@/app/utils/promoUpliftSettings';
 import { formatPct, sourceLabel } from '@/app/utils/scenarioPromotions';
 import { formatDateTime } from '@/lib/formatDate';
 import { cn } from '@/lib/utils';
@@ -23,9 +23,9 @@ import { cn } from '@/lib/utils';
 import RecommendedReadout from './RecommendedReadout';
 
 const HISTORY_COLUMNS = [
-  { key: 'uplift', label: 'Uplift', width: '6rem' },
+  { key: 'uplift', label: 'Uplift', width: '9.5rem' },
   { key: 'appliesTo', label: 'Applies to' },
-  { key: 'source', label: 'Source', width: '8rem' },
+  { key: 'source', label: 'Source', width: '10.5rem' },
   { key: 'when', label: 'When', width: '13rem' },
   { key: 'note', label: 'Note' },
 ];
@@ -81,7 +81,7 @@ export default function PromoUpliftDetails({ row, shownUplift, moments, startEdi
   const fields = [
     ['Discount', row.effective_discount_pct != null ? `${row.effective_discount_pct}%` : '—'],
     ['Applies to', scopeLabel(row)],
-    ['Source', sourceLabel(row.source)],
+    ['Source', <StatusPill key="source" tone={sourceTone(row.source)}>{sourceLabel(row.source)}</StatusPill>],
     ['Last changed', changedLabel(row) || '—'],
   ];
 
@@ -154,15 +154,16 @@ export default function PromoUpliftDetails({ row, shownUplift, moments, startEdi
               {history.rows.map((entry) => (
                 <tr key={entry.id} className="h-11 border-b border-lavander/80 last:border-b-0">
                   <td className="px-4 py-2 tabular-nums">
-                    <span className="font-medium">{formatPct(entry.uplift_pct)}</span>
-                    {entry.superseded_at ? null : (
-                      <span className="ml-1.5">
-                        <StatusPill tone="success">Current</StatusPill>
-                      </span>
-                    )}
+                    {/* One line, so the Current pill never runs into Applies to. */}
+                    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                      <span className="font-medium">{formatPct(entry.uplift_pct)}</span>
+                      {entry.superseded_at ? null : <StatusPill tone="success">Current</StatusPill>}
+                    </span>
                   </td>
                   <td className="truncate px-4 py-2" title={scopeLabel(entry)}>{scopeLabel(entry)}</td>
-                  <td className="px-4 py-2">{sourceLabel(entry.source)}</td>
+                  <td className="whitespace-nowrap px-4 py-2">
+                    <StatusPill tone={sourceTone(entry.source)}>{sourceLabel(entry.source)}</StatusPill>
+                  </td>
                   <td className="px-4 py-2 text-muted-foreground">{changedLabel(entry)}</td>
                   <td className="truncate px-4 py-2 text-muted-foreground" title={entry.note ?? undefined}>
                     {entry.note || '—'}

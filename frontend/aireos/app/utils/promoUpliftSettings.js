@@ -33,6 +33,28 @@ export function placeholderUplift(effectiveDiscountPct, anchorPct) {
   return Math.sign(value) * Math.round(Math.abs(value)) || 0;
 }
 
+// StatusPill tone per source, anchors and uplifts alike: from data (adopted
+// or learned) info, typed in by someone warning (a judgement worth
+// noticing), and everything that falls back to a broader value muted.
+const SOURCE_TONES = {
+  recommended: 'info',
+  learned: 'info',
+  manual: 'warning',
+  estimate: 'warning',
+  customer: 'muted',
+  default: 'muted',
+  placeholder: 'muted',
+};
+
+/**
+ * The StatusPill tone for an anchor or uplift source.
+ *
+ * @param {string} source
+ */
+export function sourceTone(source) {
+  return SOURCE_TONES[source] ?? 'muted';
+}
+
 /**
  * Where an anchor value comes from, in words.
  *
