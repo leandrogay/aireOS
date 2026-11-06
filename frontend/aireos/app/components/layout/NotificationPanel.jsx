@@ -1,6 +1,13 @@
 'use client';
 
 import { formatDate, formatDateTime } from '@/lib/formatDate';
+import {
+  forecastErrorLines,
+  forecastIntro,
+  forecastTitle,
+  isRefreshFailure,
+  startedByLabel,
+} from '@/app/utils/forecastNotificationText';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
@@ -38,9 +45,8 @@ function lowStockTitle(payload) {
     : `[STOCK ALERT] Low stock detected for ${payload.product_name}`;
 }
 
-function forecastTitle(payload, success) {
-  const date = formatDate(payload.updated_at?.slice(0, 10));
-  return success ? `[SUCCESS] Forecast Pipeline Completed – ${date}` : `[FAILURE] Forecast Pipeline Failed – ${date}`;
+function forecastNotificationTitle(payload, success) {
+  return forecastTitle(payload, success, formatDate(payload.updated_at?.slice(0, 10)));
 }
 
 function LowStockDetails({ payload }) {
@@ -84,37 +90,49 @@ function ForecastDetails({ payload, success }) {
   // must not crash the whole page the bell sits on.
   const customers = payload.customers ?? [];
   const skus = payload.skus ?? [];
+  // A refresh that never started (backend stage "refresh") has no forecast to
+  // describe, so the period / customers / SKUs rows would only read "—" and "0".
+  const neverStarted = isRefreshFailure(payload, success);
+  const errorLines = forecastErrorLines(payload);
   return (
     <>
-      <p className="text-deep-violet-blue/80">
-        {success
-          ? 'The sales forecasting pipeline has completed successfully, and the latest forecast is ready for review.'
-          : 'The sales forecasting pipeline encountered an error and did not complete.'}
-      </p>
+      <p className={MUTED_TEXT_CLASS}>{forecastIntro(payload, success)}</p>
       <div className="mt-2 space-y-1">
-        <Field
-          label="Forecast period"
-          value={payload.period_start ? `${payload.period_start} – ${payload.period_end}` : '—'}
-        />
-        <Field
-          label="Customers processed"
-          value={
-            customers.length
-              ? `${customers.length}: ${customers.map(retailerLabel).join(', ')}`
-              : '0'
-          }
-        />
-        <Field
-          label="SKUs forecasted"
-          value={skus.length ? `${skus.length}: ${skus.join(', ')}` : '0'}
-        />
+        {!neverStarted && (
+          <>
+            <Field
+              label="Forecast period"
+              value={payload.period_start ? `${payload.period_start} – ${payload.period_end}` : '—'}
+            />
+            <Field
+              label="Customers processed"
+              value={
+                customers.length
+                  ? `${customers.length}: ${customers.map(retailerLabel).join(', ')}`
+                  : '0'
+              }
+            />
+            <Field
+              label="SKUs forecasted"
+              value={skus.length ? `${skus.length}: ${skus.join(', ')}` : '0'}
+            />
+          </>
+        )}
         <Field label="Last updated" value={formatDateTime(payload.updated_at)} />
-        <Field label="Started by" value={payload.source === 'scheduled' ? 'Scheduled run' : 'Forecast script'} />
+        <Field label="Started by" value={startedByLabel(payload.source)} />
       </div>
-      {!success && (
+      {!success && payload.reason && (
+        <div className="mt-1">
+          <span className={MUTED_TEXT_CLASS}>Reason</span>
+          <p className="mt-0.5 text-deep-violet-blue">{payload.reason}</p>
+        </div>
+      )}
+      {/* Older failures have no reason, only errors, so they still show "None"
+          when empty; newer ones list errors only when they add to the reason. */}
+      {!success && (!payload.reason || errorLines.length > 0) && (
         <div className="mt-1">
           <span className={MUTED_TEXT_CLASS}>Errors / Warnings</span>
-          <p className="mt-0.5 text-deep-violet-blue">{payload.errors?.length ? payload.errors.join('; ') : 'None'}</p>
+          <p className="mt-0.5 text-deep-violet-blue">{errorLines.length ? errorLines.join('; ') : 'None'}</p>
         </div>
       )}
       {success && (
@@ -188,8 +206,8 @@ function RollbackDetails({ payload, success }) {
 
 const TITLES = {
   low_stock: lowStockTitle,
-  forecast_success: (payload) => forecastTitle(payload, true),
-  forecast_failure: (payload) => forecastTitle(payload, false),
+  forecast_success: (payload) => forecastNotificationTitle(payload, true),
+  forecast_failure: (payload) => forecastNotificationTitle(payload, false),
   mapping_uploaded: (payload) => `[NOMENCLATURE] ${payload.amended ? 'Nomenclature updated' : 'New nomenclature approved'} – ${payload.name}`,
   rollback_success: () => `[SUCCESS] Upload Rolled Back`,
   rollback_failure: () => `[FAILURE] Upload Rollback Failed`,

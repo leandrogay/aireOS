@@ -4,6 +4,7 @@ import pandas as pd
 
 from app.services import (
     apply_contract,
+    forecast_refresh_events,
     layout_detection,
     sellout_service,
     validation_service,
@@ -107,6 +108,9 @@ def process_confirmed_upload(
             source_blob=source_blob,
             content_hash=content_hash,
             mapping_fingerprint=mapping_fingerprint,
+        )
+        forecast_refresh_events.enqueue_best_effort(
+            storage.get("forecast_refresh_request_id")
         )
     else:
         storage = {

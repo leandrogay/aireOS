@@ -181,9 +181,10 @@ def _name_and_date_filters(
 
 
 def _catalog_dataset() -> str:
-    # public_customers / public_skus are replicated into the same dataset as
-    # the output view.
-    return BQ_FORECAST_OUTPUT_VIEW.rsplit(".", 1)[0]
+    # public_customers / public_skus are Datastream's copies of Cloud SQL, which
+    # land in the CDC dataset -- not the forecast dataset the output view is in.
+    # Read at call time so a test (or a redeploy) can point it elsewhere.
+    return config.BQ_CDC_DATASET
 
 
 # The view is keyed by customer_id + sku; the page filters by name, so names
@@ -396,3 +397,28 @@ def get_sales_loaded_at(customer_name: str | None = None) -> str | None:
     if df.empty:
         return None
     return _iso_stamp(df.iloc[0]["latest_sales_loaded_at"])
+
+
+def get_initial_meta() -> list[dict]:
+    """One row per Initial Yearly Forecast year: when it locks and when it was last rebuilt.
+
+    aire_forecasting_initial_meta is written by Sandra's procedures (one row
+    per forecast_year, timestamps in UTC). The dataset is read at call time so
+    a test or redeploy can point it elsewhere. 2026 was backfilled outside the
+    procedure, so it has no row.
+    """
+    query = f"""
+        SELECT forecast_year, lock_at, refreshed_at
+        FROM `{config.BQ_FORECAST_DATASET}.aire_forecasting_initial_meta`
+        ORDER BY forecast_year
+    """
+    df = get_bigquery_client().query(query).result().to_dataframe()
+    return [
+        {
+            "forecast_year": int(record["forecast_year"]),
+            "lock_at": _iso_stamp(record["lock_at"]),
+            "refreshed_at": _iso_stamp(record["refreshed_at"]),
+        }
+        for record in df.to_dict(orient="records")
+        if not pd.isna(record["forecast_year"])
+    ]

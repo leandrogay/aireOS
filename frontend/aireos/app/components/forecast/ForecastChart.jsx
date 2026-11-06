@@ -28,6 +28,7 @@ import {
   promoPeriodDividerXs,
   promosOverlappingMonth,
 } from '@/app/utils/forecastView';
+import { forecastLineHints, hasPreviousLine } from '@/app/utils/forecastLineText';
 import { dotRevealDelay, lineSweepTimings } from '@/app/utils/lineAnimation';
 
 // All lines draw in with one left-to-right sweep (see lineSweepTimings), so
@@ -163,6 +164,8 @@ export default function ForecastChart({
   salesLabel,
   salesLoadedAt,
   confidence,
+  updatingBadge = null,
+  initialNotes = [],
   yearTotals = [],
   yearTotalsLoading = false,
   horizonVolume = null,
@@ -178,7 +181,11 @@ export default function ForecastChart({
   const [panelX, setPanelX] = useState(0);
   const [wrapWidth, setWrapWidth] = useState(0);
 
-  const visibleKeys = FORECAST_SERIES.filter((series) => visibleSeries[series.key]).map((series) => series.key);
+  // Previous is empty until the forecast has a second month of sales. Its
+  // pill is then greyed out and the line and table column stay off.
+  const previousAvailable = hasPreviousLine(points);
+  const shownSeries = previousAvailable ? visibleSeries : { ...visibleSeries, previous: false };
+  const visibleKeys = FORECAST_SERIES.filter((series) => shownSeries[series.key]).map((series) => series.key);
   const hasVisibleLine = visibleKeys.length > 0;
   const hasData = points.some((point) =>
     visibleKeys.some((key) => point[key] != null)
@@ -217,30 +224,15 @@ export default function ForecastChart({
   const ticks = plotData.map((point) => point.x);
   const lineTimings = lineSweepTimings(plotData, SERIES_KEYS, LINE_SWEEP);
 
-  const showRange = Boolean(visibleSeries.current) && chartData.some((point) => point.range);
+  const showRange = Boolean(shownSeries.current) && chartData.some((point) => point.range);
   const visibleValues = chartData.flatMap((point) => [
     ...visibleKeys.map((key) => point[key]),
     ...(showRange && point.range ? point.range : []),
   ]).filter((value) => typeof value === 'number');
   // Hover text for the line pills, so the explanations don't crowd the chart.
-  // One SKU with no Initial values in range gets its own reason; today the
-  // only cause is the 6-month history minimum (Ultra Tape in the 2026
-  // backfill). The Ultra Tape sentence is data-specific: the backfill skipped
-  // it, so an All SKUs Initial total leaves it out while Current includes it.
-  // Drop that sentence once 2026 is out of view.
+  // One SKU with no Initial values in range gets its own reason.
   const initialMissingForSku = singleSeries && !points.some((point) => point.initial != null);
-  const lineHints = {
-    initial: initialMissingForSku
-      ? "No Initial Yearly Forecast for this SKU in this period: it had under 6 months of sales history when the year's plan was frozen."
-      : 'Initial Yearly Forecast: the plan for the year, frozen each December from data up to that point. ' +
-        '2026 was backfilled using data up to Dec 2025.' +
-        (singleSeries
-          ? ''
-          : ' Ultra Tape has no 2026 Initial (under 6 months of history), so the All SKUs Initial total excludes it.'),
-    current: singleSeries
-      ? null
-      : 'Pick one SKU and customer to see the 80% range and the forecast confidence.',
-  };
+  const lineHints = forecastLineHints({ singleSeries, initialMissingForSku, previousAvailable });
   const yDomain = visibleValues.length ? niceYDomain(visibleValues) : [0, 1];
   const hoverPoint = chartPoints.find((point) => point.month_year === hoverMonth);
   const hoverPromos = promosOverlappingMonth(
@@ -250,7 +242,7 @@ export default function ForecastChart({
     selectedPackTypes
   );
   const panelLeft = promoPanelLeft(panelX, wrapWidth);
-  const seriesValues = FORECAST_SERIES.filter((series) => visibleSeries[series.key]).map((series) => ({
+  const seriesValues = FORECAST_SERIES.filter((series) => shownSeries[series.key]).map((series) => ({
     key: series.key,
     label: series.label,
     color: series.color,
@@ -357,7 +349,12 @@ export default function ForecastChart({
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-lavander bg-white px-3 py-2">
-          <ForecastLineToggle visible={visibleSeries} onToggle={onToggleSeries} hints={lineHints} />
+          <ForecastLineToggle
+            visible={shownSeries}
+            onToggle={onToggleSeries}
+            hints={lineHints}
+            disabled={{ previous: !previousAvailable }}
+          />
           <ForecastPromoToggle
             selectedTypes={selectedPromoTypes}
             onToggleType={onTogglePromoType}
@@ -474,7 +471,7 @@ export default function ForecastChart({
                     />
                   ) : null}
                   */}
-                  {FORECAST_SERIES.filter((series) => visibleSeries[series.key]).map((series) => (
+                  {FORECAST_SERIES.filter((series) => shownSeries[series.key]).map((series) => (
                     <Line
                       key={series.key}
                       dataKey={series.key}
@@ -532,6 +529,8 @@ export default function ForecastChart({
                 salesLabel={salesLabel}
                 salesLoadedAt={salesLoadedAt}
                 confidence={confidence}
+                updatingBadge={updatingBadge}
+                initialNotes={initialNotes}
                 className="-mt-6 px-3 pb-1 pt-0"
               />
             </div>
@@ -548,7 +547,7 @@ export default function ForecastChart({
             <ForecastTable
               points={points}
               metric={metric}
-              visibleSeries={visibleSeries}
+              visibleSeries={shownSeries}
             />
           </>
         )}
