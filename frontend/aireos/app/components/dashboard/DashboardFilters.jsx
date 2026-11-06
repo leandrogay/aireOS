@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 
+import { Button } from '@/components/ui/button';
 import SelectDropdown from '@/components/ui/SelectDropdown';
 
 // "Filter" side panel for the sales dashboard: Customer, SKU and Store. The
@@ -119,14 +120,9 @@ export default function DashboardFilters({
     <div className="bg-white rounded-lg border border-lavander shadow-sm p-3 h-full">
       <div className="mb-2 flex items-center gap-2">
         <h3 className="font-serif text-base text-deep-violet-blue">Filter</h3>
-        <button
-          type="button"
-          onClick={onClearFilters}
-          disabled={!hasActiveFilters}
-          className="rounded-md border border-deep-violet-blue/30 bg-white px-2 py-0.5 text-[10px] font-medium text-deep-violet-blue transition hover:bg-cream disabled:cursor-not-allowed disabled:opacity-40"
-        >
+        <Button type="button" variant="outline" size="xs" onClick={onClearFilters} disabled={!hasActiveFilters}>
           Clear
-        </button>
+        </Button>
       </div>
 
       <div className="space-y-2">
