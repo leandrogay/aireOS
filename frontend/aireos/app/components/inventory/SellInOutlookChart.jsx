@@ -1,14 +1,10 @@
 'use client';
 
+import { useState } from 'react';
 import { CartesianGrid, ComposedChart, Dot, Line, XAxis, YAxis } from 'recharts';
 
-import {
-  ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
-  ChartTooltip,
-  ChartTooltipContent,
-} from '@/components/ui/chart';
+import ForecastLineToggle from '@/components/forecast/ForecastLineToggle';
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 
 import { FORECAST_SERIES } from '@/app/utils/forecastView';
 import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
@@ -16,93 +12,57 @@ import { dotRevealDelay, lineSweepTimings } from '@/app/utils/lineAnimation';
 
 import { labelledTooltipRow } from './chartTooltip';
 
-// The sell-out lines look exactly like the Forecast page's Actual, Initial
-// Yearly Forecast, Previous and Current lines (forecastView.FORECAST_SERIES), so the two
-// pages read the same way.
+// The sell-out lines keep the Forecast page's colours (forecastView.FORECAST_SERIES),
+// so the two pages read the same way. Every line has its own colour, and the
+// line style says which forecast it comes from, the same for sell-in and
+// sell-out: solid with dots = actual, short dashes = Current, long dashes =
+// Previous, dots = Initial. Eight colours can't all be told apart by colour
+// alone (checked with the dataviz palette validator), so the style carries it
+// too, and the toggles let you show only the lines being compared. Each
+// sell-in colour passes the validator against the sell-out line of the same
+// style (red/navy, blue/teal, green/purple, brown/orange), the pairs most
+// often read together.
 const FORECAST_LINE = Object.fromEntries(FORECAST_SERIES.map((series) => [series.key, series]));
 
-// Sell-in is one colour, solid while actual and dashed once it is the plan's
-// recommendation, the same way sell-out runs from actual into forecast.
-const SELL_IN_COLOR = 'var(--aire-violet)';
-const SELL_IN_PLAN_DASH = '6 4';
-
-// `dot`: the line has a dot per month (the actual lines), so its legend sample does too.
-const SERIES = [
-  { key: 'sell_in_actual', label: 'Sell-in (actual)', color: SELL_IN_COLOR, dot: true },
-  { key: 'sell_in_recommended', label: 'Sell-in (recommended)', color: SELL_IN_COLOR, dash: SELL_IN_PLAN_DASH },
-  {
-    key: 'sell_out_actual',
-    label: 'Sell-out (actual)',
-    color: FORECAST_LINE.actual.color,
-    dot: true,
-  },
-  {
-    key: 'sell_out_current',
-    label: 'Sell-out Forecast (Current)',
-    color: FORECAST_LINE.current.color,
-    dash: FORECAST_LINE.current.dash,
-  },
-  {
-    // Last month's forecast run, so last month's sales can be read against what
-    // was forecast for them a month ahead (backend get_forecast_lines "previous").
-    key: 'sell_out_previous',
-    label: 'Sell-out Forecast (Previous)',
-    color: FORECAST_LINE.previous.color,
-    dash: FORECAST_LINE.previous.dash,
-  },
-  {
-    key: 'sell_out_initial',
-    // Named for sell-out here, beside the sell-in lines; same line as the Forecast page's Initial Yearly Forecast.
-    label: 'Initial Yearly Sell-out Forecast',
-    color: FORECAST_LINE.initial.color,
-    dash: FORECAST_LINE.initial.dash,
-  },
-];
-
-/**
- * A legend sample of one line, drawn the way the chart draws it, so two lines
- * in the same colour (sell-in actual and recommended) still tell apart. Sized
- * inline: ChartLegendContent squares any icon to 12px by class.
- *
- * `faded`: the line has no values in view, so its entry is greyed out.
- *
- * @param {{ color: string, dash?: string, dot?: boolean }} series
- * @param {boolean} [faded]
- */
-function legendLine({ color, dash, dot }, faded = false) {
-  return function LegendLine() {
-    return (
-      <svg viewBox="0 0 22 10" style={{ width: 22, height: 10, opacity: faded ? 0.35 : 1 }} aria-hidden="true">
-        <line x1="1" y1="5" x2="21" y2="5" stroke={color} strokeWidth="2" strokeDasharray={dash} />
-        {dot ? <circle cx="11" cy="5" r="2.5" fill="#fff" stroke={color} strokeWidth="1.5" /> : null}
-      </svg>
-    );
-  };
-}
-
-const CHART_CONFIG = Object.fromEntries(
-  SERIES.map((series) => [series.key, { label: series.label, color: series.color, icon: legendLine(series) }]),
-);
-
-// Until the forecast pipeline has a second run there is no Previous forecast;
-// the legend still lists it with its sample greyed out, so it is clear the line
-// is missing, not hidden (the Forecast page greys its Previous pill out too).
-const PREVIOUS_SERIES = SERIES.find((series) => series.key === 'sell_out_previous');
-const CHART_CONFIG_NO_PREVIOUS = {
-  ...CHART_CONFIG,
-  sell_out_previous: { ...CHART_CONFIG.sell_out_previous, icon: legendLine(PREVIOUS_SERIES, true) },
+const DASH = {
+  current: FORECAST_LINE.current.dash,
+  previous: FORECAST_LINE.previous.dash,
+  initial: FORECAST_LINE.initial.dash,
 };
 
-const TOOLTIP_CONFIG = Object.fromEntries(SERIES.map((series) => [series.key, { label: series.label }]));
+// `dot`: the line has a dot per month (the actual lines), so its sample does too.
+// `shape: 'line'` makes ForecastLineToggle show that line sample on its pill.
+const SERIES = [
+  { key: 'sell_in_actual', group: 'Sell-in', label: 'Sell-in (actual)', color: '#e34948', dot: true },
+  { key: 'sell_in_recommended', group: 'Sell-in', label: 'Sell-in Forecast (Current)', color: '#2a78d6', dash: DASH.current },
+  { key: 'sell_in_previous', group: 'Sell-in', label: 'Sell-in Forecast (Previous)', color: '#008300', dash: DASH.previous },
+  { key: 'sell_in_initial', group: 'Sell-in', label: 'Initial Yearly Sell-in Forecast', color: '#92400e', dash: DASH.initial },
+  { key: 'sell_out_actual', group: 'Sell-out', label: 'Sell-out (actual)', color: FORECAST_LINE.actual.color, dot: true },
+  { key: 'sell_out_current', group: 'Sell-out', label: 'Sell-out Forecast (Current)', color: FORECAST_LINE.current.color, dash: DASH.current },
+  { key: 'sell_out_previous', group: 'Sell-out', label: 'Sell-out Forecast (Previous)', color: FORECAST_LINE.previous.color, dash: DASH.previous },
+  { key: 'sell_out_initial', group: 'Sell-out', label: 'Initial Yearly Sell-out Forecast', color: FORECAST_LINE.initial.color, dash: DASH.initial },
+];
+
+const GROUPS = ['Sell-in', 'Sell-out'].map((group) => ({
+  label: group,
+  series: SERIES.filter((series) => series.group === group).map((series) => ({ ...series, shape: 'line' })),
+}));
+
+const CHART_CONFIG = Object.fromEntries(SERIES.map((series) => [series.key, { label: series.label, color: series.color }]));
 
 const TOOLTIP_ORDER = SERIES.map((series) => series.key);
 
-// Each line sweeps left to right: the actual parts first, then the
-// recommendation and the current forecast carry on from where they ended.
-// The initial and previous run across the whole window.
+const ALL_VISIBLE = Object.fromEntries(SERIES.map((series) => [series.key, true]));
+
+// Each line sweeps left to right: the actual parts first, then the forecasts
+// carry on from where they ended.
 const LINE_SWEEP = { begin: 0, duration: 1200 };
 
-// The dashed lines that start from the last actual point (see rows below).
+// The current sell-in and sell-out lines start from the last actual point, so
+// each reads as one stroke from actual into plan (see rows below). There the
+// value is the actual, not a forecast, so the tooltip leaves it out. The
+// Previous and Initial lines have values of their own in the actual months
+// (backend _past_recommendations), so they never join.
 const JOIN_KEYS = ['sell_in_recommended', 'sell_out_current'];
 
 // Recharts' dot, faded in as the line reaches it (dotRevealDelay). `points` is
@@ -115,8 +75,8 @@ function timedDot(timing) {
 }
 
 /**
- * The plan months that run on the Initial Yearly Forecast because the current
- * forecast does not reach them yet, as a label ("Aug 2026 – Sep 2026"), or null.
+ * The plan months that run on the Initial Yearly Sell-out Forecast because the
+ * current forecast does not reach them yet, as a label ("Aug 2026 – Sep 2026"), or null.
  *
  * @param {Array<{ month: string, forecast_source: string | null }>} months
  * @returns {string | null}
@@ -130,58 +90,84 @@ export function initialFallbackLabel(months) {
 }
 
 /**
- * Sell-in against sell-out by month for the sell-in plan, all as lines. Sell-in
- * is solid through the actual months and dashed for the plan's recommendation.
- * Sell-out is the actual line, the current forecast carrying on from it, and the
- * Initial Yearly Forecast and last month's (Previous) forecast across the whole
- * window, so last months' sales can be read against what was planned for them. A plan month the current forecast
- * does not reach runs on the initial, and is drawn on that line only.
- * `actualsThrough` is the last actual month.
+ * Sell-in against sell-out by month for the sell-in plan, all as lines, each
+ * of which can be switched on and off. Sell-in is the actual months, then the
+ * recommendation planned on the current forecast (falling back to the initial
+ * where the current does not reach), on last month's (Previous) forecast, and
+ * on the initial alone (backend get_sell_in_outlook). The Previous and Initial
+ * sell-in lines also run through the actual months, as what that forecast
+ * would have recommended each month. Sell-out is the actual
+ * months, the current forecast carrying on from them, and the Previous and
+ * Initial forecasts across the whole window, so last months' sales can be read
+ * against what was forecast for them. `actualsThrough` is the last actual month.
  *
- * @param {{ months: Array<{ month: string, sell_in_actual: number | null, sell_in_recommended: number | null, sell_out_actual: number | null, sell_out_forecast: number | null, sell_out_initial: number | null, sell_out_previous: number | null, forecast_source: 'current' | 'initial' | 'mixed' | null }>, actualsThrough: string | null }} props
+ * @param {{ months: Array<{ month: string, sell_in_actual: number | null, sell_in_recommended: number | null, sell_in_previous: number | null, sell_in_initial: number | null, sell_out_actual: number | null, sell_out_forecast: number | null, sell_out_initial: number | null, sell_out_previous: number | null, forecast_source: 'current' | 'initial' | 'mixed' | null }>, actualsThrough: string | null }} props
  */
 export default function SellInOutlookChart({ months, actualsThrough }) {
+  const [visible, setVisible] = useState(ALL_VISIBLE);
+
   if (months.length === 0) {
     return <p className="text-sm text-deep-violet-blue/70">No actuals for these filters.</p>;
   }
 
   const lastIndex = months.findIndex((row) => row.month === actualsThrough);
-  const nextIsCurrent = ['current', 'mixed'].includes(months[lastIndex + 1]?.forecast_source);
-  const rows = months.map((row, index) => ({
-    ...row,
-    label: formatMonth(row.month),
-    // The recommendation starts from the last actual point so the sell-in line
-    // reads as one stroke from actual into plan.
-    sell_in_recommended: index === lastIndex ? row.sell_in_actual : row.sell_in_recommended,
-    // The current line does the same, when the month after it is on the current forecast.
-    sell_out_current:
-      index === lastIndex && nextIsCurrent
-        ? row.sell_out_actual
-        : row.forecast_source === 'current' || row.forecast_source === 'mixed'
-          ? row.sell_out_forecast
-          : null,
-  }));
+  const next = months[lastIndex + 1];
+  const nextIsCurrent = ['current', 'mixed'].includes(next?.forecast_source);
+  const rows = months.map((row, index) => {
+    return {
+      ...row,
+      label: formatMonth(row.month),
+      sell_in_recommended:
+        index === lastIndex && next?.sell_in_recommended != null ? row.sell_in_actual : row.sell_in_recommended,
+      // The current sell-out line joins the actual too, when the month after it is on the current forecast.
+      sell_out_current:
+        index === lastIndex && nextIsCurrent
+          ? row.sell_out_actual
+          : row.forecast_source === 'current' || row.forecast_source === 'mixed'
+            ? row.sell_out_forecast
+            : null,
+    };
+  });
 
-  const timings = lineSweepTimings(
-    rows,
-    ['sell_in_actual', 'sell_in_recommended', 'sell_out_actual', 'sell_out_current', 'sell_out_previous', 'sell_out_initial'],
-    LINE_SWEEP,
+  // A line with no values in view (no Previous forecast yet) can't be switched on.
+  const noData = Object.fromEntries(SERIES.map((series) => [series.key, !rows.some((row) => row[series.key] != null)]));
+  const hints = Object.fromEntries(
+    SERIES.filter((series) => noData[series.key]).map((series) => [
+      series.key,
+      series.dash === DASH.previous ? 'No previous forecast yet.' : 'No values for these filters.',
+    ]),
   );
 
-  const formatRow = labelledTooltipRow(TOOLTIP_CONFIG, (value) => `${formatUnits(value)} units`);
+  const timings = lineSweepTimings(rows, TOOLTIP_ORDER, LINE_SWEEP);
+
+  const formatRow = labelledTooltipRow(CHART_CONFIG, (value) => `${formatUnits(value)} units`);
   function formatTooltipRow(value, name, item, index, payload) {
-    // The join point repeats the actual value on the dashed lines; it is not a plan or forecast.
     if (JOIN_KEYS.includes(name) && payload?.month === actualsThrough) return null;
     return formatRow(value, name, item);
   }
 
   const fallback = initialFallbackLabel(months);
-  const hasPrevious = months.some((row) => row.sell_out_previous != null);
 
   return (
     <div className="space-y-2">
+      {/* The Forecast page's line pills and bar, one row each for sell-in and sell-out. */}
+      <div className="space-y-1.5 rounded-lg border border-lavander bg-white px-3 py-2">
+        {GROUPS.map((group) => (
+          <ForecastLineToggle
+            key={group.label}
+            label={group.label}
+            labelClassName="w-14 shrink-0"
+            series={group.series}
+            visible={visible}
+            onToggle={(key) => setVisible((shown) => ({ ...shown, [key]: !shown[key] }))}
+            hints={hints}
+            disabled={noData}
+          />
+        ))}
+      </div>
+
       <div className="overflow-visible rounded-xl border border-lavander bg-white pl-1 pr-3 pt-2">
-        <ChartContainer config={hasPrevious ? CHART_CONFIG : CHART_CONFIG_NO_PREVIOUS} className="aspect-auto h-[328px] w-full">
+        <ChartContainer config={CHART_CONFIG} className="aspect-auto h-[328px] w-full">
           <ComposedChart accessibilityLayer data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
             <CartesianGrid vertical={false} stroke="var(--aire-lavender)" />
             <XAxis
@@ -194,70 +180,24 @@ export default function SellInOutlookChart({ months, actualsThrough }) {
               tickMargin={6}
             />
             <YAxis width={48} tick={{ fontSize: 10, fill: '#3A4369' }} tickFormatter={formatUnits} />
-            {/* Above the legend, which is drawn after it and would show through. */}
             <ChartTooltip
               wrapperStyle={{ zIndex: 10 }}
               itemSorter={(item) => TOOLTIP_ORDER.indexOf(item.dataKey)}
-              content={
-                <ChartTooltipContent
-                  className="border-violet/40 bg-white"
-                  formatter={formatTooltipRow}
-                />
-              }
+              content={<ChartTooltipContent className="border-violet/40 bg-white" formatter={formatTooltipRow} />}
             />
-            <ChartLegend itemSorter={null} content={<ChartLegendContent className="flex-wrap text-foreground" />} />
-            <Line
-              dataKey="sell_in_actual"
-              stroke="var(--color-sell_in_actual)"
-              strokeWidth={2}
-              dot={timedDot(timings.sell_in_actual)}
-              connectNulls={false}
-              {...timings.sell_in_actual}
-            />
-            <Line
-              dataKey="sell_in_recommended"
-              stroke="var(--color-sell_in_recommended)"
-              strokeWidth={2}
-              strokeDasharray={SELL_IN_PLAN_DASH}
-              dot={false}
-              connectNulls={false}
-              {...timings.sell_in_recommended}
-            />
-            <Line
-              dataKey="sell_out_initial"
-              stroke="var(--color-sell_out_initial)"
-              strokeWidth={2}
-              strokeDasharray={FORECAST_LINE.initial.dash}
-              dot={false}
-              connectNulls={false}
-              {...timings.sell_out_initial}
-            />
-            <Line
-              dataKey="sell_out_actual"
-              stroke="var(--color-sell_out_actual)"
-              strokeWidth={2}
-              dot={timedDot(timings.sell_out_actual)}
-              connectNulls={false}
-              {...timings.sell_out_actual}
-            />
-            <Line
-              dataKey="sell_out_previous"
-              stroke="var(--color-sell_out_previous)"
-              strokeWidth={2}
-              strokeDasharray={FORECAST_LINE.previous.dash}
-              dot={false}
-              connectNulls={false}
-              {...timings.sell_out_previous}
-            />
-            <Line
-              dataKey="sell_out_current"
-              stroke="var(--color-sell_out_current)"
-              strokeWidth={2}
-              strokeDasharray={FORECAST_LINE.current.dash}
-              dot={false}
-              connectNulls={false}
-              {...timings.sell_out_current}
-            />
+            {SERIES.map((series) => (
+              <Line
+                key={series.key}
+                dataKey={series.key}
+                hide={!visible[series.key] || noData[series.key]}
+                stroke={`var(--color-${series.key})`}
+                strokeWidth={2}
+                strokeDasharray={series.dash}
+                dot={series.dot ? timedDot(timings[series.key]) : false}
+                connectNulls={false}
+                {...timings[series.key]}
+              />
+            ))}
           </ComposedChart>
         </ChartContainer>
       </div>

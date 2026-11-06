@@ -3,7 +3,17 @@
 import { cn } from '@/lib/utils';
 import { FORECAST_SERIES } from '@/app/utils/forecastView';
 
-function SeriesMark({ color, shape }) {
+function SeriesMark({ color, shape, dash, dot }) {
+  // 'line': a short sample of the line itself, for charts whose lines differ
+  // by dash pattern rather than marker shape (inventory SellInOutlookChart).
+  if (shape === 'line') {
+    return (
+      <svg viewBox="0 0 22 10" className="h-2.5 w-[22px] shrink-0" aria-hidden="true">
+        <line x1="1" y1="5" x2="21" y2="5" stroke={color} strokeWidth="2" strokeDasharray={dash} />
+        {dot ? <circle cx="11" cy="5" r="2.5" fill="#fff" stroke={color} strokeWidth="1.5" /> : null}
+      </svg>
+    );
+  }
   if (shape === 'square') {
     return <span className="size-2 shrink-0" style={{ backgroundColor: color }} aria-hidden="true" />;
   }
@@ -32,16 +42,19 @@ function SeriesMark({ color, shape }) {
  * Line on/off pills. `hints` maps a series key to a short explanation shown
  * on hover or keyboard focus of that pill (e.g. why Initial is missing).
  * `series` defaults to the committed forecast lines; the Scenario builder
- * adds its Simulated line.
+ * adds its Simulated line. `label` names the row ("Lines" by default), and
+ * `labelClassName` lets stacked rows line their pills up.
  * A key in `disabled` is greyed out and can't be turned on (a line with no
  * data yet, e.g. Previous); it stays focusable so its hint can still be read.
  *
  * @param {{
- *   series?: { key: string, label: string, color: string, shape: string }[],
+ *   series?: { key: string, label: string, color: string, shape: string, dash?: string, dot?: boolean }[],
  *   visible: Record<string, boolean>,
  *   onToggle: (key: string) => void,
  *   hints?: Record<string, string | null>,
  *   disabled?: Record<string, boolean>,
+ *   label?: string,
+ *   labelClassName?: string,
  * }} props
  */
 export default function ForecastLineToggle({
@@ -50,11 +63,13 @@ export default function ForecastLineToggle({
   onToggle,
   hints = {},
   disabled = {},
+  label = 'Lines',
+  labelClassName,
 }) {
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/50">
-        Lines
+      <p className={cn('text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/50', labelClassName)}>
+        {label}
       </p>
       <div className="flex flex-wrap gap-1.5">
         {lines.map((series) => {
@@ -87,7 +102,7 @@ export default function ForecastLineToggle({
                 }
               >
                 <span className={cn('inline-flex', isDisabled && 'opacity-40')}>
-                  <SeriesMark color={series.color} shape={series.shape} />
+                  <SeriesMark color={series.color} shape={series.shape} dash={series.dash} dot={series.dot} />
                 </span>
                 {series.label}
               </button>

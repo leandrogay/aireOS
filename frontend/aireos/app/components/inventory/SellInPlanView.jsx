@@ -13,6 +13,7 @@ import {
   InventoryChartSlot,
   InventoryFilterCard,
   InventorySection,
+  monthRangeLabel,
   skuScopeLabel,
   StatTag,
 } from './InventoryChrome';
@@ -41,26 +42,33 @@ function LastMonthVsForecast({ comparison }) {
   const sign = comparison.difference > 0 ? '+' : comparison.difference < 0 ? '−' : '';
   const percent = comparison.percent === null ? '' : ` (${sign}${Math.abs(comparison.percent).toFixed(1)}%)`;
   const direction = comparison.difference > 0 ? 'above' : comparison.difference < 0 ? 'below' : 'on';
+  // Same bar as the chart's line toggles below it (and the Forecast page's):
+  // a small uppercase label, then the figures as pills.
   return (
-    <div className="mb-2 flex flex-wrap items-center gap-1.5" role="status">
-      <span className="text-[11px] font-medium text-deep-violet-blue">
+    <div
+      className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-lavander bg-white px-3 py-2"
+      role="status"
+    >
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/50">
         {formatMonth(comparison.month)} sell-out vs forecast
-      </span>
-      {comparison.skus_compared < comparison.skus_with_actuals ? (
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        <StatTag label="Actual" value={`${formatUnits(comparison.actual)} units`} />
         <StatTag
-          label="SKUs"
-          value={`${comparison.skus_compared} of ${comparison.skus_with_actuals} (the rest have no forecast)`}
+          label="Forecast"
+          value={`${formatUnits(comparison.forecast)} units (${FORECAST_SOURCE_LABEL[comparison.forecast_source]})`}
         />
-      ) : null}
-      <StatTag label="Actual" value={`${formatUnits(comparison.actual)} units`} />
-      <StatTag
-        label="Forecast"
-        value={`${formatUnits(comparison.forecast)} units · ${FORECAST_SOURCE_LABEL[comparison.forecast_source]}`}
-      />
-      <StatTag
-        label="Difference"
-        value={`${sign}${formatUnits(Math.abs(comparison.difference))} units${percent} ${direction} forecast`}
-      />
+        <StatTag
+          label="Difference"
+          value={`${sign}${formatUnits(Math.abs(comparison.difference))} units${percent} ${direction} forecast`}
+        />
+        {comparison.skus_compared < comparison.skus_with_actuals ? (
+          <StatTag
+            label="SKUs"
+            value={`${comparison.skus_compared} of ${comparison.skus_with_actuals} (the rest have no forecast)`}
+          />
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -93,6 +101,10 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
   const [customerId, setCustomerId] = useState(null);
   const [months, setMonths] = useState(6);
   const [skus, setSkus] = useState([]);
+  // The chart's "Start from" year; null = the backend's default, the year of
+  // the latest actual month (get_sell_in_outlook). Reset when the customer or
+  // SKUs change, since the years on offer depend on their actuals.
+  const [startYear, setStartYear] = useState(null);
 
   // Adjust state during render: pick the first customer once the list arrives,
   // so the view is never empty by default. Runs only while nothing is chosen.
@@ -101,22 +113,39 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
   }
 
   const { data, loading, error } = useSellInPlan({ customerId, months, skus, refreshKey });
-  const outlook = useSellInOutlook({ customerId, months, skus, refreshKey });
+  const outlook = useSellInOutlook({ customerId, months, skus, startYear, refreshKey });
   const customerName = customers.find((c) => c.customer_id === customerId)?.customer_name;
+  const chartMonths = outlook.data?.months ?? [];
   const outlookTags = [
     { label: 'Customer', value: customerName ? retailerLabel(customerName) : '—' },
     { label: 'SKU', value: skuScopeLabel(skus) },
+    ...(chartMonths.length
+      ? [{ label: 'Months', value: monthRangeLabel(chartMonths[0].month, chartMonths[chartMonths.length - 1].month) }]
+      : []),
   ];
+  const startYearOptions = (outlook.data?.start_years ?? []).map((year) => ({ value: String(year), label: String(year) }));
+  const shownStartYear = startYear ?? outlook.data?.start_year ?? null;
+
+  function changeCustomer(id) {
+    setCustomerId(id);
+    setStartYear(null);
+  }
+
+  function changeSkus(next) {
+    setSkus(next);
+    setStartYear(null);
+  }
 
   function clearFilters() {
     setSkus([]);
     setMonths(6);
+    setStartYear(null);
   }
 
   return (
     <div className="space-y-1">
       <InventoryFilterCard
-        canClear={skus.length > 0 || months !== 6}
+        canClear={skus.length > 0 || months !== 6 || startYear !== null}
         onClear={clearFilters}
         stats={data?.actuals_through ? (
           <>
@@ -134,14 +163,26 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
           {/* SelectDropdown values are strings; customer ids are numbers. */}
           <SelectDropdown
             value={customerId === null ? '' : String(customerId)}
-            onChange={(value) => setCustomerId(Number(value))}
+            onChange={(value) => changeCustomer(Number(value))}
             options={customers.map((c) => ({ value: String(c.customer_id), label: retailerLabel(c.customer_name) }))}
             ariaLabel="Customer"
             look="compact"
           />
         </div>
 
-        <SkuDropdown skuOptions={skuOptions} skus={skus} onChange={setSkus} />
+        <SkuDropdown skuOptions={skuOptions} skus={skus} onChange={changeSkus} />
+
+        <div className="min-w-0">
+          <span className={filterLabelClass}>Start from</span>
+          <SelectDropdown
+            value={shownStartYear === null ? '' : String(shownStartYear)}
+            onChange={(value) => setStartYear(Number(value))}
+            options={startYearOptions}
+            ariaLabel="Start from"
+            look="compact"
+            disabled={startYearOptions.length === 0}
+          />
+        </div>
 
         <div className="min-w-0">
           <span className={filterLabelClass}>Months ahead</span>

@@ -339,7 +339,7 @@ _FUNCTION_SCHEMAS = [
             "type": "object",
             "properties": {
                 "customer": {"type": "string", "description": "Retailer/customer name. Defaults to the current page's customer if omitted."},
-                "months": {"type": "integer", "description": "How many months ahead to plan, counted from the month after the last actual month (given back as actuals_through). Defaults to 6 -- pass a larger value if the month the user asked about is further out than that, so it's actually included in the returned rows."},
+                "months": {"type": "integer", "description": "How many months ahead to plan, counted from the current month (the plan runs from the month after the last actual month, given back as actuals_through, up to that many months after the current month). Defaults to 6 -- pass a larger value if the month the user asked about is further out than that, so it's actually included in the returned rows."},
                 "skus": {"type": "array", "items": {"type": "string"}, "description": "Exact SKU codes to scope the plan to. Call list_inventory_skus first if the user named a product rather than a code."},
                 "month": {"type": "string", "description": "YYYY-MM for the one month the user asked about, e.g. '2026-10' for October. Pass it whenever the question names a month: the result then holds only that month's rows, so the answer and its table/chart show the same month. Omit only when the question covers every planned month."},
             },

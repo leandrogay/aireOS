@@ -109,7 +109,7 @@ export async function getCustomerInventory(customerId, { skus, startMonth, endMo
  * (what to order, by item) and `skus_without_forecast`.
  *
  * @param {number} customerId
- * @param {{ months?: number, skus?: string[] }} [options] how many months ahead, 1 to 12 (default 6), and the SKUs to plan (default all)
+ * @param {{ months?: number, skus?: string[] }} [options] how many months after the current month to plan up to, 1 to 12 (default 6), and the SKUs to plan (default all)
  * @returns {Promise<{ customer: object, threshold: object, actuals_through: string | null, rows: object[], monthly_totals: object[], sku_totals: object[], skus_without_forecast: object[] }>}
  */
 export async function getSellInPlan(customerId, { months, skus } = {}) {
@@ -121,16 +121,22 @@ export async function getSellInPlan(customerId, { months, skus } = {}) {
 /**
  * GET /api/inventory/customers/{customerId}/sell-in-outlook
  *
- * Sell-in and sell-out per month for the sell-in plan chart: the three months
- * up to the last actual month, then the plan's months ahead.
+ * Sell-in and sell-out per month for the sell-in plan chart: from January of
+ * `startYear` to `months` months after the current month, the same end month
+ * as getSellInPlan. Without `startYear` it starts in the year of the latest
+ * actual month; `start_years` lists the years it can start from.
  *
  * @param {number} customerId
- * @param {{ months?: number, skus?: string[] }} [options] how many months ahead, 1 to 12 (default 6), and the SKUs to include (default all)
- * @returns {Promise<{ customer: object, actuals_through: string | null, months: object[] }>}
+ * @param {{ months?: number, skus?: string[], startYear?: number | null }} [options] how many months after the current month, 1 to 12 (default 6), the SKUs to include (default all), and the year to start from (default the latest actual's)
+ * @returns {Promise<{ customer: object, actuals_through: string | null, months: object[], start_year: number | null, start_years: number[] }>}
  */
-export async function getSellInOutlook(customerId, { months, skus } = {}) {
+export async function getSellInOutlook(customerId, { months, skus, startYear } = {}) {
   return request(
-    `/api/inventory/customers/${encodeURIComponent(customerId)}/sell-in-outlook${toQuery({ months, sku: skus })}`,
+    `/api/inventory/customers/${encodeURIComponent(customerId)}/sell-in-outlook${toQuery({
+      months,
+      sku: skus,
+      start_year: startYear ?? undefined,
+    })}`,
   );
 }
 
