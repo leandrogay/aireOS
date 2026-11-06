@@ -3,7 +3,6 @@ from decimal import Decimal
 from pydantic import Field, model_validator
 
 from app.schemas.catalog import _Base
-from app.schemas.settings.common import SettingsChangeBase
 
 
 # ============================================================
@@ -17,7 +16,7 @@ from app.schemas.settings.common import SettingsChangeBase
 # ============================================================
 
 
-class DohThresholdsUpdate(SettingsChangeBase):
+class DohThresholdsUpdate(_Base):
     min_doh: Decimal = Field(ge=0, max_digits=6, decimal_places=2)
     target_doh: Decimal = Field(ge=0, max_digits=6, decimal_places=2)
     max_doh: Decimal = Field(ge=0, max_digits=6, decimal_places=2)
@@ -31,14 +30,6 @@ class DohThresholdsUpdate(SettingsChangeBase):
             raise ValueError("target_doh cannot be greater than max_doh")
 
         return self
-
-
-class DohRevert(SettingsChangeBase):
-    pass
-
-
-class DohReset(SettingsChangeBase):
-    pass
 
 
 class DohAlertUpdate(_Base):

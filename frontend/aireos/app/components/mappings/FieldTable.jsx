@@ -120,7 +120,7 @@ function FieldInfo({ entry }) {
   const reason = level !== 'reviewer' ? entry.rationale : '';
 
   return (
-    <InfoTooltip label={`About ${entry.label}`} className="w-80">
+    <InfoTooltip label={`About ${entry.label}`} variant="card" className="w-80">
       <p className="text-sm font-medium text-deep-violet-blue">{entry.label}</p>
       <p>{entry.help}</p>
 

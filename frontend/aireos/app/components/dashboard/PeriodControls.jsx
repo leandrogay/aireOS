@@ -1,7 +1,7 @@
 'use client';
 
 import CompareControl from '@/components/dashboard/CompareControl';
-import DateRangeControl from '@/components/dashboard/DateRangeControl';
+import DateRangeControl from '@/components/ui/DateRangeControl';
 import { monthCount, parseIso } from '@/app/utils/periodComparison';
 
 /**

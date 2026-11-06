@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { ChevronDown, GitCompareArrows } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import MonthRangeCalendar from '@/components/dashboard/MonthRangeCalendar';
+import MonthRangeCalendar from '@/components/ui/MonthRangeCalendar';
 import { cn } from '@/lib/utils';
 import { formatPeriodName } from '@/app/utils/periodComparison';
 

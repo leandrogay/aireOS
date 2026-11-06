@@ -50,6 +50,7 @@ export default function ForecastPromoPanel({
   seriesValues,
   details,
   formatValue,
+  scenarioDetails = null,
   promos,
   openPromoId,
   onTogglePromo,
@@ -85,9 +86,12 @@ export default function ForecastPromoPanel({
         ) : null}
         <ForecastPointDetails details={details} className="mt-2 border-t border-lavander pt-2" />
       </div>
+      {/* Scenario builder only: what its building blocks and planned
+          promotions add this month (ForecastChart's ScenarioPointDetails). */}
+      {scenarioDetails ? <div className="border-b border-lavander px-3 py-2">{scenarioDetails}</div> : null}
       <div className="border-b border-lavander px-3 py-1.5">
         <p className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/45">
-          Promotions
+          {scenarioDetails ? 'Entered promotions' : 'Promotions'}
         </p>
       </div>
       <ul className="max-h-[min(48vh,400px)] divide-y divide-lavander overflow-y-auto">

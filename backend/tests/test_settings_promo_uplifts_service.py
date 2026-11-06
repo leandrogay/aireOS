@@ -1,0 +1,630 @@
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
+
+import pytest
+from conftest import FakeConnection, FakeEngine
+
+from app.services.settings import common
+from app.services.settings import promo_uplifts as service
+
+
+STAMP = datetime(2026, 10, 21, 8, 0, tzinfo=timezone.utc)
+
+SEED = [
+    ("pct_off_20", "20% Off", "20", "0"),
+    ("pct_off_30", "30% Off", "30", "4"),
+    ("b1g1", "Buy 1 Get 1 Free", "50", "12"),
+    ("voucher", "Voucher", None, "3"),
+]
+
+
+class FakePromoUpliftDatabase:
+    """
+    In-memory customers, skus, promotions and both settings tables,
+    answering the statements the service sends. The settings tables are
+    append-only: any UPDATE or DELETE fails the test.
+    """
+
+    def __init__(self):
+        self.customers = {1: "fairprice", 2: "giant"}
+        self.skus = {"Aire Pants L": {"sku": "SKU-L", "sku_range": "Pants"}}
+        self.promotions = []
+        self.promotion_skus = []
+        self.uplifts = []
+        self.anchors = []
+        for key, label, discount, uplift in SEED:
+            self.add_uplift(key, label, discount, uplift, updated_by="seed")
+        self.add_anchor(None, "20", "manual", "seed")
+        # promo_moments.anchor_recommendations, keyed (customer_id, sku_range).
+        self.recommendations = {}
+
+    # ---- helpers for tests -----------------------------------------------------
+
+    def _stamp(self):
+        return STAMP + timedelta(minutes=len(self.uplifts) + len(self.anchors))
+
+    # `key` and `scope` are what the service derives from the label and the
+    # target; they are kept here so the tests read like the rows they mean.
+    def add_uplift(self, key, label, discount, uplift, scope="all", customer_id=None,
+                   sku_range=None, sku=None, source="placeholder", updated_by="aireos", note=None):
+        row = {
+            "uplift_id": len(self.uplifts) + 1,
+            "customer_id": customer_id,
+            "sku_range": sku_range,
+            "sku": sku,
+            "promotion_mechanic": label,
+            "effective_discount_pct": Decimal(discount) if discount is not None else None,
+            "uplift_pct": Decimal(uplift) if uplift is not None else None,
+            "source": source,
+            "note": note,
+            "updated_by": updated_by,
+            "updated_at": self._stamp(),
+        }
+        self.uplifts.append(row)
+        return {**row, "id": row["uplift_id"]}
+
+    def add_anchor(self, customer_id, anchor_pct, source, updated_by="aireos", sku_range=None, mechanic=None):
+        row = {
+            "anchor_id": len(self.anchors) + 1,
+            "customer_id": customer_id,
+            "sku_range": sku_range,
+            "promotion_mechanic": mechanic,
+            "anchor_pct": Decimal(anchor_pct) if anchor_pct is not None else None,
+            "source": source,
+            "updated_by": updated_by,
+            "updated_at": self._stamp(),
+        }
+        self.anchors.append(row)
+        return row
+
+    def add_promotion(self, customer_id, start, end, mechanic, promo_type="monthly", skus=()):
+        promotion_id = len(self.promotions) + 1
+        self.promotions.append({
+            "customer_id": customer_id,
+            "promotion_id": promotion_id,
+            "period_start": start,
+            "period_end": end,
+            "promo_type": promo_type,
+            "promotion_mechanic": mechanic,
+        })
+        self.promotion_skus.extend((promotion_id, sku) for sku in skus)
+
+    def current_uplifts(self, key):
+        """Newest row per target for one mechanic, as the service picks them, with `id` like the API."""
+
+        newest = {}
+        for row in self.uplifts:
+            if service.rules.mechanic_key(row["promotion_mechanic"]) != key:
+                continue
+            target = (row["customer_id"], row["sku_range"], row["sku"])
+            if target not in newest or (row["updated_at"], row["uplift_id"]) > (
+                newest[target]["updated_at"], newest[target]["uplift_id"]
+            ):
+                newest[target] = row
+        return [{**row, "id": row["uplift_id"]} for row in newest.values() if row["source"] != "removed"]
+
+    # ---- statements --------------------------------------------------------------
+
+    def respond(self, sql, params):
+        params = params or {}
+
+        if sql.startswith(("UPDATE", "DELETE")):
+            raise AssertionError(f"settings tables are append-only: {sql}")
+
+        if sql.startswith("LOCK TABLE"):
+            return []
+
+        if sql.startswith("INSERT INTO promo_uplift_settings"):
+            row = self.add_uplift(
+                None, params["promotion_mechanic"], params["effective_discount_pct"], params["uplift_pct"],
+                customer_id=params["customer_id"], sku_range=params["sku_range"], sku=params["sku"],
+                source=params["source"], updated_by=params["updated_by"], note=params["note"],
+            )
+            return [(row["uplift_id"],)]
+
+        if sql.startswith("INSERT INTO promo_anchor_settings"):
+            self.add_anchor(
+                params["customer_id"], params["anchor_pct"], params["source"], params["updated_by"],
+                params["sku_range"], params["promotion_mechanic"],
+            )
+            return []
+
+        if "FOR NO KEY UPDATE" in sql:
+            return [{"customer_id": params["customer_id"]}] if params["customer_id"] in self.customers else []
+
+        if "FROM customers WHERE customer_name = :customer_name" in sql:
+            return [
+                {"customer_id": i, "customer_name": name}
+                for i, name in self.customers.items()
+                if name == params["customer_name"]
+            ]
+
+        if sql.startswith("SELECT customer_id, customer_name FROM customers"):
+            wanted = params.get("customer_id")
+            rows = [{"customer_id": i, "customer_name": n} for i, n in self.customers.items()]
+            rows = [r for r in rows if wanted is None or r["customer_id"] == wanted]
+            return sorted(rows, key=lambda r: r["customer_name"])
+
+        if "FROM promotions p JOIN promotion_stores" in sql:
+            wanted = params.get("customer_id")
+            return [p for p in self.promotions if wanted is None or p["customer_id"] == wanted]
+
+        if "FROM promotion_skus pk JOIN skus sk" in sql:
+            by_sku = {row["sku"]: row["sku_range"] for row in self.skus.values()}
+            return sorted({(pid, by_sku[sku]) for pid, sku in self.promotion_skus if by_sku.get(sku)})
+
+        if "FROM promotions WHERE promotion_mechanic IS NOT NULL" in sql:
+            counts = {}
+            for p in self.promotions:
+                counts[p["promotion_mechanic"]] = counts.get(p["promotion_mechanic"], 0) + 1
+            return [{"promotion_mechanic": m, "promotions": n} for m, n in counts.items()]
+
+        if sql.startswith("SELECT DISTINCT sku_range FROM skus"):
+            return [(r,) for r in sorted({row["sku_range"] for row in self.skus.values() if row["sku_range"]})]
+
+        if "FROM skus" in sql and "sku IS DISTINCT FROM sku_range" in sql:
+            return [{"product_name": name, **row} for name, row in self.skus.items()]
+
+        if "FROM skus" in sql:
+            row = self.skus.get(params["product_name"])
+            return [row] if row else []
+
+        if "FROM promo_anchor_settings" in sql:
+            return [{**row, "id": row["anchor_id"]} for row in self.anchors]
+
+        if "FROM promo_uplift_settings u" in sql:
+            return [
+                {**row, "id": row["uplift_id"], "customer_name": self.customers.get(row["customer_id"])}
+                for row in self.uplifts
+            ]
+
+        raise AssertionError(f"unexpected statement: {sql}")
+
+
+def _install(monkeypatch, db):
+    conn = FakeConnection(db.respond)
+    engine = FakeEngine(conn)
+    monkeypatch.setattr(common, "get_engine", lambda: engine)
+    monkeypatch.setattr(common, "get_read_engine", lambda: engine)
+    monkeypatch.setattr(service.promo_moments, "anchor_recommendations", lambda conn: db.recommendations)
+    return conn
+
+
+def _recommend(db, customer_id, sku_range, key, months=6, window_months=10):
+    db.recommendations[(customer_id, sku_range)] = {
+        "mechanic_key": key,
+        "mechanic_label": key,
+        "months": months,
+        "window_months": window_months,
+    }
+
+
+def _uplift_of(result, key):
+    return next(u["uplift_pct"] for u in result["uplifts"] if u["mechanic_key"] == key)
+
+
+# ---- anchor ----------------------------------------------------------------------
+
+
+def test_with_nothing_saved_a_customer_uses_the_all_customers_anchor_and_its_ranges_follow(monkeypatch):
+    db = FakePromoUpliftDatabase()
+    _recommend(db, 1, "Pants", "pct_off_30")
+    _install(monkeypatch, db)
+
+    anchor = service.get_anchor(1)
+    pants = anchor["ranges"][0]
+
+    assert (anchor["anchor_pct"], anchor["source"]) == (20.0, "default")
+    # A recommendation is shown, never used until it is adopted.
+    assert (pants["anchor_pct"], pants["source"]) == (20.0, "customer")
+    assert pants["recommended"] == {
+        "mechanic_key": "pct_off_30", "mechanic_label": "30% Off", "anchor_pct": 30.0, "months": 6,
+    }
+    assert pants["recommendation_differs"] is True
+
+
+def test_adopting_saves_the_recommended_mechanic_and_its_discount(monkeypatch):
+    db = FakePromoUpliftDatabase()
+    _recommend(db, 1, "Pants", "pct_off_30")
+    _install(monkeypatch, db)
+
+    result = service.adopt_anchor(1, "Pants")
+    pants = result["anchor"]["ranges"][0]
+
+    assert result["changed"] is True
+    assert (pants["anchor_pct"], pants["mechanic_label"], pants["source"]) == (30.0, "30% Off", "recommended")
+    assert pants["recommendation_differs"] is False
+    assert (db.anchors[-1]["promotion_mechanic"], db.anchors[-1]["anchor_pct"]) == ("30% Off", Decimal("30"))
+    # Adopting again writes nothing.
+    assert service.adopt_anchor(1, "Pants")["changed"] is False
+
+
+def test_a_saved_anchor_does_not_move_when_the_recommendation_does(monkeypatch):
+    db = FakePromoUpliftDatabase()
+    db.add_anchor(1, "30", "recommended", sku_range="Pants", mechanic="30% Off")
+    _recommend(db, 1, "Pants", "b1g1")
+    _install(monkeypatch, db)
+
+    pants = service.get_anchor(1)["ranges"][0]
+
+    assert (pants["anchor_pct"], pants["mechanic_label"]) == (30.0, "30% Off")
+    assert pants["recommended"]["mechanic_label"] == "Buy 1 Get 1 Free"
+    assert pants["recommendation_differs"] is True
+
+
+def test_a_discount_can_be_typed_only_with_too_few_moments(monkeypatch):
+    db = FakePromoUpliftDatabase()
+    _recommend(db, 1, "Pants", "pct_off_30", window_months=10)
+    _recommend(db, 1, None, None, window_months=2)
+    _install(monkeypatch, db)
+
+    with pytest.raises(service.UpliftSettingConflictError):
+        service.set_anchor(1, Decimal("25"), sku_range="Pants")
+
+    saved = service.set_anchor(1, Decimal("25"))
+    assert (saved["anchor"]["anchor_pct"], saved["anchor"]["source"]) == (25.0, "manual")
+    assert saved["anchor"]["manual_allowed"] is True
+    assert db.anchors[-1]["promotion_mechanic"] is None
+    assert service.set_anchor(1, Decimal("25.00"))["changed"] is False
+
+
+def test_adopting_with_too_few_moments_is_a_conflict(monkeypatch):
+    db = FakePromoUpliftDatabase()
+    _recommend(db, 1, "Pants", None, window_months=2)
+    _install(monkeypatch, db)
+
+    with pytest.raises(service.UpliftSettingConflictError):
+        service.adopt_anchor(1, "Pants")
+    assert len(db.anchors) == 1
+
+
+def test_a_range_follows_its_customers_saved_anchor(monkeypatch):
+    db = FakePromoUpliftDatabase()
+    db.skus["Aire Tape M"] = {"sku": "SKU-TM", "sku_range": "Tape"}
+    db.add_anchor(1, "25", "recommended", mechanic="25% Off")
+    db.add_anchor(1, "30", "recommended", sku_range="Pants", mechanic="30% Off")
+    _install(monkeypatch, db)
+
+    ranges = {item["sku_range"]: item for item in service.get_anchor(1)["ranges"]}
+
+    assert (ranges["Pants"]["anchor_pct"], ranges["Pants"]["source"]) == (30.0, "recommended")
+    assert (ranges["Tape"]["anchor_pct"], ranges["Tape"]["source"]) == (25.0, "customer")
+    assert ranges["Tape"]["mechanic_label"] == "25% Off"
+
+
+def test_seeding_lists_todays_recommendations_and_writes_only_when_applied(monkeypatch):
+    db = FakePromoUpliftDatabase()
+    db.add_anchor(2, "20", "recommended", mechanic="20% Off")
+    _recommend(db, 1, None, "pct_off_30")
+    _recommend(db, 1, "Pants", "b1g1")
+    _recommend(db, 2, None, "pct_off_30")
+    _recommend(db, 2, "Pants", None, window_months=1)
+    _install(monkeypatch, db)
+
+    planned = service.seed_anchors()
+    assert [(p["customer_name"], p["sku_range"], p["promotion_mechanic"]) for p in planned] == [
+        ("fairprice", None, "30% Off"),
+        ("fairprice", "Pants", "Buy 1 Get 1 Free"),
+    ]
+    assert len(db.anchors) == 2
+
+    service.seed_anchors(apply=True)
+    assert [(r["customer_id"], r["sku_range"], r["source"]) for r in db.anchors[2:]] == [
+        (1, None, "recommended"),
+        (1, "Pants", "recommended"),
+    ]
+
+
+def test_the_all_customers_anchor_can_always_be_typed(monkeypatch):
+    _install(monkeypatch, FakePromoUpliftDatabase())
+
+    result = service.set_anchor(None, Decimal("30"))
+
+    assert result == {"changed": True, "default_anchor_pct": 30.0}
+    assert service.get_anchor(2)["anchor_pct"] == 30.0
+
+
+def test_range_anchors_need_a_customer_and_a_catalogue_range(monkeypatch):
+    db = FakePromoUpliftDatabase()
+    _install(monkeypatch, db)
+
+    with pytest.raises(ValueError):
+        service.set_anchor(None, Decimal("25"), sku_range="Pants")
+    with pytest.raises(ValueError):
+        service.adopt_anchor(1, sku_range="Socks")
+    assert len(db.anchors) == 1
+
+
+def test_anchor_history_is_per_target_and_newest_first(monkeypatch):
+    db = FakePromoUpliftDatabase()
+    db.add_anchor(1, "30", "recommended", sku_range="Pants", mechanic="30% Off")
+    db.add_anchor(1, "25", "manual", sku_range="Pants")
+    _install(monkeypatch, db)
+
+    history = service.anchor_history(1, "Pants")
+
+    assert [(row["source"], row["mechanic_label"]) for row in history] == [("manual", None), ("recommended", "30% Off")]
+    assert [row["is_current"] for row in history] == [True, False]
+    assert service.anchor_history(1) == []
+
+
+def test_anchor_writes_for_an_unknown_customer_are_404s(monkeypatch):
+    _install(monkeypatch, FakePromoUpliftDatabase())
+
+    with pytest.raises(common.CustomerNotFoundError):
+        service.set_anchor(9, Decimal("25"))
+    with pytest.raises(common.CustomerNotFoundError):
+        service.get_anchor(9)
+
+
+# ---- resolve_uplifts ---------------------------------------------------------------
+
+
+def test_placeholder_uplifts_follow_the_customers_anchor(monkeypatch):
+    db = FakePromoUpliftDatabase()
+    db.add_anchor(1, "30", "manual")
+    _install(monkeypatch, db)
+
+    result = service.resolve_uplifts("fairprice")
+
+    assert _uplift_of(result, "pct_off_30") == 0.0
+    assert _uplift_of(result, "pct_off_20") == -4.0
+    assert _uplift_of(result, "b1g1") == 8.0
+    # The voucher is not a discount, so the anchor never moves it.
+    assert _uplift_of(result, "voucher") == 3.0
+    assert result["anchor"]["anchor_pct"] == 30.0
+
+
+def test_placeholders_use_the_products_range_anchor(monkeypatch):
+    db = FakePromoUpliftDatabase()
+    db.skus["Aire Tape M"] = {"sku": "SKU-TM", "sku_range": "Tape"}
+    db.add_anchor(1, "30", "manual", sku_range="Pants")
+    _install(monkeypatch, db)
+
+    assert _uplift_of(service.resolve_uplifts("fairprice", "Aire Pants L"), "pct_off_30") == 0.0
+    assert _uplift_of(service.resolve_uplifts("fairprice", "Aire Tape M"), "pct_off_30") == 4.0
+    # All SKUs: the customer's anchor, with Pants listed as differing.
+    all_skus = service.resolve_uplifts("fairprice")
+    assert _uplift_of(all_skus, "pct_off_30") == 4.0
+    assert all_skus["product_uplifts"]["Aire Pants L"]["pct_off_30"] == 0.0
+    assert "Aire Tape M" not in all_skus["product_uplifts"]
+    assert all_skus["product_anchors"] == {"Aire Pants L": 30.0}
+
+
+def test_a_typed_estimate_does_not_follow_the_anchor(monkeypatch):
+    db = FakePromoUpliftDatabase()
+    db.add_anchor(1, "30", "manual")
+    db.add_uplift("b1g1", "Buy 1 Get 1 Free", "50", "15", scope="customer", customer_id=1, source="estimate")
+    _install(monkeypatch, db)
+
+    result = service.resolve_uplifts("fairprice")
+
+    assert _uplift_of(result, "b1g1") == 15.0
+
+
+def test_the_most_specific_scope_wins(monkeypatch):
+    db = FakePromoUpliftDatabase()
+    db.add_uplift("pct_off_30", "30% Off", "30", "6", scope="customer", customer_id=1, source="estimate")
+    db.add_uplift("pct_off_30", "30% Off", "30", "7", scope="range", customer_id=1, sku_range="Pants", source="estimate")
+    db.add_uplift("pct_off_30", "30% Off", "30", "8", scope="sku", customer_id=1, sku="SKU-L", source="estimate")
+    db.add_uplift("pct_off_30", "30% Off", "30", "9", scope="customer", customer_id=2, source="estimate")
+    _install(monkeypatch, db)
+
+    assert _uplift_of(service.resolve_uplifts("fairprice", "Aire Pants L"), "pct_off_30") == 8.0
+    assert _uplift_of(service.resolve_uplifts("fairprice", "Unknown product"), "pct_off_30") == 6.0
+    assert _uplift_of(service.resolve_uplifts("fairprice"), "pct_off_30") == 6.0
+    assert _uplift_of(service.resolve_uplifts("giant"), "pct_off_30") == 9.0
+
+
+def test_all_skus_lists_only_the_products_whose_value_differs(monkeypatch):
+    db = FakePromoUpliftDatabase()
+    db.skus["Aire Pants XL"] = {"sku": "SKU-XL", "sku_range": "Pants"}
+    db.skus["Aire Tape M"] = {"sku": "SKU-TM", "sku_range": "Tape"}
+    db.add_uplift("pct_off_30", "30% Off", "30", "7", scope="range", customer_id=1, sku_range="Pants", source="estimate")
+    db.add_uplift("b1g1", "Buy 1 Get 1 Free", "50", "15", scope="sku", customer_id=1, sku="SKU-L", source="estimate")
+    _install(monkeypatch, db)
+
+    result = service.resolve_uplifts("fairprice")
+
+    assert _uplift_of(result, "pct_off_30") == 4.0
+    assert result["product_uplifts"] == {
+        "Aire Pants L": {"pct_off_30": 7.0, "b1g1": 15.0},
+        "Aire Pants XL": {"pct_off_30": 7.0},
+    }
+
+
+def test_all_skus_lists_no_products_when_none_differ(monkeypatch):
+    _install(monkeypatch, FakePromoUpliftDatabase())
+
+    assert service.resolve_uplifts("fairprice")["product_uplifts"] == {}
+
+
+def test_resolving_for_an_unknown_customer_is_a_404(monkeypatch):
+    _install(monkeypatch, FakePromoUpliftDatabase())
+
+    with pytest.raises(common.CustomerNotFoundError):
+        service.resolve_uplifts("nobody")
+
+
+# ---- editing uplifts ---------------------------------------------------------------
+
+
+def test_editing_a_value_inserts_an_estimate_and_keeps_the_old_version(monkeypatch):
+    db = FakePromoUpliftDatabase()
+    _install(monkeypatch, db)
+    old = db.current_uplifts("pct_off_30")[0]
+
+    result = service.update_uplift(old["id"], Decimal("6"), note="Fairprice data")
+
+    assert result["changed"] is True
+    assert result["setting"]["uplift_pct"] == 6.0
+    assert result["setting"]["source"] == "estimate"
+    assert result["setting"]["follows_anchor"] is False
+    assert result["setting"]["changed_by"] == "aireos"
+    assert [row["id"] for row in db.current_uplifts("pct_off_30")] == [result["setting"]["id"]]
+    # The placeholder row is untouched: the history is the table itself.
+    assert next(r for r in db.uplifts if r["uplift_id"] == old["id"])["uplift_pct"] == Decimal("4")
+
+
+def test_saving_the_same_estimate_twice_writes_one_version(monkeypatch):
+    db = FakePromoUpliftDatabase()
+    _install(monkeypatch, db)
+    first = service.update_uplift(db.current_uplifts("pct_off_30")[0]["id"], Decimal("6"))
+
+    second = service.update_uplift(first["setting"]["id"], Decimal("6.00"))
+
+    assert second["changed"] is False
+    assert len([r for r in db.uplifts if r["promotion_mechanic"] == "30% Off"]) == 2
+
+
+def test_learned_values_cannot_be_edited_or_reset(monkeypatch):
+    db = FakePromoUpliftDatabase()
+    learned = db.add_uplift("pct_off_30", "30% Off", "30", "8", scope="sku", customer_id=1, sku="SKU-L", source="learned")
+    _install(monkeypatch, db)
+
+    with pytest.raises(service.UpliftSettingConflictError):
+        service.update_uplift(learned["id"], Decimal("5"))
+    with pytest.raises(service.UpliftSettingConflictError):
+        service.reset_uplift(learned["id"])
+
+
+def test_editing_an_old_version_is_a_conflict(monkeypatch):
+    db = FakePromoUpliftDatabase()
+    _install(monkeypatch, db)
+    old_id = db.current_uplifts("pct_off_30")[0]["id"]
+    service.update_uplift(old_id, Decimal("6"))
+
+    with pytest.raises(service.UpliftSettingConflictError):
+        service.update_uplift(old_id, Decimal("7"))
+
+
+def test_editing_a_missing_row_is_not_found(monkeypatch):
+    _install(monkeypatch, FakePromoUpliftDatabase())
+
+    with pytest.raises(service.UpliftSettingNotFoundError):
+        service.update_uplift(999, Decimal("5"))
+
+
+def test_reset_puts_an_all_customers_value_back_on_the_placeholder_rule(monkeypatch):
+    db = FakePromoUpliftDatabase()
+    _install(monkeypatch, db)
+    edited = service.update_uplift(db.current_uplifts("pct_off_30")[0]["id"], Decimal("9"))
+
+    result = service.reset_uplift(edited["setting"]["id"])
+
+    assert result["changed"] is True
+    assert result["setting"]["source"] == "placeholder"
+    assert result["setting"]["follows_anchor"] is True
+    assert result["setting"]["uplift_pct"] == 4.0
+
+
+def test_reset_gives_the_voucher_back_its_placeholder_value(monkeypatch):
+    db = FakePromoUpliftDatabase()
+    _install(monkeypatch, db)
+    edited = service.update_uplift(db.current_uplifts("voucher")[0]["id"], Decimal("5"))
+
+    result = service.reset_uplift(edited["setting"]["id"])
+
+    assert result["setting"]["uplift_pct"] == 3.0
+
+
+def test_reset_removes_a_customer_override_so_the_broader_value_applies(monkeypatch):
+    db = FakePromoUpliftDatabase()
+    override = db.add_uplift("pct_off_30", "30% Off", "30", "9", scope="customer", customer_id=1, source="estimate")
+    _install(monkeypatch, db)
+
+    result = service.reset_uplift(override["id"])
+
+    assert result == {"changed": True, "setting": None}
+    assert db.uplifts[-1]["source"] == "removed"
+    assert db.uplifts[-1]["uplift_pct"] is None
+    assert _uplift_of(service.resolve_uplifts("fairprice"), "pct_off_30") == 4.0
+    # A removed value can no longer be edited.
+    with pytest.raises(service.UpliftSettingConflictError):
+        service.update_uplift(override["id"], Decimal("5"))
+
+
+def test_resetting_a_placeholder_writes_nothing(monkeypatch):
+    db = FakePromoUpliftDatabase()
+    _install(monkeypatch, db)
+    count = len(db.uplifts)
+
+    assert service.reset_uplift(db.current_uplifts("pct_off_30")[0]["id"])["changed"] is False
+    assert len(db.uplifts) == count
+
+
+# ---- overrides ---------------------------------------------------------------------
+
+
+def test_an_override_copies_the_mechanic_and_is_an_estimate(monkeypatch):
+    db = FakePromoUpliftDatabase()
+    _install(monkeypatch, db)
+
+    result = service.add_override("pct_off_30", "sku", 1, Decimal("7"), sku="SKU-L")
+
+    setting = result["setting"]
+    assert (setting["scope"], setting["sku"], setting["customer_name"]) == ("sku", "SKU-L", "fairprice")
+    assert (setting["mechanic_label"], setting["effective_discount_pct"]) == ("30% Off", 30.0)
+    assert setting["source"] == "estimate"
+
+
+def test_a_second_override_at_the_same_scope_is_a_conflict(monkeypatch):
+    db = FakePromoUpliftDatabase()
+    _install(monkeypatch, db)
+    service.add_override("pct_off_30", "customer", 1, Decimal("7"))
+
+    with pytest.raises(service.UpliftSettingConflictError):
+        service.add_override("pct_off_30", "customer", 1, Decimal("8"))
+
+
+def test_an_override_needs_a_known_mechanic_and_customer(monkeypatch):
+    _install(monkeypatch, FakePromoUpliftDatabase())
+
+    with pytest.raises(service.MechanicNotFoundError):
+        service.add_override("pct_off_99", "customer", 1, Decimal("7"))
+    with pytest.raises(common.CustomerNotFoundError):
+        service.add_override("pct_off_30", "customer", 9, Decimal("7"))
+
+
+# ---- listing, matching, history ----------------------------------------------------
+
+
+def test_unmapped_mechanics_lists_labels_no_setting_matches(monkeypatch):
+    db = FakePromoUpliftDatabase()
+    db.add_promotion(1, date(2026, 7, 1), date(2026, 7, 31), "30% Off")
+    db.add_promotion(1, date(2026, 7, 1), date(2026, 7, 31), "Free tote bag")
+    db.add_promotion(1, date(2026, 8, 1), date(2026, 8, 31), "Buy 2 Get 1 Free")
+    _install(monkeypatch, db)
+
+    result = service.list_settings()
+
+    # "Buy 2 Get 1 Free" reads fine but has no row in this fake's seed.
+    assert [row["promotion_mechanic"] for row in result["unmapped_mechanics"]] == [
+        "Buy 2 Get 1 Free",
+        "Free tote bag",
+    ]
+    assert result["default_anchor_pct"] == 20.0
+    assert len(result["settings"]) == len(SEED)
+
+
+def test_match_reads_the_label_by_its_pattern(monkeypatch):
+    _install(monkeypatch, FakePromoUpliftDatabase())
+
+    matched = service.match_mechanic("30 % off")
+    unmatched = service.match_mechanic("Free tote bag")
+
+    assert (matched["mechanic_key"], matched["matched"]) == ("pct_off_30", True)
+    assert matched["setting"]["uplift_pct"] == 4.0
+    assert (unmatched["mechanic_key"], unmatched["matched"], unmatched["setting"]) == (None, False, None)
+
+
+def test_mechanic_history_is_newest_first_and_unknown_is_not_found(monkeypatch):
+    db = FakePromoUpliftDatabase()
+    _install(monkeypatch, db)
+    service.update_uplift(db.current_uplifts("pct_off_30")[0]["id"], Decimal("6"))
+
+    history = service.mechanic_history("pct_off_30")
+
+    assert [row["source"] for row in history] == ["estimate", "placeholder"]
+    with pytest.raises(service.MechanicNotFoundError):
+        service.mechanic_history("pct_off_99")

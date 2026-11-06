@@ -25,6 +25,7 @@ import { buildMonthlyPoints, buildYearlyTotals, fullYearWindow } from '@/app/uti
  * @param {{ start?: string, end?: string }} options.bounds months that exist
  * @param {object[]} options.rows forecast rows already fetched for the filter
  * @param {object[]} options.actuals monthly actuals already fetched for the filter
+ * @param {(rows: object[]) => object[]} [options.mapRows] applied to the forecast rows before totalling
  */
 export default function useForecastYearTotals({
   ready = false,
@@ -35,6 +36,7 @@ export default function useForecastYearTotals({
   bounds = {},
   rows = [],
   actuals = [],
+  mapRows = (forecastRows) => forecastRows,
 }) {
   const [wide, setWide] = useState({ key: '', rows: [], actuals: [] });
   const [loading, setLoading] = useState(false);
@@ -82,7 +84,9 @@ export default function useForecastYearTotals({
   }, [ready, needsWiderRange, windowKey, productName, customerName, yearWindow?.start, yearWindow?.end]);
 
   const widened = needsWiderRange && wide.key === windowKey;
-  const sourceRows = needsWiderRange ? (widened ? wide.rows : []) : rows;
+  // mapRows lets the Scenario builder total the rows of its chosen forecast
+  // view (scenarioModelView.rowsForView); the Forecast page leaves it as is.
+  const sourceRows = mapRows(needsWiderRange ? (widened ? wide.rows : []) : rows);
   const sourceActuals = needsWiderRange ? (widened ? wide.actuals : []) : actuals;
   // Both metrics come from the same months, so the cards can show volume and
   // revenue side by side without the chart's Volume/Revenue tab changing them.

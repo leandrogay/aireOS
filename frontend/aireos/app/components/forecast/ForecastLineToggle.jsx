@@ -31,10 +31,13 @@ function SeriesMark({ color, shape }) {
 /**
  * Line on/off pills. `hints` maps a series key to a short explanation shown
  * on hover or keyboard focus of that pill (e.g. why Initial is missing).
+ * `series` defaults to the committed forecast lines; the Scenario builder
+ * adds its Simulated line.
  * A key in `disabled` is greyed out and can't be turned on (a line with no
  * data yet, e.g. Previous); it stays focusable so its hint can still be read.
  *
  * @param {{
+ *   series?: { key: string, label: string, color: string, shape: string }[],
  *   visible: Record<string, boolean>,
  *   onToggle: (key: string) => void,
  *   hints?: Record<string, string | null>,

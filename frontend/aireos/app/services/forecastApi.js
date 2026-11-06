@@ -67,6 +67,22 @@ export async function getForecastView({
 }
 
 /**
+ * GET /api/forecast/alternatives
+ * For every customer x SKU x month whose Current line comes from the model
+ * that already includes the promotion entered for that month
+ * (ARIMA_PLUS_XREG), the forecast the pipeline would have picked without it:
+ * alt_forecast_current (cartons), alt_low_80 / alt_high_80, their *_revenue
+ * at the same realised price, and alt_source_model. Used by the Scenario
+ * builder's "Simulate New Promotions" view.
+ * See backend forecast_service.get_forecast_alternatives.
+ */
+export async function getForecastAlternatives({ productName = '', customerName = '' } = {}) {
+  const params = new URLSearchParams();
+  if (productName) params.set('product_name', productName);
+  if (customerName) params.set('customer_name', customerName);
+  const query = params.toString();
+  const data = await request(`/api/forecast/alternatives${query ? `?${query}` : ''}`);
+  return data.rows ?? [];
  * GET /api/forecast/initial-status
  * One entry per Initial Yearly Forecast year in aire_forecasting_initial_meta:
  * { forecast_year, lock_at, refreshed_at, locked }. Best effort on the backend
