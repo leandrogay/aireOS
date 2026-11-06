@@ -32,7 +32,7 @@ export default function CustomerDropdown({ customers, customerIds, onChange, err
         value={customerIds[0] ?? ''}
         onChange={(e) => onChange(e.target.value ? [Number(e.target.value)] : [])}
         aria-invalid={invalid}
-        className={cn(formFieldClass, invalid && invalidInputClass)}
+        className={cn(formFieldClass, 'cursor-pointer', invalid && invalidInputClass)}
       >
         {/* Shown while nothing is chosen. Hidden so it is not a selectable option. */}
         <option value="" disabled hidden>

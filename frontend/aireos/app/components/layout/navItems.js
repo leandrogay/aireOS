@@ -47,9 +47,9 @@ export const NAV_ITEMS = [
     description: 'Ending stock, days of holding and a sell-in plan per customer.',
     children: [{ label: 'DOH settings', href: '/doh' }],
   },
-  // Catalog has no page of its own, so it links to its first child.
+  // Database has no page of its own, so it links to its first child.
   {
-    label: 'Catalog',
+    label: 'Database',
     href: '/skus',
     icon: Library,
     description: 'Maintain the SKU list and the customers that sell it.',
@@ -59,3 +59,9 @@ export const NAV_ITEMS = [
     ],
   },
 ];
+
+// Whether a nav link is the current page. A detail route (/mappings/abc123)
+// still belongs to its tab.
+export function matchesPath(pathname, href) {
+  return pathname === href || !!pathname?.startsWith(`${href}/`);
+}

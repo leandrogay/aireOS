@@ -1,10 +1,11 @@
 'use client';
 
-import { cn } from '@/lib/utils';
+import SelectDropdown from '@/components/ui/SelectDropdown';
+import ToggleButton from '@/components/ui/ToggleButton';
 
 import MonthFilter from './MonthFilter';
 import SkuDropdown from './SkuDropdown';
-import { filterControlClass, filterLabelClass, InventoryFilterCard } from './InventoryChrome';
+import { filterLabelClass, InventoryFilterCard } from './InventoryChrome';
 
 /**
  * SKU multi-select and month range shared by the overview and the customer
@@ -80,40 +81,24 @@ export default function InventoryFilters({
       />
 
       {statusOptions && (
-        <label htmlFor="inventory-doh-status">
+        <div className="min-w-0">
           <span className={filterLabelClass}>DOH status</span>
-          <select
-            id="inventory-doh-status"
+          <SelectDropdown
             value={status}
-            onChange={(e) => onStatusChange(e.target.value)}
-            className={filterControlClass}
-          >
-            <option value="">All</option>
-            {statusOptions.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
+            onChange={onStatusChange}
+            options={[{ value: '', label: 'All' }, ...statusOptions]}
+            ariaLabel="DOH status"
+            look="compact"
+          />
+        </div>
       )}
 
       {onAtRiskChange && (
         <div>
           <span className={filterLabelClass}>At risk</span>
-          <button
-            type="button"
-            aria-pressed={atRiskOnly}
-            onClick={() => onAtRiskChange(!atRiskOnly)}
-            className={cn(
-              'h-8 w-full rounded-md border px-2 text-center text-xs font-medium shadow-sm transition',
-              atRiskOnly
-                ? 'border-deep-violet-blue bg-deep-violet-blue text-white hover:bg-deep-violet-blue/90'
-                : 'border-deep-violet-blue/40 bg-white text-deep-violet-blue hover:bg-cream',
-            )}
-          >
+          <ToggleButton pressed={atRiskOnly} onChange={onAtRiskChange}>
             At risk only
-          </button>
+          </ToggleButton>
         </div>
       )}
     </InventoryFilterCard>

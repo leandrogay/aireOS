@@ -101,7 +101,7 @@ export default function InventoryOverview({ skuOptions, refreshKey, onEditRow })
 
       <InventorySection title="Ending stock by month" tags={scopeTags}>
         <InventoryChartSlot loading={loading} ready={Boolean(data)}>
-          {data && <EndingStockChart monthly={chartRows} />}
+          {data && <EndingStockChart monthly={chartRows} allCustomers={data.customers} />}
         </InventoryChartSlot>
       </InventorySection>
 

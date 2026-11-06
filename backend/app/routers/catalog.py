@@ -1,8 +1,9 @@
 from decimal import Decimal
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.exc import IntegrityError
 
+from app.auth import require_user
 from app.services import catalog_service, customer_service
 from app.services.settings.common import CustomerNotFoundError
 from app.schemas.catalog import (
@@ -12,6 +13,7 @@ from app.schemas.catalog import (
     RetailerLink,
     RetailerUpdate,
     SkuCreate,
+    SkuPricePeriodCorrection,
     SkuUpdate,
     StoreCreate,
     StoreUpdate,
@@ -602,6 +604,9 @@ def create_sku(sku: SkuCreate):
     except catalog_service.SkuAlreadyExistsError as e:
         raise HTTPException(status_code=409, detail=str(e))
 
+    except catalog_service.SkuPricePeriodConflictError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+
     except IntegrityError:
         raise HTTPException(
             status_code=409,
@@ -676,6 +681,33 @@ def get_sku(sku: str):
         )
 
 
+@router.put("/skus/{sku}/price-periods/{period_id}")
+def correct_sku_price_period(
+    sku: str,
+    period_id: int,
+    correction: SkuPricePeriodCorrection,
+    user: dict = Depends(require_user),
+):
+    try:
+        updated = catalog_service.correct_sku_price_period(
+            sku, period_id, correction, user["email"]
+        )
+        if updated is None:
+            raise HTTPException(status_code=404, detail="SKU price period not found")
+        return updated
+    except HTTPException:
+        raise
+    except catalog_service.SkuPricePeriodConflictError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except IntegrityError as e:
+        raise HTTPException(status_code=409, detail="These dates conflict with another price period.") from e
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to correct SKU price dates: {type(e).__name__}: {e}",
+        ) from e
+
+
 @router.put("/skus/{sku}")
 def update_sku(sku: str, changes: SkuUpdate):
     try:
@@ -686,6 +718,9 @@ def update_sku(sku: str, changes: SkuUpdate):
 
     except HTTPException:
         raise
+
+    except catalog_service.SkuPricePeriodConflictError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
 
     except Exception as e:
         raise HTTPException(

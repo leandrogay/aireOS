@@ -4,6 +4,7 @@ import re
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from functools import lru_cache
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import text
 
@@ -76,9 +77,17 @@ def _price_on_day(
     current_price: Decimal | None,
 ) -> tuple[Decimal | None, bool]:
     """Return the effective history snapshot and whether it predates history."""
+    if versions and "effective_from" in versions[0]:
+        matching = [
+            version for version in versions
+            if version["effective_from"] <= day
+            and (version["effective_to"] is None or day <= version["effective_to"])
+        ]
+        return (matching[-1]["price"], False) if matching else (None, False)
+
     prior = [
         version for version in versions
-        if version["changed_at"].date() <= day
+        if version["changed_at"].astimezone(ZoneInfo("Asia/Singapore")).date() <= day
     ]
     if prior:
         selected = prior[-1]
@@ -260,10 +269,10 @@ def estimate_sales_revenue(rows: list[dict]) -> list[dict]:
               AND is_active = TRUE
         """), params).mappings().all()
         history_rows = conn.execute(text("""
-            SELECT sku, action, price, changed_at
-            FROM sku_history
+            SELECT sku, price, effective_from, effective_to
+            FROM sku_price_periods
             WHERE sku = ANY(CAST(:skus AS text[]))
-            ORDER BY sku, changed_at, sku_history_id
+            ORDER BY sku, effective_from
         """), params).mappings().all()
         promotion_rows = conn.execute(text("""
             SELECT p.promotion_id, p.period_start, p.period_end, p.promo_type,
@@ -283,9 +292,9 @@ def estimate_sales_revenue(rows: list[dict]) -> list[dict]:
     versions: dict[str, list[dict]] = {}
     for item in history_rows:
         versions.setdefault(item["sku"], []).append({
-            "action": item["action"],
             "price": Decimal(str(item["price"])) if item["price"] is not None else None,
-            "changed_at": item["changed_at"],
+            "effective_from": item["effective_from"],
+            "effective_to": item["effective_to"],
         })
     # Each row is checked against its own store's promotions only, not the
     # whole batch's: the dashboard prices a month's rows on every read, and

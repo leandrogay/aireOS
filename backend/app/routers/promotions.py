@@ -1,5 +1,7 @@
 from fastapi import APIRouter, HTTPException
-from sqlalchemy.exc import IntegrityError
+from google.api_core.exceptions import GoogleAPICallError
+from google.auth.exceptions import DefaultCredentialsError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.services import promotion_pricing, promotion_service
 from app.schemas.promotions import (
@@ -22,11 +24,18 @@ def estimate_revenue(request: RevenueEstimateRequest):
         return promotion_pricing.estimate_sales_revenue(
             [row.model_dump() for row in request.rows]
         )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except (DefaultCredentialsError, GoogleAPICallError, SQLAlchemyError, OSError) as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Unable to reach the pricing database: {type(e).__name__}: {e}",
+        ) from e
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=f"Failed to estimate promotion revenue: {type(e).__name__}: {e}",
-        )
+        ) from e
 
 @router.get("/health/db")
 def check_db_connection():

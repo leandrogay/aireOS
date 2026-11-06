@@ -22,6 +22,9 @@ import copy
 import base64
 import datetime
 import logging
+import math
+from pathlib import Path
+from xml.sax.saxutils import escape
 from concurrent.futures import ThreadPoolExecutor
 
 from google import genai
@@ -31,22 +34,26 @@ from google.auth.exceptions import GoogleAuthError
 from sqlalchemy.exc import SQLAlchemyError
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, TableStyle, Spacer
-from reportlab.graphics.shapes import Drawing, String, PolyLine
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.pdfbase.pdfmetrics import stringWidth
+from reportlab.platypus import KeepTogether, SimpleDocTemplate, Paragraph, Table, TableStyle, Spacer
+from reportlab.graphics.shapes import Drawing, Group, String, PolyLine
 from reportlab.graphics.charts.barcharts import VerticalBarChart
 from reportlab.graphics.charts.lineplots import LinePlot
 from reportlab.graphics.widgets.markers import makeMarker
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.chart.data import CategoryChartData
-from pptx.enum.chart import XL_CHART_TYPE, XL_MARKER_STYLE
-from pptx.enum.text import MSO_AUTO_SIZE
+from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION, XL_MARKER_STYLE
+from pptx.enum.dml import MSO_LINE
+from pptx.enum.shapes import MSO_SHAPE
+from pptx.enum.text import MSO_ANCHOR, MSO_AUTO_SIZE, PP_ALIGN
 from pptx.dml.color import RGBColor
 from pptx.oxml.ns import qn
 from lxml import etree
 from openpyxl import Workbook
-from openpyxl.chart import BarChart as XlsxBarChart, Reference
+from openpyxl.chart import BarChart as XlsxBarChart, LineChart as XlsxLineChart, Reference
 from openpyxl.styles import Font as XlsxFont, Alignment as XlsxAlignment
 from openpyxl.utils import get_column_letter
 
@@ -624,6 +631,10 @@ def _run_business_tool(name: str, tool_input: dict, default_customer: str):
                 return (f"Invalid arguments: {e}", True, None)
             except Exception as e:
                 return (f"Unable to reach the forecast data: {e}", True, None)
+            # The chart's Initial Yearly Forecast line isn't a figure the model
+            # is told how to explain, so it can't quote one in its answer.
+            for_model = {key: value for key, value in result.items() if key != "chart_lines"}
+            return (json.dumps(for_model, default=str), False, result)
         else:
             return (f"Unknown tool: {name}", True, None)
     except ValueError as e:
@@ -769,6 +780,7 @@ def _sales_summary_periods(raw_result) -> list[dict]:
     a "total revenue" figure.
     """
     combined: dict[str, float] = {}
+    units: dict[str, float] = {}
     starts: dict[str, object] = {}
     order: list[str] = []
     for mode_data in (raw_result.get("offline"), raw_result.get("online")):
@@ -776,11 +788,13 @@ def _sales_summary_periods(raw_result) -> list[dict]:
             label = row["period_label"]
             if label not in combined:
                 combined[label] = 0.0
+                units[label] = 0.0
                 starts[label] = row.get("period_start")
                 order.append(label)
             combined[label] += row["revenue"]
+            units[label] += row.get("units") or 0
     return [
-        {"period_label": label, "period_start": starts[label], "revenue": round(combined[label], 2)}
+        {"period_label": label, "period_start": starts[label], "revenue": round(combined[label], 2), "units": units[label]}
         for label in order
     ]
 
@@ -821,9 +835,9 @@ def _range_label(calls: list[tuple[dict, object]]) -> str | None:
     return None
 
 
-def _compare_periods_totals(calls: list[tuple[dict, object]]) -> tuple[float, float] | None:
+def _compare_periods_totals(calls: list[tuple[dict, object]], figure: str = "revenue") -> tuple[float, float] | None:
     """
-    (previous_revenue, current_revenue) for a comparison chart, from however
+    (previous, current) revenue or units for a comparison chart, from however
     many compare_periods calls were made.
 
     A call with no `mode` argument already returns the combined (all-channel)
@@ -843,7 +857,7 @@ def _compare_periods_totals(calls: list[tuple[dict, object]]) -> tuple[float, fl
         previous = raw_result.get("previous") or {}
         if current.get("start") is None:
             return None
-        return previous.get("revenue", 0), current.get("revenue", 0)
+        return previous.get(figure, 0), current.get(figure, 0)
 
     by_mode: dict[str, object] = {}
     for tool_input, raw in calls:
@@ -858,8 +872,8 @@ def _compare_periods_totals(calls: list[tuple[dict, object]]) -> tuple[float, fl
             previous = raw_result.get("previous") or {}
             if current.get("start") is None:
                 continue
-            prev_total += previous.get("revenue", 0)
-            cur_total += current.get("revenue", 0)
+            prev_total += previous.get(figure, 0)
+            cur_total += current.get(figure, 0)
         return round(prev_total, 2), round(cur_total, 2)
 
     if len(by_mode) == 1:
@@ -868,9 +882,82 @@ def _compare_periods_totals(calls: list[tuple[dict, object]]) -> tuple[float, fl
         previous = raw_result.get("previous") or {}
         if current.get("start") is None:
             return None
-        return previous.get("revenue", 0), current.get("revenue", 0)
+        return previous.get(figure, 0), current.get(figure, 0)
 
     return None
+
+
+# ---- Sales table ------------------------------------------------------------
+#
+# Every historic sales chart carries a table of the same figures, as the
+# forecast's does, so an export has both. It adds units, which the chart leaves
+# out. Channel, product and store columns appear only when the question was
+# narrowed by them.
+
+_SALES_SCOPE_COLUMNS = {"channel": "mode", "product": "sku", "store": "store"}
+
+
+def _units_cell(value) -> str:
+    return "—" if value is None else f"{float(value):,.0f}"
+
+
+def _sales_row(period: str, customer: str, tool_input: dict, units, revenue) -> dict:
+    scope = {column: tool_input.get(argument) for column, argument in _SALES_SCOPE_COLUMNS.items()}
+    return {"period": period, "customer": customer, **scope, "units": units, "revenue": revenue}
+
+
+def _with_sales_table(chart: dict, rows: list[dict]) -> dict:
+    scope_columns = [column for column in _SALES_SCOPE_COLUMNS if any(row[column] for row in rows)]
+
+    def scope_cell(row: dict, column: str) -> str:
+        value = row[column] or "All"
+        return value.title() if column == "channel" else value
+
+    return {
+        **chart,
+        "has_table": bool(rows),
+        "table_columns": ["period", "customer", *scope_columns, "units", "revenue"] if rows else [],
+        "table_rows": [
+            [
+                row["period"],
+                _customer_label(row["customer"]),
+                *[scope_cell(row, column) for column in scope_columns],
+                _units_cell(row["units"]),
+                _revenue_cell(row["revenue"]),
+            ]
+            for row in rows
+        ],
+        "table_note": "",
+    }
+
+
+def _combined_scope(calls: list[tuple[dict, object]]) -> dict:
+    """The latest call's scope. A channel only when every call was for that one:
+    _compare_periods_totals otherwise reports the channels combined."""
+    modes = {tool_input.get("mode") for tool_input, _ in calls}
+    return {**calls[-1][0], "mode": next(iter(modes)) if len(modes) == 1 else None}
+
+
+def _range_total_rows(calls: list[tuple[dict, object]], customer: str) -> list[dict]:
+    """compare_periods' current side, for a total over one date range."""
+    revenue, units = _compare_periods_totals(calls), _compare_periods_totals(calls, "units")
+    if revenue is None or units is None:
+        return []
+    return [_sales_row(_range_label(calls) or "Total", customer, _combined_scope(calls), units[1], revenue[1])]
+
+
+def _comparison_rows(calls: list[tuple[dict, object]], customer: str) -> list[dict]:
+    """Both sides of a comparison, each with the dates it covers."""
+    revenue, units = _compare_periods_totals(calls), _compare_periods_totals(calls, "units")
+    if revenue is None or units is None:
+        return []
+    raw = calls[-1][1] or {}
+    rows = []
+    for index, (label, side) in enumerate((("Previous", "previous"), ("Current", "current"))):
+        dates = raw.get(side) or {}
+        period = f"{label} ({dates['start']} to {dates['end']})" if dates.get("start") and dates.get("end") else label
+        rows.append(_sales_row(period, customer, _combined_scope(calls), units[index], revenue[index]))
+    return rows
 
 
 def _calls_by_customer(calls: list[tuple[dict, object]], default_customer: str) -> dict[str, list]:
@@ -892,23 +979,22 @@ def _per_customer_total_chart(by_customer: dict[str, list]) -> dict | None:
 
     categories: list[str] = []
     values: list[float] = []
+    rows: list[dict] = []
     for slug, calls in by_customer.items():
         totals = _compare_periods_totals(calls)
         if totals is None:
             continue
         categories.append(slug.replace("_", " ").title())
         values.append(round(float(totals[1]), 2))
+        rows += _range_total_rows(calls, slug)
     if not categories:
         return None
-    return {
+    return _with_sales_table({
         "has_chart": True,
         "chart_type": "bar",
         "chart_categories": categories,
         "chart_series": [{"label": "Revenue", "values": values}],
-        "has_table": False,
-        "table_columns": [],
-        "table_rows": [],
-    }
+    }, rows)
 
 
 def _grouped_bar_chart(categories: list[str], series: list[dict]) -> dict:
@@ -931,13 +1017,15 @@ def _per_customer_comparison_chart(by_customer: dict[str, list]) -> dict | None:
     ("Fairprice vs NHG, this month vs last"), instead of only the first one."""
 
     series = []
+    rows: list[dict] = []
     for slug, calls in by_customer.items():
         totals = _compare_periods_totals(calls)
         if totals is not None:
             series.append({"label": _customer_label(slug), "values": [round(float(v), 2) for v in totals]})
+            rows += _comparison_rows(calls, slug)
     if len(series) < 2:
         return None
-    return _grouped_bar_chart(["Previous", "Current"], series)
+    return _with_sales_table(_grouped_bar_chart(["Previous", "Current"], series), rows)
 
 
 def _covers(tool_input: dict, period_start) -> bool:
@@ -963,8 +1051,8 @@ def _per_customer_trend_chart(summary_calls: list[tuple[dict, object]], customer
     whereas outside it a customer simply wasn't asked about that month.
     """
 
-    # {customer: {channel: {period_label: revenue}}}
-    figures: dict[str, dict[str | None, dict[str, float]]] = {}
+    # {customer: {channel: {period_label: table row}}}
+    figures: dict[str, dict[str | None, dict[str, dict]]] = {}
     calls_by_customer: dict[str, list[dict]] = {}
     starts: dict[str, object] = {}
     for tool_input, raw in summary_calls:
@@ -972,7 +1060,7 @@ def _per_customer_trend_chart(summary_calls: list[tuple[dict, object]], customer
         calls_by_customer.setdefault(slug, []).append(tool_input)
         channel = figures.setdefault(slug, {}).setdefault(tool_input.get("mode"), {})
         for row in _sales_summary_periods(raw):
-            channel[row["period_label"]] = row["revenue"]
+            channel[row["period_label"]] = _sales_row(row["period_label"], slug, tool_input, row["units"], row["revenue"])
             starts.setdefault(row["period_label"], row.get("period_start"))
     if len(figures) < 2:
         return None
@@ -987,32 +1075,69 @@ def _per_customer_trend_chart(summary_calls: list[tuple[dict, object]], customer
     series = [
         {
             "label": _customer_label(slug),
-            "values": [round(sum(periods.get(label, 0.0) for periods in channels.values()), 2) for label in categories],
+            "values": [
+                round(sum(periods[label]["revenue"] for periods in channels.values() if label in periods), 2)
+                for label in categories
+            ],
         }
         for slug, channels in figures.items()
     ]
-    return _grouped_bar_chart(categories, series)
+    rows: list[dict] = []
+    for label in categories:
+        for slug, channels in figures.items():
+            # A customer with nothing that period is a real 0, as on the chart.
+            found = [periods[label] for periods in channels.values() if label in periods]
+            rows += found or [_sales_row(label, slug, {}, 0.0, 0.0)]
+    return _with_sales_table(_grouped_bar_chart(categories, series), rows)
 
 
-def _sales_summary_chart(summary_results: list) -> dict | None:
-    """One bar per period across every get_sales_summary result, in call order."""
+def _calls_the_answer_uses(summary_calls: list[tuple[dict, object]]) -> list[tuple[dict, object]]:
+    """
+    The get_sales_summary calls to chart. The model often reads a wide range
+    first to find where the data ends, then the months it was asked about: a
+    call sharing a month with a later call for the same channels was that
+    probe, and charting it too showed "the past 3 months" as the whole history
+    with those months repeated. Calls for separate months, or for one channel
+    each (offline then online), all stay.
+    """
+    kept: list[tuple[dict, object]] = []
+    for tool_input, raw in reversed(summary_calls):
+        months = _period_months(raw)
+        replaced = any(
+            months & _period_months(later_raw)
+            and (tool_input.get("mode") == later_input.get("mode") or not tool_input.get("mode") or not later_input.get("mode"))
+            for later_input, later_raw in kept
+        )
+        if not replaced:
+            kept.append((tool_input, raw))
+    kept.reverse()
+    return kept
+
+
+def _period_months(raw_result) -> set[str]:
+    """'YYYY-MM' per period, so a monthly probe is caught by a later weekly call too."""
+    return {str(row["period_start"] or row["period_label"])[:7] for row in _sales_summary_periods(raw_result)}
+
+
+def _sales_summary_chart(summary_calls: list[tuple[dict, object]], customer: str) -> dict | None:
+    """One bar per period across the get_sales_summary calls the answer uses, in call order."""
     categories: list[str] = []
     values: list[float] = []
-    for raw_result in summary_results:
+    rows: list[dict] = []
+    for tool_input, raw_result in _calls_the_answer_uses(summary_calls):
+        slug = _customer_slug(tool_input.get("customer") or customer)
         for row in _sales_summary_periods(raw_result):
             categories.append(row["period_label"])
             values.append(row["revenue"])
+            rows.append(_sales_row(row["period_label"], slug, tool_input, row["units"], row["revenue"]))
     if not categories:
         return None
-    return {
+    return _with_sales_table({
         "has_chart": True,
         "chart_type": "bar",
         "chart_categories": categories,
         "chart_series": [{"label": "Revenue", "values": values}],
-        "has_table": False,
-        "table_columns": [],
-        "table_rows": [],
-    }
+    }, rows)
 
 
 def _breakdown_over_range_totals(
@@ -1038,7 +1163,7 @@ def _breakdown_over_range_totals(
     per_customer = _per_customer_trend_chart(summary_calls, customer)
     if per_customer is not None:
         return per_customer
-    chart = _sales_summary_chart([raw for _, raw in summary_calls])
+    chart = _sales_summary_chart(summary_calls, customer)
     return chart if chart is not None and len(chart["chart_categories"]) > 1 else None
 
 
@@ -1055,15 +1180,13 @@ def _range_total_breakdown_chart(compare_calls: list[tuple[dict, object]], custo
     tool_input, raw = compare_calls[-1]
     current = (raw or {}).get("current") or {}
     start, end = current.get("start"), current.get("end")
-    single_bar = {
+    slug = _customer_slug(tool_input.get("customer") or customer)
+    single_bar = _with_sales_table({
         "has_chart": True,
         "chart_type": "bar",
         "chart_categories": [current_label],
         "chart_series": [{"label": "Revenue", "values": [current_revenue]}],
-        "has_table": False,
-        "table_columns": [],
-        "table_rows": [],
-    }
+    }, _range_total_rows(compare_calls, slug))
     if not start or not end:
         return single_bar
     try:
@@ -1087,15 +1210,12 @@ def _range_total_breakdown_chart(compare_calls: list[tuple[dict, object]], custo
     if not periods:
         return single_bar
 
-    return {
+    return _with_sales_table({
         "has_chart": True,
         "chart_type": "bar",
         "chart_categories": [row["period_label"] for row in periods],
         "chart_series": [{"label": "Revenue", "values": [row["revenue"] for row in periods]}],
-        "has_table": False,
-        "table_columns": [],
-        "table_rows": [],
-    }
+    }, [_sales_row(row["period_label"], slug, tool_input, row["units"], row["revenue"]) for row in periods])
 
 
 _DOH_STATUS_LABELS = {"below_min": "Below min", "within": "Within range", "above_max": "Above max"}
@@ -1112,11 +1232,18 @@ def _table_cell(value) -> str:
     return "—" if value is None else str(value)
 
 
-# ---- Forecast table (get_demand_forecast) -----------------------------------
+# ---- Forecast table and chart (get_demand_forecast) -------------------------
 #
-# A table, not a chart: the chart and the exported files draw one series, and
-# a forecast needs Actual and Forecast side by side without ever merging them
-# into one line. The "type" column carries that label on every row.
+# The table's "type" column labels every row Actual or Forecast. The chart is
+# the Forecast page's: one line per FORECAST_SERIES in app/utils/forecastView.js,
+# which holds their dash and marker; keep these keys and colours in sync. "Current" is
+# spelled out as "Current Forecast" here, where it sits apart from the page's context.
+
+_FORECAST_LINES = {
+    "actual": {"label": "Actual", "color": "3A4369"},
+    "initial": {"label": "Initial Yearly Forecast", "color": "E8922A"},
+    "current": {"label": "Current Forecast", "color": "0D9488"},
+}
 
 _FORECAST_COLUMNS = ["type", "month", "customer", "product", "cartons", "range_80", "confidence"]
 # A revenue question swaps the cartons range for the dollar figure: the table
@@ -1232,11 +1359,62 @@ def _forecast_note(raw: dict, with_revenue: bool) -> str:
     return " · ".join(parts)
 
 
+def _forecast_series(lines: list[dict], with_revenue: bool) -> list[dict]:
+    """The chart's series, revenue when the question was about revenue (the
+    page's Revenue view). A line with no values is left out."""
+    unit = "revenue" if with_revenue else "cartons"
+    series = []
+    for key, line in _FORECAST_LINES.items():
+        values = [month[f"{key}_{unit}"] for month in lines]
+        if any(value is not None for value in values):
+            series.append({"key": key, "label": line["label"], "unit": unit, "values": values})
+    return series
+
+
+def _forecast_scope(raw: dict) -> tuple:
+    return raw.get("customer"), raw.get("product_name")
+
+
+def _forecast_months(raw: dict) -> set[str]:
+    return {line["month"] for line in raw.get("chart_lines") or []}
+
+
+def _forecast_calls_the_answer_uses(calls: list[tuple[dict, dict]]) -> list[tuple[dict, dict]]:
+    """
+    The get_demand_forecast calls to show. The model sometimes reads the default
+    months first, then the months it was asked about: that first read must not
+    add months nobody specified, or count as a second scope and lose the chart.
+    For the same customer and product, a call is dropped when a later one shares
+    a month with it, or when it named no months and a later one did. Calls for
+    separate months, or for another customer or product, all stay.
+    """
+    kept: list[tuple[dict, dict]] = []
+    for tool_input, raw in reversed(calls):
+        replaced = any(
+            _forecast_scope(raw) == _forecast_scope(later_raw)
+            and (
+                _forecast_months(raw) & _forecast_months(later_raw)
+                or (not tool_input.get("start_month") and later_input.get("start_month"))
+            )
+            for later_input, later_raw in kept
+        )
+        if not replaced:
+            kept.append((tool_input, raw))
+    kept.reverse()
+    return kept
+
+
 def _forecast_chart(chart_sources: list[tuple[str, dict, object]]) -> dict | None:
-    """One table from every get_demand_forecast call this turn (two customers
-    asked about separately both show), identical rows shown once. Any call
-    that asked for revenue puts the whole table in its revenue layout."""
-    calls = [(tool_input, raw) for name, tool_input, raw in chart_sources if name == "get_demand_forecast" and raw]
+    """One table from the get_demand_forecast calls the answer uses (two
+    customers asked about separately both show), identical rows shown once. Any
+    call that asked for revenue puts the whole table in its revenue layout.
+
+    A chart above it when those calls share one scope: it plots one customer and
+    product selection, like the Forecast page, so two customers asked about
+    separately get the table only."""
+    calls = _forecast_calls_the_answer_uses(
+        [(tool_input, raw) for name, tool_input, raw in chart_sources if name == "get_demand_forecast" and raw]
+    )
     with_revenue = any(tool_input.get("include_revenue") for tool_input, _raw in calls)
     table_rows: list[list[str]] = []
     for _tool_input, raw in calls:
@@ -1246,7 +1424,19 @@ def _forecast_chart(chart_sources: list[tuple[str, dict, object]]) -> dict | Non
     if not table_rows:
         return None
     columns = _FORECAST_REVENUE_COLUMNS if with_revenue else _FORECAST_COLUMNS
-    return {**_table_chart(columns, table_rows), "table_note": _forecast_note(calls[-1][1], with_revenue)}
+    chart = {**_table_chart(columns, table_rows), "table_note": _forecast_note(calls[-1][1], with_revenue)}
+    one_scope = len({_forecast_scope(raw) for _tool_input, raw in calls}) == 1
+    months = sorted((line for _tool_input, raw in calls for line in raw.get("chart_lines") or []), key=lambda line: line["month"])
+    series = _forecast_series(months, with_revenue) if one_scope else []
+    if series:
+        chart.update({
+            "has_chart": True,
+            # One month has nothing to join: bars side by side, not a dot per line.
+            "chart_type": "line" if len(months) > 1 else "bar",
+            "chart_categories": [forecast_summary.short_month_label(line["month"]) for line in months],
+            "chart_series": series,
+        })
+    return chart
 
 
 def _build_chart(chart_sources: list[tuple[str, dict, object]], customer: str) -> dict:
@@ -1306,38 +1496,40 @@ def _build_chart(chart_sources: list[tuple[str, dict, object]], customer: str) -
                 # an auto-derived "Previous" the question never requested.
                 current_label = _range_label(compare_calls) or "Total"
                 return _range_total_breakdown_chart(compare_calls, customer, current_revenue, current_label)
-            return {
+            slug = _customer_slug(compare_calls[-1][0].get("customer") or customer)
+            return _with_sales_table({
                 "has_chart": True,
                 "chart_type": "bar",
                 "chart_categories": ["Previous", "Current"],
                 "chart_series": [{"label": "Revenue", "values": [previous_revenue, current_revenue]}],
-                "has_table": False,
-                "table_columns": [],
-                "table_rows": [],
-            }
+            }, _comparison_rows(compare_calls, slug))
 
     per_customer = _per_customer_trend_chart(summary_calls, customer)
     if per_customer is not None:
         return per_customer
-    summary_chart = _sales_summary_chart([raw for _tool_input, raw in summary_calls])
+    summary_chart = _sales_summary_chart(summary_calls, customer)
     if summary_chart is not None:
         return summary_chart
 
-    rank_results = [raw for name, tool_input, raw in chart_sources if name == "rank_skus"]
-    if rank_results:
-        rows = rank_results[-1] or []
+    rank_calls = [(tool_input, raw) for name, tool_input, raw in chart_sources if name == "rank_skus"]
+    if rank_calls:
+        tool_input, raw = rank_calls[-1]
+        rows = (raw or [])[:10]
         if rows:
+            by_volume = tool_input.get("metric") == "volume"
+            series = {"label": "Units", "unit": "units"} if by_volume else {"label": "Revenue"}
             return {
-                "has_chart": False,
-                "chart_type": "none",
-                "chart_categories": [],
-                "chart_series": [],
+                "has_chart": True,
+                "chart_type": "bar",
+                "chart_categories": [str(r.get("product_name", "")) for r in rows],
+                "chart_series": [{**series, "values": [r.get("volume" if by_volume else "value") or 0 for r in rows]}],
                 "has_table": True,
                 "table_columns": ["rank", "product_name", "volume", "value"],
                 "table_rows": [
-                    [str(r.get("rank", "")), str(r.get("product_name", "")), str(r.get("volume", "")), str(r.get("value", ""))]
-                    for r in rows[:10]
+                    [str(r.get("rank", "")), str(r.get("product_name", "")), _units_cell(r.get("volume")), _revenue_cell(r.get("value"))]
+                    for r in rows
                 ],
+                "table_note": "",
             }
 
     inventory_chart = _inventory_chart(chart_sources)
@@ -1621,7 +1813,46 @@ def _linear_trend(values: list[float]) -> list[float]:
 # themselves never being. A generation failure degrades to no download
 # rather than breaking the whole answer, since the export is additive.
 
-_AIRE_BRAND_COLOR = colors.HexColor("#2b2560")
+# The PDF shares the slides' look: every page has the same header and footer,
+# with the content on one grid between them. All in points, on a 612 x 792 page.
+_PDF_MARGIN = 43
+_PDF_CONTENT_WIDTH = 612 - 2 * _PDF_MARGIN
+_PDF_LOGO_WIDTH = 62
+_PDF_LOGO_TOP = 26
+_PDF_LOGO_RIGHT = _PDF_MARGIN
+_PDF_RULE_TOP = 58
+_PDF_CONTENT_TOP = 72
+_PDF_CONTENT_BOTTOM = 50
+_PDF_FOOTER_Y = 30
+_PDF_CHART_HEIGHT = 210
+_PDF_CHART_BOTTOM = 26
+# Past this many labels, the chart's axis tilts them rather than overlapping.
+_PDF_MAX_LEVEL_LABELS = 10
+_PDF_CATEGORY_FONT_SIZE = 8
+_PDF_CATEGORY_LINE_HEIGHT = 10
+_PDF_TABLE_FONT_SIZE = 8.5
+_PDF_CELL_PADDING = 5
+
+_PDF_TEXT_COLOR = colors.HexColor("#3A4369")  # --aire-deep-blue
+_PDF_MUTED_COLOR = colors.HexColor("#7A809B")
+_PDF_RULE_COLOR = colors.HexColor("#A29BCC")  # --aire-violet
+_PDF_GRIDLINE_COLOR = colors.HexColor("#E4E7F2")
+_PDF_ROW_TINT = colors.HexColor("#F3F5FC")
+
+# The Forecast page's line styles (FORECAST_SERIES in app/utils/forecastView.js).
+_PDF_LINE_DASH = {"initial": [1, 3], "current": [3, 2]}
+_PDF_LINE_MARKER = {"actual": "FilledCircle", "initial": "FilledSquare", "current": "FilledDiamond"}
+
+_PDF_BODY_STYLE = ParagraphStyle("AireBody", fontName="Helvetica", fontSize=10.5, leading=15, textColor=_PDF_TEXT_COLOR, spaceAfter=6)
+_PDF_BULLET_STYLE = ParagraphStyle("AireBullet", parent=_PDF_BODY_STYLE, leftIndent=14, bulletIndent=2, bulletFontSize=10.5, bulletColor=_PDF_TEXT_COLOR)
+_PDF_HEADING_STYLE = ParagraphStyle("AireHeading", fontName="Helvetica-Bold", fontSize=13, leading=17, textColor=_PDF_TEXT_COLOR, spaceAfter=8)
+_PDF_CHART_TITLE_STYLE = ParagraphStyle("AireChartTitle", fontName="Helvetica", fontSize=10.5, leading=14, textColor=_PDF_TEXT_COLOR, alignment=TA_CENTER, spaceAfter=4)
+_PDF_LEGEND_STYLE = ParagraphStyle("AireLegend", fontName="Helvetica", fontSize=9, leading=12, textColor=_PDF_TEXT_COLOR, alignment=TA_CENTER, spaceBefore=2)
+_PDF_NOTE_STYLE = ParagraphStyle("AireNote", fontName="Helvetica-Oblique", fontSize=8, leading=11, textColor=_PDF_MUTED_COLOR)
+_PDF_CELL_STYLE = ParagraphStyle("AireCell", fontName="Helvetica", fontSize=_PDF_TABLE_FONT_SIZE, leading=11, textColor=_PDF_TEXT_COLOR)
+_PDF_CELL_RIGHT_STYLE = ParagraphStyle("AireCellRight", parent=_PDF_CELL_STYLE, alignment=TA_RIGHT)
+_PDF_HEADER_STYLE = ParagraphStyle("AireHeader", parent=_PDF_CELL_STYLE, fontName="Helvetica-Bold", textColor=colors.white)
+_PDF_HEADER_RIGHT_STYLE = ParagraphStyle("AireHeaderRight", parent=_PDF_HEADER_STYLE, alignment=TA_RIGHT)
 
 
 # Colours for the second and later series of a chart comparing customers, the
@@ -1630,8 +1861,18 @@ _AIRE_BRAND_COLOR = colors.HexColor("#2b2560")
 _SERIES_COLORS_HEX = ["A29BCC", "A7D2F2", "DFE4F7"]
 
 
+def _is_forecast_chart(chart: dict) -> bool:
+    return bool(chart.get("has_chart")) and bool((chart.get("chart_series") or [{}])[0].get("key"))
+
+
 def _series_colors_hex(chart: dict, chart_style: dict | None) -> list[str]:
     """Hex (no '#') per series of `chart`, first series first."""
+    if _is_forecast_chart(chart):
+        # The page's colours, unless the user asked for a colour (first series, as on any chart).
+        line_colors = [_FORECAST_LINES[series["key"]]["color"] for series in chart["chart_series"]]
+        if (chart_style or {}).get("color", "default") != "default":
+            line_colors[0] = _resolve_bar_color(chart_style)
+        return line_colors
     count = len(chart.get("chart_series") or [])
     extra = [_SERIES_COLORS_HEX[i % len(_SERIES_COLORS_HEX)] for i in range(max(count - 1, 0))]
     return [_resolve_bar_color(chart_style), *extra]
@@ -1671,154 +1912,313 @@ def _split_into_points(text: str) -> list[str] | None:
     return points if len(points) >= 2 else None
 
 
-def _build_pdf(answer_text: str, chart: dict, chart_style: dict | None = None, trend_values: list[float] | None = None) -> bytes:
-    buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=letter, title="AireOS Report")
-    styles = getSampleStyleSheet()
-    elements = [
-        Paragraph("AireOS Report", styles["Title"]),
-        Spacer(1, 6),
-        Paragraph(_report_date(), styles["Normal"]),
-        Spacer(1, 16),
-    ]
-    points = _split_into_points(answer_text)
-    if points:
-        for point in points:
-            elements.append(Paragraph(f"&bull; {point}", styles["Normal"]))
-            elements.append(Spacer(1, 4))
-    else:
-        elements.append(Paragraph(answer_text, styles["Normal"]))
-    elements.append(Spacer(1, 16))
+def _pdf_markup(text: str) -> str:
+    """The text as Paragraph markup: anything like '<' or '&' stays literal, and
+    the model's **bold** is bold rather than asterisks, as in the chat."""
+    return _BOLD_RE.sub(lambda match: f"<b>{match.group(1)[2:-2]}</b>", escape(text))
 
-    if chart.get("has_chart"):
-        categories = chart["chart_categories"]
-        values = chart["chart_series"][0]["values"]
-        style = chart_style or {}
-        label_format = {"whole_number": "%d", "currency": "$%0.0f"}.get(style.get("value_label_format"), "%0.2f")
-        label_font_size = FONT_SIZE_PT.get(style.get("font_size"), FONT_SIZE_PT["medium"])
-        axis_font_size = label_font_size - 1
-        base_color = _resolve_bar_color(style)
-        opacity = style.get("opacity", 1.0)
-        # opacity is applied via colors.Color's alpha channel -- corner_radius
-        # has no equivalent in reportlab's bar-chart API, so it's not applied
-        # here (chat-preview-only, same documented gap as the trend line).
-        r, g, b = (int(base_color[i:i + 2], 16) / 255 for i in (0, 2, 4))
-        line_color = colors.Color(r, g, b, alpha=opacity)
-        trend_color = colors.HexColor(f"#{_TREND_LINE_COLOR_HEX}")
-        all_series = chart["chart_series"]
-        series_colors = [line_color] + [
-            colors.HexColor(f"#{hex_color}") for hex_color in _series_colors_hex(chart, style)[1:]
-        ]
-        has_trend = bool(trend_values) and len(trend_values) == len(values) and len(all_series) == 1
 
-        if style.get("title"):
-            elements.append(Paragraph(style["title"], styles["Heading3"]))
-            elements.append(Spacer(1, 6))
+def _draw_pdf_logo(canvas, doc) -> None:
+    """In the top margin, so it can't land on the report however the content flows."""
+    width = _PDF_LOGO_WIDTH
+    height = width / _LOGO_ASPECT_RATIO
+    x = doc.pagesize[0] - _PDF_LOGO_RIGHT - width
+    y = doc.pagesize[1] - _PDF_LOGO_TOP - height
+    canvas.drawImage(str(_LOGO_PATH), x, y, width=width, height=height, mask="auto")
 
-        drawing = Drawing(440, 260)
-        if style.get("chart_type") == "line":
-            plot = LinePlot()
-            plot.x, plot.y = 50, 50
-            plot.width, plot.height = 180, 140
-            plot.data = [[(i, v) for i, v in enumerate(series["values"])] for series in all_series]
-            for index, color in enumerate(series_colors):
-                plot.lines[index].strokeColor = color
-                plot.lines[index].strokeWidth = 2
-                if style.get("show_data_points"):
-                    plot.lines[index].symbol = makeMarker("Circle")
-            if has_trend:
-                # LinePlot natively supports multiple data series -- much
-                # simpler than the bar case below, no manual coordinates
-                # needed.
-                plot.data.append([(i, v) for i, v in enumerate(trend_values)])
-                plot.lines[1].strokeColor = trend_color
-                plot.lines[1].strokeWidth = 1.5
-                plot.lines[1].strokeDashArray = [4, 2]
-            plot.xValueAxis.valueMin = 0
-            plot.xValueAxis.valueMax = max(len(values) - 1, 0)
-            plot.xValueAxis.valueSteps = list(range(len(values)))
-            plot.xValueAxis.labelTextFormat = (
-                lambda x, _cats=categories: str(_cats[int(x)]) if 0 <= int(x) < len(_cats) else ""
-            )
-            plot.xValueAxis.labels.fontSize = axis_font_size
-            plot.xValueAxis.labels.angle = 30
-            plot.xValueAxis.labels.dy = -10
-            if style.get("show_gridlines"):
-                plot.yValueAxis.visibleGrid = 1
-                plot.yValueAxis.gridStrokeColor = colors.lightgrey
-            # show_value_labels isn't applied here -- reportlab's LinePlot has
-            # no equivalent of VerticalBarChart's barLabelFormat, only bar
-            # charts get value labels in this export today.
-            drawing = Drawing(440, 220)
-            if style.get("y_axis_label"):
-                drawing.add(String(15, 205, style["y_axis_label"], fontSize=axis_font_size))
-            drawing.add(plot)
+
+def _draw_pdf_page_frame(canvas, doc, total_pages: int) -> None:
+    """What every page shares, like a slide: title and logo over a rule, and the
+    date and page number at the foot."""
+    page_width, page_height = doc.pagesize
+    canvas.saveState()
+    canvas.setFillColor(_PDF_TEXT_COLOR)
+    canvas.setFont("Helvetica-Bold", 18)
+    canvas.drawString(_PDF_MARGIN, page_height - _PDF_RULE_TOP + 8, "AireOS Report")
+    _draw_pdf_logo(canvas, doc)
+    canvas.setStrokeColor(_PDF_RULE_COLOR)
+    canvas.setLineWidth(1.5)
+    canvas.line(_PDF_MARGIN, page_height - _PDF_RULE_TOP, page_width - _PDF_MARGIN, page_height - _PDF_RULE_TOP)
+    canvas.setFillColor(_PDF_MUTED_COLOR)
+    canvas.setFont("Helvetica", 8)
+    canvas.drawString(_PDF_MARGIN, _PDF_FOOTER_Y, f"AireOS Report · {_report_date()}")
+    canvas.drawRightString(page_width - _PDF_MARGIN, _PDF_FOOTER_Y, f"{canvas.getPageNumber()} / {total_pages}")
+    canvas.restoreState()
+
+
+def _pdf_summary(answer_text: str) -> list:
+    """The answer as bullets, split as on the slides (_slide_points): only ever
+    the words as written. One statement stays a plain sentence."""
+    points = _slide_points(answer_text)
+    if len(points) == 1:
+        return [Paragraph(_pdf_markup(points[0]), _PDF_BODY_STYLE)]
+    return [Paragraph(_pdf_markup(point), _PDF_BULLET_STYLE, bulletText="•") for point in points]
+
+
+def _nice_axis(highest: float) -> tuple[float, float]:
+    """(top of the axis, gap between its lines), in round numbers from zero."""
+    if highest <= 0:
+        return 1, 1
+    rough = highest / 5
+    magnitude = 10 ** math.floor(math.log10(rough))
+    step = next((m * magnitude for m in (1, 2, 2.5, 5, 10) if m * magnitude >= rough), 10 * magnitude)
+    return math.ceil(highest / step) * step, step
+
+
+def _pdf_axis_text(chart: dict):
+    """How the value axis writes a figure, as on the slides (_chart_axis_format)."""
+    if _chart_axis_format(chart) == "#,##0":
+        return lambda value: f"{value:,.0f}"
+    return lambda value: f"${value:,.0f}"
+
+
+def _style_pdf_value_axis(axis, chart: dict, highest: float, show_gridlines: bool) -> None:
+    """A light frame, as on the slides: pale gridlines and no line up the side."""
+    top, step = _nice_axis(highest)
+    axis.valueMin, axis.valueMax, axis.valueStep = 0, top, step
+    axis.labelTextFormat = _pdf_axis_text(chart)
+    axis.labels.fontName = "Helvetica"
+    axis.labels.fontSize = 8
+    axis.labels.fillColor = _PDF_TEXT_COLOR
+    axis.visibleAxis = 0
+    axis.visibleTicks = 0
+    axis.visibleGrid = 1 if show_gridlines else 0
+    axis.gridStrokeColor = _PDF_GRIDLINE_COLOR
+    axis.gridStrokeWidth = 0.75
+
+
+def _pdf_series_colors(chart: dict, style: dict) -> list:
+    """The first series takes the style's opacity (colors.Color's alpha channel);
+    corner_radius has no equivalent in reportlab, so it's chat-preview only."""
+    hex_colors = _series_colors_hex(chart, style)
+    red, green, blue = (int(hex_colors[0][i:i + 2], 16) / 255 for i in (0, 2, 4))
+    first = colors.Color(red, green, blue, alpha=style.get("opacity", 1.0))
+    return [first, *(colors.HexColor(f"#{hex_color}") for hex_color in hex_colors[1:])]
+
+
+def _pdf_line_plot(chart: dict, style: dict, series_colors: list, trend_values: list[float] | None, left: float) -> LinePlot:
+    categories = chart["chart_categories"]
+    all_series = chart["chart_series"]
+    plot = LinePlot()
+    plot.x, plot.y = left, _PDF_CHART_BOTTOM
+    plot.width, plot.height = _PDF_CONTENT_WIDTH - left - 8, _PDF_CHART_HEIGHT - _PDF_CHART_BOTTOM - 8
+    # A month with no value leaves a gap (a forecast has no Actual for future months).
+    plot.data = [[(i, v) for i, v in enumerate(series["values"]) if v is not None] for series in all_series]
+    for index, (series, color) in enumerate(zip(all_series, series_colors)):
+        line = plot.lines[index]
+        line.strokeColor = color
+        line.strokeWidth = 2
+        if series.get("key") in _PDF_LINE_DASH:
+            line.strokeDashArray = _PDF_LINE_DASH[series["key"]]
+        if style.get("show_data_points"):
+            marker = makeMarker(_PDF_LINE_MARKER.get(series.get("key"), "FilledCircle"))
+            marker.fillColor = marker.strokeColor = color
+            marker.size = 6
+            line.symbol = marker
+    has_trend = bool(trend_values) and len(trend_values) == len(categories) and len(all_series) == 1
+    if has_trend:
+        # LinePlot natively supports multiple data series -- much simpler than
+        # the bar case below, no manual coordinates needed.
+        plot.data.append([(i, v) for i, v in enumerate(trend_values)])
+        plot.lines[1].strokeColor = colors.HexColor(f"#{_TREND_LINE_COLOR_HEX}")
+        plot.lines[1].strokeWidth = 1.5
+        plot.lines[1].strokeDashArray = [4, 2]
+    # Half a month of room each side, so the first and last points and labels stay clear of the edges.
+    plot.xValueAxis.valueMin = -0.5
+    plot.xValueAxis.valueMax = len(categories) - 0.5
+    plot.xValueAxis.valueSteps = list(range(len(categories)))
+    plot.xValueAxis.labelTextFormat = lambda x, _cats=categories: str(_cats[int(x)]) if 0 <= int(x) < len(_cats) else ""
+    _style_pdf_category_labels(plot.xValueAxis, len(categories))
+    plot.xValueAxis.strokeColor = _PDF_MUTED_COLOR
+    plot.xValueAxis.visibleTicks = 0
+    highest = max(value for points in plot.data for _x, value in points)
+    _style_pdf_value_axis(plot.yValueAxis, chart, highest, style.get("show_gridlines", True))
+    # show_value_labels isn't applied here -- only bar charts get value labels
+    # in this export today.
+    return plot
+
+
+def _style_pdf_category_labels(axis, count: int) -> None:
+    axis.labels.fontName = "Helvetica"
+    axis.labels.fontSize = _PDF_CATEGORY_FONT_SIZE
+    axis.labels.fillColor = _PDF_TEXT_COLOR
+    axis.labels.dy = -4
+    if count > _PDF_MAX_LEVEL_LABELS:
+        # Too many to sit side by side level.
+        axis.labels.angle = 30
+        axis.labels.boxAnchor = "ne"
+
+
+def _pdf_wrapped_label(label: str, width: float) -> str:
+    """A category name broken over lines to fit its bar's slot, on word gaps."""
+    lines: list[str] = []
+    for word in label.split():
+        candidate = f"{lines[-1]} {word}" if lines else word
+        if lines and stringWidth(candidate, "Helvetica", _PDF_CATEGORY_FONT_SIZE) <= width:
+            lines[-1] = candidate
         else:
-            bar = VerticalBarChart()
-            bar.x, bar.y = 50, 50
-            bar.width, bar.height = 360, 180
-            bar.data = [series["values"] for series in all_series]
-            bar.categoryAxis.categoryNames = [str(c) for c in categories]
-            bar.categoryAxis.labels.angle = 30
-            bar.categoryAxis.labels.dy = -10
-            bar.categoryAxis.labels.fontSize = axis_font_size
-            bar.valueAxis.valueMin = 0
-            if has_trend:
-                # VerticalBarChart has no native way to overlay a second
-                # series -- explicitly set valueMax (rather than reportlab's
-                # own auto-scaling, which isn't readable back before
-                # drawing) so the bars and the manually-positioned trend
-                # line below share one known scale. Verified this positions
-                # correctly against the bars' own coordinate space.
-                bar.valueAxis.valueMax = max(values + trend_values) * 1.15
-            for index, color in enumerate(series_colors):
-                bar.bars[index].fillColor = color
-            if style.get("show_gridlines"):
-                bar.valueAxis.visibleGrid = 1
-                bar.valueAxis.gridStrokeColor = colors.lightgrey
-            if style.get("show_value_labels"):
-                bar.barLabelFormat = label_format
-                bar.barLabels.nudge = 7
-                bar.barLabels.fontSize = label_font_size
-            if style.get("y_axis_label"):
-                drawing.add(String(15, 245, style["y_axis_label"], fontSize=axis_font_size))
-            drawing.add(bar)
-            if has_trend:
-                n = len(values)
-                slot_width = bar.width / n
-                points = []
-                for i, v in enumerate(trend_values):
-                    x = bar.x + (i + 0.5) * slot_width
-                    y = bar.y + (v / bar.valueAxis.valueMax) * bar.height
-                    points.extend([x, y])
-                drawing.add(PolyLine(points, strokeColor=trend_color, strokeWidth=1.5, strokeDashArray=[4, 2]))
-        elements.append(drawing)
-        if len(all_series) > 1:
-            # Which colour is which customer.
-            elements.append(Paragraph(
-                "&nbsp;&nbsp;&nbsp;".join(
-                    f'<font color="{color.hexval().replace("0x", "#")}">&#9632;</font> {series["label"]}'
-                    for series, color in zip(all_series, series_colors)
-                ),
-                styles["Normal"],
-            ))
-    elif chart.get("has_table"):
-        table_data = [chart["table_columns"]] + chart["table_rows"]
-        # repeatRows: a table that runs onto a second page keeps its header there.
-        table = Table(table_data, repeatRows=1)
-        table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), _AIRE_BRAND_COLOR),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-            ("FONTSIZE", (0, 0), (-1, -1), 9),
-        ]))
-        elements.append(table)
+            lines.append(word)
+    return "\n".join(lines)
+
+
+def _pdf_bar_chart(chart: dict, style: dict, series_colors: list, trend_values: list[float] | None, left: float) -> tuple:
+    """(the bars, the trend line over them or None)."""
+    categories = chart["chart_categories"]
+    all_series = chart["chart_series"]
+    bar = VerticalBarChart()
+    width = _PDF_CONTENT_WIDTH - left - 8
+    names = [str(c) for c in categories]
+    # Past _PDF_MAX_LEVEL_LABELS they tilt instead (_style_pdf_category_labels).
+    if len(categories) <= _PDF_MAX_LEVEL_LABELS:
+        names = [_pdf_wrapped_label(name, width / len(categories) - 6) for name in names]
+    extra_lines = max(name.count("\n") for name in names) if names else 0
+    bottom = _PDF_CHART_BOTTOM + extra_lines * _PDF_CATEGORY_LINE_HEIGHT
+    bar.x, bar.y = left, bottom
+    bar.width, bar.height = width, _PDF_CHART_HEIGHT - bottom - 8
+    bar.data = [series["values"] for series in all_series]
+    bar.categoryAxis.categoryNames = names
+    _style_pdf_category_labels(bar.categoryAxis, len(categories))
+    bar.categoryAxis.strokeColor = _PDF_MUTED_COLOR
+    bar.categoryAxis.visibleTicks = 0
+    # A single month's bars would otherwise fill the whole page's width.
+    bar.barWidth, bar.barSpacing = 10, 1
+    bar.groupSpacing = 8 if len(categories) > 1 else 40
+    bar.bars.strokeColor = None
+    for index, color in enumerate(series_colors):
+        bar.bars[index].fillColor = color
+    values = [value for series in all_series for value in series["values"] if value is not None]
+    has_trend = bool(trend_values) and len(trend_values) == len(categories) and len(all_series) == 1
+    # VerticalBarChart has no native way to overlay a second series: the axis's
+    # known top lets the manually-positioned trend line below share its scale.
+    highest = max([*values, *(trend_values if has_trend else [])])
+    _style_pdf_value_axis(bar.valueAxis, chart, highest, style.get("show_gridlines", True))
+    if style.get("show_value_labels"):
+        bar.barLabelFormat = {"whole_number": "%d", "currency": "$%0.0f"}.get(style.get("value_label_format"), "%0.2f")
+        bar.barLabels.nudge = 7
+        bar.barLabels.fontSize = FONT_SIZE_PT.get(style.get("font_size"), FONT_SIZE_PT["medium"])
+        bar.barLabels.fillColor = _PDF_TEXT_COLOR
+    if not has_trend:
+        return bar, None
+    slot_width = bar.width / len(categories)
+    points = []
+    for index, value in enumerate(trend_values):
+        points.extend([bar.x + (index + 0.5) * slot_width, bar.y + (value / bar.valueAxis.valueMax) * bar.height])
+    return bar, PolyLine(points, strokeColor=colors.HexColor(f"#{_TREND_LINE_COLOR_HEX}"), strokeWidth=1.5, strokeDashArray=[4, 2])
+
+
+def _pdf_chart_drawing(chart: dict, style: dict, trend_values: list[float] | None) -> Drawing:
+    series_colors = _pdf_series_colors(chart, style)
+    y_label = style.get("y_axis_label")
+    left = 62 if y_label else 48
+    drawing = Drawing(_PDF_CONTENT_WIDTH, _PDF_CHART_HEIGHT)
+    if y_label:
+        label = String(0, 0, y_label, fontName="Helvetica", fontSize=8, fillColor=_PDF_TEXT_COLOR, textAnchor="middle")
+        drawing.add(Group(label, transform=(0, 1, -1, 0, 8, _PDF_CHART_HEIGHT / 2)))
+    if style.get("chart_type") == "line":
+        drawing.add(_pdf_line_plot(chart, style, series_colors, trend_values, left))
+    else:
+        bar, trend_line = _pdf_bar_chart(chart, style, series_colors, trend_values, left)
+        drawing.add(bar)
+        if trend_line is not None:
+            drawing.add(trend_line)
+    return drawing
+
+
+def _pdf_chart_section(chart: dict, style: dict, trend_values: list[float] | None) -> list:
+    """Heading, chart and legend, kept on one page together."""
+    section = [Paragraph(_chart_slide_title(chart), _PDF_HEADING_STYLE)]
+    if style.get("title"):
+        section.append(Paragraph(_pdf_markup(style["title"]), _PDF_CHART_TITLE_STYLE))
+    section.append(_pdf_chart_drawing(chart, style, trend_values))
+    all_series = chart["chart_series"]
+    if style.get("show_legend") or len(all_series) > 1 or _is_forecast_chart(chart):
+        entries = [
+            f'<font color="{color.hexval().replace("0x", "#")[:7]}">&#9632;</font> {_pdf_markup(series["label"])}'
+            for series, color in zip(all_series, _pdf_series_colors(chart, style))
+        ]
+        section.append(Paragraph("&nbsp;&nbsp;&nbsp;&nbsp;".join(entries), _PDF_LEGEND_STYLE))
+    return [KeepTogether(section), Spacer(1, 14)]
+
+
+def _pdf_column_widths(headings: list[str], rows: list[list[str]]) -> list[float]:
+    """Sized from the font's real letter widths, shared out as on the slides."""
+    def width_of(text: str, font: str) -> float:
+        return stringWidth(text, font, _PDF_TABLE_FONT_SIZE) + _PDF_CELL_PADDING * 2
+
+    needed, floors = [], []
+    for index, heading in enumerate(headings):
+        cells = [str(row[index]) for row in rows]
+        needed.append(max([width_of(heading, "Helvetica-Bold"), *(width_of(cell, "Helvetica-Bold") for cell in cells)]))
+        words = [word for cell in cells for word in cell.split()]
+        floors.append(max([width_of(word, "Helvetica-Bold") for word in [*heading.split(), *words]]))
+    return _fit_column_widths(needed, floors, _PDF_CONTENT_WIDTH)
+
+
+def _pdf_table(chart: dict) -> Table:
+    rows_data = chart["table_rows"]
+    headings = [_table_heading(column) for column in chart["table_columns"]]
+    numeric = _numeric_columns(rows_data, len(headings))
+
+    def cell(text: str, index: int, *, bold: bool = False, header: bool = False) -> Paragraph:
+        right = index in numeric
+        if header:
+            return Paragraph(_pdf_markup(text), _PDF_HEADER_RIGHT_STYLE if right else _PDF_HEADER_STYLE)
+        return Paragraph(f"<b>{escape(text)}</b>" if bold else escape(text), _PDF_CELL_RIGHT_STYLE if right else _PDF_CELL_STYLE)
+
+    table_data = [[cell(heading, index, header=True) for index, heading in enumerate(headings)]]
+    commands = [
+        ("BACKGROUND", (0, 0), (-1, 0), _PDF_TEXT_COLOR),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), _PDF_CELL_PADDING),
+        ("RIGHTPADDING", (0, 0), (-1, -1), _PDF_CELL_PADDING),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]
+    for row_index, row in enumerate(rows_data, start=1):
+        # Totals stand out from the rows they add up.
+        is_total = "total" in str(row[0]).lower()
+        table_data.append([cell(str(value), index, bold=is_total) for index, value in enumerate(row)])
+        if row_index % 2 == 0:
+            commands.append(("BACKGROUND", (0, row_index), (-1, row_index), _PDF_ROW_TINT))
+    # repeatRows: a table that runs onto a second page keeps its header there.
+    table = Table(table_data, colWidths=_pdf_column_widths(headings, rows_data), repeatRows=1, hAlign="LEFT")
+    table.setStyle(TableStyle(commands))
+    return table
+
+
+def _pdf_elements(answer_text: str, chart: dict, style: dict, trend_values: list[float] | None) -> list:
+    elements = [*_pdf_summary(answer_text), Spacer(1, 14)]
+    if chart.get("has_chart"):
+        elements.extend(_pdf_chart_section(chart, style, trend_values))
+    if chart.get("has_table"):
+        elements.append(Paragraph("Details", _PDF_HEADING_STYLE))
+        elements.append(_pdf_table(chart))
         if chart.get("table_note"):
             elements.append(Spacer(1, 6))
-            elements.append(Paragraph(chart["table_note"], styles["Italic"]))
+            elements.append(Paragraph(_pdf_markup(chart["table_note"]), _PDF_NOTE_STYLE))
+    return elements
 
-    doc.build(elements)
-    return buf.getvalue()
+
+def _build_pdf(answer_text: str, chart: dict, chart_style: dict | None = None, trend_values: list[float] | None = None) -> bytes:
+    style = chart_style or {}
+
+    def render(total_pages: int) -> tuple[bytes, int]:
+        buf = io.BytesIO()
+        # The frame adds its own 6pt of padding: content starts exactly at _PDF_MARGIN.
+        doc = SimpleDocTemplate(
+            buf, pagesize=letter, title="AireOS Report",
+            leftMargin=_PDF_MARGIN - 6, rightMargin=_PDF_MARGIN - 6,
+            topMargin=_PDF_CONTENT_TOP - 6, bottomMargin=_PDF_CONTENT_BOTTOM - 6,
+        )
+        def draw_frame(canvas, page_doc):
+            _draw_pdf_page_frame(canvas, page_doc, total_pages)
+        doc.build(_pdf_elements(answer_text, chart, style, trend_values), onFirstPage=draw_frame, onLaterPages=draw_frame)
+        return buf.getvalue(), doc.page
+
+    # "2 / 3" needs the page count, only known once the content has been laid out.
+    _, total_pages = render(0)
+    pdf_bytes, _ = render(total_pages)
+    return pdf_bytes
 
 
 def _build_excel(answer_text: str, chart: dict, chart_style: dict | None = None) -> bytes:
@@ -1834,10 +2234,10 @@ def _build_excel(answer_text: str, chart: dict, chart_style: dict | None = None)
     ws.row_dimensions[3].height = 30
     ws["A3"].alignment = XlsxAlignment(wrap_text=True)
 
+    header_row = 5
     if chart.get("has_chart"):
         categories = chart["chart_categories"]
         all_series = chart["chart_series"]
-        header_row = 5
         ws.cell(row=header_row, column=1, value="Period")
         for i, category in enumerate(categories):
             ws.cell(row=header_row + 1 + i, column=1, value=str(category))
@@ -1847,16 +2247,17 @@ def _build_excel(answer_text: str, chart: dict, chart_style: dict | None = None)
             for i, value in enumerate(series["values"]):
                 ws.cell(row=header_row + 1 + i, column=col, value=value)
 
-        xlsx_chart = XlsxBarChart()
-        xlsx_chart.title = "Revenue"
+        xlsx_chart = XlsxLineChart() if _is_forecast_chart(chart) and chart.get("chart_type") == "line" else XlsxBarChart()
+        xlsx_chart.title = "Forecast" if _is_forecast_chart(chart) else _chart_slide_title(chart)
         last_row = header_row + len(categories)
         data_ref = Reference(ws, min_col=2, max_col=1 + len(all_series), min_row=header_row, max_row=last_row)
         cats_ref = Reference(ws, min_col=1, min_row=header_row + 1, max_row=last_row)
         xlsx_chart.add_data(data_ref, titles_from_data=True)
         xlsx_chart.set_categories(cats_ref)
         ws.add_chart(xlsx_chart, f"{get_column_letter(len(all_series) + 3)}{header_row}")
-    elif chart.get("has_table"):
-        header_row = 5
+        # Clear of the anchored chart (openpyxl's default is about 15 rows tall).
+        header_row = max(last_row, header_row + 15) + 2
+    if chart.get("has_table"):
         for col_idx, col_name in enumerate(chart["table_columns"], start=1):
             cell = ws.cell(row=header_row, column=col_idx, value=str(col_name))
             cell.font = XlsxFont(bold=True)
@@ -1876,29 +2277,404 @@ def _build_excel(answer_text: str, chart: dict, chart_style: dict | None = None)
     return buf.getvalue()
 
 
+# The AIRE logo at the top right of every exported page: a copy of the frontend's
+# public/aire-logo.png, kept here because the backend's image doesn't include the frontend.
+_LOGO_PATH = Path(__file__).resolve().parent.parent / "assets" / "aire-logo.png"
+_LOGO_ASPECT_RATIO = 2.449  # width / height
+
 _MAX_BULLETS_PER_SLIDE = 4
+# About as much text as a slide's body holds at the size _bullet_font_size picks for it.
+_MAX_CHARS_PER_SLIDE = 1000
 _MAX_TABLE_ROWS_PER_SLIDE = 12
+
+# Every slide shares one widescreen grid, so nothing can land on anything else:
+# title, then a chart, table or text, then the table's note, then the footer.
+_SLIDE_WIDTH = 13.333
+_SLIDE_HEIGHT = 7.5
+_SLIDE_MARGIN = 0.6
+_CONTENT_WIDTH = _SLIDE_WIDTH - 2 * _SLIDE_MARGIN
+_TITLE_TOP = 0.35
+_TITLE_HEIGHT = 0.75
+_RULE_TOP = 1.12
+_CONTENT_TOP = 1.35
+_TABLE_NOTE_TOP = 6.48
+_FOOTER_TOP = 6.98
+_FOOTER_HEIGHT = 0.3
+_SLIDE_LOGO_WIDTH = 1.3
+_SLIDE_LOGO_TOP = 0.42
+_CONTENT_BOTTOM = _FOOTER_TOP - 0.1
+
+_PPTX_TEXT_COLOR = RGBColor.from_string("3A4369")  # --aire-deep-blue
+_PPTX_MUTED_COLOR = RGBColor.from_string("7A809B")
+_PPTX_RULE_COLOR = RGBColor.from_string("A29BCC")  # --aire-violet
+_PPTX_GRIDLINE_COLOR = RGBColor.from_string("E4E7F2")
+_PPTX_ROW_TINT = RGBColor.from_string("F3F5FC")
+_PPTX_WHITE = RGBColor.from_string("FFFFFF")
+
+_TABLE_FONT_SIZE = Pt(12)
+# Roughly one 12pt character, and a cell's left and right margins, in inches.
+_TABLE_CHAR_WIDTH = 0.088
+_TABLE_CELL_PADDING = 0.24
+_TABLE_LINE_HEIGHT = 0.2
+_TABLE_ROW_PADDING = 0.16
+
+_TABLE_HEADINGS = {"range_80": "80% range", "doh": "DOH", "sku": "SKU"}
+_NUMERIC_CELL_RE = re.compile(r"^\(?\$?-?[\d,]+(\.\d+)?\)?%?$")
+_SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z(\"$])")
+_BOLD_RE = re.compile(r"(\*\*[^*]+\*\*)")
+
+# The Forecast page's line styles (FORECAST_SERIES in app/utils/forecastView.js).
+_FORECAST_LINE_DASH = {"initial": MSO_LINE.ROUND_DOT, "current": MSO_LINE.SQUARE_DOT}
+_FORECAST_LINE_MARKER = {"actual": XL_MARKER_STYLE.CIRCLE, "initial": XL_MARKER_STYLE.SQUARE, "current": XL_MARKER_STYLE.DIAMOND}
+
+
+def _slide_points(answer_text: str) -> list[str]:
+    """The answer as separate points to lay out: its own bullets, else its
+    sentences. Only ever splits the text, so every word and figure is as written."""
+    points = _split_into_points(answer_text)
+    if points:
+        return points
+    sentences = []
+    for line in answer_text.splitlines():
+        sentences.extend(part.strip() for part in _SENTENCE_END_RE.split(line) if part.strip())
+    return sentences or [answer_text]
 
 
 def _chunk_points(points: list[str]) -> list[list[str]]:
-    """Caps each slide at a readable number of bullets -- the system prompt
-    already asks the model for 2-5 insights, but this is a defensive split
-    (not a truncation) so a longer list still reads as several comfortable
-    slides instead of one slide with tiny text."""
-    return [points[i:i + _MAX_BULLETS_PER_SLIDE] for i in range(0, len(points), _MAX_BULLETS_PER_SLIDE)]
+    """Caps each slide at a readable amount, by bullets and by length -- a
+    defensive split (not a truncation), so a longer answer still reads as
+    several comfortable slides instead of one running off the bottom."""
+    chunks: list[list[str]] = []
+    for point in points:
+        current = chunks[-1] if chunks else None
+        if current is None or len(current) >= _MAX_BULLETS_PER_SLIDE or sum(map(len, current)) + len(point) > _MAX_CHARS_PER_SLIDE:
+            chunks.append([point])
+        else:
+            current.append(point)
+    return chunks
 
 
 def _bullet_font_size(points: list[str]) -> Pt:
-    """Scales down as bullets get more numerous/longer -- PowerPoint's
-    default placeholder font (28pt) comfortably fits maybe one short bullet
-    before overflowing the content box, which is exactly the overflow bug
-    this was written to fix."""
+    """Scales down as bullets get more numerous/longer, within what the slide's
+    body comfortably holds."""
     total_chars = sum(len(p) for p in points)
     if len(points) >= 4 or total_chars > 220:
-        return Pt(15)
+        return Pt(16)
     if len(points) >= 3 or total_chars > 120:
         return Pt(18)
     return Pt(20)
+
+
+def _add_runs(paragraph, text: str, size: Pt, color: RGBColor) -> None:
+    """The text with the model's **bold** honoured rather than shown as asterisks,
+    as in the chat (renderWithBold). Size and colour go on each run: PowerPoint
+    ignores a paragraph-level size once the text is in runs."""
+    paragraph.font.size = size
+    for part in _BOLD_RE.split(text):
+        if not part:
+            continue
+        run = paragraph.add_run()
+        is_bold = part.startswith("**") and part.endswith("**")
+        run.text = part[2:-2] if is_bold else part
+        run.font.size = size
+        run.font.bold = is_bold
+        run.font.color.rgb = color
+
+
+def _new_slide(prs, layout_index: int, title: str):
+    """A slide on the shared grid: its title, in a real title placeholder so it
+    shows in PowerPoint's outline, with the rule under it."""
+    slide = prs.slides.add_slide(prs.slide_layouts[layout_index])
+    heading = slide.shapes.title
+    heading.left, heading.top = Inches(_SLIDE_MARGIN), Inches(_TITLE_TOP)
+    # Stops short of the logo at the right end of the title's row.
+    heading.width, heading.height = Inches(_CONTENT_WIDTH - _SLIDE_LOGO_WIDTH - 0.3), Inches(_TITLE_HEIGHT)
+    frame = heading.text_frame
+    frame.vertical_anchor = MSO_ANCHOR.BOTTOM
+    frame.margin_left = frame.margin_right = 0
+    paragraph = frame.paragraphs[0]
+    paragraph.alignment = PP_ALIGN.LEFT
+    run = paragraph.add_run()
+    run.text = title
+    run.font.size = Pt(28)
+    run.font.bold = True
+    run.font.color.rgb = _PPTX_TEXT_COLOR
+
+    rule = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(_SLIDE_MARGIN), Inches(_RULE_TOP), Inches(_CONTENT_WIDTH), Inches(0.03))
+    rule.fill.solid()
+    rule.fill.fore_color.rgb = _PPTX_RULE_COLOR
+    rule.line.fill.background()
+    rule.shadow.inherit = False
+    slide.shapes.add_picture(
+        str(_LOGO_PATH), Inches(_SLIDE_WIDTH - _SLIDE_MARGIN - _SLIDE_LOGO_WIDTH), Inches(_SLIDE_LOGO_TOP), width=Inches(_SLIDE_LOGO_WIDTH),
+    )
+    return slide
+
+
+def _add_summary_slide(prs, title: str, points: list[str]) -> None:
+    slide = _new_slide(prs, 1, title)
+    body = slide.placeholders[1]
+    body.left, body.top = Inches(_SLIDE_MARGIN), Inches(_CONTENT_TOP)
+    body.width, body.height = Inches(_CONTENT_WIDTH), Inches(_CONTENT_BOTTOM - _CONTENT_TOP)
+    frame = body.text_frame
+    frame.word_wrap = True
+    frame.vertical_anchor = MSO_ANCHOR.TOP
+    # A safety net: PowerPoint shrinks anything the chunking above still lets through.
+    frame.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
+    font_size = _bullet_font_size(points)
+    for index, point in enumerate(points):
+        paragraph = frame.paragraphs[0] if index == 0 else frame.add_paragraph()
+        paragraph.space_after = Pt(12)
+        _add_runs(paragraph, point, font_size, _PPTX_TEXT_COLOR)
+    if len(points) == 1:
+        # One statement is a statement, not a list of one.
+        properties = frame.paragraphs[0]._p.get_or_add_pPr()
+        properties.set("marL", "0")
+        properties.set("indent", "0")
+        properties.insert(0, properties.makeelement(qn("a:buNone"), {}))
+
+
+def _chart_slide_title(chart: dict) -> str:
+    if _is_forecast_chart(chart):
+        return "Forecast revenue" if chart["chart_series"][0].get("unit") == "revenue" else "Forecast (cartons)"
+    return "Units" if chart["chart_series"][0].get("unit") == "units" else "Revenue"
+
+
+def _chart_axis_format(chart: dict) -> str:
+    """Every chart plots revenue unless its series counts cartons or units."""
+    is_count = chart["chart_series"][0].get("unit") in ("cartons", "units")
+    return "#,##0" if is_count else '"$"#,##0'
+
+
+def _set_chart_text(frame, text: str, size: Pt) -> None:
+    """A chart or axis title, which otherwise keeps PowerPoint's own font and black."""
+    frame.text = text
+    for run in frame.paragraphs[0].runs:
+        run.font.size = size
+        run.font.bold = False
+        run.font.color.rgb = _PPTX_TEXT_COLOR
+
+
+def _style_pptx_chart(pptx_chart, chart: dict, style: dict) -> None:
+    """A light frame so the data is what stands out: pale gridlines, no axis line
+    up the side, the legend on its own row underneath."""
+    pptx_chart.font.size = Pt(12)
+    pptx_chart.font.color.rgb = _PPTX_TEXT_COLOR
+    value_axis = pptx_chart.value_axis
+    value_axis.tick_labels.number_format = _chart_axis_format(chart)
+    value_axis.tick_labels.number_format_is_linked = False
+    value_axis.format.line.fill.background()
+    if value_axis.has_major_gridlines:
+        value_axis.major_gridlines.format.line.color.rgb = _PPTX_GRIDLINE_COLOR
+    pptx_chart.category_axis.format.line.color.rgb = _PPTX_MUTED_COLOR
+    if pptx_chart.has_legend:
+        pptx_chart.legend.position = XL_LEGEND_POSITION.BOTTOM
+        pptx_chart.legend.include_in_layout = False
+        pptx_chart.legend.font.size = Pt(12)
+    plot = pptx_chart.plots[0]
+    # Otherwise one series is coloured, and listed in the legend, by category.
+    plot.vary_by_categories = False
+    if style.get("chart_type") != "line":
+        # A single month's bars would otherwise fill the whole slide.
+        plot.gap_width = 90 if len(chart["chart_categories"]) > 1 else 300
+        plot.overlap = -8
+
+
+def _add_chart_slide(prs, chart: dict, style: dict, trend_values: list[float] | None) -> None:
+    slide = _new_slide(prs, 5, _chart_slide_title(chart))
+    chart_data = CategoryChartData()
+    chart_data.categories = [str(c) for c in chart["chart_categories"]]
+    all_series = chart["chart_series"]
+    for series in all_series:
+        chart_data.add_series(series["label"], series["values"])
+    is_line = style.get("chart_type") == "line"
+    graphic_frame = slide.shapes.add_chart(
+        XL_CHART_TYPE.LINE if is_line else XL_CHART_TYPE.COLUMN_CLUSTERED,
+        Inches(_SLIDE_MARGIN), Inches(_CONTENT_TOP), Inches(_CONTENT_WIDTH), Inches(_CONTENT_BOTTOM - _CONTENT_TOP),
+        chart_data,
+    )
+    pptx_chart = graphic_frame.chart
+    pptx_number_format = {"whole_number": "0", "currency": '"$"#,##0'}.get(style.get("value_label_format"), "0.00")
+    label_font_size = FONT_SIZE_PT.get(style.get("font_size"), FONT_SIZE_PT["medium"])
+    plot = pptx_chart.plots[0]
+    plot.has_data_labels = bool(style.get("show_value_labels"))
+    if plot.has_data_labels:
+        plot.data_labels.number_format = pptx_number_format
+        plot.data_labels.number_format_is_linked = False
+        plot.data_labels.font.size = Pt(label_font_size)
+    pptx_chart.value_axis.has_major_gridlines = bool(style.get("show_gridlines", True))
+    # Several series need the legend to say which colour is which. The slide's
+    # title says what the chart is, so PowerPoint's own (a series name) would only repeat it.
+    pptx_chart.has_legend = bool(style.get("show_legend")) or len(all_series) > 1 or _is_forecast_chart(chart)
+    pptx_chart.has_title = bool(style.get("title"))
+    if style.get("title"):
+        _set_chart_text(pptx_chart.chart_title.text_frame, style["title"], Pt(16))
+    if style.get("y_axis_label"):
+        pptx_chart.value_axis.has_title = True
+        _set_chart_text(pptx_chart.value_axis.axis_title.text_frame, style["y_axis_label"], Pt(12))
+    _style_pptx_chart(pptx_chart, chart, style)
+
+    # opacity has no equivalent in python-pptx 1.0.2's FillFormat (no
+    # transparency property at all -- confirmed against the class, not
+    # guessed) so it's not applied here, chat-preview/PDF only.
+    for pptx_series, series, color_hex in zip(pptx_chart.series, all_series, _series_colors_hex(chart, style)):
+        color = RGBColor.from_string(color_hex)
+        if is_line:
+            pptx_series.smooth = False
+            pptx_series.format.line.color.rgb = color
+            pptx_series.format.line.width = Pt(2.5)
+            if series.get("key") in _FORECAST_LINE_DASH:
+                pptx_series.format.line.dash_style = _FORECAST_LINE_DASH[series["key"]]
+            if style.get("show_data_points"):
+                pptx_series.marker.style = _FORECAST_LINE_MARKER.get(series.get("key"), XL_MARKER_STYLE.CIRCLE)
+                pptx_series.marker.size = 8
+                pptx_series.marker.format.fill.solid()
+                pptx_series.marker.format.fill.fore_color.rgb = color
+                pptx_series.marker.format.line.color.rgb = color
+        else:
+            pptx_series.format.fill.solid()
+            pptx_series.format.fill.fore_color.rgb = color
+
+    if len(all_series) == 1 and trend_values and len(trend_values) == len(all_series[0]["values"]):
+        _add_pptx_trend_line(pptx_chart, is_line, trend_values)
+
+
+def _table_heading(column: object) -> str:
+    """'product_name' -> 'Product name'; the figures under it are untouched."""
+    name = str(column)
+    return _TABLE_HEADINGS.get(name, name.replace("_", " ").capitalize())
+
+
+def _fit_column_widths(needed: list[float], floors: list[float], total: float) -> list[float]:
+    """Each column as wide as its longest cell needs, so product names get the
+    room and a column of small numbers doesn't; equal columns wrapped nearly every
+    row. When they can't all fit, only the columns with long text give up width,
+    and never below their longest word, so a word isn't broken in two."""
+    if sum(needed) <= total:
+        return [width * total / sum(needed) for width in needed]
+    spare = total - sum(floors)
+    if spare <= 0:
+        return [width * total / sum(floors) for width in floors]
+    flexible = sum(need - floor for need, floor in zip(needed, floors))
+    return [floor + (need - floor) * spare / flexible for need, floor in zip(needed, floors)]
+
+
+def _table_column_widths(headings: list[str], rows: list[list[str]]) -> list[float]:
+    """Inches, for a slide, from a rough character width."""
+    columns = [[heading, *(str(row[index]) for row in rows)] for index, heading in enumerate(headings)]
+    needed = [max(map(len, cells)) * _TABLE_CHAR_WIDTH + _TABLE_CELL_PADDING for cells in columns]
+    floors = [max(len(word) for cell in cells for word in cell.split() or [""]) * _TABLE_CHAR_WIDTH + _TABLE_CELL_PADDING for cells in columns]
+    return _fit_column_widths(needed, floors, _CONTENT_WIDTH)
+
+
+def _table_row_height(row: list[str], widths: list[float]) -> float:
+    """Inches, for the row's most-wrapped cell. An estimate, on the generous side."""
+    lines = 1
+    for cell, width in zip(row, widths):
+        fits = max(int((width - _TABLE_CELL_PADDING) / _TABLE_CHAR_WIDTH), 1)
+        lines = max(lines, -(-len(str(cell)) // fits))
+    return lines * _TABLE_LINE_HEIGHT + _TABLE_ROW_PADDING
+
+
+def _table_pages(rows: list[list[str]], widths: list[float], header_height: float, available: float) -> list[list[list[str]]]:
+    """The rows split so each page fits its slide, by row count and by height: a
+    long table continues on further slides, header repeated."""
+    pages: list[list[list[str]]] = [[]]
+    used = header_height
+    for row in rows:
+        height = _table_row_height(row, widths)
+        if pages[-1] and (len(pages[-1]) >= _MAX_TABLE_ROWS_PER_SLIDE or used + height > available):
+            pages.append([])
+            used = header_height
+        pages[-1].append(row)
+        used += height
+    return pages
+
+
+def _numeric_columns(rows: list[list[str]], count: int) -> set[int]:
+    """Columns of figures (allowing the — for a blank), right-aligned so digits line up."""
+    numeric = set()
+    for index in range(count):
+        cells = [str(row[index]) for row in rows if str(row[index]) != "—"]
+        if cells and all(_NUMERIC_CELL_RE.match(cell) for cell in cells):
+            numeric.add(index)
+    return numeric
+
+
+def _fill_table_cell(cell, text: str, *, fill: RGBColor, color: RGBColor, bold: bool, right: bool) -> None:
+    cell.fill.solid()
+    cell.fill.fore_color.rgb = fill
+    cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+    cell.margin_left = cell.margin_right = Inches(_TABLE_CELL_PADDING / 2)
+    cell.margin_top = cell.margin_bottom = Inches(0.03)
+    paragraph = cell.text_frame.paragraphs[0]
+    paragraph.alignment = PP_ALIGN.RIGHT if right else PP_ALIGN.LEFT
+    run = paragraph.add_run()
+    run.text = text
+    run.font.size = _TABLE_FONT_SIZE
+    run.font.bold = bold
+    run.font.color.rgb = color
+
+
+def _add_table_slides(prs, chart: dict) -> None:
+    rows_data = chart["table_rows"]
+    headings = [_table_heading(column) for column in chart["table_columns"]]
+    widths = _table_column_widths(headings, rows_data)
+    numeric = _numeric_columns(rows_data, len(headings))
+    header_height = _table_row_height(headings, widths)
+    note = chart.get("table_note")
+    bottom = _TABLE_NOTE_TOP - 0.05 if note else _CONTENT_BOTTOM
+    pages = _table_pages(rows_data, widths, header_height, bottom - _CONTENT_TOP)
+    for page_index, page in enumerate(pages):
+        title = "Details" if len(pages) == 1 else f"Details ({page_index + 1}/{len(pages)})"
+        slide = _new_slide(prs, 5, title)
+        heights = [header_height, *(_table_row_height(row, widths) for row in page)]
+        table = slide.shapes.add_table(
+            len(page) + 1, len(headings),
+            Inches(_SLIDE_MARGIN), Inches(_CONTENT_TOP), Inches(_CONTENT_WIDTH), Inches(sum(heights)),
+        ).table
+        for col_idx, width in enumerate(widths):
+            table.columns[col_idx].width = Inches(width)
+        for row_idx, height in enumerate(heights):
+            table.rows[row_idx].height = Inches(height)
+        for col_idx, heading in enumerate(headings):
+            _fill_table_cell(table.cell(0, col_idx), heading, fill=_PPTX_TEXT_COLOR, color=_PPTX_WHITE, bold=True, right=col_idx in numeric)
+        for row_idx, row in enumerate(page, start=1):
+            # Totals stand out from the rows they add up.
+            is_total = "total" in str(row[0]).lower()
+            fill = _PPTX_ROW_TINT if row_idx % 2 == 0 else _PPTX_WHITE
+            for col_idx, value in enumerate(row):
+                _fill_table_cell(table.cell(row_idx, col_idx), str(value), fill=fill, color=_PPTX_TEXT_COLOR, bold=is_total, right=col_idx in numeric)
+        if note:
+            frame = slide.shapes.add_textbox(
+                Inches(_SLIDE_MARGIN), Inches(_TABLE_NOTE_TOP), Inches(_CONTENT_WIDTH), Inches(_FOOTER_TOP - _TABLE_NOTE_TOP),
+            ).text_frame
+            frame.word_wrap = True
+            frame.margin_left = frame.margin_right = 0
+            frame.margin_top = frame.margin_bottom = 0
+            run = frame.paragraphs[0].add_run()
+            run.text = note
+            run.font.size = Pt(10)
+            run.font.italic = True
+            run.font.color.rgb = _PPTX_MUTED_COLOR
+
+
+def _add_footers(prs) -> None:
+    """The report's name and date, and the page number, on every slide."""
+    total = len(prs.slides)
+    for number, slide in enumerate(prs.slides, start=1):
+        for text, left, width, alignment in (
+            (f"AireOS Report · {_report_date()}", _SLIDE_MARGIN, _CONTENT_WIDTH - 1.5, PP_ALIGN.LEFT),
+            (f"{number} / {total}", _SLIDE_WIDTH - _SLIDE_MARGIN - 1.5, 1.5, PP_ALIGN.RIGHT),
+        ):
+            frame = slide.shapes.add_textbox(Inches(left), Inches(_FOOTER_TOP), Inches(width), Inches(_FOOTER_HEIGHT)).text_frame
+            frame.margin_left = frame.margin_right = 0
+            paragraph = frame.paragraphs[0]
+            paragraph.alignment = alignment
+            run = paragraph.add_run()
+            run.text = text
+            run.font.size = Pt(10)
+            run.font.color.rgb = _PPTX_MUTED_COLOR
 
 
 _TREND_LINE_COLOR_HEX = "374151"
@@ -1993,115 +2769,17 @@ def _add_pptx_trend_line(pptx_chart, is_line_chart: bool, trend_values: list[flo
 
 def _build_pptx(answer_text: str, chart: dict, chart_style: dict | None = None, trend_values: list[float] | None = None) -> bytes:
     prs = Presentation()
+    prs.slide_width, prs.slide_height = Inches(_SLIDE_WIDTH), Inches(_SLIDE_HEIGHT)
 
-    points = _split_into_points(answer_text)
-    if points:
-        # "Title and Content" layout -- its body placeholder auto-bullets
-        # each paragraph, unlike the plain title slide's subtitle
-        # placeholder, so multiple distinct insights read as a real list
-        # rather than one run-on paragraph. Chunked across slides and
-        # explicitly font-sized (rather than relying on the placeholder's
-        # default 28pt) so a handful of full-sentence insights don't
-        # overflow the slide -- auto_size is kept as a safety net on top,
-        # for whatever the manual sizing still doesn't cover.
-        chunks = _chunk_points(points)
-        for chunk_index, chunk in enumerate(chunks):
-            title_slide = prs.slides.add_slide(prs.slide_layouts[1])
-            title_slide.shapes.title.text = (
-                "AireOS Report" if len(chunks) == 1 else f"AireOS Report ({chunk_index + 1}/{len(chunks)})"
-            )
-            body = title_slide.placeholders[1].text_frame
-            body.word_wrap = True
-            body.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
-            font_size = _bullet_font_size(chunk)
-            body.text = chunk[0]
-            body.paragraphs[0].font.size = font_size
-            body.paragraphs[0].space_after = Pt(10)
-            for point in chunk[1:]:
-                paragraph = body.add_paragraph()
-                paragraph.text = point
-                paragraph.font.size = font_size
-                paragraph.space_after = Pt(10)
-    else:
-        title_slide = prs.slides.add_slide(prs.slide_layouts[0])
-        title_slide.shapes.title.text = "AireOS Report"
-        title_slide.placeholders[1].text = answer_text
-
+    chunks = _chunk_points(_slide_points(answer_text))
+    for chunk_index, chunk in enumerate(chunks):
+        title = "AireOS Report" if len(chunks) == 1 else f"AireOS Report ({chunk_index + 1}/{len(chunks)})"
+        _add_summary_slide(prs, title, chunk)
     if chart.get("has_chart"):
-        style = chart_style or {}
-        slide = prs.slides.add_slide(prs.slide_layouts[5])
-        chart_data = CategoryChartData()
-        chart_data.categories = [str(c) for c in chart["chart_categories"]]
-        all_series = chart["chart_series"]
-        for series in all_series:
-            chart_data.add_series(series["label"], series["values"])
-        pptx_chart_type = XL_CHART_TYPE.LINE if style.get("chart_type") == "line" else XL_CHART_TYPE.COLUMN_CLUSTERED
-        graphic_frame = slide.shapes.add_chart(
-            pptx_chart_type, Inches(1), Inches(1.5), Inches(8), Inches(5), chart_data,
-        )
-        pptx_chart = graphic_frame.chart
-        pptx_number_format = {"whole_number": "0", "currency": '"$"#,##0'}.get(style.get("value_label_format"), "0.00")
-        label_font_size = FONT_SIZE_PT.get(style.get("font_size"), FONT_SIZE_PT["medium"])
-        plot = pptx_chart.plots[0]
-        plot.has_data_labels = bool(style.get("show_value_labels"))
-        if plot.has_data_labels:
-            plot.data_labels.number_format = pptx_number_format
-            plot.data_labels.number_format_is_linked = False
-            plot.data_labels.font.size = Pt(label_font_size)
-        pptx_chart.value_axis.has_major_gridlines = bool(style.get("show_gridlines", True))
-        # Several series need the legend to say which colour is which customer.
-        pptx_chart.has_legend = bool(style.get("show_legend")) or len(all_series) > 1
-        if style.get("title"):
-            pptx_chart.has_title = True
-            pptx_chart.chart_title.text_frame.text = style["title"]
-        if style.get("y_axis_label"):
-            pptx_chart.value_axis.has_title = True
-            pptx_chart.value_axis.axis_title.text_frame.text = style["y_axis_label"]
-
-        # opacity has no equivalent in python-pptx 1.0.2's FillFormat (no
-        # transparency property at all -- confirmed against the class, not
-        # guessed) so it's not applied here, chat-preview/PDF only.
-        for chart_series, color_hex in zip(pptx_chart.series, _series_colors_hex(chart, style)):
-            if style.get("chart_type") == "line":
-                chart_series.format.line.color.rgb = RGBColor.from_string(color_hex)
-                if style.get("show_data_points"):
-                    chart_series.marker.style = XL_MARKER_STYLE.CIRCLE
-                    chart_series.marker.size = 7
-            else:
-                chart_series.format.fill.solid()
-                chart_series.format.fill.fore_color.rgb = RGBColor.from_string(color_hex)
-
-        if len(all_series) == 1 and trend_values and len(trend_values) == len(all_series[0]["values"]):
-            _add_pptx_trend_line(pptx_chart, style.get("chart_type") == "line", trend_values)
-    elif chart.get("has_table"):
-        columns = chart["table_columns"]
-        rows_data = chart["table_rows"]
-        # A slide fits about a dozen rows; more would run off its bottom edge,
-        # so a long table continues on further slides, header repeated.
-        chunks = [
-            rows_data[start:start + _MAX_TABLE_ROWS_PER_SLIDE]
-            for start in range(0, len(rows_data), _MAX_TABLE_ROWS_PER_SLIDE)
-        ] or [[]]
-        for chunk in chunks:
-            slide = prs.slides.add_slide(prs.slide_layouts[5])
-            table_shape = slide.shapes.add_table(
-                len(chunk) + 1, len(columns), Inches(0.5), Inches(1.5), Inches(9), Inches(0.4) * (len(chunk) + 1),
-            )
-            table = table_shape.table
-            for col_idx, col_name in enumerate(columns):
-                table.cell(0, col_idx).text = str(col_name)
-            for row_idx, row in enumerate(chunk, start=1):
-                for col_idx, value in enumerate(row):
-                    table.cell(row_idx, col_idx).text = str(value)
-            for cell in table.iter_cells():
-                for paragraph in cell.text_frame.paragraphs:
-                    paragraph.font.size = Pt(11)
-            if chart.get("table_note"):
-                note = slide.shapes.add_textbox(Inches(0.5), Inches(6.9), Inches(9), Inches(0.4)).text_frame
-                note.word_wrap = True
-                note.text = chart["table_note"]
-                note.paragraphs[0].font.size = Pt(10)
-                note.paragraphs[0].font.italic = True
+        _add_chart_slide(prs, chart, chart_style or {}, trend_values)
+    if chart.get("has_table"):
+        _add_table_slides(prs, chart)
+    _add_footers(prs)
 
     buf = io.BytesIO()
     prs.save(buf)
@@ -2128,6 +2806,9 @@ def generate_export_file(
     a documented gap anymore); excel has no chat-facing style button so
     chart_style/trend_values are both ignored there.
     """
+    if _is_forecast_chart(chart) and chart.get("chart_type") == "line":
+        # Drawn as lines unless restyled, with markers so a line of one month still shows.
+        chart_style = {**(chart_style or {}), "chart_type": "line", "show_data_points": True}
     if export_format == "pdf":
         return _build_pdf(answer_text, chart, chart_style, trend_values), "application/pdf", "aireos-report.pdf"
     if export_format == "excel":
@@ -2219,13 +2900,24 @@ def _cites_a_figure(text: str) -> bool:
     return _first_dollar_figure(text) is not None or _first_unit_figure(text) is not None
 
 
+def _series_the_model_saw(chart: dict) -> list[dict]:
+    """The chart's series a headline figure can be checked against. The forecast
+    chart's Initial line is never sent to the model, so an answer that happens
+    to match it must not count as backed by it; the forecast's table and tool
+    result hold every figure the model was sent."""
+    return [series for series in chart.get("chart_series") or [] if not series.get("key")]
+
+
 def _known_good_revenue_figures(chart: dict, chart_sources: list[tuple[str, dict, object]]) -> set[float]:
     """Every revenue figure that actually came back from a tool call this
     turn (rounded to cents) -- what the headline figure must be one of."""
     figures: set[float] = set()
-    for series in chart.get("chart_series") or []:
+    for series in _series_the_model_saw(chart):
+        if series.get("unit") == "units":
+            continue
         for value in series.get("values", []):
-            figures.add(round(float(value), 2))
+            if value is not None:
+                figures.add(round(float(value), 2))
     for name, _tool_input, raw in chart_sources:
         if name == "compare_periods":
             for side in ("current", "previous"):
@@ -2259,9 +2951,10 @@ def _displayed_figures(chart: dict) -> set[float]:
     months and product names don't parse and are skipped)."""
 
     figures: set[float] = set()
-    for series in chart.get("chart_series") or []:
+    for series in _series_the_model_saw(chart):
         for value in series.get("values", []):
-            figures.add(float(value))
+            if value is not None:
+                figures.add(float(value))
     for row in chart.get("table_rows") or []:
         for cell in row:
             try:
@@ -2790,8 +3483,7 @@ Rules:
   ("down 11.2%"); quote them, never compute your own.
 - One bullet per area, each starting with "- " and then a short bold label:
   "**Sales:**", "**By channel:**", "**Top products:**", "**Stock:**",
-  "**Forecast:**", "**Promotions:**". Keep the order the facts are given in.
-  3-6 bullets total.
+  "**Forecast:**". Keep the order the facts are given in. 3-6 bullets total.
 - Keep each bullet to one or two short sentences (about 30 words at most).
   Lead with what happened ("Revenue fell 11.2% to $24,052"), then the
   comparison. Use "up"/"down"/"rose"/"fell", never "+"/"-" signs or "vs".
@@ -2802,15 +3494,13 @@ Rules:
   ("may run out", "more stock than needed").
 - When a bullet has both, make clear which figure is a forecast and which
   is actual sales.
-- Several promotions in one bullet: give the count and the months, not
-  every promotion.
+- Never write a bullet about promotions: it is added to your summary afterwards.
 - If a section says there's nothing notable, skip that bullet entirely
   rather than forcing a mention of "nothing changed."
 - When the facts are grouped by customer under "## <customer>" headings,
   write one bullet per customer instead, labelled with its name in bold
   ("**Fairprice:**"): its sales change, then anything notable about its
-  stock or forecast, in two sentences at most. Then the "**Promotions:**"
-  bullet. Up to 8 bullets in all.
+  stock or forecast, in two sentences at most. Up to 8 bullets in all.
 - If the facts say a channel is loaded further than the period covered,
   say so in a few words in that customer's sales bullet.
 - No greeting, no closing sentence -- just the bullets.
@@ -3182,6 +3872,17 @@ def _digest_promotion_lines(promotions: list[dict] | None) -> list[str]:
     return lines
 
 
+def _with_digest_promotion_bullet(answer: str, promotions: list[dict] | None) -> str:
+    """The summary with its promotions bullet written here, not by the model: left
+    to it, "6 promotions in the next 7 days" became "6 promotions in Nov 2026",
+    when 26 ran that month. Any such bullet it wrote anyway is replaced. No bullet
+    when there's nothing soon, or the promotions couldn't be read."""
+    lines = [line for line in answer.splitlines() if not line.lstrip().startswith("- **Promotions")]
+    if promotions:
+        lines.append(f"- **Promotions:** {_count_text(len(promotions), 'promotion')} starting or ending in the next 7 days.")
+    return "\n".join(lines)
+
+
 def _digest_facts_text(facts: dict) -> str:
     return "\n".join([
         "Summarize these already-verified facts for the user:",
@@ -3303,7 +4004,7 @@ def generate_digest(customer: str) -> dict:
     return {
         # The model sometimes double-escapes the line breaks between bullets,
         # leaving a literal "\n" the chat window would print as-is.
-        "answer": parsed.get("answer", "").replace("\\n", "\n"),
+        "answer": _with_digest_promotion_bullet(parsed.get("answer", "").replace("\\n", "\n"), facts.get("promotions")),
         "grounded": True,
         "data_source": "aire_data",
         "follow_up_prompts": parsed.get("follow_up_prompts") or [],

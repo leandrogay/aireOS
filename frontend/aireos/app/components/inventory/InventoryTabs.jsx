@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import SegmentedControl from '@/components/ui/SegmentedControl';
 import Toast from '@/components/ui/Toast';
 import useInventoryOptions from '@/hooks/useInventoryOptions';
 import useToast from '@/hooks/useToast';
@@ -12,9 +12,6 @@ import CustomerInventoryView from './CustomerInventoryView';
 import InventoryDataManager from './InventoryDataManager';
 import InventoryOverview from './InventoryOverview';
 import SellInPlanView from './SellInPlanView';
-
-const TAB_TRIGGER_CLASS =
-  'h-6 min-w-0 flex-1 rounded-md px-2.5 text-xs font-medium text-deep-violet-blue/65 transition hover:bg-cream hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white data-active:hover:bg-deep-violet-blue data-active:hover:text-white';
 
 const TABS = [
   { value: 'overview', label: 'Overview' },
@@ -67,15 +64,15 @@ export default function InventoryTabs() {
 
   return (
     <div>
-      <Tabs value={tab} onValueChange={handleTabChange} className="gap-0">
-        <TabsList className="h-8 w-full rounded-md border border-violet/40 bg-white p-0.5">
-          {TABS.map((t) => (
-            <TabsTrigger key={t.value} value={t.value} className={TAB_TRIGGER_CLASS}>
-              {t.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
+      <SegmentedControl
+        value={tab}
+        onChange={handleTabChange}
+        options={TABS}
+        look="outline"
+        size="md"
+        fullWidth
+        ariaLabel="Inventory views"
+      />
 
       <div className="mt-1 space-y-1">
       {options.error && (

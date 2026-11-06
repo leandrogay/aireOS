@@ -26,6 +26,7 @@ aireOS/
 │   │   ├── auth.py                Shared require_user dependency for protected API routers; current_user_email
 │   │   │                          (settings writes record it as updated_by, never a name sent in the body)
 │   │   ├── middleware.py          UnhandledErrorMiddleware (turns unhandled exceptions into JSON 500s)
+│   │   ├── assets/                aire-logo.png: the AIRE logo on exported PDFs and slides (copy of the frontend's)
 │   │   ├── routers/               HTTP layer. One file per URL prefix.
 │   │   │   ├── uploads.py         /api/uploads        file ingest + mapping review (async)
 │   │   │   ├── auth.py            /api/auth           Google Workspace login/callback/session/logout
@@ -124,16 +125,20 @@ aireOS/
     │   ├── doh/page.js            DOH Settings: per-customer thresholds, alert toggle, edit, reset to global default (components/settings)
     │   ├── inventory/page.js      Inventory: overview, by-customer DOH, at-risk list, sell-in plan, enter/edit data (components/inventory)
     │   ├── components/
-    │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column), Sidebar (NAV_ITEMS)
-    │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, calendar, popover, tooltip, DateRangePicker
+    │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column), Sidebar (NAV_ITEMS; collapses
+    │   │   │                      to an icon rail, hidden on narrow screens), RailFlyout (a rail section's sub-pages)
+    │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, calendar, popover, DateRangePicker
     │   │   │                      (typed date inputs, not a calendar); MonthGrid (year + 12-month grid, shared by
-    │   │   │                      MonthDropdown and the dashboard month-range picker); Dropdown (popover shell holding any
-    │   │   │                      content: checkbox lists, MonthGrid); MonthDropdown (one 'YYYY-MM' month, wrapped by
-    │   │   │                      promotions MonthPicker and inventory MonthFilter); HeaderCheckboxFilter (table-header pill
+    │   │   │                      MonthDropdown and the dashboard month-range picker); dropdown kit: Dropdown (the one shell:
+    │   │   │                      closed button, popover panel, optional `searchable`, `look` field/filter/compact) →
+    │   │   │                      SelectDropdown (pick one, ✓ rows), MultiSelectDropdown (pick many, tick-box rows + "All",
+    │   │   │                      `noneMeansAll`), MonthDropdown (one 'YYYY-MM' month, wrapped by promotions MonthPicker and
+    │   │   │                      inventory MonthFilter); build new pickers on these, not on a raw Popover; toggle kit: SegmentedControl
+    │   │   │                      (pick one of a few, sliding highlight, `look` tint/outline), ToggleButton (one thing on/off,
+    │   │   │                      `look` compact/chip), ToggleField (switch; `label` / `showState` / hints opt in, `ariaLabel` when unlabelled; used by DOH alerts and nomenclature file settings); app/testing shows both kits and lists the
+    │   │   │                      pages not migrated yet; HeaderCheckboxFilter (table-header pill
     │   │   │                      filter, forecast + inventory tables); formStyles.js (cream form input/label/button classes
-    │   │   │                      shared by forms and dialogs); DateRangeControl
-    │   │   │                      (dashboard Period picker: presets + MonthRangeCalendar, whole months); InfoTooltip
-    │   │   │                      ("i" hint, inventory + Scenario builder); Toast (+ hooks/useToast);
+    │   │   │                      shared by forms and dialogs); Toast (+ hooks/useToast);
     │   │   │                      list-table kit (Customers, Promotions, SKUs, Nomenclatures): DataTable (card: count, search slot,
     │   │   │                      refresh, Retry, empty state, footer) → TableGrid (column config → fixed widths, sort headers,
     │   │   │                      skeleton; `nested` variant + `inset` for tables inside rows), ExpandableRow, RowActions
@@ -154,7 +159,9 @@ aireOS/
     │   │   │                      RetailerTable (nested TableGrid), columns.js (shared grid), NameFormDialog,
     │   │   │                      LinkRetailerDialog, UnlinkedRetailers
     │   │   ├── skus/              SKU catalog filters/table, create-edit form, details/history
-    │   │   ├── forecast/          ForecastChart/Filters/Table, HeaderCheckboxFilter (shared)
+    │   │   ├── mappings/          Nomenclature list: MappingList (state) → MappingFilters (on ui/FilterBar), MappingRow (on
+    │   │   │                      ui/DataTable), columns.js; plus the review screen (MappingReviewPanel and its steps)
+    │   │   ├── forecast/          ForecastChart/Filters/Table
     │   ├── services/              Backend API wrappers
     │   │   ├── promotionsApi.js   request() + parseApiError() + promotion/retailer/store endpoints
     │   │   ├── catalogApi.js      SKU CRUD, details, options and archive API wrappers
@@ -181,7 +188,7 @@ aireOS/
     │       ├── priceMix.js        Avg-price change split into SKU price vs product mix
     │       ├── estimatedRevenue.js EST sign: when a revenue figure includes estimated revenue, and its hover text
     │       ├── customerTrend.js   Cross-customer chart: MAX_COMPARED_CUSTOMERS (3), bars up to MAX_BAR_PERIODS (6) then lines, series/rows
-    │       ├── storeFormats.js    FORMAT_COLORS + formatColor() per store format
+    │       ├── storeFormats.js    FORMAT_COLORS + formatColor() per store format; customerColor + customerColorOrder (one colour per customer on every page, by customer_id)
     │       ├── dohSettingsForm.js validate/build/formFrom helpers for the DOH threshold form, GLOBAL_DEFAULT_DOH
     │       ├── customerForm.js    normaliseName (mirrors backend slug), validateName, edit/delete block reasons
     │       ├── retailerLabel.js   shared display label for retailer/customer slugs (fairprice_online → Fairprice Online)
@@ -190,6 +197,7 @@ aireOS/
     ├── hooks/                     Data-fetching hooks (cancel-flag pattern; dashboard calls services/*Api.js)
     │   ├── useDataFreshness.js    polls /api/sales/last-updated → { channels, dataVersion, refreshing }
     │   ├── useCustomerOptions.js  /api/sales/customer-options
+    │   ├── useAllCustomers.js     /api/inventory/customers via inventoryApi (every customer, for customerColorOrder)
     │   ├── useCustomerTrends.js   /api/sales/customer-trends via salesApi.getCustomerTrends (2-3 customers ticked: each per week/month)
     │   ├── useDashboardSummary.js /api/sales/dashboard-summary (silent refresh on dataVersion)
     │   ├── useDefaultDateRange.js /api/sales/default-date-range
@@ -197,9 +205,11 @@ aireOS/
     │   ├── useMonthlyOnly.js      /api/sales/monthly-only via salesApi.getMonthlyOnly (months with no weekly breakdown → month bars)
     │   ├── usePriceMix.js         useSkuSales × 2 (this period + comparison) → priceMixEffects
     │   ├── useDohSettings.js      /api/settings/doh (+ replaceRow for the row a write returns)
+    │   ├── useUploads.js          upload list + actions from components/upload/UploadProvider (in the root layout, so uploads outlive the page; UploadTray shows them on every page)
     │   ├── useCustomers.js        /api/catalog/customers (+ applyCustomer / removeCustomer for the row a write returns)
     │   ├── useExpandedRows.js     { isExpanded, toggle, expand } for ui/ExpandableRow (several open by default)
     │   ├── useConfirmAction.js    { target, isPending, request, cancel, confirm } for ui/ConfirmDialog (e.g. Delete)
+    │   ├── useMediaQuery.js       boolean for a CSS media query (Sidebar: rail vs hidden when collapsed)
     │   └── useToast.js            { toast, notify, dismissToast } for components/ui/Toast
     ├── lib/                       cn() (clsx + tailwind-merge), formatDateRange, formatDate/formatDateTime (shared date display,
     │                              Singapore time), singaporeTime (singaporeDateTimeParts, singaporeToday)
@@ -384,6 +394,7 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | upload `mapping_status` load states (`ready_to_load`, `mapped`, `reload_available`, in `upload_loading`); load preview/result keys (`preview_loads`, `load_uploads`, `sellout_ingestion.preview_confirmed_upload`); confirm `waiting_uploads`/`outdated_uploads`/`load_requires_confirmation` | `utils/uploadHistory.js`, `utils/loadPreview.js` (`LOAD_PREVIEW_FIELDS`), `LoadConfirmDialog.jsx` → `LoadFileRow.jsx` (sample rows via `OutputPreview`), `ApprovedSummary.jsx` |
 | `settings/doh._settings_view` keys, `GLOBAL_DEFAULT_*_DOH` | `DohSettingsTable.jsx`, `dohSettingsForm.js` (`GLOBAL_DEFAULT_DOH`) |
 | `DohThresholdsUpdate` field names | `buildDohThresholdPayload` |
+| `DELETE /api/mappings/{fp}/pending` → `removed_uploads`; review packet `waitingUploads` (pending only, `upload_loading.uploads_waiting_on_proposal`) | `ConfirmDiscardDialog.jsx` (names the files), `UploadProvider.forgetMapping` (drops their `needs_review` rows), `app/mappings/page.js` (`?discarded=<n>` toast) |
 | `ConfirmRequest.customer_id`; packet `customerId`, `customerName`, `sourceFilename`; `mapping_contract.retailer_outputs` | `mappingApi.confirmMapping`, `utils/mappingCustomer.js` (`retailerOutputs` mirrors it), `utils/mappingList.js` |
 | packet `columnGroups` (`mapping_view.column_groups`: detected groups from `column_profile.review_column_groups`, with contract-ready `group` settings, `readings`, `meltGroupId`/`field`) and `measureFields` | `utils/mappingReview.js` (`toGroups`, `groupChoices`, `toRules`), `FieldTable.jsx`, `ColumnGroupDetails.jsx`, `UnusedColumns.jsx`. `review_column_groups` adds month-named headings for review only -- never fold them into `detect_column_groups`, which the layout fingerprint is built from |
 | `CustomerCreate.retailer_names` (`customer_service._attach_retailer`: links a retailer an upload made, 409 for another customer's) | `NewCustomerDialog.jsx` |
@@ -394,6 +405,7 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | Retailer = `{customer}_online` / `{customer}_offline` (`sellout_service._retailer_for`); `mapping_contract.retailer_outputs` (incl. retailers read off headings, given `columns`/`layout`); packet `columnValues` | `utils/retailerSplit.js` (`splitDecision`, `withCustomerChannels`), `ChannelSplit.jsx`, `mappingCustomer.retailerDecision` |
 | `GET /api/settings/promo-uplifts/moments` (`settings/promo_moments.list_moments`, rules in `settings/promo_moment_rules.py`): `moments[]` (`customer_name`, `sku`, `sku_range`, `month`, `mechanic_key`, `uplift_pct`, `is_baseline`), `recommendations[]` (`recommended_uplift_pct`, `moments_by_year`, `months_used`, `enough_data`), `recommend_from` | `promoUpliftSettings.js` (`momentCounts`, `formatMomentCounts`, `recommendedUplift` -- `latestMonth` from `months_used` is the Effective date), `PromoUpliftTable.jsx` (Moments, Effective date columns), `hooks/usePromoMoments.js` |
 | `settings/promo_uplifts` anchors per customer x SKU range, a mechanic saved once and changed only by adopting a recommendation (`list_anchors` `window_months`, `recommend_from`, `customers[].ranges[]`: `sku_range`, `anchor_pct`, `mechanic_label`, `source` `recommended`/`manual`/`customer`/`default`, `recommended`, `recommendation_differs`, `manual_allowed`; PUT (typed discount, 409 unless too few moments) and POST `/adopt` take `sku_range`, history `?sku_range=`; `seed_anchors`); `resolve_uplifts` `product_uplifts` + `product_anchors`; migrations `008_create_promo_uplift_settings.sql` + `009_promo_anchor_mechanic.sql` (append-only, newest row per target wins) | `settingsApi.js` anchor wrappers (via `promoUpliftsApi.js`), `PromoAnchorTable.jsx`, `PromoAnchorDetails.jsx`, `PromoAnchorForm.jsx`, `PromoUpliftSettingsView.shownUplift`, `scenario/PromotionEditor.jsx` |
+| `assistant._FORECAST_LINES` (keys, labels, export colours; `chart_series[].key`/`unit`), `forecast_summary` `chart_lines` | `FORECAST_SERIES` in `utils/forecastView.js`, `AssistantChart` in `assistant/AssistantMessage.jsx` |
 | `HTTPException.detail` shapes | `parseApiError()` |
 
 When you change the left column, grep the right column in the same PR.

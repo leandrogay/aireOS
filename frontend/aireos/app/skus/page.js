@@ -17,6 +17,7 @@ import useToast from '@/hooks/useToast';
 import { paginate, matchesSearch } from '@/app/utils/tableView';
 import {
   archiveSku,
+  correctSkuPricePeriod,
   createSku,
   getSku,
   getSkuOptions,
@@ -64,6 +65,7 @@ export default function SkusPage() {
     if (!matchesSearch([sku.sku, sku.sku_range, sku.product_name], search)) return false;
     if (filters.skuRange && sku.sku_range !== filters.skuRange) return false;
     if (filters.brand && sku.brand !== filters.brand) return false;
+    if ((filters.minPrice !== '' || filters.maxPrice !== '') && sku.price == null) return false;
     if (filters.minPrice !== '' && Number(sku.price) < Number(filters.minPrice)) return false;
     if (filters.maxPrice !== '' && Number(sku.price) > Number(filters.maxPrice)) return false;
     return true;
@@ -90,9 +92,13 @@ export default function SkusPage() {
       const withoutSaved = current.filter((item) => item.sku !== saved.sku);
       return [...withoutSaved, saved].sort((left, right) => left.product_name.localeCompare(right.product_name));
     });
-    setOptions(await getSkuOptions());
     notify(editor.sku ? 'updated' : 'created', editor.sku ? `SKU ${saved.sku} updated.` : `SKU ${saved.sku} created.`);
     setEditor(null);
+    getSkuOptions()
+      .then(setOptions)
+      .catch((optionsError) => {
+        setError(optionsError.message || 'SKU saved, but the dropdown options could not be refreshed.');
+      });
   };
 
   const viewSkuHistory = async (sku) => {
@@ -106,6 +112,15 @@ export default function SkusPage() {
     } finally {
       setDetailsLoading(false);
     }
+  };
+
+  const correctPricePeriod = async (periodId, changes) => {
+    const skuCode = details.sku;
+    await correctSkuPricePeriod(skuCode, periodId, changes);
+    const [updatedDetails, updatedSkus] = await Promise.all([getSku(skuCode), getSkus()]);
+    setDetails(updatedDetails);
+    setSkus(updatedSkus);
+    notify('updated', `Price period for SKU ${skuCode} corrected.`);
   };
 
   async function archiveRecord(sku) {
@@ -182,6 +197,7 @@ export default function SkusPage() {
         sku={details}
         loading={detailsLoading}
         error={detailsError}
+        onCorrectPricePeriod={correctPricePeriod}
         onClose={() => setDetails(null)}
       />
       <ConfirmDialog
