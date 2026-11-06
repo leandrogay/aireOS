@@ -1,4 +1,4 @@
--- To run this migration in Cloud SQL, after 008_create_promo_uplift_settings.sql.
+-- To run this migration in Cloud SQL, after 012_create_promo_uplift_settings.sql.
 
 -- A customer's (or SKU range's) anchor is now a promotion mechanic: the one
 -- it most often runs as a whole-month promotion ("moments", counted by

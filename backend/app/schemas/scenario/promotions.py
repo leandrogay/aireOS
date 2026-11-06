@@ -21,7 +21,7 @@ from app.schemas.catalog import _Base
 # Same values as PROMO_OVERLAY_TYPES in app/utils/forecastView.js.
 ScenarioPromoType = Literal["monthly", "side_offer", "bundle", "others"]
 
-# Same bounds as promo_uplift_settings.uplift_pct (migration 008).
+# Same bounds as promo_uplift_settings.uplift_pct (migration 012).
 _UPLIFT = {"ge": Decimal("-90"), "le": Decimal("300"), "max_digits": 6, "decimal_places": 2}
 
 
