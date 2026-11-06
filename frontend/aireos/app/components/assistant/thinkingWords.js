@@ -190,6 +190,12 @@ const THINKING_WORDS = [
   'Wrangling',
   'Zesting',
   'Zigzagging',
+  'Alaning',
+  'Niving',
+  'WIPing',
+  'Packing diapers',
+  'Wrapping diapers',
+  'Sniffing diapers'
 ];
 
 export default THINKING_WORDS;
