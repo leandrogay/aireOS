@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 
+import SelectDropdown from '@/components/ui/SelectDropdown';
+
 // "Filter" side panel for the sales dashboard: Customer, SKU and Store. The
 // Period and Compare to controls live above the trend chart instead
 // (DateRangeControl, CompareControl), since the timeframe is the first thing
@@ -132,59 +134,47 @@ export default function DashboardFilters({
 
         <div>
           <label className="block text-xs text-deep-violet-blue/70 mb-1">SKU</label>
-          <select
-            aria-label="SKU"
+          {/* One SKU at a time (the API takes a single `sku`), so SelectDropdown,
+              in the same compact look as the multi-select Customer above. */}
+          <SelectDropdown
+            ariaLabel="SKU"
+            look="compact"
+            searchable
             value={sku}
-            onChange={(e) => {
-              const value = e.target.value;
+            onChange={(value) => {
               const productName = skuOptions.find((o) => o.sku === value)?.product_name ?? '';
               onSkuChange(value, productName);
             }}
+            options={skuLoading ? [] : [
+              { value: '', label: 'All SKUs' },
+              ...skuOptions.map((o) => ({ value: o.sku, label: o.product_name })),
+            ]}
+            placeholder={skuLoading ? 'Loading SKUs…' : 'All SKUs'}
             disabled={skuLoading}
-            className="w-full px-2 py-1 text-xs rounded-md border bg-white text-deep-violet-blue border-violet disabled:opacity-50"
-          >
-            {skuLoading ? (
-              <option value="">Loading SKUs…</option>
-            ) : (
-              <>
-                <option value="">All SKUs</option>
-                {skuOptions.map((o) => (
-                  <option key={o.sku} value={o.sku}>
-                    {o.product_name}
-                  </option>
-                ))}
-              </>
-            )}
-          </select>
+          />
         </div>
 
         <div>
           <label className="block text-xs text-deep-violet-blue/70 mb-1">Store</label>
-          <select
-            aria-label="Store"
-            value={store}
-            onChange={(e) => {
-              const value = e.target.value;
-              const storeName = storeOptions.find((o) => o.store_code === value)?.store_name ?? '';
-              onStoreChange(value, storeName);
-            }}
-            disabled={storeDisabled || storeLoading}
-            title={storeDisabled ? 'Store applies when one customer is selected' : undefined}
-            className="w-full px-2 py-1 text-xs rounded-md border bg-white text-deep-violet-blue border-violet disabled:opacity-50"
-          >
-            {storeLoading ? (
-              <option value="">Loading stores…</option>
-            ) : (
-              <>
-                <option value="">All Stores</option>
-                {storeOptions.map((o) => (
-                  <option key={o.store_code} value={o.store_code}>
-                    {o.store_name}
-                  </option>
-                ))}
-              </>
-            )}
-          </select>
+          {/* The wrapper carries the tooltip: a disabled button gets no hover. */}
+          <div title={storeDisabled ? 'Store applies when one customer is selected' : undefined}>
+            <SelectDropdown
+              ariaLabel="Store"
+              look="compact"
+              searchable
+              value={store}
+              onChange={(value) => {
+                const storeName = storeOptions.find((o) => o.store_code === value)?.store_name ?? '';
+                onStoreChange(value, storeName);
+              }}
+              options={storeLoading ? [] : [
+                { value: '', label: 'All Stores' },
+                ...storeOptions.map((o) => ({ value: o.store_code, label: o.store_name })),
+              ]}
+              placeholder={storeLoading ? 'Loading stores…' : 'All Stores'}
+              disabled={storeDisabled || storeLoading}
+            />
+          </div>
         </div>
       </div>
 
