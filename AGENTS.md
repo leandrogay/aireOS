@@ -59,6 +59,8 @@ aireOS/
 │   │       ├── scenario/building_blocks.py scenario_building_blocks CRUD; resolves customer_name/product_name to customer_id/sku
 │   │       ├── sellout_units.py   Cloud SQL monthly sell-out per SKU for inventory, via sellout_service's effective-sellout view
 │   │       ├── forecast_units.py  read-only BigQuery forecast units per SKU/month, from the aire_forecasting_output view (BQ_FORECAST_OUTPUT_VIEW)
+│   │       ├── sell_in_snapshots.py saves every customer's sell-in plan when a forecast refresh retrains (worker + scheduled run), one
+│   │       │                      snapshot per customer per month (sell_in_plan_snapshots); the chart's "Sell-in Forecast (Previous)"
 │   │       ├── catalog_service.py retailers/stores/skus CRUD; SKU history/archive; get_or_create_* seams; retailer
 │   │       │                      writes for the Customers page (always under a customer, blocked once it has stores)
 │   │       ├── customer_service.py customers CRUD + list_customers (customers with nested retailers, in_use flags,

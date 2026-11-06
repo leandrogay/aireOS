@@ -23,56 +23,6 @@ import SkuDropdown from './SkuDropdown';
 
 const MONTH_OPTIONS = [3, 6, 12].map((n) => ({ value: String(n), label: `${n} months` }));
 
-const FORECAST_SOURCE_LABEL = {
-  current: 'Sell-out Forecast (Current)',
-  initial: 'Initial Yearly Sell-out Forecast',
-  mixed: 'Current + Initial',
-};
-
-/**
- * The latest actual month's sell-out against its forecast (backend
- * inventory_service._last_month_vs_forecast), as pills above the chart.
- *
- * Only SKUs with a forecast for the month are compared, so when some have none
- * the actual here is lower than the chart's, and the pills say how many.
- *
- * @param {{ comparison: { month: string, actual: number, forecast: number, forecast_source: string, difference: number, percent: number | null, skus_compared: number, skus_with_actuals: number } }} props
- */
-function LastMonthVsForecast({ comparison }) {
-  const sign = comparison.difference > 0 ? '+' : comparison.difference < 0 ? '−' : '';
-  const percent = comparison.percent === null ? '' : ` (${sign}${Math.abs(comparison.percent).toFixed(1)}%)`;
-  const direction = comparison.difference > 0 ? 'above' : comparison.difference < 0 ? 'below' : 'on';
-  // Same bar as the chart's line toggles below it (and the Forecast page's):
-  // a small uppercase label, then the figures as pills.
-  return (
-    <div
-      className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-lavander bg-white px-3 py-2"
-      role="status"
-    >
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/50">
-        {formatMonth(comparison.month)} sell-out vs forecast
-      </p>
-      <div className="flex flex-wrap gap-1.5">
-        <StatTag label="Actual" value={`${formatUnits(comparison.actual)} units`} />
-        <StatTag
-          label="Forecast"
-          value={`${formatUnits(comparison.forecast)} units (${FORECAST_SOURCE_LABEL[comparison.forecast_source]})`}
-        />
-        <StatTag
-          label="Difference"
-          value={`${sign}${formatUnits(Math.abs(comparison.difference))} units${percent} ${direction} forecast`}
-        />
-        {comparison.skus_compared < comparison.skus_with_actuals ? (
-          <StatTag
-            label="SKUs"
-            value={`${comparison.skus_compared} of ${comparison.skus_with_actuals} (the rest have no forecast)`}
-          />
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
 /**
  * Where the plan starts. Each SKU plans from its own last actual month, so when
  * they differ (actuals were entered for only some SKUs) the range is shown.
@@ -228,12 +178,14 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
       )}
 
       <InventorySection title="Sell-in and sell-out" tags={outlookTags}>
-        {outlook.data?.last_month_vs_forecast ? (
-          <LastMonthVsForecast comparison={outlook.data.last_month_vs_forecast} />
-        ) : null}
         <InventoryChartSlot loading={outlook.loading} ready={Boolean(outlook.data)}>
           {outlook.data && (
-            <SellInOutlookChart months={outlook.data.months} actualsThrough={outlook.data.actuals_through} />
+            <SellInOutlookChart
+              months={outlook.data.months}
+              actualsThrough={outlook.data.actuals_through}
+              sellInComparison={outlook.data.last_month_sell_in_vs_forecast}
+              sellOutComparison={outlook.data.last_month_vs_forecast}
+            />
           )}
         </InventoryChartSlot>
       </InventorySection>

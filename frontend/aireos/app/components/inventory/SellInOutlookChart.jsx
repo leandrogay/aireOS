@@ -11,6 +11,7 @@ import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
 import { dotRevealDelay, lineSweepTimings } from '@/app/utils/lineAnimation';
 
 import { labelledTooltipRow } from './chartTooltip';
+import LastMonthDifference from './LastMonthDifference';
 
 // The sell-out lines keep the Forecast page's colours (forecastView.FORECAST_SERIES),
 // so the two pages read the same way. Every line has its own colour, and the
@@ -54,6 +55,15 @@ const TOOLTIP_ORDER = SERIES.map((series) => series.key);
 
 const ALL_VISIBLE = Object.fromEntries(SERIES.map((series) => [series.key, true]));
 
+// Why a line has nothing to show. Previous sell-in is the plan saved at each
+// forecast refresh (backend sell_in_snapshots), or worked out on the previous
+// sell-out forecast where none was saved, so both Previous lines are empty
+// only when neither exists.
+const NO_DATA_HINT = {
+  sell_in_previous: 'No previous forecast yet.',
+  sell_out_previous: 'No previous forecast yet.',
+};
+
 // Each line sweeps left to right: the actual parts first, then the forecasts
 // carry on from where they ended.
 const LINE_SWEEP = { begin: 0, duration: 1200 };
@@ -62,7 +72,7 @@ const LINE_SWEEP = { begin: 0, duration: 1200 };
 // each reads as one stroke from actual into plan (see rows below). There the
 // value is the actual, not a forecast, so the tooltip leaves it out. The
 // Previous and Initial lines have values of their own in the actual months
-// (backend _past_recommendations), so they never join.
+// (backend _previous_sell_in, _past_recommendations), so they never join.
 const JOIN_KEYS = ['sell_in_recommended', 'sell_out_current'];
 
 // Recharts' dot, faded in as the line reaches it (dotRevealDelay). `points` is
@@ -93,17 +103,22 @@ export function initialFallbackLabel(months) {
  * Sell-in against sell-out by month for the sell-in plan, all as lines, each
  * of which can be switched on and off. Sell-in is the actual months, then the
  * recommendation planned on the current forecast (falling back to the initial
- * where the current does not reach), on last month's (Previous) forecast, and
- * on the initial alone (backend get_sell_in_outlook). The Previous and Initial
- * sell-in lines also run through the actual months, as what that forecast
- * would have recommended each month. Sell-out is the actual
+ * where the current does not reach), the plan saved at an earlier forecast
+ * refresh (Previous), and the plan on the initial alone (backend
+ * get_sell_in_outlook). Previous takes, for each month, the newest plan saved
+ * before it, so in the actual months it shows what was recommended then, and
+ * falls back to the plan on the previous sell-out forecast where none was. The
+ * Initial sell-in line also runs through the actual months, as what the
+ * initial would have recommended each month. Sell-out is the actual
  * months, the current forecast carrying on from them, and the Previous and
  * Initial forecasts across the whole window, so last months' sales can be read
  * against what was forecast for them. `actualsThrough` is the last actual month.
+ * The card above the chart also holds that month's sell-in and sell-out
+ * against forecast (`sellInComparison`, `sellOutComparison`).
  *
- * @param {{ months: Array<{ month: string, sell_in_actual: number | null, sell_in_recommended: number | null, sell_in_previous: number | null, sell_in_initial: number | null, sell_out_actual: number | null, sell_out_forecast: number | null, sell_out_initial: number | null, sell_out_previous: number | null, forecast_source: 'current' | 'initial' | 'mixed' | null }>, actualsThrough: string | null }} props
+ * @param {{ months: Array<{ month: string, sell_in_actual: number | null, sell_in_recommended: number | null, sell_in_previous: number | null, sell_in_initial: number | null, sell_out_actual: number | null, sell_out_forecast: number | null, sell_out_initial: number | null, sell_out_previous: number | null, forecast_source: 'current' | 'initial' | 'mixed' | null }>, actualsThrough: string | null, sellInComparison?: object | null, sellOutComparison?: object | null }} props
  */
-export default function SellInOutlookChart({ months, actualsThrough }) {
+export default function SellInOutlookChart({ months, actualsThrough, sellInComparison = null, sellOutComparison = null }) {
   const [visible, setVisible] = useState(ALL_VISIBLE);
 
   if (months.length === 0) {
@@ -134,7 +149,7 @@ export default function SellInOutlookChart({ months, actualsThrough }) {
   const hints = Object.fromEntries(
     SERIES.filter((series) => noData[series.key]).map((series) => [
       series.key,
-      series.dash === DASH.previous ? 'No previous forecast yet.' : 'No values for these filters.',
+      NO_DATA_HINT[series.key] ?? 'No values for these filters.',
     ]),
   );
 
@@ -150,8 +165,14 @@ export default function SellInOutlookChart({ months, actualsThrough }) {
 
   return (
     <div className="space-y-2">
-      {/* The Forecast page's line pills and bar, one row each for sell-in and sell-out. */}
+      {/* One card: last month's differences, then the Forecast page's line
+          pills, one row each for sell-in and sell-out. */}
       <div className="space-y-1.5 rounded-lg border border-lavander bg-white px-3 py-2">
+        {sellInComparison || sellOutComparison ? (
+          <div className="border-b border-lavander pb-1.5">
+            <LastMonthDifference sellIn={sellInComparison} sellOut={sellOutComparison} />
+          </div>
+        ) : null}
         {GROUPS.map((group) => (
           <ForecastLineToggle
             key={group.label}

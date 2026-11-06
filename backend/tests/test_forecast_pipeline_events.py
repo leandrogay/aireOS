@@ -20,7 +20,14 @@ def _run(state, **extra):
 
 
 @pytest.fixture
-def inserted(monkeypatch):
+def snapshots(monkeypatch):
+    taken = []
+    monkeypatch.setattr(events.sell_in_snapshots, "take_snapshot_best_effort", lambda: taken.append(True))
+    return taken
+
+
+@pytest.fixture
+def inserted(monkeypatch, snapshots):
     rows = []
     monkeypatch.setattr(notification_service, "has_forecast_run", lambda name: False)
     monkeypatch.setattr(notification_service, "insert", lambda kind, payload: rows.append((kind, payload)) or len(rows))
@@ -181,3 +188,28 @@ def test_the_forecast_summary_names_customers_and_products(monkeypatch):
         "customers": ["fairprice", "nhg"],
         "skus": ["Pants L", "Tape XL"],
     }
+
+
+# ---- sell-in plan snapshot -----------------------------------------------------
+
+
+def test_a_run_that_retrained_saves_the_sell_in_plan(inserted, snapshots, monkeypatch):
+    monkeypatch.setattr(events, "_retrained_during", lambda start, end: True)
+
+    events.handle_transfer_run(_run("SUCCEEDED"))
+
+    assert snapshots == [True]
+
+
+def test_a_run_with_no_new_month_saves_no_sell_in_plan(inserted, snapshots, monkeypatch):
+    monkeypatch.setattr(events, "_retrained_during", lambda start, end: False)
+
+    events.handle_transfer_run(_run("SUCCEEDED"))
+
+    assert snapshots == []
+
+
+def test_a_failed_run_saves_no_sell_in_plan(inserted, snapshots):
+    events.handle_transfer_run(_run("FAILED"))
+
+    assert snapshots == []
