@@ -127,8 +127,10 @@ aireOS/
     │   ├── components/
     │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column), Sidebar (NAV_ITEMS; collapses
     │   │   │                      to an icon rail, hidden on narrow screens), RailFlyout (a rail section's sub-pages)
-    │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, calendar, popover, DateRangePicker
-    │   │   │                      (typed date inputs, not a calendar); ChartLoading (spinner placeholder / refetch overlay)
+    │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, calendar (brand-styled), popover;
+    │   │   │                      date kit on calendar: DatePicker (one day) / RangeDatePicker (start + end, Apply), each
+    │   │   │                      `variant` button or typed input (utils/datePicker.js); DateRangePicker (older typed
+    │   │   │                      From/To pair, exports DateInput, the dd/mm/yyyy box); ChartLoading (spinner placeholder / refetch overlay)
     │   │   │                      and chart skeletons (first-load placeholders on ui/skeleton): ChartSkeletonFrame (shared
     │   │   │                      axes/gridlines/legend/status) → BarChartSkeleton (`groups` per category); MonthGrid (year + 12-month grid, shared by
     │   │   │                      MonthDropdown and the dashboard month-range picker); dropdown kit: Dropdown (the one shell:

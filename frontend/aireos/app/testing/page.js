@@ -1,12 +1,14 @@
 import PageLayout from '@/components/layout/PageLayout';
 
 import ButtonGallery from './ButtonGallery';
+import DatePickerGallery from './DatePickerGallery';
 import DropdownGallery from './DropdownGallery';
 import ToggleGallery from './ToggleGallery';
 
 // A living reference for the shared kits: buttons (components/ui/button),
 // dropdowns (components/ui/Dropdown, SelectDropdown, MultiSelectDropdown,
-// MonthDropdown) and toggles (SegmentedControl, ToggleButton, ToggleField).
+// MonthDropdown), date pickers (DatePicker, RangeDatePicker on ui/calendar)
+// and toggles (SegmentedControl, ToggleButton, ToggleField).
 // Every variant with sample data, to look at and try. Not linked from the
 // sidebar, so it is only reached by URL. Add a variant here when you add one
 // to a kit.
@@ -15,6 +17,7 @@ export default function TestingPage() {
     <PageLayout title="Shared components">
       <ButtonGallery />
       <DropdownGallery />
+      <DatePickerGallery />
       <ToggleGallery />
     </PageLayout>
   );

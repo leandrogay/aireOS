@@ -16,8 +16,11 @@ new UI consistent with what's already here.
 
 Reusable UI primitives already exist in `app/components/ui/`: `Button`, `Card`
 (+ `CardHeader`/`CardTitle`/`CardContent`/etc.), `Tabs`, `Chart`,
-`Calendar` (react-day-picker; the dashboard's `RangeCalendar` builds on it),
-`Popover`, `DateRangePicker` (typed date inputs), `RefreshButton` (spinning
+`Calendar` (react-day-picker, in the brand colours), `DatePicker` (one day) and
+`RangeDatePicker` (start + end, applied on Apply) built on it, each with a
+`button` or typed `input` variant -- use these for new date fields,
+`Popover`, `DateRangePicker` (older pair of typed date inputs, to be replaced
+by `RangeDatePicker`), `RefreshButton` (spinning
 reload icon — pass the page's loading flag as `isRefreshing`), `Skeleton`
 (pulsing placeholder block), `TableSkeleton` (placeholder `<tr>` rows for a
 table's first load — pass the header's column count as `columns`), and the
