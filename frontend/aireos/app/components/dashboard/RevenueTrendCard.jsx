@@ -2,7 +2,7 @@
 
 import BarChartSkeleton from "@/components/ui/BarChartSkeleton"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import SegmentedControl from "@/components/ui/SegmentedControl"
 import ComparisonMixChart from "@/components/dashboard/ComparisonMixChart"
 import CustomerTrendChart from "@/components/dashboard/CustomerTrendChart"
 import EstMark from "@/components/dashboard/EstMark"
@@ -10,8 +10,10 @@ import { FormatTrendChart } from "@/components/dashboard/TrendChart"
 import { formatDateTime } from "@/lib/formatDate"
 import { relabelFormatRows } from "@/app/utils/storeFormats"
 
-const tabTriggerClass =
-  "text-deep-violet-blue/70 hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white data-active:hover:text-white"
+const METRIC_OPTIONS = [
+  { value: "units", label: "Volume" },
+  { value: "revenue", label: "Revenue" },
+]
 
 // Under the chart: EST on the left when it includes estimated revenue, and
 // when the data was last updated on the right, on one text line (baseline).
@@ -82,28 +84,18 @@ export default function RevenueTrendCard({
       <div className="mb-2 flex flex-wrap items-end gap-x-3 gap-y-2">
         {headerExtra}
         <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-          <Tabs value={metric} onValueChange={onMetricChange}>
-            <TabsList className="h-7 bg-lavander">
-              <TabsTrigger value="units" className={`text-xs ${tabTriggerClass}`}>
-                Volume
-              </TabsTrigger>
-              <TabsTrigger value="revenue" className={`text-xs ${tabTriggerClass}`}>
-                Revenue
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-          <Tabs value={granularity} onValueChange={onGranularityChange}>
-            <TabsList className="h-7 bg-lavander">
-              {/* Disabled (faded) when no month in the range has weekly rows
-                  (page.js weekAvailable). */}
-              <TabsTrigger value="week" disabled={!weekAvailable} className={`text-xs ${tabTriggerClass}`}>
-                By week
-              </TabsTrigger>
-              <TabsTrigger value="month" className={`text-xs ${tabTriggerClass}`}>
-                By month
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
+          <SegmentedControl value={metric} onChange={onMetricChange} options={METRIC_OPTIONS} ariaLabel="Metric" />
+          {/* By week is disabled (faded) when no month in the range has weekly
+              rows (page.js weekAvailable). */}
+          <SegmentedControl
+            value={granularity}
+            onChange={onGranularityChange}
+            options={[
+              { value: "week", label: "By week", disabled: !weekAvailable },
+              { value: "month", label: "By month" },
+            ]}
+            ariaLabel="Group by"
+          />
         </div>
       </div>
 
