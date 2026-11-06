@@ -135,7 +135,14 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoa
             </p>
           )}
 
-          {kind === 'uploading' && <UploadProgress stage={item.stage} sendPercent={item.sendPercent} />}
+          {kind === 'uploading' && (
+            <UploadProgress
+              sendPercent={item.sendPercent}
+              sentAt={item.sentAt}
+              finished={item.finished}
+              check={item.check}
+            />
+          )}
 
           {kind === 'uploaded' && (
             <>
