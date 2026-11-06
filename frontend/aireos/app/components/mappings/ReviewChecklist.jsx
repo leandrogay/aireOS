@@ -4,7 +4,6 @@ import { CheckCircle2, Circle, Loader2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import InfoTooltip from '@/components/ui/InfoTooltip';
-import { primaryButtonClass } from '@/components/ui/formStyles';
 import { cn } from '@/lib/utils';
 
 /**
@@ -89,7 +88,7 @@ export default function ReviewChecklist({ items, isConfirmed, aiProposed = false
           type="button"
           onClick={onApprove}
           disabled={!ready || nothingToSave || busy !== null}
-          className={cn(primaryButtonClass, 'flex-1')}
+          className="flex-1"
         >
           {busy === 'approve' && <Loader2 aria-hidden="true" className="size-4 animate-spin" />}
           {busy === 'approve' ? 'Saving…' : isConfirmed ? 'Save new version' : 'Approve nomenclature'}

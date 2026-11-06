@@ -6,7 +6,7 @@ import { ChevronRight, Database, RotateCw, X } from 'lucide-react';
 
 import { formatDateTime } from '@/lib/formatDate';
 import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import DuplicateChoice from '@/components/upload/DuplicateChoice';
 import UploadProgress from '@/components/upload/UploadProgress';
 import UploadPreview from '@/components/upload/UploadPreview';
@@ -14,10 +14,10 @@ import { fileTypeLabel, formatFileSize } from '@/app/utils/fileInspect';
 import { duplicateDecision, duplicateResult, fileKind } from '@/app/utils/uploadFlow';
 import { vendorLabel } from '@/app/utils/retailerLabel';
 
-const action =
-  'inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-60';
-const secondaryAction = `${action} border-violet bg-white text-deep-violet-blue hover:bg-lavander`;
-const primaryAction = `${action} border-deep-violet-blue bg-deep-violet-blue text-white hover:opacity-90`;
+// The row's actions are the shared Button. The two that navigate are links, so
+// they take its look through buttonVariants instead of nesting a <button>.
+const primaryLink = buttonVariants({ size: 'sm' });
+const secondaryLink = buttonVariants({ variant: 'outline', size: 'sm' });
 
 // Before upload the cross means "leave this file out"; after, it only tidies
 // the list (the upload itself is kept, and listed under Recent uploads).
@@ -200,10 +200,10 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoa
                 <span className="text-amber-900">not loaded yet</span>
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-                <button type="button" onClick={() => onLoad([id])} className={primaryAction}>
-                  <Database aria-hidden="true" className="size-3.5" />
+                <Button type="button" size="sm" onClick={() => onLoad([id])}>
+                  <Database aria-hidden="true" />
                   Review and load
-                </button>
+                </Button>
                 {outcome.mappingId && (
                   <Link
                     href={`/mappings/${outcome.mappingId}`}
@@ -246,7 +246,7 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoa
                   {outcome.why === 'partial' ? (
                     <Link
                       href={`/mappings/${outcome.mappingId}`}
-                      className={secondaryAction}
+                      className={secondaryLink}
                       aria-label={`View the closest nomenclature for ${file.name}`}
                     >
                       View closest nomenclature
@@ -254,7 +254,7 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoa
                   ) : (
                     <Link
                       href={`/mappings/${outcome.mappingId}`}
-                      className={primaryAction}
+                      className={primaryLink}
                       aria-label={`Review the suggested nomenclature for ${file.name}`}
                     >
                       Review nomenclature
@@ -268,14 +268,10 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoa
           {kind === 'failed' && (
             <>
               <p className="mt-1 text-xs text-red-700">{outcome.error}</p>
-              <button
-                type="button"
-                onClick={() => onRetry(id)}
-                className={cn(secondaryAction, 'mt-2')}
-              >
-                <RotateCw aria-hidden="true" className="size-3.5" />
+              <Button type="button" variant="outline" size="sm" onClick={() => onRetry(id)} className="mt-2">
+                <RotateCw aria-hidden="true" />
                 Try again
-              </button>
+              </Button>
             </>
           )}
         </div>

@@ -2,6 +2,7 @@
 
 import { CheckCircle2, CircleAlert, SlidersHorizontal } from 'lucide-react';
 
+import { Button } from '@/components/ui/button';
 import InfoTooltip from '@/components/ui/InfoTooltip';
 import SelectDropdown from '@/components/ui/SelectDropdown';
 import Disclosure from '@/components/ui/Disclosure';
@@ -20,9 +21,6 @@ import { cn } from '@/lib/utils';
 import ColumnGroupDetails from './ColumnGroupDetails';
 import ConfidenceBadge, { confidenceLevel } from './ConfidenceBadge';
 import ResetButton from './ResetButton';
-
-const smallButton =
-  'shrink-0 rounded-md border border-deep-violet-blue bg-white px-2 py-1 text-[11px] font-medium text-deep-violet-blue transition hover:bg-lavander focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-deep-violet-blue disabled:opacity-60';
 
 const GROUP_PREFIX = 'group:';
 
@@ -189,9 +187,9 @@ function Confidence({ entry, canUndo, onConfirm, onUndo, canReset, onReset, disa
           row became background and read as approval. High stays in the ⓘ card. */}
       {filled && level !== 'high' && <ConfidenceBadge level={level} />}
       {guessed && !entry.reviewed && (
-        <button type="button" disabled={disabled} onClick={() => onConfirm(entry)} className={smallButton}>
+        <Button type="button" variant="outline" size="xs" disabled={disabled} onClick={() => onConfirm(entry)} className="shrink-0">
           Looks right
-        </button>
+        </Button>
       )}
       {guessed && entry.reviewed && (
         <span className="flex items-center gap-1.5 text-[11px]">
@@ -289,17 +287,19 @@ function FieldRow({
           </div>
           {/* Every way the field can be filled, and the steps on its value;
               the dropdown beside it is the quick way to pick a column. */}
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="xs"
             disabled={disabled}
             onClick={() => onEdit(entry)}
             aria-label={`Edit how ${entry.label} is filled`}
             title={`Edit how ${entry.label} is filled`}
-            className={cn(smallButton, 'inline-flex items-center gap-1')}
+            className="shrink-0"
           >
-            <SlidersHorizontal aria-hidden="true" className="size-3" />
+            <SlidersHorizontal aria-hidden="true" />
             Edit
-          </button>
+          </Button>
         </div>
         {entry.transform && entry.status !== 'auto' && (
           <p className="truncate text-[11px] text-deep-violet-blue/60" title={summariseTransforms(entry.transform).join('; ')}>
