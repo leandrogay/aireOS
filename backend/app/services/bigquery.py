@@ -181,8 +181,15 @@ def _name_and_date_filters(
 
 
 def _catalog_dataset() -> str:
-    # public_customers / public_skus are replicated into the same dataset as
-    # the output view.
+    # public_customers / public_skus are Datastream's copies of Cloud SQL, which
+    # land in the CDC dataset -- not the forecast dataset the output view is in.
+    # Read at call time so a test (or a redeploy) can point it elsewhere.
+    return config.BQ_CDC_DATASET
+
+
+def _forecast_dataset() -> str:
+    # The pipeline's own tables (runs, training input, model quality) sit
+    # beside the output view.
     return BQ_FORECAST_OUTPUT_VIEW.rsplit(".", 1)[0]
 
 
@@ -330,9 +337,9 @@ _FORECAST_ALTERNATIVES_SQL = """
         IF(c.alt_source_model = 'tier1_arima', c.arima_high, c.tier0_high) AS alt_high_80,
         IF(c.alt_source_model = 'tier1_arima', c.arima_smape, c.tier0_smape) AS alt_backtest_smape
       FROM chosen AS c
-      JOIN `{dataset}.public_customers` AS customer
+      JOIN `{catalog}.public_customers` AS customer
         ON customer.customer_id = c.customer_id
-      JOIN `{dataset}.public_skus` AS product
+      JOIN `{catalog}.public_skus` AS product
         ON product.sku = c.sku
     )
 """
@@ -374,7 +381,7 @@ def get_forecast_alternatives(
         bigquery.ScalarQueryParameter("fallback_smape", "FLOAT64", TIER0_FALLBACK_SMAPE),
     ]
     query = f"""
-        {_FORECAST_ALTERNATIVES_SQL.format(dataset=_catalog_dataset())}
+        {_FORECAST_ALTERNATIVES_SQL.format(dataset=_forecast_dataset(), catalog=_catalog_dataset())}
         SELECT *
         FROM with_names
         WHERE {" AND ".join(where_clauses)}
