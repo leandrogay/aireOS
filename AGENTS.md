@@ -132,7 +132,8 @@ aireOS/
     │   │   │                      `variant` button or typed input (utils/datePicker.js); DateRangePicker (older typed
     │   │   │                      From/To pair, exports DateInput, the dd/mm/yyyy box); ChartLoading (spinner placeholder / refetch overlay)
     │   │   │                      and chart skeletons (first-load placeholders on ui/skeleton): ChartSkeletonFrame (shared
-    │   │   │                      axes/gridlines/legend/status) → BarChartSkeleton (`groups` per category); MonthGrid (year + 12-month grid, shared by
+    │   │   │                      axes/gridlines/legend/status, `tiltXTicks` for angled labels) → BarChartSkeleton (`groups` per category),
+    │   │   │                      LineChartSkeleton (`lines`, `points`; paths from utils/chartSkeleton.js; forecast first load); MonthGrid (year + 12-month grid, shared by
     │   │   │                      MonthDropdown and the dashboard month-range picker); dropdown kit: Dropdown (the one shell:
     │   │   │                      closed button, popover panel, optional `searchable`, `look` field/filter/compact) →
     │   │   │                      SelectDropdown (pick one, ✓ rows), MultiSelectDropdown (pick many, tick-box rows + "All",

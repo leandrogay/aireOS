@@ -6,8 +6,8 @@ const GRID_LINES = 4;
 export const SKELETON_PULSE = 'rounded bg-lavander motion-reduce:animate-none';
 
 /**
- * The part every chart skeleton shares (BarChartSkeleton, and a line chart
- * skeleton later): the busy status for screen readers, the reserved height,
+ * The part every chart skeleton shares (BarChartSkeleton, LineChartSkeleton):
+ * the busy status for screen readers, the reserved height,
  * Y-axis stubs, gridlines, X-axis stubs and legend pills. The chart-type
  * skeleton draws its marks as `children`, laid over the plot area.
  *
@@ -23,12 +23,15 @@ export const SKELETON_PULSE = 'rounded bg-lavander motion-reduce:animate-none';
  *   legendItems?: number,
  *   label?: string,
  *   xTicks?: number,
+ *   tiltXTicks?: boolean,
  *   fill?: boolean,
  *   className?: string,
  *   children: import('react').ReactNode,
  * }} props `xTicks`: how many X-axis stubs to draw (a bar chart passes its
  * category count so each stub sits under its bars). `legendItems`: how many
  * legend pills to draw when `legend` is on (one per series in the real chart).
+ * `tiltXTicks`: draw the stubs slanted in a 48px axis row, for a chart whose
+ * labels are angled (the forecast chart's -40° month labels).
  */
 export default function ChartSkeletonFrame({
   height = 300,
@@ -37,6 +40,7 @@ export default function ChartSkeletonFrame({
   legendItems = 3,
   label = 'Loading chart…',
   xTicks = 12,
+  tiltXTicks = false,
   fill = false,
   className,
   children,
@@ -57,7 +61,7 @@ export default function ChartSkeletonFrame({
             {children}
           </div>
         </div>
-        {axes && <XAxisStubs count={xTicks} />}
+        {axes && <XAxisStubs count={xTicks} tilted={tiltXTicks} />}
         {legend && <LegendStubs count={legendItems} />}
       </div>
     </div>
@@ -87,13 +91,33 @@ function YAxisStubs() {
 }
 
 // Spaced like BarChartSkeleton's categories (justify-around, px-2) so each stub sits under its bars.
-function XAxisStubs({ count }) {
+function XAxisStubs({ count, tilted }) {
+  if (tilted) return <TiltedXAxisStubs count={count} />;
   return (
     <div className="flex h-8 shrink-0 items-start pt-2">
       <div className="w-12 shrink-0" />
       <div className="flex flex-1 justify-around gap-1 px-2">
         {Array.from({ length: count }, (_, i) => (
           <Skeleton key={i} className={cn(SKELETON_PULSE, 'h-2.5 w-full max-w-8')} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Same slots as XAxisStubs, each stub hanging down-left from its tick like
+// Recharts' angle={-40} textAnchor="end" label. h-12 is the real axis height (48).
+function TiltedXAxisStubs({ count }) {
+  return (
+    <div className="flex h-12 shrink-0 items-start pt-2">
+      <div className="w-12 shrink-0" />
+      <div className="flex flex-1 justify-around gap-1 px-2">
+        {Array.from({ length: count }, (_, i) => (
+          <div key={i} className="relative flex flex-1 justify-center">
+            <div className="relative w-0">
+              <Skeleton className={cn(SKELETON_PULSE, 'absolute right-0 top-0 h-2 w-9 origin-right -rotate-40')} />
+            </div>
+          </div>
         ))}
       </div>
     </div>
