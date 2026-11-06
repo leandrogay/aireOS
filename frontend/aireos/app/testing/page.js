@@ -3,22 +3,35 @@ import PageLayout from '@/components/layout/PageLayout';
 import ButtonGallery from './ButtonGallery';
 import DatePickerGallery from './DatePickerGallery';
 import DropdownGallery from './DropdownGallery';
+import { Category } from './GalleryParts';
 import ToggleGallery from './ToggleGallery';
 
-// A living reference for the shared kits: buttons (components/ui/button),
-// dropdowns (components/ui/Dropdown, SelectDropdown, MultiSelectDropdown,
-// MonthDropdown), date pickers (DatePicker, RangeDatePicker on ui/calendar)
-// and toggles (SegmentedControl, ToggleButton, ToggleField).
-// Every variant with sample data, to look at and try. Not linked from the
-// sidebar, so it is only reached by URL. Add a variant here when you add one
-// to a kit.
+// A living reference for the shared kits, one Category each: buttons
+// (components/ui/button), dropdowns (Dropdown, SelectDropdown,
+// MultiSelectDropdown, MonthDropdown), date pickers (DatePicker,
+// RangeDatePicker on ui/calendar) and toggles (SegmentedControl,
+// ToggleButton, ToggleField). A kit opens and closes (closed to start with,
+// so only the names show); everything inside it is open. Every kit has the
+// same blocks: "Which to use", its components, then "Not migrated yet" (the
+// pages still on the old version, with the old and new side by side). See
+// GalleryParts.jsx. Not linked from the sidebar, so it is only reached by URL.
+// Add a variant to its kit's gallery when you add one, and a new Category
+// here for a new kit.
 export default function TestingPage() {
   return (
     <PageLayout title="Shared components">
-      <ButtonGallery />
-      <DropdownGallery />
-      <DatePickerGallery />
-      <ToggleGallery />
+      <Category title="Buttons" note="Button variants, sizes, icons and states">
+        <ButtonGallery />
+      </Category>
+      <Category title="Dropdowns" note="SelectDropdown, MultiSelectDropdown, MonthDropdown, Dropdown">
+        <DropdownGallery />
+      </Category>
+      <Category title="Date pickers" note="DatePicker, RangeDatePicker, Calendar">
+        <DatePickerGallery />
+      </Category>
+      <Category title="Toggles" note="SegmentedControl, ToggleButton, ToggleField">
+        <ToggleGallery />
+      </Category>
     </PageLayout>
   );
 }

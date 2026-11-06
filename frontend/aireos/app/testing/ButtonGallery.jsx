@@ -5,7 +5,7 @@ import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 
-import { Section, Variant } from './GalleryParts';
+import { NotMigrated, Section, Variant, WhichToUse } from './GalleryParts';
 
 // A living reference for components/ui/button.jsx; see app/testing/page.js.
 
@@ -32,8 +32,8 @@ const ICON_SIZES = ['icon-xs', 'icon-sm', 'icon', 'icon-lg'];
 // Which component to reach for; keep in step with the components themselves.
 const GUIDE = [
   ['A click that does something', 'Button', 'variant, size, disabled, onClick'],
-  ['Pick one of a few, side by side', 'SegmentedControl', 'see Toggles above'],
-  ['Turn one thing on or off', 'ToggleButton / ToggleField', 'see Toggles above'],
+  ['Pick one of a few, side by side', 'SegmentedControl', 'see Toggles'],
+  ['Turn one thing on or off', 'ToggleButton / ToggleField', 'see Toggles'],
   ['A row in a menu or a calendar cell', 'Dropdown, MonthGrid', 'interactive surfaces, not buttons'],
 ];
 
@@ -41,12 +41,12 @@ const GUIDE = [
 // their own classes or the old primaryButtonClass / secondaryButtonClass
 // constants in ui/formStyles.js. Remove a row when its folder migrates.
 const NOT_MIGRATED = [
-  ['Forms and dialogs', 'primaryButtonClass (21 files), secondaryButtonClass (16 files)', 'default / outline'],
-  ['Nomenclatures', 'mappings/StepSettings, ChannelSplit, StepsEditor, FieldTable, ReviewHeader', 'raw <button>: filled, link and danger looks'],
-  ['Scenario', 'scenario/PromotionsSection, UpliftField, ScenarioPanel, PromotionEditor', 'raw <button>: link and ghost looks'],
-  ['Upload', 'upload/UploadFileRow, UploadGroup, UploadBatch, LoadFileRow', 'raw <button>: link and ghost looks'],
-  ['Dashboard', 'dashboard/SkuRanking, CompareControl', 'raw <button>: ghost looks'],
-  ['Danger', 'ui/ConfirmDialog, mappings/ConfirmDiscardDialog, CustomerStep', 'hand-written red-700 → destructive'],
+  ['Forms and dialogs', 'every file importing ui/formStyles.js (21 + 16)', 'primaryButtonClass, secondaryButtonClass', 'Button default / outline'],
+  ['Nomenclatures', 'mappings/StepSettings, ChannelSplit, StepsEditor, FieldTable, ReviewHeader', 'Raw <button>: filled, link and danger looks', 'Button'],
+  ['Scenario', 'scenario/PromotionsSection, UpliftField, ScenarioPanel, PromotionEditor', 'Raw <button>: link and ghost looks', 'Button link / ghost'],
+  ['Upload', 'upload/UploadFileRow, UploadGroup, UploadBatch, LoadFileRow', 'Raw <button>: link and ghost looks', 'Button link / ghost'],
+  ['Dashboard', 'dashboard/SkuRanking, CompareControl', 'Raw <button>: ghost looks', 'Button ghost'],
+  ['Delete / discard dialogs', 'ui/ConfirmDialog, mappings/ConfirmDiscardDialog, CustomerStep', 'Hand-written red-700 classes', 'Button destructive'],
 ];
 
 // Clickable things that look like buttons but are not, so they stay as they are.
@@ -56,12 +56,22 @@ const LEAVE_AS_IS = [
   ['Forecast, Dashboard', 'ForecastLineToggle, FilterBadge', 'Chips and filter badges: ToggleButton look="chip"'],
 ];
 
+// What the raw buttons above look like, for the side-by-side examples.
+const OLD_FILLED_CLASS =
+  'rounded-md bg-deep-violet-blue px-4 py-1.5 text-sm text-white hover:bg-deep-violet-blue/90';
+const OLD_OUTLINE_CLASS =
+  'rounded-md border border-deep-violet-blue/30 bg-white px-4 py-1.5 text-sm text-deep-violet-blue hover:bg-cream';
+const OLD_LINK_CLASS = 'text-xs font-medium text-deep-violet-blue underline underline-offset-2';
+const OLD_DANGER_CLASS = 'rounded-md bg-red-700 px-4 py-1.5 text-sm text-white hover:bg-red-800';
+
 export default function ButtonGallery() {
   const [clicks, setClicks] = useState({});
   const click = (key) => setClicks((prev) => ({ ...prev, [key]: (prev[key] || 0) + 1 }));
 
   return (
     <>
+      <WhichToUse rows={GUIDE} />
+
       <Section title="Buttons: variants" note="Default size. Click one to see it respond.">
         {VARIANTS.map(([variant, use]) => (
           <Variant key={variant} name={use} props={`variant="${variant}"`} value={{ clicks: clicks[variant] || 0 }}>
@@ -136,43 +146,40 @@ export default function ButtonGallery() {
         </Variant>
       </Section>
 
-      <section className="mb-4 rounded-lg border border-lavander bg-white p-4 shadow-sm">
-        <h2 className="font-serif text-lg text-deep-violet-blue">Buttons: which to use</h2>
-        <GalleryTable head={['When', 'Use', 'Props']} rows={GUIDE} />
-        <h3 className="mt-5 text-sm font-medium text-deep-violet-blue">Not migrated yet</h3>
-        <GalleryTable head={['Where', 'Files', 'Becomes']} rows={NOT_MIGRATED} />
-        <h3 className="mt-5 text-sm font-medium text-deep-violet-blue">Left as they are</h3>
-        <GalleryTable head={['Where', 'Files', 'Why']} rows={LEAVE_AS_IS} />
-      </section>
+      <NotMigrated rows={NOT_MIGRATED} leaveAsIs={LEAVE_AS_IS}>
+        <Variant name="Old: filled, hand-rolled" props="<button className={...}>" value={null}>
+          <button type="button" className={OLD_FILLED_CLASS}>
+            Save changes
+          </button>
+        </Variant>
+        <Variant name="New: default" props='<Button variant="default">' value={null}>
+          <Button>Save changes</Button>
+        </Variant>
+        <Variant name="Old: outline, hand-rolled" props="<button className={...}>" value={null}>
+          <button type="button" className={OLD_OUTLINE_CLASS}>
+            Cancel
+          </button>
+        </Variant>
+        <Variant name="New: outline" props='<Button variant="outline">' value={null}>
+          <Button variant="outline">Cancel</Button>
+        </Variant>
+        <Variant name="Old: link, hand-rolled" props="<button className={...}>" value={null}>
+          <button type="button" className={OLD_LINK_CLASS}>
+            View details
+          </button>
+        </Variant>
+        <Variant name="New: link" props='<Button variant="link">' value={null}>
+          <Button variant="link">View details</Button>
+        </Variant>
+        <Variant name="Old: danger, hand-written red" props="<button className={...}>" value={null}>
+          <button type="button" className={OLD_DANGER_CLASS}>
+            Delete
+          </button>
+        </Variant>
+        <Variant name="New: destructive" props='<Button variant="destructive">' value={null}>
+          <Button variant="destructive">Delete</Button>
+        </Variant>
+      </NotMigrated>
     </>
-  );
-}
-
-function GalleryTable({ head, rows }) {
-  return (
-    <div className="mt-2 overflow-x-auto">
-      <table className="w-full text-left text-xs text-deep-violet-blue">
-        <thead>
-          <tr className="border-b border-lavander text-deep-violet-blue/60">
-            {head.map((label) => (
-              <th key={label} className="py-1.5 pr-4 font-medium">
-                {label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row[0] + row[1]} className="border-b border-lavander/60 align-top">
-              {row.map((cell, index) => (
-                <td key={cell} className={index === 1 ? 'py-1.5 pr-4 font-mono text-[11px]' : 'py-1.5 pr-4'}>
-                  {cell}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
   );
 }

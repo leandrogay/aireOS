@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils"
 import { DayPicker, getDefaultClassNames } from "react-day-picker";
 
 import { Button, buttonVariants } from "@/components/ui/button"
+import { toYmd } from "@/app/utils/datePicker"
 import { ChevronLeftIcon, ChevronRightIcon, ChevronDownIcon } from "lucide-react"
 
 function Calendar({
@@ -169,7 +170,9 @@ function CalendarDayButton({
       ref={ref}
       variant="ghost"
       size="icon"
-      data-day={day.date.toLocaleDateString(locale?.code)}
+      // ISO, not toLocaleDateString: the server and the browser format locale
+      // dates differently, which fails hydration on every day button.
+      data-day={toYmd(day.date)}
       data-selected-single={
         modifiers.selected &&
         !modifiers.range_start &&
