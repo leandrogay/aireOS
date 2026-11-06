@@ -34,6 +34,9 @@ const buttonVariants = cva(
         // The confirming click of a delete or discard, not its trigger.
         destructive:
           "bg-red-700 text-white hover:bg-red-800 focus-visible:border-red-700 focus-visible:ring-red-700/30",
+        // The button that opens a delete or discard, before the confirming click.
+        "destructive-outline":
+          "border-red-300 bg-white text-red-700 hover:bg-red-50 focus-visible:border-red-700 focus-visible:ring-red-700/30",
         // An action that reads as text, inside a table row or a sentence.
         link: "text-deep-violet-blue underline-offset-4 hover:underline",
         // The Scenario builder's own accent, so its main actions match its chips.

@@ -137,7 +137,7 @@ aireOS/
     │   │   │                      `noneMeansAll`), MonthDropdown (one 'YYYY-MM' month, wrapped by promotions MonthPicker and
     │   │   │                      inventory MonthFilter); build new pickers on these, not on a raw Popover; toggle kit: SegmentedControl
     │   │   │                      (pick one of a few, sliding highlight, `look` tint/outline), ToggleButton (one thing on/off,
-    │   │   │                      `look` compact/chip), ToggleField (switch; `label` / `showState` / hints opt in, `ariaLabel` when unlabelled; used by DOH alerts and nomenclature file settings); app/testing shows both kits and the brand-coloured Button (default/outline/secondary/ghost/destructive/link/scenario; sizes sm/default/lg) and lists the
+    │   │   │                      `look` compact/chip), ToggleField (switch; `label` / `showState` / hints opt in, `ariaLabel` when unlabelled; used by DOH alerts and nomenclature file settings); app/testing shows both kits and the brand-coloured Button (default/outline/secondary/ghost/destructive/destructive-outline/link/scenario; sizes sm/default/lg) and lists the
     │   │   │                      pages not migrated yet; HeaderCheckboxFilter (table-header pill
     │   │   │                      filter, forecast + inventory tables); formStyles.js (cream form input/label/button classes
     │   │   │                      shared by forms and dialogs); Toast (+ hooks/useToast);

@@ -15,6 +15,7 @@ const VARIANTS = [
   ['secondary', 'A soft filled action that should not compete with the primary'],
   ['ghost', 'Toolbar and table actions that need no outline'],
   ['destructive', 'The confirming click of a delete or discard, not the button that opens it'],
+  ['destructive-outline', 'The button that opens a delete or discard (Discard proposal)'],
   ['link', 'An action that reads as text, inside a table row or a sentence'],
   ['scenario', "The Scenario builder's main actions, to match its chips and switches"],
 ];
