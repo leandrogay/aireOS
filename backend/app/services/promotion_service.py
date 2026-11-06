@@ -3,7 +3,7 @@ from datetime import date, datetime
 from functools import lru_cache
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
-from app.services import sql
+from app.services import forecast_refresh_events, sql
 from app.services.catalog_service import (
     get_or_create_retailers,
     get_or_create_stores,
@@ -481,10 +481,16 @@ def create_promotion(
             promotion.skus,
         )
 
-        return _fetch_promotion(
+        created = _fetch_promotion(
             conn,
             promotion_id,
         )
+        refresh_request_id = forecast_refresh_events.record_change(
+            conn, "promotion_change", f"promotion:{promotion_id}"
+        )
+
+    forecast_refresh_events.enqueue_best_effort(refresh_request_id)
+    return created
 
 
 # ============================================================
@@ -787,10 +793,16 @@ def update_promotion(
             promotion.skus,
         )
 
-        return _fetch_promotion(
+        updated = _fetch_promotion(
             conn,
             promotion_id,
         )
+        refresh_request_id = forecast_refresh_events.record_change(
+            conn, "promotion_change", f"promotion:{promotion_id}"
+        )
+
+    forecast_refresh_events.enqueue_best_effort(refresh_request_id)
+    return updated
 
 
 # ============================================================
@@ -866,4 +878,9 @@ def delete_promotion(
             },
         )
 
-        return True
+        refresh_request_id = forecast_refresh_events.record_change(
+            conn, "promotion_change", f"promotion:{promotion_id}"
+        )
+
+    forecast_refresh_events.enqueue_best_effort(refresh_request_id)
+    return True

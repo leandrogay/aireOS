@@ -18,7 +18,14 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
 from app import config
-from app.services import catalog_service, ingestion_service, mapping_checks, promotion_pricing, sql
+from app.services import (
+    catalog_service,
+    forecast_refresh_events,
+    ingestion_service,
+    mapping_checks,
+    promotion_pricing,
+    sql,
+)
 
 
 class SelloutLoadError(RuntimeError):
@@ -627,6 +634,11 @@ def load_clean_rows(
                     rows_stored=len(records),
                     rows_consolidated=rows_consolidated,
                 )
+            refresh_request_id = forecast_refresh_events.record_change(
+                connection,
+                "sales_upload",
+                f"sales:{facts[0].get('source_file') or 'unknown'}",
+            )
     except SelloutLoadError:
         raise
     except Exception as exc:
@@ -639,6 +651,8 @@ def load_clean_rows(
     }
     if ingestion_id is not None:
         result["ingestion_id"] = ingestion_id
+    if refresh_request_id is not None:
+        result["forecast_refresh_request_id"] = refresh_request_id
     return result
 
 

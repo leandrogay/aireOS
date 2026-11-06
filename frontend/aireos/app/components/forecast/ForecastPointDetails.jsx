@@ -7,7 +7,9 @@ import { cn } from '@/lib/utils';
  * confidence, promo situation, price). Shared by the chart tooltip and the
  * promo panel, which replaces the tooltip in promo months.
  *
- * @param {{ details: { label: string, value: string }[], className?: string }} props
+ * `hint` is hover text for a value (e.g. why Tier 0 was used).
+ *
+ * @param {{ details: { label: string, value: string, hint?: string }[], className?: string }} props
  */
 export default function ForecastPointDetails({ details, className }) {
   if (!details?.length) return null;
@@ -18,7 +20,12 @@ export default function ForecastPointDetails({ details, className }) {
           <dt className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/45">
             {detail.label}
           </dt>
-          <dd className="font-medium text-deep-violet-blue">{detail.value}</dd>
+          <dd
+            className={cn('font-medium text-deep-violet-blue', detail.hint && 'cursor-help underline decoration-dotted underline-offset-2')}
+            title={detail.hint || undefined}
+          >
+            {detail.value}
+          </dd>
         </div>
       ))}
     </dl>

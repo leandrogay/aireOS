@@ -10,6 +10,8 @@ from app.auth import require_user
 from app.middleware import UnhandledErrorMiddleware
 from app.routers import assistant, auth, catalog, forecast, inventory, mappings
 from app.routers import notifications, promotions, sales, scenario, settings, uploads
+from app.routers import assistant, auth, catalog, forecast, internal_forecast, inventory, mappings
+from app.routers import notifications, promotions, sales, settings, uploads
 from app.services import forecast_pipeline_events
 
 logger = logging.getLogger("uvicorn.error")
@@ -83,6 +85,7 @@ protected = [Depends(require_user)]
 
 # Authentication endpoints must remain public so users can log in.
 app.include_router(auth.router)
+app.include_router(internal_forecast.router)
 
 # All internal application endpoints require a valid session when enabled.
 app.include_router(uploads.router, dependencies=protected)

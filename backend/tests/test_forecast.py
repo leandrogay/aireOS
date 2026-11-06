@@ -98,6 +98,21 @@ def test_forecast_output_rows_bind_filters_as_parameters(monkeypatch):
     assert str(params["end_date"].value) == "2027-07-01"
 
 
+def test_forecast_output_names_come_from_the_cdc_dataset(monkeypatch):
+    # The output view sits in the forecast dataset, but the catalog copies are
+    # Datastream's, in the CDC dataset; joining the forecast dataset's
+    # public_customers would fail once the page reads the Singapore dataset.
+    fake = _install_fake_client(monkeypatch, pd.DataFrame())
+    monkeypatch.setattr(bigquery, "BQ_FORECAST_OUTPUT_VIEW", "proj.forecast_ds.aire_forecasting_output")
+    monkeypatch.setattr(bigquery.config, "BQ_CDC_DATASET", "proj.cdc_ds")
+
+    bigquery.get_forecast_output_rows()
+
+    assert "`proj.cdc_ds.public_customers`" in fake.last_query
+    assert "`proj.cdc_ds.public_skus`" in fake.last_query
+    assert "forecast_ds.public_" not in fake.last_query
+
+
 def test_forecast_output_rows_select_named_columns_only(monkeypatch):
     fake = _install_fake_client(monkeypatch, pd.DataFrame())
 

@@ -24,7 +24,7 @@ def inserted(monkeypatch):
     rows = []
     monkeypatch.setattr(notification_service, "has_forecast_run", lambda name: False)
     monkeypatch.setattr(notification_service, "insert", lambda kind, payload: rows.append((kind, payload)) or len(rows))
-    monkeypatch.setattr(events, "_latest_forecast_summary", lambda: SUMMARY)
+    monkeypatch.setattr(events, "latest_forecast_summary", lambda: SUMMARY)
     return rows
 
 
@@ -37,6 +37,8 @@ def test_a_failed_run_raises_a_failure_with_its_error(inserted):
     kind, payload = inserted[0]
     assert kind == "forecast_failure"
     assert payload["errors"] == ["Data checks failed"]
+    assert payload["reason"] == "Data checks failed"
+    assert payload["stage"] == "pipeline"
     assert payload["run_name"] == RUN
     assert payload["source"] == "scheduled"
     assert payload["updated_at"] == "2026-10-23T02:09:00Z"
@@ -55,7 +57,15 @@ def test_a_run_that_retrained_raises_a_success_describing_the_new_forecast(inser
 
     kind, payload = inserted[0]
     assert kind == "forecast_success"
-    assert payload == {**SUMMARY, "updated_at": "2026-10-23T02:09:00Z", "errors": [], "source": "scheduled", "run_name": RUN}
+    assert payload == {
+        **SUMMARY,
+        "updated_at": "2026-10-23T02:09:00Z",
+        "errors": [],
+        "source": "scheduled",
+        "stage": "pipeline",
+        "reason": None,
+        "run_name": RUN,
+    }
 
 
 def test_a_daily_run_with_no_new_month_raises_nothing(inserted, monkeypatch):
@@ -165,7 +175,7 @@ def test_the_forecast_summary_names_customers_and_products(monkeypatch):
         {"sku": "S1", "product_name": "Pants L"}, {"sku": "S2", "product_name": "Tape XL"},
     ])
 
-    assert events._latest_forecast_summary() == {
+    assert events.latest_forecast_summary() == {
         "period_start": "2026-09-01",
         "period_end": "2027-08-01",
         "customers": ["fairprice", "nhg"],

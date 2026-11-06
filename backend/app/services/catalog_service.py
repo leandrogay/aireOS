@@ -3,7 +3,7 @@ from functools import lru_cache
 from zoneinfo import ZoneInfo
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
-from app.services import customer_service, sql
+from app.services import customer_service, forecast_refresh_events, sql
 from app.services.settings.common import lock_customer
 
 
@@ -1630,6 +1630,7 @@ def update_sku(sku: str, changes) -> dict | None:
 
 
 def archive_sku(sku: str) -> dict | None:
+    refresh_request_id = None
     with _get_engine().begin() as conn:
         item = _fetch_active_sku(conn, sku)
         if item is None:
@@ -1666,8 +1667,34 @@ def archive_sku(sku: str) -> dict | None:
             ),
             {"sku": sku},
         )
+        refresh_request_id = forecast_refresh_events.record_change(
+            conn, "sku_change", f"sku:{sku}"
+        )
 
+    forecast_refresh_events.enqueue_best_effort(refresh_request_id)
     return item
+
+
+def restore_sku(sku: str) -> dict | None:
+    """Reactivate an archived master SKU and refresh forecast inputs after commit."""
+    refresh_request_id = None
+    with _get_engine().begin() as conn:
+        row = conn.execute(text(f"""
+            UPDATE skus
+            SET is_active = TRUE, archived_at = NULL
+            WHERE sku = :sku AND is_active = FALSE
+            RETURNING {_SKU_COLUMNS}
+        """), {"sku": sku}).mappings().first()
+        if row is None:
+            return None
+        restored = dict(row)
+        _insert_sku_history(conn, restored, "restored")
+        refresh_request_id = forecast_refresh_events.record_change(
+            conn, "sku_change", f"sku:{sku}"
+        )
+
+    forecast_refresh_events.enqueue_best_effort(refresh_request_id)
+    return restored
 
 
 # ============================================================

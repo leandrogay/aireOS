@@ -8,6 +8,8 @@ google-cloud-bigquery
 # Listens for the scheduled BigQuery forecast run finishing
 google-cloud-pubsub
 google-cloud-storage
+# Delayed, authenticated forecast refresh checks after sales and promotion writes.
+google-cloud-tasks
 google-genai==2.23.0
 openpyxl
 pandas

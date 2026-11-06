@@ -241,6 +241,18 @@ def auth_cookie_secure() -> bool:
 # month lands") reports each finished run to. Empty: the backend does not
 # listen, and only scripts/refresh_forecast.py raises forecast notifications.
 FORECAST_PIPELINE_SUBSCRIPTION = os.environ.get("FORECAST_PIPELINE_SUBSCRIPTION", "")
+
+# Event-driven forecast refresh. Keep disabled until the Singapore dataset,
+# migration 010 and task callback are verified.
+FORECAST_REFRESH_ENABLED = os.environ.get("FORECAST_REFRESH_ENABLED", "false")
+FORECAST_REFRESH_QUEUE = os.environ.get("FORECAST_REFRESH_QUEUE", "forecast-refresh")
+FORECAST_REFRESH_LOCATION = os.environ.get("FORECAST_REFRESH_LOCATION", "asia-southeast1")
+FORECAST_REFRESH_HANDLER_URL = os.environ.get("FORECAST_REFRESH_HANDLER_URL", "")
+FORECAST_REFRESH_INVOKER = os.environ.get("FORECAST_REFRESH_INVOKER", "")
+FORECAST_REFRESH_MAX_WAIT = os.environ.get("FORECAST_REFRESH_MAX_WAIT", "2h")
+# Must match the forecast-refresh queue's max attempts (gcloud tasks queues
+# describe): the worker records a refresh failure on the last one.
+FORECAST_REFRESH_MAX_ATTEMPTS = os.environ.get("FORECAST_REFRESH_MAX_ATTEMPTS", "10")
 # Written by retrain_if_new_month: one row per run, retrained=TRUE only when a
 # new forecast was actually produced.
 BQ_TRAINING_RUN_LOG_TABLE = (

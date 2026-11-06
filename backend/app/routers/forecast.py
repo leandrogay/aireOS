@@ -1,9 +1,9 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from google.api_core.exceptions import GoogleAPICallError
 from google.auth.exceptions import DefaultCredentialsError
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.services import bigquery, forecast_service
+from app.services import bigquery, forecast_refresh_worker, forecast_service
 
 router = APIRouter(prefix="/api/forecast", tags=["forecast"])
 
@@ -18,11 +18,13 @@ _CREDENTIALS_DETAIL = (
 
 @router.get("/")
 def get_forecast(
+    background_tasks: BackgroundTasks,
     product_name: str | None = None,
     customer_name: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
 ):
+    background_tasks.add_task(forecast_refresh_worker.recover_best_effort)
     try:
         return forecast_service.get_forecast_view(
             product_name=product_name,
@@ -73,3 +75,18 @@ def get_forecast_options():
         raise HTTPException(status_code=503, detail=_CREDENTIALS_DETAIL)
     except GoogleAPICallError as e:
         raise HTTPException(status_code=503, detail=f"Unable to reach BigQuery: {e.message}")
+
+
+# Both below are best effort (the services never raise): they feed small
+# notes on the Forecast page, so they sit outside GET / and can't slow or
+# fail the chart.
+@router.get("/initial-status")
+def get_initial_status():
+    """Per-year Initial Yearly Forecast lock state, for the note under the chart."""
+    return forecast_service.get_initial_status()
+
+
+@router.get("/refresh-status")
+def get_refresh_status():
+    """Whether an event forecast refresh is waiting or running ("Forecast updating…")."""
+    return forecast_refresh_worker.refresh_status_best_effort()

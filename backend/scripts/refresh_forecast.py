@@ -33,7 +33,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.services import forecast_service, notification_service
+from app.services import forecast_notifications, forecast_service, notification_service
 
 OUT_DIR = Path(__file__).resolve().parent / "out"
 
@@ -97,16 +97,18 @@ def main() -> None:
         )
     except Exception as exc:
         if args.write:
+            finished_at = datetime.now(timezone.utc)
+            error = f"{type(exc).__name__}: {exc}"
             notification_service.insert(
                 notification_service.FORECAST_FAILURE,
-                {
-                    "period_start": None,
-                    "period_end": None,
-                    "customers": [],
-                    "skus": [],
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
-                    "errors": [f"{type(exc).__name__}: {exc}"],
-                },
+                forecast_notifications.failure_payload(
+                    run_name=f"script-{finished_at.isoformat()}",
+                    source="script",
+                    updated_at=finished_at,
+                    stage="pipeline",
+                    reason=error,
+                    errors=[error],
+                ),
             )
         raise
 
@@ -114,10 +116,16 @@ def main() -> None:
     _save_preview(result)
 
     if args.write:
-        payload = forecast_service.forecast_notification_payload(result["forecast"])
-        payload["updated_at"] = datetime.now(timezone.utc).isoformat()
-        payload["errors"] = []
-        notification_service.insert(notification_service.FORECAST_SUCCESS, payload)
+        finished_at = datetime.now(timezone.utc)
+        notification_service.insert(
+            notification_service.FORECAST_SUCCESS,
+            forecast_notifications.success_payload(
+                run_name=f"script-{finished_at.isoformat()}",
+                source="script",
+                updated_at=finished_at,
+                summary=forecast_service.forecast_notification_payload(result["forecast"]),
+            ),
+        )
     else:
         print("\nPreview only -- add --write to update BigQuery.")
 
