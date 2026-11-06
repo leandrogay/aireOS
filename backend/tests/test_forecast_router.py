@@ -35,6 +35,14 @@ def test_forecast_route_returns_combined_payload(monkeypatch):
     assert body["freshness"]["current_generated_at"] == "2026-09-30T16:28:11Z"
 
 
+def test_forecast_route_without_trailing_slash_does_not_redirect(monkeypatch):
+    monkeypatch.setattr(forecast_service, "get_forecast_view", lambda **kwargs: {"rows": []})
+    response = TestClient(app).get("/api/forecast", follow_redirects=False)
+
+    assert response.status_code == 200
+    assert response.json() == {"rows": []}
+
+
 def test_forecast_route_maps_bad_dates_to_400(monkeypatch):
     def _boom(**kwargs):
         raise ValueError("start_date must be in YYYY-MM-DD format")

@@ -57,7 +57,7 @@ export async function getForecastView({
   if (startDate) params.set('start_date', startDate);
   if (endDate) params.set('end_date', endDate);
   const query = params.toString();
-  const data = await request(`/api/forecast/${query ? `?${query}` : ''}`);
+  const data = await request(`/api/forecast${query ? `?${query}` : ''}`);
   return {
     rows: data.rows ?? [],
     actuals: data.actuals ?? [],
