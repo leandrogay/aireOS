@@ -261,6 +261,29 @@ export default function ScenarioBuilder() {
       (hasUnsavedChanges(block) && !togglingIds.includes(block.id))
   );
   const selectedBlock = panelBlocks.find((block) => block.id === selectedId) ?? panelBlocks[0] ?? null;
+  // Saved, switched-on blocks that aren't open in the panel, split by
+  // whether they apply to the chart as filtered (customer, SKU, months): the
+  // panel shows those as cards when no block is being edited, and only counts
+  // the rest, so it never lists a block for another customer, SKU or period.
+  const viewRange = chartView(filters);
+  const savedSwitchedOn = savedBlocks.filter((block) => block.isActive && !panelBlocks.includes(block));
+  const savedOnChart = savedSwitchedOn.filter((block) =>
+    itemInView(block, filters, viewRange.startMonth || '0000-01-01', viewRange.endMonth || '9999-12-01')
+  );
+  // Switched-on blocks for the chart's customer and SKU whose months all
+  // have actual sales by now: they change nothing, and say so rather than
+  // reading as "outside chart filters".
+  const fetchedMonths = [...new Set(rows.map((row) => row.month_year))];
+  const openMonths = new Set(forecastMonths(rows));
+  const closedIds = new Set(
+    allBlocks
+      .filter((block) => {
+        if (!itemInView(block, filters, '0000-01-01', '9999-12-01')) return false;
+        const covered = fetchedMonths.filter((month) => month >= block.startMonth && month <= block.endMonth);
+        return covered.length > 0 && covered.every((month) => !openMonths.has(month));
+      })
+      .map((block) => block.id)
+  );
 
   const simulatedYears = simulatedYearTotals(years, byMonth);
   const scenario = {
@@ -384,7 +407,7 @@ export default function ScenarioBuilder() {
           'grid items-start gap-2',
           panelCollapsed
             ? 'min-[1100px]:grid-cols-[minmax(0,1fr)_56px]'
-            : 'min-[1100px]:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]'
+            : 'min-[1100px]:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)] min-[1100px]:items-stretch'
         )}
       >
         <div className="min-w-0 space-y-1 min-[1100px]:flex min-[1100px]:flex-col min-[1100px]:[&>[data-slot=card]]:flex-1">
@@ -471,10 +494,11 @@ export default function ScenarioBuilder() {
 
         </div>
 
-        {/* The panel is as tall as its own content (the grid aligns to the
-            top), never the chart card's height or the window's, so switching
-            By year / By month leaves it exactly as it is. */}
-        <div className="min-w-0">
+        {/* Side by side, the panel and the chart card are the same height: the
+            row is as tall as the taller of the two and the other stretches.
+            Space the editor leaves free holds the cards of what is on the
+            chart, so a short panel never shows as a blank column. */}
+        <div className={cn('min-w-0', panelCollapsed ? null : 'min-[1100px]:[&>aside]:h-full')}>
         <ScenarioPanel
           collapsed={panelCollapsed}
           onCollapsedChange={setPanelCollapsed}
@@ -492,6 +516,12 @@ export default function ScenarioBuilder() {
                 onSave={savePanelBlock}
                 onRequestDelete={deletion.request}
                 onClose={() => setSelectedId(null)}
+                savedOnChart={savedOnChart}
+                savedElsewhereCount={savedSwitchedOn.length - savedOnChart.length}
+                onEditSaved={editSaved}
+                onToggleSaved={toggleSaved}
+                togglingIds={togglingIds}
+                closedIds={closedIds}
                 {...sectionProps}
               />
             )
@@ -529,6 +559,7 @@ export default function ScenarioBuilder() {
         onEdit={editSaved}
         onDelete={deletion.request}
         onClearFilters={filters.clear}
+        closedIds={closedIds}
       />
 
       <ConfirmDialog

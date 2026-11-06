@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Layers, Plus } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { primaryButtonClass } from '@/components/ui/formStyles';
@@ -14,6 +14,11 @@ import {
   updateScenarioBlock,
   validateScenarioBlock,
 } from '@/app/utils/scenarioBlocks';
+
+// Switched-on saved blocks the chart's filters leave out.
+function elsewhereNote(count) {
+  return `${count} more switched-on block${count === 1 ? ' is' : 's are'} for another customer, SKU or period.`;
+}
 
 /**
  * Building blocks in the Scenario builder panel: blocks not saved yet, plus
@@ -42,6 +47,12 @@ import {
  *   defaultCustomer: string,
  *   defaultSku: string,
  *   impacts: Map<string, { deltaUnits: number, months: string[] }>,
+ *   savedOnChart: object[],           saved, switched-on blocks for the chart's filters, not open in the panel
+ *   savedElsewhereCount: number,      saved, switched-on blocks for other customers, SKUs or months
+ *   onEditSaved: (block: object) => void,
+ *   onToggleSaved: (block: object, isActive: boolean) => void, saves the switch at once
+ *   togglingIds: string[],
+ *   closedIds: Set<string>,           blocks whose months all have actual sales
  * }} props
  */
 export default function BuildingBlocksSection({
@@ -59,6 +70,12 @@ export default function BuildingBlocksSection({
   defaultCustomer,
   defaultSku,
   impacts,
+  savedOnChart,
+  savedElsewhereCount,
+  onEditSaved,
+  onToggleSaved,
+  togglingIds,
+  closedIds,
 }) {
   // Field errors show only after Save was pressed on that block, so a new
   // block isn't covered in red before the user has typed anything.
@@ -155,14 +172,43 @@ export default function BuildingBlocksSection({
         onSelect={onSelect}
         onToggle={(block, isActive) => updateBlock(block.id, { isActive })}
         impacts={impacts}
+        closedIds={closedIds}
       />
 
-      {items.length ? null : (
-        <p className="text-xs text-deep-violet-blue/60">
-          {savedCount
-            ? 'Saved blocks are in the table under the chart.'
-            : 'No building blocks yet. Add one, such as a new store opening or a gift with purchase, to see how it lifts the forecast.'}
-        </p>
+      {/* Nothing open to edit: the saved blocks on the chart as cards (click
+          to edit, switch to take one off), or an empty state when there are none. */}
+      {items.length ? null : savedOnChart.length ? (
+        <section className="space-y-1.5">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">
+            On the chart · {savedOnChart.length} saved
+          </p>
+          <BlockList
+            blocks={savedOnChart}
+            selectedId={null}
+            onSelect={(id) => onEditSaved(savedOnChart.find((block) => block.id === id))}
+            onToggle={onToggleSaved}
+            impacts={impacts}
+            closedIds={closedIds}
+            togglingIds={togglingIds}
+          />
+          {savedElsewhereCount ? <p className="text-[11px] text-deep-violet-blue/60">{elsewhereNote(savedElsewhereCount)}</p> : null}
+        </section>
+      ) : (
+        <div className="flex flex-col items-center rounded-lg border border-dashed border-lavander px-4 py-8 text-center">
+          <span className="mb-2 flex size-10 items-center justify-center rounded-full bg-lavander text-deep-violet-blue">
+            <Layers className="size-5" aria-hidden="true" />
+          </span>
+          <p className="font-serif text-base text-deep-violet-blue">
+            {savedCount ? 'Nothing on the chart' : 'No building blocks yet'}
+          </p>
+          <p className="mt-1 max-w-xs text-xs text-deep-violet-blue/60">
+            {savedElsewhereCount
+              ? `${elsewhereNote(savedElsewhereCount)} Change the filters to see them, or add a new one.`
+              : savedCount
+                ? 'Saved blocks are in the table under the chart. Switch one on there, or add a new one.'
+                : 'Add one, such as a new store opening, a gift with purchase or a flood, to see how it moves the forecast.'}
+          </p>
+        </div>
       )}
 
 

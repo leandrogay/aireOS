@@ -21,10 +21,11 @@ function impactLine(impact) {
 
 // One short status line per block, most important first: an unsaved block
 // would be lost on leaving, so that outranks being switched off.
-function blockStatus(block, inView) {
+function blockStatus(block, inView, closed) {
   if (!block.saved) return { text: 'Not saved yet', tone: 'unsaved' };
   if (hasUnsavedChanges(block)) return { text: 'Unsaved changes', tone: 'unsaved' };
   if (!block.isActive) return { text: 'Saved, not on the chart', tone: 'muted' };
+  if (closed) return { text: 'Its months have actual sales, so it changes nothing', tone: 'muted' };
   if (!inView) return { text: 'Not in current chart view', tone: 'muted' };
   return null;
 }
@@ -39,13 +40,15 @@ function blockStatus(block, inView) {
  *   onSelect: (id: string) => void,
  *   onToggle: (block: object, isActive: boolean) => void,
  *   impacts: Map<string, object>,
- * }} props impacts = simulate().byItem
+ *   closedIds?: Set<string>,
+ *   togglingIds?: string[],
+ * }} props impacts = simulate().byItem; closedIds = blocks whose months all have actual sales
  */
-export default function BlockList({ blocks, selectedId, onSelect, onToggle, impacts }) {
+export default function BlockList({ blocks, selectedId, onSelect, onToggle, impacts, closedIds = new Set(), togglingIds = [] }) {
   return (
     <ul className="space-y-1.5">
       {blocks.map((block) => {
-        const status = blockStatus(block, impacts.has(block.id));
+        const status = blockStatus(block, impacts.has(block.id), closedIds.has(block.id));
         const impact = block.isActive ? impactLine(impacts.get(block.id)) : null;
         const selected = block.id === selectedId;
         return (
@@ -88,6 +91,7 @@ export default function BlockList({ blocks, selectedId, onSelect, onToggle, impa
             </button>
             <Switch
               checked={block.isActive}
+              disabled={togglingIds.includes(block.id)}
               onCheckedChange={(checked) => onToggle(block, checked)}
               aria-label={`${block.isActive ? 'Take off the Simulated line' : 'Show on the Simulated line'}: ${block.name}`}
               title={block.isActive ? 'On the Simulated line' : 'Off the Simulated line'}

@@ -116,6 +116,7 @@ function BlockDetails({ block, months }) {
  *   onEdit: (block: object) => void,
  *   onDelete: (block: object) => void,
  *   onClearFilters: () => void,
+ *   closedIds?: Set<string>,          blocks whose months all have actual sales
  * }} props
  */
 export default function BlockTable({
@@ -134,6 +135,7 @@ export default function BlockTable({
   onEdit,
   onDelete,
   onClearFilters,
+  closedIds = new Set(),
 }) {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState({ field: 'startMonth', direction: 'asc' });
@@ -244,7 +246,9 @@ export default function BlockTable({
               {impact ? (
                 <span className="font-semibold text-scenario-ink">{signed(impact.deltaUnits, wholeUnits)} units</span>
               ) : (
-                <span className="text-deep-violet-blue/45">{block.isActive ? 'Outside chart filters' : 'Off'}</span>
+                <span className="text-deep-violet-blue/45">
+                  {!block.isActive ? 'Off' : closedIds.has(block.id) ? 'Months closed' : 'Outside chart filters'}
+                </span>
               )}
             </td>
             <td className="px-4 py-2.5" title={block.explanation || undefined}>
