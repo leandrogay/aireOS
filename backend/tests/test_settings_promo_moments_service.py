@@ -1,5 +1,7 @@
 from contextlib import nullcontext
-from datetime import date
+from datetime import date, datetime, timezone
+
+from conftest import FakeConnection
 
 from app.services import sellout_units
 from app.services.settings import common
@@ -86,3 +88,31 @@ def test_a_saved_anchor_is_the_baseline_even_when_it_is_not_the_most_common(monk
 
     assert {m["baseline_mechanic_key"] for m in moments} == {"pct_off_30"}
     assert moments[0]["uplift_pct"] == round((100 / 132 - 1) * 100, 2)
+
+
+# ---- _saved_baselines --------------------------------------------------------------
+
+
+def test_saved_anchors_become_baselines_with_ranges_falling_back_to_the_customer():
+    at = datetime(2026, 11, 5, tzinfo=timezone.utc)
+    anchors = [
+        {"id": 1, "customer_id": 1, "sku_range": None, "promotion_mechanic": "20% Off", "updated_at": at},
+        {"id": 2, "customer_id": 1, "sku_range": "Pants", "promotion_mechanic": "Buy 2 Get 25% Off", "updated_at": at},
+        # A typed anchor names no mechanic, so its range has no baseline mechanic.
+        {"id": 3, "customer_id": 1, "sku_range": "Tape", "promotion_mechanic": None, "updated_at": at},
+    ]
+
+    def respond(sql, params):
+        if "FROM promo_anchor_settings" in sql:
+            return anchors
+        if "FROM skus" in sql:
+            return [("Pants",), ("Tape",), ("Ultra Pants",)]
+        return []
+
+    baselines = service._saved_baselines(FakeConnection(respond))
+
+    assert baselines == {
+        (1, "Pants"): "b2_pct_off_25",
+        (1, "Tape"): None,
+        (1, "Ultra Pants"): "pct_off_20",
+    }

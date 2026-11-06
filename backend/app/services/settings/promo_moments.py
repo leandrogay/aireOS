@@ -7,6 +7,7 @@ from sqlalchemy.engine import Connection
 from app.services import sellout_units
 from app.services.settings import common
 from app.services.settings import promo_moment_rules as rules
+from app.services.settings import promo_uplift_rules as uplift_rules
 
 
 # Moments and Recommended Uplift for Promotion Uplift Settings, read-only:
@@ -155,7 +156,7 @@ def _saved_baselines(conn: Connection) -> dict[tuple[int, str], str | None]:
 
     current = common.newest([dict(row) for row in rows], lambda row: (row["customer_id"], row["sku_range"]))
     customer_level = {
-        customer_id: rules.mechanic_key(row["promotion_mechanic"])
+        customer_id: uplift_rules.mechanic_key(row["promotion_mechanic"])
         for (customer_id, sku_range), row in current.items()
         if sku_range is None
     }
@@ -166,7 +167,7 @@ def _saved_baselines(conn: Connection) -> dict[tuple[int, str], str | None]:
         for (sku_range,) in ranges:
             row = current.get((customer_id, sku_range))
             if row is not None:
-                baselines[(customer_id, sku_range)] = rules.mechanic_key(row["promotion_mechanic"])
+                baselines[(customer_id, sku_range)] = uplift_rules.mechanic_key(row["promotion_mechanic"])
             elif customer_id in customer_level:
                 baselines[(customer_id, sku_range)] = customer_level[customer_id]
     return baselines
