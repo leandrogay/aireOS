@@ -16,7 +16,10 @@ _CREDENTIALS_DETAIL = (
 )
 
 
-@router.get("/")
+# The web proxy must not redirect this request to the API host, which cannot
+# receive the web host's SSO cookie. Keep the slash route for existing callers.
+@router.get("/", include_in_schema=False)
+@router.get("")
 def get_forecast(
     background_tasks: BackgroundTasks,
     product_name: str | None = None,
