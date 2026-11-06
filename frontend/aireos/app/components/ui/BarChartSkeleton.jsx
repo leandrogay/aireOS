@@ -29,6 +29,7 @@ const DEFAULT_BARS = 12;
  *   bars?: number,
  *   groups?: number,
  *   height?: number,
+ *   fill?: boolean,
  *   axes?: boolean,
  *   legend?: boolean,
  *   legendItems?: number,

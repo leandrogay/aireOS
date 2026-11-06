@@ -23,6 +23,7 @@ export const SKELETON_PULSE = 'rounded bg-lavander motion-reduce:animate-none';
  *   legendItems?: number,
  *   label?: string,
  *   xTicks?: number,
+ *   fill?: boolean,
  *   className?: string,
  *   children: import('react').ReactNode,
  * }} props `xTicks`: how many X-axis stubs to draw (a bar chart passes its
@@ -36,13 +37,19 @@ export default function ChartSkeletonFrame({
   legendItems = 3,
   label = 'Loading chart…',
   xTicks = 12,
+  fill = false,
   className,
   children,
 }) {
   return (
-    <div role="status" aria-live="polite" aria-busy="true" className={cn('w-full', className)}>
+    <div role="status" aria-live="polite" aria-busy="true" className={cn('w-full', fill && 'flex flex-col', className)}>
       <span className="sr-only">{label}</span>
-      <div aria-hidden="true" className="flex flex-col py-2" style={{ height }}>
+      {/* fill: grow with the parent like a flex-1 chart, `height` being the minimum. */}
+      <div
+        aria-hidden="true"
+        className={cn('flex flex-col py-2', fill && 'flex-1')}
+        style={fill ? { minHeight: height } : { height }}
+      >
         <div className="flex min-h-0 flex-1">
           {axes && <YAxisStubs />}
           <div className="relative flex-1 border-b border-lavander">

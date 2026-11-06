@@ -1,6 +1,7 @@
 "use client"
 
-import ChartLoading from "@/components/ui/ChartLoading"
+import BarChartSkeleton from "@/components/ui/BarChartSkeleton"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import ComparisonMixChart from "@/components/dashboard/ComparisonMixChart"
 import CustomerTrendChart from "@/components/dashboard/CustomerTrendChart"
@@ -117,7 +118,26 @@ export default function RevenueTrendCard({
       {/* Always the full placeholder, never the overlay: a refetch can change
           the granularity or add a comparison, and the old bars would be
           drawn with the new labels. flex-1 keeps the card's height. */}
-      {busy && <ChartLoading label="Loading dashboard…" className="flex-1" />}
+      {busy && (
+        // Same box as the loaded state: a flex-1 chart (min 220px) plus the footer line, so the card
+        // keeps its height when the data arrives. The usual state is a few customers ticked, one month
+        // (CustomerTrendChart: one cluster of a bar per customer); otherwise a year of months by ~4 formats.
+        <div className="flex flex-1 flex-col">
+          <BarChartSkeleton
+            bars={comparingCustomers ? 1 : 12}
+            groups={comparingCustomers ? 3 : 1}
+            height={220}
+            fill
+            legend
+            legendItems={comparingCustomers ? 3 : 4}
+            label="Loading dashboard…"
+            className="flex-1"
+          />
+          <div className="mt-1 flex items-baseline justify-end">
+            <Skeleton className="h-4 w-40 rounded bg-lavander motion-reduce:animate-none" />
+          </div>
+        </div>
+      )}
       {error && <p className="text-red-600 text-sm">{error}</p>}
       {!busy && !error && comparingCustomers && (
         <div className="flex flex-1 flex-col">
