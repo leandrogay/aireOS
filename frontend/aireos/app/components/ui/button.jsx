@@ -12,11 +12,16 @@ import { cva } from "class-variance-authority";
 
 import { cn } from "@/lib/utils"
 
-// cva maps `variant` and `size` to a Tailwind class string. The brand colours
+// cva maps `variant` and `size` to a Tailwind class string.
+//
+// Every variant has a 1px border, transparent on the filled ones, so all
+// variants share one box. shadcn's `bg-clip-padding` is left out on purpose:
+// it stopped the fill inside that transparent border, so a filled button
+// looked 2px smaller than an outline one beside it (Cancel / Rollback upload). The brand colours
 // are fixed hexes (no dark theme is switched on), so the variants carry no
 // `dark:` classes; add them here, once, if one is ever introduced.
 const buttonVariants = cva(
-  "group/button inline-flex shrink-0 cursor-pointer items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-violet focus-visible:ring-3 focus-visible:ring-violet/40 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "group/button inline-flex shrink-0 cursor-pointer items-center justify-center rounded-lg border border-transparent text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-violet focus-visible:ring-3 focus-visible:ring-violet/40 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
