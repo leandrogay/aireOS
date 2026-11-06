@@ -61,6 +61,7 @@ export default function RevenueTrendCard({
   comparisonLoading = false,
   periodNames = null,
   customerBars = null,
+  customerColorOrder = [],
   estimate = null,
   metric = "revenue",
   onMetricChange = () => {},
@@ -120,7 +121,7 @@ export default function RevenueTrendCard({
       {error && <p className="text-red-600 text-sm">{error}</p>}
       {!busy && !error && comparingCustomers && (
         <div className="flex flex-1 flex-col">
-          <CustomerTrendChart customers={customerBars} mode={mode} metric={metric} granularity={granularity} />
+          <CustomerTrendChart customers={customerBars} mode={mode} metric={metric} granularity={granularity} colorOrder={customerColorOrder} />
           <ChartFooter estimate={shownEstimate} lastUpdated={lastUpdated} />
         </div>
       )}

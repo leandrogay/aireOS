@@ -780,6 +780,7 @@ def _sales_summary_periods(raw_result) -> list[dict]:
     a "total revenue" figure.
     """
     combined: dict[str, float] = {}
+    units: dict[str, float] = {}
     starts: dict[str, object] = {}
     order: list[str] = []
     for mode_data in (raw_result.get("offline"), raw_result.get("online")):
@@ -787,11 +788,13 @@ def _sales_summary_periods(raw_result) -> list[dict]:
             label = row["period_label"]
             if label not in combined:
                 combined[label] = 0.0
+                units[label] = 0.0
                 starts[label] = row.get("period_start")
                 order.append(label)
             combined[label] += row["revenue"]
+            units[label] += row.get("units") or 0
     return [
-        {"period_label": label, "period_start": starts[label], "revenue": round(combined[label], 2)}
+        {"period_label": label, "period_start": starts[label], "revenue": round(combined[label], 2), "units": units[label]}
         for label in order
     ]
 
@@ -832,9 +835,9 @@ def _range_label(calls: list[tuple[dict, object]]) -> str | None:
     return None
 
 
-def _compare_periods_totals(calls: list[tuple[dict, object]]) -> tuple[float, float] | None:
+def _compare_periods_totals(calls: list[tuple[dict, object]], figure: str = "revenue") -> tuple[float, float] | None:
     """
-    (previous_revenue, current_revenue) for a comparison chart, from however
+    (previous, current) revenue or units for a comparison chart, from however
     many compare_periods calls were made.
 
     A call with no `mode` argument already returns the combined (all-channel)
@@ -854,7 +857,7 @@ def _compare_periods_totals(calls: list[tuple[dict, object]]) -> tuple[float, fl
         previous = raw_result.get("previous") or {}
         if current.get("start") is None:
             return None
-        return previous.get("revenue", 0), current.get("revenue", 0)
+        return previous.get(figure, 0), current.get(figure, 0)
 
     by_mode: dict[str, object] = {}
     for tool_input, raw in calls:
@@ -869,8 +872,8 @@ def _compare_periods_totals(calls: list[tuple[dict, object]]) -> tuple[float, fl
             previous = raw_result.get("previous") or {}
             if current.get("start") is None:
                 continue
-            prev_total += previous.get("revenue", 0)
-            cur_total += current.get("revenue", 0)
+            prev_total += previous.get(figure, 0)
+            cur_total += current.get(figure, 0)
         return round(prev_total, 2), round(cur_total, 2)
 
     if len(by_mode) == 1:
@@ -879,9 +882,82 @@ def _compare_periods_totals(calls: list[tuple[dict, object]]) -> tuple[float, fl
         previous = raw_result.get("previous") or {}
         if current.get("start") is None:
             return None
-        return previous.get("revenue", 0), current.get("revenue", 0)
+        return previous.get(figure, 0), current.get(figure, 0)
 
     return None
+
+
+# ---- Sales table ------------------------------------------------------------
+#
+# Every historic sales chart carries a table of the same figures, as the
+# forecast's does, so an export has both. It adds units, which the chart leaves
+# out. Channel, product and store columns appear only when the question was
+# narrowed by them.
+
+_SALES_SCOPE_COLUMNS = {"channel": "mode", "product": "sku", "store": "store"}
+
+
+def _units_cell(value) -> str:
+    return "—" if value is None else f"{float(value):,.0f}"
+
+
+def _sales_row(period: str, customer: str, tool_input: dict, units, revenue) -> dict:
+    scope = {column: tool_input.get(argument) for column, argument in _SALES_SCOPE_COLUMNS.items()}
+    return {"period": period, "customer": customer, **scope, "units": units, "revenue": revenue}
+
+
+def _with_sales_table(chart: dict, rows: list[dict]) -> dict:
+    scope_columns = [column for column in _SALES_SCOPE_COLUMNS if any(row[column] for row in rows)]
+
+    def scope_cell(row: dict, column: str) -> str:
+        value = row[column] or "All"
+        return value.title() if column == "channel" else value
+
+    return {
+        **chart,
+        "has_table": bool(rows),
+        "table_columns": ["period", "customer", *scope_columns, "units", "revenue"] if rows else [],
+        "table_rows": [
+            [
+                row["period"],
+                _customer_label(row["customer"]),
+                *[scope_cell(row, column) for column in scope_columns],
+                _units_cell(row["units"]),
+                _revenue_cell(row["revenue"]),
+            ]
+            for row in rows
+        ],
+        "table_note": "",
+    }
+
+
+def _combined_scope(calls: list[tuple[dict, object]]) -> dict:
+    """The latest call's scope. A channel only when every call was for that one:
+    _compare_periods_totals otherwise reports the channels combined."""
+    modes = {tool_input.get("mode") for tool_input, _ in calls}
+    return {**calls[-1][0], "mode": next(iter(modes)) if len(modes) == 1 else None}
+
+
+def _range_total_rows(calls: list[tuple[dict, object]], customer: str) -> list[dict]:
+    """compare_periods' current side, for a total over one date range."""
+    revenue, units = _compare_periods_totals(calls), _compare_periods_totals(calls, "units")
+    if revenue is None or units is None:
+        return []
+    return [_sales_row(_range_label(calls) or "Total", customer, _combined_scope(calls), units[1], revenue[1])]
+
+
+def _comparison_rows(calls: list[tuple[dict, object]], customer: str) -> list[dict]:
+    """Both sides of a comparison, each with the dates it covers."""
+    revenue, units = _compare_periods_totals(calls), _compare_periods_totals(calls, "units")
+    if revenue is None or units is None:
+        return []
+    raw = calls[-1][1] or {}
+    rows = []
+    for index, (label, side) in enumerate((("Previous", "previous"), ("Current", "current"))):
+        dates = raw.get(side) or {}
+        period = f"{label} ({dates['start']} to {dates['end']})" if dates.get("start") and dates.get("end") else label
+        rows.append(_sales_row(period, customer, _combined_scope(calls), units[index], revenue[index]))
+    return rows
 
 
 def _calls_by_customer(calls: list[tuple[dict, object]], default_customer: str) -> dict[str, list]:
@@ -903,23 +979,22 @@ def _per_customer_total_chart(by_customer: dict[str, list]) -> dict | None:
 
     categories: list[str] = []
     values: list[float] = []
+    rows: list[dict] = []
     for slug, calls in by_customer.items():
         totals = _compare_periods_totals(calls)
         if totals is None:
             continue
         categories.append(slug.replace("_", " ").title())
         values.append(round(float(totals[1]), 2))
+        rows += _range_total_rows(calls, slug)
     if not categories:
         return None
-    return {
+    return _with_sales_table({
         "has_chart": True,
         "chart_type": "bar",
         "chart_categories": categories,
         "chart_series": [{"label": "Revenue", "values": values}],
-        "has_table": False,
-        "table_columns": [],
-        "table_rows": [],
-    }
+    }, rows)
 
 
 def _grouped_bar_chart(categories: list[str], series: list[dict]) -> dict:
@@ -942,13 +1017,15 @@ def _per_customer_comparison_chart(by_customer: dict[str, list]) -> dict | None:
     ("Fairprice vs NHG, this month vs last"), instead of only the first one."""
 
     series = []
+    rows: list[dict] = []
     for slug, calls in by_customer.items():
         totals = _compare_periods_totals(calls)
         if totals is not None:
             series.append({"label": _customer_label(slug), "values": [round(float(v), 2) for v in totals]})
+            rows += _comparison_rows(calls, slug)
     if len(series) < 2:
         return None
-    return _grouped_bar_chart(["Previous", "Current"], series)
+    return _with_sales_table(_grouped_bar_chart(["Previous", "Current"], series), rows)
 
 
 def _covers(tool_input: dict, period_start) -> bool:
@@ -974,8 +1051,8 @@ def _per_customer_trend_chart(summary_calls: list[tuple[dict, object]], customer
     whereas outside it a customer simply wasn't asked about that month.
     """
 
-    # {customer: {channel: {period_label: revenue}}}
-    figures: dict[str, dict[str | None, dict[str, float]]] = {}
+    # {customer: {channel: {period_label: table row}}}
+    figures: dict[str, dict[str | None, dict[str, dict]]] = {}
     calls_by_customer: dict[str, list[dict]] = {}
     starts: dict[str, object] = {}
     for tool_input, raw in summary_calls:
@@ -983,7 +1060,7 @@ def _per_customer_trend_chart(summary_calls: list[tuple[dict, object]], customer
         calls_by_customer.setdefault(slug, []).append(tool_input)
         channel = figures.setdefault(slug, {}).setdefault(tool_input.get("mode"), {})
         for row in _sales_summary_periods(raw):
-            channel[row["period_label"]] = row["revenue"]
+            channel[row["period_label"]] = _sales_row(row["period_label"], slug, tool_input, row["units"], row["revenue"])
             starts.setdefault(row["period_label"], row.get("period_start"))
     if len(figures) < 2:
         return None
@@ -998,11 +1075,20 @@ def _per_customer_trend_chart(summary_calls: list[tuple[dict, object]], customer
     series = [
         {
             "label": _customer_label(slug),
-            "values": [round(sum(periods.get(label, 0.0) for periods in channels.values()), 2) for label in categories],
+            "values": [
+                round(sum(periods[label]["revenue"] for periods in channels.values() if label in periods), 2)
+                for label in categories
+            ],
         }
         for slug, channels in figures.items()
     ]
-    return _grouped_bar_chart(categories, series)
+    rows: list[dict] = []
+    for label in categories:
+        for slug, channels in figures.items():
+            # A customer with nothing that period is a real 0, as on the chart.
+            found = [periods[label] for periods in channels.values() if label in periods]
+            rows += found or [_sales_row(label, slug, {}, 0.0, 0.0)]
+    return _with_sales_table(_grouped_bar_chart(categories, series), rows)
 
 
 def _calls_the_answer_uses(summary_calls: list[tuple[dict, object]]) -> list[tuple[dict, object]]:
@@ -1033,25 +1119,25 @@ def _period_months(raw_result) -> set[str]:
     return {str(row["period_start"] or row["period_label"])[:7] for row in _sales_summary_periods(raw_result)}
 
 
-def _sales_summary_chart(summary_calls: list[tuple[dict, object]]) -> dict | None:
+def _sales_summary_chart(summary_calls: list[tuple[dict, object]], customer: str) -> dict | None:
     """One bar per period across the get_sales_summary calls the answer uses, in call order."""
     categories: list[str] = []
     values: list[float] = []
-    for _tool_input, raw_result in _calls_the_answer_uses(summary_calls):
+    rows: list[dict] = []
+    for tool_input, raw_result in _calls_the_answer_uses(summary_calls):
+        slug = _customer_slug(tool_input.get("customer") or customer)
         for row in _sales_summary_periods(raw_result):
             categories.append(row["period_label"])
             values.append(row["revenue"])
+            rows.append(_sales_row(row["period_label"], slug, tool_input, row["units"], row["revenue"]))
     if not categories:
         return None
-    return {
+    return _with_sales_table({
         "has_chart": True,
         "chart_type": "bar",
         "chart_categories": categories,
         "chart_series": [{"label": "Revenue", "values": values}],
-        "has_table": False,
-        "table_columns": [],
-        "table_rows": [],
-    }
+    }, rows)
 
 
 def _breakdown_over_range_totals(
@@ -1077,7 +1163,7 @@ def _breakdown_over_range_totals(
     per_customer = _per_customer_trend_chart(summary_calls, customer)
     if per_customer is not None:
         return per_customer
-    chart = _sales_summary_chart(summary_calls)
+    chart = _sales_summary_chart(summary_calls, customer)
     return chart if chart is not None and len(chart["chart_categories"]) > 1 else None
 
 
@@ -1094,15 +1180,13 @@ def _range_total_breakdown_chart(compare_calls: list[tuple[dict, object]], custo
     tool_input, raw = compare_calls[-1]
     current = (raw or {}).get("current") or {}
     start, end = current.get("start"), current.get("end")
-    single_bar = {
+    slug = _customer_slug(tool_input.get("customer") or customer)
+    single_bar = _with_sales_table({
         "has_chart": True,
         "chart_type": "bar",
         "chart_categories": [current_label],
         "chart_series": [{"label": "Revenue", "values": [current_revenue]}],
-        "has_table": False,
-        "table_columns": [],
-        "table_rows": [],
-    }
+    }, _range_total_rows(compare_calls, slug))
     if not start or not end:
         return single_bar
     try:
@@ -1126,15 +1210,12 @@ def _range_total_breakdown_chart(compare_calls: list[tuple[dict, object]], custo
     if not periods:
         return single_bar
 
-    return {
+    return _with_sales_table({
         "has_chart": True,
         "chart_type": "bar",
         "chart_categories": [row["period_label"] for row in periods],
         "chart_series": [{"label": "Revenue", "values": [row["revenue"] for row in periods]}],
-        "has_table": False,
-        "table_columns": [],
-        "table_rows": [],
-    }
+    }, [_sales_row(row["period_label"], slug, tool_input, row["units"], row["revenue"]) for row in periods])
 
 
 _DOH_STATUS_LABELS = {"below_min": "Below min", "within": "Within range", "above_max": "Above max"}
@@ -1415,38 +1496,40 @@ def _build_chart(chart_sources: list[tuple[str, dict, object]], customer: str) -
                 # an auto-derived "Previous" the question never requested.
                 current_label = _range_label(compare_calls) or "Total"
                 return _range_total_breakdown_chart(compare_calls, customer, current_revenue, current_label)
-            return {
+            slug = _customer_slug(compare_calls[-1][0].get("customer") or customer)
+            return _with_sales_table({
                 "has_chart": True,
                 "chart_type": "bar",
                 "chart_categories": ["Previous", "Current"],
                 "chart_series": [{"label": "Revenue", "values": [previous_revenue, current_revenue]}],
-                "has_table": False,
-                "table_columns": [],
-                "table_rows": [],
-            }
+            }, _comparison_rows(compare_calls, slug))
 
     per_customer = _per_customer_trend_chart(summary_calls, customer)
     if per_customer is not None:
         return per_customer
-    summary_chart = _sales_summary_chart(summary_calls)
+    summary_chart = _sales_summary_chart(summary_calls, customer)
     if summary_chart is not None:
         return summary_chart
 
-    rank_results = [raw for name, tool_input, raw in chart_sources if name == "rank_skus"]
-    if rank_results:
-        rows = rank_results[-1] or []
+    rank_calls = [(tool_input, raw) for name, tool_input, raw in chart_sources if name == "rank_skus"]
+    if rank_calls:
+        tool_input, raw = rank_calls[-1]
+        rows = (raw or [])[:10]
         if rows:
+            by_volume = tool_input.get("metric") == "volume"
+            series = {"label": "Units", "unit": "units"} if by_volume else {"label": "Revenue"}
             return {
-                "has_chart": False,
-                "chart_type": "none",
-                "chart_categories": [],
-                "chart_series": [],
+                "has_chart": True,
+                "chart_type": "bar",
+                "chart_categories": [str(r.get("product_name", "")) for r in rows],
+                "chart_series": [{**series, "values": [r.get("volume" if by_volume else "value") or 0 for r in rows]}],
                 "has_table": True,
                 "table_columns": ["rank", "product_name", "volume", "value"],
                 "table_rows": [
-                    [str(r.get("rank", "")), str(r.get("product_name", "")), str(r.get("volume", "")), str(r.get("value", ""))]
-                    for r in rows[:10]
+                    [str(r.get("rank", "")), str(r.get("product_name", "")), _units_cell(r.get("volume")), _revenue_cell(r.get("value"))]
+                    for r in rows
                 ],
+                "table_note": "",
             }
 
     inventory_chart = _inventory_chart(chart_sources)
@@ -1745,6 +1828,8 @@ _PDF_CHART_HEIGHT = 210
 _PDF_CHART_BOTTOM = 26
 # Past this many labels, the chart's axis tilts them rather than overlapping.
 _PDF_MAX_LEVEL_LABELS = 10
+_PDF_CATEGORY_FONT_SIZE = 8
+_PDF_CATEGORY_LINE_HEIGHT = 10
 _PDF_TABLE_FONT_SIZE = 8.5
 _PDF_CELL_PADDING = 5
 
@@ -1955,7 +2040,7 @@ def _pdf_line_plot(chart: dict, style: dict, series_colors: list, trend_values: 
 
 def _style_pdf_category_labels(axis, count: int) -> None:
     axis.labels.fontName = "Helvetica"
-    axis.labels.fontSize = 8
+    axis.labels.fontSize = _PDF_CATEGORY_FONT_SIZE
     axis.labels.fillColor = _PDF_TEXT_COLOR
     axis.labels.dy = -4
     if count > _PDF_MAX_LEVEL_LABELS:
@@ -1964,15 +2049,34 @@ def _style_pdf_category_labels(axis, count: int) -> None:
         axis.labels.boxAnchor = "ne"
 
 
+def _pdf_wrapped_label(label: str, width: float) -> str:
+    """A category name broken over lines to fit its bar's slot, on word gaps."""
+    lines: list[str] = []
+    for word in label.split():
+        candidate = f"{lines[-1]} {word}" if lines else word
+        if lines and stringWidth(candidate, "Helvetica", _PDF_CATEGORY_FONT_SIZE) <= width:
+            lines[-1] = candidate
+        else:
+            lines.append(word)
+    return "\n".join(lines)
+
+
 def _pdf_bar_chart(chart: dict, style: dict, series_colors: list, trend_values: list[float] | None, left: float) -> tuple:
     """(the bars, the trend line over them or None)."""
     categories = chart["chart_categories"]
     all_series = chart["chart_series"]
     bar = VerticalBarChart()
-    bar.x, bar.y = left, _PDF_CHART_BOTTOM
-    bar.width, bar.height = _PDF_CONTENT_WIDTH - left - 8, _PDF_CHART_HEIGHT - _PDF_CHART_BOTTOM - 8
+    width = _PDF_CONTENT_WIDTH - left - 8
+    names = [str(c) for c in categories]
+    # Past _PDF_MAX_LEVEL_LABELS they tilt instead (_style_pdf_category_labels).
+    if len(categories) <= _PDF_MAX_LEVEL_LABELS:
+        names = [_pdf_wrapped_label(name, width / len(categories) - 6) for name in names]
+    extra_lines = max(name.count("\n") for name in names) if names else 0
+    bottom = _PDF_CHART_BOTTOM + extra_lines * _PDF_CATEGORY_LINE_HEIGHT
+    bar.x, bar.y = left, bottom
+    bar.width, bar.height = width, _PDF_CHART_HEIGHT - bottom - 8
     bar.data = [series["values"] for series in all_series]
-    bar.categoryAxis.categoryNames = [str(c) for c in categories]
+    bar.categoryAxis.categoryNames = names
     _style_pdf_category_labels(bar.categoryAxis, len(categories))
     bar.categoryAxis.strokeColor = _PDF_MUTED_COLOR
     bar.categoryAxis.visibleTicks = 0
@@ -2144,7 +2248,7 @@ def _build_excel(answer_text: str, chart: dict, chart_style: dict | None = None)
                 ws.cell(row=header_row + 1 + i, column=col, value=value)
 
         xlsx_chart = XlsxLineChart() if _is_forecast_chart(chart) and chart.get("chart_type") == "line" else XlsxBarChart()
-        xlsx_chart.title = "Forecast" if _is_forecast_chart(chart) else "Revenue"
+        xlsx_chart.title = "Forecast" if _is_forecast_chart(chart) else _chart_slide_title(chart)
         last_row = header_row + len(categories)
         data_ref = Reference(ws, min_col=2, max_col=1 + len(all_series), min_row=header_row, max_row=last_row)
         cats_ref = Reference(ws, min_col=1, min_row=header_row + 1, max_row=last_row)
@@ -2333,13 +2437,13 @@ def _add_summary_slide(prs, title: str, points: list[str]) -> None:
 def _chart_slide_title(chart: dict) -> str:
     if _is_forecast_chart(chart):
         return "Forecast revenue" if chart["chart_series"][0].get("unit") == "revenue" else "Forecast (cartons)"
-    return "Revenue"
+    return "Units" if chart["chart_series"][0].get("unit") == "units" else "Revenue"
 
 
 def _chart_axis_format(chart: dict) -> str:
-    """Every chart that isn't a forecast in cartons plots revenue."""
-    is_cartons = _is_forecast_chart(chart) and chart["chart_series"][0].get("unit") == "cartons"
-    return "#,##0" if is_cartons else '"$"#,##0'
+    """Every chart plots revenue unless its series counts cartons or units."""
+    is_count = chart["chart_series"][0].get("unit") in ("cartons", "units")
+    return "#,##0" if is_count else '"$"#,##0'
 
 
 def _set_chart_text(frame, text: str, size: Pt) -> None:
@@ -2809,6 +2913,8 @@ def _known_good_revenue_figures(chart: dict, chart_sources: list[tuple[str, dict
     turn (rounded to cents) -- what the headline figure must be one of."""
     figures: set[float] = set()
     for series in _series_the_model_saw(chart):
+        if series.get("unit") == "units":
+            continue
         for value in series.get("values", []):
             if value is not None:
                 figures.add(round(float(value), 2))

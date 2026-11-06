@@ -77,7 +77,7 @@ export default function SegmentedControl({
                   // `isolate` keeps the highlight (-z-10) behind the label but above the track.
                   'relative isolate inline-flex h-6 min-w-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-2.5 font-medium transition-colors outline-none',
                   'focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet',
-                  'disabled:cursor-not-allowed disabled:opacity-50',
+                  'cursor-pointer disabled:cursor-not-allowed disabled:opacity-50',
                   fullWidth && 'flex-1',
                   active ? 'text-white' : cn('text-deep-violet-blue/70 hover:text-deep-violet-blue', SEGMENT_HOVER[look]),
                 )}

@@ -98,17 +98,6 @@ export default function Sidebar() {
   // Width isn't covered by MotionConfig's reducedMotion, so snap it here.
   const reduceMotion = useReducedMotion();
 
-  // The nav bar's width as --sidebar-width, so the assistant's full-screen
-  // panel can sit flush against it (AssistantWidget). Set to the width the bar
-  // mounts at; onUpdate below keeps the variable in step while the width
-  // animates. Removed when a page without the nav bar is shown.
-  const [mountWidth] = useState(width);
-  useEffect(() => {
-    const root = document.documentElement;
-    root.style.setProperty('--sidebar-width', `${mountWidth}px`);
-    return () => root.style.removeProperty('--sidebar-width');
-  }, [mountWidth]);
-
   const toggleCollapsed = () => {
     lastCollapsed = !collapsed;
     setCollapsed(!collapsed);
@@ -134,9 +123,6 @@ export default function Sidebar() {
       initial={false}
       animate={{ width }}
       transition={reduceMotion ? { duration: 0 } : NAV_SPRING}
-      onUpdate={(latest) => {
-        document.documentElement.style.setProperty('--sidebar-width', `${latest.width}px`);
-      }}
       className={cn(
         // Border and background stay on CSS transitions; they fade alongside the width.
         'sticky top-0 flex h-screen shrink-0 flex-col self-start overflow-x-hidden overflow-y-auto border-r py-4 transition-colors duration-300',
@@ -157,13 +143,13 @@ export default function Sidebar() {
               exit="hidden"
               className="absolute top-1/2 left-1 -translate-y-1/2"
             >
-              <Link href="/dashboard" aria-label="AIRE home">
+              <Link href="/dashboard" aria-label="AireOS home">
                 <Image
-                  src="/aire-logo.png"
-                  alt="AIRE"
-                  width={72}
-                  height={30}
-                  className="h-7 w-auto"
+                  src="/aireos-wordmark.svg"
+                  alt="AireOS"
+                  width={120}
+                  height={36}
+                  className="h-auto"
                   priority
                 />
               </Link>

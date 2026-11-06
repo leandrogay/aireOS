@@ -8,6 +8,7 @@ import {
   formatUnits,
 } from '@/app/utils/inventoryForm';
 import { retailerLabel } from '@/app/utils/retailerLabel';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 import InventoryTableFrame, {
@@ -118,13 +119,15 @@ export default function InventorySkuTable({
                     <td className={inventoryTdClass}>
                       {/* A month with no rows of its own (stock carried forward) has nothing to edit. */}
                       {row.has_data && (
-                        <button
+                        <Button
                           type="button"
+                          variant="outline"
+                          size="xs"
                           onClick={() => onEdit(row)}
-                          className="rounded-md border border-deep-violet-blue/30 bg-white px-2 py-0.5 text-[11px] font-medium text-deep-violet-blue transition hover:bg-cream"
+                          className="h-auto rounded-md border-deep-violet-blue/30 bg-white px-2 py-0.5 text-[11px] font-medium text-deep-violet-blue transition hover:bg-cream hover:text-deep-violet-blue"
                         >
                           Edit
-                        </button>
+                        </Button>
                       )}
                     </td>
                   )}

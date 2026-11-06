@@ -209,6 +209,7 @@ export default function RevenueSummaryCards({
   mode = "offline",
   comparingCustomers = false,
   customerRows = [],
+  customerColorOrder = [],
 }) {
   const [hoveredFormat, setHoveredFormat] = useState(null)
   const salesData = summaryByMode[mode]
@@ -229,6 +230,7 @@ export default function RevenueSummaryCards({
       const channel = row[mode] ?? { revenue: 0, units: 0 }
       return {
         format: row.label,
+        customer: row.customer,
         revenue: channel.revenue ?? 0,
         units: channel.units ?? 0,
         estimated_revenue: channel.estimated_revenue ?? 0,
@@ -241,7 +243,7 @@ export default function RevenueSummaryCards({
   const currentByFormat = new Map(tileFormats.map((format) => [format.format, format]))
   const baselineByFormat = new Map(tileBaseline.map((format) => [format.format, format]))
   const colorForName = comparingCustomers
-    ? (name) => customerColor(name, customerTiles.map((tile) => tile.format))
+    ? (name) => customerColor(customerTiles.find((tile) => tile.format === name)?.customer, customerColorOrder)
     : formatColor
   const formatNames = [...new Set([...currentByFormat.keys(), ...baselineByFormat.keys()])]
   const emptyTotals = { revenue: 0, units: 0 }
