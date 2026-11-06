@@ -8,10 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import config, notification_stream
 from app.auth import require_user
 from app.middleware import UnhandledErrorMiddleware
-from app.routers import assistant, auth, catalog, forecast, inventory, mappings
-from app.routers import notifications, promotions, sales, scenario, settings, uploads
 from app.routers import assistant, auth, catalog, forecast, internal_forecast, inventory, mappings
-from app.routers import notifications, promotions, sales, settings, uploads
+from app.routers import notifications, promotions, sales, scenario, settings, uploads
 from app.services import forecast_pipeline_events
 
 logger = logging.getLogger("uvicorn.error")

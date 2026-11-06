@@ -11,7 +11,6 @@ import {
   initialStatusNotes,
   yearsInRange,
 } from '@/app/utils/forecastLineText';
-import { currentYearDateRange, readForecastDateSession, writeForecastDateSession } from '@/app/utils/dateRange';
 import {
   ALL_PACK_TYPE_VALUES,
   ALL_PROMO_TYPE_VALUES,

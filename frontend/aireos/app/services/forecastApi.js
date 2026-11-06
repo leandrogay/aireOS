@@ -83,6 +83,9 @@ export async function getForecastAlternatives({ productName = '', customerName =
   const query = params.toString();
   const data = await request(`/api/forecast/alternatives${query ? `?${query}` : ''}`);
   return data.rows ?? [];
+}
+
+/**
  * GET /api/forecast/initial-status
  * One entry per Initial Yearly Forecast year in aire_forecasting_initial_meta:
  * { forecast_year, lock_at, refreshed_at, locked }. Best effort on the backend

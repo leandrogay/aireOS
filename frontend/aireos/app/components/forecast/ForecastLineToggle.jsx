@@ -44,14 +44,20 @@ function SeriesMark({ color, shape }) {
  *   disabled?: Record<string, boolean>,
  * }} props
  */
-export default function ForecastLineToggle({ visible, onToggle, hints = {}, disabled = {} }) {
+export default function ForecastLineToggle({
+  series: lines = FORECAST_SERIES,
+  visible,
+  onToggle,
+  hints = {},
+  disabled = {},
+}) {
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
       <p className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/50">
         Lines
       </p>
       <div className="flex flex-wrap gap-1.5">
-        {FORECAST_SERIES.map((series) => {
+        {lines.map((series) => {
           const isDisabled = Boolean(disabled[series.key]);
           const isActive = !isDisabled && visible[series.key];
           const hint = hints[series.key];

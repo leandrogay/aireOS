@@ -250,6 +250,7 @@ def get_forecast_alternatives(
 
     return {**filters, "rows": priced}
 
+
 def _is_past(stamp: str | None, now: datetime) -> bool:
     if not stamp:
         return False

@@ -242,11 +242,22 @@ export default function ForecastChart({
   const [panelX, setPanelX] = useState(0);
   const [wrapWidth, setWrapWidth] = useState(0);
 
+  // The Scenario builder adds its Simulated line (and pins, draft promo
+  // bands, seasonal average) through `scenario`; /forecast passes nothing,
+  // so it draws exactly the committed lines. All values arrive precomputed
+  // (app/utils/scenarioEngine.js); this component only draws them.
+  const allSeries = scenario ? [...FORECAST_SERIES, ...scenario.series] : FORECAST_SERIES;
+  const config = scenario
+    ? {
+        ...chartConfig,
+        ...Object.fromEntries(scenario.series.map((series) => [series.key, { label: series.label, color: series.color }])),
+      }
+    : chartConfig;
   // Previous is empty until the forecast has a second month of sales. Its
   // pill is then greyed out and the line and table column stay off.
   const previousAvailable = hasPreviousLine(points);
   const shownSeries = previousAvailable ? visibleSeries : { ...visibleSeries, previous: false };
-  const visibleKeys = FORECAST_SERIES.filter((series) => shownSeries[series.key]).map((series) => series.key);
+  const visibleKeys = allSeries.filter((series) => shownSeries[series.key]).map((series) => series.key);
   const hasVisibleLine = visibleKeys.length > 0;
   const hasData = points.some((point) =>
     visibleKeys.some((key) => point[key] != null)
@@ -304,7 +315,7 @@ export default function ForecastChart({
     selectedPackTypes
   );
   const panelLeft = promoPanelLeft(panelX, wrapWidth);
-  const seriesValues = FORECAST_SERIES.filter((series) => shownSeries[series.key]).map((series) => ({
+  const seriesValues = allSeries.filter((series) => shownSeries[series.key]).map((series) => ({
     key: series.key,
     label: series.label,
     color: series.color,
@@ -441,6 +452,7 @@ export default function ForecastChart({
         {toolbar}
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-lavander bg-white px-3 py-2">
           <ForecastLineToggle
+            series={allSeries}
             visible={shownSeries}
             onToggle={onToggleSeries}
             hints={lineHints}
@@ -629,7 +641,7 @@ export default function ForecastChart({
                       isAnimationActive={false}
                     />
                   ) : null}
-                  {allSeries.filter((series) => visibleSeries[series.key]).map((series) => (
+                  {allSeries.filter((series) => shownSeries[series.key]).map((series) => (
                     <Line
                       key={series.key}
                       dataKey={series.key}
@@ -734,7 +746,7 @@ export default function ForecastChart({
               <ForecastTable
                 points={points}
                 metric={metric}
-                visibleSeries={visibleSeries}
+                visibleSeries={shownSeries}
               />
             )}
           </>
