@@ -1,7 +1,8 @@
 import re
+from datetime import date
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class _Base(BaseModel):
@@ -226,6 +227,18 @@ class SkuBase(_Base):
         decimal_places=2,
     )
 
+    price_effective_from: date | None = None
+    price_effective_to: date | None = None
+
+    @model_validator(mode="after")
+    def valid_price_period(self):
+        if self.price_effective_to and not self.price_effective_from:
+            raise ValueError("Effective from is required when Effective to is set")
+        if (self.price_effective_from and self.price_effective_to
+                and self.price_effective_to < self.price_effective_from):
+            raise ValueError("Effective to cannot be before Effective from")
+        return self
+
 
 class SkuCreate(SkuBase):
     sku: str = Field(
@@ -237,4 +250,16 @@ class SkuCreate(SkuBase):
 class SkuUpdate(SkuBase):
     """Editable SKU fields. The immutable SKU code comes from the URL."""
 
-    pass
+    price_changed: bool | None = None
+
+
+class SkuPricePeriodCorrection(_Base):
+    price: Decimal = Field(ge=0, max_digits=10, decimal_places=2)
+    effective_from: date
+    effective_to: date | None = None
+
+    @model_validator(mode="after")
+    def valid_dates(self):
+        if self.effective_to and self.effective_to < self.effective_from:
+            raise ValueError("Effective to cannot be before Effective from")
+        return self

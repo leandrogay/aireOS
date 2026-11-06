@@ -30,4 +30,20 @@ export const SKU_HISTORY_COLUMNS = [
   { key: 'uom', label: 'UOM', width: '5rem' },
   { key: 'pack', label: 'Pack', width: '5rem', align: 'right' },
   { key: 'price', label: 'Price', width: '7rem', align: 'right' },
+  { key: 'from', label: 'Price from', width: '8rem' },
+  { key: 'to', label: 'Price to', width: '8rem' },
+];
+
+export const SKU_PRICE_PERIOD_COLUMNS = [
+  { key: 'price', label: 'Price', width: '9rem' },
+  { key: 'from', label: 'Effective from' },
+  { key: 'to', label: 'Effective to' },
+  { key: 'action', label: 'Action', width: '8rem' },
+];
+
+export const SKU_PRICE_CORRECTION_COLUMNS = [
+  { key: 'when', label: 'Corrected', width: '11rem' },
+  { key: 'old', label: 'Previous price and dates' },
+  { key: 'new', label: 'Corrected price and dates' },
+  { key: 'by', label: 'By', width: '15rem' },
 ];

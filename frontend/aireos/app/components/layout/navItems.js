@@ -43,9 +43,9 @@ export const NAV_ITEMS = [
     description: 'Ending stock, days of holding and a sell-in plan per customer.',
     children: [{ label: 'DOH settings', href: '/doh' }],
   },
-  // Catalog has no page of its own, so it links to its first child.
+  // Database has no page of its own, so it links to its first child.
   {
-    label: 'Catalog',
+    label: 'Database',
     href: '/skus',
     icon: Library,
     description: 'Maintain the SKU list and the customers that sell it.',
