@@ -13,6 +13,7 @@ import {
   MAX_UPLIFT_PCT,
   blockMonthOptions,
   hasUnsavedChanges,
+  switchUpliftDirection,
   switchUpliftMode,
 } from '@/app/utils/scenarioBlocks';
 import { monthSpanLabel } from '@/app/utils/scenarioPitch';
@@ -23,7 +24,7 @@ const labelClass = 'mb-0.5 block text-[11px] text-deep-violet-blue/70';
 const errorClass = 'mt-0.5 text-[11px] text-red-700';
 
 function formatUnits(value) {
-  return Math.round(value).toLocaleString('en-US');
+  return Math.abs(Math.round(value)).toLocaleString('en-US');
 }
 
 function FieldError({ message }) {
@@ -41,19 +42,30 @@ function ImpactNote({ block, impact }) {
     return 'Not in current chart view: show this block\'s customer, SKU and months on the chart to see its impact.';
   }
   const pctOfCurrent = impact.baseUnits ? Math.round((impact.deltaUnits / impact.baseUnits) * 100) : null;
+  const removes = impact.deltaUnits < 0;
+  const sign = removes ? '−' : '+';
   return (
     <>
-      This block adds <b>+{formatUnits(impact.deltaUnits)} units</b>
-      {pctOfCurrent == null ? '' : `, or +${pctOfCurrent}% on Current,`} to {retailerLabel(block.customer)} sell-out
-      across {monthSpanLabel(impact.months)}.
+      This block {removes ? 'removes' : 'adds'}{' '}
+      <b>
+        {sign}
+        {formatUnits(impact.deltaUnits)} units
+      </b>
+      {pctOfCurrent == null ? '' : `, or ${sign}${Math.abs(pctOfCurrent)}% on Current,`} {removes ? 'from' : 'to'}{' '}
+      {retailerLabel(block.customer)} sell-out across {monthSpanLabel(impact.months)}.
     </>
   );
 }
 
-// A units figure far above what the % slider allows is likely a typo (an
-// extra zero), so it's flagged, but not blocked: a new store can be big.
+// A units increase far above what the % slider allows is likely a typo (an
+// extra zero), so it's flagged, but not blocked: a new store can be big. A
+// units decrease bigger than the Current forecast can only take the months
+// to 0 (scenarioEngine floors the Simulated line there), so that is said.
 function unitsWarning(block, impact) {
   if (block.upliftMode !== 'units' || !impact?.baseUnits) return null;
+  if (block.decrease && Math.abs(Number(block.upliftValue)) > impact.baseUnits) {
+    return `That's more than the Current forecast for these months, so they go to 0 units. Double-check the number of units.`;
+  }
   const pct = Math.round((impact.deltaUnits / impact.baseUnits) * 100);
   if (pct <= MAX_UPLIFT_PCT) return null;
   return `That's +${pct}% on the Current forecast for these months. Double-check the number of units.`;
@@ -157,6 +169,7 @@ export default function BlockEditor({
         block={block}
         onChange={onChange}
         onModeChange={(mode) => onChange(switchUpliftMode(block, mode, impact))}
+        onDirectionChange={(decrease) => onChange(switchUpliftDirection(block, decrease))}
         error={errors.upliftValue}
       />
 

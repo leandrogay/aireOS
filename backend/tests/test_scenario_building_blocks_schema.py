@@ -64,8 +64,9 @@ def test_is_active_defaults_to_true():
         {"customer_name": ""},
         {"uplift_mode": "dollars"},
         {"uplift_value": 0},
-        {"uplift_value": -5},
+        {"uplift_mode": "units", "uplift_value": 0},
         {"uplift_value": 50.5},
+        {"uplift_value": -100.5},
         {"uplift_mode": "units", "uplift_value": 900.5},
         {"start_month": "2026-11-15"},
         {"start_month": "2026-12-01", "end_month": "2026-11-01"},
@@ -80,3 +81,24 @@ def test_a_units_block_may_go_above_the_pct_cap():
     block = ScenarioBuildingBlockCreate(**_block(uplift_mode="units", uplift_value=5000))
 
     assert block.uplift_value == Decimal("5000")
+
+
+# ---- Decreases ---------------------------------------------------------------
+
+
+@pytest.mark.parametrize("pct", [-5, -50, -100])
+def test_a_pct_decrease_down_to_minus_100_is_accepted(pct):
+    block = ScenarioBuildingBlockCreate(**_block(uplift_value=pct))
+
+    assert block.uplift_value == Decimal(pct)
+
+
+def test_a_units_decrease_is_a_negative_whole_number():
+    block = ScenarioBuildingBlockCreate(**_block(uplift_mode="units", uplift_value=-900))
+
+    assert block.uplift_value == Decimal("-900")
+
+
+def test_a_units_decrease_must_be_whole_units():
+    with pytest.raises(ValidationError):
+        ScenarioBuildingBlockCreate(**_block(uplift_mode="units", uplift_value=-900.5))

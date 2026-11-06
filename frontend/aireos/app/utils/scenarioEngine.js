@@ -32,6 +32,8 @@
 //
 // Every uplift is measured against the Current forecast only, never against
 // Current plus other items, so uplifts simply add up (blueprint Part 5.4).
+// A decrease (a negative uplift) can't take a customer x SKU x month below 0
+// units: simulate() scales that cell's decreases down to fit (floorAtZero).
 
 // Same colour as --aire-scenario in globals.css; recharts needs the value
 // itself, as the committed lines in forecastView.js do.
@@ -222,6 +224,28 @@ export function cellsByMonth(cells) {
   return months;
 }
 
+// The cells for one customer x SKU x month with their decreases scaled down,
+// all by the same share, so the increases and decreases together never take
+// the Current forecast below 0. `capped` marks a scaled cell.
+function floorAtZero(cells) {
+  const base = cells[0].baseUnits;
+  const added = cells.reduce((sum, cell) => sum + Math.max(0, cell.deltaUnits), 0);
+  const removed = cells.reduce((sum, cell) => sum + Math.min(0, cell.deltaUnits), 0);
+  if (base + added + removed >= 0) return cells;
+  const share = -(base + added) / removed;
+  return cells.map((cell) => (cell.deltaUnits < 0 ? { ...cell, deltaUnits: cell.deltaUnits * share, capped: true } : cell));
+}
+
+function withFloor(cells) {
+  const byRow = new Map();
+  for (const cell of cells) {
+    const key = `${cell.customer}|${cell.sku}|${cell.month_year}`;
+    if (!byRow.has(key)) byRow.set(key, []);
+    byRow.get(key).push(cell);
+  }
+  return [...byRow.values()].flatMap(floorAtZero);
+}
+
 /**
  * Run every source over its items and total the cells by month and by item.
  *
@@ -236,7 +260,7 @@ export function cellsByMonth(cells) {
  * @param {ReturnType<typeof chartView>} view the chart filters the rows were fetched with
  */
 export function simulate(rows, items, sources, view) {
-  const cells = sources.flatMap((source) => source.deltas(items[source.itemsKey] ?? [], rows, view));
+  const cells = withFloor(sources.flatMap((source) => source.deltas(items[source.itemsKey] ?? [], rows, view)));
   const byMonth = new Map();
   const byItem = new Map();
   for (const cell of cells) {

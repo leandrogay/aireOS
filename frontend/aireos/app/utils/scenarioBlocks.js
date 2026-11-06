@@ -3,8 +3,9 @@
 // ============================================================
 //
 // User-entered uplifts (a fair booth, new outlets, a gift with purchase) in
-// the Scenario builder. They only ever move the Simulated line: the Current
-// forecast, Inventory and Dashboard never read them. They are what-ifs on
+// the Scenario builder, or decreases (a flood, a store closing). They only
+// ever move the Simulated line: the Current forecast, Inventory and
+// Dashboard never read them. They are what-ifs on
 // the way to the forecast pipeline's sell_out_building_blocks, which hold the
 // confirmed ones that count as actuals; the two may merge in a later
 // refactor, so in code these are always "scenario blocks".
@@ -16,7 +17,11 @@
 //     customer, sku,                // forecast customer_name / product_name; sku '' = all SKUs
 //     name, explanation,            // free text; explanation is optional
 //     upliftMode, upliftValue,      // 'pct' + 18 = +18% on Current each month,
-//                                   // 'units' + 900 = +900 units over the whole range
+//                                   // 'units' + 900 = +900 units over the whole range;
+//                                   // negative = a decrease (-20 = -20%), never 0 once saved
+//     decrease,                     // the Increase | Decrease switch; follows the sign
+//                                   // of upliftValue, and keeps the choice while the
+//                                   // units box is still empty (0)
 //     startMonth, endMonth,         // 'YYYY-MM-01', forecast months only
 //     isActive,                     // switched on = counts on the Simulated line
 //     saved,                        // the fields as last saved, null if never saved
@@ -38,12 +43,34 @@ export const BLOCK_NAME_SUGGESTIONS = [
 ];
 
 export const UPLIFT_MODES = [
-  { value: 'pct', label: '% uplift' },
+  { value: 'pct', label: '%' },
   { value: 'units', label: 'Units' },
 ];
-export const UPLIFT_PRESETS = [5, 10, 18, 25];
+export const UPLIFT_DIRECTIONS = [
+  { value: false, label: 'Increase' },
+  { value: true, label: 'Decrease' },
+];
+// Sizes of the change, without the sign; a decrease can take a month down to
+// no sales at all. Same limits as the backend's MIN_UPLIFT_PCT / MAX_UPLIFT_PCT
+// (app/schemas/scenario/building_blocks.py).
+export const UPLIFT_PRESETS = { increase: [5, 10, 18, 25], decrease: [10, 25, 50, 100] };
 export const MAX_UPLIFT_PCT = 50;
+export const MIN_UPLIFT_PCT = -100;
 const DEFAULT_UPLIFT_PCT = 10;
+
+/**
+ * The largest size a % change may have in this direction: 50 up, 100 down.
+ *
+ * @param {boolean} decrease
+ */
+export function pctLimit(decrease) {
+  return decrease ? -MIN_UPLIFT_PCT : MAX_UPLIFT_PCT;
+}
+
+// A size given the block's direction, as the signed value that is stored.
+function signed(block, size) {
+  return block.decrease ? -size : size;
+}
 
 export const NEW_BLOCK_NAME = 'New building block';
 
@@ -84,6 +111,7 @@ export function newScenarioBlock({ customer = '', sku = '', months = [] }) {
     explanation: '',
     upliftMode: 'pct',
     upliftValue: DEFAULT_UPLIFT_PCT,
+    decrease: false,
     startMonth: months[0] ?? '',
     endMonth: months[0] ?? '',
     isActive: true,
@@ -135,21 +163,42 @@ export function blockMonthOptions(block, months) {
 export function switchUpliftMode(block, mode, impact) {
   if (mode === block.upliftMode) return block;
   if (mode === 'units') {
-    const units = impact ? Math.round(impact.deltaUnits) : 0;
-    return { ...block, upliftMode: mode, upliftValue: units };
+    const units = impact ? Math.abs(Math.round(impact.deltaUnits)) : 0;
+    return { ...block, upliftMode: mode, upliftValue: signed(block, units) };
   }
-  const pct = impact?.baseUnits ? Math.round((impact.deltaUnits / impact.baseUnits) * 100) : DEFAULT_UPLIFT_PCT;
-  return { ...block, upliftMode: mode, upliftValue: Math.min(MAX_UPLIFT_PCT, Math.max(1, pct)) };
+  const pct = impact?.baseUnits
+    ? Math.abs(Math.round((impact.deltaUnits / impact.baseUnits) * 100))
+    : DEFAULT_UPLIFT_PCT;
+  const size = Math.min(pctLimit(block.decrease), Math.max(1, pct));
+  return { ...block, upliftMode: mode, upliftValue: signed(block, size) };
 }
 
 /**
- * "+18%" or "+900 units", for the panel list and the blocks table.
+ * The block switched between Increase and Decrease. The size stays the same
+ * (a % is brought within the new direction's limit); only the sign flips.
+ *
+ * @param {object} block
+ * @param {boolean} decrease
+ */
+export function switchUpliftDirection(block, decrease) {
+  if (decrease === block.decrease) return block;
+  const next = { ...block, decrease };
+  let size = Math.abs(Number(block.upliftValue) || 0);
+  if (block.upliftMode === 'pct') size = Math.min(pctLimit(decrease), Math.max(1, size));
+  return { ...next, upliftValue: signed(next, size) };
+}
+
+/**
+ * "+18%", "−20%", "+900 units" or "−900 units", for the panel list and the
+ * blocks table.
  *
  * @param {object} block
  */
 export function upliftLabel(block) {
-  if (block.upliftMode === 'units') return `+${Math.round(block.upliftValue).toLocaleString('en-US')} units`;
-  return `+${block.upliftValue}%`;
+  const value = Number(block.upliftValue) || 0;
+  const sign = value < 0 ? '−' : '+';
+  if (block.upliftMode === 'units') return `${sign}${Math.abs(Math.round(value)).toLocaleString('en-US')} units`;
+  return `${sign}${Math.abs(value)}%`;
 }
 
 /**
@@ -170,7 +219,7 @@ export function hasUnsavedChanges(block) {
  */
 export function discardBlockChanges(block) {
   if (!block.saved) return null;
-  return { ...block, ...block.saved };
+  return { ...block, ...block.saved, decrease: block.saved.upliftValue < 0 };
 }
 
 /**
@@ -198,10 +247,16 @@ export function validateScenarioBlock(block) {
   const errors = {};
   if (!block.name.trim()) errors.name = 'Give the building block a name.';
   if (!block.customer) errors.customer = 'Pick a customer.';
-  if (!(Number(block.upliftValue) > 0)) {
-    errors.upliftValue = block.upliftMode === 'units' ? 'Enter how many units it adds.' : 'Set an uplift above 0%.';
-  } else if (block.upliftMode === 'units' && !Number.isInteger(Number(block.upliftValue))) {
+  const value = Number(block.upliftValue) || 0;
+  if (value === 0) {
+    errors.upliftValue =
+      block.upliftMode === 'units'
+        ? `Enter how many units it ${block.decrease ? 'removes' : 'adds'}.`
+        : 'Set a change above 0%.';
+  } else if (block.upliftMode === 'units' && !Number.isInteger(value)) {
     errors.upliftValue = 'Enter a whole number of units.';
+  } else if (block.upliftMode === 'pct' && (value < MIN_UPLIFT_PCT || value > MAX_UPLIFT_PCT)) {
+    errors.upliftValue = `A % change must be between ${MIN_UPLIFT_PCT}% and +${MAX_UPLIFT_PCT}%.`;
   }
   if (!block.startMonth || !block.endMonth) errors.months = 'Pick the months it runs.';
   return errors;
@@ -243,6 +298,7 @@ export function scenarioBlockFromApi(row) {
     explanation: row.explanation ?? '',
     upliftMode: row.uplift_mode,
     upliftValue: Number(row.uplift_value),
+    decrease: Number(row.uplift_value) < 0,
     startMonth: row.start_month,
     endMonth: row.end_month,
     isActive: row.is_active,
