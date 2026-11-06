@@ -59,3 +59,50 @@ def get_forecast_units_by_customer(
         by_sku = forecast.setdefault(customer_id, {})
         by_sku.setdefault(row["sku"], {})[month.replace(day=1)] = float(row["forecast_current"])
     return forecast
+
+
+def _first_of_month(value) -> date:
+    value = value.date() if hasattr(value, "date") else value
+    return value.replace(day=1)
+
+
+def get_forecast_lines(customer_id: int) -> dict[str, dict[str, dict[date, float]]]:
+    """
+    One customer's current, previous and Initial Yearly forecasts in one query,
+    as {"current" | "previous" | "initial": {sku: {month: units}}}. The sell-in
+    plan uses the initial for months the current run does not reach (the
+    current starts after the newest sales month, which can be ahead of the last
+    month with sell-in actuals); the previous (last month's run) is only drawn,
+    so last month's sales can be read against what was forecast a month ahead.
+    The customer is picked out in Python for the same reason as
+    get_forecast_units_by_customer; a NULL is left out.
+    """
+
+    query = f"""
+        SELECT
+          customer_id,
+          sku,
+          month_year,
+          forecast_current,
+          forecast_previous,
+          forecast_initial
+
+        FROM `{FORECAST_OUTPUT_VIEW}`
+
+        WHERE forecast_current IS NOT NULL
+           OR forecast_previous IS NOT NULL
+           OR forecast_initial IS NOT NULL
+    """
+    df = bigquery.get_bigquery_client().query(query).result().to_dataframe()
+
+    lines: dict[str, dict[str, dict[date, float]]] = {"current": {}, "previous": {}, "initial": {}}
+    for row in df.to_dict(orient="records"):
+        if int(row["customer_id"]) != customer_id:
+            continue
+        month = _first_of_month(row["month_year"])
+        for line in lines:
+            value = row.get(f"forecast_{line}")
+            if value is None or value != value:  # NULL comes back as None or NaN
+                continue
+            lines[line].setdefault(row["sku"], {})[month] = float(value)
+    return lines

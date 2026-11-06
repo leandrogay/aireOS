@@ -74,7 +74,8 @@ export default function InventoryTabs() {
         ariaLabel="Inventory views"
       />
 
-      <div className="mt-1 space-y-1">
+      {/* relative: the inactive KeptTabPanels are placed over this column. */}
+      <div className="relative mt-1 space-y-1">
       {options.error && (
         <p className="rounded-md border border-violet bg-lavander/50 px-3 py-2 text-sm text-deep-violet-blue" role="alert">
           {options.error}
@@ -122,6 +123,11 @@ export default function InventoryTabs() {
  * A view tab that is mounted on its first visit and then only hidden, so its
  * fetched data and filters survive a tab switch.
  *
+ * Hidden without display:none: an inactive panel keeps the column's width but
+ * is invisible, takes no space, and can't be clicked, focused or read out
+ * (inert). With display:none its charts' ResponsiveContainer measured 0 x 0 and
+ * Recharts logged a warning on every tab switch.
+ *
  * @param {object} props
  * @param {string} props.value this panel's tab
  * @param {string} props.tab the active tab
@@ -130,5 +136,10 @@ export default function InventoryTabs() {
  */
 function KeptTabPanel({ value, tab, visitedTabs, children }) {
   if (!visitedTabs.includes(value)) return null;
-  return <div hidden={tab !== value}>{children}</div>;
+  if (tab === value) return <div>{children}</div>;
+  return (
+    <div inert aria-hidden="true" className="invisible absolute inset-x-0 top-0 -z-10 h-0 overflow-hidden">
+      {children}
+    </div>
+  );
 }

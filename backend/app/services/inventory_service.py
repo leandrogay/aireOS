@@ -366,6 +366,32 @@ def _forecast_by_sku(customer_id: int, details: dict[str, dict]) -> dict[str, di
     }
 
 
+def _plan_forecast(
+    lines: dict[str, dict[str, dict[date, float]]],
+    details: dict[str, dict],
+) -> tuple[dict[str, dict[date, float]], dict[str, dict[date, str]], dict[str, dict[date, float]]]:
+    """
+    The forecast the sell-in plan runs on, per SKU and month: the current
+    forecast where it has the month, otherwise the Initial Yearly Forecast.
+    The current run starts after the newest sales month, so without the
+    initial a customer whose sell-in actuals stop earlier would have no
+    forecast for the months straight after them, and no plan at all. Also
+    returns which line each month came from ("current" / "initial") and the
+    initial on its own (the outlook draws it as a line).
+    """
+
+    current = _known_skus(lines.get("current", {}), details)
+    initial = _known_skus(lines.get("initial", {}), details)
+    merged: dict[str, dict[date, float]] = {}
+    source: dict[str, dict[date, str]] = {}
+    for sku in current.keys() | initial.keys():
+        merged[sku] = {**initial.get(sku, {}), **current.get(sku, {})}
+        source[sku] = {
+            month: "current" if month in current.get(sku, {}) else "initial" for month in merged[sku]
+        }
+    return merged, source, initial
+
+
 # ============================================================
 # OVERVIEW (all customers)
 # ============================================================
@@ -740,6 +766,7 @@ def _sku_plans(
     threshold: dict,
     months: int,
     details: dict[str, dict],
+    source: dict[str, dict[date, str]] | None = None,
 ) -> tuple[dict[str, tuple[date, float]], list[dict], list[dict]]:
     """
     Each SKU's last actual month and ending stock, its planned rows (raw dates),
@@ -771,8 +798,9 @@ def _sku_plans(
         if not plan:
             without_forecast.append(sku_cols)
             continue
+        sku_source = (source or {}).get(sku, {})
         for row in plan:
-            rows.append({**sku_cols, **row})
+            rows.append({**sku_cols, **row, "forecast_source": sku_source.get(row["month"], "current")})
     return last_actual, rows, without_forecast
 
 
@@ -799,12 +827,12 @@ def get_sell_in_plan(
         with _read_connection() as conn:
             customers = _fetch_customers(conn)
             _require_customers(customers, [customer_id])
-            forecast_job = pool.submit(forecast_units.get_forecast_units, customer_id)
+            forecast_job = pool.submit(forecast_units.get_forecast_lines, customer_id)
             metrics = _fetch_actuals(conn, [customer_id])
             versions = doh_settings.fetch_versions(conn, [customer_id]).get(customer_id, [])
             shipped = _fetch_shipped(conn, customer_id)
 
-        forecast = forecast_job.result()
+        lines = forecast_job.result()
 
     threshold = _threshold_view(customer_id, customers[customer_id], versions)
     customer = {"customer_id": customer_id, "customer_name": customers[customer_id]}
@@ -821,36 +849,11 @@ def get_sell_in_plan(
         }
 
     details = _sku_details()
-    forecast = _known_skus(forecast, details)
-
-    # A plan is what to send from now on, so every month aims at the current
-    # target, even when a SKU's last actual month is some way back.
-    def target_for(month: date) -> float:
-        return threshold["target_doh"]
-
-    # Each SKU's own last actual month and the stock it ended that month with.
-    last_actual = {}
-    for (_, sku), sku_months in metrics.items():
-        last = inventory_calc.build_monthly_series(sku_months)[-1]
-        last_actual[sku] = (last["month"], last["ending_stock"])
-
-    rows = []
-    without_forecast = []
-    for sku, (last_month, ending_stock) in last_actual.items():
-        sku_cols = _sku_columns(sku, details)
-        plan = inventory_calc.build_sell_in_plan(
-            ending_stock,
-            inventory_calc.add_months(last_month, 1),
-            months,
-            forecast.get(sku, {}),
-            target_for,
-            shipped.get(sku, {}),
-        )
-        if not plan:
-            without_forecast.append(sku_cols)
-            continue
-        for row in plan:
-            rows.append({**sku_cols, **row, "month": _iso(row["month"])})
+    forecast, source, _ = _plan_forecast(lines, details)
+    last_actual, plan_rows, without_forecast = _sku_plans(
+        metrics, forecast, shipped, threshold, months, details, source
+    )
+    rows = [{**row, "month": _iso(row["month"])} for row in plan_rows]
 
     if skus:
         rows = [row for row in rows if row["sku"] in skus]
@@ -905,8 +908,10 @@ def get_sell_in_outlook(
 
     threshold = _threshold_view(customer_id, customers[customer_id], versions)
     details = _sku_details()
-    forecast = _forecast_by_sku(customer_id, details)
-    last_actual, plan_rows, _ = _sku_plans(metrics, forecast, shipped, threshold, months, details)
+    lines = forecast_units.get_forecast_lines(customer_id)
+    forecast, source, initial = _plan_forecast(lines, details)
+    previous = _known_skus(lines.get("previous", {}), details)
+    last_actual, plan_rows, _ = _sku_plans(metrics, forecast, shipped, threshold, months, details, source)
 
     actuals_through = max(month for month, _ in last_actual.values())
     window = [inventory_calc.add_months(actuals_through, offset) for offset in range(-2, months + 1)]
@@ -917,10 +922,16 @@ def get_sell_in_outlook(
     ]
     recommended: dict[date, list[float]] = {}
     forecast_out: dict[date, list[float]] = {}
+    sources: dict[date, set[str]] = {}
     for row in plan_rows:
         recommended.setdefault(row["month"], []).append(row["recommended_sell_in"])
         forecast_out.setdefault(row["month"], []).append(row["forecast_sell_out"])
+        sources.setdefault(row["month"], set()).add(row["forecast_source"])
 
+    # The initial and previous lines cover the SKUs in view, actual months
+    # included, so they can be read against what actually sold as well as
+    # against the plan.
+    in_view = {sku for _, sku in metrics}
     series = []
     for month in window:
         actual = [by_month[month] for by_month in actual_by_sku if month in by_month]
@@ -931,10 +942,74 @@ def get_sell_in_outlook(
                 "sell_in_recommended": _sum_or_none(recommended.get(month, [])),
                 "sell_out_actual": _sum_or_none([row["sell_out"] for row in actual]),
                 "sell_out_forecast": _sum_or_none(forecast_out.get(month, [])),
+                "sell_out_initial": _sum_or_none(
+                    [initial[sku][month] for sku in in_view if month in initial.get(sku, {})]
+                ),
+                "sell_out_previous": _sum_or_none(
+                    [previous[sku][month] for sku in in_view if month in previous.get(sku, {})]
+                ),
+                "forecast_source": _one_source(sources.get(month, set())),
             }
         )
 
-    return {"customer": customer, "actuals_through": _iso(actuals_through), "months": series}
+    return {
+        "customer": customer,
+        "actuals_through": _iso(actuals_through),
+        "months": series,
+        "last_month_vs_forecast": _last_month_vs_forecast(metrics, forecast, source, actuals_through),
+    }
+
+
+def _one_source(sources: set[str]) -> str | None:
+    """"current" / "initial" when every SKU's forecast came from one line, "mixed" otherwise."""
+
+    if not sources:
+        return None
+    return next(iter(sources)) if len(sources) == 1 else "mixed"
+
+
+def _last_month_vs_forecast(
+    metrics: dict[tuple[int, str], dict[date, dict[str, float]]],
+    forecast: dict[str, dict[date, float]],
+    source: dict[str, dict[date, str]],
+    month: date,
+) -> dict | None:
+    """
+    The latest actual month's sell-out against what was forecast for it,
+    over the SKUs that have both, so the two figures cover the same products.
+    The forecast is the same one the plan uses (current where it has the
+    month, otherwise the initial). None when no SKU has both.
+    """
+
+    actual_total = forecast_total = 0.0
+    used: set[str] = set()
+    compared = with_actual = 0
+    for (_, sku), sku_months in metrics.items():
+        series = inventory_calc.build_monthly_series(sku_months)
+        actual_row = next((row for row in series if row["month"] == month), None)
+        if actual_row is None:
+            continue
+        with_actual += 1
+        if month not in forecast.get(sku, {}):
+            continue
+        compared += 1
+        actual_total += actual_row["sell_out"]
+        forecast_total += forecast[sku][month]
+        used.add(source[sku][month])
+    if not used:
+        return None
+
+    difference = actual_total - forecast_total
+    return {
+        "month": _iso(month),
+        "actual": round(actual_total, 2),
+        "forecast": round(forecast_total, 2),
+        "forecast_source": _one_source(used),
+        "difference": round(difference, 2),
+        "percent": round(difference / forecast_total * 100, 1) if forecast_total else None,
+        "skus_compared": compared,
+        "skus_with_actuals": with_actual,
+    }
 
 
 def _parse_month(value: str) -> date:

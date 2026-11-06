@@ -5,7 +5,7 @@ import { useState } from 'react';
 import SelectDropdown from '@/components/ui/SelectDropdown';
 import useSellInOutlook from '@/hooks/useSellInOutlook';
 import useSellInPlan from '@/hooks/useSellInPlan';
-import { formatDoh, formatMonth } from '@/app/utils/inventoryForm';
+import { formatDoh, formatMonth, formatUnits } from '@/app/utils/inventoryForm';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 
 import {
@@ -21,6 +21,49 @@ import SellInOutlookChart from './SellInOutlookChart';
 import SkuDropdown from './SkuDropdown';
 
 const MONTH_OPTIONS = [3, 6, 12].map((n) => ({ value: String(n), label: `${n} months` }));
+
+const FORECAST_SOURCE_LABEL = {
+  current: 'Sell-out Forecast (Current)',
+  initial: 'Initial Yearly Sell-out Forecast',
+  mixed: 'Current + Initial',
+};
+
+/**
+ * The latest actual month's sell-out against its forecast (backend
+ * inventory_service._last_month_vs_forecast), as pills above the chart.
+ *
+ * Only SKUs with a forecast for the month are compared, so when some have none
+ * the actual here is lower than the chart's, and the pills say how many.
+ *
+ * @param {{ comparison: { month: string, actual: number, forecast: number, forecast_source: string, difference: number, percent: number | null, skus_compared: number, skus_with_actuals: number } }} props
+ */
+function LastMonthVsForecast({ comparison }) {
+  const sign = comparison.difference > 0 ? '+' : comparison.difference < 0 ? '−' : '';
+  const percent = comparison.percent === null ? '' : ` (${sign}${Math.abs(comparison.percent).toFixed(1)}%)`;
+  const direction = comparison.difference > 0 ? 'above' : comparison.difference < 0 ? 'below' : 'on';
+  return (
+    <div className="mb-2 flex flex-wrap items-center gap-1.5" role="status">
+      <span className="text-[11px] font-medium text-deep-violet-blue">
+        {formatMonth(comparison.month)} sell-out vs forecast
+      </span>
+      {comparison.skus_compared < comparison.skus_with_actuals ? (
+        <StatTag
+          label="SKUs"
+          value={`${comparison.skus_compared} of ${comparison.skus_with_actuals} (the rest have no forecast)`}
+        />
+      ) : null}
+      <StatTag label="Actual" value={`${formatUnits(comparison.actual)} units`} />
+      <StatTag
+        label="Forecast"
+        value={`${formatUnits(comparison.forecast)} units · ${FORECAST_SOURCE_LABEL[comparison.forecast_source]}`}
+      />
+      <StatTag
+        label="Difference"
+        value={`${sign}${formatUnits(Math.abs(comparison.difference))} units${percent} ${direction} forecast`}
+      />
+    </div>
+  );
+}
 
 /**
  * Where the plan starts. Each SKU plans from its own last actual month, so when
@@ -144,6 +187,9 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
       )}
 
       <InventorySection title="Sell-in and sell-out" tags={outlookTags}>
+        {outlook.data?.last_month_vs_forecast ? (
+          <LastMonthVsForecast comparison={outlook.data.last_month_vs_forecast} />
+        ) : null}
         <InventoryChartSlot loading={outlook.loading} ready={Boolean(outlook.data)}>
           {outlook.data && (
             <SellInOutlookChart months={outlook.data.months} actualsThrough={outlook.data.actuals_through} />
