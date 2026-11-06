@@ -2,22 +2,13 @@
 // SCENARIO PITCH METRICS -- pure, no React
 // ============================================================
 //
-// The scenario's measures (blueprint Part 2.1; the impact summary above the
-// chart shows volume and gap, and its pitch summary is gone). They read the
-// monthly points the chart plots plus the engine's per-month deltas, never
-// the items, so draft promotions count the moment their source returns
-// cells. Everything is in units: the scenario predicts volume only.
+// The scenario's measures (blueprint Part 2.1): the seasonal average line,
+// month-span labels and the impact table's rows. The summary cards and pitch
+// card are gone; the Current-vs-Simulated table under the chart (by year and
+// by month) carries the numbers. Everything is in units: the scenario
+// predicts volume only.
 
 import { formatMonthLabel } from '@/app/utils/forecastView';
-
-function deltaFor(byMonth, monthYear, key) {
-  return byMonth.get(monthYear)?.[key] ?? 0;
-}
-
-// A month still to come: it has a Current forecast and no actual yet.
-function isForecastMonth(point) {
-  return point.current != null && point.actual == null;
-}
 
 /**
  * Seasonal average = mean of the months in view, using the actual where
@@ -32,87 +23,6 @@ export function seasonalAverage(points) {
     .filter((value) => value != null);
   if (!values.length) return null;
   return values.reduce((sum, value) => sum + value, 0) / values.length;
-}
-
-/**
- * Every pitch-card number for the months in view.
- *
- * @param {object[]} unitPoints buildMonthlyPoints(..., 'units')
- * @param {Map} byMonth simulate().byMonth
- */
-export function pitchMetrics(unitPoints, byMonth) {
-  // Volume added: units added, as a share of Current in the months the
-  // items cover.
-  let unitsAdded = 0;
-  let unitsBase = 0;
-  const impactMonths = [];
-  for (const point of unitPoints) {
-    const delta = deltaFor(byMonth, point.month_year, 'deltaUnits');
-    if (!delta) continue;
-    unitsAdded += delta;
-    unitsBase += point.current ?? 0;
-    impactMonths.push(point.month_year);
-  }
-
-  // Seasonal dip flattened: in forecast months below the seasonal average,
-  // the share of the gap that the items fill.
-  const average = seasonalAverage(unitPoints);
-  let dipTotal = 0;
-  let dipFilled = 0;
-  const dipMonths = [];
-  for (const point of unitPoints) {
-    if (average == null || !isForecastMonth(point) || point.current >= average) continue;
-    const gap = average - point.current;
-    dipTotal += gap;
-    dipFilled += Math.min(gap, deltaFor(byMonth, point.month_year, 'deltaUnits'));
-    dipMonths.push(point.month_year);
-  }
-
-  // Forecast gap closed: where Current is below the Initial Yearly Forecast,
-  // the share of that shortfall the items cover.
-  let shortfall = 0;
-  let closed = 0;
-  for (const point of unitPoints) {
-    if (!isForecastMonth(point) || point.initial == null || point.current >= point.initial) continue;
-    const gap = point.initial - point.current;
-    shortfall += gap;
-    closed += Math.min(gap, deltaFor(byMonth, point.month_year, 'deltaUnits'));
-  }
-
-  // Attainment: (actuals + forecast) / Initial Yearly Forecast, over the
-  // months that have an Initial value so both sides cover the same months.
-  let target = 0;
-  let achieved = 0;
-  let added = 0;
-  for (const point of unitPoints) {
-    if (point.initial == null) continue;
-    target += point.initial;
-    achieved += point.actual ?? point.current ?? 0;
-    if (point.actual == null) added += deltaFor(byMonth, point.month_year, 'deltaUnits');
-  }
-
-  return {
-    units: {
-      added: unitsAdded,
-      pctOfCurrent: unitsBase ? unitsAdded / unitsBase : null,
-      months: impactMonths,
-    },
-    dip: {
-      average,
-      total: dipTotal,
-      share: dipTotal ? dipFilled / dipTotal : null,
-      months: dipMonths,
-    },
-    gap: {
-      shortfall,
-      share: shortfall ? closed / shortfall : null,
-    },
-    attainment: {
-      target,
-      before: target ? achieved / target : null,
-      after: target ? (achieved + added) / target : null,
-    },
-  };
 }
 
 /**

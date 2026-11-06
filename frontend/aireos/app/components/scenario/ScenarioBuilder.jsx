@@ -10,7 +10,6 @@ import ForecastFilters from '@/components/forecast/ForecastFilters';
 import { mixCaption } from '@/components/forecast/ForecastYearTotals';
 import BlockTable from '@/components/scenario/BlockTable';
 import BuildingBlocksSection from '@/components/scenario/BuildingBlocksSection';
-import ImpactStrip from '@/components/scenario/ImpactStrip';
 import ModelViewToggle from '@/components/scenario/ModelViewToggle';
 import MonthlyPlan from '@/components/scenario/MonthlyPlan';
 import PromotionsSection from '@/components/scenario/PromotionsSection';
@@ -38,7 +37,7 @@ import {
   splitBasisNeeds,
   withSimulatedLine,
 } from '@/app/utils/scenarioEngine';
-import { monthSpanLabel, pitchMetrics, seasonalAverage } from '@/app/utils/scenarioPitch';
+import { monthSpanLabel, seasonalAverage } from '@/app/utils/scenarioPitch';
 import {
   MODEL_VIEWS,
   OFFICIAL_REFERENCE_SERIES,
@@ -258,16 +257,6 @@ export default function ScenarioBuilder() {
         ? { startMonth: selectedBlock.startMonth, endMonth: selectedBlock.endMonth, label: selectedBlock.name }
         : null,
   };
-  const metrics = pitchMetrics(unitPoints, byMonth);
-  const yearShares = simulatedYears
-    .filter((year) => year.deltaUnits)
-    .map((year) => {
-      const base = years.find((item) => item.year === year.year);
-      return {
-        year: year.year,
-        unitsPct: base?.volume.total ? year.deltaUnits / base.volume.total : null,
-      };
-    });
 
   // Comparison table rows: each year in view, then the next 12 months (the
   // months the Current line covers).
@@ -406,7 +395,6 @@ export default function ScenarioBuilder() {
                 canClearFilters={filters.canClear}
               />
             }
-            summary={<ImpactStrip metrics={metrics} years={yearShares} loading={view.loading} />}
             yearTable={
               <ScenarioTotals
                 singleSeries={singleSeries}
