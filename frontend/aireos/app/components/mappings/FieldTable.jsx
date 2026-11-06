@@ -187,7 +187,7 @@ function Confidence({ entry, canUndo, onConfirm, onUndo, canReset, onReset, disa
           row became background and read as approval. High stays in the ⓘ card. */}
       {filled && level !== 'high' && <ConfidenceBadge level={level} />}
       {guessed && !entry.reviewed && (
-        <Button type="button" variant="outline" size="xs" disabled={disabled} onClick={() => onConfirm(entry)} className="shrink-0">
+        <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={() => onConfirm(entry)} className="shrink-0">
           Looks right
         </Button>
       )}
@@ -290,7 +290,7 @@ function FieldRow({
           <Button
             type="button"
             variant="outline"
-            size="xs"
+            size="sm"
             disabled={disabled}
             onClick={() => onEdit(entry)}
             aria-label={`Edit how ${entry.label} is filled`}
