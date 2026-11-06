@@ -74,17 +74,33 @@ function itemState(item, isPromotion) {
   return edited ? 'edited' : 'saved';
 }
 
-// Switched-on items changing anything in these months, each with its units
-// over them, so the year table can say what makes up its Simulated figure
-// ("1 saved + 1 draft", and per item on hover).
-function itemsInMonths(monthCells, months, itemInfo) {
+// True when a switched-on item is for what the chart shows (its customer,
+// and its SKU or all SKUs) and runs at some point from `first` to `last`.
+function itemInView(item, filters, first, last) {
+  if (!item.customer || !item.startMonth || !item.endMonth) return false;
+  if (filters.customerName && filters.customerName !== item.customer) return false;
+  if (filters.productName && item.sku && filters.productName !== item.sku) return false;
+  return item.startMonth <= last && item.endMonth >= first;
+}
+
+// The switched-on items in a table row, so it can say what makes up its
+// Simulated figure ("1 saved + 1 draft", and per item on hover): those
+// changing these months, with their units, then those that run in the row's
+// period for the chart's customer and SKU but change nothing (`notCounted`:
+// their months have actual sales by now), so a saved block never quietly
+// disappears from the count.
+function itemsInMonths(monthCells, months, itemInfo, { activeItems, filters, first, last }) {
   const units = new Map();
   for (const month of months) {
     for (const [id, totals] of monthCells.get(month) ?? []) {
       units.set(id, (units.get(id) ?? 0) + totals.deltaUnits);
     }
   }
-  return { items: [...units].map(([id, deltaUnits]) => ({ id, ...itemInfo.get(id), deltaUnits })) };
+  const counting = [...units].map(([id, deltaUnits]) => ({ id, ...itemInfo.get(id), deltaUnits }));
+  const idle = activeItems
+    .filter((item) => !units.has(item.id) && itemInView(item, filters, first, last))
+    .map((item) => ({ id: item.id, ...itemInfo.get(item.id), deltaUnits: 0, notCounted: true }));
+  return { items: [...counting, ...idle] };
 }
 
 /**
@@ -205,6 +221,7 @@ export default function ScenarioBuilder() {
       { name: promotion.mechanicLabel, kind: 'promotion', state: itemState(promotion, true) },
     ]),
   ]);
+  const activeItems = [...counted.blocks, ...activePromotions];
   const { cells, byMonth, byItem } = simulate(rows, counted, SCENARIO_SOURCES, chartView(filters, splitBasis.basis));
   // Nothing simulated until a switched-on item changes something in view:
   // no Simulated line, legend entry or table columns before that.
@@ -218,7 +235,12 @@ export default function ScenarioBuilder() {
   const monthItems = new Map(
     [...monthCells].map(([month, items]) => [
       month,
-      [...items].map(([itemId, totals]) => ({ itemId, name: names.get(itemId) ?? '', ...totals })),
+      [...items].map(([itemId, totals]) => ({
+        itemId,
+        name: names.get(itemId) ?? '',
+        state: itemInfo.get(itemId)?.state ?? 'saved',
+        ...totals,
+      })),
     ])
   );
   const monthsByItem = new Map();
@@ -271,7 +293,12 @@ export default function ScenarioBuilder() {
         caption: base ? mixCaption(base) : '',
         current: base?.volume.total ?? null,
         delta: year.deltaUnits,
-        ...itemsInMonths(monthCells, yearMonths, itemInfo),
+        ...itemsInMonths(monthCells, yearMonths, itemInfo, {
+          activeItems,
+          filters,
+          first: `${year.year}-01-01`,
+          last: `${year.year}-12-01`,
+        }),
       };
     }),
     ...(horizonMonths.length
@@ -281,7 +308,12 @@ export default function ScenarioBuilder() {
             label: 'Next 12 months',
             current: sumHorizonForecast(basePoints),
             delta: horizonMonths.reduce((total, month) => total + (byMonth.get(month)?.deltaUnits ?? 0), 0),
-            ...itemsInMonths(monthCells, horizonMonths, itemInfo),
+            ...itemsInMonths(monthCells, horizonMonths, itemInfo, {
+              activeItems,
+              filters,
+              first: horizonMonths[0],
+              last: horizonMonths[horizonMonths.length - 1],
+            }),
           },
         ]
       : []),
@@ -352,11 +384,9 @@ export default function ScenarioBuilder() {
           'grid items-start gap-2',
           panelCollapsed
             ? 'min-[1100px]:grid-cols-[minmax(0,1fr)_56px]'
-            : 'min-[1100px]:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)] min-[1100px]:items-stretch'
+            : 'min-[1100px]:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]'
         )}
       >
-        {/* Side by side, the chart card and the panel end at the same height:
-            the row is as tall as the taller one and the chart card stretches. */}
         <div className="min-w-0 space-y-1 min-[1100px]:flex min-[1100px]:flex-col min-[1100px]:[&>[data-slot=card]]:flex-1">
           {showViewToggle ? (
             <ModelViewToggle
@@ -441,19 +471,10 @@ export default function ScenarioBuilder() {
 
         </div>
 
-        {/* Side by side, the open panel takes exactly the chart card's height
-            (absolute, inset-0) instead of setting the row's, so both end level
-            whatever the tab or the chart view. Each tab scrolls on its own under
-            the fixed tab buttons, and overscroll-contain stops a scroll that
-            reaches a tab's end from carrying on into the page. */}
-        <div
-          className={cn(
-            'relative min-w-0',
-            panelCollapsed
-              ? null
-              : 'min-[1100px]:[&>aside]:absolute min-[1100px]:[&>aside]:inset-0 min-[1100px]:[&_[data-slot=tabs]]:h-full min-[1100px]:[&_[data-slot=tabs-content]]:min-h-0 min-[1100px]:[&_[data-slot=tabs-content]]:overflow-y-auto min-[1100px]:[&_[data-slot=tabs-content]]:overscroll-contain min-[1100px]:[&_[data-slot=tabs-content]]:pr-1'
-          )}
-        >
+        {/* The panel is as tall as its own content (the grid aligns to the
+            top), never the chart card's height or the window's, so switching
+            By year / By month leaves it exactly as it is. */}
+        <div className="min-w-0">
         <ScenarioPanel
           collapsed={panelCollapsed}
           onCollapsedChange={setPanelCollapsed}

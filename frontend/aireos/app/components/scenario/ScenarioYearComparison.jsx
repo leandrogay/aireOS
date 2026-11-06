@@ -57,7 +57,10 @@ function ItemsBadge({ items }) {
           {groups.flatMap((group) =>
             group.items.map((item) => (
               <li key={item.id} className="tabular-nums">
-                • {group.hover} {item.kind}: {item.name || 'Untitled'} ({signedFigure(item.deltaUnits)} units)
+                • {group.hover} {item.kind}: {item.name || 'Untitled'}{' '}
+                {item.notCounted
+                  ? '(no change: its months have actual sales)'
+                  : `(${signedFigure(item.deltaUnits)} units)`}
               </li>
             ))
           )}
@@ -95,7 +98,9 @@ export default function ScenarioYearComparison({ rows, loading = false }) {
   }
   if (!rows.length) return null;
 
-  const compare = rows.some((row) => row.items.length > 0);
+  // Items that change nothing (notCounted) are listed but don't open the
+  // Simulated columns on their own.
+  const compare = rows.some((row) => row.items.some((item) => !item.notCounted));
 
   return (
     <section aria-label="Current and simulated totals" className="overflow-x-auto rounded-md border border-lavander">

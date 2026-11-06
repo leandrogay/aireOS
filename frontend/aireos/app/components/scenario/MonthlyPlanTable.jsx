@@ -36,23 +36,44 @@ function Header({ label, hint, align = 'right' }) {
   );
 }
 
+const chipClass =
+  'mt-1 inline-flex max-w-[7.5rem] items-center gap-1 rounded-full px-2 py-px text-[10px] font-semibold text-scenario-ink';
+// Saved items in a filled chip; drafts and unsaved edits outlined and
+// dashed, as in the By year badge (ScenarioYearComparison), since they move
+// the line without being saved.
+const savedChip = 'bg-scenario-soft hover:bg-scenario/15';
+const unsavedChip = 'border border-dashed border-scenario/60 bg-white hover:bg-scenario-soft';
+const STATE_TAGS = { draft: 'Draft', edited: 'Unsaved edits' };
+
+// "2 blocks" or "2 blocks · 1 draft" for a month several items add to.
+function manyLabel(items) {
+  const unsaved = items.filter((item) => item.state !== 'saved').length;
+  return `${items.length} blocks${unsaved ? ` · ${unsaved} unsaved` : ''}`;
+}
+
 // The blocks adding to a month: one opens straight away; several open a
 // short list to pick from.
 function BlockLinks({ items, onOpen }) {
-  const chip =
-    'mt-1 inline-flex max-w-[7.5rem] items-center gap-1 rounded-full bg-scenario-soft px-2 py-px text-[10px] font-semibold text-scenario-ink hover:bg-scenario/15';
   if (items.length === 1) {
+    const [item] = items;
+    const tag = STATE_TAGS[item.state];
     return (
-      <button type="button" onClick={() => onOpen(items[0].itemId)} className={chip} title={`Edit ${items[0].name}`}>
-        <span className="truncate">{items[0].name}</span>
+      <button
+        type="button"
+        onClick={() => onOpen(item.itemId)}
+        className={cn(chipClass, tag ? unsavedChip : savedChip)}
+        title={tag ? `Edit ${item.name} (${tag.toLowerCase()})` : `Edit ${item.name}`}
+      >
+        <span className="truncate">{item.name}</span>
       </button>
     );
   }
+  const anyUnsaved = items.some((item) => item.state !== 'saved');
   return (
     <Popover>
-      <PopoverTrigger className={chip}>
-        {items.length} blocks
-        <ChevronDown className="size-3" aria-hidden="true" />
+      <PopoverTrigger className={cn(chipClass, anyUnsaved ? unsavedChip : savedChip)}>
+        <span className="truncate">{manyLabel(items)}</span>
+        <ChevronDown className="size-3 shrink-0" aria-hidden="true" />
       </PopoverTrigger>
       <PopoverContent align="end" className="w-56 bg-white p-1.5">
         <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/50">
@@ -63,9 +84,14 @@ function BlockLinks({ items, onOpen }) {
             key={item.itemId}
             type="button"
             onClick={() => onOpen(item.itemId)}
-            className="block w-full truncate rounded px-2 py-1 text-left text-xs text-deep-violet-blue hover:bg-cream"
+            className="flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs text-deep-violet-blue hover:bg-cream"
           >
-            {item.name}
+            <span className="truncate">{item.name}</span>
+            {STATE_TAGS[item.state] ? (
+              <span className="shrink-0 rounded-full border border-dashed border-scenario/60 px-1.5 text-[10px] text-scenario-ink">
+                {STATE_TAGS[item.state]}
+              </span>
+            ) : null}
           </button>
         ))}
       </PopoverContent>

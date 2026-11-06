@@ -51,14 +51,14 @@ function variance(adjusted, lastYear) {
  *     blocks: { units },                     // switched-on items' uplift
  *     adjusted: { units },                   // model + blocks
  *     variance: { units, unitsPct } | null,
- *     items: [{ itemId, name }],             // what adds to this month
+ *     items: [{ itemId, name, state }],      // what adds to this month; state 'saved' | 'draft' | 'edited'
  *   }
  *
  * @param {{
  *   rows: object[],               forecast rows from GET /api/forecast
  *   lastYearActuals: object[],    actuals for the months 12 months earlier
  *   byMonth: Map,                 simulate().byMonth
- *   monthItems: Map,              month_year → [{ itemId, name }]
+ *   monthItems: Map,              month_year → [{ itemId, name, state }]
  * }} input
  */
 export function buildPlanRows({ rows, lastYearActuals, byMonth, monthItems }) {
@@ -78,7 +78,7 @@ export function buildPlanRows({ rows, lastYearActuals, byMonth, monthItems }) {
       blocks,
       adjusted,
       variance: variance(adjusted, previous),
-      items: (monthItems.get(monthYear) ?? []).map(({ itemId, name }) => ({ itemId, name })),
+      items: (monthItems.get(monthYear) ?? []).map(({ itemId, name, state }) => ({ itemId, name, state })),
     };
   });
 }
