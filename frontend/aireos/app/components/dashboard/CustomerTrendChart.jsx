@@ -3,7 +3,9 @@
 import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts';
 
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip } from '@/components/ui/chart';
+import { ESTIMATE_PILL_CLASS } from '@/components/dashboard/EstMark';
 import { hasEstimate } from '@/app/utils/estimatedRevenue';
+import { cn } from '@/lib/utils';
 import { trendChartKind, trendRows, trendSeries } from '@/app/utils/customerTrend';
 import {
   BAR_ANIMATION,
@@ -12,6 +14,8 @@ import {
   TILTED_LABEL_LEFT_MARGIN,
   formatMetric,
   metricAxisFormatter,
+  METRIC_AXIS_DOMAIN,
+  CHART_TOP_MARGIN,
   periodAxisProps,
 } from '@/app/utils/trendChart';
 
@@ -25,10 +29,10 @@ function formatValue(metric, value) {
   return formatMetric(metric, value);
 }
 
-// The hovered period: every customer's figure in its colour, "(EST)" after
+// The hovered period: every customer's figure in its colour, an est. tag after
 // the name of any whose revenue is partly estimated, and the customers'
 // total. Two columns, so names and figures each line up with one fixed gap
-// between them, whichever names carry (EST).
+// between them, whichever names carry the tag.
 function TrendTooltip({ active, payload, metric, series }) {
   if (!active || !payload?.length) return null;
   const row = payload[0].payload;
@@ -43,7 +47,7 @@ function TrendTooltip({ active, payload, metric, series }) {
             <span className="h-2.5 w-2.5 shrink-0 rounded-[2px]" style={{ backgroundColor: item.color }} />
             {item.label}
             {hasEstimate(row[`${item.key}Estimated`]) && (
-              <span className="text-[10px] font-semibold tracking-wider text-violet">(EST)</span>
+              <span className={cn(ESTIMATE_PILL_CLASS, 'h-4 px-1 text-[10px]')}>est.</span>
             )}
           </span>
           <span className="text-right font-mono font-medium text-deep-violet-blue tabular-nums">
@@ -82,12 +86,14 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
   // on the plot's edges, so the line chart pads its x-axis and keeps room on
   // the right for its last point and label.
   const margin = {
+    top: CHART_TOP_MARGIN,
     bottom: 8,
     ...(axisProps.angle ? { left: TILTED_LABEL_LEFT_MARGIN } : {}),
     ...(kind === 'lines' ? { right: 16 } : {}),
   };
   const yAxis = (
     <YAxis
+      domain={METRIC_AXIS_DOMAIN}
       tickFormatter={metricAxisFormatter(metric)}
       width={50}
       tick={{ fontSize: 10 }}
@@ -100,7 +106,7 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
 
   if (customers.length === 0) {
     return (
-      <p className="flex flex-1 items-center text-sm text-deep-violet-blue/60">
+      <p className="flex flex-1 items-center justify-center text-center text-sm text-deep-violet-blue/60">
         Select at least one customer.
       </p>
     );
@@ -108,7 +114,7 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
 
   if (series.length === 0 || rows.length === 0) {
     return (
-      <p className="flex flex-1 items-center text-sm text-deep-violet-blue/60">
+      <p className="flex flex-1 items-center justify-center text-center text-sm text-deep-violet-blue/60">
         No sales for the selected customers in this period.
       </p>
     );

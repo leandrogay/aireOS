@@ -116,6 +116,40 @@ export function metricAxisFormatter(metric) {
   return metric === 'units' ? formatAxisUnits : formatAxisCurrency;
 }
 
+// The y-axis has this many equal steps above 0 (5 ticks, Recharts' default).
+const AXIS_STEPS = 4;
+// Step sizes that still read well as labels (1.5k, 6k, 2.5M ...), times a
+// power of ten. Finer than 1/2/5 alone, which could nearly double the axis.
+const NICE_STEP_FACTORS = [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10];
+// Room above the tallest value, as a share of it.
+const HEADROOM = 1.05;
+
+/**
+ * The top of a chart's y-axis: at least 5% above the tallest bar, stack or
+ * point, so the highest value never sits on the plot's top edge (where a
+ * line's point and dot are clipped off), and a whole number of equal, round
+ * steps (AXIS_STEPS), so every tick is the same distance apart. Recharts
+ * puts its last tick on the axis top, so a top that is not a whole step
+ * (e.g. 24.1k after ticks of 6.5k) would leave a short last gap.
+ *
+ * @param {number} dataMax
+ * @returns {number}
+ */
+export function niceAxisMax(dataMax) {
+  if (!(dataMax > 0)) return 1;
+  const rawStep = (dataMax * HEADROOM) / AXIS_STEPS;
+  const magnitude = 10 ** Math.floor(Math.log10(rawStep));
+  const factor = NICE_STEP_FACTORS.find((f) => f * magnitude >= rawStep);
+  // toPrecision drops float noise (1.2 * 0.1 is 0.12000000000000001).
+  return Number((factor * magnitude * AXIS_STEPS).toPrecision(12));
+}
+
+// The y-axis of every dashboard trend chart: 0 to niceAxisMax.
+export const METRIC_AXIS_DOMAIN = [0, niceAxisMax];
+
+// Room above the plot for the top tick label and a point's hover dot.
+export const CHART_TOP_MARGIN = 12;
+
 // Stack order for the per-format bar: Recharts stacks <Bar> elements bottom-up
 // in the order they're rendered, and that order is fixed across every bar in
 // the chart (it can't vary per period) — so this picks one order for the

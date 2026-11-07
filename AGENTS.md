@@ -134,7 +134,7 @@ aireOS/
     │   │   │                      hooks/useConfirmAction; filter kit (Promotions, SKUs, Nomenclatures): FilterBar (card + grid +
     │   │   │                      Reset) holding FilterSelect (single pick) / MultiSelectDropdown (tick-box), whose closed look
     │   │   │                      comes from filterControl.js (filterControlClass)
-    │   │   ├── dashboard/         ChannelSwitch (Offline / Online, beside the page title), DashboardFilters,
+    │   │   ├── dashboard/         ChannelSwitch (Offline / Online, top right of the trend card), DashboardFilters,
     │   │   │                      CustomerSelector, FilterBadge, PeriodControls (Period /
     │   │   │                      Compare to: DateRangeControl, CompareControl, MonthRangeCalendar — whole months only),
     │   │   │                      RevenueTrendCard (always by format) → TrendChart (FormatTrendChart),
@@ -172,7 +172,7 @@ aireOS/
     │       ├── trendChart.js      Trend chart labels, x-axis setup (long week runs labelled by month), bar sizing, format stack order, Revenue/Volume formatting
     │       ├── weeklyGaps.js      "No weekly data for …" message: monthly-only months merged into ranges, capped
     │       ├── priceMix.js        Avg-price change split into SKU price vs product mix
-    │       ├── estimatedRevenue.js EST sign: when a revenue figure includes estimated revenue, and its hover text
+    │       ├── estimatedRevenue.js est. sign: when a revenue figure includes estimated revenue, and its hover text
     │       ├── customerTrend.js   Cross-customer chart: MAX_COMPARED_CUSTOMERS (3), bars up to MAX_BAR_PERIODS (6) then lines, series/rows
     │       ├── storeFormats.js    FORMAT_COLORS + formatColor() per store format
     │       ├── dohSettingsForm.js validate/build/formFrom helpers for the DOH threshold form, GLOBAL_DEFAULT_DOH
@@ -369,7 +369,7 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | `_PROMOTION_COLUMNS` (nested `stores`, `skus`) | `PromotionList.jsx`, `promotionOverview.js` |
 | `sales.py` query-param names (`start_date`, `end_date`, `granularity`, `customer`, `store`, `sku` …) | `URLSearchParams` keys in `hooks/*.js` and `services/salesApi.js` |
 | `sellout_service.get_customer_trends` (`/api/sales/customer-trends`: `customers[]` with `offline`/`online` period lists, `has_*`), `MAX_COMPARED_CUSTOMERS` | `salesApi.getCustomerTrends`, `useCustomerTrends.js`, `utils/customerTrend.js` (`MAX_COMPARED_CUSTOMERS`), `CustomerTrendChart.jsx`, `CustomerSelector.jsx` |
-| `sellout_service` estimated part of revenue: `estimated_revenue` (dashboard summary rows, customer totals), `estimated_value` (SKU ranking), from the `revenue_estimated` row flag | `utils/estimatedRevenue.js`, `EstMark.jsx` (one under the chart in `RevenueTrendCard`, top right of each `RevenueSummaryCards` tile, beside `SkuRanking` values; `TrendChart` tooltip) |
+| `sellout_service` estimated part of revenue: `estimated_revenue` (dashboard summary rows, customer totals), `estimated_value` (SKU ranking), from the `revenue_estimated` row flag | `utils/estimatedRevenue.js`, `EstMark.jsx` (top right of each `RevenueSummaryCards` tile, beside `SkuRanking` values; `TrendChart` tooltip) |
 | `mapping_view` packet/rule keys (`targetField`, `sourceColumn`, `editable`, `status`, `field`, `meltGroup`, `options`, `description`, `requiredMissing`, `checks`) | `utils/mappingReview.js`, `components/mappings/*` |
 | `mapping_checks` check shape (`id`, `level`, `passed`, `message`, `fields`, `evidence`) | `utils/mappingChecks.js`, `MappingChecks.jsx` |
 | packet `skuCodes`, `masterSkus`, `contractFormat`, `instructions`; processing preview/rejection fields | `utils/skuCodeTable.js`, `SkuCodeTable.jsx`, `MappingReviewPanel.jsx`, `UploadFileRow.jsx` |

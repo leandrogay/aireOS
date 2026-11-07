@@ -14,6 +14,8 @@ import {
   exactBucketLabel,
   formatMetric,
   metricAxisFormatter,
+  METRIC_AXIS_DOMAIN,
+  CHART_TOP_MARGIN,
   TILTED_LABEL_LEFT_MARGIN,
   comparisonAxisProps,
   sortFormatsByTotalDesc,
@@ -208,14 +210,14 @@ export default function ComparisonMixChart({ rows, periodNames, granularity, met
   return (
     <>
       <ChartContainer config={{}} className={CHART_SIZE_CLASS}>
-        <BarChart accessibilityLayer data={chartData} margin={{ bottom: 8, left: TILTED_LABEL_LEFT_MARGIN }}>
+        <BarChart accessibilityLayer data={chartData} margin={{ top: CHART_TOP_MARGIN, bottom: 8, left: TILTED_LABEL_LEFT_MARGIN }}>
           <CartesianGrid vertical={false} />
           <XAxis
             dataKey="axisLabel"
             {...axisProps}
             tick={false}
           />
-          <YAxis tickFormatter={metricAxisFormatter(metric)} width={50} tick={{ fontSize: 10 }} />
+          <YAxis domain={METRIC_AXIS_DOMAIN} tickFormatter={metricAxisFormatter(metric)} width={50} tick={{ fontSize: 10 }} />
           <ChartTooltip content={<MixTooltip formats={formats} metric={metric} />} />
           <defs>
             {formats.map((format) => (
