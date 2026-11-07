@@ -1,5 +1,7 @@
 'use client';
 
+import { Pencil } from 'lucide-react';
+
 import {
   DOH_STATUS_LABELS,
   formatDoh,
@@ -8,7 +10,7 @@ import {
   formatUnits,
 } from '@/app/utils/inventoryForm';
 import { retailerLabel } from '@/app/utils/retailerLabel';
-import { Button } from '@/components/ui/button';
+import RowActions from '@/components/ui/RowActions';
 import { cn } from '@/lib/utils';
 
 import InventoryTableFrame, {
@@ -32,7 +34,7 @@ const STATUS_CLASSES = {
 /**
  * SKU-level inventory rows (backend _stock_row; with `showDoh` also the DOH,
  * target, gap and status columns from get_customer_view). Newest month first.
- * `onEdit(row)` adds an Edit button that hands the row to the record form.
+ * `onEdit(row)` adds an action that opens the record form.
  *
  * @param {object} props
  * @param {object[]} props.rows
@@ -53,12 +55,12 @@ export default function InventorySkuTable({
   const sorted = [...rows].sort(
     (a, b) => b.month.localeCompare(a.month) || a.product_name.localeCompare(b.product_name),
   );
-  const columnCount = 6 + (showCustomer ? 1 : 0) + (showDoh ? 4 : 0) + (onEdit ? 1 : 0);
+  const columnCount = 8 + (showCustomer ? 1 : 0) + (showDoh ? 4 : 0) + (onEdit ? 1 : 0);
 
   return (
     <InventoryTableFrame title={title} rows={sorted} loading={loading}>
       {(visible, monthHeader) => (
-        <table className={inventoryTableClass}>
+        <table className={cn(inventoryTableClass, showDoh ? 'min-w-[84rem]' : 'min-w-[64rem]')}>
           <thead className={inventoryTheadClass}>
             <tr className={inventoryHeadRowClass}>
               {showCustomer && <th className={inventoryThClass}>Customer</th>}
@@ -78,7 +80,7 @@ export default function InventorySkuTable({
                   <th className={inventoryThClass}>Status</th>
                 </>
               )}
-              {onEdit && <th className={inventoryThClass}>Action</th>}
+              {onEdit && <th className={inventoryThClass}><span className="sr-only">Actions</span></th>}
             </tr>
           </thead>
           <tbody aria-busy={loading}>
@@ -116,18 +118,13 @@ export default function InventorySkuTable({
                     </>
                   )}
                   {onEdit && (
-                    <td className={inventoryTdClass}>
+                    <td className={cn(inventoryTdClass, 'text-right')}>
                       {/* A month with no rows of its own (stock carried forward) has nothing to edit. */}
                       {row.has_data && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="xs"
-                          onClick={() => onEdit(row)}
-                          className="h-auto rounded-md border-deep-violet-blue/30 bg-white px-2 py-0.5 text-[11px] font-medium text-deep-violet-blue transition hover:bg-cream hover:text-deep-violet-blue"
-                        >
-                          Edit
-                        </Button>
+                        <RowActions
+                          label={`Actions for ${row.product_name} in ${formatMonth(row.month)}`}
+                          actions={[{ key: 'edit', label: 'Edit inventory', icon: Pencil, onSelect: () => onEdit(row) }]}
+                        />
                       )}
                     </td>
                   )}

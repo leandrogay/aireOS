@@ -93,7 +93,7 @@ export default function PromoUpliftDetails({ row, shownUplift, moments, startEdi
           <DialogDescription>Current uplift value and every saved version of this mechanic.</DialogDescription>
         </DialogHeader>
         <RecommendedReadout scopeRow={row.view ?? row} moments={moments} />
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg border border-border p-4">
+        <dl className="grid gap-x-6 gap-y-3 rounded-lg border border-border p-4 sm:grid-cols-2">
           <div>
             <dt className="text-xs text-muted-foreground">{editing ? 'Manual Uplift (%)' : 'Uplift in use'}</dt>
             <dd className="mt-0.5 font-medium">

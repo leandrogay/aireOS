@@ -9,6 +9,15 @@ import TableSearch from '@/components/ui/TableSearch';
 import ConfirmDeleteDialog from '@/components/promotions/ConfirmDeleteDialog';
 import PromotionFilters from '@/components/promotions/PromotionFilters';
 import PromotionRow from '@/components/promotions/PromotionRow';
+import { promotionRowActions } from '@/components/promotions/PromotionRow';
+import PromotionDetails from '@/components/promotions/PromotionDetails';
+import MobileRecordCard from '@/components/ui/MobileRecordCard';
+import RowActions from '@/components/ui/RowActions';
+import StatusPill from '@/components/ui/StatusPill';
+import { formatDate } from '@/lib/formatDate';
+import { retailerLabel } from '@/app/utils/retailerLabel';
+import { promoTypeLabel } from '@/app/utils/promotionForm';
+import { summariseNames } from '@/app/utils/tableView';
 import useConfirmAction from '@/hooks/useConfirmAction';
 import { nextSort, paginate } from '@/app/utils/tableView';
 import {
@@ -21,6 +30,10 @@ import {
   uniquePromotionRetailers,
   uniquePromotionStoreNames,
   uniquePromotionTypes,
+  promotionRetailerNames,
+  promotionStoreNames,
+  promotionStatus,
+  promotionStatusLabel,
 } from '@/app/utils/promotionOverview';
 
 import { PROMOTION_COLUMNS } from './columns';
@@ -176,6 +189,35 @@ export default function PromotionList({
         sort={sort}
         onSort={handleSort}
         emptyState={noMatches || null}
+        mobileContent={
+          <div className="grid gap-2">
+            {pageRows.map((promotion) => {
+              const id = promotion.promotion_id;
+              const status = promotionStatus(promotion);
+              const open = isExpanded(id);
+              return (
+                <MobileRecordCard
+                  key={id}
+                  title={summariseNames(promotionRetailerNames(promotion).map(retailerLabel))}
+                  subtitle={summariseNames(promotionStoreNames(promotion))}
+                  badge={<StatusPill tone={status === 'active' ? 'success' : status === 'upcoming' ? 'info' : 'muted'}>{promotionStatusLabel(status)}</StatusPill>}
+                  actions={<RowActions label={`Actions for promotion ${id}`} actions={promotionRowActions(promotion, editingId === id, onEdit, deletion.request)} />}
+                  fields={[
+                    { label: 'Starts', value: formatDate(promotion.period_start) },
+                    { label: 'Ends', value: formatDate(promotion.period_end) },
+                    { label: 'Type', value: promoTypeLabel(promotion.promo_type) },
+                    { label: 'Mechanic', value: promotion.promotion_mechanic || '—' },
+                  ]}
+                >
+                  <Button variant="link" size="sm" aria-expanded={open} onClick={() => onToggle(id)} className="mt-2 h-auto px-0 text-xs text-deep-violet-blue">
+                    {open ? 'Hide details' : 'View details'}
+                  </Button>
+                  {open && <div className="mt-2 border-t border-lavander/70 pt-2"><PromotionDetails promotion={promotion} /></div>}
+                </MobileRecordCard>
+              );
+            })}
+          </div>
+        }
       >
         {pageRows.map((promotion) => {
           const id = promotion.promotion_id;

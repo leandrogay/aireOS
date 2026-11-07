@@ -179,6 +179,9 @@
   * {
     @apply border-border outline-ring/50;
   }
+  :where(button:not(:disabled), a[href], select:not(:disabled), summary, input[type="checkbox"]:not(:disabled), input[type="radio"]:not(:disabled), [role="button"]:not([aria-disabled="true"]):not([data-disabled])) {
+    cursor: pointer;
+  }
   body {
     @apply bg-background text-foreground;
   }
@@ -286,5 +289,40 @@
     animation: none;
     background-image: none;
     color: color-mix(in srgb, var(--aire-deep-blue) 60%, transparent);
+  }
+}
+
+/* Keep long desktop lists scannable without changing their row content. */
+@media (min-width: 640px) {
+  .aire-table-grid thead th:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background-color: var(--aire-cream);
+  }
+
+  .aire-table-grid tbody > tr:not(:has(> td[colspan])) > td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background-color: white;
+  }
+
+  .aire-table-grid tbody > tr:not(:has(> td[colspan])) > td {
+    transition: background-color 140ms ease, box-shadow 140ms ease;
+  }
+
+  .aire-table-grid tbody > tr:nth-child(even):not(:has(> td[colspan])) > td {
+    background-color: color-mix(in srgb, var(--aire-cream) 17%, white);
+  }
+
+  .aire-table-grid tbody > tr:not(:has(> td[colspan])):hover > td,
+  .aire-table-grid tbody > tr:not(:has(> td[colspan])):focus-within > td {
+    background-color: color-mix(in srgb, var(--aire-lavender) 28%, white);
+  }
+
+  .aire-table-grid tbody > tr:not(:has(> td[colspan])):hover > td:first-child,
+  .aire-table-grid tbody > tr:not(:has(> td[colspan])):focus-within > td:first-child {
+    box-shadow: inset 3px 0 0 var(--aire-deep-blue);
   }
 }

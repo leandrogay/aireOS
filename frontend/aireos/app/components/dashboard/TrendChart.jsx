@@ -16,8 +16,10 @@ import {
   formatRevenue,
   metricAxisFormatter,
   periodAxisProps,
+  yearAxisProps,
   sortFormatsByTotalDesc,
 } from '@/app/utils/trendChart';
+import useMediaQuery from '@/hooks/useMediaQuery';
 import TooltipChange from '@/components/dashboard/TooltipChange';
 
 // The trend with no comparison (FormatTrendChart), revenue or units (the
@@ -118,11 +120,12 @@ function TrendTooltip({ active, payload, granularity, metric }) {
  * @param {{ periodByFormat: Array<object>, periodTotal: Array<object>, granularity: 'week' | 'month', metric?: 'revenue' | 'units' }} props
  */
 export function FormatTrendChart({ periodByFormat, periodTotal, granularity, metric = 'revenue' }) {
+  const mobile = useMediaQuery('(max-width: 639px)');
   const formats = sortFormatsByTotalDesc(periodByFormat);
   const unnamedOnly = formats.length === 1 && formats[0] === UNNAMED_FORMAT;
   const chartConfig = Object.fromEntries(formats.map((format) => [format, { label: format, color: formatColor(format) }]));
   const chartData = pivotByFormat(periodByFormat, periodTotal, metric);
-  const axisProps = periodAxisProps(chartData, granularity);
+  const axisProps = mobile ? yearAxisProps(chartData, 'periodStart') : periodAxisProps(chartData, granularity);
   // Tilted labels run down-left from their bar, so the first needs room past the y-axis.
   const margin = axisProps.angle ? { bottom: 8, left: TILTED_LABEL_LEFT_MARGIN } : { bottom: 8 };
 
@@ -130,7 +133,7 @@ export function FormatTrendChart({ periodByFormat, periodTotal, granularity, met
     <ChartContainer config={chartConfig} className={CHART_SIZE_CLASS}>
       <BarChart accessibilityLayer data={chartData} margin={margin}>
         <CartesianGrid vertical={false} />
-        <XAxis dataKey="displayLabel" {...axisProps} />
+        <XAxis dataKey={mobile ? 'periodStart' : 'displayLabel'} {...axisProps} />
         <YAxis tickFormatter={metricAxisFormatter(metric)} width={50} tick={{ fontSize: 10 }} />
         {/* Above the legend, which is drawn after it and would show through. */}
         <ChartTooltip content={<TrendTooltip granularity={granularity} metric={metric} />} wrapperStyle={{ zIndex: 10 }} />

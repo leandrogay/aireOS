@@ -62,6 +62,29 @@ export function periodAxisProps(rows, granularity) {
   };
 }
 
+// One tick in the middle of each calendar year keeps a long monthly or weekly
+// series readable on a phone. The full period remains available in tooltips.
+export function yearAxisProps(rows, dateKey) {
+  const byYear = new Map();
+  rows.forEach((row, index) => {
+    const date = String(row[dateKey] ?? '');
+    const year = date.slice(0, 4);
+    if (!/^\d{4}$/.test(year)) return;
+    const indices = byYear.get(year) ?? [];
+    indices.push(index);
+    byYear.set(year, indices);
+  });
+  return {
+    ticks: [...byYear.values()].map((indices) => rows[indices[Math.floor((indices.length - 1) / 2)]][dateKey]),
+    tickFormatter: (date) => String(date).slice(0, 4),
+    interval: 0,
+    angle: 0,
+    textAnchor: 'middle',
+    height: 28,
+    tickMargin: 6,
+  };
+}
+
 // The comparison chart labels both bars of every bucket, which never fit
 // flat side by side, so its labels are always tilted and never skipped.
 export function comparisonAxisProps(granularity) {
