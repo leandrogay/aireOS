@@ -2,8 +2,10 @@
 
 ## Setup
 
+Requires Node.js 20.12+ (22 LTS recommended).
+
 ```bash
-cd frontend
+cd frontend/aireos
 npm install
 ```
 
@@ -13,10 +15,10 @@ Download `.env.frontend` from Google Drive and place it in `frontend/aireos/` (n
 
 ## Serving the frontend
 
-**Terminal 2 — Frontend:**
+Start the backend first (see [backend/README.md](../../backend/README.md)), then:
 
 ```bash
-cd frontend
+cd frontend/aireos
 npm run dev
 ```
 
