@@ -3,6 +3,7 @@
 import { cn } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
 import DateRangePicker from '@/components/ui/DateRangePicker';
+import SelectDropdown from '@/components/ui/SelectDropdown';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 
 const selectClass =
@@ -60,7 +61,36 @@ function CustomerField({ value, onChange, options }) {
 }
 
 /**
- * Forecast filters: SKU, customer, date range, Clear. The default is the
+ * The forecast model (tier) every line on the chart shows. A model that isn't
+ * available for every SKU in scope is greyed out with the reason under it
+ * (forecastTiers.modelOptions). `disabled` (All customers) shows
+ * `placeholder` ("Average of all models") instead of a pick.
+ */
+function ModelField({ value, onChange, options, disabled, placeholder }) {
+  return (
+    <div>
+      <span className={labelClass} id="forecast-model-label">
+        Model
+      </span>
+      <SelectDropdown
+        id="forecast-model"
+        ariaLabel="Model"
+        value={disabled ? '' : value}
+        onChange={onChange}
+        options={options}
+        disabled={disabled}
+        placeholder={placeholder}
+        look="compact"
+        size="sm"
+        className="w-full"
+      />
+    </div>
+  );
+}
+
+/**
+ * Forecast filters: SKU, customer, Model (when `model` is given -- /forecast
+ * only), date range, Clear. The default is the
  * card /forecast uses. `variant="toolbar"` (Scenario builder only) is the
  * same fields in one row with no card, inside the chart card.
  */
@@ -80,6 +110,7 @@ export default function ForecastFilters({
   maxDate,
   onClearFilters,
   canClearFilters,
+  model = null,
   variant = 'card',
 }) {
   if (variant === 'toolbar') {
@@ -122,9 +153,14 @@ export default function ForecastFilters({
           </button>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+        <div className={cn('grid grid-cols-2 gap-2', model ? 'lg:grid-cols-5' : 'lg:grid-cols-4')}>
           <SkuField value={productName} onChange={onProductNameChange} options={productOptions} />
           <CustomerField value={customerName} onChange={onCustomerNameChange} options={customerOptions} />
+          {model ? (
+            <div className="col-span-2 lg:col-span-1">
+              <ModelField {...model} />
+            </div>
+          ) : null}
 
           <div className="col-span-2">
             <DateRangePicker
