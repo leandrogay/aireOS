@@ -25,7 +25,7 @@ const GUIDE = [
 const NOT_MIGRATED = [
   ['Dashboard', 'dashboard/RevenueTrendCard.jsx', 'ui/tabs: Offline / Online, Volume / Revenue, By week / By month (jumps)', 'SegmentedControl'],
   ['Forecast', 'forecast/ForecastChart.jsx', 'ui/tabs: Volume / Revenue (jumps)', 'SegmentedControl'],
-  ['Forecast', 'forecast/ForecastLineToggle.jsx, ForecastPromoToggle.jsx', 'Hand-rolled chips with per-series colours', 'ToggleButton look="chip" (needs a colour option first)'],
+  ['Forecast, Inventory', 'ui/LineToggle.jsx (shared chart line pills), forecast/ForecastPromoToggle.jsx', 'Hand-rolled chips with per-series colours', 'ToggleButton look="chip" (needs a colour option first)'],
   ['Promotions', 'promotions/PromotionDetails.jsx (FormatTab)', 'Hand-rolled chips with a count', 'ToggleButton look="chip"'],
   ['Upload', 'upload/DuplicateChoice.jsx', 'Radio inputs styled as a track, with icons', 'SegmentedControl with option icons'],
   ['Nomenclatures', 'mappings/ChannelValueList.jsx', 'Hand-rolled Online / Offline buttons', 'SegmentedControl'],

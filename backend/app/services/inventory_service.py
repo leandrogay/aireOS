@@ -994,9 +994,18 @@ def get_sell_in_outlook(
         **previous_worked_out,
         **_previous_sell_in(snapshots, window, current_month, in_view),
     }
+    def sell_in_vs_forecast(month: date) -> dict | None:
+        recommended_for_month = {
+            "saved": _saved_plan_for(snapshots, month, current_month),
+            "previous": past_previous.get(month, {}),
+            "initial": past_initial.get(month, {}),
+        }
+        return _sell_in_vs_forecast(metrics, recommended_for_month, month)
+
     series = []
     for month in window:
         actual = [by_month[month] for by_month in actual_by_sku if month in by_month]
+        is_actual = month in actual_months
         series.append(
             {
                 "month": _iso(month),
@@ -1013,6 +1022,10 @@ def get_sell_in_outlook(
                     [previous[sku][month] for sku in in_view if month in previous.get(sku, {})]
                 ),
                 "forecast_source": _one_source(sources.get(month, set())),
+                # Actual months only: the SKU-matched comparison the chart
+                # adds up over a picked range (frontend sellInComparison.js).
+                "sell_in_vs_forecast": sell_in_vs_forecast(month) if is_actual else None,
+                "sell_out_vs_forecast": _sell_out_vs_forecast(metrics, forecast, source, month) if is_actual else None,
             }
         )
 
@@ -1022,16 +1035,8 @@ def get_sell_in_outlook(
         "months": series,
         "start_year": start_year,
         "start_years": start_years,
-        "last_month_vs_forecast": _last_month_vs_forecast(metrics, forecast, source, actuals_through),
-        "last_month_sell_in_vs_forecast": _last_month_sell_in_vs_forecast(
-            metrics,
-            {
-                "saved": _saved_plan_for(snapshots, actuals_through, current_month),
-                "previous": past_previous.get(actuals_through, {}),
-                "initial": past_initial.get(actuals_through, {}),
-            },
-            actuals_through,
-        ),
+        "last_month_vs_forecast": _sell_out_vs_forecast(metrics, forecast, source, actuals_through),
+        "last_month_sell_in_vs_forecast": sell_in_vs_forecast(actuals_through),
     }
 
 
@@ -1162,14 +1167,14 @@ def _one_source(sources: set[str]) -> str | None:
     return next(iter(sources)) if len(sources) == 1 else "mixed"
 
 
-def _last_month_vs_forecast(
+def _sell_out_vs_forecast(
     metrics: dict[tuple[int, str], dict[date, dict[str, float]]],
     forecast: dict[str, dict[date, float]],
     source: dict[str, dict[date, str]],
     month: date,
 ) -> dict | None:
     """
-    The latest actual month's sell-out against what was forecast for it,
+    One actual month's sell-out against what was forecast for it,
     over the SKUs that have both, so the two figures cover the same products.
     The forecast is the same one the plan uses (current where it has the
     month, otherwise the initial). None when no SKU has both.
@@ -1200,24 +1205,24 @@ def _last_month_vs_forecast(
         "forecast": round(forecast_total, 2),
         "forecast_source": _one_source(used),
         "difference": round(difference, 2),
-        "percent": round(difference / forecast_total * 100, 1) if forecast_total else None,
+        "percent": round(difference / forecast_total * 100, 2) if forecast_total else None,
         "skus_compared": compared,
         "skus_with_actuals": with_actual,
     }
 
 
-def _last_month_sell_in_vs_forecast(
+def _sell_in_vs_forecast(
     metrics: dict[tuple[int, str], dict[date, dict[str, float]]],
     recommended: dict[str, dict[str, float]],
     month: date,
 ) -> dict | None:
     """
-    The latest actual month's sell-in against what was recommended for it,
+    One actual month's sell-in against what was recommended for it,
     over the SKUs that have both. Per SKU the recommendation is, in order: the
     plan saved before that month (`saved`), the one worked out on the
     previous sell-out forecast (`previous`), then on the initial
     (`initial`), the Previous sell-in line first and the initial where it has
-    nothing. Same shape as _last_month_vs_forecast; forecast_source is
+    nothing. Same shape as _sell_out_vs_forecast; forecast_source is
     'previous', 'initial' or 'mixed'. None when no SKU has both.
     """
 
@@ -1252,7 +1257,7 @@ def _last_month_sell_in_vs_forecast(
         "forecast": round(forecast_total, 2),
         "forecast_source": _one_source(used),
         "difference": round(difference, 2),
-        "percent": round(difference / forecast_total * 100, 1) if forecast_total else None,
+        "percent": round(difference / forecast_total * 100, 2) if forecast_total else None,
         "skus_compared": compared,
         "skus_with_actuals": with_actual,
     }

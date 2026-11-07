@@ -136,10 +136,13 @@ aireOS/
     │   │   │                      SelectDropdown (pick one, ✓ rows), MultiSelectDropdown (pick many, tick-box rows + "All",
     │   │   │                      `noneMeansAll`), MonthDropdown (one 'YYYY-MM' month, wrapped by promotions MonthPicker and
     │   │   │                      inventory MonthFilter); build new pickers on these, not on a raw Popover; toggle kit: SegmentedControl
-    │   │   │                      (pick one of a few, sliding highlight, `look` tint/outline), ToggleButton (one thing on/off,
+    │   │   │                      (pick one of a few, sliding highlight, `look` tint/outline), LineToggle (chart line on/off pills, one row or stacked `groups` with a
+    │   │   │                      `header`; Forecast + Scenario charts and the inventory sell-in chart), ToggleButton (one thing on/off,
     │   │   │                      `look` compact/chip), ToggleField (switch; `label` / `showState` / hints opt in, `ariaLabel` when unlabelled; used by DOH alerts and nomenclature file settings); app/testing shows both kits and lists the
     │   │   │                      pages not migrated yet; HeaderCheckboxFilter (table-header pill
-    │   │   │                      filter, forecast + inventory tables); formStyles.js (cream form input/label/button classes
+    │   │   │                      filter, forecast + inventory tables); ComparisonFigures (ChangeFigure / ChangeValue / ComparisonNote: the
+    │   │   │                      ▲/▼ % figures and note of a Comparison card, dashboard + inventory); ChartZoomButton (+ hooks/useChartZoom: drag across
+    │   │   │                      a category chart to zoom, inventory sell-in chart); formStyles.js (cream form input/label/button classes
     │   │   │                      shared by forms and dialogs); Toast (+ hooks/useToast);
     │   │   │                      list-table kit (Customers, Promotions, SKUs, Nomenclatures): DataTable (card: count, search slot,
     │   │   │                      refresh, Retry, empty state, footer) → TableGrid (column config → fixed widths, sort headers,

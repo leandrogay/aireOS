@@ -2291,3 +2291,25 @@ def test_no_recommendation_for_the_latest_month_means_no_sell_in_comparison(monk
     view = _three_line_outlook(monkeypatch)
 
     assert view["last_month_sell_in_vs_forecast"] is None
+
+
+# ---- sell-in outlook: per-month comparison for a picked range ----------------------------
+
+
+def test_each_actual_month_carries_its_sell_in_and_sell_out_comparison(monkeypatch):
+    initial = {"A1": {date(2026, 2, 1): 250.0, date(2026, 3, 1): 310.0, date(2026, 4, 1): 300.0}}
+
+    view = _three_line_outlook(monkeypatch, initial=initial)
+
+    feb = _month(view, "2026-02-01")
+    assert feb["sell_in_vs_forecast"]["forecast"] == 50
+    assert feb["sell_in_vs_forecast"]["actual"] == 0
+    assert feb["sell_out_vs_forecast"] == view["last_month_vs_forecast"]
+
+
+def test_plan_months_carry_no_comparison(monkeypatch):
+    view = _three_line_outlook(monkeypatch)
+
+    march = _month(view, "2026-03-01")
+    assert march["sell_in_vs_forecast"] is None
+    assert march["sell_out_vs_forecast"] is None

@@ -1,11 +1,11 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { FORECAST_SERIES } from '@/app/utils/forecastView';
 
+// The pill's sample of its line: a marker shape (the Forecast page), or a
+// short stretch of the line itself for charts whose lines differ by dash
+// pattern (`shape: 'line'`, inventory SellInOutlookChart).
 function SeriesMark({ color, shape, dash, dot }) {
-  // 'line': a short sample of the line itself, for charts whose lines differ
-  // by dash pattern rather than marker shape (inventory SellInOutlookChart).
   if (shape === 'line') {
     return (
       <svg viewBox="0 0 22 10" className="h-2.5 w-[22px] shrink-0" aria-hidden="true">
@@ -38,54 +38,28 @@ function SeriesMark({ color, shape, dash, dot }) {
   return <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: color }} aria-hidden="true" />;
 }
 
-/**
- * Line on/off pills. `hints` maps a series key to a short explanation shown
- * on hover or keyboard focus of that pill (e.g. why Initial is missing).
- * `series` defaults to the committed forecast lines; the Scenario builder
- * adds its Simulated line. `label` names the row ("Lines" by default), and
- * `labelClassName` lets stacked rows line their pills up.
- * A key in `disabled` is greyed out and can't be turned on (a line with no
- * data yet, e.g. Previous); it stays focusable so its hint can still be read.
- *
- * @param {{
- *   series?: { key: string, label: string, color: string, shape: string, dash?: string, dot?: boolean }[],
- *   visible: Record<string, boolean>,
- *   onToggle: (key: string) => void,
- *   hints?: Record<string, string | null>,
- *   disabled?: Record<string, boolean>,
- *   label?: string,
- *   labelClassName?: string,
- * }} props
- */
-export default function ForecastLineToggle({
-  series: lines = FORECAST_SERIES,
-  visible,
-  onToggle,
-  hints = {},
-  disabled = {},
-  label = 'Lines',
-  labelClassName,
-}) {
+// One labelled row of pills.
+function LineRow({ label, labelClassName, series, visible, onToggle, hints, disabled }) {
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
       <p className={cn('text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/50', labelClassName)}>
         {label}
       </p>
       <div className="flex flex-wrap gap-1.5">
-        {lines.map((series) => {
-          const isDisabled = Boolean(disabled[series.key]);
-          const isActive = !isDisabled && visible[series.key];
-          const hint = hints[series.key];
-          const hintId = `forecast-line-hint-${series.key}`;
+        {series.map((line) => {
+          const isDisabled = Boolean(disabled[line.key]);
+          const isActive = !isDisabled && visible[line.key];
+          const hint = hints[line.key];
+          const hintId = `line-toggle-hint-${line.key}`;
           return (
-            <span key={series.key} className="group relative inline-flex">
+            <span key={line.key} className="group relative inline-flex">
               <button
                 type="button"
                 aria-pressed={isActive}
                 aria-disabled={isDisabled || undefined}
                 aria-describedby={hint ? hintId : undefined}
                 onClick={() => {
-                  if (!isDisabled) onToggle(series.key);
+                  if (!isDisabled) onToggle(line.key);
                 }}
                 className={cn(
                   'inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-medium transition',
@@ -97,14 +71,14 @@ export default function ForecastLineToggle({
                 )}
                 style={
                   isActive
-                    ? { backgroundColor: `color-mix(in srgb, ${series.color} 20%, white)` }
+                    ? { backgroundColor: `color-mix(in srgb, ${line.color} 20%, white)` }
                     : undefined
                 }
               >
                 <span className={cn('inline-flex', isDisabled && 'opacity-40')}>
-                  <SeriesMark color={series.color} shape={series.shape} dash={series.dash} dot={series.dot} />
+                  <SeriesMark color={line.color} shape={line.shape} dash={line.dash} dot={line.dot} />
                 </span>
-                {series.label}
+                {line.label}
               </button>
               {hint ? (
                 <span
@@ -119,6 +93,68 @@ export default function ForecastLineToggle({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Chart line on/off pills, shared by every chart with switchable lines (the
+ * Forecast page and Scenario builder via ForecastChart, the inventory
+ * sell-in plan chart).
+ *
+ * Give either `series` for one row (labelled `label`, "Lines" by default),
+ * or `groups` for several stacked rows, e.g. Sell-in and Sell-out, whose
+ * labels share a width so the pills line up. `header` sits above the rows,
+ * divided off, for figures that read with the lines (SellInOutlookChart's
+ * last-month differences). With `groups` or `header` the rows come in a
+ * card.
+ *
+ * `hints` maps a line key to a short explanation shown on hover or keyboard
+ * focus (e.g. why a line is missing). A key in `disabled` is greyed out and
+ * can't be turned on (a line with no data yet); it stays focusable so its
+ * hint can still be read.
+ *
+ * @param {{
+ *   series?: { key: string, label: string, color: string, shape: string, dash?: string, dot?: boolean }[],
+ *   groups?: { label: string, series: object[] }[],
+ *   visible: Record<string, boolean>,
+ *   onToggle: (key: string) => void,
+ *   hints?: Record<string, string | null>,
+ *   disabled?: Record<string, boolean>,
+ *   label?: string,
+ *   header?: import('react').ReactNode,
+ * }} props
+ */
+export default function LineToggle({
+  series = [],
+  groups = null,
+  visible,
+  onToggle,
+  hints = {},
+  disabled = {},
+  label = 'Lines',
+  header = null,
+}) {
+  const rows = groups ?? [{ label, series }];
+  const stacked = rows.length > 1;
+  const rowProps = { visible, onToggle, hints, disabled };
+
+  if (!stacked && !header) {
+    return <LineRow label={label} series={series} {...rowProps} />;
+  }
+
+  return (
+    <div className="space-y-1.5 rounded-lg border border-lavander bg-white px-3 py-2">
+      {header ? <div className="border-b border-lavander pb-1.5">{header}</div> : null}
+      {rows.map((row) => (
+        <LineRow
+          key={row.label}
+          label={row.label}
+          labelClassName={stacked ? 'w-14 shrink-0' : undefined}
+          series={row.series}
+          {...rowProps}
+        />
+      ))}
     </div>
   );
 }

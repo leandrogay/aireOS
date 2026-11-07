@@ -1,17 +1,21 @@
 'use client';
 
 import { useState } from 'react';
-import { CartesianGrid, ComposedChart, Dot, Line, XAxis, YAxis } from 'recharts';
+import { CartesianGrid, ComposedChart, Dot, Line, ReferenceArea, ReferenceLine, XAxis, YAxis } from 'recharts';
 
-import ForecastLineToggle from '@/components/forecast/ForecastLineToggle';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
+import ChartZoomButton from '@/components/ui/ChartZoomButton';
+import LineToggle from '@/components/ui/LineToggle';
+import useChartZoom from '@/hooks/useChartZoom';
 
 import { FORECAST_SERIES } from '@/app/utils/forecastView';
 import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
 import { dotRevealDelay, lineSweepTimings } from '@/app/utils/lineAnimation';
+import { cn } from '@/lib/utils';
 
 import { labelledTooltipRow } from './chartTooltip';
 import LastMonthDifference from './LastMonthDifference';
+import SellInComparison from './SellInComparison';
 
 // The sell-out lines keep the Forecast page's colours (forecastView.FORECAST_SERIES),
 // so the two pages read the same way. Every line has its own colour, and the
@@ -32,7 +36,7 @@ const DASH = {
 };
 
 // `dot`: the line has a dot per month (the actual lines), so its sample does too.
-// `shape: 'line'` makes ForecastLineToggle show that line sample on its pill.
+// `shape: 'line'` makes LineToggle show that line sample on its pill.
 const SERIES = [
   { key: 'sell_in_actual', group: 'Sell-in', label: 'Sell-in (actual)', color: '#e34948', dot: true },
   { key: 'sell_in_recommended', group: 'Sell-in', label: 'Sell-in Forecast (Current)', color: '#2a78d6', dash: DASH.current },
@@ -116,10 +120,15 @@ export function initialFallbackLabel(months) {
  * The card above the chart also holds that month's sell-in and sell-out
  * against forecast (`sellInComparison`, `sellOutComparison`).
  *
+ * The zoom button (hooks/useChartZoom) narrows the chart to the months
+ * dragged across, and the Comparison card under it then sets their actual
+ * sell-in and sell-out against forecast (SellInComparison).
+ *
  * @param {{ months: Array<{ month: string, sell_in_actual: number | null, sell_in_recommended: number | null, sell_in_previous: number | null, sell_in_initial: number | null, sell_out_actual: number | null, sell_out_forecast: number | null, sell_out_initial: number | null, sell_out_previous: number | null, forecast_source: 'current' | 'initial' | 'mixed' | null }>, actualsThrough: string | null, sellInComparison?: object | null, sellOutComparison?: object | null }} props
  */
 export default function SellInOutlookChart({ months, actualsThrough, sellInComparison = null, sellOutComparison = null }) {
   const [visible, setVisible] = useState(ALL_VISIBLE);
+  const zoom = useChartZoom(months.map((row) => formatMonth(row.month)));
 
   if (months.length === 0) {
     return <p className="text-sm text-deep-violet-blue/70">No actuals for these filters.</p>;
@@ -144,16 +153,28 @@ export default function SellInOutlookChart({ months, actualsThrough, sellInCompa
     };
   });
 
-  // A line with no values in view (no Previous forecast yet) can't be switched on.
-  const noData = Object.fromEntries(SERIES.map((series) => [series.key, !rows.some((row) => row[series.key] != null)]));
+  // Zoomed in: only the picked months. One month alone can't draw a line,
+  // so it is shown with the months either side, marked by a line.
+  const singleMonth = zoom.zoomed && zoom.start === zoom.end;
+  const viewStart = singleMonth ? Math.max(zoom.start - 1, 0) : zoom.start;
+  const viewEnd = singleMonth ? Math.min(zoom.end + 1, rows.length - 1) : zoom.end;
+  const shownRows = rows.slice(viewStart, viewEnd + 1);
+
+  // A line with no values in view (no Previous forecast yet, or none in the
+  // zoomed months) can't be switched on. Its on/off choice is kept, so it
+  // comes back as it was on zooming out.
+  const hasValues = (inRows, key) => inRows.some((row) => row[key] != null);
+  const noData = Object.fromEntries(SERIES.map((series) => [series.key, !hasValues(shownRows, series.key)]));
   const hints = Object.fromEntries(
     SERIES.filter((series) => noData[series.key]).map((series) => [
       series.key,
-      NO_DATA_HINT[series.key] ?? 'No values for these filters.',
+      hasValues(rows, series.key)
+        ? 'No values in the zoomed months.'
+        : (NO_DATA_HINT[series.key] ?? 'No values for these filters.'),
     ]),
   );
-
-  const timings = lineSweepTimings(rows, TOOLTIP_ORDER, LINE_SWEEP);
+  const pickedMonths = months.slice(zoom.start, zoom.end + 1);
+  const timings = lineSweepTimings(shownRows, TOOLTIP_ORDER, LINE_SWEEP);
 
   const formatRow = labelledTooltipRow(CHART_CONFIG, (value) => `${formatUnits(value)} units`);
   function formatTooltipRow(value, name, item, index, payload) {
@@ -165,31 +186,45 @@ export default function SellInOutlookChart({ months, actualsThrough, sellInCompa
 
   return (
     <div className="space-y-2">
-      {/* One card: last month's differences, then the Forecast page's line
-          pills, one row each for sell-in and sell-out. */}
-      <div className="space-y-1.5 rounded-lg border border-lavander bg-white px-3 py-2">
-        {sellInComparison || sellOutComparison ? (
-          <div className="border-b border-lavander pb-1.5">
+      {/* One card: last month's differences, then the line pills, one row
+          each for sell-in and sell-out. */}
+      <LineToggle
+        groups={GROUPS}
+        visible={visible}
+        onToggle={(key) => setVisible((shown) => ({ ...shown, [key]: !shown[key] }))}
+        hints={hints}
+        disabled={noData}
+        header={
+          sellInComparison || sellOutComparison ? (
             <LastMonthDifference sellIn={sellInComparison} sellOut={sellOutComparison} />
-          </div>
-        ) : null}
-        {GROUPS.map((group) => (
-          <ForecastLineToggle
-            key={group.label}
-            label={group.label}
-            labelClassName="w-14 shrink-0"
-            series={group.series}
-            visible={visible}
-            onToggle={(key) => setVisible((shown) => ({ ...shown, [key]: !shown[key] }))}
-            hints={hints}
-            disabled={noData}
-          />
-        ))}
-      </div>
+          ) : null
+        }
+      />
 
-      <div className="overflow-visible rounded-xl border border-lavander bg-white pl-1 pr-3 pt-2">
-        <ChartContainer config={CHART_CONFIG} className="aspect-auto h-[328px] w-full">
-          <ComposedChart accessibilityLayer data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+      <div className="relative overflow-visible rounded-xl border border-lavander bg-white pl-1 pr-3 pt-2">
+        {/* Top right, in the space the chart's top margin leaves, its right
+            edge in line with the end of the plot (the chart's right margin
+            plus the card's padding). */}
+        <div className="absolute right-5 top-2 z-10">
+          <ChartZoomButton
+            picking={zoom.picking}
+            zoomed={zoom.zoomed}
+            onPick={zoom.startPicking}
+            onCancel={zoom.cancelPicking}
+            onReset={zoom.reset}
+            align="end"
+          />
+        </div>
+        <ChartContainer
+          config={CHART_CONFIG}
+          className={cn('aspect-auto h-[360px] w-full', zoom.picking && 'cursor-crosshair select-none')}
+        >
+          <ComposedChart
+            accessibilityLayer
+            data={shownRows}
+            margin={{ top: 40, right: 8, left: 0, bottom: 8 }}
+            {...zoom.chartHandlers}
+          >
             <CartesianGrid vertical={false} stroke="var(--aire-lavender)" />
             <XAxis
               dataKey="label"
@@ -206,6 +241,18 @@ export default function SellInOutlookChart({ months, actualsThrough, sellInCompa
               itemSorter={(item) => TOOLTIP_ORDER.indexOf(item.dataKey)}
               content={<ChartTooltipContent className="border-violet/40 bg-white" formatter={formatTooltipRow} />}
             />
+            {singleMonth ? (
+              <ReferenceLine x={rows[zoom.start].label} stroke="var(--aire-violet)" strokeWidth={1.5} strokeDasharray="4 3" />
+            ) : null}
+            {zoom.dragging ? (
+              <ReferenceArea
+                x1={zoom.dragging.from}
+                x2={zoom.dragging.to}
+                fill="var(--aire-lavender)"
+                fillOpacity={0.6}
+                ifOverflow="extendDomain"
+              />
+            ) : null}
             {SERIES.map((series) => (
               <Line
                 key={series.key}
@@ -228,6 +275,7 @@ export default function SellInOutlookChart({ months, actualsThrough, sellInCompa
           {fallback.includes('–') ? 'these months' : 'this month'}.
         </p>
       ) : null}
+      {zoom.zoomed ? <SellInComparison months={pickedMonths} /> : null}
     </div>
   );
 }

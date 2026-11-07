@@ -3,7 +3,7 @@ import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
 import { StatTag } from './InventoryChrome';
 
 // What each comparison was measured against (backend forecast_source).
-const SOURCE_LABEL = {
+export const SOURCE_LABEL = {
   sell_in: {
     previous: 'Sell-in Forecast (Previous)',
     initial: 'Initial Yearly Sell-in Forecast',
@@ -24,7 +24,7 @@ const SOURCE_LABEL = {
  */
 export function differenceText({ difference, percent }) {
   const sign = difference > 0 ? '+' : difference < 0 ? '−' : '';
-  const share = percent === null ? '' : ` (${sign}${Math.abs(percent).toFixed(1)}%)`;
+  const share = percent === null ? '' : ` (${sign}${Math.abs(percent).toFixed(2)}%)`;
   const direction = difference > 0 ? 'above' : difference < 0 ? 'below' : 'on';
   return `${sign}${formatUnits(Math.abs(difference))} units${share} ${direction} forecast`;
 }
@@ -47,8 +47,8 @@ function detailText(kind, comparison) {
 
 /**
  * The latest actual month's sell-in and sell-out against their forecasts
- * (backend inventory_service._last_month_sell_in_vs_forecast and
- * _last_month_vs_forecast), as one line of pills: the difference only, the
+ * (backend get_sell_in_outlook's last_month_sell_in_vs_forecast and
+ * last_month_vs_forecast), as one line of pills: the difference only, the
  * figures behind it on hover. Renders nothing when neither can be compared.
  *
  * @param {{ sellIn: object | null, sellOut: object | null }} props
