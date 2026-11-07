@@ -34,26 +34,26 @@ export default async function LoginPage({ searchParams }) {
   const errorMessage = ERROR_MESSAGES[params?.error];
 
   return (
-    <main className="relative isolate flex min-h-screen items-center justify-center overflow-hidden bg-cream px-6 py-12">
+    <main className="relative isolate flex min-h-dvh items-center justify-center overflow-hidden bg-cream px-4 py-6 sm:px-6 sm:py-12">
       <PackshotBackdrop />
-      <Card className="relative z-10 min-h-[34rem] w-full max-w-3xl gap-0 overflow-hidden border-border/70 py-0 shadow-xl shadow-primary/10">
-        <CardHeader className="flex flex-1 flex-col items-center justify-center px-8 pt-12 pb-10 text-center sm:px-16 sm:pt-16">
+      <Card className="relative z-10 w-full max-w-3xl gap-0 overflow-hidden border-border/70 py-0 shadow-xl shadow-primary/10 sm:min-h-[34rem]">
+        <CardHeader className="flex flex-1 flex-col items-center justify-center px-6 pt-9 pb-8 text-center sm:px-16 sm:pt-16 sm:pb-10">
           <Image
             src="/aire-logo.png"
             alt="AIRE"
             width={150}
             height={61}
-            className="mx-auto"
+            className="mx-auto h-auto w-28 sm:w-[150px]"
             priority
           />
-          <CardTitle className="mt-9 text-4xl tracking-tight text-deep-violet-blue sm:text-5xl">
+          <CardTitle className="mt-6 text-3xl leading-tight tracking-tight text-deep-violet-blue sm:mt-9 sm:text-5xl">
             Welcome to AireOS
           </CardTitle>
-          <CardDescription className="mt-3 max-w-lg text-lg leading-8 text-balance">
+          <CardDescription className="mt-3 max-w-lg text-base leading-6 text-balance sm:text-lg sm:leading-8">
             Sign in securely with your Aire Google Workspace account to continue.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6 border-t border-border/60 bg-card/60 px-8 py-10 sm:px-16 sm:py-12">
+        <CardContent className="space-y-5 border-t border-border/60 bg-card/60 px-6 py-8 sm:space-y-6 sm:px-16 sm:py-12">
           {errorMessage && (
             <p role="alert" className="rounded-lg bg-destructive/10 px-4 py-3 text-base text-destructive">
               {errorMessage}
@@ -71,14 +71,14 @@ export default async function LoginPage({ searchParams }) {
               variant: 'outline',
               size: 'lg',
               className:
-                'h-16 w-full gap-3 border-border bg-background px-6 text-xl font-semibold shadow-sm hover:border-primary/40 hover:bg-primary/5',
+                'h-14 w-full gap-3 border-border bg-background px-4 text-base font-semibold shadow-sm hover:border-primary/40 hover:bg-primary/5 sm:h-16 sm:px-6 sm:text-xl',
             })}
           >
             <Image src="/google-g-logo.svg" alt="" width={24} height={24} />
             Continue with Google
           </a>
-          <div className="flex items-center justify-center gap-2 text-center text-sm text-muted-foreground">
-            <ShieldCheck aria-hidden="true" className="size-4 text-primary" />
+          <div className="flex items-start justify-center gap-2 text-center text-xs leading-5 text-muted-foreground sm:items-center sm:text-sm">
+            <ShieldCheck aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-primary sm:mt-0" />
             <span>Google Workspace SSO · Verified @shop-aire.com accounts only</span>
           </div>
         </CardContent>

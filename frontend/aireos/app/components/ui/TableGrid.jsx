@@ -95,11 +95,11 @@ export default function TableGrid({
     // relative: the header's sr-only labels are absolutely positioned;
     // without a positioned ancestor they escape this scroll box and widen
     // the whole page on narrow windows.
-    <div className={cn('relative', FRAMES[variant])}>
+    <div className={cn('relative min-w-0 max-w-full', FRAMES[variant])}>
       <table
         style={minWidth ? { minWidth } : undefined}
         className={cn(
-          'w-full whitespace-nowrap text-left text-sm text-deep-violet-blue [&_td]:align-middle [&_th]:align-middle',
+          'aire-table-grid w-full whitespace-nowrap text-left text-sm text-deep-violet-blue [&_td]:align-middle [&_th]:align-middle',
           isFixed && 'table-fixed',
         )}
       >
@@ -113,14 +113,14 @@ export default function TableGrid({
             ))}
           </colgroup>
         )}
-        {/* Stays in view while the rows scroll. White under the cream tint
+        {/* Stays in view while the rows scroll. Solid cream over the rows
             so rows do not show through; the bottom rule is an inset shadow
             because a collapsed table border does not move with a sticky
             header. */}
-        <thead className="sticky top-0 z-10 bg-white">
+        <thead className="sticky top-0 z-10 bg-cream">
           <tr
             className={cn(
-              'bg-cream/60 [&>th]:shadow-[inset_0_-1px_0_var(--color-lavander)]',
+              'bg-cream [&>th]:shadow-[inset_0_-1px_0_var(--color-lavander)]',
               HEADER_ROW_HEIGHTS[variant],
             )}
           >

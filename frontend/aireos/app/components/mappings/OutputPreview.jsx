@@ -36,7 +36,7 @@ export default function OutputPreview({ preview, fields, total = preview.rows_to
     <div>
       <div className="overflow-x-auto rounded-md border border-lavander">
         <table className="min-w-full text-left text-xs">
-          <thead className="bg-cream/60 text-[11px] text-deep-violet-blue/70">
+          <thead className="bg-cream text-[11px] text-deep-violet-blue/70">
             <tr>
               {columns.map((column) => (
                 <th key={column} className="whitespace-nowrap px-2 py-1.5 font-medium">

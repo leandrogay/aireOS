@@ -148,7 +148,7 @@ export default function SkusPage() {
       headerExtra={(
         <Button
           onClick={() => setEditor({ sku: null })}
-          className="ml-auto bg-deep-violet-blue text-white hover:bg-deep-violet-blue/90"
+          className="w-full bg-deep-violet-blue text-white hover:bg-deep-violet-blue/90 md:w-auto"
         >
           <Plus data-icon="inline-start" />
           Create SKU

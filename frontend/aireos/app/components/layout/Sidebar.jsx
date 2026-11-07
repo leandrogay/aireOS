@@ -30,7 +30,7 @@ const NAV_SPRING = { type: 'spring', stiffness: 400, damping: 40 };
 // clicking a rail tab keeps the rail. Only the toggle opens or closes it.
 let lastCollapsed = false;
 
-// Below Tailwind's md breakpoint a collapsed bar hides instead of becoming a rail.
+// Below Tailwind's md breakpoint the navigation opens over the page.
 const NARROW_QUERY = '(max-width: 767px)';
 
 // A tab label fades out as the bar closes to the rail, and back in once it
@@ -86,9 +86,11 @@ export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [collapsed, setCollapsed] = useState(() => lastCollapsed);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const narrow = useMediaQuery(NARROW_QUERY);
   const rail = collapsed && !narrow;
-  const hidden = collapsed && narrow;
+  const hidden = narrow && !mobileOpen;
+  const showingMobile = narrow && mobileOpen;
   const width = hidden ? HIDDEN_WIDTH : rail ? RAIL_WIDTH : OPEN_WIDTH;
   // The label of the rail section whose flyout is open; one at a time.
   const [openFlyout, setOpenFlyout] = useState(null);
@@ -99,8 +101,16 @@ export default function Sidebar() {
   const reduceMotion = useReducedMotion();
 
   const toggleCollapsed = () => {
+    if (narrow) {
+      setMobileOpen((open) => !open);
+      return;
+    }
     lastCollapsed = !collapsed;
     setCollapsed(!collapsed);
+  };
+
+  const closeMobileNavigation = () => {
+    if (narrow) setMobileOpen(false);
   };
 
   const handleLogout = async () => {
@@ -119,22 +129,35 @@ export default function Sidebar() {
   };
 
   return (
-    <motion.nav
+    <>
+      {showingMobile && (
+        <button
+          type="button"
+          aria-label="Close navigation"
+          onClick={() => setMobileOpen(false)}
+          className="fixed inset-0 z-30 bg-deep-violet-blue/20 md:hidden"
+        />
+      )}
+      <motion.nav
       initial={false}
       animate={{ width }}
-      transition={reduceMotion ? { duration: 0 } : NAV_SPRING}
+      transition={narrow || reduceMotion ? { duration: 0 } : NAV_SPRING}
       className={cn(
         // Border and background stay on CSS transitions; they fade alongside the width.
-        'sticky top-0 flex h-screen shrink-0 flex-col self-start overflow-x-hidden overflow-y-auto border-r py-4 transition-colors duration-300',
-        collapsed ? 'px-2' : 'px-3',
-        hidden ? 'border-transparent bg-transparent' : 'border-lavander bg-white',
+        'flex h-screen shrink-0 flex-col self-start overflow-x-hidden overflow-y-auto border-r py-4 transition-colors duration-300',
+        // The first server render does not know the viewport width. Keep its
+        // desktop-width nav out of the mobile layout until the media query settles.
+        narrow ? 'fixed inset-y-0 left-0 z-40' : 'fixed left-0 top-0 max-md:invisible md:sticky',
+        showingMobile && 'shadow-lg',
+        rail || hidden ? 'px-2' : 'px-3',
+        hidden ? 'pointer-events-none border-transparent bg-transparent' : 'border-lavander bg-white',
       )}
     >
-      <div className="relative mt-2 mb-4 flex h-8 items-center">
+      <div className="relative mb-4 flex h-8 items-center md:mt-2">
         {/* Absolute, so the logo coming and going never pushes the toggle
             around; it just fades over the row. */}
         <AnimatePresence initial={false}>
-          {!collapsed && (
+          {!rail && !hidden && (
             <motion.div
               key="logo"
               variants={NAV_CONTENT}
@@ -143,7 +166,7 @@ export default function Sidebar() {
               exit="hidden"
               className="absolute top-1/2 left-1 -translate-y-1/2"
             >
-              <Link href="/dashboard" aria-label="AireOS home">
+              <Link href="/dashboard" aria-label="AireOS home" onClick={closeMobileNavigation}>
                 <Image
                   src="/aireos-wordmark.svg"
                   alt="AireOS"
@@ -163,9 +186,9 @@ export default function Sidebar() {
         <button
           type="button"
           onClick={toggleCollapsed}
-          aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
+          aria-label={hidden || rail ? 'Expand navigation' : 'Collapse navigation'}
           className={cn(
-            'ml-auto flex size-8 cursor-pointer items-center justify-center rounded-md text-deep-violet-blue/70 transition-colors hover:bg-lavander hover:text-deep-violet-blue',
+            'pointer-events-auto ml-auto flex size-8 cursor-pointer items-center justify-center rounded-md text-deep-violet-blue/70 transition-colors hover:bg-lavander hover:text-deep-violet-blue',
             rail && 'mr-1',
           )}
         >
@@ -183,9 +206,9 @@ export default function Sidebar() {
             <motion.ul
               key="tabs"
               variants={NAV_CONTENT}
-              initial="hidden"
-              animate="shown"
-              exit="hidden"
+              initial={narrow ? false : 'hidden'}
+              animate={narrow ? { opacity: 1, transition: { duration: 0 } } : 'shown'}
+              exit={narrow ? { opacity: 0, transition: { duration: 0 } } : 'hidden'}
               className="w-50 shrink-0 space-y-0.5"
             >
               {NAV_ITEMS.map((item) => {
@@ -241,6 +264,7 @@ export default function Sidebar() {
                     ) : (
                       <Link
                         href={item.href}
+                        onClick={closeMobileNavigation}
                         aria-current={isActive ? 'page' : undefined}
                         title={rail ? item.label : undefined}
                         className={tabClass}
@@ -274,6 +298,7 @@ export default function Sidebar() {
                               <li key={child.label}>
                                 <Link
                                   href={child.href}
+                                  onClick={closeMobileNavigation}
                                   aria-current={isChildActive ? 'page' : undefined}
                                   className={cn(
                                     'relative isolate block rounded-lg px-3 py-1.5 text-xs',
@@ -337,5 +362,6 @@ export default function Sidebar() {
         )}
       </AnimatePresence>
     </motion.nav>
+    </>
   );
 }

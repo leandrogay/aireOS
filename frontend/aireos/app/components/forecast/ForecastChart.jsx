@@ -33,6 +33,8 @@ import {
 } from '@/app/utils/forecastView';
 import { forecastLineHints, hasPreviousLine } from '@/app/utils/forecastLineText';
 import { dotRevealDelay, lineSweepTimings } from '@/app/utils/lineAnimation';
+import { yearAxisProps } from '@/app/utils/trendChart';
+import useMediaQuery from '@/hooks/useMediaQuery';
 
 // All lines draw in with one left-to-right sweep (see lineSweepTimings), so
 // Actual, Initial and Current reach each month together. The promo bands wipe
@@ -235,6 +237,7 @@ export default function ForecastChart({
   summary = null,
   yearTable = null,
 }) {
+  const mobile = useMediaQuery('(max-width: 639px)');
   const chartWrapRef = useRef(null);
   const overPanelRef = useRef(false);
   const lastPointerXRef = useRef(0);
@@ -296,6 +299,8 @@ export default function ForecastChart({
       ]
     : chartData;
   const ticks = plotData.map((point) => point.x);
+  // Keep every tick in the DOM: the chart's month hover lookup uses their positions.
+  const formatMobileYear = yearAxisProps(chartData, 'month_year').tickFormatter;
   // Every line drawn, including the Scenario builder's, needs a timing.
   const lineTimings = lineSweepTimings(plotData, allSeries.map((series) => series.key), LINE_SWEEP);
 
@@ -417,7 +422,7 @@ export default function ForecastChart({
   }
 
   return (
-    <Card size="sm" className="overflow-visible rounded-lg border border-lavander bg-white text-deep-violet-blue shadow-sm ring-0">
+    <Card size="sm" className="min-w-0 max-w-full overflow-visible rounded-lg border border-lavander bg-white text-deep-violet-blue shadow-sm ring-0">
       <CardHeader className="flex flex-row items-start justify-between gap-3 pb-1">
         <div className="min-w-0 space-y-1.5">
           <CardTitle className="font-serif text-base font-normal text-deep-violet-blue group-data-[size=sm]/card:text-base">
@@ -450,7 +455,7 @@ export default function ForecastChart({
           </Tabs>
         ) : null}
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="min-w-0 space-y-3">
         {toolbar}
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-lavander bg-white px-3 py-2">
           <ForecastLineToggle
@@ -521,11 +526,13 @@ export default function ForecastChart({
                     domain={[0, lastIndex + 1]}
                     ticks={ticks}
                     interval={0}
-                    height={48}
+                    height={mobile ? 28 : 48}
                     tick={{ fontSize: 9, fill: '#3A4369' }}
-                    tickFormatter={(index) => plotData[index]?.label ?? ''}
-                    angle={-40}
-                    textAnchor="end"
+                    tickFormatter={(index) => mobile
+                      ? formatMobileYear(plotData[index]?.month_year)
+                      : (plotData[index]?.label ?? '')}
+                    angle={mobile ? 0 : -40}
+                    textAnchor={mobile ? 'middle' : 'end'}
                     tickMargin={8}
                   />
                   <YAxis

@@ -92,7 +92,7 @@ export default function PromoAnchorDetails({ target, windowMonths, readOnly, onE
               : 'The ordinary-month discount used when a customer has no anchor of its own.'}
           </DialogDescription>
         </DialogHeader>
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg border border-border p-4">
+        <dl className="grid gap-x-6 gap-y-3 rounded-lg border border-border p-4 sm:grid-cols-2">
           {fields.map(([label, value]) => (
             <div key={label}>
               <dt className="text-xs text-muted-foreground">{label}</dt>

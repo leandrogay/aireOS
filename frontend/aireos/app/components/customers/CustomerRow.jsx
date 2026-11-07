@@ -6,8 +6,6 @@ import { Button } from '@/components/ui/button';
 import ExpandableRow from '@/components/ui/ExpandableRow';
 import RowActions from '@/components/ui/RowActions';
 import { EXPANDED_ROW_INSET } from '@/components/ui/TableGrid';
-import { cn } from '@/lib/utils';
-import { summariseNames } from '@/app/utils/tableView';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 import {
   customerDeleteBlockReason,
@@ -35,21 +33,8 @@ import UsageStatus from './UsageStatus';
  *   onDeleteRetailer: (retailer: object, customer: object) => void,
  * }} props
  */
-export default function CustomerRow({
-  customer,
-  isOpen,
-  isNew,
-  onToggle,
-  onEdit,
-  onDelete,
-  onAddRetailer,
-  onEditRetailer,
-  onDeleteRetailer,
-}) {
-  const name = retailerLabel(customer.customer_name);
-  const retailerNames = customer.retailers.map((retailer) => retailerLabel(retailer.retailer_name));
-
-  const customerActions = [
+export function customerRowActions(customer, onEdit, onDelete, onAddRetailer) {
+  return [
     {
       key: 'edit',
       label: 'Edit name',
@@ -67,21 +52,39 @@ export default function CustomerRow({
       disabledReason: customerDeleteBlockReason(customer),
     },
   ];
+}
 
-  const retailerActions = (retailer) => {
-    const blocked = retailerBlockReason(retailer);
-    return [
-      { key: 'edit', label: 'Edit name', icon: Pencil, onSelect: () => onEditRetailer(retailer, customer), disabledReason: blocked },
-      {
-        key: 'delete',
-        label: 'Delete',
-        icon: Trash2,
-        destructive: true,
-        onSelect: () => onDeleteRetailer(retailer, customer),
-        disabledReason: blocked,
-      },
-    ];
-  };
+export function retailerRowActions(retailer, customer, onEditRetailer, onDeleteRetailer) {
+  const blocked = retailerBlockReason(retailer);
+  return [
+    { key: 'edit', label: 'Edit name', icon: Pencil, onSelect: () => onEditRetailer(retailer, customer), disabledReason: blocked },
+    {
+      key: 'delete',
+      label: 'Delete',
+      icon: Trash2,
+      destructive: true,
+      onSelect: () => onDeleteRetailer(retailer, customer),
+      disabledReason: blocked,
+    },
+  ];
+}
+
+export default function CustomerRow({
+  customer,
+  isOpen,
+  isNew,
+  onToggle,
+  onEdit,
+  onDelete,
+  onAddRetailer,
+  onEditRetailer,
+  onDeleteRetailer,
+}) {
+  const name = retailerLabel(customer.customer_name);
+
+  const customerActions = customerRowActions(customer, onEdit, onDelete, onAddRetailer);
+
+  const retailerActions = (retailer) => retailerRowActions(retailer, customer, onEditRetailer, onDeleteRetailer);
 
   return (
     <ExpandableRow
@@ -114,11 +117,6 @@ export default function CustomerRow({
         </div>
       }
     >
-      <td className="px-4 py-2.5" title={retailerNames.join(', ') || undefined}>
-        <span className={cn('block truncate', !retailerNames.length && 'text-deep-violet-blue/50')}>
-          {summariseNames(retailerNames, 'None yet')}
-        </span>
-      </td>
       <td className="px-4 py-2.5">
         <UsageStatus inUse={customer.in_use} />
       </td>
