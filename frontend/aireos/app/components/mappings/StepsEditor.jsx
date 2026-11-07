@@ -43,7 +43,7 @@ function SampleRun({ samples, steps }) {
   return (
     <div className="rounded-md border border-lavander bg-white">
       <table className="w-full text-left text-[11px] text-deep-violet-blue">
-        <thead className="bg-cream/60 text-deep-violet-blue/60">
+        <thead className="bg-cream text-deep-violet-blue/60">
           <tr>
             <th className="px-2 py-1 font-medium">In the file</th>
             <th className="px-2 py-1 font-medium">Becomes</th>

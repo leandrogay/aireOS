@@ -74,9 +74,13 @@ export function yearAxisProps(rows, dateKey) {
     indices.push(index);
     byYear.set(year, indices);
   });
+  const labelledDates = new Set(
+    [...byYear.values()].map((indices) => rows[indices[Math.floor((indices.length - 1) / 2)]][dateKey]),
+  );
   return {
-    ticks: [...byYear.values()].map((indices) => rows[indices[Math.floor((indices.length - 1) / 2)]][dateKey]),
-    tickFormatter: (date) => String(date).slice(0, 4),
+    // Keep all points on the axis so chart hover and bar spacing stay intact.
+    // Only the middle point of each year receives visible text.
+    tickFormatter: (date) => labelledDates.has(date) ? String(date).slice(0, 4) : '',
     interval: 0,
     angle: 0,
     textAnchor: 'middle',

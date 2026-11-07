@@ -87,7 +87,7 @@ export default function DataTable({
         fill && 'min-h-80 flex-1',
       )}
     >
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-white to-cream/50 px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white px-4 py-3">
         <p className="text-sm text-deep-violet-blue/70" aria-live="polite">
           {firstLoad ? `Loading ${plural}…` : resultCountLabel(shownCount, totalCount, noun, plural)}
         </p>

@@ -108,7 +108,7 @@ export default function ForecastTable({ points, metric, visibleSeries }) {
 
       <div className="hidden min-w-0 overflow-x-auto rounded-md border border-lavander sm:block">
         <div className={expanded ? '' : 'max-h-[28vh] overflow-y-auto'}>
-          <table className="w-full min-w-[44rem] table-fixed text-left text-xs text-deep-violet-blue">
+          <table className="aire-table-rows w-full min-w-[44rem] table-fixed text-left text-xs text-deep-violet-blue">
             <colgroup>
               <col className="w-[16%]" />
               {visibleColumns.map((series) => (

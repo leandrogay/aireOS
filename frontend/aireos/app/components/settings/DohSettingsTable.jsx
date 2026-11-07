@@ -11,7 +11,7 @@ import { formatDateTime } from '@/lib/formatDate';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
-const thClass = 'bg-lavander px-2 py-1.5 text-left text-xs font-semibold text-deep-violet-blue';
+const thClass = 'bg-cream px-2 py-1.5 text-left text-xs font-medium text-deep-violet-blue/60';
 const tdClass = 'px-2 py-1.5 text-sm text-deep-violet-blue';
 const numClass = 'text-right tabular-nums';
 
@@ -78,7 +78,7 @@ export default function DohSettingsTable({
       })}
     </div>
     <div className="hidden max-w-full min-w-0 overflow-auto rounded-md border border-lavander sm:block">
-      <table className="w-full min-w-[44rem] border-collapse">
+      <table className="aire-table-rows w-full min-w-[44rem] border-collapse">
         <thead>
           <tr>
             <th className={thClass}>Customer</th>

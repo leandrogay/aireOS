@@ -113,14 +113,14 @@ export default function TableGrid({
             ))}
           </colgroup>
         )}
-        {/* Stays in view while the rows scroll. White under the cream tint
+        {/* Stays in view while the rows scroll. Solid cream over the rows
             so rows do not show through; the bottom rule is an inset shadow
             because a collapsed table border does not move with a sticky
             header. */}
-        <thead className="sticky top-0 z-10 bg-white">
+        <thead className="sticky top-0 z-10 bg-cream">
           <tr
             className={cn(
-              'bg-gradient-to-r from-cream/90 via-white to-cream/70 [&>th]:shadow-[inset_0_-1px_0_var(--color-lavander)]',
+              'bg-cream [&>th]:shadow-[inset_0_-1px_0_var(--color-lavander)]',
               HEADER_ROW_HEIGHTS[variant],
             )}
           >

@@ -300,7 +300,7 @@ export default function ForecastChart({
     : chartData;
   const ticks = plotData.map((point) => point.x);
   // Keep every tick in the DOM: the chart's month hover lookup uses their positions.
-  const mobileYearTicks = new Set(yearAxisProps(chartData, 'month_year').ticks);
+  const formatMobileYear = yearAxisProps(chartData, 'month_year').tickFormatter;
   // Every line drawn, including the Scenario builder's, needs a timing.
   const lineTimings = lineSweepTimings(plotData, allSeries.map((series) => series.key), LINE_SWEEP);
 
@@ -529,7 +529,7 @@ export default function ForecastChart({
                     height={mobile ? 28 : 48}
                     tick={{ fontSize: 9, fill: '#3A4369' }}
                     tickFormatter={(index) => mobile
-                      ? (mobileYearTicks.has(plotData[index]?.month_year) ? String(plotData[index].month_year).slice(0, 4) : '')
+                      ? formatMobileYear(plotData[index]?.month_year)
                       : (plotData[index]?.label ?? '')}
                     angle={mobile ? 0 : -40}
                     textAnchor={mobile ? 'middle' : 'end'}

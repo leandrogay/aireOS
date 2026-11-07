@@ -397,7 +397,7 @@ export default function SkuRanking({
       </div>
 
       <div className="hidden w-full overflow-x-auto rounded-md border border-lavander sm:block">
-          <table className="w-full table-fixed text-left text-xs text-deep-violet-blue" aria-busy={tableLoading}>
+          <table className="aire-table-rows w-full table-fixed text-left text-xs text-deep-violet-blue" aria-busy={tableLoading}>
             <colgroup>
               <col className="w-[8%]" />
               <col className={showChange ? 'w-[36%]' : 'w-[44%]'} />

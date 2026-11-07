@@ -206,12 +206,12 @@ export default function ComparisonMixChart({ rows, periodNames, granularity, met
   // The axis keeps its height and spacing, but its single tick per bucket is
   // hidden: BarAxisLabel labels each of the two stacks instead.
   const axisProps = mobile ? { interval: 0, angle: 0, height: 28 } : comparisonAxisProps(granularity);
-  const currentYearTicks = new Set(yearAxisProps(chartData, 'axisStart').ticks);
-  const baselineYearTicks = new Set(yearAxisProps(chartData, 'baselineStart').ticks);
+  const formatCurrentYear = yearAxisProps(chartData, 'axisStart').tickFormatter;
+  const formatBaselineYear = yearAxisProps(chartData, 'baselineStart').tickFormatter;
   if (mobile) {
     chartData.forEach((point) => {
-      point.mobileCurrentYear = currentYearTicks.has(point.axisStart) ? point.axisStart.slice(0, 4) : '';
-      point.mobileBaselineYear = baselineYearTicks.has(point.baselineStart) ? point.baselineStart.slice(0, 4) : '';
+      point.mobileCurrentYear = formatCurrentYear(point.axisStart);
+      point.mobileBaselineYear = formatBaselineYear(point.baselineStart);
     });
   }
   const axisLabel = (field, muted) => (
