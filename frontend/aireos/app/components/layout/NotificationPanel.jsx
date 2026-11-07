@@ -2,6 +2,7 @@
 
 import { ChevronDown } from 'lucide-react';
 
+import { Button } from '@/components/ui/button';
 import useExpandedRows from '@/hooks/useExpandedRows';
 import { formatDateTime } from '@/lib/formatDate';
 import { cn } from '@/lib/utils';
@@ -55,21 +56,16 @@ function TypeTag({ tone, children }) {
 }
 
 /**
- * "Mark as read" / "Mark all as read": a small white, fully rounded pill with a
- * light violet border, cream on hover.
- * min-h-6: WCAG 2.5.8 asks for pointer targets of at least 24 x 24 CSS px.
+ * "Mark as read" / "Mark all as read": the shared Button (outline, xs: 24px
+ * tall, the WCAG 2.5.8 minimum target), fully rounded to sit with the type tags.
  *
  * @param {{ onClick: () => void, children: import('react').ReactNode }} props
  */
 function MarkReadButton({ onClick, children }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="inline-flex min-h-6 shrink-0 cursor-pointer items-center rounded-full border border-violet/30 bg-white px-2.5 text-[11px] font-medium text-deep-violet-blue transition hover:bg-cream"
-    >
+    <Button variant="outline" size="xs" onClick={onClick} className="rounded-full">
       {children}
-    </button>
+    </Button>
   );
 }
 
@@ -137,15 +133,16 @@ function NotificationItem({ notification, isOpen, onToggle, onMarkRead }) {
               the same place on every row. It opens the same details as the row
               button; that button is the one keyboards and screen readers use,
               so this copy is skipped by both. */}
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon-xs"
             tabIndex={-1}
             aria-hidden="true"
             onClick={onToggle}
-            className="flex size-6 shrink-0 items-center justify-center rounded-md text-deep-violet-blue/70 hover:text-deep-violet-blue"
+            className="text-deep-violet-blue/70 hover:text-deep-violet-blue"
           >
             <ChevronDown className={cn('size-4 transition', isOpen && 'rotate-180')} />
-          </button>
+          </Button>
         </div>
       </div>
       {isOpen && (
