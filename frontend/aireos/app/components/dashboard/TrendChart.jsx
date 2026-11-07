@@ -14,10 +14,14 @@ import {
   exactBucketLabel,
   formatMetric,
   formatRevenue,
-  metricAxisFormatter,
+  chartDataMax,
+  metricYAxisProps,
+  CHART_TOP_MARGIN,
   periodAxisProps,
   sortFormatsByTotalDesc,
+  weekMonthGroups,
 } from '@/app/utils/trendChart';
+import MonthAxis from '@/components/dashboard/MonthAxis';
 import TooltipChange from '@/components/dashboard/TooltipChange';
 
 // The trend with no comparison (FormatTrendChart), revenue or units (the
@@ -33,7 +37,7 @@ function weekOrMonth(periodLabel) {
 // holding `metric`, which is the shape Recharts needs for a stacked bar, plus
 // each period's % change vs the one before it (from `periodTotal`) for the
 // tooltip, and how much of its revenue is estimated (`estimated`, said in the
-// tooltip; the chart itself carries one EST under it, RevenueTrendCard).
+// tooltip as an est. row).
 function pivotByFormat(periodByFormat, periodTotal, metric) {
   const byPeriod = new Map();
   for (const row of periodByFormat) {
@@ -97,7 +101,7 @@ function TrendTooltip({ active, payload, granularity, metric }) {
         )}
         {metric === 'revenue' && hasEstimate(period.estimated) && (
           <div className="flex w-full items-center justify-between gap-2">
-            <span className="text-deep-violet-blue/70">EST</span>
+            <span className="text-deep-violet-blue/70">est.</span>
             <span className="font-mono font-medium text-deep-violet-blue tabular-nums">
               {formatRevenue(period.estimated)}
             </span>
@@ -123,15 +127,20 @@ export function FormatTrendChart({ periodByFormat, periodTotal, granularity, met
   const chartConfig = Object.fromEntries(formats.map((format) => [format, { label: format, color: formatColor(format) }]));
   const chartData = pivotByFormat(periodByFormat, periodTotal, metric);
   const axisProps = periodAxisProps(chartData, granularity);
+  const monthGroups = weekMonthGroups(chartData, granularity);
+  const yAxisProps = metricYAxisProps(metric, chartDataMax(chartData, formats));
   // Tilted labels run down-left from their bar, so the first needs room past the y-axis.
-  const margin = axisProps.angle ? { bottom: 8, left: TILTED_LABEL_LEFT_MARGIN } : { bottom: 8 };
+  const margin = axisProps.angle
+    ? { top: CHART_TOP_MARGIN, bottom: 8, left: TILTED_LABEL_LEFT_MARGIN }
+    : { top: CHART_TOP_MARGIN, bottom: 8 };
 
   return (
     <ChartContainer config={chartConfig} className={CHART_SIZE_CLASS}>
       <BarChart accessibilityLayer data={chartData} margin={margin}>
         <CartesianGrid vertical={false} />
         <XAxis dataKey="displayLabel" {...axisProps} />
-        <YAxis tickFormatter={metricAxisFormatter(metric)} width={50} tick={{ fontSize: 10 }} />
+        <YAxis {...yAxisProps} />
+        <MonthAxis groups={monthGroups} />
         {/* Above the legend, which is drawn after it and would show through. */}
         <ChartTooltip content={<TrendTooltip granularity={granularity} metric={metric} />} wrapperStyle={{ zIndex: 10 }} />
         {!unnamedOnly && <ChartLegend content={<ChartLegendContent />} />}

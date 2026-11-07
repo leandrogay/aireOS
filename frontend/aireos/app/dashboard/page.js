@@ -30,7 +30,6 @@ import {
 import { DEFAULT_PRESET_ID, buildDateRangePresets } from "@/app/utils/dateRangePresets";
 import { rangeHasWeeklyMonths, weeklyGapMessage } from "@/app/utils/weeklyGaps";
 import { customerColorOrder, relabelFormatRows } from "@/app/utils/storeFormats";
-import { addEstimates, customerTrendsEstimate, summaryEstimate } from "@/app/utils/estimatedRevenue";
 import { MAX_COMPARED_CUSTOMERS } from "@/app/utils/customerTrend";
 
 const NO_CUSTOMERS = [];
@@ -313,15 +312,6 @@ export default function DashboardPage() {
         baselineWeeksByFormat: relabelFormatRows(baselineFormatRows, currentFormatRows),
       })
     : null;
-  // The chart's EST covers everything it draws: each customer's periods, or
-  // this period plus the comparison while comparing.
-  const chartEstimate = comparingCustomers
-    ? customerTrendsEstimate(customerTrends.rows, mode)
-    : addEstimates(
-        summaryEstimate(summary.summaryByMode[mode]),
-        baseline ? summaryEstimate(baselineSummary.summaryByMode[mode]) : null,
-      );
-
   const lastUpdated = customers
     .map((name) => channels[`${name}_${mode}`])
     .filter(Boolean)
@@ -369,15 +359,6 @@ export default function DashboardPage() {
   return (
     <PageLayout
       title="Sales Dashboard"
-      headerExtra={
-        (pageStatus === 'failed' || pageStatus === 'empty') ? null : (
-          <ChannelSwitch
-            mode={mode}
-            onChange={handleModeChange}
-            onlineEnabled={!freshnessLoaded || onlineAvailable}
-          />
-        )
-      }
     >
       {(pageStatus === 'failed' || pageStatus === 'empty') ? (
         <DashboardStatus kind={pageStatus} error={customerOptionsError} />
@@ -401,9 +382,15 @@ export default function DashboardPage() {
               comparisonLoading={baselineSummary.loading}
               customerBars={customers.length === 0 ? [] : (comparingCustomers ? customerTrends.rows : null)}
               customerColorOrder={colorOrder}
-              estimate={customers.length === 0 ? null : chartEstimate}
               metric={metric}
               onMetricChange={setMetric}
+              channelSwitch={
+                <ChannelSwitch
+                  mode={mode}
+                  onChange={handleModeChange}
+                  onlineEnabled={!freshnessLoaded || onlineAvailable}
+                />
+              }
               headerExtra={
                 <PeriodControls
                   start={effectiveStartDate}
@@ -479,6 +466,7 @@ export default function DashboardPage() {
               mode={mode}
               comparingCustomers={comparingCustomers}
               customerRows={customerTotals.rows}
+              noCustomers={customers.length === 0}
               customerColorOrder={colorOrder}
             />
           </div>
