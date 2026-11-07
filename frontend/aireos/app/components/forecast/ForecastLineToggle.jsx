@@ -31,22 +31,35 @@ function SeriesMark({ color, shape }) {
 /**
  * Line on/off pills. `hints` maps a series key to a short explanation shown
  * on hover or keyboard focus of that pill (e.g. why Initial is missing).
+ * `series` defaults to the committed forecast lines; the Scenario builder
+ * adds its Simulated line.
+ * A key in `disabled` is greyed out and can't be turned on (a line with no
+ * data yet, e.g. Previous); it stays focusable so its hint can still be read.
  *
  * @param {{
+ *   series?: { key: string, label: string, color: string, shape: string }[],
  *   visible: Record<string, boolean>,
  *   onToggle: (key: string) => void,
  *   hints?: Record<string, string | null>,
+ *   disabled?: Record<string, boolean>,
  * }} props
  */
-export default function ForecastLineToggle({ visible, onToggle, hints = {} }) {
+export default function ForecastLineToggle({
+  series: lines = FORECAST_SERIES,
+  visible,
+  onToggle,
+  hints = {},
+  disabled = {},
+}) {
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
       <p className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/50">
         Lines
       </p>
       <div className="flex flex-wrap gap-1.5">
-        {FORECAST_SERIES.map((series) => {
-          const isActive = visible[series.key];
+        {lines.map((series) => {
+          const isDisabled = Boolean(disabled[series.key]);
+          const isActive = !isDisabled && visible[series.key];
           const hint = hints[series.key];
           const hintId = `forecast-line-hint-${series.key}`;
           return (
@@ -54,13 +67,18 @@ export default function ForecastLineToggle({ visible, onToggle, hints = {} }) {
               <button
                 type="button"
                 aria-pressed={isActive}
+                aria-disabled={isDisabled || undefined}
                 aria-describedby={hint ? hintId : undefined}
-                onClick={() => onToggle(series.key)}
+                onClick={() => {
+                  if (!isDisabled) onToggle(series.key);
+                }}
                 className={cn(
                   'inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-medium transition',
-                  isActive
-                    ? 'border-transparent text-deep-violet-blue shadow-sm'
-                    : 'border-lavander bg-white text-deep-violet-blue/55 hover:bg-cream'
+                  isDisabled
+                    ? 'cursor-not-allowed border-dashed border-lavander bg-white text-deep-violet-blue/40'
+                    : isActive
+                      ? 'border-transparent text-deep-violet-blue shadow-sm'
+                      : 'border-lavander bg-white text-deep-violet-blue/55 hover:bg-cream'
                 )}
                 style={
                   isActive
@@ -68,7 +86,9 @@ export default function ForecastLineToggle({ visible, onToggle, hints = {} }) {
                     : undefined
                 }
               >
-                <SeriesMark color={series.color} shape={series.shape} />
+                <span className={cn('inline-flex', isDisabled && 'opacity-40')}>
+                  <SeriesMark color={series.color} shape={series.shape} />
+                </span>
                 {series.label}
               </button>
               {hint ? (

@@ -23,8 +23,10 @@ aireOS/
 ├── backend/                       FastAPI app — run: uvicorn app.main:app --reload (:8000)
 │   ├── app/
 │   │   ├── main.py                FastAPI() instance, credentialed CORS, protected routers, GET /
-│   │   ├── auth.py                Shared require_user dependency for protected API routers
+│   │   ├── auth.py                Shared require_user dependency for protected API routers; current_user_email
+│   │   │                          (settings writes record it as updated_by, never a name sent in the body)
 │   │   ├── middleware.py          UnhandledErrorMiddleware (turns unhandled exceptions into JSON 500s)
+│   │   ├── assets/                aire-logo.png: the AIRE logo on exported PDFs and slides (copy of the frontend's)
 │   │   ├── routers/               HTTP layer. One file per URL prefix.
 │   │   │   ├── uploads.py         /api/uploads        file ingest + mapping review (async)
 │   │   │   ├── auth.py            /api/auth           Google Workspace login/callback/session/logout
@@ -35,14 +37,16 @@ aireOS/
 │   │   │   ├── inventory.py       /api/inventory      overview, per-customer DOH, at-risk list, sell-in plan, record create/edit, temporary sell-in
 │   │   │   ├── settings/          /api/settings       customer-level settings; __init__.py mounts one sub-router per kind
 │   │   │   │   └── doh.py         /api/settings/doh   DOH thresholds (versioned, revert, history, reset to global default) + alert toggle
+│   │   │   ├── scenario/          /api/scenario       Scenario builder items; __init__.py mounts one sub-router per kind
+│   │   │   │   └── building_blocks.py /api/scenario/building-blocks  list/create/replace/delete what-if building blocks
 │   │   │   └── promotions.py      /api/promotions     promotion CRUD + /health/db
 │   │   ├── schemas/               Pydantic v2 request models (only catalog + promotions today)
 │   │   │   ├── catalog.py         _Base, normalise_name (names → lowercase slugs), CustomerCreate/Update,
 │   │   │   │                      RetailerCreate (needs customer_id)/Update/Link, StoreCreate/Update,
 │   │   │   │                      SkuItem + required SkuCreate/Update
 │   │   │   ├── inventory.py       InventoryRecordCreate/Update, ShippedSoFarUpdate
-│   │   │   ├── settings/common.py SettingsChangeBase (optional updated_by), shared by every kind of setting
-│   │   │   ├── settings/doh.py    DohThresholdsUpdate (min <= target <= max, NUMERIC(6,2)), DohAlertUpdate, DohRevert, DohReset
+│   │   │   ├── scenario/building_blocks.py ScenarioBuildingBlockCreate/Update (uplift_mode pct|units, signed uplift: pct -100..+50, whole units, never 0; first-of-month range)
+│   │   │   ├── settings/doh.py    DohThresholdsUpdate (min <= target <= max, NUMERIC(6,2)), DohAlertUpdate
 │   │   │   └── promotions.py      PromoType Literal, PromotionStoreRef, PromotionBase/Create/Update
 │   │   └── services/              All logic + all external I/O. Never imports fastapi.
 │   │       ├── sql.py             Cloud SQL connector → SQLAlchemy Engine singletons (rw + autocommit read)
@@ -51,6 +55,8 @@ aireOS/
 │   │       ├── inventory_service.py inventory_metrics reads/writes + DOH thresholds via settings/doh (history by month) (raw SQL, one txn per write)
 │   │       ├── settings/common.py shared by every kind of setting: engines, CustomerNotFoundError, lock_customer
 │   │       ├── settings/doh.py    doh_settings (append-only versions) + customers alert columns; reads via the current_settings view; GLOBAL_DEFAULT_*_DOH 25/30/35
+│   │       ├── scenario/common.py engines shared by every kind of Scenario builder item
+│   │       ├── scenario/building_blocks.py scenario_building_blocks CRUD; resolves customer_name/product_name to customer_id/sku
 │   │       ├── sellout_units.py   Cloud SQL monthly sell-out per SKU for inventory, via sellout_service's effective-sellout view
 │   │       ├── forecast_units.py  read-only BigQuery forecast units per SKU/month, from the aire_forecasting_output view (BQ_FORECAST_OUTPUT_VIEW)
 │   │       ├── catalog_service.py retailers/stores/skus CRUD; SKU history/archive; get_or_create_* seams; retailer
@@ -119,12 +125,25 @@ aireOS/
     │   ├── doh/page.js            DOH Settings: per-customer thresholds, alert toggle, edit, reset to global default (components/settings)
     │   ├── inventory/page.js      Inventory: overview, by-customer DOH, at-risk list, sell-in plan, enter/edit data (components/inventory)
     │   ├── components/
-    │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column), Sidebar (NAV_ITEMS)
-    │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, calendar, popover, tooltip, DateRangePicker
-    │   │   │                      (typed date inputs, not a calendar); MonthGrid (year + 12-month grid, shared by
-    │   │   │                      MonthDropdown and the dashboard month-range picker); Dropdown (popover shell holding any
-    │   │   │                      content: checkbox lists, MonthGrid); MonthDropdown (one 'YYYY-MM' month, wrapped by
-    │   │   │                      promotions MonthPicker and inventory MonthFilter); HeaderCheckboxFilter (table-header pill
+    │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column), Sidebar (NAV_ITEMS; collapses
+    │   │   │                      to an icon rail, hidden on narrow screens), RailFlyout (a rail section's sub-pages)
+    │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, calendar (brand-styled), popover;
+    │   │   │                      date kit on calendar: DatePicker (one day) / RangeDatePicker (start + end, Apply), each
+    │   │   │                      `variant` button or typed input (utils/datePicker.js); DateRangePicker (older typed
+    │   │   │                      From/To pair, exports DateInput, the dd/mm/yyyy box); ChartLoading (spinner placeholder / refetch overlay)
+    │   │   │                      and chart skeletons (first-load placeholders on ui/skeleton): ChartSkeletonFrame (shared
+    │   │   │                      axes/gridlines/legend/status, `tiltXTicks` for angled labels) → BarChartSkeleton (`groups` per category),
+    │   │   │                      LineChartSkeleton (`lines`, `points`; paths from utils/chartSkeleton.js; forecast first load);
+    │   │   │                      page skeleton kit: PageSkeleton (one busy status, children inert) holding CardSkeleton (card frame +
+    │   │   │                      header bars) + SkeletonBars, chart skeletons and DataTable's first-load state (scenario/ScenarioBuilderSkeleton is the model); MonthGrid (year + 12-month grid, shared by
+    │   │   │                      MonthDropdown and the dashboard month-range picker); dropdown kit: Dropdown (the one shell:
+    │   │   │                      closed button, popover panel, optional `searchable`, `look` field/filter/compact) →
+    │   │   │                      SelectDropdown (pick one, ✓ rows), MultiSelectDropdown (pick many, tick-box rows + "All",
+    │   │   │                      `noneMeansAll`), MonthDropdown (one 'YYYY-MM' month, wrapped by promotions MonthPicker and
+    │   │   │                      inventory MonthFilter); build new pickers on these, not on a raw Popover; toggle kit: SegmentedControl
+    │   │   │                      (pick one of a few, sliding highlight, `look` tint/outline), ToggleButton (one thing on/off,
+    │   │   │                      `look` compact/chip), ToggleField (switch; `label` / `showState` / hints opt in, `ariaLabel` when unlabelled; used by DOH alerts and nomenclature file settings); app/testing shows both kits and the brand-coloured Button (default/outline/secondary/ghost/destructive/destructive-outline/link/scenario; sizes sm/default/lg) and lists the
+    │   │   │                      pages not migrated yet; HeaderCheckboxFilter (table-header pill
     │   │   │                      filter, forecast + inventory tables); formStyles.js (cream form input/label/button classes
     │   │   │                      shared by forms and dialogs); Toast (+ hooks/useToast);
     │   │   │                      list-table kit (Customers, Promotions, SKUs, Nomenclatures): DataTable (card: count, search slot,
@@ -159,6 +178,7 @@ aireOS/
     │   │   └── upload2/           Harness pieces: MappingDiv, UploadPanel, ResultsPanel, ContractView, RequestLog…
     │   │   ├── salesApi.js        /api/sales wrappers via request() (getSkuSales, getMonthlyOnly)
     │   │   ├── settingsApi.js     /api/settings/* wrappers, one section per kind (reuses promotionsApi.request)
+    │   │   ├── scenarioBuildingBlocksApi.js /api/scenario/building-blocks wrappers (reuses promotionsApi.request)
     │   │   ├── catalogApi.js      /api/catalog customers + retailer writes for the Customers page (reuses promotionsApi.request)
     │   │   └── mappingApi.js      /api/uploads wrappers taking an explicit baseUrl (harness style)
     │   └── utils/                 Pure, React-free helpers
@@ -166,6 +186,7 @@ aireOS/
     │       ├── skuForm.js         required-field validation and SKU form/payload conversion
     │       ├── promotionOverview.js list grouping/filter helpers
     │       ├── forecastView.js    Sell-out run series (Initial Yearly Forecast/Previous/Current), tier resolution
+    │       ├── scenarioPlan.js    Monthly plan rows: last year, model, blocks, adjusted, variance; shiftMonth()
     │       ├── dateRange.js       currentYearDateRange() -- shared default-date-range helper
     │       ├── periodComparison.js Compare-to baselines (comparisonSetup), week pairing for the comparison chart
     │       ├── dateRangePresets.js Period presets in whole months (Latest month … Past 12 months, YTD, Last year), anchored to the latest loaded month
@@ -174,7 +195,7 @@ aireOS/
     │       ├── priceMix.js        Avg-price change split into SKU price vs product mix
     │       ├── estimatedRevenue.js est. sign: when a revenue figure includes estimated revenue, and its hover text
     │       ├── customerTrend.js   Cross-customer chart: MAX_COMPARED_CUSTOMERS (3), bars up to MAX_BAR_PERIODS (6) then lines, series/rows
-    │       ├── storeFormats.js    FORMAT_COLORS + formatColor() per store format
+    │       ├── storeFormats.js    FORMAT_COLORS + formatColor() per store format; customerColor + customerColorOrder (one colour per customer on every page, by customer_id)
     │       ├── dohSettingsForm.js validate/build/formFrom helpers for the DOH threshold form, GLOBAL_DEFAULT_DOH
     │       ├── customerForm.js    normaliseName (mirrors backend slug), validateName, edit/delete block reasons
     │       ├── retailerLabel.js   shared display label for retailer/customer slugs (fairprice_online → Fairprice Online)
@@ -183,6 +204,7 @@ aireOS/
     ├── hooks/                     Data-fetching hooks (cancel-flag pattern; dashboard calls services/*Api.js)
     │   ├── useDataFreshness.js    polls /api/sales/last-updated → { channels, dataVersion, refreshing }
     │   ├── useCustomerOptions.js  /api/sales/customer-options
+    │   ├── useAllCustomers.js     /api/inventory/customers via inventoryApi (every customer, for customerColorOrder)
     │   ├── useCustomerTrends.js   /api/sales/customer-trends via salesApi.getCustomerTrends (2-3 customers ticked: each per week/month)
     │   ├── useDashboardSummary.js /api/sales/dashboard-summary (silent refresh on dataVersion)
     │   ├── useDefaultDateRange.js /api/sales/default-date-range
@@ -194,6 +216,7 @@ aireOS/
     │   ├── useCustomers.js        /api/catalog/customers (+ applyCustomer / removeCustomer for the row a write returns)
     │   ├── useExpandedRows.js     { isExpanded, toggle, expand } for ui/ExpandableRow (several open by default)
     │   ├── useConfirmAction.js    { target, isPending, request, cancel, confirm } for ui/ConfirmDialog (e.g. Delete)
+    │   ├── useMediaQuery.js       boolean for a CSS media query (Sidebar: rail vs hidden when collapsed)
     │   └── useToast.js            { toast, notify, dismissToast } for components/ui/Toast
     ├── lib/                       cn() (clsx + tailwind-merge), formatDateRange, formatDate/formatDateTime (shared date display,
     │                              Singapore time), singaporeTime (singaporeDateTimeParts, singaporeToday)
@@ -210,7 +233,8 @@ aireOS/
 Key dependencies: `@base-ui/react`, `shadcn`, `class-variance-authority`, `clsx`,
 `tailwind-merge`, `lucide-react`, `recharts`, `react-day-picker` (+ its `date-fns`, behind
 `ui/calendar`), `tw-animate-css`, `babel-plugin-react-compiler`.
-No test runner is installed on the frontend; linting (`npm run lint`) is the frontend check.
+No test framework is installed on the frontend: `npm run lint` is the main check, and `npm test` runs
+Node's built-in test runner (`node --test`, no packages) over `tests/*.test.mjs` for pure `app/utils/` helpers.
 
 ---
 
@@ -223,9 +247,10 @@ No test runner is installed on the frontend; linting (`npm run lint`) is the fro
 | Sales dashboard | `sales.py` | `sellout_service` | **Cloud SQL Postgres**: `sellout` (the source of truth -- every upload writes here first; `retailer_id`/`store_code`/`sku` rows, `period_type` `week` or `month`), joined to `retailers`/`stores`/`skus` for names (retailer name = `{customer}_{offline|online}`). A retailer+calendar-month with monthly-granularity rows uses only those (never both, see `EFFECTIVE_SELLOUT_CTE`); `granularity='week'` summary views read genuine weekly rows only. No more BigQuery/Datastream replication lag -- reads are real-time | `app/dashboard`, `hooks/use*.js`, `services/salesApi.js` |
 | Catalog | `catalog.py` | `catalog_service`, `customer_service` | **Cloud SQL Postgres**: `customers`, `customer_retailers`, `retailers`, `stores`, `skus`, `sku_history`. Names are lowercase slugs, unique case-insensitively. A retailer with stores, or a customer with any such retailer or `inventory_metrics` rows, is `in_use` and can't be renamed or deleted. `skus` keeps one stable foreign-key master row per code; `sku_history` stores its timestamped created/updated/archived versions. Historical price reads resolve the version effective on the requested date. | `app/customers`, `app/skus`, `services/catalogApi.js`; `services/promotionsApi.js` (getRetailers/getStores/getSkuRanges) |
 | Inventory | `inventory.py` | `inventory_service`, `inventory_calc`, `sellout_units`, `forecast_units` | **Cloud SQL Postgres**: `customers`, `customer_retailers`, `inventory_metrics` (long format; app writes carry `data_source='manual_entry'`; only sell-in, a first-month opening and building blocks (stock used outside sell-out) are read; workbook rows are never changed), `doh_settings` (read via `settings/doh.fetch_versions`; closed months use the version in effect at month end, the latest month, at-risk list and sell-in plan use the current one), `sellout` (sell-out, via `sellout_units`/`sellout_service`'s effective-sellout view, same monthly-preferred-over-weekly rule as the dashboard); **BigQuery** (read-only): the forecast table. Ending stock, DOH and the plan are computed, never stored | `app/inventory`, `services/inventoryApi.js` |
+| Scenario builder | `scenario/building_blocks.py` (`/api/scenario/building-blocks`) | `scenario/building_blocks`, `scenario/common` | **Cloud SQL Postgres**: `scenario_building_blocks` (what-if uplifts stored as entered: `uplift_mode` `pct` = % on Current each month, `units` = whole units over the whole range; a negative value is a decrease (a flood, a store closing; migration `014_scenario_building_blocks_decrease.sql`), and the Simulated line is floored at 0 per customer x SKU x month (`scenarioEngine.simulate`); `is_active` decides whether a block counts; `customer_id` ON DELETE CASCADE, `sku` NULL = all SKUs). Only the Scenario builder's Simulated line reads it -- the Current forecast, Inventory and Dashboard never do; the delta is worked out on the client (`scenarioEngine.js`), in units only -- the Scenario builder never predicts revenue, since a discount's price effect isn't modelled. Not the same as inventory's `sell_out_building_blocks` (confirmed blocks that count as actuals) | `app/scenario`, `services/scenarioBuildingBlocksApi.js` |
 | Settings (DOH) | `settings/doh.py` | `settings/doh`, `settings/common` | **Cloud SQL Postgres**: `doh_settings` (append-only: a change is an INSERT only when min/target/max differ from the newest row; newest by `updated_at DESC, setting_id DESC`; never UPDATE/DELETE, except that a new customer gets a global-default row; `customer_id` is ON DELETE CASCADE, so deleting a customer deletes its rows and DOH settings never block it), view `current_settings` (one row per customer), `customers.doh_alert_enabled` / `doh_alert_updated_at` (in-place toggle, no version). Also read by the inventory DOH calculations (`fetch_versions`, `thresholds_on`, `current_thresholds`) | `app/doh`, `services/settingsApi.js` |
 | Promotions | `promotions.py` | `promotion_service` (+ `catalog_service` seams) | **Cloud SQL Postgres**: `promotions`, `promotion_stores`, `promotion_skus`; enum `promo_type_enum`; trigger `trg_promotions_updated_at` | `app/promotions`, `services/promotionsApi.js` |
-| Forecast (P&L) | `forecast.py` (`/api/forecast`, read-only; writes are out of band via `scripts/refresh_forecast.py`) | `pl_forecast` (pure), `forecast_service`, `catalog_service` (product prices) | **BigQuery** (`Aire_Data_Analytics`, read-only): model learns from `v_sales_enriched` (weekly), page Actual line reads `v_customer_monthly_sales`; refresh MERGEs into `BQ_FORECAST_TABLE`. **Cloud SQL Postgres**: `skus.price` prices sell-out revenue | `app/forecast` |
+| Forecast (P&L) | `forecast.py` (`/api/forecast`, read-only; writes are out of band via `scripts/refresh_forecast.py`) | `pl_forecast` (pure), `forecast_service`, `catalog_service` (product prices) | **BigQuery** (`BQ_FORECAST_DATASET`, default `aireos_forecast_validation_sg`, read-only; names from `BQ_CDC_DATASET`): model learns from `v_sales_enriched` (weekly), page Actual line reads `v_customer_monthly_sales`; refresh MERGEs into `BQ_FORECAST_TABLE`. **Cloud SQL Postgres**: `skus.price` prices sell-out revenue | `app/forecast` |
 | AI mapping | (inside uploads, `mappings.py`) | `generate_mapping` | **Gemini on Vertex AI** (`google-genai`, `MAPPING_MODEL` default `gemini-3.8-flash`, `MAPPING_VERTEX_LOCATION` default `global`, signed in as the service account, no API key). Pending proposals record `provider` + `model` (ones made before the move to Gemini say `anthropic`); `scripts/eval_mapping.py` scores proposals against `reference_contracts` | — |
 | Assistant | `assistant.py` (`/api/assistant`) | `assistant` | **Gemini on Vertex AI** (`GEMINI_ASSISTANT_MODEL`, default `gemini-3.8-flash`; `GCP_VERTEX_LOCATION`, default `global`), both set in `config.py` | floating widget (`components/assistant`) |
 
@@ -386,6 +411,12 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | Contract vocabulary: `mapping_contract` statuses, `TRANSFORM_TYPES`, `RULE_OPS`, `MELT_KEY_TARGETS`/`LABEL_TARGETS` (melt-group `labels`; `rows_above: 0` = the headings again, so any descriptive field (`HEADING_FIELDS`) can read them), `from_layout: "stated_period"` | `utils/fieldDecision.js` (`fieldMethods`, `currentDecision`, `decisionEntry`, `withFieldDecision`), `utils/transformSteps.js` (`STEP_TYPES`, `RULE_OPS`), `FieldEditorDialog.jsx` |
 | `mappings.ContractSettings` (`instructions.aggregate` on preview/confirm); packet `instructions`, `headRows`; preview `layout`, `head_rows`, `preview_error` | `useMappingEdits` (`instructionsPayload`), `FileSettings.jsx`, `FileTop.jsx`, `MappingReviewPanel.jsx`, `mappingApi.previewMapping/confirmMapping` |
 | Retailer = `{customer}_online` / `{customer}_offline` (`sellout_service._retailer_for`); `mapping_contract.retailer_outputs` (incl. retailers read off headings, given `columns`/`layout`); packet `columnValues` | `utils/retailerSplit.js` (`splitDecision`, `withCustomerChannels`), `ChannelSplit.jsx`, `mappingCustomer.retailerDecision` |
+| `GET /api/settings/promo-uplifts/moments` (`settings/promo_moments.list_moments`, rules in `settings/promo_moment_rules.py`): `moments[]` (`customer_name`, `sku`, `sku_range`, `month`, `mechanic_key`, `uplift_pct`, `is_baseline`), `recommendations[]` (`recommended_uplift_pct`, `moments_by_year`, `months_used`, `enough_data`), `recommend_from` | `promoUpliftSettings.js` (`momentCounts`, `formatMomentCounts`, `recommendedUplift` -- `latestMonth` from `months_used` is the Effective date), `PromoUpliftTable.jsx` (Moments, Effective date columns), `hooks/usePromoMoments.js` |
+| `settings/promo_uplifts` anchors per customer x SKU range, a mechanic saved once and changed only by adopting a recommendation (`list_anchors` `window_months`, `recommend_from`, `customers[].ranges[]`: `sku_range`, `anchor_pct`, `mechanic_label`, `source` `recommended`/`manual`/`customer`/`default`, `recommended`, `recommendation_differs`, `manual_allowed`; PUT (typed discount, 409 unless too few moments) and POST `/adopt` take `sku_range`, history `?sku_range=`; `seed_anchors`); `resolve_uplifts` `product_uplifts` + `product_anchors`; migrations `012_create_promo_uplift_settings.sql` + `013_promo_anchor_mechanic.sql` (append-only, newest row per target wins) | `settingsApi.js` anchor wrappers (via `promoUpliftsApi.js`), `PromoAnchorTable.jsx`, `PromoAnchorDetails.jsx`, `PromoAnchorForm.jsx`, `PromoUpliftSettingsView.shownUplift`, `scenario/PromotionEditor.jsx` |
+| `forecast_notifications` payload (`run_name`, `source` event/scheduled/script, `stage` pipeline/refresh, `reason`, `errors`, `period_*`, `customers`, `skus`, `updated_at`) | `utils/forecastNotificationText.js`, `NotificationPanel.jsx` |
+| `assistant._FORECAST_LINES` (keys, labels, export colours; `chart_series[].key`/`unit`), `forecast_summary` `chart_lines` | `FORECAST_SERIES` in `utils/forecastView.js`, `AssistantChart` in `assistant/AssistantMessage.jsx` |
+| `GET /api/forecast/initial-status` (`forecast_service.get_initial_status`: `years[]` of `forecast_year`, `lock_at`, `refreshed_at`, `locked`, from `aire_forecasting_initial_meta`; best effort, `[]` on error) | `forecastApi.getForecastInitialStatus`, `hooks/useForecastInitialStatus.js`, `utils/forecastLineText.js` (`initialStatusNotes`), `ForecastLegendFooter.jsx` |
+| `GET /api/forecast/refresh-status` (`forecast_refresh_worker.refresh_status_best_effort`: `{ updating, since }` from pending/running `forecast_refresh_requests`; false on error or while event refresh is off) | `forecastApi.getForecastRefreshStatus`, `hooks/useForecastRefreshStatus.js` (60 s re-check only while updating), `utils/forecastLineText.js` (`forecastUpdatingBadge`, `nextStatusCheckDelay`), `ForecastLegendFooter.jsx` |
 | `HTTPException.detail` shapes | `parseApiError()` |
 
 When you change the left column, grep the right column in the same PR.
@@ -410,7 +441,7 @@ Quirks:
 
 Backend variables: `GOOGLE_APPLICATION_CREDENTIALS`, `SERVICE_ACCOUNT_KEY_PATH`, `GCP_PROJECT_ID`,
 `GCS_BUCKET_NAME`, `GCS_DESTINATION_PREFIX`, `GCS_DESTINATION_PREFIX_MAPPING`,
-`BQ_FAIRPRICESELLOUT_TABLE` (legacy, unused), `BQ_FORECAST_OUTPUT_VIEW`, `MAPPING_MODEL`, `MAPPING_VERTEX_LOCATION`,
+`BQ_FORECAST_DATASET` (default `aireos_forecast_validation_sg`: the forecast views and pipeline tables), `BQ_CDC_DATASET` (default `aireos_cdc_sg`: Datastream's `public_customers` / `public_skus`, the names the forecast is joined to), `BQ_FORECAST_LOCATION`, `BQ_FAIRPRICESELLOUT_TABLE` (legacy, unused), `BQ_FORECAST_OUTPUT_VIEW`, `MAPPING_MODEL`, `MAPPING_VERTEX_LOCATION`,
 `GEMINI_ASSISTANT_MODEL`, `GCP_VERTEX_LOCATION`, `POSTGRESQL_INSTANCE_CONNECTION_NAME`,
 `DB_IAM_USER`, `DB_NAME`, `CLOUD_SQL_LOAD_ENABLED`, `REQUIRE_LOAD_CONFIRMATION` (default false: known layouts load on
 upload; true: they wait for a confirmed Load), `AUTH_ENABLED`,
@@ -429,7 +460,7 @@ non-secret settings in `api.env.yaml` / `web.build.env` / `target.env`, secret *
 See README "Deploying"; `tests/test_deploy_config.py` keeps secrets out of the committed files.
 
 Running locally: VS Code task **Start Both Servers**, or two terminals per the READMEs.
-Tests: `cd backend && pytest`. Lint: `cd frontend/aireos && npm run lint`.
+Tests: `cd backend && pytest`; `cd frontend/aireos && npm test`. Lint: `cd frontend/aireos && npm run lint`.
 
 ---
 

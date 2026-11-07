@@ -1,6 +1,6 @@
 """FastAPI authentication dependency shared by every protected router."""
 
-from fastapi import HTTPException, Request
+from fastapi import Depends, HTTPException, Request
 
 from app import config
 from app.services import auth_service
@@ -23,3 +23,8 @@ def require_user(request: Request) -> dict:
         return auth_service.read_session(token)
     except (auth_service.InvalidSessionError, config.ConfigError) as exc:
         raise HTTPException(status_code=401, detail="Authentication required") from exc
+
+
+def current_user_email(user: dict = Depends(require_user)) -> str:
+    """The signed-in user's email, recorded as who made a change (settings `updated_by`)."""
+    return user["email"]

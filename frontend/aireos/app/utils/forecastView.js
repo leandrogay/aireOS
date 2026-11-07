@@ -1,3 +1,4 @@
+import { modelHint } from '@/app/utils/forecastLineText';
 import { splitPromoType } from '@/app/utils/promotionForm';
 
 export const DEFAULT_PRODUCT_NAME = 'Aire Ultra Tape L';
@@ -6,19 +7,21 @@ export const DEFAULT_PRODUCT_NAME = 'Aire Ultra Tape L';
 // bigquery.FORECAST_OUTPUT_COLUMNS); the BigQuery pipeline picks the best
 // model per month, so the page only sums and draws them.
 // `archived: true` keeps a line's code and data path intact but hides it from
-// the page (chart, toggles, table). Previous is archived until the
-// per-customer pipeline produces a previous-data-month run; set it back to
-// false to bring the line back.
+// the page (chart, toggles, table); no line is archived today.
 // `connectNulls: false` leaves a gap where the column is NULL instead of
 // bridging it, so a blank month never looks like a forecast.
+// The hover text for each line is in utils/forecastLineText.js.
 const ALL_FORECAST_SERIES = [
   { key: 'actual', label: 'Actual', color: '#3A4369', dash: undefined, shape: 'circle' },
-  // Frozen Jan-Dec best line, snapshotted each December for the next year
-  // (aire_forecasting_initial). 2026 was a one-off backfill trained on data
-  // up to Dec 2025; the pipeline's first own snapshot is for 2027. A SKU with
-  // no initial row (e.g. Ultra Tape in 2026) simply draws no line.
+  // The year's Jan-Dec plan (aire_forecasting_initial): created from the
+  // first September sales, rebuilt as that year's promotions or Oct/Nov
+  // sales arrive, locked at 23:59 SGT on 31 December. 2026 was a one-off
+  // backfill trained on data up to Dec 2025. A SKU with no initial row
+  // (e.g. Ultra Tape in 2026) simply draws no line.
   { key: 'initial', label: 'Initial Yearly Forecast', color: '#E8922A', dash: '2 4', shape: 'square' },
-  // The run before the latest; blank for a month that just entered the window.
+  // The final forecast made on the month before the newest sales month;
+  // empty until the forecast dataset has a second sales month, when
+  // ForecastChart greys its pill out instead of drawing it.
   {
     key: 'previous',
     label: 'Previous',
@@ -26,7 +29,6 @@ const ALL_FORECAST_SERIES = [
     dash: '8 3',
     shape: 'triangle',
     connectNulls: false,
-    archived: true,
   },
   // The latest run, 12 months after the newest sales month.
   { key: 'current', label: 'Current', color: '#0D9488', dash: '3 3', shape: 'diamond' },
@@ -39,11 +41,12 @@ export const ALL_SERIES_VISIBLE = Object.fromEntries(
 );
 
 // source_model values written by run_monthly_forecast_pipeline /
-// run_tier0_legacy in BigQuery. Keep in sync with those procedures. Both
-// ARIMA models (with and without promo input) show as one Tier 1 label;
-// which of the two won a month isn't a distinction the page needs.
+// run_tier0_legacy in BigQuery. Keep in sync with those procedures. The two
+// ARIMA models get their own labels: "advanced" is ARIMA_PLUS_XREG (with the
+// promotion input), "basic" is ARIMA_PLUS (without it), so the page shows
+// which months already include the promotion entered for them.
 export const SOURCE_MODEL_LABELS = {
-  tier1_arima: 'Tier 1 advanced',
+  tier1_arima: 'Tier 1 basic',
   tier1_arimax: 'Tier 1 advanced',
   tier0_legacy: 'Tier 0 baseline',
 };
@@ -174,6 +177,46 @@ function columnValue(row, column, metric) {
   return row[key] ?? null;
 }
 
+export function formatAxisValue(value, metric) {
+  if (typeof value !== 'number') return value;
+  if (metric === 'revenue') {
+    if (Math.abs(value) >= 1000) {
+      return `$${(value / 1000).toLocaleString('en-US', { maximumFractionDigits: 1 })}k`;
+    }
+    return `$${value}`;
+  }
+  if (Math.abs(value) >= 1000) {
+    return `${(value / 1000).toLocaleString('en-US', { maximumFractionDigits: 1 })}k`;
+  }
+  return `${value}`;
+}
+
+export function niceYDomain(values) {
+  const dataMin = Math.min(...values);
+  const dataMax = Math.max(...values);
+  const span = dataMax - dataMin;
+  const padding = span * 0.1 || Math.abs(dataMax) * 0.1 || 1;
+  let low = dataMin - padding;
+  let high = dataMax + padding;
+  if (low < 0 && dataMin >= 0) low = 0;
+  const rawStep = (high - low) / 4;
+  const magnitude = 10 ** Math.floor(Math.log10(rawStep || 1));
+  const residual = rawStep / magnitude;
+  const step = residual >= 5 ? 10 * magnitude : residual >= 2 ? 5 * magnitude : 2 * magnitude;
+  return [Math.floor(low / step) * step, Math.ceil(high / step) * step];
+}
+
+export function formatTooltipValue(value, metric) {
+  if (typeof value !== 'number') return value;
+  if (metric === 'revenue') {
+    return `$${value.toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  }
+  return Math.round(value).toLocaleString('en-US');
+}
+
 export function formatMonthLabel(monthYear) {
   if (!monthYear) return '';
   return new Date(`${monthYear}T00:00:00`).toLocaleDateString('en-US', {
@@ -269,9 +312,9 @@ export function buildMonthlyPoints(rows, actuals = [], metric = 'units', { singl
 }
 
 /**
- * "Tier 1 advanced" for one SKU, or "Tier 1 advanced ×7 · Tier 0 baseline ×2"
- * when a month's total mixes SKUs forecast by different tiers. Counts are
- * grouped by label, so the two Tier 1 models add up to one entry.
+ * "Tier 1 basic" for one SKU, or "Tier 1 basic ×5 · Tier 1 advanced ×2 ·
+ * Tier 0 baseline ×2" when a month's total mixes SKUs forecast by different
+ * models. Counts are grouped by label.
  */
 export function formatModelMix(currentModels) {
   const countsByLabel = {};
@@ -297,7 +340,7 @@ export function forecastPointDetails(point, metric, formatValue) {
   if (!point) return [];
   const details = [];
   const models = formatModelMix(point.currentModels);
-  if (models) details.push({ label: 'Model', value: models });
+  if (models) details.push({ label: 'Model', value: models, hint: modelHint(point.currentModels) });
   if (point.range) {
     // Negative bounds read as (10) rather than -10, accounting style.
     const formatBound = (value) => (value < 0 ? `(${formatValue(-value)})` : formatValue(value));

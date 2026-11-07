@@ -1,36 +1,43 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Area, ComposedChart, Line, ReferenceArea, ReferenceLine, XAxis, YAxis } from 'recharts';
+import { Area, ComposedChart, Line, ReferenceArea, ReferenceDot, ReferenceLine, XAxis, YAxis } from 'recharts';
 
+import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import ChartLoading from '@/components/ui/ChartLoading';
+import LineChartSkeleton from '@/components/ui/LineChartSkeleton';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ForecastLineToggle from '@/components/forecast/ForecastLineToggle';
 import ForecastPointDetails from '@/components/forecast/ForecastPointDetails';
 import ForecastPromoPanel from '@/components/forecast/ForecastPromoPanel';
 import ForecastPromoToggle from '@/components/forecast/ForecastPromoToggle';
 import ForecastTable from '@/components/forecast/ForecastTable';
+import SeriesDot from '@/components/forecast/SeriesDot';
 import ForecastYearTotals from '@/components/forecast/ForecastYearTotals';
 import ForecastLegendFooter from '@/components/forecast/ForecastLegendFooter';
 import {
   FORECAST_SERIES,
   buildPromoOverlayBands,
   forecastPointDetails,
+  formatAxisValue,
   formatMonthLabel,
+  formatTooltipValue,
+  niceYDomain,
   nextMonthYear,
   padMonthlyPoints,
   promoPeriodDividerXs,
   promosOverlappingMonth,
 } from '@/app/utils/forecastView';
+import { forecastLineHints, hasPreviousLine } from '@/app/utils/forecastLineText';
 import { dotRevealDelay, lineSweepTimings } from '@/app/utils/lineAnimation';
 
 // All lines draw in with one left-to-right sweep (see lineSweepTimings), so
 // Actual, Initial and Current reach each month together. The promo bands wipe
 // in with the same sweep (PromoBands).
 const LINE_SWEEP = { begin: 0, duration: 1200 };
-const SERIES_KEYS = FORECAST_SERIES.map((series) => series.key);
 
 // How long a promo band takes to wipe in when it is added after the first draw.
 const LATE_BAND_MS = 300;
@@ -38,46 +45,6 @@ const LATE_BAND_MS = 300;
 const chartConfig = Object.fromEntries(
   FORECAST_SERIES.map((series) => [series.key, { label: series.label, color: series.color }])
 );
-
-function formatAxisValue(value, metric) {
-  if (typeof value !== 'number') return value;
-  if (metric === 'revenue') {
-    if (Math.abs(value) >= 1000) {
-      return `$${(value / 1000).toLocaleString('en-US', { maximumFractionDigits: 1 })}k`;
-    }
-    return `$${value}`;
-  }
-  if (Math.abs(value) >= 1000) {
-    return `${(value / 1000).toLocaleString('en-US', { maximumFractionDigits: 1 })}k`;
-  }
-  return `${value}`;
-}
-
-function niceYDomain(values) {
-  const dataMin = Math.min(...values);
-  const dataMax = Math.max(...values);
-  const span = dataMax - dataMin;
-  const padding = span * 0.1 || Math.abs(dataMax) * 0.1 || 1;
-  let low = dataMin - padding;
-  let high = dataMax + padding;
-  if (low < 0 && dataMin >= 0) low = 0;
-  const rawStep = (high - low) / 4;
-  const magnitude = 10 ** Math.floor(Math.log10(rawStep || 1));
-  const residual = rawStep / magnitude;
-  const step = residual >= 5 ? 10 * magnitude : residual >= 2 ? 5 * magnitude : 2 * magnitude;
-  return [Math.floor(low / step) * step, Math.ceil(high / step) * step];
-}
-
-function formatTooltipValue(value, metric) {
-  if (typeof value !== 'number') return value;
-  if (metric === 'revenue') {
-    return `$${value.toLocaleString('en-US', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}`;
-  }
-  return Math.round(value).toLocaleString('en-US');
-}
 
 function OverlayDefs({ bands }) {
   return (
@@ -106,40 +73,6 @@ function OverlayDefs({ bands }) {
         ))}
     </defs>
   );
-}
-
-// `delay` (ms) fades the dot in as its line is drawn past it (.line-dot-in).
-function SeriesDot({ cx, cy, color, shape, delay }) {
-  if (cx == null || cy == null) return null;
-  const reveal = { className: 'line-dot-in', style: { animationDelay: `${delay}ms` } };
-  if (shape === 'square') {
-    return (
-      <rect x={cx - 3.5} y={cy - 3.5} width={7} height={7} fill={color} stroke="#fff" strokeWidth={1} {...reveal} />
-    );
-  }
-  if (shape === 'diamond') {
-    return (
-      <polygon
-        points={`${cx},${cy - 5} ${cx + 5},${cy} ${cx},${cy + 5} ${cx - 5},${cy}`}
-        fill={color}
-        stroke="#fff"
-        strokeWidth={1}
-        {...reveal}
-      />
-    );
-  }
-  if (shape === 'triangle') {
-    return (
-      <polygon
-        points={`${cx},${cy - 5} ${cx + 5},${cy + 4} ${cx - 5},${cy + 4}`}
-        fill={color}
-        stroke="#fff"
-        strokeWidth={1}
-        {...reveal}
-      />
-    );
-  }
-  return <circle cx={cx} cy={cy} r={3.5} fill={color} stroke="#fff" strokeWidth={1} {...reveal} />;
 }
 
 /**
@@ -214,6 +147,59 @@ function promoPanelLeft(originX, wrapWidth) {
   return Math.max(PROMO_PANEL_EDGE, Math.min(left, maxLeft));
 }
 
+// The Scenario builder's switched-on items, one group per source, in the
+// order the panel's tabs show them.
+const SCENARIO_ITEM_GROUPS = [
+  { source: 'blocks', title: 'Building blocks added' },
+  { source: 'promotions', title: 'Planned promotions added' },
+];
+
+// Scenario section of the hover card (and of the entered-promotions panel,
+// which replaces the card in months with an entered promotion): how far
+// Simulated sits from Current this month, and every switched-on building
+// block and planned promotion in it, even one that adds 0%. With
+// `hasEntered`, planned promotions are added on top of the month's entered
+// ones (scenarioPromotions.stackedModelCells), so the card says so.
+function ScenarioPointDetails({ point, items, formatValue, hasEntered = false, className }) {
+  if (point?.simulated == null || point.current == null) return null;
+  const delta = point.simulated - point.current;
+  if (!delta && !items.length) return null;
+  const pct = point.current ? ` (${delta < 0 ? '−' : '+'}${Math.abs((delta / point.current) * 100).toFixed(1)}%)` : '';
+  // Sign written here, figure unsigned, so it reads "+2,555".
+  const signed = (value) => `${value < 0 ? '−' : '+'}${formatValue(Math.abs(value))}`;
+  return (
+    <div className={cn('space-y-0.5 text-[11px] tabular-nums', className)}>
+      <div className="flex justify-between gap-3">
+        <span>Difference from Current</span>
+        <span className="font-semibold text-scenario-ink">
+          {signed(delta)}
+          {pct}
+        </span>
+      </div>
+      {SCENARIO_ITEM_GROUPS.map((group) => {
+        const groupItems = items.filter((item) => item.source === group.source);
+        if (!groupItems.length) return null;
+        return (
+          <div key={group.source}>
+            <p className="pt-1 text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/50">
+              {group.title}
+            </p>
+            {groupItems.map((item) => (
+              <div key={item.itemId} className="flex justify-between gap-3">
+                <span className="truncate">{item.name}</span>
+                <span className="font-semibold text-scenario-ink">{signed(item.deltaUnits)}</span>
+              </div>
+            ))}
+            {group.source === 'promotions' && hasEntered ? (
+              <p className="text-[10px] text-deep-violet-blue/60">On top of the entered promotions below.</p>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function ForecastChart({
   points,
   startDate,
@@ -233,11 +219,21 @@ export default function ForecastChart({
   salesLabel,
   salesLoadedAt,
   confidence,
+  updatingBadge = null,
+  initialNotes = [],
   yearTotals = [],
   yearTotalsLoading = false,
   horizonVolume = null,
   horizonRevenue = null,
   loading = false,
+  scenario = null,
+  // Scenario builder only (all default off, so /forecast is unchanged):
+  // `toolbar` renders under the card header, `summary` right under the
+  // chart; `yearTable` replaces ForecastYearTotals. Without `onMetricChange`
+  // the Volume | Revenue tabs are hidden (the Scenario builder is volume only).
+  toolbar = null,
+  summary = null,
+  yearTable = null,
 }) {
   const chartWrapRef = useRef(null);
   const overPanelRef = useRef(false);
@@ -248,7 +244,22 @@ export default function ForecastChart({
   const [panelX, setPanelX] = useState(0);
   const [wrapWidth, setWrapWidth] = useState(0);
 
-  const visibleKeys = FORECAST_SERIES.filter((series) => visibleSeries[series.key]).map((series) => series.key);
+  // The Scenario builder adds its Simulated line (and pins, draft promo
+  // bands, seasonal average) through `scenario`; /forecast passes nothing,
+  // so it draws exactly the committed lines. All values arrive precomputed
+  // (app/utils/scenarioEngine.js); this component only draws them.
+  const allSeries = scenario ? [...FORECAST_SERIES, ...scenario.series] : FORECAST_SERIES;
+  const config = scenario
+    ? {
+        ...chartConfig,
+        ...Object.fromEntries(scenario.series.map((series) => [series.key, { label: series.label, color: series.color }])),
+      }
+    : chartConfig;
+  // Previous is empty until the forecast has a second month of sales. Its
+  // pill is then greyed out and the line and table column stay off.
+  const previousAvailable = hasPreviousLine(points);
+  const shownSeries = previousAvailable ? visibleSeries : { ...visibleSeries, previous: false };
+  const visibleKeys = allSeries.filter((series) => shownSeries[series.key]).map((series) => series.key);
   const hasVisibleLine = visibleKeys.length > 0;
   const hasData = points.some((point) =>
     visibleKeys.some((key) => point[key] != null)
@@ -285,32 +296,18 @@ export default function ForecastChart({
       ]
     : chartData;
   const ticks = plotData.map((point) => point.x);
-  const lineTimings = lineSweepTimings(plotData, SERIES_KEYS, LINE_SWEEP);
+  // Every line drawn, including the Scenario builder's, needs a timing.
+  const lineTimings = lineSweepTimings(plotData, allSeries.map((series) => series.key), LINE_SWEEP);
 
-  const showRange = Boolean(visibleSeries.current) && chartData.some((point) => point.range);
+  const showRange = Boolean(shownSeries.current) && chartData.some((point) => point.range);
   const visibleValues = chartData.flatMap((point) => [
     ...visibleKeys.map((key) => point[key]),
     ...(showRange && point.range ? point.range : []),
   ]).filter((value) => typeof value === 'number');
   // Hover text for the line pills, so the explanations don't crowd the chart.
-  // One SKU with no Initial values in range gets its own reason; today the
-  // only cause is the 6-month history minimum (Ultra Tape in the 2026
-  // backfill). The Ultra Tape sentence is data-specific: the backfill skipped
-  // it, so an All SKUs Initial total leaves it out while Current includes it.
-  // Drop that sentence once 2026 is out of view.
+  // One SKU with no Initial values in range gets its own reason.
   const initialMissingForSku = singleSeries && !points.some((point) => point.initial != null);
-  const lineHints = {
-    initial: initialMissingForSku
-      ? "No Initial Yearly Forecast for this SKU in this period: it had under 6 months of sales history when the year's plan was frozen."
-      : 'Initial Yearly Forecast: the plan for the year, frozen each December from data up to that point. ' +
-        '2026 was backfilled using data up to Dec 2025.' +
-        (singleSeries
-          ? ''
-          : ' Ultra Tape has no 2026 Initial (under 6 months of history), so the All SKUs Initial total excludes it.'),
-    current: singleSeries
-      ? null
-      : 'Pick one SKU and customer to see the 80% range and the forecast confidence.',
-  };
+  const lineHints = forecastLineHints({ singleSeries, initialMissingForSku, previousAvailable });
   const yDomain = visibleValues.length ? niceYDomain(visibleValues) : [0, 1];
   const hoverPoint = chartPoints.find((point) => point.month_year === hoverMonth);
   const hoverPromos = promosOverlappingMonth(
@@ -320,13 +317,37 @@ export default function ForecastChart({
     selectedPackTypes
   );
   const panelLeft = promoPanelLeft(panelX, wrapWidth);
-  const seriesValues = FORECAST_SERIES.filter((series) => visibleSeries[series.key]).map((series) => ({
+  const seriesValues = allSeries.filter((series) => shownSeries[series.key]).map((series) => ({
     key: series.key,
     label: series.label,
     color: series.color,
     value: hoverPoint?.[series.key],
   }));
   const formatValue = (value) => formatTooltipValue(value, metric);
+  const monthX = (monthYear) => monthYears.indexOf(monthYear);
+  // The Scenario builder sends no Simulated series until a switched-on block
+  // changes something in view, so its gap, markers and band wait for it too.
+  const simulatedSeries = scenario?.series[0] ?? null;
+  const showSimulated = Boolean(simulatedSeries) && Boolean(visibleSeries.simulated);
+  const scenarioMarkers = showSimulated
+    ? scenario.markers
+        .map((marker) => ({ ...marker, x: monthX(marker.month_year) }))
+        .filter((marker) => marker.x >= 0 && chartData[marker.x]?.simulated != null)
+    : [];
+  // The block selected in the panel or the blocks table: its months banded.
+  const selectedBand =
+    showSimulated && scenario.selectedBand
+      ? {
+          ...scenario.selectedBand,
+          // Centred on the month's points (plotted at whole x values), so
+          // the band sits behind the months it changes.
+          x1: monthX(scenario.selectedBand.startMonth) - 0.5,
+          x2: monthX(scenario.selectedBand.endMonth) + 0.5,
+        }
+      : null;
+  const scenarioBands = (scenario?.promoBands ?? [])
+    .map((band) => ({ ...band, x1: monthX(band.startMonth), x2: monthX(band.endMonth) + 1 }))
+    .filter((band) => band.x1 >= 0 && band.x2 > 0);
 
   function axisXFromClientX(clientX) {
     if (!chartWrapRef.current || !chartPoints.length) return null;
@@ -402,32 +423,43 @@ export default function ForecastChart({
           <CardTitle className="font-serif text-base font-normal text-deep-violet-blue group-data-[size=sm]/card:text-base">
             Monthly forecast
           </CardTitle>
-          <div className="flex flex-wrap gap-1.5">
-            {scopeTags.map((tag) => (
-              <ScopeTag key={tag.label} label={tag.label} value={tag.value} />
-            ))}
-          </div>
+          {scopeTags.length ? (
+            <div className="flex flex-wrap gap-1.5">
+              {scopeTags.map((tag) => (
+                <ScopeTag key={tag.label} label={tag.label} value={tag.value} />
+              ))}
+            </div>
+          ) : null}
         </div>
-        <Tabs value={metric} onValueChange={onMetricChange}>
-          <TabsList className="h-7 bg-lavander p-0.5">
-            <TabsTrigger
-              value="units"
-              className="h-6 px-2.5 text-[11px] text-deep-violet-blue/70 hover:bg-white hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white data-active:hover:bg-deep-violet-blue data-active:hover:text-white"
-            >
-              Volume
-            </TabsTrigger>
-            <TabsTrigger
-              value="revenue"
-              className="h-6 px-2.5 text-[11px] text-deep-violet-blue/70 hover:bg-white hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white data-active:hover:bg-deep-violet-blue data-active:hover:text-white"
-            >
-              Revenue
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+        {onMetricChange ? (
+          <Tabs value={metric} onValueChange={onMetricChange}>
+            <TabsList className="h-7 bg-lavander p-0.5">
+              <TabsTrigger
+                value="units"
+                className="h-6 px-2.5 text-[11px] text-deep-violet-blue/70 hover:bg-white hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white data-active:hover:bg-deep-violet-blue data-active:hover:text-white"
+              >
+                Volume
+              </TabsTrigger>
+              <TabsTrigger
+                value="revenue"
+                className="h-6 px-2.5 text-[11px] text-deep-violet-blue/70 hover:bg-white hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white data-active:hover:bg-deep-violet-blue data-active:hover:text-white"
+              >
+                Revenue
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        ) : null}
       </CardHeader>
       <CardContent className="space-y-3">
+        {toolbar}
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-lavander bg-white px-3 py-2">
-          <ForecastLineToggle visible={visibleSeries} onToggle={onToggleSeries} hints={lineHints} />
+          <ForecastLineToggle
+            series={allSeries}
+            visible={shownSeries}
+            onToggle={onToggleSeries}
+            hints={lineHints}
+            disabled={{ previous: !previousAvailable }}
+          />
           <ForecastPromoToggle
             selectedTypes={selectedPromoTypes}
             onToggleType={onTogglePromoType}
@@ -440,12 +472,26 @@ export default function ForecastChart({
           <p className="text-sm text-muted-foreground">No lines selected. Turn a line on to plot values.</p>
         ) : !hasData ? (
           // Rows start empty, so without this the first load would briefly
-          // claim there is no data. Sized like the chart frame below.
+          // claim there is no data. Same box as the loaded chart below (its
+          // pl-1 pr-3 pt-2 wrapper, 34vh / min 220px ChartContainer with the
+          // 48px tilted month axis, then the legend footer line), one line per
+          // series switched on and one point per month in the date range.
+          // A refetch keeps the old chart under the overlay instead.
           loading ? (
-            <ChartLoading
-              label="Loading forecast…"
-              className="h-[calc(34vh+10px)] min-h-[230px] rounded-xl border border-lavander bg-white"
-            />
+            <div className="pl-1 pr-3 pt-2">
+              <LineChartSkeleton
+                points={chartPoints.length}
+                lines={visibleKeys.length}
+                height={220}
+                fill
+                tiltXTicks
+                label="Loading forecast…"
+                className="h-[34vh]"
+              />
+              <div className="mt-1 flex justify-center px-3 pb-1">
+                <Skeleton className="h-3 w-72 max-w-full rounded bg-lavander motion-reduce:animate-none" />
+              </div>
+            </div>
           ) : (
             <p className="text-sm text-muted-foreground">No forecast data matches these filters.</p>
           )
@@ -462,7 +508,7 @@ export default function ForecastChart({
                   clearHover();
                 }}
               >
-              <ChartContainer config={chartConfig} className="aspect-auto h-[34vh] min-h-[220px] w-full">
+              <ChartContainer config={config} className="aspect-auto h-[34vh] min-h-[220px] w-full">
                 <ComposedChart
                   accessibilityLayer
                   data={plotData}
@@ -507,10 +553,20 @@ export default function ForecastChart({
                           labelFormatter={(_value, payload) => payload?.[0]?.payload?.label ?? ''}
                           valueFormatter={formatValue}
                           footer={
-                            <ForecastPointDetails
-                              details={forecastPointDetails(point, metric, formatValue)}
-                              className="mt-1 border-t border-lavander pt-1.5"
-                            />
+                            <>
+                              {showSimulated ? (
+                                <ScenarioPointDetails
+                                  point={point}
+                                  items={scenario.monthItems?.get(point.month_year) ?? []}
+                                  formatValue={formatValue}
+                                  className="mt-1 border-t border-lavander pt-1.5"
+                                />
+                              ) : null}
+                              <ForecastPointDetails
+                                details={forecastPointDetails(point, metric, formatValue)}
+                                className="mt-1 border-t border-lavander pt-1.5"
+                              />
+                            </>
                           }
                         />
                       );
@@ -544,7 +600,64 @@ export default function ForecastChart({
                     />
                   ) : null}
                   */}
-                  {FORECAST_SERIES.filter((series) => visibleSeries[series.key]).map((series) => (
+                  {selectedBand && selectedBand.x1 >= -0.5 && selectedBand.x2 > 0 ? (
+                    <ReferenceArea
+                      x1={Math.max(selectedBand.x1, 0)}
+                      x2={selectedBand.x2}
+                      fill="var(--color-scenario-soft)"
+                      fillOpacity={0.9}
+                      stroke="none"
+                      ifOverflow="visible"
+                      label={{
+                        value: selectedBand.label,
+                        position: 'insideTop',
+                        fontSize: 10,
+                        fontWeight: 600,
+                        fill: 'var(--color-scenario-ink)',
+                      }}
+                    />
+                  ) : null}
+                  {scenarioBands.map((band) => (
+                    <ReferenceArea
+                      key={band.key}
+                      x1={band.x1}
+                      x2={band.x2}
+                      fill="none"
+                      stroke={band.color}
+                      strokeDasharray="4 3"
+                      strokeWidth={1.5}
+                      ifOverflow="visible"
+                    />
+                  ))}
+                  {scenario?.seasonalAverage != null && visibleSeries.simulated ? (
+                    <ReferenceLine
+                      y={scenario.seasonalAverage}
+                      stroke="#A8741A"
+                      strokeDasharray="4 4"
+                      strokeWidth={1.4}
+                      ifOverflow="extendDomain"
+                      label={{
+                        value: `Seasonal avg ${formatAxisValue(Math.round(scenario.seasonalAverage), metric)}`,
+                        position: 'insideTopRight',
+                        fontSize: 10,
+                        fill: '#A8741A',
+                      }}
+                    />
+                  ) : null}
+                  {showSimulated ? (
+                    <Area
+                      dataKey="simulatedGap"
+                      type="monotone"
+                      stroke="none"
+                      fill={simulatedSeries.color}
+                      fillOpacity={0.3}
+                      tooltipType="none"
+                      legendType="none"
+                      activeDot={false}
+                      isAnimationActive={false}
+                    />
+                  ) : null}
+                  {allSeries.filter((series) => shownSeries[series.key]).map((series) => (
                     <Line
                       key={series.key}
                       dataKey={series.key}
@@ -565,6 +678,18 @@ export default function ForecastChart({
                       activeDot={{ r: 5, fill: series.color }}
                       connectNulls={series.connectNulls ?? true}
                       {...lineTimings[series.key]}
+                    />
+                  ))}
+                  {scenarioMarkers.map((marker) => (
+                    <ReferenceDot
+                      key={`marker-${marker.key}`}
+                      x={marker.x}
+                      y={chartData[marker.x].simulated}
+                      r={6}
+                      fill={simulatedSeries.color}
+                      stroke="#fff"
+                      strokeWidth={2}
+                      ifOverflow="visible"
                     />
                   ))}
                 </ComposedChart>
@@ -588,6 +713,16 @@ export default function ForecastChart({
                     seriesValues={seriesValues}
                     details={forecastPointDetails(hoverPoint, metric, formatValue)}
                     formatValue={formatValue}
+                    scenarioDetails={
+                      showSimulated ? (
+                        <ScenarioPointDetails
+                          point={hoverPoint}
+                          items={scenario.monthItems?.get(hoverMonth) ?? []}
+                          formatValue={formatValue}
+                          hasEntered={scenario.stacksOnEntered}
+                        />
+                      ) : null
+                    }
                     promos={hoverPromos}
                     openPromoId={openPromoId}
                     onTogglePromo={(key) =>
@@ -602,24 +737,34 @@ export default function ForecastChart({
                 salesLabel={salesLabel}
                 salesLoadedAt={salesLoadedAt}
                 confidence={confidence}
+                updatingBadge={updatingBadge}
+                initialNotes={initialNotes}
                 className="-mt-6 px-3 pb-1 pt-0"
               />
             </div>
+            {summary}
             {/* `loading` too: while the page refetches, `points` still hold
                 the previous filter's months, and a year total from those
                 would be wrong rather than merely stale. */}
-            <ForecastYearTotals
-              years={yearTotals}
-              loading={yearTotalsLoading || loading}
-              horizonVolume={horizonVolume}
-              horizonRevenue={horizonRevenue}
-            />
+            {yearTable ?? (
+              <ForecastYearTotals
+                years={yearTotals}
+                loading={yearTotalsLoading || loading}
+                horizonVolume={horizonVolume}
+                horizonRevenue={horizonRevenue}
+                simulatedYears={showSimulated ? scenario.simulatedYears : []}
+              />
+            )}
 
-            <ForecastTable
-              points={points}
-              metric={metric}
-              visibleSeries={visibleSeries}
-            />
+            {/* The Scenario builder reviews changes in its comparison and
+                blocks tables instead, so the monthly table is /forecast only. */}
+            {scenario ? null : (
+              <ForecastTable
+                points={points}
+                metric={metric}
+                visibleSeries={shownSeries}
+              />
+            )}
           </>
         )}
       </CardContent>

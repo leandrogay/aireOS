@@ -6,13 +6,13 @@ import { MAX_FILES_PER_BATCH } from '@/app/config/upload';
 import { validateFile } from '@/app/utils/fileInspect';
 import { wasSaved } from '@/app/utils/loadPreview';
 import {
-  STAGES,
   checkFromResult,
   isSkipped,
   isUploadable,
   outcomeFromResult,
   uploadOptionsFor,
 } from '@/app/utils/uploadFlow';
+import { FINISH_PAUSE_MS } from '@/app/utils/uploadProgress';
 import { checkUpload, uploadFile } from '@/app/services/uploadApi';
 import UploadTray from '@/components/upload/UploadTray';
 
@@ -47,10 +47,6 @@ function UploadQueue({ showTray, children }) {
   // Counts uploads that answered; the upload page reloads Recent uploads on it.
   const [uploadsFinished, setUploadsFinished] = useState(0);
 
-  // Stage timers keyed by item id, so a file that finishes early stops
-  // advancing its own labels without touching any other file's.
-  const stageTimers = useRef(new Map());
-
   // Validation and checks are async, so by the time one answers the list has
   // moved on. This is what the duplicate-name and same-contents checks read.
   const itemsRef = useRef(items);
@@ -68,19 +64,6 @@ function UploadQueue({ showTray, children }) {
     setItems((prev) =>
       prev.map((item) => (item.id === id ? { ...item, ...changes } : item)),
     );
-  }, []);
-
-  const clearStageTimers = useCallback((id) => {
-    (stageTimers.current.get(id) || []).forEach(clearTimeout);
-    stageTimers.current.delete(id);
-  }, []);
-
-  useEffect(() => {
-    const timers = stageTimers.current;
-    return () => {
-      timers.forEach((handles) => handles.forEach(clearTimeout));
-      timers.clear();
-    };
   }, []);
 
   // Moving between pages keeps an upload going, but a refresh or a closed tab
@@ -203,26 +186,22 @@ function UploadQueue({ showTray, children }) {
 
   const removeItem = useCallback(
     (id) => {
-      clearStageTimers(id);
       pendingHashes.current.delete(id);
       setItems((prev) => prev.filter((item) => item.id !== id));
     },
-    [clearStageTimers],
+    [],
   );
 
   // Takes out every file that has not been sent: the "Remove all" of the
   // files waiting under the drop zone. Sent files keep their results.
   const clearStaged = useCallback(() => {
     const staged = itemsRef.current.filter((item) => !item.batch);
-    staged.forEach((item) => {
-      clearStageTimers(item.id);
-      pendingHashes.current.delete(item.id);
-    });
+    staged.forEach((item) => pendingHashes.current.delete(item.id));
     const stagedIds = new Set(staged.map((item) => item.id));
     setItems((prev) => prev.filter((item) => !stagedIds.has(item.id)));
     setRejections([]);
     setBatchError('');
-  }, [clearStageTimers]);
+  }, []);
 
   // Takes the finished results out of the list. Files mid-upload stay: their
   // requests are already on the server and their rows report how they went.
@@ -262,42 +241,41 @@ function UploadQueue({ showTray, children }) {
   // ---- Uploading ----------------------------------------------------------
 
   // One request per file, started together and never awaited as a group: a
-  // file that fails, or one that takes a minute in Claude, leaves the others
+  // file that fails, or one that takes a minute in Gemini, leaves the others
   // to finish and report on their own.
   //
-  // Two parts: sending the bytes has a real percentage (sendPercent), then the
-  // server's work has none, so its labels start on their timers once the file
-  // has been sent (see STAGES). A large file would otherwise read "Processing
-  // file" while most of it was still on its way.
+  // Two parts on one bar (UploadProgress): sending the bytes has a real
+  // percentage (sendPercent), then the server's work has none, so the bar
+  // estimates it from the time since the file was sent (sentAt). A large file
+  // would otherwise read "Processing file" while most of it was still on its
+  // way. When the response lands the bar fills (finished) and holds for
+  // FINISH_PAUSE_MS, so the result replaces a full bar rather than a partial
+  // one, which would read as cut short.
   const uploadItem = useCallback(
     async (item, batch) => {
-      clearStageTimers(item.id);
       patchItem(item.id, {
         batch,
         phase: 'uploading',
-        stage: STAGES[0].key,
         sendPercent: 0,
+        sentAt: null,
+        finished: false,
         outcome: null,
         sentBack: false,
         uploadRun: (item.uploadRun || 0) + 1,
       });
-
-      const startStageTimers = () => {
-        patchItem(item.id, { sendPercent: null });
-        const handles = STAGES.slice(1).map((stage) =>
-          setTimeout(() => patchItem(item.id, { stage: stage.key }), stage.afterMs),
-        );
-        stageTimers.current.set(item.id, handles);
-      };
+      const progressCleared = { sendPercent: null, sentAt: null, finished: false };
 
       try {
         const outcome = outcomeFromResult(
           await uploadFile(item.file, {
             ...uploadOptionsFor(item),
             onProgress: (percent) => patchItem(item.id, { sendPercent: percent }),
-            onSent: startStageTimers,
+            onSent: () => patchItem(item.id, { sendPercent: null, sentAt: Date.now() }),
           }),
         );
+
+        patchItem(item.id, { finished: true });
+        await new Promise((resolve) => setTimeout(resolve, FINISH_PAUSE_MS));
 
         if (outcome.kind === 'duplicate') {
           // The upload found an earlier copy the check did not (the check
@@ -308,10 +286,9 @@ function UploadQueue({ showTray, children }) {
           // Out of its batch and back under the drop zone, where the
           // decision is made.
           patchItem(item.id, {
+            ...progressCleared,
             batch: null,
             phase: 'ready',
-            stage: null,
-            sendPercent: null,
             decision: null,
             sentBack: true,
             check: {
@@ -328,21 +305,18 @@ function UploadQueue({ showTray, children }) {
           // compared against (the server's duplicate check takes over). A
           // failed file stays pending, since Try again can still send it.
           if (outcome.kind !== 'failed') pendingHashes.current.delete(item.id);
-          patchItem(item.id, { phase: 'done', stage: null, sendPercent: null, outcome });
+          patchItem(item.id, { ...progressCleared, phase: 'done', outcome });
           setUploadsFinished((count) => count + 1);
         }
       } catch (error) {
         patchItem(item.id, {
+          ...progressCleared,
           phase: 'done',
-          stage: null,
-          sendPercent: null,
           outcome: { kind: 'failed', error: error.message },
         });
-      } finally {
-        clearStageTimers(item.id);
       }
     },
-    [clearStageTimers, patchItem],
+    [patchItem],
   );
 
   const startUpload = useCallback(() => {

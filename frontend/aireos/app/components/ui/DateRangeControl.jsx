@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { CalendarDays, ChevronDown } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import MonthRangeCalendar from '@/components/dashboard/MonthRangeCalendar';
+import MonthRangeCalendar from '@/components/ui/MonthRangeCalendar';
 import { cn } from '@/lib/utils';
 import { findPreset } from '@/app/utils/dateRangePresets';
 import { formatPeriodName, periodBounds } from '@/app/utils/periodComparison';
@@ -13,7 +13,8 @@ const actionButtonClass =
 const sectionLabelClass = 'text-[11px] font-medium uppercase tracking-wide text-deep-violet-blue/60';
 
 /**
- * The dashboard's Period control, above the trend chart. The trigger
+ * A Period control (the dashboard's, above its trend chart; the Scenario
+ * builder's toolbar). The trigger
  * always shows the range the dashboard is actually using — its preset name
  * (e.g. "Latest month") or "Custom" — so there is never a highlighted preset
  * next to a blank picker. The popover lists presets on the left (applied at

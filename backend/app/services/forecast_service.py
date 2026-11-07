@@ -24,8 +24,10 @@ when write=True. They are meant to be triggered out of band
 (scripts/refresh_forecast.py), not from a request path.
 """
 
+import logging
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 
 import pandas as pd
 from google.cloud import bigquery
@@ -34,6 +36,8 @@ from app.services import catalog_service, pl_forecast, promotion_service
 from app.services import bigquery as bigquery_service
 from app import config
 from app.services.bigquery import get_bigquery_client
+
+logger = logging.getLogger("uvicorn.error")
 
 FORECAST_TABLE = bigquery_service.BQ_FORECAST_TABLE
 SALES_ENRICHED_VIEW = config.BQ_SALES_ENRICHED_VIEW
@@ -193,6 +197,85 @@ def get_forecast_view(
             **forecast_stamps_from_rows(rows),
             "latest_sales_loaded_at": sales_loaded_at,
         },
+    }
+
+
+_ALTERNATIVE_REVENUE_COLUMNS = {
+    "alt_forecast_current": "alt_forecast_current_revenue",
+    "alt_low_80": "alt_low_80_revenue",
+    "alt_high_80": "alt_high_80_revenue",
+}
+
+
+def get_forecast_alternatives(
+    product_name: str | None = None,
+    customer_name: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict:
+    """The forecast without the model's promotions, for months where the Current line uses them.
+
+    Used by the Scenario builder's "Plan my own promotions" view
+    (bigquery.get_forecast_alternatives). The cartons are priced at the same
+    realised price as the Current line, so switching views changes revenue
+    only because the forecast changed.
+    """
+    filters = {
+        "product_name": product_name or None,
+        "customer_name": customer_name or None,
+        "start_date": start_date or None,
+        "end_date": end_date or None,
+    }
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        rows_job = pool.submit(bigquery_service.get_forecast_alternatives, **filters)
+        prices_job = pool.submit(
+            bigquery_service.get_realised_prices,
+            product_name=filters["product_name"],
+            customer_name=filters["customer_name"],
+        )
+        rows = rows_job.result()
+        prices = prices_job.result()
+
+    priced = []
+    for row in rows:
+        price = prices.get((row.get("customer_id"), row.get("sku")))
+        revenue = {
+            revenue_key: round(row[cartons_key] * price, 2)
+            if row.get(cartons_key) is not None and price is not None
+            else None
+            for cartons_key, revenue_key in _ALTERNATIVE_REVENUE_COLUMNS.items()
+        }
+        priced.append({**row, **revenue})
+
+    return {**filters, "rows": priced}
+
+
+def _is_past(stamp: str | None, now: datetime) -> bool:
+    if not stamp:
+        return False
+    return datetime.fromisoformat(stamp.replace("Z", "+00:00")) < now
+
+
+def get_initial_status() -> dict:
+    """Whether each year's Initial Yearly Forecast is still updating or locked.
+
+    Best effort, behind its own endpoint: the note it feeds is extra detail,
+    so a failed read logs and returns no years rather than failing the page.
+    `locked` is decided here on the server's UTC clock (open while now <=
+    lock_at), so a viewer's wrong clock can't flip it.
+    """
+    try:
+        meta = bigquery_service.get_initial_meta()
+    except Exception as exc:
+        logger.warning("Could not read the Initial Yearly Forecast status: %s", exc)
+        return {"years": []}
+    now = datetime.now(timezone.utc)
+    return {
+        "years": [
+            {**row, "locked": _is_past(row["lock_at"], now)}
+            for row in meta
+        ]
     }
 
 

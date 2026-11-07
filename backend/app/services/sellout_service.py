@@ -18,7 +18,14 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
 from app import config
-from app.services import catalog_service, ingestion_service, mapping_checks, promotion_pricing, sql
+from app.services import (
+    catalog_service,
+    forecast_refresh_events,
+    ingestion_service,
+    mapping_checks,
+    promotion_pricing,
+    sql,
+)
 
 
 class SelloutLoadError(RuntimeError):
@@ -627,6 +634,11 @@ def load_clean_rows(
                     rows_stored=len(records),
                     rows_consolidated=rows_consolidated,
                 )
+            refresh_request_id = forecast_refresh_events.record_change(
+                connection,
+                "sales_upload",
+                f"sales:{facts[0].get('source_file') or 'unknown'}",
+            )
     except SelloutLoadError:
         raise
     except Exception as exc:
@@ -639,6 +651,8 @@ def load_clean_rows(
     }
     if ingestion_id is not None:
         result["ingestion_id"] = ingestion_id
+    if refresh_request_id is not None:
+        result["forecast_refresh_request_id"] = refresh_request_id
     return result
 
 
@@ -671,10 +685,9 @@ def _get_read_engine() -> Engine:
 # Revenue on each chosen row stays the ingested sellout.revenue. A blank
 # revenue (NULL, not an explicit 0) takes its estimate from
 # :revenue_estimates (see _REVENUE_ESTIMATES), and only a row with no
-# estimate falls back to quantity_units times skus.price, the one current
-# catalog list price for that SKU. Inventory reads only units from this view,
-# so it binds NO_REVENUE_ESTIMATES and the price join does not change stock
-# figures.
+# estimate falls back to quantity_units times the average list price
+# effective across its sales days. Inventory reads only units from this view,
+# so it binds NO_REVENUE_ESTIMATES; pricing does not change stock figures.
 #
 # Estimated revenue (promotion_pricing: the SKU price on each sale day, less
 # any promotion and voucher) is worked out in Python for each read, by
@@ -719,15 +732,28 @@ EFFECTIVE_SELLOUT_CTE = """
     effective_sellout AS (
         SELECT p.retailer_id, p.store_code, p.sku, p.period_start, p.period_end,
                p.quantity_units,
-               COALESCE(p.revenue, e.estimated_revenue, p.quantity_units * k.price) AS revenue,
+               COALESCE(p.revenue, e.estimated_revenue,
+                        p.quantity_units * effective_price.price) AS revenue,
                -- Either fill counts as estimated: the dashboard marks it EST.
                (p.revenue IS NULL) AS revenue_estimated,
                p.period_type
         FROM preferred_rows p
-        LEFT JOIN skus k ON k.sku = p.sku
         LEFT JOIN """ + _REVENUE_ESTIMATES + """
           ON e.retailer_id = p.retailer_id AND e.store_code = p.store_code AND e.sku = p.sku
          AND e.period_start = p.period_start AND e.period_type = p.period_type
+        LEFT JOIN LATERAL (
+            SELECT CASE WHEN COUNT(*) = COUNT(day_price.price)
+                        THEN AVG(day_price.price) END AS price
+            FROM generate_series(p.period_start::date, p.period_end::date,
+                                 interval '1 day') AS sale_day(day_date)
+            LEFT JOIN LATERAL (
+                SELECT price FROM sku_price_periods
+                WHERE sku = p.sku AND effective_from <= sale_day.day_date::date
+                  AND (effective_to IS NULL OR effective_to >= sale_day.day_date::date)
+                ORDER BY effective_from DESC LIMIT 1
+            ) AS day_price ON TRUE
+            WHERE p.revenue IS NULL AND e.estimated_revenue IS NULL
+        ) AS effective_price ON TRUE
     )
 """
 
@@ -738,13 +764,26 @@ PRICED_SELLOUT_FROM = """
 (
     SELECT src.retailer_id, src.store_code, src.sku, src.period_start, src.period_end,
            src.period_type, src.quantity_units,
-           COALESCE(src.revenue, e.estimated_revenue, src.quantity_units * k.price) AS revenue,
+           COALESCE(src.revenue, e.estimated_revenue,
+                    src.quantity_units * effective_price.price) AS revenue,
            (src.revenue IS NULL) AS revenue_estimated
     FROM sellout src
-    LEFT JOIN skus k ON k.sku = src.sku
     LEFT JOIN """ + _REVENUE_ESTIMATES + """
       ON e.retailer_id = src.retailer_id AND e.store_code = src.store_code AND e.sku = src.sku
      AND e.period_start = src.period_start AND e.period_type = src.period_type
+    LEFT JOIN LATERAL (
+        SELECT CASE WHEN COUNT(*) = COUNT(day_price.price)
+                    THEN AVG(day_price.price) END AS price
+        FROM generate_series(src.period_start::date, src.period_end::date,
+                             interval '1 day') AS sale_day(day_date)
+        LEFT JOIN LATERAL (
+            SELECT price FROM sku_price_periods
+            WHERE sku = src.sku AND effective_from <= sale_day.day_date::date
+              AND (effective_to IS NULL OR effective_to >= sale_day.day_date::date)
+            ORDER BY effective_from DESC LIMIT 1
+        ) AS day_price ON TRUE
+        WHERE src.revenue IS NULL AND e.estimated_revenue IS NULL
+    ) AS effective_price ON TRUE
 ) s
 """
 

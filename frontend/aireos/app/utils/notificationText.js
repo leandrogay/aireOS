@@ -1,4 +1,5 @@
 import { formatDate } from '@/lib/formatDate';
+import { isRefreshFailure } from '@/app/utils/forecastNotificationText';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 
 // ==== Notification headings ====
@@ -18,11 +19,15 @@ function lowStockHeading(payload) {
   };
 }
 
+// The three cases follow forecastNotificationText.forecastTitle (a refresh
+// that never started is its own failure), worded for the tag + title layout.
 function forecastHeading(payload, success) {
   const date = formatDate(payload.updated_at?.slice(0, 10));
-  return success
-    ? { tag: 'Success', tone: 'success', title: `Forecast pipeline completed – ${date}` }
-    : { tag: 'Failure', tone: 'danger', title: `Forecast pipeline failed – ${date}` };
+  if (success) return { tag: 'Success', tone: 'success', title: `Forecast pipeline completed – ${date}` };
+  if (isRefreshFailure(payload, success)) {
+    return { tag: 'Failure', tone: 'danger', title: `Forecast refresh couldn't start – ${date}` };
+  }
+  return { tag: 'Failure', tone: 'danger', title: `Forecast pipeline failed – ${date}` };
 }
 
 // ==== AI model outdated (model_outdated) ====

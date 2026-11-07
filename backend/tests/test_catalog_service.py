@@ -4,7 +4,9 @@ from decimal import Decimal
 import pytest
 from conftest import FakeConnection, FakeEngine
 
-from app.schemas.catalog import RetailerCreate, RetailerUpdate, SkuCreate, SkuUpdate
+from app.schemas.catalog import (
+    RetailerCreate, RetailerUpdate, SkuCreate, SkuPricePeriodCorrection, SkuUpdate,
+)
 from app.services import catalog_service
 from app.services.settings.common import CustomerNotFoundError
 
@@ -153,7 +155,7 @@ def test_returns_prices_from_the_version_in_effect_on_a_past_date(monkeypatch):
     sql, params = engine.conn.calls[0]
     assert "FROM sku_history" in sql
     assert "DISTINCT ON (sku)" in sql
-    assert "changed_at >= CAST(:as_of_date AS DATE)" in sql
+    assert "AT TIME ZONE 'Asia/Singapore'" in sql
     assert params == {"as_of_date": as_of_date}
 
 
@@ -204,8 +206,10 @@ def test_create_sku_and_history_share_one_transaction(monkeypatch):
 
     created = catalog_service.create_sku(_sku_create())
 
-    assert created == SKU_ROW
+    assert {key: created[key] for key in SKU_ROW} == SKU_ROW
+    assert created["price_effective_from"] == catalog_service._price_today()
     assert len(engine.conn.sql_containing("INSERT INTO sku_history")) == 1
+    assert len(engine.conn.sql_containing("INSERT INTO sku_price_periods")) == 1
     _, history_params = engine.conn.sql_containing("INSERT INTO sku_history")[0]
     assert history_params["action"] == "created"
     assert history_params["sku"] == "NEW-001"
@@ -249,7 +253,11 @@ def test_update_sku_does_not_change_the_sku_code(monkeypatch):
     updated = {**SKU_ROW, "price": Decimal("13.00")}
 
     def respond(sql, params):
+        if "SELECT price FROM skus" in sql:
+            return [(SKU_ROW["price"],)]
         if "UPDATE skus" in sql:
+            return [updated]
+        if "FROM skus" in sql:
             return [updated]
         return []
 
@@ -263,6 +271,210 @@ def test_update_sku_does_not_change_the_sku_code(monkeypatch):
     assert "SET sku =" not in update_sql
     assert update_params["sku"] == "NEW-001"
     assert engine.conn.sql_containing("INSERT INTO sku_history")[0][1]["action"] == "updated"
+    assert len(engine.conn.sql_containing("INSERT INTO sku_price_periods")) == 1
+
+
+def test_future_price_keeps_today_price_and_closes_previous_period(monkeypatch):
+    monkeypatch.setattr(catalog_service, "_price_today", lambda: datetime.date(2026, 11, 4))
+    scheduled = {**SKU_ROW, "price": Decimal("12.00")}
+    current = {**SKU_ROW, "price": Decimal("10.00")}
+
+    def respond(sql, params):
+        if "SELECT price FROM skus" in sql:
+            return [(Decimal("10.00"),)]
+        if "UPDATE skus" in sql:
+            return [scheduled]
+        if "FROM skus" in sql:
+            return [current]
+        if "FROM sku_price_periods" in sql:
+            return [{"price_period_id": 7, "price": Decimal("10.00"),
+                     "effective_from": datetime.date(2026, 1, 1),
+                     "effective_to": None}]
+        return []
+
+    engine = _install_fake_write_engine(monkeypatch, respond)
+    payload = SkuUpdate(**{
+        **{key: value for key, value in scheduled.items() if key != "sku"},
+        "price_changed": True,
+        "price_effective_from": datetime.date(2026, 12, 1),
+    })
+
+    result = catalog_service.update_sku("NEW-001", payload)
+
+    assert result["price"] == Decimal("10.00")
+    assert engine.conn.sql_containing("UPDATE sku_price_periods")[0][1]["ends_on"] == datetime.date(2026, 11, 30)
+    assert engine.conn.sql_containing("INSERT INTO sku_price_periods")[0][1]["price"] == Decimal("12.00")
+    assert engine.conn.sql_containing("INSERT INTO sku_history")[0][1]["price_effective_from"] == datetime.date(2026, 12, 1)
+
+
+def test_new_price_fills_gap_before_later_scheduled_price(monkeypatch):
+    periods = [
+        {"price_period_id": 1, "price": Decimal("90.00"),
+         "effective_from": datetime.date(2026, 11, 4),
+         "effective_to": datetime.date(2026, 11, 4)},
+        {"price_period_id": 2, "price": Decimal("99.00"),
+         "effective_from": datetime.date(2026, 11, 7), "effective_to": None},
+    ]
+    entered = {**SKU_ROW, "price": Decimal("95.00")}
+
+    def respond(sql, params):
+        if "SELECT price FROM skus" in sql:
+            return [(Decimal("99.00"),)]
+        if "FROM sku_price_periods" in sql:
+            return periods
+        if "UPDATE skus SET sku_range" in sql:
+            return [entered]
+        if "FROM skus" in sql:
+            return [entered]
+        return []
+
+    engine = _install_fake_write_engine(monkeypatch, respond)
+    payload = SkuUpdate(**{
+        **{key: value for key, value in entered.items() if key != "sku"},
+        "price_changed": True,
+        "price_effective_from": datetime.date(2026, 11, 5),
+    })
+    catalog_service.update_sku("NEW-001", payload)
+
+    inserted = engine.conn.sql_containing("INSERT INTO sku_price_periods")[0][1]
+    assert inserted["effective_from"] == datetime.date(2026, 11, 5)
+    assert inserted["effective_to"] == datetime.date(2026, 11, 6)
+    assert engine.conn.sql_containing("UPDATE sku_price_periods") == []
+    assert engine.conn.sql_containing("UPDATE skus SET price")[0][1]["price"] == Decimal("99.00")
+    assert engine.conn.sql_containing("INSERT INTO sku_history")[0][1]["price_effective_to"] == datetime.date(2026, 11, 6)
+
+
+def test_new_price_cannot_overlap_later_scheduled_price():
+    periods = [
+        {"price_period_id": 1, "price": Decimal("90.00"),
+         "effective_from": datetime.date(2026, 11, 4),
+         "effective_to": datetime.date(2026, 11, 4)},
+        {"price_period_id": 2, "price": Decimal("99.00"),
+         "effective_from": datetime.date(2026, 11, 7), "effective_to": None},
+    ]
+    conn = FakeConnection(lambda sql, params: periods if "FROM sku_price_periods" in sql else [])
+    with pytest.raises(catalog_service.SkuPricePeriodConflictError, match="next scheduled"):
+        catalog_service._insert_price_period(
+            conn, "NEW-001", Decimal("95.00"), datetime.date(2026, 11, 5),
+            datetime.date(2026, 11, 7),
+        )
+    assert conn.sql_containing("INSERT INTO sku_price_periods") == []
+    assert conn.sql_containing("UPDATE sku_price_periods") == []
+
+
+def test_correct_price_dates_records_old_and_new_dates_in_one_transaction(monkeypatch):
+    periods = [
+        {"price_period_id": 1, "price": Decimal("10"),
+         "effective_from": datetime.date(2026, 1, 1),
+         "effective_to": datetime.date(2026, 11, 30)},
+        {"price_period_id": 2, "price": Decimal("12"),
+         "effective_from": datetime.date(2026, 12, 1), "effective_to": None},
+    ]
+
+    def respond(sql, params):
+        if "SELECT sku FROM skus" in sql:
+            return [("NEW-001",)]
+        if "FROM sku_price_periods" in sql:
+            return periods
+        return []
+
+    engine = _install_fake_write_engine(monkeypatch, respond)
+    corrected = catalog_service.correct_sku_price_period(
+        "NEW-001", 2,
+        SkuPricePeriodCorrection(price=Decimal("13"),
+                                 effective_from=datetime.date(2026, 12, 5)),
+        "nisha@shop-aire.com",
+    )
+
+    assert corrected["effective_from"] == datetime.date(2026, 12, 5)
+    assert corrected["price"] == Decimal("13")
+    assert len(engine.conn.sql_containing("UPDATE sku_price_periods")) == 1
+    assert engine.conn.sql_containing("UPDATE skus SET price")[0][1]["price"] == Decimal("13")
+    _, audit = engine.conn.sql_containing("INSERT INTO sku_price_period_corrections")[0]
+    assert audit["old_price"] == Decimal("12")
+    assert audit["new_price"] == Decimal("13")
+    assert audit["old_from"] == datetime.date(2026, 12, 1)
+    assert audit["new_from"] == datetime.date(2026, 12, 5)
+    assert audit["corrected_by"] == "nisha@shop-aire.com"
+
+
+def test_correct_price_dates_rejects_overlap_without_writing(monkeypatch):
+    periods = [
+        {"price_period_id": 1, "price": Decimal("10"),
+         "effective_from": datetime.date(2026, 1, 1),
+         "effective_to": datetime.date(2026, 11, 30)},
+        {"price_period_id": 2, "price": Decimal("12"),
+         "effective_from": datetime.date(2026, 12, 1), "effective_to": None},
+    ]
+
+    def respond(sql, params):
+        if "SELECT sku FROM skus" in sql:
+            return [("NEW-001",)]
+        if "FROM sku_price_periods" in sql:
+            return periods
+        return []
+
+    engine = _install_fake_write_engine(monkeypatch, respond)
+    with pytest.raises(catalog_service.SkuPricePeriodConflictError, match="overlap"):
+        catalog_service.correct_sku_price_period(
+            "NEW-001", 2,
+            SkuPricePeriodCorrection(price=Decimal("12"),
+                                     effective_from=datetime.date(2026, 11, 30)),
+            "nisha@shop-aire.com",
+        )
+    assert engine.conn.sql_containing("UPDATE sku_price_periods") == []
+    assert engine.conn.sql_containing("INSERT INTO sku_price_period_corrections") == []
+
+
+def test_correcting_past_price_keeps_latest_catalog_price(monkeypatch):
+    periods = [
+        {"price_period_id": 1, "price": Decimal("10"),
+         "effective_from": datetime.date(2026, 1, 1),
+         "effective_to": datetime.date(2026, 11, 30)},
+        {"price_period_id": 2, "price": Decimal("12"),
+         "effective_from": datetime.date(2026, 12, 1), "effective_to": None},
+    ]
+
+    def respond(sql, params):
+        if "SELECT sku FROM skus" in sql:
+            return [("NEW-001",)]
+        if "FROM sku_price_periods" in sql:
+            return periods
+        return []
+
+    engine = _install_fake_write_engine(monkeypatch, respond)
+    catalog_service.correct_sku_price_period(
+        "NEW-001", 1,
+        SkuPricePeriodCorrection(price=Decimal("9.50"),
+                                 effective_from=datetime.date(2026, 1, 1),
+                                 effective_to=datetime.date(2026, 11, 30)),
+        "nisha@shop-aire.com",
+    )
+    assert engine.conn.sql_containing("UPDATE skus SET price")[0][1]["price"] == Decimal("12")
+    assert engine.conn.sql_containing("INSERT INTO sku_price_period_corrections")[0][1]["old_price"] == Decimal("10")
+
+
+def test_unchanged_price_dates_do_not_add_a_correction(monkeypatch):
+    period = {"price_period_id": 1, "price": Decimal("10"),
+              "effective_from": datetime.date(2026, 1, 1), "effective_to": None}
+
+    def respond(sql, params):
+        if "SELECT sku FROM skus" in sql:
+            return [("NEW-001",)]
+        if "FROM sku_price_periods" in sql:
+            return [period]
+        return []
+
+    engine = _install_fake_write_engine(monkeypatch, respond)
+    corrected = catalog_service.correct_sku_price_period(
+        "NEW-001", 1,
+        SkuPricePeriodCorrection(price=Decimal("10"),
+                                 effective_from=datetime.date(2026, 1, 1)),
+        "nisha@shop-aire.com",
+    )
+    assert corrected == period
+    assert engine.conn.sql_containing("UPDATE sku_price_periods") == []
+    assert engine.conn.sql_containing("INSERT INTO sku_price_period_corrections") == []
 
 
 def test_archive_sku_is_blocked_when_promotions_reference_it(monkeypatch):
@@ -296,6 +508,46 @@ def test_archive_sku_versions_snapshot_and_marks_master_inactive(monkeypatch):
     assert engine.conn.sql_containing("INSERT INTO old_skus") == []
     assert len(engine.conn.sql_containing("SET is_active = FALSE")) == 1
     assert engine.conn.sql_containing("INSERT INTO sku_history")[0][1]["action"] == "archived"
+
+
+def test_archive_sku_records_refresh_in_its_transaction(monkeypatch):
+    from app.services import forecast_refresh_events
+
+    def respond(sql, params):
+        if "FROM skus" in sql:
+            return [SKU_ROW]
+        if "FROM promotion_skus" in sql:
+            return [(False,)]
+        return []
+
+    engine = _install_fake_write_engine(monkeypatch, respond)
+    recorded = []
+    queued = []
+    monkeypatch.setattr(forecast_refresh_events, "record_change", lambda conn, kind, source: recorded.append((conn, kind, source)) or 42)
+    monkeypatch.setattr(forecast_refresh_events, "enqueue_best_effort", queued.append)
+
+    catalog_service.archive_sku("NEW-001")
+
+    assert recorded == [(engine.conn, "sku_change", "sku:NEW-001")]
+    assert queued == [42]
+
+
+def test_restore_sku_records_history_and_refresh(monkeypatch):
+    from app.services import forecast_refresh_events
+
+    def respond(sql, params):
+        return [SKU_ROW] if "UPDATE skus" in sql else []
+
+    engine = _install_fake_write_engine(monkeypatch, respond)
+    recorded = []
+    queued = []
+    monkeypatch.setattr(forecast_refresh_events, "record_change", lambda conn, kind, source: recorded.append((kind, source)) or 43)
+    monkeypatch.setattr(forecast_refresh_events, "enqueue_best_effort", queued.append)
+
+    assert catalog_service.restore_sku("NEW-001") == SKU_ROW
+    assert engine.conn.sql_containing("INSERT INTO sku_history")[0][1]["action"] == "restored"
+    assert recorded == [("sku_change", "sku:NEW-001")]
+    assert queued == [43]
 
 
 # ---- retailers under a customer (Customers page) --------------------------------

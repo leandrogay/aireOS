@@ -232,38 +232,35 @@ export function parseTypedDate(raw) {
 }
 
 /**
- * One date: type digits into dd/mm/yyyy, or pick from the calendar icon.
- * Slashes stay put; only the number segments can change.
+ * The bare dd/mm/yyyy text box: type digits, the slashes stay put and only
+ * the number segments change. Reports a YYYY-MM-DD once the date is whole
+ * (or '' when emptied); a half-typed date reverts on blur. Shared by
+ * DateField below and the typed variants of ui/DatePicker and
+ * ui/RangeDatePicker, which bring their own border and calendar.
  *
  * @param {{
- *   id: string,
- *   name: string,
- *   label: string,
- *   required?: boolean,
+ *   id?: string,
+ *   name?: string,
  *   value: string,
  *   min?: string,
  *   max?: string,
  *   disabled?: boolean,
- *   error?: string,
- *   inputClassName?: string,
- *   labelClassName?: string,
- *   calendarLabel: string,
+ *   className?: string,
+ *   ariaLabel?: string,
+ *   ariaInvalid?: boolean,
  *   onChange: (value: string) => void,
  * }} props
  */
-function DateField({
+export function DateInput({
   id,
   name,
-  label,
-  required = false,
   value,
   min,
   max,
   disabled = false,
-  error,
-  inputClassName,
-  labelClassName,
-  calendarLabel,
+  className,
+  ariaLabel,
+  ariaInvalid,
   onChange,
 }) {
   const inputRef = useRef(null);
@@ -542,80 +539,127 @@ function DateField({
   const hasDigits = slots.some(Boolean);
 
   return (
+    <input
+      ref={inputRef}
+      id={id}
+      name={name}
+      type="text"
+      inputMode="numeric"
+      autoComplete="off"
+      spellCheck={false}
+      maxLength={10}
+      value={display}
+      disabled={disabled}
+      aria-label={ariaLabel}
+      aria-invalid={ariaInvalid || undefined}
+      onFocus={() => {
+        focusedRef.current = true;
+        requestAnimationFrame(selectFromPointer);
+      }}
+      onMouseUp={() => {
+        requestAnimationFrame(selectFromPointer);
+      }}
+      onClick={() => {
+        requestAnimationFrame(selectFromPointer);
+      }}
+      onKeyDown={handleKeyDown}
+      onBeforeInput={(event) => {
+        event.preventDefault();
+        if (keyHandledRef.current) {
+          keyHandledRef.current = false;
+          return;
+        }
+        if (event.inputType === 'insertText' && /^\d$/.test(event.data || '')) {
+          insertDigit(event.data);
+          return;
+        }
+        if (String(event.inputType).startsWith('delete')) deleteBackward();
+      }}
+      onPaste={handlePaste}
+      onCut={(event) => {
+        event.preventDefault();
+        deleteBackward();
+      }}
+      onChange={() => {
+        const input = inputRef.current;
+        const selection = selectionRef.current;
+        if (!input) return;
+        input.value = slotsToDisplay(slotsRef.current);
+        if (selection) input.setSelectionRange(selection.start, selection.end);
+      }}
+      onBlur={() => {
+        focusedRef.current = false;
+        const current = slotsRef.current;
+        const iso = slotsToIso(current);
+        if (iso) {
+          commit(iso);
+          return;
+        }
+        if (current.every((slot) => !slot)) {
+          onChange('');
+          return;
+        }
+        const reverted = isoToSlots(value);
+        slotsRef.current = reverted;
+        setSlots(reverted);
+      }}
+      className={cn(!hasDigits && 'text-deep-violet-blue/45', className)}
+    />
+  );
+}
+
+/**
+ * One date: type digits into dd/mm/yyyy, or pick from the calendar icon.
+ *
+ * @param {{
+ *   id: string,
+ *   name: string,
+ *   label: string,
+ *   required?: boolean,
+ *   value: string,
+ *   min?: string,
+ *   max?: string,
+ *   disabled?: boolean,
+ *   error?: string,
+ *   inputClassName?: string,
+ *   labelClassName?: string,
+ *   calendarLabel: string,
+ *   onChange: (value: string) => void,
+ * }} props
+ */
+function DateField({
+  id,
+  name,
+  label,
+  required = false,
+  value,
+  min,
+  max,
+  disabled = false,
+  error,
+  inputClassName,
+  labelClassName,
+  calendarLabel,
+  onChange,
+}) {
+  return (
     <div>
       <label htmlFor={id} className={cn(defaultLabelClass, labelClassName)}>
         {label}
         {required ? <span className="text-red-700"> *</span> : null}
       </label>
       <div className="relative">
-        <input
-          ref={inputRef}
+        <DateInput
           id={id}
           name={name}
-          type="text"
-          inputMode="numeric"
-          autoComplete="off"
-          spellCheck={false}
-          maxLength={10}
-          value={display}
+          value={value}
+          min={min}
+          max={max}
           disabled={disabled}
-          onFocus={() => {
-            focusedRef.current = true;
-            requestAnimationFrame(selectFromPointer);
-          }}
-          onMouseUp={() => {
-            requestAnimationFrame(selectFromPointer);
-          }}
-          onClick={() => {
-            requestAnimationFrame(selectFromPointer);
-          }}
-          onKeyDown={handleKeyDown}
-          onBeforeInput={(event) => {
-            event.preventDefault();
-            if (keyHandledRef.current) {
-              keyHandledRef.current = false;
-              return;
-            }
-            if (event.inputType === 'insertText' && /^\d$/.test(event.data || '')) {
-              insertDigit(event.data);
-              return;
-            }
-            if (String(event.inputType).startsWith('delete')) deleteBackward();
-          }}
-          onPaste={handlePaste}
-          onCut={(event) => {
-            event.preventDefault();
-            deleteBackward();
-          }}
-          onChange={() => {
-            const input = inputRef.current;
-            const selection = selectionRef.current;
-            if (!input) return;
-            input.value = slotsToDisplay(slotsRef.current);
-            if (selection) input.setSelectionRange(selection.start, selection.end);
-          }}
-          onBlur={() => {
-            focusedRef.current = false;
-            const current = slotsRef.current;
-            const iso = slotsToIso(current);
-            if (iso) {
-              commit(iso);
-              return;
-            }
-            if (current.every((slot) => !slot)) {
-              onChange('');
-              return;
-            }
-            const reverted = isoToSlots(value);
-            slotsRef.current = reverted;
-            setSlots(reverted);
-          }}
-          className={cn(
-            defaultInputClass,
-            !hasDigits && 'text-deep-violet-blue/45',
-            inputClassName,
-          )}
+          className={cn(defaultInputClass, inputClassName)}
+          onChange={onChange}
         />
+        {/* DateInput picks the new value up from `value` (it isn't focused). */}
         <input
           type="date"
           tabIndex={-1}
@@ -624,7 +668,11 @@ function DateField({
           min={min || undefined}
           max={max || undefined}
           disabled={disabled}
-          onChange={(event) => commit(event.target.value)}
+          onChange={(event) => {
+            const iso = event.target.value;
+            if (iso && !isIsoInCalendarRange(iso, min, max)) return;
+            onChange(iso);
+          }}
           className="absolute inset-y-0 right-0 w-8 cursor-pointer border-0 bg-transparent p-0 opacity-0 disabled:cursor-not-allowed"
         />
         <span

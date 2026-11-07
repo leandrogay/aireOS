@@ -16,6 +16,7 @@ import useDataFreshness from "@/hooks/useDataFreshness";
 import useDashboardSummary from "@/hooks/useDashboardSummary";
 import useDefaultDateRange from "@/hooks/useDefaultDateRange";
 import useCustomerOptions from "@/hooks/useCustomerOptions";
+import useAllCustomers from "@/hooks/useAllCustomers";
 import useMonthlyOnly from "@/hooks/useMonthlyOnly";
 import usePriceMix from "@/hooks/usePriceMix";
 import useCustomerTotals from "@/hooks/useCustomerTotals";
@@ -28,7 +29,7 @@ import {
 } from "@/app/utils/periodComparison";
 import { DEFAULT_PRESET_ID, buildDateRangePresets } from "@/app/utils/dateRangePresets";
 import { rangeHasWeeklyMonths, weeklyGapMessage } from "@/app/utils/weeklyGaps";
-import { relabelFormatRows } from "@/app/utils/storeFormats";
+import { customerColorOrder, relabelFormatRows } from "@/app/utils/storeFormats";
 import { MAX_COMPARED_CUSTOMERS } from "@/app/utils/customerTrend";
 
 const NO_CUSTOMERS = [];
@@ -51,6 +52,10 @@ export default function DashboardPage() {
   // option list. The chart reads `customers` once two or more are ticked.
   const { options: customerOptions, loading: customerOptionsLoading, error: customerOptionsError } =
     useCustomerOptions({ dataVersion });
+  // Only sets colours, so a failed read just leaves the customers with sales in
+  // order, each still with its own colour, rather than an error on the page.
+  const { customers: allCustomers } = useAllCustomers({ dataVersion });
+  const colorOrder = customerColorOrder(allCustomers, customerOptions.map((option) => option.value));
   const [selectedCustomers, setSelectedCustomers] = useState(null);
   if (selectedCustomers === null && customerOptions.length > 0) {
     setSelectedCustomers(defaultCustomers(customerOptions));
@@ -376,6 +381,7 @@ export default function DashboardPage() {
               periodNames={periodNames}
               comparisonLoading={baselineSummary.loading}
               customerBars={customers.length === 0 ? [] : (comparingCustomers ? customerTrends.rows : null)}
+              customerColorOrder={colorOrder}
               metric={metric}
               onMetricChange={setMetric}
               channelSwitch={
@@ -461,6 +467,7 @@ export default function DashboardPage() {
               comparingCustomers={comparingCustomers}
               customerRows={customerTotals.rows}
               noCustomers={customers.length === 0}
+              customerColorOrder={colorOrder}
             />
           </div>
 
@@ -481,6 +488,7 @@ export default function DashboardPage() {
               customerRows={customerTotals.rows}
               customerRowsLoading={customerTotals.loading}
               customerRowsError={customerTotals.error}
+              customerColorOrder={colorOrder}
               loading={pageLoading}
             />
           </div>

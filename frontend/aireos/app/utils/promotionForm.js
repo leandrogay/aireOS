@@ -389,32 +389,6 @@ export function resolveRetailerTargets(form, retailers) {
 }
 
 /**
- * Whether every retailer checkbox is currently ticked.
- *
- * @param {number[] | string[]} selectedIds
- * @param {Array<{ retailer_id: number }>} options
- * @returns {boolean}
- */
-export function areAllRetailersSelected(selectedIds, options) {
-  if (!options.length) return false;
-  const selected = new Set((selectedIds || []).map(String));
-  return options.every((retailer) => selected.has(String(retailer.retailer_id)));
-}
-
-/**
- * Whether every SKU range checkbox is currently ticked.
- *
- * @param {string[]} selected
- * @param {string[]} options
- * @returns {boolean}
- */
-export function areAllSkuRangesSelected(selected, options = []) {
-  if (!options.length) return false;
-  const picked = new Set(selected || []);
-  return options.every((range) => picked.has(range));
-}
-
-/**
  * Catalog stores that belong to the ticked retailer ids.
  *
  * Each stores row has retailer_id. An empty id list means no stores,
@@ -461,19 +435,6 @@ export function storeCatalogOptions(apiStores = []) {
   return [...unique.values()].sort((left, right) =>
     left.store_name.localeCompare(right.store_name),
   );
-}
-
-/**
- * Whether every store checkbox is currently ticked.
- *
- * @param {string[]} selectedCodes
- * @param {Array<{ store_code: string }>} options
- * @returns {boolean}
- */
-export function areAllStoresSelected(selectedCodes, options) {
-  if (!options.length) return false;
-  const selected = new Set((selectedCodes || []).map(String));
-  return options.every((store) => selected.has(String(store.store_code)));
 }
 
 /**

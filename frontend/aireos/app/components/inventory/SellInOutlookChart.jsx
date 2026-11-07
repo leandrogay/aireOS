@@ -4,6 +4,8 @@ import { Bar, CartesianGrid, ComposedChart, Dot, Line, XAxis, YAxis } from 'rech
 
 import {
   ChartContainer,
+  ChartLegend,
+  ChartLegendContent,
   ChartTooltip,
   ChartTooltipContent,
 } from '@/components/ui/chart';
@@ -19,19 +21,17 @@ const SELL_OUT_COLOR = '#E8922A';
 const SERIES = [
   { key: 'sell_in_actual', label: 'Sell-in (actual)', color: 'var(--aire-deep-blue)' },
   { key: 'sell_in_recommended', label: 'Sell-in (recommended)', color: 'var(--aire-violet)' },
-  { key: 'sell_out_actual', label: 'Sell-out (actual)', color: SELL_OUT_COLOR },
+  { key: 'sell_out_actual', label: 'Sell-out (actual)', legendLabel: 'Sell-out', color: SELL_OUT_COLOR },
   { key: 'sell_out_forecast', label: 'Sell-out (forecast)', color: SELL_OUT_COLOR },
 ];
 
-const LEGEND = [
-  SERIES[0],
-  SERIES[1],
-  { key: 'sell_out', label: 'Sell-out', color: SELL_OUT_COLOR },
-];
-
+// The legend shows sell-out once (the forecast line has legendType="none"), since
+// both parts are one colour; the tooltip still says which part a value is.
 const chartConfig = Object.fromEntries(
-  SERIES.map((series) => [series.key, { label: series.label, color: series.color }]),
+  SERIES.map((series) => [series.key, { label: series.legendLabel ?? series.label, color: series.color }]),
 );
+
+const TOOLTIP_CONFIG = Object.fromEntries(SERIES.map((series) => [series.key, { label: series.label }]));
 
 const TOOLTIP_ORDER = SERIES.map((series) => series.key);
 
@@ -71,7 +71,7 @@ export default function SellInOutlookChart({ months, actualsThrough }) {
 
   const timings = lineSweepTimings(rows, ['sell_out_actual', 'sell_out_forecast'], LINE_SWEEP);
 
-  const formatRow = labelledTooltipRow(chartConfig, (value) => `${formatUnits(value)} units`);
+  const formatRow = labelledTooltipRow(TOOLTIP_CONFIG, (value) => `${formatUnits(value)} units`);
   // The join point repeats the actual value on the forecast line; it is not a forecast.
   function formatTooltipRow(value, name, item, index, payload) {
     if (name === 'sell_out_forecast' && payload?.month === actualsThrough) return null;
@@ -81,8 +81,8 @@ export default function SellInOutlookChart({ months, actualsThrough }) {
   return (
     <div className="space-y-2">
       <div className="overflow-visible rounded-xl border border-lavander bg-white pl-1 pr-3 pt-2">
-        <ChartContainer config={chartConfig} className="aspect-auto h-[300px] w-full">
-          <ComposedChart accessibilityLayer data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
+        <ChartContainer config={chartConfig} className="aspect-auto h-[328px] w-full">
+          <ComposedChart accessibilityLayer data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
             <CartesianGrid vertical={false} stroke="var(--aire-lavender)" />
             <XAxis
               dataKey="label"
@@ -94,7 +94,9 @@ export default function SellInOutlookChart({ months, actualsThrough }) {
               tickMargin={6}
             />
             <YAxis width={48} tick={{ fontSize: 10, fill: '#3A4369' }} tickFormatter={formatUnits} />
+            {/* Above the legend, which is drawn after it and would show through. */}
             <ChartTooltip
+              wrapperStyle={{ zIndex: 10 }}
               itemSorter={(item) => TOOLTIP_ORDER.indexOf(item.dataKey)}
               content={
                 <ChartTooltipContent
@@ -103,6 +105,7 @@ export default function SellInOutlookChart({ months, actualsThrough }) {
                 />
               }
             />
+            <ChartLegend itemSorter={null} content={<ChartLegendContent className="flex-wrap text-foreground" />} />
             <Bar dataKey="sell_in_actual" stackId="sell-in" fill="var(--color-sell_in_actual)" {...BAR_ANIMATION} />
             <Bar
               dataKey="sell_in_recommended"
@@ -121,6 +124,7 @@ export default function SellInOutlookChart({ months, actualsThrough }) {
             />
             <Line
               dataKey="sell_out_forecast"
+              legendType="none"
               stroke="var(--color-sell_out_forecast)"
               strokeWidth={2}
               strokeDasharray="6 4"
@@ -130,14 +134,6 @@ export default function SellInOutlookChart({ months, actualsThrough }) {
             />
           </ComposedChart>
         </ChartContainer>
-      </div>
-      <div className="flex flex-wrap items-center justify-center gap-4 text-xs text-deep-violet-blue">
-        {LEGEND.map((series) => (
-          <span key={series.key} className="inline-flex items-center gap-1.5">
-            <span className="h-2 w-2 shrink-0 rounded-[2px]" style={{ backgroundColor: series.color }} />
-            {series.label}
-          </span>
-        ))}
       </div>
     </div>
   );

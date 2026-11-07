@@ -77,6 +77,12 @@ if GOOGLE_APPLICATION_CREDENTIALS:
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = GOOGLE_APPLICATION_CREDENTIALS
 
 # ---- BigQuery ---------------------------------------------------------------
+BQ_FORECAST_DATASET = (
+    os.environ.get("BQ_FORECAST_DATASET")
+    or "aire-data.aireos_forecast_validation_sg"
+)
+BQ_CDC_DATASET = os.environ.get("BQ_CDC_DATASET") or "aire-data.aireos_cdc_sg"
+BQ_FORECAST_LOCATION = os.environ.get("BQ_FORECAST_LOCATION") or "asia-southeast1"
 
 BQ_FAIRPRICESELLOUT_TABLE = (
     os.environ.get("BQ_FAIRPRICESELLOUT_TABLE")
@@ -88,14 +94,14 @@ BQ_FAIRPRICESELLOUT_TABLE = (
 # by the BigQuery procedure run_monthly_forecast_pipeline.
 BQ_FORECAST_OUTPUT_VIEW = (
     os.environ.get("BQ_FORECAST_OUTPUT_VIEW")
-    or "aire-data.Aire_Data_Analytics.aire_forecasting_output"
+    or f"{BQ_FORECAST_DATASET}.aire_forecasting_output"
 )
 
 # Weekly sell-out with catalog names joined on (built on the Datastream
 # replica of Cloud SQL sellout). The forecast model learns from this.
 BQ_SALES_ENRICHED_VIEW = (
     os.environ.get("BQ_SALES_ENRICHED_VIEW")
-    or "aire-data.Aire_Data_Analytics.v_sales_enriched"
+    or f"{BQ_FORECAST_DATASET}.v_sales_enriched"
 )
 
 # Forecast model output (predictions only; written out of band by
@@ -108,15 +114,7 @@ BQ_FORECAST_TABLE = (
 # Closed monthly sell-out the Forecast page reads its Actual line from.
 BQ_MONTHLY_SALES_VIEW = (
     os.environ.get("BQ_MONTHLY_SALES_VIEW")
-    or "aire-data.Aire_Data_Analytics.v_customer_monthly_sales"
-)
-
-# Final forecast the Forecast page reads: one row per customer x SKU x month
-# with the initial / previous / current lines, cartons only. Read-only; written
-# by the BigQuery procedure run_monthly_forecast_pipeline.
-BQ_FORECAST_OUTPUT_VIEW = (
-    os.environ.get("BQ_FORECAST_OUTPUT_VIEW")
-    or "aire-data.Aire_Data_Analytics.aire_forecasting_output"
+    or f"{BQ_FORECAST_DATASET}.v_customer_monthly_sales"
 )
 
 # ---- Cloud SQL --------------------------------------------------------------
@@ -243,17 +241,29 @@ def auth_cookie_secure() -> bool:
 # month lands") reports each finished run to. Empty: the backend does not
 # listen, and only scripts/refresh_forecast.py raises forecast notifications.
 FORECAST_PIPELINE_SUBSCRIPTION = os.environ.get("FORECAST_PIPELINE_SUBSCRIPTION", "")
+
+# Event-driven forecast refresh. Keep disabled until the Singapore dataset,
+# migration 010 and task callback are verified.
+FORECAST_REFRESH_ENABLED = os.environ.get("FORECAST_REFRESH_ENABLED", "false")
+FORECAST_REFRESH_QUEUE = os.environ.get("FORECAST_REFRESH_QUEUE", "forecast-refresh")
+FORECAST_REFRESH_LOCATION = os.environ.get("FORECAST_REFRESH_LOCATION", "asia-southeast1")
+FORECAST_REFRESH_HANDLER_URL = os.environ.get("FORECAST_REFRESH_HANDLER_URL", "")
+FORECAST_REFRESH_INVOKER = os.environ.get("FORECAST_REFRESH_INVOKER", "")
+FORECAST_REFRESH_MAX_WAIT = os.environ.get("FORECAST_REFRESH_MAX_WAIT", "2h")
+# Must match the forecast-refresh queue's max attempts (gcloud tasks queues
+# describe): the worker records a refresh failure on the last one.
+FORECAST_REFRESH_MAX_ATTEMPTS = os.environ.get("FORECAST_REFRESH_MAX_ATTEMPTS", "10")
 # Written by retrain_if_new_month: one row per run, retrained=TRUE only when a
 # new forecast was actually produced.
 BQ_TRAINING_RUN_LOG_TABLE = (
     os.environ.get("BQ_TRAINING_RUN_LOG_TABLE")
-    or "aire-data.Aire_Data_Analytics.training_run_log"
+    or f"{BQ_FORECAST_DATASET}.training_run_log"
 )
 # The live forecast output (not the 12-hourly snapshot), so a notification
 # raised right after a run describes that run.
 BQ_FORECAST_PIPELINE_VIEW = (
     os.environ.get("BQ_FORECAST_PIPELINE_VIEW")
-    or "aire-data.Aire_Data_Analytics.aire_forecasting_output"
+    or BQ_FORECAST_OUTPUT_VIEW
 )
 
 

@@ -57,11 +57,51 @@ export async function getForecastView({
   if (startDate) params.set('start_date', startDate);
   if (endDate) params.set('end_date', endDate);
   const query = params.toString();
-  const data = await request(`/api/forecast/${query ? `?${query}` : ''}`);
+  const data = await request(`/api/forecast${query ? `?${query}` : ''}`);
   return {
     rows: data.rows ?? [],
     actuals: data.actuals ?? [],
     promotions: data.promotions ?? [],
     freshness: data.freshness ?? EMPTY_FORECAST_FRESHNESS,
   };
+}
+
+/**
+ * GET /api/forecast/alternatives
+ * For every customer x SKU x month whose Current line comes from the model
+ * that already includes the promotion entered for that month
+ * (ARIMA_PLUS_XREG), the forecast the pipeline would have picked without it:
+ * alt_forecast_current (cartons), alt_low_80 / alt_high_80, their *_revenue
+ * at the same realised price, and alt_source_model. Used by the Scenario
+ * builder's "Simulate New Promotions" view.
+ * See backend forecast_service.get_forecast_alternatives.
+ */
+export async function getForecastAlternatives({ productName = '', customerName = '' } = {}) {
+  const params = new URLSearchParams();
+  if (productName) params.set('product_name', productName);
+  if (customerName) params.set('customer_name', customerName);
+  const query = params.toString();
+  const data = await request(`/api/forecast/alternatives${query ? `?${query}` : ''}`);
+  return data.rows ?? [];
+}
+
+/**
+ * GET /api/forecast/initial-status
+ * One entry per Initial Yearly Forecast year in aire_forecasting_initial_meta:
+ * { forecast_year, lock_at, refreshed_at, locked }. Best effort on the backend
+ * (forecast_service.get_initial_status): a failed read returns no years.
+ */
+export async function getForecastInitialStatus() {
+  const data = await request('/api/forecast/initial-status');
+  return data.years ?? [];
+}
+
+/**
+ * GET /api/forecast/refresh-status
+ * { updating, since }: whether an event forecast refresh is waiting or
+ * running (backend forecast_refresh_worker.refresh_status_best_effort).
+ * Always false while event refresh is switched off.
+ */
+export async function getForecastRefreshStatus() {
+  return request('/api/forecast/refresh-status');
 }

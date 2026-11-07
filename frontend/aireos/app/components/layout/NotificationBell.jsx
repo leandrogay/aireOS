@@ -52,7 +52,7 @@ export default function NotificationBell() {
         ref={triggerRef}
         data-notification-bell
         aria-label={unreadCount > 0 ? `Notifications (${unreadCount} unread)` : 'Notifications'}
-        className="relative flex size-9 shrink-0 items-center justify-center rounded-md text-deep-violet-blue/70 transition-colors hover:bg-lavander hover:text-deep-violet-blue"
+        className="relative flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-md text-deep-violet-blue/70 transition-colors hover:bg-lavander hover:text-deep-violet-blue"
       >
         <Bell className="size-5" />
         {unreadCount > 0 && (

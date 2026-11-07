@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 
 import HeaderCheckboxFilter from '@/components/ui/HeaderCheckboxFilter';
+import { modelHint } from '@/app/utils/forecastLineText';
 import { FORECAST_SERIES, formatModelMix, uniqueMonthOptions } from '@/app/utils/forecastView';
 
 function formatTableValue(value, metric) {
@@ -126,7 +127,10 @@ export default function ForecastTable({ points, metric, visibleSeries }) {
                         {formatTableValue(point[series.key], metric)}
                       </td>
                     ))}
-                    <td className="truncate px-1.5 py-2" title={formatModelMix(point.currentModels)}>
+                    <td
+                      className="truncate px-1.5 py-2"
+                      title={[formatModelMix(point.currentModels), modelHint(point.currentModels)].filter(Boolean).join('\n')}
+                    >
                       {formatModelMix(point.currentModels) || '—'}
                     </td>
                   </tr>

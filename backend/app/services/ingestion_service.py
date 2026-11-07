@@ -11,7 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
 from app import config
-from app.services import notification_service, sql, storage
+from app.services import forecast_refresh_events, notification_service, sql, storage
 
 
 class IngestionNotFoundError(LookupError):
@@ -566,7 +566,13 @@ def _rollback_latest_run(
             )
             rows_restored = _restore_versions(connection, versions)
 
-            return {
+            refresh_request_id = forecast_refresh_events.record_change(
+                connection,
+                "sales_upload",
+                f"sales:{run['source_file']}",
+            )
+
+            result = {
                 "ingestion_id": ingestion_id,
                 "source_blob": run["source_blob"],
                 "source_file": run["source_file"],
@@ -575,6 +581,8 @@ def _rollback_latest_run(
                 "rows_restored": rows_restored,
                 "rows_removed": max(rows_removed_from_current - rows_restored, 0),
             }
+        forecast_refresh_events.enqueue_best_effort(refresh_request_id)
+        return result
     except (
         IngestionNotFoundError,
         IngestionAlreadyRolledBackError,

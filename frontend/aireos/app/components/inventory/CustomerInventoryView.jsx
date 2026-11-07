@@ -2,12 +2,13 @@
 
 import { useState } from 'react';
 
+import BarChartSkeleton from '@/components/ui/BarChartSkeleton';
+import SelectDropdown from '@/components/ui/SelectDropdown';
 import useCustomerInventory from '@/hooks/useCustomerInventory';
 import { DOH_STATUS_LABELS, earliestMonthInput, formatDoh, filterMonthRange, latestMonthInput } from '@/app/utils/inventoryForm';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 
 import {
-  filterControlClass,
   filterLabelClass,
   InventoryChartSlot,
   InventorySection,
@@ -89,21 +90,20 @@ export default function CustomerInventoryView({ customers, skuOptions, refreshKe
     <div className="space-y-1">
       <InventoryFilters
         leading={(
-          <label htmlFor="inventory-customer">
+          <div className="min-w-0">
             <span className={filterLabelClass}>Customer</span>
-            <select
-              id="inventory-customer"
-              value={customerId ?? ''}
-              onChange={(e) => setCustomerId(Number(e.target.value))}
-              className={filterControlClass}
-            >
-              {customers.map((c) => (
-                <option key={c.customer_id} value={c.customer_id}>
-                  {retailerLabel(c.customer_name)}
-                </option>
-              ))}
-            </select>
-          </label>
+            {/* SelectDropdown values are strings; customer ids are numbers. */}
+            <SelectDropdown
+              value={customerId === null ? '' : String(customerId)}
+              onChange={(value) => setCustomerId(Number(value))}
+              options={customers.map((c) => ({
+                value: String(c.customer_id),
+                label: retailerLabel(c.customer_name),
+              }))}
+              ariaLabel="Customer"
+              look="compact"
+            />
+          </div>
         )}
         stats={threshold ? (
           <>
@@ -137,7 +137,19 @@ export default function CustomerInventoryView({ customers, skuOptions, refreshKe
       )}
 
       <InventorySection title="Sell-in trend" tags={scopeTags}>
-        <InventoryChartSlot loading={loading} ready={Boolean(data)}>
+        <InventoryChartSlot
+          loading={loading}
+          ready={Boolean(data)}
+          placeholder={(
+            // Same frame and 280px height as SellInTrendChart. One bar per month (~19 of history), no legend.
+            <BarChartSkeleton
+              bars={19}
+              height={280}
+              label="Loading inventory…"
+              className="rounded-xl border border-lavander bg-white pl-1 pr-3 pt-2"
+            />
+          )}
+        >
           {data && <SellInTrendChart trend={trend} />}
         </InventoryChartSlot>
       </InventorySection>

@@ -1,4 +1,5 @@
 import { formatDate, formatDateTime } from '@/lib/formatDate';
+import { forecastErrorLines, isRefreshFailure, startedByLabel } from '@/app/utils/forecastNotificationText';
 import { lowStockItemText, modelFeatureLabel } from '@/app/utils/notificationText';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
@@ -101,25 +102,45 @@ function LowStockDetails({ payload }) {
   );
 }
 
+// The cases, Started by and error lines come from forecastNotificationText
+// (backend forecast_notifications payload: stage, reason, errors, source).
+function forecastSummary(payload, success) {
+  if (success) return 'The latest forecast is ready to review on the dashboard.';
+  if (isRefreshFailure(payload, success)) {
+    return "The forecast refresh couldn't start, so the forecast wasn't updated after the latest changes.";
+  }
+  return 'The forecasting pipeline hit an error and did not complete.';
+}
+
 function ForecastDetails({ payload, success }) {
   // Every producer sends these arrays, but one hand-inserted row without them
   // must not crash the whole page the bell sits on.
   const customers = (payload.customers ?? []).map(retailerLabel);
   const skus = payload.skus ?? [];
+  // A refresh that never started (backend stage "refresh") has no forecast to
+  // describe, so the period / customers / SKUs rows would only read "—" and "0".
+  const neverStarted = isRefreshFailure(payload, success);
+  const errorLines = forecastErrorLines(payload);
   return (
     <>
-      <Summary>
-        {success
-          ? 'The latest forecast is ready to review on the dashboard.'
-          : 'The forecasting pipeline hit an error and did not complete.'}
-      </Summary>
+      <Summary>{forecastSummary(payload, success)}</Summary>
       <Fields>
-        <Field label="Period" value={payload.period_start ? `${payload.period_start} – ${payload.period_end}` : '—'} />
-        <ChipField label={`Customers (${customers.length})`} names={customers} />
-        <ChipField label={`SKUs (${skus.length})`} names={skus} />
+        {!neverStarted && (
+          <>
+            <Field
+              label="Period"
+              value={payload.period_start ? `${payload.period_start} – ${payload.period_end}` : '—'}
+            />
+            <ChipField label={`Customers (${customers.length})`} names={customers} />
+            <ChipField label={`SKUs (${skus.length})`} names={skus} />
+          </>
+        )}
         <Field label="Last updated" value={formatDateTime(payload.updated_at)} />
-        <Field label="Started by" value={payload.source === 'scheduled' ? 'Scheduled run' : 'Forecast script'} />
-        {!success && <ErrorsField errors={payload.errors} />}
+        <Field label="Started by" value={startedByLabel(payload.source)} />
+        {!success && payload.reason && <Field label="Reason" value={payload.reason} />}
+        {/* Older failures have no reason, only errors, so they still show "None"
+            when empty; newer ones list errors only when they add to the reason. */}
+        {!success && (!payload.reason || errorLines.length > 0) && <ErrorsField errors={errorLines} />}
       </Fields>
     </>
   );

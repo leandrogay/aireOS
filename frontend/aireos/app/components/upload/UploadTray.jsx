@@ -52,7 +52,12 @@ function TrayRow({ item, onRetry, onFollow }) {
         {item.file.name}
       </p>
       {item.phase === 'uploading' ? (
-        <UploadProgress stage={item.stage} sendPercent={item.sendPercent} />
+        <UploadProgress
+          sendPercent={item.sendPercent}
+          sentAt={item.sentAt}
+          finished={item.finished}
+          check={item.check}
+        />
       ) : (
         <>
           <p

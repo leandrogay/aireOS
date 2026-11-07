@@ -159,11 +159,20 @@ function SummaryCard({
 }
 
 // Placeholder tiles on the same grid as the real ones, so nothing jumps when
-// the figures arrive. `count` includes the Total tile.
-function SummaryCardsSkeleton({ count }) {
+// the figures arrive. `count` includes the Total tile. `mixBar` reserves the
+// room of FormatMixBar (its label line and 10px track plus its mb-2), which
+// sits above the tiles whenever there is more than one tile to split.
+function SummaryCardsSkeleton({ count, mixBar }) {
   return (
     <div role="status">
       <span className="sr-only">Loading sell-out summary…</span>
+      {mixBar && (
+        <div aria-hidden="true" className="mb-2">
+          {/* h-4 = the label's 16px line height. */}
+          <Skeleton className="mb-1 h-4 w-20 rounded bg-lavander" />
+          <Skeleton className="h-2.5 w-full rounded-full bg-lavander" />
+        </div>
+      )}
       <div aria-hidden="true" className={TILE_GRID_CLASS}>
         {Array.from({ length: count }, (_, index) => (
           <div
@@ -210,6 +219,7 @@ export default function RevenueSummaryCards({
   comparingCustomers = false,
   customerRows = [],
   noCustomers = false,
+  customerColorOrder = [],
 }) {
   const [hoveredFormat, setHoveredFormat] = useState(null)
   const salesData = summaryByMode[mode]
@@ -230,6 +240,7 @@ export default function RevenueSummaryCards({
       const channel = row[mode] ?? { revenue: 0, units: 0 }
       return {
         format: row.label,
+        customer: row.customer,
         revenue: channel.revenue ?? 0,
         units: channel.units ?? 0,
         estimated_revenue: channel.estimated_revenue ?? 0,
@@ -242,7 +253,7 @@ export default function RevenueSummaryCards({
   const currentByFormat = new Map(tileFormats.map((format) => [format.format, format]))
   const baselineByFormat = new Map(tileBaseline.map((format) => [format.format, format]))
   const colorForName = comparingCustomers
-    ? (name) => customerColor(name, customerTiles.map((tile) => tile.format))
+    ? (name) => customerColor(customerTiles.find((tile) => tile.format === name)?.customer, customerColorOrder)
     : formatColor
   const formatNames = [...new Set([...currentByFormat.keys(), ...baselineByFormat.keys()])]
   const emptyTotals = { revenue: 0, units: 0 }
@@ -271,7 +282,13 @@ export default function RevenueSummaryCards({
       {noCustomers && (
         <p className="py-6 text-center text-sm text-deep-violet-blue/60">Select at least one customer.</p>
       )}
-      {!noCustomers && loading && <SummaryCardsSkeleton count={(salesData?.storeFormats.length ?? 4) + 1} />}
+      {/* The bar shows for customers, and for a channel with more than one format (online has one). */}
+      {!noCustomers && loading && (
+        <SummaryCardsSkeleton
+          count={(salesData?.storeFormats.length ?? 4) + 1}
+          mixBar={comparingCustomers || mode !== "online"}
+        />
+      )}
       {!noCustomers && error && <p className="text-red-600 text-sm">{error}</p>}
 
       {!noCustomers && !loading && (comparingCustomers || salesData) && tileFormats.length > 1 && (

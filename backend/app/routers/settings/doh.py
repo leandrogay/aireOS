@@ -1,12 +1,16 @@
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
-from app.schemas.settings.doh import DohAlertUpdate, DohReset, DohRevert, DohThresholdsUpdate
+from app.auth import current_user_email
+
+from app.schemas.settings.doh import DohAlertUpdate, DohThresholdsUpdate
 from app.services.settings import doh as doh_service
 from app.services.settings.common import CustomerNotFoundError
 
 
 # Per-customer DOH thresholds (versioned) and alert toggle are under
-# /api/settings/doh (the /api/settings prefix comes from __init__.py)
+# /api/settings/doh (the /api/settings prefix comes from __init__.py).
+# A new version records the signed-in user's email as updated_by, never a
+# name sent in the body.
 router = APIRouter(
     prefix="/doh",
     tags=["settings"],
@@ -63,14 +67,19 @@ def get_settings(customer_id: int):
 
 
 @router.put("/{customer_id}/thresholds")
-def save_thresholds(customer_id: int, update: DohThresholdsUpdate, response: Response):
+def save_thresholds(
+    customer_id: int,
+    update: DohThresholdsUpdate,
+    response: Response,
+    updated_by: str = Depends(current_user_email),
+):
     try:
         result = doh_service.save_thresholds(
             customer_id,
             update.min_doh,
             update.target_doh,
             update.max_doh,
-            update.updated_by,
+            updated_by,
         )
         return _version_status(response, result)
 
@@ -114,13 +123,13 @@ def revert_to_version(
     customer_id: int,
     setting_id: int,
     response: Response,
-    body: DohRevert | None = None,
+    updated_by: str = Depends(current_user_email),
 ):
     try:
         result = doh_service.revert_to_version(
             customer_id,
             setting_id,
-            body.updated_by if body is not None else None,
+            updated_by,
         )
         return _version_status(response, result)
 
@@ -144,12 +153,12 @@ def revert_to_version(
 def reset_to_default(
     customer_id: int,
     response: Response,
-    body: DohReset | None = None,
+    updated_by: str = Depends(current_user_email),
 ):
     try:
         result = doh_service.reset_to_default(
             customer_id,
-            body.updated_by if body is not None else None,
+            updated_by,
         )
         return _version_status(response, result)
 

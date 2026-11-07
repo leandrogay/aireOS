@@ -2,13 +2,14 @@
 
 import { useState } from 'react';
 
+import BarChartSkeleton from '@/components/ui/BarChartSkeleton';
+import SelectDropdown from '@/components/ui/SelectDropdown';
 import useSellInOutlook from '@/hooks/useSellInOutlook';
 import useSellInPlan from '@/hooks/useSellInPlan';
 import { formatDoh, formatMonth } from '@/app/utils/inventoryForm';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 
 import {
-  filterControlClass,
   filterLabelClass,
   InventoryChartSlot,
   InventoryFilterCard,
@@ -20,7 +21,7 @@ import SellInDetailTable from './SellInPlanTable';
 import SellInOutlookChart from './SellInOutlookChart';
 import SkuDropdown from './SkuDropdown';
 
-const MONTH_CHOICES = [3, 6, 12];
+const MONTH_OPTIONS = [3, 6, 12].map((n) => ({ value: String(n), label: `${n} months` }));
 
 /**
  * Where the plan starts. Each SKU plans from its own last actual month, so when
@@ -86,39 +87,30 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
           ? 'Each SKU starts from its own last actual month.'
           : null}
       >
-        <label htmlFor="inventory-plan-customer">
+        <div className="min-w-0">
           <span className={filterLabelClass}>Customer</span>
-          <select
-            id="inventory-plan-customer"
-            value={customerId ?? ''}
-            onChange={(e) => setCustomerId(Number(e.target.value))}
-            className={filterControlClass}
-          >
-            {customers.map((c) => (
-              <option key={c.customer_id} value={c.customer_id}>
-                {retailerLabel(c.customer_name)}
-              </option>
-            ))}
-          </select>
-        </label>
+          {/* SelectDropdown values are strings; customer ids are numbers. */}
+          <SelectDropdown
+            value={customerId === null ? '' : String(customerId)}
+            onChange={(value) => setCustomerId(Number(value))}
+            options={customers.map((c) => ({ value: String(c.customer_id), label: retailerLabel(c.customer_name) }))}
+            ariaLabel="Customer"
+            look="compact"
+          />
+        </div>
 
         <SkuDropdown skuOptions={skuOptions} skus={skus} onChange={setSkus} />
 
-        <label htmlFor="inventory-months-ahead">
+        <div className="min-w-0">
           <span className={filterLabelClass}>Months ahead</span>
-          <select
-            id="inventory-months-ahead"
-            value={months}
-            onChange={(e) => setMonths(Number(e.target.value))}
-            className={filterControlClass}
-          >
-            {MONTH_CHOICES.map((n) => (
-              <option key={n} value={n}>
-                {n} months
-              </option>
-            ))}
-          </select>
-        </label>
+          <SelectDropdown
+            value={String(months)}
+            onChange={(value) => setMonths(Number(value))}
+            options={MONTH_OPTIONS}
+            ariaLabel="Months ahead"
+            look="compact"
+          />
+        </div>
       </InventoryFilterCard>
 
       {error && (
@@ -153,7 +145,21 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
       )}
 
       <InventorySection title="Sell-in and sell-out" tags={outlookTags}>
-        <InventoryChartSlot loading={outlook.loading} ready={Boolean(outlook.data)}>
+        <InventoryChartSlot
+          loading={outlook.loading}
+          ready={Boolean(outlook.data)}
+          placeholder={(
+            // Same frame and 328px height as SellInOutlookChart. ~3 actual months + the default 6 ahead; legend has Sell-in and Sell-out.
+            <BarChartSkeleton
+              bars={9}
+              height={328}
+              legend
+              legendItems={2}
+              label="Loading inventory…"
+              className="rounded-xl border border-lavander bg-white pl-1 pr-3 pt-2"
+            />
+          )}
+        >
           {outlook.data && (
             <SellInOutlookChart months={outlook.data.months} actualsThrough={outlook.data.actuals_through} />
           )}

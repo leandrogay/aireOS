@@ -74,10 +74,10 @@ function TrendTooltip({ active, payload, metric, series }) {
  * since 3 customers x 12 months would be 36 bars too thin to read. Customers
  * without the active channel (NHG has no online sales) are left off.
  *
- * @param {{ customers: Array<object>, mode: 'offline' | 'online', metric: 'revenue' | 'units', granularity: 'week' | 'month' }} props
+ * @param {{ customers: Array<object>, mode: 'offline' | 'online', metric: 'revenue' | 'units', granularity: 'week' | 'month', colorOrder: string[] }} props
  */
-export default function CustomerTrendChart({ customers, mode, metric, granularity }) {
-  const series = trendSeries(customers, mode);
+export default function CustomerTrendChart({ customers, mode, metric, granularity, colorOrder }) {
+  const series = trendSeries(customers, mode, colorOrder);
   const rows = trendRows(customers, series, mode, metric, granularity);
   const kind = trendChartKind(rows.length);
   const chartConfig = Object.fromEntries(series.map((item) => [item.key, { label: item.label, color: item.color }]));

@@ -23,6 +23,20 @@ def disable_authentication_by_default(monkeypatch):
     monkeypatch.setattr(config, "AUTH_ENABLED", "false")
 
 
+SIGNED_IN_EMAIL = "staff@shop-aire.com"
+
+
+@pytest.fixture
+def signed_in():
+    """Requests come from SIGNED_IN_EMAIL's session (routes that record who made a change)."""
+    from app.auth import require_user
+    from app.main import app
+
+    app.dependency_overrides[require_user] = lambda: {"sub": "123", "email": SIGNED_IN_EMAIL, "name": "Staff", "picture": None}
+    yield SIGNED_IN_EMAIL
+    app.dependency_overrides.pop(require_user, None)
+
+
 class FakeResult:
     def __init__(self, rows):
         self._rows = list(rows)

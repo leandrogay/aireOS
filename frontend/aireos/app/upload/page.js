@@ -200,11 +200,11 @@ export default function UploadPage() {
             <p aria-live="polite" className="text-sm text-deep-violet-blue/70">
               {blocker}
             </p>
-            <button
+            <Button
               type="button"
+              size="lg"
               onClick={startUpload}
               disabled={!(uploadableCount || skippedCount) || Boolean(blocker)}
-              className="rounded-lg border border-deep-violet-blue bg-deep-violet-blue px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-violet focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {/* Only skips left: pressing it files them under the batch. */}
               {uploadableCount
@@ -212,7 +212,7 @@ export default function UploadPage() {
                 : skippedCount
                   ? `Skip ${filesLabel(skippedCount)}`
                   : 'Upload'}
-            </button>
+            </Button>
           </div>
         </section>
 

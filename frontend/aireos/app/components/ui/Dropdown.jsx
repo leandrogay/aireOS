@@ -1,91 +1,140 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 
+import { filterControlClass } from '@/components/ui/filterControl';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 
 /**
- * Closed-by-default dropdown whose panel holds whatever the parent puts in it:
- * a checkbox list (the promotion form's pickers, inventory's SkuDropdown) or a
- * month grid (MonthDropdown). For a plain list of options, ui/SelectDropdown
- * (pick one) and ui/MultiSelectDropdown (pick many) already do the rows.
+ * The closed button's look, one per kind of place a dropdown sits:
+ * - field: forms and the mapping review (cream, lavender border). `size`
+ *   'sm' is the compact version used inside tables.
+ * - filter: a FilterBar (filterControl.js), shared with FilterSelect, with
+ *   the darker border while `active`.
+ * - compact: the inventory filter card (white, violet border, small text).
  *
- * The trigger looks like the other cream/lavender inputs. Clicking it opens
- * the panel; clicking outside or Escape closes it. Selection stays in the
- * parent — this component only controls open/close.
+ * @param {'field' | 'filter' | 'compact'} look
+ * @param {'md' | 'sm'} size
+ * @param {boolean} active
+ */
+function lookClass(look, size, active) {
+  if (look === 'filter') return filterControlClass(active);
+  if (look === 'compact') return 'h-8 rounded-md border border-violet bg-white px-2 text-xs';
+  return cn(
+    'rounded-md border border-lavander bg-cream focus:border-violet',
+    size === 'sm' ? 'h-7 px-2 text-xs' : 'px-2.5 py-1.5 text-sm',
+  );
+}
+
+/**
+ * The one dropdown shell every picker is built on: ui/SelectDropdown (pick
+ * one), ui/MultiSelectDropdown (pick many) and ui/MonthDropdown (a month
+ * grid). It owns the closed button, the panel, open/close and the optional
+ * search box; what goes in the panel is the caller's.
  *
- * The panel is a Popover, so it renders in a portal: it is never clipped by
- * a scrolling container (the promotion form scrolls inside its modal on short
- * windows), and it flips above the trigger when there is no room below.
+ * The panel is a Popover, so it renders in a portal: a scrolling container
+ * never clips it, and it flips above the button when there is no room below.
+ * It is at least as wide as the button and grows (up to 28rem) for long
+ * labels. Clicking outside or Escape closes it, and closing clears the search.
  *
- * Children may be a function `(query, close) => nodes` so the parent can
- * filter its rows by the search text, or close the panel after a
- * single-select pick. The query is cleared on close.
+ * Children may be a function `(query, close) => nodes` so the caller can
+ * filter its rows by the search text, or close the panel after a pick.
+ * `footer` (same shape) is pinned under the list, outside its scroll.
  *
  * @param {object} props
- * @param {string} props.summary text shown on the closed button
+ * @param {string} props.summary text on the closed button ('' shows `placeholder`)
  * @param {string} [props.placeholder]
+ * @param {string} [props.title] tooltip on the closed button; defaults to `summary`
+ * @param {'field' | 'filter' | 'compact'} [props.look]
+ * @param {'md' | 'sm'} [props.size] only for the field look
+ * @param {boolean} [props.active] filter look: darker border while narrowing a list
  * @param {boolean} [props.disabled]
  * @param {boolean} [props.invalid] red border after a failed submit
+ * @param {string} [props.id] on the button, for a <label htmlFor>
+ * @param {string} [props.ariaLabel]
+ * @param {string} [props.ariaLabelledby]
+ * @param {string} [props.className] extra classes for the button
  * @param {boolean} [props.searchable]
  * @param {string} [props.searchPlaceholder]
- * @param {(query: string) => void} [props.onSearchChange] optional consumer callback for user-entered search text
- * @param {string} [props.listClassName] classes for the option list; inventory passes no max-height so every SKU is visible
+ * @param {(query: string) => void} [props.onSearchChange]
+ * @param {string} [props.panelClassName]
+ * @param {string} [props.listClassName] e.g. 'max-h-none' to show every row
+ * @param {string} [props.listRole] e.g. 'listbox'; labelled with `ariaLabel`
+ * @param {React.ReactNode | ((query: string, close: () => void) => React.ReactNode)} [props.footer]
  * @param {React.ReactNode | ((query: string, close: () => void) => React.ReactNode)} props.children
  */
 export default function Dropdown({
   summary,
   placeholder = 'Select…',
+  title,
+  look = 'field',
+  size = 'md',
+  active = false,
   disabled = false,
   invalid = false,
+  id,
+  ariaLabel,
+  ariaLabelledby,
+  className,
   searchable = false,
   searchPlaceholder = 'Search…',
-  onSearchChange = null,
-  listClassName = 'max-h-52 overflow-auto p-2',
+  onSearchChange,
+  panelClassName,
+  listClassName,
+  listRole,
+  footer,
   children,
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const searchRef = useRef(null);
 
-  /**
-   * Open or close the menu; closing clears any search text.
-   *
-   * @param {boolean} next
-   */
-  const handleOpenChange = (next) => {
+  function handleOpenChange(next) {
     setOpen(next);
     if (!next) setQuery('');
-  };
+  }
 
   const close = () => handleOpenChange(false);
-
-  const content = typeof children === 'function' ? children(query, close) : children;
+  const render = (slot) => (typeof slot === 'function' ? slot(query, close) : slot);
+  const small = look === 'compact' || size === 'sm';
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger
+        id={id}
         disabled={disabled}
-        title={summary || undefined}
+        aria-label={ariaLabel}
+        aria-labelledby={ariaLabelledby}
+        title={title ?? (summary || undefined)}
         className={cn(
-          'flex w-full min-w-0 max-w-full items-center justify-between overflow-hidden rounded-md border border-lavander bg-cream px-2.5 py-1.5 text-left text-sm text-deep-violet-blue focus:border-violet focus:outline-none disabled:cursor-not-allowed disabled:opacity-60',
+          'flex w-full min-w-0 cursor-pointer items-center justify-between overflow-hidden text-left text-deep-violet-blue outline-none disabled:cursor-not-allowed disabled:opacity-60',
+          lookClass(look, size, active),
           invalid && 'border-red-400 focus:border-red-500',
+          className,
         )}
       >
-        <span className={`min-w-0 flex-1 truncate ${summary ? '' : 'text-deep-violet-blue/50'}`}>
+        <span className={cn('min-w-0 flex-1 truncate', !summary && 'text-deep-violet-blue/50')}>
           {summary || placeholder}
         </span>
-        <span className="ml-2 shrink-0 text-[10px] text-deep-violet-blue/50" aria-hidden="true">
-          {open ? '▲' : '▼'}
-        </span>
+        <ChevronDown
+          aria-hidden="true"
+          className={cn(
+            'ml-2 shrink-0 text-deep-violet-blue/50 transition-transform',
+            small ? 'size-3.5' : 'size-4',
+            open && 'rotate-180',
+          )}
+        />
       </PopoverTrigger>
-      {/* Same width as the trigger, like the old inline panel. The caret goes
-          straight into the search box when there is one. */}
+      {/* The caret goes straight into the search box when there is one. */}
       <PopoverContent
         align="start"
         initialFocus={searchable ? searchRef : undefined}
-        className="w-(--anchor-width) gap-0 overflow-hidden rounded-md border border-lavander bg-white p-0 text-deep-violet-blue ring-0"
+        className={cn(
+          'w-max min-w-(--anchor-width) max-w-[min(28rem,90vw)] gap-0 overflow-hidden rounded-md border border-lavander bg-white p-0 text-deep-violet-blue ring-0',
+          panelClassName,
+        )}
       >
         {searchable && (
           <div className="border-b border-lavander p-2">
@@ -96,20 +145,24 @@ export default function Dropdown({
               placeholder={searchPlaceholder}
               aria-label={searchPlaceholder}
               onChange={(event) => {
-                const nextQuery = event.target.value;
-                setQuery(nextQuery);
-                onSearchChange?.(nextQuery);
+                setQuery(event.target.value);
+                onSearchChange?.(event.target.value);
               }}
               onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  event.preventDefault();
-                }
+                if (event.key === 'Enter') event.preventDefault();
               }}
               className="w-full rounded-md border border-lavander bg-cream px-2 py-1 text-sm text-deep-violet-blue placeholder:text-deep-violet-blue/45 focus:border-violet focus:outline-none"
             />
           </div>
         )}
-        <div className={listClassName}>{content}</div>
+        <div
+          role={listRole}
+          aria-label={listRole ? ariaLabel : undefined}
+          className={cn('max-h-72 overflow-y-auto overflow-x-hidden p-1.5', listClassName)}
+        >
+          {render(children)}
+        </div>
+        {footer && <div className="border-t border-lavander p-1.5">{render(footer)}</div>}
       </PopoverContent>
     </Popover>
   );

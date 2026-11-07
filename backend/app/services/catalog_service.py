@@ -1,8 +1,9 @@
 import datetime
 from functools import lru_cache
+from zoneinfo import ZoneInfo
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
-from app.services import customer_service, sql
+from app.services import customer_service, forecast_refresh_events, sql
 from app.services.settings.common import lock_customer
 
 
@@ -36,6 +37,10 @@ class SkuAlreadyExistsError(Exception):
 
 
 class SkuHasPromotionsError(Exception):
+    pass
+
+
+class SkuPricePeriodConflictError(ValueError):
     pass
 
 
@@ -1107,6 +1112,37 @@ _SKU_COLUMNS = """
     price
 """
 
+_SKU_READ_COLUMNS = """
+    skus.sku,
+    skus.sku_range,
+    skus.product_name,
+    skus.size,
+    skus.brand,
+    skus.uom,
+    skus.pack_size,
+    current_price.price,
+    current_price.effective_from AS price_effective_from,
+    current_price.effective_to AS price_effective_to
+"""
+
+_CURRENT_PRICE_JOIN = """
+    LEFT JOIN LATERAL (
+        SELECT price, effective_from, effective_to
+        FROM sku_price_periods
+        WHERE sku = skus.sku
+          AND effective_from <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Singapore')::DATE
+          AND (effective_to IS NULL OR effective_to >=
+               (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Singapore')::DATE)
+        ORDER BY effective_from DESC
+        LIMIT 1
+    ) AS current_price ON TRUE
+"""
+
+
+def _price_today() -> datetime.date:
+    """SKU effective dates are Singapore business calendar dates."""
+    return datetime.datetime.now(ZoneInfo("Asia/Singapore")).date()
+
 
 def _fetch_active_sku(
     conn: Connection,
@@ -1116,9 +1152,10 @@ def _fetch_active_sku(
         text(
             f"""
             SELECT
-                {_SKU_COLUMNS}
+                {_SKU_READ_COLUMNS}
 
             FROM skus
+            {_CURRENT_PRICE_JOIN}
 
             WHERE
                 sku = :sku
@@ -1135,6 +1172,8 @@ def _insert_sku_history(
     conn: Connection,
     sku: dict,
     action: str,
+    effective_from: datetime.date | None = None,
+    effective_to: datetime.date | None = None,
 ) -> None:
     conn.execute(
         text(
@@ -1148,7 +1187,9 @@ def _insert_sku_history(
                 brand,
                 uom,
                 pack_size,
-                price
+                price,
+                price_effective_from,
+                price_effective_to
             )
             VALUES (
                 :sku,
@@ -1159,19 +1200,86 @@ def _insert_sku_history(
                 :brand,
                 :uom,
                 :pack_size,
-                :price
+                :price,
+                :price_effective_from,
+                :price_effective_to
             )
             """
         ),
         {
             **sku,
             "action": action,
+            "price_effective_from": effective_from,
+            "price_effective_to": effective_to,
         },
     )
 
 
+def _insert_price_period(
+    conn: Connection,
+    sku: str,
+    price,
+    effective_from: datetime.date,
+    effective_to: datetime.date | None,
+) -> datetime.date | None:
+    periods = [dict(row) for row in conn.execute(text("""
+        SELECT price_period_id, price, effective_from, effective_to
+        FROM sku_price_periods
+        WHERE sku = :sku
+        ORDER BY effective_from
+        FOR UPDATE
+    """), {"sku": sku}).mappings().all()]
+    previous = next(
+        (row for row in reversed(periods) if row["effective_from"] <= effective_from),
+        None,
+    )
+    following = next(
+        (row for row in periods if row["effective_from"] > effective_from),
+        None,
+    )
+    if previous and previous["effective_from"] == effective_from:
+        raise SkuPricePeriodConflictError(
+            "A price period already starts on this date. "
+            "To correct it, use History > Price periods > Edit."
+        )
+    if following and effective_to is not None and effective_to >= following["effective_from"]:
+        raise SkuPricePeriodConflictError(
+            "Effective to must be before the next scheduled price starts."
+        )
+
+    ends_on = effective_to
+    if ends_on is None and following:
+        ends_on = following["effective_from"] - datetime.timedelta(days=1)
+
+    if previous and (previous["effective_to"] is None or previous["effective_to"] >= effective_from):
+        conn.execute(text("""
+            UPDATE sku_price_periods
+            SET effective_to = :ends_on
+            WHERE price_period_id = :period_id
+        """), {
+            "ends_on": effective_from - datetime.timedelta(days=1),
+            "period_id": previous["price_period_id"],
+        })
+
+    conn.execute(text("""
+        INSERT INTO sku_price_periods (sku, price, effective_from, effective_to)
+        VALUES (:sku, :price, :effective_from, :effective_to)
+    """), {
+        "sku": sku,
+        "price": price,
+        "effective_from": effective_from,
+        "effective_to": ends_on,
+    })
+    if following:
+        conn.execute(text("""
+            UPDATE skus SET price = :price WHERE sku = :sku
+        """), {"price": periods[-1]["price"], "sku": sku})
+    return ends_on
+
+
 def create_sku(sku) -> dict:
     values = sku.model_dump()
+    effective_from = sku.price_effective_from or _price_today()
 
     with _get_engine().begin() as conn:
         exists = conn.execute(
@@ -1216,9 +1324,21 @@ def create_sku(sku) -> dict:
         ).mappings().first()
 
         created = dict(row)
-        _insert_sku_history(conn, created, "created")
+        period_end = _insert_price_period(
+            conn, created["sku"], created["price"], effective_from,
+            sku.price_effective_to,
+        )
+        _insert_sku_history(
+            conn, created, "created", effective_from, period_end,
+        )
 
-    return created
+    if effective_from <= _price_today() and (
+        period_end is None or period_end >= _price_today()
+    ):
+        return {**created, "price_effective_from": effective_from,
+                "price_effective_to": period_end}
+    return {**created, "price": None, "price_effective_from": None,
+            "price_effective_to": None}
 
 
 def list_skus(
@@ -1248,18 +1368,19 @@ def list_skus(
         where_clauses.append("brand = :brand")
         params["brand"] = brand
     if min_price is not None:
-        where_clauses.append("price >= :min_price")
+        where_clauses.append("current_price.price >= :min_price")
         params["min_price"] = min_price
     if max_price is not None:
-        where_clauses.append("price <= :max_price")
+        where_clauses.append("current_price.price <= :max_price")
         params["max_price"] = max_price
 
     query = text(
         f"""
         SELECT
-            {_SKU_COLUMNS}
+            {_SKU_READ_COLUMNS}
 
         FROM skus
+        {_CURRENT_PRICE_JOIN}
 
         WHERE
             {" AND ".join(where_clauses)}
@@ -1289,7 +1410,9 @@ def get_sku(sku: str) -> dict | None:
                     sku_history_id,
                     action,
                     {_SKU_COLUMNS},
-                    changed_at
+                    changed_at,
+                    price_effective_from,
+                    price_effective_to
 
                 FROM sku_history
 
@@ -1303,8 +1426,111 @@ def get_sku(sku: str) -> dict | None:
             {"sku": sku},
         ).mappings().all()
 
+        price_periods = conn.execute(text("""
+            SELECT price_period_id, price, effective_from, effective_to
+            FROM sku_price_periods
+            WHERE sku = :sku
+            ORDER BY effective_from DESC, price_period_id DESC
+        """), {"sku": sku}).mappings().all()
+        price_corrections = conn.execute(text("""
+            SELECT correction_id, price_period_id, old_price, new_price,
+                   old_effective_from, old_effective_to,
+                   new_effective_from, new_effective_to,
+                   corrected_by, corrected_at
+            FROM sku_price_period_corrections
+            WHERE sku = :sku
+            ORDER BY corrected_at DESC, correction_id DESC
+        """), {"sku": sku}).mappings().all()
+
     item["history"] = [dict(row) for row in history]
+    item["price_periods"] = [dict(row) for row in price_periods]
+    item["price_corrections"] = [dict(row) for row in price_corrections]
     return item
+
+
+def correct_sku_price_period(
+    sku: str, period_id: int, correction, corrected_by: str,
+) -> dict | None:
+    """Correct saved dates while retaining the original interval in an audit row."""
+    with _get_engine().begin() as conn:
+        product = conn.execute(text("""
+            SELECT sku FROM skus WHERE sku = :sku AND is_active = TRUE FOR UPDATE
+        """), {"sku": sku}).first()
+        if product is None:
+            return None
+
+        periods = [dict(row) for row in conn.execute(text("""
+            SELECT price_period_id, price, effective_from, effective_to
+            FROM sku_price_periods
+            WHERE sku = :sku
+            ORDER BY effective_from, price_period_id
+            FOR UPDATE
+        """), {"sku": sku}).mappings().all()]
+        current = next((row for row in periods if row["price_period_id"] == period_id), None)
+        if current is None:
+            return None
+
+        new_price = correction.price
+        new_start = correction.effective_from
+        new_end = correction.effective_to
+        if (new_price, new_start, new_end) == (
+            current["price"], current["effective_from"], current["effective_to"]
+        ):
+            return current
+
+        for other in periods:
+            if other["price_period_id"] == period_id:
+                continue
+            if new_start <= (other["effective_to"] or datetime.date.max) and (
+                new_end is None or other["effective_from"] <= new_end
+            ):
+                raise SkuPricePeriodConflictError(
+                    "These dates overlap another price period for this SKU."
+                )
+
+        conn.execute(text("""
+            UPDATE sku_price_periods
+            SET price = :price, effective_from = :effective_from,
+                effective_to = :effective_to
+            WHERE price_period_id = :period_id
+        """), {
+            "price": new_price,
+            "effective_from": new_start,
+            "effective_to": new_end,
+            "period_id": period_id,
+        })
+        latest_period = max(
+            periods,
+            key=lambda row: new_start if row["price_period_id"] == period_id
+            else row["effective_from"],
+        )
+        latest_price = new_price if latest_period["price_period_id"] == period_id else latest_period["price"]
+        conn.execute(text("""
+            UPDATE skus SET price = :price WHERE sku = :sku
+        """), {"price": latest_price, "sku": sku})
+        conn.execute(text("""
+            INSERT INTO sku_price_period_corrections (
+                price_period_id, sku, old_price, new_price,
+                old_effective_from, old_effective_to,
+                new_effective_from, new_effective_to, corrected_by
+            ) VALUES (
+                :period_id, :sku, :old_price, :new_price,
+                :old_from, :old_to, :new_from, :new_to, :corrected_by
+            )
+        """), {
+            "period_id": period_id,
+            "sku": sku,
+            "old_price": current["price"],
+            "new_price": new_price,
+            "old_from": current["effective_from"],
+            "old_to": current["effective_to"],
+            "new_from": new_start,
+            "new_to": new_end,
+            "corrected_by": corrected_by,
+        })
+
+    return {**current, "price": new_price,
+            "effective_from": new_start, "effective_to": new_end}
 
 
 def get_sku_options() -> dict[str, list]:
@@ -1341,12 +1567,25 @@ def get_sku_options() -> dict[str, list]:
 
 
 def update_sku(sku: str, changes) -> dict | None:
-    params = {
-        "sku": sku,
-        **changes.model_dump(),
-    }
-
     with _get_engine().begin() as conn:
+        current = conn.execute(text("""
+            SELECT price FROM skus
+            WHERE sku = :sku AND is_active = TRUE
+            FOR UPDATE
+        """), {"sku": sku}).first()
+        if current is None:
+            return None
+
+        price_changed = (
+            changes.price_changed if changes.price_changed is not None
+            else changes.price != current[0] or changes.price_effective_from is not None
+        )
+        effective_from = (changes.price_effective_from or _price_today()) if price_changed else None
+        params = {
+            "sku": sku,
+            **changes.model_dump(exclude={"price_changed"}),
+            "price": changes.price if price_changed else current[0],
+        }
         row = conn.execute(
             text(
                 f"""
@@ -1375,12 +1614,23 @@ def update_sku(sku: str, changes) -> dict | None:
             return None
 
         updated = dict(row)
-        _insert_sku_history(conn, updated, "updated")
+        period_end = None
+        if price_changed:
+            period_end = _insert_price_period(
+                conn, sku, updated["price"], effective_from,
+                changes.price_effective_to,
+            )
+        _insert_sku_history(
+            conn, updated, "updated", effective_from,
+            period_end,
+        )
+        visible = _fetch_active_sku(conn, sku)
 
-    return updated
+    return visible
 
 
 def archive_sku(sku: str) -> dict | None:
+    refresh_request_id = None
     with _get_engine().begin() as conn:
         item = _fetch_active_sku(conn, sku)
         if item is None:
@@ -1417,36 +1667,68 @@ def archive_sku(sku: str) -> dict | None:
             ),
             {"sku": sku},
         )
+        refresh_request_id = forecast_refresh_events.record_change(
+            conn, "sku_change", f"sku:{sku}"
+        )
 
+    forecast_refresh_events.enqueue_best_effort(refresh_request_id)
     return item
+
+
+def restore_sku(sku: str) -> dict | None:
+    """Reactivate an archived master SKU and refresh forecast inputs after commit."""
+    refresh_request_id = None
+    with _get_engine().begin() as conn:
+        row = conn.execute(text(f"""
+            UPDATE skus
+            SET is_active = TRUE, archived_at = NULL
+            WHERE sku = :sku AND is_active = FALSE
+            RETURNING {_SKU_COLUMNS}
+        """), {"sku": sku}).mappings().first()
+        if row is None:
+            return None
+        restored = dict(row)
+        _insert_sku_history(conn, restored, "restored")
+        refresh_request_id = forecast_refresh_events.record_change(
+            conn, "sku_change", f"sku:{sku}"
+        )
+
+    forecast_refresh_events.enqueue_best_effort(refresh_request_id)
+    return restored
 
 
 # ============================================================
 # PRODUCT PRICES
 #
-# Current price reads come from skus. Historical calculations read the
-# complete snapshots in sku_history, so changing today's catalog price does
-# not replace the price used for an earlier period.
+# Price periods are dated Singapore business days. SKU history still supplies
+# the product name as it was known on a historical date.
 # ============================================================
 
 
 def get_product_prices(
     as_of_date: datetime.date | None = None,
 ) -> dict[str, float]:
-    """Return current prices, or the SKU versions effective on a past date."""
+    """Return SKU prices effective today or on a requested past date."""
     params = {}
     if as_of_date is None:
         query = text(
             """
             SELECT
-                product_name,
-                price
+                skus.product_name,
+                current_price.price
 
             FROM skus
+            JOIN LATERAL (
+                SELECT price FROM sku_price_periods
+                WHERE sku = skus.sku
+                  AND effective_from <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Singapore')::DATE
+                  AND (effective_to IS NULL OR effective_to >=
+                       (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Singapore')::DATE)
+                ORDER BY effective_from DESC LIMIT 1
+            ) AS current_price ON TRUE
 
             WHERE
-                price IS NOT NULL
-                AND is_active = TRUE
+                current_price.price IS NOT NULL AND skus.is_active = TRUE
             """
         )
     else:
@@ -1463,34 +1745,44 @@ def get_product_prices(
 
                 ORDER BY
                     sku,
-                    (changed_at < CAST(:as_of_date AS DATE) + INTERVAL '1 day') DESC,
+                    ((changed_at AT TIME ZONE 'Asia/Singapore') <
+                     CAST(:as_of_date AS DATE) + INTERVAL '1 day') DESC,
                     CASE
-                        WHEN changed_at < CAST(:as_of_date AS DATE) + INTERVAL '1 day'
+                        WHEN (changed_at AT TIME ZONE 'Asia/Singapore') <
+                             CAST(:as_of_date AS DATE) + INTERVAL '1 day'
                         THEN changed_at
                     END DESC,
                     CASE
-                        WHEN changed_at >= CAST(:as_of_date AS DATE) + INTERVAL '1 day'
+                        WHEN (changed_at AT TIME ZONE 'Asia/Singapore') >=
+                             CAST(:as_of_date AS DATE) + INTERVAL '1 day'
                         THEN changed_at
                     END ASC,
                     CASE
-                        WHEN changed_at < CAST(:as_of_date AS DATE) + INTERVAL '1 day'
+                        WHEN (changed_at AT TIME ZONE 'Asia/Singapore') <
+                             CAST(:as_of_date AS DATE) + INTERVAL '1 day'
                         THEN sku_history_id
                     END DESC,
                     CASE
-                        WHEN changed_at >= CAST(:as_of_date AS DATE) + INTERVAL '1 day'
+                        WHEN (changed_at AT TIME ZONE 'Asia/Singapore') >=
+                             CAST(:as_of_date AS DATE) + INTERVAL '1 day'
                         THEN sku_history_id
                     END ASC
             )
             SELECT
-                product_name,
-                price
+                effective_versions.product_name,
+                period.price
 
             FROM effective_versions
+            JOIN sku_price_periods AS period
+              ON period.sku = effective_versions.sku
+             AND period.effective_from <= CAST(:as_of_date AS DATE)
+             AND (period.effective_to IS NULL
+                  OR period.effective_to >= CAST(:as_of_date AS DATE))
 
             WHERE
-                action <> 'archived'
-                AND product_name IS NOT NULL
-                AND price IS NOT NULL
+                effective_versions.action <> 'archived'
+                AND effective_versions.product_name IS NOT NULL
+                AND period.price IS NOT NULL
             """
         )
         params["as_of_date"] = as_of_date

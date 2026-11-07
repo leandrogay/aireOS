@@ -66,7 +66,7 @@ function MarkReadButton({ onClick, children }) {
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex min-h-6 shrink-0 items-center rounded-full border border-violet/30 bg-white px-2.5 text-[11px] font-medium text-deep-violet-blue transition hover:bg-cream"
+      className="inline-flex min-h-6 shrink-0 cursor-pointer items-center rounded-full border border-violet/30 bg-white px-2.5 text-[11px] font-medium text-deep-violet-blue transition hover:bg-cream"
     >
       {children}
     </button>

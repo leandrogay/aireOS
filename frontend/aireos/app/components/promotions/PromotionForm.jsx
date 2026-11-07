@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import DateRangePicker from '@/components/ui/DateRangePicker';
-import Dropdown from '@/components/ui/Dropdown';
+import MultiSelectDropdown from '@/components/ui/MultiSelectDropdown';
+import SelectDropdown from '@/components/ui/SelectDropdown';
 import MonthPicker from '@/components/promotions/MonthPicker';
 import { formatDate } from '@/lib/formatDate';
 import { cn } from '@/lib/utils';
@@ -12,11 +13,7 @@ import {
   MONTHLY_PROMO_TYPE,
   PACK_TYPES,
   PROMO_TYPES,
-  areAllRetailersSelected,
-  areAllSkuRangesSelected,
-  areAllStoresSelected,
   estimatedMechanicDiscount,
-  promoTypeLabel,
   promoTypePatch,
   retailerDropdownOptions,
   storeCatalogOptions,
@@ -30,8 +27,6 @@ const invalidInputClass = 'border-red-400 focus:border-red-500';
 const labelClass = 'mb-1 block text-xs font-medium text-deep-violet-blue';
 const errorClass = 'mt-1 text-xs text-red-700';
 const hintClass = 'mt-1 text-[11px] text-deep-violet-blue/60';
-const checkRowClass =
-  'flex min-w-0 cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2 py-1 text-sm text-deep-violet-blue hover:bg-cream';
 // Segmented radio chip: the native radio is visually hidden and the label
 // itself shows the checked / focused state.
 const chipClass =
@@ -310,27 +305,9 @@ export default function PromotionForm({
     storesForRetailerIds(stores, form.selectedRetailerIds),
   );
   const storesNeedRetailer = !(form.selectedRetailerIds || []).length;
-  const allRetailersSelected = areAllRetailersSelected(
-    form.selectedRetailerIds,
-    retailerOptions,
-  );
-  const allStoresSelected = areAllStoresSelected(form.selectedStoreCodes, storeOptions);
-  const allSkuRangesSelected = areAllSkuRangesSelected(form.skuRanges, skuRangeOptions);
-  const retailerSummary = allRetailersSelected
-    ? 'All retailers'
-    : retailerOptions
-        .filter((retailer) =>
-          (form.selectedRetailerIds || []).map(String).includes(String(retailer.retailer_id)),
-        )
-        .map((retailer) => retailerLabel(retailer.retailer_name))
-        .join(', ');
   const selectedStores = storeOptions.filter((store) =>
     (form.selectedStoreCodes || []).map(String).includes(String(store.store_code)),
   );
-  const storeSummary = allStoresSelected
-    ? 'All stores'
-    : selectedStores.map((store) => store.store_name).join(', ');
-  const skuSummary = allSkuRangesSelected ? 'All SKU ranges' : form.skuRanges.join(', ');
   // Pack and carton Monthly both run for a whole calendar month.
   const isMonthly = form.promoType === MONTHLY_PROMO_TYPE;
   // Inline messages sit next to each field; the footer repeats the count so
@@ -353,36 +330,15 @@ export default function PromotionForm({
   };
 
   /**
-   * Tick or untick one retailer. Unticking any box also clears the
-   * "All retailers" shortcut because the set is no longer complete.
+   * Set the ticked retailers, dropping any picked store that no longer
+   * belongs to one of them.
    *
-   * @param {number} retailerId
+   * @param {string[]} retailerIds
    */
-  const toggleRetailer = (retailerId) => {
-    const id = String(retailerId);
-    const selected = (form.selectedRetailerIds || []).map(String);
-    const next = selected.includes(id)
-      ? selected.filter((item) => item !== id)
-      : [...selected, id];
-
+  const setRetailers = (retailerIds) => {
     patchForm({
-      selectedRetailerIds: next,
-      selectedStoreCodes: storeCodesAllowedForRetailers(next),
-    });
-  };
-
-  /**
-   * Tick every retailer checkbox, or clear them all.
-   *
-   * @param {boolean} checked
-   */
-  const toggleAllRetailers = (checked) => {
-    const next = checked
-      ? retailerOptions.map((retailer) => String(retailer.retailer_id))
-      : [];
-    patchForm({
-      selectedRetailerIds: next,
-      selectedStoreCodes: storeCodesAllowedForRetailers(next),
+      selectedRetailerIds: retailerIds,
+      selectedStoreCodes: storeCodesAllowedForRetailers(retailerIds),
     });
   };
 
@@ -403,53 +359,6 @@ export default function PromotionForm({
       .filter((code) => allowed.has(code));
   };
 
-  /**
-   * Tick or untick one store among the current retailer's catalog.
-   *
-   * @param {string} storeCode
-   */
-  const toggleStore = (storeCode) => {
-    const code = String(storeCode);
-    const selected = (form.selectedStoreCodes || []).map(String);
-    const next = selected.includes(code)
-      ? selected.filter((item) => item !== code)
-      : [...selected, code];
-    patchForm({ selectedStoreCodes: next });
-  };
-
-  /**
-   * Tick every store checkbox, or clear them all.
-   *
-   * @param {boolean} checked
-   */
-  const toggleAllStores = (checked) => {
-    patchForm({
-      selectedStoreCodes: checked
-        ? storeOptions.map((store) => String(store.store_code))
-        : [],
-    });
-  };
-
-  /**
-   * Tick every SKU range, or clear them all.
-   *
-   * @param {boolean} checked
-   */
-  const toggleAllSkuRanges = (checked) => {
-    patchForm({ skuRanges: checked ? [...skuRangeOptions] : [] });
-  };
-
-  /**
-   * Toggle a SKU range checkbox. More than one range can be selected.
-   *
-   * @param {string} range
-   */
-  const toggleSkuRange = (range) => {
-    const selected = form.skuRanges.includes(range)
-      ? form.skuRanges.filter((item) => item !== range)
-      : [...form.skuRanges, range];
-    patchForm({ skuRanges: selected });
-  };
 
   return (
     <form
@@ -511,39 +420,22 @@ export default function PromotionForm({
                 Retailers
                 <RequiredMark />
               </legend>
-              <Dropdown
-                summary={retailerSummary}
+              <MultiSelectDropdown
+                ariaLabel="Retailers"
+                allLabel="All retailers"
+                noneMeansAll={false}
+                options={retailerOptions.map((retailer) => ({
+                  value: String(retailer.retailer_id),
+                  label: retailerLabel(retailer.retailer_name),
+                }))}
+                values={(form.selectedRetailerIds || []).map(String)}
+                onChange={setRetailers}
                 placeholder={
                   isLoadingRetailers ? 'Loading retailers…' : 'Select retailers'
                 }
                 disabled={isLoadingRetailers || retailerOptions.length === 0}
                 invalid={Boolean(errors.retailerScope)}
-              >
-                <label className={`${checkRowClass} font-medium`}>
-                  <input
-                    type="checkbox"
-                    checked={allRetailersSelected}
-                    onChange={(event) => toggleAllRetailers(event.target.checked)}
-                    className="size-3.5 accent-deep-violet-blue"
-                  />
-                  All retailers
-                </label>
-                {retailerOptions.map((retailer) => (
-                  <label key={retailer.retailer_id} className={checkRowClass}>
-                    <input
-                      type="checkbox"
-                      checked={(form.selectedRetailerIds || [])
-                        .map(String)
-                        .includes(String(retailer.retailer_id))}
-                      onChange={() => toggleRetailer(retailer.retailer_id)}
-                      className="size-3.5 accent-deep-violet-blue"
-                    />
-                    <span className="min-w-0 truncate">
-                      {retailerLabel(retailer.retailer_name)}
-                    </span>
-                  </label>
-                ))}
-              </Dropdown>
+              />
               {retailersError && <p className={errorClass}>{retailersError}</p>}
               {!isLoadingRetailers && !retailersError && retailerOptions.length === 0 && (
                 <p className={hintClass}>No retailers yet.</p>
@@ -556,8 +448,19 @@ export default function PromotionForm({
                 Stores
                 <RequiredMark />
               </legend>
-              <Dropdown
-                summary={storeSummary}
+              {/* The store code is the hint, so the search finds a store by
+                  name or code. */}
+              <MultiSelectDropdown
+                ariaLabel="Stores"
+                allLabel="All stores"
+                noneMeansAll={false}
+                options={storeOptions.map((store) => ({
+                  value: String(store.store_code),
+                  label: store.store_name,
+                  hint: String(store.store_code),
+                }))}
+                values={(form.selectedStoreCodes || []).map(String)}
+                onChange={(selectedStoreCodes) => patchForm({ selectedStoreCodes })}
                 placeholder={
                   isLoadingStores
                     ? 'Loading stores…'
@@ -571,53 +474,7 @@ export default function PromotionForm({
                 invalid={Boolean(errors.storeName)}
                 searchable
                 searchPlaceholder="Search stores…"
-              >
-                {(query) => {
-                  const needle = query.trim().toLowerCase();
-                  const visibleStores = needle
-                    ? storeOptions.filter((store) => {
-                        const name = String(store.store_name || '').toLowerCase();
-                        const code = String(store.store_code || '').toLowerCase();
-                        return name.includes(needle) || code.includes(needle);
-                      })
-                    : storeOptions;
-
-                  return (
-                    <>
-                      <label className={`${checkRowClass} font-medium`}>
-                        <input
-                          type="checkbox"
-                          checked={allStoresSelected}
-                          onChange={(event) => toggleAllStores(event.target.checked)}
-                          className="size-3.5 accent-deep-violet-blue"
-                        />
-                        All stores
-                      </label>
-                      {visibleStores.map((store) => (
-                        <label key={store.store_code} className={checkRowClass}>
-                          <input
-                            type="checkbox"
-                            checked={(form.selectedStoreCodes || [])
-                              .map(String)
-                              .includes(String(store.store_code))}
-                            onChange={() => toggleStore(store.store_code)}
-                            className="size-3.5 accent-deep-violet-blue"
-                          />
-                          <span className="min-w-0 truncate">{store.store_name}</span>
-                          <span className="ml-auto shrink-0 font-mono text-[10px] text-deep-violet-blue/60">
-                            {store.store_code}
-                          </span>
-                        </label>
-                      ))}
-                      {needle && visibleStores.length === 0 && (
-                        <p className="px-2 py-1 text-xs text-deep-violet-blue/60">
-                          No stores match.
-                        </p>
-                      )}
-                    </>
-                  );
-                }}
-              </Dropdown>
+              />
               {storesError && <p className={errorClass}>{storesError}</p>}
               {!isLoadingStores && !storesError && (
                 // Always rendered so the line does not vanish (and shift the
@@ -647,30 +504,14 @@ export default function PromotionForm({
                 Promo type
                 <RequiredMark />
               </legend>
-              <Dropdown
-                summary={promoTypeLabel(form.promoType)}
+              <SelectDropdown
+                ariaLabel="Promo type"
+                value={form.promoType}
+                onChange={(promoType) => patchForm(promoTypePatch(form, promoType))}
+                options={PROMO_TYPES}
                 placeholder="Select promo type"
                 invalid={Boolean(errors.promoType)}
-              >
-                {(_query, close) =>
-                  PROMO_TYPES.map((option) => (
-                    <label key={option.value} className={checkRowClass}>
-                      <input
-                        type="radio"
-                        name="promoType"
-                        value={option.value}
-                        checked={form.promoType === option.value}
-                        onChange={() => {
-                          patchForm(promoTypePatch(form, option.value));
-                          close();
-                        }}
-                        className="size-3.5 accent-deep-violet-blue"
-                      />
-                      <span className="min-w-0 truncate">{option.label}</span>
-                    </label>
-                  ))
-                }
-              </Dropdown>
+              />
               <FieldError message={errors.promoType} />
             </fieldset>
 
@@ -773,35 +614,19 @@ export default function PromotionForm({
               SKU range
               <RequiredMark />
             </legend>
-            <Dropdown
-              summary={skuSummary}
+            <MultiSelectDropdown
+              ariaLabel="SKU range"
+              allLabel="All SKU ranges"
+              noneMeansAll={false}
+              options={skuRangeOptions.map((range) => ({ value: range, label: range }))}
+              values={form.skuRanges}
+              onChange={(skuRanges) => patchForm({ skuRanges })}
               placeholder={
                 isLoadingSkuRanges ? 'Loading SKU ranges…' : 'Select SKU ranges'
               }
               disabled={isLoadingSkuRanges || skuRangeOptions.length === 0}
               invalid={Boolean(errors.skuRanges)}
-            >
-              <label className={`${checkRowClass} font-medium`}>
-                <input
-                  type="checkbox"
-                  checked={allSkuRangesSelected}
-                  onChange={(event) => toggleAllSkuRanges(event.target.checked)}
-                  className="size-3.5 accent-deep-violet-blue"
-                />
-                All SKU ranges
-              </label>
-              {skuRangeOptions.map((range) => (
-                <label key={range} className={checkRowClass}>
-                  <input
-                    type="checkbox"
-                    checked={form.skuRanges.includes(range)}
-                    onChange={() => toggleSkuRange(range)}
-                    className="size-3.5 accent-deep-violet-blue"
-                  />
-                  <span className="min-w-0 truncate">{range}</span>
-                </label>
-              ))}
-            </Dropdown>
+            />
             {skuRangesError && <p className={errorClass}>{skuRangesError}</p>}
             {!isLoadingSkuRanges && !skuRangesError && skuRangeOptions.length === 0 && (
               <p className={hintClass}>No SKU ranges yet.</p>

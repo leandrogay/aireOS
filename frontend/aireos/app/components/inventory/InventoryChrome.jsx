@@ -1,5 +1,6 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import ChartLoading from '@/components/ui/ChartLoading';
 import { formatMonth } from '@/app/utils/inventoryForm';
@@ -7,8 +8,6 @@ import { formatMonth } from '@/app/utils/inventoryForm';
 // Same compact field styling as ForecastFilters, so the inventory filter
 // card lines up with the sell-out forecast page.
 export const filterLabelClass = 'mb-0.5 block text-[11px] text-deep-violet-blue/70';
-export const filterControlClass =
-  'h-8 w-full rounded-md border border-violet bg-white px-2 text-xs text-deep-violet-blue disabled:opacity-50';
 
 // Data-entry fields. Same white/violet treatment as the filter bar, with the
 // roomier size the forms need. Kept off formStyles.js because DOH Settings
@@ -18,7 +17,7 @@ export const formFieldClass =
   'w-full min-w-0 max-w-full rounded-md border border-violet bg-white px-2.5 py-1.5 text-sm text-deep-violet-blue placeholder:text-deep-violet-blue/45 focus:border-deep-violet-blue focus:outline-none disabled:opacity-60';
 
 const CLEAR_BUTTON_CLASS =
-  'rounded-md border border-deep-violet-blue/30 bg-white px-2 py-0.5 text-[10px] font-medium text-deep-violet-blue transition hover:bg-cream disabled:cursor-not-allowed disabled:opacity-40';
+  'h-auto rounded-md border-deep-violet-blue/30 bg-white px-2 py-0.5 text-[10px] font-medium text-deep-violet-blue transition hover:bg-cream hover:text-deep-violet-blue disabled:opacity-40';
 
 /**
  * @param {string} start 'YYYY-MM' or ''
@@ -77,9 +76,9 @@ export function InventoryFilterCard({ canClear, onClear, stats, note, children }
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <p className="font-serif text-base text-deep-violet-blue">Filters</p>
-            <button type="button" onClick={onClear} disabled={!canClear} className={CLEAR_BUTTON_CLASS}>
+            <Button type="button" variant="outline" size="xs" onClick={onClear} disabled={!canClear} className={CLEAR_BUTTON_CLASS}>
               Clear
-            </button>
+            </Button>
           </div>
           {stats ? <div className="flex flex-wrap items-center justify-end gap-1.5">{stats}</div> : null}
         </div>
@@ -128,17 +127,21 @@ export function InventorySection({ title, tags, description, children }) {
  * first load shows a placeholder the size of the 280px chart frame; after
  * that, a refetch (filter change, or refreshKey after a save) dims the old
  * chart under an overlay instead of swapping it out, so it doesn't flash.
+ * A tab that has a chart-shaped placeholder (ui/BarChartSkeleton) passes it as
+ * `placeholder` to replace the first-load spinner.
  *
  * @param {object} props
  * @param {boolean} props.loading
  * @param {boolean} props.ready true once there is data to draw
+ * @param {import('react').ReactNode} [props.placeholder] first-load placeholder
  * @param {import('react').ReactNode} props.children the chart
  */
-export function InventoryChartSlot({ loading, ready, children }) {
+export function InventoryChartSlot({ loading, ready, placeholder, children }) {
   if (!ready) {
-    return loading ? (
+    if (!loading) return null;
+    return placeholder ?? (
       <ChartLoading label="Loading inventory…" className="h-[290px] rounded-xl border border-lavander bg-white" />
-    ) : null;
+    );
   }
 
   // min-h so the overlay still fits when the chart is just its one-line empty state.
