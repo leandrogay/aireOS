@@ -14,12 +14,14 @@ import {
   exactBucketLabel,
   formatMetric,
   formatRevenue,
-  metricAxisFormatter,
-  METRIC_AXIS_DOMAIN,
+  chartDataMax,
+  metricYAxisProps,
   CHART_TOP_MARGIN,
   periodAxisProps,
   sortFormatsByTotalDesc,
+  weekMonthGroups,
 } from '@/app/utils/trendChart';
+import MonthAxis from '@/components/dashboard/MonthAxis';
 import TooltipChange from '@/components/dashboard/TooltipChange';
 
 // The trend with no comparison (FormatTrendChart), revenue or units (the
@@ -125,6 +127,8 @@ export function FormatTrendChart({ periodByFormat, periodTotal, granularity, met
   const chartConfig = Object.fromEntries(formats.map((format) => [format, { label: format, color: formatColor(format) }]));
   const chartData = pivotByFormat(periodByFormat, periodTotal, metric);
   const axisProps = periodAxisProps(chartData, granularity);
+  const monthGroups = weekMonthGroups(chartData, granularity);
+  const yAxisProps = metricYAxisProps(metric, chartDataMax(chartData, formats));
   // Tilted labels run down-left from their bar, so the first needs room past the y-axis.
   const margin = axisProps.angle
     ? { top: CHART_TOP_MARGIN, bottom: 8, left: TILTED_LABEL_LEFT_MARGIN }
@@ -135,7 +139,8 @@ export function FormatTrendChart({ periodByFormat, periodTotal, granularity, met
       <BarChart accessibilityLayer data={chartData} margin={margin}>
         <CartesianGrid vertical={false} />
         <XAxis dataKey="displayLabel" {...axisProps} />
-        <YAxis domain={METRIC_AXIS_DOMAIN} tickFormatter={metricAxisFormatter(metric)} width={50} tick={{ fontSize: 10 }} />
+        <YAxis {...yAxisProps} />
+        <MonthAxis groups={monthGroups} />
         {/* Above the legend, which is drawn after it and would show through. */}
         <ChartTooltip content={<TrendTooltip granularity={granularity} metric={metric} />} wrapperStyle={{ zIndex: 10 }} />
         {!unnamedOnly && <ChartLegend content={<ChartLegendContent />} />}

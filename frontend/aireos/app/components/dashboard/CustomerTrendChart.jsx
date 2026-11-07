@@ -11,17 +11,17 @@ import {
   BAR_ANIMATION,
   CHART_SIZE_CLASS,
   MAX_BAR_SIZE,
+  MAX_DOTTED_POINTS,
   TILTED_LABEL_LEFT_MARGIN,
   formatMetric,
-  metricAxisFormatter,
-  METRIC_AXIS_DOMAIN,
+  chartDataMax,
+  metricYAxisProps,
   CHART_TOP_MARGIN,
   periodAxisProps,
+  weekMonthGroups,
 } from '@/app/utils/trendChart';
+import MonthAxis from '@/components/dashboard/MonthAxis';
 
-// Past this many points a dot on every one crowds the line; the hovered
-// point still gets one (activeDot).
-const MAX_DOTTED_POINTS = 26;
 
 function formatValue(metric, value) {
   // No sales loaded for that customer and period.
@@ -82,6 +82,7 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
   const kind = trendChartKind(rows.length);
   const chartConfig = Object.fromEntries(series.map((item) => [item.key, { label: item.label, color: item.color }]));
   const axisProps = periodAxisProps(rows, granularity);
+  const monthGroups = weekMonthGroups(rows, granularity);
   // Bars sit in the middle of their slot; a line's first and last points sit
   // on the plot's edges, so the line chart pads its x-axis and keeps room on
   // the right for its last point and label.
@@ -91,14 +92,10 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
     ...(axisProps.angle ? { left: TILTED_LABEL_LEFT_MARGIN } : {}),
     ...(kind === 'lines' ? { right: 16 } : {}),
   };
-  const yAxis = (
-    <YAxis
-      domain={METRIC_AXIS_DOMAIN}
-      tickFormatter={metricAxisFormatter(metric)}
-      width={50}
-      tick={{ fontSize: 10 }}
-    />
-  );
+  // Customers sit side by side (bars) or as separate lines, never stacked,
+  // so the axis reaches the single tallest customer's value.
+  const seriesKeys = series.map((item) => item.key);
+  const yAxis = <YAxis {...metricYAxisProps(metric, chartDataMax(rows, seriesKeys, { stacked: false }))} />;
   // Above the legend, which is drawn after it and would show through.
   const tooltip = (
     <ChartTooltip content={<TrendTooltip metric={metric} series={series} />} wrapperStyle={{ zIndex: 10 }} />
@@ -128,6 +125,7 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
             <CartesianGrid vertical={false} />
             <XAxis dataKey="displayLabel" {...axisProps} />
             {yAxis}
+            <MonthAxis groups={monthGroups} />
             {tooltip}
             <ChartLegend content={<ChartLegendContent />} />
             {series.map((item) => (
@@ -139,6 +137,7 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
             <CartesianGrid vertical={false} />
             <XAxis dataKey="displayLabel" {...axisProps} padding={{ left: 24, right: 24 }} />
             {yAxis}
+            <MonthAxis groups={monthGroups} />
             {tooltip}
             <ChartLegend content={<ChartLegendContent />} />
             {series.map((item) => (
