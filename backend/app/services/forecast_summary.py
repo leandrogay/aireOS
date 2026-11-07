@@ -1,8 +1,8 @@
 """
 The sell-out forecast in plain numbers, for the assistant's get_demand_forecast tool.
 
-It reads exactly what the Forecast page reads (bigquery.get_forecast_output_rows
-for the Current line, bigquery.get_forecast_actuals for the Actual line, and the
+It reads exactly what the Forecast page reads on its default model, Tier 0
+(bigquery.get_forecast_output_rows with tier="tier0" for the Current line, bigquery.get_forecast_actuals for the Actual line, and the
 same freshness stamps) and applies the page's own display rules, so a figure the
 assistant quotes is the figure the page shows for the same SKU, customer and month:
 
@@ -51,6 +51,9 @@ REVENUE_BASIS = (
 
 # Bands come from current_confidence_band (sMAPE < 20 high, 20-50 medium,
 # > 50 low). Same labels as CONFIDENCE_LABELS in app/utils/forecastView.js.
+# Below this a SKU has too little history for the Tier 1 models.
+SHORT_HISTORY_MONTHS = 12
+
 CONFIDENCE_LABELS = {
     "high": "High",
     "medium": "Medium",
@@ -117,8 +120,10 @@ def forecast_confidence(rows: list[dict]) -> dict | None:
     band = first.get("current_confidence_band")
     if band not in CONFIDENCE_LABELS:
         band = "unknown"
-    # The pipeline falls back to Tier 0 below 6 months of history.
-    short_history = first.get("current_source_model") == "tier0_legacy"
+    # The Tier 1 models need 12+ months of history; below that the SKU's
+    # forecast leans on very little data.
+    months = first.get("months_of_history")
+    short_history = months is not None and months < SHORT_HISTORY_MONTHS
     return {
         "band": band,
         "label": CONFIDENCE_LABELS[band],
@@ -453,7 +458,9 @@ def get_demand_forecast(
     """The Forecast page's figures for one question: resolve the names the
     user typed to the page's own filter values, pick the months, then read
     the actuals and freshness for exactly that scope."""
-    rows = bigquery_service.get_forecast_output_rows()
+    # One model only: the view has a row per tier, and adding them up would
+    # triple every total. Tier 0 is available for every SKU.
+    rows = bigquery_service.get_forecast_output_rows(tier=bigquery_service.DEFAULT_FORECAST_TIER)
     product_name, customer_name = resolve_scope(rows, product, customer)
     scoped = [
         row for row in rows

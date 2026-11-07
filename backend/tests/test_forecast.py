@@ -49,9 +49,18 @@ def _output_record(**overrides):
         "sku": "13271338",
         "product_name": "Aire Ultra Tape L",
         "month_year": datetime.date(2026, 8, 1),
+        "tier": "tier0",
+        "tier_label": "Tier 0 · Baseline",
+        "tier_order": 0,
+        "source_model": "tier0_legacy",
+        "is_available": True,
+        "unavailable_reason": None,
+        "months_of_history": 26,
         "forecast_initial": None,
         "initial_source_model": None,
         "initial_generated_at": pd.NaT,
+        "initial_low_80": None,
+        "initial_high_80": None,
         "forecast_previous": None,
         "previous_source_model": None,
         "previous_generated_at": pd.NaT,
@@ -62,6 +71,9 @@ def _output_record(**overrides):
         "current_high_80": 690.0,
         "current_backtest_smape": 75.6,
         "current_confidence_band": "low",
+        "month_range_pct": 26.0,
+        "month_confidence_band": "medium",
+        "xreg_used_typical_promo": None,
         "promo_mix": "monthly_only",
     }
     record.update(overrides)
@@ -136,9 +148,18 @@ def test_forecast_output_row_keeps_blank_lines_as_none(monkeypatch):
             "sku": "13271338",
             "product_name": "Aire Ultra Tape L",
             "month_year": "2026-08-01",
+            "tier": "tier0",
+            "tier_label": "Tier 0 · Baseline",
+            "tier_order": 0,
+            "source_model": "tier0_legacy",
+            "is_available": True,
+            "unavailable_reason": None,
+            "months_of_history": 26,
             "forecast_initial": None,
             "initial_source_model": None,
             "initial_generated_at": None,
+            "initial_low_80": None,
+            "initial_high_80": None,
             "forecast_previous": None,
             "previous_source_model": None,
             "previous_generated_at": None,
@@ -149,9 +170,63 @@ def test_forecast_output_row_keeps_blank_lines_as_none(monkeypatch):
             "current_high_80": 690.0,
             "current_backtest_smape": 75.6,
             "current_confidence_band": "low",
+            "month_range_pct": 26.0,
+            "month_confidence_band": "medium",
+            # NULL outside the Advanced tier reads as "didn't swap the promotion".
+            "xreg_used_typical_promo": False,
             "promo_mix": "monthly_only",
         }
     ]
+
+
+def test_forecast_output_rows_return_every_tier_without_a_tier_filter(monkeypatch):
+    # The page switches models without a new request, so it reads all three.
+    fake = _install_fake_client(monkeypatch, pd.DataFrame())
+
+    bigquery.get_forecast_output_rows(customer_name="fairprice")
+
+    assert "tier = @tier" not in fake.last_query
+    assert "tier" not in _params_by_name(fake.last_job_config)
+    assert "tier_order, month_year" in fake.last_query
+
+
+def test_forecast_output_rows_bind_one_tier_as_a_parameter(monkeypatch):
+    fake = _install_fake_client(monkeypatch, pd.DataFrame())
+
+    bigquery.get_forecast_output_rows(tier="tier1_basic")
+
+    assert "tier = @tier" in fake.last_query
+    assert _params_by_name(fake.last_job_config)["tier"].value == "tier1_basic"
+
+
+def test_unknown_tier_raises_without_querying(monkeypatch):
+    def _no_client_allowed():
+        raise AssertionError("BigQuery should not be queried for an unknown tier")
+
+    monkeypatch.setattr(bigquery, "get_bigquery_client", _no_client_allowed)
+    with pytest.raises(ValueError, match="tier must be one of"):
+        bigquery.get_forecast_output_rows(tier="best")
+
+
+def test_unavailable_tier_row_keeps_its_reason_and_blank_forecast(monkeypatch):
+    record = _output_record(
+        tier="tier1_advanced",
+        tier_order=2,
+        is_available=False,
+        unavailable_reason="no_familiar_promotions",
+        forecast_current=None,
+        current_low_80=None,
+        current_high_80=None,
+        xreg_used_typical_promo=True,
+    )
+    _install_fake_client(monkeypatch, pd.DataFrame([record]))
+
+    [row] = bigquery.get_forecast_output_rows()
+
+    assert row["is_available"] is False
+    assert row["unavailable_reason"] == "no_familiar_promotions"
+    assert row["forecast_current"] is None
+    assert row["xreg_used_typical_promo"] is True
 
 
 # ---- realised prices from v_customer_monthly_sales ----
