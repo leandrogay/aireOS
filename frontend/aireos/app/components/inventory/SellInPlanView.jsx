@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 
+import BarChartSkeleton from '@/components/ui/BarChartSkeleton';
 import SelectDropdown from '@/components/ui/SelectDropdown';
 import useSellInOutlook from '@/hooks/useSellInOutlook';
 import useSellInPlan from '@/hooks/useSellInPlan';
@@ -144,7 +145,21 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
       )}
 
       <InventorySection title="Sell-in and sell-out" tags={outlookTags}>
-        <InventoryChartSlot loading={outlook.loading} ready={Boolean(outlook.data)}>
+        <InventoryChartSlot
+          loading={outlook.loading}
+          ready={Boolean(outlook.data)}
+          placeholder={(
+            // Same frame and 328px height as SellInOutlookChart. ~3 actual months + the default 6 ahead; legend has Sell-in and Sell-out.
+            <BarChartSkeleton
+              bars={9}
+              height={328}
+              legend
+              legendItems={2}
+              label="Loading inventory…"
+              className="rounded-xl border border-lavander bg-white pl-1 pr-3 pt-2"
+            />
+          )}
+        >
           {outlook.data && (
             <SellInOutlookChart months={outlook.data.months} actualsThrough={outlook.data.actuals_through} />
           )}

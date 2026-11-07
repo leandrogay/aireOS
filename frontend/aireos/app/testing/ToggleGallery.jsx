@@ -9,7 +9,7 @@ import ToggleButton from '@/components/ui/ToggleButton';
 import ToggleField from '@/components/ui/ToggleField';
 import { filterLabelClass } from '@/components/inventory/InventoryChrome';
 
-import { Section, Variant } from './GalleryParts';
+import { NotMigrated, Section, Variant, WhichToUse } from './GalleryParts';
 
 // A living reference for the toggle kit; see app/testing/page.js.
 
@@ -17,7 +17,7 @@ import { Section, Variant } from './GalleryParts';
 const GUIDE = [
   ['Pick one of a few, side by side', 'SegmentedControl', 'value, onChange, options, look, size, fullWidth'],
   ['Turn one thing on or off', 'ToggleButton', 'pressed, onChange, look'],
-  ['A setting with a switch and an explanation', 'ToggleField', 'label or ariaLabel, checked, onChange, showState, onHint, offHint'],
+  ['A setting with a switch and an explanation', 'ToggleField', 'label or ariaLabel, checked, onChange, showState, onHint, offHint, tone'],
 ];
 
 // Controls that should move to the kit, page by page. Remove a row when its
@@ -75,38 +75,6 @@ const FORMATS = ['Hypermarket', 'Supermarket', 'Convenience'];
 const LEGACY_TAB_TRIGGER_CLASS =
   'text-deep-violet-blue/70 hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white data-active:hover:text-white';
 
-/**
- * @param {{ head: string[], rows: string[][] }} props
- */
-function ReferenceTable({ head, rows }) {
-  return (
-    <div className="overflow-x-auto rounded-md border border-lavander">
-      <table className="w-full text-left text-xs text-deep-violet-blue">
-        <thead className="bg-cream">
-          <tr className="border-b border-lavander">
-            {head.map((label) => (
-              <th key={label} className="px-2.5 py-2 font-semibold">
-                {label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.join('|')} className="border-b border-lavander/80 last:border-b-0">
-              {row.map((cell, index) => (
-                <td key={index} className={index === 1 ? 'px-2.5 py-2 font-mono' : 'px-2.5 py-2'}>
-                  {cell}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 export default function ToggleGallery() {
   const [segments, setSegments] = useState({
     metric: 'revenue',
@@ -124,6 +92,7 @@ export default function ToggleGallery() {
     labelState: false,
     labelHints: true,
     full: false,
+    scenario: true,
   });
   const [legacy, setLegacy] = useState('week');
 
@@ -140,23 +109,16 @@ export default function ToggleGallery() {
   }
 
   return (
-    <div className="mt-8">
-      <h2 className="mb-3 font-serif text-2xl text-deep-violet-blue">Toggles</h2>
-
-      <section className="mb-4 rounded-lg border border-lavander bg-white p-4 shadow-sm">
-        <h2 className="font-serif text-lg text-deep-violet-blue">How to use this kit</h2>
-        <p className="mb-3 text-xs text-deep-violet-blue/60">
-          Every control below is the real shared component. Build new switches and on/off buttons on these rather than
-          on ui/tabs, a raw Switch or a hand-rolled button with aria-pressed. The Inventory page is the reference for SegmentedControl and ToggleButton; the DOH alerts and the nomenclature file settings use ToggleField.
-        </p>
-        <ReferenceTable head={['I need to…', 'Use', 'Main props']} rows={GUIDE} />
-        <p className="mt-3 text-xs text-deep-violet-blue/70">
-          SegmentedControl&apos;s <span className="font-medium">look</span>: <span className="font-mono">tint</span>{' '}
-          (lavender track) inside cards, <span className="font-mono">outline</span> (white, bordered) for a
-          page&apos;s top-level tabs. Its highlight slides on the Sidebar&apos;s spring and is instant for users who
-          ask for reduced motion.
-        </p>
-      </section>
+    <div>
+      <WhichToUse
+        rows={GUIDE}
+        note="Build new switches and on/off buttons on these rather than on ui/tabs, a raw Switch or a hand-rolled button with aria-pressed. The Inventory page is the reference for SegmentedControl and ToggleButton; the DOH alerts and the nomenclature file settings use ToggleField."
+      >
+        SegmentedControl&apos;s <span className="font-medium">look</span>: <span className="font-mono">tint</span>{' '}
+        (lavender track) inside cards, <span className="font-mono">outline</span> (white, bordered) for a
+        page&apos;s top-level tabs. Its highlight slides on the Sidebar&apos;s spring and is instant for users who
+        ask for reduced motion.
+      </WhichToUse>
 
       <Section
         title="SegmentedControl — pick one of a few"
@@ -266,6 +228,15 @@ export default function ToggleGallery() {
             offHint="Every row loads as the file has it, for example one per week."
           />
         </Variant>
+        <Variant name="Scenario tone (Scenario builder pink)" props={'label showState tone="scenario"'} value={settings.scenario}>
+          <ToggleField
+            label="Show on the Simulated line"
+            showState
+            tone="scenario"
+            checked={settings.scenario}
+            onChange={setSetting('scenario')}
+          />
+        </Variant>
         <Variant name="Disabled (a save in flight)" props="disabled" value={true}>
           <div className="space-y-2">
             <ToggleField ariaLabel="DOH alerts for Fairprice" checked disabled onChange={() => {}} />
@@ -274,43 +245,63 @@ export default function ToggleGallery() {
         </Variant>
       </Section>
 
-      <section className="mb-4 rounded-lg border border-lavander bg-white p-4 shadow-sm">
-        <h2 className="font-serif text-lg text-deep-violet-blue">Not migrated yet</h2>
-        <p className="mb-3 text-xs text-deep-violet-blue/60">
-          These pages still use their own switches and on/off buttons. Move them to the kit when you&apos;re next
-          working in that file, not as a standalone change.
-        </p>
-        <ReferenceTable head={['Page', 'File (components/)', 'Uses now', 'Migrate to']} rows={NOT_MIGRATED} />
-
-        <div className="mt-4 grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2 lg:grid-cols-4">
-          <Variant name="Legacy: ui/tabs (Dashboard)" props="jumps, doesn't slide" value={legacy}>
-            <Tabs value={legacy} onValueChange={setLegacy}>
-              <TabsList className="h-7 bg-lavander">
-                <TabsTrigger value="week" className={`text-xs ${LEGACY_TAB_TRIGGER_CLASS}`}>
-                  By week
-                </TabsTrigger>
-                <TabsTrigger value="month" className={`text-xs ${LEGACY_TAB_TRIGGER_CLASS}`}>
-                  By month
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </Variant>
-          <Variant name="New: SegmentedControl" props="slides" value={legacy}>
-            <SegmentedControl
-              value={legacy}
-              onChange={setLegacy}
-              options={[
-                { value: 'week', label: 'By week' },
-                { value: 'month', label: 'By month' },
-              ]}
-            />
-          </Variant>
-        </div>
-
-        <h3 className="mt-5 mb-2 text-sm font-medium text-deep-violet-blue">Leave as is</h3>
-        <p className="mb-3 text-xs text-deep-violet-blue/60">Look pressed, but aren&apos;t toggles; don&apos;t migrate these.</p>
-        <ReferenceTable head={['Page', 'File (components/)', 'Why it stays']} rows={LEAVE_AS_IS} />
-      </section>
+      <NotMigrated rows={NOT_MIGRATED} leaveAsIs={LEAVE_AS_IS}>
+        <Variant name="Old: ui/tabs (Dashboard)" props="jumps, doesn't slide" value={legacy}>
+          <Tabs value={legacy} onValueChange={setLegacy}>
+            <TabsList className="h-7 bg-lavander">
+              <TabsTrigger value="week" className={`text-xs ${LEGACY_TAB_TRIGGER_CLASS}`}>
+                By week
+              </TabsTrigger>
+              <TabsTrigger value="month" className={`text-xs ${LEGACY_TAB_TRIGGER_CLASS}`}>
+                By month
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </Variant>
+        <Variant name="New: SegmentedControl" props="slides" value={legacy}>
+          <SegmentedControl
+            value={legacy}
+            onChange={setLegacy}
+            options={[
+              { value: 'week', label: 'By week' },
+              { value: 'month', label: 'By month' },
+            ]}
+          />
+        </Variant>
+        <Variant name="Old: hand-rolled chips (Forecast, Promotions)" props="<button aria-pressed>" value={pressed.formats}>
+          <div className="flex flex-wrap gap-1.5">
+            {FORMATS.map((format) => (
+              <button
+                key={format}
+                type="button"
+                aria-pressed={pressed.formats.includes(format)}
+                onClick={() => toggleFormat(format)}
+                className={`rounded-full border px-2.5 py-0.5 text-xs ${
+                  pressed.formats.includes(format)
+                    ? 'border-deep-violet-blue bg-deep-violet-blue text-white'
+                    : 'border-lavander bg-white text-deep-violet-blue'
+                }`}
+              >
+                {format}
+              </button>
+            ))}
+          </div>
+        </Variant>
+        <Variant name="New: ToggleButton chip" props={'look="chip"'} value={pressed.formats}>
+          <div className="flex flex-wrap gap-1.5">
+            {FORMATS.map((format) => (
+              <ToggleButton
+                key={format}
+                look="chip"
+                pressed={pressed.formats.includes(format)}
+                onChange={() => toggleFormat(format)}
+              >
+                {format}
+              </ToggleButton>
+            ))}
+          </div>
+        </Variant>
+      </NotMigrated>
     </div>
   );
 }

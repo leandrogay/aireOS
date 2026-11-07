@@ -7,6 +7,8 @@ import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import ChartLoading from '@/components/ui/ChartLoading';
+import LineChartSkeleton from '@/components/ui/LineChartSkeleton';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ForecastLineToggle from '@/components/forecast/ForecastLineToggle';
 import ForecastPointDetails from '@/components/forecast/ForecastPointDetails';
@@ -470,12 +472,26 @@ export default function ForecastChart({
           <p className="text-sm text-muted-foreground">No lines selected. Turn a line on to plot values.</p>
         ) : !hasData ? (
           // Rows start empty, so without this the first load would briefly
-          // claim there is no data. Sized like the chart frame below.
+          // claim there is no data. Same box as the loaded chart below (its
+          // pl-1 pr-3 pt-2 wrapper, 34vh / min 220px ChartContainer with the
+          // 48px tilted month axis, then the legend footer line), one line per
+          // series switched on and one point per month in the date range.
+          // A refetch keeps the old chart under the overlay instead.
           loading ? (
-            <ChartLoading
-              label="Loading forecast…"
-              className="h-[calc(34vh+10px)] min-h-[230px] rounded-xl border border-lavander bg-white"
-            />
+            <div className="pl-1 pr-3 pt-2">
+              <LineChartSkeleton
+                points={chartPoints.length}
+                lines={visibleKeys.length}
+                height={220}
+                fill
+                tiltXTicks
+                label="Loading forecast…"
+                className="h-[34vh]"
+              />
+              <div className="mt-1 flex justify-center px-3 pb-1">
+                <Skeleton className="h-3 w-72 max-w-full rounded bg-lavander motion-reduce:animate-none" />
+              </div>
+            </div>
           ) : (
             <p className="text-sm text-muted-foreground">No forecast data matches these filters.</p>
           )

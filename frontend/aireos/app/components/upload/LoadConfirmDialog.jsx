@@ -5,7 +5,6 @@ import { AlertTriangle, Loader2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { primaryButtonClass, secondaryButtonClass } from '@/components/ui/formStyles';
 import LoadFileRow from '@/components/upload/LoadFileRow';
 import LoadResult from '@/components/upload/LoadResult';
 import { loadUploads, previewLoad } from '@/app/services/uploadApi';
@@ -160,10 +159,10 @@ function LoadConfirmForm({ pathsKey, reload, onClose, onLoaded, onPendingChange 
               </p>
             )}
             <div className="flex items-center justify-end gap-2">
-              <Button type="button" variant="outline" disabled={loading} onClick={onClose} className={secondaryButtonClass}>
+              <Button type="button" variant="outline" disabled={loading} onClick={onClose}>
                 Cancel
               </Button>
-              <Button type="button" disabled={loading || !totals?.files} onClick={handleLoad} className={primaryButtonClass}>
+              <Button type="button" disabled={loading || !totals?.files} onClick={handleLoad}>
                 {loading && <Loader2 aria-hidden="true" className="size-4 animate-spin" />}
                 {loading ? 'Loading…' : loadButtonLabel(totals?.files || 0, reload, storageOff)}
               </Button>

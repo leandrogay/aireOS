@@ -12,6 +12,8 @@ export const checkRowClass =
   'flex min-w-0 cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2 py-1 text-sm text-deep-violet-blue hover:bg-cream';
 export const cardClass = 'rounded-lg border border-lavander bg-white p-3 shadow-sm';
 
+// Superseded by <Button> (default and outline variants, ui/button.jsx), which now
+// carries this look itself. Kept until the files that still use them migrate.
 export const primaryButtonClass =
   'h-auto border-deep-violet-blue bg-deep-violet-blue px-4 py-1.5 text-white hover:bg-deep-violet-blue/90';
 export const secondaryButtonClass =

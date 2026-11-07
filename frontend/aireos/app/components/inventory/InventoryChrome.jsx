@@ -127,17 +127,21 @@ export function InventorySection({ title, tags, description, children }) {
  * first load shows a placeholder the size of the 280px chart frame; after
  * that, a refetch (filter change, or refreshKey after a save) dims the old
  * chart under an overlay instead of swapping it out, so it doesn't flash.
+ * A tab that has a chart-shaped placeholder (ui/BarChartSkeleton) passes it as
+ * `placeholder` to replace the first-load spinner.
  *
  * @param {object} props
  * @param {boolean} props.loading
  * @param {boolean} props.ready true once there is data to draw
+ * @param {import('react').ReactNode} [props.placeholder] first-load placeholder
  * @param {import('react').ReactNode} props.children the chart
  */
-export function InventoryChartSlot({ loading, ready, children }) {
+export function InventoryChartSlot({ loading, ready, placeholder, children }) {
   if (!ready) {
-    return loading ? (
+    if (!loading) return null;
+    return placeholder ?? (
       <ChartLoading label="Loading inventory…" className="h-[290px] rounded-xl border border-lavander bg-white" />
-    ) : null;
+    );
   }
 
   // min-h so the overlay still fits when the chart is just its one-line empty state.

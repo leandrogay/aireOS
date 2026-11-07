@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   CircleDashed,
+  CloudUpload,
   CopyCheck,
   Database,
   FilePlus2,
@@ -19,9 +20,13 @@ import UploadFileRow from '@/components/upload/UploadFileRow';
 // in app/utils/uploadFlow.js. The heading is where a file's state is shown
 // now, once per section instead of a badge on every row; the icon repeats
 // the words' meaning in a shape, so it never rests on colour alone.
+// Uploading is the one in-progress state that stays still: each of its rows
+// has a moving progress bar (UploadProgress), and a spinner beside it would
+// be a second animation saying the same thing. Checking has no bar, so its
+// spinner is the only sign the check is running.
 const GROUP_ICONS = {
   checking: { Icon: Loader2, className: 'animate-spin text-violet motion-reduce:animate-none' },
-  uploading: { Icon: Loader2, className: 'animate-spin text-violet motion-reduce:animate-none' },
+  uploading: { Icon: CloudUpload, className: 'text-violet' },
   ready: { Icon: CheckCircle2, className: 'text-green-700' },
   uploaded: { Icon: CheckCircle2, className: 'text-green-700' },
   ready_to_load: { Icon: Database, className: 'text-amber-700' },
