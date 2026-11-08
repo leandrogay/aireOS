@@ -414,7 +414,7 @@ export default function PromotionsPage() {
         </Button>
       }
     >
-      <div className="flex min-h-0 flex-1 flex-col gap-2.5">
+      <div className="flex min-h-0 flex-1 flex-col gap-3">
         <PromotionList
           promotions={promotions}
           isLoading={isLoadingList}

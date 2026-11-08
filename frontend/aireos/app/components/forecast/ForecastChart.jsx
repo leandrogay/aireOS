@@ -422,7 +422,7 @@ export default function ForecastChart({
   }
 
   return (
-    <Card size="sm" className="min-w-0 max-w-full overflow-visible rounded-lg border border-lavander bg-white text-deep-violet-blue shadow-sm ring-0">
+    <Card className="min-w-0 max-w-full overflow-visible rounded-lg border border-lavander bg-white text-deep-violet-blue shadow-sm ring-0">
       <CardHeader className="flex flex-row items-start justify-between gap-3 pb-1">
         <div className="min-w-0 space-y-1.5">
           <CardTitle className="font-serif text-base font-normal text-deep-violet-blue group-data-[size=sm]/card:text-base">

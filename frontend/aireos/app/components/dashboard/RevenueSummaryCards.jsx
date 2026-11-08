@@ -10,7 +10,7 @@ import { formatRevenue } from "@/app/utils/trendChart"
 import { PeriodSwatch, hatchTint } from "@/components/dashboard/PeriodTexture"
 
 const TILE_GRID_CLASS =
-  "grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-flow-col lg:grid-cols-none lg:auto-cols-[minmax(0,1fr)]"
+  "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-flow-col lg:grid-cols-none lg:auto-cols-[minmax(0,1fr)]"
 
 function sumFormats(storeFormats = []) {
   return storeFormats.reduce(
@@ -259,7 +259,7 @@ export default function RevenueSummaryCards({
   const emptyTotals = { revenue: 0, units: 0 }
 
   return (
-    <div className="bg-white rounded-lg border border-lavander shadow-sm p-3 h-full">
+    <div className="bg-white rounded-lg border border-lavander shadow-sm p-4 h-full">
       <div className="mb-2">
         <h3 className="font-serif text-base text-deep-violet-blue">
           Sell-out Summary{" "}

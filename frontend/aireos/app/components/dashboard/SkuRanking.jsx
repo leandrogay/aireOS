@@ -328,7 +328,7 @@ export default function SkuRanking({
   const mobileRows = showCustomers ? customersRanked : skus;
 
   return (
-    <section className="bg-white rounded-lg border border-lavander shadow-sm p-3">
+    <section className="bg-white rounded-lg border border-lavander shadow-sm p-4">
       <div className="mb-2">
         <h3 className="font-serif text-base text-deep-violet-blue">
           {showCustomers ? 'Customer Sales' : 'SKU Performance Ranking'}{' '}

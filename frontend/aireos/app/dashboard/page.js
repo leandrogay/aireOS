@@ -374,7 +374,7 @@ export default function DashboardPage() {
       {(pageStatus === 'failed' || pageStatus === 'empty') ? (
         <DashboardStatus kind={pageStatus} error={customerOptionsError} />
       ) : (
-        <div className="grid grid-cols-1 gap-1 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
           <div className="lg:col-span-2">
             <RevenueTrendCard
               summaryByMode={summary.summaryByMode}
@@ -423,7 +423,7 @@ export default function DashboardPage() {
               stacked beside the chart they explain. A grid rather than flex so
               the Comparison card's h-full fills whatever height the chart row
               leaves under the Filters. */}
-          <div className="grid grid-rows-[auto_1fr] gap-1">
+          <div className="grid grid-rows-[auto_1fr] gap-3">
             <div>
               <DashboardFilters
                 customerControl={

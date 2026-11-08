@@ -10,7 +10,7 @@ export const ACTIONS_COLUMN = { key: 'actions', label: 'Actions', width: '4.5rem
 
 // How far a nested table's edges sit inside its parent table's edges, for
 // `inset`. ExpandableRow's details cell (px-4) plus the nested frame's 1px
-// border; the standard card (p-3, cardClass) plus the same border.
+// border; the standard card (p-4, cardClass) plus the same border.
 export const EXPANDED_ROW_INSET = '1rem + 1px';
 export const CARD_INSET = '0.75rem + 1px';
 

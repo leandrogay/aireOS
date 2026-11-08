@@ -149,7 +149,7 @@ export default function PromoUpliftSettingsView() {
         )
       }
     >
-      <div className="grid grid-cols-1 gap-1">
+      <div className="grid grid-cols-1 gap-3">
         <section className={cardClass}>
           <div className="mb-2 flex items-center justify-between gap-2">
             <h2 className="text-sm font-medium text-deep-violet-blue">Ordinary-month discount by customer</h2>
