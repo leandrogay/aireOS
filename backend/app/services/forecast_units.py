@@ -3,9 +3,11 @@ from datetime import date
 from app import config
 from app.services import bigquery
 
-# Read-only. One row per customer x SKU x month already, maintained by the
-# BigQuery procedure run_monthly_forecast_pipeline
+# Read-only. One row per customer x SKU x month x tier, maintained by the
+# BigQuery procedure run_monthly_forecast_pipeline. Inventory plans on one
+# model, Tier 0 (available for every SKU); the other tiers' rows are dropped.
 FORECAST_OUTPUT_VIEW = config.BQ_FORECAST_OUTPUT_VIEW
+FORECAST_TIER = bigquery.DEFAULT_FORECAST_TIER
 
 
 def get_forecast_units(customer_id: int) -> dict[str, dict[date, float]]:
@@ -26,7 +28,9 @@ def get_forecast_units_by_customer(
     (one row per customer x SKU x forecast month), and a customer filter is
     pushed down into its window functions and made the job measurably slower
     (about 7-10 s with `customer_id = @id`, 13-18 s with `IN UNNEST(@ids)`,
-    6-9 s with no filter, measured October 2026).
+    6-9 s with no filter, measured October 2026). The tier is picked out
+    here too, for the same reason: without it each month would come back
+    three times, once per model.
     Only rows that carry a forecast are read: a missing month is not the same
     as a forecast of zero, so it is simply absent from the result rather than
     filled in.
@@ -40,6 +44,7 @@ def get_forecast_units_by_customer(
           customer_id,
           sku,
           month_year,
+          tier,
           forecast_current
 
         FROM `{FORECAST_OUTPUT_VIEW}`
@@ -52,7 +57,7 @@ def get_forecast_units_by_customer(
     forecast: dict[int, dict[str, dict[date, float]]] = {}
     for row in df.to_dict(orient="records"):
         customer_id = int(row["customer_id"])
-        if customer_id not in wanted:
+        if customer_id not in wanted or row.get("tier") != FORECAST_TIER:
             continue
         month = row["month_year"]
         month = month.date() if hasattr(month, "date") else month

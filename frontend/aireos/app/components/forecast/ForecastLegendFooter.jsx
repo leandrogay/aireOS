@@ -1,24 +1,24 @@
 'use client';
 
 import { useState } from 'react';
-import { AlertTriangle, CheckCircle2, CircleDashed, Info, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
-import { FORECAST_LAST_UPDATED_LABEL } from '@/app/utils/forecastLineText';
+import { BAND_STYLES } from '@/components/forecast/ForecastConfidenceDetails';
+import {
+  FORECAST_LAST_UPDATED_LABEL,
+  PAST_ACCURACY_BADGE_HINT,
+  pastAccuracyBadgeLabel,
+} from '@/app/utils/forecastLineText';
 import { formatSgtTimestamp } from '@/app/utils/forecastView';
 
-// Colour is a second channel only: every badge also carries an icon and a
-// word, so the band survives greyscale and colour blindness.
-const BAND_STYLES = {
-  high: { className: 'border-green-300 bg-green-50 text-green-800', Icon: CheckCircle2 },
-  medium: { className: 'border-amber-400 bg-amber-50 text-amber-900', Icon: Info },
-  low: { className: 'border-red-300 bg-red-50 text-red-800', Icon: AlertTriangle },
-  unknown: { className: 'border-lavander bg-cream text-deep-violet-blue/70', Icon: CircleDashed },
-};
-
-function ConfidenceBadge({ confidence }) {
+/**
+ * "Past accuracy: High · sMAPE 12%" for one SKU on the selected model, with
+ * why it isn't like-for-like across tiers on hover, focus or tap.
+ */
+function PastAccuracyBadge({ pastAccuracy }) {
   const [open, setOpen] = useState(false);
-  const { className, Icon } = BAND_STYLES[confidence.band] ?? BAND_STYLES.unknown;
+  const { className, Icon } = BAND_STYLES[pastAccuracy.band] ?? BAND_STYLES.unknown;
 
   return (
     <span
@@ -39,17 +39,14 @@ function ConfidenceBadge({ confidence }) {
         )}
       >
         <Icon aria-hidden="true" className="size-3 shrink-0" />
-        <span>
-          Confidence: {confidence.label}
-          <span className="font-normal opacity-80"> ({confidence.reason})</span>
-        </span>
+        {pastAccuracyBadgeLabel(pastAccuracy)}
       </button>
       {open ? (
         <span
           role="tooltip"
           className="absolute bottom-full left-1/2 z-40 mb-1.5 w-64 -translate-x-1/2 rounded-md border border-lavander bg-white px-2.5 py-2 text-left text-[11px] leading-snug text-deep-violet-blue shadow-md"
         >
-          {confidence.detail}
+          {PAST_ACCURACY_BADGE_HINT}
         </span>
       ) : null}
     </span>
@@ -84,21 +81,24 @@ function UpdatingBadge({ badge }) {
 }
 
 /**
- * Centred line in the chart box, under the graph: when the forecast last
- * updated (MAX(current_generated_at) for the customer -- every retrain
+ * Centred line in the chart box, under the graph: when the selected model
+ * last updated (MAX(current_generated_at) for that tier -- every retrain
  * replaces the Current line, so this is the latest retrain), when that
  * customer's sales last loaded (latest_sales_loaded_at; see backend
- * bigquery.get_sales_loaded_at) and, for one customer + SKU, the confidence badge.
+ * bigquery.get_sales_loaded_at) and, for one customer + SKU, the model's
+ * Past accuracy badge. How to read confidence, and what each Current dot
+ * means, live in the hover card's CONFIDENCE section.
  * `updatingBadge` (forecastUpdatingBadge) shows while a refresh is pending;
- * `initialNotes` (initialStatusNotes) are one line each under that row.
+ * `notes` (Initial status, Initial / Previous coverage) are one line each
+ * under that row.
  *
  * @param {{
  *   lastRun?: string | null,
  *   salesLabel: string,
  *   salesLoadedAt?: string | null,
- *   confidence?: object | null,
+ *   pastAccuracy?: { band: string, smape: number | null } | null,
  *   updatingBadge?: { label: string, hint: string } | null,
- *   initialNotes?: string[],
+ *   notes?: string[],
  *   className?: string,
  * }} props
  */
@@ -106,9 +106,9 @@ export default function ForecastLegendFooter({
   lastRun,
   salesLabel,
   salesLoadedAt,
-  confidence,
+  pastAccuracy = null,
   updatingBadge = null,
-  initialNotes = [],
+  notes = [],
   className,
 }) {
   return (
@@ -124,14 +124,14 @@ export default function ForecastLegendFooter({
           <span className="text-deep-violet-blue/55">{salesLabel}: </span>
           <span className="font-medium">{formatSgtTimestamp(salesLoadedAt)}</span>
         </span>
-        {confidence ? (
+        {pastAccuracy ? (
           <>
             <span aria-hidden="true" className="h-3 w-px bg-lavander" />
-            <ConfidenceBadge confidence={confidence} />
+            <PastAccuracyBadge pastAccuracy={pastAccuracy} />
           </>
         ) : null}
       </div>
-      {initialNotes.map((note) => (
+      {notes.map((note) => (
         <p key={note} className="text-center text-[11px] text-deep-violet-blue/55">
           {note}
         </p>

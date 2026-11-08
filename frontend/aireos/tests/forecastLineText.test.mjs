@@ -10,23 +10,32 @@ import {
   FORECAST_LAST_UPDATED_LABEL,
   INITIAL_HINT,
   INITIAL_MISSING_HINT,
-  PREVIOUS_EMPTY_HINT,
   PREVIOUS_HINT,
+  PREVIOUS_MISSING_HINT,
   FORECAST_UPDATING_HINT,
   FORECAST_UPDATING_LABEL,
   REFRESH_STATUS_RECHECK_MS,
   TIER0_HINT,
+  CURRENT_DOT_FILL,
+  confidenceWords,
   forecastLineHints,
+  initialMissingHint,
+  lineCoverageNote,
+  pastAccuracyBadgeLabel,
+  previousMadeLines,
+  rangeChanceText,
+  rangePctText,
+  smapeText,
+  tierUnavailableText,
   forecastUpdatingBadge,
-  hasPreviousLine,
+  INITIAL_UPDATING_HINT,
   initialStatusNotes,
-  modelHint,
   nextStatusCheckDelay,
   sgtDay,
   yearsInRange,
 } from '../app/utils/forecastLineText.js';
 
-const ONE_SERIES = { singleSeries: true, initialMissingForSku: false, previousAvailable: true };
+const ONE_SERIES = { initialMissing: '', previousMissing: false };
 
 // ---- Hover text per line ----
 
@@ -48,25 +57,48 @@ describe('line hints', () => {
     assert.ok(INITIAL_HINT.endsWith('locked at 23:59 on 31 December.'));
   });
 
-  test('a SKU with no initial values gets the history reason instead', () => {
-    const hints = forecastLineHints({ ...ONE_SERIES, initialMissingForSku: true });
-    assert.equal(hints.initial, INITIAL_MISSING_HINT);
+  test('a Tier 1 model with no initial values gets the 12-month history reason instead', () => {
+    const reason = initialMissingHint({ tier: 'tier1_basic', years: [2026] });
+    assert.equal(forecastLineHints({ ...ONE_SERIES, initialMissing: reason }).initial, INITIAL_MISSING_HINT);
+    assert.equal(
+      INITIAL_MISSING_HINT,
+      'No Initial yearly forecast for this model — it needs 12+ months of history at the time the yearly plan was made.'
+    );
   });
 
-  test('previous with no data says when it will appear', () => {
-    const hints = forecastLineHints({ ...ONE_SERIES, previousAvailable: false });
-    assert.equal(hints.previous, 'Appears after the next month of sales.');
-    assert.equal(hints.previous, PREVIOUS_EMPTY_HINT);
+  test('a Tier 0 SKU with no Initial launched after that year\'s plan was made', () => {
+    assert.equal(
+      initialMissingHint({ tier: 'tier0', years: [2026] }),
+      'No Initial yearly forecast: this SKU launched after the 2026 plan was made.'
+    );
+    assert.equal(
+      initialMissingHint({ tier: 'tier0', years: [2026, 2027], skuCount: 2 }),
+      'No Initial yearly forecast: these SKUs launched after the 2026 and 2027 plans were made.'
+    );
+  });
+
+  test('previous says it is the forecast made before the latest sales month', () => {
+    assert.equal(PREVIOUS_HINT, "Previous: the forecast made before this SKU's latest month of sales.");
+    assert.doesNotMatch(PREVIOUS_HINT, /next month of sales/);
+  });
+
+  test('a model with no Previous for the SKU says when it will appear, per SKU and tier', () => {
+    const hints = forecastLineHints({ ...ONE_SERIES, previousMissing: true });
+    assert.equal(hints.previous, PREVIOUS_MISSING_HINT);
+    assert.equal(
+      PREVIOUS_MISSING_HINT,
+      'No Previous forecast for this model yet — it appears once this SKU has a forecast from an earlier month.'
+    );
   });
 
   test('current says the forecast updates itself after saves', () => {
     assert.match(CURRENT_HINT, /updates automatically about 5–10 minutes after/);
   });
 
-  test('current asks for one SKU and customer before the range and confidence show', () => {
-    const hints = forecastLineHints({ ...ONE_SERIES, singleSeries: false });
-    assert.ok(hints.current.startsWith(CURRENT_HINT));
-    assert.match(hints.current, /Pick one SKU and customer/);
+  test('no line pill talks about a drawn 80% range any more', () => {
+    for (const hint of Object.values(forecastLineHints(ONE_SERIES))) {
+      assert.doesNotMatch(hint, /80% range/);
+    }
   });
 
   test('actual says customers can end in different months', () => {
@@ -74,17 +106,32 @@ describe('line hints', () => {
   });
 });
 
-// ---- Previous availability ----
+// ---- When Previous was made ----
 
-describe('previous line availability', () => {
-  test('any month with a previous value counts', () => {
-    assert.equal(hasPreviousLine([{ previous: null }, { previous: 0 }]), true);
+describe('previous made', () => {
+  const fmt = (value) => `[${value}]`;
+
+  test('one run for every SKU is one line', () => {
+    const entries = [
+      { productName: 'Pants L', customerName: 'fairprice', at: '2026-10-01T03:00:00Z' },
+      { productName: 'Pants XL', customerName: 'fairprice', at: '2026-10-01T03:00:00Z' },
+    ];
+    assert.deepEqual(previousMadeLines(entries, fmt), ['made [2026-10-01T03:00:00Z]']);
   });
 
-  test('no previous values, or no points, means none', () => {
-    assert.equal(hasPreviousLine([{ previous: null }, { current: 5 }]), false);
-    assert.equal(hasPreviousLine([]), false);
-    assert.equal(hasPreviousLine(undefined), false);
+  test('different runs per SKU get a line each', () => {
+    const entries = [
+      { productName: 'Pants L', customerName: 'fairprice', at: '2026-10-01T03:00:00Z' },
+      { productName: 'Pants XL', customerName: 'fairprice', at: '2026-09-01T03:00:00Z' },
+    ];
+    assert.deepEqual(previousMadeLines(entries, fmt), [
+      'Pants L: made [2026-10-01T03:00:00Z]',
+      'Pants XL: made [2026-09-01T03:00:00Z]',
+    ]);
+  });
+
+  test('no Previous, no line', () => {
+    assert.deepEqual(previousMadeLines([], fmt), []);
   });
 });
 
@@ -92,20 +139,82 @@ test('the stamp is labelled as the forecast update time', () => {
   assert.equal(FORECAST_LAST_UPDATED_LABEL, 'Forecast last updated');
 });
 
-// ---- Model hover (F9) ----
+// ---- Model picker wording ----
 
-describe('model hover', () => {
-  test('a month with any Tier 0 series explains Tier 0', () => {
-    assert.equal(modelHint({ tier0_legacy: 1, tier1_arimax: 3 }), TIER0_HINT);
+describe('model picker wording', () => {
+  test('Tier 0 is described as a baseline for every SKU, not a best-model choice', () => {
+    assert.equal(TIER0_HINT, "Baseline from recent sales and last year's pattern. Available for every SKU.");
+    assert.doesNotMatch(TIER0_HINT, /more accurate|under 6 months/);
+  });
+
+  test('one SKU gets its own reason in plain words', () => {
+    assert.equal(tierUnavailableText({ reasons: ['not_enough_history'], total: 1 }), 'Needs 12+ months of sales history');
     assert.equal(
-      TIER0_HINT,
-      'Used for products with under 6 months of sales, or where it was more accurate than the Tier 1 models.'
+      tierUnavailableText({ reasons: ['no_familiar_promotions'], total: 1 }),
+      'No familiar promotions in the next 12 months'
     );
   });
 
-  test('Tier 1 only, or no model, has no hover', () => {
-    assert.equal(modelHint({ tier1_arima: 2, tier1_arimax: 1 }), '');
-    assert.equal(modelHint(undefined), '');
+  test('several SKUs say how many can not use the model', () => {
+    assert.equal(
+      tierUnavailableText({ reasons: ['not_enough_history', 'not_backtested'], total: 5 }),
+      'Not available for 2 of 5 selected SKUs'
+    );
+    assert.equal(
+      tierUnavailableText({ reasons: ['not_enough_history', 'not_enough_history'], total: 5 }),
+      'Not available for 2 of 5 selected SKUs · Needs 12+ months of sales history'
+    );
+  });
+
+  test('an unknown or missing reason still reads as a sentence', () => {
+    assert.equal(tierUnavailableText({ reasons: [null], total: 1 }), 'Not available for this SKU');
+    assert.equal(tierUnavailableText({ reasons: [], total: 3 }), '');
+  });
+
+  test('a partial Initial or Previous is called out, all or none is not', () => {
+    assert.equal(
+      lineCoverageNote('Initial yearly forecast', { withLine: 3, total: 5 }),
+      'Initial yearly forecast: shown for 3 of 5 selected SKUs.'
+    );
+    assert.equal(lineCoverageNote('Previous', { withLine: 5, total: 5 }), '');
+    assert.equal(lineCoverageNote('Previous', { withLine: 0, total: 5 }), '');
+  });
+
+  test('no wording describes a best-model choice', () => {
+    for (const text of [TIER0_HINT, PREVIOUS_HINT, CURRENT_HINT, INITIAL_HINT]) {
+      assert.doesNotMatch(text, /best model|best-model/i);
+    }
+  });
+});
+
+// ---- Confidence wording ----
+
+describe('confidence wording', () => {
+  test('this month reads as a +/- range and an 8 in 10 chance', () => {
+    assert.equal(rangePctText(30), '±30%');
+    assert.equal(rangePctText(null), '');
+    assert.equal(rangeChanceText('700', '1,300'), '8 in 10 chance it lands between 700 and 1,300');
+    assert.equal(rangeChanceText('', '1,300'), '');
+  });
+
+  test('past accuracy shows the sMAPE, or says it is untested', () => {
+    assert.equal(smapeText(12.4), 'sMAPE 12%');
+    assert.equal(smapeText(null), 'not tested yet');
+  });
+
+  test('the hover card names the month band in plain words beside its dot', () => {
+    assert.equal(confidenceWords('low'), 'Low confidence');
+    assert.equal(confidenceWords('high'), 'High confidence');
+    assert.equal(confidenceWords(null), 'Unknown confidence');
+  });
+
+  test('each band has its own dot fill, never colour alone', () => {
+    assert.deepEqual(CURRENT_DOT_FILL, { high: 'filled', medium: 'half', low: 'hollow', unknown: 'small' });
+  });
+
+  test('the legend badge names the band and the sMAPE', () => {
+    assert.equal(pastAccuracyBadgeLabel({ band: 'high', smape: 12.4 }), 'Past accuracy: High · sMAPE 12%');
+    assert.equal(pastAccuracyBadgeLabel({ band: null, smape: null }), 'Past accuracy: Unknown · not tested yet');
   });
 });
 
@@ -122,44 +231,36 @@ const OPEN_2027 = {
 describe('initial status notes', () => {
   test('an open year says when it locks, in Singapore time, and when it last updated', () => {
     const notes = initialStatusNotes({
-      rangeYears: [2027], meta: [OPEN_2027], yearsWithInitial: [], formatStamp: stamp,
+      rangeYears: [2027], meta: [OPEN_2027], formatStamp: stamp,
     });
     assert.deepEqual(notes, ['2027 Initial: updating until 31 Dec 2026 · last updated at 2026-11-04T03:00:00Z']);
   });
 
-  test('a locked year is a fixed plan', () => {
+  test('a locked year gets no note', () => {
     const notes = initialStatusNotes({
-      rangeYears: [2027], meta: [{ ...OPEN_2027, locked: true }], yearsWithInitial: [], formatStamp: stamp,
+      rangeYears: [2027], meta: [{ ...OPEN_2027, locked: true }], formatStamp: stamp,
     });
-    assert.deepEqual(notes, ['2027 Initial: fixed plan']);
+    assert.deepEqual(notes, []);
   });
 
-  test('a year with Initial values but no meta row (the 2026 backfill) is a fixed plan', () => {
+  test('a year with no meta row (the 2026 backfill) gets no note', () => {
     const notes = initialStatusNotes({
-      rangeYears: [2026], meta: [OPEN_2027], yearsWithInitial: [2026, 2026], formatStamp: stamp,
+      rangeYears: [2026], meta: [OPEN_2027], formatStamp: stamp,
     });
-    assert.deepEqual(notes, ['2026 Initial: fixed plan']);
+    assert.deepEqual(notes, []);
   });
 
-  test('a year with neither gets no note, and only years in range are listed', () => {
+  test('only open years in range are listed', () => {
     const notes = initialStatusNotes({
-      rangeYears: [2025, 2026], meta: [OPEN_2027], yearsWithInitial: [2026], formatStamp: stamp,
+      rangeYears: yearsInRange('2026-01-01', '2027-12-01'), meta: [OPEN_2027], formatStamp: stamp,
     });
-    assert.deepEqual(notes, ['2026 Initial: fixed plan']);
-  });
-
-  test('a range across years lists each in order', () => {
-    const notes = initialStatusNotes({
-      rangeYears: yearsInRange('2026-01-01', '2027-12-01'), meta: [OPEN_2027], yearsWithInitial: [2026], formatStamp: stamp,
-    });
-    assert.equal(notes.length, 2);
-    assert.ok(notes[0].startsWith('2026 Initial: fixed plan'));
-    assert.ok(notes[1].startsWith('2027 Initial: updating until 31 Dec 2026'));
+    assert.equal(notes.length, 1);
+    assert.ok(notes[0].startsWith('2027 Initial: updating until 31 Dec 2026'));
   });
 
   test('no refreshed time drops the last-updated part', () => {
     const notes = initialStatusNotes({
-      rangeYears: [2027], meta: [{ ...OPEN_2027, refreshed_at: null }], yearsWithInitial: [], formatStamp: stamp,
+      rangeYears: [2027], meta: [{ ...OPEN_2027, refreshed_at: null }], formatStamp: stamp,
     });
     assert.deepEqual(notes, ['2027 Initial: updating until 31 Dec 2026']);
   });
@@ -186,6 +287,21 @@ describe('forecast updating badge', () => {
     });
     assert.equal(FORECAST_UPDATING_LABEL, 'Forecast updating…');
     assert.ok(FORECAST_UPDATING_HINT.endsWith("You'll get a notification when it's done."));
+  });
+
+  test('while an Initial year is still open, the badge names the Initial Yearly Forecast', () => {
+    const badge = forecastUpdatingBadge({ updating: true, since: '2026-11-06T02:30:00Z' }, [OPEN_2027]);
+    assert.equal(badge.label, 'Initial Yearly Forecast updating…');
+    assert.equal(badge.hint, INITIAL_UPDATING_HINT);
+  });
+
+  test('only locked Initial years keep the plain forecast badge', () => {
+    const badge = forecastUpdatingBadge({ updating: true }, [{ ...OPEN_2027, locked: true }]);
+    assert.equal(badge.label, 'Forecast updating…');
+  });
+
+  test('an open Initial year with nothing updating shows no badge', () => {
+    assert.equal(forecastUpdatingBadge({ updating: false, since: null }, [OPEN_2027]), null);
   });
 
   test('nothing updating, or no response, shows no badge', () => {

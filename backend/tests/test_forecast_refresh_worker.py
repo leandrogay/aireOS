@@ -353,3 +353,44 @@ def test_last_cloud_task_attempt_records_refresh_failure(monkeypatch):
     assert response.status_code == 503
     assert len(failures) == 1
     assert "CDC unavailable" in failures[0]
+
+
+# ---- Success notification summary ----
+
+
+class _SummaryBigQuery:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def query(self, sql, job_config=None):
+        rows = self.rows
+        return type("Job", (), {"result": lambda self: rows})()
+
+
+def test_the_forecast_summary_names_customers_and_products(monkeypatch):
+    fake = _SummaryBigQuery([{
+        "period_start": datetime(2026, 9, 1).date(),
+        "period_end": datetime(2027, 8, 1).date(),
+        "customer_ids": [3, 1],
+        "skus": ["S2", "S1"],
+    }])
+    monkeypatch.setattr(worker, "get_bigquery_client", lambda: fake)
+    monkeypatch.setattr(worker.inventory_service, "list_customers", lambda: [
+        {"customer_id": 1, "customer_name": "fairprice"}, {"customer_id": 3, "customer_name": "nhg"},
+    ])
+    monkeypatch.setattr(worker.catalog_service, "get_skus", lambda: [
+        {"sku": "S1", "product_name": "Pants L"}, {"sku": "S2", "product_name": "Tape XL"},
+    ])
+
+    assert worker.latest_forecast_summary() == {
+        "period_start": "2026-09-01",
+        "period_end": "2027-08-01",
+        "customers": ["fairprice", "nhg"],
+        "skus": ["Pants L", "Tape XL"],
+    }
+
+
+def test_a_forecast_with_no_current_run_has_an_empty_summary(monkeypatch):
+    monkeypatch.setattr(worker, "get_bigquery_client", lambda: _SummaryBigQuery([{"period_start": None}]))
+
+    assert worker.latest_forecast_summary() == {"period_start": None, "period_end": None, "customers": [], "skus": []}

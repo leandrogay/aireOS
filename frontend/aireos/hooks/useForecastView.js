@@ -3,8 +3,17 @@
 import { useEffect, useState } from 'react';
 
 import { EMPTY_FORECAST_FRESHNESS, getForecastView } from '@/app/services/forecastApi';
+import { DEFAULT_TIER } from '@/app/utils/forecastTiers';
 
-const EMPTY_VIEW = { rows: [], actuals: [], promotions: [], freshness: EMPTY_FORECAST_FRESHNESS };
+const EMPTY_VIEW = {
+  rows: [],
+  tiers: [],
+  availability: {},
+  horizon: {},
+  actuals: [],
+  promotions: [],
+  freshness: EMPTY_FORECAST_FRESHNESS,
+};
 
 /**
  * Forecast rows, monthly actuals, overlapping promos and freshness stamps for
@@ -20,6 +29,7 @@ const EMPTY_VIEW = { rows: [], actuals: [], promotions: [], freshness: EMPTY_FOR
  * @param {string} options.customerName customer filter ('' = all customers)
  * @param {string} options.startDate filter start, 'YYYY-MM-DD'
  * @param {string} options.endDate filter end, 'YYYY-MM-DD'
+ * @param {string} [options.tier] one model's rows (Tier 0 by default), or ALL_TIERS (forecastApi.getForecastView)
  */
 export default function useForecastView({
   ready = false,
@@ -27,6 +37,7 @@ export default function useForecastView({
   customerName = '',
   startDate = '',
   endDate = '',
+  tier = DEFAULT_TIER,
 }) {
   const [data, setData] = useState(EMPTY_VIEW);
   const [loading, setLoading] = useState(false);
@@ -39,10 +50,13 @@ export default function useForecastView({
     async function loadRows() {
       setLoading(true);
       try {
-        const payload = await getForecastView({ productName, customerName, startDate, endDate });
+        const payload = await getForecastView({ productName, customerName, startDate, endDate, tier });
         if (cancelled) return;
         setData({
           rows: payload.rows,
+          tiers: payload.tiers,
+          availability: payload.availability,
+          horizon: payload.horizon,
           actuals: payload.actuals,
           promotions: payload.promotions,
           freshness: payload.freshness ?? EMPTY_FORECAST_FRESHNESS,
@@ -59,7 +73,7 @@ export default function useForecastView({
     return () => {
       cancelled = true;
     };
-  }, [ready, productName, customerName, startDate, endDate]);
+  }, [ready, productName, customerName, startDate, endDate, tier]);
 
   return { data, loading, error };
 }

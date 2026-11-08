@@ -1,3 +1,5 @@
+import { ALL_TIERS, DEFAULT_TIER, rowsForTier } from '@/app/utils/forecastTiers';
+
 function apiBaseUrl() {
   return (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
 }
@@ -33,23 +35,33 @@ export const EMPTY_FORECAST_FRESHNESS = {
   current_generated_at: null,
   previous_generated_at: null,
   initial_generated_at: null,
+  by_tier: {},
   latest_sales_loaded_at: null,
 };
 
 /**
  * GET /api/forecast
- * Forecast rows from aire_forecasting_output (one per customer x SKU x month,
- * with forecast_initial / forecast_previous / forecast_current, the model per
- * month, and *_revenue at realised price), monthly actuals (cartons +
- * revenue), overlapping Postgres promos, and freshness stamps (when each
- * forecast line was generated + sales loaded_at).
+ * Forecast rows from aire_forecasting_output: one per customer x SKU x month
+ * x tier (tier0 / tier1_basic / tier1_advanced), with forecast_initial /
+ * forecast_previous / forecast_current, the month's confidence
+ * (month_range_pct, month_confidence_band), the model's backtest
+ * (current_backtest_smape, current_confidence_band), all in cartons (the
+ * Forecast page is volume only); `tiers` (in tier_order) and `availability`
+ * ({sku: {tier: {is_available, unavailable_reason, has_initial}}}) for the
+ * Model picker; monthly actuals (cartons); overlapping Postgres
+ * promos; and freshness stamps, overall and `by_tier`, plus sales loaded_at.
  * See backend forecast_service.get_forecast_view.
+ *
+ * `tier` keeps one model's rows: Tier 0 by default, since anything that adds
+ * rows up would otherwise count each month three times. The Forecast page
+ * passes ALL_TIERS so it can switch models without a new request.
  */
 export async function getForecastView({
   productName = '',
   customerName = '',
   startDate = '',
   endDate = '',
+  tier = DEFAULT_TIER,
 } = {}) {
   const params = new URLSearchParams();
   if (productName) params.set('product_name', productName);
@@ -58,8 +70,14 @@ export async function getForecastView({
   if (endDate) params.set('end_date', endDate);
   const query = params.toString();
   const data = await request(`/api/forecast${query ? `?${query}` : ''}`);
+  const rows = data.rows ?? [];
   return {
-    rows: data.rows ?? [],
+    rows: tier === ALL_TIERS ? rows : rowsForTier(rows, tier),
+    tiers: data.tiers ?? [],
+    availability: data.availability ?? {},
+    // {tier: {units, series}}: each SKU's whole
+    // Current line, not cut by the dates (forecast_service.current_horizon_totals).
+    horizon: data.horizon ?? {},
     actuals: data.actuals ?? [],
     promotions: data.promotions ?? [],
     freshness: data.freshness ?? EMPTY_FORECAST_FRESHNESS,

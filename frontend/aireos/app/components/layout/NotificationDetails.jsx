@@ -1,5 +1,10 @@
 import { formatDate, formatDateTime } from '@/lib/formatDate';
-import { forecastErrorLines, isRefreshFailure, startedByLabel } from '@/app/utils/forecastNotificationText';
+import {
+  forecastErrorLines,
+  forecastWarningLines,
+  isRefreshFailure,
+  startedByLabel,
+} from '@/app/utils/forecastNotificationText';
 import { daysLeftValue, lowStockItemText, modelFeatureLabel } from '@/app/utils/notificationText';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
@@ -125,6 +130,9 @@ function ForecastDetails({ payload, success }) {
   // describe, so the period / customers / SKUs rows would only read "—" and "0".
   const neverStarted = isRefreshFailure(payload, success);
   const errorLines = forecastErrorLines(payload);
+  // A retrain that worked but whose Initial yearly forecast couldn't refresh
+  // (backend forecast_notifications.initial_refresh_warning).
+  const warningLines = success ? forecastWarningLines(payload) : [];
   return (
     <>
       <Summary>{forecastSummary(payload, success)}</Summary>
@@ -145,6 +153,7 @@ function ForecastDetails({ payload, success }) {
         {/* Older failures have no reason, only errors, so they still show "None"
             when empty; newer ones list errors only when they add to the reason. */}
         {!success && (!payload.reason || errorLines.length > 0) && <ErrorsField errors={errorLines} />}
+        {warningLines.length > 0 && <Field label="Warning" value={warningLines.join('; ')} />}
       </Fields>
     </>
   );

@@ -11,7 +11,7 @@ class FakeJob:
         self._df = df
         self.num_dml_affected_rows = 3
 
-    def result(self):
+    def result(self, timeout=None):
         return self
 
     def to_dataframe(self):
@@ -299,14 +299,17 @@ def test_get_forecast_view_combines_rows_actuals_and_promos(monkeypatch):
                 "customer_id": 1,
                 "sku": "13271338",
                 "month_year": "2026-08-01",
+                "tier": "tier0",
+                "tier_label": "Tier 0 · Baseline",
+                "tier_order": 0,
+                "is_available": True,
                 "forecast_current": 100.0,
                 "current_generated_at": "2026-09-30T16:28:11Z",
             }
         ]
 
-    def _prices(**kwargs):
-        captured["prices"] = kwargs
-        return {(1, "13271338"): 8.22}
+    def _no_prices(**_kwargs):
+        raise AssertionError("the Forecast page is volume only: nothing is priced")
 
     def _actuals(**kwargs):
         captured["actuals"] = kwargs
@@ -320,8 +323,13 @@ def test_get_forecast_view_combines_rows_actuals_and_promos(monkeypatch):
         captured["sales_loaded_at"] = kwargs
         return "2026-09-27T06:32:01Z"
 
+    def _horizon(**kwargs):
+        captured["horizon"] = kwargs
+        return [{"tier": "tier0", "customer_id": 1, "sku": "13271338", "cartons": 1200.0, "months": 12}]
+
     monkeypatch.setattr(forecast_service.bigquery_service, "get_forecast_output_rows", _rows)
-    monkeypatch.setattr(forecast_service.bigquery_service, "get_realised_prices", _prices)
+    monkeypatch.setattr(forecast_service.bigquery_service, "get_current_horizon", _horizon)
+    monkeypatch.setattr(forecast_service.bigquery_service, "get_realised_prices", _no_prices)
     monkeypatch.setattr(forecast_service.bigquery_service, "get_forecast_actuals", _actuals)
     monkeypatch.setattr(forecast_service.promotion_service, "list_forecast_promotions", _promos)
     monkeypatch.setattr(forecast_service.bigquery_service, "get_sales_loaded_at", _sales_loaded_at)
@@ -340,19 +348,25 @@ def test_get_forecast_view_combines_rows_actuals_and_promos(monkeypatch):
         "end_date": "2026-12-01",
     }
     assert captured["rows"] == expected
-    assert captured["prices"] == {"product_name": None, "customer_name": "fairprice"}
+    # The whole Current line: no date filter.
+    assert captured["horizon"] == {"product_name": None, "customer_name": "fairprice"}
+    assert result["horizon"]["tier0"] == {"units": 1200.0, "series": 1}
     assert captured["actuals"] == expected
     assert captured["promotions"] == expected
     assert captured["sales_loaded_at"] == {"customer_name": "fairprice"}
     assert result["rows"][0]["forecast_current"] == 100.0
-    assert result["rows"][0]["forecast_current_revenue"] == 822.0
-    assert result["actuals"][0]["quantity_cartons"] == 209.0
+    # Volume only: no revenue on rows or actuals.
+    assert not any(key.endswith("_revenue") or key == "realised_price" for key in result["rows"][0])
+    assert result["actuals"][0] == {"month_year": "2026-08-01", "quantity_cartons": 209.0}
     assert result["promotions"][0]["promo_type"] == "bundle"
-    assert result["freshness"] == {
-        "current_generated_at": "2026-09-30T16:28:11Z",
-        "previous_generated_at": None,
-        "initial_generated_at": None,
-        "latest_sales_loaded_at": "2026-09-27T06:32:01Z",
+    assert result["freshness"]["current_generated_at"] == "2026-09-30T16:28:11Z"
+    assert result["freshness"]["by_tier"]["tier0"]["current_generated_at"] == "2026-09-30T16:28:11Z"
+    assert result["freshness"]["latest_sales_loaded_at"] == "2026-09-27T06:32:01Z"
+    assert result["tiers"] == [{"tier": "tier0", "tier_label": "Tier 0 · Baseline", "tier_order": 0}]
+    assert result["availability"] == {
+        "13271338": {
+            "tier0": {"is_available": True, "unavailable_reason": None, "has_initial": False, "has_previous": False}
+        }
     }
 
 
@@ -361,7 +375,7 @@ def test_get_forecast_view_surfaces_a_failed_read(monkeypatch):
         raise ValueError("start_date must be YYYY-MM-DD")
 
     monkeypatch.setattr(forecast_service.bigquery_service, "get_forecast_output_rows", _boom)
-    monkeypatch.setattr(forecast_service.bigquery_service, "get_realised_prices", lambda **_k: {})
+    monkeypatch.setattr(forecast_service.bigquery_service, "get_current_horizon", lambda **_k: [])
     monkeypatch.setattr(forecast_service.bigquery_service, "get_forecast_actuals", lambda **_k: [])
     monkeypatch.setattr(forecast_service.promotion_service, "list_forecast_promotions", lambda **_k: [])
     monkeypatch.setattr(forecast_service.bigquery_service, "get_sales_loaded_at", lambda **_k: None)
@@ -370,30 +384,146 @@ def test_get_forecast_view_surfaces_a_failed_read(monkeypatch):
         forecast_service.get_forecast_view(start_date="bad")
 
 
+# ---- Next 12 months (whole Current line) ----
+
+
+def test_horizon_totals_sum_each_tier_separately():
+    series = [
+        {"tier": "tier0", "customer_id": 1, "sku": "A", "cartons": 100.0},
+        {"tier": "tier0", "customer_id": 2, "sku": "A", "cartons": 50.0},
+        {"tier": "tier1_basic", "customer_id": 1, "sku": "A", "cartons": 90.0},
+    ]
+
+    totals = forecast_service.current_horizon_totals(series)
+
+    assert totals["tier0"] == {"units": 150.0, "series": 2}
+    assert totals["tier1_basic"] == {"units": 90.0, "series": 1}
+
+
 # ---- Forecast stamps from rows ----
 
 
 def test_forecast_stamps_take_the_latest_run_per_line():
     rows = [
-        {"current_generated_at": "2026-09-30T16:28:11Z", "initial_generated_at": "2026-10-01T02:00:00Z"},
-        {"current_generated_at": "2026-10-01T03:15:00Z", "initial_generated_at": None},
+        {"tier": "tier0", "current_generated_at": "2026-09-30T16:28:11Z", "initial_generated_at": "2026-10-01T02:00:00Z"},
+        {"tier": "tier0", "current_generated_at": "2026-10-01T03:15:00Z", "initial_generated_at": None},
     ]
 
     stamps = forecast_service.forecast_stamps_from_rows(rows)
 
-    assert stamps == {
-        "current_generated_at": "2026-10-01T03:15:00Z",
-        "previous_generated_at": None,
-        "initial_generated_at": "2026-10-01T02:00:00Z",
-    }
+    assert stamps["current_generated_at"] == "2026-10-01T03:15:00Z"
+    assert stamps["previous_generated_at"] is None
+    assert stamps["initial_generated_at"] == "2026-10-01T02:00:00Z"
+
+
+def test_forecast_stamps_are_kept_per_tier():
+    # "Last updated" is the selected model's own latest run.
+    rows = [
+        {"tier": "tier0", "current_generated_at": "2026-10-01T03:15:00Z"},
+        {"tier": "tier1_basic", "current_generated_at": "2026-09-30T16:28:11Z"},
+    ]
+
+    by_tier = forecast_service.forecast_stamps_from_rows(rows)["by_tier"]
+
+    assert by_tier["tier0"]["current_generated_at"] == "2026-10-01T03:15:00Z"
+    assert by_tier["tier1_basic"]["current_generated_at"] == "2026-09-30T16:28:11Z"
+    assert by_tier["tier1_advanced"]["current_generated_at"] is None
+
+
+def test_freshness_says_when_the_output_table_was_last_rebuilt():
+    rows = [
+        {"tier": "tier0", "output_built_at": "2026-11-08T03:00:00Z"},
+        {"tier": "tier1_basic", "output_built_at": "2026-11-08T03:00:00Z"},
+    ]
+
+    assert forecast_service.forecast_stamps_from_rows(rows)["output_built_at"] == "2026-11-08T03:00:00Z"
+    assert forecast_service.forecast_stamps_from_rows([])["output_built_at"] is None
 
 
 def test_forecast_stamps_are_blank_without_rows():
-    assert forecast_service.forecast_stamps_from_rows([]) == {
-        "current_generated_at": None,
-        "previous_generated_at": None,
-        "initial_generated_at": None,
+    stamps = forecast_service.forecast_stamps_from_rows([])
+
+    assert stamps["current_generated_at"] is None
+    assert stamps["previous_generated_at"] is None
+    assert stamps["initial_generated_at"] is None
+    assert set(stamps["by_tier"]) == {"tier0", "tier1_basic", "tier1_advanced"}
+
+
+# ---- Tiers and availability ----
+
+
+def _tier_row(sku, tier, **overrides):
+    order = {"tier0": 0, "tier1_basic": 1, "tier1_advanced": 2}[tier]
+    row = {"sku": sku, "tier": tier, "tier_label": f"label {tier}", "tier_order": order,
+           "is_available": True, "unavailable_reason": None, "forecast_initial": None}
+    row.update(overrides)
+    return row
+
+
+def test_tiers_come_back_once_each_in_tier_order():
+    rows = [_tier_row("A", "tier1_advanced"), _tier_row("A", "tier0"), _tier_row("B", "tier1_basic"),
+            _tier_row("B", "tier0")]
+
+    tiers = forecast_service.forecast_tiers_from_rows(rows)
+
+    assert [item["tier"] for item in tiers] == ["tier0", "tier1_basic", "tier1_advanced"]
+
+
+def test_availability_is_per_sku_and_tier_with_its_reason():
+    rows = [
+        _tier_row("A", "tier0", forecast_initial=10.0),
+        _tier_row("A", "tier1_basic", is_available=False, unavailable_reason="not_enough_history"),
+    ]
+
+    availability = forecast_service.forecast_availability(rows)
+
+    assert availability["A"]["tier0"] == {
+        "is_available": True, "unavailable_reason": None, "has_initial": True, "has_previous": False,
     }
+    assert availability["A"]["tier1_basic"] == {
+        "is_available": False, "unavailable_reason": "not_enough_history", "has_initial": False, "has_previous": False,
+    }
+
+
+def test_has_initial_is_true_when_any_month_has_an_initial():
+    rows = [_tier_row("A", "tier0", forecast_initial=None), _tier_row("A", "tier0", forecast_initial=12.0)]
+
+    assert forecast_service.forecast_availability(rows)["A"]["tier0"]["has_initial"] is True
+
+
+def test_a_sku_with_a_tier_1_previous_null_has_no_previous_on_that_tier_only():
+    # Tier 1 had no forecast from an earlier month yet; Tier 0 did.
+    rows = [
+        _tier_row("A", "tier0", forecast_previous=90.0),
+        _tier_row("A", "tier1_basic", forecast_previous=None),
+        _tier_row("A", "tier1_basic", forecast_previous=None),
+    ]
+
+    availability = forecast_service.forecast_availability(rows)
+
+    assert availability["A"]["tier0"]["has_previous"] is True
+    assert availability["A"]["tier1_basic"]["has_previous"] is False
+    assert availability["A"]["tier1_basic"]["is_available"] is True
+
+
+def test_a_tier_0_sku_launched_after_the_plan_has_no_initial_but_is_available():
+    rows = [_tier_row("NEW", "tier0", forecast_initial=None, forecast_current=40.0)]
+
+    entry = forecast_service.forecast_availability(rows)["NEW"]["tier0"]
+
+    assert entry == {"is_available": True, "unavailable_reason": None, "has_initial": False, "has_previous": False}
+
+
+def test_a_tier_missing_for_one_customer_is_unavailable_for_the_sku():
+    rows = [
+        _tier_row("A", "tier1_basic", customer_id=1),
+        _tier_row("A", "tier1_basic", customer_id=2, is_available=False, unavailable_reason="not_backtested"),
+    ]
+
+    entry = forecast_service.forecast_availability(rows)["A"]["tier1_basic"]
+
+    assert entry["is_available"] is False
+    assert entry["unavailable_reason"] == "not_backtested"
 
 
 # ---- Forecast revenue at realised price ----

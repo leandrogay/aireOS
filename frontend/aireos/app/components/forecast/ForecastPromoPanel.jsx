@@ -50,6 +50,7 @@ export default function ForecastPromoPanel({
   seriesValues,
   details,
   formatValue,
+  confidenceDetails = null,
   scenarioDetails = null,
   promos,
   openPromoId,
@@ -84,6 +85,8 @@ export default function ForecastPromoPanel({
             ))}
           </ul>
         ) : null}
+        {/* The month's CONFIDENCE section (ForecastConfidenceDetails), same as the hover card. */}
+        {confidenceDetails ? <div className="mt-2 border-t border-lavander pt-2">{confidenceDetails}</div> : null}
         <ForecastPointDetails details={details} className="mt-2 border-t border-lavander pt-2" />
       </div>
       {/* Scenario builder only: what its building blocks and planned

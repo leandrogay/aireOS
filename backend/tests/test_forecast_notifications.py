@@ -27,8 +27,9 @@ SUMMARY = {
 ENDED = datetime(2026, 11, 5, 3, 0, tzinfo=timezone.utc)
 CONTRACT_KEYS = {
     "run_name", "source", "stage", "reason", "errors",
-    "period_start", "period_end", "customers", "skus", "updated_at",
+    "period_start", "period_end", "customers", "skus", "updated_at", "warnings",
 }
+INITIAL_ERROR = "Initial refresh failed: Not enough history to train initial_arimax_model at [12:5]"
 
 
 class FakeJob:
@@ -59,7 +60,7 @@ def batch(monkeypatch):
     conn = FakeConnection()
     monkeypatch.setattr(worker.sql, "connect_with_connector", lambda: FakeEngine(conn))
     monkeypatch.setattr(worker, "_pending", lambda _: [])
-    monkeypatch.setattr(worker.forecast_pipeline_events, "latest_forecast_summary", lambda: SUMMARY)
+    monkeypatch.setattr(worker, "latest_forecast_summary", lambda: SUMMARY)
     return conn
 
 
@@ -238,7 +239,7 @@ def test_success_is_still_notified_when_the_summary_query_fails(written, batch, 
         raise RuntimeError("BigQuery unavailable")
 
     monkeypatch.setattr(worker, "_run_outcome", lambda _job: (True, True))
-    monkeypatch.setattr(worker.forecast_pipeline_events, "latest_forecast_summary", bigquery_down)
+    monkeypatch.setattr(worker, "latest_forecast_summary", bigquery_down)
 
     worker._finish("job-1", FakeJob())
 
@@ -346,3 +347,44 @@ def test_last_attempt_never_hides_the_error_when_the_database_is_down(written, m
     assert response.status_code == 503
     assert "CDC unavailable" in response.json()["detail"]
     assert written == []
+
+
+# ---- _finish: the Initial refresh failed after the retrain ----
+
+
+def test_initial_refresh_warning_reads_only_a9_1s_held_initial_error():
+    warning = forecast_notifications.initial_refresh_warning(FakeJob(error_result={"message": INITIAL_ERROR}))
+
+    assert warning.startswith(forecast_notifications.INITIAL_WARNING)
+    assert "Not enough history to train initial_arimax_model" in warning
+    assert forecast_notifications.initial_refresh_warning(
+        FakeJob(error_result={"message": "Data check failed: negative quantity"})
+    ) is None
+
+
+def test_initial_error_after_a_retrain_is_a_success_with_a_warning(written, batch, monkeypatch):
+    monkeypatch.setattr(worker, "_run_outcome", lambda _job: (True, True))
+
+    assert worker._finish("job-1", FakeJob(error_result={"message": INITIAL_ERROR}))["status"] == "completed"
+
+    kind, payload = written[0]
+    assert kind == "forecast_success"
+    assert set(payload) == CONTRACT_KEYS
+    assert payload["customers"] == ["fairprice"]
+    assert len(payload["warnings"]) == 1
+    assert "initial_arimax_model" in payload["warnings"][0]
+    update = _status_update(batch)
+    assert update["status"] == "completed"
+    assert "Initial refresh failed" in update["error"]
+
+
+def test_initial_error_with_no_retrain_is_still_a_failure(written, batch, monkeypatch):
+    monkeypatch.setattr(worker, "_run_outcome", lambda _job: (True, False))
+
+    assert worker._finish("job-1", FakeJob(error_result={"message": INITIAL_ERROR}))["status"] == "failed"
+
+    kind, payload = written[0]
+    assert kind == "forecast_failure"
+    assert payload["reason"] == INITIAL_ERROR
+    assert payload["warnings"] == []
+    assert _status_update(batch)["status"] == "failed"

@@ -237,11 +237,6 @@ def auth_cookie_secure() -> bool:
 # Notifications older than 60 days are deleted by the database itself (pg_cron,
 # migrations/005_schedule_notification_cleanup.sql), not by this app.
 
-# Pub/Sub subscription the scheduled BigQuery forecast run ("Retrain when new
-# month lands") reports each finished run to. Empty: the backend does not
-# listen, and only scripts/refresh_forecast.py raises forecast notifications.
-FORECAST_PIPELINE_SUBSCRIPTION = os.environ.get("FORECAST_PIPELINE_SUBSCRIPTION", "")
-
 # Event-driven forecast refresh. Keep disabled until the Singapore dataset,
 # migration 010 and task callback are verified.
 FORECAST_REFRESH_ENABLED = os.environ.get("FORECAST_REFRESH_ENABLED", "false")

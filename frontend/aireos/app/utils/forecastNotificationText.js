@@ -4,7 +4,9 @@
 // The payload shape is backend app/services/forecast_notifications.py:
 //   run_name, source ('event' | 'scheduled' | 'script'),
 //   stage ('pipeline' | 'refresh'; refresh = the retrain never started),
-//   reason, errors[], period_start, period_end, customers[], skus[], updated_at.
+//   reason, errors[], warnings[], period_start, period_end, customers[], skus[], updated_at.
+// `warnings` (successes only, e.g. the Initial yearly forecast couldn't
+// refresh) is newer still, so it is optional too.
 // Notifications written before `stage`/`reason` existed have neither, so both
 // are optional here: no stage means 'pipeline'.
 
@@ -36,6 +38,9 @@ export function isRefreshFailure(payload, success) {
  * @param {string} date
  */
 export function forecastTitle(payload, success, date) {
+  if (success && forecastWarningLines(payload).length) {
+    return `[SUCCESS] Forecast Pipeline Completed with a warning – ${date}`;
+  }
   if (success) return `[SUCCESS] Forecast Pipeline Completed – ${date}`;
   if (isRefreshFailure(payload, success)) return `[FAILURE] Forecast refresh couldn't start – ${date}`;
   return `[FAILURE] Forecast Pipeline Failed – ${date}`;
@@ -65,6 +70,16 @@ export function forecastIntro(payload, success) {
  */
 export function startedByLabel(source) {
   return STARTED_BY[source] ?? 'Forecast script';
+}
+
+/**
+ * What didn't refresh with a successful retrain (backend
+ * forecast_notifications.initial_refresh_warning), one line each.
+ *
+ * @param {{ warnings?: string[] }} payload
+ */
+export function forecastWarningLines(payload) {
+  return (payload?.warnings ?? []).filter(Boolean);
 }
 
 /**
