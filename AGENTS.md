@@ -151,7 +151,8 @@ aireOS/
     │   │   │                      skeleton; `nested` variant + `inset` for tables inside rows), ExpandableRow, RowActions
     │   │   │                      ("..." menu, disabledReason), StatusPill (success/info/muted/warning/danger); + hooks/useExpandedRows,
     │   │   │                      hooks/useConfirmAction; filter kit (Promotions, SKUs, Nomenclatures): FilterBar (card + grid +
-    │   │   │                      Reset) holding FilterSelect (single pick) / MultiSelectDropdown (tick-box), whose closed look
+    │   │   │                      Reset) holding FilterSelect (single pick) / MultiSelectDropdown (tick-box) / PriceRangeFilter
+    │   │   │                      (min/max popover on Dropdown, text from utils/priceRange.js), whose closed look
     │   │   │                      comes from filterControl.js (filterControlClass)
     │   │   ├── dashboard/         ChannelSwitch (Offline / Online, top right of the trend card), DashboardFilters,
     │   │   │                      CustomerSelector, FilterBadge, PeriodControls (Period /
@@ -187,6 +188,7 @@ aireOS/
     │   └── utils/                 Pure, React-free helpers
     │       ├── promotionForm.js   PROMO_TYPES, EMPTY_PROMOTION_FORM, validate/build/formFrom helpers
     │       ├── skuForm.js         required-field validation and SKU form/payload conversion
+    │       ├── skuFilters.js      SKU catalog filtering (multi-select range/brand, min/max price, search)
     │       ├── promotionOverview.js list grouping/filter helpers
     │       ├── forecastView.js    Sell-out run series (Initial Yearly Forecast/Previous/Current), tier resolution
     │       ├── scenarioPlan.js    Monthly plan rows: last year, model, blocks, adjusted, variance; shiftMonth()

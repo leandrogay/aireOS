@@ -8,6 +8,7 @@ import { changePct, formatChangePct } from '@/app/utils/periodComparison';
 import { customerColor } from '@/app/utils/storeFormats';
 import { formatRevenue } from '@/app/utils/trendChart';
 import EstMark from '@/components/dashboard/EstMark';
+import SelectDropdown from '@/components/ui/SelectDropdown';
 
 const GRAINS = [
   { value: 'customer', label: 'Customers' },
@@ -310,6 +311,22 @@ export default function SkuRanking({
     setOrder(order === 'desc' ? 'asc' : 'desc');
   }
 
+  const mobileSort = `${metric}-${order}`;
+  const mobileSortOptions = [
+    { value: 'value-desc', label: 'Value: highest first' },
+    { value: 'value-asc', label: 'Value: lowest first' },
+    { value: 'volume-desc', label: 'Volume: highest first' },
+    { value: 'volume-asc', label: 'Volume: lowest first' },
+  ];
+
+  function changeMobileSort(value) {
+    const [nextMetric, nextOrder] = value.split('-');
+    setMetric(nextMetric);
+    setOrder(nextOrder);
+  }
+
+  const mobileRows = showCustomers ? customersRanked : skus;
+
   return (
     <section className="bg-white rounded-lg border border-lavander shadow-sm p-3">
       <div className="mb-2">
@@ -330,8 +347,61 @@ export default function SkuRanking({
 
       {tableError && <p className="mb-2 text-sm text-red-600">{tableError}</p>}
 
-      <div className="w-full overflow-x-auto rounded-md border border-lavander">
-          <table className="w-full table-fixed text-left text-xs text-deep-violet-blue" aria-busy={tableLoading}>
+      <div className="mb-2 grid grid-cols-2 gap-2 sm:hidden">
+        {comparingCustomers && (
+          <div className="min-w-0">
+            <p className="mb-1 text-[11px] font-medium text-deep-violet-blue/65">Show</p>
+            <SelectDropdown
+              value={rankBy}
+              onChange={setRankBy}
+              options={GRAINS}
+              ariaLabel="Rank customers or products"
+              look="filter"
+              className="min-w-0"
+            />
+          </div>
+        )}
+        <div className={comparingCustomers ? 'min-w-0' : 'col-span-2 min-w-0'}>
+          <p className="mb-1 text-[11px] font-medium text-deep-violet-blue/65">Sort by</p>
+          <SelectDropdown
+            value={mobileSort}
+            onChange={changeMobileSort}
+            options={mobileSortOptions}
+            ariaLabel="Sort sales ranking"
+            look="filter"
+            className="min-w-0"
+          />
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-lg border border-lavander sm:hidden" aria-label={`${showCustomers ? 'Customer' : 'Product'} sales ranking`}>
+        {tableLoading ? (
+          <p className="p-4 text-sm text-deep-violet-blue/60">Loading sales ranking...</p>
+        ) : !tableError && mobileRows.length === 0 ? (
+          <p className="p-4 text-sm text-deep-violet-blue/60">No sales for this channel in the selected period.</p>
+        ) : !tableError && mobileRows.map((row) => (
+          <article key={showCustomers ? row.customer : row.sku} className="border-b border-lavander/70 p-3 last:border-b-0 even:bg-cream/30">
+            <div className="flex min-w-0 items-start gap-2.5">
+              <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-lavander/50 text-xs font-semibold text-deep-violet-blue" aria-label={`Rank ${row.rank}`}>
+                {row.rank}
+              </span>
+              <span className="min-w-0 flex-1 break-words font-medium text-deep-violet-blue">
+                {showCustomers ? row.label : row.product_name}
+              </span>
+            </div>
+            <dl className="mt-3 grid grid-cols-2 gap-3 pl-8">
+              <div><dt className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">Volume</dt><dd>{formatVolume(row.volume)}</dd></div>
+              <div><dt className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">Value</dt><dd>{formatRevenue(row.value)}</dd></div>
+              {!showCustomers && baselineBySku && (
+                <div className="col-span-2"><dt className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">Change {compareShort}</dt><dd>{baselineBySku.get(row.sku)?.[metric] ? formatChangePct(changePct(row[metric], baselineBySku.get(row.sku)[metric])) : 'New'}</dd></div>
+              )}
+            </dl>
+          </article>
+        ))}
+      </div>
+
+      <div className="hidden w-full overflow-x-auto rounded-md border border-lavander sm:block">
+          <table className="aire-table-rows w-full table-fixed text-left text-xs text-deep-violet-blue" aria-busy={tableLoading}>
             <colgroup>
               <col className="w-[8%]" />
               <col className={showChange ? 'w-[36%]' : 'w-[44%]'} />

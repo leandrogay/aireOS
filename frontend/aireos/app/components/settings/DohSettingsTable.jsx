@@ -1,6 +1,9 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
+import { Pencil } from 'lucide-react';
+
+import RowActions from '@/components/ui/RowActions';
+import MobileRecordCard from '@/components/ui/MobileRecordCard';
 import TableSkeleton from '@/components/ui/TableSkeleton';
 import ToggleField from '@/components/ui/ToggleField';
 import { formatDohDays } from '@/app/utils/dohSettingsForm';
@@ -8,21 +11,23 @@ import { formatDateTime } from '@/lib/formatDate';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
-const thClass = 'bg-lavander px-2 py-1.5 text-left text-xs font-semibold text-deep-violet-blue';
+const thClass = 'bg-cream px-2 py-1.5 text-left text-xs font-medium text-deep-violet-blue/60';
 const tdClass = 'px-2 py-1.5 text-sm text-deep-violet-blue';
 const numClass = 'text-right tabular-nums';
 
-// Same look as the promotions list's Edit button (PromotionList.jsx
-// actionButtonClass): filled deep violet, and violet "Editing" on the row
-// whose form is open. Applied to the shared Button primitive.
-const editButtonClass =
-  'h-auto min-w-[4rem] rounded-md px-3 py-1.5 text-xs font-medium shadow-sm transition';
-const editIdleClass = 'bg-deep-violet-blue text-white hover:bg-deep-violet-blue hover:opacity-90';
-const editActiveClass = 'bg-violet text-deep-violet-blue hover:bg-violet';
+function editAction(row, editingId, onEdit) {
+  return [{
+    key: 'edit',
+    label: 'Edit thresholds',
+    icon: Pencil,
+    onSelect: () => onEdit(row),
+    disabledReason: editingId === row.customer_id ? 'Editing now' : undefined,
+  }];
+}
 
 /**
  * One row per customer: min / target / max DOH, when the thresholds were last
- * saved, the alert toggle, and Edit. Rows on the global default are badged.
+ * saved, the alert toggle, and an actions menu. Rows on the global default are badged.
  * Reset to default lives in the edit form (DohThresholdForm). Holds no state
  * of its own; the parent (DohSettingsView) owns editing and pending requests.
  *
@@ -33,7 +38,7 @@ const editActiveClass = 'bg-violet text-deep-violet-blue hover:bg-violet';
  * @param {(row: object) => void} props.onEdit
  * @param {(row: object, enabled: boolean) => void} props.onToggleAlert
  * @param {boolean} [props.loading] first load in flight: placeholder rows,
- *   sized like the real ones (the Edit button sets their 40px height)
+ *   sized like the real ones
  */
 export default function DohSettingsTable({
   rows,
@@ -44,8 +49,36 @@ export default function DohSettingsTable({
   loading = false,
 }) {
   return (
-    <div className="overflow-auto rounded-md border border-lavander">
-      <table className="w-full border-collapse">
+    <>
+    <div className="grid min-w-0 gap-2 sm:hidden">
+      {loading && Array.from({ length: 4 }, (_, index) => (
+        <div key={index} className="h-28 animate-pulse rounded-lg border border-lavander bg-white" />
+      ))}
+      {rows.map((row) => {
+        const alertPending = row.customer_id in pendingAlerts;
+        const alertOn = alertPending ? pendingAlerts[row.customer_id] : row.doh_alert_enabled;
+        const customer = retailerLabel(row.customer_name);
+        return (
+          <MobileRecordCard
+            key={row.customer_id}
+            title={customer}
+            badge={row.is_global_default && (
+              <span className="rounded-full border border-violet bg-lavander px-2 py-0.5 text-[10px] text-deep-violet-blue">Global Default</span>
+            )}
+            actions={<RowActions label={`Actions for DOH settings for ${customer}`} actions={editAction(row, editingId, onEdit)} />}
+            fields={[
+              { label: 'Min DOH', value: formatDohDays(row.min_doh) },
+              { label: 'Target DOH', value: formatDohDays(row.target_doh) },
+              { label: 'Max DOH', value: formatDohDays(row.max_doh) },
+              { label: 'Last updated', value: formatDateTime(row.thresholds_updated_at) },
+              { label: 'Alerts', value: <ToggleField ariaLabel={`DOH alerts for ${customer}`} checked={alertOn} disabled={alertPending} onChange={(checked) => onToggleAlert(row, checked)} /> },
+            ]}
+          />
+        );
+      })}
+    </div>
+    <div className="hidden max-w-full min-w-0 overflow-auto rounded-md border border-lavander sm:block">
+      <table className="aire-table-rows w-full min-w-[44rem] border-collapse">
         <thead>
           <tr>
             <th className={thClass}>Customer</th>
@@ -54,9 +87,7 @@ export default function DohSettingsTable({
             <th className={cn(thClass, numClass)}>Max DOH</th>
             <th className={thClass}>Last updated</th>
             <th className={thClass}>Alerts</th>
-            <th className={thClass}>
-              <span className="sr-only">Actions</span>
-            </th>
+            <th className={thClass}><span className="sr-only">Actions</span></th>
           </tr>
         </thead>
         <tbody aria-busy={loading}>
@@ -97,15 +128,12 @@ export default function DohSettingsTable({
                     onChange={(checked) => onToggleAlert(row, checked)}
                   />
                 </td>
-                <td className={tdClass}>
+                <td className={cn(tdClass, 'text-right')}>
                   <div className="flex justify-end">
-                    <Button
-                      size="sm"
-                      onClick={() => onEdit(row)}
-                      className={cn(editButtonClass, editingId === row.customer_id ? editActiveClass : editIdleClass)}
-                    >
-                      {editingId === row.customer_id ? 'Editing' : 'Edit'}
-                    </Button>
+                    <RowActions
+                      label={`Actions for DOH settings for ${retailerLabel(row.customer_name)}`}
+                      actions={editAction(row, editingId, onEdit)}
+                    />
                   </div>
                 </td>
               </tr>
@@ -114,5 +142,6 @@ export default function DohSettingsTable({
         </tbody>
       </table>
     </div>
+    </>
   );
 }

@@ -1,14 +1,15 @@
 import { ACTIONS_COLUMN } from '@/components/ui/TableGrid';
 
-// One column grid for every table on the Customers page, so the customer
-// table and each retailer table under it line up regardless of their data:
-// name | detail (takes the rest) | status | actions. Only the labels differ.
-const NAME_WIDTH = '18rem';
-const STATUS_WIDTH = '9rem';
+// Retailers are shown in the expanded table, rather than abbreviated in the
+// customer row ("Fairprice Offline +1" hid which other retailer was linked).
+// Both tables end in the same fixed status + actions widths, so the customer
+// status column lines up with the retailer status column under it; the
+// customer name, with nothing beside it, takes the rest.
+const NAME_WIDTH = '13rem';
+const STATUS_WIDTH = '7rem';
 
 export const CUSTOMER_COLUMNS = [
-  { key: 'name', label: 'Customer', width: NAME_WIDTH },
-  { key: 'retailers', label: 'Retailers' },
+  { key: 'name', label: 'Customer' },
   { key: 'status', label: 'Status', width: STATUS_WIDTH },
   ACTIONS_COLUMN,
 ];

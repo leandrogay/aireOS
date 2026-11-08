@@ -25,9 +25,11 @@ export default function RetailerTable({ retailers, inset, actionsFor }) {
     <TableGrid variant="nested" columns={RETAILER_COLUMNS} inset={inset} minWidth="36rem">
       {retailers.map((retailer) => (
         <tr key={retailer.retailer_id} className="h-11 border-b border-lavander/80 last:border-b-0">
-          <td className="truncate px-4 py-2 font-medium" title={retailer.retailer_name}>
-            {retailerLabel(retailer.retailer_name)}
-            <span className="ml-2 text-xs font-normal text-deep-violet-blue/50">{retailer.retailer_name}</span>
+          {/* The stored name sits under the label: it is what uploads and
+              mappings match on, and on one line it was cut off. */}
+          <td className="px-4 py-2" title={retailer.retailer_name}>
+            <span className="block truncate font-medium">{retailerLabel(retailer.retailer_name)}</span>
+            <span className="block truncate font-mono text-xs text-deep-violet-blue/50">{retailer.retailer_name}</span>
           </td>
           <td className="px-4 py-2 tabular-nums">{retailer.store_count}</td>
           <td className="px-4 py-2">

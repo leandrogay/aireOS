@@ -8,11 +8,18 @@ import TablePagination, { PAGE_SIZES } from '@/components/ui/TablePagination';
 import TableSearch from '@/components/ui/TableSearch';
 import MappingFilters from '@/components/mappings/MappingFilters';
 import MappingRow from '@/components/mappings/MappingRow';
+import MobileRecordCard from '@/components/ui/MobileRecordCard';
+import StatusPill from '@/components/ui/StatusPill';
+import { formatDate } from '@/lib/formatDate';
 import {
   filterMappings,
   searchMappings,
   sortMappings,
   uniqueMappingCustomers,
+  mappingTitle,
+  mappingSourceLine,
+  mappingCustomer,
+  mappingStatus,
 } from '@/app/utils/mappingList';
 import { nextSort, paginate } from '@/app/utils/tableView';
 
@@ -134,6 +141,28 @@ export default function MappingList({ mappings, isLoading, error, onOpen, onRefr
         sort={sort}
         onSort={changeSort}
         emptyState={noMatches || null}
+        mobileContent={
+          <div className="grid gap-2">
+            {pageRows.map((mapping) => {
+              const status = mappingStatus(mapping);
+              const tones = { confirmed: 'success', pending: 'warning', missing: 'danger', warnings: 'warning', unknown: 'muted' };
+              return (
+                <MobileRecordCard
+                  key={mapping.mappingId}
+                  title={mappingTitle(mapping)}
+                  subtitle={mappingSourceLine(mapping)}
+                  badge={<StatusPill tone={tones[status.kind]}>{status.label}</StatusPill>}
+                  fields={[
+                    { label: 'Customer', value: mappingCustomer(mapping) || '—' },
+                    { label: 'Validated', value: mapping.validatedAt ? formatDate(mapping.validatedAt) : '—' },
+                  ]}
+                >
+                  <Button variant="link" size="sm" onClick={() => onOpen(mapping.mappingId)} className="mt-2 h-auto px-0 text-xs text-deep-violet-blue">Review mapping</Button>
+                </MobileRecordCard>
+              );
+            })}
+          </div>
+        }
       >
         {pageRows.map((mapping) => (
           <MappingRow key={mapping.mappingId} mapping={mapping} onOpen={onOpen} />

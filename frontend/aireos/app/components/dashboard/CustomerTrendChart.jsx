@@ -19,8 +19,10 @@ import {
   CHART_TOP_MARGIN,
   periodAxisProps,
   weekMonthGroups,
+  yearAxisProps,
 } from '@/app/utils/trendChart';
 import MonthAxis from '@/components/dashboard/MonthAxis';
+import useMediaQuery from '@/hooks/useMediaQuery';
 
 
 function formatValue(metric, value) {
@@ -77,12 +79,14 @@ function TrendTooltip({ active, payload, metric, series }) {
  * @param {{ customers: Array<object>, mode: 'offline' | 'online', metric: 'revenue' | 'units', granularity: 'week' | 'month', colorOrder: string[] }} props
  */
 export default function CustomerTrendChart({ customers, mode, metric, granularity, colorOrder }) {
+  const mobile = useMediaQuery('(max-width: 639px)');
   const series = trendSeries(customers, mode, colorOrder);
   const rows = trendRows(customers, series, mode, metric, granularity);
   const kind = trendChartKind(rows.length);
   const chartConfig = Object.fromEntries(series.map((item) => [item.key, { label: item.label, color: item.color }]));
-  const axisProps = periodAxisProps(rows, granularity);
-  const monthGroups = weekMonthGroups(rows, granularity);
+  const axisProps = mobile ? yearAxisProps(rows, 'periodStart') : periodAxisProps(rows, granularity);
+  // On a phone the axis is labelled by year (yearAxisProps), so no month axis.
+  const monthGroups = mobile ? null : weekMonthGroups(rows, granularity);
   // Bars sit in the middle of their slot; a line's first and last points sit
   // on the plot's edges, so the line chart pads its x-axis and keeps room on
   // the right for its last point and label.
@@ -123,7 +127,7 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
         {kind === 'bars' ? (
           <BarChart accessibilityLayer data={rows} margin={margin}>
             <CartesianGrid vertical={false} />
-            <XAxis dataKey="displayLabel" {...axisProps} />
+            <XAxis dataKey={mobile ? 'periodStart' : 'displayLabel'} {...axisProps} />
             {yAxis}
             <MonthAxis groups={monthGroups} />
             {tooltip}
@@ -135,7 +139,7 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
         ) : (
           <LineChart accessibilityLayer data={rows} margin={margin}>
             <CartesianGrid vertical={false} />
-            <XAxis dataKey="displayLabel" {...axisProps} padding={{ left: 24, right: 24 }} />
+            <XAxis dataKey={mobile ? 'periodStart' : 'displayLabel'} {...axisProps} padding={{ left: 24, right: 24 }} />
             {yAxis}
             <MonthAxis groups={monthGroups} />
             {tooltip}

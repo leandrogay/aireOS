@@ -103,6 +103,33 @@ export function periodAxisProps(rows, granularity) {
   return { ...hidden, angle: -45, height: tiltedAxisHeight('month') };
 }
 
+// One tick in the middle of each calendar year keeps a long monthly or weekly
+// series readable on a phone. The full period remains available in tooltips.
+export function yearAxisProps(rows, dateKey) {
+  const byYear = new Map();
+  rows.forEach((row, index) => {
+    const date = String(row[dateKey] ?? '');
+    const year = date.slice(0, 4);
+    if (!/^\d{4}$/.test(year)) return;
+    const indices = byYear.get(year) ?? [];
+    indices.push(index);
+    byYear.set(year, indices);
+  });
+  const labelledDates = new Set(
+    [...byYear.values()].map((indices) => rows[indices[Math.floor((indices.length - 1) / 2)]][dateKey]),
+  );
+  return {
+    // Keep all points on the axis so chart hover and bar spacing stay intact.
+    // Only the middle point of each year receives visible text.
+    tickFormatter: (date) => labelledDates.has(date) ? String(date).slice(0, 4) : '',
+    interval: 0,
+    angle: 0,
+    textAnchor: 'middle',
+    height: 28,
+    tickMargin: 6,
+  };
+}
+
 // The comparison chart labels both bars of every bucket, which never fit
 // flat side by side, so its labels are always tilted and never skipped.
 export function comparisonAxisProps(granularity) {

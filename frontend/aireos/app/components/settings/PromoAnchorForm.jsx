@@ -89,7 +89,7 @@ export default function PromoAnchorForm({ target, settings, onSaved, onCancel })
             <div className="overflow-auto rounded-md border border-lavander">
               <table className="w-full text-xs text-deep-violet-blue">
                 <thead>
-                  <tr className="bg-lavander text-left">
+                  <tr className="bg-cream text-left">
                     <th className="px-2 py-1 font-semibold">Placeholder mechanic</th>
                     <th className="px-2 py-1 text-right font-semibold">Now</th>
                     <th className="px-2 py-1 text-right font-semibold">After</th>

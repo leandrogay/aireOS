@@ -3,8 +3,10 @@
 import { useState } from 'react';
 
 import SegmentedControl from '@/components/ui/SegmentedControl';
+import SelectDropdown from '@/components/ui/SelectDropdown';
 import Toast from '@/components/ui/Toast';
 import useInventoryOptions from '@/hooks/useInventoryOptions';
+import useMediaQuery from '@/hooks/useMediaQuery';
 import useToast from '@/hooks/useToast';
 
 import AtRiskView from './AtRiskView';
@@ -37,6 +39,7 @@ export default function InventoryTabs() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [editRow, setEditRow] = useState(null);
   const { toast, notify, dismissToast } = useToast();
+  const narrow = useMediaQuery('(max-width: 767px)');
 
   function handleTabChange(value) {
     setTab(value);
@@ -64,15 +67,25 @@ export default function InventoryTabs() {
 
   return (
     <div>
-      <SegmentedControl
-        value={tab}
-        onChange={handleTabChange}
-        options={TABS}
-        look="outline"
-        size="md"
-        fullWidth
-        ariaLabel="Inventory views"
-      />
+      {narrow ? (
+        <SelectDropdown
+          value={tab}
+          onChange={handleTabChange}
+          options={TABS}
+          ariaLabel="Inventory view"
+          className="w-full"
+        />
+      ) : (
+        <SegmentedControl
+          value={tab}
+          onChange={handleTabChange}
+          options={TABS}
+          look="outline"
+          size="md"
+          fullWidth
+          ariaLabel="Inventory views"
+        />
+      )}
 
       <div className="mt-1 space-y-1">
       {options.error && (

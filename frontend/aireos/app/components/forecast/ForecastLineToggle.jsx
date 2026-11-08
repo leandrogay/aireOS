@@ -52,7 +52,7 @@ export default function ForecastLineToggle({
   disabled = {},
 }) {
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-2">
+    <div className="relative flex min-w-0 flex-wrap items-center gap-2">
       <p className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/50">
         Lines
       </p>
@@ -63,7 +63,7 @@ export default function ForecastLineToggle({
           const hint = hints[series.key];
           const hintId = `forecast-line-hint-${series.key}`;
           return (
-            <span key={series.key} className="group relative inline-flex">
+            <span key={series.key} className="group inline-flex sm:relative">
               <button
                 type="button"
                 aria-pressed={isActive}

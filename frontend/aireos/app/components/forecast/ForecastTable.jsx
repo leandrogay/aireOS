@@ -45,8 +45,8 @@ export default function ForecastTable({ points, metric, visibleSeries }) {
   }
 
   return (
-    <section className="bg-white">
-      <div className="mb-2 flex items-center justify-between gap-2">
+    <section className="min-w-0 bg-white">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="font-serif text-base text-deep-violet-blue">Monthly values</h3>
           <p className="text-[11px] text-deep-violet-blue/70">
@@ -54,6 +54,17 @@ export default function ForecastTable({ points, metric, visibleSeries }) {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <div className="sm:hidden">
+            <HeaderCheckboxFilter
+              id="month-mobile"
+              label="Month"
+              selected={activeMonthFilter}
+              options={monthOptions}
+              openId={openFilter}
+              setOpenId={setOpenFilter}
+              onChange={setMonthFilter}
+            />
+          </div>
           <button
             type="button"
             onClick={clearTableFilters}
@@ -72,9 +83,32 @@ export default function ForecastTable({ points, metric, visibleSeries }) {
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-md border border-lavander">
+      <div className={`${expanded ? '' : 'max-h-[55vh]'} overflow-y-auto rounded-lg border border-lavander sm:hidden`} aria-label="Monthly forecast values">
+        {rows.length === 0 ? (
+          <p className="p-4 text-sm text-deep-violet-blue/70">No rows match these table filters.</p>
+        ) : rows.map((point) => (
+          <article key={point.month_year} className="border-b border-lavander/70 p-3 last:border-b-0 even:bg-cream/30">
+            <h4 className="mb-2 font-semibold text-deep-violet-blue">{point.label}</h4>
+            <dl className="grid grid-cols-2 gap-x-3 gap-y-2">
+              {visibleColumns.map((series) => (
+                <div key={series.key} className="min-w-0">
+                  <dt className="text-[10px] font-semibold uppercase leading-tight tracking-wide text-deep-violet-blue/60">{series.label}</dt>
+                  <dd className="mt-0.5 text-sm font-medium tabular-nums text-deep-violet-blue">{formatTableValue(point[series.key], metric)}</dd>
+                </div>
+              ))}
+            </dl>
+            {formatModelMix(point.currentModels) && (
+              <p className="mt-2 border-t border-lavander/60 pt-2 text-xs text-deep-violet-blue/70" title={modelHint(point.currentModels)}>
+                Model: {formatModelMix(point.currentModels)}
+              </p>
+            )}
+          </article>
+        ))}
+      </div>
+
+      <div className="hidden min-w-0 overflow-x-auto rounded-md border border-lavander sm:block">
         <div className={expanded ? '' : 'max-h-[28vh] overflow-y-auto'}>
-          <table className="w-full table-fixed text-left text-xs text-deep-violet-blue">
+          <table className="aire-table-rows w-full min-w-[44rem] table-fixed text-left text-xs text-deep-violet-blue">
             <colgroup>
               <col className="w-[16%]" />
               {visibleColumns.map((series) => (

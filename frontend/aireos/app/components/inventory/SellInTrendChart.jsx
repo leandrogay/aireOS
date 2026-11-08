@@ -9,7 +9,8 @@ import {
 } from '@/components/ui/chart';
 
 import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
-import { BAR_ANIMATION } from '@/app/utils/trendChart';
+import { BAR_ANIMATION, yearAxisProps } from '@/app/utils/trendChart';
+import useMediaQuery from '@/hooks/useMediaQuery';
 
 import { labelledTooltipRow } from './chartTooltip';
 
@@ -23,6 +24,7 @@ const chartConfig = {
  * @param {{ trend: Array<{ month: string, sell_in: number }> }} props
  */
 export default function SellInTrendChart({ trend }) {
+  const mobile = useMediaQuery('(max-width: 639px)');
   if (trend.length === 0) {
     return <p className="text-sm text-deep-violet-blue/70">No inventory data for these filters.</p>;
   }
@@ -35,13 +37,14 @@ export default function SellInTrendChart({ trend }) {
         <BarChart accessibilityLayer data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
           <CartesianGrid vertical={false} stroke="var(--aire-lavender)" />
           <XAxis
-            dataKey="label"
+            dataKey={mobile ? 'month' : 'label'}
             interval={0}
-            height={52}
+            height={mobile ? 28 : 52}
             tick={{ fontSize: 9, fill: '#3A4369' }}
-            angle={-40}
-            textAnchor="end"
+            angle={mobile ? 0 : -40}
+            textAnchor={mobile ? 'middle' : 'end'}
             tickMargin={6}
+            {...(mobile ? yearAxisProps(rows, 'month') : {})}
           />
           <YAxis width={48} tick={{ fontSize: 10, fill: '#3A4369' }} tickFormatter={formatUnits} />
           <ChartTooltip

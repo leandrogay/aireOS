@@ -12,7 +12,8 @@ import {
 
 import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
 import { dotRevealDelay, lineSweepTimings } from '@/app/utils/lineAnimation';
-import { BAR_ANIMATION } from '@/app/utils/trendChart';
+import { BAR_ANIMATION, yearAxisProps } from '@/app/utils/trendChart';
+import useMediaQuery from '@/hooks/useMediaQuery';
 
 import { labelledTooltipRow } from './chartTooltip';
 
@@ -58,6 +59,7 @@ function timedDot(timing) {
  * @param {{ months: Array<{ month: string, sell_in_actual: number | null, sell_in_recommended: number | null, sell_out_actual: number | null, sell_out_forecast: number | null }>, actualsThrough: string | null }} props
  */
 export default function SellInOutlookChart({ months, actualsThrough }) {
+  const mobile = useMediaQuery('(max-width: 639px)');
   if (months.length === 0) {
     return <p className="text-sm text-deep-violet-blue/70">No actuals for these filters.</p>;
   }
@@ -85,13 +87,14 @@ export default function SellInOutlookChart({ months, actualsThrough }) {
           <ComposedChart accessibilityLayer data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
             <CartesianGrid vertical={false} stroke="var(--aire-lavender)" />
             <XAxis
-              dataKey="label"
+              dataKey={mobile ? 'month' : 'label'}
               interval={0}
-              height={52}
+              height={mobile ? 28 : 52}
               tick={{ fontSize: 9, fill: '#3A4369' }}
-              angle={-40}
-              textAnchor="end"
+              angle={mobile ? 0 : -40}
+              textAnchor={mobile ? 'middle' : 'end'}
               tickMargin={6}
+              {...(mobile ? yearAxisProps(rows, 'month') : {})}
             />
             <YAxis width={48} tick={{ fontSize: 10, fill: '#3A4369' }} tickFormatter={formatUnits} />
             {/* Above the legend, which is drawn after it and would show through. */}
