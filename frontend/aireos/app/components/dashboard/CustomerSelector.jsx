@@ -27,7 +27,9 @@ export default function CustomerSelector({ selected, onChange, options, loading,
         allLabel="All customers"
         noneMeansAll={false}
         maxSelected={MAX_COMPARED_CUSTOMERS}
-        placeholder={loading ? 'Loading customers…' : 'No customers'}
+        // With customers to pick from, an empty box asks for one; "No
+        // customers" is only true when there are none.
+        placeholder={loading ? 'Loading customers…' : options.length ? 'Select customers' : 'No customers'}
         disabled={loading || options.length === 0}
       />
       {error && <p className="text-red-600 text-xs mt-1">{error}</p>}

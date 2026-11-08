@@ -3,23 +3,27 @@
 import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts';
 
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip } from '@/components/ui/chart';
+import { ESTIMATE_PILL_CLASS } from '@/components/dashboard/EstMark';
 import { hasEstimate } from '@/app/utils/estimatedRevenue';
+import { cn } from '@/lib/utils';
 import { trendChartKind, trendRows, trendSeries } from '@/app/utils/customerTrend';
 import {
   BAR_ANIMATION,
   CHART_SIZE_CLASS,
   MAX_BAR_SIZE,
+  MAX_DOTTED_POINTS,
   TILTED_LABEL_LEFT_MARGIN,
   formatMetric,
-  metricAxisFormatter,
+  chartDataRange,
+  metricYAxisProps,
+  CHART_TOP_MARGIN,
   periodAxisProps,
+  weekMonthGroups,
   yearAxisProps,
 } from '@/app/utils/trendChart';
+import MonthAxis from '@/components/dashboard/MonthAxis';
 import useMediaQuery from '@/hooks/useMediaQuery';
 
-// Past this many points a dot on every one crowds the line; the hovered
-// point still gets one (activeDot).
-const MAX_DOTTED_POINTS = 26;
 
 function formatValue(metric, value) {
   // No sales loaded for that customer and period.
@@ -27,10 +31,10 @@ function formatValue(metric, value) {
   return formatMetric(metric, value);
 }
 
-// The hovered period: every customer's figure in its colour, "(EST)" after
+// The hovered period: every customer's figure in its colour, an est. tag after
 // the name of any whose revenue is partly estimated, and the customers'
 // total. Two columns, so names and figures each line up with one fixed gap
-// between them, whichever names carry (EST).
+// between them, whichever names carry the tag.
 function TrendTooltip({ active, payload, metric, series }) {
   if (!active || !payload?.length) return null;
   const row = payload[0].payload;
@@ -45,7 +49,7 @@ function TrendTooltip({ active, payload, metric, series }) {
             <span className="h-2.5 w-2.5 shrink-0 rounded-[2px]" style={{ backgroundColor: item.color }} />
             {item.label}
             {hasEstimate(row[`${item.key}Estimated`]) && (
-              <span className="text-[10px] font-semibold tracking-wider text-violet">(EST)</span>
+              <span className={cn(ESTIMATE_PILL_CLASS, 'h-4 px-1 text-[10px]')}>est.</span>
             )}
           </span>
           <span className="text-right font-mono font-medium text-deep-violet-blue tabular-nums">
@@ -81,21 +85,21 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
   const kind = trendChartKind(rows.length);
   const chartConfig = Object.fromEntries(series.map((item) => [item.key, { label: item.label, color: item.color }]));
   const axisProps = mobile ? yearAxisProps(rows, 'periodStart') : periodAxisProps(rows, granularity);
+  // On a phone the axis is labelled by year (yearAxisProps), so no month axis.
+  const monthGroups = mobile ? null : weekMonthGroups(rows, granularity);
   // Bars sit in the middle of their slot; a line's first and last points sit
   // on the plot's edges, so the line chart pads its x-axis and keeps room on
   // the right for its last point and label.
   const margin = {
+    top: CHART_TOP_MARGIN,
     bottom: 8,
     ...(axisProps.angle ? { left: TILTED_LABEL_LEFT_MARGIN } : {}),
     ...(kind === 'lines' ? { right: 16 } : {}),
   };
-  const yAxis = (
-    <YAxis
-      tickFormatter={metricAxisFormatter(metric)}
-      width={50}
-      tick={{ fontSize: 10 }}
-    />
-  );
+  // Customers sit side by side (bars) or as separate lines, never stacked,
+  // so the axis reaches the single tallest customer's value.
+  const seriesKeys = series.map((item) => item.key);
+  const yAxis = <YAxis {...metricYAxisProps(metric, chartDataRange(rows, seriesKeys, { stacked: false }))} />;
   // Above the legend, which is drawn after it and would show through.
   const tooltip = (
     <ChartTooltip content={<TrendTooltip metric={metric} series={series} />} wrapperStyle={{ zIndex: 10 }} />
@@ -103,7 +107,7 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
 
   if (customers.length === 0) {
     return (
-      <p className="flex flex-1 items-center text-sm text-deep-violet-blue/60">
+      <p className="flex flex-1 items-center justify-center text-center text-sm text-deep-violet-blue/60">
         Select at least one customer.
       </p>
     );
@@ -111,7 +115,7 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
 
   if (series.length === 0 || rows.length === 0) {
     return (
-      <p className="flex flex-1 items-center text-sm text-deep-violet-blue/60">
+      <p className="flex flex-1 items-center justify-center text-center text-sm text-deep-violet-blue/60">
         No sales for the selected customers in this period.
       </p>
     );
@@ -125,6 +129,7 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
             <CartesianGrid vertical={false} />
             <XAxis dataKey={mobile ? 'periodStart' : 'displayLabel'} {...axisProps} />
             {yAxis}
+            <MonthAxis groups={monthGroups} />
             {tooltip}
             <ChartLegend content={<ChartLegendContent />} />
             {series.map((item) => (
@@ -136,6 +141,7 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
             <CartesianGrid vertical={false} />
             <XAxis dataKey={mobile ? 'periodStart' : 'displayLabel'} {...axisProps} padding={{ left: 24, right: 24 }} />
             {yAxis}
+            <MonthAxis groups={monthGroups} />
             {tooltip}
             <ChartLegend content={<ChartLegendContent />} />
             {series.map((item) => (
