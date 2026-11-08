@@ -15,8 +15,11 @@ Team WIP x Aire - FYP
 Install these before doing anything else:
 
 - **Python 3.15** — [python.org/downloads](https://www.python.org/downloads/)
-- **Node.js 18+ and npm** — [nodejs.org](https://nodejs.org/)
+- **Node.js 20.12+ (22 LTS recommended) and npm** — [nodejs.org](https://nodejs.org/).
+  Next.js 16 and `next.config.mjs` (`process.loadEnvFile`) do not run on older versions.
 - **Git**
+- **Google Cloud CLI (`gcloud`)** — only if you sign in with your own Google account instead of
+  a `gcp-key.json`, or to deploy
 
 Check your versions:
 
@@ -27,13 +30,107 @@ npm --version
 git --version
 ```
 
-## First-Time Setup
+## Setting up the servers (local development)
 
-Clone the repo, then set up each side separately.
-Frontend and Backend specific instructions are located in the respective folder READMEs.
+aireOS runs as two servers side by side: the **backend** (FastAPI, port 8000) and the
+**frontend** (Next.js, port 3000). Both need their own env file. PowerShell is shown; macOS/Linux
+differences are noted.
 
-### Environment variables
-Download the `.env.frontend` file from Google Drive and place it in `frontend\aireos\`.
+### 1. Clone the repo
+
+```powershell
+git clone <repo-url> aireOS
+cd aireOS
+```
+
+### 2. Backend: install
+
+```powershell
+cd backend
+py -3.15 -m venv venv
+.\venv\Scripts\Activate.ps1      # macOS/Linux: python3.15 -m venv venv; source venv/bin/activate
+pip install -r requirements.txt
+```
+
+If PowerShell refuses to run `Activate.ps1`, run
+`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once and try again.
+
+### 3. Backend: configure
+
+```powershell
+copy .env.example .env.backend   # macOS/Linux: cp .env.example .env.backend
+```
+
+Fill in `backend/.env.backend` (ask the team for the values): `GCP_PROJECT_ID`, `GCS_BUCKET_NAME`,
+`POSTGRESQL_INSTANCE_CONNECTION_NAME`, `DB_IAM_USER` and `DB_NAME`. Everything else has a working
+default for local use; leave `AUTH_ENABLED=false` until you need SSO (see below).
+
+Then give the backend Google credentials, in **one** of two ways:
+
+- **Service-account key:** place the key file at `backend/gcp-key.json` (the default paths in
+  `.env.example` already point there). Never commit it.
+- **Your own Google login:** blank out `GOOGLE_APPLICATION_CREDENTIALS` and
+  `SERVICE_ACCOUNT_KEY_PATH` in `.env.backend`, then run
+  `gcloud auth application-default login`. Your account needs access to the project's
+  Cloud SQL, GCS, BigQuery and Vertex AI.
+
+### 4. Frontend: install and configure
+
+```powershell
+cd ..\frontend\aireos
+npm install
+```
+
+Download `.env.frontend` from the team Google Drive into `frontend/aireos/`. It must contain at least
+`NEXT_PUBLIC_API_URL=http://localhost:8000`. `npm run dev` fails with `ENOENT ... .env.frontend`
+if the file is missing.
+
+### 5. Start both servers
+
+Use two terminals, both from the repo root.
+
+**Terminal 1 — backend:**
+
+```powershell
+cd backend
+.\venv\Scripts\Activate.ps1
+uvicorn app.main:app --reload
+```
+
+**Terminal 2 — frontend:**
+
+```powershell
+cd frontend\aireos
+npm run dev
+```
+
+### 6. Check it works
+
+- [http://localhost:8000](http://localhost:8000) returns `{"status": "ok"}`, and
+  [http://localhost:8000/docs](http://localhost:8000/docs) lists the API.
+- [http://localhost:8000/api/promotions/health/db](http://localhost:8000/api/promotions/health/db)
+  confirms Cloud SQL is reachable.
+- [http://localhost:3000](http://localhost:3000) opens the dashboard.
+
+### Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| `ENOENT ... .env.frontend` | `.env.frontend` is missing from `frontend/aireos/` (step 4) |
+| API calls return 503 mentioning credentials | `gcp-key.json` missing, or run `gcloud auth application-default login` (step 3) |
+| Browser shows a CORS error | Open the app at `localhost:3000` or `127.0.0.1:3000`, or add your origin to `CORS_ALLOWED_ORIGINS` |
+| `Address already in use` | Another server is on that port; stop it, or run `uvicorn app.main:app --reload --port 8001` and point `NEXT_PUBLIC_API_URL` at it |
+| `uvicorn` not found | The venv is not activated (`.\venv\Scripts\Activate.ps1`) |
+
+### Running the tests
+
+```powershell
+cd backend; .\venv\Scripts\python.exe -m pytest -q    # no cloud credentials needed
+cd frontend\aireos; npm test; npm run lint
+```
+
+More detail on each side is in [backend/README.md](backend/README.md) and
+[frontend/aireos/README.md](frontend/aireos/README.md).
 
 ### Google Workspace SSO
 

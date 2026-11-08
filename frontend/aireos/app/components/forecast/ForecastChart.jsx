@@ -11,6 +11,7 @@ import LineChartSkeleton from '@/components/ui/LineChartSkeleton';
 import { Skeleton } from '@/components/ui/skeleton';
 import LineToggle from '@/components/ui/LineToggle';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import ForecastConfidenceDetails from '@/components/forecast/ForecastConfidenceDetails';
 import ForecastPointDetails from '@/components/forecast/ForecastPointDetails';
 import ForecastPromoPanel from '@/components/forecast/ForecastPromoPanel';
 import ForecastPromoToggle from '@/components/forecast/ForecastPromoToggle';
@@ -220,9 +221,17 @@ export default function ForecastChart({
   lastRun,
   salesLabel,
   salesLoadedAt,
-  confidence,
+  pastAccuracy = null,
   updatingBadge = null,
   initialNotes = [],
+  // /forecast only: the selected model has no Initial for any SKU in scope
+  // (greys out its pill); undefined falls back to "no Initial value in view
+  // for one series". `notes` are extra lines under the legend, `modelLabel`
+  // names the model in the table, `emptyMessage` replaces the no-data text.
+  initialMissing,
+  notes = [],
+  modelLabel = '',
+  emptyMessage = 'No forecast data matches these filters.',
   yearTotals = [],
   yearTotalsLoading = false,
   horizonVolume = null,
@@ -261,7 +270,13 @@ export default function ForecastChart({
   // Previous is empty until the forecast has a second month of sales. Its
   // pill is then greyed out and the line and table column stay off.
   const previousAvailable = hasPreviousLine(points);
-  const shownSeries = previousAvailable ? visibleSeries : { ...visibleSeries, previous: false };
+  // Same for Initial when the model has none for the SKUs in scope.
+  const initialMissingForScope = initialMissing ?? (singleSeries && !points.some((point) => point.initial != null));
+  const shownSeries = {
+    ...visibleSeries,
+    ...(previousAvailable ? {} : { previous: false }),
+    ...(initialMissingForScope ? { initial: false } : {}),
+  };
   const visibleKeys = allSeries.filter((series) => shownSeries[series.key]).map((series) => series.key);
   const hasVisibleLine = visibleKeys.length > 0;
   const hasData = points.some((point) =>
@@ -304,15 +319,19 @@ export default function ForecastChart({
   // Every line drawn, including the Scenario builder's, needs a timing.
   const lineTimings = lineSweepTimings(plotData, allSeries.map((series) => series.key), LINE_SWEEP);
 
+  // Points only carry a range for one customer + one SKU (buildMonthlyPoints):
+  // added-up bounds would overstate the range of a total.
   const showRange = Boolean(shownSeries.current) && chartData.some((point) => point.range);
   const visibleValues = chartData.flatMap((point) => [
     ...visibleKeys.map((key) => point[key]),
     ...(showRange && point.range ? point.range : []),
   ]).filter((value) => typeof value === 'number');
   // Hover text for the line pills, so the explanations don't crowd the chart.
-  // One SKU with no Initial values in range gets its own reason.
-  const initialMissingForSku = singleSeries && !points.some((point) => point.initial != null);
-  const lineHints = forecastLineHints({ singleSeries, initialMissingForSku, previousAvailable });
+  const lineHints = forecastLineHints({
+    singleSeries,
+    initialMissingForSku: initialMissingForScope,
+    previousAvailable,
+  });
   const yDomain = visibleValues.length ? niceYDomain(visibleValues) : [0, 1];
   const hoverPoint = chartPoints.find((point) => point.month_year === hoverMonth);
   const hoverPromos = promosOverlappingMonth(
@@ -463,7 +482,7 @@ export default function ForecastChart({
             visible={shownSeries}
             onToggle={onToggleSeries}
             hints={lineHints}
-            disabled={{ previous: !previousAvailable }}
+            disabled={{ previous: !previousAvailable, initial: initialMissingForScope }}
           />
           <ForecastPromoToggle
             selectedTypes={selectedPromoTypes}
@@ -498,7 +517,7 @@ export default function ForecastChart({
               </div>
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">No forecast data matches these filters.</p>
+            <p className="text-sm text-muted-foreground">{emptyMessage}</p>
           )
         ) : (
           <>
@@ -569,8 +588,13 @@ export default function ForecastChart({
                                   className="mt-1 border-t border-lavander pt-1.5"
                                 />
                               ) : null}
+                              <ForecastConfidenceDetails
+                                entries={point.confidence}
+                                formatValue={formatValue}
+                                className="mt-1 border-t border-lavander pt-1.5"
+                              />
                               <ForecastPointDetails
-                                details={forecastPointDetails(point, metric, formatValue)}
+                                details={forecastPointDetails(point, metric)}
                                 className="mt-1 border-t border-lavander pt-1.5"
                               />
                             </>
@@ -590,8 +614,7 @@ export default function ForecastChart({
                       ifOverflow="visible"
                     />
                   ))}
-                  {/* Archived for now: 80% confidence band around the current forecast line.
-                      Restore by uncommenting this block.
+                  {/* 80% range around the Current line: one customer + one SKU only. */}
                   {showRange ? (
                     <Area
                       dataKey="range"
@@ -606,7 +629,6 @@ export default function ForecastChart({
                       isAnimationActive={false}
                     />
                   ) : null}
-                  */}
                   {selectedBand && selectedBand.x1 >= -0.5 && selectedBand.x2 > 0 ? (
                     <ReferenceArea
                       x1={Math.max(selectedBand.x1, 0)}
@@ -671,7 +693,8 @@ export default function ForecastChart({
                       name={series.label}
                       type="monotone"
                       stroke={series.color}
-                      strokeWidth={2.4}
+                      strokeWidth={series.strokeWidth ?? 2.4}
+                      strokeOpacity={series.strokeOpacity ?? 1}
                       strokeDasharray={series.dash}
                       dot={(props) => (
                         <SeriesDot
@@ -718,8 +741,15 @@ export default function ForecastChart({
                   <ForecastPromoPanel
                     monthLabel={hoverPoint?.label ?? formatMonthLabel(hoverMonth)}
                     seriesValues={seriesValues}
-                    details={forecastPointDetails(hoverPoint, metric, formatValue)}
+                    details={forecastPointDetails(hoverPoint, metric)}
                     formatValue={formatValue}
+                    confidenceDetails={
+                      <ForecastConfidenceDetails
+                        entries={hoverPoint?.confidence}
+                        formatValue={formatValue}
+                        interactive
+                      />
+                    }
                     scenarioDetails={
                       showSimulated ? (
                         <ScenarioPointDetails
@@ -743,9 +773,12 @@ export default function ForecastChart({
                 lastRun={lastRun}
                 salesLabel={salesLabel}
                 salesLoadedAt={salesLoadedAt}
-                confidence={confidence}
+                pastAccuracy={pastAccuracy}
+                // The hover card can't be hovered itself, so the confidence
+                // help sits here whenever the chart has some to explain.
+                showConfidenceHelp={points.some((point) => point.confidence?.length)}
                 updatingBadge={updatingBadge}
-                initialNotes={initialNotes}
+                notes={[...initialNotes, ...notes]}
                 className="-mt-6 px-3 pb-1 pt-0"
               />
             </div>
@@ -770,6 +803,7 @@ export default function ForecastChart({
                 points={points}
                 metric={metric}
                 visibleSeries={shownSeries}
+                modelLabel={modelLabel}
               />
             )}
           </>

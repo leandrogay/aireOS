@@ -15,18 +15,36 @@ BQ_FORECAST_OUTPUT_VIEW = config.BQ_FORECAST_OUTPUT_VIEW
 # the output view only carries actuals for months inside its forecast window.
 BQ_MONTHLY_SALES_VIEW = config.BQ_MONTHLY_SALES_VIEW
 
-# Named explicitly, never SELECT *, so columns the pipeline adds later (tier
-# columns, model tags) can't change the API's shape. All from the view except
-# customer_name / product_name, which come from the catalog joins below.
+# The view has one row per customer x SKU x month x tier: the same three
+# models for every SKU, side by side, never a "best model" mixed per month.
+# The client builds their own plan on the model they pick, so nothing here
+# ranks or blends tiers, and no total may ever add rows of different tiers.
+# Tier 0 is available for every SKU, so readers that need one line
+# (Inventory, the Assistant, the Scenario builder) use it.
+FORECAST_TIERS = ("tier0", "tier1_basic", "tier1_advanced")
+DEFAULT_FORECAST_TIER = "tier0"
+
+# Named explicitly, never SELECT *, so columns the pipeline adds later can't
+# change the API's shape. All from the view except customer_name /
+# product_name, which come from the catalog joins below.
 FORECAST_OUTPUT_COLUMNS = [
     "customer_id",
     "customer_name",
     "sku",
     "product_name",
     "month_year",
+    "tier",
+    "tier_label",
+    "tier_order",
+    "source_model",
+    "is_available",
+    "unavailable_reason",
+    "months_of_history",
     "forecast_initial",
     "initial_source_model",
     "initial_generated_at",
+    "initial_low_80",
+    "initial_high_80",
     "forecast_previous",
     "previous_source_model",
     "previous_generated_at",
@@ -37,6 +55,9 @@ FORECAST_OUTPUT_COLUMNS = [
     "current_high_80",
     "current_backtest_smape",
     "current_confidence_band",
+    "month_range_pct",
+    "month_confidence_band",
+    "xreg_used_typical_promo",
     "promo_mix",
 ]
 
@@ -98,6 +119,12 @@ def _json_int(value):
     return int(value)
 
 
+def _json_bool(value) -> bool | None:
+    if value is None or pd.isna(value):
+        return None
+    return bool(value)
+
+
 def _json_str(value):
     if value is None or pd.isna(value):
         return None
@@ -117,9 +144,19 @@ def _forecast_output_row(record: dict) -> dict:
         "sku": _json_str(record.get("sku")),
         "product_name": _json_str(record.get("product_name")),
         "month_year": _iso_date(record.get("month_year")),
+        "tier": _json_str(record.get("tier")),
+        "tier_label": _json_str(record.get("tier_label")),
+        "tier_order": _json_int(record.get("tier_order")),
+        "source_model": _json_str(record.get("source_model")),
+        # is_available is the same on every row of a SKU + tier.
+        "is_available": bool(_json_bool(record.get("is_available"))),
+        "unavailable_reason": _json_str(record.get("unavailable_reason")),
+        "months_of_history": _json_int(record.get("months_of_history")),
         "forecast_initial": _json_number(record.get("forecast_initial")),
         "initial_source_model": _json_str(record.get("initial_source_model")),
         "initial_generated_at": _iso_stamp(record.get("initial_generated_at")),
+        "initial_low_80": _json_number(record.get("initial_low_80")),
+        "initial_high_80": _json_number(record.get("initial_high_80")),
         "forecast_previous": _json_number(record.get("forecast_previous")),
         "previous_source_model": _json_str(record.get("previous_source_model")),
         "previous_generated_at": _iso_stamp(record.get("previous_generated_at")),
@@ -130,6 +167,13 @@ def _forecast_output_row(record: dict) -> dict:
         "current_high_80": _json_number(record.get("current_high_80")),
         "current_backtest_smape": _json_number(record.get("current_backtest_smape")),
         "current_confidence_band": _json_str(record.get("current_confidence_band")),
+        # Per month, Current line only: half the 80% range as a % of the
+        # forecast, and its band (<= 20 high, <= 50 medium, else low).
+        "month_range_pct": _json_number(record.get("month_range_pct")),
+        "month_confidence_band": _json_str(record.get("month_confidence_band")),
+        # Advanced only: the month's promotion was unfamiliar to the model,
+        # so it used the SKU's usual promotion instead.
+        "xreg_used_typical_promo": bool(_json_bool(record.get("xreg_used_typical_promo"))),
         "promo_mix": _json_str(record.get("promo_mix")),
     }
 
@@ -213,16 +257,22 @@ def get_forecast_output_rows(
     customer_name: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
+    tier: str | None = None,
 ) -> list[dict]:
-    """Forecast rows from aire_forecasting_output, one per customer x SKU x month.
+    """Forecast rows from aire_forecasting_output, one per customer x SKU x month x tier.
 
-    Cartons only; forecast_service prices them. The initial / previous /
-    current lines and the model behind each month are already chosen by
-    the BigQuery pipeline, so nothing here re-derives them.
+    Cartons only; forecast_service prices them. With no `tier` every tier
+    comes back (the Forecast page switches models without a new request);
+    callers that add rows up must pass one tier, or the totals triple.
     """
+    if tier is not None and tier not in FORECAST_TIERS:
+        raise ValueError(f"tier must be one of {', '.join(FORECAST_TIERS)}")
     where_clauses, query_parameters = _name_and_date_filters(
         product_name, customer_name, start_date, end_date, "month_year"
     )
+    if tier is not None:
+        where_clauses.append("tier = @tier")
+        query_parameters.append(bigquery.ScalarQueryParameter("tier", "STRING", tier))
     source = _FORECAST_OUTPUT_WITH_NAMES.format(
         view=BQ_FORECAST_OUTPUT_VIEW, dataset=_catalog_dataset()
     )
@@ -232,7 +282,7 @@ def get_forecast_output_rows(
           {", ".join(FORECAST_OUTPUT_COLUMNS)}
         FROM output_with_names
         WHERE {" AND ".join(where_clauses)}
-        ORDER BY customer_name, product_name, month_year
+        ORDER BY customer_name, product_name, tier_order, month_year
     """
     job_config = bigquery.QueryJobConfig(query_parameters=query_parameters)
     client = get_bigquery_client()

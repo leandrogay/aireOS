@@ -3,8 +3,7 @@
 import { useMemo, useState } from 'react';
 
 import HeaderCheckboxFilter from '@/components/ui/HeaderCheckboxFilter';
-import { modelHint } from '@/app/utils/forecastLineText';
-import { FORECAST_SERIES, formatModelMix, uniqueMonthOptions } from '@/app/utils/forecastView';
+import { FORECAST_SERIES, uniqueMonthOptions } from '@/app/utils/forecastView';
 
 function formatTableValue(value, metric) {
   if (value == null) return '—';
@@ -17,7 +16,14 @@ function formatTableValue(value, metric) {
   return Math.round(value).toLocaleString();
 }
 
-export default function ForecastTable({ points, metric, visibleSeries }) {
+/**
+ * Month-by-month values of the lines on the chart, for the model the chart
+ * shows (`modelLabel`, e.g. "Tier 0 · Baseline"): `points` are already that
+ * one tier's (utils/forecastTiers.js), so the table has no per-month model.
+ *
+ * @param {{ points: object[], metric: 'units' | 'revenue', visibleSeries: Record<string, boolean>, modelLabel?: string }} props
+ */
+export default function ForecastTable({ points, metric, visibleSeries, modelLabel = '' }) {
   const [monthFilter, setMonthFilter] = useState([]);
   const [openFilter, setOpenFilter] = useState(null);
   const [expanded, setExpanded] = useState(false);
@@ -51,6 +57,7 @@ export default function ForecastTable({ points, metric, visibleSeries }) {
           <h3 className="font-serif text-base text-deep-violet-blue">Monthly values</h3>
           <p className="text-[11px] text-deep-violet-blue/70">
             {rows.length} of {points.length} months shown
+            {modelLabel ? ` · ${modelLabel}` : ''}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -114,7 +121,6 @@ export default function ForecastTable({ points, metric, visibleSeries }) {
               {visibleColumns.map((series) => (
                 <col key={series.key} />
               ))}
-              <col className="w-[22%]" />
             </colgroup>
             <thead className="sticky top-0 z-10 bg-cream">
               <tr className="border-b border-lavander">
@@ -137,15 +143,12 @@ export default function ForecastTable({ points, metric, visibleSeries }) {
                     {series.label}
                   </th>
                 ))}
-                <th className="px-2.5 py-2 text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">
-                  Model (Current)
-                </th>
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td className="px-2.5 py-3 text-deep-violet-blue/80" colSpan={visibleColumns.length + 2}>
+                  <td className="px-2.5 py-3 text-deep-violet-blue/80" colSpan={visibleColumns.length + 1}>
                     No rows match these table filters.
                   </td>
                 </tr>
@@ -161,12 +164,6 @@ export default function ForecastTable({ points, metric, visibleSeries }) {
                         {formatTableValue(point[series.key], metric)}
                       </td>
                     ))}
-                    <td
-                      className="truncate px-1.5 py-2"
-                      title={[formatModelMix(point.currentModels), modelHint(point.currentModels)].filter(Boolean).join('\n')}
-                    >
-                      {formatModelMix(point.currentModels) || '—'}
-                    </td>
                   </tr>
                 ))
               )}

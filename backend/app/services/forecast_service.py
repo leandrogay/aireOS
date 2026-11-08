@@ -123,20 +123,64 @@ def add_forecast_revenue(rows: list[dict], prices: dict[tuple[int, str], float])
 _GENERATED_AT_COLUMNS = ("current_generated_at", "previous_generated_at", "initial_generated_at")
 
 
-def forecast_stamps_from_rows(rows: list[dict]) -> dict:
-    """Latest pipeline run behind each forecast line, from rows already fetched.
-
-    Same answer as MAX(<line>_generated_at) over the output view for the
-    customer, without a second read of that slow view: every month of one
-    customer's run carries the same stamp. The stamps are uniform
-    YYYY-MM-DDTHH:MM:SSZ strings (bigquery._iso_stamp), so max() on the
-    strings is the latest time. A line with no rows in scope stays None.
-    """
+def _latest_stamps(rows: list[dict]) -> dict:
     stamps = {}
     for column in _GENERATED_AT_COLUMNS:
         values = [row[column] for row in rows if row.get(column)]
         stamps[column] = max(values) if values else None
     return stamps
+
+
+def forecast_stamps_from_rows(rows: list[dict]) -> dict:
+    """Latest pipeline run behind each forecast line, overall and per tier.
+
+    Same answer as MAX(<line>_generated_at) over the output view for the
+    scope, without a second read of that slow view. The stamps are uniform
+    YYYY-MM-DDTHH:MM:SSZ strings (bigquery._iso_stamp), so max() on the
+    strings is the latest time. A line with no rows in scope stays None.
+    The top-level stamps cover every tier (the All customers view, which
+    averages the models); `by_tier` is what a page showing one model reads.
+    """
+    by_tier = {}
+    for tier in bigquery_service.FORECAST_TIERS:
+        by_tier[tier] = _latest_stamps([row for row in rows if row.get("tier") == tier])
+    return {**_latest_stamps(rows), "by_tier": by_tier}
+
+
+def forecast_tiers_from_rows(rows: list[dict]) -> list[dict]:
+    """The models in scope, in tier_order, with the label the view gives each."""
+    tiers = {}
+    for row in rows:
+        tier = row.get("tier")
+        if tier and tier not in tiers:
+            tiers[tier] = {"tier": tier, "tier_label": row.get("tier_label"), "tier_order": row.get("tier_order")}
+    return sorted(tiers.values(), key=lambda item: (item["tier_order"] is None, item["tier_order"] or 0, item["tier"]))
+
+
+def forecast_availability(rows: list[dict]) -> dict:
+    """{sku: {tier: {is_available, unavailable_reason, has_initial}}} for the rows in scope.
+
+    is_available is the same on every row of a customer x SKU x tier. With
+    several customers in scope a SKU's tier counts as available only when
+    it is for all of them (the page only offers the Model choice for one
+    customer, so this is just a safe answer). has_initial is whether any
+    month has a forecast_initial: a tier can be available with no Initial
+    when the SKU had under 12 months of history when the yearly plan was made.
+    """
+    availability: dict[str, dict[str, dict]] = {}
+    for row in rows:
+        sku, tier = row.get("sku"), row.get("tier")
+        if not sku or not tier:
+            continue
+        entry = availability.setdefault(sku, {}).setdefault(
+            tier, {"is_available": True, "unavailable_reason": None, "has_initial": False}
+        )
+        if not row.get("is_available"):
+            entry["is_available"] = False
+            entry["unavailable_reason"] = entry["unavailable_reason"] or row.get("unavailable_reason")
+        if row.get("forecast_initial") is not None:
+            entry["has_initial"] = True
+    return availability
 
 
 def get_forecast_view(
@@ -147,10 +191,13 @@ def get_forecast_view(
 ) -> dict:
     """One Forecast-page payload: forecast rows, monthly actuals, and overlapping promos.
 
-    Forecast rows come from aire_forecasting_output (the BigQuery pipeline
-    has already picked the initial / previous / current lines and the model
-    per month) and are priced here at realised price. Actuals come from
-    v_customer_monthly_sales. Promos come from Postgres.
+    Forecast rows come from aire_forecasting_output with every tier (three
+    rows per customer x SKU x month), so the page switches models without a
+    new request; they are priced here at realised price, per row, and never
+    added up across tiers. `availability` and `tiers` drive the Model
+    picker. Actuals come from v_customer_monthly_sales (not the view's
+    actual_quantity_cartons, which repeats on every tier's row). Promos
+    come from Postgres.
     """
     product_name = product_name or None
     customer_name = customer_name or None
@@ -191,6 +238,8 @@ def get_forecast_view(
     return {
         **filters,
         "rows": add_forecast_revenue(rows, prices),
+        "tiers": forecast_tiers_from_rows(rows),
+        "availability": forecast_availability(rows),
         "actuals": actuals,
         "promotions": promotions,
         "freshness": {

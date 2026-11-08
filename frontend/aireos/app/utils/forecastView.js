@@ -1,11 +1,12 @@
-import { modelHint } from '@/app/utils/forecastLineText';
+import { confidenceEntry } from '@/app/utils/forecastTiers';
 import { splitPromoType } from '@/app/utils/promotionForm';
 
 export const DEFAULT_PRODUCT_NAME = 'Aire Ultra Tape L';
 
 // Each forecast line is one column of aire_forecasting_output (see backend
-// bigquery.FORECAST_OUTPUT_COLUMNS); the BigQuery pipeline picks the best
-// model per month, so the page only sums and draws them.
+// bigquery.FORECAST_OUTPUT_COLUMNS), for the one model (tier) the page shows:
+// every line switches together, so a line never mixes models
+// (utils/forecastTiers.js picks the rows).
 // `archived: true` keeps a line's code and data path intact but hides it from
 // the page (chart, toggles, table); no line is archived today.
 // `connectNulls: false` leaves a gap where the column is NULL instead of
@@ -22,6 +23,7 @@ const ALL_FORECAST_SERIES = [
   // The final forecast made on the month before the newest sales month;
   // empty until the forecast dataset has a second sales month, when
   // ForecastChart greys its pill out instead of drawing it.
+  // Faint, so Current reads as the line to plan on.
   {
     key: 'previous',
     label: 'Previous',
@@ -29,9 +31,11 @@ const ALL_FORECAST_SERIES = [
     dash: '8 3',
     shape: 'triangle',
     connectNulls: false,
+    strokeOpacity: 0.45,
+    strokeWidth: 1.8,
   },
-  // The latest run, 12 months after the newest sales month.
-  { key: 'current', label: 'Current', color: '#0D9488', dash: '3 3', shape: 'diamond' },
+  // The latest run, 12 months after the newest sales month. Bold and solid.
+  { key: 'current', label: 'Current', color: '#0D9488', dash: undefined, shape: 'diamond', strokeWidth: 3 },
 ];
 
 export const FORECAST_SERIES = ALL_FORECAST_SERIES.filter((series) => !series.archived);
@@ -39,17 +43,6 @@ export const FORECAST_SERIES = ALL_FORECAST_SERIES.filter((series) => !series.ar
 export const ALL_SERIES_VISIBLE = Object.fromEntries(
   FORECAST_SERIES.map((series) => [series.key, true])
 );
-
-// source_model values written by run_monthly_forecast_pipeline /
-// run_tier0_legacy in BigQuery. Keep in sync with those procedures. The two
-// ARIMA models get their own labels: "advanced" is ARIMA_PLUS_XREG (with the
-// promotion input), "basic" is ARIMA_PLUS (without it), so the page shows
-// which months already include the promotion entered for them.
-export const SOURCE_MODEL_LABELS = {
-  tier1_arima: 'Tier 1 basic',
-  tier1_arimax: 'Tier 1 advanced',
-  tier0_legacy: 'Tier 0 baseline',
-};
 
 // promo_mix values from fc_future_input. no_promos also means "nothing
 // entered yet" for future months.
@@ -59,11 +52,6 @@ export const PROMO_MIX_LABELS = {
   weekly_only: 'Weekly offer only',
   no_promos: 'None entered',
 };
-
-export function sourceModelLabel(model) {
-  if (!model) return '';
-  return SOURCE_MODEL_LABELS[model] ?? model;
-}
 
 // Carton column on an output row per series, and the revenue column the
 // backend priced it into (forecast_service.add_forecast_revenue).
@@ -256,11 +244,14 @@ export function formatTimestamp(value) {
 
 /**
  * One chart/table point per month: Actual plus the three forecast lines,
- * summed across the SKUs in scope.
+ * summed across the SKUs in scope. `rows` must be one model's rows (or the
+ * All customers average, utils/forecastTiers.js), never several tiers'.
  *
  * The 80% range and promo situation belong to one series, so
  * they are only filled when `singleSeries` is true (one customer + one SKU).
  * Adding per-SKU bounds does not give an 80% range for the total.
+ * `confidence` holds one entry per SKU with a Current forecast that month
+ * (forecastTiers.confidenceEntry); rows with no tier (the average) add none.
  *
  * @param {object[]} rows forecast rows from GET /api/forecast
  * @param {object[]} actuals monthly actuals from GET /api/forecast
@@ -294,14 +285,12 @@ export function buildMonthlyPoints(rows, actuals = [], metric = 'units', { singl
       if (value != null) point[seriesKey] = (point[seriesKey] ?? 0) + value;
     }
 
-    if (row.current_source_model) {
-      point.currentModels[row.current_source_model] =
-        (point.currentModels[row.current_source_model] ?? 0) + 1;
-    }
+    const low = columnValue(row, 'current_low_80', metric);
+    const high = columnValue(row, 'current_high_80', metric);
+    const confidence = row.tier ? confidenceEntry(row, { low, high }) : null;
+    if (confidence) point.confidence.push(confidence);
 
     if (singleSeries) {
-      const low = columnValue(row, 'current_low_80', metric);
-      const high = columnValue(row, 'current_high_80', metric);
       point.range = low != null && high != null ? [low, high] : null;
       point.promoMix = row.promo_mix;
       point.realisedPrice = row.realised_price;
@@ -312,43 +301,14 @@ export function buildMonthlyPoints(rows, actuals = [], metric = 'units', { singl
 }
 
 /**
- * "Tier 1 basic" for one SKU, or "Tier 1 basic ×5 · Tier 1 advanced ×2 ·
- * Tier 0 baseline ×2" when a month's total mixes SKUs forecast by different
- * models. Counts are grouped by label.
+ * The rest of a month's Current value for the tooltip and promo panel: what
+ * it assumed about promotions, and the price behind revenue. The model is the
+ * whole line's (the Model dropdown), and the 80% range sits in the
+ * CONFIDENCE section (ForecastConfidenceDetails).
  */
-export function formatModelMix(currentModels) {
-  const countsByLabel = {};
-  for (const [model, count] of Object.entries(currentModels ?? {})) {
-    const label = sourceModelLabel(model);
-    countsByLabel[label] = (countsByLabel[label] ?? 0) + count;
-  }
-  const entries = Object.entries(countsByLabel);
-  if (!entries.length) return '';
-  if (entries.length === 1 && entries[0][1] === 1) return entries[0][0];
-  return entries
-    .sort((a, b) => b[1] - a[1])
-    .map(([label, count]) => `${label} ×${count}`)
-    .join(' · ');
-}
-
-/**
- * The "why" behind a month's Current value, for the tooltip and promo panel:
- * which model produced it, how accurate that model was in its backtest, and
- * what it assumed about promotions.
- */
-export function forecastPointDetails(point, metric, formatValue) {
+export function forecastPointDetails(point, metric) {
   if (!point) return [];
   const details = [];
-  const models = formatModelMix(point.currentModels);
-  if (models) details.push({ label: 'Model', value: models, hint: modelHint(point.currentModels) });
-  if (point.range) {
-    // Negative bounds read as (10) rather than -10, accounting style.
-    const formatBound = (value) => (value < 0 ? `(${formatValue(-value)})` : formatValue(value));
-    details.push({
-      label: '80% Confidence Range',
-      value: `${formatBound(point.range[0])} to ${formatBound(point.range[1])}`,
-    });
-  }
   if (point.promoMix) {
     details.push({ label: 'Promo', value: PROMO_MIX_LABELS[point.promoMix] ?? point.promoMix });
   }
@@ -367,7 +327,7 @@ export function emptyMonthlyPoint(monthYear) {
     previous: null,
     current: null,
     range: null,
-    currentModels: {},
+    confidence: [],
     promoMix: null,
     realisedPrice: null,
   };
@@ -654,17 +614,8 @@ export function uniqueMonthOptions(points) {
 }
 
 // ============================================================
-// FORECAST CONFIDENCE + LAST UPDATED
+// LAST UPDATED
 // ============================================================
-
-// Bands come from current_confidence_band in aire_forecasting_output
-// (sMAPE < 20 high, 20-50 medium, > 50 low; see fc_model_quality_views).
-const CONFIDENCE_LABELS = {
-  high: 'High',
-  medium: 'Medium',
-  low: 'Low',
-  unknown: 'Not yet scored',
-};
 
 const SGT_FORMAT = new Intl.DateTimeFormat('en-SG', {
   timeZone: 'Asia/Singapore',
@@ -678,60 +629,4 @@ export function formatSgtTimestamp(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '—';
   return SGT_FORMAT.format(date);
-}
-
-function confidenceReason(band, { shortHistory }) {
-  // The score is a backtest (the model re-run on past months it hadn't
-  // seen), not a track record of earlier live forecasts.
-  if (band === 'high') return 'model tracked actual sales closely when tested on past months';
-  if (band === 'medium') return 'sales vary month to month, review recommended';
-  if (band === 'low') {
-    return shortHistory
-      ? 'limited sales history, check before using'
-      : 'sales swing a lot month to month, check before using';
-  }
-  return 'too new to test against past sales';
-}
-
-function confidenceDetail(band, smape) {
-  const accuracy =
-    smape == null
-      ? 'This forecast has not been tested against past sales yet.'
-      : `In recent test months this forecast was typically off by about ${Math.round(smape)}% from actual sales.`;
-  const action = {
-    high: 'Safe to use for planning.',
-    medium: 'Worth a quick review before committing stock or promos.',
-    low: 'Review manually before using it for orders or promo plans.',
-    unknown: 'Treat it as a rough guide until it has been scored.',
-  }[band];
-  return `${accuracy} ${action}`;
-}
-
-/**
- * Confidence for one customer x SKU, from its earliest month with a Current
- * forecast (the band and sMAPE are the same on every month of a run).
- * Returns null when there is no Current forecast to rate.
- *
- * @param {object[]} rows forecast rows for a single customer + SKU
- */
-export function forecastConfidence(rows) {
-  const first = rows
-    .filter((row) => row.forecast_current != null && row.month_year)
-    .sort((a, b) => a.month_year.localeCompare(b.month_year))[0];
-  if (!first) return null;
-
-  const raw = first.current_confidence_band;
-  const band = raw in CONFIDENCE_LABELS ? raw : 'unknown';
-  const smape = first.current_backtest_smape ?? null;
-  // The pipeline falls back to Tier 0 below 6 months of history
-  // (tier0_min_history_months in run_monthly_forecast_pipeline). Actuals on
-  // the page are date-filtered, so they can't be counted for this instead.
-  const shortHistory = first.current_source_model === 'tier0_legacy';
-
-  return {
-    band,
-    label: CONFIDENCE_LABELS[band],
-    reason: confidenceReason(band, { shortHistory }),
-    detail: confidenceDetail(band, smape),
-  };
 }

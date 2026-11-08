@@ -31,7 +31,7 @@ def _install(monkeypatch, frame):
     return client
 
 
-COLUMNS = ["customer_id", "sku", "month_year", "forecast_current"]
+COLUMNS = ["customer_id", "sku", "month_year", "tier", "forecast_current"]
 
 
 def test_the_customer_filter_is_not_pushed_into_the_view(monkeypatch):
@@ -48,8 +48,8 @@ def test_the_customer_filter_is_not_pushed_into_the_view(monkeypatch):
 def test_only_the_asked_for_customer_is_returned(monkeypatch):
     frame = pd.DataFrame(
         [
-            {"customer_id": 1, "sku": "A1", "month_year": date(2026, 8, 1), "forecast_current": 10.0},
-            {"customer_id": 2, "sku": "A1", "month_year": date(2026, 8, 1), "forecast_current": 20.0},
+            {"customer_id": 1, "tier": "tier0", "sku": "A1", "month_year": date(2026, 8, 1), "forecast_current": 10.0},
+            {"customer_id": 2, "tier": "tier0", "sku": "A1", "month_year": date(2026, 8, 1), "forecast_current": 20.0},
         ]
     )
     _install(monkeypatch, frame)
@@ -68,9 +68,9 @@ def test_only_rows_with_a_forecast_are_read(monkeypatch):
 def test_predictions_are_keyed_by_sku_and_first_of_month(monkeypatch):
     frame = pd.DataFrame(
         [
-            {"customer_id": 1, "sku": "A1", "month_year": pd.Timestamp("2026-08-01"), "forecast_current": 1310.0},
-            {"customer_id": 1, "sku": "A1", "month_year": date(2026, 9, 1), "forecast_current": 1984.0},
-            {"customer_id": 1, "sku": "B1", "month_year": pd.Timestamp("2026-08-01"), "forecast_current": 44.0},
+            {"customer_id": 1, "tier": "tier0", "sku": "A1", "month_year": pd.Timestamp("2026-08-01"), "forecast_current": 1310.0},
+            {"customer_id": 1, "tier": "tier0", "sku": "A1", "month_year": date(2026, 9, 1), "forecast_current": 1984.0},
+            {"customer_id": 1, "tier": "tier0", "sku": "B1", "month_year": pd.Timestamp("2026-08-01"), "forecast_current": 44.0},
         ]
     )
     _install(monkeypatch, frame)
@@ -81,6 +81,21 @@ def test_predictions_are_keyed_by_sku_and_first_of_month(monkeypatch):
         "A1": {date(2026, 8, 1): 1310.0, date(2026, 9, 1): 1984.0},
         "B1": {date(2026, 8, 1): 44.0},
     }
+
+
+def test_only_tier_0_is_used_so_months_are_not_tripled(monkeypatch):
+    # The view has a row per model; Inventory plans on Tier 0 only.
+    frame = pd.DataFrame(
+        [
+            {"customer_id": 1, "tier": "tier0", "sku": "A1", "month_year": date(2026, 8, 1), "forecast_current": 10.0},
+            {"customer_id": 1, "tier": "tier1_basic", "sku": "A1", "month_year": date(2026, 8, 1), "forecast_current": 99.0},
+            {"customer_id": 1, "tier": "tier1_advanced", "sku": "A1", "month_year": date(2026, 8, 1), "forecast_current": 77.0},
+        ]
+    )
+    client = _install(monkeypatch, frame)
+
+    assert forecast_units.get_forecast_units(1) == {"A1": {date(2026, 8, 1): 10.0}}
+    assert "tier" in client.last_query
 
 
 def test_no_rows_gives_an_empty_forecast(monkeypatch):
@@ -106,8 +121,8 @@ def test_several_customers_are_read_in_one_query(monkeypatch):
 def test_predictions_are_grouped_by_customer(monkeypatch):
     frame = pd.DataFrame(
         [
-            {"customer_id": 1, "sku": "A1", "month_year": date(2026, 8, 1), "forecast_current": 10.0},
-            {"customer_id": 2, "sku": "A1", "month_year": date(2026, 8, 1), "forecast_current": 20.0},
+            {"customer_id": 1, "tier": "tier0", "sku": "A1", "month_year": date(2026, 8, 1), "forecast_current": 10.0},
+            {"customer_id": 2, "tier": "tier0", "sku": "A1", "month_year": date(2026, 8, 1), "forecast_current": 20.0},
         ]
     )
     _install(monkeypatch, frame)
@@ -123,8 +138,8 @@ def test_predictions_are_grouped_by_customer(monkeypatch):
 def test_customers_not_asked_for_are_left_out(monkeypatch):
     frame = pd.DataFrame(
         [
-            {"customer_id": 1, "sku": "A1", "month_year": date(2026, 8, 1), "forecast_current": 10.0},
-            {"customer_id": 3, "sku": "A1", "month_year": date(2026, 8, 1), "forecast_current": 30.0},
+            {"customer_id": 1, "tier": "tier0", "sku": "A1", "month_year": date(2026, 8, 1), "forecast_current": 10.0},
+            {"customer_id": 3, "tier": "tier0", "sku": "A1", "month_year": date(2026, 8, 1), "forecast_current": 30.0},
         ]
     )
     _install(monkeypatch, frame)

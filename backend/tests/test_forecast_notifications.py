@@ -60,6 +60,8 @@ def batch(monkeypatch):
     monkeypatch.setattr(worker.sql, "connect_with_connector", lambda: FakeEngine(conn))
     monkeypatch.setattr(worker, "_pending", lambda _: [])
     monkeypatch.setattr(worker.forecast_pipeline_events, "latest_forecast_summary", lambda: SUMMARY)
+    # A retrain saves the sell-in plans (sell_in_snapshots), which reads BigQuery.
+    monkeypatch.setattr(worker.sell_in_snapshots, "take_snapshot_best_effort", lambda: None)
     return conn
 
 
