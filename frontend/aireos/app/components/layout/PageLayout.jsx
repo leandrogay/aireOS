@@ -33,7 +33,9 @@ export default function PageLayout({ title, headerExtra, back, fitScreen = false
         )}
       >
         <div className={cn("mx-auto w-full min-w-0 max-w-6xl", fitScreen && "flex min-h-0 flex-1 flex-col")}>
-          <div className="mb-3 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 md:flex md:items-center">
+          {/* data-page-heading: NotificationBell measures this row, as wide
+              as the page content, to size its panel. */}
+          <div data-page-heading className="mb-3 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 md:flex md:items-center">
             <div className="flex min-h-9 min-w-0 items-center gap-3 pl-10 md:flex-1 md:pl-0">
               {back && (
                 <BackLink href={back.href} label={back.label} className="-mr-1.5 -ml-1" />

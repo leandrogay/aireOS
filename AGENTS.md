@@ -154,11 +154,14 @@ aireOS/
     │   │   │                      Reset) holding FilterSelect (single pick) / MultiSelectDropdown (tick-box) / PriceRangeFilter
     │   │   │                      (min/max popover on Dropdown, text from utils/priceRange.js), whose closed look
     │   │   │                      comes from filterControl.js (filterControlClass)
-    │   │   ├── dashboard/         ChannelSwitch (Offline / Online, beside the page title), DashboardFilters,
+    │   │   ├── dashboard/         ChannelSwitch (Offline / Online, top right of the trend card), DashboardFilters,
     │   │   │                      CustomerSelector, FilterBadge, PeriodControls (Period /
     │   │   │                      Compare to: DateRangeControl, CompareControl, MonthRangeCalendar — whole months only),
     │   │   │                      RevenueTrendCard (always by format) → TrendChart (FormatTrendChart),
-    │   │   │                      ComparisonMixChart; PeriodTexture (hatched "past period" fills), TooltipChange,
+    │   │   │                      ComparisonMixChart (paired stacks; past 6 buckets → ComparisonLineChart: this period
+    │   │   │                      solid, comparison dashed), both hovering ComparisonTooltip (per-format breakdown);
+    │   │   │                      MonthAxis (month labels + dividers under a long week run);
+    │   │   │                      PeriodTexture (hatched "past period" fills), TooltipChange,
     │   │   │                      PeriodComparisonDetail, RevenueSummaryCards + FormatMixBar, SkuRanking;
     │   │   │                      CustomerTrendChart (2-3 customers: grouped bars per period, lines past 6 periods);
     │   │   │                      DashboardStatus (whole-page card: sales data couldn't load / none uploaded yet)
@@ -192,10 +195,12 @@ aireOS/
     │       ├── dateRange.js       currentYearDateRange() -- shared default-date-range helper
     │       ├── periodComparison.js Compare-to baselines (comparisonSetup), week pairing for the comparison chart
     │       ├── dateRangePresets.js Period presets in whole months (Latest month … Past 12 months, YTD, Last year), anchored to the latest loaded month
-    │       ├── trendChart.js      Trend chart labels, x-axis setup (long week runs labelled by month), bar sizing, format stack order, Revenue/Volume formatting
+    │       ├── trendChart.js      Trend chart labels, x-axis setup (long week runs grouped by month: weekMonthGroups → dashboard/MonthAxis),
+    │       │                      y-axis (metricYAxisProps, chartDataRange; dips below 0 for negative sales), bar sizing, format stack order, Revenue/Volume formatting
+    │       ├── axisTicks.js       PURE, import-free: y-axis tick labels, one unit (k / M) and one decimal count per axis (tests/axisTicks.test.mjs)
     │       ├── weeklyGaps.js      "No weekly data for …" message: monthly-only months merged into ranges, capped
     │       ├── priceMix.js        Avg-price change split into SKU price vs product mix
-    │       ├── estimatedRevenue.js EST sign: when a revenue figure includes estimated revenue, and its hover text
+    │       ├── estimatedRevenue.js est. sign: when a revenue figure includes estimated revenue, and its hover text
     │       ├── customerTrend.js   Cross-customer chart: MAX_COMPARED_CUSTOMERS (3), bars up to MAX_BAR_PERIODS (6) then lines, series/rows
     │       ├── storeFormats.js    FORMAT_COLORS + formatColor() per store format; customerColor + customerColorOrder (one colour per customer on every page, by customer_id)
     │       ├── dohSettingsForm.js validate/build/formFrom helpers for the DOH threshold form, GLOBAL_DEFAULT_DOH
@@ -396,7 +401,7 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | `_PROMOTION_COLUMNS` (nested `stores`, `skus`) | `PromotionList.jsx`, `promotionOverview.js` |
 | `sales.py` query-param names (`start_date`, `end_date`, `granularity`, `customer`, `store`, `sku` …) | `URLSearchParams` keys in `hooks/*.js` and `services/salesApi.js` |
 | `sellout_service.get_customer_trends` (`/api/sales/customer-trends`: `customers[]` with `offline`/`online` period lists, `has_*`), `MAX_COMPARED_CUSTOMERS` | `salesApi.getCustomerTrends`, `useCustomerTrends.js`, `utils/customerTrend.js` (`MAX_COMPARED_CUSTOMERS`), `CustomerTrendChart.jsx`, `CustomerSelector.jsx` |
-| `sellout_service` estimated part of revenue: `estimated_revenue` (dashboard summary rows, customer totals), `estimated_value` (SKU ranking), from the `revenue_estimated` row flag | `utils/estimatedRevenue.js`, `EstMark.jsx` (one under the chart in `RevenueTrendCard`, top right of each `RevenueSummaryCards` tile, beside `SkuRanking` values; `TrendChart` tooltip) |
+| `sellout_service` estimated part of revenue: `estimated_revenue` (dashboard summary rows, customer totals), `estimated_value` (SKU ranking), from the `revenue_estimated` row flag | `utils/estimatedRevenue.js`, `EstMark.jsx` (top right of each `RevenueSummaryCards` tile, beside `SkuRanking` values; `TrendChart` tooltip) |
 | `mapping_view` packet/rule keys (`targetField`, `sourceColumn`, `editable`, `status`, `field`, `meltGroup`, `options`, `description`, `requiredMissing`, `checks`) | `utils/mappingReview.js`, `components/mappings/*` |
 | `mapping_checks` check shape (`id`, `level`, `passed`, `message`, `fields`, `evidence`) | `utils/mappingChecks.js`, `MappingChecks.jsx` |
 | packet `skuCodes`, `masterSkus`, `contractFormat`, `instructions`; processing preview/rejection fields | `utils/skuCodeTable.js`, `SkuCodeTable.jsx`, `MappingReviewPanel.jsx`, `UploadFileRow.jsx` |

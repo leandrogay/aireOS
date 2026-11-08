@@ -3,28 +3,31 @@
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 // A soft, see-through track with the chosen channel as a white pill on it:
-// lighter than the solid navy of the chart's switches, so the page header
-// stays calm while still showing which channel is on. A hairline outline and
-// a faint shadow on both make them read as a button.
+// lighter than the solid navy of the view switches below it, so choosing the
+// data (channel) reads differently from choosing how to draw it. A hairline
+// outline and a faint shadow on both make them read as a button.
 const triggerClass =
-  'px-3 font-medium text-deep-violet-blue/55 hover:text-deep-violet-blue data-active:bg-white data-active:text-deep-violet-blue data-active:shadow-sm data-active:ring-1 data-active:ring-violet/30';
+  'px-2.5 font-medium text-deep-violet-blue/55 hover:text-deep-violet-blue data-active:bg-white data-active:text-deep-violet-blue data-active:shadow-sm data-active:ring-1 data-active:ring-violet/30';
 
 /**
- * Offline / Online for the whole Sales Dashboard: the chart, the summary and
- * the ranking all follow it, so it sits beside the page title rather than in
- * one card. A step larger than the chart's own switches, as the page's main
- * view choice. Online is disabled when no ticked customer sells online (NHG).
+ * Offline / Online for the whole Sales Dashboard (the chart, the summary and
+ * the ranking all follow it), at the top right of the trend card beside the
+ * Period controls. 26px tall, the height of those buttons (text-xs, py-1 and
+ * a 1px border). 152px wide, the same fixed width RevenueTrendCard gives the
+ * By week / By month switch below it, so the two right-aligned switches line
+ * up on both edges; the two options share it equally (TabsTrigger is flex-1). Online is disabled when no ticked customer
+ * sells online (NHG).
  *
  * @param {{ mode: 'offline' | 'online', onChange: (mode: string) => void, onlineEnabled?: boolean }} props
  */
 export default function ChannelSwitch({ mode, onChange, onlineEnabled = true }) {
   return (
     <Tabs value={mode} onValueChange={onChange}>
-      <TabsList aria-label="Sales channel" className="h-8 bg-lavander/45 p-px shadow-sm ring-1 ring-violet/25 backdrop-blur-sm">
-        <TabsTrigger value="offline" className={`text-sm ${triggerClass}`}>
+      <TabsList aria-label="Sales channel" className="h-[26px] w-[152px] bg-lavander/45 p-0.5 group-data-horizontal/tabs:h-[26px] shadow-sm ring-1 ring-violet/25 backdrop-blur-sm">
+        <TabsTrigger value="offline" className={`text-xs ${triggerClass}`}>
           Offline
         </TabsTrigger>
-        <TabsTrigger value="online" disabled={!onlineEnabled} className={`text-sm ${triggerClass}`}>
+        <TabsTrigger value="online" disabled={!onlineEnabled} className={`text-xs ${triggerClass}`}>
           Online
         </TabsTrigger>
       </TabsList>

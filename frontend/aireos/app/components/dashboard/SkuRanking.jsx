@@ -217,6 +217,10 @@ export default function SkuRanking({
   const [fetchedKey, setFetchedKey] = useState('');
   const [error, setError] = useState(null);
   const rankingProducts = !showCustomers && (comparingCustomers || Boolean(customer));
+  // No customer ticked: an empty table that says so. The last ranking stays
+  // in state (the fetch is skipped), so it is hidden rather than shown stale.
+  const noCustomers = customers.length === 0;
+  const shownSkus = noCustomers ? [] : skus;
   const productRequestKey = JSON.stringify({
     metric,
     order,
@@ -285,12 +289,12 @@ export default function SkuRanking({
 
   // While loading, the Change column follows the comparison being fetched,
   // not the previous result, so the skeleton has the columns the data will.
-  const showChange = !showCustomers && (productLoading ? Boolean(comparisonStart && comparisonEnd) : baselineBySku !== null);
+  const showChange = !noCustomers && !showCustomers && (productLoading ? Boolean(comparisonStart && comparisonEnd) : baselineBySku !== null);
   const customersRanked = showCustomers
     ? rankCustomers(customerRows, mode, metric, order, customerColorOrder)
     : [];
-  const tableLoading = loading || (showCustomers ? customerRowsLoading : productLoading);
-  const tableError = showCustomers ? customerRowsError : error;
+  const tableLoading = !noCustomers && (loading || (showCustomers ? customerRowsLoading : productLoading));
+  const tableError = noCustomers ? null : (showCustomers ? customerRowsError : error);
   const channelLabel = mode === 'online' ? 'Online' : 'Offline';
 
   const headerClass = 'px-2.5 py-2 text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60';
@@ -455,10 +459,12 @@ export default function SkuRanking({
                   cellClassName={cellClass}
                 />
               )}
-              {!tableLoading && !tableError && (showCustomers ? customersRanked.length === 0 : skus.length === 0) && (
+              {!tableLoading && !tableError && (showCustomers ? customersRanked.length === 0 : shownSkus.length === 0) && (
                 <tr>
                   <td className="px-2.5 py-6 text-center text-deep-violet-blue/50" colSpan={showChange ? 5 : 4}>
-                    {showCustomers
+                    {noCustomers
+                      ? 'Select at least one customer.'
+                      : showCustomers
                       ? 'No customer sales for this channel in the selected period.'
                       : comparingCustomers
                         ? 'No product sales for this channel in the selected period.'
@@ -476,7 +482,7 @@ export default function SkuRanking({
                   <td className={numCellClass}>{formatRevenue(row.value)}</td>
                 </tr>
               ))}
-              {!tableLoading && !tableError && !showCustomers && skus.map((s) => (
+              {!tableLoading && !tableError && !showCustomers && shownSkus.map((s) => (
                 <tr key={s.sku} className="border-b border-lavander/80 bg-white last:border-b-0 hover:bg-cream/50">
                   <td className={`${cellClass} tabular-nums`}>{s.rank}</td>
                   <td className={cellClass} title={s.product_name}>
@@ -496,16 +502,16 @@ export default function SkuRanking({
   );
 }
 
-// A row's name, with EST a little after it (plain, at the table's text size)
+// A row's name, with the est. tag a little after it
 // when part of its revenue is estimated (backend estimated_value /
-// estimated_revenue). A long name truncates; EST always stays in view. A
+// estimated_revenue). A long name truncates; est. always stays in view. A
 // customer row leads with its chart colour (`color`).
 function NameWithEst({ name, value, estimated, color = null }) {
   return (
     <span className="flex min-w-0 items-center gap-2.5">
       {color && <span className="-mr-1 size-2 shrink-0 rounded-full" style={{ backgroundColor: color }} aria-hidden="true" />}
       <span className="truncate font-medium">{name}</span>
-      <EstMark estimated={estimated} total={value} className="text-[11px]" />
+      <EstMark estimated={estimated} total={value} />
     </span>
   );
 }
