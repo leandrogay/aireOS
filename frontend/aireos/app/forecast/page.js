@@ -8,30 +8,22 @@ import ForecastChart from '@/components/forecast/ForecastChart';
 import ForecastFilters from '@/components/forecast/ForecastFilters';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 import {
-  ALL_MODELS_AVERAGE_LABEL,
-  ALL_MODELS_AVERAGE_NOTE,
   FORECAST_TIER_OPTIONS,
   NO_DATA_FOR_TIER,
   forecastUpdatingBadge,
-  initialPartialNote,
+  initialMissingHint,
   initialStatusNotes,
+  lineCoverageNote,
   yearsInRange,
 } from '@/app/utils/forecastLineText';
-import {
-  ALL_TIERS,
-  averageAcrossTiers,
-  forecastModelView,
-  parseTier,
-  pastAccuracy,
-  rowsForTier,
-} from '@/app/utils/forecastTiers';
+import { lineCoverage } from '@/app/utils/forecastActuals';
+import { ALL_TIERS, forecastModelView, parseTier, pastAccuracy, rowsForTier } from '@/app/utils/forecastTiers';
 import {
   ALL_PACK_TYPE_VALUES,
   ALL_PROMO_TYPE_VALUES,
   ALL_SERIES_VISIBLE,
   buildMonthlyPoints,
   formatSgtTimestamp,
-  sumHorizonForecast,
   toggleSelectedValue,
   toggleSeriesVisibility,
 } from '@/app/utils/forecastView';
@@ -53,7 +45,6 @@ export default function ForecastPage() {
 function ForecastView() {
   const filters = useForecastFilters();
   const { productName, customerName, startDate, endDate, ready } = filters;
-  const [metric, setMetric] = useState('units');
   const [selectedPromoTypes, setSelectedPromoTypes] = useState(ALL_PROMO_TYPE_VALUES);
   const [selectedPackTypes, setSelectedPackTypes] = useState(ALL_PACK_TYPE_VALUES);
   const [visibleSeries, setVisibleSeries] = useState(ALL_SERIES_VISIBLE);
@@ -74,7 +65,9 @@ function ForecastView() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const requestedTier = parseTier(searchParams.get('tier'));
-  const model = forecastModelView({ rows: allRows, availability, requestedTier, customerName });
+  // One model for every scope, All customers included: never an average or
+  // a mix of tiers (utils/forecastTiers.js).
+  const model = forecastModelView({ rows: allRows, availability, requestedTier });
   const rows = model.rows;
 
   function setTier(tier) {
@@ -87,7 +80,7 @@ function ForecastView() {
   // changed) falls back to Tier 0 on the chart at once (forecastModelView);
   // this keeps the URL, and so the dropdown, in step. Only once the new
   // filter's rows are in, so availability is for the SKUs now picked.
-  const fellBack = model.mode === 'tier' && model.tier !== requestedTier;
+  const fellBack = model.tier !== requestedTier;
   useEffect(() => {
     if (!ready || view.loading || !fellBack || !model.tier) return;
     const params = new URLSearchParams(searchParams.toString());
@@ -95,35 +88,28 @@ function ForecastView() {
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
   }, [ready, view.loading, fellBack, model.tier, searchParams, router, pathname]);
 
-  const modelLabel =
-    model.mode === 'tier'
-      ? FORECAST_TIER_OPTIONS.find((option) => option.value === model.tier)?.label ?? ''
-      : ALL_MODELS_AVERAGE_LABEL;
+  const modelLabel = FORECAST_TIER_OPTIONS.find((option) => option.value === model.tier)?.label ?? '';
 
   // ---- Points ----------------------------------------------------------
 
-  // The 80% range and Past accuracy describe one series, so they only show
-  // once a single customer and SKU are picked.
+  // Past accuracy and the Current dot bands describe one series, so they
+  // only show once a single customer and SKU are picked.
   const singleSeries = Boolean(productName && customerName);
-  // Same rows the chart plots. Volume and revenue are both summed so the
-  // year strip can show the next-12-month total beside the year, whichever
-  // metric the chart tab is on.
-  const unitPoints = buildMonthlyPoints(rows, actuals, 'units', { singleSeries });
-  const revenuePoints = buildMonthlyPoints(rows, actuals, 'revenue', { singleSeries });
-  const points = metric === 'revenue' ? revenuePoints : unitPoints;
-  const horizonVolume = sumHorizonForecast(unitPoints);
-  const horizonRevenue = sumHorizonForecast(revenuePoints);
+  // Volume only (cartons): the page shows no revenue.
+  const points = buildMonthlyPoints(rows, actuals, 'units', { singleSeries });
+  // "Next 12 months" is each SKU's whole Current line, which the date
+  // filter can cut short (a Jan-Dec view of a line running Sep-Aug), so it
+  // comes from the backend's total, not from the points in view.
+  const horizon = view.data.horizon?.[model.tier] ?? null;
+  const horizonVolume = horizon?.units ?? null;
   // When the selected model last produced its Current line
   // (MAX(current_generated_at) for that tier, see backend
-  // forecast_service.forecast_stamps_from_rows); across every tier for the
-  // All customers average. A retrain replaces the Current line, so this is
-  // when the forecast last updated (shown as "Forecast last updated").
-  const lastRun =
-    model.mode === 'tier'
-      ? freshness.by_tier?.[model.tier]?.current_generated_at ?? null
-      : freshness.current_generated_at;
+  // forecast_service.forecast_stamps_from_rows). A retrain replaces the
+  // Current line, so this is when the forecast last updated (shown as
+  // "Forecast last updated").
+  const lastRun = freshness.by_tier?.[model.tier]?.current_generated_at ?? null;
   const salesLabel = customerName ? `${retailerLabel(customerName)} sales` : 'All customers sales';
-  const accuracy = singleSeries && model.mode === 'tier' ? pastAccuracy(rows) : null;
+  const accuracy = singleSeries ? pastAccuracy(rows) : null;
   // Year cards always cover Jan-Dec, so they fetch a wider window than the
   // date filter when the filter cuts a year short; that fetch has every tier
   // too, and mapRows keeps the same model's rows.
@@ -137,8 +123,7 @@ function ForecastView() {
     rows: allRows,
     actuals,
     tier: ALL_TIERS,
-    mapRows: (forecastRows) =>
-      model.mode === 'tier' ? rowsForTier(forecastRows, model.tier) : averageAcrossTiers(forecastRows),
+    mapRows: (forecastRows) => rowsForTier(forecastRows, model.tier),
   });
 
   // ---- Notes under the chart -------------------------------------------
@@ -152,12 +137,23 @@ function ForecastView() {
     meta: initialMeta,
     formatStamp: formatSgtTimestamp,
   });
-  // No Initial at all on this model greys out its pill (its hover says why);
-  // some SKUs without one is a note, so the partial sum is never silent.
-  const initialMissing = model.mode === 'tier' && model.initial.total > 0 && model.initial.withInitial === 0;
+  // Initial and Previous are per SKU and tier. None of the customer x SKUs
+  // in scope has one on this model: its pill is greyed out (its hover says
+  // why). Some have one: a note, so the partial sum is never silent.
+  const initialCoverage = lineCoverage(rows, 'forecast_initial');
+  const previousCoverage = lineCoverage(rows, 'forecast_previous');
+  const initialOff =
+    initialCoverage.total > 0 && initialCoverage.withLine === 0
+      ? initialMissingHint({
+          tier: model.tier,
+          years: yearsInRange(startDate, endDate),
+          skuCount: initialCoverage.total,
+        })
+      : '';
+  const previousOff = previousCoverage.withLine === 0;
   const modelNotes = [
-    model.mode === 'average' ? ALL_MODELS_AVERAGE_NOTE : '',
-    model.mode === 'tier' ? initialPartialNote(model.initial) : '',
+    lineCoverageNote('Initial yearly forecast', initialCoverage),
+    lineCoverageNote('Previous', previousCoverage),
   ].filter(Boolean);
 
   const scopeTags = [
@@ -191,11 +187,9 @@ function ForecastView() {
           onClearFilters={filters.clear}
           canClearFilters={filters.canClear}
           model={{
-            value: model.tier ?? '',
+            value: model.tier,
             onChange: setTier,
             options: model.options,
-            disabled: model.mode === 'average',
-            placeholder: ALL_MODELS_AVERAGE_LABEL,
           }}
         />
 
@@ -203,8 +197,6 @@ function ForecastView() {
           points={points}
           startDate={startDate}
           endDate={endDate}
-          metric={metric}
-          onMetricChange={setMetric}
           singleSeries={singleSeries}
           scopeTags={scopeTags}
           promotions={promotions}
@@ -224,14 +216,15 @@ function ForecastView() {
           pastAccuracy={accuracy}
           updatingBadge={updatingBadge}
           initialNotes={initialNotes}
-          initialMissing={initialMissing}
+          initialMissingHint={initialOff}
+          previousMissing={previousOff}
+          confidenceDots={singleSeries}
           notes={modelNotes}
           modelLabel={modelLabel}
-          emptyMessage={model.mode === 'tier' && allRows.length ? NO_DATA_FOR_TIER : undefined}
+          emptyMessage={allRows.length ? NO_DATA_FOR_TIER : undefined}
           yearTotals={yearTotals}
           yearTotalsLoading={yearTotalsLoading}
           horizonVolume={horizonVolume}
-          horizonRevenue={horizonRevenue}
           loading={loading}
         />
       </div>

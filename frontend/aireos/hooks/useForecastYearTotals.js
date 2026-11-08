@@ -4,10 +4,11 @@ import { useEffect, useState } from 'react';
 
 import { getForecastView } from '@/app/services/forecastApi';
 import { DEFAULT_TIER } from '@/app/utils/forecastTiers';
-import { buildMonthlyPoints, buildYearlyTotals, fullYearWindow } from '@/app/utils/forecastView';
+import { fullYearWindow } from '@/app/utils/forecastView';
+import { buildYearlyTotals } from '@/app/utils/forecastYearTotals';
 
 /**
- * Whole-calendar-year volume and revenue totals for the cards under the
+ * Whole-calendar-year volume totals (cartons) for the cards under the
  * forecast chart.
  *
  * The cards always read as full years, so when the date filter is narrower
@@ -92,15 +93,11 @@ export default function useForecastYearTotals({
   const widened = needsWiderRange && wide.key === windowKey;
   // mapRows lets the Scenario builder total the rows of its chosen forecast
   // view (scenarioModelView.rowsForView), and the Forecast page the rows of
-  // its chosen model (forecastTiers.rowsForTier / averageAcrossTiers).
+  // its chosen model (forecastTiers.rowsForTier).
   const sourceRows = mapRows(needsWiderRange ? (widened ? wide.rows : []) : rows);
   const sourceActuals = needsWiderRange ? (widened ? wide.actuals : []) : actuals;
-  // Both metrics come from the same months, so the cards can show volume and
-  // revenue side by side without the chart's Volume/Revenue tab changing them.
-  const years = buildYearlyTotals(
-    buildMonthlyPoints(sourceRows, sourceActuals, 'units'),
-    buildMonthlyPoints(sourceRows, sourceActuals, 'revenue')
-  );
+  // Actual or Current is chosen per customer x SKU x month (forecastYearTotals).
+  const years = buildYearlyTotals(sourceRows, sourceActuals);
 
   return {
     years,

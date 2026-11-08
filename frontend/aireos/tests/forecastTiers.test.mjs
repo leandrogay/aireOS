@@ -6,10 +6,8 @@ import { describe, test } from 'node:test';
 
 import {
   DEFAULT_TIER,
-  averageAcrossTiers,
   confidenceEntry,
   forecastModelView,
-  initialCoverage,
   modelOptions,
   parseTier,
   pastAccuracy,
@@ -85,10 +83,6 @@ describe('availability', () => {
     assert.equal(resolveTier('tier1_basic', AVAILABILITY, ['A', 'B']), 'tier0');
     assert.equal(resolveTier('tier1_advanced', AVAILABILITY, ['A']), 'tier0');
   });
-
-  test('Initial coverage counts the SKUs with any Initial on the tier', () => {
-    assert.deepEqual(initialCoverage(AVAILABILITY, ['A', 'B'], 'tier0'), { withInitial: 1, total: 2 });
-  });
 });
 
 // ---- Rows to add up ----
@@ -100,43 +94,50 @@ describe('rows for the chart', () => {
     row('A', 'tier1_advanced', '2026-12-01', { forecast_current: null }),
   ];
 
-  test('one customer shows one tier, never several added together', () => {
-    const view = forecastModelView({
-      rows,
-      availability: AVAILABILITY,
-      requestedTier: 'tier1_basic',
-      customerName: 'fairprice',
-    });
-    assert.equal(view.mode, 'tier');
+  test('one tier is shown, never several added together', () => {
+    const view = forecastModelView({ rows, availability: AVAILABILITY, requestedTier: 'tier1_basic' });
     assert.equal(view.tier, 'tier1_basic');
     assert.deepEqual(view.rows.map((item) => item.forecast_current), [140]);
+  });
+
+  test('switching tiers switches every row to that model, with no new data', () => {
+    const tier0 = forecastModelView({ rows, availability: AVAILABILITY, requestedTier: 'tier0' });
+    const basic = forecastModelView({ rows, availability: AVAILABILITY, requestedTier: 'tier1_basic' });
+    assert.deepEqual(tier0.rows.map((item) => item.tier), ['tier0']);
+    assert.deepEqual(basic.rows.map((item) => item.tier), ['tier1_basic']);
+  });
+
+  test('the default is Tier 0', () => {
+    assert.equal(forecastModelView({ rows, availability: AVAILABILITY, requestedTier: parseTier(null) }).tier, 'tier0');
   });
 
   test('rowsForTier keeps only that tier', () => {
     assert.equal(rowsForTier(rows, 'tier0').length, 1);
   });
 
-  test('All customers averages the available tiers per customer x SKU x month', () => {
-    const view = forecastModelView({ rows, availability: AVAILABILITY, requestedTier: 'tier0', customerName: '' });
-    assert.equal(view.mode, 'average');
-    assert.equal(view.tier, null);
-    assert.equal(view.rows.length, 1);
-    // (100 + 140) / 2: the Advanced tier's NULL is left out, not counted as 0.
-    assert.equal(view.rows[0].forecast_current, 120);
-    assert.ok(view.options.every((option) => option.disabled));
+  test('All customers shows the selected tier too, never an average', () => {
+    const allCustomers = [
+      ...rows,
+      row('A', 'tier0', '2026-12-01', { customer_id: 2, customer_name: 'nhg', forecast_current: 30 }),
+      row('A', 'tier1_basic', '2026-12-01', { customer_id: 2, customer_name: 'nhg', forecast_current: 50 }),
+    ];
+    const view = forecastModelView({ rows: allCustomers, availability: AVAILABILITY, requestedTier: 'tier1_basic' });
+    assert.equal(view.tier, 'tier1_basic');
+    assert.deepEqual(view.rows.map((item) => item.forecast_current), [140, 50]);
+    assert.equal(view.options.find((option) => option.value === 'tier1_basic').disabled, undefined);
   });
 
-  test('the average keeps customers apart so they can be summed', () => {
-    const averaged = averageAcrossTiers([
-      row('A', 'tier0', '2026-12-01', { forecast_current: 10 }),
-      row('A', 'tier0', '2026-12-01', { customer_id: 2, forecast_current: 30 }),
-    ]);
-    assert.deepEqual(averaged.map((item) => item.forecast_current), [10, 30]);
-  });
-
-  test('a line no tier has stays blank in the average', () => {
-    const [averaged] = averageAcrossTiers([row('A', 'tier0', '2026-12-01'), row('A', 'tier1_basic', '2026-12-01')]);
-    assert.equal(averaged.forecast_initial, null);
+  test('a greyed-out tier says why and the view falls back to Tier 0', () => {
+    // B has too little history for Tier 1, so neither Tier 1 model is offered.
+    const view = forecastModelView({
+      rows: [...rows, row('B', 'tier0', '2026-12-01'), row('B', 'tier1_basic', '2026-12-01', { forecast_current: null })],
+      availability: AVAILABILITY,
+      requestedTier: 'tier1_basic',
+    });
+    assert.equal(view.tier, 'tier0');
+    const basic = view.options.find((option) => option.value === 'tier1_basic');
+    assert.equal(basic.disabled, true);
+    assert.equal(basic.description, 'Not available for 1 of 2 selected SKUs · Needs 12+ months of sales history');
   });
 });
 
@@ -153,8 +154,42 @@ describe('confidence', () => {
     assert.equal(pastAccuracy([]), null);
   });
 
-  test('a month with no Current forecast has no confidence entry', () => {
+  test('a month with neither a Current nor a Previous forecast has no confidence entry', () => {
     assert.equal(confidenceEntry(row('A', 'tier0', '2026-12-01', { forecast_current: null })), null);
+  });
+
+  test('a month with a Previous carries its own band and range', () => {
+    const entry = confidenceEntry(
+      row('A', 'tier0', '2026-12-01', {
+        forecast_previous: 400,
+        previous_confidence_band: 'medium',
+        previous_range_pct: 35,
+      }),
+      { previousLow: 300, previousHigh: 580 }
+    );
+    assert.deepEqual(entry.previous, { band: 'medium', rangePct: 35, low: 300, high: 580 });
+  });
+
+  test('a Previous-only month borrows the series past accuracy', () => {
+    const entry = confidenceEntry(
+      row('A', 'tier0', '2026-08-01', {
+        forecast_current: null,
+        forecast_previous: 414,
+        current_backtest_smape: null,
+        current_confidence_band: null,
+      }),
+      { past: { band: 'medium', smape: 21 } }
+    );
+    assert.equal(entry.hasCurrent, false);
+    assert.equal(entry.monthBand, null);
+    assert.equal(entry.pastBand, 'medium');
+    assert.equal(entry.smape, 21);
+  });
+
+  test('an entry is keyed by customer x SKU so All customers keeps them apart', () => {
+    const entry = confidenceEntry(row('A', 'tier0', '2026-12-01', { customer_id: 2, customer_name: 'nhg' }));
+    assert.equal(entry.key, '2|A');
+    assert.equal(entry.customerName, 'nhg');
   });
 
   test('an entry keeps this month and past accuracy side by side', () => {

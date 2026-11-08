@@ -3,17 +3,42 @@
 import { useMemo, useState } from 'react';
 
 import HeaderCheckboxFilter from '@/components/ui/HeaderCheckboxFilter';
+import {
+  TABLE_MISSING_HINT,
+  TABLE_MISSING_LABEL,
+  TABLE_PARTIAL_HINT,
+  TABLE_PARTIAL_LABEL,
+} from '@/app/utils/forecastLineText';
 import { FORECAST_SERIES, uniqueMonthOptions } from '@/app/utils/forecastView';
 
-function formatTableValue(value, metric) {
+// Cartons, whole numbers.
+function formatTableValue(value) {
   if (value == null) return '—';
-  if (metric === 'revenue') {
-    return `$${Number(value).toLocaleString('en-US', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}`;
-  }
   return Math.round(value).toLocaleString();
+}
+
+/**
+ * One cell's value. A month whose sales file is missing reads "Missing"
+ * (muted), never "—" or 0; a partly reported month keeps its sum with a
+ * muted "partial" (forecastActuals.actualKind).
+ */
+function CellValue({ point, seriesKey }) {
+  if (seriesKey === 'actual' && point.actualKind === 'missing') {
+    return (
+      <span className="text-deep-violet-blue/45" title={TABLE_MISSING_HINT}>
+        {TABLE_MISSING_LABEL}
+      </span>
+    );
+  }
+  const value = formatTableValue(point[seriesKey]);
+  if (seriesKey === 'actual' && point.actualKind === 'partial') {
+    return (
+      <span title={TABLE_PARTIAL_HINT}>
+        {value} <span className="text-[10px] text-deep-violet-blue/45">{TABLE_PARTIAL_LABEL}</span>
+      </span>
+    );
+  }
+  return value;
 }
 
 /**
@@ -21,9 +46,9 @@ function formatTableValue(value, metric) {
  * shows (`modelLabel`, e.g. "Tier 0 · Baseline"): `points` are already that
  * one tier's (utils/forecastTiers.js), so the table has no per-month model.
  *
- * @param {{ points: object[], metric: 'units' | 'revenue', visibleSeries: Record<string, boolean>, modelLabel?: string }} props
+ * @param {{ points: object[], visibleSeries: Record<string, boolean>, modelLabel?: string }} props
  */
-export default function ForecastTable({ points, metric, visibleSeries, modelLabel = '' }) {
+export default function ForecastTable({ points, visibleSeries, modelLabel = '' }) {
   const [monthFilter, setMonthFilter] = useState([]);
   const [openFilter, setOpenFilter] = useState(null);
   const [expanded, setExpanded] = useState(false);
@@ -100,15 +125,10 @@ export default function ForecastTable({ points, metric, visibleSeries, modelLabe
               {visibleColumns.map((series) => (
                 <div key={series.key} className="min-w-0">
                   <dt className="text-[10px] font-semibold uppercase leading-tight tracking-wide text-deep-violet-blue/60">{series.label}</dt>
-                  <dd className="mt-0.5 text-sm font-medium tabular-nums text-deep-violet-blue">{formatTableValue(point[series.key], metric)}</dd>
+                  <dd className="mt-0.5 text-sm font-medium tabular-nums text-deep-violet-blue"><CellValue point={point} seriesKey={series.key} /></dd>
                 </div>
               ))}
             </dl>
-            {formatModelMix(point.currentModels) && (
-              <p className="mt-2 border-t border-lavander/60 pt-2 text-xs text-deep-violet-blue/70" title={modelHint(point.currentModels)}>
-                Model: {formatModelMix(point.currentModels)}
-              </p>
-            )}
           </article>
         ))}
       </div>
@@ -161,7 +181,7 @@ export default function ForecastTable({ points, metric, visibleSeries, modelLabe
                     <td className="px-2 py-2 font-medium">{point.label}</td>
                     {visibleColumns.map((series) => (
                       <td key={series.key} className="px-2.5 py-2 text-right tabular-nums">
-                        {formatTableValue(point[series.key], metric)}
+                        <CellValue point={point} seriesKey={series.key} />
                       </td>
                     ))}
                   </tr>

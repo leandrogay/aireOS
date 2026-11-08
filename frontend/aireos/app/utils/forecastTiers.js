@@ -4,11 +4,9 @@
 //
 // GET /api/forecast returns every tier: one row per customer x SKU x month x
 // tier (backend forecast_service.get_forecast_view). Rows of different tiers
-// are never added together:
-//   - one customer picked: the page shows one tier, chosen in the Model
-//     dropdown, and sums that tier's rows across the SKUs in scope;
-//   - All customers: each customer x SKU x month is the average of its
-//     available tiers, and those averages are summed across customers.
+// are never added together, averaged or mixed: the page shows the one tier
+// chosen in the Model dropdown (Tier 0 by default, for one customer or All
+// customers) and sums that tier's rows across the customer x SKUs in scope.
 
 import {
   FORECAST_TIER_OPTIONS,
@@ -71,87 +69,24 @@ export function resolveTier(requested, availability, skus) {
   return tierStatus(availability, skus, tier).available ? tier : DEFAULT_TIER;
 }
 
-/** How many SKUs in scope have any Initial on `tier` (availability has_initial). */
-export function initialCoverage(availability, skus, tier) {
-  const withInitial = skus.filter((sku) => availability?.[sku]?.[tier]?.has_initial).length;
-  return { withInitial, total: skus.length };
-}
-
-// Line columns averaged across tiers in the All customers view, carton and
-// revenue (backend forecast_service.add_forecast_revenue).
-const AVERAGED_COLUMNS = [
-  'forecast_initial',
-  'forecast_previous',
-  'forecast_current',
-  'current_low_80',
-  'current_high_80',
-].flatMap((column) => [column, `${column}_revenue`]);
-
-function mean(values) {
-  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
-}
-
 /**
- * One row per customer x SKU x month whose line values are the average of the
- * tiers that have a value there (an unavailable tier's NULLs are left out, not
- * counted as 0). A line no tier has stays null. Per-tier fields (tier,
- * confidence, model) are dropped: the row is no single model.
- */
-export function averageAcrossTiers(rows) {
-  const groups = new Map();
-  for (const row of rows ?? []) {
-    const key = `${row.customer_id}|${row.sku}|${row.month_year}`;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(row);
-  }
-  return [...groups.values()].map((group) => {
-    const first = group[0];
-    const averaged = {
-      customer_id: first.customer_id,
-      customer_name: first.customer_name,
-      sku: first.sku,
-      product_name: first.product_name,
-      month_year: first.month_year,
-      tier: null,
-      promo_mix: first.promo_mix ?? null,
-      realised_price: first.realised_price ?? null,
-    };
-    for (const column of AVERAGED_COLUMNS) {
-      averaged[column] = mean(group.map((row) => row[column]).filter((value) => typeof value === 'number'));
-    }
-    return averaged;
-  });
-}
-
-/**
- * Everything the page needs to show one model: the resolved tier, the rows to
- * add up, the dropdown options and the Initial coverage.
+ * Everything the page needs to show one model: the resolved tier, its rows,
+ * and the dropdown options. The same for one customer and All customers:
+ * with several customers in scope `availability` already counts a tier as
+ * available for a SKU only when every customer has it (backend
+ * forecast_service.forecast_availability), so a Tier 1 option is enabled
+ * only if every customer x SKU in scope has it.
  *
- * Without a customer the page shows the average of all models
- * (`mode: 'average'`): no tier is picked and the dropdown is disabled.
- *
- * @param {{ rows: object[], availability: object, requestedTier: string, customerName: string }} options
+ * @param {{ rows: object[], availability: object, requestedTier: string }} options
  */
-export function forecastModelView({ rows, availability, requestedTier, customerName }) {
+export function forecastModelView({ rows, availability, requestedTier }) {
   const skus = skusInRows(rows);
-  if (!customerName) {
-    return {
-      mode: 'average',
-      tier: null,
-      rows: averageAcrossTiers(rows),
-      skus,
-      options: FORECAST_TIER_OPTIONS.map((option) => ({ ...option, disabled: true })),
-      initial: { withInitial: skus.length, total: skus.length },
-    };
-  }
   const tier = resolveTier(requestedTier, availability, skus);
   return {
-    mode: 'tier',
     tier,
     rows: rowsForTier(rows, tier),
     skus,
     options: modelOptions(availability, skus),
-    initial: initialCoverage(availability, skus, tier),
   };
 }
 
@@ -169,22 +104,47 @@ export function pastAccuracy(rows) {
 }
 
 /**
- * One SKU's confidence for a month's tooltip, or null on a month with no
- * Current forecast (actual-only months show no confidence). `low` / `high`
- * are the 80% bounds in the chart's metric, already picked by the caller.
+ * One SKU's confidence for a month's tooltip, or null on a month with
+ * neither a Current nor a Previous forecast (actual-only months show no
+ * confidence). `low` / `high` (Current) and `previousLow` / `previousHigh`
+ * are the 80% bounds in cartons.
+ * `key` is the customer x SKU, so two customers' rows for one SKU (All
+ * customers) stay apart; the tooltip names the customer when they differ.
+ *
+ * Current and Previous each get this month's band and range (the backend
+ * reads Previous's from its own run, bigquery.month_range). Past accuracy is
+ * the model's backtest for the series, one score for both lines (Previous
+ * comes from the same model); `past` passes it in for a month with no
+ * Current row to read it from (pastAccuracy).
  */
-export function confidenceEntry(row, { low = null, high = null } = {}) {
-  if (row?.forecast_current == null) return null;
+export function confidenceEntry(
+  row,
+  { low = null, high = null, previousLow = null, previousHigh = null, past = null } = {}
+) {
+  const hasCurrent = row?.forecast_current != null;
+  const hasPrevious = row?.forecast_previous != null;
+  if (!hasCurrent && !hasPrevious) return null;
   return {
+    key: `${row.customer_id}|${row.sku}`,
     sku: row.sku,
     productName: row.product_name ?? row.sku,
-    monthBand: confidenceBand(row.month_confidence_band),
-    monthRangePct: row.month_range_pct ?? null,
+    customerName: row.customer_name ?? '',
+    hasCurrent,
+    monthBand: hasCurrent ? confidenceBand(row.month_confidence_band) : null,
+    monthRangePct: hasCurrent ? (row.month_range_pct ?? null) : null,
     low,
     high,
-    pastBand: confidenceBand(row.current_confidence_band),
-    smape: row.current_backtest_smape ?? null,
-    typicalPromo: row.tier === 'tier1_advanced' && Boolean(row.xreg_used_typical_promo),
+    previous: hasPrevious
+      ? {
+          band: confidenceBand(row.previous_confidence_band),
+          rangePct: row.previous_range_pct ?? null,
+          low: previousLow,
+          high: previousHigh,
+        }
+      : null,
+    pastBand: hasCurrent ? confidenceBand(row.current_confidence_band) : (past?.band ?? 'unknown'),
+    smape: row.current_backtest_smape ?? past?.smape ?? null,
+    typicalPromo: hasCurrent && row.tier === 'tier1_advanced' && Boolean(row.xreg_used_typical_promo),
   };
 }
 
