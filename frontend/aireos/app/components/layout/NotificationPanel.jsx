@@ -5,6 +5,7 @@ import {
   forecastErrorLines,
   forecastIntro,
   forecastTitle,
+  forecastWarningLines,
   isRefreshFailure,
   startedByLabel,
 } from '@/app/utils/forecastNotificationText';
@@ -94,6 +95,7 @@ function ForecastDetails({ payload, success }) {
   // describe, so the period / customers / SKUs rows would only read "—" and "0".
   const neverStarted = isRefreshFailure(payload, success);
   const errorLines = forecastErrorLines(payload);
+  const warningLines = success ? forecastWarningLines(payload) : [];
   return (
     <>
       <p className={MUTED_TEXT_CLASS}>{forecastIntro(payload, success)}</p>
@@ -133,6 +135,12 @@ function ForecastDetails({ payload, success }) {
         <div className="mt-1">
           <span className={MUTED_TEXT_CLASS}>Errors / Warnings</span>
           <p className="mt-0.5 text-deep-violet-blue">{errorLines.length ? errorLines.join('; ') : 'None'}</p>
+        </div>
+      )}
+      {warningLines.length > 0 && (
+        <div className="mt-1">
+          <span className={MUTED_TEXT_CLASS}>Warning</span>
+          <p className="mt-0.5 text-deep-violet-blue">{warningLines.join('; ')}</p>
         </div>
       )}
       {success && (

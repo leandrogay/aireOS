@@ -10,7 +10,6 @@ from app.auth import require_user
 from app.middleware import UnhandledErrorMiddleware
 from app.routers import assistant, auth, catalog, forecast, internal_forecast, inventory, mappings
 from app.routers import notifications, promotions, sales, scenario, settings, uploads
-from app.services import forecast_pipeline_events
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -36,15 +35,6 @@ def _cors_origins() -> list[str]:
     return origins
 
 
-def _start_forecast_run_listener():
-    # Pub/Sub being unreachable must not stop the app from starting.
-    try:
-        return forecast_pipeline_events.start_listening()
-    except Exception as exc:
-        logger.warning("Not listening for scheduled forecast runs: %s", exc)
-        return None
-
-
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     # Run notification listeners in the background so the API can start first.
@@ -52,13 +42,10 @@ async def lifespan(_app: FastAPI):
     listener = asyncio.create_task(
         notification_stream.run_listener(stop_listening)
     )
-    forecast_runs = _start_forecast_run_listener()
 
     yield
 
     stop_listening.set()
-    if forecast_runs is not None:
-        forecast_runs.cancel()
     await listener
 
 
@@ -98,8 +85,11 @@ app.include_router(settings.router, dependencies=protected)
 app.include_router(notifications.router, dependencies=protected)
 app.include_router(scenario.router, dependencies=protected)
 
+# async on purpose: it does no blocking work, so it answers on the event loop
+# even while every worker thread is busy (on 8 Nov slow forecast queries held
+# them all, and this sync health check queued behind them).
 @app.get("/")
-def read_root():
+async def read_root():
     return {"status": "ok"}
 
 
