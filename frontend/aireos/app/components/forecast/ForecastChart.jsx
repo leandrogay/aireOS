@@ -34,6 +34,7 @@ import {
 import { forecastLineHints, hasPreviousLine } from '@/app/utils/forecastLineText';
 import { dotRevealDelay, lineSweepTimings } from '@/app/utils/lineAnimation';
 import { yearAxisProps } from '@/app/utils/trendChart';
+import useDelayedLoading from '@/hooks/useDelayedLoading';
 import useMediaQuery from '@/hooks/useMediaQuery';
 
 // All lines draw in with one left-to-right sweep (see lineSweepTimings), so
@@ -267,6 +268,9 @@ export default function ForecastChart({
   const hasData = points.some((point) =>
     visibleKeys.some((key) => point[key] != null)
   );
+  // First load only (a refetch keeps the old chart under the overlay); a fast
+  // load skips the placeholder instead of flashing it.
+  const firstLoad = useDelayedLoading({ loading: loading && !hasData });
   const chartPoints = useMemo(
     () => padMonthlyPoints(points, startDate, endDate),
     [points, startDate, endDate]
@@ -475,15 +479,15 @@ export default function ForecastChart({
 
         {!hasVisibleLine ? (
           <p className="text-sm text-muted-foreground">No lines selected. Turn a line on to plot values.</p>
-        ) : !hasData ? (
+        ) : firstLoad.pending || !hasData ? (
           // Rows start empty, so without this the first load would briefly
           // claim there is no data. Same box as the loaded chart below (its
           // pl-1 pr-3 pt-2 wrapper, 34vh / min 220px ChartContainer with the
           // 48px tilted month axis, then the legend footer line), one line per
           // series switched on and one point per month in the date range.
           // A refetch keeps the old chart under the overlay instead.
-          loading ? (
-            <div className="pl-1 pr-3 pt-2">
+          firstLoad.pending ? (
+            <div className={`pl-1 pr-3 pt-2 ${firstLoad.placeholderClass}`}>
               <LineChartSkeleton
                 points={chartPoints.length}
                 lines={visibleKeys.length}

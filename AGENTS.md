@@ -227,6 +227,8 @@ aireOS/
     │   ├── useExpandedRows.js     { isExpanded, toggle, expand } for ui/ExpandableRow (several open by default)
     │   ├── useConfirmAction.js    { target, isPending, request, cancel, confirm } for ui/ConfirmDialog (e.g. Delete)
     │   ├── useMediaQuery.js       boolean for a CSS media query (Sidebar: rail vs hidden when collapsed)
+    │   ├── useDelayedLoading.js   { pending, visible, placeholderClass }: a first-load chart skeleton shows only after 200ms and
+    │   │                          stays 400ms, so fast loads never flash it (dashboard trend, forecast, InventoryChartSlot)
     │   └── useToast.js            { toast, notify, dismissToast } for components/ui/Toast
     ├── lib/                       cn() (clsx + tailwind-merge), formatDateRange, formatDate/formatDateTime (shared date display,
     │                              Singapore time), singaporeTime (singaporeDateTimeParts, singaporeToday), cardCascade

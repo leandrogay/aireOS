@@ -46,6 +46,14 @@ export const PAGE_CASCADE = {
   transition: { ...SPRING, opacity: QUICK_FADE },
 };
 
+// Loading placeholders (hooks/useDelayedLoading). A placeholder that shows
+// for a frame or two before the chart replaces it reads as a flicker, so:
+// `delay`: seconds of loading before the placeholder appears at all -- a load
+// faster than this goes straight to the chart (its space is held, blank).
+// `minDuration`: once shown, seconds it stays at least, so it never blinks.
+// The placeholder fades in over 150ms (the `duration-150` class in the hook).
+export const PLACEHOLDER_TIMING = { delay: 0.2, minDuration: 0.4 };
+
 // A tab moves less than a page: it is the same place.
 export const TAB_CASCADE = {
   ...PAGE_CASCADE,

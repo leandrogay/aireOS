@@ -11,8 +11,10 @@ import { CARD_SELECTOR } from '@/app/config/transitions';
  *
  * Pages render skeleton cards first and swap in the real ones when their data
  * lands, so for `options.watchFor` seconds new cards are caught too: one that
- * mounts mid-cascade takes its place in the order instead of popping in ahead
- * of the cards above it. A container with no visible card springs in itself.
+ * mounts before its turn takes its place in the order instead of popping in
+ * ahead of the cards above it; one that mounts after its turn has started
+ * just appears, since the card it replaces already sprang in. A container
+ * with no visible card springs in itself.
  *
  * Call it before paint (useLayoutEffect) so nothing shows at rest first.
  * Returns a cleanup that finishes every animation and stops watching.
@@ -41,19 +43,28 @@ export function cascadeCards(container, options) {
     running.push({ element, animation });
   }
 
-  function springInNewCards() {
+  // `firstPass`: every card on screen now takes its turn. On later passes a
+  // card whose turn has already started is replacing one that already sprang
+  // in (its skeleton), so it just appears -- springing it again would make
+  // the card move twice.
+  function springInNewCards(firstPass = false) {
     frame = null;
     const elapsed = (performance.now() - startedAt) / 1000;
     let slot = 0;
     for (const card of visibleOutermostCards(container)) {
-      const delay = Math.max(0, Math.min(slot, options.maxStaggered) * options.stagger - elapsed);
+      const turn = Math.min(slot, options.maxStaggered) * options.stagger;
       slot += 1;
-      if (!sprung.has(card)) springIn(card, delay);
+      if (sprung.has(card)) continue;
+      if (!firstPass && turn <= elapsed) {
+        sprung.add(card);
+        continue;
+      }
+      springIn(card, Math.max(0, turn - elapsed));
     }
     return slot;
   }
 
-  const cardCount = springInNewCards();
+  const cardCount = springInNewCards(true);
   if (cardCount === 0) {
     springIn(container, 0);
     return () => finish(running);

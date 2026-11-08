@@ -8,6 +8,7 @@ import CustomerTrendChart from "@/components/dashboard/CustomerTrendChart"
 import { FormatTrendChart } from "@/components/dashboard/TrendChart"
 import { formatDateTime } from "@/lib/formatDate"
 import { relabelFormatRows } from "@/app/utils/storeFormats"
+import useDelayedLoading from "@/hooks/useDelayedLoading"
 
 const METRIC_OPTIONS = [
   { value: "units", label: "Volume" },
@@ -65,7 +66,10 @@ export default function RevenueTrendCard({
 }) {
   const salesData = summaryByMode[mode]
   const comparingCustomers = customerBars !== null
-  const busy = loading || (!comparingCustomers && comparisonRows !== null && comparisonLoading)
+  // A fast load skips the placeholder instead of flashing it (useDelayedLoading).
+  const { pending: busy, placeholderClass } = useDelayedLoading({
+    loading: loading || (!comparingCustomers && comparisonRows !== null && comparisonLoading),
+  })
 
   return (
     <div className="bg-white rounded-lg border border-lavander shadow-sm p-4 h-full flex flex-col">
@@ -115,7 +119,7 @@ export default function RevenueTrendCard({
         // Same box as the loaded state: a flex-1 chart (min 220px) plus the footer line, so the card
         // keeps its height when the data arrives. The usual state is a few customers ticked, one month
         // (CustomerTrendChart: one cluster of a bar per customer); otherwise a year of months by ~4 formats.
-        <div className="flex flex-1 flex-col">
+        <div className={`flex flex-1 flex-col ${placeholderClass}`}>
           <BarChartSkeleton
             bars={comparingCustomers ? 1 : 12}
             groups={comparingCustomers ? 3 : 1}

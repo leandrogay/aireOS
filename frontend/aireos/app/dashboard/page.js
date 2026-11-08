@@ -477,7 +477,10 @@ export default function DashboardPage() {
               mode={mode}
               comparingCustomers={comparingCustomers}
               customerRows={customerTotals.rows}
-              noCustomers={customers.length === 0}
+              // Not while the page loads: the selection is empty only because
+              // the default customers aren't picked yet, not because the user
+              // unticked them all.
+              noCustomers={!pageLoading && customers.length === 0}
               customerColorOrder={colorOrder}
             />
           </div>

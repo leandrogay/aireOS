@@ -293,7 +293,10 @@ export default function SkuRanking({
   const customersRanked = showCustomers
     ? rankCustomers(customerRows, mode, metric, order, customerColorOrder)
     : [];
-  const tableLoading = !noCustomers && (loading || (showCustomers ? customerRowsLoading : productLoading));
+  // `loading` (the page's first load) wins over an empty selection: until the
+  // customer list loads, no customer is ticked yet, and the table should show
+  // its skeleton rather than "Select at least one customer".
+  const tableLoading = loading || (!noCustomers && (showCustomers ? customerRowsLoading : productLoading));
   const tableError = noCustomers ? null : (showCustomers ? customerRowsError : error);
   const channelLabel = mode === 'online' ? 'Online' : 'Offline';
 

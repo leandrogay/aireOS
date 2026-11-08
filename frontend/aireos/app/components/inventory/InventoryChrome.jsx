@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import ChartLoading from '@/components/ui/ChartLoading';
 import { formatMonth } from '@/app/utils/inventoryForm';
+import useDelayedLoading from '@/hooks/useDelayedLoading';
 
 // Same compact field styling as ForecastFilters, so the inventory filter
 // card lines up with the sell-out forecast page.
@@ -124,7 +125,8 @@ export function InventorySection({ title, tags, description, children }) {
 
 /**
  * Chart slot with the shared chart loading states (ui/ChartLoading). The
- * first load shows a placeholder the size of the 280px chart frame; after
+ * first load shows a placeholder the size of the 280px chart frame (only if
+ * it takes longer than a moment, see hooks/useDelayedLoading); after
  * that, a refetch (filter change, or refreshKey after a save) dims the old
  * chart under an overlay instead of swapping it out, so it doesn't flash.
  * A tab that has a chart-shaped placeholder (ui/BarChartSkeleton) passes it as
@@ -137,12 +139,19 @@ export function InventorySection({ title, tags, description, children }) {
  * @param {import('react').ReactNode} props.children the chart
  */
 export function InventoryChartSlot({ loading, ready, placeholder, children }) {
-  if (!ready) {
-    if (!loading) return null;
-    return placeholder ?? (
-      <ChartLoading label="Loading inventory…" className="h-[290px] rounded-xl border border-lavander bg-white" />
+  // A fast first load skips the placeholder instead of flashing it.
+  const firstLoad = useDelayedLoading({ loading: loading && !ready });
+
+  if (firstLoad.pending) {
+    return (
+      <div className={firstLoad.placeholderClass}>
+        {placeholder ?? (
+          <ChartLoading label="Loading inventory…" className="h-[290px] rounded-xl border border-lavander bg-white" />
+        )}
+      </div>
     );
   }
+  if (!ready) return null;
 
   // min-h so the overlay still fits when the chart is just its one-line empty state.
   return (
