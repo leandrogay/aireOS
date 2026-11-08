@@ -82,7 +82,7 @@ function PeriodFigures({ totals, periodName, hatched = false, comparing, color =
 // these tall. Lines wrap rather than clip if a tile gets very narrow.
 // `available` / `baselineAvailable` say whether each period has sales rows
 // for this tile; without both there is no fair change, so it reads "N/A".
-// EST sits top right when the tile's revenue (either period) includes
+// est. sits top right when the tile's revenue (either period) includes
 // estimated revenue; tiles with none show nothing there.
 function SummaryCard({
   title,
@@ -218,6 +218,7 @@ export default function RevenueSummaryCards({
   mode = "offline",
   comparingCustomers = false,
   customerRows = [],
+  noCustomers = false,
   customerColorOrder = [],
 }) {
   const [hoveredFormat, setHoveredFormat] = useState(null)
@@ -276,16 +277,21 @@ export default function RevenueSummaryCards({
       {/* The hook keeps the previous filters' data while it refetches, so hide
           it rather than show stale figures beside the skeleton. Offline's 4
           formats + Total until a first load says how many there are. */}
+      {/* No customer ticked: nothing to sum, so no tiles -- the hook still
+          holds the last customer's figures, which must not show. */}
+      {noCustomers && (
+        <p className="py-6 text-center text-sm text-deep-violet-blue/60">Select at least one customer.</p>
+      )}
       {/* The bar shows for customers, and for a channel with more than one format (online has one). */}
-      {loading && (
+      {!noCustomers && loading && (
         <SummaryCardsSkeleton
           count={(salesData?.storeFormats.length ?? 4) + 1}
           mixBar={comparingCustomers || mode !== "online"}
         />
       )}
-      {error && <p className="text-red-600 text-sm">{error}</p>}
+      {!noCustomers && error && <p className="text-red-600 text-sm">{error}</p>}
 
-      {!loading && (comparingCustomers || salesData) && tileFormats.length > 1 && (
+      {!noCustomers && !loading && (comparingCustomers || salesData) && tileFormats.length > 1 && (
         <FormatMixBar
           formats={tileFormats}
           baselineFormats={comparingCustomers ? null : (baselineData ? tileBaseline : null)}
@@ -298,7 +304,7 @@ export default function RevenueSummaryCards({
         />
       )}
 
-      {!loading && (comparingCustomers || salesData) && (
+      {!noCustomers && !loading && (comparingCustomers || salesData) && (
         <div className={TILE_GRID_CLASS}>
           <SummaryCard
             title="Total"
