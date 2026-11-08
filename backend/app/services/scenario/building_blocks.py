@@ -5,10 +5,11 @@ from app.services.scenario import common
 
 
 # Scenario builder building blocks (scenario_building_blocks): what-if
-# uplifts that only move the Scenario builder's Simulated line. Nothing
-# here reads or writes the forecast, Inventory or Dashboard data; the
-# frontend applies a block to the Current forecast itself
-# (app/utils/scenarioEngine.js). Requests name the customer and product
+# uplifts that move the Scenario builder's Simulated line, and the sell-in
+# plan chart's building blocks overlay when picked there. Nothing here reads
+# or writes the forecast, Inventory or Dashboard data; the Scenario builder
+# applies a block to the Current forecast itself (app/utils/scenarioEngine.js),
+# the overlay through scenario/block_effects. Requests name the customer and product
 # the way the Forecast page does, and they are resolved to customer_id /
 # sku here so the table holds real foreign keys.
 
@@ -95,6 +96,46 @@ def list_building_blocks() -> list[dict]:
         ).mappings().all()
 
     return [_block_view(dict(row)) for row in rows]
+
+
+def fetch_blocks_for_customer(conn: Connection, customer_id: int, block_ids: list[int]) -> list[dict]:
+    """
+    The picked blocks that belong to this customer, as the sell-in plan's
+    building blocks overlay applies them (scenario/block_effects): sku is the
+    code (None = every SKU), months are dates. A picked block of another
+    customer, or one deleted since, is simply not returned. Whether a block
+    is switched on in the Scenario builder doesn't matter: the overlay is
+    picked by hand.
+    """
+
+    if not block_ids:
+        return []
+    rows = conn.execute(
+        text(
+            """
+            SELECT
+                block_id,
+                sku,
+                name,
+                uplift_mode,
+                uplift_value,
+                start_month,
+                end_month
+
+            FROM scenario_building_blocks
+
+            WHERE
+                customer_id = :customer_id
+                AND block_id = ANY(:block_ids)
+
+            ORDER BY
+                block_id
+            """
+        ),
+        {"customer_id": customer_id, "block_ids": list(block_ids)},
+    ).mappings().all()
+
+    return [{**dict(row), "uplift_value": float(row["uplift_value"])} for row in rows]
 
 
 # ============================================================

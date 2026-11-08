@@ -50,7 +50,7 @@ export function parseApiError(data, status) {
  * @param {{ method?: string, body?: unknown }} [options]
  * @returns {Promise<unknown>}
  */
-export async function request(path, { method = 'GET', body } = {}) {
+export async function request(path, { method = 'GET', body, signal } = {}) {
   const baseUrl = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
 
   if (!baseUrl) {
@@ -70,6 +70,7 @@ export async function request(path, { method = 'GET', body } = {}) {
       credentials: 'include',
       headers: body ? { 'Content-Type': 'application/json' } : undefined,
       body: body ? JSON.stringify(body) : undefined,
+      signal,
     });
 
     const text = await response.text();
@@ -90,6 +91,9 @@ export async function request(path, { method = 'GET', body } = {}) {
 
     return data;
   } catch (error) {
+    // Cancelled by the caller (a hook whose filters changed or that unmounted):
+    // not a failure, so it is passed on untouched for the caller to ignore.
+    if (error.name === 'AbortError') throw error;
     if (!error.status) {
       const wrapped = new Error(
         error.message?.includes('NEXT_PUBLIC_API_URL')

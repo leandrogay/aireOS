@@ -1,5 +1,7 @@
 from datetime import date
 
+from google.api_core.exceptions import DeadlineExceeded
+
 from app import config
 from app.services import bigquery
 
@@ -8,6 +10,32 @@ from app.services import bigquery
 # model, Tier 0 (available for every SKU); the other tiers' rows are dropped.
 FORECAST_OUTPUT_VIEW = config.BQ_FORECAST_OUTPUT_VIEW
 FORECAST_TIER = bigquery.DEFAULT_FORECAST_TIER
+
+# How long a forecast read may take before it is stopped. Normally well under
+# this (about a minute at worst in November 2026); a read that hangs on a slow view would otherwise hold a server
+# thread (and the browser's connection) for as long as the view takes, until
+# nothing else on the page can load. Stopped, it is a GoogleAPICallError, so
+# every route already answers it with a 503 the page can show.
+FORECAST_QUERY_TIMEOUT_SECONDS = 120
+
+
+def _read_forecast(query: str):
+    """Run a forecast read, or stop it and raise DeadlineExceeded after the time limit."""
+
+    job = bigquery.get_bigquery_client().query(query)
+    try:
+        # The REST download, said outright: the BigQuery Storage client isn't
+        # installed, and asking for it by default logs a warning on every read.
+        return job.result(timeout=FORECAST_QUERY_TIMEOUT_SECONDS).to_dataframe(create_bqstorage_client=False)
+    except TimeoutError as exc:
+        try:
+            job.cancel()
+        except Exception:
+            pass  # Best effort: the job stops on its own once it finishes.
+        raise DeadlineExceeded(
+            f"The forecast took longer than {FORECAST_QUERY_TIMEOUT_SECONDS} seconds to load from BigQuery, "
+            "so it was stopped. Try again in a few minutes."
+        ) from exc
 
 
 def get_forecast_units(customer_id: int) -> dict[str, dict[date, float]]:
@@ -51,7 +79,7 @@ def get_forecast_units_by_customer(
 
         WHERE forecast_current IS NOT NULL
     """
-    df = bigquery.get_bigquery_client().query(query).result().to_dataframe()
+    df = _read_forecast(query)
 
     wanted = set(customer_ids)
     forecast: dict[int, dict[str, dict[date, float]]] = {}
@@ -79,8 +107,8 @@ def get_forecast_lines(customer_id: int) -> dict[str, dict[str, dict[date, float
     current starts after the newest sales month, which can be ahead of the last
     month with sell-in actuals); the previous (last month's run) is only drawn,
     so last month's sales can be read against what was forecast a month ahead.
-    The customer is picked out in Python for the same reason as
-    get_forecast_units_by_customer; a NULL is left out.
+    The customer and the tier (Tier 0, as get_forecast_units_by_customer) are
+    picked out in Python for the same reason as there; a NULL is left out.
     """
 
     query = f"""
@@ -88,6 +116,7 @@ def get_forecast_lines(customer_id: int) -> dict[str, dict[str, dict[date, float
           customer_id,
           sku,
           month_year,
+          tier,
           forecast_current,
           forecast_previous,
           forecast_initial
@@ -98,11 +127,11 @@ def get_forecast_lines(customer_id: int) -> dict[str, dict[str, dict[date, float
            OR forecast_previous IS NOT NULL
            OR forecast_initial IS NOT NULL
     """
-    df = bigquery.get_bigquery_client().query(query).result().to_dataframe()
+    df = _read_forecast(query)
 
     lines: dict[str, dict[str, dict[date, float]]] = {"current": {}, "previous": {}, "initial": {}}
     for row in df.to_dict(orient="records"):
-        if int(row["customer_id"]) != customer_id:
+        if int(row["customer_id"]) != customer_id or row.get("tier") != FORECAST_TIER:
             continue
         month = _first_of_month(row["month_year"])
         for line in lines:

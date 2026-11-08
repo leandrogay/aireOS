@@ -206,9 +206,12 @@ def get_sell_in_outlook(
     months: int = Query(default=6, ge=1, le=12),
     sku: list[str] | None = Query(default=None),
     start_year: int | None = Query(default=None),
+    block_id: list[int] | None = Query(default=None),
 ):
     try:
-        return inventory_service.get_sell_in_outlook(customer_id, months=months, skus=sku, start_year=start_year)
+        return inventory_service.get_sell_in_outlook(
+            customer_id, months=months, skus=sku, start_year=start_year, block_ids=block_id
+        )
 
     except inventory_service.CustomerNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))

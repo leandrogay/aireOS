@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import { monthsWithoutActuals, rangeComparison } from '../app/utils/sellInComparison.js';
+import { monthlyComparison, monthsWithoutActuals, rangeComparison } from '../app/utils/sellInComparison.js';
 
 function compared(actual, forecast, source = 'initial', skusCompared = 2, skusWithActuals = 2) {
   return {
@@ -71,6 +71,30 @@ describe('rangeComparison', () => {
     const months = [month('2026-07-01', { sellIn: compared(10, 0) })];
 
     assert.equal(rangeComparison(months, 'sell_in_vs_forecast').percent, null);
+  });
+});
+
+describe('monthlyComparison', () => {
+  test('keeps each month apart, both sides', () => {
+    const months = [
+      month('2026-06-01', { sellIn: compared(110, 100), sellOut: compared(90, 100, 'current') }),
+      month('2026-07-01', { sellIn: compared(100, 100) }),
+    ];
+
+    const rows = monthlyComparison(months);
+
+    assert.deepEqual(rows.map((row) => row.month), ['2026-06-01', '2026-07-01']);
+    assert.equal(rows[0].sellIn.percent, 10);
+    assert.equal(rows[0].sellOut.percent, -10);
+    assert.equal(rows[0].sellOut.source, 'current');
+    assert.equal(rows[1].sellIn.difference, 0);
+    assert.equal(rows[1].sellOut, null);
+  });
+
+  test('leaves out months with nothing to compare', () => {
+    const months = [month('2026-07-01', { sellOut: compared(50, 40) }), month('2026-08-01', { actual: null })];
+
+    assert.deepEqual(monthlyComparison(months).map((row) => row.month), ['2026-07-01']);
   });
 });
 

@@ -34,6 +34,10 @@
 // Current plus other items, so uplifts simply add up (blueprint Part 5.4).
 // A decrease (a negative uplift) can't take a customer x SKU x month below 0
 // units: simulate() scales that cell's decreases down to fit (floorAtZero).
+//
+// The sell-in plan chart's building blocks overlay applies saved blocks with
+// the same rules on the backend (app/services/scenario/block_effects.py),
+// since the plan is worked out there. Change the two together.
 
 // Same colour as --aire-scenario in globals.css; recharts needs the value
 // itself, as the committed lines in forecastView.js do.

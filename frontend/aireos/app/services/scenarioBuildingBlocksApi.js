@@ -6,7 +6,8 @@ import { request } from '@/app/services/promotionsApi';
 //
 // Bodies come from buildScenarioBlockPayload and rows are read back with
 // scenarioBlockFromApi (app/utils/scenarioBlocks.js). Saving a block never
-// changes the Current forecast; only the Scenario builder reads them.
+// changes the Current forecast; the Scenario builder reads them, and the
+// sell-in plan chart's building blocks overlay offers them to pick.
 // ============================================================
 
 const BASE_PATH = '/api/scenario/building-blocks';
