@@ -9,6 +9,8 @@ from sqlalchemy.exc import DatabaseError
 
 from app.services import catalog_service, forecast_units, inventory_calc, notification_service, sellout_units, sql
 from app.services.sell_in_upload import canonical_customer_name, product_for_description, quantity_problem, read_sell_in_lines
+from app.services.scenario import block_effects
+from app.services.scenario import building_blocks as scenario_blocks
 from app.services.settings import doh as doh_settings
 
 
@@ -901,6 +903,7 @@ def get_sell_in_outlook(
     months: int = inventory_calc.SELL_IN_PLAN_MONTHS,
     skus: list[str] | None = None,
     start_year: int | None = None,
+    block_ids: list[int] | None = None,
 ) -> dict:
     """
     One customer's sell-in and sell-out by month for the sell-in plan chart:
@@ -925,6 +928,13 @@ def get_sell_in_outlook(
     the same way as the initial line. Months before the previous forecast
     starts are planned on the plan's own forecast, only to carry the stock
     through to it, and are not shown.
+
+    `block_ids` picks saved Scenario builder building blocks for the chart's
+    overlay: they are added to the Current sell-out forecast the way the
+    Scenario builder's Simulated line adds them (scenario/block_effects), and
+    the plan is worked out again on that (sell_out_with_blocks,
+    sell_in_with_blocks). A what-if only: the plan, the other lines and the
+    saved snapshots never include them.
     """
 
     current_month = _current_month()
@@ -935,11 +945,19 @@ def get_sell_in_outlook(
         versions = doh_settings.fetch_versions(conn, [customer_id]).get(customer_id, [])
         shipped = _fetch_shipped(conn, customer_id)
         snapshots = _fetch_plan_snapshots(conn, customer_id, current_month)
+        blocks = scenario_blocks.fetch_blocks_for_customer(conn, customer_id, block_ids or [])
 
     customer = {"customer_id": customer_id, "customer_name": customers[customer_id]}
     metrics = {key: sku_months for key, sku_months in metrics.items() if not skus or key[1] in skus}
     if not metrics:
-        return {"customer": customer, "actuals_through": None, "months": [], "start_year": None, "start_years": []}
+        return {
+            "customer": customer,
+            "actuals_through": None,
+            "months": [],
+            "start_year": None,
+            "start_years": [],
+            "building_blocks": [],
+        }
 
     threshold = _threshold_view(customer_id, customers[customer_id], versions)
     details = _sku_details()
@@ -954,6 +972,7 @@ def get_sell_in_outlook(
     bridged = {sku: {**forecast.get(sku, {}), **months_} for sku, months_ in previous.items()}
     _, bridged_rows, _ = _sku_plans(metrics, bridged, shipped, threshold, until, details)
     previous_rows = [row for row in bridged_rows if row["month"] in previous.get(row["sku"], {})]
+    with_blocks = _plan_with_blocks(metrics, lines, blocks, shipped, threshold, until, details)
 
     actuals_through = max(month for month, _ in last_actual.values())
     start_years = _start_years(metrics, actuals_through, current_month)
@@ -977,6 +996,10 @@ def get_sell_in_outlook(
         recommended.setdefault(row["month"], []).append(row["recommended_sell_in"])
         forecast_out.setdefault(row["month"], []).append(row["forecast_sell_out"])
         sources.setdefault(row["month"], set()).add(row["forecast_source"])
+    blocks_sell_in = _sell_in_by_month(with_blocks["rows"])
+    blocks_sell_out: dict[date, list[float]] = {}
+    for row in with_blocks["rows"]:
+        blocks_sell_out.setdefault(row["month"], []).append(row["forecast_sell_out"])
     actual_months = {month for month in window if month <= actuals_through}
     past_initial = _past_recommendations(metrics, initial, actual_months, versions, actuals_through)
     past_previous = _past_recommendations(metrics, previous, actual_months, versions, actuals_through)
@@ -1021,6 +1044,8 @@ def get_sell_in_outlook(
                 "sell_out_previous": _sum_or_none(
                     [previous[sku][month] for sku in in_view if month in previous.get(sku, {})]
                 ),
+                "sell_in_with_blocks": _sum_or_none(blocks_sell_in.get(month, [])),
+                "sell_out_with_blocks": _sum_or_none(blocks_sell_out.get(month, [])),
                 "forecast_source": _one_source(sources.get(month, set())),
                 # Actual months only: the SKU-matched comparison the chart
                 # adds up over a picked range (frontend sellInComparison.js).
@@ -1037,7 +1062,70 @@ def get_sell_in_outlook(
         "start_years": start_years,
         "last_month_vs_forecast": _sell_out_vs_forecast(metrics, forecast, source, actuals_through),
         "last_month_sell_in_vs_forecast": sell_in_vs_forecast(actuals_through),
+        "building_blocks": _blocks_in_window(blocks, with_blocks["deltas"], window),
     }
+
+
+def _plan_with_blocks(
+    metrics: dict[tuple[int, str], dict[date, dict[str, float]]],
+    lines: dict[str, dict[str, dict[date, float]]],
+    blocks: list[dict],
+    shipped: dict[str, dict[date, float]],
+    threshold: dict,
+    until: date,
+    details: dict[str, dict],
+) -> dict:
+    """
+    The sell-in plan worked out again with the overlay's building blocks
+    added to the Current forecast, and what each block adds to it ({block_id:
+    {sku: {month: units}}}, before the blocks are floored together), counted
+    only for the SKU x months the plan covers, so it matches the chart.
+    Nothing when no block is picked.
+    """
+
+    if not blocks:
+        return {"rows": [], "deltas": {}}
+    in_view = {sku for _, sku in metrics}
+    current = {sku: months for sku, months in lines.get("current", {}).items() if sku in in_view}
+    adjusted = {**lines, "current": block_effects.apply_blocks(current, blocks)}
+    forecast, source, _ = _plan_forecast(adjusted, details)
+    _, rows, _ = _sku_plans(metrics, forecast, shipped, threshold, until, details, source)
+    planned = {(row["sku"], row["month"]) for row in rows}
+    deltas = {
+        block["block_id"]: {
+            sku: {month: units for month, units in months.items() if (sku, month) in planned}
+            for sku, months in block_effects.block_deltas(current, [block]).items()
+        }
+        for block in blocks
+    }
+    return {"rows": rows, "deltas": deltas}
+
+
+def _blocks_in_window(
+    blocks: list[dict],
+    deltas: dict[int, dict[str, dict[date, float]]],
+    window: list[date],
+) -> list[dict]:
+    """
+    Each overlay block with the sell-out it adds over the chart's months
+    (`sell_out_change`, units, negative for a decrease), so the page can say
+    which ones change nothing here (another SKU, or months with no Current
+    forecast).
+    """
+
+    shown = set(window)
+    return [
+        {
+            "block_id": block["block_id"],
+            "name": block["name"],
+            "sell_out_change": round(
+                sum(units for months in deltas.get(block["block_id"], {}).values()
+                    for month, units in months.items() if month in shown),
+                2,
+            ),
+        }
+        for block in blocks
+    ]
 
 
 def _start_years(

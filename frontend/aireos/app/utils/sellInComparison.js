@@ -42,6 +42,24 @@ export function rangeComparison(months, key) {
 }
 
 /**
+ * Each picked month on its own, sell-in and sell-out side by side, so the
+ * months can be read against one another rather than as one total. Months
+ * that could not be compared on either side are left out.
+ *
+ * @param {object[]} months rows of get_sell_in_outlook's `months`
+ * @returns {{ month: string, sellIn: object | null, sellOut: object | null }[]} each side in rangeComparison's shape
+ */
+export function monthlyComparison(months) {
+  return months
+    .map((row) => ({
+      month: row.month,
+      sellIn: rangeComparison([row], 'sell_in_vs_forecast'),
+      sellOut: rangeComparison([row], 'sell_out_vs_forecast'),
+    }))
+    .filter((row) => row.sellIn || row.sellOut);
+}
+
+/**
  * The picked months with no actuals yet (plan months), which a comparison of
  * actual vs forecast leaves out.
  *

@@ -20,11 +20,14 @@ export default function useAtRisk({ customerIds = [], risk = '', refreshKey = 0 
 
   useEffect(() => {
     let cancelled = false;
+    // Aborted on a filter change or unmount, so a slow request doesn't keep
+    // holding one of the browser's few connections to the API.
+    const controller = new AbortController();
 
     async function fetchAtRisk() {
       setLoading(true);
       try {
-        const result = await getAtRisk(JSON.parse(filterKey));
+        const result = await getAtRisk(JSON.parse(filterKey), { signal: controller.signal });
         if (cancelled) return;
         setData(result);
         setError(null);
@@ -38,6 +41,7 @@ export default function useAtRisk({ customerIds = [], risk = '', refreshKey = 0 
     fetchAtRisk();
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [filterKey, refreshKey]);
 

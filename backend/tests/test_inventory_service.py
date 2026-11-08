@@ -2313,3 +2313,82 @@ def test_plan_months_carry_no_comparison(monkeypatch):
     march = _month(view, "2026-03-01")
     assert march["sell_in_vs_forecast"] is None
     assert march["sell_out_vs_forecast"] is None
+
+
+# ---- building blocks overlay (sell-in plan chart) ----
+
+
+def _overlay_view(monkeypatch, blocks):
+    monkeypatch.setattr(
+        inventory_service.scenario_blocks,
+        "fetch_blocks_for_customer",
+        lambda conn, customer_id, block_ids: [block for block in blocks if block["block_id"] in block_ids],
+    )
+    return _outlook_view_with_blocks(monkeypatch, [block["block_id"] for block in blocks])
+
+
+def _outlook_view_with_blocks(monkeypatch, block_ids):
+    jan, feb = date(2026, 1, 1), date(2026, 2, 1)
+    metrics = [
+        _metric(1, "A1", jan, "sell_in", 400),
+        _metric(1, "A1", jan, "sell_out_base", 100),
+        _metric(1, "A1", feb, "sell_in", 0),
+        _metric(1, "A1", feb, "sell_out_base", 280),
+    ]
+    _install(monkeypatch, _router(_customers("fairprice"), metrics, [_version(5, 10, 15)]))
+    monkeypatch.setattr(
+        forecast_units,
+        "get_forecast_lines",
+        lambda customer_id: {"current": _PLAN_FORECAST, "initial": {}},
+    )
+    return inventory_service.get_sell_in_outlook(1, months=12, block_ids=block_ids)
+
+
+def _overlay_block(**changes):
+    block = {
+        "block_id": 1,
+        "sku": None,
+        "name": "New store",
+        "uplift_mode": "pct",
+        "uplift_value": 10.0,
+        "start_month": date(2026, 3, 1),
+        "end_month": date(2026, 4, 1),
+    }
+    block.update(changes)
+    return block
+
+
+def test_with_no_blocks_picked_the_overlay_lines_are_empty(monkeypatch):
+    view = _overlay_view(monkeypatch, [])
+
+    assert all(row["sell_out_with_blocks"] is None for row in view["months"])
+    assert all(row["sell_in_with_blocks"] is None for row in view["months"])
+    assert view["building_blocks"] == []
+
+
+def test_a_block_raises_the_overlay_sell_out_and_the_plan_follows(monkeypatch):
+    plain = _month(_overlay_view(monkeypatch, []), "2026-03-01")
+    march = _month(_overlay_view(monkeypatch, [_overlay_block()]), "2026-03-01")
+
+    assert march["sell_out_with_blocks"] == pytest.approx(341.0)
+    assert march["sell_in_with_blocks"] > plain["sell_in_recommended"]
+
+
+def test_the_overlay_leaves_the_plan_and_the_other_lines_as_they_are(monkeypatch):
+    plain = _overlay_view(monkeypatch, [])
+    overlaid = _overlay_view(monkeypatch, [_overlay_block()])
+
+    for before, after in zip(plain["months"], overlaid["months"]):
+        assert after["sell_out_forecast"] == before["sell_out_forecast"]
+        assert after["sell_in_recommended"] == before["sell_in_recommended"]
+
+
+def test_each_block_says_how_much_sell_out_it_adds_to_the_chart(monkeypatch):
+    blocks = [_overlay_block(), _overlay_block(block_id=2, name="Elsewhere", sku="Z9")]
+
+    view = _overlay_view(monkeypatch, blocks)
+
+    assert view["building_blocks"] == [
+        {"block_id": 1, "name": "New store", "sell_out_change": pytest.approx(61.0)},
+        {"block_id": 2, "name": "Elsewhere", "sell_out_change": 0},
+    ]

@@ -3,11 +3,14 @@
 import { useState } from 'react';
 
 import SelectDropdown from '@/components/ui/SelectDropdown';
+import useSavedBuildingBlocks from '@/hooks/useSavedBuildingBlocks';
 import useSellInOutlook from '@/hooks/useSellInOutlook';
 import useSellInPlan from '@/hooks/useSellInPlan';
+import { blocksWithoutEffect, customerBlocks, pickedBlockIds } from '@/app/utils/buildingBlocksOverlay';
 import { formatDoh, formatMonth, formatUnits } from '@/app/utils/inventoryForm';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 
+import BuildingBlocksOverlay from './BuildingBlocksOverlay';
 import {
   filterLabelClass,
   InventoryChartSlot,
@@ -55,6 +58,10 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
   // the latest actual month (get_sell_in_outlook). Reset when the customer or
   // SKUs change, since the years on offer depend on their actuals.
   const [startYear, setStartYear] = useState(null);
+  // The chart's building blocks overlay: saved Scenario builder blocks,
+  // picked by hand, drawn as extra lines (BuildingBlocksOverlay).
+  const [overlayOn, setOverlayOn] = useState(false);
+  const [blockIds, setBlockIds] = useState([]);
 
   // Adjust state during render: pick the first customer once the list arrives,
   // so the view is never empty by default. Runs only while nothing is chosen.
@@ -62,9 +69,13 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
     setCustomerId(customers[0].customer_id);
   }
 
-  const { data, loading, error } = useSellInPlan({ customerId, months, skus, refreshKey });
-  const outlook = useSellInOutlook({ customerId, months, skus, startYear, refreshKey });
   const customerName = customers.find((c) => c.customer_id === customerId)?.customer_name;
+  const savedBlocks = useSavedBuildingBlocks({ enabled: overlayOn });
+  const offeredBlocks = customerBlocks(savedBlocks.blocks, customerName);
+  const appliedBlockIds = overlayOn ? pickedBlockIds(blockIds, offeredBlocks) : [];
+
+  const { data, loading, error } = useSellInPlan({ customerId, months, skus, refreshKey });
+  const outlook = useSellInOutlook({ customerId, months, skus, startYear, blockIds: appliedBlockIds, refreshKey });
   const chartMonths = outlook.data?.months ?? [];
   const outlookTags = [
     { label: 'Customer', value: customerName ? retailerLabel(customerName) : '—' },
@@ -79,6 +90,7 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
   function changeCustomer(id) {
     setCustomerId(id);
     setStartYear(null);
+    setBlockIds([]);
   }
 
   function changeSkus(next) {
@@ -178,16 +190,30 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
       )}
 
       <InventorySection title="Sell-in and sell-out" tags={outlookTags}>
-        <InventoryChartSlot loading={outlook.loading} ready={Boolean(outlook.data)}>
-          {outlook.data && (
-            <SellInOutlookChart
-              months={outlook.data.months}
-              actualsThrough={outlook.data.actuals_through}
-              sellInComparison={outlook.data.last_month_sell_in_vs_forecast}
-              sellOutComparison={outlook.data.last_month_vs_forecast}
-            />
-          )}
-        </InventoryChartSlot>
+        <div className="space-y-2">
+          <BuildingBlocksOverlay
+            enabled={overlayOn}
+            onEnabledChange={setOverlayOn}
+            blocks={offeredBlocks}
+            blockIds={appliedBlockIds}
+            onBlockIdsChange={setBlockIds}
+            customerLabel={customerName ? retailerLabel(customerName) : 'this customer'}
+            loading={savedBlocks.loading}
+            error={savedBlocks.error}
+            withoutEffect={appliedBlockIds.length ? blocksWithoutEffect(outlook.data?.building_blocks ?? []) : []}
+          />
+          <InventoryChartSlot loading={outlook.loading} ready={Boolean(outlook.data)}>
+            {outlook.data && (
+              <SellInOutlookChart
+                months={outlook.data.months}
+                actualsThrough={outlook.data.actuals_through}
+                sellInComparison={outlook.data.last_month_sell_in_vs_forecast}
+                sellOutComparison={outlook.data.last_month_vs_forecast}
+                showBlocks={appliedBlockIds.length > 0}
+              />
+            )}
+          </InventoryChartSlot>
+        </div>
       </InventorySection>
 
       {(data || loading) && <SellInDetailTable rows={data?.rows ?? []} loading={loading && !data} />}

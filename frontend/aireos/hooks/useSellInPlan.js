@@ -23,11 +23,14 @@ export default function useSellInPlan({ customerId = null, months = 6, skus = []
     if (!id) return undefined;
 
     let cancelled = false;
+    // Aborted on a filter change or unmount, so a slow request doesn't keep
+    // holding one of the browser's few connections to the API.
+    const controller = new AbortController();
 
     async function fetchPlan() {
       setLoading(true);
       try {
-        const result = await getSellInPlan(id, filters);
+        const result = await getSellInPlan(id, filters, { signal: controller.signal });
         if (cancelled) return;
         setData(result);
         setError(null);
@@ -41,6 +44,7 @@ export default function useSellInPlan({ customerId = null, months = 6, skus = []
     fetchPlan();
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [filterKey, refreshKey]);
 

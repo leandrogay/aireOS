@@ -1,9 +1,10 @@
 import { ChangeFigure, ComparisonNote } from '@/components/ui/ComparisonFigures';
 import { formatUnits } from '@/app/utils/inventoryForm';
-import { monthsWithoutActuals, rangeComparison } from '@/app/utils/sellInComparison';
+import { monthlyComparison, monthsWithoutActuals, rangeComparison } from '@/app/utils/sellInComparison';
 
 import { monthRangeLabel } from './InventoryChrome';
 import { SOURCE_LABEL } from './LastMonthDifference';
+import SellInComparisonTable from './SellInComparisonTable';
 
 const SIDES = [
   { kind: 'sell_in', key: 'sell_in_vs_forecast', label: 'Sell-in' },
@@ -41,10 +42,12 @@ function SideRows({ label, kind, comparison }) {
 
 /**
  * The months picked on the sell-in plan chart (zoom), actual against
- * forecast for sell-in and sell-out, laid out like the dashboard's
- * Comparison card: the two differences as headline figures, then each
- * side's totals, then any note. Only months with actuals count, each SKU-
- * matched (backend get_sell_in_outlook, frontend utils/sellInComparison).
+ * forecast for sell-in and sell-out. One month is laid out like the
+ * dashboard's Comparison card: the two differences as headline figures, then
+ * each side's figures. Several months get a row each (SellInComparisonTable)
+ * rather than one total, so the months can be told apart. Then any note.
+ * Only months with actuals count, each SKU-matched (backend
+ * get_sell_in_outlook, frontend utils/sellInComparison).
  *
  * @param {{ months: object[] }} props the picked rows of get_sell_in_outlook's `months`
  */
@@ -52,6 +55,7 @@ export default function SellInComparison({ months }) {
   const sides = SIDES.map((side) => ({ ...side, comparison: rangeComparison(months, side.key) }));
   const future = monthsWithoutActuals(months);
   const anyCompared = sides.some((side) => side.comparison);
+  const perMonth = monthlyComparison(months);
 
   const notes = [];
   if (future.length === months.length) {
@@ -70,7 +74,9 @@ export default function SellInComparison({ months }) {
         {monthRangeLabel(months[0].month, months[months.length - 1].month)} · actual vs forecast
       </p>
 
-      {anyCompared ? (
+      {perMonth.length > 1 ? (
+        <SellInComparisonTable rows={perMonth} />
+      ) : anyCompared ? (
         <>
           <div className="flex gap-3">
             {sides.map((side) => (
