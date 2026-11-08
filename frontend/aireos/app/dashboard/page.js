@@ -54,7 +54,7 @@ export default function DashboardPage() {
     useCustomerOptions({ dataVersion });
   // Only sets colours, so a failed read just leaves the customers with sales in
   // order, each still with its own colour, rather than an error on the page.
-  const { customers: allCustomers } = useAllCustomers({ dataVersion });
+  const { customers: allCustomers, loading: allCustomersLoading } = useAllCustomers({ dataVersion });
   const colorOrder = customerColorOrder(allCustomers, customerOptions.map((option) => option.value));
   const [selectedCustomers, setSelectedCustomers] = useState(null);
   if (selectedCustomers === null && customerOptions.length > 0) {
@@ -160,9 +160,14 @@ export default function DashboardPage() {
   // never its "nothing here" message. 'failed' (the list couldn't be read)
   // and 'empty' (no sales uploaded at all) show one DashboardStatus card
   // instead of the sections.
+  // Also 'loading' until every customer is in (useAllCustomers), since that
+  // list sets each customer's colour (customerColorOrder, by customer id):
+  // drawing before it would colour customers in the dropdown's order first
+  // and then switch. A failed read ends the wait (colours then follow the
+  // dropdown), and a later dataVersion refetch does not bring it back.
   let pageStatus = 'ready';
   if (customerOptionsError && customerOptions.length === 0) pageStatus = 'failed';
-  else if (customerOptionsLoading) pageStatus = 'loading';
+  else if (customerOptionsLoading || allCustomersLoading) pageStatus = 'loading';
   else if (customerOptions.length === 0) pageStatus = 'empty';
   else if (customers.length > 0 && !latestPeriodStart) pageStatus = 'loading';
   const pageLoading = pageStatus === 'loading';
