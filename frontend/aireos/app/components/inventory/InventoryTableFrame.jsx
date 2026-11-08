@@ -15,12 +15,12 @@ import { cn } from '@/lib/utils';
 // (ui/DataTable + ui/TableGrid), so every table in the app reads alike.
 const actionButtonClass = 'rounded-md border-deep-violet-blue/30 bg-white text-deep-violet-blue hover:bg-cream';
 
-export const inventoryTableClass = 'w-full text-left text-sm text-deep-violet-blue [&_td]:align-middle [&_th]:align-middle';
-// White under the cream tint so rows do not show through the sticky header;
+export const inventoryTableClass = 'aire-table-rows w-full text-left text-sm text-deep-violet-blue [&_td]:align-middle [&_th]:align-middle';
+// Solid cream keeps rows from showing through the sticky header;
 // the bottom rule is an inset shadow because a collapsed border does not move
 // with a sticky header (same as TableGrid).
-export const inventoryTheadClass = 'sticky top-0 z-10 bg-white';
-export const inventoryHeadRowClass = 'h-10 bg-cream/60 [&>th]:shadow-[inset_0_-1px_0_var(--color-lavander)]';
+export const inventoryTheadClass = 'sticky top-0 z-10 bg-cream';
+export const inventoryHeadRowClass = 'h-10 bg-cream [&>th]:shadow-[inset_0_-1px_0_var(--color-lavander)]';
 export const inventoryThClass = TABLE_HEADER_CLASS;
 export const inventoryTdClass = 'px-4 py-2.5 text-deep-violet-blue';
 export const inventoryRowClass = 'border-b border-lavander/80 bg-white hover:bg-cream/50';

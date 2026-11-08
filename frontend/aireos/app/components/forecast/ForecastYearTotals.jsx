@@ -154,9 +154,47 @@ export default function ForecastYearTotals({
 
   if (!years.length) return null;
 
+  const simulatedByYear = new Map(simulatedYears.map((year) => [year.year, year]));
+
   return (
-    <section aria-label="Full-year totals" className="space-y-1.5">
-      <div className="overflow-x-auto rounded-md border border-lavander">
+    <section aria-label="Full-year totals" className="min-w-0 space-y-1.5">
+      <div className="grid gap-2 sm:hidden">
+        {years.map((year) => (
+          <article key={year.year} className="rounded-lg border border-lavander bg-white p-3">
+            <div className="mb-2 flex flex-wrap items-baseline gap-2 border-b border-lavander/70 pb-2">
+              <h3 className="font-semibold text-deep-violet-blue">{year.year}</h3>
+              <span className="text-[11px] text-deep-violet-blue/60">{mixCaption(year)}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {[{ label: 'Volume', values: year.volume, format: formatVolume }, { label: 'Revenue', values: year.revenue, format: formatRevenue }].map((group) => (
+                <dl key={group.label} className="min-w-0 space-y-1 text-xs">
+                  <dt className="font-semibold text-deep-violet-blue">{group.label}</dt>
+                  {SPLIT.map((column) => (
+                    <div key={column.key} className="flex justify-between gap-1">
+                      <dt className="text-deep-violet-blue/60">{column.label}</dt>
+                      <dd className="font-medium tabular-nums text-deep-violet-blue">{group.format(group.values[column.key])}</dd>
+                    </div>
+                  ))}
+                </dl>
+              ))}
+            </div>
+            {simulatedByYear.has(year.year) && (
+              <div className="mt-3 grid grid-cols-2 gap-3 rounded-md bg-scenario-soft p-2 text-xs text-scenario-ink">
+                <div><p className="font-semibold">Simulated volume</p><p className="tabular-nums">{formatVolume(simulatedByYear.get(year.year).volume.total)}</p><p className="opacity-75">{signed(simulatedByYear.get(year.year).deltaUnits, formatVolume)}</p></div>
+                <div><p className="font-semibold">Simulated revenue</p><p className="tabular-nums">{formatRevenue(simulatedByYear.get(year.year).revenue.total)}</p><p className="opacity-75">{signed(simulatedByYear.get(year.year).deltaRevenue, formatRevenue)}</p></div>
+              </div>
+            )}
+          </article>
+        ))}
+        <div className="rounded-lg border border-lavander bg-cream/50 p-3 text-xs text-deep-violet-blue">
+          <p className="mb-2 font-semibold">Next 12 months forecast</p>
+          <dl className="grid grid-cols-2 gap-3">
+            <div><dt className="text-deep-violet-blue/60">Volume</dt><dd className="font-medium tabular-nums">{formatVolume(horizonVolume)}</dd></div>
+            <div><dt className="text-deep-violet-blue/60">Revenue</dt><dd className="font-medium tabular-nums">{formatRevenue(horizonRevenue)}</dd></div>
+          </dl>
+        </div>
+      </div>
+      <div className="hidden min-w-0 overflow-x-auto rounded-md border border-lavander sm:block">
       <table className="w-full border-separate border-spacing-0 text-left text-xs text-deep-violet-blue">
         <ColumnWidths />
         <thead>
@@ -226,7 +264,7 @@ export default function ForecastYearTotals({
         </tbody>
       </table>
       </div>
-      <div className="overflow-x-auto rounded-md bg-[#F7F4F1]">
+      <div className="hidden min-w-0 overflow-x-auto rounded-md bg-[#F7F4F1] sm:block">
         <table className="w-full border-separate border-spacing-0 text-left text-xs text-deep-violet-blue">
           <ColumnWidths />
           <tbody>

@@ -1,55 +1,85 @@
-import { cn } from '@/lib/utils';
-import { STAGES } from '@/app/utils/uploadFlow';
+'use client';
+
+import { useEffect, useState } from 'react';
+import { Check } from 'lucide-react';
+import {
+  checkedFacts,
+  isStillWorking,
+  uploadPercent,
+  waitExpectation,
+} from '@/app/utils/uploadProgress';
+
+// Often enough that the width transition below runs into the next tick, so
+// the bar moves continuously rather than in steps.
+const TICK_MS = 200;
 
 /**
- * Where a file in flight has got to. Sending has a real percentage. After
- * that the server's steps show as a segmented bar: the steps are real, only
- * their timing is a guess (see STAGES), so there is no percentage to show.
+ * Where a file in flight has got to: one bar from the first byte sent to the
+ * response. Sending has a real percentage; the server's part is an estimate
+ * sized by the pre-upload check (see utils/uploadProgress), and reaches 100%
+ * only when the response lands (`finished`).
  *
- * @param {{ stage: string, sendPercent: number | null | undefined }} props
+ * @param {{
+ *   sendPercent: number | null | undefined,
+ *   sentAt: number | null | undefined,
+ *   finished: boolean | undefined,
+ *   check: object | null | undefined,
+ * }} props
  */
-export default function UploadProgress({ stage, sendPercent }) {
-  if (sendPercent !== null && sendPercent !== undefined) {
-    return (
-      <div className="mt-2 max-w-sm">
-        <div
-          role="progressbar"
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={sendPercent}
-          aria-label="Sending file"
-          className="h-1.5 overflow-hidden rounded-full bg-lavander"
-        >
-          <div
-            className="h-full rounded-full bg-deep-violet-blue transition-[width] duration-200 motion-reduce:transition-none"
-            style={{ width: `${sendPercent}%` }}
-          />
-        </div>
-        <p className="mt-1 text-xs text-deep-violet-blue/70 tabular-nums">Sending, {sendPercent}%</p>
-      </div>
-    );
-  }
+export default function UploadProgress({ sendPercent, sentAt, finished, check }) {
+  const [serverElapsedMs, setServerElapsedMs] = useState(null);
 
-  const current = Math.max(0, STAGES.findIndex((entry) => entry.key === stage));
+  useEffect(() => {
+    if (!sentAt || finished) return undefined;
+    const handle = setInterval(() => setServerElapsedMs(Date.now() - sentAt), TICK_MS);
+    return () => clearInterval(handle);
+  }, [sentAt, finished]);
+
+  const { expectedMs, label, hint } = waitExpectation(check);
+  const sending = !sentAt;
+  const elapsed = sending ? null : (serverElapsedMs ?? 0);
+  const percent = uploadPercent({ sendPercent, serverElapsedMs: elapsed, expectedMs, finished });
+  const facts = checkedFacts(check);
+
+  let status = `Sending, ${sendPercent || 0}%`;
+  if (finished) status = 'Done';
+  else if (!sending) status = `${label}…`;
 
   return (
     <div className="mt-2 max-w-sm">
-      <div className="flex gap-1" aria-hidden="true">
-        {STAGES.map((entry, index) => (
-          <span
-            key={entry.key}
-            className={cn(
-              'h-1.5 flex-1 rounded-full',
-              index < current && 'bg-deep-violet-blue',
-              index === current && 'animate-pulse bg-violet motion-reduce:animate-none',
-              index > current && 'bg-lavander',
-            )}
-          />
-        ))}
+      <div
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent}
+        aria-valuetext={status}
+        aria-label="Uploading file"
+        className="h-1.5 overflow-hidden rounded-full bg-lavander"
+      >
+        <div
+          className="h-full rounded-full bg-deep-violet-blue transition-[width] duration-300 ease-linear motion-reduce:transition-none"
+          style={{ width: `${percent}%` }}
+        />
       </div>
-      <p className="mt-1 text-xs text-deep-violet-blue/70">
-        Uploading, step {current + 1} of {STAGES.length}: {STAGES[current].label.toLowerCase()}…
+      <p className="mt-1 text-xs text-deep-violet-blue/70 tabular-nums">
+        {status}
+        {!sending && !finished && hint && <span className="text-deep-violet-blue/50"> {hint}</span>}
       </p>
+      {facts.length > 0 && (
+        <p className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-deep-violet-blue/60">
+          {facts.map((fact) => (
+            <span key={fact} className="inline-flex items-center gap-1">
+              <Check className="size-3 text-green-700" aria-hidden="true" />
+              {fact}
+            </span>
+          ))}
+        </p>
+      )}
+      {!finished && isStillWorking(elapsed, expectedMs) && (
+        <p className="mt-0.5 text-xs text-deep-violet-blue/60" role="status">
+          Still working. Larger files can take up to a minute.
+        </p>
+      )}
     </div>
   );
 }

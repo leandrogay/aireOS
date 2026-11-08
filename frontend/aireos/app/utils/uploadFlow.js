@@ -3,23 +3,6 @@
 // the list it belongs to, and what (if anything) is holding the Upload button.
 
 /**
- * The stages a file passes through on the server, in order.
- *
- * POST /api/uploads does all three in one synchronous call and answers once at
- * the end, so there is no progress to subscribe to — the labels advance on a
- * timer while the request is in flight, and the last one is replaced by the
- * real outcome when the response lands. The order and the names are the work
- * the server actually does, in the order it does it; only the timing is a
- * guess. If the endpoint ever grows per-file job status, this is the one place
- * that has to change.
- */
-export const STAGES = [
-  { key: 'uploading', label: 'Uploading', afterMs: 0 },
-  { key: 'duplicates', label: 'Checking for duplicates', afterMs: 700 },
-  { key: 'matching', label: 'Processing file', afterMs: 1800 },
-];
-
-/**
  * @typedef {(
  *   | { kind: 'mapped', mappingId: string, name: string?, vendor: string?, processing: object? }
  *   | { kind: 'ready_to_load', mappingId: string, name: string?, vendor: string?, blobPath: string }

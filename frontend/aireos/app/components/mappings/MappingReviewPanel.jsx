@@ -6,7 +6,6 @@ import { Loader2, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import Disclosure from '@/components/ui/Disclosure';
-import { primaryButtonClass, secondaryButtonClass } from '@/components/ui/formStyles';
 import useCustomers from '@/hooks/useCustomers';
 import useMappingEdits from '@/hooks/useMappingEdits';
 import { createRetailer, linkRetailer } from '@/app/services/catalogApi';
@@ -21,7 +20,6 @@ import {
 import { PROPOSER, isAiProposal, reviewIssues } from '@/app/utils/mappingReview';
 import { SECTION_IDS, reviewChecklist } from '@/app/utils/reviewChecklist';
 import { codeRows, unknownCodes } from '@/app/utils/skuCodeTable';
-import { cn } from '@/lib/utils';
 
 import ApprovedSummary from './ApprovedSummary';
 import ConfirmDiscardDialog from './ConfirmDiscardDialog';
@@ -385,12 +383,12 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
               // step, so the button becomes the primary one.
               <Button
                 type="button"
-                variant="outline"
+                variant={stale ? 'default' : 'outline'}
+                size="sm"
                 disabled={disabled}
                 onClick={runChecks}
-                className={cn(stale ? primaryButtonClass : secondaryButtonClass, 'h-7 px-2.5 text-xs')}
               >
-                {busy === 'preview' ? <Loader2 aria-hidden="true" className="size-3.5 animate-spin" /> : <Play aria-hidden="true" className="size-3.5" />}
+                {busy === 'preview' ? <Loader2 aria-hidden="true" className="animate-spin" /> : <Play aria-hidden="true" />}
                 {busy === 'preview' ? 'Testing…' : stale ? 'Test my changes' : preview ? 'Test again' : 'Test nomenclature'}
               </Button>
             }

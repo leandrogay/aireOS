@@ -16,8 +16,10 @@ import {
   metricAxisFormatter,
   TILTED_LABEL_LEFT_MARGIN,
   comparisonAxisProps,
+  yearAxisProps,
   sortFormatsByTotalDesc,
 } from '@/app/utils/trendChart';
+import useMediaQuery from '@/hooks/useMediaQuery';
 
 // The comparison period is drawn in the same format colours as this period,
 // hatched (see PeriodTexture): a 50% tint with stripes and an outline in the
@@ -170,6 +172,7 @@ function formatsWithSales(formats, rows, side) {
  * }} props
  */
 export default function ComparisonMixChart({ rows, periodNames, granularity, metric = 'revenue' }) {
+  const mobile = useMediaQuery('(max-width: 639px)');
   const baseId = useId();
   const formats = sortFormatsByTotalDesc(
     rows
@@ -179,6 +182,8 @@ export default function ComparisonMixChart({ rows, periodNames, granularity, met
   const names = { current: periodNames?.current || 'This period', baseline: periodNames?.baseline || 'Comparison' };
   const chartData = rows.map((row) => {
     const point = {
+      axisStart: row.axisStart,
+      baselineStart: row.baseline?.firstWeekStart ?? '',
       axisLabel: bucketLabel(granularity, row.axisStart),
       currentLabel: exactBucketLabel(granularity, row.axisStart),
       baselineLabel: row.baseline?.label ?? null,
@@ -200,7 +205,15 @@ export default function ComparisonMixChart({ rows, periodNames, granularity, met
   });
   // The axis keeps its height and spacing, but its single tick per bucket is
   // hidden: BarAxisLabel labels each of the two stacks instead.
-  const axisProps = comparisonAxisProps(granularity);
+  const axisProps = mobile ? { interval: 0, angle: 0, height: 28 } : comparisonAxisProps(granularity);
+  const formatCurrentYear = yearAxisProps(chartData, 'axisStart').tickFormatter;
+  const formatBaselineYear = yearAxisProps(chartData, 'baselineStart').tickFormatter;
+  if (mobile) {
+    chartData.forEach((point) => {
+      point.mobileCurrentYear = formatCurrentYear(point.axisStart);
+      point.mobileBaselineYear = formatBaselineYear(point.baselineStart);
+    });
+  }
   const axisLabel = (field, muted) => (
     <BarAxisLabel points={chartData} field={field} muted={muted} tilt={axisProps.angle} />
   );
@@ -241,7 +254,7 @@ export default function ComparisonMixChart({ rows, periodNames, granularity, met
             fill="none"
             minPointSize={1}
             isAnimationActive={false}
-            label={axisLabel('axisLabel', false)}
+            label={axisLabel(mobile ? 'mobileCurrentYear' : 'axisLabel', false)}
           />
           {formats.map((format) => (
             <Bar
@@ -261,7 +274,7 @@ export default function ComparisonMixChart({ rows, periodNames, granularity, met
             fill="none"
             minPointSize={1}
             isAnimationActive={false}
-            label={axisLabel('baselineAxisLabel', true)}
+            label={axisLabel(mobile ? 'mobileBaselineYear' : 'baselineAxisLabel', true)}
           />
           {formats.map((format) => (
             <Bar

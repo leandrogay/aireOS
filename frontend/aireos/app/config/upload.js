@@ -5,10 +5,13 @@
 // The backend accepts .xlsm too (backend/app/services/storage.py
 // ALLOWED_EXTENSIONS) and enforces no size limit of its own — these are the
 // narrower product rules, not a mirror of the server's.
+//
+// The size cap is set by Cloud Run, not the app: a request body over 32 MiB is
+// rejected before it reaches FastAPI, so the limit stays under that.
 
 export const MAX_FILES_PER_BATCH = 10;
 
-export const MAX_FILE_SIZE_MB = 50;
+export const MAX_FILE_SIZE_MB = 32;
 export const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
 export const ALLOWED_EXTENSIONS = ['xlsx', 'csv', 'txt'];

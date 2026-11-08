@@ -66,8 +66,8 @@ export default function DohSettingsView() {
   const editingRow = data.find((row) => row.customer_id === editingId);
 
   return (
-    <div className="grid gap-1">
-      <section className={cardClass}>
+    <div className="grid min-w-0 gap-1">
+      <section className={`${cardClass} min-w-0`}>
         <div className="mb-2 flex items-center justify-between gap-2">
           <h2 className="text-sm font-medium text-deep-violet-blue">Customer DOH thresholds</h2>
           <RefreshButton

@@ -7,6 +7,8 @@ import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import ChartLoading from '@/components/ui/ChartLoading';
+import LineChartSkeleton from '@/components/ui/LineChartSkeleton';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ForecastConfidenceDetails from '@/components/forecast/ForecastConfidenceDetails';
 import ForecastLineToggle from '@/components/forecast/ForecastLineToggle';
@@ -32,6 +34,8 @@ import {
 } from '@/app/utils/forecastView';
 import { forecastLineHints, hasPreviousLine } from '@/app/utils/forecastLineText';
 import { dotRevealDelay, lineSweepTimings } from '@/app/utils/lineAnimation';
+import { yearAxisProps } from '@/app/utils/trendChart';
+import useMediaQuery from '@/hooks/useMediaQuery';
 
 // All lines draw in with one left-to-right sweep (see lineSweepTimings), so
 // Actual, Initial and Current reach each month together. The promo bands wipe
@@ -242,6 +246,7 @@ export default function ForecastChart({
   summary = null,
   yearTable = null,
 }) {
+  const mobile = useMediaQuery('(max-width: 639px)');
   const chartWrapRef = useRef(null);
   const overPanelRef = useRef(false);
   const lastPointerXRef = useRef(0);
@@ -309,6 +314,8 @@ export default function ForecastChart({
       ]
     : chartData;
   const ticks = plotData.map((point) => point.x);
+  // Keep every tick in the DOM: the chart's month hover lookup uses their positions.
+  const formatMobileYear = yearAxisProps(chartData, 'month_year').tickFormatter;
   // Every line drawn, including the Scenario builder's, needs a timing.
   const lineTimings = lineSweepTimings(plotData, allSeries.map((series) => series.key), LINE_SWEEP);
 
@@ -434,7 +441,7 @@ export default function ForecastChart({
   }
 
   return (
-    <Card size="sm" className="overflow-visible rounded-lg border border-lavander bg-white text-deep-violet-blue shadow-sm ring-0">
+    <Card size="sm" className="min-w-0 max-w-full overflow-visible rounded-lg border border-lavander bg-white text-deep-violet-blue shadow-sm ring-0">
       <CardHeader className="flex flex-row items-start justify-between gap-3 pb-1">
         <div className="min-w-0 space-y-1.5">
           <CardTitle className="font-serif text-base font-normal text-deep-violet-blue group-data-[size=sm]/card:text-base">
@@ -467,7 +474,7 @@ export default function ForecastChart({
           </Tabs>
         ) : null}
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="min-w-0 space-y-3">
         {toolbar}
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-lavander bg-white px-3 py-2">
           <ForecastLineToggle
@@ -489,12 +496,26 @@ export default function ForecastChart({
           <p className="text-sm text-muted-foreground">No lines selected. Turn a line on to plot values.</p>
         ) : !hasData ? (
           // Rows start empty, so without this the first load would briefly
-          // claim there is no data. Sized like the chart frame below.
+          // claim there is no data. Same box as the loaded chart below (its
+          // pl-1 pr-3 pt-2 wrapper, 34vh / min 220px ChartContainer with the
+          // 48px tilted month axis, then the legend footer line), one line per
+          // series switched on and one point per month in the date range.
+          // A refetch keeps the old chart under the overlay instead.
           loading ? (
-            <ChartLoading
-              label="Loading forecast…"
-              className="h-[calc(34vh+10px)] min-h-[230px] rounded-xl border border-lavander bg-white"
-            />
+            <div className="pl-1 pr-3 pt-2">
+              <LineChartSkeleton
+                points={chartPoints.length}
+                lines={visibleKeys.length}
+                height={220}
+                fill
+                tiltXTicks
+                label="Loading forecast…"
+                className="h-[34vh]"
+              />
+              <div className="mt-1 flex justify-center px-3 pb-1">
+                <Skeleton className="h-3 w-72 max-w-full rounded bg-lavander motion-reduce:animate-none" />
+              </div>
+            </div>
           ) : (
             <p className="text-sm text-muted-foreground">{emptyMessage}</p>
           )
@@ -524,11 +545,13 @@ export default function ForecastChart({
                     domain={[0, lastIndex + 1]}
                     ticks={ticks}
                     interval={0}
-                    height={48}
+                    height={mobile ? 28 : 48}
                     tick={{ fontSize: 9, fill: '#3A4369' }}
-                    tickFormatter={(index) => plotData[index]?.label ?? ''}
-                    angle={-40}
-                    textAnchor="end"
+                    tickFormatter={(index) => mobile
+                      ? formatMobileYear(plotData[index]?.month_year)
+                      : (plotData[index]?.label ?? '')}
+                    angle={mobile ? 0 : -40}
+                    textAnchor={mobile ? 'middle' : 'end'}
                     tickMargin={8}
                   />
                   <YAxis

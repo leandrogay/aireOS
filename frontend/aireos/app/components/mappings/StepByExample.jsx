@@ -9,8 +9,6 @@ import { inputClass } from '@/components/ui/formStyles';
 import { suggestSteps } from '@/app/utils/stepByExample';
 import { cn } from '@/lib/utils';
 
-const smallButton = 'h-7 border-deep-violet-blue/30 bg-white px-2 text-xs text-deep-violet-blue hover:bg-cream';
-const iconButton = 'rounded-md p-1 text-deep-violet-blue/50 hover:bg-cream hover:text-deep-violet-blue disabled:opacity-40';
 
 // Examples a reviewer can give; two settle most readings, three any.
 const MAX_EXAMPLES = 3;
@@ -85,15 +83,16 @@ export default function StepByExample({ values, onAdd, disabled = false }) {
               className={cn(inputClass, 'min-w-0 flex-1 basis-32 py-1 font-mono text-xs')}
             />
             {examples.length > 1 && (
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon-xs"
                 aria-label={`Remove example ${index + 1}`}
                 disabled={disabled}
                 onClick={() => setExamples((prev) => prev.filter((_, i) => i !== index))}
-                className={iconButton}
               >
-                <X aria-hidden="true" className="size-3.5" />
-              </button>
+                <X aria-hidden="true" />
+              </Button>
             )}
           </li>
         ))}
@@ -130,9 +129,9 @@ export default function StepByExample({ values, onAdd, disabled = false }) {
               <Button
                 type="button"
                 variant="outline"
+                size="sm"
                 disabled={disabled}
                 onClick={() => use(suggestion.step)}
-                className={smallButton}
               >
                 Use this
               </Button>
@@ -147,15 +146,10 @@ export default function StepByExample({ values, onAdd, disabled = false }) {
         </p>
       )}
       {examples.length < MAX_EXAMPLES && values.length > examples.length && (
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={addExample}
-          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-deep-violet-blue/70 hover:bg-cream disabled:opacity-60"
-        >
-          <Plus aria-hidden="true" className="size-3" />
+        <Button type="button" variant="ghost" size="xs" disabled={disabled} onClick={addExample}>
+          <Plus aria-hidden="true" />
           Another example
-        </button>
+        </Button>
       )}
     </div>
   );

@@ -3,13 +3,14 @@
 import { useEffect, useId } from 'react';
 import { createPortal } from 'react-dom';
 
-import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 
 // The confirm button's colour says how serious the action is: red for
 // anything that cannot be undone, the brand navy otherwise.
-const CONFIRM_TONES = {
-  destructive: 'border-red-700 bg-red-700',
-  default: 'border-deep-violet-blue bg-deep-violet-blue',
+// `tone` picks the confirm button's Button variant.
+const CONFIRM_VARIANTS = {
+  destructive: 'destructive',
+  default: 'default',
 };
 
 /**
@@ -124,25 +125,17 @@ export default function ConfirmDialog({
         )}
         {children}
         <div className="mt-4 flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={isPending}
-            className="rounded-md border border-deep-violet-blue/30 bg-white px-3 py-1.5 text-sm font-medium text-deep-violet-blue hover:bg-cream disabled:cursor-not-allowed disabled:opacity-60"
-          >
+          <Button type="button" variant="outline" onClick={onCancel} disabled={isPending}>
             {cancelLabel}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant={CONFIRM_VARIANTS[tone] || CONFIRM_VARIANTS.destructive}
             onClick={onConfirm}
             disabled={isPending || confirmDisabled}
-            className={cn(
-              'rounded-md border px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60',
-              CONFIRM_TONES[tone] || CONFIRM_TONES.destructive,
-            )}
           >
             {isPending ? pendingLabel : confirmLabel}
-          </button>
+          </Button>
         </div>
       </div>
     </div>,

@@ -29,7 +29,7 @@ export default function SellInDetailTable({ rows, loading = false }) {
   return (
     <InventoryTableFrame title="Sell-in plan by SKU and month" rows={rows} loading={loading}>
       {(visible, monthHeader) => (
-        <table className={inventoryTableClass}>
+        <table className={cn(inventoryTableClass, 'min-w-[68rem]')}>
           <thead className={inventoryTheadClass}>
             <tr className={inventoryHeadRowClass}>
               {monthHeader}

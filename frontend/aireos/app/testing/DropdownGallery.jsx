@@ -9,7 +9,7 @@ import MultiSelectDropdown from '@/components/ui/MultiSelectDropdown';
 import SelectDropdown from '@/components/ui/SelectDropdown';
 import { filterLabelClass } from '@/components/inventory/InventoryChrome';
 
-import { Section, Variant } from './GalleryParts';
+import { NotMigrated, Section, Variant, WhichToUse } from './GalleryParts';
 
 // A living reference for the dropdown kit; see app/testing/page.js.
 
@@ -24,6 +24,22 @@ const GUIDE = [
   ['Pick any number from a list', 'MultiSelectDropdown', 'values, onChange, options, noneMeansAll'],
   ['Pick one month', 'MonthDropdown', 'value (YYYY-MM), onChange, min / max'],
   ['Something else in the panel', 'Dropdown', 'summary, children (query, close) => nodes'],
+];
+
+// Selects that should move to the kit, page by page. Remove a row when its
+// page migrates.
+const NOT_MIGRATED = [
+  ['Promotions', 'promotions/PromotionFilters.jsx', 'ui/FilterSelect (native select)', 'SelectDropdown look="filter"'],
+  ['SKUs', 'skus/SkuFilters.jsx', 'ui/FilterSelect (native select)', 'SelectDropdown look="filter"'],
+  ['Settings', 'settings/PromoUpliftFilters.jsx', 'ui/FilterSelect (native select)', 'SelectDropdown look="filter"'],
+  ['Dashboard', 'dashboard/DashboardFilters.jsx', 'Raw <select> (2)', 'SelectDropdown look="compact"'],
+  ['Forecast', 'forecast/ForecastFilters.jsx', 'Raw <select> (2)', 'SelectDropdown look="compact"'],
+  ['Inventory', 'inventory/CustomerDropdown.jsx', 'Raw <select>', 'SelectDropdown look="compact"'],
+  ['Promotions', 'promotions/PromotionForm.jsx', 'Raw <select>', 'SelectDropdown look="field"'],
+  ['Scenario', 'scenario/BlockEditor.jsx (4), PromotionEditor.jsx (6)', 'Raw <select>', 'SelectDropdown look="field"'],
+  ['Settings', 'settings/PromoOverrideForm.jsx', 'Raw <select> (4)', 'SelectDropdown look="field"'],
+  ['Customers', 'customers/LinkRetailerDialog.jsx', 'Raw <select>', 'SelectDropdown look="field"'],
+  ['Tables', 'ui/TablePagination.jsx', 'Raw <select> (page size)', 'SelectDropdown look="field" size="sm"'],
 ];
 
 const CUSTOMERS = [
@@ -98,7 +114,7 @@ export default function DropdownGallery() {
     compactSome: ['AIR-PT-L'],
   });
   const [months, setMonths] = useState({ field: '2026-07', compact: '', bounded: '2026-03' });
-  const [native, setNative] = useState({ filterSelect: '', inventory: '1' });
+  const [native, setNative] = useState({ filterSelect: '', inventory: '1', form: '2' });
   const [lastAction, setLastAction] = useState('');
 
   const setOne = (key) => (value) => setSingle((prev) => ({ ...prev, [key]: value }));
@@ -107,40 +123,15 @@ export default function DropdownGallery() {
 
   return (
     <div>
-      <section className="mb-4 rounded-lg border border-lavander bg-white p-4 shadow-sm">
-        <h2 className="font-serif text-lg text-deep-violet-blue">How to use this page</h2>
-        <p className="mb-3 text-xs text-deep-violet-blue/60">
-          Every control below is the real shared component with sample data, so click around: open them, search,
-          tick, pick. The line under each shows the value it currently holds and the props it was built with.
-          Build new dropdowns on these rather than on a raw Popover or a native select.
-        </p>
-        <div className="overflow-x-auto rounded-md border border-lavander">
-          <table className="w-full text-left text-xs text-deep-violet-blue">
-            <thead className="bg-cream">
-              <tr className="border-b border-lavander">
-                <th className="px-2.5 py-2 font-semibold">I need to…</th>
-                <th className="px-2.5 py-2 font-semibold">Use</th>
-                <th className="px-2.5 py-2 font-semibold">Main props</th>
-              </tr>
-            </thead>
-            <tbody>
-              {GUIDE.map(([need, component, props]) => (
-                <tr key={component} className="border-b border-lavander/80 last:border-b-0">
-                  <td className="px-2.5 py-2">{need}</td>
-                  <td className="px-2.5 py-2 font-mono">{component}</td>
-                  <td className="px-2.5 py-2 font-mono text-deep-violet-blue/70">{props}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="mt-3 text-xs text-deep-violet-blue/70">
-          <span className="font-medium">look</span> sets where it sits: <span className="font-mono">field</span> in
-          forms and tables, <span className="font-mono">filter</span> in a FilterBar,{' '}
-          <span className="font-mono">compact</span> in the inventory filter cards. Turn on search with{' '}
-          <span className="font-mono">searchable</span> for long lists.
-        </p>
-      </section>
+      <WhichToUse
+        rows={GUIDE}
+        note="Every control below is the real shared component with sample data, so click around: open them, search, tick, pick. The line under each shows the value it currently holds and the props it was built with. Build new dropdowns on these rather than on a raw Popover or a native select."
+      >
+        <span className="font-medium">look</span> sets where it sits: <span className="font-mono">field</span> in
+        forms and tables, <span className="font-mono">filter</span> in a FilterBar,{' '}
+        <span className="font-mono">compact</span> in the inventory filter cards. Turn on search with{' '}
+        <span className="font-mono">searchable</span> for long lists.
+      </WhichToUse>
 
       <Section
         title="SelectDropdown — pick one"
@@ -301,11 +292,8 @@ export default function DropdownGallery() {
         </Variant>
       </Section>
 
-      <Section
-        title="Native selects — still used on some pages"
-        note="For comparison: the browser draws these menus. FilterSelect is on Promotions and SKUs; raw selects are on the Dashboard and Forecast filters."
-      >
-        <Variant name="ui/FilterSelect (Promotions, SKUs)" props="native" value={native.filterSelect}>
+      <NotMigrated rows={NOT_MIGRATED}>
+        <Variant name="Old: ui/FilterSelect (native)" props="native select" value={native.filterSelect}>
           <FilterSelect
             label="Status"
             value={native.filterSelect}
@@ -314,7 +302,16 @@ export default function DropdownGallery() {
             onChange={(value) => setNative((prev) => ({ ...prev, filterSelect: value }))}
           />
         </Variant>
-        <Variant name="Raw <select> (Dashboard, Forecast)" props="native, plain classes" value={native.inventory}>
+        <Variant name="New: SelectDropdown, filter" props={'look="filter"'} value={native.filterSelect}>
+          <span className={filterLabelClass}>Status</span>
+          <SelectDropdown
+            look="filter"
+            value={native.filterSelect}
+            options={STATUSES}
+            onChange={(value) => setNative((prev) => ({ ...prev, filterSelect: value }))}
+          />
+        </Variant>
+        <Variant name="Old: raw <select> (Dashboard, Forecast)" props="native, plain classes" value={native.inventory}>
           <span className={filterLabelClass}>Customer</span>
           <select
             value={native.inventory}
@@ -328,7 +325,36 @@ export default function DropdownGallery() {
             ))}
           </select>
         </Variant>
-      </Section>
+        <Variant name="New: SelectDropdown, compact" props={'look="compact"'} value={native.inventory}>
+          <span className={filterLabelClass}>Customer</span>
+          <SelectDropdown
+            look="compact"
+            value={native.inventory}
+            options={CUSTOMERS}
+            onChange={(value) => setNative((prev) => ({ ...prev, inventory: value }))}
+          />
+        </Variant>
+        <Variant name="Old: raw <select> in a form" props="native, cream field classes" value={native.form}>
+          <select
+            value={native.form}
+            onChange={(event) => setNative((prev) => ({ ...prev, form: event.target.value }))}
+            className="w-full rounded-md border border-lavander bg-cream px-2.5 py-1.5 text-sm text-deep-violet-blue focus:border-violet focus:outline-none"
+          >
+            {CUSTOMERS.map((customer) => (
+              <option key={customer.value} value={customer.value}>
+                {customer.label}
+              </option>
+            ))}
+          </select>
+        </Variant>
+        <Variant name="New: SelectDropdown, field" props={'look="field"'} value={native.form}>
+          <SelectDropdown
+            value={native.form}
+            options={CUSTOMERS}
+            onChange={(value) => setNative((prev) => ({ ...prev, form: value }))}
+          />
+        </Variant>
+      </NotMigrated>
     </div>
   );
 }

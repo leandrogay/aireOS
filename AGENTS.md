@@ -127,15 +127,22 @@ aireOS/
     │   ├── components/
     │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column), Sidebar (NAV_ITEMS; collapses
     │   │   │                      to an icon rail, hidden on narrow screens), RailFlyout (a rail section's sub-pages)
-    │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, calendar, popover, DateRangePicker
-    │   │   │                      (typed date inputs, not a calendar); MonthGrid (year + 12-month grid, shared by
+    │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, calendar (brand-styled), popover;
+    │   │   │                      date kit on calendar: DatePicker (one day) / RangeDatePicker (start + end, Apply), each
+    │   │   │                      `variant` button or typed input (utils/datePicker.js); DateRangePicker (older typed
+    │   │   │                      From/To pair, exports DateInput, the dd/mm/yyyy box); ChartLoading (spinner placeholder / refetch overlay)
+    │   │   │                      and chart skeletons (first-load placeholders on ui/skeleton): ChartSkeletonFrame (shared
+    │   │   │                      axes/gridlines/legend/status, `tiltXTicks` for angled labels) → BarChartSkeleton (`groups` per category),
+    │   │   │                      LineChartSkeleton (`lines`, `points`; paths from utils/chartSkeleton.js; forecast first load);
+    │   │   │                      page skeleton kit: PageSkeleton (one busy status, children inert) holding CardSkeleton (card frame +
+    │   │   │                      header bars) + SkeletonBars, chart skeletons and DataTable's first-load state (scenario/ScenarioBuilderSkeleton is the model); MonthGrid (year + 12-month grid, shared by
     │   │   │                      MonthDropdown and the dashboard month-range picker); dropdown kit: Dropdown (the one shell:
     │   │   │                      closed button, popover panel, optional `searchable`, `look` field/filter/compact) →
     │   │   │                      SelectDropdown (pick one, ✓ rows), MultiSelectDropdown (pick many, tick-box rows + "All",
     │   │   │                      `noneMeansAll`), MonthDropdown (one 'YYYY-MM' month, wrapped by promotions MonthPicker and
     │   │   │                      inventory MonthFilter); build new pickers on these, not on a raw Popover; toggle kit: SegmentedControl
     │   │   │                      (pick one of a few, sliding highlight, `look` tint/outline), ToggleButton (one thing on/off,
-    │   │   │                      `look` compact/chip), ToggleField (switch; `label` / `showState` / hints opt in, `ariaLabel` when unlabelled; used by DOH alerts and nomenclature file settings); app/testing shows both kits and lists the
+    │   │   │                      `look` compact/chip), ToggleField (switch; `label` / `showState` / hints opt in, `ariaLabel` when unlabelled; used by DOH alerts and nomenclature file settings); app/testing shows both kits and the brand-coloured Button (default/outline/secondary/ghost/destructive/destructive-outline/link/scenario; sizes sm/default/lg) and lists the
     │   │   │                      pages not migrated yet; HeaderCheckboxFilter (table-header pill
     │   │   │                      filter, forecast + inventory tables); formStyles.js (cream form input/label/button classes
     │   │   │                      shared by forms and dialogs); Toast (+ hooks/useToast);
@@ -144,7 +151,8 @@ aireOS/
     │   │   │                      skeleton; `nested` variant + `inset` for tables inside rows), ExpandableRow, RowActions
     │   │   │                      ("..." menu, disabledReason), StatusPill (success/info/muted/warning/danger); + hooks/useExpandedRows,
     │   │   │                      hooks/useConfirmAction; filter kit (Promotions, SKUs, Nomenclatures): FilterBar (card + grid +
-    │   │   │                      Reset) holding FilterSelect (single pick) / MultiSelectDropdown (tick-box), whose closed look
+    │   │   │                      Reset) holding FilterSelect (single pick) / MultiSelectDropdown (tick-box) / PriceRangeFilter
+    │   │   │                      (min/max popover on Dropdown, text from utils/priceRange.js), whose closed look
     │   │   │                      comes from filterControl.js (filterControlClass)
     │   │   ├── dashboard/         ChannelSwitch (Offline / Online, beside the page title), DashboardFilters,
     │   │   │                      CustomerSelector, FilterBadge, PeriodControls (Period /
@@ -177,6 +185,7 @@ aireOS/
     │   └── utils/                 Pure, React-free helpers
     │       ├── promotionForm.js   PROMO_TYPES, EMPTY_PROMOTION_FORM, validate/build/formFrom helpers
     │       ├── skuForm.js         required-field validation and SKU form/payload conversion
+    │       ├── skuFilters.js      SKU catalog filtering (multi-select range/brand, min/max price, search)
     │       ├── promotionOverview.js list grouping/filter helpers
     │       ├── forecastView.js    Sell-out run series (Initial Yearly Forecast/Previous/Current), tier resolution
     │       ├── scenarioPlan.js    Monthly plan rows: last year, model, blocks, adjusted, variance; shiftMonth()

@@ -5,7 +5,6 @@ import { ChevronDown, CircleAlert } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { primaryButtonClass, secondaryButtonClass } from '@/components/ui/formStyles';
 import {
   currentDecision,
   decisionProblem,
@@ -135,18 +134,19 @@ function EditorForm({ entry, mapping, state, layout, onApply, onClose }) {
           {more.length > 0 && (
             <div className="mt-1.5">
               {!chosenInMore && (
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="xs"
                   aria-expanded={showMore}
                   onClick={() => setShowMore((open) => !open)}
-                  className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-deep-violet-blue/70 hover:bg-cream"
                 >
                   <ChevronDown
                     aria-hidden="true"
-                    className={cn('size-3 transition-transform', showMore && 'rotate-180')}
+                    className={cn('transition-transform', showMore && 'rotate-180')}
                   />
                   {showMore ? 'Fewer ways' : `More ways (${more.length})`}
-                </button>
+                </Button>
               )}
               {(showMore || chosenInMore) && (
                 <ul className="mt-1 space-y-1">
@@ -194,10 +194,10 @@ function EditorForm({ entry, mapping, state, layout, onApply, onClose }) {
             {problem}
           </p>
         )}
-        <Button type="button" variant="outline" onClick={onClose} className={secondaryButtonClass}>
+        <Button type="button" variant="outline" onClick={onClose}>
           Cancel
         </Button>
-        <Button type="submit" disabled={blocked} className={primaryButtonClass}>
+        <Button type="submit" disabled={blocked}>
           Use this
         </Button>
       </div>

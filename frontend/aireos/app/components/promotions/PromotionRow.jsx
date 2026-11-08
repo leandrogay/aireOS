@@ -42,6 +42,19 @@ const STATUS_TONES = {
  *   onDelete: (promotion: object) => void,
  * }} props
  */
+export function promotionRowActions(promotion, isEditing, onEdit, onDelete) {
+  return [
+    {
+      key: 'edit',
+      label: 'Edit',
+      icon: Pencil,
+      onSelect: () => onEdit(promotion),
+      disabledReason: isEditing ? 'Editing now' : undefined,
+    },
+    { key: 'delete', label: 'Delete', icon: Trash2, destructive: true, onSelect: () => onDelete(promotion) },
+  ];
+}
+
 export default function PromotionRow({
   promotion,
   isOpen,
@@ -56,16 +69,7 @@ export default function PromotionRow({
   const retailerSummary = summariseNames(retailerNames);
   const status = promotionStatus(promotion);
 
-  const actions = [
-    {
-      key: 'edit',
-      label: 'Edit',
-      icon: Pencil,
-      onSelect: () => onEdit(promotion),
-      disabledReason: isEditing ? 'Editing now' : undefined,
-    },
-    { key: 'delete', label: 'Delete', icon: Trash2, destructive: true, onSelect: () => onDelete(promotion) },
-  ];
+  const actions = promotionRowActions(promotion, isEditing, onEdit, onDelete);
 
   return (
     <ExpandableRow
