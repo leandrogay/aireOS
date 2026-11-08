@@ -6,7 +6,7 @@ import BarChartSkeleton from '@/components/ui/BarChartSkeleton';
 import SelectDropdown from '@/components/ui/SelectDropdown';
 import useSellInOutlook from '@/hooks/useSellInOutlook';
 import useSellInPlan from '@/hooks/useSellInPlan';
-import { formatDoh, formatMonth } from '@/app/utils/inventoryForm';
+import { formatDoh, formatMonth, formatUnits } from '@/app/utils/inventoryForm';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 
 import {
@@ -14,6 +14,7 @@ import {
   InventoryChartSlot,
   InventoryFilterCard,
   InventorySection,
+  monthRangeLabel,
   skuScopeLabel,
   StatTag,
 } from './InventoryChrome';
@@ -51,6 +52,10 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
   const [customerId, setCustomerId] = useState(null);
   const [months, setMonths] = useState(6);
   const [skus, setSkus] = useState([]);
+  // The chart's "Start from" year; null = the backend's default, the year of
+  // the latest actual month (get_sell_in_outlook). Reset when the customer or
+  // SKUs change, since the years on offer depend on their actuals.
+  const [startYear, setStartYear] = useState(null);
 
   // Adjust state during render: pick the first customer once the list arrives,
   // so the view is never empty by default. Runs only while nothing is chosen.
@@ -59,22 +64,39 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
   }
 
   const { data, loading, error } = useSellInPlan({ customerId, months, skus, refreshKey });
-  const outlook = useSellInOutlook({ customerId, months, skus, refreshKey });
+  const outlook = useSellInOutlook({ customerId, months, skus, startYear, refreshKey });
   const customerName = customers.find((c) => c.customer_id === customerId)?.customer_name;
+  const chartMonths = outlook.data?.months ?? [];
   const outlookTags = [
     { label: 'Customer', value: customerName ? retailerLabel(customerName) : '—' },
     { label: 'SKU', value: skuScopeLabel(skus) },
+    ...(chartMonths.length
+      ? [{ label: 'Months', value: monthRangeLabel(chartMonths[0].month, chartMonths[chartMonths.length - 1].month) }]
+      : []),
   ];
+  const startYearOptions = (outlook.data?.start_years ?? []).map((year) => ({ value: String(year), label: String(year) }));
+  const shownStartYear = startYear ?? outlook.data?.start_year ?? null;
+
+  function changeCustomer(id) {
+    setCustomerId(id);
+    setStartYear(null);
+  }
+
+  function changeSkus(next) {
+    setSkus(next);
+    setStartYear(null);
+  }
 
   function clearFilters() {
     setSkus([]);
     setMonths(6);
+    setStartYear(null);
   }
 
   return (
     <div className="space-y-1">
       <InventoryFilterCard
-        canClear={skus.length > 0 || months !== 6}
+        canClear={skus.length > 0 || months !== 6 || startYear !== null}
         onClear={clearFilters}
         stats={data?.actuals_through ? (
           <>
@@ -92,14 +114,26 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
           {/* SelectDropdown values are strings; customer ids are numbers. */}
           <SelectDropdown
             value={customerId === null ? '' : String(customerId)}
-            onChange={(value) => setCustomerId(Number(value))}
+            onChange={(value) => changeCustomer(Number(value))}
             options={customers.map((c) => ({ value: String(c.customer_id), label: retailerLabel(c.customer_name) }))}
             ariaLabel="Customer"
             look="compact"
           />
         </div>
 
-        <SkuDropdown skuOptions={skuOptions} skus={skus} onChange={setSkus} />
+        <SkuDropdown skuOptions={skuOptions} skus={skus} onChange={changeSkus} />
+
+        <div className="min-w-0">
+          <span className={filterLabelClass}>Start from</span>
+          <SelectDropdown
+            value={shownStartYear === null ? '' : String(shownStartYear)}
+            onChange={(value) => setStartYear(Number(value))}
+            options={startYearOptions}
+            ariaLabel="Start from"
+            look="compact"
+            disabled={startYearOptions.length === 0}
+          />
+        </div>
 
         <div className="min-w-0">
           <span className={filterLabelClass}>Months ahead</span>
@@ -161,7 +195,12 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
           )}
         >
           {outlook.data && (
-            <SellInOutlookChart months={outlook.data.months} actualsThrough={outlook.data.actuals_through} />
+            <SellInOutlookChart
+              months={outlook.data.months}
+              actualsThrough={outlook.data.actuals_through}
+              sellInComparison={outlook.data.last_month_sell_in_vs_forecast}
+              sellOutComparison={outlook.data.last_month_vs_forecast}
+            />
           )}
         </InventoryChartSlot>
       </InventorySection>

@@ -59,6 +59,8 @@ aireOS/
 │   │       ├── scenario/building_blocks.py scenario_building_blocks CRUD; resolves customer_name/product_name to customer_id/sku
 │   │       ├── sellout_units.py   Cloud SQL monthly sell-out per SKU for inventory, via sellout_service's effective-sellout view
 │   │       ├── forecast_units.py  read-only BigQuery forecast units per SKU/month, from the aire_forecasting_output view (BQ_FORECAST_OUTPUT_VIEW)
+│   │       ├── sell_in_snapshots.py saves every customer's sell-in plan when a forecast refresh retrains (worker + scheduled run), one
+│   │       │                      snapshot per customer per month (sell_in_plan_snapshots); the chart's "Sell-in Forecast (Previous)"
 │   │       ├── catalog_service.py retailers/stores/skus CRUD; SKU history/archive; get_or_create_* seams; retailer
 │   │       │                      writes for the Customers page (always under a customer, blocked once it has stores)
 │   │       ├── customer_service.py customers CRUD + list_customers (customers with nested retailers, in_use flags,
@@ -141,10 +143,13 @@ aireOS/
     │   │   │                      SelectDropdown (pick one, ✓ rows), MultiSelectDropdown (pick many, tick-box rows + "All",
     │   │   │                      `noneMeansAll`), MonthDropdown (one 'YYYY-MM' month, wrapped by promotions MonthPicker and
     │   │   │                      inventory MonthFilter); build new pickers on these, not on a raw Popover; toggle kit: SegmentedControl
-    │   │   │                      (pick one of a few, sliding highlight, `look` tint/outline), ToggleButton (one thing on/off,
+    │   │   │                      (pick one of a few, sliding highlight, `look` tint/outline), LineToggle (chart line on/off pills, one row or stacked `groups` with a
+    │   │   │                      `header`; Forecast + Scenario charts and the inventory sell-in chart), ToggleButton (one thing on/off,
     │   │   │                      `look` compact/chip), ToggleField (switch; `label` / `showState` / hints opt in, `ariaLabel` when unlabelled; used by DOH alerts and nomenclature file settings); app/testing shows both kits and the brand-coloured Button (default/outline/secondary/ghost/destructive/destructive-outline/link/scenario; sizes sm/default/lg) and lists the
     │   │   │                      pages not migrated yet; HeaderCheckboxFilter (table-header pill
-    │   │   │                      filter, forecast + inventory tables); formStyles.js (cream form input/label/button classes
+    │   │   │                      filter, forecast + inventory tables); ComparisonFigures (ChangeFigure / ChangeValue / ComparisonNote: the
+    │   │   │                      ▲/▼ % figures and note of a Comparison card, dashboard + inventory); ChartZoomButton (+ hooks/useChartZoom: drag across
+    │   │   │                      a category chart to zoom, inventory sell-in chart); formStyles.js (cream form input/label/button classes
     │   │   │                      shared by forms and dialogs); Toast (+ hooks/useToast);
     │   │   │                      list-table kit (Customers, Promotions, SKUs, Nomenclatures): DataTable (card: count, search slot,
     │   │   │                      refresh, Retry, empty state, footer) → TableGrid (column config → fixed widths, sort headers,

@@ -139,3 +139,41 @@ def test_no_customers_skips_bigquery(monkeypatch):
     monkeypatch.setattr(bigquery, "get_bigquery_client", _no_client_allowed)
 
     assert forecast_units.get_forecast_units_by_customer([]) == {}
+
+
+# ---- current and initial lines together (sell-in plan) ----
+
+LINE_COLUMNS = ["customer_id", "sku", "month_year", "forecast_current", "forecast_previous", "forecast_initial"]
+
+
+def test_both_lines_are_read_in_one_query(monkeypatch):
+    client = _install(monkeypatch, pd.DataFrame(columns=LINE_COLUMNS))
+
+    forecast_units.get_forecast_lines(1)
+
+    assert "forecast_previous IS NOT NULL" in client.last_query
+    assert "forecast_initial IS NOT NULL" in client.last_query
+    assert "customer_id =" not in client.last_query
+
+
+def test_each_line_keeps_only_the_months_it_has(monkeypatch):
+    frame = pd.DataFrame(
+        [
+            {"customer_id": 1, "sku": "A1", "month_year": date(2026, 8, 1), "forecast_current": None, "forecast_previous": 55.0, "forecast_initial": 50.0},
+            {"customer_id": 1, "sku": "A1", "month_year": pd.Timestamp("2026-10-01"), "forecast_current": 70.0, "forecast_previous": None, "forecast_initial": 60.0},
+            {"customer_id": 2, "sku": "A1", "month_year": date(2026, 8, 1), "forecast_current": 9.0, "forecast_previous": 9.0, "forecast_initial": 9.0},
+        ]
+    )
+    _install(monkeypatch, frame)
+
+    assert forecast_units.get_forecast_lines(1) == {
+        "current": {"A1": {date(2026, 10, 1): 70.0}},
+        "previous": {"A1": {date(2026, 8, 1): 55.0}},
+        "initial": {"A1": {date(2026, 8, 1): 50.0, date(2026, 10, 1): 60.0}},
+    }
+
+
+def test_no_rows_gives_three_empty_lines(monkeypatch):
+    _install(monkeypatch, pd.DataFrame(columns=LINE_COLUMNS))
+
+    assert forecast_units.get_forecast_lines(1) == {"current": {}, "previous": {}, "initial": {}}

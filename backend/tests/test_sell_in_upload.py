@@ -136,8 +136,8 @@ def test_a_description_that_is_not_listed_is_not_guessed():
     assert product_for_description("") is None
 
 
-def test_cmm_marketing_services_is_known_as_sheng_shiong():
-    assert canonical_customer_name("CMM Marketing Services Pte Ltd") == "sheng_shiong"
+def test_cmm_marketing_services_is_known_as_sheng_siong():
+    assert canonical_customer_name("CMM Marketing Services Pte Ltd") == "sheng_siong"
 
 
 def test_an_unlisted_customer_name_is_returned_unchanged():

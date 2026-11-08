@@ -1778,7 +1778,7 @@ def test_customer_nicknames_resolve_to_the_stored_customer(typed):
 
 
 def test_unknown_names_pass_through_unchanged():
-    assert assistant._customer_slug("Sheng Shiong") == "sheng_shiong"
+    assert assistant._customer_slug("Sheng Siong") == "sheng_siong"
     assert assistant._customer_slug("Giant") == "giant"
 
 
@@ -3773,12 +3773,12 @@ def test_report_date_is_the_singapore_day(monkeypatch):
 
 _INVENTORY_CUSTOMERS = [
     {"customer_id": 1, "customer_name": "fairprice"},
-    {"customer_id": 2, "customer_name": "sheng_shiong"},
+    {"customer_id": 2, "customer_name": "sheng_siong"},
 ]
 
 
 def _customer_view(customer_id, doh, month="2026-07-01", product="Adult Pants L"):
-    name = {1: "fairprice", 2: "sheng_shiong"}[customer_id]
+    name = {1: "fairprice", 2: "sheng_siong"}[customer_id]
     return {
         "customer": {"customer_id": customer_id, "customer_name": name},
         "threshold": {"target_doh": 30.0, "min_doh": 25.0, "max_doh": 35.0, "is_global_default": True},
@@ -3835,13 +3835,13 @@ def test_a_follow_up_about_the_chart_on_screen_keeps_it(monkeypatch):
 def test_a_fresh_lookup_replaces_the_previous_table_even_if_the_model_calls_it_a_follow_up(monkeypatch):
     monkeypatch.setattr(inventory_service, "list_customers", lambda: _INVENTORY_CUSTOMERS)
     monkeypatch.setattr(inventory_service, "get_customer_view", lambda **kwargs: _customer_view(2, 22.5))
-    tool_call = _tool_call_response(("tu_1", "get_customer_inventory", {"customer": "sheng shiong"}))
+    tool_call = _tool_call_response(("tu_1", "get_customer_inventory", {"customer": "sheng siong"}))
     _install_fake_client(
         monkeypatch,
-        [tool_call, _final_answer(text="Sheng Shiong is at 22.5 days.", uses_previous_chart=True)],
+        [tool_call, _final_answer(text="Sheng Siong is at 22.5 days.", uses_previous_chart=True)],
     )
 
-    result = assistant.ask("and sheng shiong?", history=None, customer="fairprice", last_chart=_PREVIOUS_TABLE)
+    result = assistant.ask("and sheng siong?", history=None, customer="fairprice", last_chart=_PREVIOUS_TABLE)
 
     assert result["table_rows"][0][3] == "22.5"
 
@@ -3855,7 +3855,7 @@ def test_earlier_tool_calls_and_results_are_not_replayed_to_the_model(monkeypatc
         {"role": "model", "parts": [{"text": '{"answer": "39.8 days"}'}]},
     ]
 
-    assistant.ask("and sheng shiong?", history=history, customer="fairprice")
+    assistant.ask("and sheng siong?", history=history, customer="fairprice")
 
     sent = fake_client.models.calls[0]["contents"]
     assert sent[:-1] == [history[0], history[3]]
@@ -3878,17 +3878,17 @@ def test_two_customer_inventory_calls_show_both_customers_rows(monkeypatch):
     )
     tool_calls = _tool_call_response(
         ("tu_1", "get_customer_inventory", {"customer": "fairprice"}),
-        ("tu_2", "get_customer_inventory", {"customer": "sheng shiong"}),
+        ("tu_2", "get_customer_inventory", {"customer": "sheng siong"}),
     )
     _install_fake_client(
         monkeypatch,
-        [tool_calls, _final_answer(text="Fairprice is at 39.8 days and Sheng Shiong at 22.5 days.")],
+        [tool_calls, _final_answer(text="Fairprice is at 39.8 days and Sheng Siong at 22.5 days.")],
     )
 
     result = assistant.ask("compare DOH", history=None, customer="fairprice")
 
     assert result["table_columns"][0] == "customer"
-    assert [row[0] for row in result["table_rows"]] == ["fairprice", "sheng_shiong"]
+    assert [row[0] for row in result["table_rows"]] == ["fairprice", "sheng_siong"]
     assert [row[4] for row in result["table_rows"]] == ["39.8", "22.5"]
 
 
@@ -4013,7 +4013,7 @@ def test_a_unit_figure_in_a_sales_answer_is_not_checked_against_inventory(monkey
 
 def test_quoting_a_figure_without_calling_a_tool_triggers_one_fresh_lookup(monkeypatch):
     tool_call = _inventory_turn(monkeypatch, doh=22.5)
-    from_memory = _final_answer(text="Sheng Shiong is at 39.8 days.")
+    from_memory = _final_answer(text="Sheng Siong is at 39.8 days.")
     fresh = _final_answer(text="Fairprice is at 22.5 days.")
     fake_client = _install_fake_client(monkeypatch, [from_memory, tool_call, fresh])
 
@@ -4048,7 +4048,7 @@ def test_a_web_search_answer_shows_no_table_from_earlier_tool_calls(monkeypatch)
 
 
 def test_a_thank_you_that_quotes_old_figures_gets_a_plain_reply_with_no_table_or_note(monkeypatch):
-    from_memory = _final_answer(text="You're welcome! Sheng Shiong is at 81.2 days.")
+    from_memory = _final_answer(text="You're welcome! Sheng Siong is at 81.2 days.")
     plain = _final_answer(text="You're welcome!", grounded=True, data_source="none")
     fake_client = _install_fake_client(monkeypatch, [from_memory, plain])
 
@@ -4060,12 +4060,12 @@ def test_a_thank_you_that_quotes_old_figures_gets_a_plain_reply_with_no_table_or
 
 
 def test_an_unverifiable_figure_with_no_table_shows_the_answer_unchanged(monkeypatch):
-    still_from_memory = _final_answer(text="Sheng Shiong is at 81.2 days.")
+    still_from_memory = _final_answer(text="Sheng Siong is at 81.2 days.")
     fake_client = _install_fake_client(monkeypatch, [still_from_memory, still_from_memory])
 
     result = assistant.ask("how are they doing?", history=None, customer="fairprice")
 
-    assert result["answer"] == "Sheng Shiong is at 81.2 days."
+    assert result["answer"] == "Sheng Siong is at 81.2 days."
     assert result["has_table"] is False
 
 
@@ -4219,21 +4219,21 @@ def test_a_new_question_exports_its_own_answer(monkeypatch):
 def test_a_customer_written_with_spaces_and_capitals_resolves_to_its_stored_name(monkeypatch):
     monkeypatch.setattr(
         inventory_service, "list_customers",
-        lambda: [{"customer_id": 1, "customer_name": "fairprice"}, {"customer_id": 9, "customer_name": "sheng_shiong"}],
+        lambda: [{"customer_id": 1, "customer_name": "fairprice"}, {"customer_id": 9, "customer_name": "sheng_siong"}],
     )
 
-    assert assistant._resolve_inventory_customer_id("Sheng Shiong") == 9
-    assert assistant._resolve_inventory_customer_id("sheng-shiong") == 9
-    assert assistant._resolve_inventory_customer_id("sheng_shiong") == 9
+    assert assistant._resolve_inventory_customer_id("Sheng Siong") == 9
+    assert assistant._resolve_inventory_customer_id("sheng-siong") == 9
+    assert assistant._resolve_inventory_customer_id("sheng_siong") == 9
 
 
 def test_a_sales_tool_receives_the_customer_as_a_slug(monkeypatch):
     seen = {}
     monkeypatch.setattr(sellout_service, "get_dashboard_summary", lambda **kwargs: seen.update(kwargs) or {})
 
-    assistant._run_business_tool("get_sales_summary", {"customer": "Sheng Shiong"}, "fairprice")
+    assistant._run_business_tool("get_sales_summary", {"customer": "Sheng Siong"}, "fairprice")
 
-    assert seen["customer"] == "sheng_shiong"
+    assert seen["customer"] == "sheng_siong"
 
 
 def test_a_restyle_keeps_the_chart_even_when_the_model_labels_it_data_source_none(monkeypatch):
@@ -4592,3 +4592,13 @@ def test_pdf_label_that_fits_stays_on_one_line():
 
 def test_pdf_label_longer_than_its_bar_keeps_the_word_whole():
     assert assistant._pdf_wrapped_label("Extraordinarily", 10) == "Extraordinarily"
+
+
+def test_the_old_sheng_shiong_spelling_still_finds_sheng_siong():
+    assert assistant._customer_slug("Sheng Shiong") == "sheng_siong"
+    assert assistant._customer_slug("ShengShiong") == "sheng_siong"
+
+
+def test_sheng_siong_written_as_one_word_finds_the_customer():
+    assert assistant._customer_slug("ShengSiong") == "sheng_siong"
+

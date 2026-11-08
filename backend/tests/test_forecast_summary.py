@@ -74,9 +74,9 @@ def test_sgt_timestamp_matches_page_format():
 # ---- Scope ------------------------------------------------------------------
 
 def test_scope_resolves_partial_name_sku_code_and_spaced_customer():
-    rows = [_row("2026-09-01", customer="sheng_shiong"), _row("2026-09-01", product="Aire Ultra Tape XL", sku="13271342")]
+    rows = [_row("2026-09-01", customer="sheng_siong"), _row("2026-09-01", product="Aire Ultra Tape XL", sku="13271342")]
 
-    assert forecast_summary.resolve_scope(rows, "ultra tape l", "Sheng Shiong") == ("Aire Ultra Tape L", "sheng_shiong")
+    assert forecast_summary.resolve_scope(rows, "ultra tape l", "Sheng Siong") == ("Aire Ultra Tape L", "sheng_siong")
     assert forecast_summary.resolve_scope(rows, "13271342", None) == ("Aire Ultra Tape XL", None)
 
 

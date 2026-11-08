@@ -339,7 +339,7 @@ _FUNCTION_SCHEMAS = [
             "type": "object",
             "properties": {
                 "customer": {"type": "string", "description": "Retailer/customer name. Defaults to the current page's customer if omitted."},
-                "months": {"type": "integer", "description": "How many months ahead to plan, counted from the month after the last actual month (given back as actuals_through). Defaults to 6 -- pass a larger value if the month the user asked about is further out than that, so it's actually included in the returned rows."},
+                "months": {"type": "integer", "description": "How many months ahead to plan, counted from the current month (the plan runs from the month after the last actual month, given back as actuals_through, up to that many months after the current month). Defaults to 6 -- pass a larger value if the month the user asked about is further out than that, so it's actually included in the returned rows."},
                 "skus": {"type": "array", "items": {"type": "string"}, "description": "Exact SKU codes to scope the plan to. Call list_inventory_skus first if the user named a product rather than a code."},
                 "month": {"type": "string", "description": "YYYY-MM for the one month the user asked about, e.g. '2026-10' for October. Pass it whenever the question names a month: the result then holds only that month's rows, so the answer and its table/chart show the same month. Omit only when the question covers every planned month."},
             },
@@ -376,7 +376,7 @@ _FUNCTION_SCHEMAS = [
             "type": "object",
             "properties": {
                 "product": {"type": "string", "description": "Product name or SKU code, e.g. 'Aire Ultra Tape L' or '13271338'. A unique part of the name works ('ultra tape l'). Omit for every SKU."},
-                "customer": {"type": "string", "description": "Customer name, e.g. 'fairprice', 'sheng shiong', 'nhg'. Omit for every customer (does NOT default to the page's customer)."},
+                "customer": {"type": "string", "description": "Customer name, e.g. 'fairprice', 'sheng siong', 'nhg'. Omit for every customer (does NOT default to the page's customer)."},
                 "start_month": {"type": "string", "description": "YYYY-MM, the first month asked about, e.g. '2026-11' for \"next month\" in October 2026. Omit when no period was named: the first 3 forecast months are returned."},
                 "end_month": {"type": "string", "description": "YYYY-MM, inclusive. Omit for a single month (just start_month)."},
                 "include_revenue": {"type": "boolean", "description": "True when the question asks about revenue, sales value or dollars rather than (or as well as) cartons: the table then shows a revenue column. Defaults to false."},
@@ -440,12 +440,15 @@ _CUSTOMER_ALIASES = {
     "fp": "fairprice",
     "fair_price": "fairprice",
     "fairprice_group": "fairprice",
-    "shengshiong": "sheng_shiong",
+    "shengsiong": "sheng_siong",
+    # The common misspelling, so "Sheng Shiong" still finds the customer.
+    "sheng_shiong": "sheng_siong",
+    "shengshiong": "sheng_siong",
 }
 
 
 def _customer_slug(name: str) -> str:
-    """'Sheng Shiong' -> 'sheng_shiong', the form customers are stored in. The
+    """'Sheng Siong' -> 'sheng_siong', the form customers are stored in. The
     model writes names the way people do, so every customer name it passes goes
     through the same rule the catalog uses, and a nickname ('NTUC') becomes
     the customer it means."""
@@ -1258,7 +1261,7 @@ _MAX_FORECAST_SERIES_IN_TABLE = 9
 
 
 def _customer_label(name: str | None) -> str:
-    """'sheng_shiong' -> 'Sheng Shiong', the way the Forecast page writes it (retailerLabel)."""
+    """'sheng_siong' -> 'Sheng Siong', the way the Forecast page writes it (retailerLabel)."""
     if not name:
         return "All customers"
     return " ".join(word.capitalize() for word in re.split(r"[_\s]+", name) if word)

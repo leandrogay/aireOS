@@ -5,6 +5,7 @@ from functools import lru_cache
 
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
+from sqlalchemy.exc import DatabaseError
 
 from app.services import catalog_service, forecast_units, inventory_calc, notification_service, sellout_units, sql
 from app.services.sell_in_upload import canonical_customer_name, product_for_description, quantity_problem, read_sell_in_lines
@@ -92,6 +93,16 @@ def _read_connection() -> Connection:
 def _utc_today() -> date:
     # Not date.today(), which follows whatever timezone the server runs in.
     return datetime.now(timezone.utc).date()
+
+
+def _current_month() -> date:
+    """First of the current month: where the sell-in plan's "months ahead" count from."""
+    return _utc_today().replace(day=1)
+
+
+def _months_inclusive(first: date, last: date) -> int:
+    """How many months from `first` to `last`, both counted (0 when last is earlier)."""
+    return max((last.year - first.year) * 12 + last.month - first.month + 1, 0)
 
 
 def _iso(value: date | None) -> str | None:
@@ -364,6 +375,32 @@ def _forecast_by_sku(customer_id: int, details: dict[str, dict]) -> dict[str, di
         for sku, months in forecast_units.get_forecast_units(customer_id).items()
         if sku in details
     }
+
+
+def _plan_forecast(
+    lines: dict[str, dict[str, dict[date, float]]],
+    details: dict[str, dict],
+) -> tuple[dict[str, dict[date, float]], dict[str, dict[date, str]], dict[str, dict[date, float]]]:
+    """
+    The forecast the sell-in plan runs on, per SKU and month: the current
+    forecast where it has the month, otherwise the Initial Yearly Forecast.
+    The current run starts after the newest sales month, so without the
+    initial a customer whose sell-in actuals stop earlier would have no
+    forecast for the months straight after them, and no plan at all. Also
+    returns which line each month came from ("current" / "initial") and the
+    initial on its own (the outlook draws it as a line).
+    """
+
+    current = _known_skus(lines.get("current", {}), details)
+    initial = _known_skus(lines.get("initial", {}), details)
+    merged: dict[str, dict[date, float]] = {}
+    source: dict[str, dict[date, str]] = {}
+    for sku in current.keys() | initial.keys():
+        merged[sku] = {**initial.get(sku, {}), **current.get(sku, {})}
+        source[sku] = {
+            month: "current" if month in current.get(sku, {}) else "initial" for month in merged[sku]
+        }
+    return merged, source, initial
 
 
 # ============================================================
@@ -738,14 +775,16 @@ def _sku_plans(
     forecast: dict[str, dict[date, float]],
     shipped: dict[str, dict[date, float]],
     threshold: dict,
-    months: int,
+    until: date,
     details: dict[str, dict],
+    source: dict[str, dict[date, str]] | None = None,
 ) -> tuple[dict[str, tuple[date, float]], list[dict], list[dict]]:
     """
     Each SKU's last actual month and ending stock, its planned rows (raw dates),
-    and the SKUs with no forecast for their start month. A plan is what to send
-    from now on, so every month aims at the current target, even when a SKU's
-    last actual month is some way back.
+    and the SKUs with no forecast for their start month. Every SKU plans from
+    the month after its own last actual month up to `until`, so they all end
+    together. A plan is what to send from now on, so every month aims at the
+    current target, even when a SKU's last actual month is some way back.
     """
 
     def target_for(month: date) -> float:
@@ -760,10 +799,11 @@ def _sku_plans(
     without_forecast = []
     for sku, (last_month, ending_stock) in last_actual.items():
         sku_cols = _sku_columns(sku, details)
+        first = inventory_calc.add_months(last_month, 1)
         plan = inventory_calc.build_sell_in_plan(
             ending_stock,
-            inventory_calc.add_months(last_month, 1),
-            months,
+            first,
+            _months_inclusive(first, until),
             forecast.get(sku, {}),
             target_for,
             shipped.get(sku, {}),
@@ -771,8 +811,9 @@ def _sku_plans(
         if not plan:
             without_forecast.append(sku_cols)
             continue
+        sku_source = (source or {}).get(sku, {})
         for row in plan:
-            rows.append({**sku_cols, **row})
+            rows.append({**sku_cols, **row, "forecast_source": sku_source.get(row["month"], "current")})
     return last_actual, rows, without_forecast
 
 
@@ -786,9 +827,10 @@ def get_sell_in_plan(
     Recommended sell-in per SKU and future month for one customer (in whole
     cartons: 8 for pants, 12 for tape), with the
     totals per month and per SKU that an order to the factory is built from.
-    Each SKU plans `months` months from the month after its own last actual
-    month, on that SKU's own ending stock, so entering actuals for only some
-    SKUs moves only those. A SKU with no forecast for its start month cannot be
+    Each SKU plans from the month after its own last actual month, on that
+    SKU's own ending stock, up to `months` months after the current month (the
+    page's "Months ahead"), so entering actuals for only some SKUs moves only
+    those. A SKU with no forecast for its start month cannot be
     planned and is listed in skus_without_forecast instead. `skus` narrows the
     plan to those SKUs; the monthly totals then cover only them.
     """
@@ -799,12 +841,12 @@ def get_sell_in_plan(
         with _read_connection() as conn:
             customers = _fetch_customers(conn)
             _require_customers(customers, [customer_id])
-            forecast_job = pool.submit(forecast_units.get_forecast_units, customer_id)
+            forecast_job = pool.submit(forecast_units.get_forecast_lines, customer_id)
             metrics = _fetch_actuals(conn, [customer_id])
             versions = doh_settings.fetch_versions(conn, [customer_id]).get(customer_id, [])
             shipped = _fetch_shipped(conn, customer_id)
 
-        forecast = forecast_job.result()
+        lines = forecast_job.result()
 
     threshold = _threshold_view(customer_id, customers[customer_id], versions)
     customer = {"customer_id": customer_id, "customer_name": customers[customer_id]}
@@ -821,36 +863,12 @@ def get_sell_in_plan(
         }
 
     details = _sku_details()
-    forecast = _known_skus(forecast, details)
-
-    # A plan is what to send from now on, so every month aims at the current
-    # target, even when a SKU's last actual month is some way back.
-    def target_for(month: date) -> float:
-        return threshold["target_doh"]
-
-    # Each SKU's own last actual month and the stock it ended that month with.
-    last_actual = {}
-    for (_, sku), sku_months in metrics.items():
-        last = inventory_calc.build_monthly_series(sku_months)[-1]
-        last_actual[sku] = (last["month"], last["ending_stock"])
-
-    rows = []
-    without_forecast = []
-    for sku, (last_month, ending_stock) in last_actual.items():
-        sku_cols = _sku_columns(sku, details)
-        plan = inventory_calc.build_sell_in_plan(
-            ending_stock,
-            inventory_calc.add_months(last_month, 1),
-            months,
-            forecast.get(sku, {}),
-            target_for,
-            shipped.get(sku, {}),
-        )
-        if not plan:
-            without_forecast.append(sku_cols)
-            continue
-        for row in plan:
-            rows.append({**sku_cols, **row, "month": _iso(row["month"])})
+    forecast, source, _ = _plan_forecast(lines, details)
+    until = inventory_calc.add_months(_current_month(), months)
+    last_actual, plan_rows, without_forecast = _sku_plans(
+        metrics, forecast, shipped, threshold, until, details, source
+    )
+    rows = [{**row, "month": _iso(row["month"])} for row in plan_rows]
 
     if skus:
         rows = [row for row in rows if row["sku"] in skus]
@@ -882,34 +900,71 @@ def get_sell_in_outlook(
     customer_id: int,
     months: int = inventory_calc.SELL_IN_PLAN_MONTHS,
     skus: list[str] | None = None,
+    start_year: int | None = None,
 ) -> dict:
     """
     One customer's sell-in and sell-out by month for the sell-in plan chart:
-    the three months up to the last actual month, then the `months` months the
-    plan covers. Each SKU is actual up to its own last actual month and then
+    from January of `start_year` (the page's "Start from") to `months` months
+    after the current month (its "Months ahead"), the same end month as the
+    plan. `start_year` defaults to the year of the latest actual month, so in
+    January the actuals from last year stay on the chart until this year has
+    one; it must be one of `start_years` (_start_years), or ValueError. Each SKU is actual up to its own last actual month and then
     uses the plan's recommended sell-in and the forecast sell-out, so a SKU
     only adds to the months its own data covers.
+
+    Sell-in is also planned on the initial forecast alone (same opening
+    stock, target and shipments), with no fallback: a SKU stops at its first
+    month without it, as the plan does. Like its sell-out line it also covers
+    the actual months, with what the initial would have recommended each
+    month (_past_recommendations), to read against the sell-in actually sent.
+
+    Previous sell-in is the plan saved after a forecast refresh
+    (sell_in_snapshots), so it shows what was actually recommended then
+    (_previous_sell_in). A month no saved plan covers falls back to the plan
+    worked out on the previous sell-out forecast, covering the actual months
+    the same way as the initial line. Months before the previous forecast
+    starts are planned on the plan's own forecast, only to carry the stock
+    through to it, and are not shown.
     """
 
+    current_month = _current_month()
     with _read_connection() as conn:
         customers = _fetch_customers(conn)
         _require_customers(customers, [customer_id])
         metrics = _fetch_actuals(conn, [customer_id])
         versions = doh_settings.fetch_versions(conn, [customer_id]).get(customer_id, [])
         shipped = _fetch_shipped(conn, customer_id)
+        snapshots = _fetch_plan_snapshots(conn, customer_id, current_month)
 
     customer = {"customer_id": customer_id, "customer_name": customers[customer_id]}
     metrics = {key: sku_months for key, sku_months in metrics.items() if not skus or key[1] in skus}
     if not metrics:
-        return {"customer": customer, "actuals_through": None, "months": []}
+        return {"customer": customer, "actuals_through": None, "months": [], "start_year": None, "start_years": []}
 
     threshold = _threshold_view(customer_id, customers[customer_id], versions)
     details = _sku_details()
-    forecast = _forecast_by_sku(customer_id, details)
-    last_actual, plan_rows, _ = _sku_plans(metrics, forecast, shipped, threshold, months, details)
+    lines = forecast_units.get_forecast_lines(customer_id)
+    forecast, source, initial = _plan_forecast(lines, details)
+    previous = _known_skus(lines.get("previous", {}), details)
+    until = inventory_calc.add_months(current_month, months)
+    last_actual, plan_rows, _ = _sku_plans(metrics, forecast, shipped, threshold, until, details, source)
+    _, initial_rows, _ = _sku_plans(metrics, initial, shipped, threshold, until, details)
+    # The previous forecast often starts some months after a SKU's last
+    # actual; the plan's forecast bridges that gap so the plan can reach it.
+    bridged = {sku: {**forecast.get(sku, {}), **months_} for sku, months_ in previous.items()}
+    _, bridged_rows, _ = _sku_plans(metrics, bridged, shipped, threshold, until, details)
+    previous_rows = [row for row in bridged_rows if row["month"] in previous.get(row["sku"], {})]
 
     actuals_through = max(month for month, _ in last_actual.values())
-    window = [inventory_calc.add_months(actuals_through, offset) for offset in range(-2, months + 1)]
+    start_years = _start_years(metrics, actuals_through, current_month)
+    if start_year is None:
+        start_year = actuals_through.year
+    elif start_year not in start_years:
+        raise ValueError(
+            f"Start from must be one of {', '.join(str(year) for year in start_years)}, not {start_year}."
+        )
+    year_start = date(start_year, 1, 1)
+    window = [inventory_calc.add_months(year_start, offset) for offset in range(_months_inclusive(year_start, until))]
 
     actual_by_sku = [
         {row["month"]: row for row in inventory_calc.build_monthly_series(sku_months)}
@@ -917,24 +972,295 @@ def get_sell_in_outlook(
     ]
     recommended: dict[date, list[float]] = {}
     forecast_out: dict[date, list[float]] = {}
+    sources: dict[date, set[str]] = {}
     for row in plan_rows:
         recommended.setdefault(row["month"], []).append(row["recommended_sell_in"])
         forecast_out.setdefault(row["month"], []).append(row["forecast_sell_out"])
+        sources.setdefault(row["month"], set()).add(row["forecast_source"])
+    actual_months = {month for month in window if month <= actuals_through}
+    past_initial = _past_recommendations(metrics, initial, actual_months, versions, actuals_through)
+    past_previous = _past_recommendations(metrics, previous, actual_months, versions, actuals_through)
+    initial_sell_in = _sell_in_by_month(initial_rows)
+    previous_worked_out = _sell_in_by_month(previous_rows)
+    for past, by_month in ((past_initial, initial_sell_in), (past_previous, previous_worked_out)):
+        for month, by_sku in past.items():
+            by_month.setdefault(month, []).extend(by_sku.values())
+
+    # The initial and previous lines cover the SKUs in view, actual months
+    # included, so they can be read against what actually sold as well as
+    # against the plan.
+    in_view = {sku for _, sku in metrics}
+    previous_sell_in = {
+        **previous_worked_out,
+        **_previous_sell_in(snapshots, window, current_month, in_view),
+    }
+    def sell_in_vs_forecast(month: date) -> dict | None:
+        recommended_for_month = {
+            "saved": _saved_plan_for(snapshots, month, current_month),
+            "previous": past_previous.get(month, {}),
+            "initial": past_initial.get(month, {}),
+        }
+        return _sell_in_vs_forecast(metrics, recommended_for_month, month)
 
     series = []
     for month in window:
         actual = [by_month[month] for by_month in actual_by_sku if month in by_month]
+        is_actual = month in actual_months
         series.append(
             {
                 "month": _iso(month),
                 "sell_in_actual": _sum_or_none([row["sell_in"] for row in actual]),
                 "sell_in_recommended": _sum_or_none(recommended.get(month, [])),
+                "sell_in_previous": _sum_or_none(previous_sell_in.get(month, [])),
+                "sell_in_initial": _sum_or_none(initial_sell_in.get(month, [])),
                 "sell_out_actual": _sum_or_none([row["sell_out"] for row in actual]),
                 "sell_out_forecast": _sum_or_none(forecast_out.get(month, [])),
+                "sell_out_initial": _sum_or_none(
+                    [initial[sku][month] for sku in in_view if month in initial.get(sku, {})]
+                ),
+                "sell_out_previous": _sum_or_none(
+                    [previous[sku][month] for sku in in_view if month in previous.get(sku, {})]
+                ),
+                "forecast_source": _one_source(sources.get(month, set())),
+                # Actual months only: the SKU-matched comparison the chart
+                # adds up over a picked range (frontend sellInComparison.js).
+                "sell_in_vs_forecast": sell_in_vs_forecast(month) if is_actual else None,
+                "sell_out_vs_forecast": _sell_out_vs_forecast(metrics, forecast, source, month) if is_actual else None,
             }
         )
 
-    return {"customer": customer, "actuals_through": _iso(actuals_through), "months": series}
+    return {
+        "customer": customer,
+        "actuals_through": _iso(actuals_through),
+        "months": series,
+        "start_year": start_year,
+        "start_years": start_years,
+        "last_month_vs_forecast": _sell_out_vs_forecast(metrics, forecast, source, actuals_through),
+        "last_month_sell_in_vs_forecast": sell_in_vs_forecast(actuals_through),
+    }
+
+
+def _start_years(
+    metrics: dict[tuple[int, str], dict[date, dict[str, float]]],
+    actuals_through: date,
+    current_month: date,
+) -> list[int]:
+    """
+    The years the chart can start from: this year and last year (no further
+    back, so the chart stays readable), last year only when the customer has
+    actuals in or before it, and always the year of the latest actual month
+    (the default), even when that is older.
+    """
+
+    first_actual = min(month for sku_months in metrics.values() for month in sku_months)
+    years = {current_month.year, actuals_through.year}
+    if first_actual.year <= current_month.year - 1:
+        years.add(current_month.year - 1)
+    return sorted(years)
+
+
+def _fetch_plan_snapshots(
+    conn: Connection, customer_id: int, before: date
+) -> dict[date, dict[date, dict[str, float]]]:
+    """One customer's saved sell-in plans taken before `before`, as
+    {snapshot_month: {plan_month: {sku: recommended}}} (sell_in_snapshots).
+    None saved yet when migration 015 hasn't been run, so the rest of the
+    chart still loads. Must stay the last query on `conn`."""
+
+    try:
+        rows = conn.execute(
+            text("""
+                SELECT snapshot_month, plan_month, sku, recommended_sell_in
+                FROM sell_in_plan_snapshots
+                WHERE customer_id = :customer_id AND snapshot_month < :before
+            """),
+            {"customer_id": customer_id, "before": before},
+        ).mappings().all()
+    except DatabaseError as exc:
+        if "sell_in_plan_snapshots" not in str(exc):
+            raise
+        return {}
+
+    snapshots: dict[date, dict[date, dict[str, float]]] = {}
+    for row in rows:
+        plan = snapshots.setdefault(row["snapshot_month"], {}).setdefault(row["plan_month"], {})
+        plan[row["sku"]] = float(row["recommended_sell_in"])
+    return snapshots
+
+
+def _previous_sell_in(
+    snapshots: dict[date, dict[date, dict[str, float]]],
+    window: list[date],
+    current_month: date,
+    skus: set[str],
+) -> dict[date, list[float]]:
+    """
+    The Previous sell-in line: for each month, what the newest plan saved
+    before it recommended. From the current month on that is the plan saved
+    last month (or the newest earlier one); for a past month, the plan saved
+    before that month began, to read against the sell-in actually sent. A
+    month that plan didn't cover is left out (get_sell_in_outlook fills it
+    from the previous sell-out forecast).
+    """
+
+    by_month: dict[date, list[float]] = {}
+    for month in window:
+        plan = _saved_plan_for(snapshots, month, current_month)
+        values = [value for sku, value in plan.items() if sku in skus]
+        if values:
+            by_month[month] = values
+    return by_month
+
+
+def _saved_plan_for(
+    snapshots: dict[date, dict[date, dict[str, float]]], month: date, current_month: date
+) -> dict[str, float]:
+    """{sku: recommended} for `month` from the newest plan saved before it
+    (before the current month, for a month from then on); {} when none."""
+
+    cutoff = min(month, current_month)
+    taken = [snapshot_month for snapshot_month in snapshots if snapshot_month < cutoff]
+    return snapshots[max(taken)].get(month, {}) if taken else {}
+
+
+def _past_recommendations(
+    metrics: dict[tuple[int, str], dict[date, dict[str, float]]],
+    forecast: dict[str, dict[date, float]],
+    months: set[date],
+    versions: list[dict],
+    latest: date,
+) -> dict[date, dict[str, float]]:
+    """
+    For each actual month in `months`, the sell-in the plan's rule would have
+    recommended per SKU ({month: {sku: units}}) had it run on `forecast`: that month's real opening
+    stock, the forecast for it and the months after, and the target in effect
+    at that month's end. Nothing already shipped is taken off (those months
+    are closed). A SKU with no forecast for a month adds nothing to it.
+    """
+
+    by_month: dict[date, dict[str, float]] = {}
+    for (_, sku), sku_months in metrics.items():
+        sku_forecast = forecast.get(sku, {})
+        for row in inventory_calc.build_monthly_series(sku_months):
+            month = row["month"]
+            if month not in months:
+                continue
+            target = _band_for_month(versions, month, latest)["target_doh"]
+            plan = inventory_calc.build_sell_in_plan(row["opening_stock"], month, 1, sku_forecast, lambda _: target)
+            if plan:
+                by_month.setdefault(month, {})[sku] = plan[0]["recommended_sell_in"]
+    return by_month
+
+
+def _sell_in_by_month(plan_rows: list[dict]) -> dict[date, list[float]]:
+    by_month: dict[date, list[float]] = {}
+    for row in plan_rows:
+        by_month.setdefault(row["month"], []).append(row["recommended_sell_in"])
+    return by_month
+
+
+def _one_source(sources: set[str]) -> str | None:
+    """"current" / "initial" when every SKU's forecast came from one line, "mixed" otherwise."""
+
+    if not sources:
+        return None
+    return next(iter(sources)) if len(sources) == 1 else "mixed"
+
+
+def _sell_out_vs_forecast(
+    metrics: dict[tuple[int, str], dict[date, dict[str, float]]],
+    forecast: dict[str, dict[date, float]],
+    source: dict[str, dict[date, str]],
+    month: date,
+) -> dict | None:
+    """
+    One actual month's sell-out against what was forecast for it,
+    over the SKUs that have both, so the two figures cover the same products.
+    The forecast is the same one the plan uses (current where it has the
+    month, otherwise the initial). None when no SKU has both.
+    """
+
+    actual_total = forecast_total = 0.0
+    used: set[str] = set()
+    compared = with_actual = 0
+    for (_, sku), sku_months in metrics.items():
+        series = inventory_calc.build_monthly_series(sku_months)
+        actual_row = next((row for row in series if row["month"] == month), None)
+        if actual_row is None:
+            continue
+        with_actual += 1
+        if month not in forecast.get(sku, {}):
+            continue
+        compared += 1
+        actual_total += actual_row["sell_out"]
+        forecast_total += forecast[sku][month]
+        used.add(source[sku][month])
+    if not used:
+        return None
+
+    difference = actual_total - forecast_total
+    return {
+        "month": _iso(month),
+        "actual": round(actual_total, 2),
+        "forecast": round(forecast_total, 2),
+        "forecast_source": _one_source(used),
+        "difference": round(difference, 2),
+        "percent": round(difference / forecast_total * 100, 2) if forecast_total else None,
+        "skus_compared": compared,
+        "skus_with_actuals": with_actual,
+    }
+
+
+def _sell_in_vs_forecast(
+    metrics: dict[tuple[int, str], dict[date, dict[str, float]]],
+    recommended: dict[str, dict[str, float]],
+    month: date,
+) -> dict | None:
+    """
+    One actual month's sell-in against what was recommended for it,
+    over the SKUs that have both. Per SKU the recommendation is, in order: the
+    plan saved before that month (`saved`), the one worked out on the
+    previous sell-out forecast (`previous`), then on the initial
+    (`initial`), the Previous sell-in line first and the initial where it has
+    nothing. Same shape as _sell_out_vs_forecast; forecast_source is
+    'previous', 'initial' or 'mixed'. None when no SKU has both.
+    """
+
+    actual_total = forecast_total = 0.0
+    used: set[str] = set()
+    compared = with_actual = 0
+    for (_, sku), sku_months in metrics.items():
+        actual_row = next(
+            (row for row in inventory_calc.build_monthly_series(sku_months) if row["month"] == month), None
+        )
+        if actual_row is None:
+            continue
+        with_actual += 1
+        value = kind = None
+        for key, line in (("saved", "previous"), ("previous", "previous"), ("initial", "initial")):
+            if sku in recommended[key]:
+                value, kind = recommended[key][sku], line
+                break
+        if value is None:
+            continue
+        compared += 1
+        actual_total += actual_row["sell_in"]
+        forecast_total += value
+        used.add(kind)
+    if not used:
+        return None
+
+    difference = actual_total - forecast_total
+    return {
+        "month": _iso(month),
+        "actual": round(actual_total, 2),
+        "forecast": round(forecast_total, 2),
+        "forecast_source": _one_source(used),
+        "difference": round(difference, 2),
+        "percent": round(difference / forecast_total * 100, 2) if forecast_total else None,
+        "skus_compared": compared,
+        "skus_with_actuals": with_actual,
+    }
 
 
 def _parse_month(value: str) -> date:

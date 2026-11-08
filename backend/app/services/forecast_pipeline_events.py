@@ -21,7 +21,13 @@ from google.cloud import pubsub_v1
 from google.oauth2 import service_account
 
 from app import config
-from app.services import catalog_service, forecast_notifications, inventory_service, notification_service
+from app.services import (
+    catalog_service,
+    forecast_notifications,
+    inventory_service,
+    notification_service,
+    sell_in_snapshots,
+)
 from app.services.bigquery import get_bigquery_client
 
 logger = logging.getLogger("uvicorn.error")
@@ -105,6 +111,9 @@ def handle_transfer_run(run: dict) -> int | None:
 
     if not _retrained_during(run.get("startTime") or run.get("runTime"), finished_at):
         return None
+    # Before the notification, so a redelivery after a failed insert saves it
+    # again (the month's snapshot is replaced, never doubled).
+    sell_in_snapshots.take_snapshot_best_effort()
     payload = forecast_notifications.success_payload(
         run_name=run_name,
         source=SOURCE,

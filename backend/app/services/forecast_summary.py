@@ -196,7 +196,7 @@ def resolve_scope(rows: list[dict], product: str | None, customer: str | None) -
     products = sorted({row["product_name"] for row in rows if row.get("product_name")})
     customers = sorted({row["customer_name"] for row in rows if row.get("customer_name")})
     sku_codes = {str(row["sku"]).lower(): row["product_name"] for row in rows if row.get("sku") and row.get("product_name")}
-    # Customers are stored as slugs (sheng_shiong); people type "Sheng Shiong".
+    # Customers are stored as slugs (sheng_siong); people type "Sheng Siong".
     customer_wanted = customer.strip().lower().replace(" ", "_") if customer else None
     return (
         _resolve_name(product, products, "product", sku_codes),
