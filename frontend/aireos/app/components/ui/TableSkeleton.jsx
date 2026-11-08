@@ -11,19 +11,22 @@ import { cn } from '@/lib/utils';
  * `className` goes on every row; pass the real rows' height and border so
  * nothing moves when the data arrives. `cellClassName` goes on every cell,
  * for a table whose cells are padded tighter than the default.
+ * `columnClassNames` is one class per column (TableGrid's hideClass), so a
+ * column hidden at this width has no placeholder cell either.
  *
  * @param {{
  *   columns: number,
  *   rows?: number,
  *   className?: string,
  *   cellClassName?: string,
+ *   columnClassNames?: Array<string | undefined>,
  * }} props
  */
-export default function TableSkeleton({ columns, rows = 6, className, cellClassName }) {
+export default function TableSkeleton({ columns, rows = 6, className, cellClassName, columnClassNames = [] }) {
   return Array.from({ length: rows }, (_, row) => (
     <tr key={row} aria-hidden="true" className={cn('h-12 border-b border-lavander/80', className)}>
       {Array.from({ length: columns }, (_, cell) => (
-        <td key={cell} className={cn('px-4 py-3.5', cellClassName)}>
+        <td key={cell} className={cn('px-4 py-3.5', cellClassName, columnClassNames[cell])}>
           <Skeleton className="h-3.5 w-full max-w-[6rem] rounded bg-lavander" />
         </td>
       ))}

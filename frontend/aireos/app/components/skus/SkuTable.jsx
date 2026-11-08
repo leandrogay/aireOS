@@ -59,7 +59,6 @@ export default function SkuTable({
         />
       }
       columns={SKU_COLUMNS}
-      minWidth="72rem"
       emptyState={!loading && totalCount > 0 && total === 0 ? 'No SKUs match the current search and filters.' : null}
       mobileContent={
         <div className="grid gap-2">

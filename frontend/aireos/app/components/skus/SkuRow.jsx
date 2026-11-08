@@ -5,7 +5,7 @@ import { History, Pencil, Trash2 } from 'lucide-react';
 import RowActions from '@/components/ui/RowActions';
 import { cn } from '@/lib/utils';
 
-import { SKU_CELL_CLASS } from './columns';
+import { SKU_CELL_CLASS, SKU_HIDE } from './columns';
 
 const money = new Intl.NumberFormat('en-SG', { style: 'currency', currency: 'SGD' });
 
@@ -41,10 +41,10 @@ export default function SkuRow({ sku, onHistory, onEdit, onDelete }) {
       <td className={cn(SKU_CELL_CLASS, 'px-4 py-2.5 font-medium')}>{sku.sku}</td>
       <td className={cn(SKU_CELL_CLASS, 'px-4 py-2.5')}>{sku.product_name}</td>
       <td className={cn(SKU_CELL_CLASS, 'px-4 py-2.5')}>{sku.sku_range}</td>
-      <td className={cn(SKU_CELL_CLASS, 'px-4 py-2.5')}>{sku.size}</td>
-      <td className={cn(SKU_CELL_CLASS, 'px-4 py-2.5')}>{sku.brand}</td>
-      <td className={cn(SKU_CELL_CLASS, 'px-4 py-2.5')}>{sku.uom}</td>
-      <td className={cn(SKU_CELL_CLASS, 'px-4 py-2.5 text-right tabular-nums')}>{sku.pack_size}</td>
+      <td className={cn(SKU_CELL_CLASS, 'px-4 py-2.5', SKU_HIDE.size)}>{sku.size}</td>
+      <td className={cn(SKU_CELL_CLASS, 'px-4 py-2.5', SKU_HIDE.brand)}>{sku.brand}</td>
+      <td className={cn(SKU_CELL_CLASS, 'px-4 py-2.5', SKU_HIDE.uom)}>{sku.uom}</td>
+      <td className={cn(SKU_CELL_CLASS, 'px-4 py-2.5 text-right tabular-nums', SKU_HIDE['pack-size'])}>{sku.pack_size}</td>
       <td className={cn(SKU_CELL_CLASS, 'px-4 py-2.5 text-right tabular-nums')}>
         {formatSkuPrice(sku.price)}
       </td>

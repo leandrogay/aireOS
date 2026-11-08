@@ -1,50 +1,59 @@
 'use client';
 
 import FilterBar from '@/components/ui/FilterBar';
-import FilterSelect from '@/components/ui/FilterSelect';
-import { filterControlClass } from '@/components/ui/filterControl';
+import MultiSelectDropdown from '@/components/ui/MultiSelectDropdown';
+import PriceRangeFilter from '@/components/ui/PriceRangeFilter';
 
 const options = (values) => values.map((value) => ({ value: String(value), label: String(value) }));
 
+/**
+ * Filter bar above the SKU catalog, in the shared FilterBar. Range and brand
+ * take any number of values in the tick-box dropdown the nomenclature list
+ * uses (nothing ticked = all); price is one min/max popover. The matching
+ * rules live in utils/skuFilters.js (filterSkus).
+ *
+ * @param {{
+ *   filters: { skuRanges: string[], brands: string[], minPrice: string, maxPrice: string },
+ *   values: { sku_ranges?: string[], brands?: string[] },
+ *   hasFilters: boolean,
+ *   onChange: (changes: object) => void,
+ *   onReset: () => void,
+ * }} props
+ */
 export default function SkuFilters({ filters, values, hasFilters, onChange, onReset }) {
+  const skuRanges = values.sku_ranges || [];
+  const brands = values.brands || [];
+
   return (
     <FilterBar label="Filter SKUs" hasFilters={hasFilters} onReset={onReset}>
-      <FilterSelect
+      <MultiSelectDropdown
+        look="filter"
         label="SKU range"
-        value={filters.skuRange}
         allLabel="All ranges"
-        options={options(values.sku_ranges || [])}
-        onChange={(value) => onChange('skuRange', value)}
+        placeholder="No ranges yet"
+        options={options(skuRanges)}
+        values={filters.skuRanges}
+        onChange={(picked) => onChange({ skuRanges: picked })}
+        searchable={skuRanges.length > 8}
+        searchPlaceholder="Search ranges…"
       />
-      <FilterSelect
+      <MultiSelectDropdown
+        look="filter"
         label="Brand"
-        value={filters.brand}
         allLabel="All brands"
-        options={options(values.brands || [])}
-        onChange={(value) => onChange('brand', value)}
+        placeholder="No brands yet"
+        options={options(brands)}
+        values={filters.brands}
+        onChange={(picked) => onChange({ brands: picked })}
+        searchable={brands.length > 8}
+        searchPlaceholder="Search brands…"
       />
-      <label className="grid gap-1 text-xs font-medium text-deep-violet-blue/70">
-        Min price
-        <input
-          type="number"
-          min="0"
-          step="0.01"
-          value={filters.minPrice}
-          onChange={(event) => onChange('minPrice', event.target.value)}
-          className={filterControlClass(Boolean(filters.minPrice))}
-        />
-      </label>
-      <label className="grid gap-1 text-xs font-medium text-deep-violet-blue/70">
-        Max price
-        <input
-          type="number"
-          min="0"
-          step="0.01"
-          value={filters.maxPrice}
-          onChange={(event) => onChange('maxPrice', event.target.value)}
-          className={filterControlClass(Boolean(filters.maxPrice))}
-        />
-      </label>
+      <PriceRangeFilter
+        label="Price"
+        min={filters.minPrice}
+        max={filters.maxPrice}
+        onChange={({ min, max }) => onChange({ minPrice: min, maxPrice: max })}
+      />
     </FilterBar>
   );
 }
