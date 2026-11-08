@@ -141,7 +141,7 @@ export default function PromoUpliftSettingsView() {
         readOnly ? null : (
           <Button
             onClick={() => setAddingOverride(true)}
-            className="ml-auto bg-deep-violet-blue text-white hover:bg-deep-violet-blue/90"
+            className="w-full bg-deep-violet-blue text-white hover:bg-deep-violet-blue/90 md:w-auto"
           >
             <Plus data-icon="inline-start" />
             Add uplift value

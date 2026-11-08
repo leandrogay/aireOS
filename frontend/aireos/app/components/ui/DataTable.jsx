@@ -5,6 +5,7 @@ import RefreshButton from '@/components/ui/RefreshButton';
 import TableGrid from '@/components/ui/TableGrid';
 import { cn } from '@/lib/utils';
 import { resultCountLabel } from '@/app/utils/tableView';
+import useMediaQuery from '@/hooks/useMediaQuery';
 
 /**
  * The list-table card every feature uses (Customers, Promotions): a count on
@@ -50,6 +51,7 @@ import { resultCountLabel } from '@/app/utils/tableView';
  *   toolbar?: import('react').ReactNode,
  *   footer?: import('react').ReactNode,
  *   fill?: boolean,
+ *   mobileContent?: import('react').ReactNode,
  * } & Omit<Parameters<typeof TableGrid>[0], 'variant' | 'isLoading'>} props
  */
 export default function DataTable({
@@ -65,8 +67,11 @@ export default function DataTable({
   toolbar = null,
   footer = null,
   fill = false,
+  mobileContent = null,
   ...gridProps
 }) {
+  const mobile = useMediaQuery('(max-width: 639px)');
+  const showMobile = Boolean(mobileContent) && mobile;
   const firstLoad = isLoading && totalCount === 0;
   const showTable = firstLoad || totalCount > 0;
 
@@ -76,17 +81,17 @@ export default function DataTable({
     <section
       aria-label={label}
       className={cn(
-        'flex flex-col overflow-hidden rounded-lg border border-lavander bg-white shadow-sm',
+        'flex w-full min-w-0 flex-col overflow-hidden rounded-lg border border-lavander bg-white shadow-sm',
         // min-h-80 keeps the table usable on a short window (the page
         // scrolls instead).
         fill && 'min-h-80 flex-1',
       )}
     >
-      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white px-4 py-3">
         <p className="text-sm text-deep-violet-blue/70" aria-live="polite">
           {firstLoad ? `Loading ${plural}…` : resultCountLabel(shownCount, totalCount, noun, plural)}
         </p>
-        <div className="flex items-center gap-2">
+        <div className={cn('flex min-w-0 flex-wrap items-center gap-2', toolbar ? 'w-full sm:w-auto' : 'ml-auto')}>
           {toolbar}
           <RefreshButton
             onClick={onRefresh}
@@ -119,7 +124,22 @@ export default function DataTable({
 
       {showTable && (
         <>
-          <TableGrid variant="card" isLoading={firstLoad} {...gridProps} />
+          {showMobile && (
+            <div className="min-h-0 flex-1 overflow-y-auto border-t border-lavander bg-cream/25 p-3">
+              {firstLoad ? (
+                <div className="grid gap-2" aria-label={`Loading ${plural}`}>
+                  {Array.from({ length: 4 }, (_, index) => <div key={index} className="h-24 animate-pulse rounded-lg border border-lavander bg-white" />)}
+                </div>
+              ) : gridProps.emptyState ? (
+                <div className="rounded-lg border border-lavander bg-white p-6 text-center text-sm text-deep-violet-blue/70">{gridProps.emptyState}</div>
+              ) : mobileContent}
+            </div>
+          )}
+          {!showMobile && (
+            <div className="flex min-h-0 flex-1">
+              <TableGrid variant="card" isLoading={firstLoad} {...gridProps} />
+            </div>
+          )}
           {footer}
         </>
       )}

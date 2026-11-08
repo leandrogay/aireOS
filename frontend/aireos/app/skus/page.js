@@ -14,7 +14,8 @@ import SkuForm from '@/components/skus/SkuForm';
 import SkuTable from '@/components/skus/SkuTable';
 import useConfirmAction from '@/hooks/useConfirmAction';
 import useToast from '@/hooks/useToast';
-import { paginate, matchesSearch } from '@/app/utils/tableView';
+import { paginate } from '@/app/utils/tableView';
+import { EMPTY_SKU_FILTERS, filterSkus, hasSkuFilters } from '@/app/utils/skuFilters';
 import {
   archiveSku,
   correctSkuPricePeriod,
@@ -25,13 +26,11 @@ import {
   updateSku,
 } from '@/app/services/catalogApi';
 
-const EMPTY_FILTERS = { skuRange: '', brand: '', minPrice: '', maxPrice: '' };
-
 export default function SkusPage() {
   const [skus, setSkus] = useState([]);
   const [options, setOptions] = useState({});
   const [search, setSearch] = useState('');
-  const [filters, setFilters] = useState(EMPTY_FILTERS);
+  const [filters, setFilters] = useState(EMPTY_SKU_FILTERS);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -61,21 +60,14 @@ export default function SkusPage() {
     return () => { cancelled = true; };
   }, [refreshKey]);
 
-  const filtered = skus.filter((sku) => {
-    if (!matchesSearch([sku.sku, sku.sku_range, sku.product_name], search)) return false;
-    if (filters.skuRange && sku.sku_range !== filters.skuRange) return false;
-    if (filters.brand && sku.brand !== filters.brand) return false;
-    if ((filters.minPrice !== '' || filters.maxPrice !== '') && sku.price == null) return false;
-    if (filters.minPrice !== '' && Number(sku.price) < Number(filters.minPrice)) return false;
-    if (filters.maxPrice !== '' && Number(sku.price) > Number(filters.maxPrice)) return false;
-    return true;
-  });
+  const filtered = filterSkus(skus, filters, search);
   const { pageRows, currentPage, totalPages } = paginate(filtered, page, pageSize);
-  const hasFilters = search.trim() !== '' || Object.values(filters).some((value) => value !== '');
+  const hasFilters = hasSkuFilters(filters, search);
 
   const changeSearch = (value) => { setSearch(value); setPage(1); };
-  const changeFilter = (key, value) => {
-    setFilters((current) => ({ ...current, [key]: value }));
+  // One call can set several keys: the price filter sends min and max together.
+  const changeFilters = (changes) => {
+    setFilters((current) => ({ ...current, ...changes }));
     setPage(1);
   };
   const refreshCatalog = () => {
@@ -148,7 +140,7 @@ export default function SkusPage() {
       headerExtra={(
         <Button
           onClick={() => setEditor({ sku: null })}
-          className="ml-auto bg-deep-violet-blue text-white hover:bg-deep-violet-blue/90"
+          className="w-full bg-deep-violet-blue text-white hover:bg-deep-violet-blue/90 md:w-auto"
         >
           <Plus data-icon="inline-start" />
           Create SKU
@@ -160,8 +152,8 @@ export default function SkusPage() {
           filters={filters}
           values={options}
           hasFilters={hasFilters}
-          onChange={changeFilter}
-          onReset={() => { setSearch(''); setFilters(EMPTY_FILTERS); setPage(1); }}
+          onChange={changeFilters}
+          onReset={() => { setSearch(''); setFilters(EMPTY_SKU_FILTERS); setPage(1); }}
         />
         <SkuTable
           rows={pageRows}

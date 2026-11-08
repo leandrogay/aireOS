@@ -129,7 +129,7 @@ export default function InventoryQuantityTable({
 
   return (
     <div className="max-h-[32rem] overflow-auto rounded-md border border-lavander">
-      <table className={cn(inventoryTableClass, 'border-collapse')}>
+      <table className={cn(inventoryTableClass, 'min-w-[36rem] border-collapse')}>
         <thead className={inventoryTheadClass}>
           <tr className={inventoryHeadRowClass}>
             <th className={inventoryThClass}>Product</th>

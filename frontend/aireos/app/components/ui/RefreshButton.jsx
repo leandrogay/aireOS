@@ -31,7 +31,7 @@ export default function RefreshButton({
   label = 'Refresh',
   busyLabel = 'Refreshing…',
   variant = 'outline',
-  size = 'icon-sm',
+  size = 'icon',
   className,
   ...props
 }) {
@@ -47,7 +47,7 @@ export default function RefreshButton({
       aria-label={title}
       aria-busy={isRefreshing}
       title={title}
-      className={className}
+      className={cn('shrink-0', className)}
       {...props}
     >
       <RefreshCw aria-hidden="true" className={cn(isRefreshing && 'animate-spin')} />
