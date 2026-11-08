@@ -1,7 +1,8 @@
 """
 The one payload shape every forecast notification uses, whichever path raised
-it: the event-driven refresh (forecast_refresh_worker), the scheduled BigQuery
-run (forecast_pipeline_events) and the forecast script (scripts/refresh_forecast.py).
+it: the event-driven refresh (forecast_refresh_worker) and the forecast script
+(scripts/refresh_forecast.py). "scheduled" is kept as a source because older
+notifications in the bell came from the retired scheduled-query listener.
 
 The bell (frontend NotificationPanel / utils/forecastNotificationText.js) reads
 these keys by name, so they are built here once rather than as dict literals in
@@ -12,7 +13,10 @@ each producer:
     stage      "pipeline" | "refresh"   (failures; "refresh" = the retrain never started)
     reason     str | None   plain-language cause (failures)
     errors     list[str]    detail lines, e.g. from the BigQuery job (failures)
-    period_start, period_end, customers, skus   what was forecast (successes)
+    warnings   list[str]    a retrain that worked but left something behind, e.g.
+                            the Initial yearly forecast couldn't refresh (successes)
+    period_start, period_end, customers, skus   what was forecast (successes;
+                                                forecast_refresh_worker.latest_forecast_summary)
     updated_at ISO timestamp, UTC
 
 Pure builders plus one best-effort writer; no BigQuery or forecast logic here.
@@ -32,6 +36,12 @@ EMPTY_SUMMARY = {"period_start": None, "period_end": None, "customers": [], "sku
 
 DEFAULT_JOB_FAILURE_REASON = "The forecast retrain failed in BigQuery."
 
+# retrain_if_new_month (A9.1) holds an error from the Initial refresh (A9.4)
+# until the page table is rebuilt, then raises it with this prefix: the
+# retrain itself may still have succeeded.
+INITIAL_ERROR_PREFIX = "Initial refresh failed:"
+INITIAL_WARNING = "The Initial yearly forecast couldn't refresh, so the page keeps its last version."
+
 
 def _timestamp(value: datetime | str) -> str:
     return value.isoformat() if isinstance(value, datetime) else str(value)
@@ -50,8 +60,10 @@ def success_payload(
     source: str,
     updated_at: datetime | str,
     summary: dict | None = None,
+    warnings: list[str] | None = None,
 ) -> dict:
-    """A finished retrain: what was forecast, from latest_forecast_summary()."""
+    """A finished retrain: what was forecast, from latest_forecast_summary(),
+    plus anything that didn't refresh with it (`warnings`)."""
     _check(source)
     summary = summary or EMPTY_SUMMARY
     return {
@@ -60,6 +72,7 @@ def success_payload(
         "stage": "pipeline",
         "reason": None,
         "errors": [],
+        "warnings": [str(warning) for warning in warnings or []],
         "period_start": summary.get("period_start"),
         "period_end": summary.get("period_end"),
         "customers": list(summary.get("customers") or []),
@@ -85,6 +98,7 @@ def failure_payload(
         "stage": stage,
         "reason": reason,
         "errors": [str(error) for error in errors or []],
+        "warnings": [],
         "period_start": None,
         "period_end": None,
         "customers": [],
@@ -104,6 +118,16 @@ def job_failure(job) -> tuple[str, list[str]]:
         if error
     ]
     return reason, errors
+
+
+def initial_refresh_warning(job) -> str | None:
+    """The bell's warning when a failed job's only error is A9.1's held
+    Initial refresh error, else None (a real retrain failure)."""
+    message = (job.error_result or {}).get("message") or ""
+    if INITIAL_ERROR_PREFIX not in message:
+        return None
+    detail = message.split(INITIAL_ERROR_PREFIX, 1)[1].strip()
+    return f"{INITIAL_WARNING} {detail}".strip()
 
 
 def notify_once(notification_type: str, payload: dict) -> int | None:

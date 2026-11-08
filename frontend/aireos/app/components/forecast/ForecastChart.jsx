@@ -10,7 +10,6 @@ import ChartLoading from '@/components/ui/ChartLoading';
 import LineChartSkeleton from '@/components/ui/LineChartSkeleton';
 import { Skeleton } from '@/components/ui/skeleton';
 import LineToggle from '@/components/ui/LineToggle';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ForecastConfidenceDetails from '@/components/forecast/ForecastConfidenceDetails';
 import ForecastPointDetails from '@/components/forecast/ForecastPointDetails';
 import ForecastPromoPanel from '@/components/forecast/ForecastPromoPanel';
@@ -32,7 +31,8 @@ import {
   promoPeriodDividerXs,
   promosOverlappingMonth,
 } from '@/app/utils/forecastView';
-import { forecastLineHints, hasPreviousLine } from '@/app/utils/forecastLineText';
+import { withActualBridges } from '@/app/utils/forecastActuals';
+import { CURRENT_DOT_FILL, INITIAL_MISSING_HINT, forecastLineHints } from '@/app/utils/forecastLineText';
 import { dotRevealDelay, lineSweepTimings } from '@/app/utils/lineAnimation';
 import { yearAxisProps } from '@/app/utils/trendChart';
 import useMediaQuery from '@/hooks/useMediaQuery';
@@ -45,9 +45,20 @@ const LINE_SWEEP = { begin: 0, duration: 1200 };
 // How long a promo band takes to wipe in when it is added after the first draw.
 const LATE_BAND_MS = 300;
 
+// Room for carton ticks ("1.5k"); the chart is volume only.
+const Y_AXIS_WIDTH = 40;
+
 const chartConfig = Object.fromEntries(
   FORECAST_SERIES.map((series) => [series.key, { label: series.label, color: series.color }])
 );
+
+const ACTUAL_COLOR = FORECAST_SERIES.find((series) => series.key === 'actual')?.color;
+
+function dotFill(seriesKey, payload, confidenceDots) {
+  if (seriesKey === 'actual' && payload?.actualKind === 'partial') return 'hollow';
+  if (seriesKey === 'current' && confidenceDots && payload?.currentBand) return CURRENT_DOT_FILL[payload.currentBand];
+  return 'filled';
+}
 
 function OverlayDefs({ bands }) {
   return (
@@ -207,8 +218,6 @@ export default function ForecastChart({
   points,
   startDate,
   endDate,
-  metric,
-  onMetricChange,
   singleSeries,
   scopeTags,
   promotions,
@@ -224,24 +233,27 @@ export default function ForecastChart({
   pastAccuracy = null,
   updatingBadge = null,
   initialNotes = [],
-  // /forecast only: the selected model has no Initial for any SKU in scope
-  // (greys out its pill); undefined falls back to "no Initial value in view
-  // for one series". `notes` are extra lines under the legend, `modelLabel`
-  // names the model in the table, `emptyMessage` replaces the no-data text.
-  initialMissing,
+  // /forecast only: why the selected model has no Initial / no Previous for
+  // any SKU in scope (greys out that pill; per SKU and tier, from the
+  // page). undefined falls back to "no value in view". `confidenceDots`
+  // draws the Current dots by this month's confidence (one SKU and
+  // customer). `notes` are extra lines under the legend, `modelLabel` names
+  // the model in the table, `emptyMessage` replaces the no-data text.
+  initialMissingHint,
+  previousMissing,
+  confidenceDots = false,
   notes = [],
   modelLabel = '',
   emptyMessage = 'No forecast data matches these filters.',
   yearTotals = [],
   yearTotalsLoading = false,
   horizonVolume = null,
-  horizonRevenue = null,
   loading = false,
   scenario = null,
   // Scenario builder only (all default off, so /forecast is unchanged):
   // `toolbar` renders under the card header, `summary` right under the
-  // chart; `yearTable` replaces ForecastYearTotals. Without `onMetricChange`
-  // the Volume | Revenue tabs are hidden (the Scenario builder is volume only).
+  // chart; `yearTable` replaces ForecastYearTotals. Both pages are volume
+  // only (cartons): there is no revenue view.
   toolbar = null,
   summary = null,
   yearTable = null,
@@ -267,15 +279,16 @@ export default function ForecastChart({
         ...Object.fromEntries(scenario.series.map((series) => [series.key, { label: series.label, color: series.color }])),
       }
     : chartConfig;
-  // Previous is empty until the forecast has a second month of sales. Its
-  // pill is then greyed out and the line and table column stay off.
-  const previousAvailable = hasPreviousLine(points);
-  // Same for Initial when the model has none for the SKUs in scope.
-  const initialMissingForScope = initialMissing ?? (singleSeries && !points.some((point) => point.initial != null));
+  // A line the selected model has for none of the SKUs in scope: its pill
+  // is greyed out (its hover says why) and the line and table column stay off.
+  const previousOff = previousMissing ?? !points.some((point) => point.previous != null);
+  const initialOffHint =
+    initialMissingHint ??
+    (singleSeries && !points.some((point) => point.initial != null) ? INITIAL_MISSING_HINT : '');
   const shownSeries = {
     ...visibleSeries,
-    ...(previousAvailable ? {} : { previous: false }),
-    ...(initialMissingForScope ? { initial: false } : {}),
+    ...(previousOff ? { previous: false } : {}),
+    ...(initialOffHint ? { initial: false } : {}),
   };
   const visibleKeys = allSeries.filter((series) => shownSeries[series.key]).map((series) => series.key);
   const hasVisibleLine = visibleKeys.length > 0;
@@ -286,7 +299,10 @@ export default function ForecastChart({
     () => padMonthlyPoints(points, startDate, endDate),
     [points, startDate, endDate]
   );
-  const chartData = chartPoints.map((point, index) => ({ ...point, x: index }));
+  // The Actual line breaks at months with no actual; each gap gets its own
+  // dashed join (one key per gap).
+  const actualBridges = withActualBridges(chartPoints);
+  const chartData = actualBridges.points.map((point, index) => ({ ...point, x: index }));
   const lastIndex = Math.max(chartData.length - 1, 0);
   const trailingMonth = chartData.length ? nextMonthYear(chartData.at(-1).month_year) : '';
   const monthYears = chartPoints.map((point) => point.month_year);
@@ -319,18 +335,15 @@ export default function ForecastChart({
   // Every line drawn, including the Scenario builder's, needs a timing.
   const lineTimings = lineSweepTimings(plotData, allSeries.map((series) => series.key), LINE_SWEEP);
 
-  // Points only carry a range for one customer + one SKU (buildMonthlyPoints):
-  // added-up bounds would overstate the range of a total.
-  const showRange = Boolean(shownSeries.current) && chartData.some((point) => point.range);
-  const visibleValues = chartData.flatMap((point) => [
-    ...visibleKeys.map((key) => point[key]),
-    ...(showRange && point.range ? point.range : []),
-  ]).filter((value) => typeof value === 'number');
+  // No 80% range is drawn: the tooltip's CONFIDENCE section gives it in
+  // figures, so the axis only has to fit the lines.
+  const visibleValues = chartData
+    .flatMap((point) => visibleKeys.map((key) => point[key]))
+    .filter((value) => typeof value === 'number');
   // Hover text for the line pills, so the explanations don't crowd the chart.
   const lineHints = forecastLineHints({
-    singleSeries,
-    initialMissingForSku: initialMissingForScope,
-    previousAvailable,
+    initialMissing: initialOffHint,
+    previousMissing: previousOff,
   });
   const yDomain = visibleValues.length ? niceYDomain(visibleValues) : [0, 1];
   const hoverPoint = chartPoints.find((point) => point.month_year === hoverMonth);
@@ -347,7 +360,7 @@ export default function ForecastChart({
     color: series.color,
     value: hoverPoint?.[series.key],
   }));
-  const formatValue = (value) => formatTooltipValue(value, metric);
+  const formatValue = (value) => formatTooltipValue(value, 'units');
   const monthX = (monthYear) => monthYears.indexOf(monthYear);
   // The Scenario builder sends no Simulated series until a switched-on block
   // changes something in view, so its gap, markers and band wait for it too.
@@ -382,7 +395,7 @@ export default function ForecastChart({
     });
     if (mids.length < 2) {
       const wrap = chartWrapRef.current.getBoundingClientRect();
-      const yAxisWidth = metric === 'revenue' ? 52 : 40;
+      const yAxisWidth = Y_AXIS_WIDTH;
       const ratio = (clientX - wrap.left - yAxisWidth) / Math.max(wrap.width - yAxisWidth - 18, 1);
       return Math.max(0, Math.min(lastIndex + 1, ratio * (lastIndex + 1)));
     }
@@ -455,24 +468,6 @@ export default function ForecastChart({
             </div>
           ) : null}
         </div>
-        {onMetricChange ? (
-          <Tabs value={metric} onValueChange={onMetricChange}>
-            <TabsList className="h-7 bg-lavander p-0.5">
-              <TabsTrigger
-                value="units"
-                className="h-6 px-2.5 text-[11px] text-deep-violet-blue/70 hover:bg-white hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white data-active:hover:bg-deep-violet-blue data-active:hover:text-white"
-              >
-                Volume
-              </TabsTrigger>
-              <TabsTrigger
-                value="revenue"
-                className="h-6 px-2.5 text-[11px] text-deep-violet-blue/70 hover:bg-white hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white data-active:hover:bg-deep-violet-blue data-active:hover:text-white"
-              >
-                Revenue
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-        ) : null}
       </CardHeader>
       <CardContent className="min-w-0 space-y-3">
         {toolbar}
@@ -482,7 +477,7 @@ export default function ForecastChart({
             visible={shownSeries}
             onToggle={onToggleSeries}
             hints={lineHints}
-            disabled={{ previous: !previousAvailable, initial: initialMissingForScope }}
+            disabled={{ previous: previousOff, initial: Boolean(initialOffHint) }}
           />
           <ForecastPromoToggle
             selectedTypes={selectedPromoTypes}
@@ -555,7 +550,7 @@ export default function ForecastChart({
                     tickMargin={8}
                   />
                   <YAxis
-                    width={metric === 'revenue' ? 52 : 40}
+                    width={Y_AXIS_WIDTH}
                     domain={yDomain}
                     ticks={
                       yDomain[0] === yDomain[1]
@@ -564,7 +559,7 @@ export default function ForecastChart({
                     }
                     allowDataOverflow
                     tick={{ fontSize: 10, fill: '#3A4369' }}
-                    tickFormatter={(value) => formatAxisValue(value, metric)}
+                    tickFormatter={(value) => formatAxisValue(value, 'units')}
                   />
                   <ChartTooltip
                     wrapperStyle={{ zIndex: 30, pointerEvents: 'none' }}
@@ -591,10 +586,12 @@ export default function ForecastChart({
                               <ForecastConfidenceDetails
                                 entries={point.confidence}
                                 formatValue={formatValue}
+                                dotSymbols={confidenceDots}
+                                showPrevious={Boolean(shownSeries.previous)}
                                 className="mt-1 border-t border-lavander pt-1.5"
                               />
                               <ForecastPointDetails
-                                details={forecastPointDetails(point, metric)}
+                                details={forecastPointDetails(point, { showPrevious: shownSeries.previous })}
                                 className="mt-1 border-t border-lavander pt-1.5"
                               />
                             </>
@@ -614,21 +611,6 @@ export default function ForecastChart({
                       ifOverflow="visible"
                     />
                   ))}
-                  {/* 80% range around the Current line: one customer + one SKU only. */}
-                  {showRange ? (
-                    <Area
-                      dataKey="range"
-                      name="80% range"
-                      type="monotone"
-                      stroke="none"
-                      fill={chartConfig.current.color}
-                      fillOpacity={0.14}
-                      tooltipType="none"
-                      legendType="none"
-                      activeDot={false}
-                      isAnimationActive={false}
-                    />
-                  ) : null}
                   {selectedBand && selectedBand.x1 >= -0.5 && selectedBand.x2 > 0 ? (
                     <ReferenceArea
                       x1={Math.max(selectedBand.x1, 0)}
@@ -666,7 +648,7 @@ export default function ForecastChart({
                       strokeWidth={1.4}
                       ifOverflow="extendDomain"
                       label={{
-                        value: `Seasonal avg ${formatAxisValue(Math.round(scenario.seasonalAverage), metric)}`,
+                        value: `Seasonal avg ${formatAxisValue(Math.round(scenario.seasonalAverage), 'units')}`,
                         position: 'insideTopRight',
                         fontSize: 10,
                         fill: '#A8741A',
@@ -702,6 +684,7 @@ export default function ForecastChart({
                           cy={props.cy}
                           color={series.color}
                           shape={series.shape}
+                          fill={dotFill(series.key, props.payload, confidenceDots)}
                           delay={dotRevealDelay(lineTimings[series.key], props.points, props.cx)}
                         />
                       )}
@@ -710,6 +693,27 @@ export default function ForecastChart({
                       {...lineTimings[series.key]}
                     />
                   ))}
+                  {/* Dashed joins across months with no actual (a missing file),
+                      under the Actual line; never a point, never in the tooltip. */}
+                  {shownSeries.actual
+                    ? actualBridges.keys.map((key) => (
+                        <Line
+                          key={key}
+                          dataKey={key}
+                          type="linear"
+                          stroke={ACTUAL_COLOR}
+                          strokeWidth={1.6}
+                          strokeOpacity={0.7}
+                          strokeDasharray="4 4"
+                          dot={false}
+                          activeDot={false}
+                          connectNulls
+                          tooltipType="none"
+                          legendType="none"
+                          isAnimationActive={false}
+                        />
+                      ))
+                    : null}
                   {scenarioMarkers.map((marker) => (
                     <ReferenceDot
                       key={`marker-${marker.key}`}
@@ -741,12 +745,14 @@ export default function ForecastChart({
                   <ForecastPromoPanel
                     monthLabel={hoverPoint?.label ?? formatMonthLabel(hoverMonth)}
                     seriesValues={seriesValues}
-                    details={forecastPointDetails(hoverPoint, metric)}
+                    details={forecastPointDetails(hoverPoint, { showPrevious: shownSeries.previous })}
                     formatValue={formatValue}
                     confidenceDetails={
                       <ForecastConfidenceDetails
                         entries={hoverPoint?.confidence}
                         formatValue={formatValue}
+                        dotSymbols={confidenceDots}
+                        showPrevious={Boolean(shownSeries.previous)}
                         interactive
                       />
                     }
@@ -774,9 +780,6 @@ export default function ForecastChart({
                 salesLabel={salesLabel}
                 salesLoadedAt={salesLoadedAt}
                 pastAccuracy={pastAccuracy}
-                // The hover card can't be hovered itself, so the confidence
-                // help sits here whenever the chart has some to explain.
-                showConfidenceHelp={points.some((point) => point.confidence?.length)}
                 updatingBadge={updatingBadge}
                 notes={[...initialNotes, ...notes]}
                 className="-mt-6 px-3 pb-1 pt-0"
@@ -791,8 +794,6 @@ export default function ForecastChart({
                 years={yearTotals}
                 loading={yearTotalsLoading || loading}
                 horizonVolume={horizonVolume}
-                horizonRevenue={horizonRevenue}
-                simulatedYears={showSimulated ? scenario.simulatedYears : []}
               />
             )}
 
@@ -801,7 +802,6 @@ export default function ForecastChart({
             {scenario ? null : (
               <ForecastTable
                 points={points}
-                metric={metric}
                 visibleSeries={shownSeries}
                 modelLabel={modelLabel}
               />

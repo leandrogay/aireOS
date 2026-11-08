@@ -1,5 +1,5 @@
 import { formatDate } from '@/lib/formatDate';
-import { isRefreshFailure } from '@/app/utils/forecastNotificationText';
+import { forecastWarningLines, isRefreshFailure } from '@/app/utils/forecastNotificationText';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 
 // ==== Notification headings ====
@@ -26,7 +26,14 @@ function forecastHeading(payload, success) {
   // time. Slicing the UTC string would name the day before for a run between
   // midnight and 8am Singapore time.
   const date = formatDate(payload.updated_at);
-  if (success) return { tag: 'Success', tone: 'success', title: `Forecast pipeline completed – ${date}` };
+  if (success) {
+    // A retrain that worked but left the Initial yearly forecast unrefreshed
+    // (payload `warnings`) says so in the title too.
+    const completed = forecastWarningLines(payload).length
+      ? 'Forecast pipeline completed with a warning'
+      : 'Forecast pipeline completed';
+    return { tag: 'Success', tone: 'success', title: `${completed} – ${date}` };
+  }
   if (isRefreshFailure(payload, success)) {
     return { tag: 'Failure', tone: 'danger', title: `Forecast refresh couldn't start – ${date}` };
   }

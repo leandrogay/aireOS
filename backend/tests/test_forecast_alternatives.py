@@ -15,7 +15,7 @@ class FakeQueryJob:
     def __init__(self, df):
         self._df = df
 
-    def result(self):
+    def result(self, timeout=None):
         return self
 
     def to_dataframe(self):
@@ -67,6 +67,11 @@ def _no_client_allowed():
 def test_alternatives_query_binds_the_pipeline_thresholds_and_filters(monkeypatch):
     fake = FakeBigQueryClient(pd.DataFrame([_alternative_record()]))
     monkeypatch.setattr(bigquery, "get_bigquery_client", lambda: fake)
+    monkeypatch.setattr(
+        bigquery,
+        "resolve_forecast_scope",
+        lambda product_name=None, customer_name=None: {"customer_ids": [1], "skus": ["13255044"]},
+    )
 
     rows = bigquery.get_forecast_alternatives(
         product_name="Aire Pants L",
@@ -78,8 +83,13 @@ def test_alternatives_query_binds_the_pipeline_thresholds_and_filters(monkeypatc
     params = _params_by_name(fake.last_job_config)
     assert params["min_history_months"].value == bigquery.TIER0_MIN_HISTORY_MONTHS == 6
     assert params["fallback_smape"].value == bigquery.TIER0_FALLBACK_SMAPE == 50
-    assert params["product_name"].value == "Aire Pants L"
-    assert params["customer_name"].value == "fairprice"
+    # Names are resolved to ids, filtered where the runs and training-input
+    # tables are read.
+    assert params["customer_ids"].values == [1]
+    assert params["skus"].values == ["13255044"]
+    sql = " ".join(fake.last_query.split())
+    assert "WHERE is_best AND source_model = 'tier1_arimax' AND customer_id IN UNNEST(@customer_ids)" in sql
+    assert "FROM `" in sql and "fc_training_input` WHERE TRUE AND customer_id IN UNNEST(@customer_ids)" in sql
     assert params["start_date"].value == datetime.date(2026, 1, 1)
     assert rows[0]["alt_forecast_current"] == 2540.0
     assert rows[0]["month_year"] == "2026-12-01"

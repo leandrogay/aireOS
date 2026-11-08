@@ -4,8 +4,7 @@ import { useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
-import InfoTooltip from '@/components/ui/InfoTooltip';
-import { BAND_STYLES, ConfidenceHelp } from '@/components/forecast/ForecastConfidenceDetails';
+import { BAND_STYLES } from '@/components/forecast/ForecastConfidenceDetails';
 import {
   FORECAST_LAST_UPDATED_LABEL,
   PAST_ACCURACY_BADGE_HINT,
@@ -86,18 +85,18 @@ function UpdatingBadge({ badge }) {
  * last updated (MAX(current_generated_at) for that tier -- every retrain
  * replaces the Current line, so this is the latest retrain), when that
  * customer's sales last loaded (latest_sales_loaded_at; see backend
- * bigquery.get_sales_loaded_at), how to read the tooltip's confidence and,
- * for one customer + SKU, the model's Past accuracy badge.
+ * bigquery.get_sales_loaded_at) and, for one customer + SKU, the model's
+ * Past accuracy badge. How to read confidence, and what each Current dot
+ * means, live in the hover card's CONFIDENCE section.
  * `updatingBadge` (forecastUpdatingBadge) shows while a refresh is pending;
- * `notes` (Initial status, missing Initial, the All customers average) are
- * one line each under that row.
+ * `notes` (Initial status, Initial / Previous coverage) are one line each
+ * under that row.
  *
  * @param {{
  *   lastRun?: string | null,
  *   salesLabel: string,
  *   salesLoadedAt?: string | null,
  *   pastAccuracy?: { band: string, smape: number | null } | null,
- *   showConfidenceHelp?: boolean,
  *   updatingBadge?: { label: string, hint: string } | null,
  *   notes?: string[],
  *   className?: string,
@@ -108,7 +107,6 @@ export default function ForecastLegendFooter({
   salesLabel,
   salesLoadedAt,
   pastAccuracy = null,
-  showConfidenceHelp = false,
   updatingBadge = null,
   notes = [],
   className,
@@ -126,17 +124,11 @@ export default function ForecastLegendFooter({
           <span className="text-deep-violet-blue/55">{salesLabel}: </span>
           <span className="font-medium">{formatSgtTimestamp(salesLoadedAt)}</span>
         </span>
-        {showConfidenceHelp || pastAccuracy ? (
-          <span aria-hidden="true" className="h-3 w-px bg-lavander" />
-        ) : null}
-        {pastAccuracy ? <PastAccuracyBadge pastAccuracy={pastAccuracy} /> : null}
-        {showConfidenceHelp ? (
-          <span className="inline-flex items-center text-deep-violet-blue/55">
-            Confidence
-            <InfoTooltip label="How to read confidence">
-              <ConfidenceHelp />
-            </InfoTooltip>
-          </span>
+        {pastAccuracy ? (
+          <>
+            <span aria-hidden="true" className="h-3 w-px bg-lavander" />
+            <PastAccuracyBadge pastAccuracy={pastAccuracy} />
+          </>
         ) : null}
       </div>
       {notes.map((note) => (
