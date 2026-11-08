@@ -171,10 +171,8 @@ const SCENARIO_ITEM_GROUPS = [
 // Scenario section of the hover card (and of the entered-promotions panel,
 // which replaces the card in months with an entered promotion): how far
 // Simulated sits from Current this month, and every switched-on building
-// block and planned promotion in it, even one that adds 0%. With
-// `hasEntered`, planned promotions are added on top of the month's entered
-// ones (scenarioPromotions.stackedModelCells), so the card says so.
-function ScenarioPointDetails({ point, items, formatValue, hasEntered = false, className }) {
+// block and planned promotion in it, even one that adds 0%.
+function ScenarioPointDetails({ point, items, formatValue, className }) {
   if (point?.simulated == null || point.current == null) return null;
   const delta = point.simulated - point.current;
   if (!delta && !items.length) return null;
@@ -204,9 +202,6 @@ function ScenarioPointDetails({ point, items, formatValue, hasEntered = false, c
                 <span className="font-semibold text-scenario-ink">{signed(item.deltaUnits)}</span>
               </div>
             ))}
-            {group.source === 'promotions' && hasEntered ? (
-              <p className="text-[10px] text-deep-violet-blue/60">On top of the entered promotions below.</p>
-            ) : null}
           </div>
         );
       })}
@@ -762,7 +757,6 @@ export default function ForecastChart({
                           point={hoverPoint}
                           items={scenario.monthItems?.get(hoverMonth) ?? []}
                           formatValue={formatValue}
-                          hasEntered={scenario.stacksOnEntered}
                         />
                       ) : null
                     }

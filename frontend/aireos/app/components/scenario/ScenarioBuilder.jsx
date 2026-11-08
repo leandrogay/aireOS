@@ -9,13 +9,15 @@ import ForecastFilters from '@/components/forecast/ForecastFilters';
 import { mixCaption } from '@/components/forecast/ForecastYearTotals';
 import BlockTable from '@/components/scenario/BlockTable';
 import BuildingBlocksSection from '@/components/scenario/BuildingBlocksSection';
-import ModelViewToggle from '@/components/scenario/ModelViewToggle';
 import MonthlyPlan from '@/components/scenario/MonthlyPlan';
 import PromotionsSection from '@/components/scenario/PromotionsSection';
 import ScenarioBuilderSkeleton from '@/components/scenario/ScenarioBuilderSkeleton';
 import ScenarioPanel from '@/components/scenario/ScenarioPanel';
 import ScenarioTotals from '@/components/scenario/ScenarioTotals';
 import ScenarioYearComparison from '@/components/scenario/ScenarioYearComparison';
+import { nextYearDateRange } from '@/app/utils/dateRange';
+import { FORECAST_TIER_OPTIONS } from '@/app/utils/forecastLineText';
+import { DEFAULT_TIER } from '@/app/utils/forecastTiers';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 import {
   ALL_PACK_TYPE_VALUES,
@@ -39,13 +41,6 @@ import {
 } from '@/app/utils/scenarioEngine';
 import { monthSpanLabel, seasonalAverage } from '@/app/utils/scenarioPitch';
 import {
-  MODEL_VIEWS,
-  OFFICIAL_REFERENCE_SERIES,
-  modelPromotionSummary,
-  rowsForView,
-  withOfficialReference,
-} from '@/app/utils/scenarioModelView';
-import {
   activeScenarioPromotions,
   draftPromotionBands,
   hasUnsavedPromotionChanges,
@@ -56,7 +51,6 @@ import {
   updateScenarioBlock,
 } from '@/app/utils/scenarioBlocks';
 import { SCENARIO_SOURCES } from '@/app/utils/scenarioSources';
-import useForecastAlternatives from '@/hooks/useForecastAlternatives';
 import useForecastFilters from '@/hooks/useForecastFilters';
 import useForecastView from '@/hooks/useForecastView';
 import useForecastYearTotals from '@/hooks/useForecastYearTotals';
@@ -65,6 +59,12 @@ import useExpandedRows from '@/hooks/useExpandedRows';
 import useScenarioBlocks from '@/hooks/useScenarioBlocks';
 import useScenarioPromotions from '@/hooks/useScenarioPromotions';
 import useUnitsSplitBasis from '@/hooks/useUnitsSplitBasis';
+
+// Its own key, so the Forecast page's range (this year) and this page's
+// (next year) don't overwrite each other.
+const SCENARIO_DATE_SESSION_KEY = 'aireos.scenario.dateRange';
+// Same label as the Forecast page's Model dropdown.
+const MODEL_LABEL = FORECAST_TIER_OPTIONS.find((option) => option.value === DEFAULT_TIER)?.label ?? '';
 
 // Whether an item on the line is saved, never saved (a draft), or saved
 // with unsaved edits -- the line shows what is on screen, not what is saved.
@@ -110,44 +110,28 @@ function itemsInMonths(monthCells, months, itemInfo, { activeItems, filters, fir
  * impact summary and a Current-vs-Simulated table; saved blocks are listed
  * in a table under it; the panel on the right creates and edits them.
  *
+ * Always built on Tier 0 (the baseline: last year x growth and the recent
+ * run-rate, no promotions), so a planned promotion is measured against the
+ * customer's usual discount and never against a promotion the model already
+ * holds. Opens on next year, the year being planned.
+ *
  * Shared file: it owns the state and the layout slots. Everything it shows
  * is calculated by the pure scenario utils from the forecast rows and the
  * items. Saving a block never changes the Current forecast: only the
  * Simulated line reads them.
  */
 export default function ScenarioBuilder() {
-  const filters = useForecastFilters();
+  const filters = useForecastFilters({ defaultRange: nextYearDateRange, sessionKey: SCENARIO_DATE_SESSION_KEY });
   const { productName, customerName, startDate, endDate, ready } = filters;
   const [selectedPromoTypes, setSelectedPromoTypes] = useState(ALL_PROMO_TYPE_VALUES);
   const [selectedPackTypes, setSelectedPackTypes] = useState(ALL_PACK_TYPE_VALUES);
   const [visibleSeries, setVisibleSeries] = useState({
     ...ALL_SERIES_VISIBLE,
     [SIMULATED_SERIES.key]: true,
-    [OFFICIAL_REFERENCE_SERIES.key]: true,
   });
   const [panelCollapsed, setPanelCollapsed] = useState(false);
-  const [modelView, setModelView] = useState(MODEL_VIEWS.official);
-  const view = useForecastView({ ready, productName, customerName, startDate, endDate });
-  const { rows: officialRows, actuals, promotions, freshness } = view.data;
-
-  // Months whose official forecast already includes the promotion entered
-  // for them can be swapped for the forecast without it, so planned
-  // promotions start from no promotion rather than stacking on the entered
-  // one (app/utils/scenarioModelView.js).
-  // Only for one customer and one SKU: across several, the months mix models
-  // and the toggle would be too hard to read. Greyed out when that SKU has no
-  // such month.
-  const showViewToggle = Boolean(productName && customerName);
-  const modelSummary = modelPromotionSummary(officialRows);
-  const canSwitchView = showViewToggle && modelSummary.modelMonths > 0;
-  const activeView = canSwitchView ? modelView : MODEL_VIEWS.official;
-  const alternatives = useForecastAlternatives({
-    enabled: ready && canSwitchView && activeView === MODEL_VIEWS.planned,
-    productName,
-    customerName,
-  });
-  const mapRows = (forecastRows) => rowsForView(forecastRows, alternatives.data, activeView);
-  const rows = mapRows(officialRows);
+  const view = useForecastView({ ready, productName, customerName, startDate, endDate, tier: DEFAULT_TIER });
+  const { rows, actuals, promotions, freshness } = view.data;
   const scenarioBlocks = useScenarioBlocks();
   // Planned promotions: saved like blocks (hooks/useScenarioPromotions.js).
   const scenarioPromotions = useScenarioPromotions();
@@ -177,9 +161,9 @@ export default function ScenarioBuilder() {
     startDate,
     endDate,
     bounds: filters.bounds,
-    rows: officialRows,
+    rows,
     actuals,
-    mapRows,
+    tier: DEFAULT_TIER,
   });
   // Units blocks the filters only partly show (an All SKUs block while one
   // SKU is picked) are split over rows fetched for their whole scope.
@@ -202,11 +186,7 @@ export default function ScenarioBuilder() {
   // Volume only (scenarioEngine.js): the chart, tables and impact strip all
   // read units.
   const singleSeries = Boolean(productName && customerName);
-  const unitPoints = buildMonthlyPoints(rows, actuals, 'units', { singleSeries });
-  const swapped = rows !== officialRows;
-  const basePoints = swapped
-    ? withOfficialReference(unitPoints, buildMonthlyPoints(officialRows, actuals, 'units', { singleSeries }))
-    : unitPoints;
+  const basePoints = buildMonthlyPoints(rows, actuals, 'units', { singleSeries });
 
   // Only switched-on blocks and promotions count, on the chart and in the tables.
   const allBlocks = scenarioBlocks.blocks;
@@ -285,16 +265,12 @@ export default function ScenarioBuilder() {
 
   const simulatedYears = simulatedYearTotals(years, byMonth);
   const scenario = {
-    // Simulated stays first: the chart takes its colour from series[0]. The
-    // grey Official reference only shows in the Simulate New Promotions view.
-    series: [...(hasSimulated ? [SIMULATED_SERIES] : []), ...(swapped ? [OFFICIAL_REFERENCE_SERIES] : [])],
+    // The chart takes the Simulated colour from series[0].
+    series: hasSimulated ? [SIMULATED_SERIES] : [],
     markers: hasSimulated ? itemMarkers(byItem) : [],
     promoBands: draftPromotionBands(activePromotions),
     seasonalAverage: seasonalAverage(basePoints),
     monthItems,
-    // Planned promotions sit on top of the month's entered ones unless the
-    // Simulate New Promotions view swapped in the forecast without them.
-    stacksOnEntered: !swapped,
     selectedBand:
       selectedBlock && byItem.has(selectedBlock.id)
         ? { startMonth: selectedBlock.startMonth, endMonth: selectedBlock.endMonth, label: selectedBlock.name }
@@ -409,24 +385,14 @@ export default function ScenarioBuilder() {
         )}
       >
         <div className="min-w-0 space-y-1 min-[1100px]:flex min-[1100px]:flex-col min-[1100px]:[&>[data-slot=card]]:flex-1">
-          {showViewToggle ? (
-            <ModelViewToggle
-              value={activeView}
-              onChange={setModelView}
-              disabled={!canSwitchView}
-              summary={modelSummary}
-              loading={alternatives.loading}
-              error={alternatives.error}
-            />
-          ) : null}
-
           <ForecastChart
             points={hasSimulated ? withSimulatedLine(basePoints, byMonth) : basePoints}
             startDate={startDate}
             endDate={endDate}
             metric="units"
             singleSeries={singleSeries}
-            scopeTags={[]}
+            // SKU and customer are in the toolbar's filters; the model isn't.
+            scopeTags={[{ label: 'Model', value: MODEL_LABEL }]}
             toolbar={
               <ForecastFilters
                 variant="toolbar"
@@ -484,7 +450,7 @@ export default function ScenarioBuilder() {
             salesLoadedAt={freshness.latest_sales_loaded_at}
             yearTotals={years}
             yearTotalsLoading={yearTotalsLoading}
-            horizonVolume={sumHorizonForecast(unitPoints)}
+            horizonVolume={sumHorizonForecast(basePoints)}
             loading={view.loading}
             scenario={scenario}
           />

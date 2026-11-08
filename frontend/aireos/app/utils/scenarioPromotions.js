@@ -53,9 +53,9 @@ export const VOUCHER_KEY = 'voucher';
 export const SIDE_OFFER_TYPE = 'side_offer';
 
 // The pipeline's ARIMA_PLUS_XREG model already reflects the promotion
-// entered for the months it forecasts. A planned promotion is still added on
-// top there (Modify Planned Promotions); Simulate New Promotions swaps those
-// months for the forecast without it (scenarioModelView.rowsForView).
+// entered for the months it forecasts. The Scenario builder reads Tier 0
+// only, so no row there is from that model; the check stays in case it ever
+// shows another tier.
 export const MODEL_INCLUDES_PROMOS = 'tier1_arimax';
 
 const SOURCE_LABELS = {
@@ -299,9 +299,8 @@ function inPromotion(row, promotion) {
 /**
  * The SKU-months inside the promotion whose Current forecast already
  * includes the promotion entered for them (ARIMA_PLUS_XREG): the planned
- * promotion's uplift is added on top of that one there. In the "Simulate New
- * Promotions" view those rows have been swapped
- * (scenarioModelView.rowsForView), so this comes back empty.
+ * promotion's uplift is added on top of that one there. On Tier 0, which the
+ * Scenario builder reads, this comes back empty.
  *
  * @param {object} promotion
  * @param {object[]} rows the forecast rows of the current view

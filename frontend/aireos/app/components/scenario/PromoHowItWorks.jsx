@@ -39,15 +39,14 @@ export default function PromoHowItWorks() {
             the same Current forecast and the results are added, not multiplied.
           </li>
           <li>
-            Some months&apos; official forecast already includes the promotion entered for them. In <b>Modify Planned
-            Promotions</b> your promotion is added on top of that one; switch to <b>Simulate New Promotions</b> above the
-            chart to start from the forecast without it instead. Building blocks apply in both views.
+            The Scenario builder always starts from <b>Tier 0 · Baseline</b>, which never includes the promotions
+            entered on the Promotions page, so your promotion is never added on top of one already in the forecast.
           </li>
           <li>All values are placeholders until they are measured from sales data.</li>
           <li>
             The Scenario builder is for exploring: the Simulated line is never saved into the official forecast.
             The Current forecast, Inventory and Dashboard change only through new sales data and the forecasting
-            model, and a promotion entered on the Promotions page only affects months forecast by Tier 1 advanced,
+            model, and a promotion entered on the Promotions page only affects months forecast by Tier 1 · Advanced,
             and then only by its type (not its discount depth or voucher).
           </li>
         </ul>

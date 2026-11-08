@@ -90,8 +90,9 @@ export async function getForecastView({
  * that already includes the promotion entered for that month
  * (ARIMA_PLUS_XREG), the forecast the pipeline would have picked without it:
  * alt_forecast_current (cartons), alt_low_80 / alt_high_80, their *_revenue
- * at the same realised price, and alt_source_model. Used by the Scenario
- * builder's "Simulate New Promotions" view.
+ * at the same realised price, and alt_source_model. Nothing calls it since
+ * the Scenario builder moved to Tier 0 (its "Simulate New Promotions" view
+ * is gone); remove it with the endpoint.
  * See backend forecast_service.get_forecast_alternatives.
  */
 export async function getForecastAlternatives({ productName = '', customerName = '' } = {}) {

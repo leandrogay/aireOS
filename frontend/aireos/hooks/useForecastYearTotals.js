@@ -91,9 +91,8 @@ export default function useForecastYearTotals({
   }, [ready, needsWiderRange, windowKey, productName, customerName, yearWindow?.start, yearWindow?.end, tier]);
 
   const widened = needsWiderRange && wide.key === windowKey;
-  // mapRows lets the Scenario builder total the rows of its chosen forecast
-  // view (scenarioModelView.rowsForView), and the Forecast page the rows of
-  // its chosen model (forecastTiers.rowsForTier).
+  // mapRows lets the Forecast page total the rows of its chosen model
+  // (forecastTiers.rowsForTier).
   const sourceRows = mapRows(needsWiderRange ? (widened ? wide.rows : []) : rows);
   const sourceActuals = needsWiderRange ? (widened ? wide.actuals : []) : actuals;
   // Actual or Current is chosen per customer x SKU x month (forecastYearTotals).

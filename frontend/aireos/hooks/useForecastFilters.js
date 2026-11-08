@@ -2,19 +2,30 @@
 
 import { useEffect, useState } from 'react';
 
-import { currentYearDateRange, readForecastDateSession, writeForecastDateSession } from '@/app/utils/dateRange';
+import {
+  FORECAST_DATE_SESSION_KEY,
+  currentYearDateRange,
+  readForecastDateSession,
+  writeForecastDateSession,
+} from '@/app/utils/dateRange';
 import useForecastOptions from '@/hooks/useForecastOptions';
 
 /**
  * SKU / customer / date filters for the Forecast page and the Scenario
- * builder, with the same defaults on both: the first customer, and the
- * current year unless this browser tab already picked a range (kept in
- * sessionStorage, so leaving the page and coming back keeps it).
+ * builder: the first customer, and `defaultRange` (the current year unless a
+ * page passes another, e.g. nextYearDateRange) unless this browser tab
+ * already picked a range (kept in sessionStorage under `sessionKey`, so
+ * leaving the page and coming back keeps it; each page has its own key).
  *
  * `ready` turns true once the options have loaded and the defaults are set;
  * pages pass it to useForecastView so they never fetch with blank filters.
+ *
+ * @param {{ defaultRange?: (bounds: { start: string, end: string }) => { start: string, end: string }, sessionKey?: string }} [options]
  */
-export default function useForecastFilters() {
+export default function useForecastFilters({
+  defaultRange = currentYearDateRange,
+  sessionKey = FORECAST_DATE_SESSION_KEY,
+} = {}) {
   const { data: options, loading: optionsLoading, error } = useForecastOptions();
   const [productName, setProductName] = useState('');
   const [customerName, setCustomerName] = useState('');
@@ -26,24 +37,24 @@ export default function useForecastFilters() {
   // the documented one-time-default case). The options are fetched, so this
   // only ever runs in the browser, after hydration.
   if (!ready && options) {
-    const defaultRange = currentYearDateRange(options.bounds);
-    const savedRange = readForecastDateSession();
+    const initialRange = defaultRange(options.bounds);
+    const savedRange = readForecastDateSession(sessionKey);
     setCustomerName(options.customers[0] ?? '');
-    setStartDate(savedRange?.start ?? defaultRange.start);
-    setEndDate(savedRange?.end ?? defaultRange.end);
+    setStartDate(savedRange?.start ?? initialRange.start);
+    setEndDate(savedRange?.end ?? initialRange.end);
     setReady(true);
   }
 
   useEffect(() => {
     if (!ready || !startDate || !endDate) return;
-    writeForecastDateSession(startDate, endDate);
-  }, [ready, startDate, endDate]);
+    writeForecastDateSession(startDate, endDate, sessionKey);
+  }, [ready, startDate, endDate, sessionKey]);
 
   const bounds = options?.bounds ?? { start: '', end: '' };
-  // The "default" state is the current year, not the full bounds range --
-  // canClear compares against that, or Clear would look active on a freshly
-  // loaded page that hasn't been touched yet.
-  const defaultDateRange = currentYearDateRange(bounds);
+  // The "default" state is the page's default year, not the full bounds
+  // range -- canClear compares against that, or Clear would look active on a
+  // freshly loaded page that hasn't been touched yet.
+  const defaultDateRange = defaultRange(bounds);
   const canClear = Boolean(
     productName || customerName || startDate !== defaultDateRange.start || endDate !== defaultDateRange.end
   );
