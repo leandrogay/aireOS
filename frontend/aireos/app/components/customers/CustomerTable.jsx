@@ -65,11 +65,14 @@ export default function CustomerTable({
                   <div className="mt-2 divide-y divide-lavander/70 border-t border-lavander/70">
                     {customer.retailers.map((retailer) => (
                       <div key={retailer.retailer_id} className="flex items-center gap-2 py-2">
-                        <span className="min-w-0 flex-1 break-words text-xs text-deep-violet-blue">
-                          {retailerLabel(retailer.retailer_name)}
-                          <span className="ml-1 text-deep-violet-blue/60">· {retailer.store_count} stores</span>
+                        <span className="min-w-0 flex-1 text-xs text-deep-violet-blue">
+                          <span className="block break-words">
+                            {retailerLabel(retailer.retailer_name)}
+                            <span className="ml-1 text-deep-violet-blue/60">· {retailer.store_count} stores</span>
+                          </span>
+                          <span className="block break-all font-mono text-[11px] text-deep-violet-blue/50">{retailer.retailer_name}</span>
                         </span>
-                        <RowActions label={`Actions for retailer ${retailer.retailer_name}`} actions={retailerRowActions(retailer, customer, rowHandlers.onEditRetailer, rowHandlers.onDeleteRetailer)} />
+                        <RowActions label={`Actions for retailer ${retailerLabel(retailer.retailer_name)}`} actions={retailerRowActions(retailer, customer, rowHandlers.onEditRetailer, rowHandlers.onDeleteRetailer)} />
                       </div>
                     ))}
                     {customer.retailers.length === 0 && <p className="py-2 text-xs text-deep-violet-blue/60">No retailers yet.</p>}
