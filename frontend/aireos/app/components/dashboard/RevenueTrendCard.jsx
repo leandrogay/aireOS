@@ -84,7 +84,12 @@ export default function RevenueTrendCard({
         <SegmentedControl value={metric} onChange={onMetricChange} options={METRIC_OPTIONS} ariaLabel="Metric" />
         {/* By week is disabled (faded) when no month in the range has weekly
             rows (page.js weekAvailable). */}
+        {/* 152px, as wide as the Offline / Online switch above it
+            (ChannelSwitch), so the two line up on both edges; wide enough
+            for "By month" in an equal half. */}
         <SegmentedControl
+          fullWidth
+          className="w-[152px]"
           value={granularity}
           onChange={onGranularityChange}
           options={[

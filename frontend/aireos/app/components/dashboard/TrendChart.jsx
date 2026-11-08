@@ -140,7 +140,9 @@ export function FormatTrendChart({ periodByFormat, periodTotal, granularity, met
 
   return (
     <ChartContainer config={chartConfig} className={CHART_SIZE_CLASS}>
-      <BarChart accessibilityLayer data={chartData} margin={margin}>
+      {/* stackOffset="sign": a negative segment (returns) is drawn down from 0,
+          not on top of the positive ones (chartDataRange measures it that way). */}
+      <BarChart accessibilityLayer data={chartData} margin={margin} stackOffset="sign">
         <CartesianGrid vertical={false} />
         <XAxis dataKey={mobile ? 'periodStart' : 'displayLabel'} {...axisProps} />
         <YAxis {...yAxisProps} />

@@ -1,6 +1,6 @@
 import { formatDate, formatDateTime } from '@/lib/formatDate';
 import { forecastErrorLines, isRefreshFailure, startedByLabel } from '@/app/utils/forecastNotificationText';
-import { lowStockItemText, modelFeatureLabel } from '@/app/utils/notificationText';
+import { daysLeftValue, lowStockItemText, modelFeatureLabel } from '@/app/utils/notificationText';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
@@ -31,8 +31,11 @@ function Field({ label, value }) {
 // More names than this and the chips stack in one column, one per line,
 // so a long list (a forecast's SKUs) lines up instead of wrapping raggedly.
 const CHIP_COLUMN_AFTER = 5;
+// One line per chip: a narrow panel (a third of a 1024px page) would
+// otherwise wrap a name inside its pill. A name too long for the panel ends
+// in "…" and is shown in full on hover (title).
 const CHIP_CLASS =
-  'rounded-full border border-lavander bg-white px-2 py-0.5 text-[10px] font-medium text-deep-violet-blue';
+  'max-w-full truncate whitespace-nowrap rounded-full border border-lavander bg-white px-2 py-0.5 text-[10px] font-medium text-deep-violet-blue';
 
 // A count plus one chip per name (customers, SKUs), like the promo panel's SKU
 // chips, beside their label. Up to CHIP_COLUMN_AFTER sit in a row, as wide as
@@ -45,7 +48,7 @@ function ChipField({ label, names }) {
       {names.length ? (
         <ul className={cn('flex min-w-0 gap-1', asColumn ? 'flex-col items-start' : 'flex-wrap')}>
           {names.map((name) => (
-            <li key={name} className={CHIP_CLASS}>
+            <li key={name} title={name} className={CHIP_CLASS}>
               {name}
             </li>
           ))}

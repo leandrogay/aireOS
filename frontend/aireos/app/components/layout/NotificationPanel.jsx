@@ -45,7 +45,9 @@ function TypeTag({ tone, children }) {
     <span
       className={cn(
         // A faint drop shadow gives the borderless pill its edge.
-        'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium shadow-[0_1px_2px_rgb(15_30_74/0.12)]',
+        // whitespace-nowrap: the row is wrap-anywhere (for file names), which
+        // would otherwise break a tag mid-word ("Nomenclat / ure").
+        'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium shadow-[0_1px_2px_rgb(15_30_74/0.12)]',
         (TONES[tone] || TONES.muted).tag,
       )}
     >

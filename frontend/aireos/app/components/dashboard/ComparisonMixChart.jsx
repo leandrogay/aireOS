@@ -177,7 +177,14 @@ export default function ComparisonMixChart({ rows, periodNames, granularity, met
   return (
     <>
       <ChartContainer config={{}} className={CHART_SIZE_CLASS}>
-        <BarChart accessibilityLayer data={chartData} margin={{ top: CHART_TOP_MARGIN, bottom: 8, left: TILTED_LABEL_LEFT_MARGIN }}>
+        {/* stackOffset="sign": negative segments (returns) go down from 0, as
+            chartDataRange measures them, not on top of the positive ones. */}
+        <BarChart
+          accessibilityLayer
+          data={chartData}
+          margin={{ top: CHART_TOP_MARGIN, bottom: 8, left: TILTED_LABEL_LEFT_MARGIN }}
+          stackOffset="sign"
+        >
           <CartesianGrid vertical={false} />
           <XAxis
             dataKey="axisLabel"

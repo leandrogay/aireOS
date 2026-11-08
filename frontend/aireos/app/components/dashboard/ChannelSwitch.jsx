@@ -13,9 +13,9 @@ const triggerClass =
  * Offline / Online for the whole Sales Dashboard (the chart, the summary and
  * the ranking all follow it), at the top right of the trend card beside the
  * Period controls. 26px tall, the height of those buttons (text-xs, py-1 and
- * a 1px border). 135px wide, the width the By week / By month switch below
- * it draws at, so the two right-aligned switches line up on both edges; the
- * two options share it equally (TabsTrigger is flex-1). Online is disabled when no ticked customer
+ * a 1px border). 152px wide, the same fixed width RevenueTrendCard gives the
+ * By week / By month switch below it, so the two right-aligned switches line
+ * up on both edges; the two options share it equally (TabsTrigger is flex-1). Online is disabled when no ticked customer
  * sells online (NHG).
  *
  * @param {{ mode: 'offline' | 'online', onChange: (mode: string) => void, onlineEnabled?: boolean }} props
@@ -23,7 +23,7 @@ const triggerClass =
 export default function ChannelSwitch({ mode, onChange, onlineEnabled = true }) {
   return (
     <Tabs value={mode} onValueChange={onChange}>
-      <TabsList aria-label="Sales channel" className="h-[26px] w-[135px] bg-lavander/45 p-0.5 group-data-horizontal/tabs:h-[26px] shadow-sm ring-1 ring-violet/25 backdrop-blur-sm">
+      <TabsList aria-label="Sales channel" className="h-[26px] w-[152px] bg-lavander/45 p-0.5 group-data-horizontal/tabs:h-[26px] shadow-sm ring-1 ring-violet/25 backdrop-blur-sm">
         <TabsTrigger value="offline" className={`text-xs ${triggerClass}`}>
           Offline
         </TabsTrigger>
