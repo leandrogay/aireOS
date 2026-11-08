@@ -6,32 +6,31 @@ import DateRangePicker from '@/components/ui/DateRangePicker';
 import SelectDropdown from '@/components/ui/SelectDropdown';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 
-const selectClass =
-  'h-8 w-full px-2 text-xs rounded-md border bg-white text-deep-violet-blue border-violet disabled:opacity-50';
 const labelClass = 'mb-0.5 block text-[11px] text-deep-violet-blue/70';
 const clearClass =
   'rounded-md border border-deep-violet-blue/30 bg-white px-2 py-0.5 text-[10px] font-medium text-deep-violet-blue transition hover:bg-cream disabled:cursor-not-allowed disabled:opacity-40';
 
+// SKU and customer are the shared ui/SelectDropdown in the same compact look
+// as Model beside them (and the Dashboard's filters); '' is "All".
 function SkuField({ value, onChange, options }) {
   return (
     <div>
-      <label className={labelClass} htmlFor="forecast-sku">
+      <span className={labelClass} id="forecast-sku-label">
         SKU
-      </label>
-      <select
+      </span>
+      <SelectDropdown
         id="forecast-sku"
-        aria-label="SKU"
+        ariaLabel="SKU"
         value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className={selectClass}
-      >
-        <option value="">All SKUs</option>
-        {options.map((name) => (
-          <option key={name} value={name}>
-            {name}
-          </option>
-        ))}
-      </select>
+        onChange={onChange}
+        options={[{ value: '', label: 'All SKUs' }, ...options.map((name) => ({ value: name, label: name }))]}
+        placeholder="All SKUs"
+        searchable
+        searchPlaceholder="Search SKUs…"
+        look="compact"
+        size="sm"
+        className="w-full"
+      />
     </div>
   );
 }
@@ -39,34 +38,36 @@ function SkuField({ value, onChange, options }) {
 function CustomerField({ value, onChange, options }) {
   return (
     <div>
-      <label className={labelClass} htmlFor="forecast-customer">
+      <span className={labelClass} id="forecast-customer-label">
         Sales customer
-      </label>
-      <select
+      </span>
+      <SelectDropdown
         id="forecast-customer"
-        aria-label="Sales customer"
+        ariaLabel="Sales customer"
         value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className={selectClass}
-      >
-        <option value="">All customers</option>
-        {options.map((name) => (
-          <option key={name} value={name}>
-            {retailerLabel(name)}
-          </option>
-        ))}
-      </select>
+        onChange={onChange}
+        options={[
+          { value: '', label: 'All customers' },
+          ...options.map((name) => ({ value: name, label: retailerLabel(name) })),
+        ]}
+        placeholder="All customers"
+        searchable
+        searchPlaceholder="Search customers…"
+        look="compact"
+        size="sm"
+        className="w-full"
+      />
     </div>
   );
 }
 
 /**
- * The forecast model (tier) every line on the chart shows. A model that isn't
- * available for every SKU in scope is greyed out with the reason under it
- * (forecastTiers.modelOptions). `disabled` (All customers) shows
- * `placeholder` ("Average of all models") instead of a pick.
+ * The forecast model (tier) every line on the chart shows, for one customer
+ * or All customers alike. A model that isn't available for every customer x
+ * SKU in scope is greyed out with the reason under it
+ * (forecastTiers.modelOptions).
  */
-function ModelField({ value, onChange, options, disabled, placeholder }) {
+function ModelField({ value, onChange, options }) {
   return (
     <div>
       <span className={labelClass} id="forecast-model-label">
@@ -75,11 +76,9 @@ function ModelField({ value, onChange, options, disabled, placeholder }) {
       <SelectDropdown
         id="forecast-model"
         ariaLabel="Model"
-        value={disabled ? '' : value}
+        value={value}
         onChange={onChange}
         options={options}
-        disabled={disabled}
-        placeholder={placeholder}
         look="compact"
         size="sm"
         className="w-full"
