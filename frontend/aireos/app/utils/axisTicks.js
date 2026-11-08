@@ -25,7 +25,8 @@ function decimalsFor(step) {
  * A tick formatter for an axis running from 0 to `axisMax` in `steps` equal
  * steps. Values are shown in k (thousands) or M (millions) when the axis top
  * reaches them, with `prefix` in front ('$' for revenue, '' for units). Zero
- * is always a bare "$0" / "0".
+ * is always a bare "$0" / "0", and a negative value puts its sign first
+ * ("-$0.8k"). `axisMax` is the furthest the axis reaches from 0, on either side.
  *
  * @param {number} axisMax
  * @param {number} steps
@@ -35,13 +36,16 @@ function decimalsFor(step) {
 export function axisTickFormatter(axisMax, steps, prefix = '') {
   const unit = UNITS.find(({ size }) => axisMax >= size) ?? { size: 1, suffix: '' };
   const decimals = decimalsFor(axisMax / steps / unit.size);
-  return (value) => {
+  function format(value) {
     if (typeof value !== 'number') return value;
     if (value === 0) return `${prefix}0`;
+    // A negative tick (returns) reads -$0.8k, not $-0.8k.
+    if (value < 0) return `-${format(-value)}`;
     const shown = (value / unit.size).toLocaleString('en-US', {
       minimumFractionDigits: decimals,
       maximumFractionDigits: decimals,
     });
     return `${prefix}${shown}${unit.suffix}`;
-  };
+  }
+  return format;
 }

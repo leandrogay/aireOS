@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Bell } from 'lucide-react';
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -11,8 +11,10 @@ import NotificationPanel from './NotificationPanel';
 // The panel is as wide as the dashboard's right-hand column (app/dashboard/page.js:
 // `lg:grid-cols-3` with `gap-1`), so it lines up with that card's edges, and keeps
 // that width on every page. The popup is portalled out of the page, so CSS can't
-// take a fraction of the content column; it is measured from the heading row
-// (the bell's parent in PageLayout, as wide as the content) when the bell opens.
+// take a fraction of the content column; it is measured from PageLayout's heading
+// row ([data-page-heading], as wide as the content) when the bell opens and
+// whenever the window is resized while it is open. The row is found with
+// closest(), not parentElement: the bell sits in a small wrapper of its own.
 const PAGE_COLUMNS = 3;
 const PAGE_COLUMN_GAP_PX = 4;
 // Below Tailwind's `lg`, the dashboard stacks into one column; the panel then
@@ -39,15 +41,31 @@ export default function NotificationBell() {
   const { notifications, unreadCount, markRead, refresh } = useNotifications();
   const triggerRef = useRef(null);
   const [panelWidth, setPanelWidth] = useState(NARROW_PANEL_WIDTH);
+  const [open, setOpen] = useState(false);
 
-  function handleOpenChange(open) {
-    if (!open) return;
-    setPanelWidth(columnWidth(triggerRef.current?.parentElement));
+  function measure() {
+    setPanelWidth(columnWidth(triggerRef.current?.closest('[data-page-heading]')));
+  }
+
+  function handleOpenChange(nextOpen) {
+    setOpen(nextOpen);
+    if (!nextOpen) return;
+    measure();
     refresh();
   }
 
+  // Keep the panel the column's width if the window is resized while it is open.
+  useEffect(() => {
+    if (!open) return undefined;
+    function handleResize() {
+      setPanelWidth(columnWidth(triggerRef.current?.closest('[data-page-heading]')));
+    }
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [open]);
+
   return (
-    <Popover onOpenChange={handleOpenChange}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger
         ref={triggerRef}
         data-notification-bell

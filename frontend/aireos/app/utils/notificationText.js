@@ -22,7 +22,10 @@ function lowStockHeading(payload) {
 // The three cases follow forecastNotificationText.forecastTitle (a refresh
 // that never started is its own failure), worded for the tag + title layout.
 function forecastHeading(payload, success) {
-  const date = formatDate(payload.updated_at?.slice(0, 10));
+  // The run's Singapore date: formatDate shows a full timestamp in Singapore
+  // time. Slicing the UTC string would name the day before for a run between
+  // midnight and 8am Singapore time.
+  const date = formatDate(payload.updated_at);
   if (success) return { tag: 'Success', tone: 'success', title: `Forecast pipeline completed – ${date}` };
   if (isRefreshFailure(payload, success)) {
     return { tag: 'Failure', tone: 'danger', title: `Forecast refresh couldn't start – ${date}` };
@@ -86,8 +89,29 @@ export function notificationHeading(type, payload) {
   return heading ? heading(payload ?? {}) : { tag: 'Notice', tone: 'muted', title: 'Notification' };
 }
 
+/**
+ * Days of holding left, as shown in a low-stock alert: one decimal at most
+ * ("0.2", "3"), since the backend sends the raw ratio (stock / daily
+ * sell-out), which can have many decimals. null when there is no usable
+ * figure (no sell-out that month, so no daily rate to divide by).
+ *
+ * @param {number | string | null | undefined} value payload doh_remaining
+ * @returns {string | null}
+ */
+export function daysLeftValue(value) {
+  const days = Number(value);
+  if (value === null || value === undefined || value === '' || !Number.isFinite(days)) return null;
+  return String(Math.round(days * 10) / 10);
+}
+
+/** "0.2 days left", "1 day left", or "Days left unknown" when there is no figure. */
+export function daysLeftText(value) {
+  const days = daysLeftValue(value);
+  if (days === null) return 'Days left unknown';
+  return `${days} day${days === '1' ? '' : 's'} left`;
+}
+
 /** One SKU of a consolidated low-stock alert, e.g. "Diapers M (Fairprice) — 3 days left". */
 export function lowStockItemText(item) {
-  const days = `${item.doh_remaining} day${item.doh_remaining === 1 ? '' : 's'} left`;
-  return `${item.product_name} (${retailerLabel(item.customer_name)}) — ${days}`;
+  return `${item.product_name} (${retailerLabel(item.customer_name)}) — ${daysLeftText(item.doh_remaining)}`;
 }

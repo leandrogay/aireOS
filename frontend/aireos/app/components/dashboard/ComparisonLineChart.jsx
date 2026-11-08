@@ -10,7 +10,7 @@ import {
   CHART_TOP_MARGIN,
   MAX_DOTTED_POINTS,
   TILTED_LABEL_LEFT_MARGIN,
-  chartDataMax,
+  chartDataRange,
   metricYAxisProps,
   periodAxisProps,
   weekMonthGroups,
@@ -63,7 +63,7 @@ export default function ComparisonLineChart({ points, formats, names, granularit
   const monthGroups = weekMonthGroups(points, granularity);
   const yAxisProps = metricYAxisProps(
     metric,
-    chartDataMax(points, ['currentTotal', 'baselineTotal'], { stacked: false }),
+    chartDataRange(points, ['currentTotal', 'baselineTotal'], { stacked: false }),
   );
   const dot = points.length > MAX_DOTTED_POINTS ? false : { r: 2.5 };
   const margin = {

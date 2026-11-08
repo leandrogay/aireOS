@@ -14,7 +14,7 @@ import {
   MAX_BAR_SIZE,
   bucketLabel,
   exactBucketLabel,
-  chartDataMax,
+  chartDataRange,
   metricYAxisProps,
   CHART_TOP_MARGIN,
   TILTED_LABEL_LEFT_MARGIN,
@@ -155,11 +155,13 @@ export default function ComparisonMixChart({ rows, periodNames, granularity, met
   // hidden: BarAxisLabel labels each of the two stacks instead.
   const axisProps = mobile ? { interval: 0, angle: 0, height: 28 } : comparisonAxisProps(granularity);
   // Each bucket has two stacks (this period, the comparison); the axis
-  // reaches the taller of them.
-  const dataMax = Math.max(
-    chartDataMax(chartData, formats.map((format) => `current_${format}`)),
-    chartDataMax(chartData, formats.map((format) => `baseline_${format}`)),
-  );
+  // reaches the furthest of them, above and below 0.
+  const currentRange = chartDataRange(chartData, formats.map((format) => `current_${format}`));
+  const baselineRange = chartDataRange(chartData, formats.map((format) => `baseline_${format}`));
+  const dataRange = {
+    min: Math.min(currentRange.min, baselineRange.min),
+    max: Math.max(currentRange.max, baselineRange.max),
+  };
   const formatCurrentYear = yearAxisProps(chartData, 'axisStart').tickFormatter;
   const formatBaselineYear = yearAxisProps(chartData, 'baselineStart').tickFormatter;
   if (mobile) {
@@ -182,7 +184,7 @@ export default function ComparisonMixChart({ rows, periodNames, granularity, met
             {...axisProps}
             tick={false}
           />
-          <YAxis {...metricYAxisProps(metric, dataMax)} />
+          <YAxis {...metricYAxisProps(metric, dataRange)} />
           <ChartTooltip content={<ComparisonTooltip formats={formats} metric={metric} />} />
           <defs>
             {formats.map((format) => (

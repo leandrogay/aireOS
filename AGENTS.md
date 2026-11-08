@@ -196,7 +196,7 @@ aireOS/
     │       ├── periodComparison.js Compare-to baselines (comparisonSetup), week pairing for the comparison chart
     │       ├── dateRangePresets.js Period presets in whole months (Latest month … Past 12 months, YTD, Last year), anchored to the latest loaded month
     │       ├── trendChart.js      Trend chart labels, x-axis setup (long week runs grouped by month: weekMonthGroups → dashboard/MonthAxis),
-    │       │                      y-axis (metricYAxisProps, chartDataMax), bar sizing, format stack order, Revenue/Volume formatting
+    │       │                      y-axis (metricYAxisProps, chartDataRange; dips below 0 for negative sales), bar sizing, format stack order, Revenue/Volume formatting
     │       ├── axisTicks.js       PURE, import-free: y-axis tick labels, one unit (k / M) and one decimal count per axis (tests/axisTicks.test.mjs)
     │       ├── weeklyGaps.js      "No weekly data for …" message: monthly-only months merged into ranges, capped
     │       ├── priceMix.js        Avg-price change split into SKU price vs product mix

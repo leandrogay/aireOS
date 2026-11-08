@@ -14,7 +14,7 @@ import {
   MAX_DOTTED_POINTS,
   TILTED_LABEL_LEFT_MARGIN,
   formatMetric,
-  chartDataMax,
+  chartDataRange,
   metricYAxisProps,
   CHART_TOP_MARGIN,
   periodAxisProps,
@@ -99,7 +99,7 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
   // Customers sit side by side (bars) or as separate lines, never stacked,
   // so the axis reaches the single tallest customer's value.
   const seriesKeys = series.map((item) => item.key);
-  const yAxis = <YAxis {...metricYAxisProps(metric, chartDataMax(rows, seriesKeys, { stacked: false }))} />;
+  const yAxis = <YAxis {...metricYAxisProps(metric, chartDataRange(rows, seriesKeys, { stacked: false }))} />;
   // Above the legend, which is drawn after it and would show through.
   const tooltip = (
     <ChartTooltip content={<TrendTooltip metric={metric} series={series} />} wrapperStyle={{ zIndex: 10 }} />

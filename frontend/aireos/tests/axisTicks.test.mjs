@@ -46,3 +46,17 @@ describe('axis decimals', () => {
     assert.deepEqual(ticks(1000, '$'), ['$0', '$0.25k', '$0.50k', '$0.75k', '$1.00k']);
   });
 });
+
+// ---- Negative values ----
+
+describe('negative ticks', () => {
+  test('a tick below zero puts its sign before the currency', () => {
+    const format = axisTickFormatter(3200, 4, '$');
+    assert.equal(format(-800), '-$0.8k');
+  });
+
+  test('negative units read like positive ones with a minus', () => {
+    const format = axisTickFormatter(20_000, 4, '');
+    assert.equal(format(-5000), '-5k');
+  });
+});

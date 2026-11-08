@@ -193,41 +193,65 @@ export function niceAxisMax(dataMax) {
 }
 
 /**
- * The tallest value a chart draws: the biggest of `rows`' summed `keys`
- * (a stacked bar adds its segments; pass one key per row for a line or a
- * grouped bar via `stacked: false`). Missing values count as 0.
+ * How far a chart's values reach above and below 0: { min, max } over `rows`'
+ * `keys`. A stacked bar draws its positive parts up from 0 and its negative
+ * parts (returns, credit notes) down from it, so each side is summed apart;
+ * a line or grouped bar (`stacked: false`) reaches its single highest and
+ * lowest value. Missing values count as 0; min is never above 0, max never
+ * below it.
  *
  * @param {Array<object>} rows
  * @param {string[]} keys
  * @param {{ stacked?: boolean }} [options]
+ * @returns {{ min: number, max: number }}
  */
-export function chartDataMax(rows, keys, { stacked = true } = {}) {
+export function chartDataRange(rows, keys, { stacked = true } = {}) {
+  let min = 0;
   let max = 0;
   for (const row of rows) {
     const values = keys.map((key) => Number(row[key]) || 0);
-    const value = stacked ? values.reduce((sum, v) => sum + v, 0) : Math.max(0, ...values);
-    if (value > max) max = value;
+    const high = stacked
+      ? values.filter((v) => v > 0).reduce((sum, v) => sum + v, 0)
+      : Math.max(0, ...values);
+    const low = stacked
+      ? values.filter((v) => v < 0).reduce((sum, v) => sum + v, 0)
+      : Math.min(0, ...values);
+    if (high > max) max = high;
+    if (low < min) min = low;
   }
-  return max;
+  return { min, max };
 }
 
 /**
  * The y-axis of every dashboard trend chart, spread onto <YAxis>: 0 to
- * niceAxisMax(dataMax) in AXIS_STEPS equal steps, each tick labelled in one
- * unit with one number of decimals (axisTickFormatter): $0, $0.8k, $1.6k ...
- * The ticks are given outright, so they are exactly the steps the labels
- * were chosen for.
+ * niceAxisMax(max) in AXIS_STEPS equal steps, each tick labelled in one unit
+ * with one number of decimals (axisTickFormatter): $0, $0.8k, $1.6k ...
+ * When something dips below 0 (negative sales from returns), the axis carries
+ * on below 0 in the same step, far enough for the lowest value plus the same
+ * headroom, so nothing is cut off at either end. The ticks are given
+ * outright, so they are exactly the steps the labels were chosen for.
  *
  * @param {'revenue' | 'units'} metric
- * @param {number} dataMax the tallest value drawn (chartDataMax)
+ * @param {{ min: number, max: number }} range what the chart draws (chartDataRange)
  */
-export function metricYAxisProps(metric, dataMax) {
-  const top = niceAxisMax(dataMax);
-  const ticks = Array.from({ length: AXIS_STEPS + 1 }, (_, i) => Number(((top / AXIS_STEPS) * i).toPrecision(12)));
+export function metricYAxisProps(metric, { min = 0, max = 0 }) {
+  const depth = min < 0 ? -min : 0;
+  let stepsDown = 0;
+  let stepsUp = AXIS_STEPS;
+  let step = niceAxisMax(max) / AXIS_STEPS;
+  if (depth > 0) {
+    // One step size for both sides, from the side that reaches further.
+    step = niceAxisMax(Math.max(max, depth)) / AXIS_STEPS;
+    stepsUp = max > 0 ? Math.ceil((max * HEADROOM) / step - 1e-9) : 0;
+    stepsDown = Math.ceil((depth * HEADROOM) / step - 1e-9);
+  }
+  const ticks = [];
+  for (let i = -stepsDown; i <= stepsUp; i += 1) ticks.push(Number((step * i).toPrecision(12)));
+  const reach = Math.max(stepsUp, stepsDown);
   return {
-    domain: [0, top],
+    domain: [ticks[0], ticks.at(-1)],
     ticks,
-    tickFormatter: axisTickFormatter(top, AXIS_STEPS, metric === 'units' ? '' : '$'),
+    tickFormatter: axisTickFormatter(step * reach, reach, metric === 'units' ? '' : '$'),
     width: 50,
     tick: { fontSize: 10 },
   };

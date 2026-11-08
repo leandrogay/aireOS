@@ -14,7 +14,7 @@ import {
   exactBucketLabel,
   formatMetric,
   formatRevenue,
-  chartDataMax,
+  chartDataRange,
   metricYAxisProps,
   CHART_TOP_MARGIN,
   periodAxisProps,
@@ -132,7 +132,7 @@ export function FormatTrendChart({ periodByFormat, periodTotal, granularity, met
   const axisProps = mobile ? yearAxisProps(chartData, 'periodStart') : periodAxisProps(chartData, granularity);
   // On a phone the axis is labelled by year (yearAxisProps), so no month axis.
   const monthGroups = mobile ? null : weekMonthGroups(chartData, granularity);
-  const yAxisProps = metricYAxisProps(metric, chartDataMax(chartData, formats));
+  const yAxisProps = metricYAxisProps(metric, chartDataRange(chartData, formats));
   // Tilted labels run down-left from their bar, so the first needs room past the y-axis.
   const margin = axisProps.angle
     ? { top: CHART_TOP_MARGIN, bottom: 8, left: TILTED_LABEL_LEFT_MARGIN }

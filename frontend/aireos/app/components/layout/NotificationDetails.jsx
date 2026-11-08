@@ -89,13 +89,14 @@ function LowStockDetails({ payload }) {
     );
   }
 
+  const daysLeft = daysLeftValue(payload.doh_remaining);
   return (
     <>
       <Summary>Critical stock level on this product. Please review and take action.</Summary>
       <Fields>
         <Field label="Customer" value={retailerLabel(payload.customer_name)} />
         <Field label="Current stock" value={`${payload.current_stock} units`} />
-        <Field label="Days left" value={`${payload.doh_remaining} days (threshold ${payload.doh_threshold})`} />
+        <Field label="Days left" value={`${daysLeft === null ? 'Unknown' : `${daysLeft} days`} (threshold ${payload.doh_threshold})`} />
         <Field label="Last updated" value={formatDate(payload.last_update)} />
       </Fields>
     </>
