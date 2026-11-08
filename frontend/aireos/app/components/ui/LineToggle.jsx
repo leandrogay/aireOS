@@ -41,7 +41,7 @@ function SeriesMark({ color, shape, dash, dot }) {
 // One labelled row of pills.
 function LineRow({ label, labelClassName, series, visible, onToggle, hints, disabled }) {
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-2">
+    <div className="relative flex min-w-0 flex-wrap items-center gap-2">
       <p className={cn('text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/50', labelClassName)}>
         {label}
       </p>
@@ -52,7 +52,7 @@ function LineRow({ label, labelClassName, series, visible, onToggle, hints, disa
           const hint = hints[line.key];
           const hintId = `line-toggle-hint-${line.key}`;
           return (
-            <span key={line.key} className="group relative inline-flex">
+            <span key={line.key} className="group inline-flex sm:relative">
               <button
                 type="button"
                 aria-pressed={isActive}

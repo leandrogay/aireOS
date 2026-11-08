@@ -22,6 +22,33 @@ const FRAMES = {
 };
 const HEADER_ROW_HEIGHTS = { card: 'h-10', nested: 'h-9' };
 
+// A column with `hideBelow` drops out under that viewport width, so a wide
+// table fits instead of scrolling sideways. The Tailwind breakpoints, plus
+// pixel widths for a table with several columns to drop in turn. Whole class
+// names, so Tailwind finds them; the rows' cells must carry the same class
+// (hideClass).
+const HIDE_BELOW = {
+  md: 'max-md:hidden',
+  lg: 'max-lg:hidden',
+  xl: 'max-xl:hidden',
+  '960px': 'max-[959px]:hidden',
+  '1024px': 'max-[1023px]:hidden',
+  '1100px': 'max-[1099px]:hidden',
+  '1280px': 'max-[1279px]:hidden',
+};
+
+/**
+ * The class a column's header, <col> and cells share to hide below its
+ * `hideBelow` width (a key of HIDE_BELOW); undefined for a column that
+ * always shows.
+ *
+ * @param {{ hideBelow?: string }} column
+ * @returns {string | undefined}
+ */
+export function hideClass(column) {
+  return HIDE_BELOW[column.hideBelow];
+}
+
 /**
  * Width of one column. A table inset from its parent's edges by `inset` (a
  * CSS length sum) takes that off its first and last columns, so its column
@@ -57,6 +84,8 @@ function columnStyle(width, isEdge, inset) {
  * nested or not (`inset`).
  *
  * A column with `sortField` gets a SortHeader driven by `sort` / `onSort`.
+ * `hideBelow` (a key of HIDE_BELOW) hides a column (header, <col> and, through
+ * hideClass, the rows' cells) under that breakpoint or pixel width (HIDE_BELOW).
  * `align: 'right'` right-aligns the header, for numeric columns; the rows'
  * cells pair it with `text-right tabular-nums` so the digits line up.
  * `isLoading` (first load only) shows placeholder rows; `emptyState` replaces
@@ -95,11 +124,11 @@ export default function TableGrid({
     // relative: the header's sr-only labels are absolutely positioned;
     // without a positioned ancestor they escape this scroll box and widen
     // the whole page on narrow windows.
-    <div className={cn('relative', FRAMES[variant])}>
+    <div className={cn('relative min-w-0 max-w-full', FRAMES[variant])}>
       <table
         style={minWidth ? { minWidth } : undefined}
         className={cn(
-          'w-full whitespace-nowrap text-left text-sm text-deep-violet-blue [&_td]:align-middle [&_th]:align-middle',
+          'aire-table-grid w-full whitespace-nowrap text-left text-sm text-deep-violet-blue [&_td]:align-middle [&_th]:align-middle',
           isFixed && 'table-fixed',
         )}
       >
@@ -108,27 +137,28 @@ export default function TableGrid({
             {columns.map((column, index) => (
               <col
                 key={column.key}
+                className={hideClass(column)}
                 style={columnStyle(column.width, index === 0 || index === lastIndex, inset)}
               />
             ))}
           </colgroup>
         )}
-        {/* Stays in view while the rows scroll. White under the cream tint
+        {/* Stays in view while the rows scroll. Solid cream over the rows
             so rows do not show through; the bottom rule is an inset shadow
             because a collapsed table border does not move with a sticky
             header. */}
-        <thead className="sticky top-0 z-10 bg-white">
+        <thead className="sticky top-0 z-10 bg-cream">
           <tr
             className={cn(
-              'bg-cream/60 [&>th]:shadow-[inset_0_-1px_0_var(--color-lavander)]',
+              'bg-cream [&>th]:shadow-[inset_0_-1px_0_var(--color-lavander)]',
               HEADER_ROW_HEIGHTS[variant],
             )}
           >
             {columns.map((column) => {
-              const alignClass = column.align === 'right' ? 'text-right' : undefined;
+              const alignClass = cn(column.align === 'right' && 'text-right', hideClass(column));
               if (column.hideLabel) {
                 return (
-                  <th key={column.key} scope="col" className="px-2 py-2">
+                  <th key={column.key} scope="col" className={cn('px-2 py-2', hideClass(column))}>
                     <span className="sr-only">{column.label}</span>
                   </th>
                 );
@@ -155,7 +185,13 @@ export default function TableGrid({
           </tr>
         </thead>
         <tbody aria-busy={isLoading}>
-          {isLoading && <TableSkeleton columns={columns.length} rows={skeletonRows} />}
+          {isLoading && (
+            <TableSkeleton
+              columns={columns.length}
+              rows={skeletonRows}
+              columnClassNames={columns.map(hideClass)}
+            />
+          )}
           {emptyState ? (
             <tr>
               <td colSpan={columns.length} className="whitespace-normal px-4 py-24 text-center text-deep-violet-blue/80">

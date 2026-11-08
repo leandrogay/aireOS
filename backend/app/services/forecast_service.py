@@ -102,7 +102,9 @@ _REVENUE_COLUMNS = {
 def add_forecast_revenue(rows: list[dict], prices: dict[tuple[int, str], float]) -> list[dict]:
     """Price each row's cartons at its own customer x SKU realised price.
 
-    Done per row, before the page sums SKUs, so "All SKUs" revenue weights
+    For the assistant's forecast summary (forecast_summary); the Forecast
+    page is volume only and its GET /api/forecast rows are never priced.
+    Done per row, before SKUs are summed, so "All SKUs" revenue weights
     every SKU by its own price. A missing price or a blank carton value
     leaves the revenue blank (None), never 0.
     """
@@ -117,6 +119,19 @@ def add_forecast_revenue(rows: list[dict], prices: dict[tuple[int, str], float])
             )
         priced.append({**row, "realised_price": price, **revenue})
     return priced
+
+
+def current_horizon_totals(series: list[dict]) -> dict:
+    """{tier: {units, series}} for the "Next 12 months" total: every
+    customer x SKU's whole Current line (bigquery.get_current_horizon),
+    whatever the date filter shows. Cartons only, like the rest of the page.
+    """
+    totals = {}
+    for entry in series:
+        tier = totals.setdefault(entry["tier"], {"units": 0.0, "series": 0})
+        tier["units"] += entry.get("cartons") or 0.0
+        tier["series"] += 1
+    return totals
 
 
 # Stamp column on an output row per forecast line.
@@ -144,7 +159,9 @@ def forecast_stamps_from_rows(rows: list[dict]) -> dict:
     by_tier = {}
     for tier in bigquery_service.FORECAST_TIERS:
         by_tier[tier] = _latest_stamps([row for row in rows if row.get("tier") == tier])
-    return {**_latest_stamps(rows), "by_tier": by_tier}
+    # When the output table was last rebuilt: the same on every row.
+    built = [row["output_built_at"] for row in rows if row.get("output_built_at")]
+    return {**_latest_stamps(rows), "output_built_at": max(built) if built else None, "by_tier": by_tier}
 
 
 def forecast_tiers_from_rows(rows: list[dict]) -> list[dict]:
@@ -158,14 +175,17 @@ def forecast_tiers_from_rows(rows: list[dict]) -> list[dict]:
 
 
 def forecast_availability(rows: list[dict]) -> dict:
-    """{sku: {tier: {is_available, unavailable_reason, has_initial}}} for the rows in scope.
+    """{sku: {tier: {is_available, unavailable_reason, has_initial, has_previous}}} for the rows in scope.
 
     is_available is the same on every row of a customer x SKU x tier. With
-    several customers in scope a SKU's tier counts as available only when
-    it is for all of them (the page only offers the Model choice for one
-    customer, so this is just a safe answer). has_initial is whether any
-    month has a forecast_initial: a tier can be available with no Initial
-    when the SKU had under 12 months of history when the yearly plan was made.
+    several customers in scope (All customers) a SKU's tier counts as
+    available only when it is for all of them, so the Model dropdown only
+    offers a model every customer x SKU in scope has. has_initial /
+    has_previous: whether any month has a forecast_initial /
+    forecast_previous. A tier can be available with neither: no Initial when
+    the SKU had under 12 months of history when the yearly plan was made (or
+    launched after it, on Tier 0), no Previous before its first earlier
+    forecast.
     """
     availability: dict[str, dict[str, dict]] = {}
     for row in rows:
@@ -173,13 +193,15 @@ def forecast_availability(rows: list[dict]) -> dict:
         if not sku or not tier:
             continue
         entry = availability.setdefault(sku, {}).setdefault(
-            tier, {"is_available": True, "unavailable_reason": None, "has_initial": False}
+            tier, {"is_available": True, "unavailable_reason": None, "has_initial": False, "has_previous": False}
         )
         if not row.get("is_available"):
             entry["is_available"] = False
             entry["unavailable_reason"] = entry["unavailable_reason"] or row.get("unavailable_reason")
         if row.get("forecast_initial") is not None:
             entry["has_initial"] = True
+        if row.get("forecast_previous") is not None:
+            entry["has_previous"] = True
     return availability
 
 
@@ -191,13 +213,16 @@ def get_forecast_view(
 ) -> dict:
     """One Forecast-page payload: forecast rows, monthly actuals, and overlapping promos.
 
-    Forecast rows come from aire_forecasting_output with every tier (three
-    rows per customer x SKU x month), so the page switches models without a
-    new request; they are priced here at realised price, per row, and never
-    added up across tiers. `availability` and `tiers` drive the Model
-    picker. Actuals come from v_customer_monthly_sales (not the view's
-    actual_quantity_cartons, which repeats on every tier's row). Promos
-    come from Postgres.
+    Volume only (cartons): the page shows no revenue, so nothing is priced
+    and actuals carry no revenue. Forecast rows come from
+    aire_forecasting_output with every tier (three rows per customer x SKU x
+    month), so the page switches models without a new request; they are
+    never added up across tiers. `availability` and `tiers` drive the Model
+    picker. Actuals come from v_customer_monthly_sales (not the table's
+    actual_quantity_cartons, which repeats on every tier's row); each row's
+    actual_status says why a month in the forecast window has no actual
+    (missing file / not yet / before the first sale), and the page lines
+    actuals up with it by customer x SKU. Promos come from Postgres.
     """
     product_name = product_name or None
     customer_name = customer_name or None
@@ -218,8 +243,8 @@ def get_forecast_view(
     # a worker's exception here, so the router's error mapping is unchanged.
     with ThreadPoolExecutor(max_workers=5) as pool:
         rows_job = pool.submit(bigquery_service.get_forecast_output_rows, **filters)
-        prices_job = pool.submit(
-            bigquery_service.get_realised_prices,
+        horizon_job = pool.submit(
+            bigquery_service.get_current_horizon,
             product_name=product_name,
             customer_name=customer_name,
         )
@@ -230,17 +255,21 @@ def get_forecast_view(
             customer_name=customer_name,
         )
         rows = rows_job.result()
-        prices = prices_job.result()
+        horizon = horizon_job.result()
         actuals = actuals_job.result()
         promotions = promotions_job.result()
         sales_loaded_at = sales_loaded_job.result()
 
     return {
         **filters,
-        "rows": add_forecast_revenue(rows, prices),
+        "rows": rows,
         "tiers": forecast_tiers_from_rows(rows),
         "availability": forecast_availability(rows),
-        "actuals": actuals,
+        # The whole Current line per tier, not cut by the date filter.
+        "horizon": current_horizon_totals(horizon),
+        # get_forecast_actuals also feeds the assistant's summary, which
+        # prices; the page only needs cartons.
+        "actuals": [{key: value for key, value in row.items() if key != "revenue"} for row in actuals],
         "promotions": promotions,
         "freshness": {
             **forecast_stamps_from_rows(rows),

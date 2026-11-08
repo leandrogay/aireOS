@@ -38,6 +38,10 @@ function summaryOf(options, values, allLabel, noneMeansAll) {
  * - false (a required form field): nothing ticked is nothing; the button
  *   shows `placeholder`, and the "All" row ticks or clears every option.
  *
+ * `maxSelected` caps how many can be ticked: the rest are disabled at the cap,
+ * a note says so, and the "All" row is left out when the list is longer than
+ * the cap (the dashboard's customers, which each get their own chart series).
+ *
  * `searchable` adds a search box for a long list; it matches an option's
  * label and its `hint` (a few words shown at the right of the row, e.g. a
  * store code).
@@ -55,6 +59,7 @@ function summaryOf(options, values, allLabel, noneMeansAll) {
  *   searchable?: boolean,
  *   searchPlaceholder?: string,
  *   listClassName?: string,
+ *   maxSelected?: number,
  *   disabled?: boolean,
  *   invalid?: boolean,
  *   className?: string,
@@ -73,6 +78,7 @@ export default function MultiSelectDropdown({
   searchable = false,
   searchPlaceholder = 'Search…',
   listClassName,
+  maxSelected,
   disabled = false,
   invalid = false,
   className,
@@ -82,6 +88,10 @@ export default function MultiSelectDropdown({
   const summary = summaryOf(options, values, allLabel, noneMeansAll);
   const everything = options.length > 0 && options.every((option) => values.includes(option.value));
   const allTicked = everything || (noneMeansAll && values.length === 0);
+  // With a cap, the rest are disabled once it is reached, and "All" is offered
+  // only while every option fits under it.
+  const capped = maxSelected !== undefined && options.length > maxSelected;
+  const atCap = capped && values.length >= maxSelected;
 
   function toggle(value) {
     const next = values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
@@ -114,6 +124,9 @@ export default function MultiSelectDropdown({
         searchable={searchable}
         searchPlaceholder={searchPlaceholder}
         listClassName={listClassName}
+        footer={capped && (
+          <p className="px-2 py-0.5 text-[11px] text-deep-violet-blue/60">Up to {maxSelected} at a time</p>
+        )}
       >
         {(query) => {
           const needle = query.trim().toLowerCase();
@@ -123,7 +136,7 @@ export default function MultiSelectDropdown({
 
           return (
             <>
-              {!needle && (
+              {!needle && !capped && (
                 <label className={cn(checkRowClass, 'font-medium')}>
                   <input
                     type="checkbox"
@@ -134,22 +147,27 @@ export default function MultiSelectDropdown({
                   {allLabel}
                 </label>
               )}
-              {shown.map((option) => (
-                <label key={option.value} className={checkRowClass}>
-                  <input
-                    type="checkbox"
-                    checked={values.includes(option.value)}
-                    onChange={() => toggle(option.value)}
-                    className="size-3.5 accent-deep-violet-blue"
-                  />
-                  <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                  {option.hint && (
-                    <span className="max-w-[45%] shrink-0 truncate text-[11px] text-deep-violet-blue/50">
-                      {option.hint}
-                    </span>
-                  )}
-                </label>
-              ))}
+              {shown.map((option) => {
+                const ticked = values.includes(option.value);
+                const blocked = atCap && !ticked;
+                return (
+                  <label key={option.value} className={cn(checkRowClass, blocked && 'cursor-not-allowed opacity-50')}>
+                    <input
+                      type="checkbox"
+                      checked={ticked}
+                      disabled={blocked}
+                      onChange={() => toggle(option.value)}
+                      className="size-3.5 accent-deep-violet-blue"
+                    />
+                    <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                    {option.hint && (
+                      <span className="max-w-[45%] shrink-0 truncate text-[11px] text-deep-violet-blue/50">
+                        {option.hint}
+                      </span>
+                    )}
+                  </label>
+                );
+              })}
               {!shown.length && <p className="px-2 py-1 text-sm text-deep-violet-blue/60">No matches</p>}
             </>
           );

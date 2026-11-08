@@ -13,9 +13,10 @@ from sqlalchemy import text
 
 from app import config
 from app.services import (
+    catalog_service,
     forecast_notifications,
-    forecast_pipeline_events,
     forecast_refresh_events,
+    inventory_service,
     notification_service,
     sell_in_snapshots,
     sql,
@@ -331,17 +332,46 @@ def _run_outcome(job) -> tuple[bool, bool]:
     return bool(rows and rows[0]["checked"]), bool(rows and rows[0]["retrained"])
 
 
+def latest_forecast_summary() -> dict:
+    """Period, customers and products of the newest forecast run, for the
+    success notification's detail lines (named as the bell shows them)."""
+
+    query = f"""
+        WITH latest AS (SELECT MAX(current_generated_at) AS generated_at FROM `{config.BQ_FORECAST_PIPELINE_VIEW}`)
+        SELECT
+            MIN(month_year) AS period_start,
+            MAX(month_year) AS period_end,
+            ARRAY_AGG(DISTINCT customer_id IGNORE NULLS) AS customer_ids,
+            ARRAY_AGG(DISTINCT sku IGNORE NULLS) AS skus
+        FROM `{config.BQ_FORECAST_PIPELINE_VIEW}`, latest
+        WHERE current_generated_at = latest.generated_at
+    """
+    rows = list(get_bigquery_client().query(query).result())
+    if not rows or rows[0]["period_start"] is None:
+        return {"period_start": None, "period_end": None, "customers": [], "skus": []}
+
+    row = rows[0]
+    customer_names = {c["customer_id"]: c["customer_name"] for c in inventory_service.list_customers()}
+    product_names = {s["sku"]: s["product_name"] for s in catalog_service.get_skus()}
+    return {
+        "period_start": str(row["period_start"]),
+        "period_end": str(row["period_end"]),
+        "customers": sorted(customer_names.get(cid, str(cid)) for cid in row["customer_ids"]),
+        "skus": sorted(product_names.get(sku, sku) for sku in row["skus"]),
+    }
+
+
 def _summary_best_effort() -> dict:
     # A retrain that succeeded is still worth announcing when the summary
     # query behind its detail lines fails.
     try:
-        return forecast_pipeline_events.latest_forecast_summary()
+        return latest_forecast_summary()
     except Exception as exc:
         logger.warning("Could not summarise the latest forecast run: %s", exc)
         return forecast_notifications.EMPTY_SUMMARY
 
 
-def _notify_outcome(job_id: str, job, failed: bool) -> None:
+def _notify_outcome(job_id: str, job, failed: bool, warning: str | None = None) -> None:
     updated_at = job.ended or datetime.now(timezone.utc)
     if failed:
         reason, errors = forecast_notifications.job_failure(job)
@@ -353,14 +383,22 @@ def _notify_outcome(job_id: str, job, failed: bool) -> None:
         return
     payload = forecast_notifications.success_payload(
         run_name=job_id, source=EVENT_SOURCE, updated_at=updated_at,
-        summary=_summary_best_effort(),
+        summary=_summary_best_effort(), warnings=[warning] if warning else [],
     )
     forecast_notifications.notify_once(notification_service.FORECAST_SUCCESS, payload)
 
 
 def _finish(job_id: str, job) -> dict:
     failed = bool(job.error_result)
-    checked, retrained = _run_outcome(job) if not failed else (False, False)
+    warning = forecast_notifications.initial_refresh_warning(job) if failed else None
+    if warning:
+        # Only the Initial refresh failed (A9.1 raises it after rebuilding the
+        # page table). When the retrain itself logged a success, announce that
+        # success with the Initial as a warning, not the whole run as failed.
+        checked, retrained = _run_outcome(job)
+        failed = not retrained
+    else:
+        checked, retrained = _run_outcome(job) if not failed else (False, False)
     if not failed and not checked:
         # The routine returns without logging when another forecast is busy.
         # Keep the outbox pending and use a new BigQuery job ID on the next try,
@@ -387,7 +425,7 @@ def _finish(job_id: str, job) -> dict:
         # Best effort and deduped on the job id: the batch status below must be
         # recorded even when the bell can't be written, and a Cloud Tasks retry
         # of this same job must not notify twice.
-        _notify_outcome(job_id, job, failed)
+        _notify_outcome(job_id, job, failed, None if failed else warning)
     with sql.connect_with_connector().begin() as conn:
         conn.execute(text("""
             UPDATE forecast_refresh_requests
@@ -395,7 +433,8 @@ def _finish(job_id: str, job) -> dict:
             WHERE job_id = :job_id AND status = 'running'
         """), {
             "status": "failed" if failed else "completed",
-            "error": str(job.error_result) if failed else None,
+            # The Initial warning is kept on a completed batch too, for the record.
+            "error": str(job.error_result) if failed or warning else None,
             "job_id": job_id,
         })
         pending = _pending(conn)

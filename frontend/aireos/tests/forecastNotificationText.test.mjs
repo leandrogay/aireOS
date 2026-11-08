@@ -10,6 +10,7 @@ import {
   forecastErrorLines,
   forecastIntro,
   forecastTitle,
+  forecastWarningLines,
   isRefreshFailure,
   startedByLabel,
 } from '../app/utils/forecastNotificationText.js';
@@ -37,6 +38,18 @@ describe('forecast notification titles', () => {
 
   test('a success keeps the old title', () => {
     assert.equal(forecastTitle({}, true, DATE), '[SUCCESS] Forecast Pipeline Completed – 5 Nov 2026');
+    assert.equal(forecastTitle({ warnings: [] }, true, DATE), '[SUCCESS] Forecast Pipeline Completed – 5 Nov 2026');
+  });
+
+  test('a success whose Initial could not refresh says so in the title', () => {
+    const payload = { warnings: ["The Initial yearly forecast couldn't refresh, so the page keeps its last version."] };
+
+    assert.equal(
+      forecastTitle(payload, true, DATE),
+      '[SUCCESS] Forecast Pipeline Completed with a warning – 5 Nov 2026',
+    );
+    assert.deepEqual(forecastWarningLines(payload), payload.warnings);
+    assert.deepEqual(forecastWarningLines({}), []);
   });
 
   test('a success is never treated as a refresh failure', () => {

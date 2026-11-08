@@ -4,6 +4,7 @@ from functools import lru_cache
 import pandas as pd
 from google.cloud import bigquery
 from app import config
+from app.services import forecast_cache
 
 DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -48,6 +49,8 @@ FORECAST_OUTPUT_COLUMNS = [
     "forecast_previous",
     "previous_source_model",
     "previous_generated_at",
+    "previous_low_80",
+    "previous_high_80",
     "forecast_current",
     "current_source_model",
     "current_generated_at",
@@ -59,7 +62,29 @@ FORECAST_OUTPUT_COLUMNS = [
     "month_confidence_band",
     "xreg_used_typical_promo",
     "promo_mix",
+    "actual_status",
+    "output_built_at",
 ]
+# The two above come from the catalog joins, not the output table.
+_JOINED_NAME_COLUMNS = ("customer_name", "product_name")
+# The output view carries the 80% range for Current only. Previous's comes
+# from its own run row in aire_forecasting_runs: the row the view took
+# forecast_previous from (same series, month and model, made at
+# previous_generated_at).
+_PREVIOUS_RUN_COLUMNS = {
+    "previous_low_80": "prediction_interval_lower_bound",
+    "previous_high_80": "prediction_interval_upper_bound",
+}
+# Per-month confidence cut-offs, the same as the output view's
+# (high_max_range_pct / medium_max_range_pct): half the 80% range as a % of
+# the forecast, <= 20 high, <= 50 medium, else low.
+MONTH_HIGH_MAX_RANGE_PCT = 20.0
+MONTH_MEDIUM_MAX_RANGE_PCT = 50.0
+# actual_status: 'reported' (a NULL-free actual; 0 is a real 0),
+# 'missing_file' (the customer sent later months but not this one),
+# 'not_yet' (after the customer's latest month), 'before_first_sale'.
+# The same on every tier's row.
+ACTUAL_STATUSES = ("reported", "missing_file", "not_yet", "before_first_sale")
 
 # Realised price = revenue / cartons over each SKU's latest N sales months.
 # The models forecast cartons only; this prices them the way FairPrice's own
@@ -72,6 +97,36 @@ def get_bigquery_client(project="aire-data") -> bigquery.Client:
     # HTTP session/credentials) instead of paying client-construction cost
     # on every request — same pattern as storage.get_storage_client().
     return bigquery.Client(project=project)
+
+
+def run_query(query: str, query_parameters: list | None = None):
+    """Run one read with bound parameters and return its rows (a RowIterator).
+
+    No time limit: the page waits for its forecast rather than giving up.
+    """
+    job_config = bigquery.QueryJobConfig(query_parameters=query_parameters or [])
+    return get_bigquery_client().query(query, job_config=job_config).result()
+
+
+def _read_output_built_at() -> str | None:
+    df = run_query(
+        f"SELECT MAX(output_built_at) AS output_built_at FROM `{BQ_FORECAST_OUTPUT_VIEW}`"
+    ).to_dataframe()
+    if df.empty:
+        return None
+    return _iso_stamp(df.iloc[0]["output_built_at"])
+
+
+def get_output_built_at() -> str | None:
+    """When aire_forecasting_output was last rebuilt (re-read at most once a minute)."""
+    return forecast_cache.stamp(_read_output_built_at)
+
+
+def cached_read(key: tuple, load):
+    """`load()` shared by overlapping calls with the same key and kept until
+    aire_forecasting_output is rebuilt, or 10 minutes (forecast_cache). The
+    key must name the read and every argument that changes its rows."""
+    return forecast_cache.cached(key, load, get_output_built_at)
 
 
 def _validate_date(value: str | None, field_name: str) -> None:
@@ -134,10 +189,30 @@ def _json_str(value):
     return text
 
 
+def month_range(value: float | None, low: float | None, high: float | None) -> tuple[float | None, str | None]:
+    """One forecast month's (range_pct, band), the way the output view works
+    out month_range_pct / month_confidence_band for Current. No forecast: no
+    band; a forecast without a usable range: 'unknown'."""
+    if value is None:
+        return None, None
+    if low is None or high is None or value == 0:
+        return None, "unknown"
+    pct = round((high - low) / (2 * value) * 100, 1)
+    if pct <= MONTH_HIGH_MAX_RANGE_PCT:
+        return pct, "high"
+    if pct <= MONTH_MEDIUM_MAX_RANGE_PCT:
+        return pct, "medium"
+    return pct, "low"
+
+
 def _forecast_output_row(record: dict) -> dict:
     # NULL stays None throughout: a blank forecast line (no initial for a
     # SKU or year without a snapshot, no previous after the first run) must
     # not be charted as zero.
+    forecast_previous = _json_number(record.get("forecast_previous"))
+    previous_low = _json_number(record.get("previous_low_80"))
+    previous_high = _json_number(record.get("previous_high_80"))
+    previous_range_pct, previous_band = month_range(forecast_previous, previous_low, previous_high)
     return {
         "customer_id": _json_int(record.get("customer_id")),
         "customer_name": _json_str(record.get("customer_name")),
@@ -157,9 +232,15 @@ def _forecast_output_row(record: dict) -> dict:
         "initial_generated_at": _iso_stamp(record.get("initial_generated_at")),
         "initial_low_80": _json_number(record.get("initial_low_80")),
         "initial_high_80": _json_number(record.get("initial_high_80")),
-        "forecast_previous": _json_number(record.get("forecast_previous")),
+        "forecast_previous": forecast_previous,
         "previous_source_model": _json_str(record.get("previous_source_model")),
         "previous_generated_at": _iso_stamp(record.get("previous_generated_at")),
+        # Previous's own 80% range (from its run) and that month's band, the
+        # same measures Current gets, so the tooltip can show both.
+        "previous_low_80": previous_low,
+        "previous_high_80": previous_high,
+        "previous_range_pct": previous_range_pct,
+        "previous_confidence_band": previous_band,
         "forecast_current": _json_number(record.get("forecast_current")),
         "current_source_model": _json_str(record.get("current_source_model")),
         "current_generated_at": _iso_stamp(record.get("current_generated_at")),
@@ -175,6 +256,10 @@ def _forecast_output_row(record: dict) -> dict:
         # so it used the SKU's usual promotion instead.
         "xreg_used_typical_promo": bool(_json_bool(record.get("xreg_used_typical_promo"))),
         "promo_mix": _json_str(record.get("promo_mix")),
+        # Why a month has (or has no) actual for this customer x SKU; never
+        # turned into a number here, so a missing month can't read as 0.
+        "actual_status": _json_str(record.get("actual_status")),
+        "output_built_at": _iso_stamp(record.get("output_built_at")),
     }
 
 
@@ -183,6 +268,9 @@ def _actual_row(record: dict) -> dict:
         "month_year": _iso_date(record.get("month_year")),
         "customer_id": _json_int(record.get("customer_id")),
         "customer_name": record.get("customer_name"),
+        # The page lines each actual up with its forecast rows' actual_status
+        # (customer x SKU x month), so the SKU comes along.
+        "sku": _json_str(record.get("sku")),
         "product_name": record.get("product_name"),
         "quantity_cartons": _json_number(record.get("quantity_cartons")),
         "revenue": _json_number(record.get("revenue")),
@@ -237,19 +325,129 @@ def _forecast_dataset() -> str:
     return BQ_FORECAST_OUTPUT_VIEW.rsplit(".", 1)[0]
 
 
-# The view is keyed by customer_id + sku; the page filters by name, so names
-# are joined on from the catalog here and the filters apply to the result.
-_FORECAST_OUTPUT_WITH_NAMES = """
-    SELECT
-      output.*,
-      customer.customer_name,
-      product.product_name
-    FROM `{view}` AS output
-    JOIN `{dataset}.public_customers` AS customer
-      ON customer.customer_id = output.customer_id
-    JOIN `{dataset}.public_skus` AS product
-      ON product.sku = output.sku
-"""
+# ============================================================
+# FORECAST SCOPE (names -> ids)
+#
+# aire_forecasting_output is a stored table clustered on customer_id, sku,
+# tier, and only a filter on those columns with fixed values lets BigQuery
+# skip the rest. The page filters by name, so the names are turned into ids
+# first, from the same catalog copies the rows are named from.
+# ============================================================
+
+def _read_forecast_scope(product_name: str | None, customer_name: str | None) -> dict:
+    parts = []
+    query_parameters = []
+    if customer_name:
+        parts.append(
+            f"ARRAY(SELECT customer_id FROM `{_catalog_dataset()}.public_customers` "
+            "WHERE customer_name = @customer_name) AS customer_ids"
+        )
+        query_parameters.append(bigquery.ScalarQueryParameter("customer_name", "STRING", customer_name))
+    if product_name:
+        parts.append(
+            f"ARRAY(SELECT sku FROM `{_catalog_dataset()}.public_skus` "
+            "WHERE product_name = @product_name) AS skus"
+        )
+        query_parameters.append(bigquery.ScalarQueryParameter("product_name", "STRING", product_name))
+    df = run_query(f"SELECT {', '.join(parts)}", query_parameters).to_dataframe()
+    record = df.iloc[0].to_dict() if not df.empty else {}
+    return {
+        "customer_ids": [int(value) for value in record.get("customer_ids", [])] if customer_name else None,
+        "skus": sorted(str(value) for value in record.get("skus", [])) if product_name else None,
+    }
+
+
+def resolve_forecast_scope(product_name: str | None = None, customer_name: str | None = None) -> dict:
+    """{customer_ids, skus} for the names a forecast read filters by.
+
+    None for a name not given (every customer / SKU); an empty list for a
+    name that matches nothing, so the caller can answer without querying.
+    """
+    product_name = product_name or None
+    customer_name = customer_name or None
+    if product_name is None and customer_name is None:
+        return {"customer_ids": None, "skus": None}
+    return cached_read(
+        ("forecast_scope", product_name, customer_name),
+        lambda: _read_forecast_scope(product_name, customer_name),
+    )
+
+
+def _scope_filters(scope: dict, prefix: str) -> tuple[list[str], list]:
+    where_clauses = []
+    query_parameters = []
+    if scope["customer_ids"] is not None:
+        where_clauses.append(f"{prefix}customer_id IN UNNEST(@customer_ids)")
+        query_parameters.append(bigquery.ArrayQueryParameter("customer_ids", "INT64", scope["customer_ids"]))
+    if scope["skus"] is not None:
+        where_clauses.append(f"{prefix}sku IN UNNEST(@skus)")
+        query_parameters.append(bigquery.ArrayQueryParameter("skus", "STRING", scope["skus"]))
+    return where_clauses, query_parameters
+
+
+def _scope_is_empty(scope: dict) -> bool:
+    return scope["customer_ids"] == [] or scope["skus"] == []
+
+
+# The output table is keyed by customer_id + sku; names are joined on from
+# the catalog copies for display only. Columns are named, never output.*,
+# so a column the pipeline adds can't change the API's shape.
+_OUTPUT_TABLE_COLUMNS = [
+    column
+    for column in FORECAST_OUTPUT_COLUMNS
+    if column not in _JOINED_NAME_COLUMNS and column not in _PREVIOUS_RUN_COLUMNS
+]
+
+
+def _previous_run_select() -> str:
+    # Blank when the view shows no Previous (e.g. an unavailable tier), so a
+    # range never shows without its line.
+    return ", ".join(
+        f"IF(output.forecast_previous IS NULL, NULL, previous_run.{source}) AS {column}"
+        for column, source in _PREVIOUS_RUN_COLUMNS.items()
+    )
+
+
+def _read_forecast_output_rows(
+    scope: dict,
+    start_date: str | None,
+    end_date: str | None,
+    tier: str | None,
+) -> list[dict]:
+    where_clauses, query_parameters = _name_and_date_filters(
+        None, None, start_date, end_date, "output.month_year"
+    )
+    scope_clauses, scope_parameters = _scope_filters(scope, "output.")
+    where_clauses += scope_clauses
+    query_parameters += scope_parameters
+    if tier is not None:
+        where_clauses.append("output.tier = @tier")
+        query_parameters.append(bigquery.ScalarQueryParameter("tier", "STRING", tier))
+    query = f"""
+        SELECT
+          {", ".join(f"output.{column}" for column in _OUTPUT_TABLE_COLUMNS)},
+          {_previous_run_select()},
+          customer.customer_name,
+          product.product_name
+        FROM `{BQ_FORECAST_OUTPUT_VIEW}` AS output
+        JOIN `{_catalog_dataset()}.public_customers` AS customer
+          ON customer.customer_id = output.customer_id
+        JOIN `{_catalog_dataset()}.public_skus` AS product
+          ON product.sku = output.sku
+        LEFT JOIN `{_forecast_dataset()}.aire_forecasting_runs` AS previous_run
+          ON previous_run.customer_id = output.customer_id
+         AND previous_run.sku = output.sku
+         AND previous_run.month_year = output.month_year
+         AND previous_run.source_model = output.source_model
+         AND previous_run.forecast_generated_at = output.previous_generated_at
+         AND NOT previous_run.is_best
+        WHERE {" AND ".join(where_clauses)}
+        ORDER BY customer.customer_name, product.product_name, output.tier_order, output.month_year
+    """
+    df = run_query(query, query_parameters).to_dataframe()
+    if df.empty:
+        return []
+    return [_forecast_output_row(record) for record in df.to_dict(orient="records")]
 
 
 def get_forecast_output_rows(
@@ -264,32 +462,35 @@ def get_forecast_output_rows(
     Cartons only; forecast_service prices them. With no `tier` every tier
     comes back (the Forecast page switches models without a new request);
     callers that add rows up must pass one tier, or the totals triple.
+    Shared through forecast_cache; each caller gets its own copy of the rows.
     """
     if tier is not None and tier not in FORECAST_TIERS:
         raise ValueError(f"tier must be one of {', '.join(FORECAST_TIERS)}")
-    where_clauses, query_parameters = _name_and_date_filters(
-        product_name, customer_name, start_date, end_date, "month_year"
-    )
-    if tier is not None:
-        where_clauses.append("tier = @tier")
-        query_parameters.append(bigquery.ScalarQueryParameter("tier", "STRING", tier))
-    source = _FORECAST_OUTPUT_WITH_NAMES.format(
-        view=BQ_FORECAST_OUTPUT_VIEW, dataset=_catalog_dataset()
-    )
-    query = f"""
-        WITH output_with_names AS ({source})
-        SELECT
-          {", ".join(FORECAST_OUTPUT_COLUMNS)}
-        FROM output_with_names
-        WHERE {" AND ".join(where_clauses)}
-        ORDER BY customer_name, product_name, tier_order, month_year
-    """
-    job_config = bigquery.QueryJobConfig(query_parameters=query_parameters)
-    client = get_bigquery_client()
-    df = client.query(query, job_config=job_config).result().to_dataframe()
-    if df.empty:
+    _validate_date(start_date, "start_date")
+    _validate_date(end_date, "end_date")
+    scope = resolve_forecast_scope(product_name, customer_name)
+    if _scope_is_empty(scope):
         return []
-    return [_forecast_output_row(record) for record in df.to_dict(orient="records")]
+    key = (
+        "forecast_output_rows",
+        _scope_key(scope),
+        start_date or None,
+        end_date or None,
+        tier,
+    )
+    rows = cached_read(key, lambda: _read_forecast_output_rows(scope, start_date or None, end_date or None, tier))
+    return [dict(row) for row in rows]
+
+
+def _scope_key(scope: dict) -> tuple:
+    # Every id in the key, sorted, so one SKU selection never reuses
+    # another's rows.
+    customer_ids = scope["customer_ids"]
+    skus = scope["skus"]
+    return (
+        tuple(sorted(customer_ids)) if customer_ids is not None else None,
+        tuple(sorted(skus)) if skus is not None else None,
+    )
 
 
 # ============================================================
@@ -323,11 +524,12 @@ _FORECAST_ALTERNATIVES_SQL = """
     xreg_months AS (
       SELECT customer_id, sku, month_year, forecast_generated_at
       FROM run
-      WHERE is_best AND source_model = 'tier1_arimax'
+      WHERE is_best AND source_model = 'tier1_arimax'{scope}
     ),
     history AS (
       SELECT customer_id, sku, COUNT(*) AS months_of_history
       FROM `{dataset}.fc_training_input`
+      WHERE TRUE{scope}
       GROUP BY customer_id, sku
     ),
     scored AS (
@@ -423,27 +625,98 @@ def get_forecast_alternatives(
     (cartons only; forecast_service prices them). Read-only: the runs table
     keeps every model's forecast for the latest run.
     """
-    where_clauses, query_parameters = _name_and_date_filters(
-        product_name, customer_name, start_date, end_date, "month_year"
-    )
+    _validate_date(start_date, "start_date")
+    _validate_date(end_date, "end_date")
+    scope = resolve_forecast_scope(product_name, customer_name)
+    if _scope_is_empty(scope):
+        return []
+    key = ("forecast_alternatives", _scope_key(scope), start_date or None, end_date or None)
+    rows = cached_read(key, lambda: _read_forecast_alternatives(scope, start_date or None, end_date or None))
+    return [dict(row) for row in rows]
+
+
+_ALTERNATIVE_COLUMNS = [
+    "customer_id",
+    "customer_name",
+    "sku",
+    "product_name",
+    "month_year",
+    "alt_source_model",
+    "alt_generated_at",
+    "alt_forecast_current",
+    "alt_low_80",
+    "alt_high_80",
+    "alt_backtest_smape",
+]
+
+
+def _read_forecast_alternatives(scope: dict, start_date: str | None, end_date: str | None) -> list[dict]:
+    where_clauses, query_parameters = _name_and_date_filters(None, None, start_date, end_date, "month_year")
+    # The id filter goes into the runs and training-input CTEs, where the
+    # tables are read, not onto the named result at the end.
+    scope_clauses, scope_parameters = _scope_filters(scope, "")
+    scope_sql = "".join(f" AND {clause}" for clause in scope_clauses)
+    query_parameters += scope_parameters
     query_parameters += [
         bigquery.ScalarQueryParameter("min_history_months", "INT64", TIER0_MIN_HISTORY_MONTHS),
         bigquery.ScalarQueryParameter("fallback_smape", "FLOAT64", TIER0_FALLBACK_SMAPE),
     ]
+    alternatives_sql = _FORECAST_ALTERNATIVES_SQL.format(
+        dataset=_forecast_dataset(), catalog=_catalog_dataset(), scope=scope_sql
+    )
     query = f"""
-        {_FORECAST_ALTERNATIVES_SQL.format(dataset=_forecast_dataset(), catalog=_catalog_dataset())}
-        SELECT *
+        {alternatives_sql}
+        SELECT {", ".join(_ALTERNATIVE_COLUMNS)}
         FROM with_names
         WHERE {" AND ".join(where_clauses)}
           AND alt_forecast_current IS NOT NULL
         ORDER BY customer_name, product_name, month_year
     """
-    job_config = bigquery.QueryJobConfig(query_parameters=query_parameters)
-    client = get_bigquery_client()
-    df = client.query(query, job_config=job_config).result().to_dataframe()
+    df = run_query(query, query_parameters).to_dataframe()
     if df.empty:
         return []
     return [_forecast_alternative_row(record) for record in df.to_dict(orient="records")]
+
+
+def get_current_horizon(
+    product_name: str | None = None,
+    customer_name: str | None = None,
+) -> list[dict]:
+    """Cartons on each customer x SKU's whole Current line, per tier.
+
+    The Current line runs 12 months from each series' own first forecast
+    month, which the page's date filter can cut short (a Jan-Dec view of a
+    line that runs Sep-Aug). The "Next 12 months" total needs every month,
+    so it is read here with no date filter. One row per tier x customer x
+    SKU, priced by forecast_service.
+    """
+    scope = resolve_forecast_scope(product_name, customer_name)
+    if _scope_is_empty(scope):
+        return []
+    rows = cached_read(("current_horizon", _scope_key(scope)), lambda: _read_current_horizon(scope))
+    return [dict(row) for row in rows]
+
+
+def _read_current_horizon(scope: dict) -> list[dict]:
+    where_clauses, query_parameters = _scope_filters(scope, "")
+    where_clauses.append("forecast_current IS NOT NULL")
+    query = f"""
+        SELECT tier, customer_id, sku, SUM(forecast_current) AS cartons, COUNT(*) AS months
+        FROM `{BQ_FORECAST_OUTPUT_VIEW}`
+        WHERE {" AND ".join(where_clauses)}
+        GROUP BY tier, customer_id, sku
+    """
+    df = run_query(query, query_parameters).to_dataframe()
+    return [
+        {
+            "tier": _json_str(record.get("tier")),
+            "customer_id": _json_int(record.get("customer_id")),
+            "sku": _json_str(record.get("sku")),
+            "cartons": _json_number(record.get("cartons")),
+            "months": _json_int(record.get("months")),
+        }
+        for record in df.to_dict(orient="records")
+    ]
 
 
 def get_realised_prices(
@@ -481,9 +754,10 @@ def get_realised_prices(
         )
         GROUP BY customer_id, sku
     """
-    job_config = bigquery.QueryJobConfig(query_parameters=query_parameters)
-    client = get_bigquery_client()
-    df = client.query(query, job_config=job_config).result().to_dataframe()
+    df = forecast_cache.single_flight(
+        ("realised_prices", product_name or None, customer_name or None),
+        lambda: run_query(query, query_parameters).to_dataframe(),
+    )
 
     prices = {}
     for record in df.to_dict(orient="records"):
@@ -509,6 +783,7 @@ def get_forecast_actuals(
         SELECT
           customer_id,
           customer_name,
+          sku,
           product_name,
           period_start AS month_year,
           quantity_cartons,
@@ -517,30 +792,44 @@ def get_forecast_actuals(
         WHERE {" AND ".join(where_clauses)}
         ORDER BY customer_name, product_name, period_start
     """
-    job_config = bigquery.QueryJobConfig(query_parameters=query_parameters)
-    client = get_bigquery_client()
-    df = client.query(query, job_config=job_config).result().to_dataframe()
+    # Not cached: actuals move when sales load, not when the forecast is
+    # rebuilt. Overlapping identical reads still share one query.
+    df = forecast_cache.single_flight(
+        ("forecast_actuals", product_name or None, customer_name or None, start_date or None, end_date or None),
+        lambda: run_query(query, query_parameters).to_dataframe(),
+    )
     if df.empty:
         return []
     return [_actual_row(record) for record in df.to_dict(orient="records")]
 
 
 def get_forecast_options() -> dict:
+    """Product/customer lists and the date-picker bounds for the forecast filters.
+
+    Shared through forecast_cache like the forecast rows (the output side
+    only changes when the table is rebuilt).
+    """
+    options = cached_read(("forecast_options",), _read_forecast_options)
+    return {**options, "products": list(options["products"]), "customers": list(options["customers"])}
+
+
+def _read_forecast_options() -> dict:
     # Product/customer lists and the picker bounds come from both the
     # forecast output and actuals, so a year that only exists on one side is
     # still selectable (e.g. 2024 actuals before the first forecast month).
-    source = _FORECAST_OUTPUT_WITH_NAMES.format(
-        view=BQ_FORECAST_OUTPUT_VIEW, dataset=_catalog_dataset()
-    )
     # Grouped in BigQuery so only one row per customer x product comes back,
-    # not every month of both views.
+    # not every month of both.
     query = f"""
         WITH options AS (
           SELECT
-            product_name,
-            customer_name,
-            month_year
-          FROM ({source})
+            product.product_name,
+            customer.customer_name,
+            output.month_year
+          FROM `{BQ_FORECAST_OUTPUT_VIEW}` AS output
+          JOIN `{_catalog_dataset()}.public_customers` AS customer
+            ON customer.customer_id = output.customer_id
+          JOIN `{_catalog_dataset()}.public_skus` AS product
+            ON product.sku = output.sku
           UNION ALL
           SELECT
             product_name,
@@ -556,8 +845,7 @@ def get_forecast_options() -> dict:
         FROM options
         GROUP BY product_name, customer_name
     """
-    client = get_bigquery_client()
-    df = client.query(query).result().to_dataframe()
+    df = run_query(query).to_dataframe()
     if df.empty:
         return {
             "products": [],
@@ -584,7 +872,7 @@ def get_sales_loaded_at(customer_name: str | None = None) -> str | None:
 
     The forecast-line stamps (current / previous / initial generated_at)
     are not queried here: forecast_service takes them from the forecast
-    rows it already fetched, so the slow output view is read once per page
+    rows it already fetched, so the output table is read once per page
     load. An empty customer_name means every customer (the Forecast
     "All customers" filter).
     """
@@ -601,9 +889,10 @@ def get_sales_loaded_at(customer_name: str | None = None) -> str | None:
         FROM `{BQ_MONTHLY_SALES_VIEW}`
         WHERE {" AND ".join(where_clauses)}
     """
-    job_config = bigquery.QueryJobConfig(query_parameters=query_parameters)
-    client = get_bigquery_client()
-    df = client.query(query, job_config=job_config).result().to_dataframe()
+    df = forecast_cache.single_flight(
+        ("sales_loaded_at", customer_name),
+        lambda: run_query(query, query_parameters).to_dataframe(),
+    )
     if df.empty:
         return None
     return _iso_stamp(df.iloc[0]["latest_sales_loaded_at"])
@@ -622,7 +911,7 @@ def get_initial_meta() -> list[dict]:
         FROM `{config.BQ_FORECAST_DATASET}.aire_forecasting_initial_meta`
         ORDER BY forecast_year
     """
-    df = get_bigquery_client().query(query).result().to_dataframe()
+    df = run_query(query).to_dataframe()
     return [
         {
             "forecast_year": int(record["forecast_year"]),

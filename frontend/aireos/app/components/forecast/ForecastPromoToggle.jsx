@@ -5,7 +5,7 @@ import { PACK_OVERLAY_TYPES, PROMO_OVERLAY_TYPES } from '@/app/utils/forecastVie
 
 function PillGroup({ label, options, selected, onToggle }) {
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-2">
+    <div className="flex min-w-0 flex-col items-start gap-1.5 sm:flex-row sm:items-center sm:gap-2">
       <p className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/50">
         {label}
       </p>

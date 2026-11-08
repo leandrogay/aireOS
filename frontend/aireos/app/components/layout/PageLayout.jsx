@@ -28,24 +28,28 @@ export default function PageLayout({ title, headerExtra, back, fitScreen = false
     <AppShell>
       <main
         className={cn(
-          "bg-cream px-4 py-4",
+          "min-w-0 bg-cream px-4 pt-4 pb-16 md:pb-4",
           fitScreen ? "flex h-dvh flex-col overflow-y-auto" : "min-h-screen",
         )}
       >
-        <div className={cn("max-w-6xl mx-auto", fitScreen && "flex w-full min-h-0 flex-1 flex-col")}>
-          <div className="mb-3 flex items-center gap-3">
-            {/* The title and any page controls share this growing block, so a
-                control pushed right with ml-auto stays just left of the bell. */}
-            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+        <div className={cn("mx-auto w-full min-w-0 max-w-6xl", fitScreen && "flex min-h-0 flex-1 flex-col")}>
+          {/* data-page-heading: NotificationBell measures this row, as wide
+              as the page content, to size its panel. */}
+          <div data-page-heading className="mb-3 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 md:flex md:items-center">
+            <div className="flex min-h-9 min-w-0 items-center gap-3 pl-10 md:flex-1 md:pl-0">
               {back && (
                 <BackLink href={back.href} label={back.label} className="-mr-1.5 -ml-1" />
               )}
-              <h1 className="font-serif text-2xl text-deep-violet-blue">
+              <h1 className="min-w-0 font-serif text-xl leading-tight text-deep-violet-blue md:text-2xl">
                 {title}
               </h1>
-              {headerExtra}
             </div>
-            <NotificationBell />
+            {headerExtra && (
+              <div className="col-span-2 row-start-2 min-w-0 w-full md:col-auto md:row-auto md:ml-auto md:w-auto">
+                {headerExtra}
+              </div>
+            )}
+            <div className="col-start-2 row-start-1 md:col-auto md:row-auto"><NotificationBell /></div>
           </div>
           {children}
         </div>

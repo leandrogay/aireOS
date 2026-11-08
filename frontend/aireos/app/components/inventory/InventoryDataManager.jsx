@@ -4,6 +4,8 @@ import { useState } from 'react';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import SegmentedControl from '@/components/ui/SegmentedControl';
+import SelectDropdown from '@/components/ui/SelectDropdown';
+import useMediaQuery from '@/hooks/useMediaQuery';
 
 import InventoryBulkCreateForm from './InventoryBulkCreateForm';
 import InventoryBulkEditForm from './InventoryBulkEditForm';
@@ -46,6 +48,7 @@ export default function InventoryDataManager({ customers, skus, editRow, onSaved
   // neither is an insert-only operation) -- see InventoryBulkEditForm /
   // InventoryBulkShippedForm.
   const [resetKey, setResetKey] = useState(0);
+  const narrow = useMediaQuery('(max-width: 767px)');
 
   function switchMode(next) {
     setMode(next);
@@ -59,11 +62,26 @@ export default function InventoryDataManager({ customers, skus, editRow, onSaved
 
   return (
     <Card size="sm" className="rounded-lg border border-lavander bg-white text-deep-violet-blue shadow-sm ring-0">
-      <CardHeader className="flex flex-row items-start justify-between gap-3 pb-1">
+      <CardHeader className="flex flex-col gap-2 pb-1 sm:flex-row sm:items-center sm:justify-between">
         <CardTitle className="font-serif text-base font-normal text-deep-violet-blue group-data-[size=sm]/card:text-base">
           {MODES.find((item) => item.value === mode)?.label} data
         </CardTitle>
-        <SegmentedControl value={mode} onChange={switchMode} options={MODES} ariaLabel="Data entry mode" />
+        {narrow ? (
+          <SelectDropdown
+            value={mode}
+            onChange={switchMode}
+            options={MODES}
+            ariaLabel="Data entry mode"
+            className="w-full"
+          />
+        ) : (
+          <SegmentedControl
+            value={mode}
+            onChange={switchMode}
+            options={MODES}
+            ariaLabel="Data entry mode"
+          />
+        )}
       </CardHeader>
       <CardContent>
         {mode === 'create' && (

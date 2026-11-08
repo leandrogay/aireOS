@@ -11,6 +11,8 @@ import useChartZoom from '@/hooks/useChartZoom';
 import { FORECAST_SERIES } from '@/app/utils/forecastView';
 import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
 import { dotRevealDelay, lineSweepTimings } from '@/app/utils/lineAnimation';
+import { yearAxisProps } from '@/app/utils/trendChart';
+import useMediaQuery from '@/hooks/useMediaQuery';
 import { cn } from '@/lib/utils';
 
 import { labelledTooltipRow } from './chartTooltip';
@@ -169,7 +171,9 @@ export default function SellInOutlookChart({
   const [visible, setVisible] = useState(ALL_VISIBLE);
   const series = seriesFor(showBlocks);
   const tooltipOrder = series.map((line) => line.key);
-  const zoom = useChartZoom(months.map((row) => formatMonth(row.month)));
+  const mobile = useMediaQuery('(max-width: 639px)');
+  // The zoom works in x-axis values, which on a phone are the months themselves.
+  const zoom = useChartZoom(months.map((row) => (mobile ? row.month : formatMonth(row.month))));
 
   if (months.length === 0) {
     return <p className="text-sm text-deep-violet-blue/70">No actuals for these filters.</p>;
@@ -278,13 +282,14 @@ export default function SellInOutlookChart({
           >
             <CartesianGrid vertical={false} stroke="var(--aire-lavender)" />
             <XAxis
-              dataKey="label"
+              dataKey={mobile ? 'month' : 'label'}
               interval={0}
-              height={52}
+              height={mobile ? 28 : 52}
               tick={{ fontSize: 9, fill: '#3A4369' }}
-              angle={-40}
-              textAnchor="end"
+              angle={mobile ? 0 : -40}
+              textAnchor={mobile ? 'middle' : 'end'}
               tickMargin={6}
+              {...(mobile ? yearAxisProps(shownRows, 'month') : {})}
             />
             <YAxis width={48} tick={{ fontSize: 10, fill: '#3A4369' }} tickFormatter={formatUnits} />
             <ChartTooltip
@@ -293,7 +298,7 @@ export default function SellInOutlookChart({
               content={<ChartTooltipContent className="border-violet/40 bg-white" formatter={formatTooltipRow} />}
             />
             {singleMonth ? (
-              <ReferenceLine x={rows[zoom.start].label} stroke="var(--aire-violet)" strokeWidth={1.5} strokeDasharray="4 3" />
+              <ReferenceLine x={mobile ? rows[zoom.start].month : rows[zoom.start].label} stroke="var(--aire-violet)" strokeWidth={1.5} strokeDasharray="4 3" />
             ) : null}
             {zoom.dragging ? (
               <ReferenceArea

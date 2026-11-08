@@ -1,273 +1,174 @@
 'use client';
 
-import { formatDate, formatDateTime } from '@/lib/formatDate';
-import {
-  forecastErrorLines,
-  forecastIntro,
-  forecastTitle,
-  isRefreshFailure,
-  startedByLabel,
-} from '@/app/utils/forecastNotificationText';
-import { retailerLabel } from '@/app/utils/retailerLabel';
-import { cn } from '@/lib/utils';
+import { ChevronDown } from 'lucide-react';
 
-// Notifications are separated by a divider plus space, not boxes:
-// - inside one notification the gaps are 4px (lines) and 8px (title block → fields);
-// - between notifications there is 24px (12px padding either side of the divider),
-//   3x the largest inner gap so each one reads as its own group, and 2x the 12px
-//   body text (the WCAG 1.4.12 paragraph spacing benchmark).
-// Unread notifications are tinted lavender, with a bold title so the state is
-// not shown by colour alone (WCAG 1.4.1).
-// Muted text is deep-violet-blue/80: about 5.4:1 on white and 5:1 on the unread
+import { Button } from '@/components/ui/button';
+import useExpandedRows from '@/hooks/useExpandedRows';
+import { formatDateTime } from '@/lib/formatDate';
+import { cn } from '@/lib/utils';
+import { notificationHeading } from '@/app/utils/notificationText';
+
+import NotificationDetails from './NotificationDetails';
+
+// Each notification is a row that opens like the forecast page's promo
+// dropdown (ForecastPromoPanel): the tag, time and title on the row, the
+// details underneath once clicked. Several can be open at once.
+// Rows stay white; only the row under the cursor is tinted lavender. Unread
+// notifications get a bar down the left edge and a bold title, so the state
+// is not shown by colour alone (WCAG 1.4.1).
+// Muted text is deep-violet-blue/80: about 5.4:1 on white and 5:1 on the hover
 // tint; /60 and /50 fall below the WCAG 1.4.3 minimum of 4.5:1. Read notifications
 // are not faded with opacity for the same reason.
 // wrap-anywhere: file and mapping names have no spaces, so they break to stay in the panel.
-const ITEM_CLASS = 'px-3 py-3 text-xs leading-normal wrap-anywhere';
-const UNREAD_ITEM_CLASS = 'bg-lavander/50';
 const MUTED_TEXT_CLASS = 'text-deep-violet-blue/80';
 
-function Field({ label, value }) {
-  return (
-    <div className="flex justify-between gap-3">
-      <span className={cn('max-w-[60%] shrink-0', MUTED_TEXT_CLASS)}>{label}</span>
-      <span className="min-w-0 text-right font-medium text-deep-violet-blue">{value}</span>
-    </div>
-  );
-}
-
-function lowStockItem(item) {
-  return `${item.product_name} (${retailerLabel(item.customer_name)}) — ${item.doh_remaining} day${item.doh_remaining === 1 ? '' : 's'} left`;
-}
-
-function lowStockTitle(payload) {
-  return payload.items
-    ? `[STOCK ALERT] Low stock detected for ${payload.count} SKUs`
-    : `[STOCK ALERT] Low stock detected for ${payload.product_name}`;
-}
-
-function forecastNotificationTitle(payload, success) {
-  return forecastTitle(payload, success, formatDate(payload.updated_at?.slice(0, 10)));
-}
-
-function LowStockDetails({ payload }) {
-  // A consolidated alert (5+ SKUs in one batch) lists each briefly instead of
-  // repeating the full single-SKU detail block nine times over.
-  if (payload.items) {
-    return (
-      <>
-        <p className="text-deep-violet-blue/80">
-          The inventory monitoring system has detected a critical stock level for the following products. Please
-          review the details and take the necessary action.
-        </p>
-        <ul className="mt-2 list-disc space-y-0.5 pl-4 text-deep-violet-blue">
-          {payload.items.map((item) => (
-            <li key={item.sku}>{lowStockItem(item)}</li>
-          ))}
-        </ul>
-      </>
-    );
-  }
-
-  return (
-    <>
-      <p className="text-deep-violet-blue/80">
-        The inventory monitoring system has detected a critical stock level for the following product. Please
-        review the details and take the necessary action.
-      </p>
-      <div className="mt-2 space-y-1">
-        <Field label="Customer / Retailer" value={retailerLabel(payload.customer_name)} />
-        <Field label="Current stock" value={`${payload.current_stock} units`} />
-        <Field label="DOH threshold" value={`${payload.doh_threshold} days`} />
-        <Field label="Estimated days of stock remaining" value={`${payload.doh_remaining} days`} />
-        <Field label="Last inventory update" value={formatDate(payload.last_update)} />
-      </div>
-    </>
-  );
-}
-
-function ForecastDetails({ payload, success }) {
-  // Every producer sends these arrays, but one hand-inserted row without them
-  // must not crash the whole page the bell sits on.
-  const customers = payload.customers ?? [];
-  const skus = payload.skus ?? [];
-  // A refresh that never started (backend stage "refresh") has no forecast to
-  // describe, so the period / customers / SKUs rows would only read "—" and "0".
-  const neverStarted = isRefreshFailure(payload, success);
-  const errorLines = forecastErrorLines(payload);
-  return (
-    <>
-      <p className={MUTED_TEXT_CLASS}>{forecastIntro(payload, success)}</p>
-      <div className="mt-2 space-y-1">
-        {!neverStarted && (
-          <>
-            <Field
-              label="Forecast period"
-              value={payload.period_start ? `${payload.period_start} – ${payload.period_end}` : '—'}
-            />
-            <Field
-              label="Customers processed"
-              value={
-                customers.length
-                  ? `${customers.length}: ${customers.map(retailerLabel).join(', ')}`
-                  : '0'
-              }
-            />
-            <Field
-              label="SKUs forecasted"
-              value={skus.length ? `${skus.length}: ${skus.join(', ')}` : '0'}
-            />
-          </>
-        )}
-        <Field label="Last updated" value={formatDateTime(payload.updated_at)} />
-        <Field label="Started by" value={startedByLabel(payload.source)} />
-      </div>
-      {!success && payload.reason && (
-        <div className="mt-1">
-          <span className={MUTED_TEXT_CLASS}>Reason</span>
-          <p className="mt-0.5 text-deep-violet-blue">{payload.reason}</p>
-        </div>
-      )}
-      {/* Older failures have no reason, only errors, so they still show "None"
-          when empty; newer ones list errors only when they add to the reason. */}
-      {!success && (!payload.reason || errorLines.length > 0) && (
-        <div className="mt-1">
-          <span className={MUTED_TEXT_CLASS}>Errors / Warnings</span>
-          <p className="mt-0.5 text-deep-violet-blue">{errorLines.length ? errorLines.join('; ') : 'None'}</p>
-        </div>
-      )}
-      {success && (
-        <p className="mt-2 text-deep-violet-blue/80">
-          You can now access the dashboard to review the latest forecast results and recommended actions.
-        </p>
-      )}
-    </>
-  );
-}
-
-function MappingDetails({ payload }) {
-  return (
-    <>
-      <p className="text-deep-violet-blue/80">
-        {payload.amended
-          ? 'An approved file nomenclature was changed. Every future file with these columns will use the new version.'
-          : 'A new file nomenclature was approved. Every future file with these columns will be read with it.'}
-      </p>
-      <div className="mt-2 space-y-1">
-        <Field label="Nomenclature" value={payload.name} />
-        <Field label="Vendor" value={payload.vendor} />
-        {/* Approvals since loading became its own step say what waits to be
-            loaded (backend confirm_mapping); older ones said what they loaded. */}
-        {payload.uploads_waiting !== undefined ? (
-          <>
-            <Field label="Files waiting to load" value={payload.uploads_waiting} />
-            {payload.uploads_outdated > 0 && <Field label="Files to reload" value={payload.uploads_outdated} />}
-          </>
-        ) : (
-          <>
-            <Field label="Waiting files loaded" value={payload.uploads_processed} />
-            {payload.uploads_failed > 0 && <Field label="Waiting files that failed" value={payload.uploads_failed} />}
-          </>
-        )}
-      </div>
-    </>
-  );
-}
-
-// Written by backend ingestion_service.rollback_upload once a rollback has
-// committed, or when it failed (one transaction, so nothing was changed then).
-function RollbackDetails({ payload, success }) {
-  return (
-    <>
-      <p className="text-deep-violet-blue/80">
-        {success
-          ? 'An upload was rolled back. The sales figures it loaded were removed, and the values it had replaced were restored.'
-          : 'An attempt to roll back an upload did not complete. No sales data was changed.'}
-      </p>
-      <div className="mt-2 space-y-1">
-        <Field label="File" value={payload.source_file || '—'} />
-        <Field label={success ? 'Rolled back by' : 'Requested by'} value={payload.rolled_back_by || '—'} />
-        <Field label="Reason" value={payload.reason || '—'} />
-        {success && (
-          <>
-            <Field label="Rows restored" value={payload.rows_restored ?? 0} />
-            <Field label="Rows removed" value={payload.rows_removed ?? 0} />
-          </>
-        )}
-      </div>
-      {!success && (
-        <div className="mt-1">
-          <span className={MUTED_TEXT_CLASS}>Errors / Warnings</span>
-          <p className="mt-0.5 text-deep-violet-blue">{payload.errors?.length ? payload.errors.join('; ') : 'None'}</p>
-        </div>
-      )}
-    </>
-  );
-}
-
-const TITLES = {
-  low_stock: lowStockTitle,
-  forecast_success: (payload) => forecastNotificationTitle(payload, true),
-  forecast_failure: (payload) => forecastNotificationTitle(payload, false),
-  mapping_uploaded: (payload) => `[NOMENCLATURE] ${payload.amended ? 'Nomenclature updated' : 'New nomenclature approved'} – ${payload.name}`,
-  rollback_success: () => `[SUCCESS] Upload Rolled Back`,
-  rollback_failure: () => `[FAILURE] Upload Rollback Failed`,
+// Per tone (notificationHeading): the tag's fill and text, and the bar down
+// the left edge of an unread row. Five tones cover all seven notification types
+// (success / failure share one each across forecast and rollback). The tag has
+// no border; its dot repeats the word, so the type never rests on colour alone.
+// Tag colours are OKLCH with one lightness for every fill (0.95) and one for
+// every text (0.42), only the hue changing, so no pill looks paler than another
+// (Tailwind's amber-50 / red-50 / ... differ in lightness). Text on fill is
+// about 7:1, above the WCAG 1.4.3 minimum.
+const TONES = {
+  warning: { tag: 'bg-[oklch(0.95_0.04_80)] text-[oklch(0.42_0.09_60)]', bar: 'bg-amber-500' },
+  success: { tag: 'bg-[oklch(0.95_0.04_160)] text-[oklch(0.42_0.09_160)]', bar: 'bg-emerald-500' },
+  danger: { tag: 'bg-[oklch(0.95_0.04_25)] text-[oklch(0.42_0.13_25)]', bar: 'bg-red-500' },
+  info: { tag: 'bg-[oklch(0.95_0.04_280)] text-[oklch(0.42_0.09_280)]', bar: 'bg-violet' },
+  // AI model outdated: blue, so it doesn't share a colour with the other alert types.
+  model: { tag: 'bg-[oklch(0.95_0.04_235)] text-[oklch(0.42_0.09_235)]', bar: 'bg-sky-500' },
+  muted: { tag: 'bg-[oklch(0.95_0_0)] text-[oklch(0.42_0_0)]', bar: 'bg-deep-violet-blue/40' },
 };
 
-// min-h-6: WCAG 2.5.8 asks for pointer targets of at least 24 x 24 CSS px.
-const MARK_READ_BUTTON_CLASS =
-  'inline-flex min-h-6 shrink-0 cursor-pointer items-center rounded-md border border-violet/40 bg-white px-2 text-[11px] font-medium text-deep-violet-blue transition hover:bg-cream';
+function TypeTag({ tone, children }) {
+  return (
+    <span
+      className={cn(
+        // A faint drop shadow gives the borderless pill its edge.
+        // whitespace-nowrap: the row is wrap-anywhere (for file names), which
+        // would otherwise break a tag mid-word ("Nomenclat / ure").
+        'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium shadow-[0_1px_2px_rgb(15_30_74/0.12)]',
+        (TONES[tone] || TONES.muted).tag,
+      )}
+    >
+      <span aria-hidden="true" className="size-1.5 rounded-full bg-current" />
+      {children}
+    </span>
+  );
+}
 
 /**
- * One notification's rendered wording, by notification_type, with when it
- * was sent (kept beside the title, not across the panel) and its own "Mark as
- * read". The backend stores structured `payload` fields, not text, so the exact
- * copy lives here and can change without a migration.
+ * "Mark as read" / "Mark all as read": the shared Button (outline, xs: 24px
+ * tall, the WCAG 2.5.8 minimum target), fully rounded to sit with the type tags.
  *
- * @param {{ notification: { notification_id: number, notification_type: string, payload: object, created_at: string, read_at: string | null }, onMarkRead: () => void }} props
+ * @param {{ onClick: () => void, children: import('react').ReactNode }} props
  */
-function NotificationItem({ notification, onMarkRead }) {
-  const { notification_type: type, payload, created_at: createdAt, read_at: readAt } = notification;
-  const title = TITLES[type] ? TITLES[type](payload) : 'Notification';
+function MarkReadButton({ onClick, children }) {
+  return (
+    <Button variant="outline" size="xs" onClick={onClick} className="rounded-full">
+      {children}
+    </Button>
+  );
+}
+
+/**
+ * One notification: a row with its tag, when it was sent and its title, that
+ * opens to show the details; plus its own "Mark as read" and then the arrow
+ * at the right (siblings of the toggle, since a button can't sit inside
+ * another button).
+ *
+ * @param {{ notification: { notification_id: number, notification_type: string, payload: object, created_at: string, read_at: string | null }, isOpen: boolean, onToggle: () => void, onMarkRead: () => void }} props
+ */
+function NotificationItem({ notification, isOpen, onToggle, onMarkRead }) {
+  const { notification_id: id, notification_type: type, payload, created_at: createdAt, read_at: readAt } =
+    notification;
+  const { tag, tone, title } = notificationHeading(type, payload);
   const unread = !readAt;
+  const detailsId = `notification-${id}-details`;
 
   return (
-    <li className={cn(ITEM_CLASS, unread && UNREAD_ITEM_CLASS)}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <p className={cn('font-serif text-sm text-deep-violet-blue', unread && 'font-semibold')}>
-            {/* Unread is shown by the tint and the bold title, not by colour alone (WCAG 1.4.1). */}
+    // The whole notification tints on hover -- its row, its "Mark as read"
+    // and its open details -- so it reads as one item.
+    <li className="relative wrap-anywhere transition-colors hover:bg-lavander/40">
+      {/* Unread rows get a bar in their type's colour down the left edge. */}
+      {unread && (
+        <span aria-hidden="true" className={cn('absolute inset-y-0 left-0 w-1', (TONES[tone] || TONES.muted).bar)} />
+      )}
+      {/* The row button spans the whole width, so the title below the tag line
+          runs edge to edge with the same padding (px-3.5) on both sides.
+          "Mark as read" and the arrow sit on the tag line only, laid over the
+          button's top right (a button can't sit inside another button); the
+          tag line keeps clear of them with right padding. */}
+      <div className="relative">
+        <button
+          type="button"
+          aria-expanded={isOpen}
+          aria-controls={detailsId}
+          onClick={onToggle}
+          className="block w-full px-3.5 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-deep-violet-blue"
+        >
+          <span
+            className={cn(
+              'flex min-h-6 flex-wrap items-center gap-x-2 gap-y-1',
+              unread ? 'pr-[8.5rem]' : 'pr-8',
+            )}
+          >
+            <TypeTag tone={tone}>{tag}</TypeTag>
+            <span className={cn('text-[11px]', MUTED_TEXT_CLASS)}>{formatDateTime(createdAt)}</span>
+          </span>
+          <span
+            className={cn(
+              // mt-[11px]: room between the title and "Mark as read" above it
+              // (same on read rows, so every row has one rhythm).
+              'mt-[11px] block text-[13px] leading-snug text-deep-violet-blue',
+              unread ? 'font-semibold' : 'font-medium',
+            )}
+          >
+            {/* Unread is shown by the bar and the bold title, not by colour alone (WCAG 1.4.1). */}
             {unread && <span className="sr-only">Unread: </span>}
             {title}
-          </p>
-          <p className={cn('mt-1 text-[11px]', MUTED_TEXT_CLASS)}>{formatDateTime(createdAt)}</p>
+          </span>
+        </button>
+        <div className="absolute top-2.5 right-2.5 flex items-center gap-1">
+          {unread && <MarkReadButton onClick={onMarkRead}>Mark as read</MarkReadButton>}
+          {/* The arrow is at the far right, after "Mark as read", so it is in
+              the same place on every row. It opens the same details as the row
+              button; that button is the one keyboards and screen readers use,
+              so this copy is skipped by both. */}
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            tabIndex={-1}
+            aria-hidden="true"
+            onClick={onToggle}
+            className="text-deep-violet-blue/70 hover:text-deep-violet-blue"
+          >
+            <ChevronDown className={cn('size-4 transition', isOpen && 'rotate-180')} />
+          </Button>
         </div>
-        {unread && (
-          <button type="button" onClick={onMarkRead} className={MARK_READ_BUTTON_CLASS}>
-            Mark as read
-          </button>
-        )}
       </div>
-      <div className="mt-2">
-        {type === 'low_stock' && <LowStockDetails payload={payload} />}
-        {type === 'forecast_success' && <ForecastDetails payload={payload} success />}
-        {type === 'forecast_failure' && <ForecastDetails payload={payload} success={false} />}
-        {type === 'mapping_uploaded' && <MappingDetails payload={payload} />}
-        {type === 'rollback_success' && <RollbackDetails payload={payload} success />}
-        {type === 'rollback_failure' && <RollbackDetails payload={payload} success={false} />}
-      </div>
+      {isOpen && (
+        // White, so the details card stays a white card even while the row
+        // above it is tinted on hover.
+        <div id={detailsId} className="mx-3.5 mb-3 rounded-lg border border-violet/30 bg-white px-3 py-2.5">
+          <NotificationDetails type={type} payload={payload} />
+        </div>
+      )}
     </li>
   );
 }
 
 /**
  * The bell's dropdown contents: the shared feed, unread first and then read,
- * each newest first. An unread notification has a tint, a bold title and its
- * own "Mark as read"; once read it stays in the list in regular weight. "Mark
+ * each newest first. An unread notification has a coloured bar on its left
+ * edge, a bold title and its own "Mark as read"; once read it stays in the list in regular weight. "Mark
  * all as read" shows while anything is unread.
  *
  * @param {{ notifications: object[], markRead: (ids: number[]) => void }} props
  */
 export default function NotificationPanel({ notifications, markRead }) {
+  const { isExpanded, toggle } = useExpandedRows();
+
   if (notifications.length === 0) {
     return <p className="px-3 py-3 text-xs text-deep-violet-blue/75">No notifications yet.</p>;
   }
@@ -280,19 +181,21 @@ export default function NotificationPanel({ notifications, markRead }) {
   const ordered = [...unread, ...read];
 
   // The popup has no padding of its own (see NotificationBell): the header and
-  // the rows pad themselves with px-3, so unread tints run edge to edge.
+  // the rows pad themselves with px-3, so hover tints run edge to edge.
   return (
     <div className="flex flex-col">
-      <div className="flex items-center justify-between border-b border-lavander px-3 py-2.5">
-        <p className="font-serif text-sm text-deep-violet-blue">Notifications</p>
+      <div className="flex items-center justify-between gap-3 border-b border-lavander px-3 py-2.5">
+        <div>
+          <p className="font-serif text-base leading-tight text-deep-violet-blue">Notifications</p>
+          <p className={cn('mt-0.5 text-[11px]', MUTED_TEXT_CLASS)}>
+            {unreadIds.length > 0 ? `${unreadIds.length} unread` : 'All caught up'}
+          </p>
+        </div>
         {unreadIds.length > 0 && (
-          <button type="button" onClick={() => markRead(unreadIds)} className={MARK_READ_BUTTON_CLASS}>
-            Mark all as read
-          </button>
+          <MarkReadButton onClick={() => markRead(unreadIds)}>Mark all as read</MarkReadButton>
         )}
       </div>
-      {/* A divider between notifications; see the spacing note at the top.
-          rounded-b-lg clips the last row's tint to the popup's corners.
+      {/* rounded-b-lg clips the last row's hover tint to the popup's corners.
           Thin violet scrollbar (standard scrollbar-width/-color, no arrow
           buttons) instead of the default grey one. */}
       <ul className="max-h-[65vh] divide-y divide-lavander overflow-y-auto rounded-b-lg [scrollbar-color:var(--aire-violet)_transparent] [scrollbar-width:thin]">
@@ -300,6 +203,8 @@ export default function NotificationPanel({ notifications, markRead }) {
           <NotificationItem
             key={notification.notification_id}
             notification={notification}
+            isOpen={isExpanded(notification.notification_id)}
+            onToggle={() => toggle(notification.notification_id)}
             onMarkRead={() => markRead([notification.notification_id])}
           />
         ))}

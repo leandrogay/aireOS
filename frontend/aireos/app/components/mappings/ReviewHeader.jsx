@@ -1,14 +1,12 @@
 import { FileSpreadsheet, Trash2 } from 'lucide-react';
 
+import { Button } from '@/components/ui/button';
 import InfoTooltip from '@/components/ui/InfoTooltip';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { formatDateTime } from '@/lib/formatDate';
 import { mappingTitle } from '@/app/utils/mappingList';
 import { PROPOSER, proposedByLabel } from '@/app/utils/mappingReview';
 import { retailerLabel } from '@/app/utils/retailerLabel';
-
-const destructive =
-  'inline-flex items-center gap-1.5 rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-700 disabled:cursor-not-allowed disabled:opacity-60';
 
 /**
  * The top of the review: what this mapping is, what state it is in, and in a
@@ -59,10 +57,10 @@ export default function ReviewHeader({ mapping, changed, canDiscard, busy, disca
 
         {/* Apart from the save flow: discarding throws the whole proposal away. */}
         {canDiscard && (
-          <button type="button" onClick={onDiscard} disabled={busy !== null} className={destructive}>
-            <Trash2 aria-hidden="true" className="size-3.5" />
+          <Button type="button" variant="destructive-outline" size="sm" onClick={onDiscard} disabled={busy !== null}>
+            <Trash2 aria-hidden="true" />
             Discard proposal
-          </button>
+          </Button>
         )}
       </div>
 

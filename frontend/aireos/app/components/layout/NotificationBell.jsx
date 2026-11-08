@@ -1,11 +1,32 @@
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
 import { Bell } from 'lucide-react';
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import useNotifications from '@/hooks/useNotifications';
 
 import NotificationPanel from './NotificationPanel';
+
+// The panel is as wide as the dashboard's right-hand column (app/dashboard/page.js:
+// `lg:grid-cols-3` with `gap-1`), so it lines up with that card's edges, and keeps
+// that width on every page. The popup is portalled out of the page, so CSS can't
+// take a fraction of the content column; it is measured from PageLayout's heading
+// row ([data-page-heading], as wide as the content) when the bell opens and
+// whenever the window is resized while it is open. The row is found with
+// closest(), not parentElement: the bell sits in a small wrapper of its own.
+const PAGE_COLUMNS = 3;
+const PAGE_COLUMN_GAP_PX = 4;
+// Below Tailwind's `lg`, the dashboard stacks into one column; the panel then
+// falls back to a fixed width instead of the whole page.
+const WIDE_LAYOUT_QUERY = '(min-width: 64rem)';
+const NARROW_PANEL_WIDTH = '23rem';
+
+function columnWidth(headingRow) {
+  if (!headingRow || !window.matchMedia(WIDE_LAYOUT_QUERY).matches) return NARROW_PANEL_WIDTH;
+  const rowWidth = headingRow.getBoundingClientRect().width;
+  return `${(rowWidth - PAGE_COLUMN_GAP_PX * (PAGE_COLUMNS - 1)) / PAGE_COLUMNS}px`;
+}
 
 /**
  * Bell icon with an unread-count badge, opening the shared notification feed
@@ -18,14 +39,35 @@ import NotificationPanel from './NotificationPanel';
  */
 export default function NotificationBell() {
   const { notifications, unreadCount, markRead, refresh } = useNotifications();
+  const triggerRef = useRef(null);
+  const [panelWidth, setPanelWidth] = useState(NARROW_PANEL_WIDTH);
+  const [open, setOpen] = useState(false);
 
-  function handleOpenChange(open) {
-    if (open) refresh();
+  function measure() {
+    setPanelWidth(columnWidth(triggerRef.current?.closest('[data-page-heading]')));
   }
 
+  function handleOpenChange(nextOpen) {
+    setOpen(nextOpen);
+    if (!nextOpen) return;
+    measure();
+    refresh();
+  }
+
+  // Keep the panel the column's width if the window is resized while it is open.
+  useEffect(() => {
+    if (!open) return undefined;
+    function handleResize() {
+      setPanelWidth(columnWidth(triggerRef.current?.closest('[data-page-heading]')));
+    }
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [open]);
+
   return (
-    <Popover onOpenChange={handleOpenChange}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger
+        ref={triggerRef}
         data-notification-bell
         aria-label={unreadCount > 0 ? `Notifications (${unreadCount} unread)` : 'Notifications'}
         className="relative flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-md text-deep-violet-blue/70 transition-colors hover:bg-lavander hover:text-deep-violet-blue"
@@ -40,12 +82,11 @@ export default function NotificationBell() {
       {/* Two stacked shadows (tight edge + soft lift) tinted with deep violet blue
           (#0F1E4A) rather than black, so the popup floats above the page. Set
           here, not in ui/popover, so the other dropdowns keep their look.
-          alignOffset: with align="end" a negative value slides the popup right, past the
-          page card's edge into the empty margin; Base UI's collision shift keeps it on
-          screen when the window is narrow, and the arrow stays on the bell. */}
+          align="end" with no offset: the bell ends the heading row (PageLayout), whose
+          right edge is the page content's, so the popup's right edge lines up with the
+          cards below instead of hanging past them. */}
       <PopoverContent
         align="end"
-        alignOffset={-96}
         arrow
         arrowClassName="data-[side=bottom]:border-lavander"
         sideOffset={10}
@@ -53,7 +94,10 @@ export default function NotificationBell() {
         // the page's scroll height (with the default "absolute" the page could
         // be scrolled past its end while the panel was open).
         positionMethod="fixed"
-        className="w-[26rem] max-w-[90vw] gap-0 p-0 ring-lavander shadow-[0_2px_4px_rgb(15_30_74/0.1),0_12px_32px_rgb(15_30_74/0.08)]"
+        // Width measured on open (see columnWidth); a style, not a class,
+        // because it is computed.
+        style={{ width: panelWidth }}
+        className="max-w-[90vw] gap-0 p-0 ring-violet/40 shadow-[0_2px_6px_rgb(15_30_74/0.12),0_16px_40px_rgb(15_30_74/0.18)]"
       >
         <NotificationPanel notifications={notifications} markRead={markRead} />
       </PopoverContent>

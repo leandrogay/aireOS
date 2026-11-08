@@ -4,21 +4,18 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { ArrowRight, CheckCircle2, Database, RefreshCw, Upload } from 'lucide-react';
 
+import { Button, buttonVariants } from '@/components/ui/button';
 import Disclosure from '@/components/ui/Disclosure';
 import LoadConfirmDialog from '@/components/upload/LoadConfirmDialog';
 import { formatDateTime } from '@/lib/formatDate';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 import { wasSaved } from '@/app/utils/loadPreview';
 import { filesLabel } from '@/app/utils/uploadFlow';
-import { cn } from '@/lib/utils';
 
 const action =
   'inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-deep-violet-blue focus-visible:ring-offset-2';
 const primary = `${action} border-deep-violet-blue bg-deep-violet-blue text-white hover:opacity-90`;
 const secondary = `${action} border-deep-violet-blue/30 bg-white text-deep-violet-blue hover:bg-cream`;
-// Leaving the page while a load is waiting: available, but never a peer of the load button.
-const quiet =
-  'inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium text-deep-violet-blue/70 underline-offset-2 hover:text-deep-violet-blue hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-deep-violet-blue';
 
 function plural(count, one, many) {
   return `${count.toLocaleString()} ${count === 1 ? one : many}`;
@@ -48,10 +45,10 @@ function LoadableFiles({ title, help, files, detail, buttonLabel, Icon, onLoad }
           </li>
         ))}
       </ul>
-      <button type="button" onClick={onLoad} className={cn(primary, 'mt-3')}>
-        <Icon aria-hidden="true" className="size-4" />
+      <Button type="button" onClick={onLoad} className="mt-3">
+        <Icon aria-hidden="true" />
         {buttonLabel}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -181,8 +178,13 @@ export default function ApprovedSummary({ approved }) {
           The dashboard is offered only once a load from here wrote rows:
           approving alone changes nothing it shows. */}
       <div className="mt-5 flex flex-wrap items-center gap-2">
-        <Link href="/upload" className={hasNextStep ? quiet : loadedHere.length ? secondary : primary}>
-          <Upload aria-hidden="true" className="size-4" />
+        {/* Leaving the page while a load is waiting: available, but never a
+            peer of the load button, so it drops to ghost until then. */}
+        <Link
+          href="/upload"
+          className={buttonVariants({ variant: hasNextStep ? 'ghost' : loadedHere.length ? 'outline' : 'default' })}
+        >
+          <Upload aria-hidden="true" />
           Upload more files
         </Link>
         {loadedHere.length > 0 && (

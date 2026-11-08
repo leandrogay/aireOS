@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 
+import BarChartSkeleton from '@/components/ui/BarChartSkeleton';
 import useInventoryOverview from '@/hooks/useInventoryOverview';
 import { earliestMonthInput, filterMonthRange, latestMonthInput } from '@/app/utils/inventoryForm';
 
@@ -100,7 +101,22 @@ export default function InventoryOverview({ skuOptions, refreshKey, onEditRow })
       )}
 
       <InventorySection title="Ending stock by month" tags={scopeTags}>
-        <InventoryChartSlot loading={loading} ready={Boolean(data)}>
+        <InventoryChartSlot
+          loading={loading}
+          ready={Boolean(data)}
+          placeholder={(
+            // Same frame and 308px height as EndingStockChart, so nothing moves when it arrives.
+            // About the usual chart: ~20 months of history, a bar each for ~3 customers.
+            <BarChartSkeleton
+              bars={20}
+              groups={3}
+              height={308}
+              legend
+              label="Loading inventory…"
+              className="rounded-xl border border-lavander bg-white pl-1 pr-3 pt-2"
+            />
+          )}
+        >
           {data && <EndingStockChart monthly={chartRows} allCustomers={data.customers} />}
         </InventoryChartSlot>
       </InventorySection>

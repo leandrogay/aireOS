@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 
+import BarChartSkeleton from '@/components/ui/BarChartSkeleton';
+import LineChartSkeleton from '@/components/ui/LineChartSkeleton';
 import SelectDropdown from '@/components/ui/SelectDropdown';
 import useSavedBuildingBlocks from '@/hooks/useSavedBuildingBlocks';
 import useSellInOutlook from '@/hooks/useSellInOutlook';
@@ -202,7 +204,22 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
             error={savedBlocks.error}
             withoutEffect={appliedBlockIds.length ? blocksWithoutEffect(outlook.data?.building_blocks ?? []) : []}
           />
-          <InventoryChartSlot loading={outlook.loading} ready={Boolean(outlook.data)}>
+          <InventoryChartSlot
+            loading={outlook.loading}
+            ready={Boolean(outlook.data)}
+            placeholder={(
+              // Same frame and 360px height as SellInOutlookChart: the year so far + the default 6 ahead.
+              <LineChartSkeleton
+                points={18}
+                lines={4}
+                height={360}
+                legend
+                legendItems={4}
+                label="Loading inventory…"
+                className="rounded-xl border border-lavander bg-white pl-1 pr-3 pt-2"
+              />
+            )}
+          >
             {outlook.data && (
               <SellInOutlookChart
                 months={outlook.data.months}

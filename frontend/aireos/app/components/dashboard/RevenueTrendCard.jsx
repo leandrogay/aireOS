@@ -1,35 +1,34 @@
 "use client"
 
-import ChartLoading from "@/components/ui/ChartLoading"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import BarChartSkeleton from "@/components/ui/BarChartSkeleton"
+import { Skeleton } from "@/components/ui/skeleton"
+import SegmentedControl from "@/components/ui/SegmentedControl"
 import ComparisonMixChart from "@/components/dashboard/ComparisonMixChart"
 import CustomerTrendChart from "@/components/dashboard/CustomerTrendChart"
-import EstMark from "@/components/dashboard/EstMark"
 import { FormatTrendChart } from "@/components/dashboard/TrendChart"
 import { formatDateTime } from "@/lib/formatDate"
 import { relabelFormatRows } from "@/app/utils/storeFormats"
 
-const tabTriggerClass =
-  "text-deep-violet-blue/70 hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white data-active:hover:text-white"
+const METRIC_OPTIONS = [
+  { value: "units", label: "Volume" },
+  { value: "revenue", label: "Revenue" },
+]
 
-// Under the chart: EST on the left when it includes estimated revenue, and
-// when the data was last updated on the right, on one text line (baseline).
-function ChartFooter({ estimate, lastUpdated }) {
+// Under the chart, on the right: when the data was last updated. Estimated
+// revenue is shown per bar in the chart's tooltip, not here.
+function ChartFooter({ lastUpdated }) {
   return (
-    <div className="mt-1 flex items-baseline justify-between gap-2">
-      <span>{estimate && <EstMark estimated={estimate.estimated} total={estimate.total} className="text-xs" />}</span>
-      <p className="text-xs text-deep-violet-blue/60">Last Updated: {formatDateTime(lastUpdated)}</p>
-    </div>
+    <p className="mt-1 text-right text-xs text-deep-violet-blue/60">Last Updated: {formatDateTime(lastUpdated)}</p>
   )
 }
 
 /**
- * Revenue trend card: one control row -- an optional `headerExtra` on the left
+ * Revenue trend card: a top row with an optional `headerExtra` on the left
  * (page.js puts the Period and Compare to controls there, so the timeframe is
- * read before the chart) and same-size switches on the right, Volume / Revenue
- * (`metric`, owned by page.js because the comparison rows are built for it)
- * and By week / By month -- then the chart. Offline / Online (`mode`) is chosen
- * beside the page title (ChannelSwitch), since it changes the whole page.
+ * read before the chart) and `channelSwitch` (Offline / Online, ChannelSwitch)
+ * in the top right corner; then, on the right, the view
+ * switches Volume / Revenue (`metric`, owned by page.js because the comparison
+ * rows are built for it) and By week / By month; then the chart.
  *
  * The chart is always stacked by store format, in the format colours, so a
  * colour always means one format: FormatTrendChart with no comparison, and
@@ -40,9 +39,7 @@ function ChartFooter({ estimate, lastUpdated }) {
  * alignComparisonBuckets, so the charts only render.
  * With two or more customers ticked, `customerBars` (get_customer_trends rows)
  * draws CustomerTrendChart instead: each customer per week or month.
- * `estimate` ({ estimated, total }, from page.js) puts one EST under the
- * chart when anything it draws includes estimated revenue, however many bars
- * do; hovering it says how much, and a bar's tooltip gives its own share.
+ * A bar's tooltip says how much of its revenue is estimated.
  */
 export default function RevenueTrendCard({
   summaryByMode = {},
@@ -55,6 +52,7 @@ export default function RevenueTrendCard({
   weekAvailable = true,
   mode = "offline",
   headerExtra = null,
+  channelSwitch = null,
   granularity = "week",
   onGranularityChange = () => {},
   comparisonRows = null,
@@ -62,48 +60,44 @@ export default function RevenueTrendCard({
   periodNames = null,
   customerBars = null,
   customerColorOrder = [],
-  estimate = null,
   metric = "revenue",
   onMetricChange = () => {},
 }) {
-  // Units are always reported, so EST only ever applies to the Revenue view.
-  const shownEstimate = metric === "revenue" ? estimate : null
   const salesData = summaryByMode[mode]
   const comparingCustomers = customerBars !== null
   const busy = loading || (!comparingCustomers && comparisonRows !== null && comparisonLoading)
 
   return (
     <div className="bg-white rounded-lg border border-lavander shadow-sm p-3 h-full flex flex-col">
-      {/* One row: the period controls on the left, the view switches on the
-          right, lined up on their bottom edge. On a narrow card the switches
-          wrap to their own line, still on the right (ml-auto), and on a very
-          narrow one onto a line each. */}
+      {/* Top row: what data (Period, Compare to) on the left, lined up on
+          their bottom edge, and which channel in the card's top right corner
+          (self-start), level with the "Period" label. On a narrow card the
+          channel wraps under the period, still on the right (ml-auto). */}
       <div className="mb-2 flex flex-wrap items-end gap-x-3 gap-y-2">
         {headerExtra}
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-          <Tabs value={metric} onValueChange={onMetricChange}>
-            <TabsList className="h-7 bg-lavander">
-              <TabsTrigger value="units" className={`text-xs ${tabTriggerClass}`}>
-                Volume
-              </TabsTrigger>
-              <TabsTrigger value="revenue" className={`text-xs ${tabTriggerClass}`}>
-                Revenue
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-          <Tabs value={granularity} onValueChange={onGranularityChange}>
-            <TabsList className="h-7 bg-lavander">
-              {/* Disabled (faded) when no month in the range has weekly rows
-                  (page.js weekAvailable). */}
-              <TabsTrigger value="week" disabled={!weekAvailable} className={`text-xs ${tabTriggerClass}`}>
-                By week
-              </TabsTrigger>
-              <TabsTrigger value="month" className={`text-xs ${tabTriggerClass}`}>
-                By month
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </div>
+        {channelSwitch && <div className="ml-auto mt-1 self-start">{channelSwitch}</div>}
+      </div>
+
+      {/* How to draw it: the view switches on their own line, on the right,
+          just above the chart they change. */}
+      <div className="mb-2 flex flex-wrap items-center justify-end gap-2">
+        <SegmentedControl value={metric} onChange={onMetricChange} options={METRIC_OPTIONS} ariaLabel="Metric" />
+        {/* By week is disabled (faded) when no month in the range has weekly
+            rows (page.js weekAvailable). */}
+        {/* 152px, as wide as the Offline / Online switch above it
+            (ChannelSwitch), so the two line up on both edges; wide enough
+            for "By month" in an equal half. */}
+        <SegmentedControl
+          fullWidth
+          className="w-[152px]"
+          value={granularity}
+          onChange={onGranularityChange}
+          options={[
+            { value: "week", label: "By week", disabled: !weekAvailable },
+            { value: "month", label: "By month" },
+          ]}
+          ariaLabel="Group by"
+        />
       </div>
 
       {/* Only when there is something to say. weeklyGap (weeklyGapMessage)
@@ -117,12 +111,31 @@ export default function RevenueTrendCard({
       {/* Always the full placeholder, never the overlay: a refetch can change
           the granularity or add a comparison, and the old bars would be
           drawn with the new labels. flex-1 keeps the card's height. */}
-      {busy && <ChartLoading label="Loading dashboard…" className="flex-1" />}
+      {busy && (
+        // Same box as the loaded state: a flex-1 chart (min 220px) plus the footer line, so the card
+        // keeps its height when the data arrives. The usual state is a few customers ticked, one month
+        // (CustomerTrendChart: one cluster of a bar per customer); otherwise a year of months by ~4 formats.
+        <div className="flex flex-1 flex-col">
+          <BarChartSkeleton
+            bars={comparingCustomers ? 1 : 12}
+            groups={comparingCustomers ? 3 : 1}
+            height={220}
+            fill
+            legend
+            legendItems={comparingCustomers ? 3 : 4}
+            label="Loading dashboard…"
+            className="flex-1"
+          />
+          <div className="mt-1 flex items-baseline justify-end">
+            <Skeleton className="h-4 w-40 rounded bg-lavander motion-reduce:animate-none" />
+          </div>
+        </div>
+      )}
       {error && <p className="text-red-600 text-sm">{error}</p>}
       {!busy && !error && comparingCustomers && (
         <div className="flex flex-1 flex-col">
           <CustomerTrendChart customers={customerBars} mode={mode} metric={metric} granularity={granularity} colorOrder={customerColorOrder} />
-          <ChartFooter estimate={shownEstimate} lastUpdated={lastUpdated} />
+          <ChartFooter lastUpdated={lastUpdated} />
         </div>
       )}
       {!busy && !error && !comparingCustomers && salesData && (
@@ -137,7 +150,7 @@ export default function RevenueTrendCard({
               metric={metric}
             />
           )}
-          <ChartFooter estimate={shownEstimate} lastUpdated={lastUpdated} />
+          <ChartFooter lastUpdated={lastUpdated} />
         </div>
       )}
     </div>

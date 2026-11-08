@@ -18,64 +18,119 @@ export const INITIAL_HINT =
   "updated automatically as that year's promotions are entered and October/November sales arrive, " +
   'and locked at 23:59 on 31 December.';
 
-// The selected model has no Initial for any SKU in scope: a tier can be
-// available with no Initial when the SKU had under 12 months of history when
-// the yearly plan was made.
+// The selected Tier 1 model has no Initial for any SKU in scope: Tier 1
+// needs 12+ months of history at the time the yearly plan was made.
 export const INITIAL_MISSING_HINT =
   'No Initial yearly forecast for this model — it needs 12+ months of history at the time the yearly plan was made.';
 
-/**
- * Note when only some SKUs in scope have an Initial on the selected model, so
- * the Initial line is the sum of those SKUs only. '' when all or none do (none
- * is INITIAL_MISSING_HINT).
- *
- * @param {{ withInitial: number, total: number }} coverage
- */
-export function initialPartialNote({ withInitial, total }) {
-  if (!total || withInitial === 0 || withInitial === total) return '';
-  const missing = total - withInitial;
-  return (
-    `Initial yearly forecast on this model covers ${withInitial} of ${total} SKUs, so that line adds up those ${withInitial} only: ` +
-    `the other ${missing} had under 12 months of history when the yearly plan was made.`
-  );
+function joinYears(years) {
+  const list = [...new Set(years ?? [])].sort((a, b) => a - b);
+  if (list.length <= 1) return { text: String(list[0] ?? ''), plural: false };
+  return { text: `${list.slice(0, -1).join(', ')} and ${list.at(-1)}`, plural: true };
 }
 
-export const PREVIOUS_HINT =
-  "Previous: the final forecast made on the month before, for comparison. Updates within the same month don't change it.";
+/**
+ * Why the selected model draws no Initial for the SKUs in scope. Not an
+ * error. Tier 0 (available for every SKU) has none only when the SKU
+ * launched after that year's plan was made; Tier 1 needs 12+ months of
+ * history when the plan was made.
+ *
+ * @param {{ tier: string, years: number[], skuCount?: number }} options years in the date range
+ */
+export function initialMissingHint({ tier, years, skuCount = 1 }) {
+  if (tier !== 'tier0') return INITIAL_MISSING_HINT;
+  const { text, plural } = joinYears(years);
+  const subject = skuCount > 1 ? 'these SKUs' : 'this SKU';
+  const plan = text ? `the ${text} ${plural ? 'plans were' : 'plan was'} made` : 'the yearly plan was made';
+  return `No Initial yearly forecast: ${subject} launched after ${plan}.`;
+}
 
-// Previous stays empty until the forecast dataset has a second month of sales.
-export const PREVIOUS_EMPTY_HINT = 'Appears after the next month of sales.';
+/**
+ * "Initial yearly forecast: shown for 3 of 5 selected SKUs." when only some
+ * customer x SKUs in scope have the line on the selected model, so its sum is
+ * never a silent partial. '' when all or none have it (none greys the pill).
+ *
+ * @param {string} lineLabel
+ * @param {{ withLine: number, total: number }} coverage forecastActuals.lineCoverage
+ */
+export function lineCoverageNote(lineLabel, { withLine, total }) {
+  if (!total || withLine === 0 || withLine === total) return '';
+  return `${lineLabel}: shown for ${withLine} of ${total} selected SKUs.`;
+}
+
+export const PREVIOUS_HINT = "Previous: the forecast made before this SKU's latest month of sales.";
+
+// The selected model has no Previous for any SKU in scope (per SKU and tier:
+// forecast_previous on that tier's rows).
+export const PREVIOUS_MISSING_HINT =
+  'No Previous forecast for this model yet — it appears once this SKU has a forecast from an earlier month.';
 
 export const CURRENT_HINT =
   'Current: the latest forecast, made on the newest month of sales. It updates automatically ' +
   'about 5–10 minutes after sales, promotions or products are changed.';
 
-// Adding up per-SKU bounds overstates the range of the total, so the band
-// only shows for one series (see the Forecast page).
-const PICK_ONE_SERIES = 'Pick one SKU and customer to see the 80% range: added-up ranges would overstate it.';
-
 /**
- * Hover text for each line pill, by series key.
+ * Hover text for each line pill, by series key. `initialMissing` is the
+ * reason the Initial pill is greyed out (initialMissingHint), '' when it
+ * isn't; `previousMissing` greys out Previous.
  *
- * @param {{ singleSeries: boolean, initialMissingForSku: boolean, previousAvailable: boolean }} options
+ * @param {{ initialMissing?: string, previousMissing?: boolean }} options
  */
-export function forecastLineHints({ singleSeries, initialMissingForSku, previousAvailable }) {
+export function forecastLineHints({ initialMissing = '', previousMissing = false } = {}) {
   return {
     actual: ACTUAL_HINT,
-    initial: initialMissingForSku ? INITIAL_MISSING_HINT : INITIAL_HINT,
-    previous: previousAvailable ? PREVIOUS_HINT : PREVIOUS_EMPTY_HINT,
-    current: singleSeries ? CURRENT_HINT : `${CURRENT_HINT} ${PICK_ONE_SERIES}`,
+    initial: initialMissing || INITIAL_HINT,
+    previous: previousMissing ? PREVIOUS_MISSING_HINT : PREVIOUS_HINT,
+    current: CURRENT_HINT,
   };
 }
 
+// ============================================================
+// MISSING AND PARTIAL ACTUALS (actual_status)
+// ============================================================
+
+// Values beside an "Actual" label in the tooltip (forecastActuals.monthNotes).
+export const ACTUAL_MISSING_TEXT = 'missing (no sales file for this month)';
+
+/** "partial — missing for Nhg (no sales file)"; customers already formatted. */
+export function actualPartialMissingText(customers) {
+  return `partial — missing for ${customers.join(', ')} (no sales file)`;
+}
+
+/** "Actuals for 3 of 5 SKUs; 2 still forecast for Aug" */
+export function actualsStillForecastText({ reported, waiting, month }) {
+  const total = reported + waiting;
+  return `Actuals for ${reported} of ${total} SKUs; ${waiting} still forecast for ${month}`;
+}
+
+// The table never shows a missing month as "—" or 0.
+export const TABLE_MISSING_LABEL = 'Missing';
+export const TABLE_MISSING_HINT = 'No sales file for this month.';
+export const TABLE_PARTIAL_LABEL = 'partial';
+export const TABLE_PARTIAL_HINT = 'Adds up only the SKUs with an actual this month (see the chart tooltip).';
+
+// Past this many SKUs, the Previous dates collapse to "+N more".
+const PREVIOUS_ROW_LIMIT = 6;
+
 /**
- * Whether the chart has any Previous value to draw. With none, the Previous
- * pill is greyed out (not hidden) so people know the line exists.
+ * When a month's Previous values were made: one line when every SKU's came
+ * from the same run, else one per SKU (Previous is chosen per SKU).
  *
- * @param {Array<{ previous?: number | null }>} points
+ * @param {{ productName: string, customerName: string, at: string }[]} entries forecastActuals.previousMadeByMonth
+ * @param {(stamp: string) => string} formatStamp Singapore time
  */
-export function hasPreviousLine(points) {
-  return (points ?? []).some((point) => point?.previous != null);
+export function previousMadeLines(entries, formatStamp) {
+  const stamps = [...new Set((entries ?? []).map((entry) => entry.at))];
+  if (!stamps.length) return [];
+  if (stamps.length === 1) return [`made ${formatStamp(stamps[0])}`];
+  const severalCustomers = new Set(entries.map((entry) => entry.customerName)).size > 1;
+  const lines = entries.map((entry) => {
+    const name = severalCustomers ? `${entry.productName} (${entry.customerName})` : entry.productName;
+    return `${name}: made ${formatStamp(entry.at)}`;
+  });
+  const shown = lines.slice(0, PREVIOUS_ROW_LIMIT);
+  const more = lines.length - shown.length;
+  return more > 0 ? [...shown, `+${more} more`] : shown;
 }
 
 // ============================================================
@@ -129,14 +184,6 @@ export function tierUnavailableText({ reasons, total }) {
   return `Not available for ${reasons.length} of ${total} selected SKUs${shared}`;
 }
 
-// "All customers" adds every customer up, and each customer's forecast is the
-// average of its models, so there is no one model to pick.
-export const ALL_MODELS_AVERAGE_LABEL = 'Average of all models';
-
-export const ALL_MODELS_AVERAGE_NOTE =
-  "All customers: each customer's forecast is the average of its available models, then added up across customers. " +
-  'Pick one customer to choose a model.';
-
 export const NO_DATA_FOR_TIER = 'No forecast from this model matches these filters.';
 
 // ============================================================
@@ -156,8 +203,9 @@ export function confidenceBand(band) {
 }
 
 export const CONFIDENCE_INFO =
-  "This month = how wide the model's 80% range is for this month. " +
-  "Past accuracy = the model's average error (sMAPE) when tested on recent months we hid from it.";
+  "This month = how wide the model's 80% range is for this month (Current and Previous each have their own). " +
+  "Past accuracy = the model's average error (sMAPE) when tested on recent months we hid from it; " +
+  'one score for both lines, since the same model made them.';
 
 // Band cut-offs, both "<= 20 high, <= 50 medium, else low": month_range_pct
 // for This month, current_backtest_smape for Past accuracy.
@@ -182,6 +230,16 @@ export function smapeText(smape) {
 export function rangeChanceText(low, high) {
   if (!low || !high) return '';
   return `8 in 10 chance it lands between ${low} and ${high}`;
+}
+
+// The Current line's dots show this month's confidence by fill (one SKU and
+// customer only), never by colour alone; the hover card repeats the same
+// symbol beside its words, so the chart needs no separate key.
+export const CURRENT_DOT_FILL = { high: 'filled', medium: 'half', low: 'hollow', unknown: 'small' };
+
+/** "Low confidence" for a month_confidence_band (unknown for NULL). */
+export function confidenceWords(band) {
+  return `${CONFIDENCE_BAND_LABELS[confidenceBand(band)]} confidence`;
 }
 
 export const TYPICAL_PROMO_NOTE = "Promotion not familiar — model used this SKU's usual promotion.";

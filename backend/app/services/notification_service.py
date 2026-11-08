@@ -3,8 +3,8 @@ A single shared notification feed -- no per-user accounts exist anywhere in
 this app, so read state is shared across everyone rather than per-account.
 What writes here: low-stock/stockout (from inventory_service, when a SKU
 written via Create/Edit/Upload drops below its DOH threshold), forecast
-pipeline success/failure (scripts/refresh_forecast.py, and the scheduled
-BigQuery run via forecast_pipeline_events), an approved mapping, and an upload
+pipeline success/failure (scripts/refresh_forecast.py, and the event-driven
+refresh via forecast_refresh_worker), an approved mapping, and an upload
 rollback that succeeded or failed (ingestion_service.rollback_upload).
 
 `payload` is structured JSON, not pre-rendered text, so the wording staff see
@@ -133,8 +133,8 @@ def already_alerted_skus(conn: Connection, customer_id: int) -> set[str]:
 
 
 def has_forecast_run(run_name: str) -> bool:
-    """Whether a notification already exists for this scheduled forecast run.
-    Pub/Sub can deliver one run's message more than once."""
+    """Whether a notification already exists for this forecast run, so a
+    retried refresh (Cloud Tasks can call twice) never notifies twice."""
 
     with _read_connection() as conn:
         return conn.execute(

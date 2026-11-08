@@ -3,7 +3,6 @@
 import { useState } from 'react';
 
 import { cn } from '@/lib/utils';
-import ChartLoading from '@/components/ui/ChartLoading';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import ForecastChart from '@/components/forecast/ForecastChart';
 import ForecastFilters from '@/components/forecast/ForecastFilters';
@@ -13,6 +12,7 @@ import BuildingBlocksSection from '@/components/scenario/BuildingBlocksSection';
 import ModelViewToggle from '@/components/scenario/ModelViewToggle';
 import MonthlyPlan from '@/components/scenario/MonthlyPlan';
 import PromotionsSection from '@/components/scenario/PromotionsSection';
+import ScenarioBuilderSkeleton from '@/components/scenario/ScenarioBuilderSkeleton';
 import ScenarioPanel from '@/components/scenario/ScenarioPanel';
 import ScenarioTotals from '@/components/scenario/ScenarioTotals';
 import ScenarioYearComparison from '@/components/scenario/ScenarioYearComparison';
@@ -194,10 +194,8 @@ export default function ScenarioBuilder() {
         {filters.error}
       </p>
     ) : (
-      <ChartLoading
-        label="Loading forecast…"
-        className="h-[40vh] min-h-[230px] rounded-xl border border-lavander bg-white"
-      />
+      // The whole page's cards, not a spinner: nothing moves when it loads.
+      <ScenarioBuilderSkeleton />
     );
   }
 

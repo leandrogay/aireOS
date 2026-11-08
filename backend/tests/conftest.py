@@ -23,6 +23,18 @@ def disable_authentication_by_default(monkeypatch):
     monkeypatch.setattr(config, "AUTH_ENABLED", "false")
 
 
+@pytest.fixture(autouse=True)
+def fresh_forecast_cache(monkeypatch):
+    """No test reuses another's cached BigQuery rows, and none spends a fake
+    query on the output_built_at check (bigquery.get_output_built_at)."""
+    from app.services import bigquery, forecast_cache
+
+    forecast_cache.clear()
+    monkeypatch.setattr(bigquery, "_read_output_built_at", lambda: None)
+    yield
+    forecast_cache.clear()
+
+
 SIGNED_IN_EMAIL = "staff@shop-aire.com"
 
 

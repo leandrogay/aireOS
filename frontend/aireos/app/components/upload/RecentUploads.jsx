@@ -131,9 +131,9 @@ export default function RecentUploads({
       {showTable && (
         <>
           <div className="overflow-x-auto border-t border-lavander">
-            <table className="w-full whitespace-nowrap text-left text-sm text-deep-violet-blue [&_td]:align-middle [&_th]:align-middle">
+            <table className="aire-table-rows w-full whitespace-nowrap text-left text-sm text-deep-violet-blue [&_td]:align-middle [&_th]:align-middle">
               <thead>
-                <tr className="h-10 border-b border-lavander bg-cream/60">
+                <tr className="h-10 border-b border-lavander bg-cream">
                   <th scope="col" className={headerClass}>File</th>
                   <th scope="col" className={headerClass}>Customer</th>
                   <SortHeader

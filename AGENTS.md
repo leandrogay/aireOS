@@ -62,8 +62,9 @@ aireOS/
 │   │       │                      frontend scenarioEngine.js -- keep in step), for the sell-in plan chart's overlay
 │   │       ├── sellout_units.py   Cloud SQL monthly sell-out per SKU for inventory, via sellout_service's effective-sellout view
 │   │       ├── forecast_units.py  read-only BigQuery forecast units per SKU/month, from the aire_forecasting_output view (BQ_FORECAST_OUTPUT_VIEW)
-│   │       ├── sell_in_snapshots.py saves every customer's sell-in plan when a forecast refresh retrains (worker + scheduled run), one
+│   │       ├── sell_in_snapshots.py saves every customer's sell-in plan when a forecast refresh retrains (forecast_refresh_worker), one
 │   │       │                      snapshot per customer per month (sell_in_plan_snapshots); the chart's "Sell-in Forecast (Previous)"
+│   │       ├── forecast_cache.py  single-flight + short cache for the Forecast page's BigQuery reads (kept until output_built_at changes, or 10 min)
 │   │       ├── catalog_service.py retailers/stores/skus CRUD; SKU history/archive; get_or_create_* seams; retailer
 │   │       │                      writes for the Customers page (always under a customer, blocked once it has stores)
 │   │       ├── customer_service.py customers CRUD + list_customers (customers with nested retailers, in_use flags,
@@ -132,8 +133,15 @@ aireOS/
     │   ├── components/
     │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column), Sidebar (NAV_ITEMS; collapses
     │   │   │                      to an icon rail, hidden on narrow screens), RailFlyout (a rail section's sub-pages)
-    │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, calendar, popover, DateRangePicker
-    │   │   │                      (typed date inputs, not a calendar); MonthGrid (year + 12-month grid, shared by
+    │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, calendar (brand-styled), popover;
+    │   │   │                      date kit on calendar: DatePicker (one day) / RangeDatePicker (start + end, Apply), each
+    │   │   │                      `variant` button or typed input (utils/datePicker.js); DateRangePicker (older typed
+    │   │   │                      From/To pair, exports DateInput, the dd/mm/yyyy box); ChartLoading (spinner placeholder / refetch overlay)
+    │   │   │                      and chart skeletons (first-load placeholders on ui/skeleton): ChartSkeletonFrame (shared
+    │   │   │                      axes/gridlines/legend/status, `tiltXTicks` for angled labels) → BarChartSkeleton (`groups` per category),
+    │   │   │                      LineChartSkeleton (`lines`, `points`; paths from utils/chartSkeleton.js; forecast first load);
+    │   │   │                      page skeleton kit: PageSkeleton (one busy status, children inert) holding CardSkeleton (card frame +
+    │   │   │                      header bars) + SkeletonBars, chart skeletons and DataTable's first-load state (scenario/ScenarioBuilderSkeleton is the model); MonthGrid (year + 12-month grid, shared by
     │   │   │                      MonthDropdown and the dashboard month-range picker); dropdown kit: Dropdown (the one shell:
     │   │   │                      closed button, popover panel, optional `searchable`, `look` field/filter/compact) →
     │   │   │                      SelectDropdown (pick one, ✓ rows), MultiSelectDropdown (pick many, tick-box rows + "All",
@@ -141,7 +149,7 @@ aireOS/
     │   │   │                      inventory MonthFilter); build new pickers on these, not on a raw Popover; toggle kit: SegmentedControl
     │   │   │                      (pick one of a few, sliding highlight, `look` tint/outline), LineToggle (chart line on/off pills, one row or stacked `groups` with a
     │   │   │                      `header`; Forecast + Scenario charts and the inventory sell-in chart), ToggleButton (one thing on/off,
-    │   │   │                      `look` compact/chip), ToggleField (switch; `label` / `showState` / hints opt in, `ariaLabel` when unlabelled; used by DOH alerts and nomenclature file settings); app/testing shows both kits and lists the
+    │   │   │                      `look` compact/chip), ToggleField (switch; `label` / `showState` / hints opt in, `ariaLabel` when unlabelled; used by DOH alerts and nomenclature file settings); app/testing shows both kits and the brand-coloured Button (default/outline/secondary/ghost/destructive/destructive-outline/link/scenario; sizes sm/default/lg) and lists the
     │   │   │                      pages not migrated yet; HeaderCheckboxFilter (table-header pill
     │   │   │                      filter, forecast + inventory tables); ComparisonFigures (ChangeFigure / ChangeValue / ComparisonNote: the
     │   │   │                      ▲/▼ % figures and note of a Comparison card, dashboard + inventory); ChartZoomButton (+ hooks/useChartZoom: drag across
@@ -152,13 +160,17 @@ aireOS/
     │   │   │                      skeleton; `nested` variant + `inset` for tables inside rows), ExpandableRow, RowActions
     │   │   │                      ("..." menu, disabledReason), StatusPill (success/info/muted/warning/danger); + hooks/useExpandedRows,
     │   │   │                      hooks/useConfirmAction; filter kit (Promotions, SKUs, Nomenclatures): FilterBar (card + grid +
-    │   │   │                      Reset) holding FilterSelect (single pick) / MultiSelectDropdown (tick-box), whose closed look
+    │   │   │                      Reset) holding FilterSelect (single pick) / MultiSelectDropdown (tick-box) / PriceRangeFilter
+    │   │   │                      (min/max popover on Dropdown, text from utils/priceRange.js), whose closed look
     │   │   │                      comes from filterControl.js (filterControlClass)
-    │   │   ├── dashboard/         ChannelSwitch (Offline / Online, beside the page title), DashboardFilters,
+    │   │   ├── dashboard/         ChannelSwitch (Offline / Online, top right of the trend card), DashboardFilters,
     │   │   │                      CustomerSelector, FilterBadge, PeriodControls (Period /
     │   │   │                      Compare to: DateRangeControl, CompareControl, MonthRangeCalendar — whole months only),
     │   │   │                      RevenueTrendCard (always by format) → TrendChart (FormatTrendChart),
-    │   │   │                      ComparisonMixChart; PeriodTexture (hatched "past period" fills), TooltipChange,
+    │   │   │                      ComparisonMixChart (paired stacks; past 6 buckets → ComparisonLineChart: this period
+    │   │   │                      solid, comparison dashed), both hovering ComparisonTooltip (per-format breakdown);
+    │   │   │                      MonthAxis (month labels + dividers under a long week run);
+    │   │   │                      PeriodTexture (hatched "past period" fills), TooltipChange,
     │   │   │                      PeriodComparisonDetail, RevenueSummaryCards + FormatMixBar, SkuRanking;
     │   │   │                      CustomerTrendChart (2-3 customers: grouped bars per period, lines past 6 periods);
     │   │   │                      DashboardStatus (whole-page card: sales data couldn't load / none uploaded yet)
@@ -185,16 +197,21 @@ aireOS/
     │   └── utils/                 Pure, React-free helpers
     │       ├── promotionForm.js   PROMO_TYPES, EMPTY_PROMOTION_FORM, validate/build/formFrom helpers
     │       ├── skuForm.js         required-field validation and SKU form/payload conversion
+    │       ├── skuFilters.js      SKU catalog filtering (multi-select range/brand, min/max price, search)
     │       ├── promotionOverview.js list grouping/filter helpers
     │       ├── forecastView.js    Sell-out run series (Initial Yearly Forecast/Previous/Current), tier resolution
+    │       ├── forecastActuals.js PURE: actual_status per month (missing / partial / real 0), Actual line joins, Initial/Previous coverage
+    │       ├── forecastYearTotals.js PURE: year cards, actual-or-Current chosen per customer x SKU x month (never per month)
     │       ├── scenarioPlan.js    Monthly plan rows: last year, model, blocks, adjusted, variance; shiftMonth()
     │       ├── dateRange.js       currentYearDateRange() -- shared default-date-range helper
     │       ├── periodComparison.js Compare-to baselines (comparisonSetup), week pairing for the comparison chart
     │       ├── dateRangePresets.js Period presets in whole months (Latest month … Past 12 months, YTD, Last year), anchored to the latest loaded month
-    │       ├── trendChart.js      Trend chart labels, x-axis setup (long week runs labelled by month), bar sizing, format stack order, Revenue/Volume formatting
+    │       ├── trendChart.js      Trend chart labels, x-axis setup (long week runs grouped by month: weekMonthGroups → dashboard/MonthAxis),
+    │       │                      y-axis (metricYAxisProps, chartDataRange; dips below 0 for negative sales), bar sizing, format stack order, Revenue/Volume formatting
+    │       ├── axisTicks.js       PURE, import-free: y-axis tick labels, one unit (k / M) and one decimal count per axis (tests/axisTicks.test.mjs)
     │       ├── weeklyGaps.js      "No weekly data for …" message: monthly-only months merged into ranges, capped
     │       ├── priceMix.js        Avg-price change split into SKU price vs product mix
-    │       ├── estimatedRevenue.js EST sign: when a revenue figure includes estimated revenue, and its hover text
+    │       ├── estimatedRevenue.js est. sign: when a revenue figure includes estimated revenue, and its hover text
     │       ├── customerTrend.js   Cross-customer chart: MAX_COMPARED_CUSTOMERS (3), bars up to MAX_BAR_PERIODS (6) then lines, series/rows
     │       ├── storeFormats.js    FORMAT_COLORS + formatColor() per store format; customerColor + customerColorOrder (one colour per customer on every page, by customer_id)
     │       ├── dohSettingsForm.js validate/build/formFrom helpers for the DOH threshold form, GLOBAL_DEFAULT_DOH
@@ -395,7 +412,7 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | `_PROMOTION_COLUMNS` (nested `stores`, `skus`) | `PromotionList.jsx`, `promotionOverview.js` |
 | `sales.py` query-param names (`start_date`, `end_date`, `granularity`, `customer`, `store`, `sku` …) | `URLSearchParams` keys in `hooks/*.js` and `services/salesApi.js` |
 | `sellout_service.get_customer_trends` (`/api/sales/customer-trends`: `customers[]` with `offline`/`online` period lists, `has_*`), `MAX_COMPARED_CUSTOMERS` | `salesApi.getCustomerTrends`, `useCustomerTrends.js`, `utils/customerTrend.js` (`MAX_COMPARED_CUSTOMERS`), `CustomerTrendChart.jsx`, `CustomerSelector.jsx` |
-| `sellout_service` estimated part of revenue: `estimated_revenue` (dashboard summary rows, customer totals), `estimated_value` (SKU ranking), from the `revenue_estimated` row flag | `utils/estimatedRevenue.js`, `EstMark.jsx` (one under the chart in `RevenueTrendCard`, top right of each `RevenueSummaryCards` tile, beside `SkuRanking` values; `TrendChart` tooltip) |
+| `sellout_service` estimated part of revenue: `estimated_revenue` (dashboard summary rows, customer totals), `estimated_value` (SKU ranking), from the `revenue_estimated` row flag | `utils/estimatedRevenue.js`, `EstMark.jsx` (top right of each `RevenueSummaryCards` tile, beside `SkuRanking` values; `TrendChart` tooltip) |
 | `mapping_view` packet/rule keys (`targetField`, `sourceColumn`, `editable`, `status`, `field`, `meltGroup`, `options`, `description`, `requiredMissing`, `checks`) | `utils/mappingReview.js`, `components/mappings/*` |
 | `mapping_checks` check shape (`id`, `level`, `passed`, `message`, `fields`, `evidence`) | `utils/mappingChecks.js`, `MappingChecks.jsx` |
 | packet `skuCodes`, `masterSkus`, `contractFormat`, `instructions`; processing preview/rejection fields | `utils/skuCodeTable.js`, `SkuCodeTable.jsx`, `MappingReviewPanel.jsx`, `UploadFileRow.jsx` |
@@ -414,9 +431,9 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | Retailer = `{customer}_online` / `{customer}_offline` (`sellout_service._retailer_for`); `mapping_contract.retailer_outputs` (incl. retailers read off headings, given `columns`/`layout`); packet `columnValues` | `utils/retailerSplit.js` (`splitDecision`, `withCustomerChannels`), `ChannelSplit.jsx`, `mappingCustomer.retailerDecision` |
 | `GET /api/settings/promo-uplifts/moments` (`settings/promo_moments.list_moments`, rules in `settings/promo_moment_rules.py`): `moments[]` (`customer_name`, `sku`, `sku_range`, `month`, `mechanic_key`, `uplift_pct`, `is_baseline`), `recommendations[]` (`recommended_uplift_pct`, `moments_by_year`, `months_used`, `enough_data`), `recommend_from` | `promoUpliftSettings.js` (`momentCounts`, `formatMomentCounts`, `recommendedUplift` -- `latestMonth` from `months_used` is the Effective date), `PromoUpliftTable.jsx` (Moments, Effective date columns), `hooks/usePromoMoments.js` |
 | `settings/promo_uplifts` anchors per customer x SKU range, a mechanic saved once and changed only by adopting a recommendation (`list_anchors` `window_months`, `recommend_from`, `customers[].ranges[]`: `sku_range`, `anchor_pct`, `mechanic_label`, `source` `recommended`/`manual`/`customer`/`default`, `recommended`, `recommendation_differs`, `manual_allowed`; PUT (typed discount, 409 unless too few moments) and POST `/adopt` take `sku_range`, history `?sku_range=`; `seed_anchors`); `resolve_uplifts` `product_uplifts` + `product_anchors`; migrations `012_create_promo_uplift_settings.sql` + `013_promo_anchor_mechanic.sql` (append-only, newest row per target wins) | `settingsApi.js` anchor wrappers (via `promoUpliftsApi.js`), `PromoAnchorTable.jsx`, `PromoAnchorDetails.jsx`, `PromoAnchorForm.jsx`, `PromoUpliftSettingsView.shownUplift`, `scenario/PromotionEditor.jsx` |
-| `forecast_notifications` payload (`run_name`, `source` event/scheduled/script, `stage` pipeline/refresh, `reason`, `errors`, `period_*`, `customers`, `skus`, `updated_at`) | `utils/forecastNotificationText.js`, `NotificationPanel.jsx` |
+| `forecast_notifications` payload (`run_name`, `source` event/scheduled/script, `stage` pipeline/refresh, `reason`, `errors`, `warnings` (a success whose Initial couldn't refresh: `initial_refresh_warning`), `period_*`, `customers`, `skus`, `updated_at`) | `utils/forecastNotificationText.js`, `NotificationPanel.jsx` |
 | `assistant._FORECAST_LINES` (keys, labels, export colours; `chart_series[].key`/`unit`), `forecast_summary` `chart_lines` | `FORECAST_SERIES` in `utils/forecastView.js`, `AssistantChart` in `assistant/AssistantMessage.jsx` |
-| `GET /api/forecast` rows: one per customer x SKU x month x **tier** (`bigquery.FORECAST_TIERS`, `FORECAST_OUTPUT_COLUMNS`: `tier`/`tier_label`/`tier_order`, `is_available`/`unavailable_reason`, `month_range_pct`/`month_confidence_band`, `xreg_used_typical_promo`); `availability` `{sku: {tier: {is_available, unavailable_reason, has_initial}}}`, `tiers`, `freshness.by_tier` (`forecast_service.forecast_availability` / `forecast_tiers_from_rows` / `forecast_stamps_from_rows`). Never add rows of different tiers: `forecast_units`, `forecast_summary` and every `getForecastView` caller but /forecast use Tier 0 | `forecastApi.getForecastView` (`tier`, default Tier 0; `ALL_TIERS` on /forecast), `utils/forecastTiers.js` (`forecastModelView`: one tier for one customer, the average of tiers for All customers), `FORECAST_TIER_OPTIONS` / `UNAVAILABLE_REASON_TEXT` in `utils/forecastLineText.js`, `ForecastFilters` Model field, `ForecastConfidenceDetails.jsx`, `?tier=` on `app/forecast/page.js` |
+| `GET /api/forecast` rows: one per customer x SKU x month x **tier** (`bigquery.FORECAST_TIERS`, `FORECAST_OUTPUT_COLUMNS`: `tier`/`tier_label`/`tier_order`, `is_available`/`unavailable_reason`, `month_range_pct`/`month_confidence_band`, `previous_low_80`/`previous_high_80` (Previous's own run row in `aire_forecasting_runs`, joined on `previous_generated_at` + `source_model`; the view has none) with `previous_range_pct`/`previous_confidence_band` (`bigquery.month_range`, the view's 20/50 cut-offs), payload `horizon` `{tier: {units, series}}` (each series' whole Current line with no date filter, `bigquery.get_current_horizon` + `forecast_service.current_horizon_totals`: the "Next 12 months" strip). The Forecast page is **volume only**: rows and actuals carry no revenue and nothing is priced (`add_forecast_revenue` / `get_realised_prices` remain for the assistant's `forecast_summary` and `/alternatives`), `xreg_used_typical_promo`, `actual_status` (`reported`/`missing_file`/`not_yet`/`before_first_sale`, `bigquery.ACTUAL_STATUSES`), `output_built_at`); actuals rows carry `sku`; `availability` `{sku: {tier: {is_available, unavailable_reason, has_initial, has_previous}}}`, `tiers`, `freshness.by_tier` + `freshness.output_built_at` (`forecast_service.forecast_availability` / `forecast_tiers_from_rows` / `forecast_stamps_from_rows`). Never add rows of different tiers: `forecast_units`, `forecast_summary` and every `getForecastView` caller but /forecast use Tier 0. The Forecast page's output-table reads go through `bigquery.cached_read` (`forecast_cache`: single-flight, kept until `output_built_at` changes or 10 min; no time limit) | `forecastApi.getForecastView` (`tier`, default Tier 0; `ALL_TIERS` on /forecast), `utils/forecastTiers.js` (`forecastModelView`: the selected tier for one customer and All customers alike, never an average), `utils/forecastActuals.js` (missing / partial / real-0 actuals from `actual_status`, Actual line joins, Initial/Previous coverage per customer x SKU), `FORECAST_TIER_OPTIONS` / `UNAVAILABLE_REASON_TEXT` in `utils/forecastLineText.js`, `ForecastFilters` Model field, `ForecastConfidenceDetails.jsx`, `?tier=` on `app/forecast/page.js` |
 | `GET /api/inventory/customers/{id}/sell-in-outlook?block_id=` (`get_sell_in_outlook(block_ids=)`: per month `sell_in_with_blocks` / `sell_out_with_blocks`, top-level `building_blocks[]` of `block_id`, `name`, `sell_out_change`); `scenario/block_effects` rules = `scenarioEngine.js` (`upliftDeltaCells`, `unitsDeltaCells`, `floorAtZero`) | `inventoryApi.getSellInOutlook` (`blockIds`), `useSellInOutlook`, `hooks/useSavedBuildingBlocks.js`, `utils/buildingBlocksOverlay.js`, `BuildingBlocksOverlay.jsx`, `SellInOutlookChart.jsx` (`showBlocks`) |
 | `GET /api/forecast/initial-status` (`forecast_service.get_initial_status`: `years[]` of `forecast_year`, `lock_at`, `refreshed_at`, `locked`, from `aire_forecasting_initial_meta`; best effort, `[]` on error) | `forecastApi.getForecastInitialStatus`, `hooks/useForecastInitialStatus.js`, `utils/forecastLineText.js` (`initialStatusNotes`), `ForecastLegendFooter.jsx` |
 | `GET /api/forecast/refresh-status` (`forecast_refresh_worker.refresh_status_best_effort`: `{ updating, since }` from pending/running `forecast_refresh_requests`; false on error or while event refresh is off) | `forecastApi.getForecastRefreshStatus`, `hooks/useForecastRefreshStatus.js` (60 s re-check only while updating), `utils/forecastLineText.js` (`forecastUpdatingBadge`, `nextStatusCheckDelay`), `ForecastLegendFooter.jsx` |

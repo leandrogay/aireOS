@@ -3,17 +3,42 @@
 import { useMemo, useState } from 'react';
 
 import HeaderCheckboxFilter from '@/components/ui/HeaderCheckboxFilter';
+import {
+  TABLE_MISSING_HINT,
+  TABLE_MISSING_LABEL,
+  TABLE_PARTIAL_HINT,
+  TABLE_PARTIAL_LABEL,
+} from '@/app/utils/forecastLineText';
 import { FORECAST_SERIES, uniqueMonthOptions } from '@/app/utils/forecastView';
 
-function formatTableValue(value, metric) {
+// Cartons, whole numbers.
+function formatTableValue(value) {
   if (value == null) return '—';
-  if (metric === 'revenue') {
-    return `$${Number(value).toLocaleString('en-US', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}`;
-  }
   return Math.round(value).toLocaleString();
+}
+
+/**
+ * One cell's value. A month whose sales file is missing reads "Missing"
+ * (muted), never "—" or 0; a partly reported month keeps its sum with a
+ * muted "partial" (forecastActuals.actualKind).
+ */
+function CellValue({ point, seriesKey }) {
+  if (seriesKey === 'actual' && point.actualKind === 'missing') {
+    return (
+      <span className="text-deep-violet-blue/45" title={TABLE_MISSING_HINT}>
+        {TABLE_MISSING_LABEL}
+      </span>
+    );
+  }
+  const value = formatTableValue(point[seriesKey]);
+  if (seriesKey === 'actual' && point.actualKind === 'partial') {
+    return (
+      <span title={TABLE_PARTIAL_HINT}>
+        {value} <span className="text-[10px] text-deep-violet-blue/45">{TABLE_PARTIAL_LABEL}</span>
+      </span>
+    );
+  }
+  return value;
 }
 
 /**
@@ -21,9 +46,9 @@ function formatTableValue(value, metric) {
  * shows (`modelLabel`, e.g. "Tier 0 · Baseline"): `points` are already that
  * one tier's (utils/forecastTiers.js), so the table has no per-month model.
  *
- * @param {{ points: object[], metric: 'units' | 'revenue', visibleSeries: Record<string, boolean>, modelLabel?: string }} props
+ * @param {{ points: object[], visibleSeries: Record<string, boolean>, modelLabel?: string }} props
  */
-export default function ForecastTable({ points, metric, visibleSeries, modelLabel = '' }) {
+export default function ForecastTable({ points, visibleSeries, modelLabel = '' }) {
   const [monthFilter, setMonthFilter] = useState([]);
   const [openFilter, setOpenFilter] = useState(null);
   const [expanded, setExpanded] = useState(false);
@@ -51,8 +76,8 @@ export default function ForecastTable({ points, metric, visibleSeries, modelLabe
   }
 
   return (
-    <section className="bg-white">
-      <div className="mb-2 flex items-center justify-between gap-2">
+    <section className="min-w-0 bg-white">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="font-serif text-base text-deep-violet-blue">Monthly values</h3>
           <p className="text-[11px] text-deep-violet-blue/70">
@@ -61,6 +86,17 @@ export default function ForecastTable({ points, metric, visibleSeries, modelLabe
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <div className="sm:hidden">
+            <HeaderCheckboxFilter
+              id="month-mobile"
+              label="Month"
+              selected={activeMonthFilter}
+              options={monthOptions}
+              openId={openFilter}
+              setOpenId={setOpenFilter}
+              onChange={setMonthFilter}
+            />
+          </div>
           <button
             type="button"
             onClick={clearTableFilters}
@@ -79,9 +115,27 @@ export default function ForecastTable({ points, metric, visibleSeries, modelLabe
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-md border border-lavander">
+      <div className={`${expanded ? '' : 'max-h-[55vh]'} overflow-y-auto rounded-lg border border-lavander sm:hidden`} aria-label="Monthly forecast values">
+        {rows.length === 0 ? (
+          <p className="p-4 text-sm text-deep-violet-blue/70">No rows match these table filters.</p>
+        ) : rows.map((point) => (
+          <article key={point.month_year} className="border-b border-lavander/70 p-3 last:border-b-0 even:bg-cream/30">
+            <h4 className="mb-2 font-semibold text-deep-violet-blue">{point.label}</h4>
+            <dl className="grid grid-cols-2 gap-x-3 gap-y-2">
+              {visibleColumns.map((series) => (
+                <div key={series.key} className="min-w-0">
+                  <dt className="text-[10px] font-semibold uppercase leading-tight tracking-wide text-deep-violet-blue/60">{series.label}</dt>
+                  <dd className="mt-0.5 text-sm font-medium tabular-nums text-deep-violet-blue"><CellValue point={point} seriesKey={series.key} /></dd>
+                </div>
+              ))}
+            </dl>
+          </article>
+        ))}
+      </div>
+
+      <div className="hidden min-w-0 overflow-x-auto rounded-md border border-lavander sm:block">
         <div className={expanded ? '' : 'max-h-[28vh] overflow-y-auto'}>
-          <table className="w-full table-fixed text-left text-xs text-deep-violet-blue">
+          <table className="aire-table-rows w-full min-w-[44rem] table-fixed text-left text-xs text-deep-violet-blue">
             <colgroup>
               <col className="w-[16%]" />
               {visibleColumns.map((series) => (
@@ -127,7 +181,7 @@ export default function ForecastTable({ points, metric, visibleSeries, modelLabe
                     <td className="px-2 py-2 font-medium">{point.label}</td>
                     {visibleColumns.map((series) => (
                       <td key={series.key} className="px-2.5 py-2 text-right tabular-nums">
-                        {formatTableValue(point[series.key], metric)}
+                        <CellValue point={point} seriesKey={series.key} />
                       </td>
                     ))}
                   </tr>

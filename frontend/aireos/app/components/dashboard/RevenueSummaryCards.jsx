@@ -82,7 +82,7 @@ function PeriodFigures({ totals, periodName, hatched = false, comparing, color =
 // these tall. Lines wrap rather than clip if a tile gets very narrow.
 // `available` / `baselineAvailable` say whether each period has sales rows
 // for this tile; without both there is no fair change, so it reads "N/A".
-// EST sits top right when the tile's revenue (either period) includes
+// est. sits top right when the tile's revenue (either period) includes
 // estimated revenue; tiles with none show nothing there.
 function SummaryCard({
   title,
@@ -159,11 +159,20 @@ function SummaryCard({
 }
 
 // Placeholder tiles on the same grid as the real ones, so nothing jumps when
-// the figures arrive. `count` includes the Total tile.
-function SummaryCardsSkeleton({ count }) {
+// the figures arrive. `count` includes the Total tile. `mixBar` reserves the
+// room of FormatMixBar (its label line and 10px track plus its mb-2), which
+// sits above the tiles whenever there is more than one tile to split.
+function SummaryCardsSkeleton({ count, mixBar }) {
   return (
     <div role="status">
       <span className="sr-only">Loading sell-out summary…</span>
+      {mixBar && (
+        <div aria-hidden="true" className="mb-2">
+          {/* h-4 = the label's 16px line height. */}
+          <Skeleton className="mb-1 h-4 w-20 rounded bg-lavander" />
+          <Skeleton className="h-2.5 w-full rounded-full bg-lavander" />
+        </div>
+      )}
       <div aria-hidden="true" className={TILE_GRID_CLASS}>
         {Array.from({ length: count }, (_, index) => (
           <div
@@ -209,6 +218,7 @@ export default function RevenueSummaryCards({
   mode = "offline",
   comparingCustomers = false,
   customerRows = [],
+  noCustomers = false,
   customerColorOrder = [],
 }) {
   const [hoveredFormat, setHoveredFormat] = useState(null)
@@ -267,10 +277,21 @@ export default function RevenueSummaryCards({
       {/* The hook keeps the previous filters' data while it refetches, so hide
           it rather than show stale figures beside the skeleton. Offline's 4
           formats + Total until a first load says how many there are. */}
-      {loading && <SummaryCardsSkeleton count={(salesData?.storeFormats.length ?? 4) + 1} />}
-      {error && <p className="text-red-600 text-sm">{error}</p>}
+      {/* No customer ticked: nothing to sum, so no tiles -- the hook still
+          holds the last customer's figures, which must not show. */}
+      {noCustomers && (
+        <p className="py-6 text-center text-sm text-deep-violet-blue/60">Select at least one customer.</p>
+      )}
+      {/* The bar shows for customers, and for a channel with more than one format (online has one). */}
+      {!noCustomers && loading && (
+        <SummaryCardsSkeleton
+          count={(salesData?.storeFormats.length ?? 4) + 1}
+          mixBar={comparingCustomers || mode !== "online"}
+        />
+      )}
+      {!noCustomers && error && <p className="text-red-600 text-sm">{error}</p>}
 
-      {!loading && (comparingCustomers || salesData) && tileFormats.length > 1 && (
+      {!noCustomers && !loading && (comparingCustomers || salesData) && tileFormats.length > 1 && (
         <FormatMixBar
           formats={tileFormats}
           baselineFormats={comparingCustomers ? null : (baselineData ? tileBaseline : null)}
@@ -283,7 +304,7 @@ export default function RevenueSummaryCards({
         />
       )}
 
-      {!loading && (comparingCustomers || salesData) && (
+      {!noCustomers && !loading && (comparingCustomers || salesData) && (
         <div className={TILE_GRID_CLASS}>
           <SummaryCard
             title="Total"

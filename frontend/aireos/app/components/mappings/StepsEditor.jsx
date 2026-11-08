@@ -2,14 +2,12 @@
 
 import { ArrowDown, ArrowUp, CircleAlert, Plus, X } from 'lucide-react';
 
+import { Button } from '@/components/ui/button';
 import SelectDropdown from '@/components/ui/SelectDropdown';
 import { newStep, runSamples, stepHelp, stepLabel, stepMenu, stepProblem } from '@/app/utils/transformSteps';
 
 import StepByExample from './StepByExample';
 import StepSettings from './StepSettings';
-
-const iconButton =
-  'rounded-md p-1 text-deep-violet-blue/50 hover:bg-cream hover:text-deep-violet-blue disabled:opacity-40 disabled:hover:bg-transparent';
 
 // How many sample values each step shows its output for.
 const STEP_SAMPLES = 3;
@@ -45,7 +43,7 @@ function SampleRun({ samples, steps }) {
   return (
     <div className="rounded-md border border-lavander bg-white">
       <table className="w-full text-left text-[11px] text-deep-violet-blue">
-        <thead className="bg-cream/60 text-deep-violet-blue/60">
+        <thead className="bg-cream text-deep-violet-blue/60">
           <tr>
             <th className="px-2 py-1 font-medium">In the file</th>
             <th className="px-2 py-1 font-medium">Becomes</th>
@@ -124,27 +122,36 @@ export default function StepsEditor({ steps, onChange, columns, samples = [], fi
                       <p className="text-xs font-medium text-deep-violet-blue">{stepLabel(step.type)}</p>
                       <p className="text-[11px] text-deep-violet-blue/60">{stepHelp(step.type)}</p>
                     </div>
-                    <button type="button" aria-label="Move step up" disabled={disabled || index === 0} onClick={() => move(index, -1)} className={iconButton}>
-                      <ArrowUp aria-hidden="true" className="size-3.5" />
-                    </button>
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label="Move step up"
+                      disabled={disabled || index === 0}
+                      onClick={() => move(index, -1)}
+                    >
+                      <ArrowUp aria-hidden="true" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
                       aria-label="Move step down"
                       disabled={disabled || index === steps.length - 1}
                       onClick={() => move(index, 1)}
-                      className={iconButton}
                     >
-                      <ArrowDown aria-hidden="true" className="size-3.5" />
-                    </button>
-                    <button
+                      <ArrowDown aria-hidden="true" />
+                    </Button>
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="icon-xs"
                       aria-label={`Remove step ${index + 1}`}
                       disabled={disabled}
                       onClick={() => onChange(steps.filter((_, i) => i !== index))}
-                      className={iconButton}
                     >
-                      <X aria-hidden="true" className="size-3.5" />
-                    </button>
+                      <X aria-hidden="true" />
+                    </Button>
                   </div>
                   <div className="mt-1.5 pl-6">
                     <StepSettings

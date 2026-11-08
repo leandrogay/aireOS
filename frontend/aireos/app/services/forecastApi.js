@@ -45,10 +45,10 @@ export const EMPTY_FORECAST_FRESHNESS = {
  * x tier (tier0 / tier1_basic / tier1_advanced), with forecast_initial /
  * forecast_previous / forecast_current, the month's confidence
  * (month_range_pct, month_confidence_band), the model's backtest
- * (current_backtest_smape, current_confidence_band) and *_revenue at realised
- * price; `tiers` (in tier_order) and `availability`
+ * (current_backtest_smape, current_confidence_band), all in cartons (the
+ * Forecast page is volume only); `tiers` (in tier_order) and `availability`
  * ({sku: {tier: {is_available, unavailable_reason, has_initial}}}) for the
- * Model picker; monthly actuals (cartons + revenue); overlapping Postgres
+ * Model picker; monthly actuals (cartons); overlapping Postgres
  * promos; and freshness stamps, overall and `by_tier`, plus sales loaded_at.
  * See backend forecast_service.get_forecast_view.
  *
@@ -75,6 +75,9 @@ export async function getForecastView({
     rows: tier === ALL_TIERS ? rows : rowsForTier(rows, tier),
     tiers: data.tiers ?? [],
     availability: data.availability ?? {},
+    // {tier: {units, series}}: each SKU's whole
+    // Current line, not cut by the dates (forecast_service.current_horizon_totals).
+    horizon: data.horizon ?? {},
     actuals: data.actuals ?? [],
     promotions: data.promotions ?? [],
     freshness: data.freshness ?? EMPTY_FORECAST_FRESHNESS,

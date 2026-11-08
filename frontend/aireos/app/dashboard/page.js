@@ -30,7 +30,6 @@ import {
 import { DEFAULT_PRESET_ID, buildDateRangePresets } from "@/app/utils/dateRangePresets";
 import { rangeHasWeeklyMonths, weeklyGapMessage } from "@/app/utils/weeklyGaps";
 import { customerColorOrder, relabelFormatRows } from "@/app/utils/storeFormats";
-import { addEstimates, customerTrendsEstimate, summaryEstimate } from "@/app/utils/estimatedRevenue";
 import { MAX_COMPARED_CUSTOMERS } from "@/app/utils/customerTrend";
 
 const NO_CUSTOMERS = [];
@@ -55,7 +54,7 @@ export default function DashboardPage() {
     useCustomerOptions({ dataVersion });
   // Only sets colours, so a failed read just leaves the customers with sales in
   // order, each still with its own colour, rather than an error on the page.
-  const { customers: allCustomers } = useAllCustomers({ dataVersion });
+  const { customers: allCustomers, loading: allCustomersLoading } = useAllCustomers({ dataVersion });
   const colorOrder = customerColorOrder(allCustomers, customerOptions.map((option) => option.value));
   const [selectedCustomers, setSelectedCustomers] = useState(null);
   if (selectedCustomers === null && customerOptions.length > 0) {
@@ -142,12 +141,18 @@ export default function DashboardPage() {
   // GENUINE weekly row: anchoring them on a monthly total's start (Aug 1, a
   // Saturday) put every week on the wrong weekday, so a Jul 30 – Aug 5 week
   // was labelled "Aug 1 – Aug 7" and paired with the wrong weeks.
+  // The latest loaded period is read for one customer: the first ticked one
+  // that sells on this channel. The first ticked customer may not (NHG has no
+  // online sales), and asking for it would return no period at all, leaving
+  // the page on its loading state for ever. Before the freshness map loads,
+  // the first ticked customer stands in.
+  const rangeCustomer = customers.find((name) => channels[`${name}_${mode}`]) ?? customer;
   const {
     start: latestPeriodStart,
     end: latestDataEnd,
     earliestStart: earliestDataStart,
     latestWeekStart: latestGenuineWeekStart,
-  } = useDefaultDateRange({ customer, mode, dataVersion, period: 'week' });
+  } = useDefaultDateRange({ customer: rangeCustomer, mode, dataVersion, period: 'week' });
   const latestWeekStart = latestGenuineWeekStart || latestPeriodStart;
   const presets = buildDateRangePresets(latestPeriodStart);
   const defaultRange = presets.find((preset) => preset.id === DEFAULT_PRESET_ID) ?? { start: '', end: '' };
@@ -161,9 +166,14 @@ export default function DashboardPage() {
   // never its "nothing here" message. 'failed' (the list couldn't be read)
   // and 'empty' (no sales uploaded at all) show one DashboardStatus card
   // instead of the sections.
+  // Also 'loading' until every customer is in (useAllCustomers), since that
+  // list sets each customer's colour (customerColorOrder, by customer id):
+  // drawing before it would colour customers in the dropdown's order first
+  // and then switch. A failed read ends the wait (colours then follow the
+  // dropdown), and a later dataVersion refetch does not bring it back.
   let pageStatus = 'ready';
   if (customerOptionsError && customerOptions.length === 0) pageStatus = 'failed';
-  else if (customerOptionsLoading) pageStatus = 'loading';
+  else if (customerOptionsLoading || allCustomersLoading) pageStatus = 'loading';
   else if (customerOptions.length === 0) pageStatus = 'empty';
   else if (customers.length > 0 && !latestPeriodStart) pageStatus = 'loading';
   const pageLoading = pageStatus === 'loading';
@@ -313,15 +323,6 @@ export default function DashboardPage() {
         baselineWeeksByFormat: relabelFormatRows(baselineFormatRows, currentFormatRows),
       })
     : null;
-  // The chart's EST covers everything it draws: each customer's periods, or
-  // this period plus the comparison while comparing.
-  const chartEstimate = comparingCustomers
-    ? customerTrendsEstimate(customerTrends.rows, mode)
-    : addEstimates(
-        summaryEstimate(summary.summaryByMode[mode]),
-        baseline ? summaryEstimate(baselineSummary.summaryByMode[mode]) : null,
-      );
-
   const lastUpdated = customers
     .map((name) => channels[`${name}_${mode}`])
     .filter(Boolean)
@@ -369,15 +370,6 @@ export default function DashboardPage() {
   return (
     <PageLayout
       title="Sales Dashboard"
-      headerExtra={
-        (pageStatus === 'failed' || pageStatus === 'empty') ? null : (
-          <ChannelSwitch
-            mode={mode}
-            onChange={handleModeChange}
-            onlineEnabled={!freshnessLoaded || onlineAvailable}
-          />
-        )
-      }
     >
       {(pageStatus === 'failed' || pageStatus === 'empty') ? (
         <DashboardStatus kind={pageStatus} error={customerOptionsError} />
@@ -401,9 +393,15 @@ export default function DashboardPage() {
               comparisonLoading={baselineSummary.loading}
               customerBars={customers.length === 0 ? [] : (comparingCustomers ? customerTrends.rows : null)}
               customerColorOrder={colorOrder}
-              estimate={customers.length === 0 ? null : chartEstimate}
               metric={metric}
               onMetricChange={setMetric}
+              channelSwitch={
+                <ChannelSwitch
+                  mode={mode}
+                  onChange={handleModeChange}
+                  onlineEnabled={!freshnessLoaded || onlineAvailable}
+                />
+              }
               headerExtra={
                 <PeriodControls
                   start={effectiveStartDate}
@@ -479,6 +477,7 @@ export default function DashboardPage() {
               mode={mode}
               comparingCustomers={comparingCustomers}
               customerRows={customerTotals.rows}
+              noCustomers={customers.length === 0}
               customerColorOrder={colorOrder}
             />
           </div>

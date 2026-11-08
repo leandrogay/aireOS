@@ -13,7 +13,8 @@ import {
 import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 import { customerColor, customerColorOrder } from '@/app/utils/storeFormats';
-import { BAR_ANIMATION } from '@/app/utils/trendChart';
+import { BAR_ANIMATION, yearAxisProps } from '@/app/utils/trendChart';
+import useMediaQuery from '@/hooks/useMediaQuery';
 
 import { labelledTooltipRow } from './chartTooltip';
 
@@ -50,6 +51,7 @@ function pivotByCustomer(monthly) {
  * @param {{ monthly: Array<{ customer_id: number, customer_name: string, month: string, ending_stock: number }>, allCustomers: Array<{ customer_id: number, customer_name: string }> }} props
  */
 export default function EndingStockChart({ monthly, allCustomers }) {
+  const mobile = useMediaQuery('(max-width: 639px)');
   const { rows, customers } = pivotByCustomer(monthly);
 
   if (rows.length === 0) {
@@ -75,13 +77,14 @@ export default function EndingStockChart({ monthly, allCustomers }) {
           >
             <CartesianGrid vertical={false} stroke="var(--aire-lavender)" />
             <XAxis
-              dataKey="label"
+              dataKey={mobile ? 'month' : 'label'}
               interval={0}
-              height={52}
+              height={mobile ? 28 : 52}
               tick={{ fontSize: 9, fill: '#3A4369' }}
-              angle={-40}
-              textAnchor="end"
+              angle={mobile ? 0 : -40}
+              textAnchor={mobile ? 'middle' : 'end'}
               tickMargin={6}
+              {...(mobile ? yearAxisProps(rows, 'month') : {})}
             />
             <YAxis
               tickFormatter={formatUnits}

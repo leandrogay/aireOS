@@ -15,7 +15,7 @@ import { Search } from 'lucide-react';
  */
 export default function TableSearch({ value, onChange, label, placeholder = 'Search…' }) {
   return (
-    <label className="relative">
+    <label className="relative min-w-0 flex-1 sm:flex-none">
       <span className="sr-only">{label}</span>
       <Search
         aria-hidden="true"
@@ -26,7 +26,7 @@ export default function TableSearch({ value, onChange, label, placeholder = 'Sea
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="h-9 w-64 max-w-full rounded-lg border border-lavander bg-white pl-8 pr-2.5 text-sm text-deep-violet-blue outline-none placeholder:text-deep-violet-blue/40 focus-visible:ring-3 focus-visible:ring-ring/50"
+        className="h-9 w-full min-w-0 rounded-lg border border-lavander bg-white pl-8 pr-2.5 text-sm text-deep-violet-blue outline-none placeholder:text-deep-violet-blue/40 focus-visible:ring-3 focus-visible:ring-ring/50 sm:w-64"
       />
     </label>
   );

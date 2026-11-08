@@ -5,7 +5,7 @@ platform actually recommended last month, read back by
 inventory_service.get_sell_in_outlook.
 
 Called when a refresh retrains: the event-triggered refresh
-(forecast_refresh_worker) and the scheduled run (forecast_pipeline_events).
+(forecast_refresh_worker).
 scripts/refresh_forecast.py writes the legacy P&L table, which the plan does
 not read, so it takes no snapshot.
 """
