@@ -141,7 +141,7 @@ export default function Sidebar() {
       <motion.nav
       initial={false}
       animate={{ width }}
-      transition={narrow || reduceMotion ? { duration: 0 } : NAV_SPRING}
+      transition={reduceMotion ? { duration: 0 } : NAV_SPRING}
       className={cn(
         // Border and background stay on CSS transitions; they fade alongside the width.
         'flex h-screen shrink-0 flex-col self-start overflow-x-hidden overflow-y-auto border-r py-4 transition-colors duration-300',
@@ -206,9 +206,9 @@ export default function Sidebar() {
             <motion.ul
               key="tabs"
               variants={NAV_CONTENT}
-              initial={narrow ? false : 'hidden'}
-              animate={narrow ? { opacity: 1, transition: { duration: 0 } } : 'shown'}
-              exit={narrow ? { opacity: 0, transition: { duration: 0 } } : 'hidden'}
+              initial="hidden"
+              animate="shown"
+              exit="hidden"
               className="w-50 shrink-0 space-y-0.5"
             >
               {NAV_ITEMS.map((item) => {
