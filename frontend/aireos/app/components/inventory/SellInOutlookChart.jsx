@@ -19,16 +19,13 @@ import { labelledTooltipRow } from './chartTooltip';
 import LastMonthDifference from './LastMonthDifference';
 import SellInComparison from './SellInComparison';
 
-// The sell-out lines keep the Forecast page's colours (forecastView.FORECAST_SERIES),
-// so the two pages read the same way. Every line has its own colour, and the
-// line style says which forecast it comes from, the same for sell-in and
-// sell-out: solid with dots = actual, short dashes = Current, long dashes =
-// Previous, dots = Initial. Eight colours can't all be told apart by colour
-// alone (checked with the dataviz palette validator), so the style carries it
-// too, and the toggles let you show only the lines being compared. Each
-// sell-in colour passes the validator against the sell-out line of the same
-// style (red/navy, blue/teal, green/purple, brown/orange), the pairs most
-// often read together.
+// Every line has its own hue, spread around the colour wheel so the eight
+// read apart at a glance (every pair clears the dataviz validator's
+// normal-vision floor). Colour alone can't separate eight lines for
+// colour-blind readers (it fails the validator's CVD check), so the line style
+// says which forecast a line comes from, the same for sell-in and sell-out:
+// solid with dots = actual, short dashes = Current, long dashes = Previous,
+// dots = Initial; and the toggles show only the lines being compared.
 const FORECAST_LINE = Object.fromEntries(FORECAST_SERIES.map((series) => [series.key, series]));
 
 const DASH = {
@@ -43,12 +40,13 @@ const DASH = {
 // adjust, with their own dash-dot: no tenth colour stays distinct from the
 // other eight (dataviz palette validator), and the shared colour reads as
 // "this Current line, with the blocks".
-const SELL_IN_CURRENT_COLOR = '#2a78d6';
+const SELL_IN_CURRENT_COLOR = '#0B4FD9';
+const SELL_OUT_CURRENT_COLOR = '#00AEC2';
 
 // `dot`: the line has a dot per month (the actual lines), so its sample does too.
 // `shape: 'line'` makes LineToggle show that line sample on its pill.
 const SERIES = [
-  { key: 'sell_in_actual', group: 'Sell-in', label: 'Sell-in (actual)', color: '#e34948', dot: true },
+  { key: 'sell_in_actual', group: 'Sell-in', label: 'Sell-in (actual)', color: '#D81B1B', dot: true },
   { key: 'sell_in_recommended', group: 'Sell-in', label: 'Sell-in Forecast (Current)', color: SELL_IN_CURRENT_COLOR, dash: DASH.current },
   {
     key: 'sell_in_with_blocks',
@@ -58,20 +56,20 @@ const SERIES = [
     dash: DASH.blocks,
     overlay: true,
   },
-  { key: 'sell_in_previous', group: 'Sell-in', label: 'Sell-in Forecast (Previous)', color: '#008300', dash: DASH.previous },
-  { key: 'sell_in_initial', group: 'Sell-in', label: 'Initial Yearly Sell-in Forecast', color: '#92400e', dash: DASH.initial },
-  { key: 'sell_out_actual', group: 'Sell-out', label: 'Sell-out (actual)', color: FORECAST_LINE.actual.color, dot: true },
-  { key: 'sell_out_current', group: 'Sell-out', label: 'Sell-out Forecast (Current)', color: FORECAST_LINE.current.color, dash: DASH.current },
+  { key: 'sell_in_previous', group: 'Sell-in', label: 'Sell-in Forecast (Previous)', color: '#1E9E3A', dash: DASH.previous },
+  { key: 'sell_in_initial', group: 'Sell-in', label: 'Initial Yearly Sell-in Forecast', color: '#7F4A08', dash: DASH.initial },
+  { key: 'sell_out_actual', group: 'Sell-out', label: 'Sell-out (actual)', color: '#9333EA', dot: true },
+  { key: 'sell_out_current', group: 'Sell-out', label: 'Sell-out Forecast (Current)', color: SELL_OUT_CURRENT_COLOR, dash: DASH.current },
   {
     key: 'sell_out_with_blocks',
     group: 'Sell-out',
     label: 'Sell-out Forecast (with building blocks)',
-    color: FORECAST_LINE.current.color,
+    color: SELL_OUT_CURRENT_COLOR,
     dash: DASH.blocks,
     overlay: true,
   },
-  { key: 'sell_out_previous', group: 'Sell-out', label: 'Sell-out Forecast (Previous)', color: FORECAST_LINE.previous.color, dash: DASH.previous },
-  { key: 'sell_out_initial', group: 'Sell-out', label: 'Initial Yearly Sell-out Forecast', color: FORECAST_LINE.initial.color, dash: DASH.initial },
+  { key: 'sell_out_previous', group: 'Sell-out', label: 'Sell-out Forecast (Previous)', color: '#E02FA6', dash: DASH.previous },
+  { key: 'sell_out_initial', group: 'Sell-out', label: 'Initial Yearly Sell-out Forecast', color: '#F58A00', dash: DASH.initial },
 ];
 
 // The lines on the chart: the overlay's two only while blocks are picked.
