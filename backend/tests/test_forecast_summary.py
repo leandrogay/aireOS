@@ -17,7 +17,8 @@ def _row(month, customer="fairprice", product="Aire Ultra Tape L", sku="13271338
         "current_high_80": extra.get("high", 79.6),
         "current_confidence_band": extra.get("band", "low"),
         "current_backtest_smape": extra.get("smape", 58.4),
-        "current_source_model": extra.get("model", "tier0_legacy"),
+        "tier": "tier0",
+        "months_of_history": extra.get("months_of_history", 8),
         "current_generated_at": extra.get("generated_at", "2026-10-04T17:14:40Z"),
     }
 
@@ -48,8 +49,8 @@ def test_whole_cartons_rounds_halves_up_like_javascript():
 
 def test_confidence_uses_earliest_forecast_month_and_page_wording():
     rows = [
-        _row("2026-10-01", band="high", model="tier1_arima"),
-        _row("2026-09-01", band="low", model="tier0_legacy", smape=58.4),
+        _row("2026-10-01", band="high", months_of_history=20),
+        _row("2026-09-01", band="low", months_of_history=8, smape=58.4),
     ]
 
     confidence = forecast_summary.forecast_confidence(rows)
@@ -205,7 +206,11 @@ def test_sku_without_a_price_has_no_revenue_and_totals_skip_it():
 
 def test_get_demand_forecast_reads_actuals_for_the_resolved_scope(monkeypatch):
     calls = {}
-    monkeypatch.setattr(forecast_summary.bigquery_service, "get_forecast_output_rows", lambda: [_row("2026-09-01")])
+    def fake_rows(**kwargs):
+        calls["rows"] = kwargs
+        return [_row("2026-09-01")]
+
+    monkeypatch.setattr(forecast_summary.bigquery_service, "get_forecast_output_rows", fake_rows)
 
     def fake_actuals(**kwargs):
         calls["actuals"] = kwargs
@@ -225,6 +230,8 @@ def test_get_demand_forecast_reads_actuals_for_the_resolved_scope(monkeypatch):
 
     result = forecast_summary.get_demand_forecast(product="ultra tape l", customer="FairPrice", today=_TODAY)
 
+    # One model only (Tier 0), so the view's three rows per month don't triple totals.
+    assert calls["rows"] == {"tier": "tier0"}
     assert calls["prices"] == {"product_name": "Aire Ultra Tape L", "customer_name": "fairprice"}
     assert calls["actuals"] == {
         "product_name": "Aire Ultra Tape L",
@@ -238,7 +245,7 @@ def test_get_demand_forecast_reads_actuals_for_the_resolved_scope(monkeypatch):
 
 
 def test_get_demand_forecast_with_no_forecast_raises_without_reading_actuals(monkeypatch):
-    monkeypatch.setattr(forecast_summary.bigquery_service, "get_forecast_output_rows", lambda: [_row("2026-09-01", current=None)])
+    monkeypatch.setattr(forecast_summary.bigquery_service, "get_forecast_output_rows", lambda **_k: [_row("2026-09-01", current=None)])
 
     def _no_reads_allowed(**kwargs):
         raise AssertionError("should not read actuals")

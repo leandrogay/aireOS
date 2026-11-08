@@ -3,11 +3,12 @@
 import { cn } from '@/lib/utils';
 
 /**
- * Label/value lines explaining a month's Current forecast (model, 80% range,
- * confidence, promo situation, price). Shared by the chart tooltip and the
- * promo panel, which replaces the tooltip in promo months.
+ * Label/value lines explaining a month's Current forecast (promo situation,
+ * price). Shared by the chart tooltip and the promo panel, which replaces the
+ * tooltip in promo months. Confidence has its own section
+ * (ForecastConfidenceDetails); the model is the whole line's, so no row names it.
  *
- * `hint` is hover text for a value (e.g. why Tier 0 was used).
+ * `hint` is hover text for a value.
  *
  * @param {{ details: { label: string, value: string, hint?: string }[], className?: string }} props
  */

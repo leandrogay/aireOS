@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 
 import { getForecastView } from '@/app/services/forecastApi';
+import { DEFAULT_TIER } from '@/app/utils/forecastTiers';
 import { buildMonthlyPoints, buildYearlyTotals, fullYearWindow } from '@/app/utils/forecastView';
 
 /**
@@ -26,6 +27,8 @@ import { buildMonthlyPoints, buildYearlyTotals, fullYearWindow } from '@/app/uti
  * @param {object[]} options.rows forecast rows already fetched for the filter
  * @param {object[]} options.actuals monthly actuals already fetched for the filter
  * @param {(rows: object[]) => object[]} [options.mapRows] applied to the forecast rows before totalling
+ * @param {string} [options.tier] tier kept from the wider fetch (forecastApi.getForecastView); the
+ *   Forecast page passes ALL_TIERS and picks its model with mapRows
  */
 export default function useForecastYearTotals({
   ready = false,
@@ -37,6 +40,7 @@ export default function useForecastYearTotals({
   rows = [],
   actuals = [],
   mapRows = (forecastRows) => forecastRows,
+  tier = DEFAULT_TIER,
 }) {
   const [wide, setWide] = useState({ key: '', rows: [], actuals: [] });
   const [loading, setLoading] = useState(false);
@@ -47,6 +51,7 @@ export default function useForecastYearTotals({
   const windowKey = JSON.stringify({
     productName,
     customerName,
+    tier,
     start: yearWindow?.start ?? '',
     end: yearWindow?.end ?? '',
   });
@@ -64,6 +69,7 @@ export default function useForecastYearTotals({
           customerName,
           startDate: yearWindow.start,
           endDate: yearWindow.end,
+          tier,
         });
         if (cancelled) return;
         // Stamped with the window it answers so a stale payload from the
@@ -81,11 +87,12 @@ export default function useForecastYearTotals({
     return () => {
       cancelled = true;
     };
-  }, [ready, needsWiderRange, windowKey, productName, customerName, yearWindow?.start, yearWindow?.end]);
+  }, [ready, needsWiderRange, windowKey, productName, customerName, yearWindow?.start, yearWindow?.end, tier]);
 
   const widened = needsWiderRange && wide.key === windowKey;
   // mapRows lets the Scenario builder total the rows of its chosen forecast
-  // view (scenarioModelView.rowsForView); the Forecast page leaves it as is.
+  // view (scenarioModelView.rowsForView), and the Forecast page the rows of
+  // its chosen model (forecastTiers.rowsForTier / averageAcrossTiers).
   const sourceRows = mapRows(needsWiderRange ? (widened ? wide.rows : []) : rows);
   const sourceActuals = needsWiderRange ? (widened ? wide.actuals : []) : actuals;
   // Both metrics come from the same months, so the cards can show volume and
