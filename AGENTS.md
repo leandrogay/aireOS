@@ -125,7 +125,9 @@ aireOS/
     │   ├── doh/page.js            DOH Settings: per-customer thresholds, alert toggle, edit, reset to global default (components/settings)
     │   ├── inventory/page.js      Inventory: overview, by-customer DOH, at-risk list, sell-in plan, enter/edit data (components/inventory)
     │   ├── components/
-    │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column), Sidebar (NAV_ITEMS; collapses
+    │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column; on navigation its heading and cards
+    │   │   │                      spring in one by one via PageTransition → lib/cardCascade.js, timing and the card selector in
+    │   │   │                      app/config/transitions.js), Sidebar (NAV_ITEMS; collapses
     │   │   │                      to an icon rail, hidden on narrow screens), RailFlyout (a rail section's sub-pages)
     │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, calendar (brand-styled), popover;
     │   │   │                      date kit on calendar: DatePicker (one day) / RangeDatePicker (start + end, Apply), each
@@ -140,7 +142,8 @@ aireOS/
     │   │   │                      closed button, popover panel, optional `searchable`, `look` field/filter/compact) →
     │   │   │                      SelectDropdown (pick one, ✓ rows), MultiSelectDropdown (pick many, tick-box rows + "All",
     │   │   │                      `noneMeansAll`), MonthDropdown (one 'YYYY-MM' month, wrapped by promotions MonthPicker and
-    │   │   │                      inventory MonthFilter); build new pickers on these, not on a raw Popover; toggle kit: SegmentedControl
+    │   │   │                      inventory MonthFilter); build new pickers on these, not on a raw Popover; TabTransition (on each tab
+    │   │   │                      switch the shown panel's cards spring in one by one, without remounting: Inventory, Scenario builder); toggle kit: SegmentedControl
     │   │   │                      (pick one of a few, sliding highlight, `look` tint/outline), ToggleButton (one thing on/off,
     │   │   │                      `look` compact/chip), ToggleField (switch; `label` / `showState` / hints opt in, `ariaLabel` when unlabelled; used by DOH alerts and nomenclature file settings); app/testing shows both kits and the brand-coloured Button (default/outline/secondary/ghost/destructive/destructive-outline/link/scenario; sizes sm/default/lg) and lists the
     │   │   │                      pages not migrated yet; HeaderCheckboxFilter (table-header pill
@@ -226,7 +229,8 @@ aireOS/
     │   ├── useMediaQuery.js       boolean for a CSS media query (Sidebar: rail vs hidden when collapsed)
     │   └── useToast.js            { toast, notify, dismissToast } for components/ui/Toast
     ├── lib/                       cn() (clsx + tailwind-merge), formatDateRange, formatDate/formatDateTime (shared date display,
-    │                              Singapore time), singaporeTime (singaporeDateTimeParts, singaporeToday)
+    │                              Singapore time), singaporeTime (singaporeDateTimeParts, singaporeToday), cardCascade
+    │                              (springs a container's cards in one by one; PageTransition, TabTransition)
     ├── public/                    create-next-app SVGs
     ├── CONTRIBUTING.md            Frontend UI conventions (primitives, tokens, cn(), lucide) — binding
     ├── CLAUDE.md → @AGENTS.md     Next.js auto-generated notice: read node_modules/next/dist/docs before Next APIs
