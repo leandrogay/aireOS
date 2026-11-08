@@ -12,7 +12,8 @@ import {
 
 import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
 import { dotRevealDelay, lineSweepTimings } from '@/app/utils/lineAnimation';
-import { BAR_ANIMATION, yearAxisProps } from '@/app/utils/trendChart';
+import { BAR_ANIMATION, chartDataRange, metricYAxisProps, yearAxisProps } from '@/app/utils/trendChart';
+import useChartTransition from '@/hooks/useChartTransition';
 import useMediaQuery from '@/hooks/useMediaQuery';
 
 import { labelledTooltipRow } from './chartTooltip';
@@ -35,6 +36,9 @@ const chartConfig = Object.fromEntries(
 const TOOLTIP_CONFIG = Object.fromEntries(SERIES.map((series) => [series.key, { label: series.label }]));
 
 const TOOLTIP_ORDER = SERIES.map((series) => series.key);
+
+const BAR_KEYS = ['sell_in_actual', 'sell_in_recommended'];
+const LINE_KEYS = ['sell_out_actual', 'sell_out_forecast'];
 
 // The sell-out line draws in after the bars have started growing (BAR_ANIMATION
 // is 800 ms): the solid actual part first, then the dashed forecast carries on
@@ -60,9 +64,6 @@ function timedDot(timing) {
  */
 export default function SellInOutlookChart({ months, actualsThrough }) {
   const mobile = useMediaQuery('(max-width: 639px)');
-  if (months.length === 0) {
-    return <p className="text-sm text-deep-violet-blue/70">No actuals for these filters.</p>;
-  }
 
   // The forecast line starts from the last actual point so the two sell-out lines join.
   const rows = months.map((row) => ({
@@ -70,6 +71,25 @@ export default function SellInOutlookChart({ months, actualsThrough }) {
     label: formatMonth(row.month),
     sell_out_forecast: row.month === actualsThrough ? row.sell_out_actual : row.sell_out_forecast,
   }));
+  // Fixed nice steps reaching the taller of the stacked sell-in bars and the
+  // sell-out lines, so a filter change can move them and the axis together.
+  const barRange = chartDataRange(rows, BAR_KEYS);
+  const lineRange = chartDataRange(rows, LINE_KEYS, { stacked: false });
+  const yAxisProps = metricYAxisProps('units', {
+    min: Math.min(barRange.min, lineRange.min),
+    max: Math.max(barRange.max, lineRange.max),
+  });
+  const transition = useChartTransition({
+    rows,
+    rowKey: 'month',
+    valueKeys: [...BAR_KEYS, ...LINE_KEYS],
+    domain: yAxisProps.domain,
+    ticks: yAxisProps.ticks,
+  });
+
+  if (months.length === 0) {
+    return <p className="text-sm text-deep-violet-blue/70">No actuals for these filters.</p>;
+  }
 
   const timings = lineSweepTimings(rows, ['sell_out_actual', 'sell_out_forecast'], LINE_SWEEP);
 
@@ -84,7 +104,7 @@ export default function SellInOutlookChart({ months, actualsThrough }) {
     <div className="space-y-2">
       <div className="overflow-visible rounded-xl border border-lavander bg-white pl-1 pr-3 pt-2">
         <ChartContainer config={chartConfig} className="aspect-auto h-[328px] w-full">
-          <ComposedChart accessibilityLayer data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+          <ComposedChart accessibilityLayer data={transition.rows} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
             <CartesianGrid vertical={false} stroke="var(--aire-lavender)" />
             <XAxis
               dataKey={mobile ? 'month' : 'label'}
@@ -96,7 +116,13 @@ export default function SellInOutlookChart({ months, actualsThrough }) {
               tickMargin={6}
               {...(mobile ? yearAxisProps(rows, 'month') : {})}
             />
-            <YAxis width={48} tick={{ fontSize: 10, fill: '#3A4369' }} tickFormatter={formatUnits} />
+            <YAxis
+              domain={transition.domain}
+              ticks={transition.ticks}
+              width={48}
+              tick={{ fontSize: 10, fill: '#3A4369' }}
+              tickFormatter={formatUnits}
+            />
             {/* Above the legend, which is drawn after it and would show through. */}
             <ChartTooltip
               wrapperStyle={{ zIndex: 10 }}
@@ -109,13 +135,20 @@ export default function SellInOutlookChart({ months, actualsThrough }) {
               }
             />
             <ChartLegend itemSorter={null} content={<ChartLegendContent className="flex-wrap text-foreground" />} />
-            <Bar dataKey="sell_in_actual" stackId="sell-in" fill="var(--color-sell_in_actual)" {...BAR_ANIMATION} />
+            <Bar
+              dataKey="sell_in_actual"
+              stackId="sell-in"
+              fill="var(--color-sell_in_actual)"
+              {...BAR_ANIMATION}
+              {...transition.seriesAnimation}
+            />
             <Bar
               dataKey="sell_in_recommended"
               stackId="sell-in"
               fill="var(--color-sell_in_recommended)"
               radius={[2, 2, 0, 0]}
               {...BAR_ANIMATION}
+              {...transition.seriesAnimation}
             />
             <Line
               dataKey="sell_out_actual"
@@ -124,6 +157,7 @@ export default function SellInOutlookChart({ months, actualsThrough }) {
               dot={timedDot(timings.sell_out_actual)}
               connectNulls={false}
               {...timings.sell_out_actual}
+              {...transition.seriesAnimation}
             />
             <Line
               dataKey="sell_out_forecast"
@@ -134,6 +168,7 @@ export default function SellInOutlookChart({ months, actualsThrough }) {
               dot={false}
               connectNulls={false}
               {...timings.sell_out_forecast}
+              {...transition.seriesAnimation}
             />
           </ComposedChart>
         </ChartContainer>

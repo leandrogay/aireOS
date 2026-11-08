@@ -34,6 +34,7 @@ import {
 import { forecastLineHints, hasPreviousLine } from '@/app/utils/forecastLineText';
 import { dotRevealDelay, lineSweepTimings } from '@/app/utils/lineAnimation';
 import { yearAxisProps } from '@/app/utils/trendChart';
+import useChartTransition from '@/hooks/useChartTransition';
 import useDelayedLoading from '@/hooks/useDelayedLoading';
 import useMediaQuery from '@/hooks/useMediaQuery';
 
@@ -338,6 +339,17 @@ export default function ForecastChart({
   // changes something in view, so its gap, markers and band wait for it too.
   const simulatedSeries = scenario?.series[0] ?? null;
   const showSimulated = Boolean(simulatedSeries) && Boolean(visibleSeries.simulated);
+  // A filter change moves the lines, the simulated gap and the axis together.
+  // Same ticks as ever: the domain in 4 equal steps (none when it is flat).
+  const transition = useChartTransition({
+    rows: plotData,
+    rowKey: 'month_year',
+    valueKeys: showSimulated ? [...visibleKeys, 'simulatedGap'] : visibleKeys,
+    domain: yDomain,
+    ticks: yDomain[0] === yDomain[1]
+      ? undefined
+      : [0, 1, 2, 3, 4].map((i) => yDomain[0] + ((yDomain[1] - yDomain[0]) / 4) * i),
+  });
   const scenarioMarkers = showSimulated
     ? scenario.markers
         .map((marker) => ({ ...marker, x: monthX(marker.month_year) }))
@@ -520,7 +532,7 @@ export default function ForecastChart({
               <ChartContainer config={config} className="aspect-auto h-[34vh] min-h-[220px] w-full">
                 <ComposedChart
                   accessibilityLayer
-                  data={plotData}
+                  data={transition.rows}
                   margin={{ top: 8, right: 18, left: 0, bottom: 28 }}
                 >
                   <OverlayDefs bands={overlayBands} />
@@ -541,12 +553,8 @@ export default function ForecastChart({
                   />
                   <YAxis
                     width={metric === 'revenue' ? 52 : 40}
-                    domain={yDomain}
-                    ticks={
-                      yDomain[0] === yDomain[1]
-                        ? undefined
-                        : [0, 1, 2, 3, 4].map((i) => yDomain[0] + ((yDomain[1] - yDomain[0]) / 4) * i)
-                    }
+                    domain={transition.domain}
+                    ticks={transition.ticks}
                     allowDataOverflow
                     tick={{ fontSize: 10, fill: '#3A4369' }}
                     tickFormatter={(value) => formatAxisValue(value, metric)}
@@ -689,13 +697,15 @@ export default function ForecastChart({
                       activeDot={{ r: 5, fill: series.color }}
                       connectNulls={series.connectNulls ?? true}
                       {...lineTimings[series.key]}
+                      {...transition.seriesAnimation}
                     />
                   ))}
                   {scenarioMarkers.map((marker) => (
                     <ReferenceDot
                       key={`marker-${marker.key}`}
                       x={marker.x}
-                      y={chartData[marker.x].simulated}
+                      /* From the moving rows, so a marker rides its line through a change. */
+                      y={transition.rows[marker.x].simulated}
                       r={6}
                       fill={simulatedSeries.color}
                       stroke="#fff"

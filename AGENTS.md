@@ -229,6 +229,9 @@ aireOS/
     │   ├── useMediaQuery.js       boolean for a CSS media query (Sidebar: rail vs hidden when collapsed)
     │   ├── useDelayedLoading.js   { pending, visible, placeholderClass }: a first-load chart skeleton shows only after 200ms and
     │   │                          stays 400ms, so fast loads never flash it (dashboard trend, forecast, InventoryChartSlot)
+    │   ├── useChartTransition.js  tweens a chart's rows and y-axis range together on a change (pure blending in
+    │   │                          utils/chartTransition.js), so bars/lines, gridlines and tick labels move on one scale;
+    │   │                          every dashboard/forecast/inventory chart except ComparisonMixChart (animation off by design)
     │   └── useToast.js            { toast, notify, dismissToast } for components/ui/Toast
     ├── lib/                       cn() (clsx + tailwind-merge), formatDateRange, formatDate/formatDateTime (shared date display,
     │                              Singapore time), singaporeTime (singaporeDateTimeParts, singaporeToday), cardCascade

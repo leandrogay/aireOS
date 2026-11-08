@@ -46,6 +46,12 @@ export const PAGE_CASCADE = {
   transition: { ...SPRING, opacity: QUICK_FADE },
 };
 
+// Charts changing in place (hooks/useChartTransition): when a filter changes
+// what a chart draws, its bars/lines and its y-axis (range, gridlines, tick
+// labels) move together on this one tween, so the axis never snaps while the
+// data glides. Seconds; matches the bars' first draw (trendChart BAR_ANIMATION).
+export const CHART_TRANSITION = { duration: 0.7, ease: 'easeOut' };
+
 // Loading placeholders (hooks/useDelayedLoading). A placeholder that shows
 // for a frame or two before the chart replaces it reads as a flicker, so:
 // `delay`: seconds of loading before the placeholder appears at all -- a load
