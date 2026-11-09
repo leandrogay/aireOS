@@ -2,13 +2,14 @@
 // Sell-out Summary mix bar so a format is the same colour everywhere. Reused
 // across offline (4 formats) and online (1 format) since only one channel is
 // ever on screen at once — safe to reuse HYPER's colour for FPON since they
-// never render together. FPON previously used --aire-cream, which is nearly
-// invisible against the white card/cream page background.
+// never render together. FPON previously used --aire-cream, and UNITY
+// --aire-lavender; both are nearly invisible against the white card/cream
+// page background, so UNITY is dusty rose, which sits with the violets.
 export const FORMAT_COLORS = {
   HYPER: 'var(--aire-deep-blue)',
   SUPER: 'var(--aire-violet)',
   FINEST: 'var(--aire-celest)',
-  UNITY: 'var(--aire-lavender)',
+  UNITY: '#C98BA8',
   FPON: 'var(--aire-deep-blue)',
 };
 
@@ -35,9 +36,7 @@ const CUSTOMER_COLORS = [
   'var(--aire-celest)',
   '#2E7BA6',
   '#5C5299',
-  // Dusty rose rather than the old teal: it sits with the violets and blues
-  // above instead of standing out as the one green.
-  '#C98BA8',
+  '#0D9488',
   '#4F7A3A',
   '#7C3AED',
   '#8A7460',
