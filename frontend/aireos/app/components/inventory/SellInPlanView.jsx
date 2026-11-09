@@ -156,7 +156,7 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
               legend
               legendItems={2}
               label="Loading inventory…"
-              className="rounded-xl border border-lavander bg-white pl-1 pr-3 pt-2"
+              className="pl-1 pr-3 pt-2"
             />
           )}
         >

@@ -146,7 +146,7 @@ export function InventoryChartSlot({ loading, ready, placeholder, children }) {
     return (
       <div className={firstLoad.placeholderClass}>
         {placeholder ?? (
-          <ChartLoading label="Loading inventory…" className="h-[290px] rounded-xl border border-lavander bg-white" />
+          <ChartLoading label="Loading inventory…" className="h-[290px]" />
         )}
       </div>
     );

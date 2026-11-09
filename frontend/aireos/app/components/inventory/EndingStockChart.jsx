@@ -80,7 +80,7 @@ export default function EndingStockChart({ monthly, allCustomers }) {
 
   return (
     <div className="space-y-2">
-      <div className="overflow-visible rounded-xl border border-lavander bg-white pl-1 pr-3 pt-2">
+      <div className="overflow-visible pl-1 pr-3 pt-2">
         <ChartContainer config={config} className="aspect-auto h-[308px] w-full">
           <BarChart
             accessibilityLayer

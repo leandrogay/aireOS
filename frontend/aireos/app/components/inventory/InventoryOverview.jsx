@@ -121,7 +121,7 @@ export default function InventoryOverview({ skuOptions, refreshKey, onEditRow })
               height={308}
               legend
               label="Loading inventory…"
-              className="rounded-xl border border-lavander bg-white pl-1 pr-3 pt-2"
+              className="pl-1 pr-3 pt-2"
             />
           )}
         >

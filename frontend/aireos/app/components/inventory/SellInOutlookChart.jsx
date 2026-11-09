@@ -102,7 +102,7 @@ export default function SellInOutlookChart({ months, actualsThrough }) {
 
   return (
     <div className="space-y-2">
-      <div className="overflow-visible rounded-xl border border-lavander bg-white pl-1 pr-3 pt-2">
+      <div className="overflow-visible pl-1 pr-3 pt-2">
         <ChartContainer config={chartConfig} className="aspect-auto h-[328px] w-full">
           <ComposedChart accessibilityLayer data={transition.rows} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
             <CartesianGrid vertical={false} stroke="var(--aire-lavender)" />

@@ -146,7 +146,7 @@ export default function CustomerInventoryView({ customers, skuOptions, refreshKe
               bars={19}
               height={280}
               label="Loading inventory…"
-              className="rounded-xl border border-lavander bg-white pl-1 pr-3 pt-2"
+              className="pl-1 pr-3 pt-2"
             />
           )}
         >

@@ -42,7 +42,7 @@ export default function SellInTrendChart({ trend }) {
   }
 
   return (
-    <div className="overflow-visible rounded-xl border border-lavander bg-white pl-1 pr-3 pt-2">
+    <div className="overflow-visible pl-1 pr-3 pt-2">
       <ChartContainer config={chartConfig} className="aspect-auto h-[280px] w-full">
         <BarChart accessibilityLayer data={transition.rows} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
           <CartesianGrid vertical={false} stroke="var(--aire-lavender)" />
