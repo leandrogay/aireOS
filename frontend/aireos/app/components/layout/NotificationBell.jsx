@@ -90,7 +90,7 @@ export default function NotificationBell() {
         arrow
         // Same colour and width as the popup's outline (ring-violet/40 below),
         // so the tip reads as part of the panel's edge.
-        arrowClassName="data-[side=bottom]:border-violet/40"
+        arrowClassName="text-violet/40"
         sideOffset={10}
         // fixed: placed against the viewport, so this tall popup never adds to
         // the page's scroll height (with the default "absolute" the page could
