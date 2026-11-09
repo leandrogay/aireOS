@@ -1,4 +1,4 @@
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 import { fieldLabel } from '@/app/utils/mappingReview';
 
 // The review screen's "What's left" list: every condition an approval waits
@@ -60,7 +60,7 @@ export function reviewChecklist({ name, customer, outputs, statuses, issues, cod
   if (!customer) retailerDetail = 'Choose the customer first.';
   else if (outputs && !outputs.length) retailerDetail = 'Nothing sets the retailer yet.';
   else if (unsettled.length) {
-    retailerDetail = `${unsettled.map((item) => item.name).join(', ')} ${plural(unsettled.length, 'is not a retailer', 'are not retailers')} of ${retailerLabel(customer.customer_name)}.`;
+    retailerDetail = `${unsettled.map((item) => item.name).join(', ')} ${plural(unsettled.length, 'is not a retailer', 'are not retailers')} of ${customerLabel(customer.customer_name)}.`;
   } else if (!outputs) retailerDetail = 'Checked against the whole file when you approve.';
   items.push({
     id: 'retailers',

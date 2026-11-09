@@ -8,7 +8,7 @@ import TableSkeleton from '@/components/ui/TableSkeleton';
 import ToggleField from '@/components/ui/ToggleField';
 import { formatDohDays } from '@/app/utils/dohSettingsForm';
 import { formatDateTime } from '@/lib/formatDate';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
 const thClass = 'bg-cream px-2 py-1.5 text-left text-xs font-medium text-deep-violet-blue/60';
@@ -57,7 +57,7 @@ export default function DohSettingsTable({
       {rows.map((row) => {
         const alertPending = row.customer_id in pendingAlerts;
         const alertOn = alertPending ? pendingAlerts[row.customer_id] : row.doh_alert_enabled;
-        const customer = retailerLabel(row.customer_name);
+        const customer = customerLabel(row.customer_name);
         return (
           <MobileRecordCard
             key={row.customer_id}
@@ -109,7 +109,7 @@ export default function DohSettingsTable({
                 className={cn('border-t border-lavander', editingId === row.customer_id && 'bg-cream')}
               >
                 <td className={tdClass}>
-                  <span className="font-medium">{retailerLabel(row.customer_name)}</span>
+                  <span className="font-medium">{customerLabel(row.customer_name)}</span>
                   {row.is_global_default && (
                     <span className="ml-2 whitespace-nowrap rounded-full border border-violet bg-lavander px-2 py-0.5 text-[11px]">
                       Global Default
@@ -122,7 +122,7 @@ export default function DohSettingsTable({
                 <td className={cn(tdClass, 'whitespace-nowrap')}>{formatDateTime(row.thresholds_updated_at)}</td>
                 <td className={tdClass}>
                   <ToggleField
-                    ariaLabel={`DOH alerts for ${retailerLabel(row.customer_name)}`}
+                    ariaLabel={`DOH alerts for ${customerLabel(row.customer_name)}`}
                     checked={alertOn}
                     disabled={alertPending}
                     onChange={(checked) => onToggleAlert(row, checked)}
@@ -131,7 +131,7 @@ export default function DohSettingsTable({
                 <td className={cn(tdClass, 'text-right')}>
                   <div className="flex justify-end">
                     <RowActions
-                      label={`Actions for DOH settings for ${retailerLabel(row.customer_name)}`}
+                      label={`Actions for DOH settings for ${customerLabel(row.customer_name)}`}
                       actions={editAction(row, editingId, onEdit)}
                     />
                   </div>

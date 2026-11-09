@@ -7,9 +7,9 @@ import { Button } from '@/components/ui/button';
 import InfoTooltip from '@/components/ui/InfoTooltip';
 import SelectDropdown from '@/components/ui/SelectDropdown';
 import { inputClass, labelClass } from '@/components/ui/formStyles';
-import { canRenameOutputs, channelRetailerName, retailerChoices } from '@/app/utils/mappingCustomer';
+import { canRenameOutputs, channelRetailerName, customerRetailerFamily, retailerChoices } from '@/app/utils/mappingCustomer';
 import { PROPOSER } from '@/app/utils/mappingReview';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 import { splitFromDecision } from '@/app/utils/retailerSplit';
 import { cn } from '@/lib/utils';
 
@@ -27,7 +27,7 @@ const STATUS_TEXT = {
   ok: () => '',
   new: () => 'New retailer',
   unlinked: () => 'Not linked to a customer',
-  other: (item) => `Belongs to ${retailerLabel(item.owner)}`,
+  other: (item) => `Belongs to ${customerLabel(item.owner)}`,
   invalid: () => 'Not a retailer name',
 };
 
@@ -43,7 +43,7 @@ const STATUS_TEXT = {
 function RetailerLine({ item, choice, customerName, retailers, onChoose, onFix, disabled }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const customer = retailerLabel(customerName);
+  const customer = customerLabel(customerName);
   const status = item.status;
   const ok = !status || status === 'ok';
   const known = retailers.some((retailer) => retailer.retailer_name === item.name);
@@ -258,7 +258,7 @@ export default function CustomerStep({
             disabled={disabled || customersLoading}
             options={customers.map((item) => ({
               value: String(item.customer_id),
-              label: retailerLabel(item.customer_name),
+              label: customerLabel(item.customer_name),
             }))}
             action={{
               label: (typed) => (typed ? `Create customer “${typed}”` : 'Create new customer'),
@@ -287,7 +287,7 @@ export default function CustomerStep({
           {customer && !picked && <span className="text-deep-violet-blue/70">· {where.short}</span>}
           <InfoTooltip label="Where the sales go">
             {picked
-              ? `Rows are written to ${channelRetailerName(customer.customer_name, 'offline')} or ${channelRetailerName(customer.customer_name, 'online')}.`
+              ? `Rows are written to ${channelRetailerName(customerRetailerFamily(customer), 'offline')} or ${channelRetailerName(customerRetailerFamily(customer), 'online')}.`
               : where.long}{' '}
             Sales only reach the dashboard through the customer&apos;s retailers.
           </InfoTooltip>
@@ -303,7 +303,7 @@ export default function CustomerStep({
 
         {customer && !retailers.length && (
           <p className="mt-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900">
-            {retailerLabel(customer.customer_name)} has no retailers yet. Choose how rows split below, then add the
+            {customerLabel(customer.customer_name)} has no retailers yet. Choose how rows split below, then add the
             retailers it needs.
           </p>
         )}

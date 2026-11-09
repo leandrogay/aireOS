@@ -257,7 +257,10 @@ def test_customer_options_have_no_period_type_filter(monkeypatch):
 
 
 def test_customer_options_strip_the_channel_suffix(monkeypatch):
-    rows = [("fairprice_offline",), ("fairprice_online",)]
+    rows = [
+        {"retailer_name": "fairprice_offline", "customer_name": None},
+        {"retailer_name": "fairprice_online", "customer_name": None},
+    ]
     _install(monkeypatch, lambda sql, params: rows)
 
     options = sellout_service.get_customer_options()
@@ -265,8 +268,24 @@ def test_customer_options_strip_the_channel_suffix(monkeypatch):
     assert options == [{"value": "fairprice", "label": "Fairprice"}]
 
 
+def test_customer_options_are_labelled_with_the_owning_customers_name(monkeypatch):
+    rows = [
+        {"retailer_name": "fairprice_offline", "customer_name": "FairPrice"},
+        {"retailer_name": "sheng_shiong_offline", "customer_name": "Sheng_Shiong"},
+    ]
+    conn = _install(monkeypatch, lambda sql, params: rows)
+
+    options = sellout_service.get_customer_options()
+
+    assert "LEFT JOIN customers c" in conn.calls[0][0]
+    assert options == [
+        {"value": "fairprice", "label": "FairPrice"},
+        {"value": "sheng_shiong", "label": "Sheng Shiong"},
+    ]
+
+
 def test_customer_options_keep_a_short_code_uppercase(monkeypatch):
-    rows = [("nhg_offline",)]
+    rows = [{"retailer_name": "nhg_offline", "customer_name": None}]
     _install(monkeypatch, lambda sql, params: rows)
 
     options = sellout_service.get_customer_options()
@@ -837,6 +856,20 @@ def test_customer_totals_read_the_estimated_part(monkeypatch):
     (totals_sql, _params) = conn.sql_containing("effective_sellout")[0]
     assert "CASE WHEN s.revenue_estimated THEN s.revenue ELSE 0 END" in totals_sql
 
+
+
+def test_customer_totals_are_labelled_with_the_owning_customers_name(monkeypatch):
+    def respond(sql, params):
+        if "effective_sellout" in sql:
+            return []
+        return [{"retailer_name": "fairprice_offline", "customer_name": "FairPrice"}]
+
+    conn = _install(monkeypatch, respond)
+
+    result = sellout_service.get_customer_totals(["fairprice", "nhg"])
+
+    assert "LEFT JOIN customers c" in conn.calls[1][0]
+    assert [entry["label"] for entry in result["customers"]] == ["FairPrice", "NHG"]
 
 
 # ---- get_customer_trends (each customer per week or month) ---------------

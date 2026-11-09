@@ -208,7 +208,7 @@ function monthName(monthYear) {
 
 /**
  * The tooltip lines about a month's Actual and Previous. `formatCustomer`
- * shows a customer slug (retailerLabel), `formatStamp` a Previous time
+ * shows a customer name (customerLabel), `formatStamp` a Previous time
  * (Singapore time). Empty when there is nothing to explain.
  *
  * @param {{ month_year: string, actualKind?: string | null, actualCoverage?: object | null, previousMade?: object[], previous?: number | null }} point

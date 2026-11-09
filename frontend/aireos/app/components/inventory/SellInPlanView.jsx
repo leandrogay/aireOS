@@ -7,7 +7,7 @@ import SelectDropdown from '@/components/ui/SelectDropdown';
 import useSellInOutlook from '@/hooks/useSellInOutlook';
 import useSellInPlan from '@/hooks/useSellInPlan';
 import { formatDoh, formatMonth } from '@/app/utils/inventoryForm';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 
 import {
   filterLabelClass,
@@ -62,7 +62,7 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
   const outlook = useSellInOutlook({ customerId, months, skus, refreshKey });
   const customerName = customers.find((c) => c.customer_id === customerId)?.customer_name;
   const outlookTags = [
-    { label: 'Customer', value: customerName ? retailerLabel(customerName) : '—' },
+    { label: 'Customer', value: customerName ? customerLabel(customerName) : '—' },
     { label: 'SKU', value: skuScopeLabel(skus) },
   ];
 
@@ -93,7 +93,7 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
           <SelectDropdown
             value={customerId === null ? '' : String(customerId)}
             onChange={(value) => setCustomerId(Number(value))}
-            options={customers.map((c) => ({ value: String(c.customer_id), label: retailerLabel(c.customer_name) }))}
+            options={customers.map((c) => ({ value: String(c.customer_id), label: customerLabel(c.customer_name) }))}
             ariaLabel="Customer"
             look="compact"
           />

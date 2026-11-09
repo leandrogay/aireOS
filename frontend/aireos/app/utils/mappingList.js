@@ -1,5 +1,5 @@
 import { matchesSearch } from '@/app/utils/tableView';
-import { retailerLabel, vendorLabel } from '@/app/utils/retailerLabel';
+import { customerLabel, vendorLabel } from '@/app/utils/retailerLabel';
 
 // Mapping state as something a person reads. Anything unrecognised falls
 // through to the raw value rather than being hidden. Keys are the `state` of
@@ -105,7 +105,7 @@ export function mappingTitle(mapping) {
  * @returns {string}
  */
 export function mappingCustomer(mapping) {
-  return retailerLabel(mapping.customerName) || vendorLabel(mapping.vendor) || mapping.retailerFamily || '';
+  return customerLabel(mapping.customerName) || vendorLabel(mapping.vendor) || mapping.retailerFamily || '';
 }
 
 /**

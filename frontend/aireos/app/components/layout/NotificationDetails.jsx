@@ -6,7 +6,7 @@ import {
   startedByLabel,
 } from '@/app/utils/forecastNotificationText';
 import { daysLeftValue, lowStockItemText, modelFeatureLabel } from '@/app/utils/notificationText';
-import { retailerLabel, vendorLabel } from '@/app/utils/retailerLabel';
+import { customerLabel, vendorLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
 // The opened part of a notification, laid out like the forecast page's promo
@@ -102,7 +102,7 @@ function LowStockDetails({ payload }) {
     <>
       <Summary>Critical stock level on this product. Please review and take action.</Summary>
       <Fields>
-        <Field label="Customer" value={retailerLabel(payload.customer_name)} />
+        <Field label="Customer" value={customerLabel(payload.customer_name)} />
         <Field label="Current stock" value={`${payload.current_stock} units`} />
         <Field label="Days left" value={`${daysLeft === null ? 'Unknown' : `${daysLeft} days`} (threshold ${payload.doh_threshold})`} />
         <Field label="Last updated" value={formatDate(payload.last_update)} />
@@ -124,7 +124,7 @@ function forecastSummary(payload, success) {
 function ForecastDetails({ payload, success }) {
   // Every producer sends these arrays, but one hand-inserted row without them
   // must not crash the whole page the bell sits on.
-  const customers = (payload.customers ?? []).map(retailerLabel);
+  const customers = (payload.customers ?? []).map(customerLabel);
   const skus = payload.skus ?? [];
   // A refresh that never started (backend stage "refresh") has no forecast to
   // describe, so the period / customers / SKUs rows would only read "—" and "0".

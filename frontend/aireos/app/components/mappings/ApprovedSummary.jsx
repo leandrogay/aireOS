@@ -8,7 +8,7 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import Disclosure from '@/components/ui/Disclosure';
 import LoadConfirmDialog from '@/components/upload/LoadConfirmDialog';
 import { formatDateTime } from '@/lib/formatDate';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel, vendorLabel } from '@/app/utils/retailerLabel';
 import { wasSaved } from '@/app/utils/loadPreview';
 import { filesLabel } from '@/app/utils/uploadFlow';
 
@@ -72,7 +72,7 @@ export default function ApprovedSummary({ approved }) {
   const loadedPaths = new Set(loadedHere.map((item) => item.blob_path));
   const waiting = (approved.waiting_uploads || []).filter((file) => !loadedPaths.has(file.blob_path));
   const outdated = (approved.outdated_uploads || []).filter((file) => !loadedPaths.has(file.blob_path));
-  const customer = retailerLabel(approved.customer_name || approved.vendor);
+  const customer = approved.customer_name ? customerLabel(approved.customer_name) : vendorLabel(approved.vendor);
   const version = approved.version;
   const hasNextStep = waiting.length > 0 || outdated.length > 0;
 
