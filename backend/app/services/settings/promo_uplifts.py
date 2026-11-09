@@ -426,7 +426,7 @@ def _adopt_values(entry: dict, customer_id: int, sku_range: str | None, updated_
         raise UpliftSettingConflictError("Too few moments; type a discount")
     if recommended["anchor_pct"] is None:
         raise UpliftSettingConflictError(
-            "Add an uplift for this mechanic first"
+            f"Add an uplift for {recommended['mechanic_label']} first"
         )
     return {
         "customer_id": customer_id,
@@ -944,7 +944,7 @@ def reset_uplift(setting_id: int, updated_by: str | None = None) -> dict:
         else:
             uplift_pct = _seed_placeholder(_uplift_rows(conn), row["mechanic_key"])
             if uplift_pct is None:
-                raise UpliftSettingConflictError("No placeholder value to go back to")
+                raise UpliftSettingConflictError(f"{row['promotion_mechanic']} has no placeholder value")
 
         new_id = _insert_uplift(
             conn,

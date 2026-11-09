@@ -481,12 +481,12 @@ def delete_customer(
 
         if current["in_use"]:
             raise CustomerInUseError(
-                "Can't delete: has sales or inventory"
+                f"Can't delete {current['customer_name']}: has sales or inventory"
             )
 
         if current["retailers"]:
             raise CustomerHasRetailersError(
-                "Delete its retailers first"
+                f"Delete the retailers under {current['customer_name']} first"
             )
 
         # doh_settings rows go with the customer (ON DELETE CASCADE).

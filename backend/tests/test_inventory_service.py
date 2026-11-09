@@ -868,6 +868,34 @@ def test_the_plan_aims_at_the_current_target_even_for_months_before_it_was_saved
     assert plan["threshold"]["target_doh"] == 20.0
 
 
+def test_a_plan_given_the_forecast_does_not_read_it_again(monkeypatch):
+    feb = date(2026, 2, 1)
+    metrics = [_metric(1, "A1", feb, "sell_in", 400), _metric(1, "A1", feb, "sell_out_base", 280)]
+    _install(monkeypatch, _router(_customers("fairprice"), metrics, [_version(5, 10, 15)]))
+
+    def no_read(customer_id):
+        raise AssertionError("the forecast was read again")
+
+    monkeypatch.setattr(forecast_units, "get_forecast_lines", no_read)
+
+    plan = inventory_service.get_sell_in_plan(
+        1, months=2, forecast_lines={"current": _PLAN_FORECAST, "initial": {}, "previous": {}}
+    )
+
+    assert [r["month"] for r in plan["rows"]] == ["2026-03-01", "2026-04-01"]
+
+
+def test_a_sku_whose_actuals_pass_the_end_of_the_plan_is_not_listed_as_without_forecast():
+    metrics = {(1, "A1"): {date(2026, 3, 1): {"sell_in": 10.0, "sell_out_base": 5.0}}}
+
+    _, rows, without_forecast = inventory_service._sku_plans(
+        metrics, {}, {}, {"target_doh": 10.0}, date(2026, 2, 1), {}
+    )
+
+    assert rows == []
+    assert without_forecast == []
+
+
 def test_a_sku_with_no_forecast_is_listed_rather_than_planned(monkeypatch):
     plan = _plan_view(monkeypatch, _PLAN_FORECAST)
 

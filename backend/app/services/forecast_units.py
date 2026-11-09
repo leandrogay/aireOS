@@ -111,6 +111,19 @@ def get_forecast_lines(customer_id: int) -> dict[str, dict[str, dict[date, float
     picked out in Python for the same reason as there; a NULL is left out.
     """
 
+    return get_forecast_lines_by_customer([customer_id])[customer_id]
+
+
+def get_forecast_lines_by_customer(
+    customer_ids: list[int],
+) -> dict[int, dict[str, dict[str, dict[date, float]]]]:
+    """
+    get_forecast_lines for several customers from one BigQuery read, as
+    {customer_id: lines}, with every customer asked for in the result. For
+    work across all customers (sell_in_snapshots): a read takes the same time
+    however few customers it is for.
+    """
+
     query = f"""
         SELECT
           customer_id,
@@ -129,9 +142,12 @@ def get_forecast_lines(customer_id: int) -> dict[str, dict[str, dict[date, float
     """
     df = _read_forecast(query)
 
-    lines: dict[str, dict[str, dict[date, float]]] = {"current": {}, "previous": {}, "initial": {}}
+    by_customer: dict[int, dict[str, dict[str, dict[date, float]]]] = {
+        customer_id: {"current": {}, "previous": {}, "initial": {}} for customer_id in customer_ids
+    }
     for row in df.to_dict(orient="records"):
-        if int(row["customer_id"]) != customer_id or row.get("tier") != FORECAST_TIER:
+        lines = by_customer.get(int(row["customer_id"]))
+        if lines is None or row.get("tier") != FORECAST_TIER:
             continue
         month = _first_of_month(row["month_year"])
         for line in lines:
@@ -139,4 +155,4 @@ def get_forecast_lines(customer_id: int) -> dict[str, dict[str, dict[date, float
             if value is None or value != value:  # NULL comes back as None or NaN
                 continue
             lines[line].setdefault(row["sku"], {})[month] = float(value)
-    return lines
+    return by_customer

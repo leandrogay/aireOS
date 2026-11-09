@@ -255,3 +255,32 @@ def test_a_read_past_the_limit_is_stopped_and_raised_as_a_google_api_error(monke
     with pytest.raises(GoogleAPICallError, match="took longer than 120 seconds"):
         read()
     assert client.job.cancelled
+
+
+# ---- lines for several customers in one read (sell-in snapshots) ----
+
+
+def test_several_customers_lines_come_from_one_query(monkeypatch):
+    frame = pd.DataFrame(
+        [
+            {"customer_id": 1, "tier": "tier0", "sku": "A1", "month_year": date(2026, 10, 1), "forecast_current": 70.0, "forecast_previous": None, "forecast_initial": None},
+            {"customer_id": 2, "tier": "tier0", "sku": "B2", "month_year": date(2026, 10, 1), "forecast_current": 8.0, "forecast_previous": None, "forecast_initial": None},
+            {"customer_id": 3, "tier": "tier0", "sku": "C3", "month_year": date(2026, 10, 1), "forecast_current": 9.0, "forecast_previous": None, "forecast_initial": None},
+        ]
+    )
+    client = _install(monkeypatch, frame)
+
+    lines = forecast_units.get_forecast_lines_by_customer([1, 2])
+
+
+    assert sorted(lines) == [1, 2]
+    assert lines[1]["current"] == {"A1": {date(2026, 10, 1): 70.0}}
+    assert lines[2]["current"] == {"B2": {date(2026, 10, 1): 8.0}}
+
+
+def test_a_customer_with_no_rows_still_gets_three_empty_lines(monkeypatch):
+    _install(monkeypatch, pd.DataFrame(columns=LINE_COLUMNS))
+
+    assert forecast_units.get_forecast_lines_by_customer([1]) == {
+        1: {"current": {}, "previous": {}, "initial": {}}
+    }

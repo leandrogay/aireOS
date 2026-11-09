@@ -532,7 +532,7 @@ def delete_retailer(
 
         if current["in_use"]:
             raise RetailerHasStoresError(
-                "Can't delete: retailer is in use"
+                f"Can't delete {current['retailer_name']}: has stores, sales or promotions"
             )
 
         # The link row references the retailer, so it goes first.
@@ -1650,7 +1650,7 @@ def archive_sku(sku: str) -> dict | None:
 
         if has_promotions:
             raise SkuHasPromotionsError(
-                "Can't archive: used in promotions"
+                f"Can't archive {sku}: used in promotions"
             )
 
         _insert_sku_history(conn, item, "archived")
