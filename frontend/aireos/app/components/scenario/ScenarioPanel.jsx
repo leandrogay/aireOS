@@ -19,6 +19,7 @@ const triggerClass =
  *   collapsed: boolean,
  *   onCollapsedChange: (collapsed: boolean) => void,
  *   itemCount: number,
+ *   breakdownSection: import('react').ReactNode,
  *   blocksSection: import('react').ReactNode,
  *   promotionsSection: import('react').ReactNode,
  * }} props
@@ -27,6 +28,7 @@ export default function ScenarioPanel({
   collapsed,
   onCollapsedChange,
   itemCount,
+  breakdownSection,
   blocksSection,
   promotionsSection,
 }) {
@@ -77,9 +79,11 @@ export default function ScenarioPanel({
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
         <Tabs defaultValue="blocks">
           <TabsList className="h-7 bg-lavander p-0.5">
+            <TabsTrigger value="breakdown" className={triggerClass}>Breakdown</TabsTrigger>
             <TabsTrigger value="blocks" className={triggerClass}>Building blocks</TabsTrigger>
             <TabsTrigger value="promotions" className={triggerClass}>Promotions</TabsTrigger>
           </TabsList>
+          <TabsContent value="breakdown" className="pt-2">{breakdownSection}</TabsContent>
           <TabsContent value="blocks" className="pt-2">{blocksSection}</TabsContent>
           <TabsContent value="promotions" className="pt-2">{promotionsSection}</TabsContent>
         </Tabs>

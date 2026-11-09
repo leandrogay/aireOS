@@ -361,6 +361,36 @@ export default function ForecastChart({
   // changes something in view, so its gap, markers and band wait for it too.
   const simulatedSeries = scenario?.series[0] ?? null;
   const showSimulated = Boolean(simulatedSeries) && Boolean(visibleSeries.simulated);
+  const composition = scenario?.composition ?? [];
+  const compositionVisible = scenario?.compositionVisible ?? {};
+  const showComposition = Boolean(composition.length);
+  const compositionKeys = composition.map((layer) => layer.key).join('|');
+  const compositionVisibility = composition
+    .map((layer) => `${layer.key}:${compositionVisible[layer.key] ? 'on' : 'off'}`)
+    .join('|');
+  const compositionDebugData = JSON.stringify({
+    firstPoint: points[0],
+    firstChartPoint: chartData[0],
+    composition,
+    compositionVisible,
+    renderedLayers: composition
+      .filter((layer) => compositionVisible[layer.key])
+      .map((layer) => ({
+        key: layer.key,
+        value: chartData[0]?.[layer.key],
+        numeric: typeof chartData[0]?.[layer.key] === 'number',
+      })) ?? [],
+  });
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'development' || !showComposition) return;
+    const debugData = JSON.parse(compositionDebugData);
+    console.debug('[scenario composition] chart', {
+      showComposition,
+      ...debugData,
+    });
+  // Keep this diagnostic effect on a fixed-size dependency list. The chart
+  // receives new point objects as filters and scenario inputs change.
+  }, [compositionDebugData, compositionKeys, compositionVisibility, showComposition]);
   const scenarioMarkers = showSimulated
     ? scenario.markers
         .map((marker) => ({ ...marker, x: monthX(marker.month_year) }))
@@ -649,6 +679,25 @@ export default function ForecastChart({
                         fill: '#A8741A',
                       }}
                     />
+                  ) : null}
+                  {showComposition ? (
+                    scenario?.composition
+                      ?.filter((layer) => scenario.compositionVisible?.[layer.key])
+                      .map((layer) => (
+                        <Area
+                          key={layer.key}
+                          dataKey={(entry) => entry[layer.key] ?? 0}
+                          type="monotone"
+                          stackId="scenario-composition"
+                          stroke="none"
+                          fill={layer.color}
+                          fillOpacity={layer.opacity ?? 0.3}
+                          tooltipType="none"
+                          legendType="none"
+                          activeDot={false}
+                          isAnimationActive={false}
+                        />
+                      ))
                   ) : null}
                   {showSimulated ? (
                     <Area

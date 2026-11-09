@@ -1,0 +1,66 @@
+{
+  "creationTime": "1794153662814",
+  "etag": "xTzgDJpVvNymgr7KduX5aA==",
+  "id": "aire-data:aireos_forecast_validation_sg.aire_forecasting_runs",
+  "kind": "bigquery#table",
+  "lastModifiedTime": "1794153662815",
+  "location": "asia-southeast1",
+  "numActiveLogicalBytes": "272958",
+  "numActivePhysicalBytes": "394883",
+  "numBytes": "272958",
+  "numCurrentPhysicalBytes": "57781",
+  "numLongTermBytes": "0",
+  "numLongTermLogicalBytes": "0",
+  "numLongTermPhysicalBytes": "0",
+  "numRows": "3756",
+  "numTimeTravelPhysicalBytes": "337102",
+  "numTotalLogicalBytes": "272958",
+  "numTotalPhysicalBytes": "394883",
+  "schema": {
+    "fields": [
+      {
+        "name": "forecast_generated_at",
+        "type": "TIMESTAMP"
+      },
+      {
+        "name": "customer_id",
+        "type": "INTEGER"
+      },
+      {
+        "name": "sku",
+        "type": "STRING"
+      },
+      {
+        "name": "month_year",
+        "type": "DATE"
+      },
+      {
+        "name": "source_model",
+        "type": "STRING"
+      },
+      {
+        "name": "predicted_quantity_cartons",
+        "type": "FLOAT"
+      },
+      {
+        "name": "prediction_interval_lower_bound",
+        "type": "FLOAT"
+      },
+      {
+        "name": "prediction_interval_upper_bound",
+        "type": "FLOAT"
+      },
+      {
+        "name": "is_best",
+        "type": "BOOLEAN"
+      }
+    ]
+  },
+  "selfLink": "https://bigquery.googleapis.com/bigquery/v2/projects/aire-data/datasets/aireos_forecast_validation_sg/tables/aire_forecasting_runs",
+  "tableReference": {
+    "datasetId": "aireos_forecast_validation_sg",
+    "projectId": "aire-data",
+    "tableId": "aire_forecasting_runs"
+  },
+  "type": "TABLE"
+}

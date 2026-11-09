@@ -15,6 +15,7 @@ import ScenarioBuilderSkeleton from '@/components/scenario/ScenarioBuilderSkelet
 import ScenarioPanel from '@/components/scenario/ScenarioPanel';
 import ScenarioTotals from '@/components/scenario/ScenarioTotals';
 import ScenarioYearComparison from '@/components/scenario/ScenarioYearComparison';
+import FrozenBaselinePanel from '@/components/scenario/FrozenBaselinePanel';
 import { nextYearDateRange } from '@/app/utils/dateRange';
 import { FORECAST_TIER_OPTIONS } from '@/app/utils/forecastLineText';
 import { DEFAULT_TIER } from '@/app/utils/forecastTiers';
@@ -59,6 +60,7 @@ import useExpandedRows from '@/hooks/useExpandedRows';
 import useScenarioBlocks from '@/hooks/useScenarioBlocks';
 import useScenarioPromotions from '@/hooks/useScenarioPromotions';
 import useUnitsSplitBasis from '@/hooks/useUnitsSplitBasis';
+import { SCENARIO_FIXTURE_BAKED_IN_DISCOUNTS, scenarioFixturesEnabled } from '@/app/utils/scenarioFixtures';
 
 // Its own key, so the Forecast page's range (this year) and this page's
 // (next year) don't overwrite each other.
@@ -141,6 +143,13 @@ export default function ScenarioBuilder() {
   const [newIds, setNewIds] = useState([]);
   const [togglingIds, setTogglingIds] = useState([]);
   const [actionError, setActionError] = useState(null);
+  // Keyed by the chart's composition layer keys (ForecastChart reads
+  // compositionVisible[layer.key]), so the Breakdown toggles match them.
+  const [compositionVisible, setCompositionVisible] = useState({
+    tier0Layer: true,
+    blocksLayer: true,
+    promotionsLayer: true,
+  });
   const expandedRows = useExpandedRows();
   const deletion = useConfirmAction({ onConfirm: deleteSaved });
 
@@ -205,6 +214,7 @@ export default function ScenarioBuilder() {
   // no Simulated line, legend entry or table columns before that.
   const hasSimulated = byItem.size > 0;
   const monthCells = cellsByMonth(cells);
+  const bakedIn = scenarioFixturesEnabled() ? SCENARIO_FIXTURE_BAKED_IN_DISCOUNTS : null;
   // Promotions have no name of their own; their mechanic stands in.
   const names = new Map([
     ...allBlocks.map((block) => [block.id, block.name]),
@@ -221,6 +231,23 @@ export default function ScenarioBuilder() {
       })),
     ])
   );
+  const compositionPoints = basePoints.map((point) => {
+    const current = point.current ?? null;
+    if (current == null) return point;
+    const monthTotals = [...(monthCells.get(point.month_year)?.values() ?? [])];
+    const blocks = monthTotals
+      .filter((item) => item.source === 'blocks')
+      .reduce((sum, item) => sum + item.deltaUnits, 0);
+    const promotions = monthTotals
+      .filter((item) => item.source === 'promotions')
+      .reduce((sum, item) => sum + item.deltaUnits, 0);
+    return {
+      ...point,
+      tier0Layer: current,
+      blocksLayer: blocks,
+      promotionsLayer: promotions,
+    };
+  });
   const monthsByItem = new Map();
   for (const [month, items] of [...monthCells].sort(([a], [b]) => a.localeCompare(b))) {
     for (const [itemId, totals] of items) {
@@ -386,7 +413,7 @@ export default function ScenarioBuilder() {
       >
         <div className="min-w-0 space-y-1 min-[1100px]:flex min-[1100px]:flex-col min-[1100px]:[&>[data-slot=card]]:flex-1">
           <ForecastChart
-            points={hasSimulated ? withSimulatedLine(basePoints, byMonth) : basePoints}
+          points={hasSimulated ? withSimulatedLine(compositionPoints, byMonth) : compositionPoints}
             startDate={startDate}
             endDate={endDate}
             metric="units"
@@ -452,7 +479,15 @@ export default function ScenarioBuilder() {
             yearTotalsLoading={yearTotalsLoading}
             horizonVolume={sumHorizonForecast(basePoints)}
             loading={view.loading}
-            scenario={scenario}
+            scenario={{
+              ...scenario,
+              compositionVisible,
+              composition: [
+                  { key: 'tier0Layer', color: '#3A4369', opacity: 0.18 },
+                  { key: 'blocksLayer', color: '#8E7CC3', opacity: 0.35 },
+                  { key: 'promotionsLayer', color: '#D68B6D', opacity: 0.35 },
+              ],
+            }}
           />
 
         </div>
@@ -466,6 +501,17 @@ export default function ScenarioBuilder() {
           collapsed={panelCollapsed}
           onCollapsedChange={setPanelCollapsed}
           itemCount={itemCount}
+          breakdownSection={
+            <FrozenBaselinePanel
+              rows={rows}
+              monthItems={monthItems}
+              bakedIn={bakedIn}
+              compositionVisible={compositionVisible}
+              onToggleComposition={(key) =>
+                setCompositionVisible((current) => ({ ...current, [key]: !current[key] }))
+              }
+            />
+          }
           blocksSection={
             scenarioBlocks.loading ? (
               <p className="text-xs text-deep-violet-blue/60">Loading building blocks…</p>

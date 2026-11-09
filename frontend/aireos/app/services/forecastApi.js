@@ -1,4 +1,10 @@
 import { ALL_TIERS, DEFAULT_TIER, rowsForTier } from '@/app/utils/forecastTiers';
+import {
+  SCENARIO_FIXTURE_ACTUALS,
+  SCENARIO_FIXTURE_OPTIONS,
+  SCENARIO_FIXTURE_ROWS,
+  scenarioFixturesEnabled,
+} from '@/app/utils/scenarioFixtures';
 
 function apiBaseUrl() {
   return (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
@@ -28,6 +34,7 @@ async function request(path) {
  * forecast output and monthly actuals.
  */
 export async function getForecastOptions() {
+  if (scenarioFixturesEnabled()) return SCENARIO_FIXTURE_OPTIONS;
   return request('/api/forecast/options');
 }
 
@@ -63,6 +70,22 @@ export async function getForecastView({
   endDate = '',
   tier = DEFAULT_TIER,
 } = {}) {
+  if (scenarioFixturesEnabled()) {
+    const rows = tier === ALL_TIERS ? SCENARIO_FIXTURE_ROWS : rowsForTier(SCENARIO_FIXTURE_ROWS, tier);
+    return {
+      rows,
+      tiers: [{ value: 'tier0', label: 'Tier 0 · Baseline', order: 0 }],
+      availability: { [SCENARIO_FIXTURE_ROWS[0].sku]: { tier0: { is_available: true } } },
+      horizon: {},
+      actuals: SCENARIO_FIXTURE_ACTUALS,
+      promotions: [],
+      freshness: {
+        ...EMPTY_FORECAST_FRESHNESS,
+        current_generated_at: SCENARIO_FIXTURE_ROWS[0].current_generated_at,
+        output_built_at: SCENARIO_FIXTURE_ROWS[0].output_built_at,
+      },
+    };
+  }
   const params = new URLSearchParams();
   if (productName) params.set('product_name', productName);
   if (customerName) params.set('customer_name', customerName);
