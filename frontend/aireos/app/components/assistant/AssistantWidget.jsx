@@ -17,6 +17,7 @@ import {
   MessageScrollerViewport,
   useMessageScroller,
 } from '@/components/ui/message-scroller';
+import { POPUP_SHADOW_CLASS } from '@/components/ui/popupShadow';
 import { cn } from '@/lib/utils';
 import useAssistant, { ALL_CUSTOMERS } from '@/hooks/useAssistant';
 import useCustomerOptions from '@/hooks/useCustomerOptions';
@@ -266,7 +267,8 @@ export default function AssistantWidget() {
             exit={reduceMotion ? undefined : 'closed'}
             style={{ transformOrigin: 'bottom right' }}
             className={cn(
-              'fixed z-50 gap-0 rounded-lg border border-lavander bg-white py-0 shadow-xl ring-0',
+              'fixed z-50 gap-0 rounded-lg border border-deep-violet-blue bg-white py-0 ring-0',
+              POPUP_SHADOW_CLASS,
               // Placed by its four edges (not width/height) so the move between the
               // two sizes can be animated; 100% is the window, scrollbar excluded.
               'transition-[top,left,right,bottom] duration-300 ease-out motion-reduce:transition-none',

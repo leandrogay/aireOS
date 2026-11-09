@@ -321,11 +321,17 @@ def _fetch_actuals(
     actuals: dict[tuple[int, str], dict[date, dict[str, float]]] = {}
     for (customer_id, sku), months in metrics.items():
         units, data_through = sales.get(customer_id, ({}, None))
+        sku_units = units.get(sku, {})
+        # A month inside the SKU's history with sales but no inventory row
+        # (nothing shipped that month) still sold stock. Months after the last
+        # row stay out: they would move where the SKU's plan starts.
+        first, last = min(months), max(months)
+        sold_between = {month: {} for month in sku_units if first < month < last}
         by_month = {}
-        for month, values in months.items():
+        for month, values in {**sold_between, **months}.items():
             if data_through is None or data_through < _month_end(month):
                 continue
-            by_month[month] = {**values, "sell_out_base": units.get(sku, {}).get(month, 0.0)}
+            by_month[month] = {**values, "sell_out_base": sku_units.get(month, 0.0)}
         if by_month:
             actuals[(customer_id, sku)] = by_month
     return actuals
@@ -909,9 +915,8 @@ def get_sell_in_outlook(
     One customer's sell-in and sell-out by month for the sell-in plan chart:
     from January of `start_year` (the page's "Start from") to `months` months
     after the current month (its "Months ahead"), the same end month as the
-    plan. `start_year` defaults to the year of the latest actual month, so in
-    January the actuals from last year stay on the chart until this year has
-    one; it must be one of `start_years` (_start_years), or ValueError. Each SKU is actual up to its own last actual month and then
+    plan. `start_year` defaults to the current year; it must be one of
+    `start_years` (_start_years), or ValueError. Each SKU is actual up to its own last actual month and then
     uses the plan's recommended sell-in and the forecast sell-out, so a SKU
     only adds to the months its own data covers.
 
@@ -977,7 +982,7 @@ def get_sell_in_outlook(
     actuals_through = max(month for month, _ in last_actual.values())
     start_years = _start_years(metrics, actuals_through, current_month)
     if start_year is None:
-        start_year = actuals_through.year
+        start_year = current_month.year
     elif start_year not in start_years:
         raise ValueError(
             f"Start from must be one of {', '.join(str(year) for year in start_years)}, not {start_year}."
@@ -1136,8 +1141,8 @@ def _start_years(
     """
     The years the chart can start from: this year and last year (no further
     back, so the chart stays readable), last year only when the customer has
-    actuals in or before it, and always the year of the latest actual month
-    (the default), even when that is older.
+    actuals in or before it, and always the year of the latest actual month,
+    even when that is older, so those actuals can still be reached.
     """
 
     first_actual = min(month for sku_months in metrics.values() for month in sku_months)

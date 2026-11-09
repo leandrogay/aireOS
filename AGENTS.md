@@ -154,7 +154,7 @@ aireOS/
     │   │   │                      filter, forecast + inventory tables); ComparisonFigures (ChangeFigure / ChangeValue / ComparisonNote: the
     │   │   │                      ▲/▼ % figures and note of a Comparison card, dashboard + inventory); ChartZoomButton (+ hooks/useChartZoom: drag across
     │   │   │                      a category chart to zoom, inventory sell-in chart); formStyles.js (cream form input/label/button classes
-    │   │   │                      shared by forms and dialogs); Toast (+ hooks/useToast);
+    │   │   │                      shared by forms and dialogs); Toast (+ hooks/useToast); popupShadow.js (the shadow of the notification panel, chatbot and toast);
     │   │   │                      list-table kit (Customers, Promotions, SKUs, Nomenclatures): DataTable (card: count, search slot,
     │   │   │                      refresh, Retry, empty state, footer) → TableGrid (column config → fixed widths, sort headers,
     │   │   │                      skeleton; `nested` variant + `inset` for tables inside rows), ExpandableRow, RowActions

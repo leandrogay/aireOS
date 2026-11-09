@@ -56,9 +56,9 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
   const [customerId, setCustomerId] = useState(null);
   const [months, setMonths] = useState(6);
   const [skus, setSkus] = useState([]);
-  // The chart's "Start from" year; null = the backend's default, the year of
-  // the latest actual month (get_sell_in_outlook). Reset when the customer or
-  // SKUs change, since the years on offer depend on their actuals.
+  // The chart's "Start from" year; null = the backend's default, the current
+  // year (get_sell_in_outlook). Reset when the customer or SKUs change, since
+  // the years on offer depend on their actuals.
   const [startYear, setStartYear] = useState(null);
   // The chart's building blocks overlay: saved Scenario builder blocks,
   // picked by hand, drawn as extra lines (BuildingBlocksOverlay).
