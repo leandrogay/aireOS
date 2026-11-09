@@ -33,6 +33,11 @@ import TooltipChange from '@/components/dashboard/TooltipChange';
 // card's Revenue / Volume switch) stacked by store format; RevenueTrendCard
 // uses ComparisonMixChart while comparing.
 
+// The total line past the bar limit: its data key, and the colour the
+// comparison chart's total line uses (ComparisonLineChart).
+const TOTAL_KEY = 'total';
+const TOTAL_LINE_COLOR = 'var(--aire-deep-blue)';
+
 function weekOrMonth(periodLabel) {
   return periodLabel.startsWith('Week ') ? 'week' : 'month';
 }
@@ -40,9 +45,9 @@ function weekOrMonth(periodLabel) {
 // Reshapes the flat [{ period_label, period_start, format, revenue, units }]
 // rows the API returns into one row per period with a column per format
 // holding `metric`, which is the shape Recharts needs for a stacked bar, plus
-// each period's % change vs the one before it (from `periodTotal`) for the
-// tooltip, and how much of its revenue is estimated (`estimated`, said in the
-// tooltip as an est. row).
+// the period's `total` (from `periodTotal`, the line past the bar limit), its
+// % change vs the one before it for the tooltip, and how much of its revenue
+// is estimated (`estimated`, said in the tooltip as an est. row).
 function pivotByFormat(periodByFormat, periodTotal, metric) {
   const byPeriod = new Map();
   for (const row of periodByFormat) {
@@ -59,19 +64,31 @@ function pivotByFormat(periodByFormat, periodTotal, metric) {
   periodTotal.forEach((row, index) => {
     const period = byPeriod.get(row.period_label);
     if (!period) return;
+    period.total = row[metric];
     if (index > 0) period.changePct = changePct(row[metric], periodTotal[index - 1][metric]);
     period.estimated = row.estimated_revenue ?? 0;
   });
   return [...byPeriod.values()];
 }
 
+// The total line draws one series, but its tooltip still breaks the period
+// down by format, like a stacked bar's: one row per format that sold.
+function formatRows(period, formats) {
+  return formats
+    .filter((format) => typeof period[format] === 'number')
+    .map((format) => ({ dataKey: format, name: format, value: period[format], color: formatColor(format) }));
+}
+
 // Titled with the hovered bar's exact dates, one row per series — with a
 // colour square only when the series are formats, where the colour means
 // something — a Total row when stacked, the estimated revenue (Revenue view
 // only: units are always reported), and the % change vs the previous bar.
-function TrendTooltip({ active, payload, granularity, metric }) {
-  if (!active || !payload?.length) return null;
-  const period = payload[0].payload;
+// On the total line (`formats` given) the rows are the formats, not the line.
+function TrendTooltip({ active, payload: shown, granularity, metric, formats = null }) {
+  if (!active || !shown?.length) return null;
+  const period = shown[0].payload;
+  const payload = formats ? formatRows(period, formats) : shown;
+  if (!payload.length) return null;
   const total = payload.reduce((sum, item) => sum + (typeof item.value === 'number' ? item.value : 0), 0);
   const stacked = payload.length > 1;
 
@@ -124,7 +141,9 @@ function TrendTooltip({ active, payload, granularity, metric }) {
  * Each bar is labelled by its row's own type (weekOrMonth), so a
  * month-only row is never titled as a week in the tooltip. One customer is
  * one bar per period, so past the screen's bar limit (chartKind: 12 periods
- * on desktop, 3 on a phone) each format becomes a line instead.
+ * on desktop, 3 on a phone) it becomes one line of the period's total, like
+ * one customer on the cross-customer chart; hovering a point still shows the
+ * split by format.
  *
  * @param {{ periodByFormat: Array<object>, periodTotal: Array<object>, granularity: 'week' | 'month', metric?: 'revenue' | 'units' }} props
  */
@@ -138,14 +157,14 @@ export function FormatTrendChart({ periodByFormat, periodTotal, granularity, met
   // On a phone the axis is labelled by year (yearAxisProps), so no month axis.
   const monthGroups = mobile ? null : weekMonthGroups(chartData, granularity);
   const kind = trendChartKind({ customerCount: 1, periodCount: chartData.length, mobile });
-  // Bars stack the formats; lines draw each format on its own, so the axis
-  // only has to reach the single tallest format.
-  const yAxisProps = metricYAxisProps(metric, chartDataRange(chartData, formats, { stacked: kind === 'bars' }));
-  // A change (Revenue / Volume) moves the bars or lines and the axis together.
+  // Bars stack the formats; the line is the period's total.
+  const valueKeys = kind === 'bars' ? formats : [TOTAL_KEY];
+  const yAxisProps = metricYAxisProps(metric, chartDataRange(chartData, valueKeys, { stacked: kind === 'bars' }));
+  // A change (Revenue / Volume) moves the bars or line and the axis together.
   const transition = useChartTransition({
     rows: chartData,
     rowKey: 'period_label',
-    valueKeys: formats,
+    valueKeys,
     domain: yAxisProps.domain,
     ticks: yAxisProps.ticks,
   });
@@ -164,27 +183,28 @@ export function FormatTrendChart({ periodByFormat, periodTotal, granularity, met
   );
 
   if (kind === 'lines') {
+    // One line, so no legend: the tooltip names the formats.
     return (
-      <ChartContainer config={chartConfig} className={CHART_SIZE_CLASS}>
+      <ChartContainer config={{ [TOTAL_KEY]: { label: 'Total', color: TOTAL_LINE_COLOR } }} className={CHART_SIZE_CLASS}>
         <LineChart accessibilityLayer data={transition.rows} margin={margin}>
           <CartesianGrid vertical={false} />
           <XAxis dataKey={mobile ? 'periodStart' : 'displayLabel'} {...axisProps} padding={{ left: 24, right: 24 }} />
           {yAxis}
           <MonthAxis groups={monthGroups} />
-          {tooltip}
-          {!unnamedOnly && <ChartLegend content={<ChartLegendContent />} />}
-          {formats.map((format) => (
-            <Line
-              key={format}
-              dataKey={format}
-              type="linear"
-              stroke={`var(--color-${format})`}
-              strokeWidth={2}
-              dot={chartData.length > MAX_DOTTED_POINTS ? false : { r: 2.5 }}
-              activeDot={{ r: 4 }}
-              {...transition.seriesAnimation}
-            />
-          ))}
+          <ChartTooltip
+            content={<TrendTooltip granularity={granularity} metric={metric} formats={formats} />}
+            wrapperStyle={{ zIndex: 10 }}
+          />
+          <Line
+            dataKey={TOTAL_KEY}
+            name="Total"
+            type="linear"
+            stroke={`var(--color-${TOTAL_KEY})`}
+            strokeWidth={2}
+            dot={chartData.length > MAX_DOTTED_POINTS ? false : { r: 2.5 }}
+            activeDot={{ r: 4 }}
+            {...transition.seriesAnimation}
+          />
         </LineChart>
       </ChartContainer>
     );
