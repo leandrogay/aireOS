@@ -242,7 +242,7 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoa
                   resembles, which can be looked at but not approved on this
                   file's behalf, so it is not called a review. */}
               {outcome.mappingId && (
-                <div className="mt-2">
+                <div className="mt-2 flex flex-wrap gap-2">
                   {outcome.why === 'partial' ? (
                     <Link
                       href={`/mappings/${outcome.mappingId}`}
@@ -258,6 +258,16 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoa
                       aria-label={`Review the suggested nomenclature for ${file.name}`}
                     >
                       Review nomenclature
+                    </Link>
+                  )}
+                  {/* The guided review on trial beside the full one (app/nomenclature/[id]). */}
+                  {outcome.why !== 'partial' && (
+                    <Link
+                      href={`/nomenclature/${outcome.mappingId}`}
+                      className={secondaryLink}
+                      aria-label={`Guided review of the suggested nomenclature for ${file.name}`}
+                    >
+                      Guided review (dev)
                     </Link>
                   )}
                 </div>

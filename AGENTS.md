@@ -120,6 +120,8 @@ aireOS/
     │   ├── globals.css            Tailwind v4 + shadcn tokens + "AIRE brand kit" CSS vars + .dark
     │   ├── upload/page.js         Production upload + mapping review screen (uses components/upload)
     │   ├── upload2/page.js        Developer "mapping harness" (uses components/upload2, manual API base URL)
+    │   ├── nomenclature/[id]/page.js Guided review (trial, "Guided review (dev)" links): the /mappings/[id] review one
+    │   │                          question per screen (components/nomenclature), same endpoints
     │   ├── dashboard/page.js      Sales dashboard: customer/sku/store/date filters, trend chart, ranking
     │   ├── promotions/page.js     Promotion create/edit/delete + overview list
     │   ├── forecast/page.js       Sell-out forecast chart/table, default view = current year only
@@ -177,6 +179,8 @@ aireOS/
     │   │   ├── skus/              SKU catalog filters/table, create-edit form, details/history
     │   │   ├── mappings/          Nomenclature list: MappingList (state) → MappingFilters (on ui/FilterBar), MappingRow (on
     │   │   │                      ui/DataTable), columns.js; plus the review screen (MappingReviewPanel and its steps)
+    │   │   ├── nomenclature/      GuidedReview (steps from utils/guidedSteps.js, state in hooks/useGuidedReview.js) →
+    │   │   │                      GuidedFrame (StepRail beside one card: tip, Back / Continue) + one *Step per screen, reusing mappings/*
     │   │   ├── forecast/          ForecastChart/Filters/Table
     │   ├── services/              Backend API wrappers
     │   │   ├── promotionsApi.js   request() + parseApiError() + promotion/retailer/store endpoints

@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
 
 import StatusPill from '@/components/ui/StatusPill';
@@ -49,11 +50,22 @@ export default function MappingRow({ mapping, onOpen }) {
         >
           {mappingTitle(mapping)}
         </button>
-        {sourceLine && (
-          <p className="truncate text-xs text-deep-violet-blue/80" title={mapping.filename || sourceLine}>
-            {sourceLine}
-          </p>
-        )}
+        <p className="flex min-w-0 items-center gap-2 text-xs text-deep-violet-blue/80">
+          {sourceLine && (
+            <span className="truncate" title={mapping.filename || sourceLine}>
+              {sourceLine}
+            </span>
+          )}
+          {/* The guided review is on trial beside the full one
+              (app/nomenclature/[id]); its own click, not the row's. */}
+          <Link
+            href={`/nomenclature/${encodeURIComponent(mapping.mappingId)}`}
+            onClick={(event) => event.stopPropagation()}
+            className="shrink-0 rounded-full border border-violet/60 bg-lavander/60 px-1.5 py-px text-[11px] font-medium text-deep-violet-blue outline-none hover:bg-lavander focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            Guided review (dev)
+          </Link>
+        </p>
       </td>
       <td className="truncate px-4 py-2.5" title={customer || undefined}>
         {customer || '—'}

@@ -40,7 +40,7 @@ const STATUS_TEXT = {
  * "is “FPON” → fairprice_online" -- and its retailer is a dropdown that always
  * shows what it writes now, so a change can always be changed back.
  */
-function RetailerLine({ item, choice, customerName, retailers, onChoose, onFix, disabled }) {
+export function RetailerLine({ item, choice, customerName, retailers, onChoose, onFix, disabled }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const customer = customerLabel(customerName);
