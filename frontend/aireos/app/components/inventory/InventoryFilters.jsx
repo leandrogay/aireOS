@@ -1,7 +1,7 @@
 'use client';
 
 import SelectDropdown from '@/components/ui/SelectDropdown';
-import ToggleButton from '@/components/ui/ToggleButton';
+import ToggleField from '@/components/ui/ToggleField';
 
 import MonthFilter from './MonthFilter';
 import SkuDropdown from './SkuDropdown';
@@ -31,7 +31,8 @@ import { filterLabelClass, InventoryFilterCard } from './InventoryChrome';
  * @param {(value: string) => void} [props.onStatusChange]
  * @param {Array<{ value: string, label: string }>} [props.statusOptions]
  * @param {boolean} [props.atRiskOnly] show only SKUs on the at-risk list
- * @param {(value: boolean) => void} [props.onAtRiskChange] adds the "At risk only" toggle
+ * @param {(value: boolean) => void} [props.onAtRiskChange] adds the "Only at-risk SKUs" switch,
+ * @param {number | null} [props.atRiskCount] SKUs at risk for the current SKU filter, shown under
  * @param {() => void} props.onClear
  */
 export default function InventoryFilters({
@@ -52,12 +53,34 @@ export default function InventoryFilters({
   statusOptions,
   atRiskOnly = false,
   onAtRiskChange,
+  atRiskCount = null,
   onClear,
 }) {
   const canClear = skus.length > 0 || startMonth !== defaultStart || endMonth !== defaultEnd || Boolean(status) || atRiskOnly;
 
+  // Nothing to show: disabled rather than hidden, so the row doesn't reflow as
+  // filters change. Turning it off stays possible.
+  const noneAtRisk = atRiskCount === 0 && !atRiskOnly;
+  const atRiskHint = atRiskCount == null
+    ? undefined
+    : noneAtRisk
+      ? 'None at risk right now'
+      : `${atRiskCount} SKU${atRiskCount === 1 ? '' : 's'} at risk now`;
+  const atRiskSwitch = onAtRiskChange && (
+    <ToggleField
+      label="Only at-risk SKUs"
+      checked={atRiskOnly}
+      onChange={onAtRiskChange}
+      disabled={noneAtRisk}
+      onHint={atRiskHint}
+      offHint={atRiskHint}
+      className="ml-1 border-l border-lavander pl-3"
+    />
+  );
+  const headerStats = stats || atRiskSwitch ? <>{stats}{atRiskSwitch}</> : null;
+
   return (
-    <InventoryFilterCard canClear={canClear} onClear={onClear} stats={stats} note={note}>
+    <InventoryFilterCard canClear={canClear} onClear={onClear} stats={headerStats} note={note}>
       {leading}
 
       <SkuDropdown skuOptions={skuOptions} skus={skus} onChange={onSkusChange} />
@@ -90,15 +113,6 @@ export default function InventoryFilters({
             ariaLabel="DOH status"
             look="compact"
           />
-        </div>
-      )}
-
-      {onAtRiskChange && (
-        <div>
-          <span className={filterLabelClass}>At risk</span>
-          <ToggleButton pressed={atRiskOnly} onChange={onAtRiskChange}>
-            At risk only
-          </ToggleButton>
         </div>
       )}
     </InventoryFilterCard>

@@ -149,7 +149,7 @@ export default function ToggleGallery() {
         </div>
       </Section>
 
-      <Section title="ToggleButton — one thing on or off" note="Stays pressed while on. Used by Inventory's “At risk only” filter.">
+      <Section title="ToggleButton — one thing on or off" note="Stays pressed while on. Inventory's at-risk filter used to be one; it is now a ToggleField.">
         <Variant name="Compact (inventory filters)" props={'look="compact"'} value={pressed.atRisk}>
           <span className={filterLabelClass}>At risk</span>
           <ToggleButton pressed={pressed.atRisk} onChange={(value) => setPressed((prev) => ({ ...prev, atRisk: value }))}>

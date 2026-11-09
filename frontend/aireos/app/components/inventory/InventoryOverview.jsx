@@ -3,6 +3,7 @@
 import { useState } from 'react';
 
 import BarChartSkeleton from '@/components/ui/BarChartSkeleton';
+import useAtRisk from '@/hooks/useAtRisk';
 import useInventoryOverview from '@/hooks/useInventoryOverview';
 import { earliestMonthInput, filterMonthRange, latestMonthInput } from '@/app/utils/inventoryForm';
 
@@ -34,6 +35,7 @@ export default function InventoryOverview({ skuOptions, refreshKey, onEditRow })
     atRiskOnly,
     refreshKey,
   });
+  const { data: atRisk } = useAtRisk({ refreshKey });
 
   // The API returns the full history. From/To open on that whole span, which
   // is what the chart draws, and both the chart and the table follow the range.
@@ -44,8 +46,15 @@ export default function InventoryOverview({ skuOptions, refreshKey, onEditRow })
   const shownEnd = endMonth ?? defaultEnd;
   const tableRows = data ? filterMonthRange(data.skus, shownStart, shownEnd) : [];
   const chartRows = data ? filterMonthRange(data.monthly, shownStart, shownEnd) : undefined;
+  // Customer x SKU pairs, the way the filtered overview counts them below.
+  const atRiskCount = atRisk
+    ? new Set(
+      atRisk.items
+        .filter((item) => !skus.length || skus.includes(item.sku))
+        .map((item) => `${item.customer_id}-${item.sku}`),
+    ).size
+    : null;
   const atRiskSkuCount = data ? new Set(data.skus.map((row) => `${row.customer_id}-${row.sku}`)).size : 0;
-  // Distinct counts: a SKU sold to three customers is still one SKU, so these follow the data as customers or SKUs are added.
   const distinctSkuCount = data ? new Set(data.skus.map((row) => row.sku)).size : 0;
   const customerCount = data ? new Set(data.skus.map((row) => row.customer_id)).size : 0;
 
@@ -59,6 +68,8 @@ export default function InventoryOverview({ skuOptions, refreshKey, onEditRow })
   const scopeTags = [
     { label: 'SKU', value: skuScopeLabel(skus) },
     { label: 'Months', value: monthRangeLabel(shownStart, shownEnd) },
+    // So the chart (or a screenshot of it) never looks like the full picture when it isn't.
+    ...(atRiskOnly ? [{ label: 'Showing', value: 'At risk only' }] : []),
   ];
   const atRiskNote = !atRiskOnly || !data
     ? null
@@ -80,16 +91,13 @@ export default function InventoryOverview({ skuOptions, refreshKey, onEditRow })
         onEndMonthChange={setEndMonth}
         atRiskOnly={atRiskOnly}
         onAtRiskChange={setAtRiskOnly}
+        atRiskCount={atRiskCount}
         onClear={clearFilters}
         stats={data ? (
-          atRiskOnly ? (
-            <StatTag label="At risk" value={String(atRiskSkuCount)} />
-          ) : (
-            <>
-              <StatTag label="SKUs" value={String(distinctSkuCount)} />
-              <StatTag label={customerCount === 1 ? 'Customer' : 'Customers'} value={String(customerCount)} />
-            </>
-          )
+          <>
+            <StatTag label="SKUs" value={String(distinctSkuCount)} />
+            <StatTag label={customerCount === 1 ? 'Customer' : 'Customers'} value={String(customerCount)} />
+          </>
         ) : null}
         note={atRiskNote}
       />
