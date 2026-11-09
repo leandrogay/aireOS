@@ -92,11 +92,7 @@ function MappingsView() {
   // ---- Render -----------------------------------------------------------
 
   return (
-    <PageLayout
-      title="Nomenclatures"
-      fitScreen
-      back={{ href: '/upload', label: 'Upload' }}
-    >
+    <PageLayout title="Nomenclatures" fitScreen>
       <MappingList
         mappings={mappingReviews}
         isLoading={isLoadingMappings}
