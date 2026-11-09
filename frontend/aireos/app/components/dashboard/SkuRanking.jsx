@@ -150,14 +150,15 @@ function SortHeader({ label, active, order, onClick }) {
   );
 }
 
-// One row per customer that sells through the active channel, highest metric
-// first unless order is 'asc'. A customer with no sales in the period stays,
-// at 0, so the bottom of the list is the quiet one. Rank is the row number
-// after that sort.
 // A customer with nothing loaded for the period, in place of a 0 that would
 // read as no sales.
 const NO_DATA = <span className="text-deep-violet-blue/50">No data</span>;
 
+// One row per customer that sells through the active channel, highest metric
+// first unless order is 'asc'. A customer with no sales in the period stays,
+// sorted as 0, so the bottom of the list is the quiet one; one with nothing
+// loaded for the period reads "No data" there (NO_DATA). Rank is the row
+// number after that sort.
 function rankCustomers(rows, mode, metric, order, colorOrder) {
   const shown = rows.filter((row) => (mode === 'online' ? row.has_online : row.has_offline));
   const ranked = shown

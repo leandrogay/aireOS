@@ -152,6 +152,7 @@ export default function DashboardPage() {
     end: latestDataEnd,
     earliestStart: earliestDataStart,
     latestWeekStart: latestGenuineWeekStart,
+    error: dateRangeError,
   } = useDefaultDateRange({ customer, customers, mode, dataVersion, period: 'week' });
   const latestWeekStart = latestGenuineWeekStart || latestPeriodStart;
   const presets = buildDateRangePresets(latestPeriodStart);
@@ -181,6 +182,9 @@ export default function DashboardPage() {
   if (customerOptionsError && customerOptions.length === 0) pageStatus = 'failed';
   else if (customerOptionsLoading || allCustomersLoading) pageStatus = 'loading';
   else if (customerOptions.length === 0) pageStatus = 'empty';
+  // The latest period couldn't be read for these customers: the failed card
+  // (with Try again) rather than a placeholder that would never resolve.
+  else if (customers.length > 0 && !latestPeriodStart && dateRangeError) pageStatus = 'failed';
   else if (customers.length > 0 && !latestPeriodStart) pageStatus = 'loading';
   const pageLoading = pageStatus === 'loading';
 
@@ -391,7 +395,7 @@ export default function DashboardPage() {
       title="Sales Dashboard"
     >
       {(pageStatus === 'failed' || pageStatus === 'empty') ? (
-        <DashboardStatus kind={pageStatus} error={customerOptionsError} />
+        <DashboardStatus kind={pageStatus} error={customerOptionsError || dateRangeError} />
       ) : (
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
           <div className="lg:col-span-2">

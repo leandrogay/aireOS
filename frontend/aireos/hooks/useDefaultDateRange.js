@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 
-const EMPTY_RANGE = { start: '', end: '', periodType: null, earliestStart: '', latestWeekStart: '' };
+const EMPTY_RANGE = { start: '', end: '', periodType: null, earliestStart: '', latestWeekStart: '', error: null };
 
 /**
  * Bounds anchored to the latest available PREFERRED period for the given
@@ -25,8 +25,9 @@ const EMPTY_RANGE = { start: '', end: '', periodType: null, earliestStart: '', l
  *
  * Bounds are kept with the customers / channel they were read for and only
  * returned while those still apply, so a new selection reads as blank
- * (loading) rather than the previous customers' months, and a failed read
- * leaves them blank. A dataVersion refetch keeps the current bounds.
+ * (loading) rather than the previous customers' months. A failed read
+ * leaves them blank with `error` set, so the page can say so instead of
+ * loading for ever. A dataVersion refetch keeps the current bounds.
  */
 export default function useDefaultDateRange({
   customer = '',
@@ -59,7 +60,7 @@ export default function useDefaultDateRange({
         const data = await res.json();
         if (cancelled) return;
         if (!res.ok) {
-          setRange({ key, ...EMPTY_RANGE });
+          setRange({ key, ...EMPTY_RANGE, error: data?.detail || 'Failed to load the latest loaded period' });
           return;
         }
         setRange({
@@ -69,12 +70,12 @@ export default function useDefaultDateRange({
           periodType: data.period_type ?? null,
           earliestStart: data.earliest_start ?? '',
           latestWeekStart: data.latest_week_start ?? '',
+          error: null,
         });
-      } catch {
-        // Silent: a failed read gives '' bounds for these customers, the
-        // same as no filter/default at all (all-time), rather than keeping
-        // the previous customers' months or blocking the page.
-        if (!cancelled) setRange({ key, ...EMPTY_RANGE });
+      } catch (err) {
+        // '' bounds for these customers, never the previous customers'
+        // months; `error` lets the page show its failed card with Try again.
+        if (!cancelled) setRange({ key, ...EMPTY_RANGE, error: err.message || 'Failed to load the latest loaded period' });
       }
     }
 

@@ -1116,7 +1116,6 @@ def get_customer_options() -> list[dict]:
         JOIN retailers r ON r.retailer_id = s.retailer_id
         LEFT JOIN customer_retailers cr ON cr.retailer_id = r.retailer_id
         LEFT JOIN customers c ON c.customer_id = cr.customer_id
-        ORDER BY r.retailer_name
         """
     )
     with _get_read_engine().connect() as conn:
