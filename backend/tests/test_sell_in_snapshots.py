@@ -33,7 +33,7 @@ def _install(monkeypatch, plans):
 
     monkeypatch.setattr(inventory_service, "get_sell_in_plan", get_sell_in_plan)
     monkeypatch.setattr(
-        forecast_units, "get_forecast_lines_by_customer", lambda customer_ids: {i: {} for i in customer_ids}, raising=False
+        forecast_units, "get_forecast_lines_by_customer", lambda customer_ids: {i: {} for i in customer_ids}
     )
     return conn, asked
 
@@ -118,7 +118,7 @@ def test_the_forecast_is_read_once_and_shared_across_customers(monkeypatch):
         given[customer_id] = forecast_lines
         return _plan()
 
-    monkeypatch.setattr(forecast_units, "get_forecast_lines_by_customer", read_lines, raising=False)
+    monkeypatch.setattr(forecast_units, "get_forecast_lines_by_customer", read_lines)
     monkeypatch.setattr(inventory_service, "get_sell_in_plan", plan)
 
     sell_in_snapshots.take_snapshot()

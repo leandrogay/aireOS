@@ -268,10 +268,9 @@ def test_several_customers_lines_come_from_one_query(monkeypatch):
             {"customer_id": 3, "tier": "tier0", "sku": "C3", "month_year": date(2026, 10, 1), "forecast_current": 9.0, "forecast_previous": None, "forecast_initial": None},
         ]
     )
-    client = _install(monkeypatch, frame)
+    _install(monkeypatch, frame)
 
     lines = forecast_units.get_forecast_lines_by_customer([1, 2])
-
 
     assert sorted(lines) == [1, 2]
     assert lines[1]["current"] == {"A1": {date(2026, 10, 1): 70.0}}

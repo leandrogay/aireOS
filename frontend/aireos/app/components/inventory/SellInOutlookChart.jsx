@@ -11,6 +11,7 @@ import useChartZoom from '@/hooks/useChartZoom';
 import { FORECAST_SERIES } from '@/app/utils/forecastView';
 import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
 import { dotRevealDelay, lineSweepTimings } from '@/app/utils/lineAnimation';
+import { currentLineValues } from '@/app/utils/sellInOutlookLines';
 import { chartDataRange, metricYAxisProps, yearAxisProps } from '@/app/utils/trendChart';
 import useChartTransition from '@/hooks/useChartTransition';
 import useMediaQuery from '@/hooks/useMediaQuery';
@@ -174,34 +175,12 @@ export default function SellInOutlookChart({
   // The zoom works in x-axis values, which on a phone are the months themselves.
   const zoom = useChartZoom(months.map((row) => (mobile ? row.month : formatMonth(row.month))));
 
-  const lastIndex = months.findIndex((row) => row.month === actualsThrough);
-  const next = months[lastIndex + 1];
-  const nextIsCurrent = ['current', 'mixed'].includes(next?.forecast_source);
-  const rows = months.map((row, index) => {
-    return {
-      ...row,
-      label: formatMonth(row.month),
-      sell_in_recommended:
-        index === lastIndex && next?.sell_in_recommended != null ? row.sell_in_actual : row.sell_in_recommended,
-      // The current sell-out line joins the actual too, when the month after it is on the current forecast.
-      sell_out_current:
-        index === lastIndex && nextIsCurrent
-          ? row.sell_out_actual
-          : row.forecast_source === 'current' || row.forecast_source === 'mixed'
-            ? row.sell_out_forecast
-            : null,
-      // The overlay's lines follow the same rules as the two Current lines
-      // they adjust (blocks only change Current months, so the months match).
-      sell_in_with_blocks:
-        index === lastIndex && next?.sell_in_with_blocks != null ? row.sell_in_actual : (row.sell_in_with_blocks ?? null),
-      sell_out_with_blocks:
-        index === lastIndex && nextIsCurrent
-          ? row.sell_out_actual
-          : row.forecast_source === 'current' || row.forecast_source === 'mixed'
-            ? (row.sell_out_with_blocks ?? null)
-            : null,
-    };
-  });
+  const currentLines = currentLineValues(months, actualsThrough);
+  const rows = months.map((row, index) => ({
+    ...row,
+    label: formatMonth(row.month),
+    ...currentLines[index],
+  }));
 
   // Zoomed in: only the picked months. One month alone can't draw a line,
   // so it is shown with the months either side, marked by a line.
