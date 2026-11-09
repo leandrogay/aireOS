@@ -7,11 +7,12 @@
 // narrower product rules, not a mirror of the server's.
 //
 // The size cap is set by Cloud Run, not the app: a request body over 32 MiB is
-// rejected before it reaches FastAPI, so the limit stays under that.
+// rejected before it reaches FastAPI, so the limit stays under that, with room
+// for the multipart overhead around the file.
 
 export const MAX_FILES_PER_BATCH = 10;
 
-export const MAX_FILE_SIZE_MB = 32;
+export const MAX_FILE_SIZE_MB = 30;
 export const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
 export const ALLOWED_EXTENSIONS = ['xlsx', 'csv', 'txt'];
