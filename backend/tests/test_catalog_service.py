@@ -47,13 +47,13 @@ def test_names_with_no_customer_are_reported_in_order():
     conn = FakeConnection(lambda sql, params: [("fairprice_offline",)])
 
     unowned = catalog_service.unowned_retailer_names(
-        conn, ["fairprice_offline", "sheng_shiong_online", "sheng_shiong_online"]
+        conn, ["fairprice_offline", "sheng_siong_online", "sheng_siong_online"]
     )
 
-    assert unowned == ["sheng_shiong_online"]
+    assert unowned == ["sheng_siong_online"]
     sql, params = conn.calls[0]
     assert "JOIN customer_retailers" in sql
-    assert params == {"retailer_names": ["fairprice_offline", "sheng_shiong_online"]}
+    assert params == {"retailer_names": ["fairprice_offline", "sheng_siong_online"]}
 
 
 def test_no_names_skips_the_ownership_query():
@@ -666,7 +666,7 @@ def test_delete_removes_the_customer_link_before_the_retailer(monkeypatch):
 def test_a_retailer_in_use_cannot_be_deleted(monkeypatch):
     conn = _install_fake_engine(monkeypatch, _retailer_respond(retailer=_retailer_row(in_use=True)))
 
-    with pytest.raises(catalog_service.RetailerHasStoresError, match="can't be deleted"):
+    with pytest.raises(catalog_service.RetailerHasStoresError, match="Can't delete"):
         catalog_service.delete_retailer(8)
 
     assert conn.sql_containing("DELETE FROM") == []

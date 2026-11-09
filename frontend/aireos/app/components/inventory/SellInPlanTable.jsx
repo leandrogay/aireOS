@@ -20,7 +20,9 @@ const numClass = 'text-right tabular-nums';
  * inventory, the forecast sell-out, any temporary sell-in already sent, the
  * stock to hold at the end of the month for the target DOH, the recommended
  * sell-in, the days of holding left at month end and the projected ending
- * stock. The sell-in lands during the month it is shown against.
+ * stock. The sell-in lands during the month it is shown against. A forecast
+ * marked Initial is the Initial Yearly Forecast, used where the current
+ * forecast does not reach the month yet.
  *
  * @param {{ rows: object[], loading?: boolean }} props `loading`: first load in
  *   flight, so placeholder rows
@@ -58,7 +60,18 @@ export default function SellInDetailTable({ rows, loading = false }) {
                   <td className={cn(inventoryTdClass, 'font-medium')}>{formatMonth(row.month)}</td>
                   <td className={inventoryTdClass}>{row.product_name}</td>
                   <td className={cn(inventoryTdClass, numClass)}>{formatUnits(row.opening_stock)}</td>
-                  <td className={cn(inventoryTdClass, numClass)}>{formatUnits(row.forecast_sell_out)}</td>
+                  <td className={cn(inventoryTdClass, numClass)}>
+                    {/* The current forecast does not reach this month yet (backend _plan_forecast). */}
+                    {row.forecast_source === 'initial' ? (
+                      <span
+                        className="mr-1 rounded-full border border-lavander bg-lavander/60 px-1.5 py-px text-[10px] text-deep-violet-blue/70"
+                        title="No current forecast for this month yet, so the Initial Yearly Sell-out Forecast is used."
+                      >
+                        Initial
+                      </span>
+                    ) : null}
+                    {formatUnits(row.forecast_sell_out)}
+                  </td>
                   <td className={cn(inventoryTdClass, numClass)}>{formatUnits(row.shipped_so_far)}</td>
                   <td className={cn(inventoryTdClass, numClass)}>{formatUnits(row.stock_needed)}</td>
                   <td className={cn(inventoryTdClass, numClass, 'font-medium')}>{formatUnits(row.recommended_sell_in)}</td>

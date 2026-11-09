@@ -9,14 +9,14 @@ import useDohSettings from '@/hooks/useDohSettings';
 import useToast from '@/hooks/useToast';
 import { setDohAlert } from '@/app/services/settingsApi';
 import { GLOBAL_DEFAULT_DOH } from '@/app/utils/dohSettingsForm';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 
 import DohSettingsTable from './DohSettingsTable';
 import DohThresholdForm from './DohThresholdForm';
 
 /**
  * The DOH Settings page: every customer's current thresholds and alert
- * toggle, and an edit form (opened from a row) to change one customer's
+ * toggle, and an edit dialog (opened from a row) to change one customer's
  * thresholds or reset them to the global default. Each write returns the
  * customer's new settings row, which replaces that row in place; the refresh
  * button refetches everything.
@@ -36,12 +36,12 @@ export default function DohSettingsView() {
     replaceRow(result.settings);
     setEditingId(null);
     if (!result.changed) {
-      notify('success', 'No changes to save: the thresholds are already set to these values');
+      notify('success', 'No changes to save');
     } else if (result.settings.is_global_default) {
       // Saved the default values, e.g. after "Restore defaults" in the form.
-      notify('success', `Thresholds for ${retailerLabel(result.settings.customer_name)} reset to the global default`);
+      notify('success', `${customerLabel(result.settings.customer_name)} reset to default`);
     } else {
-      notify('success', 'Thresholds updated successfully');
+      notify('success', 'Thresholds updated');
     }
   }
 
@@ -51,7 +51,7 @@ export default function DohSettingsView() {
     try {
       const result = await setDohAlert(customerId, { doh_alert_enabled: enabled });
       replaceRow(result.settings);
-      notify('success', `DOH alerts turned ${enabled ? 'on' : 'off'} for ${retailerLabel(row.customer_name)}`);
+      notify('success', `DOH alerts ${enabled ? 'on' : 'off'} for ${customerLabel(row.customer_name)}`);
     } catch (err) {
       notify('error', err.message);
     } finally {

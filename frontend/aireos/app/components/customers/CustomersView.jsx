@@ -21,7 +21,7 @@ import {
   updateRetailer,
 } from '@/app/services/catalogApi';
 import { allRetailerNames, normaliseName } from '@/app/utils/customerForm';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel, retailerLabel } from '@/app/utils/retailerLabel';
 
 import CustomerTable from './CustomerTable';
 import LinkRetailerDialog from './LinkRetailerDialog';
@@ -45,7 +45,7 @@ function nameDialogProps(dialog, customers, unlinked) {
     const others = customers.filter((row) => row.customer_id !== customer?.customer_id);
     return {
       formKey: `${type}-${customer?.customer_id ?? 'new'}`,
-      title: isEdit ? `Edit customer — ${retailerLabel(customer.customer_name)}` : 'Add customer',
+      title: isEdit ? `Edit customer — ${customerLabel(customer.customer_name)}` : 'Add customer',
       fieldLabel: 'Customer name',
       kind: 'customer',
       initialName: isEdit ? customer.customer_name : '',
@@ -63,7 +63,7 @@ function nameDialogProps(dialog, customers, unlinked) {
     formKey: `${type}-${retailer?.retailer_id ?? customer.customer_id}`,
     title: isEdit
       ? `Edit retailer — ${retailerLabel(retailer.retailer_name)}`
-      : `Add retailer to ${retailerLabel(customer.customer_name)}`,
+      : `Add retailer to ${customerLabel(customer.customer_name)}`,
     fieldLabel: 'Retailer name',
     kind: 'retailer',
     initialName: isEdit ? retailer.retailer_name : '',
@@ -116,12 +116,12 @@ export default function CustomersView() {
         const created = await createCustomer({ customer_name: name });
         applyCustomer(created);
         setHighlightId(created.customer_id);
-        notify('created', `Customer ${retailerLabel(created.customer_name)} added`);
+        notify('created', `Customer ${customerLabel(created.customer_name)} added`);
       } else if (type === 'customer-edit') {
         const updated = await updateCustomer(customer.customer_id, { customer_name: name });
         applyCustomer(updated);
         setHighlightId(updated.customer_id);
-        notify('updated', `Customer renamed to ${retailerLabel(updated.customer_name)}`);
+        notify('updated', `Renamed to ${customerLabel(updated.customer_name)}`);
       } else if (type === 'retailer-create') {
         const result = await createRetailer({ retailer_name: name, customer_id: customer.customer_id });
         showCustomer(result.customer);
@@ -130,7 +130,7 @@ export default function CustomersView() {
         const result = await updateRetailer(retailer.retailer_id, { retailer_name: name });
         if (result.customer) showCustomer(result.customer);
         else applyUnlinked(result.retailer);
-        notify('updated', `Retailer renamed to ${retailerLabel(result.retailer.retailer_name)}`);
+        notify('updated', `Renamed to ${retailerLabel(result.retailer.retailer_name)}`);
       }
       setDialog(null);
     } catch (err) {
@@ -146,7 +146,7 @@ export default function CustomersView() {
       showCustomer(result.customer);
       notify(
         'updated',
-        `${retailerLabel(result.retailer.retailer_name)} linked to ${retailerLabel(result.customer.customer_name)}`,
+        `Retailer linked to ${customerLabel(result.customer.customer_name)}`,
       );
       setLinking(null);
     } catch (err) {
@@ -165,7 +165,7 @@ export default function CustomersView() {
       } else {
         await deleteCustomer(customer.customer_id);
         removeCustomer(customer.customer_id);
-        notify('deleted', `Customer ${retailerLabel(customer.customer_name)} deleted`);
+        notify('deleted', `Customer ${customerLabel(customer.customer_name)} deleted`);
       }
     } catch (err) {
       // The row stays in the list; the toast carries the backend's reason.
@@ -180,11 +180,11 @@ export default function CustomersView() {
         { label: 'Retailer', value: retailerLabel(pendingDelete.retailer.retailer_name) },
         {
           label: 'Customer',
-          value: pendingDelete.customer ? retailerLabel(pendingDelete.customer.customer_name) : 'None',
+          value: pendingDelete.customer ? customerLabel(pendingDelete.customer.customer_name) : 'None',
         },
       ]
     : pendingDelete
-      ? [{ label: 'Customer', value: retailerLabel(pendingDelete.customer.customer_name) }]
+      ? [{ label: 'Customer', value: customerLabel(pendingDelete.customer.customer_name) }]
       : [];
 
   return (
@@ -224,8 +224,9 @@ export default function CustomersView() {
         />
 
         <p className="mt-1 px-1 text-xs text-deep-violet-blue/60">
-          A customer or retailer that already has sales or inventory data can&apos;t be renamed or
-          deleted: dashboards, uploads and forecasts find it by its name.
+          A retailer that already has sales can&apos;t be renamed or deleted: dashboards, uploads and
+          promotions find it by its name. A customer can always be renamed, but one with sales or
+          inventory data can&apos;t be deleted.
         </p>
       </div>
 

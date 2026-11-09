@@ -208,10 +208,11 @@ def _ensure_customer_name_free(
     customer_name: str,
     exclude_customer_id: int | None = None,
 ) -> None:
-    # Names arrive as lowercase slugs (schemas.catalog.normalise_name);
-    # lower() on the column also catches an older row stored in
-    # another case. The unique constraint is still the backstop for
-    # a race: the router maps its IntegrityError to the same 409.
+    # Names keep the case they were typed in (schemas.catalog.
+    # clean_customer_name), so lower() on both sides makes "NHG" and
+    # "nhg" the same customer. The unique constraint is still the
+    # backstop for a race: the router maps its IntegrityError to the
+    # same 409.
     taken = conn.execute(
         text(
             """
@@ -417,6 +418,13 @@ def update_customer(
     customer_id: int,
     customer,
 ) -> dict | None:
+    """
+    Renames a customer, even one with sales or inventory data: every
+    table links to it by customer_id, and its retailers keep their own
+    slug names (fairprice_offline), so sell-out, uploads and mappings
+    still find it. None when there is no such customer.
+    """
+
     with _get_engine().begin() as conn:
         current = fetch_customer(
             conn,
@@ -425,12 +433,6 @@ def update_customer(
 
         if current is None:
             return None
-
-        if current["in_use"]:
-            raise CustomerInUseError(
-                f'"{current["customer_name"]}" already has sales '
-                "or inventory data, so it can't be renamed."
-            )
 
         _ensure_customer_name_free(
             conn,
@@ -481,13 +483,12 @@ def delete_customer(
 
         if current["in_use"]:
             raise CustomerInUseError(
-                f'"{current["customer_name"]}" already has sales '
-                "or inventory data, so it can't be deleted."
+                f"Can't delete {current['customer_name']}: has sales or inventory"
             )
 
         if current["retailers"]:
             raise CustomerHasRetailersError(
-                f'Delete the retailers under "{current["customer_name"]}" first.'
+                f"Delete the retailers under {current['customer_name']} first"
             )
 
         # doh_settings rows go with the customer (ON DELETE CASCADE).

@@ -355,6 +355,37 @@ def test_last_cloud_task_attempt_records_refresh_failure(monkeypatch):
     assert "CDC unavailable" in failures[0]
 
 
+# ---- sell-in plan snapshot -----------------------------------------------------
+
+
+def _finished(monkeypatch, *, failed: bool, retrained: bool) -> list:
+    """Run _finish for a job that ran; returns the snapshots taken."""
+    taken = []
+    monkeypatch.setattr(worker.sql, "connect_with_connector", lambda: FakeEngine(FakeConnection()))
+    monkeypatch.setattr(worker, "_run_outcome", lambda _: (True, retrained))
+    monkeypatch.setattr(worker, "_notify_outcome", lambda *_: None)
+    monkeypatch.setattr(worker, "_pending", lambda _: [])
+    monkeypatch.setattr(worker.sell_in_snapshots, "take_snapshot_best_effort", lambda: taken.append(True))
+
+    class Job:
+        error_result = {"message": "boom"} if failed else None
+
+    worker._finish("job-1", Job())
+    return taken
+
+
+def test_a_refresh_that_retrained_saves_the_sell_in_plan(monkeypatch):
+    assert _finished(monkeypatch, failed=False, retrained=True) == [True]
+
+
+def test_a_refresh_with_no_new_month_saves_no_sell_in_plan(monkeypatch):
+    assert _finished(monkeypatch, failed=False, retrained=False) == []
+
+
+def test_a_failed_refresh_saves_no_sell_in_plan(monkeypatch):
+    assert _finished(monkeypatch, failed=True, retrained=False) == []
+
+
 # ---- Success notification summary ----
 
 

@@ -61,6 +61,9 @@ def batch(monkeypatch):
     monkeypatch.setattr(worker.sql, "connect_with_connector", lambda: FakeEngine(conn))
     monkeypatch.setattr(worker, "_pending", lambda _: [])
     monkeypatch.setattr(worker, "latest_forecast_summary", lambda: SUMMARY)
+    # A retrained run also saves every customer's sell-in plan; that reads
+    # BigQuery and Cloud SQL, so it is a no-op here (test_sell_in_snapshots).
+    monkeypatch.setattr(worker.sell_in_snapshots, "take_snapshot_best_effort", lambda: None)
     return conn
 
 

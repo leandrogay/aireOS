@@ -238,9 +238,11 @@ export function changePct(current, previous) {
 }
 
 // "+12.1%" / "-3.4%" / "—", shared by the chart, cards, table and ranking.
-export function formatChangePct(pct) {
+// `decimals` is 1 everywhere except the inventory actual-vs-forecast
+// figures, where a small miss matters (2).
+export function formatChangePct(pct, decimals = 1) {
   if (pct === null || pct === undefined) return '—';
-  return `${pct > 0 ? '+' : ''}${pct.toFixed(1)}%`;
+  return `${pct > 0 ? '+' : ''}${pct.toFixed(decimals)}%`;
 }
 
 // ==== Chart alignment ====

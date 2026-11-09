@@ -260,3 +260,37 @@ def test_list_returns_newest_first(monkeypatch):
     assert [block["name"] for block in blocks] == ["Second", "First"]
     (sql, _), = [call for call in conn.sql_containing("ORDER BY") if "FROM scenario_building_blocks" in call[0]]
     assert "block.created_at DESC" in sql
+
+
+# ---- blocks for the sell-in plan overlay ----
+
+
+def test_overlay_blocks_are_read_for_the_one_customer_and_the_picked_ids():
+    conn = FakeConnection(
+        lambda sql, params: [
+            {
+                "block_id": 7,
+                "sku": None,
+                "name": "New store",
+                "uplift_mode": "units",
+                "uplift_value": Decimal("-120"),
+                "start_month": date(2026, 11, 1),
+                "end_month": date(2026, 12, 1),
+            }
+        ]
+    )
+
+    blocks = building_blocks_service.fetch_blocks_for_customer(conn, 1, [7, 9])
+
+    sql, params = conn.calls[0]
+    assert "FROM scenario_building_blocks" in sql
+    assert params == {"customer_id": 1, "block_ids": [7, 9]}
+    assert blocks[0]["uplift_value"] == -120.0
+    assert isinstance(blocks[0]["uplift_value"], float)
+
+
+def test_no_picked_blocks_reads_nothing():
+    conn = FakeConnection()
+
+    assert building_blocks_service.fetch_blocks_for_customer(conn, 1, []) == []
+    assert conn.calls == []

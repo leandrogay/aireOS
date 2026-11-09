@@ -29,11 +29,14 @@ export default function useCustomerInventory({
     if (!id) return undefined;
 
     let cancelled = false;
+    // Aborted on a filter change or unmount, so a slow request doesn't keep
+    // holding one of the browser's few connections to the API.
+    const controller = new AbortController();
 
     async function fetchCustomer() {
       setLoading(true);
       try {
-        const result = await getCustomerInventory(id, filters);
+        const result = await getCustomerInventory(id, filters, { signal: controller.signal });
         if (cancelled) return;
         setData(result);
         setError(null);
@@ -47,6 +50,7 @@ export default function useCustomerInventory({
     fetchCustomer();
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [filterKey, refreshKey]);
 

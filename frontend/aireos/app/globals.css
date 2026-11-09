@@ -332,3 +332,15 @@
     box-shadow: inset 3px 0 0 var(--aire-deep-blue);
   }
 }
+
+/* ui/Toast: the bar along the bottom that empties until the toast goes away. */
+.toast-countdown {
+  animation-name: toast-countdown;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+@keyframes toast-countdown {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}

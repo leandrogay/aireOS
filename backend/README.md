@@ -77,6 +77,14 @@ succeeds or fails also appears in the notification bell (`rollback_success` /
 `rollback_failure`). Until then those notifications are skipped and logged; the
 rollback itself is unaffected.
 
+Apply `migrations/015_create_sell_in_plan_snapshots.sql` for the sell-in plan
+chart's "Sell-in Forecast (Previous)" line. Each forecast refresh that retrains
+(the event-triggered refresh and the scheduled run) saves every customer's
+sell-in plan under the current month, replacing that month's earlier save; the
+line shows the newest plan saved before each month. Until the table exists the
+save is skipped and logged, and the line stays empty; the refresh itself is
+unaffected.
+
 The current fact schema does not retain sales UOM. FairPrice labels the source
 measure `Qty (in EA)`, while the established downstream forecasting contract
 currently treats the values as cartons. The pipeline performs no numeric unit

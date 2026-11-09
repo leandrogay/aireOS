@@ -4,7 +4,7 @@ import { Tag } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { Switch } from '@/components/ui/switch';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 import { hasUnsavedChanges, upliftLabel } from '@/app/utils/scenarioBlocks';
 import { monthSpanLabel } from '@/app/utils/scenarioPitch';
 
@@ -71,7 +71,7 @@ export default function BlockList({ blocks, selectedId, onSelect, onToggle, impa
               <Tag className="mt-0.5 size-3.5 shrink-0 text-scenario" aria-hidden="true" />
               <span className="min-w-0">
                 <span className="block truncate text-xs font-medium text-deep-violet-blue">
-                  {retailerLabel(block.customer)} · {block.name}
+                  {customerLabel(block.customer)} · {block.name}
                 </span>
                 {impact ? (
                   <span className="block truncate text-[11px] font-semibold tabular-nums text-scenario-ink">{impact}</span>

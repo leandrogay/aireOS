@@ -2,7 +2,12 @@
 
 import { useEffect, useState } from 'react';
 
-import { currentYearDateRange, readForecastDateSession, writeForecastDateSession } from '@/app/utils/dateRange';
+import {
+  clearForecastDateSession,
+  currentYearDateRange,
+  readForecastDateSession,
+  writeForecastDateSession,
+} from '@/app/utils/dateRange';
 import useForecastOptions from '@/hooks/useForecastOptions';
 
 /**
@@ -34,16 +39,21 @@ export default function useForecastFilters() {
     setReady(true);
   }
 
-  useEffect(() => {
-    if (!ready || !startDate || !endDate) return;
-    writeForecastDateSession(startDate, endDate);
-  }, [ready, startDate, endDate]);
-
   const bounds = options?.bounds ?? { start: '', end: '' };
   // The "default" state is the current year, not the full bounds range --
   // canClear compares against that, or Clear would look active on a freshly
   // loaded page that hasn't been touched yet.
   const defaultDateRange = currentYearDateRange(bounds);
+  const isDefaultRange = startDate === defaultDateRange.start && endDate === defaultDateRange.end;
+
+  // Only a range someone picked is remembered. Saving the default would pin
+  // this tab to the year it was first opened in.
+  useEffect(() => {
+    if (!ready || !startDate || !endDate) return;
+    if (isDefaultRange) clearForecastDateSession();
+    else writeForecastDateSession(startDate, endDate);
+  }, [ready, startDate, endDate, isDefaultRange]);
+
   const canClear = Boolean(
     productName || customerName || startDate !== defaultDateRange.start || endDate !== defaultDateRange.end
   );

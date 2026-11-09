@@ -16,9 +16,9 @@ import {
   secondaryButtonClass,
 } from '@/components/ui/formStyles';
 import { createCustomer } from '@/app/services/catalogApi';
-import { normaliseName, validateName } from '@/app/utils/customerForm';
+import { cleanCustomerName, normaliseName, validateName } from '@/app/utils/customerForm';
 import { CHANNELS, channelRetailerName } from '@/app/utils/mappingCustomer';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
 /**
@@ -56,7 +56,7 @@ function NewCustomerForm({ defaults, customers, unlinked, onCreated, onCancel, o
   if (!channels.length) channelError = 'Choose at least one channel.';
   else if (owned.length) {
     channelError = owned
-      .map((item) => `${item.retailerName} already belongs to ${retailerLabel(item.owner)}.`)
+      .map((item) => `${item.retailerName} already belongs to ${customerLabel(item.owner)}.`)
       .join(' ');
   }
 
@@ -148,7 +148,7 @@ function NewCustomerForm({ defaults, customers, unlinked, onCreated, onCancel, o
               {shownNameError}
             </p>
           ) : (
-            !nameError && normaliseName(name) !== name.trim() && <p className={hintClass}>Saved as {normaliseName(name)}</p>
+            !nameError && cleanCustomerName(name) !== name.trim() && <p className={hintClass}>Saved as {cleanCustomerName(name)}</p>
           )}
         </div>
 

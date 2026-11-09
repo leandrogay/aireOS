@@ -18,6 +18,7 @@ from app.services import (
     forecast_refresh_events,
     inventory_service,
     notification_service,
+    sell_in_snapshots,
     sql,
 )
 from app.services.bigquery import get_bigquery_client
@@ -415,6 +416,11 @@ def _finish(job_id: str, job) -> dict:
                 requeued, f"Another forecast run was still in progress after {_max_wait_text()}"
             )
         return _retry_later()
+    if retrained and not failed:
+        # Before the batch is marked completed, so a Cloud Tasks retry that
+        # finds it still running saves it again (the month's snapshot is
+        # replaced, never doubled). Best effort, like the bell below.
+        sell_in_snapshots.take_snapshot_best_effort()
     if failed or retrained:
         # Best effort and deduped on the job id: the batch status below must be
         # recorded even when the bell can't be written, and a Cloud Tasks retry

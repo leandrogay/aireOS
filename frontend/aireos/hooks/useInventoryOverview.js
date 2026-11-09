@@ -28,12 +28,15 @@ export default function useInventoryOverview({
 
   useEffect(() => {
     let cancelled = false;
+    // Aborted on a filter change or unmount, so a slow request doesn't keep
+    // holding one of the browser's few connections to the API.
+    const controller = new AbortController();
 
     async function fetchOverview() {
       setLoading(true);
       try {
         const filters = JSON.parse(filterKey);
-        const result = await getInventoryOverview(filters);
+        const result = await getInventoryOverview(filters, { signal: controller.signal });
         if (cancelled) return;
         setData(result);
         setError(null);
@@ -47,6 +50,7 @@ export default function useInventoryOverview({
     fetchOverview();
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [filterKey, refreshKey]);
 

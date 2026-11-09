@@ -138,7 +138,7 @@ export default function InventoryBulkCreateForm({ customers, skus: catalogSkus, 
     const failCount = pendingSkus.length - successCount;
     if (failCount === 0) {
       onSaved(
-        `Inventory data created for ${successCount} SKU${successCount === 1 ? '' : 's'} (${formatMonth(monthInputToDate(month))}).`,
+        `Created ${successCount} SKU${successCount === 1 ? '' : 's'} · ${formatMonth(monthInputToDate(month))}`,
       );
       setCustomerIds([]);
       setMonth('');

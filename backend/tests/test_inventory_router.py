@@ -138,16 +138,44 @@ def test_sell_in_plan_maps_a_bigquery_outage_to_503(monkeypatch):
 def test_sell_in_outlook_passes_the_months_and_chosen_skus_to_the_service(monkeypatch):
     seen = {}
 
-    def fake(customer_id, months, skus):
-        seen.update(customer_id=customer_id, months=months, skus=skus)
+    def fake(customer_id, months, skus, start_year, block_ids):
+        seen.update(customer_id=customer_id, months=months, skus=skus, start_year=start_year, block_ids=block_ids)
         return {"months": []}
 
     monkeypatch.setattr(inventory_service, "get_sell_in_outlook", fake)
 
-    response = client.get("/api/inventory/customers/1/sell-in-outlook?months=3&sku=S1&sku=S2")
+    response = client.get("/api/inventory/customers/1/sell-in-outlook?months=3&sku=S1&sku=S2&start_year=2025")
 
     assert response.status_code == 200
-    assert seen == {"customer_id": 1, "months": 3, "skus": ["S1", "S2"]}
+    assert seen == {"customer_id": 1, "months": 3, "skus": ["S1", "S2"], "start_year": 2025, "block_ids": None}
+
+
+def test_sell_in_outlook_passes_the_overlay_blocks_to_the_service(monkeypatch):
+    seen = {}
+
+    def fake(customer_id, months, skus, start_year, block_ids):
+        seen["block_ids"] = block_ids
+        return {"months": []}
+
+    monkeypatch.setattr(inventory_service, "get_sell_in_outlook", fake)
+
+    response = client.get("/api/inventory/customers/1/sell-in-outlook?block_id=4&block_id=9")
+
+    assert response.status_code == 200
+    assert seen == {"block_ids": [4, 9]}
+
+
+def test_sell_in_outlook_with_a_start_year_out_of_range_is_400(monkeypatch):
+    monkeypatch.setattr(
+        inventory_service,
+        "get_sell_in_outlook",
+        _raises(ValueError("Start from must be one of 2026, not 2019.")),
+    )
+
+    response = client.get("/api/inventory/customers/1/sell-in-outlook?start_year=2019")
+
+    assert response.status_code == 400
+    assert "2019" in response.json()["detail"]
 
 
 def test_sell_in_outlook_of_an_unknown_customer_is_404(monkeypatch):

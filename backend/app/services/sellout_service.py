@@ -876,8 +876,13 @@ def _retailer_family(retailer: str) -> str:
     return retailer
 
 
-def _customer_label(family: str) -> str:
-    # "fairprice" reads "Fairprice". A short code such as "nhg" stays "NHG".
+def _customer_label(family: str, customer_name: str | None = None) -> str:
+    # The name of the customer that owns the family's retailers, as it was
+    # typed ("FairPrice"; "Sheng_Shiong" reads "Sheng Shiong"). A family no
+    # customer owns yet is read off its slug: "fairprice" reads "Fairprice",
+    # a short code such as "nhg" stays "NHG".
+    if customer_name:
+        return customer_name.replace("_", " ")
     words = [word for word in family.replace("_", " ").split() if word]
     labelled = []
     for word in words:
@@ -886,6 +891,16 @@ def _customer_label(family: str) -> str:
         else:
             labelled.append(word[:1].upper() + word[1:].lower())
     return " ".join(labelled)
+
+
+def _customer_names_by_family(rows) -> dict[str, str]:
+    # Rows of retailer_name + customer_name (NULL when no customer owns the
+    # retailer) -> {family: customer_name}, for _customer_label.
+    names = {}
+    for row in rows:
+        if row.get("customer_name"):
+            names.setdefault(_retailer_family(row["retailer_name"]), row["customer_name"])
+    return names
 
 
 def _sku_product_order(sku_range: str | None, size: str | None) -> tuple:
@@ -1079,27 +1094,35 @@ def get_customer_options() -> list[dict]:
     # the page-header Customer selector, derived from whichever retailers
     # actually have sell-out rows (any period_type -- matches the original,
     # unfiltered). A newly ingested customer shows up automatically.
-    # customer_id is the customer record its retailers are linked to
-    # (customer_retailers), or None when none is: the dashboard orders
-    # customer colours by it, so a renamed customer (fairprice -> "FairPrice")
-    # keeps its colour rather than being matched by name.
+    # The value stays the family slug (it builds the retailer names every
+    # dashboard read filters on); the label is the owning customer's name.
+    # customer_id is that customer record (customer_retailers), or None when
+    # no customer owns the family: the dashboard orders customer colours by
+    # it, so a renamed customer (fairprice -> "FairPrice") keeps its colour
+    # rather than being matched by name.
     query = text(
         """
-        SELECT DISTINCT r.retailer_name, cr.customer_id
+        SELECT DISTINCT r.retailer_name, cr.customer_id, c.customer_name
         FROM sellout s
         JOIN retailers r ON r.retailer_id = s.retailer_id
         LEFT JOIN customer_retailers cr ON cr.retailer_id = r.retailer_id
+        LEFT JOIN customers c ON c.customer_id = cr.customer_id
         """
     )
     with _get_read_engine().connect() as conn:
-        rows = conn.execute(query).all()
+        rows = conn.execute(query).mappings().all()
     customer_ids: dict[str, int | None] = {}
     for row in rows:
-        family = _retailer_family(row[0])
+        family = _retailer_family(row["retailer_name"])
         if customer_ids.get(family) is None:
-            customer_ids[family] = row[1]
+            customer_ids[family] = row["customer_id"]
+    names = _customer_names_by_family(rows)
     return [
-        {"value": family, "label": _customer_label(family), "customer_id": customer_ids[family]}
+        {
+            "value": family,
+            "label": _customer_label(family, names.get(family)),
+            "customer_id": customer_ids[family],
+        }
         for family in sorted(customer_ids)
     ]
 
@@ -1283,12 +1306,14 @@ def get_dashboard_summary(
 
 # Which of these retailers have any sell-out at all, whatever the dates: a
 # customer with no online sales (NHG) is left off the Online chart rather
-# than drawn as a zero.
+# than drawn as a zero. Also names each retailer's customer, for the labels.
 _RETAILERS_WITH_SALES = text(
     """
-    SELECT DISTINCT r.retailer_name
+    SELECT DISTINCT r.retailer_name, c.customer_name
     FROM sellout s
     JOIN retailers r ON r.retailer_id = s.retailer_id
+    LEFT JOIN customer_retailers cr ON cr.retailer_id = r.retailer_id
+    LEFT JOIN customers c ON c.customer_id = cr.customer_id
     WHERE r.retailer_name = ANY(CAST(:retailer_names AS text[]))
     """
 )
@@ -1362,11 +1387,12 @@ def get_customer_totals(
 
     totals_by_retailer = {row["retailer_name"]: row for row in total_rows}
     present = {row["retailer_name"] for row in present_rows}
+    customer_names = _customer_names_by_family(present_rows)
     result = []
     for name in names:
         entry = {
             "customer": name,
-            "label": _customer_label(name),
+            "label": _customer_label(name, customer_names.get(name)),
         }
         for mode in DASHBOARD_MODES:
             retailer = _retailer_for(name, mode)
@@ -1439,9 +1465,10 @@ def get_customer_trends(
         df = _dashboard_rows(df, granularity)
 
     present = {row["retailer_name"] for row in present_rows}
+    customer_names = _customer_names_by_family(present_rows)
     result = []
     for name in names:
-        entry = {"customer": name, "label": _customer_label(name)}
+        entry = {"customer": name, "label": _customer_label(name, customer_names.get(name))}
         for mode in DASHBOARD_MODES:
             retailer = _retailer_for(name, mode)
             entry[mode] = _dashboard_mode_summary(df, retailer)["periodTotal"]

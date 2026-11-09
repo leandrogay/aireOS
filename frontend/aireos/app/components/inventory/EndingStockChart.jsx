@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/chart';
 
 import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 import { customerColor, customerColorOrder } from '@/app/utils/storeFormats';
 import { BAR_ANIMATION, chartDataRange, metricYAxisProps, yearAxisProps } from '@/app/utils/trendChart';
 import useChartTransition from '@/hooks/useChartTransition';
@@ -74,7 +74,7 @@ export default function EndingStockChart({ monthly, allCustomers }) {
   const config = Object.fromEntries(
     customers.map(([id, name]) => [
       `c${id}`,
-      { label: retailerLabel(name), color: customerColor(name, colorOrder) },
+      { label: customerLabel(name), color: customerColor(name, colorOrder) },
     ]),
   );
 

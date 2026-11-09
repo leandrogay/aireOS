@@ -1,5 +1,10 @@
 import { parseApiError, request } from '@/app/services/promotionsApi';
 
+// The reads that can wait on the BigQuery forecast (overview, at-risk, customer
+// view, sell-in plan and outlook) take a last `{ signal }` (an AbortSignal),
+// so their hook can cancel one it no longer needs instead of leaving it holding
+// one of the browser's few connections to the API.
+
 /**
  * Builds a query string, skipping empty values and repeating array keys
  * (`sku=A&sku=B`), which is how FastAPI reads `list[str]` query params.
@@ -55,7 +60,7 @@ export async function getInventorySkus() {
  * @param {{ customerIds?: number[], skus?: string[], startMonth?: string, endMonth?: string, atRiskOnly?: boolean }} [filters]
  * @returns {Promise<{ customers: object[], monthly: object[], skus: object[] }>}
  */
-export async function getInventoryOverview({ customerIds, skus, startMonth, endMonth, atRiskOnly } = {}) {
+export async function getInventoryOverview({ customerIds, skus, startMonth, endMonth, atRiskOnly } = {}, { signal } = {}) {
   return request(
     `/api/inventory/overview${toQuery({
       customer_id: customerIds,
@@ -64,6 +69,7 @@ export async function getInventoryOverview({ customerIds, skus, startMonth, endM
       end_month: endMonth,
       at_risk_only: atRiskOnly ? 'true' : '',
     })}`,
+    { signal },
   );
 }
 
@@ -77,8 +83,8 @@ export async function getInventoryOverview({ customerIds, skus, startMonth, endM
  * @param {{ customerIds?: number[], risk?: 'below_min' | 'above_max' | '' }} [filters]
  * @returns {Promise<{ as_of: string | null, counts: { below_min: number, above_max: number }, items: object[] }>}
  */
-export async function getAtRisk({ customerIds, risk } = {}) {
-  return request(`/api/inventory/at-risk${toQuery({ customer_id: customerIds, risk })}`);
+export async function getAtRisk({ customerIds, risk } = {}, { signal } = {}) {
+  return request(`/api/inventory/at-risk${toQuery({ customer_id: customerIds, risk })}`, { signal });
 }
 
 /**
@@ -91,13 +97,14 @@ export async function getAtRisk({ customerIds, risk } = {}) {
  * @param {{ skus?: string[], startMonth?: string, endMonth?: string }} [filters]
  * @returns {Promise<{ customer: object, threshold: object, trend: object[], skus: object[] }>}
  */
-export async function getCustomerInventory(customerId, { skus, startMonth, endMonth } = {}) {
+export async function getCustomerInventory(customerId, { skus, startMonth, endMonth } = {}, { signal } = {}) {
   return request(
     `/api/inventory/customers/${encodeURIComponent(customerId)}${toQuery({
       sku: skus,
       start_month: startMonth,
       end_month: endMonth,
     })}`,
+    { signal },
   );
 }
 
@@ -109,28 +116,43 @@ export async function getCustomerInventory(customerId, { skus, startMonth, endMo
  * (what to order, by item) and `skus_without_forecast`.
  *
  * @param {number} customerId
- * @param {{ months?: number, skus?: string[] }} [options] how many months ahead, 1 to 12 (default 6), and the SKUs to plan (default all)
+ * @param {{ months?: number, skus?: string[] }} [options] how many months after the current month to plan up to, 1 to 12 (default 6), and the SKUs to plan (default all)
  * @returns {Promise<{ customer: object, threshold: object, actuals_through: string | null, rows: object[], monthly_totals: object[], sku_totals: object[], skus_without_forecast: object[] }>}
  */
-export async function getSellInPlan(customerId, { months, skus } = {}) {
+export async function getSellInPlan(customerId, { months, skus } = {}, { signal } = {}) {
   return request(
     `/api/inventory/customers/${encodeURIComponent(customerId)}/sell-in-plan${toQuery({ months, sku: skus })}`,
+    { signal },
   );
 }
 
 /**
  * GET /api/inventory/customers/{customerId}/sell-in-outlook
  *
- * Sell-in and sell-out per month for the sell-in plan chart: the three months
- * up to the last actual month, then the plan's months ahead.
+ * Sell-in and sell-out per month for the sell-in plan chart: from January of
+ * `startYear` to `months` months after the current month, the same end month
+ * as getSellInPlan. Without `startYear` it starts in the current year;
+ * `start_years` lists the years it can start from.
+ *
+ * `blockIds` are saved Scenario builder building blocks for the chart's
+ * overlay: each month then also has sell_out_with_blocks / sell_in_with_blocks
+ * (the plan worked out again with them added to the Current forecast), and
+ * `building_blocks` says what each adds to the chart's sell-out. The plan
+ * itself never includes them.
  *
  * @param {number} customerId
- * @param {{ months?: number, skus?: string[] }} [options] how many months ahead, 1 to 12 (default 6), and the SKUs to include (default all)
- * @returns {Promise<{ customer: object, actuals_through: string | null, months: object[] }>}
+ * @param {{ months?: number, skus?: string[], startYear?: number | null, blockIds?: number[] }} [options] how many months after the current month, 1 to 12 (default 6), the SKUs to include (default all), the year to start from (default the current year), and the overlay's building blocks (default none)
+ * @returns {Promise<{ customer: object, actuals_through: string | null, months: object[], start_year: number | null, start_years: number[], building_blocks: Array<{ block_id: number, name: string, sell_out_change: number }> }>}
  */
-export async function getSellInOutlook(customerId, { months, skus } = {}) {
+export async function getSellInOutlook(customerId, { months, skus, startYear, blockIds = [] } = {}, { signal } = {}) {
   return request(
-    `/api/inventory/customers/${encodeURIComponent(customerId)}/sell-in-outlook${toQuery({ months, sku: skus })}`,
+    `/api/inventory/customers/${encodeURIComponent(customerId)}/sell-in-outlook${toQuery({
+      months,
+      sku: skus,
+      start_year: startYear ?? undefined,
+      block_id: blockIds,
+    })}`,
+    { signal },
   );
 }
 

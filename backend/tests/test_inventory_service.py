@@ -9,6 +9,17 @@ from app.schemas.inventory import InventoryRecordCreate, InventoryRecordUpdate
 from app.services import catalog_service, forecast_units, inventory_service, notification_service, sellout_units
 
 
+# The sell-in plan and graph count "months ahead" from the current month. The
+# plan tests' actuals end in February 2026, so "now" is February 2026: the plan
+# then starts in March and `months=2` ends in April.
+PLAN_CURRENT_MONTH = date(2026, 2, 1)
+
+
+@pytest.fixture(autouse=True)
+def _fixed_current_month(monkeypatch):
+    monkeypatch.setattr(inventory_service, "_current_month", lambda: PLAN_CURRENT_MONTH)
+
+
 TODAY = date(2026, 9, 24)
 STAMP = datetime(2026, 9, 23, 16, 50, tzinfo=timezone.utc)
 
@@ -800,7 +811,7 @@ def test_update_checks_low_stock_for_every_customer_the_write_touches(monkeypatc
 # ---- sell-in plan ------------------------------------------------------------------
 
 
-def _plan_view(monkeypatch, forecast, versions=None, months=2, month=None):
+def _plan_view(monkeypatch, forecast, versions=None, months=2, month=None, initial=None):
     jan, feb = date(2026, 1, 1), date(2026, 2, 1)
     metrics = [
         _metric(1, "A1", jan, "sell_in", 400),
@@ -811,7 +822,7 @@ def _plan_view(monkeypatch, forecast, versions=None, months=2, month=None):
         _metric(1, "B2", jan, "sell_out_base", 20),
     ]
     _install(monkeypatch, _router(_customers("fairprice"), metrics, versions or [_version(5, 10, 15)]))
-    monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: forecast)
+    monkeypatch.setattr(forecast_units, "get_forecast_lines", lambda customer_id: {"current": forecast, "initial": initial or {}})
     return inventory_service.get_sell_in_plan(1, months=months, month=month)
 
 
@@ -857,6 +868,34 @@ def test_the_plan_aims_at_the_current_target_even_for_months_before_it_was_saved
     assert plan["threshold"]["target_doh"] == 20.0
 
 
+def test_a_plan_given_the_forecast_does_not_read_it_again(monkeypatch):
+    feb = date(2026, 2, 1)
+    metrics = [_metric(1, "A1", feb, "sell_in", 400), _metric(1, "A1", feb, "sell_out_base", 280)]
+    _install(monkeypatch, _router(_customers("fairprice"), metrics, [_version(5, 10, 15)]))
+
+    def no_read(customer_id):
+        raise AssertionError("the forecast was read again")
+
+    monkeypatch.setattr(forecast_units, "get_forecast_lines", no_read)
+
+    plan = inventory_service.get_sell_in_plan(
+        1, months=2, forecast_lines={"current": _PLAN_FORECAST, "initial": {}, "previous": {}}
+    )
+
+    assert [r["month"] for r in plan["rows"]] == ["2026-03-01", "2026-04-01"]
+
+
+def test_a_sku_whose_actuals_pass_the_end_of_the_plan_is_not_listed_as_without_forecast():
+    metrics = {(1, "A1"): {date(2026, 3, 1): {"sell_in": 10.0, "sell_out_base": 5.0}}}
+
+    _, rows, without_forecast = inventory_service._sku_plans(
+        metrics, {}, {}, {"target_doh": 10.0}, date(2026, 2, 1), {}
+    )
+
+    assert rows == []
+    assert without_forecast == []
+
+
 def test_a_sku_with_no_forecast_is_listed_rather_than_planned(monkeypatch):
     plan = _plan_view(monkeypatch, _PLAN_FORECAST)
 
@@ -891,7 +930,7 @@ def test_the_plan_is_limited_to_the_months_asked_for(monkeypatch):
     assert [r["month"] for r in plan["rows"]] == ["2026-03-01"]
 
 
-def _outlook_view(monkeypatch, skus=None, months=12):
+def _outlook_view(monkeypatch, skus=None, months=12, initial=None, start_year=None):
     jan, feb = date(2026, 1, 1), date(2026, 2, 1)
     metrics = [
         _metric(1, "A1", jan, "sell_in", 400),
@@ -902,30 +941,54 @@ def _outlook_view(monkeypatch, skus=None, months=12):
         _metric(1, "B2", jan, "sell_out_base", 20),
     ]
     _install(monkeypatch, _router(_customers("fairprice"), metrics, [_version(5, 10, 15)]))
-    monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: _PLAN_FORECAST)
-    return inventory_service.get_sell_in_outlook(1, months=months, skus=skus)
+    monkeypatch.setattr(
+        forecast_units,
+        "get_forecast_lines",
+        lambda customer_id: {"current": _PLAN_FORECAST, "initial": initial or {}},
+    )
+    return inventory_service.get_sell_in_outlook(1, months=months, skus=skus, start_year=start_year)
 
 
 def _month(view, month):
     return next(row for row in view["months"] if row["month"] == month)
 
 
-def test_the_outlook_runs_three_months_back_from_the_last_actual_then_twelve_plan_months(monkeypatch):
+def test_the_outlook_runs_from_january_to_twelve_months_after_the_current_month(monkeypatch):
+    # "Now" is February 2026 (PLAN_CURRENT_MONTH).
     view = _outlook_view(monkeypatch)
 
     assert view["actuals_through"] == "2026-02-01"
-    assert [row["month"] for row in view["months"]][:1] == ["2025-12-01"]
+    assert [row["month"] for row in view["months"]][0] == "2026-01-01"
     assert [row["month"] for row in view["months"]][-1] == "2027-02-01"
-    assert len(view["months"]) == 15
+    assert len(view["months"]) == 14
 
 
-@pytest.mark.parametrize("months, last", [(3, "2026-05-01"), (6, "2026-08-01"), (12, "2027-02-01")])
-def test_the_outlook_runs_three_months_back_then_as_many_months_ahead_as_the_plan(monkeypatch, months, last):
+@pytest.mark.parametrize("months, last, count", [(3, "2026-05-01", 5), (6, "2026-08-01", 8), (12, "2027-02-01", 14)])
+def test_the_outlook_runs_from_january_to_as_many_months_ahead_as_asked(monkeypatch, months, last, count):
     view = _outlook_view(monkeypatch, months=months)
 
-    assert [row["month"] for row in view["months"]][0] == "2025-12-01"
+    assert [row["month"] for row in view["months"]][0] == "2026-01-01"
     assert [row["month"] for row in view["months"]][-1] == last
-    assert len(view["months"]) == 3 + months
+    assert len(view["months"]) == count
+
+
+def test_the_outlook_starts_in_january_of_the_current_year_even_late_in_the_year(monkeypatch):
+    monkeypatch.setattr(inventory_service, "_current_month", lambda: date(2026, 11, 1))
+
+    view = _outlook_view(monkeypatch, months=6)
+
+    assert [row["month"] for row in view["months"]][0] == "2026-01-01"
+    assert [row["month"] for row in view["months"]][-1] == "2027-05-01"
+
+
+def test_the_plan_runs_to_the_same_month_as_the_outlook(monkeypatch):
+    monkeypatch.setattr(inventory_service, "_current_month", lambda: date(2026, 3, 1))
+    forecast = {"A1": {date(2026, m, 1): 300.0 for m in range(3, 13)}}
+
+    plan = _plan_view(monkeypatch, forecast, months=2)
+
+    # Actuals end in February; "now" is March, so 2 months ahead ends in May.
+    assert [r["month"] for r in plan["rows"]] == ["2026-03-01", "2026-04-01", "2026-05-01"]
 
 
 def test_the_outlook_is_actual_sell_in_and_sell_out_up_to_each_skus_last_actual_month(monkeypatch):
@@ -935,7 +998,7 @@ def test_the_outlook_is_actual_sell_in_and_sell_out_up_to_each_skus_last_actual_
     assert jan["sell_in_actual"] == 450
     assert jan["sell_out_actual"] == 120
     assert _month(view, "2026-02-01")["sell_out_actual"] == 280
-    assert _month(view, "2025-12-01")["sell_in_actual"] is None
+    assert _month(view, "2026-03-01")["sell_in_actual"] is None
 
 
 def test_the_outlook_takes_recommended_sell_in_and_forecast_sell_out_after_the_actuals(monkeypatch):
@@ -957,7 +1020,7 @@ def test_the_outlook_is_limited_to_the_skus_chosen(monkeypatch):
 
 def test_a_customer_with_no_inventory_gets_an_empty_outlook(monkeypatch):
     _install(monkeypatch, _router(_customers("fairprice")))
-    monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: _PLAN_FORECAST)
+    monkeypatch.setattr(forecast_units, "get_forecast_lines", lambda customer_id: {"current": _PLAN_FORECAST, "initial": {}})
 
     view = inventory_service.get_sell_in_outlook(1)
 
@@ -967,7 +1030,7 @@ def test_a_customer_with_no_inventory_gets_an_empty_outlook(monkeypatch):
 
 def test_a_customer_with_no_inventory_gets_an_empty_plan(monkeypatch):
     _install(monkeypatch, _router(_customers("fairprice")))
-    monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: _PLAN_FORECAST)
+    monkeypatch.setattr(forecast_units, "get_forecast_lines", lambda customer_id: {"current": _PLAN_FORECAST, "initial": {}})
 
     plan = inventory_service.get_sell_in_plan(1)
 
@@ -1188,7 +1251,7 @@ def test_the_plan_takes_shipped_so_far_off_what_is_still_to_send(monkeypatch):
     ]
     shipped = [{"sku": "A1", "period_start": date(2026, 3, 1), "metric_value": 50.0}]
     _install(monkeypatch, _router(_customers("fairprice"), metrics, [_version(5, 10, 15)], shipped))
-    monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: _PLAN_FORECAST)
+    monkeypatch.setattr(forecast_units, "get_forecast_lines", lambda customer_id: {"current": _PLAN_FORECAST, "initial": {}})
 
     plan = inventory_service.get_sell_in_plan(1, months=2)
 
@@ -1222,7 +1285,7 @@ def _two_sku_plan(monkeypatch, months=2):
         },
     }
     _install(monkeypatch, _router(_customers("fairprice"), metrics, [_version(5, 10, 15)]))
-    monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: forecast)
+    monkeypatch.setattr(forecast_units, "get_forecast_lines", lambda customer_id: {"current": forecast, "initial": {}})
     return inventory_service.get_sell_in_plan(1, months=months)
 
 
@@ -1242,7 +1305,8 @@ def test_a_sku_without_a_recent_month_opens_at_its_own_last_ending_stock(monkeyp
     assert b2_first["opening_stock"] == 30  # 50 in - 20 out in January, not carried through February
 
 
-def test_every_sku_gets_the_months_asked_for_from_its_own_start(monkeypatch):
+def test_every_sku_plans_from_its_own_start_to_the_same_end_month(monkeypatch):
+    # "Now" is February 2026, so 2 months ahead ends in April for every SKU.
     plan = _two_sku_plan(monkeypatch, months=2)
 
     months_by_sku = {}
@@ -1250,7 +1314,7 @@ def test_every_sku_gets_the_months_asked_for_from_its_own_start(monkeypatch):
         months_by_sku.setdefault(row["sku"], []).append(row["month"])
     assert months_by_sku == {
         "A1": ["2026-03-01", "2026-04-01"],
-        "B2": ["2026-02-01", "2026-03-01"],
+        "B2": ["2026-02-01", "2026-03-01", "2026-04-01"],
     }
 
 
@@ -1304,6 +1368,41 @@ def test_a_sku_with_no_sales_that_month_has_zero_sell_out(monkeypatch):
 
     assert row["sell_out"] == 0
     assert row["ending_stock"] == 50
+
+
+def _overview_with_sales(monkeypatch, sell_in_months, sales):
+    metrics = [_metric(1, "A1", month, "sell_in", 100) for month in sell_in_months]
+    _install(monkeypatch, _router(_customers("fairprice"), metrics))
+    monkeypatch.setattr(sellout_units, "get_monthly_sellout", lambda ids, conn=None: ({"A1": sales}, FAR_FUTURE))
+    return {row["month"]: row for row in inventory_service.get_overview()["skus"]}
+
+
+def test_sales_in_a_month_with_no_sell_in_record_still_reduce_stock(monkeypatch):
+    jan, feb, mar = date(2026, 1, 1), date(2026, 2, 1), date(2026, 3, 1)
+
+    rows = _overview_with_sales(monkeypatch, [jan, mar], {jan: 10.0, feb: 30.0, mar: 20.0})
+
+    assert rows["2026-02-01"]["sell_in"] == 0
+    assert rows["2026-02-01"]["sell_out"] == 30
+    assert rows["2026-02-01"]["ending_stock"] == 60
+    assert rows["2026-03-01"]["ending_stock"] == 140
+
+
+def test_sales_after_a_skus_last_inventory_record_do_not_make_a_new_actual_month(monkeypatch):
+    jan, feb = date(2026, 1, 1), date(2026, 2, 1)
+
+    rows = _overview_with_sales(monkeypatch, [jan], {jan: 10.0, feb: 30.0})
+
+    assert list(rows) == ["2026-01-01"]
+
+
+def test_sales_before_a_skus_first_inventory_record_are_not_counted(monkeypatch):
+    jan, feb = date(2026, 1, 1), date(2026, 2, 1)
+
+    rows = _overview_with_sales(monkeypatch, [feb], {jan: 30.0, feb: 10.0})
+
+    assert list(rows) == ["2026-02-01"]
+    assert rows["2026-02-01"]["ending_stock"] == 90
 
 
 def test_sales_are_looked_up_for_the_customers_retailers(monkeypatch):
@@ -1571,7 +1670,7 @@ def test_the_plan_can_be_narrowed_to_chosen_skus(monkeypatch):
         "A1": {date(2026, 2, 1): 310.0, date(2026, 3, 1): 300.0},
         "B2": {date(2026, 2, 1): 310.0, date(2026, 3, 1): 300.0},
     }
-    monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: forecast)
+    monkeypatch.setattr(forecast_units, "get_forecast_lines", lambda customer_id: {"current": forecast, "initial": {}})
 
     everything = inventory_service.get_sell_in_plan(1, months=1)
     only_a1 = inventory_service.get_sell_in_plan(1, months=1, skus=["A1"])
@@ -1589,7 +1688,7 @@ def test_a_sku_filter_also_limits_the_no_forecast_note(monkeypatch):
     jan = date(2026, 1, 1)
     metrics = [_metric(1, "A1", jan, "sell_in", 20), _metric(1, "B2", jan, "sell_in", 20)]
     _install(monkeypatch, _router(_customers("fairprice"), metrics, [_version(5, 10, 15)]))
-    monkeypatch.setattr(forecast_units, "get_forecast_units", lambda customer_id: {})
+    monkeypatch.setattr(forecast_units, "get_forecast_lines", lambda customer_id: {"current": {}, "initial": {}})
 
     narrowed = inventory_service.get_sell_in_plan(1, months=1, skus=["B2"])
 
@@ -1749,3 +1848,609 @@ def test_customer_name_matching_is_case_insensitive(monkeypatch):
 
     assert preview["skipped"] == []
     assert preview["rows"][0]["customer_id"] == 1
+
+
+# ---- sell-in plan: the initial forecast covers months the current one does not -------
+# The current run starts after the newest sales month, which can be later than
+# the last month with sell-in actuals; the plan falls back to the initial there.
+
+# February is actual for A1, so the plan starts in March. The current run only
+# starts in April; March comes from the initial.
+_LATE_CURRENT = {"A1": {date(2026, 4, 1): 300.0}}
+_INITIAL = {
+    "A1": {
+        date(2026, 1, 1): 90.0,
+        date(2026, 2, 1): 250.0,
+        date(2026, 3, 1): 310.0,
+        date(2026, 4, 1): 999.0,
+    },
+}
+
+
+def test_a_month_the_current_forecast_does_not_reach_is_planned_on_the_initial(monkeypatch):
+    plan = _plan_view(monkeypatch, _LATE_CURRENT, initial=_INITIAL)
+
+    assert [r["month"] for r in plan["rows"]] == ["2026-03-01", "2026-04-01"]
+    assert plan["rows"][0]["forecast_sell_out"] == 310
+
+
+def test_the_current_forecast_wins_where_both_have_the_month(monkeypatch):
+    plan = _plan_view(monkeypatch, _LATE_CURRENT, initial=_INITIAL)
+
+    assert plan["rows"][1]["forecast_sell_out"] == 300
+
+
+def test_each_plan_row_says_which_forecast_it_used(monkeypatch):
+    plan = _plan_view(monkeypatch, _LATE_CURRENT, initial=_INITIAL)
+
+    assert [r["forecast_source"] for r in plan["rows"]] == ["initial", "current"]
+
+
+def test_with_no_current_forecast_at_all_the_plan_runs_on_the_initial(monkeypatch):
+    plan = _plan_view(monkeypatch, {}, initial=_INITIAL)
+
+    assert [r["month"] for r in plan["rows"]] == ["2026-03-01", "2026-04-01"]
+    assert {r["forecast_source"] for r in plan["rows"]} == {"initial"}
+
+
+def test_a_sku_with_neither_forecast_is_still_listed_rather_than_planned(monkeypatch):
+    plan = _plan_view(monkeypatch, _LATE_CURRENT, initial=_INITIAL)
+
+    assert [s["sku"] for s in plan["skus_without_forecast"]] == ["B2"]
+
+
+def test_the_outlook_draws_the_initial_forecast_across_actual_and_plan_months(monkeypatch):
+    view = _outlook_view(monkeypatch, initial=_INITIAL)
+
+    assert _month(view, "2026-01-01")["sell_out_initial"] == 90
+    assert _month(view, "2026-03-01")["sell_out_initial"] == 310
+    assert _month(view, "2026-05-01")["sell_out_initial"] is None
+
+
+def test_the_outlook_initial_line_only_covers_the_skus_chosen(monkeypatch):
+    view = _outlook_view(monkeypatch, skus=["B2"], initial=_INITIAL)
+
+    assert _month(view, "2026-01-01")["sell_out_initial"] is None
+
+
+def test_the_outlook_says_which_forecast_each_plan_month_used(monkeypatch):
+    view = _outlook_view(monkeypatch, initial={"A1": {date(2026, 5, 1): 320.0}})
+
+    assert _month(view, "2026-03-01")["forecast_source"] == "current"
+    assert _month(view, "2026-05-01")["forecast_source"] == "initial"
+    assert _month(view, "2026-01-01")["forecast_source"] is None
+
+
+def test_last_month_sell_out_is_compared_with_its_forecast(monkeypatch):
+    # A1 sold 280 in February, the last actual month; the initial had 250 for it.
+    view = _outlook_view(monkeypatch, initial=_INITIAL)
+
+    assert view["last_month_vs_forecast"] == {
+        "month": "2026-02-01",
+        "actual": 280,
+        "forecast": 250,
+        "forecast_source": "initial",
+        "difference": 30,
+        "percent": 12.0,
+        "skus_compared": 1,
+        "skus_with_actuals": 1,
+    }
+
+
+def test_last_month_comparison_only_counts_skus_with_a_forecast_for_it(monkeypatch):
+    # B2 has no February actual and no forecast; only A1 is compared.
+    view = _outlook_view(monkeypatch, initial=_INITIAL)
+
+    assert view["last_month_vs_forecast"]["actual"] == 280
+
+
+def test_no_forecast_for_the_last_month_gives_no_comparison(monkeypatch):
+    view = _outlook_view(monkeypatch)
+
+    assert view["last_month_vs_forecast"] is None
+
+
+def test_last_month_comparison_counts_the_skus_left_out_for_having_no_forecast(monkeypatch):
+    # Both SKUs sold in January; only A1 has a forecast for it.
+    jan, feb = date(2026, 1, 1), date(2026, 2, 1)
+    metrics = [
+        _metric(1, "A1", jan, "sell_in", 400),
+        _metric(1, "A1", jan, "sell_out_base", 100),
+        _metric(1, "B2", jan, "sell_in", 50),
+        _metric(1, "B2", jan, "sell_out_base", 20),
+    ]
+    _install(monkeypatch, _router(_customers("fairprice"), metrics, [_version(5, 10, 15)]))
+    monkeypatch.setattr(
+        forecast_units,
+        "get_forecast_lines",
+        lambda customer_id: {"current": {}, "initial": {"A1": {jan: 90.0, feb: 100.0}}},
+    )
+
+    comparison = inventory_service.get_sell_in_outlook(1)["last_month_vs_forecast"]
+
+    assert (comparison["skus_compared"], comparison["skus_with_actuals"]) == (1, 2)
+
+
+def test_the_outlook_draws_last_months_previous_forecast_across_actual_and_plan_months(monkeypatch):
+    jan, feb = date(2026, 1, 1), date(2026, 2, 1)
+    metrics = [
+        _metric(1, "A1", jan, "sell_in", 400),
+        _metric(1, "A1", jan, "sell_out_base", 100),
+        _metric(1, "A1", feb, "sell_in", 0),
+        _metric(1, "A1", feb, "sell_out_base", 280),
+    ]
+    _install(monkeypatch, _router(_customers("fairprice"), metrics, [_version(5, 10, 15)]))
+    monkeypatch.setattr(
+        forecast_units,
+        "get_forecast_lines",
+        lambda customer_id: {
+            "current": _PLAN_FORECAST,
+            "previous": {"A1": {feb: 260.0, date(2026, 3, 1): 305.0}},
+            "initial": {},
+        },
+    )
+
+    view = inventory_service.get_sell_in_outlook(1)
+
+    assert _month(view, "2026-02-01")["sell_out_previous"] == 260
+    assert _month(view, "2026-03-01")["sell_out_previous"] == 305
+    assert _month(view, "2026-01-01")["sell_out_previous"] is None
+
+
+def test_the_plan_does_not_run_on_the_previous_forecast(monkeypatch):
+    # Previous is last month's run: drawn for comparison, never planned on.
+    jan = date(2026, 1, 1)
+    metrics = [_metric(1, "A1", jan, "sell_in", 400), _metric(1, "A1", jan, "sell_out_base", 100)]
+    _install(monkeypatch, _router(_customers("fairprice"), metrics, [_version(5, 10, 15)]))
+    monkeypatch.setattr(
+        forecast_units,
+        "get_forecast_lines",
+        lambda customer_id: {"current": {}, "previous": {"A1": {date(2026, 2, 1): 300.0}}, "initial": {}},
+    )
+
+    plan = inventory_service.get_sell_in_plan(1, months=1)
+
+    assert plan["rows"] == []
+    assert [s["sku"] for s in plan["skus_without_forecast"]] == ["A1"]
+
+
+# ---- sell-in outlook: sell-in planned on the previous and on the initial forecast ------
+
+
+def _three_line_outlook(monkeypatch, previous=None, initial=None):
+    jan, feb = date(2026, 1, 1), date(2026, 2, 1)
+    metrics = [
+        _metric(1, "A1", jan, "sell_in", 400),
+        _metric(1, "A1", jan, "sell_out_base", 100),
+        _metric(1, "A1", feb, "sell_in", 0),
+        _metric(1, "A1", feb, "sell_out_base", 280),
+    ]
+    _install(monkeypatch, _router(_customers("fairprice"), metrics, [_version(5, 10, 15)]))
+    monkeypatch.setattr(
+        forecast_units,
+        "get_forecast_lines",
+        lambda customer_id: {"current": _PLAN_FORECAST, "previous": previous or {}, "initial": initial or {}},
+    )
+    return inventory_service.get_sell_in_outlook(1, months=2)
+
+
+def test_sell_in_is_also_planned_on_the_initial_forecast_alone(monkeypatch):
+    # Same rule and opening stock (20 at end of February) as the main plan, on
+    # the initial's figures instead: March sells 200, April 300 (10 a day), so
+    # 10 days = 100 to hold -> 200 + 100 - 20 = 280.
+    initial = {"A1": {date(2026, 3, 1): 200.0, date(2026, 4, 1): 300.0}}
+
+    view = _three_line_outlook(monkeypatch, initial=initial)
+
+    assert _month(view, "2026-03-01")["sell_in_initial"] == 280
+    assert _month(view, "2026-03-01")["sell_in_recommended"] == 390
+
+
+def test_with_no_saved_plan_previous_sell_in_is_planned_on_the_previous_forecast(monkeypatch):
+    previous = {"A1": {date(2026, 3, 1): 310.0, date(2026, 4, 1): 300.0}}
+
+    view = _three_line_outlook(monkeypatch, previous=previous)
+
+    assert _month(view, "2026-03-01")["sell_in_previous"] == 390
+
+
+def test_the_previous_forecast_fallback_covers_the_actual_months_too(monkeypatch):
+    # As the initial line: February opened with 300, so 250 + 100 - 300 = 50.
+    previous = {"A1": {date(2026, 2, 1): 250.0, date(2026, 3, 1): 310.0, date(2026, 4, 1): 300.0}}
+
+    view = _three_line_outlook(monkeypatch, previous=previous)
+
+    assert _month(view, "2026-02-01")["sell_in_previous"] == 50
+
+
+def test_no_saved_plan_or_initial_leaves_those_sell_in_lines_empty(monkeypatch):
+    view = _three_line_outlook(monkeypatch)
+
+    assert all(row["sell_in_previous"] is None for row in view["months"])
+    assert all(row["sell_in_initial"] is None for row in view["months"])
+
+
+def test_the_initial_sell_in_line_does_not_fall_back_to_the_current_forecast(monkeypatch):
+    # The initial only has March, so its plan stops there; April is not borrowed from the current.
+    view = _three_line_outlook(monkeypatch, initial={"A1": {date(2026, 3, 1): 200.0}})
+
+    assert _month(view, "2026-03-01")["sell_in_initial"] is not None
+    assert _month(view, "2026-04-01")["sell_in_initial"] is None
+
+
+def test_the_initial_sell_in_line_covers_the_actual_months_too(monkeypatch):
+    # February opened with 300 (400 in - 100 out in January). The initial had
+    # 250 for February, then March 310 and April 300 (610 over 61 days = 10 a
+    # day), so 10 days = 100 to hold: 250 + 100 - 300 = 50.
+    initial = {"A1": {date(2026, 2, 1): 250.0, date(2026, 3, 1): 310.0, date(2026, 4, 1): 300.0}}
+
+    view = _three_line_outlook(monkeypatch, initial=initial)
+
+    assert _month(view, "2026-02-01")["sell_in_initial"] == 50
+
+
+def test_an_actual_month_with_no_initial_forecast_has_no_initial_sell_in(monkeypatch):
+    initial = {"A1": {date(2026, 2, 1): 250.0, date(2026, 3, 1): 310.0}}
+
+    view = _three_line_outlook(monkeypatch, initial=initial)
+
+    assert _month(view, "2026-01-01")["sell_in_initial"] is None
+
+
+# ---- sell-in outlook: Previous sell-in from the saved plans ----------------------------
+
+
+def _snapshot(snapshot_month, plan_month, sku, value):
+    return {"snapshot_month": snapshot_month, "plan_month": plan_month, "sku": sku, "recommended_sell_in": value}
+
+
+def _snapshot_outlook(monkeypatch, snapshots, skus=None, previous=None):
+    # "Now" is February 2026 (PLAN_CURRENT_MONTH); A1 and B2 have actuals.
+    jan, feb = date(2026, 1, 1), date(2026, 2, 1)
+    metrics = [
+        _metric(1, "A1", jan, "sell_in", 400),
+        _metric(1, "A1", jan, "sell_out_base", 100),
+        _metric(1, "A1", feb, "sell_in", 0),
+        _metric(1, "A1", feb, "sell_out_base", 280),
+        _metric(1, "B2", jan, "sell_in", 50),
+        _metric(1, "B2", jan, "sell_out_base", 20),
+    ]
+    respond = _router(_customers("fairprice"), metrics, [_version(5, 10, 15)])
+
+    def with_snapshots(sql, params):
+        if "FROM sell_in_plan_snapshots" in sql:
+            return [row for row in snapshots if row["snapshot_month"] < params["before"]]
+        return respond(sql, params)
+
+    with_snapshots.sellout_units = respond.sellout_units
+    conn = _install(monkeypatch, with_snapshots)
+    monkeypatch.setattr(
+        forecast_units,
+        "get_forecast_lines",
+        lambda customer_id: {"current": _PLAN_FORECAST, "previous": previous or {}, "initial": {}},
+    )
+    return inventory_service.get_sell_in_outlook(1, months=2, skus=skus), conn
+
+
+def test_the_previous_sell_in_line_is_the_plan_saved_last_month(monkeypatch):
+    jan, mar = date(2026, 1, 1), date(2026, 3, 1)
+    snapshots = [_snapshot(jan, mar, "A1", 120.0), _snapshot(jan, mar, "B2", 30.0)]
+
+    view, _ = _snapshot_outlook(monkeypatch, snapshots)
+
+    assert _month(view, "2026-03-01")["sell_in_previous"] == 150
+
+
+def test_a_plan_saved_this_month_is_not_the_previous_one(monkeypatch):
+    feb, mar = date(2026, 2, 1), date(2026, 3, 1)
+
+    view, conn = _snapshot_outlook(monkeypatch, [_snapshot(feb, mar, "A1", 120.0)])
+
+    assert _month(view, "2026-03-01")["sell_in_previous"] is None
+    assert conn.sql_containing("FROM sell_in_plan_snapshots")[0][1]["before"] == feb
+
+
+def test_a_past_month_shows_the_plan_saved_before_it_began(monkeypatch):
+    # January 2026 reads the December plan, not January's (taken in that month).
+    dec, jan = date(2025, 12, 1), date(2026, 1, 1)
+    snapshots = [_snapshot(dec, jan, "A1", 300.0), _snapshot(jan, jan, "A1", 999.0)]
+
+    view, _ = _snapshot_outlook(monkeypatch, snapshots)
+
+    assert _month(view, "2026-01-01")["sell_in_previous"] == 300
+
+
+def test_the_newest_earlier_plan_is_used_when_last_month_has_none(monkeypatch):
+    nov, mar = date(2025, 11, 1), date(2026, 3, 1)
+
+    view, _ = _snapshot_outlook(monkeypatch, [_snapshot(nov, mar, "A1", 80.0)])
+
+    assert _month(view, "2026-03-01")["sell_in_previous"] == 80
+
+
+def test_a_month_the_saved_plan_did_not_cover_has_no_previous_sell_in(monkeypatch):
+    jan, mar = date(2026, 1, 1), date(2026, 3, 1)
+
+    view, _ = _snapshot_outlook(monkeypatch, [_snapshot(jan, mar, "A1", 120.0)])
+
+    assert _month(view, "2026-04-01")["sell_in_previous"] is None
+
+
+def test_the_previous_sell_in_line_counts_only_the_skus_in_view(monkeypatch):
+    jan, mar = date(2026, 1, 1), date(2026, 3, 1)
+    snapshots = [_snapshot(jan, mar, "A1", 120.0), _snapshot(jan, mar, "B2", 30.0)]
+
+    view, _ = _snapshot_outlook(monkeypatch, snapshots, skus=["B2"])
+
+    assert _month(view, "2026-03-01")["sell_in_previous"] == 30
+
+
+# ---- sell-in outlook: "Start from" year ----------------------------------------------
+
+
+def test_the_outlook_starts_in_the_current_year_by_default(monkeypatch):
+    # Actuals end in February 2026; in January 2027 the chart opens on 2027.
+    monkeypatch.setattr(inventory_service, "_current_month", lambda: date(2027, 1, 1))
+
+    view = _outlook_view(monkeypatch, months=3)
+
+    assert view["start_year"] == 2027
+    assert view["months"][0]["month"] == "2027-01-01"
+    assert view["months"][-1]["month"] == "2027-04-01"
+
+
+def test_the_outlook_can_start_from_another_offered_year(monkeypatch):
+    monkeypatch.setattr(inventory_service, "_current_month", lambda: date(2027, 1, 1))
+
+    view = _outlook_view(monkeypatch, months=3, start_year=2027)
+
+    assert view["months"][0]["month"] == "2027-01-01"
+
+
+def test_the_outlook_offers_this_year_and_last_year(monkeypatch):
+    monkeypatch.setattr(inventory_service, "_current_month", lambda: date(2027, 1, 1))
+
+    view = _outlook_view(monkeypatch)
+
+    assert view["start_years"] == [2026, 2027]
+
+
+def test_last_year_is_not_offered_when_the_customer_has_no_actuals_then(monkeypatch):
+    # "Now" is February 2026 and the first actual is January 2026.
+    view = _outlook_view(monkeypatch)
+
+    assert view["start_years"] == [2026]
+
+
+def test_a_start_year_that_is_not_offered_is_refused(monkeypatch):
+    with pytest.raises(ValueError, match="2019"):
+        _outlook_view(monkeypatch, start_year=2019)
+
+
+def test_the_year_of_an_old_latest_actual_is_still_offered(monkeypatch):
+    # Actuals end in February 2026; two years later that year can still be picked.
+    monkeypatch.setattr(inventory_service, "_current_month", lambda: date(2028, 3, 1))
+
+    view = _outlook_view(monkeypatch, months=1)
+
+    assert view["start_year"] == 2028
+    assert view["start_years"] == [2026, 2027, 2028]
+
+
+def test_an_empty_outlook_offers_no_start_years(monkeypatch):
+    _install(monkeypatch, _router(_customers("fairprice")))
+    monkeypatch.setattr(forecast_units, "get_forecast_lines", lambda customer_id: {"current": {}, "initial": {}})
+
+    view = inventory_service.get_sell_in_outlook(1)
+
+    assert view["start_years"] == []
+    assert view["start_year"] is None
+
+
+def test_the_outlook_still_loads_before_the_snapshot_table_exists(monkeypatch):
+    from sqlalchemy.exc import DatabaseError
+
+    jan, feb = date(2026, 1, 1), date(2026, 2, 1)
+    metrics = [
+        _metric(1, "A1", jan, "sell_in", 400),
+        _metric(1, "A1", jan, "sell_out_base", 100),
+        _metric(1, "A1", feb, "sell_out_base", 280),
+    ]
+    respond = _router(_customers("fairprice"), metrics, [_version(5, 10, 15)])
+
+    def no_table(sql, params):
+        if "FROM sell_in_plan_snapshots" in sql:
+            # What pg8000 raises: a plain DatabaseError, not ProgrammingError.
+            raise DatabaseError(sql, params, Exception('relation "sell_in_plan_snapshots" does not exist'))
+        return respond(sql, params)
+
+    no_table.sellout_units = respond.sellout_units
+    _install(monkeypatch, no_table)
+    monkeypatch.setattr(forecast_units, "get_forecast_lines", lambda customer_id: {"current": _PLAN_FORECAST, "initial": {}})
+
+    view = inventory_service.get_sell_in_outlook(1, months=2)
+
+    assert view["months"]
+    assert all(row["sell_in_previous"] is None for row in view["months"])
+
+
+def test_a_saved_plan_wins_over_the_previous_forecast_fallback(monkeypatch):
+    jan, mar, apr = date(2026, 1, 1), date(2026, 3, 1), date(2026, 4, 1)
+    previous = {"A1": {mar: 310.0, apr: 300.0}}
+
+    view, _ = _snapshot_outlook(monkeypatch, [_snapshot(jan, mar, "A1", 120.0)], skus=["A1"], previous=previous)
+
+    assert _month(view, "2026-03-01")["sell_in_previous"] == 120
+
+
+def test_a_month_no_saved_plan_covers_falls_back_to_the_previous_forecast(monkeypatch):
+    # The January plan stops at March; April is worked out on the previous forecast.
+    jan, mar, apr, may = date(2026, 1, 1), date(2026, 3, 1), date(2026, 4, 1), date(2026, 5, 1)
+    previous = {"A1": {mar: 310.0, apr: 300.0, may: 310.0}}
+
+    view, _ = _snapshot_outlook(monkeypatch, [_snapshot(jan, mar, "A1", 120.0)], skus=["A1"], previous=previous)
+
+    assert _month(view, "2026-04-01")["sell_in_previous"] is not None
+    assert _month(view, "2026-04-01")["sell_in_previous"] != 120
+
+
+def test_the_previous_forecast_fallback_reaches_past_months_it_does_not_cover(monkeypatch):
+    # The previous forecast starts in April, a month after the plan does
+    # (March): March is carried on the current forecast, April onward is
+    # planned on the previous one, and only April onward is shown.
+    previous = {"A1": {date(2026, 4, 1): 300.0, date(2026, 5, 1): 310.0}}
+
+    view = _three_line_outlook(monkeypatch, previous=previous)
+
+    assert _month(view, "2026-03-01")["sell_in_previous"] is None
+    assert _month(view, "2026-04-01")["sell_in_previous"] is not None
+
+
+# ---- sell-in outlook: latest month's sell-in against its recommendation -------------
+
+
+def test_the_latest_months_sell_in_is_compared_with_the_initial_recommendation(monkeypatch):
+    # February sent 0; the initial would have recommended 50 (see
+    # test_the_initial_sell_in_line_covers_the_actual_months_too).
+    initial = {"A1": {date(2026, 2, 1): 250.0, date(2026, 3, 1): 310.0, date(2026, 4, 1): 300.0}}
+
+    view = _three_line_outlook(monkeypatch, initial=initial)
+
+    assert view["last_month_sell_in_vs_forecast"] == {
+        "month": "2026-02-01",
+        "actual": 0,
+        "forecast": 50,
+        "forecast_source": "initial",
+        "difference": -50,
+        "percent": -100.0,
+        "skus_compared": 1,
+        "skus_with_actuals": 1,
+    }
+
+
+def test_the_previous_recommendation_comes_before_the_initial(monkeypatch):
+    initial = {"A1": {date(2026, 2, 1): 250.0, date(2026, 3, 1): 310.0, date(2026, 4, 1): 300.0}}
+    previous = {"A1": {date(2026, 2, 1): 270.0, date(2026, 3, 1): 310.0, date(2026, 4, 1): 300.0}}
+
+    view = _three_line_outlook(monkeypatch, previous=previous, initial=initial)
+
+    comparison = view["last_month_sell_in_vs_forecast"]
+    assert comparison["forecast_source"] == "previous"
+    assert comparison["forecast"] == 70
+
+
+def test_a_saved_plan_comes_before_the_worked_out_recommendations(monkeypatch):
+    jan, feb = date(2026, 1, 1), date(2026, 2, 1)
+
+    view, _ = _snapshot_outlook(monkeypatch, [_snapshot(jan, feb, "A1", 40.0)], skus=["A1"])
+
+    comparison = view["last_month_sell_in_vs_forecast"]
+    assert comparison["forecast"] == 40
+    assert comparison["forecast_source"] == "previous"
+
+
+def test_no_recommendation_for_the_latest_month_means_no_sell_in_comparison(monkeypatch):
+    view = _three_line_outlook(monkeypatch)
+
+    assert view["last_month_sell_in_vs_forecast"] is None
+
+
+# ---- sell-in outlook: per-month comparison for a picked range ----------------------------
+
+
+def test_each_actual_month_carries_its_sell_in_and_sell_out_comparison(monkeypatch):
+    initial = {"A1": {date(2026, 2, 1): 250.0, date(2026, 3, 1): 310.0, date(2026, 4, 1): 300.0}}
+
+    view = _three_line_outlook(monkeypatch, initial=initial)
+
+    feb = _month(view, "2026-02-01")
+    assert feb["sell_in_vs_forecast"]["forecast"] == 50
+    assert feb["sell_in_vs_forecast"]["actual"] == 0
+    assert feb["sell_out_vs_forecast"] == view["last_month_vs_forecast"]
+
+
+def test_plan_months_carry_no_comparison(monkeypatch):
+    view = _three_line_outlook(monkeypatch)
+
+    march = _month(view, "2026-03-01")
+    assert march["sell_in_vs_forecast"] is None
+    assert march["sell_out_vs_forecast"] is None
+
+
+# ---- building blocks overlay (sell-in plan chart) ----
+
+
+def _overlay_view(monkeypatch, blocks):
+    monkeypatch.setattr(
+        inventory_service.scenario_blocks,
+        "fetch_blocks_for_customer",
+        lambda conn, customer_id, block_ids: [block for block in blocks if block["block_id"] in block_ids],
+    )
+    return _outlook_view_with_blocks(monkeypatch, [block["block_id"] for block in blocks])
+
+
+def _outlook_view_with_blocks(monkeypatch, block_ids):
+    jan, feb = date(2026, 1, 1), date(2026, 2, 1)
+    metrics = [
+        _metric(1, "A1", jan, "sell_in", 400),
+        _metric(1, "A1", jan, "sell_out_base", 100),
+        _metric(1, "A1", feb, "sell_in", 0),
+        _metric(1, "A1", feb, "sell_out_base", 280),
+    ]
+    _install(monkeypatch, _router(_customers("fairprice"), metrics, [_version(5, 10, 15)]))
+    monkeypatch.setattr(
+        forecast_units,
+        "get_forecast_lines",
+        lambda customer_id: {"current": _PLAN_FORECAST, "initial": {}},
+    )
+    return inventory_service.get_sell_in_outlook(1, months=12, block_ids=block_ids)
+
+
+def _overlay_block(**changes):
+    block = {
+        "block_id": 1,
+        "sku": None,
+        "name": "New store",
+        "uplift_mode": "pct",
+        "uplift_value": 10.0,
+        "start_month": date(2026, 3, 1),
+        "end_month": date(2026, 4, 1),
+    }
+    block.update(changes)
+    return block
+
+
+def test_with_no_blocks_picked_the_overlay_lines_are_empty(monkeypatch):
+    view = _overlay_view(monkeypatch, [])
+
+    assert all(row["sell_out_with_blocks"] is None for row in view["months"])
+    assert all(row["sell_in_with_blocks"] is None for row in view["months"])
+    assert view["building_blocks"] == []
+
+
+def test_a_block_raises_the_overlay_sell_out_and_the_plan_follows(monkeypatch):
+    plain = _month(_overlay_view(monkeypatch, []), "2026-03-01")
+    march = _month(_overlay_view(monkeypatch, [_overlay_block()]), "2026-03-01")
+
+    assert march["sell_out_with_blocks"] == pytest.approx(341.0)
+    assert march["sell_in_with_blocks"] > plain["sell_in_recommended"]
+
+
+def test_the_overlay_leaves_the_plan_and_the_other_lines_as_they_are(monkeypatch):
+    plain = _overlay_view(monkeypatch, [])
+    overlaid = _overlay_view(monkeypatch, [_overlay_block()])
+
+    for before, after in zip(plain["months"], overlaid["months"]):
+        assert after["sell_out_forecast"] == before["sell_out_forecast"]
+        assert after["sell_in_recommended"] == before["sell_in_recommended"]
+
+
+def test_each_block_says_how_much_sell_out_it_adds_to_the_chart(monkeypatch):
+    blocks = [_overlay_block(), _overlay_block(block_id=2, name="Elsewhere", sku="Z9")]
+
+    view = _overlay_view(monkeypatch, blocks)
+
+    assert view["building_blocks"] == [
+        {"block_id": 1, "name": "New store", "sell_out_change": pytest.approx(61.0)},
+        {"block_id": 2, "name": "Elsewhere", "sell_out_change": 0},
+    ]

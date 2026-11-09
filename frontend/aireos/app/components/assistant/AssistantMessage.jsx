@@ -80,7 +80,7 @@ function seriesKey(index) {
 // it Recharts drops some, as long runs of months have no room for them all.
 const MAX_LABELS_ALWAYS_SHOWN = 6;
 
-// An axis label split at its spaces, so "Sheng Shiong" takes two short lines
+// An axis label split at its spaces, so "Sheng Siong" takes two short lines
 // and fits the narrow panel beside its neighbours.
 function WrappedAxisTick({ x, y, payload, fontSize }) {
   return (

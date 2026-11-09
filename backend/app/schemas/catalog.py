@@ -13,18 +13,28 @@ class _Base(BaseModel):
 
 
 # ============================================================
-# NAME SLUGS
+# NAMES
 #
-# Customer and retailer names are stored as lowercase slugs
-# (fairprice, fairprice_online): the dashboard, promotions and
-# uploads all look them up by that exact text, so every name a
-# user types is normalised here before it reaches a service.
-# The frontend mirrors this in normaliseName (customerForm.js).
+# Retailer names are stored as lowercase slugs (fairprice_online):
+# the dashboard, promotions and uploads all look them up by that
+# exact text, so every retailer name a user types is normalised
+# here before it reaches a service.
+#
+# Customer names keep the capitals the user typed (FairPrice, NHG)
+# because they are what people read on every page; only spaces and
+# hyphens become underscores (Sheng Shiong -> Sheng_Shiong). Nothing
+# derives a lookup key from them: a customer's retailers are linked
+# by id (customer_retailers) and their own names stay slugs.
+#
+# The frontend mirrors both in customerForm.js (normaliseName,
+# cleanCustomerName).
 # ============================================================
 
 
 _SEPARATORS = re.compile(r"[\s\-]+")
 _SLUG = re.compile(r"^[a-z0-9_]+$")
+_CUSTOMER_NAME = re.compile(r"^[A-Za-z0-9_]+$")
+_NAME_CHARACTERS = "Use only letters, numbers, spaces, hyphens or underscores."
 
 
 def normalise_name(value: str) -> str:
@@ -36,11 +46,23 @@ def normalise_name(value: str) -> str:
         raise ValueError("Enter a name.")
 
     if not _SLUG.match(slug):
-        raise ValueError(
-            "Use only letters, numbers, spaces, hyphens or underscores."
-        )
+        raise ValueError(_NAME_CHARACTERS)
 
     return slug
+
+
+def clean_customer_name(value: str) -> str:
+    """'Sheng Shiong' -> 'Sheng_Shiong', 'FairPrice' stays 'FairPrice'; same characters as normalise_name, case kept."""
+
+    name = _SEPARATORS.sub("_", value).strip("_")
+
+    if not name:
+        raise ValueError("Enter a name.")
+
+    if not _CUSTOMER_NAME.match(name):
+        raise ValueError(_NAME_CHARACTERS)
+
+    return name
 
 
 # ============================================================
@@ -56,8 +78,8 @@ class CustomerBase(_Base):
 
     @field_validator("customer_name")
     @classmethod
-    def _slug(cls, value: str) -> str:
-        return normalise_name(value)
+    def _clean(cls, value: str) -> str:
+        return clean_customer_name(value)
 
 
 class CustomerCreate(CustomerBase):

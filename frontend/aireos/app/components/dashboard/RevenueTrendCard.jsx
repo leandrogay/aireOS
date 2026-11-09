@@ -122,8 +122,8 @@ export default function RevenueTrendCard({
         // (CustomerTrendChart: one cluster of a bar per customer); otherwise a year of months by ~4 formats.
         <div className={`flex flex-1 flex-col ${placeholderClass}`}>
           <BarChartSkeleton
-            bars={comparingCustomers ? 1 : 12}
-            groups={comparingCustomers ? 3 : 1}
+            bars={comparingCustomers ? 6 : 12}
+            groups={comparingCustomers ? 1 : 1}
             height={220}
             fill
             legend

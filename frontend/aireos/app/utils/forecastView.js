@@ -2,7 +2,7 @@ import { monthNotes, monthlyActuals, previousMadeByMonth } from '@/app/utils/for
 import { confidenceBand } from '@/app/utils/forecastLineText';
 import { confidenceEntry, pastAccuracy } from '@/app/utils/forecastTiers';
 import { splitPromoType } from '@/app/utils/promotionForm';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 
 export const DEFAULT_PRODUCT_NAME = 'Aire Ultra Tape L';
 
@@ -336,7 +336,7 @@ export function buildMonthlyPoints(rows, actuals = [], _metric = 'units', { sing
 export function forecastPointDetails(point, { showPrevious = false } = {}) {
   if (!point) return [];
   const notes = monthNotes(point, {
-    formatCustomer: retailerLabel,
+    formatCustomer: customerLabel,
     formatStamp: formatSgtTimestamp,
     showPrevious,
   });

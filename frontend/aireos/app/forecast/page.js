@@ -6,7 +6,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import PageLayout from '@/components/layout/PageLayout';
 import ForecastChart from '@/components/forecast/ForecastChart';
 import ForecastFilters from '@/components/forecast/ForecastFilters';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 import {
   FORECAST_TIER_OPTIONS,
   NO_DATA_FOR_TIER,
@@ -108,7 +108,7 @@ function ForecastView() {
   // Current line, so this is when the forecast last updated (shown as
   // "Forecast last updated").
   const lastRun = freshness.by_tier?.[model.tier]?.current_generated_at ?? null;
-  const salesLabel = customerName ? `${retailerLabel(customerName)} sales` : 'All customers sales';
+  const salesLabel = customerName ? `${customerLabel(customerName)} sales` : 'All customers sales';
   const accuracy = singleSeries ? pastAccuracy(rows) : null;
   // Year cards always cover Jan-Dec, so they fetch a wider window than the
   // date filter when the filter cuts a year short; that fetch has every tier
@@ -158,7 +158,7 @@ function ForecastView() {
 
   const scopeTags = [
     { label: 'SKU', value: productName || 'All SKUs' },
-    { label: 'Customer', value: customerName ? retailerLabel(customerName) : 'All customers' },
+    { label: 'Customer', value: customerName ? customerLabel(customerName) : 'All customers' },
     { label: 'Model', value: modelLabel },
   ];
 

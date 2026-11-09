@@ -53,7 +53,7 @@ const NOT_MIGRATED = [
 const LEAVE_AS_IS = [
   ['Shared', 'ui/MonthGrid.jsx, SelectDropdown.jsx, SortHeader.jsx', 'Calendar cells, menu rows and sort headers'],
   ['Layout', 'layout/Sidebar.jsx', 'Navigation items'],
-  ['Forecast, Dashboard', 'ForecastLineToggle, FilterBadge', 'Chips and filter badges: ToggleButton look="chip"'],
+  ['Forecast, Dashboard', 'LineToggle, FilterBadge', 'Chips and filter badges: ToggleButton look="chip"'],
 ];
 
 // What the raw buttons above look like, for the side-by-side examples.

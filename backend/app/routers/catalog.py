@@ -107,10 +107,7 @@ def update_customer(customer_id: int, customer: CustomerUpdate):
     except HTTPException:
         raise
 
-    except (
-        customer_service.CustomerNameTakenError,
-        customer_service.CustomerInUseError,
-    ) as e:
+    except customer_service.CustomerNameTakenError as e:
         raise HTTPException(
             status_code=409,
             detail=str(e),
@@ -167,8 +164,7 @@ def delete_customer(customer_id: int):
         raise HTTPException(
             status_code=409,
             detail=(
-                "This customer is still referenced by other data, "
-                "so it can't be deleted."
+                "Can't delete: still in use elsewhere"
             ),
         )
 
@@ -392,8 +388,7 @@ def delete_retailer(retailer_id: int):
         raise HTTPException(
             status_code=409,
             detail=(
-                "This retailer is still referenced by other data, "
-                "so it can't be deleted."
+                "Can't delete: still in use elsewhere"
             ),
         )
 

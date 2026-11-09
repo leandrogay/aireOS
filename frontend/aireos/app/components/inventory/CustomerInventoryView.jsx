@@ -5,8 +5,9 @@ import { useState } from 'react';
 import BarChartSkeleton from '@/components/ui/BarChartSkeleton';
 import SelectDropdown from '@/components/ui/SelectDropdown';
 import useCustomerInventory from '@/hooks/useCustomerInventory';
+import { currentYearDateRange } from '@/app/utils/dateRange';
 import { DOH_STATUS_LABELS, earliestMonthInput, formatDoh, filterMonthRange, latestMonthInput } from '@/app/utils/inventoryForm';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 
 import {
   filterLabelClass,
@@ -38,8 +39,8 @@ const STATUS_OPTIONS = Object.entries(DOH_STATUS_LABELS).map(([value, label]) =>
 export default function CustomerInventoryView({ customers, skuOptions, refreshKey, onEditRow }) {
   const [customerId, setCustomerId] = useState(null);
   const [skus, setSkus] = useState([]);
-  // null = the user has not touched the range, so it shows the full span of
-  // the trend. Editing either picker (even to blank) makes the range theirs;
+  // null = the user has not touched the range, so it opens on this year, up to
+  // the latest month. Editing either picker (even to blank) makes the range theirs;
   // "Clear filters" returns it to null.
   const [startMonth, setStartMonth] = useState(null);
   const [endMonth, setEndMonth] = useState(null);
@@ -57,10 +58,11 @@ export default function CustomerInventoryView({ customers, skuOptions, refreshKe
     refreshKey,
   });
 
-  // The API returns the full history. From/To open on that whole span, which
-  // is what the trend draws, and both the trend and the table follow the range.
+  // The API returns the full history. From opens on January of this year, To
+  // on the latest month, and both the trend and the table follow the range.
   const rangeRows = data?.trend?.length ? data.trend : data?.skus ?? [];
-  const defaultStart = earliestMonthInput(rangeRows);
+  const dataStart = earliestMonthInput(rangeRows);
+  const defaultStart = currentYearDateRange().start.slice(0, 7);
   const defaultEnd = latestMonthInput(rangeRows);
   const shownStart = startMonth ?? defaultStart;
   const shownEnd = endMonth ?? defaultEnd;
@@ -80,7 +82,7 @@ export default function CustomerInventoryView({ customers, skuOptions, refreshKe
 
   const customerName = customers.find((c) => c.customer_id === customerId)?.customer_name;
   const scopeTags = [
-    { label: 'Customer', value: customerName ? retailerLabel(customerName) : '—' },
+    { label: 'Customer', value: customerName ? customerLabel(customerName) : '—' },
     { label: 'SKU', value: skuScopeLabel(skus) },
     { label: 'Months', value: monthRangeLabel(shownStart, shownEnd) },
     { label: 'Status', value: status ? DOH_STATUS_LABELS[status] : 'All' },
@@ -98,7 +100,7 @@ export default function CustomerInventoryView({ customers, skuOptions, refreshKe
               onChange={(value) => setCustomerId(Number(value))}
               options={customers.map((c) => ({
                 value: String(c.customer_id),
-                label: retailerLabel(c.customer_name),
+                label: customerLabel(c.customer_name),
               }))}
               ariaLabel="Customer"
               look="compact"
@@ -121,6 +123,7 @@ export default function CustomerInventoryView({ customers, skuOptions, refreshKe
         startMonth={shownStart}
         endMonth={shownEnd}
         defaultStart={defaultStart}
+        dataStart={dataStart}
         defaultEnd={defaultEnd}
         onStartMonthChange={setStartMonth}
         onEndMonthChange={setEndMonth}
