@@ -139,6 +139,9 @@
   --aire-scenario: #D23F74;
   --aire-scenario-soft: #FBEAF0;
   --aire-scenario-ink: #8E1F4A;
+
+  /* Scrollbar thumb on every scrolling area (set on html, inherited). */
+  --scrollbar-thumb: oklch(0.75 0 0);
 }
 
 .dark {
@@ -187,6 +190,9 @@
   }
   html {
     @apply font-sans;
+    /* One grey scrollbar for the page and every panel inside it:
+       scrollbar-color is inherited, so nested scroll areas pick it up. */
+    scrollbar-color: var(--scrollbar-thumb) transparent;
   }
   /* Recharts draws axis ticks as SVG text, out of reach of a className.
      Fixed-width digits keep the value axis ("$1.2k" / "$11.8k") evenly set
