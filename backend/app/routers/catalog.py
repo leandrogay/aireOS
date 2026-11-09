@@ -107,10 +107,7 @@ def update_customer(customer_id: int, customer: CustomerUpdate):
     except HTTPException:
         raise
 
-    except (
-        customer_service.CustomerNameTakenError,
-        customer_service.CustomerInUseError,
-    ) as e:
+    except customer_service.CustomerNameTakenError as e:
         raise HTTPException(
             status_code=409,
             detail=str(e),

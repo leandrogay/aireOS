@@ -9,8 +9,8 @@ import useSavedBuildingBlocks from '@/hooks/useSavedBuildingBlocks';
 import useSellInOutlook from '@/hooks/useSellInOutlook';
 import useSellInPlan from '@/hooks/useSellInPlan';
 import { blocksWithoutEffect, customerBlocks, pickedBlockIds } from '@/app/utils/buildingBlocksOverlay';
-import { formatDoh, formatMonth, formatUnits } from '@/app/utils/inventoryForm';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { formatDoh, formatMonth } from '@/app/utils/inventoryForm';
+import { customerLabel } from '@/app/utils/retailerLabel';
 
 import BuildingBlocksOverlay from './BuildingBlocksOverlay';
 import {
@@ -80,7 +80,7 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
   const outlook = useSellInOutlook({ customerId, months, skus, startYear, blockIds: appliedBlockIds, refreshKey });
   const chartMonths = outlook.data?.months ?? [];
   const outlookTags = [
-    { label: 'Customer', value: customerName ? retailerLabel(customerName) : '—' },
+    { label: 'Customer', value: customerName ? customerLabel(customerName) : '—' },
     { label: 'SKU', value: skuScopeLabel(skus) },
     ...(chartMonths.length
       ? [{ label: 'Months', value: monthRangeLabel(chartMonths[0].month, chartMonths[chartMonths.length - 1].month) }]
@@ -128,7 +128,7 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
           <SelectDropdown
             value={customerId === null ? '' : String(customerId)}
             onChange={(value) => changeCustomer(Number(value))}
-            options={customers.map((c) => ({ value: String(c.customer_id), label: retailerLabel(c.customer_name) }))}
+            options={customers.map((c) => ({ value: String(c.customer_id), label: customerLabel(c.customer_name) }))}
             ariaLabel="Customer"
             look="compact"
           />
@@ -199,7 +199,7 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
             blocks={offeredBlocks}
             blockIds={appliedBlockIds}
             onBlockIdsChange={setBlockIds}
-            customerLabel={customerName ? retailerLabel(customerName) : 'this customer'}
+            customerLabel={customerName ? customerLabel(customerName) : 'this customer'}
             loading={savedBlocks.loading}
             error={savedBlocks.error}
             withoutEffect={appliedBlockIds.length ? blocksWithoutEffect(outlook.data?.building_blocks ?? []) : []}

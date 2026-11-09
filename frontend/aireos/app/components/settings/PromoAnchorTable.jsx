@@ -8,7 +8,7 @@ import StatusPill from '@/components/ui/StatusPill';
 import TableGrid, { ACTIONS_COLUMN, EXPANDED_ROW_INSET } from '@/components/ui/TableGrid';
 import useExpandedRows from '@/hooks/useExpandedRows';
 import { formatDateTime } from '@/lib/formatDate';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 import { anchorLabel, anchorSourceLabel, recommendedAnchorLabel, sourceTone } from '@/app/utils/promoUpliftSettings';
 import { cn } from '@/lib/utils';
 
@@ -101,7 +101,7 @@ export default function PromoAnchorTable({ anchors, editingKey, readOnly, onView
   return (
     <TableGrid variant="nested" columns={CUSTOMER_COLUMNS} minWidth="52rem">
       {anchors.customers.map((customer) => {
-        const name = retailerLabel(customer.customer_name);
+        const name = customerLabel(customer.customer_name);
         const target = {
           key: String(customer.customer_id),
           customerId: customer.customer_id,

@@ -7,7 +7,7 @@ import SelectDropdown from '@/components/ui/SelectDropdown';
 import useCustomerInventory from '@/hooks/useCustomerInventory';
 import { currentYearDateRange } from '@/app/utils/dateRange';
 import { DOH_STATUS_LABELS, earliestMonthInput, formatDoh, filterMonthRange, latestMonthInput } from '@/app/utils/inventoryForm';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 
 import {
   filterLabelClass,
@@ -82,7 +82,7 @@ export default function CustomerInventoryView({ customers, skuOptions, refreshKe
 
   const customerName = customers.find((c) => c.customer_id === customerId)?.customer_name;
   const scopeTags = [
-    { label: 'Customer', value: customerName ? retailerLabel(customerName) : '—' },
+    { label: 'Customer', value: customerName ? customerLabel(customerName) : '—' },
     { label: 'SKU', value: skuScopeLabel(skus) },
     { label: 'Months', value: monthRangeLabel(shownStart, shownEnd) },
     { label: 'Status', value: status ? DOH_STATUS_LABELS[status] : 'All' },
@@ -100,7 +100,7 @@ export default function CustomerInventoryView({ customers, skuOptions, refreshKe
               onChange={(value) => setCustomerId(Number(value))}
               options={customers.map((c) => ({
                 value: String(c.customer_id),
-                label: retailerLabel(c.customer_name),
+                label: customerLabel(c.customer_name),
               }))}
               ariaLabel="Customer"
               look="compact"

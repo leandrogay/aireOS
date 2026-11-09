@@ -9,7 +9,7 @@ import {
   formatMonth,
   formatUnits,
 } from '@/app/utils/inventoryForm';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 import RowActions from '@/components/ui/RowActions';
 import { cn } from '@/lib/utils';
 
@@ -98,7 +98,7 @@ export default function InventorySkuTable({
                   key={`${row.customer_id}-${row.sku}-${row.month}`}
                   className={inventoryRowClass}
                 >
-                  {showCustomer && <td className={inventoryTdClass}>{retailerLabel(row.customer_name)}</td>}
+                  {showCustomer && <td className={inventoryTdClass}>{customerLabel(row.customer_name)}</td>}
                   <td className={cn(inventoryTdClass, 'font-medium')}>{formatMonth(row.month)}</td>
                   <td className={cn(inventoryTdClass, 'font-mono')}>{row.sku}</td>
                   <td className={inventoryTdClass}>{row.product_name}</td>

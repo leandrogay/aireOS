@@ -68,7 +68,7 @@ def test_list_returns_customers_with_retailers_and_the_unlinked_retailers(monkey
 # ---- create --------------------------------------------------------------------
 
 
-def test_create_inserts_the_slug_and_returns_the_row(monkeypatch):
+def test_create_inserts_the_name_as_typed_and_returns_the_row(monkeypatch):
     conn = FakeConnection(_respond(customer=_customer()))
     _install(monkeypatch, conn)
 
@@ -76,7 +76,7 @@ def test_create_inserts_the_slug_and_returns_the_row(monkeypatch):
 
     assert created == _customer()
     _, params = conn.sql_containing("INSERT INTO customers")[0]
-    assert params == {"customer_name": "giant"}
+    assert params == {"customer_name": "Giant"}
 
 
 def test_create_gives_the_new_customer_default_doh_settings(monkeypatch):
@@ -99,11 +99,12 @@ def test_a_taken_name_raises_without_inserting(monkeypatch):
     conn = FakeConnection(_respond(name_taken=True))
     _install(monkeypatch, conn)
 
-    with pytest.raises(customer_service.CustomerNameTakenError, match='"giant" already exists'):
+    with pytest.raises(customer_service.CustomerNameTakenError, match='"GIANT" already exists'):
         customer_service.create_customer(CustomerCreate(customer_name="GIANT"))
 
-    _, params = conn.sql_containing("lower(customer_name)")[0]
-    assert params == {"customer_name": "giant", "exclude_id": None}
+    sql, params = conn.sql_containing("lower(customer_name)")[0]
+    assert "lower(customer_name) = lower(:customer_name)" in sql
+    assert params == {"customer_name": "GIANT", "exclude_id": None}
     assert conn.sql_containing("INSERT INTO customers") == []
     assert conn.sql_containing("INSERT INTO doh_settings") == []
 
@@ -181,19 +182,21 @@ def test_rename_excludes_its_own_row_from_the_duplicate_check(monkeypatch):
     customer_service.update_customer(3, CustomerUpdate(customer_name="Giant Hyper"))
 
     _, params = conn.sql_containing("lower(customer_name)")[0]
-    assert params == {"customer_name": "giant_hyper", "exclude_id": 3}
+    assert params == {"customer_name": "Giant_Hyper", "exclude_id": 3}
     _, params = conn.sql_containing("UPDATE customers")[0]
-    assert params == {"customer_id": 3, "customer_name": "giant_hyper"}
+    assert params == {"customer_id": 3, "customer_name": "Giant_Hyper"}
 
 
-def test_a_customer_in_use_cannot_be_renamed(monkeypatch):
+def test_a_customer_in_use_can_still_be_renamed(monkeypatch):
+    # Everything links to a customer by id and its retailers keep their own
+    # slug names, so a rename moves no data.
     conn = FakeConnection(_respond(customer=_customer(in_use=True)))
     _install(monkeypatch, conn)
 
-    with pytest.raises(customer_service.CustomerInUseError, match="can't be renamed"):
-        customer_service.update_customer(3, CustomerUpdate(customer_name="other"))
+    customer_service.update_customer(3, CustomerUpdate(customer_name="FairPrice"))
 
-    assert conn.sql_containing("UPDATE customers") == []
+    _, params = conn.sql_containing("UPDATE customers")[0]
+    assert params == {"customer_id": 3, "customer_name": "FairPrice"}
 
 
 def test_renaming_a_missing_customer_returns_none(monkeypatch):

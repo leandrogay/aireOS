@@ -31,6 +31,19 @@ function retailerFamily(retailerName) {
   return String(retailerName).replace(/_(online|offline)$/, '');
 }
 
+/**
+ * The name a customer's channel retailers are built from: the family of the
+ * channel retailers it already has (`fairprice_offline` → `fairprice`), so a
+ * renamed customer (FairPrice → NTUC) keeps writing to the retailers its
+ * sales are under; a customer with none yet uses its own name.
+ */
+export function customerRetailerFamily(customer) {
+  const existing = (customer.retailers || [])
+    .map((retailer) => retailer.retailer_name)
+    .find((name) => /_(online|offline)$/.test(name));
+  return existing ? retailerFamily(existing) : normaliseName(customer.customer_name);
+}
+
 // ============================================================
 // What the mapping writes to
 // ============================================================
@@ -223,7 +236,9 @@ export function suggestCustomerId(mapping, customers, outputs) {
   if (mapping.customerId && customers.some((item) => item.customer_id === mapping.customerId)) {
     return mapping.customerId;
   }
-  const byName = new Map(customers.map((item) => [item.customer_name, item.customer_id]));
+  // Customer names keep their capitals (FairPrice); vendors and retailer
+  // families are compared as lowercase slugs.
+  const byName = new Map(customers.map((item) => [normaliseName(item.customer_name), item.customer_id]));
   const candidates = [
     mapping.vendor && normaliseName(mapping.vendor),
     ...(outputs || []).map(retailerFamily),

@@ -20,7 +20,7 @@ import {
 } from '@/app/utils/forecastLineText';
 import { CONFIDENCE_ROW_LIMIT } from '@/app/utils/forecastTiers';
 import { FORECAST_SERIES } from '@/app/utils/forecastView';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 
 // Colour is a second channel only: every badge also carries an icon and a
 // word, so the band survives greyscale and colour blindness.
@@ -178,7 +178,7 @@ function SkuConfidenceRows({ entries, showPrevious }) {
   // All customers: the same SKU appears once per customer, so name them.
   const severalCustomers = new Set(entries.map((entry) => entry.customerName)).size > 1;
   const nameOf = (entry) =>
-    severalCustomers ? `${entry.productName} · ${retailerLabel(entry.customerName)}` : entry.productName;
+    severalCustomers ? `${entry.productName} · ${customerLabel(entry.customerName)}` : entry.productName;
   // A Previous column only when some SKU has one this month.
   const withPrevious = showPrevious && entries.some((entry) => entry.previous);
   const columns = withPrevious ? 'grid-cols-[1fr_auto_auto_auto]' : 'grid-cols-[1fr_auto_auto]';

@@ -16,7 +16,7 @@ import ScenarioBuilderSkeleton from '@/components/scenario/ScenarioBuilderSkelet
 import ScenarioPanel from '@/components/scenario/ScenarioPanel';
 import ScenarioTotals from '@/components/scenario/ScenarioTotals';
 import ScenarioYearComparison from '@/components/scenario/ScenarioYearComparison';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 import {
   ALL_PACK_TYPE_VALUES,
   ALL_PROMO_TYPE_VALUES,
@@ -345,7 +345,7 @@ export default function ScenarioBuilder() {
   const error =
     filters.error ?? view.error ?? scenarioBlocks.error ?? scenarioPromotions.error ?? splitBasis.error ?? actionError;
 
-  const customerText = customerName ? retailerLabel(customerName) : 'All customers';
+  const customerText = customerName ? customerLabel(customerName) : 'All customers';
 
   async function savePanelBlock(block) {
     await scenarioBlocks.saveBlock(block);
@@ -569,7 +569,7 @@ export default function ScenarioBuilder() {
                 { label: 'Block', value: deletion.target.name },
                 {
                   label: 'Applies to',
-                  value: `${retailerLabel(deletion.target.customer)} · ${deletion.target.sku || 'All SKUs'}`,
+                  value: `${customerLabel(deletion.target.customer)} · ${deletion.target.sku || 'All SKUs'}`,
                 },
                 {
                   label: 'Months',
