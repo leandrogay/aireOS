@@ -143,7 +143,7 @@ export default function ForecastFilters({
   }
 
   return (
-    <Card size="sm" className="min-w-0 max-w-full rounded-lg border border-lavander bg-white text-deep-violet-blue shadow-sm ring-0">
+    <Card className="min-w-0 max-w-full rounded-lg border border-lavander bg-white text-deep-violet-blue shadow-sm ring-0">
       <CardContent className="min-w-0 space-y-2">
         <div className="flex items-center gap-2">
           <p className="font-serif text-base text-deep-violet-blue">Filters</p>

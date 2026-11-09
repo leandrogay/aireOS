@@ -9,7 +9,8 @@ import {
 } from '@/components/ui/chart';
 
 import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
-import { BAR_ANIMATION, yearAxisProps } from '@/app/utils/trendChart';
+import { BAR_ANIMATION, chartDataRange, metricYAxisProps, yearAxisProps } from '@/app/utils/trendChart';
+import useChartTransition from '@/hooks/useChartTransition';
 import useMediaQuery from '@/hooks/useMediaQuery';
 
 import { labelledTooltipRow } from './chartTooltip';
@@ -25,16 +26,25 @@ const chartConfig = {
  */
 export default function SellInTrendChart({ trend }) {
   const mobile = useMediaQuery('(max-width: 639px)');
+  const rows = trend.map((row) => ({ ...row, label: formatMonth(row.month) }));
+  // Fixed nice steps, so a filter change can move the bars and the axis together.
+  const yAxisProps = metricYAxisProps('units', chartDataRange(rows, ['sell_in']));
+  const transition = useChartTransition({
+    rows,
+    rowKey: 'month',
+    valueKeys: ['sell_in'],
+    domain: yAxisProps.domain,
+    ticks: yAxisProps.ticks,
+  });
+
   if (trend.length === 0) {
     return <p className="text-sm text-deep-violet-blue/70">No inventory data for these filters.</p>;
   }
 
-  const rows = trend.map((row) => ({ ...row, label: formatMonth(row.month) }));
-
   return (
     <div className="overflow-visible rounded-xl border border-lavander bg-white pl-1 pr-3 pt-2">
       <ChartContainer config={chartConfig} className="aspect-auto h-[280px] w-full">
-        <BarChart accessibilityLayer data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
+        <BarChart accessibilityLayer data={transition.rows} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
           <CartesianGrid vertical={false} stroke="var(--aire-lavender)" />
           <XAxis
             dataKey={mobile ? 'month' : 'label'}
@@ -46,7 +56,13 @@ export default function SellInTrendChart({ trend }) {
             tickMargin={6}
             {...(mobile ? yearAxisProps(rows, 'month') : {})}
           />
-          <YAxis width={48} tick={{ fontSize: 10, fill: '#3A4369' }} tickFormatter={formatUnits} />
+          <YAxis
+            domain={transition.domain}
+            ticks={transition.ticks}
+            width={48}
+            tick={{ fontSize: 10, fill: '#3A4369' }}
+            tickFormatter={formatUnits}
+          />
           <ChartTooltip
             content={
               <ChartTooltipContent
@@ -55,7 +71,7 @@ export default function SellInTrendChart({ trend }) {
               />
             }
           />
-          <Bar dataKey="sell_in" fill="var(--color-sell_in)" radius={[2, 2, 0, 0]} {...BAR_ANIMATION} />
+          <Bar dataKey="sell_in" fill="var(--color-sell_in)" radius={[2, 2, 0, 0]} {...BAR_ANIMATION} {...transition.seriesAnimation} />
         </BarChart>
       </ChartContainer>
     </div>

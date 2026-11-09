@@ -20,9 +20,9 @@ const BLOCK_COLUMNS = blockColumns(true);
  */
 export default function ScenarioBuilderSkeleton() {
   return (
-    <PageSkeleton label="Loading scenario builder…" className="space-y-2">
+    <PageSkeleton label="Loading scenario builder…" className="space-y-3">
       {/* Same columns as ScenarioBuilder with the panel open (its default). */}
-      <div className="grid items-start gap-2 min-[1100px]:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)] min-[1100px]:items-stretch">
+      <div className="grid items-start gap-3 min-[1100px]:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)] min-[1100px]:items-stretch">
         <CardSkeleton className="min-w-0" bodyClassName="space-y-3">
           {/* ForecastFilters toolbar: product, customer, date range, clear. */}
           <SkeletonBars widths={['w-44', 'w-44', 'w-56', 'w-20']} inline className="h-8 rounded-md" />

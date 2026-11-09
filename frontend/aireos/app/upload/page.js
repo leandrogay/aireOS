@@ -151,7 +151,7 @@ export default function UploadPage() {
 
   return (
     <PageLayout title="Upload sales data">
-      <div className="space-y-1">
+      <div className="space-y-3">
         <section className="rounded-lg border border-lavander bg-white p-6 shadow-sm">
           {/* Files in flight don't hold the page: more can be added and
               uploaded while earlier ones are still being matched. */}

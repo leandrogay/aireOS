@@ -25,6 +25,7 @@ import {
   weekMonthGroups,
 } from '@/app/utils/trendChart';
 import MonthAxis from '@/components/dashboard/MonthAxis';
+import useChartTransition from '@/hooks/useChartTransition';
 import useMediaQuery from '@/hooks/useMediaQuery';
 import TooltipChange from '@/components/dashboard/TooltipChange';
 
@@ -140,6 +141,15 @@ export function FormatTrendChart({ periodByFormat, periodTotal, granularity, met
   // Bars stack the formats; lines draw each format on its own, so the axis
   // only has to reach the single tallest format.
   const yAxisProps = metricYAxisProps(metric, chartDataRange(chartData, formats, { stacked: kind === 'bars' }));
+  // A change (Revenue / Volume) moves the bars or lines and the axis together.
+  const transition = useChartTransition({
+    rows: chartData,
+    rowKey: 'period_label',
+    valueKeys: formats,
+    domain: yAxisProps.domain,
+    ticks: yAxisProps.ticks,
+  });
+  const yAxis = <YAxis {...yAxisProps} domain={transition.domain} ticks={transition.ticks} />;
   // Tilted labels run down-left from their bar, so the first needs room past
   // the y-axis; a line's last point sits on the plot's right edge.
   const margin = {
@@ -156,10 +166,10 @@ export function FormatTrendChart({ periodByFormat, periodTotal, granularity, met
   if (kind === 'lines') {
     return (
       <ChartContainer config={chartConfig} className={CHART_SIZE_CLASS}>
-        <LineChart accessibilityLayer data={chartData} margin={margin}>
+        <LineChart accessibilityLayer data={transition.rows} margin={margin}>
           <CartesianGrid vertical={false} />
           <XAxis dataKey={mobile ? 'periodStart' : 'displayLabel'} {...axisProps} padding={{ left: 24, right: 24 }} />
-          <YAxis {...yAxisProps} />
+          {yAxis}
           <MonthAxis groups={monthGroups} />
           {tooltip}
           {!unnamedOnly && <ChartLegend content={<ChartLegendContent />} />}
@@ -172,6 +182,7 @@ export function FormatTrendChart({ periodByFormat, periodTotal, granularity, met
               strokeWidth={2}
               dot={chartData.length > MAX_DOTTED_POINTS ? false : { r: 2.5 }}
               activeDot={{ r: 4 }}
+              {...transition.seriesAnimation}
             />
           ))}
         </LineChart>
@@ -183,10 +194,10 @@ export function FormatTrendChart({ periodByFormat, periodTotal, granularity, met
     <ChartContainer config={chartConfig} className={CHART_SIZE_CLASS}>
       {/* stackOffset="sign": a negative segment (returns) is drawn down from 0,
           not on top of the positive ones (chartDataRange measures it that way). */}
-      <BarChart accessibilityLayer data={chartData} margin={margin} stackOffset="sign">
+      <BarChart accessibilityLayer data={transition.rows} margin={margin} stackOffset="sign">
         <CartesianGrid vertical={false} />
         <XAxis dataKey={mobile ? 'periodStart' : 'displayLabel'} {...axisProps} />
-        <YAxis {...yAxisProps} />
+        {yAxis}
         <MonthAxis groups={monthGroups} />
         {tooltip}
         {!unnamedOnly && <ChartLegend content={<ChartLegendContent />} />}
@@ -198,6 +209,7 @@ export function FormatTrendChart({ periodByFormat, periodTotal, granularity, met
             fill={`var(--color-${format})`}
             maxBarSize={MAX_BAR_SIZE}
             {...BAR_ANIMATION}
+            {...transition.seriesAnimation}
           />
         ))}
       </BarChart>

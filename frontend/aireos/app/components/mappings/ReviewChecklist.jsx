@@ -37,7 +37,7 @@ export default function ReviewChecklist({ items, isConfirmed, aiProposed = false
   return (
     <aside
       aria-labelledby="review-checklist-title"
-      className="rounded-lg border border-lavander bg-white p-3 shadow-sm lg:sticky lg:top-4"
+      className="rounded-lg border border-lavander bg-white p-4 shadow-sm lg:sticky lg:top-4"
     >
       <div className="flex items-baseline justify-between gap-2">
         <h2 id="review-checklist-title" className="text-sm font-medium text-deep-violet-blue">

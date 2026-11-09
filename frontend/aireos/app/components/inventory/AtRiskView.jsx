@@ -54,7 +54,7 @@ export default function AtRiskView({ customers, refreshKey }) {
   }
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-3">
       <InventoryFilterCard
         canClear={Boolean(customerId || risk)}
         onClear={clearFilters}

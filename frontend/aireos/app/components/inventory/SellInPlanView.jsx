@@ -72,7 +72,7 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
   }
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-3">
       <InventoryFilterCard
         canClear={skus.length > 0 || months !== 6}
         onClear={clearFilters}

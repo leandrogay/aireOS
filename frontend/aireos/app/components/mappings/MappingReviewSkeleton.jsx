@@ -1,6 +1,6 @@
 import { Skeleton } from '@/components/ui/skeleton';
 
-const card = 'rounded-lg border border-lavander bg-white p-3 shadow-sm';
+const card = 'rounded-lg border border-lavander bg-white p-4 shadow-sm';
 const bar = 'rounded bg-lavander';
 
 /**
@@ -11,7 +11,7 @@ const bar = 'rounded bg-lavander';
  */
 export default function MappingReviewSkeleton() {
   return (
-    <div role="status" className="space-y-1">
+    <div role="status" className="space-y-3">
       <span className="sr-only">Loading nomenclature…</span>
 
       <section aria-hidden="true" className={card}>
@@ -20,8 +20,8 @@ export default function MappingReviewSkeleton() {
         <Skeleton className={`mt-2 h-4 w-full max-w-xl ${bar}`} />
       </section>
 
-      <div className="grid gap-1 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start">
-        <div className="space-y-1">
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start">
+        <div className="space-y-3">
           {[3, 8].map((lines, index) => (
             <section key={index} aria-hidden="true" className={card}>
               <div className="mb-3 flex items-center gap-2.5">

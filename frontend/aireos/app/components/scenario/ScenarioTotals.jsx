@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 
+import TabTransition from '@/components/ui/TabTransition';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const triggerClass =
@@ -29,10 +30,12 @@ export default function ScenarioTotals({ singleSeries, yearTable, monthlyPlan })
         <TabsTrigger value="year" className={triggerClass}>By year</TabsTrigger>
         <TabsTrigger value="month" className={triggerClass}>By month</TabsTrigger>
       </TabsList>
-      <TabsContent value="year" className="pt-2">{yearTable}</TabsContent>
-      <TabsContent value="month" className="pt-2">
-        {tab === 'month' ? monthlyPlan : null}
-      </TabsContent>
+      <TabTransition value={tab}>
+        <TabsContent value="year" className="pt-2">{yearTable}</TabsContent>
+        <TabsContent value="month" className="pt-2">
+          {tab === 'month' ? monthlyPlan : null}
+        </TabsContent>
+      </TabTransition>
     </Tabs>
   );
 }
