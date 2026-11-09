@@ -17,11 +17,11 @@ import InventoryOverview from './InventoryOverview';
 import SellInPlanView from './SellInPlanView';
 
 const TABS = [
-  { value: 'overview', label: 'Overview' },
+  { value: 'plan', label: 'Sell-in plan' },
+  { value: 'overview', label: 'Stock' },
   { value: 'customer', label: 'By customer' },
   { value: 'risk', label: 'At risk' },
-  { value: 'plan', label: 'Sell-in plan' },
-  { value: 'manage', label: 'Enter / edit data' },
+  { value: 'manage', label: 'Input data' },
 ];
 
 /**
@@ -35,8 +35,8 @@ const TABS = [
  */
 export default function InventoryTabs() {
   const options = useInventoryOptions();
-  const [tab, setTab] = useState('overview');
-  const [visitedTabs, setVisitedTabs] = useState(['overview']);
+  const [tab, setTab] = useState('plan');
+  const [visitedTabs, setVisitedTabs] = useState(['plan']);
   const [refreshKey, setRefreshKey] = useState(0);
   const [editRow, setEditRow] = useState(null);
   const { toast, notify, dismissToast } = useToast();
