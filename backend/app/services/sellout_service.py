@@ -1269,10 +1269,6 @@ def get_dashboard_summary(
     return {mode: _dashboard_mode_summary(df, _retailer_for(customer, mode)) for mode in DASHBOARD_MODES}
 
 
-# Most customers the cross-customer chart compares at once: one bar or line
-# each, in its own colour (frontend storeFormats CUSTOMER_COLORS has four).
-MAX_COMPARED_CUSTOMERS = 3
-
 # Which of these retailers have any sell-out at all, whatever the dates: a
 # customer with no online sales (NHG) is left off the Online chart rather
 # than drawn as a zero.
@@ -1384,17 +1380,15 @@ def get_customer_trends(
     offline and online, for the cross-customer chart.
 
     One figure per customer per period rather than one total for the whole
-    range, so customers can be compared month by month. At most
-    MAX_COMPARED_CUSTOMERS at once. Rows follow get_dashboard_summary: by
+    range, so customers can be compared month by month. Any number of
+    customers: the frontend picks bars or lines from how many bars that
+    would draw (utils/chartKind.js). Rows follow get_dashboard_summary: by
     month the effective-sellout view, by week genuine weekly rows only.
     Periods carry estimated_revenue like the dashboard summary, and
     has_offline / has_online are as in get_customer_totals.
     """
     if granularity not in DASHBOARD_GRANULARITIES:
         raise ValueError(f"granularity must be one of {DASHBOARD_GRANULARITIES}")
-    named = {name.strip() for name in customers if name and name.strip()}
-    if len(named) > MAX_COMPARED_CUSTOMERS:
-        raise ValueError(f"Compare at most {MAX_COMPARED_CUSTOMERS} customers at a time")
     names, retailer_names, where_clauses, params = _customers_scope(customers, sku, start_date, end_date)
 
     if granularity == "month":

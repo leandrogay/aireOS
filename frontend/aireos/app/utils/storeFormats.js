@@ -27,16 +27,17 @@ const MISSING_FORMAT = 'UNKNOWN';
 export const UNNAMED_FORMAT = 'Total';
 
 // AIRE brand colours and their shades first, then the other colours the forecast
-// lines and promotion types use. Cream is second by design choice, though it and
-// lavender are the hardest to see on a white chart.
+// lines and promotion types use. No cream or lavender: both are too light to
+// see against the white card and cream page (the same reason FORMAT_COLORS
+// dropped cream).
 const CUSTOMER_COLORS = [
   'var(--aire-violet)',
-  'var(--aire-cream)',
   'var(--aire-celest)',
   '#2E7BA6',
   '#5C5299',
-  'var(--aire-lavender)',
-  '#0D9488',
+  // Dusty rose rather than the old teal: it sits with the violets and blues
+  // above instead of standing out as the one green.
+  '#C98BA8',
   '#4F7A3A',
   '#7C3AED',
   '#8A7460',

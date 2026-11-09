@@ -1,14 +1,16 @@
 'use client';
 
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip } from '@/components/ui/chart';
 import { hasEstimate } from '@/app/utils/estimatedRevenue';
+import { trendChartKind } from '@/app/utils/chartKind';
 import { changePct } from '@/app/utils/periodComparison';
 import { formatColor, UNNAMED_FORMAT } from '@/app/utils/storeFormats';
 import {
   CHART_SIZE_CLASS,
   BAR_ANIMATION,
   MAX_BAR_SIZE,
+  MAX_DOTTED_POINTS,
   TILTED_LABEL_LEFT_MARGIN,
   displayLabelFor,
   exactBucketLabel,
@@ -119,7 +121,9 @@ function TrendTooltip({ active, payload, granularity, metric }) {
  * The trend with no comparison: one bar per week/month stacked by store
  * format, in the format colours (a single-format channel is one colour).
  * Each bar is labelled by its row's own type (weekOrMonth), so a
- * month-only row is never titled as a week in the tooltip.
+ * month-only row is never titled as a week in the tooltip. One customer is
+ * one bar per period, so past the screen's bar limit (chartKind: 12 periods
+ * on desktop, 3 on a phone) each format becomes a line instead.
  *
  * @param {{ periodByFormat: Array<object>, periodTotal: Array<object>, granularity: 'week' | 'month', metric?: 'revenue' | 'units' }} props
  */
@@ -132,11 +136,48 @@ export function FormatTrendChart({ periodByFormat, periodTotal, granularity, met
   const axisProps = mobile ? yearAxisProps(chartData, 'periodStart') : periodAxisProps(chartData, granularity);
   // On a phone the axis is labelled by year (yearAxisProps), so no month axis.
   const monthGroups = mobile ? null : weekMonthGroups(chartData, granularity);
-  const yAxisProps = metricYAxisProps(metric, chartDataRange(chartData, formats));
-  // Tilted labels run down-left from their bar, so the first needs room past the y-axis.
-  const margin = axisProps.angle
-    ? { top: CHART_TOP_MARGIN, bottom: 8, left: TILTED_LABEL_LEFT_MARGIN }
-    : { top: CHART_TOP_MARGIN, bottom: 8 };
+  const kind = trendChartKind({ customerCount: 1, periodCount: chartData.length, mobile });
+  // Bars stack the formats; lines draw each format on its own, so the axis
+  // only has to reach the single tallest format.
+  const yAxisProps = metricYAxisProps(metric, chartDataRange(chartData, formats, { stacked: kind === 'bars' }));
+  // Tilted labels run down-left from their bar, so the first needs room past
+  // the y-axis; a line's last point sits on the plot's right edge.
+  const margin = {
+    top: CHART_TOP_MARGIN,
+    bottom: 8,
+    ...(axisProps.angle ? { left: TILTED_LABEL_LEFT_MARGIN } : {}),
+    ...(kind === 'lines' ? { right: 16 } : {}),
+  };
+  const tooltip = (
+    // Above the legend, which is drawn after it and would show through.
+    <ChartTooltip content={<TrendTooltip granularity={granularity} metric={metric} />} wrapperStyle={{ zIndex: 10 }} />
+  );
+
+  if (kind === 'lines') {
+    return (
+      <ChartContainer config={chartConfig} className={CHART_SIZE_CLASS}>
+        <LineChart accessibilityLayer data={chartData} margin={margin}>
+          <CartesianGrid vertical={false} />
+          <XAxis dataKey={mobile ? 'periodStart' : 'displayLabel'} {...axisProps} padding={{ left: 24, right: 24 }} />
+          <YAxis {...yAxisProps} />
+          <MonthAxis groups={monthGroups} />
+          {tooltip}
+          {!unnamedOnly && <ChartLegend content={<ChartLegendContent />} />}
+          {formats.map((format) => (
+            <Line
+              key={format}
+              dataKey={format}
+              type="linear"
+              stroke={`var(--color-${format})`}
+              strokeWidth={2}
+              dot={chartData.length > MAX_DOTTED_POINTS ? false : { r: 2.5 }}
+              activeDot={{ r: 4 }}
+            />
+          ))}
+        </LineChart>
+      </ChartContainer>
+    );
+  }
 
   return (
     <ChartContainer config={chartConfig} className={CHART_SIZE_CLASS}>
@@ -147,8 +188,7 @@ export function FormatTrendChart({ periodByFormat, periodTotal, granularity, met
         <XAxis dataKey={mobile ? 'periodStart' : 'displayLabel'} {...axisProps} />
         <YAxis {...yAxisProps} />
         <MonthAxis groups={monthGroups} />
-        {/* Above the legend, which is drawn after it and would show through. */}
-        <ChartTooltip content={<TrendTooltip granularity={granularity} metric={metric} />} wrapperStyle={{ zIndex: 10 }} />
+        {tooltip}
         {!unnamedOnly && <ChartLegend content={<ChartLegendContent />} />}
         {formats.map((format) => (
           <Bar
