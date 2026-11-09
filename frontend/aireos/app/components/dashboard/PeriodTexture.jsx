@@ -1,8 +1,8 @@
 // "Past period" texture shared by the comparison chart, its legend and the
 // Sell-out Summary: the comparison bar is a light tint of its colour with 45° stripes
 // and an outline in a darker edge colour, while this period stays solid. The
-// stripes and outline keep even the palest colours (UNITY's lavender,
-// FINEST's light blue) legible on the white card, where fading alone made
+// stripes and outline keep even the palest colours (FINEST's light blue)
+// legible on the white card, where fading alone made
 // them vanish.
 
 // The palest brand colours have almost no contrast with white, so edges are

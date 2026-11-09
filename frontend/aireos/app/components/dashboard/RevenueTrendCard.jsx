@@ -8,6 +8,7 @@ import CustomerTrendChart from "@/components/dashboard/CustomerTrendChart"
 import { FormatTrendChart } from "@/components/dashboard/TrendChart"
 import { formatDateTime } from "@/lib/formatDate"
 import { relabelFormatRows } from "@/app/utils/storeFormats"
+import useDelayedLoading from "@/hooks/useDelayedLoading"
 
 const METRIC_OPTIONS = [
   { value: "units", label: "Volume" },
@@ -65,17 +66,21 @@ export default function RevenueTrendCard({
 }) {
   const salesData = summaryByMode[mode]
   const comparingCustomers = customerBars !== null
-  const busy = loading || (!comparingCustomers && comparisonRows !== null && comparisonLoading)
+  // A fast load skips the placeholder instead of flashing it (useDelayedLoading).
+  const { pending: busy, placeholderClass } = useDelayedLoading({
+    loading: loading || (!comparingCustomers && comparisonRows !== null && comparisonLoading),
+  })
 
   return (
-    <div className="bg-white rounded-lg border border-lavander shadow-sm p-3 h-full flex flex-col">
+    <div className="bg-white rounded-lg border border-lavander shadow-sm p-4 h-full flex flex-col">
       {/* Top row: what data (Period, Compare to) on the left, lined up on
           their bottom edge, and which channel in the card's top right corner
-          (self-start), level with the "Period" label. On a narrow card the
-          channel wraps under the period, still on the right (ml-auto). */}
+          (self-start), level with the "Period" label. On a phone the channel
+          wraps under Compare to and lines up on the left with the other
+          controls; from sm up it sits on the right (sm:ml-auto). */}
       <div className="mb-2 flex flex-wrap items-end gap-x-3 gap-y-2">
         {headerExtra}
-        {channelSwitch && <div className="ml-auto mt-1 self-start">{channelSwitch}</div>}
+        {channelSwitch && <div className="mt-1 self-start sm:ml-auto">{channelSwitch}</div>}
       </div>
 
       {/* How to draw it: the view switches on their own line, on the right,
@@ -115,10 +120,10 @@ export default function RevenueTrendCard({
         // Same box as the loaded state: a flex-1 chart (min 220px) plus the footer line, so the card
         // keeps its height when the data arrives. The usual state is a few customers ticked, one month
         // (CustomerTrendChart: one cluster of a bar per customer); otherwise a year of months by ~4 formats.
-        <div className="flex flex-1 flex-col">
+        <div className={`flex flex-1 flex-col ${placeholderClass}`}>
           <BarChartSkeleton
-            bars={comparingCustomers ? 1 : 12}
-            groups={comparingCustomers ? 3 : 1}
+            bars={comparingCustomers ? 6 : 12}
+            groups={comparingCustomers ? 1 : 1}
             height={220}
             fill
             legend

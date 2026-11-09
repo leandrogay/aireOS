@@ -4,6 +4,7 @@ import { useState } from 'react';
 
 import SegmentedControl from '@/components/ui/SegmentedControl';
 import SelectDropdown from '@/components/ui/SelectDropdown';
+import TabTransition from '@/components/ui/TabTransition';
 import Toast from '@/components/ui/Toast';
 import useInventoryOptions from '@/hooks/useInventoryOptions';
 import useMediaQuery from '@/hooks/useMediaQuery';
@@ -88,7 +89,7 @@ export default function InventoryTabs() {
       )}
 
       {/* relative: the inactive KeptTabPanels are placed over this column. */}
-      <div className="relative mt-1 space-y-1">
+      <TabTransition value={tab} className="relative mt-3 space-y-3">
       {options.error && (
         <p className="rounded-md border border-violet bg-lavander/50 px-3 py-2 text-sm text-deep-violet-blue" role="alert">
           {options.error}
@@ -125,7 +126,7 @@ export default function InventoryTabs() {
           onSaved={handleRecordSaved}
         />
       )}
-      </div>
+      </TabTransition>
 
       <Toast toast={toast} onDismiss={dismissToast} />
     </div>

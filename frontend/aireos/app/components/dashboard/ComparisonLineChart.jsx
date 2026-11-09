@@ -15,6 +15,7 @@ import {
   periodAxisProps,
   weekMonthGroups,
 } from '@/app/utils/trendChart';
+import useChartTransition from '@/hooks/useChartTransition';
 
 // One colour for both periods, so the eye compares the two lines rather
 // than reading them as two different things: this period solid, the
@@ -42,7 +43,7 @@ function LineSwatch({ dashed }) {
 }
 
 /**
- * A long comparison (more than MAX_BAR_PERIODS buckets, see
+ * A long comparison (more than MAX_COMPARISON_BUCKETS buckets, see
  * ComparisonMixChart) as two lines of totals: this period solid, the
  * comparison dashed, paired bucket by bucket so the gap between them is the
  * change. Store formats are not drawn as lines (4 formats x 2 periods would
@@ -65,6 +66,14 @@ export default function ComparisonLineChart({ points, formats, names, granularit
     metric,
     chartDataRange(points, ['currentTotal', 'baselineTotal'], { stacked: false }),
   );
+  // A change (Revenue / Volume) moves both lines and the axis together.
+  const transition = useChartTransition({
+    rows: points,
+    rowKey: 'axisStart',
+    valueKeys: ['currentTotal', 'baselineTotal'],
+    domain: yAxisProps.domain,
+    ticks: yAxisProps.ticks,
+  });
   const dot = points.length > MAX_DOTTED_POINTS ? false : { r: 2.5 };
   const margin = {
     top: CHART_TOP_MARGIN,
@@ -76,10 +85,10 @@ export default function ComparisonLineChart({ points, formats, names, granularit
   return (
     <>
       <ChartContainer config={{}} className={CHART_SIZE_CLASS}>
-        <LineChart accessibilityLayer data={points} margin={margin}>
+        <LineChart accessibilityLayer data={transition.rows} margin={margin}>
           <CartesianGrid vertical={false} />
           <XAxis dataKey="displayLabel" {...axisProps} padding={{ left: 24, right: 24 }} />
-          <YAxis {...yAxisProps} />
+          <YAxis {...yAxisProps} domain={transition.domain} ticks={transition.ticks} />
           <MonthAxis groups={monthGroups} />
           <ChartTooltip content={<ComparisonTooltip formats={formats} metric={metric} />} wrapperStyle={{ zIndex: 10 }} />
           {/* The comparison first, so this period's solid line is drawn on top. */}
@@ -92,6 +101,7 @@ export default function ComparisonLineChart({ points, formats, names, granularit
             strokeOpacity={BASELINE_OPACITY}
             dot={dot && { ...dot, strokeOpacity: BASELINE_OPACITY }}
             activeDot={{ r: 4 }}
+            {...transition.seriesAnimation}
           />
           <Line
             dataKey="currentTotal"
@@ -100,6 +110,7 @@ export default function ComparisonLineChart({ points, formats, names, granularit
             strokeWidth={2}
             dot={dot}
             activeDot={{ r: 4 }}
+            {...transition.seriesAnimation}
           />
         </LineChart>
       </ChartContainer>

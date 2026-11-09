@@ -200,7 +200,7 @@ export default function CustomersView() {
         </Button>
       }
     >
-      <div className="grid gap-1">
+      <div className="grid gap-3">
         <CustomerTable
           customers={data}
           loading={loading}

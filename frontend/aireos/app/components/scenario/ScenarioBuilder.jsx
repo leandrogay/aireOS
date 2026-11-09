@@ -393,7 +393,7 @@ export default function ScenarioBuilder() {
   };
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       {error && (
         <p className="rounded-md border border-violet bg-lavander/50 px-3 py-2 text-sm text-deep-violet-blue">
           {error}
@@ -402,13 +402,13 @@ export default function ScenarioBuilder() {
 
       <div
         className={cn(
-          'grid items-start gap-2',
+          'grid items-start gap-3',
           panelCollapsed
             ? 'min-[1100px]:grid-cols-[minmax(0,1fr)_56px]'
             : 'min-[1100px]:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)] min-[1100px]:items-stretch'
         )}
       >
-        <div className="min-w-0 space-y-1 min-[1100px]:flex min-[1100px]:flex-col min-[1100px]:[&>[data-slot=card]]:flex-1">
+        <div className="min-w-0 space-y-3 min-[1100px]:flex min-[1100px]:flex-col min-[1100px]:[&>[data-slot=card]]:flex-1">
           {showViewToggle ? (
             <ModelViewToggle
               value={activeView}

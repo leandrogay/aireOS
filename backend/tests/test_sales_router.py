@@ -138,13 +138,13 @@ def test_customer_trends_passes_its_filters_to_the_service(monkeypatch):
     }
 
 
-def test_customer_trends_maps_too_many_customers_to_400(monkeypatch):
-    def _too_many(**kwargs):
-        raise ValueError("Compare at most 3 customers at a time")
+def test_customer_trends_maps_bad_input_to_400(monkeypatch):
+    def _bad_granularity(**kwargs):
+        raise ValueError("granularity must be one of ('week', 'month')")
 
-    monkeypatch.setattr(sellout_service, "get_customer_trends", _too_many)
+    monkeypatch.setattr(sellout_service, "get_customer_trends", _bad_granularity)
 
-    response = client.get("/api/sales/customer-trends?customers=a,b,c,d")
+    response = client.get("/api/sales/customer-trends?customers=a,b&granularity=day")
 
     assert response.status_code == 400
-    assert "at most 3" in response.json()["detail"]
+    assert "granularity" in response.json()["detail"]

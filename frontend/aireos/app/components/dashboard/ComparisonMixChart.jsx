@@ -4,7 +4,6 @@ import { Fragment, useId } from 'react';
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { formatColor as colorFor, UNNAMED_FORMAT } from '@/app/utils/storeFormats';
-import { MAX_BAR_PERIODS } from '@/app/utils/customerTrend';
 import ComparisonLineChart from '@/components/dashboard/ComparisonLineChart';
 import ComparisonTooltip from '@/components/dashboard/ComparisonTooltip';
 import { HatchPattern, PeriodSwatch, edgeColor, hatchTint, patternId } from '@/components/dashboard/PeriodTexture';
@@ -23,6 +22,10 @@ import {
   sortFormatsByTotalDesc,
 } from '@/app/utils/trendChart';
 import useMediaQuery from '@/hooks/useMediaQuery';
+
+// A comparison draws two stacks per bucket, so it has its own limit, not the
+// customers x periods one in utils/chartKind.js.
+const MAX_COMPARISON_BUCKETS = 6;
 
 // The comparison period is drawn in the same format colours as this period,
 // hatched (see PeriodTexture): a 50% tint with stripes and an outline in the
@@ -137,10 +140,9 @@ export default function ComparisonMixChart({ rows, periodNames, granularity, met
     return point;
   });
 
-  // Past MAX_BAR_PERIODS buckets, two stacks per bucket stop reading as
-  // bars (a year by week is over 100); the same limit as the customer chart
-  // (customerTrend), which turns to lines there too.
-  if (chartData.length > MAX_BAR_PERIODS) {
+  // Past MAX_COMPARISON_BUCKETS buckets, two stacks per bucket stop reading
+  // as bars (a year by week is over 100), so it turns to lines.
+  if (chartData.length > MAX_COMPARISON_BUCKETS) {
     return (
       <ComparisonLineChart
         points={chartData}

@@ -131,7 +131,9 @@ aireOS/
     │   ├── doh/page.js            DOH Settings: per-customer thresholds, alert toggle, edit, reset to global default (components/settings)
     │   ├── inventory/page.js      Inventory: overview, by-customer DOH, at-risk list, sell-in plan, enter/edit data (components/inventory)
     │   ├── components/
-    │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column), Sidebar (NAV_ITEMS; collapses
+    │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column; on navigation its heading and cards
+    │   │   │                      spring in one by one via PageTransition → lib/cardCascade.js, timing and the card selector in
+    │   │   │                      app/config/transitions.js), Sidebar (NAV_ITEMS; collapses
     │   │   │                      to an icon rail, hidden on narrow screens), RailFlyout (a rail section's sub-pages)
     │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, calendar (brand-styled), popover;
     │   │   │                      date kit on calendar: DatePicker (one day) / RangeDatePicker (start + end, Apply), each
@@ -146,7 +148,8 @@ aireOS/
     │   │   │                      closed button, popover panel, optional `searchable`, `look` field/filter/compact) →
     │   │   │                      SelectDropdown (pick one, ✓ rows), MultiSelectDropdown (pick many, tick-box rows + "All",
     │   │   │                      `noneMeansAll`), MonthDropdown (one 'YYYY-MM' month, wrapped by promotions MonthPicker and
-    │   │   │                      inventory MonthFilter); build new pickers on these, not on a raw Popover; toggle kit: SegmentedControl
+    │   │   │                      inventory MonthFilter); build new pickers on these, not on a raw Popover; TabTransition (on each tab
+    │   │   │                      switch the shown panel's cards spring in one by one, without remounting: Inventory, Scenario builder); toggle kit: SegmentedControl
     │   │   │                      (pick one of a few, sliding highlight, `look` tint/outline), LineToggle (chart line on/off pills, one row or stacked `groups` with a
     │   │   │                      `header`; Forecast + Scenario charts and the inventory sell-in chart), ToggleButton (one thing on/off,
     │   │   │                      `look` compact/chip), ToggleField (switch; `label` / `showState` / hints opt in, `ariaLabel` when unlabelled; used by DOH alerts and nomenclature file settings); app/testing shows both kits and the brand-coloured Button (default/outline/secondary/ghost/destructive/destructive-outline/link/scenario; sizes sm/default/lg) and lists the
@@ -172,7 +175,7 @@ aireOS/
     │   │   │                      MonthAxis (month labels + dividers under a long week run);
     │   │   │                      PeriodTexture (hatched "past period" fills), TooltipChange,
     │   │   │                      PeriodComparisonDetail, RevenueSummaryCards + FormatMixBar, SkuRanking;
-    │   │   │                      CustomerTrendChart (2-3 customers: grouped bars per period, lines past 6 periods);
+    │   │   │                      CustomerTrendChart (2+ customers: grouped bars, lines past the bar limit in utils/chartKind.js);
     │   │   │                      DashboardStatus (whole-page card: sales data couldn't load / none uploaded yet)
     │   │   ├── promotions/        PromotionForm, PromotionList → PromotionRow (on ui/DataTable), columns.js, MonthPicker (on ui/MonthDropdown)
     │   │   ├── customers/         CustomersView (state), CustomerTable → CustomerRow (expandable, retailers inside),
@@ -212,7 +215,8 @@ aireOS/
     │       ├── weeklyGaps.js      "No weekly data for …" message: monthly-only months merged into ranges, capped
     │       ├── priceMix.js        Avg-price change split into SKU price vs product mix
     │       ├── estimatedRevenue.js est. sign: when a revenue figure includes estimated revenue, and its hover text
-    │       ├── customerTrend.js   Cross-customer chart: MAX_COMPARED_CUSTOMERS (3), bars up to MAX_BAR_PERIODS (6) then lines, series/rows
+    │       ├── customerTrend.js   Cross-customer chart: series/rows (any number of customers)
+    │       ├── chartKind.js       PURE, import-free: bars vs lines for the trend charts -- customers x periods over 12 (desktop) / 3 (phone) → lines, one period always bars (tests/chartKind.test.mjs)
     │       ├── storeFormats.js    FORMAT_COLORS + formatColor() per store format; customerColor + customerColorOrder (one colour per customer on every page, by customer_id)
     │       ├── dohSettingsForm.js validate/build/formFrom helpers for the DOH threshold form, GLOBAL_DEFAULT_DOH
     │       ├── customerForm.js    normaliseName (mirrors backend slug), validateName, edit/delete block reasons
@@ -235,9 +239,15 @@ aireOS/
     │   ├── useExpandedRows.js     { isExpanded, toggle, expand } for ui/ExpandableRow (several open by default)
     │   ├── useConfirmAction.js    { target, isPending, request, cancel, confirm } for ui/ConfirmDialog (e.g. Delete)
     │   ├── useMediaQuery.js       boolean for a CSS media query (Sidebar: rail vs hidden when collapsed)
+    │   ├── useDelayedLoading.js   { pending, visible, placeholderClass }: a first-load chart skeleton shows only after 200ms and
+    │   │                          stays 400ms, so fast loads never flash it (dashboard trend, forecast, InventoryChartSlot)
+    │   ├── useChartTransition.js  tweens a chart's rows and y-axis range together on a change (pure blending in
+    │   │                          utils/chartTransition.js), so bars/lines, gridlines and tick labels move on one scale;
+    │   │                          every dashboard/forecast/inventory chart except ComparisonMixChart (animation off by design)
     │   └── useToast.js            { toast, notify, dismissToast } for components/ui/Toast
     ├── lib/                       cn() (clsx + tailwind-merge), formatDateRange, formatDate/formatDateTime (shared date display,
-    │                              Singapore time), singaporeTime (singaporeDateTimeParts, singaporeToday)
+    │                              Singapore time), singaporeTime (singaporeDateTimeParts, singaporeToday), cardCascade
+    │                              (springs a container's cards in one by one; PageTransition, TabTransition)
     ├── public/                    create-next-app SVGs
     ├── CONTRIBUTING.md            Frontend UI conventions (primitives, tokens, cn(), lucide) — binding
     ├── CLAUDE.md → @AGENTS.md     Next.js auto-generated notice: read node_modules/next/dist/docs before Next APIs
@@ -411,7 +421,7 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | `PromotionBase` field names | `buildPromotionPayload` / `formFromPromotion` |
 | `_PROMOTION_COLUMNS` (nested `stores`, `skus`) | `PromotionList.jsx`, `promotionOverview.js` |
 | `sales.py` query-param names (`start_date`, `end_date`, `granularity`, `customer`, `store`, `sku` …) | `URLSearchParams` keys in `hooks/*.js` and `services/salesApi.js` |
-| `sellout_service.get_customer_trends` (`/api/sales/customer-trends`: `customers[]` with `offline`/`online` period lists, `has_*`), `MAX_COMPARED_CUSTOMERS` | `salesApi.getCustomerTrends`, `useCustomerTrends.js`, `utils/customerTrend.js` (`MAX_COMPARED_CUSTOMERS`), `CustomerTrendChart.jsx`, `CustomerSelector.jsx` |
+| `sellout_service.get_customer_trends` (`/api/sales/customer-trends`: `customers[]` with `offline`/`online` period lists, `has_*`; no cap on customers) | `salesApi.getCustomerTrends`, `useCustomerTrends.js`, `utils/customerTrend.js`, `utils/chartKind.js` (`MAX_BARS_DESKTOP`/`MAX_BARS_MOBILE`), `CustomerTrendChart.jsx`, `CustomerSelector.jsx` |
 | `sellout_service` estimated part of revenue: `estimated_revenue` (dashboard summary rows, customer totals), `estimated_value` (SKU ranking), from the `revenue_estimated` row flag | `utils/estimatedRevenue.js`, `EstMark.jsx` (top right of each `RevenueSummaryCards` tile, beside `SkuRanking` values; `TrendChart` tooltip) |
 | `mapping_view` packet/rule keys (`targetField`, `sourceColumn`, `editable`, `status`, `field`, `meltGroup`, `options`, `description`, `requiredMissing`, `checks`) | `utils/mappingReview.js`, `components/mappings/*` |
 | `mapping_checks` check shape (`id`, `level`, `passed`, `message`, `fields`, `evidence`) | `utils/mappingChecks.js`, `MappingChecks.jsx` |

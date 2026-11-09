@@ -89,7 +89,7 @@ export default function CustomerInventoryView({ customers, skuOptions, refreshKe
   ];
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-3">
       <InventoryFilters
         leading={(
           <div className="min-w-0">

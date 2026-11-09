@@ -11,7 +11,8 @@ import useChartZoom from '@/hooks/useChartZoom';
 import { FORECAST_SERIES } from '@/app/utils/forecastView';
 import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
 import { dotRevealDelay, lineSweepTimings } from '@/app/utils/lineAnimation';
-import { yearAxisProps } from '@/app/utils/trendChart';
+import { chartDataRange, metricYAxisProps, yearAxisProps } from '@/app/utils/trendChart';
+import useChartTransition from '@/hooks/useChartTransition';
 import useMediaQuery from '@/hooks/useMediaQuery';
 import { cn } from '@/lib/utils';
 
@@ -173,10 +174,6 @@ export default function SellInOutlookChart({
   // The zoom works in x-axis values, which on a phone are the months themselves.
   const zoom = useChartZoom(months.map((row) => (mobile ? row.month : formatMonth(row.month))));
 
-  if (months.length === 0) {
-    return <p className="text-sm text-deep-violet-blue/70">No actuals for these filters.</p>;
-  }
-
   const lastIndex = months.findIndex((row) => row.month === actualsThrough);
   const next = months[lastIndex + 1];
   const nextIsCurrent = ['current', 'mixed'].includes(next?.forecast_source);
@@ -218,6 +215,24 @@ export default function SellInOutlookChart({
   // comes back as it was on zooming out.
   const hasValues = (inRows, key) => inRows.some((row) => row[key] != null);
   const noData = Object.fromEntries(series.map((line) => [line.key, !hasValues(shownRows, line.key)]));
+
+  // Fixed nice steps reaching the lines being shown, so a filter change, a
+  // zoom or a toggle can move them and the axis together. Hooks stay above
+  // the empty check below: they must run on every render.
+  const shownKeys = series.filter((line) => visible[line.key] && !noData[line.key]).map((line) => line.key);
+  const yAxisProps = metricYAxisProps('units', chartDataRange(shownRows, shownKeys, { stacked: false }));
+  const transition = useChartTransition({
+    rows: shownRows,
+    rowKey: 'month',
+    valueKeys: tooltipOrder,
+    domain: yAxisProps.domain,
+    ticks: yAxisProps.ticks,
+  });
+
+  if (months.length === 0) {
+    return <p className="text-sm text-deep-violet-blue/70">No actuals for these filters.</p>;
+  }
+
   const hints = Object.fromEntries(
     series.filter((line) => noData[line.key]).map((line) => [
       line.key,
@@ -274,7 +289,7 @@ export default function SellInOutlookChart({
         >
           <ComposedChart
             accessibilityLayer
-            data={shownRows}
+            data={transition.rows}
             margin={{ top: 40, right: 8, left: 0, bottom: 8 }}
             {...zoom.chartHandlers}
           >
@@ -289,7 +304,13 @@ export default function SellInOutlookChart({
               tickMargin={6}
               {...(mobile ? yearAxisProps(shownRows, 'month') : {})}
             />
-            <YAxis width={48} tick={{ fontSize: 10, fill: '#3A4369' }} tickFormatter={formatUnits} />
+            <YAxis
+              domain={transition.domain}
+              ticks={transition.ticks}
+              width={48}
+              tick={{ fontSize: 10, fill: '#3A4369' }}
+              tickFormatter={formatUnits}
+            />
             <ChartTooltip
               wrapperStyle={{ zIndex: 10 }}
               itemSorter={(item) => tooltipOrder.indexOf(item.dataKey)}
@@ -318,6 +339,7 @@ export default function SellInOutlookChart({
                 dot={line.dot ? timedDot(timings[line.key]) : false}
                 connectNulls={false}
                 {...timings[line.key]}
+                {...transition.seriesAnimation}
               />
             ))}
           </ComposedChart>

@@ -69,7 +69,7 @@ export default function InventoryOverview({ skuOptions, refreshKey, onEditRow })
       : `Showing only the ${atRiskSkuCount} SKU${atRiskSkuCount === 1 ? '' : 's'} at risk. The chart and table both cover just these SKUs. See the At risk tab for the reasons.`;
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-3">
       <InventoryFilters
         skuOptions={skuOptions}
         skus={skus}

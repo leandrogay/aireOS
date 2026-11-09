@@ -1,5 +1,6 @@
 import AppShell from "./AppShell";
 import NotificationBell from "./NotificationBell";
+import PageTransition from "./PageTransition";
 import BackLink from "@/components/ui/BackLink";
 import { cn } from "@/lib/utils";
 
@@ -32,7 +33,9 @@ export default function PageLayout({ title, headerExtra, back, fitScreen = false
           fitScreen ? "flex h-dvh flex-col overflow-y-auto" : "min-h-screen",
         )}
       >
-        <div className={cn("mx-auto w-full min-w-0 max-w-6xl", fitScreen && "flex min-h-0 flex-1 flex-col")}>
+        {/* The column springs in on navigation (PageTransition); the sidebar
+            outside it stays still. */}
+        <PageTransition className={cn("mx-auto w-full min-w-0 max-w-6xl", fitScreen && "flex min-h-0 flex-1 flex-col")}>
           {/* data-page-heading: NotificationBell measures this row, as wide
               as the page content, to size its panel. */}
           <div data-page-heading className="mb-3 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 md:flex md:items-center">
@@ -52,7 +55,7 @@ export default function PageLayout({ title, headerExtra, back, fitScreen = false
             <div className="col-start-2 row-start-1 md:col-auto md:row-auto"><NotificationBell /></div>
           </div>
           {children}
-        </div>
+        </PageTransition>
       </main>
     </AppShell>
   );
