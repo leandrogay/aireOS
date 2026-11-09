@@ -16,7 +16,7 @@ import DohThresholdForm from './DohThresholdForm';
 
 /**
  * The DOH Settings page: every customer's current thresholds and alert
- * toggle, and an edit form (opened from a row) to change one customer's
+ * toggle, and an edit dialog (opened from a row) to change one customer's
  * thresholds or reset them to the global default. Each write returns the
  * customer's new settings row, which replaces that row in place; the refresh
  * button refetches everything.
