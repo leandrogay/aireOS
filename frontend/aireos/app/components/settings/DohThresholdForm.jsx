@@ -15,7 +15,7 @@ import {
   isSameDohThresholdForm,
   validateDohThresholdForm,
 } from '@/app/utils/dohSettingsForm';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
 // The promotions form's buttons (deep-violet primary, outlined secondary),
@@ -143,7 +143,7 @@ export default function DohThresholdForm({ settings, onSaved, onCancel }) {
       <div className="flex flex-wrap items-end justify-between gap-2 border-b border-lavander px-4 py-3">
         <div>
           <h2 id="doh-threshold-form-title" className="font-serif text-xl text-deep-violet-blue">
-            Edit DOH thresholds — {retailerLabel(settings.customer_name)}
+            Edit DOH thresholds — {customerLabel(settings.customer_name)}
           </h2>
           <p className="mt-0.5 text-xs text-deep-violet-blue/65">
             Fields marked <span className="text-red-700">*</span> are required.

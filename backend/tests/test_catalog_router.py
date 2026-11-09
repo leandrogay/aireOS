@@ -70,7 +70,7 @@ def test_list_customers_failure_is_500_with_the_reason(monkeypatch):
     assert response.json()["detail"] == "Failed to retrieve customers: RuntimeError: db down"
 
 
-def test_create_customer_is_201_and_sends_the_slug(monkeypatch):
+def test_create_customer_is_201_and_sends_the_name_as_typed(monkeypatch):
     seen = {}
 
     def fake(customer):
@@ -79,10 +79,10 @@ def test_create_customer_is_201_and_sends_the_slug(monkeypatch):
 
     monkeypatch.setattr(customer_service, "create_customer", fake)
 
-    response = client.post("/api/catalog/customers", json={"customer_name": " Giant "})
+    response = client.post("/api/catalog/customers", json={"customer_name": " Sheng Shiong "})
 
     assert response.status_code == 201
-    assert seen == {"name": "giant"}
+    assert seen == {"name": "Sheng_Shiong"}
 
 
 def test_a_blank_customer_name_is_422_without_calling_the_service(monkeypatch):
@@ -222,16 +222,17 @@ def test_renaming_a_missing_customer_is_404(monkeypatch):
     assert response.json()["detail"] == "Customer not found"
 
 
-def test_renaming_a_customer_in_use_is_409(monkeypatch):
+def test_renaming_to_a_taken_name_is_409(monkeypatch):
     monkeypatch.setattr(
         customer_service,
         "update_customer",
-        _raises(customer_service.CustomerInUseError("can't be renamed")),
+        _raises(customer_service.CustomerNameTakenError('A customer named "Giant" already exists.')),
     )
 
-    response = client.put("/api/catalog/customers/3", json={"customer_name": "giant"})
+    response = client.put("/api/catalog/customers/3", json={"customer_name": "Giant"})
 
     assert response.status_code == 409
+    assert response.json()["detail"] == 'A customer named "Giant" already exists.'
 
 
 def test_deleting_a_customer_with_retailers_is_409(monkeypatch):

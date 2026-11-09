@@ -9,7 +9,7 @@ import useDohSettings from '@/hooks/useDohSettings';
 import useToast from '@/hooks/useToast';
 import { setDohAlert } from '@/app/services/settingsApi';
 import { GLOBAL_DEFAULT_DOH } from '@/app/utils/dohSettingsForm';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 
 import DohSettingsTable from './DohSettingsTable';
 import DohThresholdForm from './DohThresholdForm';
@@ -39,7 +39,7 @@ export default function DohSettingsView() {
       notify('success', 'No changes to save: the thresholds are already set to these values');
     } else if (result.settings.is_global_default) {
       // Saved the default values, e.g. after "Restore defaults" in the form.
-      notify('success', `Thresholds for ${retailerLabel(result.settings.customer_name)} reset to the global default`);
+      notify('success', `Thresholds for ${customerLabel(result.settings.customer_name)} reset to the global default`);
     } else {
       notify('success', 'Thresholds updated successfully');
     }
@@ -51,7 +51,7 @@ export default function DohSettingsView() {
     try {
       const result = await setDohAlert(customerId, { doh_alert_enabled: enabled });
       replaceRow(result.settings);
-      notify('success', `DOH alerts turned ${enabled ? 'on' : 'off'} for ${retailerLabel(row.customer_name)}`);
+      notify('success', `DOH alerts turned ${enabled ? 'on' : 'off'} for ${customerLabel(row.customer_name)}`);
     } catch (err) {
       notify('error', err.message);
     } finally {

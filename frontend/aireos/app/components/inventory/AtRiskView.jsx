@@ -5,7 +5,7 @@ import { useState } from 'react';
 import SelectDropdown from '@/components/ui/SelectDropdown';
 import useAtRisk from '@/hooks/useAtRisk';
 import { formatDoh, formatMonth, formatUnits } from '@/app/utils/inventoryForm';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
 import { filterLabelClass, InventoryFilterCard, StatTag } from './InventoryChrome';
@@ -73,7 +73,7 @@ export default function AtRiskView({ customers, refreshKey }) {
             onChange={setCustomerId}
             options={[
               { value: '', label: 'All customers' },
-              ...customers.map((c) => ({ value: String(c.customer_id), label: retailerLabel(c.customer_name) })),
+              ...customers.map((c) => ({ value: String(c.customer_id), label: customerLabel(c.customer_name) })),
             ]}
             ariaLabel="Customer"
             look="compact"
@@ -127,7 +127,7 @@ export default function AtRiskView({ customers, refreshKey }) {
                 ) : (
                   visible.map((item) => (
                     <tr key={`${item.customer_id}-${item.sku}`} className={inventoryRowClass}>
-                      <td className={inventoryTdClass}>{retailerLabel(item.customer_name)}</td>
+                      <td className={inventoryTdClass}>{customerLabel(item.customer_name)}</td>
                       <td className={cn(inventoryTdClass, 'font-medium')}>{formatMonth(item.month)}</td>
                       <td className={cn(inventoryTdClass, 'font-mono')}>{item.sku}</td>
                       <td className={inventoryTdClass}>{item.product_name}</td>

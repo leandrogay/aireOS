@@ -5,7 +5,7 @@ import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { applySellInUpload, previewSellInUpload } from '@/app/services/inventoryApi';
 import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 
 import { formFieldClass, formLabelClass, StatTag } from './InventoryChrome';
 import InventoryTableFrame, {
@@ -175,7 +175,7 @@ export default function SellInUploadForm({ onSaved }) {
                 <tbody>
                   {visible.map((row) => (
                     <tr key={`${row.customer_id}-${row.month}-${row.sku}`} className={inventoryRowClass}>
-                      <td className={inventoryTdClass}>{retailerLabel(row.customer_name)}</td>
+                      <td className={inventoryTdClass}>{customerLabel(row.customer_name)}</td>
                       <td className={inventoryTdClass}>{formatMonth(row.month)}</td>
                       <td className={inventoryTdClass}>{row.product_name}</td>
                       <td className={`${inventoryTdClass} text-right tabular-nums`}>{formatUnits(row.qty)}</td>

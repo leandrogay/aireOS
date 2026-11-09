@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/formStyles';
 import { addPromoUpliftOverride } from '@/app/services/promoUpliftsApi';
 import { overrideTargetChoices, parseUpliftInput } from '@/app/utils/promoUpliftSettings';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 
 import RecommendedReadout from './RecommendedReadout';
 
@@ -139,7 +139,7 @@ export default function PromoOverrideForm({ mechanics, customers, catalog, momen
                 className={inputClass}
               >
                 {customers.map((row) => (
-                  <option key={row.customer_id} value={row.customer_id}>{retailerLabel(row.customer_name)}</option>
+                  <option key={row.customer_id} value={row.customer_id}>{customerLabel(row.customer_name)}</option>
                 ))}
               </select>
             </div>

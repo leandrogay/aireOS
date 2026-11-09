@@ -5,7 +5,7 @@ import { Percent, Plus, Trash2 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { SCENARIO_PROMOTIONS_DEMO } from '@/app/services/scenarioPromotionsApi';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 import { monthSpanLabel } from '@/app/utils/scenarioPitch';
 import {
   clashingActivePromotions,
@@ -255,7 +255,7 @@ export default function PromotionsSection({
               <Percent className="mt-0.5 size-3.5 shrink-0 text-scenario" aria-hidden="true" />
               <span className="min-w-0">
                 <span className="block truncate text-xs font-medium text-deep-violet-blue">
-                  {retailerLabel(promotion.customer)} · {promotion.mechanicLabel || 'Draft promotion'}
+                  {customerLabel(promotion.customer)} · {promotion.mechanicLabel || 'Draft promotion'}
                 </span>
                 <span className="block truncate text-[11px] text-deep-violet-blue/60">
                   {promotionSummary(promotion)}

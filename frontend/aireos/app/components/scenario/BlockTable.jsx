@@ -10,7 +10,7 @@ import RowActions from '@/components/ui/RowActions';
 import TablePagination, { PAGE_SIZES } from '@/components/ui/TablePagination';
 import TableSearch from '@/components/ui/TableSearch';
 import { Switch } from '@/components/ui/switch';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 import { upliftLabel } from '@/app/utils/scenarioBlocks';
 import { monthSpanLabel } from '@/app/utils/scenarioPitch';
 import { matchesSearch, nextSort, paginate } from '@/app/utils/tableView';
@@ -213,7 +213,7 @@ export default function BlockTable({
         const isEditing = editingId === block.id;
         const toggling = togglingIds.includes(block.id);
         const sku = block.sku || 'All SKUs';
-        const appliesTo = showCustomer ? `${retailerLabel(block.customer)} · ${sku}` : sku;
+        const appliesTo = showCustomer ? `${customerLabel(block.customer)} · ${sku}` : sku;
         const actions = [
           {
             key: 'edit',

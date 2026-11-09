@@ -13,7 +13,7 @@ import {
   primaryButtonClass,
   secondaryButtonClass,
 } from '@/components/ui/formStyles';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel, retailerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
 /**
@@ -95,7 +95,7 @@ function LinkForm({ retailer, customers, onSubmit, onCancel, onPendingChange }) 
           <option value="">Choose a customer…</option>
           {customers.map((customer) => (
             <option key={customer.customer_id} value={customer.customer_id}>
-              {retailerLabel(customer.customer_name)}
+              {customerLabel(customer.customer_name)}
             </option>
           ))}
         </select>

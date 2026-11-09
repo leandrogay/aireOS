@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { primaryButtonClass, secondaryButtonClass } from '@/components/ui/formStyles';
 import UpliftField from '@/components/scenario/UpliftField';
 import { formatMonthLabel } from '@/app/utils/forecastView';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 import {
   BLOCK_NAME_SUGGESTIONS,
   MAX_UPLIFT_PCT,
@@ -52,7 +52,7 @@ function ImpactNote({ block, impact }) {
         {formatUnits(impact.deltaUnits)} units
       </b>
       {pctOfCurrent == null ? '' : `, or ${sign}${Math.abs(pctOfCurrent)}% on Current,`} {removes ? 'from' : 'to'}{' '}
-      {retailerLabel(block.customer)} sell-out across {monthSpanLabel(impact.months)}.
+      {customerLabel(block.customer)} sell-out across {monthSpanLabel(impact.months)}.
     </>
   );
 }
@@ -144,7 +144,7 @@ export default function BlockEditor({
             className={fieldClass}
           >
             {customerOptions.map((name) => (
-              <option key={name} value={name}>{retailerLabel(name)}</option>
+              <option key={name} value={name}>{customerLabel(name)}</option>
             ))}
           </select>
           <FieldError message={errors.customer} />

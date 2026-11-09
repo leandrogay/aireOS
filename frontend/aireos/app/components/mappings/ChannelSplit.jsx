@@ -6,8 +6,8 @@ import { AlertTriangle, Plus, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import SelectDropdown from '@/components/ui/SelectDropdown';
 import { inputClass } from '@/components/ui/formStyles';
-import { channelRetailerName } from '@/app/utils/mappingCustomer';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { channelRetailerName, customerRetailerFamily } from '@/app/utils/mappingCustomer';
+import { customerLabel } from '@/app/utils/retailerLabel';
 import {
   fitsValueList,
   foreignChannels,
@@ -75,7 +75,9 @@ function Values({ title, values, partial }) {
  * }} props
  */
 export default function ChannelSplit({ customer, decision, outputs, mapping, state, layout, onApply, disabled }) {
-  const name = customer.customer_name;
+  // The retailers are named after the customer's existing ones, not its
+  // display name, so a renamed customer still writes where its sales are.
+  const name = customerRetailerFamily(customer);
   const sources = splitSources(mapping, state, layout);
   const current = splitFromDecision(decision);
   const [draft, setDraft] = useState(() => (current.mode === 'split' ? current : suggestSplit(sources) || EMPTY_SPLIT));
@@ -154,10 +156,10 @@ export default function ChannelSplit({ customer, decision, outputs, mapping, sta
           <AlertTriangle aria-hidden="true" className="size-3.5 shrink-0" />
           <span>
             The nomenclature writes <span className="font-mono">{foreign.join(', ')}</span>, which{' '}
-            {foreign.length === 1 ? 'is' : 'are'} not {retailerLabel(name)}&apos;s.
+            {foreign.length === 1 ? 'is' : 'are'} not {customerLabel(customer.customer_name)}&apos;s.
           </span>
           <Button type="button" variant="outline" disabled={disabled} onClick={() => onApply(renamed)} className={cn(smallButton, 'ml-auto')}>
-            Use {retailerLabel(name)}&apos;s retailers
+            Use {customerLabel(customer.customer_name)}&apos;s retailers
           </Button>
         </div>
       )}

@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import MobileRecordCard from '@/components/ui/MobileRecordCard';
 import RowActions from '@/components/ui/RowActions';
 import UsageStatus from './UsageStatus';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel, retailerLabel } from '@/app/utils/retailerLabel';
 
 import { CUSTOMER_COLUMNS } from './columns';
 import CustomerRow, { customerRowActions, retailerRowActions } from './CustomerRow';
@@ -49,7 +49,7 @@ export default function CustomerTable({
       mobileContent={
         <div className="grid gap-2">
           {customers.map((customer) => {
-            const name = retailerLabel(customer.customer_name);
+            const name = customerLabel(customer.customer_name);
             const open = isExpanded(customer.customer_id);
             return (
               <MobileRecordCard
