@@ -25,11 +25,23 @@ export function customerLabel(value) {
  * API payloads; only call this at render time. Customer names use
  * customerLabel.
  *
+ * Given the customer it belongs to, a customer's own channel retailer reads
+ * with the customer's name as typed: `nhg_offline` under `NHG` → `NHG
+ * Offline`. A retailer whose name does not match the customer (one kept
+ * after a rename) keeps its own label.
+ *
  * @param {string | null | undefined} value
+ * @param {string} [customerName]
  * @returns {string}
  */
-export function retailerLabel(value) {
+export function retailerLabel(value, customerName) {
   if (!value) return '';
+  // Callers also pass this straight to .map(), which hands over an index
+  // here, so only a string counts as a customer name.
+  const channel = String(value).match(/^(.*)_(online|offline)$/);
+  if (typeof customerName === 'string' && channel && channel[1] === customerName.toLowerCase()) {
+    return `${customerLabel(customerName)} ${channel[2] === 'online' ? 'Online' : 'Offline'}`;
+  }
   return String(value)
     .split(/[_\s]+/)
     .filter(Boolean)

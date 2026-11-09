@@ -60,6 +60,23 @@ describe('customerLabel', () => {
   });
 });
 
+describe('retailerLabel with its customer', () => {
+  test("a customer's channel retailer reads with the customer's name", () => {
+    assert.equal(retailerLabel('nhg_offline', 'NHG'), 'NHG Offline');
+    assert.equal(retailerLabel('fairprice_online', 'FairPrice'), 'FairPrice Online');
+    assert.equal(retailerLabel('sheng_shiong_offline', 'Sheng_Shiong'), 'Sheng Shiong Offline');
+  });
+
+  test('a retailer not named after the customer keeps its own label', () => {
+    assert.equal(retailerLabel('fairprice_offline', 'NTUC'), 'Fairprice Offline');
+    assert.equal(retailerLabel('giant_hyper', 'Giant'), 'Giant Hyper');
+  });
+
+  test('passed straight to map, the index is not taken as a customer', () => {
+    assert.deepEqual(['nhg_offline', 'fairprice_online'].map(retailerLabel), ['Nhg Offline', 'Fairprice Online']);
+  });
+});
+
 describe('vendorLabel', () => {
   test('a vendor saved as a customer name keeps its capitals', () => {
     assert.equal(vendorLabel('Sheng_Shiong'), 'Sheng Shiong');

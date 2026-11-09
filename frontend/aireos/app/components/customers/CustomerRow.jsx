@@ -94,7 +94,7 @@ export default function CustomerRow({
       details={
         <div className="grid gap-2">
           {customer.retailers.length > 0 ? (
-            <RetailerTable retailers={customer.retailers} inset={EXPANDED_ROW_INSET} actionsFor={retailerActions} />
+            <RetailerTable retailers={customer.retailers} inset={EXPANDED_ROW_INSET} customerName={customer.customer_name} actionsFor={retailerActions} />
           ) : (
             <p className="text-sm text-deep-violet-blue/70">{name} has no retailers yet.</p>
           )}
