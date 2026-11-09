@@ -57,9 +57,9 @@ def list_settings():
 
 
 @router.get("/resolved")
-def resolve_uplifts(customer: str, product: str | None = None):
+def resolve_uplifts(customer: str, product: str | None = None, sku_range: str | None = None):
     try:
-        return promo_uplift_service.resolve_uplifts(customer, product or None)
+        return promo_uplift_service.resolve_uplifts(customer, product or None, sku_range or None)
 
     except CustomerNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -99,7 +99,6 @@ def add_override(
             body.customer_id,
             body.uplift_pct,
             sku_range=body.sku_range,
-            sku=body.sku,
             note=body.note,
             updated_by=updated_by,
         )

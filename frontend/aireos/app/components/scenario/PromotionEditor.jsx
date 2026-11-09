@@ -20,6 +20,7 @@ import {
   voucherOption,
 } from '@/app/utils/scenarioPromotions';
 import MechanicLookupPopover from '@/components/scenario/MechanicLookupPopover';
+import SkuRangePicker from '@/components/scenario/SkuRangePicker';
 
 const fieldClass =
   'h-8 w-full rounded-md border border-violet bg-white px-2 text-xs text-deep-violet-blue disabled:opacity-50';
@@ -31,9 +32,11 @@ function signedUnits(value) {
 }
 
 // Where the ordinary month comes from (backend promo_uplifts anchors). A
-// product whose range has its own anchor only carries its discount.
-function anchorNote(anchor, ownRange) {
+// product whose range has its own anchor only carries its discount; several
+// picked ranges may each have their own.
+function anchorNote(anchor, ownRange, varies) {
   if (ownRange) return " (this SKU range's anchor)";
+  if (varies) return ' (customer anchor; some picked SKU ranges have their own)';
   if (anchor.source === 'default') return ' (all-customers default)';
   const mechanic = anchor.mechanic_label ? `, ${anchor.mechanic_label}` : '';
   return anchor.source === 'manual' ? ' (typed in on Promotion uplift settings)' : ` (usual mechanic${mechanic})`;
@@ -53,7 +56,7 @@ function anchorNote(anchor, ownRange) {
  *   onUpdate: (changes: object) => void,
  *   resolved: object | undefined,
  *   customerOptions: string[],
- *   productOptions: string[],
+ *   skuRangeOptions: string[],
  *   months: string[],
  *   impact: { deltaUnits: number, months: string[] } | null | undefined,
  *   stacked: { count: number, months: string[] },
@@ -64,27 +67,43 @@ export default function PromotionEditor({
   onUpdate,
   resolved,
   customerOptions,
-  productOptions,
+  skuRangeOptions,
   months,
   impact,
   stacked,
 }) {
   const mechanics = mechanicOptions(resolved);
   const voucherRow = voucherOption(resolved);
-  // One product's ordinary month is its SKU range's, when that differs from
-  // the customer's (backend resolve_uplifts product_anchors).
-  const anchor = resolved?.anchor
-    ? { ...resolved.anchor, anchor_pct: resolved.product_anchors?.[promotion.sku] ?? resolved.anchor.anchor_pct }
-    : null;
-  const allSkus = !promotion.sku;
+  const skuRanges = promotion.skuRanges ?? [];
+  // The ordinary month is the SKU range's anchor when one range is picked
+  // and it differs from the customer's (backend resolve_uplifts
+  // range_anchors; product_anchors for a promotion saved on one SKU before
+  // ranges). With several ranges the customer's is shown, noting that some
+  // ranges have their own.
+  let ownAnchorPct;
+  if (skuRanges.length === 1) ownAnchorPct = resolved?.range_anchors?.[skuRanges[0]];
+  else if (!skuRanges.length && promotion.sku) ownAnchorPct = resolved?.product_anchors?.[promotion.sku];
+  const anchorVaries = skuRanges.length > 1 && skuRanges.some((name) => resolved?.range_anchors?.[name] != null);
+  const anchor = resolved?.anchor ? { ...resolved.anchor, anchor_pct: ownAnchorPct ?? resolved.anchor.anchor_pct } : null;
+  // One SKU (older promotions) or one range has a single value; otherwise
+  // the value can differ by SKU range.
+  const singleValue = skuRanges.length === 1 || (!skuRanges.length && Boolean(promotion.sku));
   const overridden = promotion.overrideUpliftPct != null;
   const sliderValue = mechanicUpliftPct(promotion);
   const range = MAX_OVERRIDE_PCT - MIN_OVERRIDE_PCT;
   const markerLeft = `${((promotion.referenceUpliftPct - MIN_OVERRIDE_PCT) / range) * 100}%`;
   const bySkuCount = Object.keys(promotion.referenceBySku ?? {}).length;
 
+  // What each mechanic is worth for this promotion's SKU ranges.
+  function optionValues(row) {
+    if (!skuRanges.length && promotion.sku) {
+      return [resolved?.product_uplifts?.[promotion.sku]?.[row.mechanic_key] ?? row.uplift_pct];
+    }
+    return valuesAcrossSkus(resolved, row, skuRanges);
+  }
+
   function optionValue(row) {
-    return allSkus ? formatPctRange(valuesAcrossSkus(resolved, row)) : formatPct(row.uplift_pct);
+    return formatPctRange(optionValues(row));
   }
 
   return (
@@ -107,19 +126,16 @@ export default function PromotionEditor({
         </select>
       </div>
 
-      <div>
-        <label className={labelClass} htmlFor="promo-sku">SKU</label>
-        <select
-          id="promo-sku"
-          value={promotion.sku}
-          onChange={(event) => onUpdate({ sku: event.target.value })}
-          className={fieldClass}
-        >
-          {productOptions.map((name) => (
-            <option key={name} value={name}>{name}</option>
-          ))}
-        </select>
-      </div>
+      <SkuRangePicker
+        id="promo-sku-ranges"
+        label="SKU ranges"
+        values={skuRanges}
+        options={skuRangeOptions}
+        legacySku={promotion.sku}
+        legacyNoun="promotion"
+        // Ticking ranges moves an older one-SKU promotion onto them.
+        onChange={(next) => onUpdate({ skuRanges: next, sku: next.length ? '' : promotion.sku })}
+      />
 
       <div>
         <label className={labelClass} htmlFor="promo-type">Promotion type</label>
@@ -149,21 +165,21 @@ export default function PromotionEditor({
           {mechanics.map((row) => (
             <option key={row.mechanic_key} value={row.mechanic_key}>
               {row.mechanic_label} · {optionValue(row)}
-              {allSkus && valuesAcrossSkus(resolved, row).length > 1 ? ' by SKU' : ''} ({sourceLabel(row.source)})
+              {!singleValue && new Set(optionValues(row)).size > 1 ? ' by SKU range' : ''} ({sourceLabel(row.source)})
             </option>
           ))}
         </select>
         {anchor ? (
           <p className="mt-0.5 text-[11px] text-deep-violet-blue/50">
             Ordinary month for {retailerLabel(promotion.customer)}: {anchor.anchor_pct}% off
-            {anchorNote(anchor, Boolean(resolved.product_anchors?.[promotion.sku]))}
+            {anchorNote(anchor, ownAnchorPct != null, anchorVaries)}
           </p>
         ) : null}
       </div>
 
       <div>
         <span className={labelClass}>
-          Voucher{voucherRow ? ` · ${allSkus ? formatPctRange(valuesAcrossSkus(resolved, voucherRow)) : formatPct(promotion.voucherUpliftPct)}` : ''}
+          Voucher{voucherRow ? ` · ${singleValue ? formatPct(promotion.voucherUpliftPct) : formatPctRange(optionValues(voucherRow))}` : ''}
         </span>
         <div className="flex gap-1" role="group" aria-label="Voucher">
           {[
@@ -319,20 +335,17 @@ export default function PromotionEditor({
           impact ? 'bg-scenario-soft text-scenario-ink' : 'border border-violet bg-lavander/50 text-deep-violet-blue'
         )}
       >
-        {/* Promotions are planned per SKU, so All SKUs has nothing to simulate yet. */}
-        {!promotion.sku ? (
-          'Choose a SKU to start simulating the forecast with this promotion.'
-        ) : impact ? (
+        {impact ? (
           <>
             This promotion changes {retailerLabel(promotion.customer)} sell-out by{' '}
             <b>{signedUnits(impact.deltaUnits)} units</b> across{' '}
             {monthSpanLabel(impact.months)}.
           </>
         ) : (
-          'Not in current chart view: change the filters to this customer and SKU to see its impact.'
+          'Not in current chart view: change the filters to this customer and SKU range to see its impact.'
         )}
       </p>
-      {promotion.sku && stacked.count ? (
+      {stacked.count ? (
         <p className="text-[11px] text-deep-violet-blue/70">
           Added on top of the promotion already in the forecast for {stacked.count} SKU-
           {stacked.count === 1 ? 'month' : 'months'} ({monthSpanLabel(stacked.months)}). Switch to Simulate New

@@ -21,6 +21,7 @@ import { buildYearlyTotals } from '@/app/utils/forecastYearTotals';
  * @param {object} options
  * @param {boolean} options.ready page has its filter options loaded
  * @param {string} options.productName SKU filter, passed straight through
+ * @param {string} [options.skuRange] SKU range filter, passed straight through (Scenario builder)
  * @param {string} options.customerName customer filter, passed straight through
  * @param {string} options.startDate filter start, 'YYYY-MM-DD'
  * @param {string} options.endDate filter end, 'YYYY-MM-DD'
@@ -34,6 +35,7 @@ import { buildYearlyTotals } from '@/app/utils/forecastYearTotals';
 export default function useForecastYearTotals({
   ready = false,
   productName = '',
+  skuRange = '',
   customerName = '',
   startDate = '',
   endDate = '',
@@ -51,6 +53,7 @@ export default function useForecastYearTotals({
   const needsWiderRange = Boolean(yearWindow) && (yearWindow.start !== startDate || yearWindow.end !== endDate);
   const windowKey = JSON.stringify({
     productName,
+    skuRange,
     customerName,
     tier,
     start: yearWindow?.start ?? '',
@@ -67,6 +70,7 @@ export default function useForecastYearTotals({
       try {
         const payload = await getForecastView({
           productName,
+          skuRange,
           customerName,
           startDate: yearWindow.start,
           endDate: yearWindow.end,
@@ -88,7 +92,7 @@ export default function useForecastYearTotals({
     return () => {
       cancelled = true;
     };
-  }, [ready, needsWiderRange, windowKey, productName, customerName, yearWindow?.start, yearWindow?.end, tier]);
+  }, [ready, needsWiderRange, windowKey, productName, skuRange, customerName, yearWindow?.start, yearWindow?.end, tier]);
 
   const widened = needsWiderRange && wide.key === windowKey;
   // mapRows lets the Forecast page total the rows of its chosen model

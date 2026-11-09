@@ -16,9 +16,22 @@ CUSTOMERS = {"fairprice": 1}
 SKUS = [{"sku": "SKU-A", "product_name": "Comfort Pants M", "is_active": True}]
 
 
+def test_a_range_promotion_resolves_and_stores_its_range(monkeypatch):
+    conn = FakeConnection(
+        lambda sql, params: [("Ultra Tape",)] if "ANY(:sku_ranges)" in sql else [(1,)] if "FROM customers" in sql else []
+    )
+    monkeypatch.setattr(promotions_service.common, "get_engine", lambda: FakeEngine(conn))
+
+    params = promotions_service._write_params(conn, _promotion(sku_ranges=["Ultra Tape"], product_name=None))
+
+    assert params["sku_ranges"] == ["Ultra Tape"]
+    assert params["sku"] is None
+
+
 def _promotion(**changes):
     promotion = {
         "customer_name": "fairprice",
+        "sku_ranges": None,
         "product_name": "Comfort Pants M",
         "promo_type": "monthly",
         "mechanic_key": "pct_off_30",

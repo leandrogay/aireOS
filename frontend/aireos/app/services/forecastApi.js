@@ -69,9 +69,11 @@ export async function getForecastView({
   startDate = '',
   endDate = '',
   tier = DEFAULT_TIER,
+  skuRange = '',
 } = {}) {
   if (scenarioFixturesEnabled()) {
-    const rows = tier === ALL_TIERS ? SCENARIO_FIXTURE_ROWS : rowsForTier(SCENARIO_FIXTURE_ROWS, tier);
+    const inRange = SCENARIO_FIXTURE_ROWS.filter((row) => !skuRange || row.sku_range === skuRange);
+    const rows = tier === ALL_TIERS ? inRange : rowsForTier(inRange, tier);
     return {
       rows,
       tiers: [{ value: 'tier0', label: 'Tier 0 · Baseline', order: 0 }],
@@ -88,6 +90,8 @@ export async function getForecastView({
   }
   const params = new URLSearchParams();
   if (productName) params.set('product_name', productName);
+  // Every SKU of one range (the Scenario builder's filter); rows carry sku_range.
+  if (skuRange) params.set('sku_range', skuRange);
   if (customerName) params.set('customer_name', customerName);
   if (startDate) params.set('start_date', startDate);
   if (endDate) params.set('end_date', endDate);

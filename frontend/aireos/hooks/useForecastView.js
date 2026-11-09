@@ -30,6 +30,7 @@ const EMPTY_VIEW = {
  * @param {string} options.startDate filter start, 'YYYY-MM-DD'
  * @param {string} options.endDate filter end, 'YYYY-MM-DD'
  * @param {string} [options.tier] one model's rows (Tier 0 by default), or ALL_TIERS (forecastApi.getForecastView)
+ * @param {string} [options.skuRange] SKU range filter ('' = every range; the Scenario builder's)
  */
 export default function useForecastView({
   ready = false,
@@ -38,6 +39,7 @@ export default function useForecastView({
   startDate = '',
   endDate = '',
   tier = DEFAULT_TIER,
+  skuRange = '',
 }) {
   const [data, setData] = useState(EMPTY_VIEW);
   const [loading, setLoading] = useState(false);
@@ -50,7 +52,7 @@ export default function useForecastView({
     async function loadRows() {
       setLoading(true);
       try {
-        const payload = await getForecastView({ productName, customerName, startDate, endDate, tier });
+        const payload = await getForecastView({ productName, customerName, startDate, endDate, tier, skuRange });
         if (cancelled) return;
         setData({
           rows: payload.rows,
@@ -73,7 +75,7 @@ export default function useForecastView({
     return () => {
       cancelled = true;
     };
-  }, [ready, productName, customerName, startDate, endDate, tier]);
+  }, [ready, productName, customerName, startDate, endDate, tier, skuRange]);
 
   return { data, loading, error };
 }

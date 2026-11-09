@@ -29,7 +29,8 @@ import PromoUpliftFilters from './PromoUpliftFilters';
 import PromoUpliftDetails from './PromoUpliftDetails';
 import PromoUpliftTable from './PromoUpliftTable';
 
-const NO_FILTERS = { customer: '', sku: '', mechanic: '' };
+// Uplifts and anchors follow SKU ranges, so the table filters by range, not SKU.
+const NO_FILTERS = { customer: '', skuRange: '', mechanic: '' };
 
 /**
  * The Promotion uplift settings page: each customer's ordinary-month
@@ -59,14 +60,13 @@ export default function PromoUpliftSettingsView() {
   const customerNames = (anchors?.customers ?? []).map((row) => row.customer_name);
   const tableRows = filteredUpliftRows(rows, {
     customerName: filters.customer,
-    sku: filters.sku,
-    skuRange: catalog.skus.find((row) => row.sku === filters.sku)?.sku_range ?? null,
+    skuRange: filters.skuRange,
     mechanicKey: filters.mechanic,
     customers: customerNames,
   });
 
   // A row resolved for one customer uses that customer's ordinary-month
-  // discount (its SKU range's, when filtered to a SKU), as the Scenario
+  // discount (its SKU range's, when filtered to a range), as the Scenario
   // builder does; the unfiltered list shows the all-customers one.
   function shownUplift(row) {
     if (!row.follows_anchor) return row.uplift_pct;
@@ -221,7 +221,7 @@ export default function PromoUpliftSettingsView() {
           <PromoUpliftFilters
             filters={filters}
             customers={customerNames}
-            skuOptions={overrideTargetChoices(catalog.skus).skus}
+            skuRangeOptions={overrideTargetChoices(catalog.skus).ranges.map((range) => ({ value: range, label: range }))}
             mechanicOptions={mechanics.map((row) => ({ value: row.mechanic_key, label: row.mechanic_label }))}
             onChange={handleFilterChange}
             onReset={() => setFilters(NO_FILTERS)}

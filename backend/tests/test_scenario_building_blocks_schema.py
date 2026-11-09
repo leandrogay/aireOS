@@ -102,3 +102,82 @@ def test_a_units_decrease_is_a_negative_whole_number():
 def test_a_units_decrease_must_be_whole_units():
     with pytest.raises(ValidationError):
         ScenarioBuildingBlockCreate(**_block(uplift_mode="units", uplift_value=-900.5))
+
+
+# ---- Growth ------------------------------------------------------------------
+
+
+def _growth(**changes):
+    growth = _block(kind="growth", name="Budget growth", sku_ranges=["Ultra Tape"], start_month="2027-01-01",
+                    end_month="2027-12-01", uplift_value=8)
+    growth.update(changes)
+    return growth
+
+
+def test_kind_defaults_to_an_ordinary_block():
+    assert ScenarioBuildingBlockCreate(**_block()).kind == "block"
+
+
+def test_growth_for_one_sku_range_over_a_whole_year_is_valid():
+    block = ScenarioBuildingBlockCreate(**_growth())
+
+    assert block.kind == "growth"
+    assert block.sku_ranges == ["Ultra Tape"]
+    assert block.start_month == date(2027, 1, 1)
+    assert block.end_month == date(2027, 12, 1)
+
+
+def test_negative_growth_is_valid():
+    assert ScenarioBuildingBlockCreate(**_growth(uplift_value=-5)).uplift_value == Decimal("-5")
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"uplift_mode": "units", "uplift_value": 900},
+        {"sku_ranges": None},
+        {"sku_ranges": None, "product_name": "Comfort Pants M"},
+        {"start_month": "2027-02-01"},
+        {"end_month": "2027-11-01"},
+        {"start_month": "2027-01-01", "end_month": "2028-12-01"},
+    ],
+    ids=["units", "no range", "one sku", "starts after january", "ends before december", "two years"],
+)
+def test_growth_that_is_not_a_pct_on_one_range_for_one_year_is_rejected(changes):
+    with pytest.raises(ValidationError):
+        ScenarioBuildingBlockCreate(**{**_growth(), **changes})
+
+
+def test_an_unknown_kind_is_rejected():
+    with pytest.raises(ValidationError):
+        ScenarioBuildingBlockCreate(**_block(kind="budget"))
+
+
+# ---- SKU ranges --------------------------------------------------------------
+
+
+def test_a_block_for_a_sku_range_is_valid():
+    block = ScenarioBuildingBlockCreate(**_block(sku_ranges=["Ultra Tape"]))
+
+    assert block.sku_ranges == ["Ultra Tape"]
+    assert block.product_name is None
+
+
+def test_several_ranges_are_kept_once_each_in_order():
+    block = ScenarioBuildingBlockCreate(**_block(sku_ranges=["Ultra Tape", " Comfort Pants ", "Ultra Tape"]))
+
+    assert block.sku_ranges == ["Comfort Pants", "Ultra Tape"]
+
+
+def test_an_empty_range_list_means_all_sku_ranges():
+    assert ScenarioBuildingBlockCreate(**_block(sku_ranges=[])).sku_ranges is None
+
+
+def test_growth_for_two_ranges_at_once_is_rejected():
+    with pytest.raises(ValidationError):
+        ScenarioBuildingBlockCreate(**{**_growth(), "sku_ranges": ["Ultra Tape", "Comfort Pants"]})
+
+
+def test_a_block_cannot_name_both_a_range_and_one_sku():
+    with pytest.raises(ValidationError):
+        ScenarioBuildingBlockCreate(**_block(sku_ranges=["Ultra Tape"], product_name="Comfort Pants M"))

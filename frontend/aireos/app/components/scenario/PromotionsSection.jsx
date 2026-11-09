@@ -15,6 +15,7 @@ import {
   hasUnsavedPromotionChanges,
   mechanicOptions,
   newDraftPromotion,
+  promotionScopeLabel,
   settingsChange,
   stackedModelCells,
   updateDraftPromotion,
@@ -31,7 +32,7 @@ import PromotionEditor from '@/components/scenario/PromotionEditor';
 import usePromoUplifts from '@/hooks/usePromoUplifts';
 
 // Changing any of these picks the setting values again (withReferences).
-const REFERENCE_FIELDS = ['customer', 'sku', 'mechanicKey'];
+const REFERENCE_FIELDS = ['customer', 'skuRanges', 'sku', 'mechanicKey'];
 
 function SettingsChangedNote({ change, onUpdate }) {
   const parts = [];
@@ -57,7 +58,7 @@ function statusText(promotion) {
 function promotionSummary(promotion) {
   const span = monthSpanLabel([promotion.startMonth, promotion.endMonth].filter(Boolean));
   const voucher = promotion.voucher ? ' + voucher' : '';
-  return `${promotion.sku || 'All SKUs'} · ${formatPctRange(effectiveUpliftRange(promotion))}${voucher} · ${span}`;
+  return `${promotionScopeLabel(promotion)} · ${formatPctRange(effectiveUpliftRange(promotion))}${voucher} · ${span}`;
 }
 
 /**
@@ -78,10 +79,10 @@ function promotionSummary(promotion) {
  *   onSave: (promotion: object) => Promise<void>,
  *   onDelete: (promotion: object) => Promise<void>,
  *   customerOptions: string[],
- *   productOptions: string[],
+ *   skuRangeOptions: string[],
  *   months: string[],
  *   defaultCustomer: string,
- *   defaultSku: string,
+ *   defaultSkuRange: string,
  *   impacts: Map<string, { deltaUnits: number, months: string[] }>,
  *   rows: object[],
  * }} props
@@ -92,10 +93,10 @@ export default function PromotionsSection({
   onSave,
   onDelete,
   customerOptions,
-  productOptions,
+  skuRangeOptions,
   months,
   defaultCustomer,
-  defaultSku,
+  defaultSkuRange,
   impacts,
   rows = [],
 }) {
@@ -114,9 +115,8 @@ export default function PromotionsSection({
   function addPromotion() {
     const promotion = newDraftPromotion({
       customer: addCustomer,
-      // Promotions are planned per SKU; with All SKUs on the chart, start on
-      // the first one.
-      sku: defaultSku || productOptions[0] || '',
+      // The chart's range to start with; none picked = All SKU ranges.
+      skuRanges: defaultSkuRange ? [defaultSkuRange] : [],
       months,
       resolved: uplifts.data[addCustomer],
     });
@@ -166,7 +166,7 @@ export default function PromotionsSection({
     if (isActive) switchOffClashes(promotion).catch((err) => setSaveError(err.message));
   }
 
-  // One switched-on promotion per slot (same customer, type, SKU and
+  // One switched-on promotion per slot (same customer, type, SKU range and
   // months; promotionsClash). Saved ones are saved switched off straight
   // away, unsaved ones just switch off.
   async function switchOffClashes(promotion) {
@@ -176,7 +176,7 @@ export default function PromotionsSection({
     onChange((current) => current.map((item) => (ids.has(item.id) ? { ...item, isActive: false } : item)));
     setNotice(
       `Switched off ${clashes.map((item) => item.mechanicLabel || 'a promotion').join(', ')}: ` +
-        `${promotion.mechanicLabel || 'this promotion'} covers the same customer, SKU, type and months.`
+        `${promotion.mechanicLabel || 'this promotion'} covers the same customer, SKU range, type and months.`
     );
     for (const clash of clashes) {
       if (clash.saved && !hasUnsavedPromotionChanges(clash)) await onSave({ ...clash, isActive: false });
@@ -333,7 +333,7 @@ export default function PromotionsSection({
           onUpdate={updateSelected}
           resolved={uplifts.data[selected.customer]}
           customerOptions={customerOptions}
-          productOptions={productOptions}
+          skuRangeOptions={skuRangeOptions}
           months={months}
           impact={impacts.get(selected.id)}
           stacked={stackedModelCells(selected, rows)}
@@ -352,8 +352,7 @@ export default function PromotionsSection({
           <Button
             type="button"
             onClick={() => savePromotion(selected)}
-            disabled={saving || !selected.sku || !hasUnsavedPromotionChanges(selected)}
-            title={selected.sku ? undefined : 'Choose a single SKU to save this promotion'}
+            disabled={saving || !hasUnsavedPromotionChanges(selected)}
             className={cn(primaryButtonClass, 'flex-1')}
           >
             {saving ? 'Saving…' : hasUnsavedPromotionChanges(selected) ? 'Save promotion' : 'Saved'}

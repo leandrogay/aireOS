@@ -27,19 +27,20 @@ import RecommendedReadout from './RecommendedReadout';
 const SCOPES = [
   { value: 'customer', label: 'Whole customer' },
   { value: 'range', label: 'One SKU range' },
-  { value: 'sku', label: 'One SKU' },
 ];
 
 /**
  * A dialog (like the anchor form) that gives a mechanic its own value for one
- * customer, SKU range or SKU (saved as an Estimate). The Scenario builder then uses the most specific value.
+ * customer or one of its SKU ranges (saved as an Estimate). Uplifts and anchors
+ * follow SKU ranges, so there is no per-SKU value. The Scenario builder then
+ * uses the most specific value.
  *
  * @param {object} props
  * @param {object[]} props.mechanics all-customers setting rows (one per mechanic)
  * @param {object[]} props.customers anchor rows ({ customer_id, customer_name })
  * @param {{ skus: object[], loading: boolean, error: string | null }} props.catalog from useSkuCatalog
  * @param {object | null} props.moments from usePromoMoments, for the Moments / Recommended Uplift readout
- * @param {{ customer: string, sku: string, mechanic: string }} [props.initial] the table's filters, picked to start with
+ * @param {{ customer: string, skuRange: string, mechanic: string }} [props.initial] the table's filters, picked to start with
  * @param {(result: object) => void} props.onSaved
  * @param {() => void} props.onCancel
  */
@@ -47,25 +48,24 @@ export default function PromoOverrideForm({ mechanics, customers, catalog, momen
   const [form, setForm] = useState({
     mechanicKey: initial?.mechanic || (mechanics[0]?.mechanic_key ?? ''),
     customerId: (customers.find((row) => row.customer_name === initial?.customer) ?? customers[0])?.customer_id ?? '',
-    scope: initial?.sku ? 'sku' : 'customer',
-    target: initial?.sku ?? '',
+    scope: initial?.skuRange ? 'range' : 'customer',
+    target: initial?.skuRange ?? '',
     uplift: '',
     note: '',
   });
   const [submitting, setSubmitting] = useState(false);
   const [requestError, setRequestError] = useState(null);
   const choices = overrideTargetChoices(catalog.skus);
-  const targetOptions =
-    form.scope === 'range' ? choices.ranges.map((range) => ({ value: range, label: range })) : choices.skus;
+  const targetOptions = choices.ranges.map((range) => ({ value: range, label: range }));
   const uplift = parseUpliftInput(form.uplift);
   const needsTarget = form.scope !== 'customer';
   const ready = uplift.value != null && form.mechanicKey && form.customerId !== '' && (!needsTarget || form.target);
 
-  let targetPrompt = form.scope === 'range' ? 'Choose a range' : 'Choose a SKU';
+  let targetPrompt = 'Choose a range';
   if (catalog.loading) targetPrompt = 'Loading…';
-  else if (!catalog.error && targetOptions.length === 0) targetPrompt = 'No SKUs in the catalog';
+  else if (!catalog.error && targetOptions.length === 0) targetPrompt = 'No SKU ranges in the catalog';
 
-  // The readout waits until a range or SKU is picked, so it never shows the
+  // The readout waits until a range is picked, so it never shows the
   // whole customer's figures for a narrower value.
   const customerName = customers.find((row) => String(row.customer_id) === String(form.customerId))?.customer_name;
   const scopeRow =
@@ -75,7 +75,7 @@ export default function PromoOverrideForm({ mechanics, customers, catalog, momen
           mechanic_key: form.mechanicKey,
           customer_name: customerName,
           sku_range: form.scope === 'range' ? form.target : null,
-          sku: form.scope === 'sku' ? form.target : null,
+          sku: null,
         }
       : null;
 
@@ -94,7 +94,6 @@ export default function PromoOverrideForm({ mechanics, customers, catalog, momen
         scope: form.scope,
         customer_id: Number(form.customerId),
         sku_range: form.scope === 'range' ? form.target : undefined,
-        sku: form.scope === 'sku' ? form.target : undefined,
         uplift_pct: uplift.value,
         note: form.note.trim() || undefined,
       });
@@ -110,7 +109,7 @@ export default function PromoOverrideForm({ mechanics, customers, catalog, momen
     <Dialog open onOpenChange={(next) => { if (!next && !submitting) onCancel(); }}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Add a value for one customer, range or SKU</DialogTitle>
+          <DialogTitle>Add a value for one customer or SKU range</DialogTitle>
           <DialogDescription>Saved as an Estimate. It does not move with the ordinary-month discount.</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
@@ -159,7 +158,7 @@ export default function PromoOverrideForm({ mechanics, customers, catalog, momen
             {needsTarget ? (
               <div>
                 <label htmlFor="override-target" className={labelClass}>
-                  {form.scope === 'range' ? 'SKU range' : 'SKU'}
+                  SKU range
                 </label>
                 <select
                   id="override-target"

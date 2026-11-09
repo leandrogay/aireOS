@@ -52,15 +52,17 @@ export const SIMULATED_SERIES = {
 
 const CURRENT_UNITS = 'forecast_current';
 
-// The forecast rows an item applies to: its customer, its SKU (or every SKU
-// when sku === ''), its months, and only rows with a Current value (months
-// with actuals have none, so they are never changed).
+// The forecast rows an item applies to: its customer, its SKU ranges (every
+// SKU of them, by the rows' sku_range) or its one SKU (items saved before
+// ranges; every SKU when neither is set), its months, and only rows with a
+// Current value (months with actuals have none, so they are never changed).
 function itemRows(rows, item) {
   if (!item.customer || !item.startMonth || !item.endMonth) return [];
   return rows.filter(
     (row) =>
       row[CURRENT_UNITS] != null &&
       row.customer_name === item.customer &&
+      (!item.skuRanges?.length || item.skuRanges.includes(row.sku_range)) &&
       (!item.sku || row.product_name === item.sku) &&
       row.month_year >= item.startMonth &&
       row.month_year <= item.endMonth
@@ -87,12 +89,16 @@ function deltaCell(row, item, source, deltaUnits) {
  * Map customer_name → { startMonth, endMonth, rows } with every SKU of that
  * customer over those months (see useUnitsSplitBasis).
  *
- * @param {{ productName: string, customerName: string, startDate: string, endDate: string }} filters
+ * @param {{ productName?: string, skuRange?: string, customerName: string, startDate: string, endDate: string }} filters
  * @param {Map<string, { startMonth: string, endMonth: string, rows: object[] }>} [splitBasis]
  */
-export function chartView({ productName = '', customerName = '', startDate = '', endDate = '' }, splitBasis = null) {
+export function chartView(
+  { productName = '', skuRange = '', customerName = '', startDate = '', endDate = '' },
+  splitBasis = null
+) {
   return {
     productName,
+    skuRange,
     customerName,
     startMonth: startDate ? `${startDate.slice(0, 7)}-01` : '',
     endMonth: endDate ? `${endDate.slice(0, 7)}-01` : '',
@@ -111,6 +117,9 @@ export function chartView({ productName = '', customerName = '', startDate = '',
 export function viewCoversItem(item, view) {
   if (view.customerName && view.customerName !== item.customer) return false;
   if (view.productName && view.productName !== item.sku) return false;
+  // A range in view covers only an item for exactly that range; an item on
+  // more ranges, all of them, or one SKU reaches beyond what the view fetched.
+  if (view.skuRange && !(item.skuRanges?.length === 1 && item.skuRanges[0] === view.skuRange)) return false;
   if (view.startMonth && item.startMonth < view.startMonth) return false;
   if (view.endMonth && item.endMonth > view.endMonth) return false;
   return true;

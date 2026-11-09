@@ -13,6 +13,7 @@ import useLastYearActuals from '@/hooks/useLastYearActuals';
  * @param {{
  *   ready: boolean,
  *   productName: string,
+ *   skuRange: string,        the Scenario builder's SKU range filter ('' = all)
  *   customerName: string,
  *   startDate: string,
  *   endDate: string,
@@ -27,6 +28,7 @@ import useLastYearActuals from '@/hooks/useLastYearActuals';
 export default function MonthlyPlan({
   ready,
   productName,
+  skuRange = '',
   customerName,
   startDate,
   endDate,
@@ -37,7 +39,7 @@ export default function MonthlyPlan({
   onOpenItem,
   scope,
 }) {
-  const lastYear = useLastYearActuals({ ready, productName, customerName, startDate, endDate, actuals });
+  const lastYear = useLastYearActuals({ ready, productName, skuRange, customerName, startDate, endDate, actuals });
   const planRows = buildPlanRows({ rows, lastYearActuals: lastYear.actuals, byMonth, monthItems });
 
   return (

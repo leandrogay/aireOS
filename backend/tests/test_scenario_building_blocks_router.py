@@ -18,6 +18,16 @@ BODY = {
     "is_active": True,
 }
 
+GROWTH_BODY = {
+    **BODY,
+    "kind": "growth",
+    "sku_ranges": ["Ultra Tape"],
+    "uplift_mode": "pct",
+    "uplift_value": 8,
+    "start_month": "2027-01-01",
+    "end_month": "2027-12-01",
+}
+
 SAVED = {
     **BODY,
     "block_id": 1,
@@ -120,6 +130,19 @@ def test_create_racing_a_deleted_customer_is_409(monkeypatch):
     assert response.status_code == 409
 
 
+def test_create_of_a_second_growth_for_the_year_is_409(monkeypatch):
+    monkeypatch.setattr(
+        building_blocks_service,
+        "create_building_block",
+        _raises(building_blocks_service.GrowthBlockExistsError("fairprice already has growth for 2027")),
+    )
+
+    response = client.post("/api/scenario/building-blocks", json=GROWTH_BODY)
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "fairprice already has growth for 2027"
+
+
 # ---- Update ------------------------------------------------------------------
 
 
@@ -146,6 +169,18 @@ def test_update_of_a_missing_block_is_404(monkeypatch):
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Building block not found"
+
+
+def test_update_into_a_year_that_already_has_growth_is_409(monkeypatch):
+    monkeypatch.setattr(
+        building_blocks_service,
+        "update_building_block",
+        _raises(building_blocks_service.GrowthBlockExistsError("fairprice already has growth for 2027")),
+    )
+
+    response = client.put("/api/scenario/building-blocks/1", json=GROWTH_BODY)
+
+    assert response.status_code == 409
 
 
 # ---- Delete ------------------------------------------------------------------

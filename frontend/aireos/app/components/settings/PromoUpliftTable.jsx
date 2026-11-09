@@ -52,7 +52,7 @@ export default function PromoUpliftTable({ rows, shownUplift, moments, productNa
   const columns = [
     { key: 'mechanic', label: 'Mechanic', width: '10rem' },
     { key: 'customer', label: 'Customer', width: '8rem' },
-    { key: 'sku', label: 'SKU' },
+    { key: 'sku', label: 'SKU range' },
     { key: 'discount', label: 'Discount', width: '6rem', align: 'right' },
     {
       key: 'recommended',

@@ -97,7 +97,7 @@ def _fixed_scope(monkeypatch, customer_ids=None, skus=None):
     monkeypatch.setattr(
         bigquery,
         "resolve_forecast_scope",
-        lambda product_name=None, customer_name=None: {"customer_ids": customer_ids, "skus": skus},
+        lambda product_name=None, customer_name=None, sku_range=None: {"customer_ids": customer_ids, "skus": skus},
     )
 
 
@@ -139,6 +139,55 @@ def test_forecast_scope_binds_the_names_and_reads_ids(monkeypatch):
     assert params["customer_name"].value == "nhg"
     assert params["product_name"].value == "Aire Ultra Tape L"
     assert "Aire Ultra Tape L" not in fake.last_query
+
+
+def test_a_sku_range_scope_is_every_sku_of_that_range(monkeypatch):
+    fake = _install_fake_client(monkeypatch, pd.DataFrame([{"range_skus": ["UT-M", "UT-L"]}]))
+
+    scope = bigquery.resolve_forecast_scope(sku_range="Ultra Tape")
+
+    assert scope == {"customer_ids": None, "skus": ["UT-L", "UT-M"]}
+    assert _params_by_name(fake.last_job_config)["sku_range"].value == "Ultra Tape"
+    assert "Ultra Tape" not in fake.last_query
+
+
+def test_a_product_and_a_range_together_keep_only_the_product_skus_in_the_range(monkeypatch):
+    _install_fake_client(
+        monkeypatch, pd.DataFrame([{"skus": ["UT-L", "OTHER"], "range_skus": ["UT-L", "UT-M"]}])
+    )
+
+    scope = bigquery.resolve_forecast_scope(product_name="Aire Ultra Tape L", sku_range="Ultra Tape")
+
+    assert scope["skus"] == ["UT-L"]
+
+
+def test_actuals_for_a_range_read_the_same_sku_codes_as_the_forecast(monkeypatch):
+    monkeypatch.setattr(
+        bigquery, "resolve_forecast_scope", lambda product_name=None, customer_name=None, sku_range=None: {
+            "customer_ids": None, "skus": ["UT-L", "UT-M"],
+        }
+    )
+    fake = _install_fake_client(monkeypatch, pd.DataFrame())
+
+    bigquery.get_forecast_actuals(customer_name="fairprice", sku_range="Ultra Tape")
+
+    assert "sku IN UNNEST(@range_skus)" in fake.last_query
+    assert _params_by_name(fake.last_job_config)["range_skus"].values == ["UT-L", "UT-M"]
+
+
+def test_actuals_for_a_range_with_no_skus_skip_the_query(monkeypatch):
+    monkeypatch.setattr(
+        bigquery, "resolve_forecast_scope", lambda product_name=None, customer_name=None, sku_range=None: {
+            "customer_ids": None, "skus": [],
+        }
+    )
+
+    def _no_client_allowed():
+        raise AssertionError("BigQuery must not be queried")
+
+    monkeypatch.setattr(bigquery, "get_bigquery_client", _no_client_allowed)
+
+    assert bigquery.get_forecast_actuals(sku_range="Nothing") == []
 
 
 def test_no_names_means_every_customer_and_sku_without_a_lookup(monkeypatch):
@@ -197,6 +246,7 @@ def test_forecast_output_row_keeps_blank_lines_as_none(monkeypatch):
             "customer_name": "fairprice",
             "sku": "13271338",
             "product_name": "Aire Ultra Tape L",
+            "sku_range": None,
             "month_year": "2026-08-01",
             "tier": "tier0",
             "tier_label": "Tier 0 · Baseline",
@@ -431,12 +481,14 @@ def test_get_forecast_options(monkeypatch):
         [
             {
                 "product_name": "Aire Ultra Tape L",
+                "sku_range": "Ultra Tape",
                 "customer_name": "fairprice",
                 "first_month": datetime.date(2024, 7, 1),
                 "last_month": datetime.date(2026, 3, 1),
             },
             {
                 "product_name": "Aire Adult Pants L",
+                "sku_range": None,
                 "customer_name": "fairprice",
                 "first_month": datetime.date(2025, 1, 1),
                 "last_month": datetime.date(2027, 8, 1),
@@ -452,6 +504,8 @@ def test_get_forecast_options(monkeypatch):
     assert "UNION ALL" in fake.last_query
     assert options["customers"] == ["fairprice"]
     assert options["products"] == ["Aire Adult Pants L", "Aire Ultra Tape L"]
+    # A SKU with no range adds none.
+    assert options["sku_ranges"] == ["Ultra Tape"]
     assert options["start_date"] == "2024-07-01"
     assert options["end_date"] == "2027-08-01"
 

@@ -252,6 +252,18 @@ def test_list_forecast_promotions_skips_optional_filters(monkeypatch):
     assert params == {}
 
 
+def test_forecast_promotions_for_a_sku_range_match_any_sku_of_it(monkeypatch):
+    conn = FakeConnection(lambda sql, params: [])
+    monkeypatch.setattr(promotion_service, "_get_engine", lambda: FakeEngine(conn))
+
+    promotion_service.list_forecast_promotions(sku_range="Ultra Tape")
+
+    [(sql, params)] = conn.calls
+    assert "sk.sku_range = :sku_range" in sql
+    assert ":product_name" not in sql
+    assert params == {"sku_range": "Ultra Tape"}
+
+
 def test_no_sku_items_skips_sku_queries(monkeypatch):
     conn = _install_fake_engine(monkeypatch)
 

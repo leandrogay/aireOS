@@ -7,7 +7,9 @@ from sqlalchemy.engine import Connection
 from app.services.scenario import building_blocks, common
 
 
-# Scenario builder promotions (scenario_promotions, migration 006): planned
+# Scenario builder promotions (scenario_promotions -- NOT CREATED YET: the page
+# runs on the in-memory store in scenarioPromotionsApi.js): planned by SKU
+# range (sku_ranges; sku only on ones saved before ranges),
 # promotions that only move the Scenario builder's Simulated line, saved
 # and switched on/off exactly like building blocks (building_blocks.py).
 # Nothing here reads or writes the forecast, the real `promotions` table,
@@ -27,6 +29,7 @@ _PROMOTION_SELECT = """
     SELECT
         promotion.promotion_id,
         customer.customer_name,
+        promotion.sku_ranges,
         promotion.sku,
         product.product_name,
         promotion.promo_type,
@@ -70,6 +73,7 @@ def _promotion_view(row: dict) -> dict:
     return {
         "promotion_id": row["promotion_id"],
         "customer_name": row["customer_name"],
+        "sku_ranges": list(row["sku_ranges"]) if row["sku_ranges"] else None,
         "sku": row["sku"],
         "product_name": row["product_name"],
         "promo_type": row["promo_type"],
@@ -143,6 +147,7 @@ def _write_params(conn: Connection, promotion: dict) -> dict:
     # a customer or product the same way.
     return {
         "customer_id": building_blocks._resolve_customer_id(conn, promotion["customer_name"]),
+        "sku_ranges": building_blocks._resolve_sku_ranges(conn, promotion["sku_ranges"]),
         "sku": building_blocks._resolve_sku(conn, promotion["product_name"]),
         "promo_type": promotion["promo_type"],
         "mechanic_key": promotion["mechanic_key"],
@@ -180,6 +185,7 @@ def create_scenario_promotion(promotion: dict) -> dict:
                 """
                 INSERT INTO scenario_promotions (
                     customer_id,
+                    sku_ranges,
                     sku,
                     promo_type,
                     mechanic_key,
@@ -200,6 +206,7 @@ def create_scenario_promotion(promotion: dict) -> dict:
                 )
                 VALUES (
                     :customer_id,
+                    CAST(:sku_ranges AS TEXT[]),
                     :sku,
                     :promo_type,
                     :mechanic_key,
@@ -238,6 +245,7 @@ def update_scenario_promotion(promotion_id: int, promotion: dict) -> dict | None
 
                 SET
                     customer_id = :customer_id,
+                    sku_ranges = CAST(:sku_ranges AS TEXT[]),
                     sku = :sku,
                     promo_type = :promo_type,
                     mechanic_key = :mechanic_key,

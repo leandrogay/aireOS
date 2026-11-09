@@ -5,22 +5,23 @@ import FilterSelect from '@/components/ui/FilterSelect';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 
 /**
- * Customer, SKU and Mechanic filters for the Uplift by mechanic table, laid
- * out like the SKU catalogue's filters (SkuFilters) but inside the table's own
- * card. A SKU on its own lists that SKU's value for every customer; a
- * mechanic on its own lists every value saved for it.
+ * Customer, SKU range and Mechanic filters for the Uplift by mechanic table,
+ * laid out like the SKU catalogue's filters (SkuFilters) but inside the
+ * table's own card. Uplifts and anchors follow SKU ranges, so the narrowest
+ * filter is a range: a range on its own lists that range's value for every
+ * customer; a mechanic on its own lists every value saved for it.
  *
  * @param {{
- *   filters: { customer: string, sku: string, mechanic: string },
+ *   filters: { customer: string, skuRange: string, mechanic: string },
  *   customers: string[],
- *   skuOptions: Array<{ value: string, label: string }>,
+ *   skuRangeOptions: Array<{ value: string, label: string }>,
  *   mechanicOptions: Array<{ value: string, label: string }>,
- *   onChange: (key: 'customer' | 'sku' | 'mechanic', value: string) => void,
+ *   onChange: (key: 'customer' | 'skuRange' | 'mechanic', value: string) => void,
  *   onReset: () => void,
  * }} props
  */
-export default function PromoUpliftFilters({ filters, customers, skuOptions, mechanicOptions, onChange, onReset }) {
-  const hasFilters = Boolean(filters.customer || filters.sku || filters.mechanic);
+export default function PromoUpliftFilters({ filters, customers, skuRangeOptions, mechanicOptions, onChange, onReset }) {
+  const hasFilters = Boolean(filters.customer || filters.skuRange || filters.mechanic);
 
   return (
     <div aria-label="Filter uplift values" role="group" className="mb-3 flex flex-wrap items-end gap-3">
@@ -33,11 +34,11 @@ export default function PromoUpliftFilters({ filters, customers, skuOptions, mec
           onChange={(value) => onChange('customer', value)}
         />
         <FilterSelect
-          label="SKU"
-          value={filters.sku}
-          allLabel="All SKUs"
-          options={skuOptions}
-          onChange={(value) => onChange('sku', value)}
+          label="SKU range"
+          value={filters.skuRange}
+          allLabel="All SKU ranges"
+          options={skuRangeOptions}
+          onChange={(value) => onChange('skuRange', value)}
         />
         <FilterSelect
           label="Mechanic"

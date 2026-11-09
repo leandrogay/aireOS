@@ -123,6 +123,14 @@ Before deploying a change to the formula, run
 `python scripts/check_tier0_parity.py` from `backend/`. It runs the view's
 query read-only and checks it against `pl_forecast.py` on live data.
 
+`views/010_…` is the live `aireos_forecast_validation_sg` definition (8 Nov
+2026 evening): `0.5 x same month last year + 0.5 x 3-month run-rate`, or the
+run-rate alone when that month last year is missing, over a 15-month horizon.
+There is no growth factor. Growth is a planning choice that the Scenario
+builder applies on top of Tier 0 as a growth building block
+(`scenario_building_blocks.kind = 'growth'`, backend migration
+`016_scenario_growth_blocks.sql`), never inside the forecast.
+
 Tier 0 has no promotion uplift. The P&L's Sell-out Building Blocks are
 hand-entered activity cartons (AO, display, expansion, promoter sampling) that
 the database doesn't hold; promotion effects come from Tier 1 XREG.

@@ -10,7 +10,10 @@
 //   {
 //     id,                                   // client id, stable while the page is open
 //     promotionId,                          // server id, null until first saved
-//     customer, sku,                        // sku '' = all SKUs
+//     customer,
+//     skuRanges,                            // SKU ranges ([] = All SKU ranges): promotions follow ranges
+//     sku,                                  // one product_name, only on promotions saved before ranges
+//                                           // (backend migration 018); new ones keep ''
 //     promoType,                            // 'monthly' | 'side_offer' | 'bundle' | 'others'
 //     mechanicKey, mechanicLabel,
 //     referenceUpliftPct, referenceSource,  // the setting's value and source when chosen
@@ -37,7 +40,8 @@
 // can be negative: a shallower discount than usual sells less.
 //
 // `resolved` below is one customer's GET /api/settings/promo-uplifts/resolved
-// answer ({ anchor, uplifts, product_uplifts }), from usePromoUplifts.
+// answer ({ anchor, uplifts, product_uplifts, range_uplifts, range_anchors, product_ranges }),
+// from usePromoUplifts. A range promotion takes its range's values.
 
 import { PROMO_OVERLAY_TYPES } from '@/app/utils/forecastView';
 import { upliftDeltaCells } from '@/app/utils/scenarioEngine';
@@ -116,29 +120,47 @@ export function voucherOption(resolved) {
 }
 
 /**
- * Values a mechanic takes for an all-SKUs promotion: the customer's value
- * plus every product's own value, for showing "+3% to +6% by SKU".
+ * Values a mechanic takes across a promotion's SKU ranges, for showing "+3%
+ * to +6% by SKU range": each picked range's value (every SKU of a range
+ * shares it), or, for All SKU ranges, the customer's value plus every
+ * product's own value.
  *
  * @param {object | undefined} resolved
  * @param {object} row a mechanic row from resolved.uplifts
+ * @param {string[]} [skuRanges] [] = All SKU ranges
  */
-export function valuesAcrossSkus(resolved, row) {
+export function valuesAcrossSkus(resolved, row, skuRanges = []) {
+  if (skuRanges.length) {
+    return skuRanges.map((range) => resolved?.range_uplifts?.[range]?.[row.mechanic_key] ?? row.uplift_pct);
+  }
   const own = Object.values(resolved?.product_uplifts ?? {})
     .map((values) => values[row.mechanic_key])
     .filter((value) => value != null);
   return [row.uplift_pct, ...own];
 }
 
-function valueFor(resolved, key, sku) {
+function valueFor(resolved, key, skuRanges, sku) {
   const base = (resolved?.uplifts ?? []).find((row) => row.mechanic_key === key);
   if (!base) return { value: null, source: '', bySku: {} };
 
+  // One range: every SKU of it takes the range's value (backend resolve_uplifts range_uplifts).
+  if (skuRanges.length === 1) {
+    return { value: resolved?.range_uplifts?.[skuRanges[0]]?.[key] ?? base.uplift_pct, source: base.source, bySku: {} };
+  }
   const products = resolved?.product_uplifts ?? {};
-  if (sku) return { value: products[sku]?.[key] ?? base.uplift_pct, source: base.source, bySku: {} };
+  // One SKU: only on a promotion saved before ranges.
+  if (sku && !skuRanges.length) {
+    return { value: products[sku]?.[key] ?? base.uplift_pct, source: base.source, bySku: {} };
+  }
 
+  // Several ranges or all of them: the customer's value, plus each product's
+  // own value for the products in those ranges (all products when none picked).
+  const productRanges = resolved?.product_ranges ?? {};
   const bySku = {};
   for (const [product, values] of Object.entries(products)) {
-    if (values[key] != null) bySku[product] = values[key];
+    if (values[key] == null) continue;
+    if (skuRanges.length && !skuRanges.includes(productRanges[product])) continue;
+    bySku[product] = values[key];
   }
   return { value: base.uplift_pct, source: base.source, bySku };
 }
@@ -153,8 +175,8 @@ function valueFor(resolved, key, sku) {
  */
 export function withReferences(promotion, resolved) {
   if (!resolved) return promotion;
-  const mechanic = valueFor(resolved, promotion.mechanicKey, promotion.sku);
-  const voucher = valueFor(resolved, VOUCHER_KEY, promotion.sku);
+  const mechanic = valueFor(resolved, promotion.mechanicKey, promotion.skuRanges ?? [], promotion.sku);
+  const voucher = valueFor(resolved, VOUCHER_KEY, promotion.skuRanges ?? [], promotion.sku);
   const row = mechanicOptions(resolved).find((option) => option.mechanic_key === promotion.mechanicKey);
 
   return {
@@ -197,14 +219,15 @@ export function defaultMechanic(resolved) {
  * exactly on the anchor; with an anchor between steps (e.g. 23%) the nearest
  * one may still be +/-1%.
  *
- * @param {{ customer: string, sku: string, months: string[], resolved: object | undefined }} defaults
+ * @param {{ customer: string, skuRanges?: string[], months: string[], resolved: object | undefined }} defaults
  */
-export function newDraftPromotion({ customer = '', sku = '', months = [], resolved }) {
+export function newDraftPromotion({ customer = '', skuRanges = [], months = [], resolved }) {
   const mechanic = defaultMechanic(resolved);
   const promotion = {
     id: `promo-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     customer,
-    sku,
+    skuRanges,
+    sku: '',
     promoType: PROMO_OVERLAY_TYPES[0].value,
     mechanicKey: mechanic?.mechanic_key ?? '',
     mechanicLabel: mechanic?.mechanic_label ?? '',
@@ -292,6 +315,7 @@ export function effectiveUpliftRange(promotion) {
 function inPromotion(row, promotion) {
   if (row.forecast_current == null) return false;
   if (row.customer_name !== promotion.customer) return false;
+  if (promotion.skuRanges?.length && !promotion.skuRanges.includes(row.sku_range)) return false;
   if (promotion.sku && row.product_name !== promotion.sku) return false;
   return row.month_year >= promotion.startMonth && row.month_year <= promotion.endMonth;
 }
@@ -316,6 +340,17 @@ export function stackedModelCells(promotion, rows) {
     }
   }
   return { count, months: [...months].sort() };
+}
+
+/**
+ * What a promotion covers, for lists: its SKU range, its one SKU (saved
+ * before ranges), or "All SKUs".
+ *
+ * @param {{ skuRanges?: string[], sku?: string }} promotion
+ */
+export function promotionScopeLabel(promotion) {
+  if (promotion.skuRanges?.length) return promotion.skuRanges.join(', ');
+  return promotion.sku || 'All SKU ranges';
 }
 
 function describeTitle(promotion) {
@@ -362,7 +397,7 @@ export const scenarioPromotionsSource = {
       title: describeTitle(promotion),
       upliftLabel: formatPctRange(effectiveUpliftRange(promotion)),
       customer: promotion.customer,
-      sku: promotion.sku,
+      sku: promotionScopeLabel(promotion),
       explanation: promotion.explanation,
       startMonth: promotion.startMonth,
       endMonth: promotion.endMonth,
@@ -398,6 +433,7 @@ export function draftPromotionBands(promotions) {
 // The fields a save writes; `saved` keeps a copy of exactly these.
 const SAVED_FIELDS = [
   'customer',
+  'skuRanges',
   'sku',
   'promoType',
   'mechanicKey',
@@ -454,7 +490,6 @@ export function discardPromotionChanges(promotion) {
  */
 export function validateScenarioPromotion(promotion) {
   if (!promotion.customer) return 'Choose a customer.';
-  if (!promotion.sku) return 'Choose a single SKU to save this promotion.';
   if (!promotion.mechanicKey) return 'Choose a mechanic.';
   if (!promotion.startMonth || !promotion.endMonth) return 'Choose the months.';
   if (promotion.promoType === SIDE_OFFER_TYPE && (!promotion.startDate || !promotion.endDate)) {
@@ -465,14 +500,16 @@ export function validateScenarioPromotion(promotion) {
 
 /**
  * Request body for saving a promotion: backend ScenarioPromotionBase
- * (app/schemas/scenario/promotions.py). product_name null = all SKUs.
+ * (app/schemas/scenario/promotions.py): sku_ranges (null = All SKU ranges),
+ * or product_name, which is only set on a promotion saved before ranges.
  *
  * @param {object} promotion
  */
 export function buildScenarioPromotionPayload(promotion) {
   return {
     customer_name: promotion.customer,
-    product_name: promotion.sku || null,
+    sku_ranges: promotion.skuRanges?.length ? promotion.skuRanges : null,
+    product_name: promotion.skuRanges?.length ? null : promotion.sku || null,
     promo_type: promotion.promoType,
     mechanic_key: promotion.mechanicKey,
     mechanic_label: promotion.mechanicLabel,
@@ -504,6 +541,7 @@ export function scenarioPromotionFromApi(row) {
     id: `saved-promo-${row.promotion_id}`,
     promotionId: row.promotion_id,
     customer: row.customer_name,
+    skuRanges: row.sku_ranges ?? [],
     sku: row.product_name ?? '',
     promoType: row.promo_type,
     mechanicKey: row.mechanic_key,
@@ -657,6 +695,10 @@ function monthsOverlap(a, b) {
 export function promotionsClash(a, b) {
   if (a.id === b.id) return false;
   if (a.customer !== b.customer || a.promoType !== b.promoType) return false;
+  // Ranges clash only when they share one ([] = all ranges shares every one).
+  if (a.skuRanges?.length && b.skuRanges?.length && !a.skuRanges.some((range) => b.skuRanges.includes(range))) {
+    return false;
+  }
   if (a.sku && b.sku && a.sku !== b.sku) return false;
   return monthsOverlap(a, b);
 }

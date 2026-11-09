@@ -108,7 +108,7 @@ export function scopeLabel(row) {
   if (row.scope === 'all') return 'All customers';
   const customer = retailerLabel(row.customer_name ?? '');
   if (row.scope === 'range') return `${customer} · range ${row.sku_range}`;
-  if (row.scope === 'sku') return `${customer} · SKU ${row.sku}`;
+  if (row.scope === 'sku') return `${customer} · SKU ${row.sku} (no longer applies)`;
   return customer;
 }
 
@@ -173,14 +173,9 @@ export function parseUpliftInput(text) {
  * @returns {{ ranges: string[], skus: { value: string, label: string }[] }}
  */
 export function overrideTargetChoices(skus) {
-  const ranges = [...new Set(skus.map((row) => row.sku_range).filter(Boolean))].sort();
-  return {
-    ranges,
-    skus: skus.map((row) => ({
-      value: row.sku,
-      label: row.product_name ? `${row.product_name} · ${row.sku}` : row.sku,
-    })),
-  };
+  // Uplifts and anchors follow SKU ranges, so a range is the narrowest
+  // target (backend PromoUpliftOverrideCreate has no SKU scope any more).
+  return { ranges: [...new Set(skus.map((row) => row.sku_range).filter(Boolean))].sort() };
 }
 
 // ============================================================
@@ -284,36 +279,39 @@ export function customerColumn(row) {
  */
 export function skuColumn(row, productNames) {
   if (row.scope === 'range') return `Range ${row.sku_range}`;
-  if (row.scope !== 'sku') return 'All SKUs';
+  if (row.scope !== 'sku') return 'All SKU ranges';
+  // Saved before uplifts followed SKU ranges; kept for its history only.
   const name = productNames.get(row.sku);
-  return name ? `${name} · ${row.sku}` : row.sku;
+  return `${name ? `${name} · ${row.sku}` : row.sku} (SKU, no longer applies)`;
 }
 
 // ============================================================
-// CUSTOMER / SKU / MECHANIC FILTER
+// CUSTOMER / SKU RANGE / MECHANIC FILTER
 // ============================================================
 
 // Most specific first, as the backend picks a value (promo_uplifts._SCOPE_ORDER).
-const SCOPE_RANK = { sku: 0, range: 1, customer: 2, all: 3 };
+const SCOPE_RANK = { range: 1, customer: 2, all: 3 };
 
-function appliesTo(row, customerName, sku, skuRange) {
+// Same as backend promo_uplifts._applies: a SKU-level row (saved before
+// uplifts followed SKU ranges) never applies.
+function appliesTo(row, customerName, skuRange) {
   if (row.scope === 'all') return true;
   if (row.customer_name !== customerName) return false;
   if (row.scope === 'customer') return true;
   if (row.scope === 'range') return Boolean(skuRange) && row.sku_range === skuRange;
-  return Boolean(sku) && row.sku === sku;
+  return false;
 }
 
-function resolvedFor(rows, customerName, sku, skuRange) {
+function resolvedFor(rows, customerName, skuRange) {
   const best = new Map();
   for (const row of rows) {
-    if (!appliesTo(row, customerName, sku, skuRange)) continue;
+    if (!appliesTo(row, customerName, skuRange)) continue;
     const current = best.get(row.mechanic_key);
     if (!current || SCOPE_RANK[row.scope] < SCOPE_RANK[current.scope]) best.set(row.mechanic_key, row);
   }
 
-  const view = sku
-    ? { scope: 'sku', customer_name: customerName, sku, sku_range: skuRange }
+  const view = skuRange
+    ? { scope: 'range', customer_name: customerName, sku: null, sku_range: skuRange }
     : { scope: 'customer', customer_name: customerName, sku: null, sku_range: null };
   return rows
     .filter((row) => row.scope === 'all' && best.has(row.mechanic_key))
@@ -324,25 +322,26 @@ function resolvedFor(rows, customerName, sku, skuRange) {
 }
 
 /**
- * The table's rows for the Customer / SKU / Mechanic filter. With no customer
- * or SKU, every setting row as saved. Otherwise one row per mechanic for each customer filtered to
- * (a SKU alone means every customer, since uplifts differ by customer): the
- * most specific saved value that applies there, carrying a `view`
- * ({ scope, customer_name, sku, sku_range, mechanic_key }) that the Customer,
- * SKU, Recommended and Moments columns read instead of the saved row's own
- * scope. Rows come grouped by mechanic, so customers sit side by side. A
- * mechanic keeps only that mechanic's rows (e.g. every 5% Off value at once).
+ * The table's rows for the Customer / SKU range / Mechanic filter. With no
+ * customer or range, every setting row as saved. Otherwise one row per
+ * mechanic for each customer filtered to (a range alone means every
+ * customer, since uplifts differ by customer): the most specific saved value
+ * that applies there, carrying a `view` ({ scope, customer_name, sku,
+ * sku_range, mechanic_key }) that the Customer, SKU range, Recommended and
+ * Moments columns read instead of the saved row's own scope. Rows come
+ * grouped by mechanic, so customers sit side by side. A mechanic keeps only
+ * that mechanic's rows (e.g. every 5% Off value at once).
  *
  * @param {object[]} rows setting rows
- * @param {{ customerName: string, sku: string, skuRange: string | null, mechanicKey: string, customers: string[] }} filter '' = all
+ * @param {{ customerName: string, skuRange: string, mechanicKey: string, customers: string[] }} filter '' = all
  * @returns {object[]}
  */
-export function filteredUpliftRows(rows, { customerName, sku, skuRange, mechanicKey, customers }) {
+export function filteredUpliftRows(rows, { customerName, skuRange, mechanicKey, customers }) {
   const ofMechanic = mechanicKey ? rows.filter((row) => row.mechanic_key === mechanicKey) : rows;
-  if (!customerName && !sku) return ofMechanic;
+  if (!customerName && !skuRange) return ofMechanic;
 
   const names = customerName ? [customerName] : customers;
-  const resolved = names.flatMap((name) => resolvedFor(ofMechanic, name, sku, skuRange));
+  const resolved = names.flatMap((name) => resolvedFor(ofMechanic, name, skuRange));
   const order = new Map(rows.filter((row) => row.scope === 'all').map((row, index) => [row.mechanic_key, index]));
   // A stable sort keeps the customers in the order given within each mechanic.
   return resolved.sort((a, b) => order.get(a.mechanic_key) - order.get(b.mechanic_key));

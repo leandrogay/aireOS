@@ -4,6 +4,7 @@
 const CUSTOMER = 'fairprice';
 const SKU = 'Aire Ultra Tape L';
 const SKU_CODE = '13271338';
+const SKU_RANGE = 'Ultra Tape';
 const RUN_AT = '2026-11-08T15:59:46Z';
 
 function month(year, index) {
@@ -19,6 +20,7 @@ function row(monthYear, index) {
     customer_name: CUSTOMER,
     sku: SKU_CODE,
     product_name: SKU,
+    sku_range: SKU_RANGE,
     month_year: monthYear,
     tier: 'tier0',
     tier_label: 'Tier 0 · Baseline',
@@ -63,6 +65,7 @@ function row(monthYear, index) {
 export const SCENARIO_FIXTURE_OPTIONS = {
   customers: [CUSTOMER],
   products: [SKU],
+  sku_ranges: [SKU_RANGE],
   bounds: { start: '2026-01-01', end: '2027-12-01' },
 };
 
@@ -85,7 +88,8 @@ export const SCENARIO_FIXTURE_BAKED_IN_DISCOUNTS = {
   frozen: false,
   status: 'not_frozen_yet',
   customer_name: CUSTOMER,
-  sku: SKU_CODE,
+  // Discounts are per customer x SKU range, as promo anchors are stored.
+  sku_range: SKU_RANGE,
   same_month_last_year: { mechanic: '20% off', source: 'measured' },
   recent_months: [
     { month: '2026-09-01', mechanic: '10% off', source: 'measured' },

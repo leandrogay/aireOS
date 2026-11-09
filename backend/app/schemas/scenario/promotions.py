@@ -28,8 +28,13 @@ _UPLIFT = {"ge": Decimal("-90"), "le": Decimal("300"), "max_digits": 6, "decimal
 class ScenarioPromotionBase(_Base):
     customer_name: str = Field(min_length=1, max_length=255)
 
-    # One SKU per promotion: promotions are planned per SKU.
-    product_name: str = Field(min_length=1, max_length=255)
+    # Promotions are planned by SKU range: sku_ranges = every SKU of those
+    # ranges; None (or empty) with no product_name = all SKU ranges.
+    # product_name (one SKU) is only for promotions saved before ranges, so
+    # they can still be edited; never both. (No table yet: the page runs on
+    # the in-memory store in scenarioPromotionsApi.js.)
+    sku_ranges: list[str] | None = Field(default=None, max_length=100)
+    product_name: str | None = Field(default=None, min_length=1, max_length=255)
 
     promo_type: ScenarioPromoType
     mechanic_key: str = Field(min_length=1, max_length=40)
@@ -63,6 +68,13 @@ class ScenarioPromotionBase(_Base):
     def _blank_explanation_is_none(cls, value: str | None) -> str | None:
         return value or None
 
+    @field_validator("sku_ranges")
+    @classmethod
+    def _ranges_in_order_once(cls, value: list[str] | None) -> list[str] | None:
+        # Same rule as building blocks: nothing left = all ranges (None).
+        ranges = sorted({item.strip() for item in value or [] if item and item.strip()})
+        return ranges or None
+
     @model_validator(mode="after")
     def validate_promotion(self):
         if self.start_month.day != 1 or self.end_month.day != 1:
@@ -70,6 +82,9 @@ class ScenarioPromotionBase(_Base):
 
         if self.end_month < self.start_month:
             raise ValueError("end_month cannot be before start_month")
+
+        if self.sku_ranges and self.product_name is not None:
+            raise ValueError("A promotion covers SKU ranges or one SKU, not both")
 
         if (self.start_date is None) != (self.end_date is None):
             raise ValueError("start_date and end_date must be given together")

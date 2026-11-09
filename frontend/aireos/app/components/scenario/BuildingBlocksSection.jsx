@@ -17,7 +17,7 @@ import {
 
 // Switched-on saved blocks the chart's filters leave out.
 function elsewhereNote(count) {
-  return `${count} more switched-on block${count === 1 ? ' is' : 's are'} for another customer, SKU or period.`;
+  return `${count} more switched-on block${count === 1 ? ' is' : 's are'} for another customer, SKU range or period.`;
 }
 
 /**
@@ -42,10 +42,10 @@ function elsewhereNote(count) {
  *   onRequestDelete: (block: object) => void,
  *   onClose: () => void,
  *   customerOptions: string[],
- *   productOptions: string[],
+ *   skuRangeOptions: string[],
  *   months: string[],
  *   defaultCustomer: string,
- *   defaultSku: string,
+ *   defaultSkuRange: string,
  *   impacts: Map<string, { deltaUnits: number, months: string[] }>,
  *   savedOnChart: object[],           saved, switched-on blocks for the chart's filters, not open in the panel
  *   savedElsewhereCount: number,      saved, switched-on blocks for other customers, SKUs or months
@@ -65,10 +65,10 @@ export default function BuildingBlocksSection({
   onRequestDelete,
   onClose,
   customerOptions,
-  productOptions,
+  skuRangeOptions,
   months,
   defaultCustomer,
-  defaultSku,
+  defaultSkuRange,
   impacts,
   savedOnChart,
   savedElsewhereCount,
@@ -96,7 +96,8 @@ export default function BuildingBlocksSection({
   function addBlock() {
     const block = newScenarioBlock({
       customer: defaultCustomer || customerOptions[0] || '',
-      sku: defaultSku,
+      // The chart's range to start with; none picked = All SKU ranges.
+      skuRanges: defaultSkuRange ? [defaultSkuRange] : [],
       months,
     });
     onChange((current) => [...current, block]);
@@ -236,7 +237,7 @@ export default function BuildingBlocksSection({
           saving={savingIds.includes(selected.id)}
           saveError={saveErrors[selected.id] ?? null}
           customerOptions={customerOptions}
-          productOptions={productOptions}
+          skuRangeOptions={skuRangeOptions}
           months={months}
           impact={impacts.get(selected.id)}
         />

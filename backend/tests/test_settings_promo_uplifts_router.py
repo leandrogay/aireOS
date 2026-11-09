@@ -36,8 +36,8 @@ def test_list_settings_is_200(monkeypatch):
 def test_resolved_passes_customer_and_product(monkeypatch):
     seen = {}
 
-    def fake(customer, product):
-        seen.update(customer=customer, product=product)
+    def fake(customer, product, sku_range):
+        seen.update(customer=customer, product=product, sku_range=sku_range)
         return {"uplifts": []}
 
     monkeypatch.setattr(service, "resolve_uplifts", fake)
@@ -45,12 +45,25 @@ def test_resolved_passes_customer_and_product(monkeypatch):
     response = client.get(f"{BASE}/resolved", params={"customer": "fairprice", "product": "Aire Pants L"})
 
     assert response.status_code == 200
-    assert seen == {"customer": "fairprice", "product": "Aire Pants L"}
+    assert seen == {"customer": "fairprice", "product": "Aire Pants L", "sku_range": None}
+
+
+def test_resolved_passes_the_sku_range(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(
+        service, "resolve_uplifts", lambda customer, product, sku_range: seen.update(sku_range=sku_range) or {}
+    )
+
+    client.get(f"{BASE}/resolved", params={"customer": "fairprice", "sku_range": "Ultra Tape"})
+
+    assert seen == {"sku_range": "Ultra Tape"}
 
 
 def test_resolved_without_a_product_means_all_skus(monkeypatch):
     seen = {}
-    monkeypatch.setattr(service, "resolve_uplifts", lambda customer, product: seen.update(product=product) or {})
+    monkeypatch.setattr(
+        service, "resolve_uplifts", lambda customer, product, sku_range: seen.update(product=product) or {}
+    )
 
     client.get(f"{BASE}/resolved", params={"customer": "fairprice", "product": ""})
 
@@ -136,7 +149,10 @@ def test_uplift_write_errors_map_to_status_codes(monkeypatch, exc, status):
 def test_an_override_is_201(monkeypatch):
     monkeypatch.setattr(service, "add_override", lambda *a, **k: {"changed": True, "setting": SETTING})
 
-    response = client.post(BASE, json={"mechanic_key": "pct_off_30", "scope": "sku", "customer_id": 1, "sku": "SKU-L", "uplift_pct": 7})
+    response = client.post(
+        BASE,
+        json={"mechanic_key": "pct_off_30", "scope": "range", "customer_id": 1, "sku_range": "Pants", "uplift_pct": 7},
+    )
 
     assert response.status_code == 201
 
@@ -145,9 +161,10 @@ def test_an_override_is_201(monkeypatch):
     "body",
     [
         {"mechanic_key": "pct_off_30", "scope": "all", "customer_id": 1, "uplift_pct": 7},
-        {"mechanic_key": "pct_off_30", "scope": "sku", "customer_id": 1, "uplift_pct": 7},
-        {"mechanic_key": "pct_off_30", "scope": "range", "customer_id": 1, "sku": "SKU-L", "uplift_pct": 7},
-        {"mechanic_key": "pct_off_30", "scope": "customer", "customer_id": 1, "sku": "SKU-L", "uplift_pct": 7},
+        # Uplifts follow SKU ranges: no new SKU-level overrides.
+        {"mechanic_key": "pct_off_30", "scope": "sku", "customer_id": 1, "sku": "SKU-L", "uplift_pct": 7},
+        {"mechanic_key": "pct_off_30", "scope": "range", "customer_id": 1, "uplift_pct": 7},
+        {"mechanic_key": "pct_off_30", "scope": "customer", "customer_id": 1, "sku_range": "Pants", "uplift_pct": 7},
     ],
 )
 def test_overrides_with_the_wrong_scope_columns_are_422(body):

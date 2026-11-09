@@ -56,6 +56,9 @@ def create_building_block(block: ScenarioBuildingBlockCreate):
     try:
         return building_blocks_service.create_building_block(block.model_dump())
 
+    except building_blocks_service.GrowthBlockExistsError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -86,6 +89,9 @@ def update_building_block(block_id: int, block: ScenarioBuildingBlockUpdate):
 
     except HTTPException:
         raise
+
+    except building_blocks_service.GrowthBlockExistsError as e:
+        raise HTTPException(status_code=409, detail=str(e))
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

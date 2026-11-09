@@ -26,6 +26,7 @@ def get_forecast(
     customer_name: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
+    sku_range: str | None = None,
 ):
     background_tasks.add_task(forecast_refresh_worker.recover_best_effort)
     try:
@@ -34,6 +35,7 @@ def get_forecast(
             customer_name=customer_name,
             start_date=start_date,
             end_date=end_date,
+            sku_range=sku_range,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

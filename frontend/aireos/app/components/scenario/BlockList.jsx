@@ -5,12 +5,12 @@ import { Tag } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Switch } from '@/components/ui/switch';
 import { retailerLabel } from '@/app/utils/retailerLabel';
-import { hasUnsavedChanges, upliftLabel } from '@/app/utils/scenarioBlocks';
+import { blockScopeLabel, hasUnsavedChanges, upliftLabel } from '@/app/utils/scenarioBlocks';
 import { monthSpanLabel } from '@/app/utils/scenarioPitch';
 
 function blockSummary(block) {
   const span = monthSpanLabel([block.startMonth, block.endMonth].filter(Boolean));
-  return `${block.sku || 'All SKUs'} · ${upliftLabel(block)} · ${span}`;
+  return `${blockScopeLabel(block)} · ${upliftLabel(block)} · ${span}`;
 }
 
 // What the block adds on the Simulated line, when it is on it.

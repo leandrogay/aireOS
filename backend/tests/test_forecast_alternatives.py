@@ -70,7 +70,7 @@ def test_alternatives_query_binds_the_pipeline_thresholds_and_filters(monkeypatc
     monkeypatch.setattr(
         bigquery,
         "resolve_forecast_scope",
-        lambda product_name=None, customer_name=None: {"customer_ids": [1], "skus": ["13255044"]},
+        lambda product_name=None, customer_name=None, sku_range=None: {"customer_ids": [1], "skus": ["13255044"]},
     )
 
     rows = bigquery.get_forecast_alternatives(

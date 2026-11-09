@@ -164,6 +164,7 @@ function promoPanelLeft(originX, wrapWidth) {
 // The Scenario builder's switched-on items, one group per source, in the
 // order the panel's tabs show them.
 const SCENARIO_ITEM_GROUPS = [
+  { source: 'growth', title: 'Growth added' },
   { source: 'blocks', title: 'Building blocks added' },
   { source: 'promotions', title: 'Planned promotions added' },
 ];

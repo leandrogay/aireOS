@@ -40,6 +40,21 @@ def test_a_pct_block_adds_that_share_of_current_in_each_month():
     assert deltas == {"A1": {OCT: pytest.approx(10.0), NOV: pytest.approx(20.0), DEC: pytest.approx(30.0)}}
 
 
+def test_a_range_block_reaches_only_the_skus_of_its_range():
+    deltas = block_deltas(CURRENT, [_block(range_skus=["B2", "Z9"], start_month=OCT, end_month=OCT)])
+
+    assert deltas == {"B2": {OCT: pytest.approx(10.0)}}
+
+
+def test_a_range_block_spreads_units_over_its_range_only():
+    deltas = block_deltas(
+        CURRENT, [_block(range_skus=["A1"], uplift_mode="units", uplift_value=60.0, start_month=OCT, end_month=NOV)]
+    )
+
+    # A1 has 100 + 200 in Oct-Nov; B2 is outside the range and gets nothing.
+    assert deltas == {"A1": {OCT: pytest.approx(20.0), NOV: pytest.approx(40.0)}}
+
+
 def test_a_block_for_every_sku_reaches_each_of_them():
     deltas = block_deltas(CURRENT, [_block(start_month=OCT, end_month=OCT)])
 

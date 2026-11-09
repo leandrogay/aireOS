@@ -5,6 +5,7 @@ import { Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { primaryButtonClass, secondaryButtonClass } from '@/components/ui/formStyles';
+import SkuRangePicker from '@/components/scenario/SkuRangePicker';
 import UpliftField from '@/components/scenario/UpliftField';
 import { formatMonthLabel } from '@/app/utils/forecastView';
 import { retailerLabel } from '@/app/utils/retailerLabel';
@@ -39,7 +40,7 @@ function ImpactNote({ block, impact }) {
     return 'Inactive: this block is not on the Simulated line. Make it active in the list to see its impact.';
   }
   if (!impact) {
-    return 'Not in current chart view: show this block\'s customer, SKU and months on the chart to see its impact.';
+    return 'Not in current chart view: show this block\'s customer, SKU range and months on the chart to see its impact.';
   }
   const pctOfCurrent = impact.baseUnits ? Math.round((impact.deltaUnits / impact.baseUnits) * 100) : null;
   const removes = impact.deltaUnits < 0;
@@ -85,7 +86,7 @@ function unitsWarning(block, impact) {
  *   saving: boolean,
  *   saveError: string | null,
  *   customerOptions: string[],
- *   productOptions: string[],
+ *   skuRangeOptions: string[],
  *   months: string[],
  *   impact: { baseUnits: number, deltaUnits: number, months: string[] } | undefined,
  * }} props
@@ -100,7 +101,7 @@ export default function BlockEditor({
   saving,
   saveError,
   customerOptions,
-  productOptions,
+  skuRangeOptions,
   months,
   impact,
 }) {
@@ -149,20 +150,16 @@ export default function BlockEditor({
           </select>
           <FieldError message={errors.customer} />
         </div>
-        <div>
-          <label className={labelClass} htmlFor="block-sku">SKU</label>
-          <select
-            id="block-sku"
-            value={block.sku}
-            onChange={(event) => onChange({ sku: event.target.value })}
-            className={fieldClass}
-          >
-            <option value="">All SKUs</option>
-            {productOptions.map((name) => (
-              <option key={name} value={name}>{name}</option>
-            ))}
-          </select>
-        </div>
+        <SkuRangePicker
+          id="block-sku-ranges"
+          label="SKU ranges"
+          values={block.skuRanges ?? []}
+          options={skuRangeOptions}
+          legacySku={block.sku}
+          legacyNoun="block"
+          // Ticking ranges moves an older one-SKU block onto them.
+          onChange={(skuRanges) => onChange({ skuRanges, sku: skuRanges.length ? '' : block.sku })}
+        />
       </div>
 
       <UpliftField

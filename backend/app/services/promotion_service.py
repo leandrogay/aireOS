@@ -540,12 +540,14 @@ def list_forecast_promotions(
     customer_name: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
+    sku_range: str | None = None,
 ) -> list[dict]:
     """Promos that apply to the Forecast page for one customer x SKU window.
 
     A promo is included when its dates overlap the requested range, it is
-    linked to the chosen product_name (or any product when that filter is
-    empty), and it has at least one store on {customer}_offline or
+    linked to the chosen product_name and/or a SKU of the chosen sku_range
+    (or any product when those filters are empty), and it has at least one
+    store on {customer}_offline or
     {customer}_online. Forecast customer is the family name (fairprice),
     not the channel.
     """
@@ -573,6 +575,21 @@ def list_forecast_promotions(
             """
         )
         params["product_name"] = product_name
+    if sku_range:
+        where_clauses.append(
+            """
+            EXISTS (
+                SELECT 1
+                FROM promotion_skus ps
+                JOIN skus sk
+                    ON sk.sku = ps.sku
+                WHERE
+                    ps.promotion_id = p.promotion_id
+                    AND sk.sku_range = :sku_range
+            )
+            """
+        )
+        params["sku_range"] = sku_range
     if customer_name:
         where_clauses.append(
             """

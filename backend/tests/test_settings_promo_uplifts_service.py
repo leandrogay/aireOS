@@ -406,14 +406,24 @@ def test_the_most_specific_scope_wins(monkeypatch):
     db = FakePromoUpliftDatabase()
     db.add_uplift("pct_off_30", "30% Off", "30", "6", scope="customer", customer_id=1, source="estimate")
     db.add_uplift("pct_off_30", "30% Off", "30", "7", scope="range", customer_id=1, sku_range="Pants", source="estimate")
-    db.add_uplift("pct_off_30", "30% Off", "30", "8", scope="sku", customer_id=1, sku="SKU-L", source="estimate")
     db.add_uplift("pct_off_30", "30% Off", "30", "9", scope="customer", customer_id=2, source="estimate")
     _install(monkeypatch, db)
 
-    assert _uplift_of(service.resolve_uplifts("fairprice", "Aire Pants L"), "pct_off_30") == 8.0
+    assert _uplift_of(service.resolve_uplifts("fairprice", sku_range="Pants"), "pct_off_30") == 7.0
+    assert _uplift_of(service.resolve_uplifts("fairprice", "Aire Pants L"), "pct_off_30") == 7.0
     assert _uplift_of(service.resolve_uplifts("fairprice", "Unknown product"), "pct_off_30") == 6.0
     assert _uplift_of(service.resolve_uplifts("fairprice"), "pct_off_30") == 6.0
     assert _uplift_of(service.resolve_uplifts("giant"), "pct_off_30") == 9.0
+
+
+def test_a_sku_level_value_saved_before_ranges_no_longer_applies(monkeypatch):
+    db = FakePromoUpliftDatabase()
+    db.add_uplift("pct_off_30", "30% Off", "30", "7", scope="range", customer_id=1, sku_range="Pants", source="estimate")
+    db.add_uplift("pct_off_30", "30% Off", "30", "8", scope="sku", customer_id=1, sku="SKU-L", source="estimate")
+    _install(monkeypatch, db)
+
+    # The product's range value, not its old SKU-level 8.
+    assert _uplift_of(service.resolve_uplifts("fairprice", "Aire Pants L"), "pct_off_30") == 7.0
 
 
 def test_all_skus_lists_only_the_products_whose_value_differs(monkeypatch):
@@ -427,10 +437,23 @@ def test_all_skus_lists_only_the_products_whose_value_differs(monkeypatch):
     result = service.resolve_uplifts("fairprice")
 
     assert _uplift_of(result, "pct_off_30") == 4.0
+    # Every SKU of a range follows the range; the old SKU-level b1g1 is ignored.
     assert result["product_uplifts"] == {
-        "Aire Pants L": {"pct_off_30": 7.0, "b1g1": 15.0},
+        "Aire Pants L": {"pct_off_30": 7.0},
         "Aire Pants XL": {"pct_off_30": 7.0},
     }
+
+
+def test_all_skus_lists_the_ranges_whose_value_differs(monkeypatch):
+    db = FakePromoUpliftDatabase()
+    db.skus["Aire Tape M"] = {"sku": "SKU-TM", "sku_range": "Tape"}
+    db.add_uplift("pct_off_30", "30% Off", "30", "7", scope="range", customer_id=1, sku_range="Pants", source="estimate")
+    _install(monkeypatch, db)
+
+    result = service.resolve_uplifts("fairprice")
+
+    assert result["range_uplifts"] == {"Pants": {"pct_off_30": 7.0}}
+    assert result["product_ranges"]["Aire Tape M"] == "Tape"
 
 
 def test_all_skus_lists_no_products_when_none_differ(monkeypatch):

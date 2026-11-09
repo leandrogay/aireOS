@@ -10,11 +10,19 @@ from datetime import date
 # - pct: that % of the Current forecast, in every month of the block.
 # - units: the units spread over the block's months and SKUs in proportion to
 #   their Current forecast (evenly when it is 0 everywhere).
-# - Only months with a Current forecast change; a block for every SKU has
-#   sku None.
+# - Only months with a Current forecast change. A block reaches the SKUs of
+#   its range (range_skus, the codes of its sku_range), or its one sku (blocks
+#   saved before ranges), or every SKU when both are None.
 # - Each block is measured against Current alone, so blocks simply add up,
 #   and a decrease never takes a SKU x month below 0: that cell's decreases
 #   are all scaled down by the same share (floorAtZero).
+
+
+def _reaches(block: dict, sku: str) -> bool:
+    range_skus = block.get("range_skus")
+    if range_skus is not None:
+        return sku in range_skus
+    return block.get("sku") is None or block["sku"] == sku
 
 
 def _cells(current: dict[str, dict[date, float]], block: dict) -> list[tuple[str, date]]:
@@ -23,7 +31,7 @@ def _cells(current: dict[str, dict[date, float]], block: dict) -> list[tuple[str
     return [
         (sku, month)
         for sku, months in current.items()
-        if block["sku"] is None or block["sku"] == sku
+        if _reaches(block, sku)
         for month in months
         if block["start_month"] <= month <= block["end_month"]
     ]
@@ -61,7 +69,8 @@ def block_deltas(
     """
     What the blocks add to the Current forecast, as {sku: {month: units}}
     (negative for a decrease). `current` is {sku: {month: units}} for one
-    customer; each block has sku (None = every SKU), uplift_mode ('pct' or
+    customer; each block has range_skus (the codes of its SKU range) or sku
+    (one SKU), both None = every SKU, uplift_mode ('pct' or
     'units'), uplift_value (signed) and start_month / end_month (first of the
     month). A cell no block reaches is left out.
     """

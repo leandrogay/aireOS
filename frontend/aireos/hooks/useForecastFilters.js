@@ -28,6 +28,9 @@ export default function useForecastFilters({
 } = {}) {
   const { data: options, loading: optionsLoading, error } = useForecastOptions();
   const [productName, setProductName] = useState('');
+  // The Scenario builder filters by SKU range instead of SKU; the Forecast
+  // page never sets it.
+  const [skuRange, setSkuRange] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -56,11 +59,16 @@ export default function useForecastFilters({
   // freshly loaded page that hasn't been touched yet.
   const defaultDateRange = defaultRange(bounds);
   const canClear = Boolean(
-    productName || customerName || startDate !== defaultDateRange.start || endDate !== defaultDateRange.end
+    productName ||
+      skuRange ||
+      customerName ||
+      startDate !== defaultDateRange.start ||
+      endDate !== defaultDateRange.end
   );
 
   function clear() {
     setProductName('');
+    setSkuRange('');
     setCustomerName('');
     setStartDate(defaultDateRange.start);
     setEndDate(defaultDateRange.end);
@@ -69,6 +77,8 @@ export default function useForecastFilters({
   return {
     productName,
     setProductName,
+    skuRange,
+    setSkuRange,
     customerName,
     setCustomerName,
     startDate,
@@ -76,6 +86,7 @@ export default function useForecastFilters({
     endDate,
     setEndDate,
     productOptions: options?.products ?? [],
+    skuRangeOptions: options?.skuRanges ?? [],
     customerOptions: options?.customers ?? [],
     bounds,
     ready,

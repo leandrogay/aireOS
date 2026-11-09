@@ -9,13 +9,14 @@ import ForecastFilters from '@/components/forecast/ForecastFilters';
 import { mixCaption } from '@/components/forecast/ForecastYearTotals';
 import BlockTable from '@/components/scenario/BlockTable';
 import BuildingBlocksSection from '@/components/scenario/BuildingBlocksSection';
+import GrowthControl from '@/components/scenario/GrowthControl';
 import MonthlyPlan from '@/components/scenario/MonthlyPlan';
 import PromotionsSection from '@/components/scenario/PromotionsSection';
 import ScenarioBuilderSkeleton from '@/components/scenario/ScenarioBuilderSkeleton';
 import ScenarioPanel from '@/components/scenario/ScenarioPanel';
 import ScenarioTotals from '@/components/scenario/ScenarioTotals';
 import ScenarioYearComparison from '@/components/scenario/ScenarioYearComparison';
-import FrozenBaselinePanel from '@/components/scenario/FrozenBaselinePanel';
+import FrozenBaselinePanel, { COMPOSITION_LAYERS } from '@/components/scenario/FrozenBaselinePanel';
 import { nextYearDateRange } from '@/app/utils/dateRange';
 import { FORECAST_TIER_OPTIONS } from '@/app/utils/forecastLineText';
 import { DEFAULT_TIER } from '@/app/utils/forecastTiers';
@@ -48,9 +49,11 @@ import {
 } from '@/app/utils/scenarioPromotions';
 import {
   activeScenarioBlocks,
+  blockScopeLabel,
   hasUnsavedChanges,
   updateScenarioBlock,
 } from '@/app/utils/scenarioBlocks';
+import { growthRanges, growthYears, isGrowthBlock, skusWithoutRange } from '@/app/utils/scenarioGrowth';
 import { SCENARIO_SOURCES } from '@/app/utils/scenarioSources';
 import useForecastFilters from '@/hooks/useForecastFilters';
 import useForecastView from '@/hooks/useForecastView';
@@ -82,6 +85,8 @@ function itemInView(item, filters, first, last) {
   if (!item.customer || !item.startMonth || !item.endMonth) return false;
   if (filters.customerName && filters.customerName !== item.customer) return false;
   if (filters.productName && item.sku && filters.productName !== item.sku) return false;
+  // An all-ranges item counts for any range in view; a ranges item only for its own.
+  if (filters.skuRange && item.skuRanges?.length && !item.skuRanges.includes(filters.skuRange)) return false;
   return item.startMonth <= last && item.endMonth >= first;
 }
 
@@ -112,10 +117,12 @@ function itemsInMonths(monthCells, months, itemInfo, { activeItems, filters, fir
  * impact summary and a Current-vs-Simulated table; saved blocks are listed
  * in a table under it; the panel on the right creates and edits them.
  *
- * Always built on Tier 0 (the baseline: last year x growth and the recent
- * run-rate, no promotions), so a planned promotion is measured against the
- * customer's usual discount and never against a promotion the model already
- * holds. Opens on next year, the year being planned.
+ * Always built on Tier 0 (the baseline: half the same month last year, half
+ * the recent run-rate, no growth and no promotions), so a planned promotion
+ * is measured against the customer's usual discount and never against a
+ * promotion the model already holds. Opens on next year, the year being
+ * planned; the budget's growth (next year = Tier 0 x (1 + g)) is set in the
+ * Breakdown tab and saved as a growth block (scenarioGrowth.js).
  *
  * Shared file: it owns the state and the layout slots. Everything it shows
  * is calculated by the pure scenario utils from the forecast rows and the
@@ -124,7 +131,9 @@ function itemsInMonths(monthCells, months, itemInfo, { activeItems, filters, fir
  */
 export default function ScenarioBuilder() {
   const filters = useForecastFilters({ defaultRange: nextYearDateRange, sessionKey: SCENARIO_DATE_SESSION_KEY });
-  const { productName, customerName, startDate, endDate, ready } = filters;
+  // Planned by SKU range, not SKU: the filter, blocks and growth all follow
+  // ranges. productName stays '' here (promotions still pick one SKU).
+  const { productName, skuRange, customerName, startDate, endDate, ready } = filters;
   const [selectedPromoTypes, setSelectedPromoTypes] = useState(ALL_PROMO_TYPE_VALUES);
   const [selectedPackTypes, setSelectedPackTypes] = useState(ALL_PACK_TYPE_VALUES);
   const [visibleSeries, setVisibleSeries] = useState({
@@ -132,7 +141,7 @@ export default function ScenarioBuilder() {
     [SIMULATED_SERIES.key]: true,
   });
   const [panelCollapsed, setPanelCollapsed] = useState(false);
-  const view = useForecastView({ ready, productName, customerName, startDate, endDate, tier: DEFAULT_TIER });
+  const view = useForecastView({ ready, productName, skuRange, customerName, startDate, endDate, tier: DEFAULT_TIER });
   const { rows, actuals, promotions, freshness } = view.data;
   const scenarioBlocks = useScenarioBlocks();
   // Planned promotions: saved like blocks (hooks/useScenarioPromotions.js).
@@ -145,11 +154,9 @@ export default function ScenarioBuilder() {
   const [actionError, setActionError] = useState(null);
   // Keyed by the chart's composition layer keys (ForecastChart reads
   // compositionVisible[layer.key]), so the Breakdown toggles match them.
-  const [compositionVisible, setCompositionVisible] = useState({
-    tier0Layer: true,
-    blocksLayer: true,
-    promotionsLayer: true,
-  });
+  const [compositionVisible, setCompositionVisible] = useState(
+    Object.fromEntries(COMPOSITION_LAYERS.map((layer) => [layer.key, true]))
+  );
   const expandedRows = useExpandedRows();
   const deletion = useConfirmAction({ onConfirm: deleteSaved });
 
@@ -166,6 +173,7 @@ export default function ScenarioBuilder() {
   const { years, loading: yearTotalsLoading } = useForecastYearTotals({
     ready,
     productName,
+    skuRange,
     customerName,
     startDate,
     endDate,
@@ -198,26 +206,41 @@ export default function ScenarioBuilder() {
   const basePoints = buildMonthlyPoints(rows, actuals, 'units', { singleSeries });
 
   // Only switched-on blocks and promotions count, on the chart and in the tables.
-  const allBlocks = scenarioBlocks.blocks;
+  // Growths are blocks too (kind 'growth'), edited in the Breakdown tab and
+  // never listed with the building blocks.
+  const allBlocks = scenarioBlocks.blocks.filter((block) => !isGrowthBlock(block));
+  const growthBlocks = scenarioBlocks.blocks.filter(isGrowthBlock);
   const activePromotions = activeScenarioPromotions(scenarioPromotions.promotions);
-  const counted = { blocks: activeScenarioBlocks(allBlocks), promotions: activePromotions };
+  const counted = {
+    growth: activeScenarioBlocks(growthBlocks),
+    blocks: activeScenarioBlocks(allBlocks),
+    promotions: activePromotions,
+  };
   const itemInfo = new Map([
+    ...counted.growth.map((block) => [block.id, { name: block.name, kind: 'growth', state: itemState(block, false) }]),
     ...counted.blocks.map((block) => [block.id, { name: block.name, kind: 'block', state: itemState(block, false) }]),
     ...activePromotions.map((promotion) => [
       promotion.id,
       { name: promotion.mechanicLabel, kind: 'promotion', state: itemState(promotion, true) },
     ]),
   ]);
-  const activeItems = [...counted.blocks, ...activePromotions];
+  const activeItems = [...counted.growth, ...counted.blocks, ...activePromotions];
   const { cells, byMonth, byItem } = simulate(rows, counted, SCENARIO_SOURCES, chartView(filters, splitBasis.basis));
   // Nothing simulated until a switched-on item changes something in view:
   // no Simulated line, legend entry or table columns before that.
   const hasSimulated = byItem.size > 0;
   const monthCells = cellsByMonth(cells);
-  const bakedIn = scenarioFixturesEnabled() ? SCENARIO_FIXTURE_BAKED_IN_DISCOUNTS : null;
+  // Discounts are per customer x SKU range, so only one picked pair has them
+  // (fixtures only until the pipeline saves them).
+  const rangePicked = Boolean(customerName && skuRange);
+  const fixtureDiscounts = scenarioFixturesEnabled() ? SCENARIO_FIXTURE_BAKED_IN_DISCOUNTS : null;
+  const bakedIn =
+    fixtureDiscounts && fixtureDiscounts.customer_name === customerName && fixtureDiscounts.sku_range === skuRange
+      ? fixtureDiscounts
+      : null;
   // Promotions have no name of their own; their mechanic stands in.
   const names = new Map([
-    ...allBlocks.map((block) => [block.id, block.name]),
+    ...scenarioBlocks.blocks.map((block) => [block.id, block.name]),
     ...scenarioPromotions.promotions.map((promotion) => [promotion.id, promotion.mechanicLabel]),
   ]);
   const monthItems = new Map(
@@ -235,6 +258,9 @@ export default function ScenarioBuilder() {
     const current = point.current ?? null;
     if (current == null) return point;
     const monthTotals = [...(monthCells.get(point.month_year)?.values() ?? [])];
+    const growth = monthTotals
+      .filter((item) => item.source === 'growth')
+      .reduce((sum, item) => sum + item.deltaUnits, 0);
     const blocks = monthTotals
       .filter((item) => item.source === 'blocks')
       .reduce((sum, item) => sum + item.deltaUnits, 0);
@@ -244,6 +270,7 @@ export default function ScenarioBuilder() {
     return {
       ...point,
       tier0Layer: current,
+      growthLayer: growth,
       blocksLayer: blocks,
       promotionsLayer: promotions,
     };
@@ -388,10 +415,8 @@ export default function ScenarioBuilder() {
 
   const sectionProps = {
     customerOptions: filters.customerOptions,
-    productOptions: filters.productOptions,
     months,
     defaultCustomer: customerName,
-    defaultSku: productName,
     impacts: byItem,
   };
 
@@ -423,9 +448,9 @@ export default function ScenarioBuilder() {
             toolbar={
               <ForecastFilters
                 variant="toolbar"
-                productName={productName}
-                onProductNameChange={filters.setProductName}
-                productOptions={filters.productOptions}
+                skuRange={skuRange}
+                onSkuRangeChange={filters.setSkuRange}
+                skuRangeOptions={filters.skuRangeOptions}
                 customerName={customerName}
                 onCustomerNameChange={filters.setCustomerName}
                 customerOptions={filters.customerOptions}
@@ -452,6 +477,7 @@ export default function ScenarioBuilder() {
                   <MonthlyPlan
                     ready={ready}
                     productName={productName}
+                    skuRange={skuRange}
                     customerName={customerName}
                     startDate={startDate}
                     endDate={endDate}
@@ -460,7 +486,7 @@ export default function ScenarioBuilder() {
                     byMonth={byMonth}
                     monthItems={monthItems}
                     onOpenItem={openItem}
-                    scope={`${customerText} · ${productName || 'All SKUs'}`}
+                    scope={`${customerText} · ${skuRange || 'All SKU ranges'}`}
                   />
                 }
               />
@@ -482,11 +508,9 @@ export default function ScenarioBuilder() {
             scenario={{
               ...scenario,
               compositionVisible,
-              composition: [
-                  { key: 'tier0Layer', color: '#3A4369', opacity: 0.18 },
-                  { key: 'blocksLayer', color: '#8E7CC3', opacity: 0.35 },
-                  { key: 'promotionsLayer', color: '#D68B6D', opacity: 0.35 },
-              ],
+              // Stacked bottom to top: Tier 0, then what growth, blocks and
+              // promotions add (FrozenBaselinePanel's COMPOSITION_LAYERS).
+              composition: COMPOSITION_LAYERS.map(({ key, color, opacity }) => ({ key, color, opacity })),
             }}
           />
 
@@ -506,6 +530,24 @@ export default function ScenarioBuilder() {
               rows={rows}
               monthItems={monthItems}
               bakedIn={bakedIn}
+              rangePicked={rangePicked}
+              growthSection={
+                scenarioBlocks.loading ? (
+                  <p className="text-xs text-deep-violet-blue/60">Loading growth…</p>
+                ) : (
+                  <GrowthControl
+                    blocks={growthBlocks}
+                    customer={customerName}
+                    years={growthYears(months)}
+                    ranges={growthRanges(rows, customerName)}
+                    unrangedSkus={skusWithoutRange(rows, customerName)}
+                    impacts={byItem}
+                    onChange={scenarioBlocks.setBlocks}
+                    onSave={scenarioBlocks.saveBlock}
+                    onRemove={scenarioBlocks.deleteBlock}
+                  />
+                )
+              }
               compositionVisible={compositionVisible}
               onToggleComposition={(key) =>
                 setCompositionVisible((current) => ({ ...current, [key]: !current[key] }))
@@ -531,6 +573,8 @@ export default function ScenarioBuilder() {
                 onToggleSaved={toggleSaved}
                 togglingIds={togglingIds}
                 closedIds={closedIds}
+                skuRangeOptions={filters.skuRangeOptions}
+                defaultSkuRange={skuRange}
                 {...sectionProps}
               />
             )
@@ -545,6 +589,8 @@ export default function ScenarioBuilder() {
                 onSave={scenarioPromotions.savePromotion}
                 onDelete={scenarioPromotions.deletePromotion}
                 rows={rows}
+                skuRangeOptions={filters.skuRangeOptions}
+                defaultSkuRange={skuRange}
                 {...sectionProps}
               />
             )
@@ -581,7 +627,7 @@ export default function ScenarioBuilder() {
                 { label: 'Block', value: deletion.target.name },
                 {
                   label: 'Applies to',
-                  value: `${retailerLabel(deletion.target.customer)} · ${deletion.target.sku || 'All SKUs'}`,
+                  value: `${retailerLabel(deletion.target.customer)} · ${blockScopeLabel(deletion.target)}`,
                 },
                 {
                   label: 'Months',

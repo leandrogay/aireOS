@@ -27,12 +27,13 @@ DEFAULT_FORECAST_TIER = "tier0"
 
 # Named explicitly, never SELECT *, so columns the pipeline adds later can't
 # change the API's shape. All from the view except customer_name /
-# product_name, which come from the catalog joins below.
+# product_name / sku_range, which come from the catalog joins below.
 FORECAST_OUTPUT_COLUMNS = [
     "customer_id",
     "customer_name",
     "sku",
     "product_name",
+    "sku_range",
     "month_year",
     "tier",
     "tier_label",
@@ -65,8 +66,8 @@ FORECAST_OUTPUT_COLUMNS = [
     "actual_status",
     "output_built_at",
 ]
-# The two above come from the catalog joins, not the output table.
-_JOINED_NAME_COLUMNS = ("customer_name", "product_name")
+# These come from the catalog joins, not the output table.
+_JOINED_NAME_COLUMNS = ("customer_name", "product_name", "sku_range")
 # The output view carries the 80% range for Current only. Previous's comes
 # from its own run row in aire_forecasting_runs: the row the view took
 # forecast_previous from (same series, month and model, made at
@@ -218,6 +219,7 @@ def _forecast_output_row(record: dict) -> dict:
         "customer_name": _json_str(record.get("customer_name")),
         "sku": _json_str(record.get("sku")),
         "product_name": _json_str(record.get("product_name")),
+        "sku_range": _json_str(record.get("sku_range")),
         "month_year": _iso_date(record.get("month_year")),
         "tier": _json_str(record.get("tier")),
         "tier_label": _json_str(record.get("tier_label")),
@@ -334,7 +336,7 @@ def _forecast_dataset() -> str:
 # first, from the same catalog copies the rows are named from.
 # ============================================================
 
-def _read_forecast_scope(product_name: str | None, customer_name: str | None) -> dict:
+def _read_forecast_scope(product_name: str | None, customer_name: str | None, sku_range: str | None = None) -> dict:
     parts = []
     query_parameters = []
     if customer_name:
@@ -349,27 +351,43 @@ def _read_forecast_scope(product_name: str | None, customer_name: str | None) ->
             "WHERE product_name = @product_name) AS skus"
         )
         query_parameters.append(bigquery.ScalarQueryParameter("product_name", "STRING", product_name))
+    if sku_range:
+        parts.append(
+            f"ARRAY(SELECT sku FROM `{_catalog_dataset()}.public_skus` "
+            "WHERE sku_range = @sku_range) AS range_skus"
+        )
+        query_parameters.append(bigquery.ScalarQueryParameter("sku_range", "STRING", sku_range))
     df = run_query(f"SELECT {', '.join(parts)}", query_parameters).to_dataframe()
     record = df.iloc[0].to_dict() if not df.empty else {}
+    product_skus = {str(value) for value in record.get("skus", [])} if product_name else None
+    range_skus = {str(value) for value in record.get("range_skus", [])} if sku_range else None
+    # Both given: the product's SKUs that are in the range.
+    skus = product_skus if range_skus is None else range_skus if product_skus is None else product_skus & range_skus
     return {
         "customer_ids": [int(value) for value in record.get("customer_ids", [])] if customer_name else None,
-        "skus": sorted(str(value) for value in record.get("skus", [])) if product_name else None,
+        "skus": sorted(skus) if skus is not None else None,
     }
 
 
-def resolve_forecast_scope(product_name: str | None = None, customer_name: str | None = None) -> dict:
+def resolve_forecast_scope(
+    product_name: str | None = None,
+    customer_name: str | None = None,
+    sku_range: str | None = None,
+) -> dict:
     """{customer_ids, skus} for the names a forecast read filters by.
 
     None for a name not given (every customer / SKU); an empty list for a
     name that matches nothing, so the caller can answer without querying.
+    A sku_range (the Scenario builder's filter) is every SKU of that range.
     """
     product_name = product_name or None
     customer_name = customer_name or None
-    if product_name is None and customer_name is None:
+    sku_range = sku_range or None
+    if product_name is None and customer_name is None and sku_range is None:
         return {"customer_ids": None, "skus": None}
     return cached_read(
-        ("forecast_scope", product_name, customer_name),
-        lambda: _read_forecast_scope(product_name, customer_name),
+        ("forecast_scope", product_name, customer_name, sku_range),
+        lambda: _read_forecast_scope(product_name, customer_name, sku_range),
     )
 
 
@@ -428,7 +446,8 @@ def _read_forecast_output_rows(
           {", ".join(f"output.{column}" for column in _OUTPUT_TABLE_COLUMNS)},
           {_previous_run_select()},
           customer.customer_name,
-          product.product_name
+          product.product_name,
+          product.sku_range
         FROM `{BQ_FORECAST_OUTPUT_VIEW}` AS output
         JOIN `{_catalog_dataset()}.public_customers` AS customer
           ON customer.customer_id = output.customer_id
@@ -456,6 +475,7 @@ def get_forecast_output_rows(
     start_date: str | None = None,
     end_date: str | None = None,
     tier: str | None = None,
+    sku_range: str | None = None,
 ) -> list[dict]:
     """Forecast rows from aire_forecasting_output, one per customer x SKU x month x tier.
 
@@ -468,7 +488,7 @@ def get_forecast_output_rows(
         raise ValueError(f"tier must be one of {', '.join(FORECAST_TIERS)}")
     _validate_date(start_date, "start_date")
     _validate_date(end_date, "end_date")
-    scope = resolve_forecast_scope(product_name, customer_name)
+    scope = resolve_forecast_scope(product_name, customer_name, sku_range)
     if _scope_is_empty(scope):
         return []
     key = (
@@ -618,6 +638,7 @@ def get_forecast_alternatives(
     customer_name: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
+    sku_range: str | None = None,
 ) -> list[dict]:
     """
     For every customer x SKU x month whose Current line comes from
@@ -627,7 +648,7 @@ def get_forecast_alternatives(
     """
     _validate_date(start_date, "start_date")
     _validate_date(end_date, "end_date")
-    scope = resolve_forecast_scope(product_name, customer_name)
+    scope = resolve_forecast_scope(product_name, customer_name, sku_range)
     if _scope_is_empty(scope):
         return []
     key = ("forecast_alternatives", _scope_key(scope), start_date or None, end_date or None)
@@ -681,6 +702,7 @@ def _read_forecast_alternatives(scope: dict, start_date: str | None, end_date: s
 def get_current_horizon(
     product_name: str | None = None,
     customer_name: str | None = None,
+    sku_range: str | None = None,
 ) -> list[dict]:
     """Cartons on each customer x SKU's whole Current line, per tier.
 
@@ -690,7 +712,7 @@ def get_current_horizon(
     so it is read here with no date filter. One row per tier x customer x
     SKU, priced by forecast_service.
     """
-    scope = resolve_forecast_scope(product_name, customer_name)
+    scope = resolve_forecast_scope(product_name, customer_name, sku_range)
     if _scope_is_empty(scope):
         return []
     rows = cached_read(("current_horizon", _scope_key(scope)), lambda: _read_current_horizon(scope))
@@ -772,12 +794,21 @@ def get_forecast_actuals(
     customer_name: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
+    sku_range: str | None = None,
 ) -> list[dict]:
     # period_start is the first of the month in v_customer_monthly_sales,
     # so it lines up with forecast month_year after we alias it.
     where_clauses, query_parameters = _name_and_date_filters(
         product_name, customer_name, start_date, end_date, "period_start"
     )
+    if sku_range:
+        # The same SKU codes the forecast rows are read for, so actuals and
+        # forecast always cover one set of SKUs.
+        range_skus = resolve_forecast_scope(sku_range=sku_range)["skus"]
+        if not range_skus:
+            return []
+        where_clauses.append("sku IN UNNEST(@range_skus)")
+        query_parameters.append(bigquery.ArrayQueryParameter("range_skus", "STRING", range_skus))
 
     query = f"""
         SELECT
@@ -795,7 +826,14 @@ def get_forecast_actuals(
     # Not cached: actuals move when sales load, not when the forecast is
     # rebuilt. Overlapping identical reads still share one query.
     df = forecast_cache.single_flight(
-        ("forecast_actuals", product_name or None, customer_name or None, start_date or None, end_date or None),
+        (
+            "forecast_actuals",
+            product_name or None,
+            customer_name or None,
+            start_date or None,
+            end_date or None,
+            sku_range or None,
+        ),
         lambda: run_query(query, query_parameters).to_dataframe(),
     )
     if df.empty:
@@ -810,7 +848,12 @@ def get_forecast_options() -> dict:
     only changes when the table is rebuilt).
     """
     options = cached_read(("forecast_options",), _read_forecast_options)
-    return {**options, "products": list(options["products"]), "customers": list(options["customers"])}
+    return {
+        **options,
+        "products": list(options["products"]),
+        "sku_ranges": list(options.get("sku_ranges", [])),
+        "customers": list(options["customers"]),
+    }
 
 
 def _read_forecast_options() -> dict:
@@ -823,6 +866,7 @@ def _read_forecast_options() -> dict:
         WITH options AS (
           SELECT
             product.product_name,
+            product.sku_range,
             customer.customer_name,
             output.month_year
           FROM `{BQ_FORECAST_OUTPUT_VIEW}` AS output
@@ -833,12 +877,14 @@ def _read_forecast_options() -> dict:
           UNION ALL
           SELECT
             product_name,
+            sku_range,
             customer_name,
             period_start AS month_year
           FROM `{BQ_MONTHLY_SALES_VIEW}`
         )
         SELECT
           product_name,
+          ANY_VALUE(sku_range) AS sku_range,
           customer_name,
           MIN(month_year) AS first_month,
           MAX(month_year) AS last_month
@@ -849,6 +895,7 @@ def _read_forecast_options() -> dict:
     if df.empty:
         return {
             "products": [],
+            "sku_ranges": [],
             "customers": [],
             "start_date": None,
             "end_date": None,
@@ -858,6 +905,10 @@ def _read_forecast_options() -> dict:
     return {
         "products": sorted(
             {name for name in df["product_name"].dropna().tolist() if name}
+        ),
+        # The Scenario builder filters and plans by SKU range.
+        "sku_ranges": sorted(
+            {name for name in df.get("sku_range", pd.Series(dtype=object)).dropna().tolist() if name}
         ),
         "customers": sorted(
             {name for name in df["customer_name"].dropna().tolist() if name}

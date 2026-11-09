@@ -680,7 +680,9 @@ def _applies(row: dict, customer_id: int, sku: str | None, sku_range: str | None
         return True
     if row["scope"] == "range":
         return sku_range is not None and row["sku_range"] == sku_range
-    return sku is not None and row["sku"] == sku
+    # A SKU-level row (saved before uplifts followed SKU ranges) is kept in
+    # the history but no longer applies: promotions are planned per range.
+    return False
 
 
 def _pick_uplifts(
@@ -711,12 +713,13 @@ def _pick_uplifts(
     return uplifts
 
 
-def resolve_uplifts(customer_name: str, product_name: str | None = None) -> dict:
+def resolve_uplifts(customer_name: str, product_name: str | None = None, sku_range: str | None = None) -> dict:
     """
-    The uplift of every mechanic for one customer and product (None = all
-    SKUs), as the Scenario builder uses it: the most specific current row
-    (SKU, range, customer, all), with placeholder values recalculated from
-    the product's range anchor (the customer's for all SKUs).
+    The uplift of every mechanic for one customer and SKU range (the
+    Scenario builder plans promotions per range; product_name, one SKU, only
+    for promotions saved before that; both None = all SKUs): the most
+    specific current row (range, customer, all), with placeholder values
+    recalculated from the range's anchor (the customer's for all SKUs).
 
     For all SKUs, `product_uplifts` also lists the products whose own value
     differs from the customer's, as {product_name: {mechanic_key:
@@ -729,9 +732,16 @@ def resolve_uplifts(customer_name: str, product_name: str | None = None) -> dict
     with common.read_connection() as conn:
         customer = _customer_by_name(conn, customer_name)
         anchor = _anchors(conn, customer["customer_id"], with_recommendations=False)[0]
-        product = _sku_for_product(conn, product_name) if product_name else {"sku": None, "sku_range": None}
+        if sku_range:
+            product = {"sku": None, "sku_range": sku_range}
+        elif product_name:
+            product = _sku_for_product(conn, product_name)
+        else:
+            product = {"sku": None, "sku_range": None}
         current = _current_uplifts(_uplift_rows(conn))
-        products = _products(conn) if product_name is None else []
+        all_skus = product_name is None and sku_range is None
+        products = _products(conn) if all_skus else []
+        ranges = _ranges(conn) if all_skus else []
 
     customer_id = customer["customer_id"]
     uplifts = _pick_uplifts(
@@ -755,13 +765,36 @@ def resolve_uplifts(customer_name: str, product_name: str | None = None) -> dict
         if differing:
             product_uplifts[item["product_name"]] = differing
 
+    # The same per SKU range, which is how the Scenario builder plans
+    # promotions: a range promotion takes its range's values and anchor.
+    range_uplifts: dict[str, dict[str, float]] = {}
+    range_anchors: dict[str, float] = {}
+    for range_name in ranges:
+        range_anchor = _anchor_pct_for(anchor, range_name)
+        if range_anchor != customer_anchor:
+            range_anchors[range_name] = _num(range_anchor)
+        own = _pick_uplifts(current, customer_id, None, range_name, range_anchor)
+        differing = {
+            view["mechanic_key"]: view["uplift_pct"]
+            for view in own
+            if view["uplift_pct"] != customer_values.get(view["mechanic_key"])
+        }
+        if differing:
+            range_uplifts[range_name] = differing
+
     return {
         "customer_name": customer["customer_name"],
         "product_name": product_name,
+        "sku_range": product["sku_range"],
         "anchor": anchor,
         "uplifts": uplifts,
         "product_uplifts": product_uplifts,
         "product_anchors": product_anchors,
+        "range_uplifts": range_uplifts,
+        "range_anchors": range_anchors,
+        # Which range each product is in, so a promotion on some ranges keeps
+        # only those products' own values.
+        "product_ranges": {item["product_name"]: item["sku_range"] for item in products if item["sku_range"]},
     }
 
 

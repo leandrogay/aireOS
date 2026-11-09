@@ -14,17 +14,21 @@ CUSTOMERS = {"fairprice": 1, "sheng_siong": 2}
 
 # product_name is not unique in skus: "Old Pants" has an archived twin.
 SKUS = [
-    {"sku": "SKU-A", "product_name": "Comfort Pants M", "is_active": True},
-    {"sku": "SKU-B", "product_name": "Old Pants", "is_active": True},
-    {"sku": "SKU-B-OLD", "product_name": "Old Pants", "is_active": False},
-    {"sku": "SKU-C", "product_name": "Twin Pants", "is_active": True},
-    {"sku": "SKU-D", "product_name": "Twin Pants", "is_active": True},
+    {"sku": "SKU-A", "product_name": "Comfort Pants M", "is_active": True, "sku_range": "Comfort Pants"},
+    {"sku": "SKU-B", "product_name": "Old Pants", "is_active": True, "sku_range": None},
+    {"sku": "SKU-B-OLD", "product_name": "Old Pants", "is_active": False, "sku_range": None},
+    {"sku": "SKU-C", "product_name": "Twin Pants", "is_active": True, "sku_range": None},
+    {"sku": "SKU-D", "product_name": "Twin Pants", "is_active": True, "sku_range": None},
+    # A leftover range-name insert: its sku is the range, so it doesn't make the range real.
+    {"sku": "Ghost Range", "product_name": "Ghost Range", "is_active": True, "sku_range": "Ghost Range"},
 ]
 
 
 def _block(**changes):
     block = {
+        "kind": "block",
         "customer_name": "fairprice",
+        "sku_ranges": None,
         "product_name": None,
         "name": "New Store Opening",
         "explanation": None,
@@ -74,6 +78,25 @@ class FakeBlocksDatabase:
                 {"sku": row["sku"], "is_active": row["is_active"]}
                 for row in SKUS
                 if row["product_name"] == params["product_name"]
+            ]
+
+        if "FROM skus" in sql and "sku_range = ANY(:sku_ranges)" in sql:
+            found = {
+                row["sku_range"]
+                for row in SKUS
+                if row["sku_range"] in params["sku_ranges"] and row["sku"] != row["sku_range"]
+            }
+            return [(name,) for name in sorted(found)]
+
+        if "kind = 'growth'" in sql:
+            return [
+                (block_id,)
+                for block_id, block in self.blocks.items()
+                if block["kind"] == "growth"
+                and block["customer_id"] == params["customer_id"]
+                and block["sku_ranges"][0] == params["sku_range"]
+                and block["start_month"] == params["start_month"]
+                and block_id != params["block_id"]
             ]
 
         if sql.startswith("INSERT INTO scenario_building_blocks"):
@@ -136,7 +159,9 @@ def test_create_returns_the_block_as_the_list_shows_it(monkeypatch):
 
     assert saved == {
         "block_id": 1,
+        "kind": "block",
         "customer_name": "fairprice",
+        "sku_ranges": None,
         "sku": "SKU-A",
         "product_name": "Comfort Pants M",
         "name": "New Store Opening",
@@ -229,6 +254,150 @@ def test_update_of_a_missing_block_returns_none(monkeypatch):
     _install(monkeypatch, FakeBlocksDatabase())
 
     assert building_blocks_service.update_building_block(99, _block()) is None
+
+
+# ---- Growth ------------------------------------------------------------------
+
+
+def _growth(**changes):
+    return _block(**{"kind": "growth", "name": "Budget growth", "sku_ranges": ["Comfort Pants"],
+                     "start_month": date(2027, 1, 1), "end_month": date(2027, 12, 1),
+                     "uplift_value": Decimal("8"), **changes})
+
+
+def test_growth_is_saved_with_its_kind(monkeypatch):
+    db = FakeBlocksDatabase()
+    conn = _install(monkeypatch, db)
+
+    saved = building_blocks_service.create_building_block(_growth())
+
+    (_, params), = conn.sql_containing("INSERT INTO scenario_building_blocks")
+    assert params["kind"] == "growth"
+    assert saved["kind"] == "growth"
+
+
+def test_a_second_growth_for_the_same_customer_and_year_raises_without_writing(monkeypatch):
+    db = FakeBlocksDatabase()
+    conn = _install(monkeypatch, db)
+    building_blocks_service.create_building_block(_growth())
+
+    with pytest.raises(
+        building_blocks_service.GrowthBlockExistsError,
+        match="fairprice already has growth for Comfort Pants in 2027",
+    ):
+        building_blocks_service.create_building_block(_growth(uplift_value=Decimal("12")))
+
+    assert len(conn.sql_containing("INSERT INTO")) == 1
+
+
+def test_growth_for_another_year_or_customer_is_allowed(monkeypatch):
+    _install(monkeypatch, FakeBlocksDatabase())
+    building_blocks_service.create_building_block(_growth())
+
+    next_year = building_blocks_service.create_building_block(
+        _growth(start_month=date(2028, 1, 1), end_month=date(2028, 12, 1))
+    )
+    other_customer = building_blocks_service.create_building_block(_growth(customer_name="sheng_siong"))
+
+    assert next_year["block_id"] == 2
+    assert other_customer["block_id"] == 3
+
+
+def test_updating_a_growth_block_does_not_clash_with_itself(monkeypatch):
+    _install(monkeypatch, FakeBlocksDatabase())
+    building_blocks_service.create_building_block(_growth())
+
+    saved = building_blocks_service.update_building_block(1, _growth(uplift_value=Decimal("12")))
+
+    assert saved["uplift_value"] == 12.0
+
+
+def test_an_ordinary_block_never_checks_for_growth(monkeypatch):
+    db = FakeBlocksDatabase()
+    conn = _install(monkeypatch, db)
+
+    building_blocks_service.create_building_block(_block())
+
+    assert not conn.sql_containing("kind = 'growth'")
+
+
+# ---- SKU ranges --------------------------------------------------------------
+
+
+def test_a_range_block_is_stored_with_its_range_and_no_single_sku(monkeypatch):
+    db = FakeBlocksDatabase()
+    conn = _install(monkeypatch, db)
+
+    saved = building_blocks_service.create_building_block(_block(sku_ranges=["Comfort Pants"]))
+
+    (_, params), = conn.sql_containing("INSERT INTO scenario_building_blocks")
+    assert params["sku_ranges"] == ["Comfort Pants"]
+    assert params["sku"] is None
+    assert saved["sku_ranges"] == ["Comfort Pants"]
+
+
+def test_an_unknown_range_raises_without_writing(monkeypatch):
+    db = FakeBlocksDatabase()
+    conn = _install(monkeypatch, db)
+
+    with pytest.raises(ValueError, match="Unknown SKU range: Nope"):
+        building_blocks_service.create_building_block(_block(sku_ranges=["Nope"]))
+
+    assert not conn.sql_containing("INSERT INTO")
+
+
+def test_a_leftover_range_name_row_does_not_make_a_range_real(monkeypatch):
+    _install(monkeypatch, FakeBlocksDatabase())
+
+    with pytest.raises(ValueError, match="Unknown SKU range: Ghost Range"):
+        building_blocks_service.create_building_block(_block(sku_ranges=["Ghost Range"]))
+
+
+def test_growth_for_another_range_in_the_same_year_is_allowed(monkeypatch):
+    db = FakeBlocksDatabase()
+    _install(monkeypatch, db)
+    SKUS.append({"sku": "SKU-E", "product_name": "Ultra Tape L", "is_active": True, "sku_range": "Ultra Tape"})
+    try:
+        building_blocks_service.create_building_block(_growth())
+        other_range = building_blocks_service.create_building_block(_growth(sku_ranges=["Ultra Tape"]))
+    finally:
+        SKUS.pop()
+
+    assert other_range["block_id"] == 2
+
+
+def test_overlay_blocks_read_the_sku_codes_of_their_range():
+    conn = FakeConnection(lambda sql, params: [])
+
+    building_blocks_service.fetch_blocks_for_customer(conn, 1, [7])
+
+    sql, _ = conn.calls[0]
+    assert "AS range_skus" in sql
+    assert "product.sku_range = ANY(block.sku_ranges)" in sql
+
+
+def test_a_block_for_several_ranges_stores_them_all(monkeypatch):
+    db = FakeBlocksDatabase()
+    conn = _install(monkeypatch, db)
+    SKUS.append({"sku": "SKU-E", "product_name": "Ultra Tape L", "is_active": True, "sku_range": "Ultra Tape"})
+    try:
+        saved = building_blocks_service.create_building_block(_block(sku_ranges=["Comfort Pants", "Ultra Tape"]))
+    finally:
+        SKUS.pop()
+
+    (_, params), = conn.sql_containing("INSERT INTO scenario_building_blocks")
+    assert params["sku_ranges"] == ["Comfort Pants", "Ultra Tape"]
+    assert saved["sku_ranges"] == ["Comfort Pants", "Ultra Tape"]
+
+
+def test_one_unknown_range_among_several_raises_without_writing(monkeypatch):
+    db = FakeBlocksDatabase()
+    conn = _install(monkeypatch, db)
+
+    with pytest.raises(ValueError, match="Unknown SKU range: Nope"):
+        building_blocks_service.create_building_block(_block(sku_ranges=["Comfort Pants", "Nope"]))
+
+    assert not conn.sql_containing("INSERT INTO")
 
 
 # ---- Delete and list ---------------------------------------------------------

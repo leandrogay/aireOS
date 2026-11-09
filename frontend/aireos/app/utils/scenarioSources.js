@@ -1,9 +1,10 @@
 // Every source the Scenario engine runs (see scenarioEngine.js for the
 // contract). Shared file: change it only in a small commit of its own.
-import { scenarioBlocksSource } from '@/app/utils/scenarioBlocks';
+import { scenarioBlocksSource, scenarioGrowthSource } from '@/app/utils/scenarioBlocks';
 import { scenarioPromotionsSource } from '@/app/utils/scenarioPromotions';
 
-export const SCENARIO_SOURCES = [scenarioBlocksSource, scenarioPromotionsSource];
+// Growth first: it is the bottom layer of what the scenario adds to Tier 0.
+export const SCENARIO_SOURCES = [scenarioGrowthSource, scenarioBlocksSource, scenarioPromotionsSource];
 
 /**
  * The source that owns a delta cell or item, by its key.

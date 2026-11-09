@@ -14,7 +14,12 @@
 //   {
 //     id,                           // client id, stable while the page is open
 //     blockId,                      // server id, null until first saved
-//     customer, sku,                // forecast customer_name / product_name; sku '' = all SKUs
+//     kind,                         // 'block', or 'growth' (scenarioGrowth.js); never
+//                                   // changes, and every save sends it back
+//     customer,                     // forecast customer_name
+//     skuRanges,                    // SKU ranges ([] = All SKU ranges): blocks follow ranges
+//     sku,                          // one product_name, only on blocks saved before
+//                                   // ranges (backend migration 017); new blocks keep ''
 //     name, explanation,            // free text; explanation is optional
 //     upliftMode, upliftValue,      // 'pct' + 18 = +18% on Current each month,
 //                                   // 'units' + 900 = +900 units over the whole range;
@@ -77,6 +82,7 @@ export const NEW_BLOCK_NAME = 'New building block';
 // The fields a save writes; `saved` keeps a copy of exactly these.
 const SAVED_FIELDS = [
   'customer',
+  'skuRanges',
   'sku',
   'name',
   'explanation',
@@ -87,6 +93,11 @@ const SAVED_FIELDS = [
   'isActive',
 ];
 
+// skuRanges is a list; every other saved field is a primitive.
+function sameField(a, b) {
+  return Array.isArray(a) || Array.isArray(b) ? JSON.stringify(a ?? []) === JSON.stringify(b ?? []) : a === b;
+}
+
 function savedFieldsOf(block) {
   return Object.fromEntries(SAVED_FIELDS.map((field) => [field, block[field]]));
 }
@@ -96,17 +107,19 @@ function newClientId() {
 }
 
 /**
- * A new, unsaved block for the given customer/SKU, covering the first
- * forecast month. It starts switched on so it shows on the chart at once.
+ * A new, unsaved block for the given customer / SKU range, covering the
+ * first forecast month. It starts switched on so it shows on the chart at once.
  *
- * @param {{ customer: string, sku: string, months: string[] }} defaults
+ * @param {{ customer: string, skuRanges?: string[], months?: string[] }} defaults
  */
-export function newScenarioBlock({ customer = '', sku = '', months = [] }) {
+export function newScenarioBlock({ customer = '', skuRanges = [], months = [] }) {
   return {
     id: newClientId(),
     blockId: null,
+    kind: 'block',
     customer,
-    sku,
+    skuRanges,
+    sku: '',
     name: NEW_BLOCK_NAME,
     explanation: '',
     upliftMode: 'pct',
@@ -189,6 +202,17 @@ export function switchUpliftDirection(block, decrease) {
 }
 
 /**
+ * What a block covers, for lists and dialogs: its SKU range, its one SKU
+ * (blocks saved before ranges), or "All SKU ranges".
+ *
+ * @param {{ skuRanges?: string[], sku?: string }} block
+ */
+export function blockScopeLabel(block) {
+  if (block.skuRanges?.length) return block.skuRanges.join(', ');
+  return block.sku || 'All SKU ranges';
+}
+
+/**
  * "+18%", "−20%", "+900 units" or "−900 units", for the panel list and the
  * blocks table.
  *
@@ -208,7 +232,7 @@ export function upliftLabel(block) {
  */
 export function hasUnsavedChanges(block) {
   if (!block.saved) return true;
-  return SAVED_FIELDS.some((field) => block[field] !== block.saved[field]);
+  return SAVED_FIELDS.some((field) => !sameField(block[field], block.saved[field]));
 }
 
 /**
@@ -232,7 +256,7 @@ export function discardBlockChanges(block) {
  * @param {object} savedBlock scenarioBlockFromApi of the row the save returned
  */
 export function applySavedBlock(current, sent, savedBlock) {
-  const editedSince = SAVED_FIELDS.some((field) => current[field] !== sent[field]);
+  const editedSince = SAVED_FIELDS.some((field) => !sameField(current[field], sent[field]));
   if (editedSince) return { ...current, blockId: savedBlock.blockId, saved: savedBlock.saved };
   return { ...savedBlock, id: current.id };
 }
@@ -264,14 +288,19 @@ export function validateScenarioBlock(block) {
 
 /**
  * Request body for saving a block: backend ScenarioBuildingBlockBase
- * (app/schemas/scenario/building_blocks.py). product_name null = all SKUs.
+ * (app/schemas/scenario/building_blocks.py). sku_ranges and product_name
+ * both null = All SKU ranges; product_name is only ever set on a block saved
+ * before ranges. A PUT replaces every field, so `kind` always goes back as
+ * it is, or a growth would turn into an ordinary block.
  *
  * @param {object} block
  */
 export function buildScenarioBlockPayload(block) {
   return {
+    kind: block.kind ?? 'block',
     customer_name: block.customer,
-    product_name: block.sku || null,
+    sku_ranges: block.skuRanges?.length ? block.skuRanges : null,
+    product_name: block.skuRanges?.length ? null : block.sku || null,
     name: block.name.trim(),
     explanation: block.explanation.trim() || null,
     uplift_mode: block.upliftMode,
@@ -292,7 +321,9 @@ export function scenarioBlockFromApi(row) {
   const block = {
     id: `saved-${row.block_id}`,
     blockId: row.block_id,
+    kind: row.kind ?? 'block',
     customer: row.customer_name,
+    skuRanges: row.sku_ranges ?? [],
     sku: row.product_name ?? '',
     name: row.name,
     explanation: row.explanation ?? '',
@@ -332,8 +363,31 @@ export const scenarioBlocksSource = {
       title: block.name || NEW_BLOCK_NAME,
       upliftLabel: upliftLabel(block),
       customer: block.customer,
-      sku: block.sku,
+      sku: blockScopeLabel(block),
       explanation: block.explanation,
+      startMonth: block.startMonth,
+      endMonth: block.endMonth,
+    };
+  },
+};
+
+// The budget's growth (scenarioGrowth.js): the same % maths as a block, as a
+// source of its own so the chart, the hover card and the Breakdown tab can
+// show it apart from the building blocks.
+export const scenarioGrowthSource = {
+  key: 'growth',
+  itemsKey: 'growth',
+  label: 'Growth',
+  deltas(blocks, rows) {
+    return blocks.flatMap((block) => upliftDeltaCells(rows, block, block.upliftValue, 'growth'));
+  },
+  describe(block) {
+    return {
+      title: block.name,
+      upliftLabel: upliftLabel(block),
+      customer: block.customer,
+      sku: block.skuRanges[0],
+      explanation: `Growth on Tier 0 for every ${block.skuRanges[0]} SKU, January to December.`,
       startMonth: block.startMonth,
       endMonth: block.endMonth,
     };

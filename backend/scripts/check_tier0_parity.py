@@ -23,7 +23,8 @@ from app.services import pl_forecast
 from app.services.bigquery import get_bigquery_client
 
 VIEW_SQL = Path(__file__).resolve().parents[2] / "bigquery" / "views" / "010_create_tier0_legacy_forecasts_view.sql"
-TRAINING_INPUT = "aire-data.Aire_Data_Analytics.fc_training_input"
+# The application dataset, the same one the view reads (not the older Aire_Data_Analytics).
+TRAINING_INPUT = "aire-data.aireos_forecast_validation_sg.fc_training_input"
 LOCATION = "asia-southeast1"
 # BigQuery ROUND is half away from zero, pandas rounds half to even.
 TOLERANCE_CARTONS = 1.0
