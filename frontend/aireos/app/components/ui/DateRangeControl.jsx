@@ -6,6 +6,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import MonthRangeCalendar from '@/components/ui/MonthRangeCalendar';
 import { cn } from '@/lib/utils';
 import { findPreset } from '@/app/utils/dateRangePresets';
+import { isWithinData, outsideDataNote } from '@/app/utils/dataBounds';
 import { formatPeriodName, periodBounds } from '@/app/utils/periodComparison';
 
 const actionButtonClass =
@@ -22,7 +23,9 @@ const sectionLabelClass = 'text-[11px] font-medium uppercase tracking-wide text-
  * applied on Apply. Ranges are always whole months: the dashboard works in
  * monthly figures. Both sides carry a small header, and every preset is
  * drawn as an outlined button rather than plain text, so the options read
- * as clickable instead of as a label for the active one.
+ * as clickable instead of as a label for the active one. A preset that
+ * reaches outside the ticked customers' loaded data (e.g. Last year for a
+ * customer whose data starts this March) is disabled, with a hover note.
  *
  * @param {{
  *   start: string,
@@ -80,21 +83,26 @@ export default function DateRangeControl({ start, end, presets, latestDataEnd, e
           <div className="flex flex-col gap-2 sm:w-36 sm:border-r sm:border-lavander sm:pr-5">
             <p className={sectionLabelClass}>Presets</p>
             <div className="flex flex-row flex-wrap gap-1 sm:flex-col">
-              {presets.map((preset) => (
+              {presets.map((preset) => {
+                const outside = !isWithinData(preset, earliestDataStart, latestDataEnd);
+                return (
                 <button
                   key={preset.id}
                   type="button"
                   onClick={() => applyPreset(preset)}
+                  disabled={outside}
+                  title={outside ? outsideDataNote(earliestDataStart, latestDataEnd) : undefined}
                   aria-pressed={activePreset?.id === preset.id}
                   className={cn(
-                    'rounded-md border border-lavander bg-white px-2 py-1 text-left text-xs text-deep-violet-blue transition-colors hover:border-violet hover:bg-lavander focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet',
+                    'rounded-md border border-lavander bg-white px-2 py-1 text-left text-xs text-deep-violet-blue transition-colors hover:border-violet hover:bg-lavander focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-lavander disabled:hover:bg-white',
                     activePreset?.id === preset.id &&
                       'border-deep-violet-blue bg-deep-violet-blue text-white hover:border-deep-violet-blue hover:bg-deep-violet-blue',
                   )}
                 >
                   {preset.label}
                 </button>
-              ))}
+                );
+              })}
             </div>
           </div>
           <div className="flex flex-col gap-2">

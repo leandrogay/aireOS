@@ -6,6 +6,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import MonthRangeCalendar from '@/components/ui/MonthRangeCalendar';
 import { cn } from '@/lib/utils';
 import { formatPeriodName } from '@/app/utils/periodComparison';
+import { isWithinData, outsideDataNote } from '@/app/utils/dataBounds';
 
 const actionButtonClass =
   'rounded-md px-3 py-1 text-xs font-medium transition-colors disabled:opacity-50';
@@ -75,13 +76,19 @@ export default function CompareControl({ value, options, latestDataEnd, earliest
       <PopoverContent align="end" className="w-auto max-w-[calc(100vw-2rem)] bg-white p-3">
         {!pickingCustom ? (
           <div className="flex w-64 flex-col gap-1">
-            {options.map((option) => (
+            {options.map((option) => {
+              // Previous period / Last year outside the loaded data can't be
+              // picked (custom is limited month by month in the calendar).
+              const outside = option.value !== 'custom' && !isWithinData(option.range, earliestDataStart, latestDataEnd);
+              return (
               <button
                 key={option.value}
                 type="button"
                 onClick={() => choose(option)}
+                disabled={outside}
+                title={outside ? outsideDataNote(earliestDataStart, latestDataEnd) : undefined}
                 className={cn(
-                  'rounded-md px-2 py-1.5 text-left text-xs text-deep-violet-blue hover:bg-lavander',
+                  'rounded-md px-2 py-1.5 text-left text-xs text-deep-violet-blue hover:bg-lavander disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent',
                   value === option.value && 'bg-deep-violet-blue text-white hover:bg-deep-violet-blue',
                 )}
               >
@@ -95,7 +102,8 @@ export default function CompareControl({ value, options, latestDataEnd, earliest
                   <span className="block text-deep-violet-blue/60">Pick the first month, e.g. Mar vs Aug</span>
                 )}
               </button>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="flex flex-col gap-2">

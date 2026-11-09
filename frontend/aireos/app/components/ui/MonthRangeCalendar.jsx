@@ -34,9 +34,11 @@ function monthsLabel(count) {
  *   comparison never covers more or fewer months than what it's compared
  *   with. The highlighted range shows exactly what will be compared.
  *
- * Months before `earliestDataStart` (the first loaded data) can't be picked
- * and the year switcher stops at its year; months after the latest loaded
- * data are faded but still pickable.
+ * Only months with loaded data for the ticked customers can be picked:
+ * `earliestDataStart` .. `latestDataEnd` (backend get_default_date_range,
+ * across every ticked customer), and the year switcher stops at both years.
+ * With `length`, a start month is also disabled when its range would run
+ * past the latest data.
  *
  * @param {{
  *   draft: { start: string, end: string },
@@ -53,6 +55,9 @@ export default function MonthRangeCalendar({ draft, onDraftChange, latestDataEnd
   const initialYear = shown ? parseIso(shown).getFullYear() : singaporeToday().getFullYear();
   const latestMonth = latestDataEnd ? startOfMonth(latestDataEnd) : '';
   const earliestMonth = earliestDataStart ? startOfMonth(earliestDataStart) : '';
+  // The last month a click may pick: the latest data month, or, for a
+  // `length`-month comparison, the month that range must start by to end there.
+  const lastPickable = latestMonth && length ? shiftMonths(latestMonth, -(length - 1)) : latestMonth;
 
   function pick(year, monthIndex) {
     const picked = monthStart(year, monthIndex);
@@ -85,6 +90,7 @@ export default function MonthRangeCalendar({ draft, onDraftChange, latestDataEnd
       <MonthGrid
         initialYear={initialYear}
         minYear={earliestMonth ? parseIso(earliestMonth).getFullYear() : null}
+        maxYear={latestMonth ? parseIso(latestMonth).getFullYear() : null}
         onPick={pick}
         isSelected={(year, monthIndex) => {
           const month = monthStart(year, monthIndex);
@@ -94,8 +100,11 @@ export default function MonthRangeCalendar({ draft, onDraftChange, latestDataEnd
           const month = monthStart(year, monthIndex);
           return Boolean(first) && month > first && month < last;
         }}
-        isMuted={(year, monthIndex) => Boolean(latestMonth) && monthStart(year, monthIndex) > latestMonth}
-        isDisabled={(year, monthIndex) => Boolean(earliestMonth) && monthStart(year, monthIndex) < earliestMonth}
+        isDisabled={(year, monthIndex) => {
+          const month = monthStart(year, monthIndex);
+          if (earliestMonth && month < earliestMonth) return true;
+          return Boolean(lastPickable) && month > lastPickable;
+        }}
       />
       <p className="mt-2 text-xs text-deep-violet-blue/60">{note}</p>
     </div>
