@@ -23,6 +23,7 @@ import {
   weekMonthGroups,
 } from '@/app/utils/trendChart';
 import MonthAxis from '@/components/dashboard/MonthAxis';
+import useChartTransition from '@/hooks/useChartTransition';
 import useMediaQuery from '@/hooks/useMediaQuery';
 import TooltipChange from '@/components/dashboard/TooltipChange';
 
@@ -133,6 +134,14 @@ export function FormatTrendChart({ periodByFormat, periodTotal, granularity, met
   // On a phone the axis is labelled by year (yearAxisProps), so no month axis.
   const monthGroups = mobile ? null : weekMonthGroups(chartData, granularity);
   const yAxisProps = metricYAxisProps(metric, chartDataRange(chartData, formats));
+  // A change (Revenue / Volume) moves the bars and the axis together.
+  const transition = useChartTransition({
+    rows: chartData,
+    rowKey: 'period_label',
+    valueKeys: formats,
+    domain: yAxisProps.domain,
+    ticks: yAxisProps.ticks,
+  });
   // Tilted labels run down-left from their bar, so the first needs room past the y-axis.
   const margin = axisProps.angle
     ? { top: CHART_TOP_MARGIN, bottom: 8, left: TILTED_LABEL_LEFT_MARGIN }
@@ -142,10 +151,10 @@ export function FormatTrendChart({ periodByFormat, periodTotal, granularity, met
     <ChartContainer config={chartConfig} className={CHART_SIZE_CLASS}>
       {/* stackOffset="sign": a negative segment (returns) is drawn down from 0,
           not on top of the positive ones (chartDataRange measures it that way). */}
-      <BarChart accessibilityLayer data={chartData} margin={margin} stackOffset="sign">
+      <BarChart accessibilityLayer data={transition.rows} margin={margin} stackOffset="sign">
         <CartesianGrid vertical={false} />
         <XAxis dataKey={mobile ? 'periodStart' : 'displayLabel'} {...axisProps} />
-        <YAxis {...yAxisProps} />
+        <YAxis {...yAxisProps} domain={transition.domain} ticks={transition.ticks} />
         <MonthAxis groups={monthGroups} />
         {/* Above the legend, which is drawn after it and would show through. */}
         <ChartTooltip content={<TrendTooltip granularity={granularity} metric={metric} />} wrapperStyle={{ zIndex: 10 }} />
@@ -158,6 +167,7 @@ export function FormatTrendChart({ periodByFormat, periodTotal, granularity, met
             fill={`var(--color-${format})`}
             maxBarSize={MAX_BAR_SIZE}
             {...BAR_ANIMATION}
+            {...transition.seriesAnimation}
           />
         ))}
       </BarChart>

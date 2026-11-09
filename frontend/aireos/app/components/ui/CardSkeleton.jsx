@@ -37,7 +37,7 @@ export default function CardSkeleton({
   return (
     <section className={cn('rounded-lg border border-lavander bg-white shadow-sm', className)}>
       {hasHeader && (
-        <div className={cn('flex items-start justify-between gap-3 px-3 pt-3', divider && 'border-b border-lavander pb-2.5')}>
+        <div className={cn('flex items-start justify-between gap-3 px-4 pt-4', divider && 'border-b border-lavander pb-2.5')}>
           <div className="min-w-0 flex-1 space-y-1.5">
             {title && <Skeleton className={cn(SKELETON_PULSE, 'h-4 w-36')} />}
             {subtitle && <Skeleton className={cn(SKELETON_PULSE, 'h-3 w-52 max-w-full')} />}
@@ -51,7 +51,7 @@ export default function CardSkeleton({
           )}
         </div>
       )}
-      <div className={cn('p-3', bodyClassName)}>{children}</div>
+      <div className={cn('p-4', bodyClassName)}>{children}</div>
     </section>
   );
 }

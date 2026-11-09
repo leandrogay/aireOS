@@ -164,7 +164,7 @@ function ForecastView() {
 
   return (
     <PageLayout title="Sell-Out Forecast">
-      <div className="min-w-0 space-y-1">
+      <div className="min-w-0 space-y-3">
         {error && (
           <p className="rounded-md border border-violet bg-lavander/50 px-3 py-2 text-sm text-deep-violet-blue">
             {error}

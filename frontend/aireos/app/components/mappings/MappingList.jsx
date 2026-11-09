@@ -99,7 +99,7 @@ export default function MappingList({ mappings, isLoading, error, onOpen, onRefr
   return (
     // Fills the height the page gives it (PageLayout fitScreen): the filter
     // bar keeps its size and the table card takes the rest.
-    <div className="flex min-h-0 flex-1 flex-col gap-1">
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
       <MappingFilters
         filters={filters}
         customers={uniqueMappingCustomers(mappings)}

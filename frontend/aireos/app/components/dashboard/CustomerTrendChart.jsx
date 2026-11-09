@@ -22,6 +22,7 @@ import {
   yearAxisProps,
 } from '@/app/utils/trendChart';
 import MonthAxis from '@/components/dashboard/MonthAxis';
+import useChartTransition from '@/hooks/useChartTransition';
 import useMediaQuery from '@/hooks/useMediaQuery';
 
 
@@ -99,7 +100,16 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
   // Customers sit side by side (bars) or as separate lines, never stacked,
   // so the axis reaches the single tallest customer's value.
   const seriesKeys = series.map((item) => item.key);
-  const yAxis = <YAxis {...metricYAxisProps(metric, chartDataRange(rows, seriesKeys, { stacked: false }))} />;
+  const yAxisProps = metricYAxisProps(metric, chartDataRange(rows, seriesKeys, { stacked: false }));
+  // A change (Revenue / Volume, customers) moves the bars or lines and the axis together.
+  const transition = useChartTransition({
+    rows,
+    rowKey: 'periodStart',
+    valueKeys: seriesKeys,
+    domain: yAxisProps.domain,
+    ticks: yAxisProps.ticks,
+  });
+  const yAxis = <YAxis {...yAxisProps} domain={transition.domain} ticks={transition.ticks} />;
   // Above the legend, which is drawn after it and would show through.
   const tooltip = (
     <ChartTooltip content={<TrendTooltip metric={metric} series={series} />} wrapperStyle={{ zIndex: 10 }} />
@@ -125,7 +135,7 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
     <div className="flex flex-1 flex-col">
       <ChartContainer config={chartConfig} className={CHART_SIZE_CLASS}>
         {kind === 'bars' ? (
-          <BarChart accessibilityLayer data={rows} margin={margin}>
+          <BarChart accessibilityLayer data={transition.rows} margin={margin}>
             <CartesianGrid vertical={false} />
             <XAxis dataKey={mobile ? 'periodStart' : 'displayLabel'} {...axisProps} />
             {yAxis}
@@ -133,11 +143,11 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
             {tooltip}
             <ChartLegend content={<ChartLegendContent />} />
             {series.map((item) => (
-              <Bar key={item.key} dataKey={item.key} fill={`var(--color-${item.key})`} maxBarSize={MAX_BAR_SIZE} {...BAR_ANIMATION} />
+              <Bar key={item.key} dataKey={item.key} fill={`var(--color-${item.key})`} maxBarSize={MAX_BAR_SIZE} {...BAR_ANIMATION} {...transition.seriesAnimation} />
             ))}
           </BarChart>
         ) : (
-          <LineChart accessibilityLayer data={rows} margin={margin}>
+          <LineChart accessibilityLayer data={transition.rows} margin={margin}>
             <CartesianGrid vertical={false} />
             <XAxis dataKey={mobile ? 'periodStart' : 'displayLabel'} {...axisProps} padding={{ left: 24, right: 24 }} />
             {yAxis}
@@ -153,6 +163,7 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
                 strokeWidth={2}
                 dot={rows.length > MAX_DOTTED_POINTS ? false : { r: 2.5 }}
                 activeDot={{ r: 4 }}
+                {...transition.seriesAnimation}
               />
             ))}
           </LineChart>
