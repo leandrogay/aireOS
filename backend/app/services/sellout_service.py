@@ -869,6 +869,12 @@ def _customer_retailers(customer: str) -> list[str]:
     return [_retailer_for(customer, mode) for mode in DASHBOARD_MODES]
 
 
+def _ticked_customers(customers: list[str] | None) -> list[str]:
+    # The dashboard's ticked customer slugs, blanks and stray spaces dropped
+    # (the routers pass the comma-split query string as-is).
+    return [name.strip() for name in customers or [] if name and name.strip()]
+
+
 def _retailer_family(retailer: str) -> str:
     for suffix in ("_online", "_offline"):
         if retailer.endswith(suffix):
@@ -1099,7 +1105,10 @@ def get_customer_options() -> list[dict]:
     # customer_id is that customer record (customer_retailers), or None when
     # no customer owns the family: the dashboard orders customer colours by
     # it, so a renamed customer (fairprice -> "FairPrice") keeps its colour
-    # rather than being matched by name.
+    # rather than being matched by name. The id and the label come from the
+    # same linked retailer, the first by name (offline before online), so
+    # they can't disagree if a family's channels were linked to different
+    # customers.
     query = text(
         """
         SELECT DISTINCT r.retailer_name, cr.customer_id, c.customer_name
@@ -1107,23 +1116,23 @@ def get_customer_options() -> list[dict]:
         JOIN retailers r ON r.retailer_id = s.retailer_id
         LEFT JOIN customer_retailers cr ON cr.retailer_id = r.retailer_id
         LEFT JOIN customers c ON c.customer_id = cr.customer_id
+        ORDER BY r.retailer_name
         """
     )
     with _get_read_engine().connect() as conn:
         rows = conn.execute(query).mappings().all()
-    customer_ids: dict[str, int | None] = {}
-    for row in rows:
+    linked: dict[str, dict | None] = {}
+    for row in sorted(rows, key=lambda row: row["retailer_name"]):
         family = _retailer_family(row["retailer_name"])
-        if customer_ids.get(family) is None:
-            customer_ids[family] = row["customer_id"]
-    names = _customer_names_by_family(rows)
+        if linked.get(family) is None:
+            linked[family] = row if row["customer_id"] is not None else None
     return [
         {
             "value": family,
-            "label": _customer_label(family, names.get(family)),
-            "customer_id": customer_ids[family],
+            "label": _customer_label(family, row["customer_name"] if row else None),
+            "customer_id": row["customer_id"] if row else None,
         }
-        for family in sorted(customer_ids)
+        for family, row in sorted(linked.items())
     ]
 
 
@@ -1401,6 +1410,10 @@ def get_customer_totals(
                 "revenue": round(float(row["revenue"] or 0), 2) if row else 0.0,
                 "units": float(row["units"] or 0) if row else 0.0,
                 "estimated_revenue": round(float(row["estimated_revenue"] or 0), 2) if row else 0.0,
+                # Whether any sell-out is loaded for the period: the 0s above
+                # are then real, not a month no one has uploaded yet (the
+                # latest month can come from another ticked customer).
+                "has_data": row is not None,
             }
             entry[f"has_{mode}"] = retailer in present
         result.append(entry)
@@ -1483,13 +1496,19 @@ def get_monthly_only_months(
     store: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
+    customers: list[str] | None = None,
 ) -> dict:
     """Per channel, the months in the range loaded only as a monthly total
     (no weekly rows for that retailer+month, e.g. August 2026), as sorted
     YYYY-MM-01 strings. A weekly dashboard-summary is missing those months,
     so the dashboard reads both sides of a comparison by month instead, and
-    names the months so users know which weekly data to upload."""
-    where_clauses, params = _dashboard_scope(customer, sku, store, start_date, end_date)
+    names the months so users know which weekly data to upload.
+
+    `customers` (the dashboard's ticked customers) replaces `customer`: a
+    month is listed when any of them has only a monthly total for it, so By
+    week isn't offered for a month another ticked customer has no weeks in."""
+    names = _ticked_customers(customers) or [customer]
+    where_clauses, params = _dashboard_scope(names, sku, store, start_date, end_date)
     query = text(
         f"""
         SELECT DISTINCT r.retailer_name AS retailer, date_trunc('month', s.period_start)::date AS month
@@ -1510,23 +1529,29 @@ def get_monthly_only_months(
     months = {mode: set() for mode in DASHBOARD_MODES}
     for row in rows:
         for mode in DASHBOARD_MODES:
-            if row["retailer"] == _retailer_for(customer, mode):
+            if row["retailer"] in {_retailer_for(name, mode) for name in names}:
                 months[mode].add(pd.Timestamp(row["month"]).strftime("%Y-%m-%d"))
     return {mode: sorted(found) for mode, found in months.items()}
 
 
 def _dashboard_scope(
-    customer: str, sku: str | None, store: str | None, start_date: str | None, end_date: str | None
+    customer: str | list[str],
+    sku: str | None,
+    store: str | None,
+    start_date: str | None,
+    end_date: str | None,
 ) -> tuple[list[str], dict]:
-    # WHERE clauses + bind params for one customer's sellout rows, shared by
-    # get_dashboard_summary and get_monthly_only_months so both read the same
-    # rows. A row counts when its period_start falls inside the range.
+    # WHERE clauses + bind params for one customer's sellout rows (or several
+    # customers', given a list), shared by get_dashboard_summary and
+    # get_monthly_only_months so both read the same rows. A row counts when
+    # its period_start falls inside the range.
     _validate_date(start_date, "start_date")
     _validate_date(end_date, "end_date")
     where_clauses = [
         "s.retailer_id IN (SELECT retailer_id FROM retailers WHERE retailer_name = ANY(CAST(:retailer_names AS text[])))",
     ]
-    params: dict = {"retailer_names": _customer_retailers(customer)}
+    names = customer if isinstance(customer, list) else [customer]
+    params: dict = {"retailer_names": [retailer for name in names for retailer in _customer_retailers(name)]}
     if sku:
         where_clauses.append("s.sku = :sku")
         params["sku"] = sku
@@ -1668,7 +1693,7 @@ def get_default_date_range(
     if mode is not None and mode not in DASHBOARD_MODES:
         raise ValueError(f"mode must be one of {DASHBOARD_MODES}")
 
-    names = [name.strip() for name in customers or [] if name and name.strip()]
+    names = _ticked_customers(customers)
     if names:
         retailer = (
             [_retailer_for(name, mode) for name in names]

@@ -218,6 +218,7 @@ aireOS/
     │       ├── estimatedRevenue.js est. sign: when a revenue figure includes estimated revenue, and its hover text
     │       ├── customerTrend.js   Cross-customer chart: series/rows (any number of customers)
     │       ├── chartKind.js       PURE, import-free: bars vs lines for the trend charts -- customers x periods over 12 (desktop) / 3 (phone) → lines, one period always bars (tests/chartKind.test.mjs)
+    │       ├── dataBounds.js      PURE: isWithinData / outsideDataNote -- Period and Compare to offer only months inside the ticked customers' data (tests/dataBounds.test.mjs)
     │       ├── storeFormats.js    FORMAT_COLORS + formatColor() per store format; customerColor + customerColorOrder (one colour per customer on every page, by customer_id)
     │       ├── dohSettingsForm.js validate/build/formFrom helpers for the DOH threshold form, GLOBAL_DEFAULT_DOH
     │       ├── customerForm.js    normaliseName / cleanCustomerName (mirror backend), validateName, edit/delete block reasons
@@ -226,13 +227,13 @@ aireOS/
     ├── proxy.js                   Optimistic route guard: missing session cookie → /login
     ├── hooks/                     Data-fetching hooks (cancel-flag pattern; dashboard calls services/*Api.js)
     │   ├── useDataFreshness.js    polls /api/sales/last-updated → { channels, dataVersion, refreshing }
-    │   ├── useCustomerOptions.js  /api/sales/customer-options
+    │   ├── useCustomerOptions.js  /api/sales/customer-options (each option's customer_id orders the colours)
     │   ├── useAllCustomers.js     /api/inventory/customers via inventoryApi (every customer, for customerColorOrder)
     │   ├── useCustomerTrends.js   /api/sales/customer-trends via salesApi.getCustomerTrends (2-3 customers ticked: each per week/month)
     │   ├── useDashboardSummary.js /api/sales/dashboard-summary (silent refresh on dataVersion)
-    │   ├── useDefaultDateRange.js /api/sales/default-date-range
+    │   ├── useDefaultDateRange.js /api/sales/default-date-range across the ticked `customers` (bounds kept per selection)
     │   ├── useSkuSales.js         /api/sales/skus via salesApi.getSkuSales
-    │   ├── useMonthlyOnly.js      /api/sales/monthly-only via salesApi.getMonthlyOnly (months with no weekly breakdown → month bars)
+    │   ├── useMonthlyOnly.js      /api/sales/monthly-only via salesApi.getMonthlyOnly, across the ticked `customers` (months with no weekly breakdown → month bars)
     │   ├── usePriceMix.js         useSkuSales × 2 (this period + comparison) → priceMixEffects
     │   ├── useDohSettings.js      /api/settings/doh (+ replaceRow for the row a write returns)
     │   ├── useUploads.js          upload list + actions from components/upload/UploadProvider (in the root layout, so uploads outlive the page; UploadTray shows them on every page)
@@ -421,7 +422,10 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | `PromoType` Literal in `schemas/promotions.py` and `promo_type_enum` in Postgres | `PROMO_TYPES` in `app/utils/promotionForm.js` |
 | `PromotionBase` field names | `buildPromotionPayload` / `formFromPromotion` |
 | `_PROMOTION_COLUMNS` (nested `stores`, `skus`) | `PromotionList.jsx`, `promotionOverview.js` |
-| `sales.py` query-param names (`start_date`, `end_date`, `granularity`, `customer`, `store`, `sku` …) | `URLSearchParams` keys in `hooks/*.js` and `services/salesApi.js` |
+| `sales.py` query-param names (`start_date`, `end_date`, `granularity`, `customer`, `customers` (comma-separated, on `default-date-range` / `monthly-only`), `store`, `sku` …) | `URLSearchParams` keys in `hooks/*.js` and `services/salesApi.js` |
+| `sellout_service.get_customer_options` (`/api/sales/customer-options`: `value` slug, `label`, `customer_id` through `customer_retailers`, or null) | `useCustomerOptions.js`, `storeFormats.customerColorOrder` (colours matched by `customer_id`, not name), `CustomerSelector.jsx` |
+| `sellout_service.get_default_date_range` (`customers` → latest / earliest across them: `start`, `end`, `earliest_start`, `latest_week_start`) | `useDefaultDateRange.js`, `utils/dataBounds.js` (`isWithinData`), `MonthRangeCalendar.jsx`, `DateRangeControl.jsx`, `CompareControl.jsx`, `app/dashboard/page.js` (saved Period / Compare to fall back when outside) |
+| `sellout_service.get_customer_totals` per-channel `has_data` (rows loaded for the period) | `RevenueSummaryCards.jsx` ("No sales data"), `SkuRanking.jsx` customer rows ("No data") |
 | `sellout_service.get_customer_trends` (`/api/sales/customer-trends`: `customers[]` with `offline`/`online` period lists, `has_*`; no cap on customers) | `salesApi.getCustomerTrends`, `useCustomerTrends.js`, `utils/customerTrend.js`, `utils/chartKind.js` (`MAX_BARS_DESKTOP`/`MAX_BARS_MOBILE`), `CustomerTrendChart.jsx`, `CustomerSelector.jsx` |
 | `sellout_service` estimated part of revenue: `estimated_revenue` (dashboard summary rows, customer totals), `estimated_value` (SKU ranking), from the `revenue_estimated` row flag | `utils/estimatedRevenue.js`, `EstMark.jsx` (top right of each `RevenueSummaryCards` tile, beside `SkuRanking` values; `TrendChart` tooltip) |
 | `mapping_view` packet/rule keys (`targetField`, `sourceColumn`, `editable`, `status`, `field`, `meltGroup`, `options`, `description`, `requiredMissing`, `checks`) | `utils/mappingReview.js`, `components/mappings/*` |

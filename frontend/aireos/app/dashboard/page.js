@@ -30,6 +30,7 @@ import {
 import { DEFAULT_PRESET_ID, buildDateRangePresets } from "@/app/utils/dateRangePresets";
 import { rangeHasWeeklyMonths, weeklyGapMessage } from "@/app/utils/weeklyGaps";
 import { customerColorOrder, relabelFormatRows } from "@/app/utils/storeFormats";
+import { isWithinData } from "@/app/utils/dataBounds";
 
 const NO_CUSTOMERS = [];
 
@@ -140,25 +141,29 @@ export default function DashboardPage() {
   // GENUINE weekly row: anchoring them on a monthly total's start (Aug 1, a
   // Saturday) put every week on the wrong weekday, so a Jul 30 – Aug 5 week
   // was labelled "Aug 1 – Aug 7" and paired with the wrong weeks.
-  // The latest loaded period is read across every ticked customer that sells
-  // on this channel, so one whose data stops sooner (FairPrice at August)
-  // doesn't hold the default month and the month picker back while others
-  // have September or October. Customers without the channel are left out
-  // (NHG has no online sales): asking only for them would return no period
-  // at all, leaving the page on its loading state for ever. Before the
-  // freshness map loads, the first ticked customer stands in.
-  const rangeCustomers = customers.filter((name) => channels[`${name}_${mode}`]);
+  // The latest loaded period is read across every ticked customer, so one
+  // whose data stops sooner (FairPrice at August) doesn't hold the default
+  // month and the month picker back while others have September or October.
+  // Sent as ticked, without waiting for the freshness map: a customer with no
+  // retailer on this channel (NHG online) just matches no rows, and the page
+  // already switches to Offline when no ticked customer sells online.
   const {
     start: latestPeriodStart,
     end: latestDataEnd,
     earliestStart: earliestDataStart,
     latestWeekStart: latestGenuineWeekStart,
-  } = useDefaultDateRange({ customer, customers: rangeCustomers, mode, dataVersion, period: 'week' });
+  } = useDefaultDateRange({ customer, customers, mode, dataVersion, period: 'week' });
   const latestWeekStart = latestGenuineWeekStart || latestPeriodStart;
   const presets = buildDateRangePresets(latestPeriodStart);
   const defaultRange = presets.find((preset) => preset.id === DEFAULT_PRESET_ID) ?? { start: '', end: '' };
 
-  const hasExplicitDateFilter = Boolean(startDate && endDate);
+  // A picked Period only applies while it is inside the ticked customers'
+  // data: switching from Prime (data to Oct) to FairPrice (to Aug) would
+  // otherwise leave the page on an empty October the picker no longer
+  // offers. Outside it, the page falls back to the default (Latest month);
+  // the pick is kept, so ticking Prime again brings it back.
+  const hasExplicitDateFilter =
+    Boolean(startDate && endDate) && isWithinData({ start: startDate, end: endDate }, earliestDataStart, latestDataEnd);
   const effectiveStartDate = hasExplicitDateFilter ? startDate : defaultRange.start;
   const effectiveEndDate = hasExplicitDateFilter ? endDate : defaultRange.end;
 
@@ -186,16 +191,28 @@ export default function DashboardPage() {
     latestDataEnd,
     custom: customCompare,
   };
-  const { options: compareOptions, baseline, periodNames } = comparisonSetup(compareTo, rangeInputs);
+  // Likewise a Compare to whose period is outside the data (Same period last
+  // year after switching to a customer whose data starts this year) shows
+  // as no comparison rather than comparing against nothing.
+  const chosenComparison = comparisonSetup(compareTo, rangeInputs);
+  const comparisonFits =
+    !chosenComparison.baseline || isWithinData(chosenComparison.baseline, earliestDataStart, latestDataEnd);
+  const effectiveCompareTo = comparisonFits ? compareTo : DEFAULT_COMPARE;
+  const { options: compareOptions, baseline, periodNames } = comparisonFits
+    ? chosenComparison
+    : comparisonSetup(DEFAULT_COMPARE, rangeInputs);
   const compareShort = baseline ? `vs ${periodNames.baseline}` : '';
 
   // Some months are loaded only as monthly totals (e.g. August 2026), and a
   // weekly summary leaves them out. Checked for both sides of a comparison
   // before picking the granularity, so either side being month-only puts
   // both on month bars instead of leaving one side empty.
+  // Every ticked customer, like the date range above: the latest month can
+  // come from any of them, so By week is judged across all of them too.
   const currentMonthlyOnly = useMonthlyOnly({
     dataVersion,
     customer,
+    customers,
     store,
     sku,
     startDate: effectiveStartDate,
@@ -204,6 +221,7 @@ export default function DashboardPage() {
   const baselineMonthlyOnly = useMonthlyOnly({
     dataVersion,
     customer,
+    customers,
     store,
     sku,
     startDate: baseline?.start ?? '',
@@ -312,7 +330,7 @@ export default function DashboardPage() {
   const baselineFormatRows = baseline ? (baselineSummary.summaryByMode[mode]?.periodByFormat ?? []) : [];
   const comparisonRows = baseline
     ? alignComparisonBuckets(currentTotals, baselineTotals, {
-        compareTo,
+        compareTo: effectiveCompareTo,
         granularity: chartGranularity,
         baselineGranularity,
         currentStart: effectiveStartDate,
@@ -411,7 +429,7 @@ export default function DashboardPage() {
                   earliestDataStart={earliestDataStart}
                   latestDataEnd={latestDataEnd}
                   onDateRangeChange={handleDateRangeChange}
-                  compareTo={compareTo}
+                  compareTo={effectiveCompareTo}
                   compareOptions={compareOptions}
                   compareDisabled={comparingCustomers}
                   onCompareChange={handleCompareChange}
@@ -444,7 +462,7 @@ export default function DashboardPage() {
                 storeDisabled={customers.length !== 1}
                 store={store}
                 onStoreChange={handleStoreChange}
-                hasPeriodChanges={hasExplicitDateFilter || compareTo !== DEFAULT_COMPARE}
+                hasPeriodChanges={hasExplicitDateFilter || effectiveCompareTo !== DEFAULT_COMPARE}
                 customersFiltered={customerOptions.length > 0 && customers.length !== customerOptions.length}
                 dataVersion={dataVersion}
                 activeFilters={badges.length > 0 && badges}

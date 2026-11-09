@@ -28,11 +28,15 @@ export async function getSkuSales({ customer, mode, store, sku, startDate, endDa
  * no weekly breakdown (e.g. August 2026) — see backend
  * get_monthly_only_months. A weekly dashboard-summary misses those months.
  *
- * @param {{ customer: string, store?: string, sku?: string, startDate: string, endDate: string }} filters
+ * `customers` (the ticked ones) reads across all of them instead of `customer`.
+ *
+ * @param {{ customer: string, customers?: string[], store?: string, sku?: string, startDate: string, endDate: string }} filters
  * @returns {Promise<{ offline: string[], online: string[] }>} YYYY-MM-01 months, sorted
  */
-export async function getMonthlyOnly({ customer, store, sku, startDate, endDate }) {
-  const params = new URLSearchParams({ customer });
+export async function getMonthlyOnly({ customer, customers = [], store, sku, startDate, endDate }) {
+  const params = new URLSearchParams();
+  if (customers.length > 0) params.set('customers', customers.join(','));
+  else params.set('customer', customer);
   if (store) params.set('store', store);
   if (sku) params.set('sku', sku);
   params.set('start_date', startDate);

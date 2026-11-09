@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 
+const EMPTY_RANGE = { start: '', end: '', periodType: null, earliestStart: '', latestWeekStart: '' };
+
 /**
  * Bounds anchored to the latest available PREFERRED period for the given
  * channel (not the wall-clock date) — see backend get_default_date_range.
@@ -20,6 +22,11 @@ import { useEffect, useState } from 'react';
  * anchor is a genuine week or a whole month, so they don't assume +6 days.
  * `customers` (the ticked ones) reads across all of them instead of
  * `customer`: the latest period any of them has, the earliest any has.
+ *
+ * Bounds are kept with the customers / channel they were read for and only
+ * returned while those still apply, so a new selection reads as blank
+ * (loading) rather than the previous customers' months, and a failed read
+ * leaves them blank. A dataVersion refetch keeps the current bounds.
  */
 export default function useDefaultDateRange({
   customer = '',
@@ -28,10 +35,11 @@ export default function useDefaultDateRange({
   dataVersion = 0,
   period = 'month',
 }) {
-  const [range, setRange] = useState({ start: '', end: '', periodType: null, earliestStart: '', latestWeekStart: '' });
+  const [range, setRange] = useState({ key: '', ...EMPTY_RANGE });
 
   // One string, so a new array with the same names doesn't refetch.
   const customersKey = customers.join(',');
+  const key = JSON.stringify({ customer, customersKey, mode, period });
 
   useEffect(() => {
     if (!customer && !customersKey) return undefined;
@@ -49,8 +57,13 @@ export default function useDefaultDateRange({
           { credentials: 'include' },
         );
         const data = await res.json();
-        if (!res.ok || cancelled) return;
+        if (cancelled) return;
+        if (!res.ok) {
+          setRange({ key, ...EMPTY_RANGE });
+          return;
+        }
         setRange({
+          key,
           start: data.start ?? '',
           end: data.end ?? '',
           periodType: data.period_type ?? null,
@@ -58,8 +71,10 @@ export default function useDefaultDateRange({
           latestWeekStart: data.latest_week_start ?? '',
         });
       } catch {
-        // Silent — if this fails, callers just get '' bounds, same as no
-        // filter/default at all (all-time), rather than blocking the page.
+        // Silent: a failed read gives '' bounds for these customers, the
+        // same as no filter/default at all (all-time), rather than keeping
+        // the previous customers' months or blocking the page.
+        if (!cancelled) setRange({ key, ...EMPTY_RANGE });
       }
     }
 
@@ -67,7 +82,7 @@ export default function useDefaultDateRange({
     return () => {
       cancelled = true;
     };
-  }, [customer, customersKey, mode, dataVersion, period]);
+  }, [key, customer, customersKey, mode, dataVersion, period]);
 
-  return range;
+  return range.key === key ? range : EMPTY_RANGE;
 }

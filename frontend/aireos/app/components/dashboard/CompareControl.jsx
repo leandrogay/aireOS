@@ -46,9 +46,12 @@ export default function CompareControl({ value, options, latestDataEnd, earliest
   function choose(option) {
     if (option.value === 'custom') {
       // Start from the current custom pick, else last year's range, so the
-      // month picker opens somewhere sensible rather than empty.
+      // month picker opens somewhere sensible rather than empty; but only a
+      // range inside the loaded data, so Apply can't compare against months
+      // the calendar disables (it opens empty and Apply waits for a pick).
       const lastYear = options.find((o) => o.value === 'last-year')?.range;
-      setDraft(option.range ?? lastYear ?? { start: '', end: '' });
+      const fits = (range) => Boolean(range) && isWithinData(range, earliestDataStart, latestDataEnd);
+      setDraft([option.range, lastYear].find(fits) ?? { start: '', end: '' });
       setPickingCustom(true);
       return;
     }

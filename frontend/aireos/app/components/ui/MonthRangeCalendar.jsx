@@ -58,6 +58,9 @@ export default function MonthRangeCalendar({ draft, onDraftChange, latestDataEnd
   // The last month a click may pick: the latest data month, or, for a
   // `length`-month comparison, the month that range must start by to end there.
   const lastPickable = latestMonth && length ? shiftMonths(latestMonth, -(length - 1)) : latestMonth;
+  // A comparison as long as the Period can't start anywhere when the Period
+  // is longer than all the loaded data: every month is disabled, so say why.
+  const nothingFits = Boolean(earliestMonth && lastPickable) && lastPickable < earliestMonth;
 
   function pick(year, monthIndex) {
     const picked = monthStart(year, monthIndex);
@@ -75,7 +78,9 @@ export default function MonthRangeCalendar({ draft, onDraftChange, latestDataEnd
   }
 
   let note;
-  if (!draft.start) {
+  if (nothingFits) {
+    note = `The Period (${monthsLabel(length)}) is longer than the loaded data, so no comparison of that length fits. Pick a shorter Period first.`;
+  } else if (!draft.start) {
     note = length ? `Pick the first month to compare with (${monthsLabel(length)}, same as the Period).` : 'Pick a start month.';
   } else if (length) {
     note = `Compares ${formatPeriodName(draft.start, draft.end)} (${monthsLabel(length)}, same as the Period).`;
@@ -90,7 +95,9 @@ export default function MonthRangeCalendar({ draft, onDraftChange, latestDataEnd
       <MonthGrid
         initialYear={initialYear}
         minYear={earliestMonth ? parseIso(earliestMonth).getFullYear() : null}
-        maxYear={latestMonth ? parseIso(latestMonth).getFullYear() : null}
+        // The last year a click can pick in: for a comparison, the year its
+        // range must start by, so the arrows never reach a fully disabled year.
+        maxYear={lastPickable && !nothingFits ? parseIso(lastPickable).getFullYear() : null}
         onPick={pick}
         isSelected={(year, monthIndex) => {
           const month = monthStart(year, monthIndex);

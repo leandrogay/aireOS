@@ -164,3 +164,18 @@ def test_default_date_range_passes_ticked_customers_as_a_list(monkeypatch):
     assert response.status_code == 200
     assert seen["customers"] == ["fairprice", "prime"]
     assert (seen["mode"], seen["period"]) == ("offline", "week")
+
+
+def test_monthly_only_passes_ticked_customers_through(monkeypatch):
+    seen = {}
+
+    def fake(**kwargs):
+        seen.update(kwargs)
+        return {"offline": [], "online": []}
+
+    monkeypatch.setattr(sellout_service, "get_monthly_only_months", fake)
+
+    response = client.get("/api/sales/monthly-only?customers=fairprice,prime&start_date=2026-10-01&end_date=2026-10-31")
+
+    assert response.status_code == 200
+    assert seen["customers"] == ["fairprice", "prime"]

@@ -154,6 +154,10 @@ function SortHeader({ label, active, order, onClick }) {
 // first unless order is 'asc'. A customer with no sales in the period stays,
 // at 0, so the bottom of the list is the quiet one. Rank is the row number
 // after that sort.
+// A customer with nothing loaded for the period, in place of a 0 that would
+// read as no sales.
+const NO_DATA = <span className="text-deep-violet-blue/50">No data</span>;
+
 function rankCustomers(rows, mode, metric, order, colorOrder) {
   const shown = rows.filter((row) => (mode === 'online' ? row.has_online : row.has_offline));
   const ranked = shown
@@ -166,6 +170,8 @@ function rankCustomers(rows, mode, metric, order, colorOrder) {
         volume: channel.units ?? 0,
         value: channel.revenue ?? 0,
         estimatedValue: channel.estimated_revenue ?? 0,
+        // Nothing loaded for the period (backend has_data): "No data", not 0.
+        hasData: channel.has_data ?? true,
       };
     });
   ranked.sort((a, b) => {
@@ -393,8 +399,8 @@ export default function SkuRanking({
               </span>
             </div>
             <dl className="mt-3 grid grid-cols-2 gap-3 pl-8">
-              <div><dt className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">Volume</dt><dd>{formatVolume(row.volume)}</dd></div>
-              <div><dt className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">Value</dt><dd>{formatRevenue(row.value)}</dd></div>
+              <div><dt className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">Volume</dt><dd>{row.hasData === false ? NO_DATA : formatVolume(row.volume)}</dd></div>
+              <div><dt className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">Value</dt><dd>{row.hasData === false ? NO_DATA : formatRevenue(row.value)}</dd></div>
               {!showCustomers && baselineBySku && (
                 <div className="col-span-2"><dt className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">Change {compareShort}</dt><dd>{baselineBySku.get(row.sku)?.[metric] ? formatChangePct(changePct(row[metric], baselineBySku.get(row.sku)[metric])) : 'New'}</dd></div>
               )}
@@ -481,8 +487,8 @@ export default function SkuRanking({
                   <td className={cellClass}>
                     <NameWithEst name={row.label} value={row.value} estimated={row.estimatedValue} color={row.color} />
                   </td>
-                  <td className={numCellClass}>{formatVolume(row.volume)}</td>
-                  <td className={numCellClass}>{formatRevenue(row.value)}</td>
+                  <td className={numCellClass}>{row.hasData ? formatVolume(row.volume) : NO_DATA}</td>
+                  <td className={numCellClass}>{row.hasData ? formatRevenue(row.value) : NO_DATA}</td>
                 </tr>
               ))}
               {!tableLoading && !tableError && !showCustomers && shownSkus.map((s) => (

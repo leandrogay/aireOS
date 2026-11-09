@@ -312,6 +312,21 @@ def test_customer_options_carry_the_linked_customer_id_whatever_its_name(monkeyp
     assert "LEFT JOIN customer_retailers" in sql
 
 
+def test_customer_options_take_id_and_label_from_the_same_linked_retailer(monkeypatch):
+    # Bad link data: fairprice's channels point at two customer records. The
+    # first linked retailer by name (offline) gives both id and label, in
+    # whatever order the rows arrive.
+    rows = [
+        {"retailer_name": "fairprice_online", "customer_id": 9, "customer_name": "Other"},
+        {"retailer_name": "fairprice_offline", "customer_id": 1, "customer_name": "FairPrice"},
+    ]
+    _install(monkeypatch, lambda sql, params: rows)
+
+    options = sellout_service.get_customer_options()
+
+    assert options == [{"value": "fairprice", "label": "FairPrice", "customer_id": 1}]
+
+
 # ---- get_customer_totals ------------------------------------------------
 
 
@@ -365,17 +380,19 @@ def test_customer_totals_reports_channel_presence_and_period_sums(monkeypatch):
         {
             "customer": "nhg",
             "label": "NHG",
-            "offline": {"revenue": 40.0, "units": 4.0, "estimated_revenue": 0.0},
+            "offline": {"revenue": 40.0, "units": 4.0, "estimated_revenue": 0.0, "has_data": True},
             "has_offline": True,
-            "online": {"revenue": 0.0, "units": 0.0, "estimated_revenue": 0.0},
+            "online": {"revenue": 0.0, "units": 0.0, "estimated_revenue": 0.0, "has_data": False},
             "has_online": False,
         },
         {
             "customer": "fairprice",
             "label": "Fairprice",
-            "offline": {"revenue": 100.13, "units": 10.0, "estimated_revenue": 20.0},
+            "offline": {"revenue": 100.13, "units": 10.0, "estimated_revenue": 20.0, "has_data": True},
             "has_offline": True,
-            "online": {"revenue": 0.0, "units": 0.0, "estimated_revenue": 0.0},
+            # FairPrice sells online but loaded nothing for this period: the
+            # 0s are a missing upload, not no sales.
+            "online": {"revenue": 0.0, "units": 0.0, "estimated_revenue": 0.0, "has_data": False},
             "has_online": True,
         },
     ]
@@ -490,6 +507,20 @@ def test_monthly_only_lists_each_channels_months_sorted_and_deduplicated(monkeyp
     result = sellout_service.get_monthly_only_months(customer="fairprice")
 
     assert result == {"offline": ["2026-06-01", "2026-08-01"], "online": ["2026-08-01"]}
+
+
+def test_monthly_only_for_several_customers_reads_all_their_retailers(monkeypatch):
+    # Prime's October is a monthly total only; FairPrice has nothing for
+    # October. With both ticked, October is monthly-only, so By week isn't
+    # offered for a month that would drop Prime's sales.
+    rows = [{"retailer": "prime_offline", "month": date(2026, 10, 1)}]
+    conn = _install(monkeypatch, lambda sql, params: rows)
+
+    result = sellout_service.get_monthly_only_months(customers=["fairprice", " prime ", ""])
+
+    assert result == {"offline": ["2026-10-01"], "online": []}
+    (_sql, params) = conn.calls[0]
+    assert params["retailer_names"] == ["fairprice_offline", "fairprice_online", "prime_offline", "prime_online"]
 
 
 def test_monthly_only_with_no_monthly_only_months_gives_empty_lists(monkeypatch):

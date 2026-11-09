@@ -34,6 +34,6 @@ describe('isWithinData', () => {
 
 describe('outsideDataNote', () => {
   test('names the loaded months', () => {
-    assert.equal(outsideDataNote(...A_ONLY), 'Only May 2026 – Jun 2026 has data for the selected customers');
+    assert.equal(outsideDataNote(...A_ONLY), 'Outside May – Jun 2026, the months with data for at least one selected customer');
   });
 });
