@@ -121,7 +121,7 @@ export default function CustomersView() {
         const updated = await updateCustomer(customer.customer_id, { customer_name: name });
         applyCustomer(updated);
         setHighlightId(updated.customer_id);
-        notify('updated', `Customer renamed to ${retailerLabel(updated.customer_name)}`);
+        notify('updated', `Renamed to ${retailerLabel(updated.customer_name)}`);
       } else if (type === 'retailer-create') {
         const result = await createRetailer({ retailer_name: name, customer_id: customer.customer_id });
         showCustomer(result.customer);
@@ -130,7 +130,7 @@ export default function CustomersView() {
         const result = await updateRetailer(retailer.retailer_id, { retailer_name: name });
         if (result.customer) showCustomer(result.customer);
         else applyUnlinked(result.retailer);
-        notify('updated', `Retailer renamed to ${retailerLabel(result.retailer.retailer_name)}`);
+        notify('updated', `Renamed to ${retailerLabel(result.retailer.retailer_name)}`);
       }
       setDialog(null);
     } catch (err) {
@@ -146,7 +146,7 @@ export default function CustomersView() {
       showCustomer(result.customer);
       notify(
         'updated',
-        `${retailerLabel(result.retailer.retailer_name)} linked to ${retailerLabel(result.customer.customer_name)}`,
+        `Retailer linked to ${retailerLabel(result.customer.customer_name)}`,
       );
       setLinking(null);
     } catch (err) {

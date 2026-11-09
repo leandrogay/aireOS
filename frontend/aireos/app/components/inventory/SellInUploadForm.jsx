@@ -83,7 +83,7 @@ export default function SellInUploadForm({ onSaved }) {
     try {
       const result = await applySellInUpload(file);
       onSaved(
-        `Sell-in saved from ${file.name}: ${plural(result.records_written, 'value')} updated, ${result.unchanged} already the same.`,
+        `Sell-in: ${result.records_written} updated, ${result.unchanged} unchanged`,
       );
       handleCancel();
     } catch (err) {

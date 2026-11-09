@@ -59,8 +59,10 @@ const KINDS = {
  * Small self-dismissing confirmation in the top right corner of the screen,
  * the same place on every page, e.g. "Thresholds updated successfully". Clicks
  * pass straight through it to whatever is underneath, except on its close
- * button, so it never gets in the way. Pair it with
- * hooks/useToast, which owns the state:
+ * button, so it never gets in the way. Every toast is the same size: the
+ * message stays on one line and a longer one is cut with "...", so keep
+ * messages to about 38 characters. Pair it with hooks/useToast, which owns the
+ * state:
  *
  *   const { toast, notify, dismissToast } = useToast();
  *   notify('success', 'Saved');
@@ -95,7 +97,7 @@ export default function Toast({ toast, onDismiss }) {
         role={toast.type === 'error' ? 'alert' : 'status'}
         aria-live={toast.type === 'error' ? 'assertive' : 'polite'}
         className={cn(
-          'relative w-80 max-w-full overflow-hidden rounded-2xl border border-lavander bg-white',
+          'relative w-96 max-w-full overflow-hidden rounded-2xl border border-lavander bg-white',
           'animate-in fade-in-0 zoom-in-95 slide-in-from-right-2 duration-300 ease-out motion-reduce:animate-none',
           POPUP_SHADOW_CLASS,
         )}
@@ -107,9 +109,9 @@ export default function Toast({ toast, onDismiss }) {
           >
             <Icon className="size-[18px]" strokeWidth={2.25} />
           </span>
-          <div className="min-w-0 flex-1 wrap-anywhere">
+          <div className="min-w-0 flex-1">
             <p className={cn('text-[11px] leading-4 font-semibold tracking-wide uppercase', text)}>{label}</p>
-            <p className="text-sm leading-snug font-medium text-deep-violet-blue">{toast.message}</p>
+            <p className="truncate text-sm leading-snug font-medium text-deep-violet-blue">{toast.message}</p>
           </div>
           <button
             type="button"

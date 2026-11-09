@@ -36,12 +36,12 @@ export default function DohSettingsView() {
     replaceRow(result.settings);
     setEditingId(null);
     if (!result.changed) {
-      notify('success', 'No changes to save: the thresholds are already set to these values');
+      notify('success', 'No changes to save');
     } else if (result.settings.is_global_default) {
       // Saved the default values, e.g. after "Restore defaults" in the form.
-      notify('success', `Thresholds for ${retailerLabel(result.settings.customer_name)} reset to the global default`);
+      notify('success', `${retailerLabel(result.settings.customer_name)} reset to global default`);
     } else {
-      notify('success', 'Thresholds updated successfully');
+      notify('success', 'Thresholds updated');
     }
   }
 

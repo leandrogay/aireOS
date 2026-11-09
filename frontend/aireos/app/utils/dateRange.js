@@ -38,3 +38,8 @@ export function writeForecastDateSession(start, end) {
   if (typeof window === 'undefined' || !start || !end) return;
   sessionStorage.setItem(FORECAST_DATE_SESSION_KEY, JSON.stringify({ start, end }));
 }
+
+export function clearForecastDateSession() {
+  if (typeof window === 'undefined') return;
+  sessionStorage.removeItem(FORECAST_DATE_SESSION_KEY);
+}
