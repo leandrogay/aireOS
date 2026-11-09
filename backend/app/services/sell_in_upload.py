@@ -38,7 +38,7 @@ DESCRIPTION_PRODUCTS = {
 # AireOS stores them under, for customers whose name in the tracker differs
 # from what they are called in the inventory customer list.
 CUSTOMER_ALIASES = {
-    "CMM MARKETING SERVICES PTE LTD": "sheng_shiong",
+    "CMM MARKETING SERVICES PTE LTD": "sheng_siong",
 }
 
 _NO_ROWS_MESSAGE = (

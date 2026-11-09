@@ -214,7 +214,7 @@ def test_a_customer_in_use_cannot_be_deleted(monkeypatch):
     conn = FakeConnection(_respond(customer=_customer(in_use=True)))
     _install(monkeypatch, conn)
 
-    with pytest.raises(customer_service.CustomerInUseError, match="can't be deleted"):
+    with pytest.raises(customer_service.CustomerInUseError, match="Can't delete"):
         customer_service.delete_customer(3)
 
     assert conn.sql_containing("DELETE FROM customers") == []

@@ -8,9 +8,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import ChartLoading from '@/components/ui/ChartLoading';
 import LineChartSkeleton from '@/components/ui/LineChartSkeleton';
+import LineToggle from '@/components/ui/LineToggle';
 import { Skeleton } from '@/components/ui/skeleton';
 import ForecastConfidenceDetails from '@/components/forecast/ForecastConfidenceDetails';
-import ForecastLineToggle from '@/components/forecast/ForecastLineToggle';
 import ForecastPointDetails from '@/components/forecast/ForecastPointDetails';
 import ForecastPromoPanel from '@/components/forecast/ForecastPromoPanel';
 import ForecastPromoToggle from '@/components/forecast/ForecastPromoToggle';
@@ -488,7 +488,7 @@ export default function ForecastChart({
       <CardContent className="min-w-0 space-y-3">
         {toolbar}
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-lavander bg-white px-3 py-2">
-          <ForecastLineToggle
+          <LineToggle
             series={allSeries}
             visible={shownSeries}
             onToggle={onToggleSeries}

@@ -423,10 +423,10 @@ def set_anchor(
 def _adopt_values(entry: dict, customer_id: int, sku_range: str | None, updated_by: str) -> dict:
     recommended = entry["recommended"]
     if recommended is None:
-        raise UpliftSettingConflictError("There are too few moments to recommend an anchor; type a discount instead.")
+        raise UpliftSettingConflictError("Too few moments; type a discount")
     if recommended["anchor_pct"] is None:
         raise UpliftSettingConflictError(
-            f"{recommended['mechanic_label']} has no uplift setting to take its discount from; add it first."
+            f"Add an uplift for {recommended['mechanic_label']} first"
         )
     return {
         "customer_id": customer_id,
@@ -824,11 +824,11 @@ def _current_version(conn: Connection, setting_id: int) -> tuple[dict, list[dict
 
     if common.newest(rows, _uplift_target)[_uplift_target(row)]["id"] != setting_id:
         raise UpliftSettingConflictError(
-            f"Uplift setting {setting_id} has been replaced by a newer version; reload and try again."
+            "Out of date; reload and try again"
         )
     if row["source"] == "learned":
         raise UpliftSettingConflictError(
-            "Learned values are set by the forecasting model after each retrain and cannot be edited."
+            "Learned values can't be edited"
         )
     return row, _current_uplifts(rows)
 
@@ -944,7 +944,7 @@ def reset_uplift(setting_id: int, updated_by: str | None = None) -> dict:
         else:
             uplift_pct = _seed_placeholder(_uplift_rows(conn), row["mechanic_key"])
             if uplift_pct is None:
-                raise UpliftSettingConflictError(f"{row['promotion_mechanic']} has no placeholder value to go back to.")
+                raise UpliftSettingConflictError(f"{row['promotion_mechanic']} has no placeholder value")
 
         new_id = _insert_uplift(
             conn,

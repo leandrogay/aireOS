@@ -208,7 +208,7 @@ export default function InventoryBulkEditForm({ customers, editRow, onSaved }) {
     const failCount = dirtySkus.length - successCount;
     if (failCount === 0) {
       onSaved(
-        `Inventory data updated for ${successCount} SKU${successCount === 1 ? '' : 's'} (${formatMonth(monthInputToDate(month))}).`,
+        `Updated ${successCount} SKU${successCount === 1 ? '' : 's'} · ${formatMonth(monthInputToDate(month))}`,
       );
     } else {
       setTopError(

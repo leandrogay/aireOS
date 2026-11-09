@@ -86,8 +86,8 @@ export default function PromoUpliftSettingsView() {
     notify(
       'success',
       result.changed
-        ? `Ordinary-month discount for ${target.name} saved`
-        : 'No changes to save: the discount is already set to this value'
+        ? 'Ordinary-month discount saved'
+        : 'No changes to save'
     );
   }
 
@@ -97,7 +97,7 @@ export default function PromoUpliftSettingsView() {
       const entry = result.anchor.ranges.find((item) => item.sku_range === target.skuRange) ?? result.anchor;
       setAnchorDetails(null);
       refresh();
-      notify('success', `${target.name} now anchors on ${anchorLabel(entry)}`);
+      notify('success', `Anchor set to ${anchorLabel(entry)}`);
     } catch (err) {
       notify('error', err.message);
     }
@@ -109,7 +109,7 @@ export default function PromoUpliftSettingsView() {
       // A save is a new version with a new id, so the open row is now stale.
       setDetailsTarget(null);
       refresh();
-      notify('success', result.changed ? `${row.mechanic_label} saved as an Estimate` : 'No changes to save');
+      notify('success', result.changed ? 'Saved as an Estimate' : 'No changes to save');
       return true;
     } catch (err) {
       notify('error', err.message);
@@ -122,7 +122,7 @@ export default function PromoUpliftSettingsView() {
       await resetPromoUplift(row.id);
       setDetailsTarget(null);
       refresh();
-      notify('success', row.scope === 'all' ? `${row.mechanic_label} is a placeholder again` : 'Value removed');
+      notify('success', row.scope === 'all' ? 'Back to a placeholder' : 'Value removed');
     } catch (err) {
       notify('error', err.message);
     }
@@ -131,7 +131,7 @@ export default function PromoUpliftSettingsView() {
   function handleOverrideSaved(result) {
     setAddingOverride(false);
     refresh();
-    notify('success', `${result.setting.mechanic_label} value added`);
+    notify('success', 'Value added');
   }
 
   return (

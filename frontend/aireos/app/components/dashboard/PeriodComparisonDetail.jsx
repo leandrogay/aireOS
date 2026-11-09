@@ -1,58 +1,12 @@
 'use client';
 
-import { Info } from 'lucide-react';
+import { ChangeFigure, ChangeValue, ComparisonNote } from '@/components/ui/ComparisonFigures';
 import { Skeleton } from '@/components/ui/skeleton';
-import { changePct, formatChangePct, parseIso } from '@/app/utils/periodComparison';
+import { changePct, parseIso } from '@/app/utils/periodComparison';
 import { formatRevenue } from '@/app/utils/trendChart';
 
 function formatDayMonth(iso) {
   return parseIso(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-}
-
-// Green up, red down — always; any caveat goes in the note underneath,
-// not in the colour.
-function toneClass(pct) {
-  if (pct === null || pct === 0) return 'text-deep-violet-blue/70';
-  return pct > 0 ? 'text-green-600' : 'text-red-600';
-}
-
-// "▲ +12.8%" in its tone, for the smaller figures under the headline.
-function Change({ pct }) {
-  return (
-    <span className={`font-medium tabular-nums ${toneClass(pct)}`}>
-      <Arrow pct={pct} />
-      {formatChangePct(pct)}
-    </span>
-  );
-}
-
-function Arrow({ pct }) {
-  if (pct > 0) return <span aria-hidden="true">▲ </span>;
-  if (pct < 0) return <span aria-hidden="true">▼ </span>;
-  return null;
-}
-
-// Revenue and Volume growth as equal headline figures, side by side, so it
-// reads at a glance whether revenue grew faster than volume (price or mix).
-// With no change to show (a side has no data, or the comparison is zero) it
-// reads "N/A" in a muted tone with no arrow, so missing data never looks
-// like a -100% collapse.
-function GrowthFigure({ label, pct }) {
-  return (
-    <div className="flex-1">
-      <p className="text-xs text-deep-violet-blue/70">{label}</p>
-      {pct === null ? (
-        <p className="text-xl font-semibold text-deep-violet-blue/40" title="Data not available">
-          N/A
-        </p>
-      ) : (
-        <p className={`text-xl font-semibold tabular-nums ${toneClass(pct)}`}>
-          <Arrow pct={pct} />
-          {formatChangePct(pct)}
-        </p>
-      )}
-    </div>
-  );
 }
 
 // One period per row — name + short tag, revenue, units — so the card reads
@@ -190,21 +144,23 @@ export default function PeriodComparisonDetail({
               the average-price change and what drove it, then each
               period's totals. */}
           <div className="flex gap-3">
-            <GrowthFigure label="Revenue" pct={revenuePct} />
-            <GrowthFigure label="Volume" pct={volumePct} />
+            {/* Green up, red down — always; any caveat goes in the note
+                underneath, not in the colour. */}
+            <ChangeFigure label="Revenue" pct={revenuePct} />
+            <ChangeFigure label="Volume" pct={volumePct} />
           </div>
 
           {aspPct !== null && (
             <div className="mt-2 border-t border-lavander pt-2 text-xs text-deep-violet-blue/70">
               <p className="flex items-baseline justify-between gap-2">
                 <span className="font-medium text-deep-violet-blue">Avg price per unit</span>
-                <Change pct={aspPct} />
+                <ChangeValue pct={aspPct} />
               </p>
               {priceMix && (
                 <dl className="mt-1 grid grid-cols-[auto_auto_1fr] items-baseline gap-x-2 gap-y-0.5 pl-2">
                   <dt>Price</dt>
                   <dd>
-                    <Change pct={priceMix.pricePct} />
+                    <ChangeValue pct={priceMix.pricePct} />
                   </dd>
                   <dd className="text-deep-violet-blue/60">
                     <span className="mr-1.5 text-deep-violet-blue/30" aria-hidden="true">|</span>
@@ -213,7 +169,7 @@ export default function PeriodComparisonDetail({
                   </dd>
                   <dt>Mix</dt>
                   <dd>
-                    <Change pct={priceMix.mixPct} />
+                    <ChangeValue pct={priceMix.mixPct} />
                   </dd>
                   <dd className="text-deep-violet-blue/60">
                     <span className="mr-1.5 text-deep-violet-blue/30" aria-hidden="true">|</span>
@@ -240,12 +196,7 @@ export default function PeriodComparisonDetail({
             />
           </div>
 
-          {note && (
-            <p className="mt-2 flex items-start gap-1.5 rounded-md bg-lavander/60 px-2 py-1 text-xs text-deep-violet-blue">
-              <Info className="mt-px size-3.5 shrink-0" aria-hidden="true" />
-              <span>{note}</span>
-            </p>
-          )}
+          {note && <ComparisonNote>{note}</ComparisonNote>}
         </>
       )}
     </div>

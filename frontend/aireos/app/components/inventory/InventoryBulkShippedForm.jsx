@@ -195,7 +195,7 @@ export default function InventoryBulkShippedForm({ customers, skus: catalogSkus,
     const failCount = dirtySkus.length - successCount;
     if (failCount === 0) {
       onSaved(
-        `Temporary sell-in saved for ${successCount} SKU${successCount === 1 ? '' : 's'} (${formatMonth(monthInputToDate(month))}). The sell-in plan now counts it.`,
+        `Temporary sell-in: ${successCount} SKU${successCount === 1 ? '' : 's'} · ${formatMonth(monthInputToDate(month))}`,
       );
     } else {
       setTopError(
