@@ -18,23 +18,31 @@ import { useEffect, useState } from 'react';
  * monthly total.
  * `periodType` tells callers whether the
  * anchor is a genuine week or a whole month, so they don't assume +6 days.
+ * `customers` (the ticked ones) reads across all of them instead of
+ * `customer`: the latest period any of them has, the earliest any has.
  */
 export default function useDefaultDateRange({
   customer = '',
+  customers = [],
   mode = 'offline',
   dataVersion = 0,
   period = 'month',
 }) {
   const [range, setRange] = useState({ start: '', end: '', periodType: null, earliestStart: '', latestWeekStart: '' });
 
+  // One string, so a new array with the same names doesn't refetch.
+  const customersKey = customers.join(',');
+
   useEffect(() => {
-    if (!customer) return undefined;
+    if (!customer && !customersKey) return undefined;
 
     let cancelled = false;
 
     async function fetchRange() {
       try {
-        const params = new URLSearchParams({ period, customer });
+        const params = new URLSearchParams({ period });
+        if (customersKey) params.set('customers', customersKey);
+        else params.set('customer', customer);
         if (mode) params.set('mode', mode);
         const res = await fetch(
           `${process.env.NEXT_PUBLIC_API_URL}/api/sales/default-date-range?${params.toString()}`,
@@ -59,7 +67,7 @@ export default function useDefaultDateRange({
     return () => {
       cancelled = true;
     };
-  }, [customer, mode, dataVersion, period]);
+  }, [customer, customersKey, mode, dataVersion, period]);
 
   return range;
 }

@@ -537,6 +537,35 @@ def test_default_date_range_earliest_start_is_scoped_to_the_channel(monkeypatch)
     assert params == {"retailer_name": "fairprice_offline"}
 
 
+def test_default_date_range_for_several_customers_reads_all_their_retailers(monkeypatch):
+    # FairPrice stops at August while Prime runs to October: with both ticked,
+    # the latest (and earliest) period is read across both, not FairPrice alone.
+    rows = [{"period_start": date(2026, 10, 1), "period_end": date(2026, 10, 31), "period_type": "month"}]
+    conn = _install(monkeypatch, _latest_and_earliest(rows, date(2024, 1, 4)))
+
+    result = sellout_service.get_default_date_range(
+        customers=["fairprice", " prime ", ""], mode="offline", period="week",
+    )
+
+    assert result["start"] == "2026-10-01"
+    both = ["fairprice_offline", "prime_offline"]
+    [(latest_sql, latest_params)] = conn.sql_containing("ORDER BY period_end DESC")
+    assert "ANY(CAST(:retailer_names AS text[]))" in latest_sql
+    assert latest_params["retailer_names"] == both
+    [(_sql, earliest_params)] = conn.sql_containing("MIN(period_start)")
+    assert earliest_params == {"retailer_names": both}
+
+
+def test_default_date_range_for_several_customers_without_mode_reads_both_channels(monkeypatch):
+    rows = [{"period_start": date(2026, 9, 1), "period_end": date(2026, 9, 30), "period_type": "month"}]
+    conn = _install(monkeypatch, _latest_and_earliest(rows, date(2024, 1, 4)))
+
+    sellout_service.get_default_date_range(customers=["fairprice", "nhg"])
+
+    [(_sql, params)] = conn.sql_containing("MIN(period_start)")
+    assert params == {"retailer_names": ["fairprice_offline", "fairprice_online", "nhg_offline", "nhg_online"]}
+
+
 def test_default_date_range_month_spans_count_back_from_the_latest_periods_month(monkeypatch):
     rows = [{"period_start": date(2026, 8, 1), "period_end": date(2026, 8, 31), "period_type": "month"}]
     _install(monkeypatch, _latest_and_earliest(rows, date(2024, 1, 4)))

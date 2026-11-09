@@ -208,10 +208,19 @@ def get_period_comparison(
 
 @router.get("/default-date-range")
 def get_default_date_range(
-    customer: str = sellout_service.DEFAULT_CUSTOMER, mode: str | None = None, period: str = "month"
+    customer: str = sellout_service.DEFAULT_CUSTOMER,
+    mode: str | None = None,
+    period: str = "month",
+    customers: str = "",
 ):
+    """Latest loaded period for one customer, or across `customers` (comma-separated) when given."""
     try:
-        return sellout_service.get_default_date_range(customer=customer, mode=mode, period=period)
+        return sellout_service.get_default_date_range(
+            customer=customer,
+            mode=mode,
+            period=period,
+            customers=[part.strip() for part in customers.split(",") if part.strip()],
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except (SQLAlchemyError, config.ConfigError, GoogleAuthError) as e:

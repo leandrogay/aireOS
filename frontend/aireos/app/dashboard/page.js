@@ -139,18 +139,20 @@ export default function DashboardPage() {
   // GENUINE weekly row: anchoring them on a monthly total's start (Aug 1, a
   // Saturday) put every week on the wrong weekday, so a Jul 30 – Aug 5 week
   // was labelled "Aug 1 – Aug 7" and paired with the wrong weeks.
-  // The latest loaded period is read for one customer: the first ticked one
-  // that sells on this channel. The first ticked customer may not (NHG has no
-  // online sales), and asking for it would return no period at all, leaving
-  // the page on its loading state for ever. Before the freshness map loads,
-  // the first ticked customer stands in.
-  const rangeCustomer = customers.find((name) => channels[`${name}_${mode}`]) ?? customer;
+  // The latest loaded period is read across every ticked customer that sells
+  // on this channel, so one whose data stops sooner (FairPrice at August)
+  // doesn't hold the default month and the month picker back while others
+  // have September or October. Customers without the channel are left out
+  // (NHG has no online sales): asking only for them would return no period
+  // at all, leaving the page on its loading state for ever. Before the
+  // freshness map loads, the first ticked customer stands in.
+  const rangeCustomers = customers.filter((name) => channels[`${name}_${mode}`]);
   const {
     start: latestPeriodStart,
     end: latestDataEnd,
     earliestStart: earliestDataStart,
     latestWeekStart: latestGenuineWeekStart,
-  } = useDefaultDateRange({ customer: rangeCustomer, mode, dataVersion, period: 'week' });
+  } = useDefaultDateRange({ customer, customers: rangeCustomers, mode, dataVersion, period: 'week' });
   const latestWeekStart = latestGenuineWeekStart || latestPeriodStart;
   const presets = buildDateRangePresets(latestPeriodStart);
   const defaultRange = presets.find((preset) => preset.id === DEFAULT_PRESET_ID) ?? { start: '', end: '' };

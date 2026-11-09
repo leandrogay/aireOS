@@ -148,3 +148,19 @@ def test_customer_trends_maps_bad_input_to_400(monkeypatch):
 
     assert response.status_code == 400
     assert "granularity" in response.json()["detail"]
+
+
+def test_default_date_range_passes_ticked_customers_as_a_list(monkeypatch):
+    seen = {}
+
+    def fake(**kwargs):
+        seen.update(kwargs)
+        return {"start": None, "end": None, "period_type": None, "earliest_start": None, "latest_week_start": None}
+
+    monkeypatch.setattr(sellout_service, "get_default_date_range", fake)
+
+    response = client.get("/api/sales/default-date-range?customers=fairprice,prime&mode=offline&period=week")
+
+    assert response.status_code == 200
+    assert seen["customers"] == ["fairprice", "prime"]
+    assert (seen["mode"], seen["period"]) == ("offline", "week")

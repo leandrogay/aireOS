@@ -1508,15 +1508,28 @@ def _dashboard_scope(
 # ============================================================
 
 
-def _latest_week_start(retailer: str | None) -> pd.Timestamp | None:
+def _retailer_scope(retailer: str | list[str] | None) -> tuple[list[str], dict]:
+    # WHERE clause + params limiting sellout rows to one retailer, several
+    # (the dashboard's ticked customers), or none (every retailer).
+    if not retailer:
+        return [], {}
+    if isinstance(retailer, list):
+        return (
+            ["retailer_id IN (SELECT retailer_id FROM retailers WHERE retailer_name = ANY(CAST(:retailer_names AS text[])))"],
+            {"retailer_names": retailer},
+        )
+    return (
+        ["retailer_id IN (SELECT retailer_id FROM retailers WHERE retailer_name = :retailer_name)"],
+        {"retailer_name": retailer},
+    )
+
+
+def _latest_week_start(retailer: str | list[str] | None) -> pd.Timestamp | None:
     # Most recent GENUINE week row's period_start -- for a week-over-week
     # comparison and the dashboard's week grid, which are inherently weekly
     # and must not silently substitute a monthly period.
-    where_clauses = ["period_type = 'week'"]
-    params: dict = {}
-    if retailer:
-        where_clauses.append("retailer_id IN (SELECT retailer_id FROM retailers WHERE retailer_name = :retailer_name)")
-        params["retailer_name"] = retailer
+    scope, params = _retailer_scope(retailer)
+    where_clauses = ["period_type = 'week'", *scope]
     query = text(
         f"""
         SELECT period_start FROM sellout
@@ -1530,11 +1543,12 @@ def _latest_week_start(retailer: str | None) -> pd.Timestamp | None:
     return pd.Timestamp(row[0]) if row else None
 
 
-def _latest_preferred_period(retailer: str | None) -> dict | None:
+def _latest_preferred_period(retailer: str | list[str] | None) -> dict | None:
     """
     The single most recent period from the effective-sellout view (monthly
     rows preferred over weekly for the same retailer+month), optionally
-    scoped to one retailer/channel -- None when there's no data. Returns
+    scoped to one retailer/channel or a list of them (the latest across all
+    of them) -- None when there's no data. Returns
     {"start": date, "end": date, "period_type": "week"|"month"}; period_end
     already correctly bounds coverage for both a week row and a month row,
     so callers never need to special-case granularity to know "how much of
@@ -1545,11 +1559,7 @@ def _latest_preferred_period(retailer: str | None) -> dict | None:
     anchors on the single latest period across every retailer, not just one
     customer's. Preserved rather than "fixed" as a drive-by here.
     """
-    where_clauses = []
-    params: dict = {}
-    if retailer:
-        where_clauses.append("retailer_id IN (SELECT retailer_id FROM retailers WHERE retailer_name = :retailer_name)")
-        params["retailer_name"] = retailer
+    where_clauses, params = _retailer_scope(retailer)
     where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
     # Only dates are read, so nothing is priced.
     params["revenue_estimates"] = NO_REVENUE_ESTIMATES
@@ -1570,15 +1580,12 @@ def _latest_preferred_period(retailer: str | None) -> dict | None:
     return {"start": row["period_start"], "end": row["period_end"], "period_type": row["period_type"]}
 
 
-def _earliest_period_start(retailer: str | None):
+def _earliest_period_start(retailer: str | list[str] | None):
     # Start of the first sellout row (week or month), scoped like
-    # _latest_preferred_period: one retailer/channel, or every retailer when
-    # None. None when there's no data.
-    where_sql = ""
-    params: dict = {}
-    if retailer:
-        where_sql = "WHERE retailer_id IN (SELECT retailer_id FROM retailers WHERE retailer_name = :retailer_name)"
-        params["retailer_name"] = retailer
+    # _latest_preferred_period: one retailer/channel, a list of them, or every
+    # retailer when None. None when there's no data.
+    scope, params = _retailer_scope(retailer)
+    where_sql = f"WHERE {' AND '.join(scope)}" if scope else ""
     query = text(f"SELECT MIN(period_start) AS earliest_start FROM sellout {where_sql}")
     with _get_read_engine().connect() as conn:
         row = conn.execute(query, params).mappings().first()
@@ -1598,7 +1605,10 @@ def _year_bounds(anchor: pd.Timestamp) -> tuple[pd.Timestamp, pd.Timestamp]:
 
 
 def get_default_date_range(
-    customer: str = DEFAULT_CUSTOMER, mode: str | None = None, period: str = "month"
+    customer: str = DEFAULT_CUSTOMER,
+    mode: str | None = None,
+    period: str = "month",
+    customers: list[str] | None = None,
 ) -> dict:
     # Bounds anchored to the latest available PREFERRED period (monthly rows
     # win over weekly for the same retailer+month) -- not just the latest
@@ -1609,13 +1619,25 @@ def get_default_date_range(
     # '6months'/'12months' count calendar months back from that period's
     # month. `period_type` in the response tells the frontend whether the
     # latest period is a week or a month.
+    # `customers` (the dashboard's ticked customers) widens this to all of
+    # them: the latest period any of them has loaded, and the earliest, so a
+    # customer whose data stops sooner (FairPrice at August) never holds the
+    # whole dashboard back. It replaces `customer` when given.
     month_spans = {"month": 1, "6months": 6, "12months": 12}
     if period not in ("week", *month_spans):
         raise ValueError(f"period must be one of {('week', *month_spans)}")
     if mode is not None and mode not in DASHBOARD_MODES:
         raise ValueError(f"mode must be one of {DASHBOARD_MODES}")
 
-    retailer = _retailer_for(customer, mode) if mode else None
+    names = [name.strip() for name in customers or [] if name and name.strip()]
+    if names:
+        retailer = (
+            [_retailer_for(name, mode) for name in names]
+            if mode
+            else [r for name in names for r in _customer_retailers(name)]
+        )
+    else:
+        retailer = _retailer_for(customer, mode) if mode else None
     latest = _latest_preferred_period(retailer)
     if latest is None:
         return {"start": None, "end": None, "period_type": None, "earliest_start": None, "latest_week_start": None}
