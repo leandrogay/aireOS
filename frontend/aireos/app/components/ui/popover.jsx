@@ -46,16 +46,25 @@ function PopoverContent({
           )}
           {...props}
         >
-          {/* A rotated square whose top and left borders form the tip, centred on the
-              trigger by Base UI. Only drawn for popups below their trigger (side="bottom"). */}
+          {/* A triangle centred on the trigger by Base UI, only drawn for popups
+              below their trigger (side="bottom"). The popup's outline is a 1px ring
+              just outside its top edge (svg rows 6-7): the sides end on that ring's
+              centre line and the fill covers the ring under the base, so the outline
+              runs into the tip with no notch at any zoom. 14px wide so that, under a
+              36px trigger at the popup's end (align="end"), both feet are 12px from
+              the edge, on the straight part past the 10px rounded corner rather than
+              on its curve. Its colour is the text colour (`arrowClassName`, e.g.
+              text-violet/40 to match ring-violet/40). */}
           {arrow && (
             <PopoverPrimitive.Arrow
               data-slot="popover-arrow"
-              className={cn(
-                "size-2.5 rotate-45 bg-popover data-[side=bottom]:-top-[5px] data-[side=bottom]:border-t data-[side=bottom]:border-l data-[side=bottom]:border-foreground/10",
-                arrowClassName
-              )}
-            />
+              className={cn("h-[7px] w-3.5 text-foreground/10 data-[side=bottom]:-top-[7px]", arrowClassName)}
+            >
+              <svg viewBox="0 0 14 7" className="block size-full overflow-visible" aria-hidden="true">
+                <path d="M7 0.5 L1 6.5 L1 7 L13 7 L13 6.5 Z" className="fill-popover" />
+                <path d="M1 6.5 L7 0.5 L13 6.5" fill="none" stroke="currentColor" strokeWidth="1" />
+              </svg>
+            </PopoverPrimitive.Arrow>
           )}
           {children}
         </PopoverPrimitive.Popup>

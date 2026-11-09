@@ -75,11 +75,12 @@ export default function RevenueTrendCard({
     <div className="bg-white rounded-lg border border-lavander shadow-sm p-4 h-full flex flex-col">
       {/* Top row: what data (Period, Compare to) on the left, lined up on
           their bottom edge, and which channel in the card's top right corner
-          (self-start), level with the "Period" label. On a narrow card the
-          channel wraps under the period, still on the right (ml-auto). */}
+          (self-start), level with the "Period" label. On a phone the channel
+          wraps under Compare to and lines up on the left with the other
+          controls; from sm up it sits on the right (sm:ml-auto). */}
       <div className="mb-2 flex flex-wrap items-end gap-x-3 gap-y-2">
         {headerExtra}
-        {channelSwitch && <div className="ml-auto mt-1 self-start">{channelSwitch}</div>}
+        {channelSwitch && <div className="mt-1 self-start sm:ml-auto">{channelSwitch}</div>}
       </div>
 
       {/* How to draw it: the view switches on their own line, on the right,

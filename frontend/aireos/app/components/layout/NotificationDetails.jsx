@@ -6,7 +6,7 @@ import {
   startedByLabel,
 } from '@/app/utils/forecastNotificationText';
 import { daysLeftValue, lowStockItemText, modelFeatureLabel } from '@/app/utils/notificationText';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { retailerLabel, vendorLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
 // The opened part of a notification, laid out like the forecast page's promo
@@ -169,7 +169,9 @@ function MappingDetails({ payload }) {
       </Summary>
       <Fields>
         <Field label="Nomenclature" value={payload.name} />
-        <Field label="Vendor" value={payload.vendor} />
+        {/* The vendor is the customer slug (sheng_siong → Sheng Siong), shown
+            the way the nomenclature pages show it (vendorLabel). */}
+        <Field label="Vendor" value={vendorLabel(payload.vendor)} />
         {/* Approvals since loading became its own step say what waits to be
             loaded (backend confirm_mapping); older ones said what they loaded. */}
         {payload.uploads_waiting !== undefined ? (

@@ -196,9 +196,8 @@ export default function NotificationPanel({ notifications, markRead }) {
         )}
       </div>
       {/* rounded-b-lg clips the last row's hover tint to the popup's corners.
-          Thin violet scrollbar (standard scrollbar-width/-color, no arrow
-          buttons) instead of the default grey one. */}
-      <ul className="max-h-[65vh] divide-y divide-lavander overflow-y-auto rounded-b-lg [scrollbar-color:var(--aire-violet)_transparent] [scrollbar-width:thin]">
+          Thin scrollbar (no arrow buttons) in the page's grey (globals.css). */}
+      <ul className="max-h-[65vh] divide-y divide-lavander overflow-y-auto rounded-b-lg [scrollbar-width:thin]">
         {ordered.map((notification) => (
           <NotificationItem
             key={notification.notification_id}

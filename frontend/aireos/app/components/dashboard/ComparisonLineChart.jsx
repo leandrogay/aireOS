@@ -43,7 +43,7 @@ function LineSwatch({ dashed }) {
 }
 
 /**
- * A long comparison (more than MAX_BAR_PERIODS buckets, see
+ * A long comparison (more than MAX_COMPARISON_BUCKETS buckets, see
  * ComparisonMixChart) as two lines of totals: this period solid, the
  * comparison dashed, paired bucket by bucket so the gap between them is the
  * change. Store formats are not drawn as lines (4 formats x 2 periods would

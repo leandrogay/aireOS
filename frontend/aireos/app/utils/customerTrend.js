@@ -4,22 +4,8 @@
 import { customerColor } from '@/app/utils/storeFormats';
 import { bucketLabel, exactBucketLabel } from '@/app/utils/trendChart';
 
-// Most customers ticked at once (backend MAX_COMPARED_CUSTOMERS): one series
-// each, and never more than storeFormats' four customer colours.
-export const MAX_COMPARED_CUSTOMERS = 3;
-
-// Up to this many periods the chart is grouped bars, one per customer in each
-// period (3 customers x 6 months = 18 bars). Past it, bars get too thin to
-// read, so each customer becomes a line instead.
-export const MAX_BAR_PERIODS = 6;
-
-/**
- * @param {number} periodCount
- * @returns {'bars' | 'lines'}
- */
-export function trendChartKind(periodCount) {
-  return periodCount > MAX_BAR_PERIODS ? 'lines' : 'bars';
-}
+// Any number of customers can be ticked; bars or lines is decided from
+// customers x periods in utils/chartKind.js.
 
 /**
  * The customers that sell through `mode`, as chart series: dataKey is the

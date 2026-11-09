@@ -841,10 +841,17 @@ def test_customer_totals_read_the_estimated_part(monkeypatch):
 
 # ---- get_customer_trends (each customer per week or month) ---------------
 
-def test_customer_trends_rejects_more_than_three_customers_without_querying(monkeypatch):
-    _no_engine_allowed(monkeypatch)
-    with pytest.raises(ValueError, match="at most 3"):
-        sellout_service.get_customer_trends(["a", "b", "c", "d"])
+def test_customer_trends_accept_more_than_three_customers(monkeypatch):
+    conn = _install(monkeypatch, lambda sql, params: [])
+
+    result = sellout_service.get_customer_trends(["a", "b", "c", "d"])
+
+    assert [row["customer"] for row in result["customers"]] == ["a", "b", "c", "d"]
+    _trend_sql, params = conn.sql_containing("GROUP BY r.retailer_name, s.period_start")[0]
+    assert params["retailer_names"] == [
+        "a_offline", "a_online", "b_offline", "b_online",
+        "c_offline", "c_online", "d_offline", "d_online",
+    ]
 
 
 def test_customer_trends_validates_customers_granularity_and_dates(monkeypatch):

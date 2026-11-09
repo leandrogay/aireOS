@@ -63,8 +63,8 @@ export async function getCustomerTotals({ customers, sku, startDate, endDate }) 
  * GET /api/sales/customer-trends
  *
  * Each ticked customer's revenue and units per week or month, split into
- * offline and online — see backend get_customer_trends. At most 3 customers
- * (MAX_COMPARED_CUSTOMERS). Every period carries estimated_revenue, the part
+ * offline and online — see backend get_customer_trends. Any number of
+ * customers. Every period carries estimated_revenue, the part
  * of its revenue that was filled in rather than reported.
  *
  * @param {{ customers: string[], granularity: 'week' | 'month', sku?: string, startDate: string, endDate: string }} filters
