@@ -61,8 +61,9 @@ const KINDS = {
  * pass straight through it to whatever is underneath, except on its close
  * button, so it never gets in the way. Every toast is the same size: the
  * message stays on one line and a longer one is cut with "...", so keep
- * messages to about 38 characters. Pair it with hooks/useToast, which owns the
- * state:
+ * messages to about 38 characters. Only an error may wrap, up to three lines,
+ * because its reason has to be readable. Pair it with hooks/useToast, which
+ * owns the state:
  *
  *   const { toast, notify, dismissToast } = useToast();
  *   notify('success', 'Saved');
@@ -111,7 +112,9 @@ export default function Toast({ toast, onDismiss }) {
           </span>
           <div className="min-w-0 flex-1">
             <p className={cn('text-[11px] leading-4 font-semibold tracking-wide uppercase', text)}>{label}</p>
-            <p className="truncate text-sm leading-snug font-medium text-deep-violet-blue">{toast.message}</p>
+            <p className={cn('text-sm leading-snug font-medium text-deep-violet-blue', toast.type === 'error' ? 'line-clamp-3 wrap-anywhere' : 'truncate')}>
+              {toast.message}
+            </p>
           </div>
           <button
             type="button"

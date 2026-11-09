@@ -167,8 +167,7 @@ def delete_customer(customer_id: int):
         raise HTTPException(
             status_code=409,
             detail=(
-                "This customer is still referenced by other data, "
-                "so it can't be deleted."
+                "Can't delete: still in use elsewhere"
             ),
         )
 
@@ -392,8 +391,7 @@ def delete_retailer(retailer_id: int):
         raise HTTPException(
             status_code=409,
             detail=(
-                "This retailer is still referenced by other data, "
-                "so it can't be deleted."
+                "Can't delete: still in use elsewhere"
             ),
         )
 
