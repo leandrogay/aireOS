@@ -70,8 +70,8 @@ function RetailerLine({ item, choice, customerName, retailers, onChoose, onFix, 
 
         {choice ? (
           <>
-            <span className="text-xs text-deep-violet-blue/70">{choice.when}</span>
-            <span aria-hidden="true" className="text-xs text-deep-violet-blue/40">
+            <span className="text-xs text-deep-violet-blue/80">{choice.when}</span>
+            <span aria-hidden="true" className="text-xs text-deep-violet-blue/80">
               →
             </span>
             {/* What it writes now stays a choice even when it is not one of
@@ -271,7 +271,7 @@ export default function CustomerStep({
             </p>
           )}
           {!customersError && customerNote && (
-            <p className="mt-1 text-[11px] text-deep-violet-blue/60">{customerNote}</p>
+            <p className="mt-1 text-[11px] text-deep-violet-blue/80">{customerNote}</p>
           )}
         </div>
       </div>
@@ -282,9 +282,9 @@ export default function CustomerStep({
           {/* The retailers a proposal names are another customer's until one is
               chosen, and nothing here can be edited yet, so there is nothing to show. */}
           {!customer && (
-            <span className="text-deep-violet-blue/70">· Choose the customer to set where the sales go</span>
+            <span className="text-deep-violet-blue/80">· Choose the customer to set where the sales go</span>
           )}
-          {customer && !picked && <span className="text-deep-violet-blue/70">· {where.short}</span>}
+          {customer && !picked && <span className="text-deep-violet-blue/80">· {where.short}</span>}
           <InfoTooltip label="Where the sales go">
             {picked
               ? `Rows are written to ${channelRetailerName(customerRetailerFamily(customer), 'offline')} or ${channelRetailerName(customerRetailerFamily(customer), 'online')}.`

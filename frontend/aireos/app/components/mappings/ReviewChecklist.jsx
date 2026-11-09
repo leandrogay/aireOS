@@ -43,7 +43,7 @@ export default function ReviewChecklist({ items, isConfirmed, aiProposed = false
         <h2 id="review-checklist-title" className="text-sm font-medium text-deep-violet-blue">
           What&apos;s left
         </h2>
-        <p role="status" className={cn('text-xs', ready && !nothingToSave ? 'text-green-700' : 'text-deep-violet-blue/70')}>
+        <p role="status" className={cn('text-xs', ready && !nothingToSave ? 'text-green-700' : 'text-deep-violet-blue/80')}>
           {summary}
         </p>
       </div>
@@ -61,7 +61,7 @@ export default function ReviewChecklist({ items, isConfirmed, aiProposed = false
                 <Circle aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-amber-700" />
               )}
               <span className="min-w-0">
-                <span className={cn('block text-xs', item.done ? 'text-deep-violet-blue/60' : 'font-medium text-deep-violet-blue')}>
+                <span className={cn('block text-xs', item.done ? 'text-deep-violet-blue/80' : 'font-medium text-deep-violet-blue')}>
                   <span className="sr-only">{item.done ? 'Done: ' : 'To do: '}</span>
                   {item.label}
                 </span>
@@ -105,7 +105,7 @@ export default function ReviewChecklist({ items, isConfirmed, aiProposed = false
       {/* The AI disclaimer, as chat assistants put one under their input: at
           the moment of approving, only for a proposal a model made. */}
       {aiProposed && !isConfirmed && (
-        <p className="mt-2 text-center text-[11px] text-deep-violet-blue/60">
+        <p className="mt-2 text-center text-[11px] text-deep-violet-blue/80">
           AI can make mistakes. <br/>
           Check each field before approving.
         </p>

@@ -22,8 +22,8 @@ function StepOutput({ samples, steps, index }) {
   const values = rows.map((row) => row.after ?? '—').join(' · ');
   const note = rows.find((row) => row.note)?.note;
   return (
-    <p className="mt-1 truncate text-[11px] text-deep-violet-blue/60" title={note ? `${values} (${note})` : values}>
-      <span className="text-deep-violet-blue/45">After this step: </span>
+    <p className="mt-1 truncate text-[11px] text-deep-violet-blue/80" title={note ? `${values} (${note})` : values}>
+      <span className="text-deep-violet-blue/80">After this step: </span>
       <span className="font-mono text-deep-violet-blue">{values}</span>
       {note && <span> · {note}</span>}
     </p>
@@ -34,7 +34,7 @@ function StepOutput({ samples, steps, index }) {
 function SampleRun({ samples, steps }) {
   if (!samples.length) {
     return (
-      <p className="rounded-md border border-dashed border-lavander px-2 py-3 text-center text-[11px] text-deep-violet-blue/55">
+      <p className="rounded-md border border-dashed border-lavander px-2 py-3 text-center text-[11px] text-deep-violet-blue/80">
         Choose where the value comes from to see what it becomes.
       </p>
     );
@@ -43,7 +43,7 @@ function SampleRun({ samples, steps }) {
   return (
     <div className="rounded-md border border-lavander bg-white">
       <table className="w-full text-left text-[11px] text-deep-violet-blue">
-        <thead className="bg-cream text-deep-violet-blue/60">
+        <thead className="bg-cream text-deep-violet-blue/80">
           <tr>
             <th className="px-2 py-1 font-medium">In the file</th>
             <th className="px-2 py-1 font-medium">Becomes</th>
@@ -59,13 +59,13 @@ function SampleRun({ samples, steps }) {
                 <span className="block truncate font-mono" title={row.after ?? ''}>
                   {row.after ?? '—'}
                 </span>
-                {row.note && <span className="block text-deep-violet-blue/50">{row.note}</span>}
+                {row.note && <span className="block text-deep-violet-blue/80">{row.note}</span>}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
-      <p className="border-t border-lavander px-2 py-1 text-[11px] text-deep-violet-blue/50">
+      <p className="border-t border-lavander px-2 py-1 text-[11px] text-deep-violet-blue/80">
         A quick look at a few values. Test the nomenclature to run it on the whole file.
       </p>
     </div>
@@ -120,7 +120,7 @@ export default function StepsEditor({ steps, onChange, columns, samples = [], fi
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-medium text-deep-violet-blue">{stepLabel(step.type)}</p>
-                      <p className="text-[11px] text-deep-violet-blue/60">{stepHelp(step.type)}</p>
+                      <p className="text-[11px] text-deep-violet-blue/80">{stepHelp(step.type)}</p>
                     </div>
                     <Button
                       type="button"
@@ -178,7 +178,7 @@ export default function StepsEditor({ steps, onChange, columns, samples = [], fi
 
         {/* An action menu: it keeps saying "Add a step…" after a pick. */}
         <div className="flex items-center gap-1.5">
-          <Plus aria-hidden="true" className="size-3.5 text-deep-violet-blue/60" />
+          <Plus aria-hidden="true" className="size-3.5 text-deep-violet-blue/80" />
           <div className="w-56">
             <SelectDropdown
               value=""
@@ -207,7 +207,7 @@ export default function StepsEditor({ steps, onChange, columns, samples = [], fi
       {/* First on a narrow screen, beside the steps on a wide one: the result
           stays in view either way. */}
       <div className="order-first space-y-1 lg:sticky lg:top-0 lg:order-none lg:self-start">
-        <p className="text-[11px] font-medium text-deep-violet-blue/70">Preview</p>
+        <p className="text-[11px] font-medium text-deep-violet-blue/80">Preview</p>
         <SampleRun samples={samples} steps={steps} />
       </div>
     </div>

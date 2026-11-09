@@ -11,15 +11,15 @@ import { cn } from '@/lib/utils';
 const smallInput = cn(inputClass, 'py-1 text-xs');
 const codeInput = cn(smallInput, 'font-mono text-[11px]');
 const linkButton =
-  'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-deep-violet-blue/70 hover:bg-cream hover:text-deep-violet-blue disabled:opacity-60';
+  'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-deep-violet-blue/80 hover:bg-cream hover:text-deep-violet-blue disabled:opacity-60';
 const iconButton =
-  'rounded-md p-1 text-deep-violet-blue/50 hover:bg-cream hover:text-deep-violet-blue disabled:opacity-60';
+  'rounded-md p-1 text-deep-violet-blue/80 hover:bg-cream hover:text-deep-violet-blue disabled:opacity-60';
 
 const CUSTOM = '__custom__';
 
 function Fallback({ step, onChange, disabled }) {
   return (
-    <label className="block text-[11px] text-deep-violet-blue/70">
+    <label className="block text-[11px] text-deep-violet-blue/80">
       Anything else becomes (leave empty to leave it blank)
       <input
         type="text"
@@ -34,7 +34,7 @@ function Fallback({ step, onChange, disabled }) {
 
 function CaseSensitive({ step, onChange, disabled }) {
   return (
-    <label className="flex items-center gap-1.5 text-[11px] text-deep-violet-blue/70">
+    <label className="flex items-center gap-1.5 text-[11px] text-deep-violet-blue/80">
       <input
         type="checkbox"
         checked={step.case_sensitive === true}
@@ -63,7 +63,7 @@ function PatternStep({ step, onChange, disabled }) {
         ]}
       />
       <div className="grid gap-1.5 sm:grid-cols-[minmax(0,1fr)_6rem]">
-        <label className="block text-[11px] text-deep-violet-blue/70">
+        <label className="block text-[11px] text-deep-violet-blue/80">
           Pattern (advanced) — the part in round brackets is kept
           <input
             type="text"
@@ -73,7 +73,7 @@ function PatternStep({ step, onChange, disabled }) {
             className={cn(codeInput, 'mt-0.5')}
           />
         </label>
-        <label className="block text-[11px] text-deep-violet-blue/70">
+        <label className="block text-[11px] text-deep-violet-blue/80">
           Bracket no.
           <input
             type="number"
@@ -101,7 +101,7 @@ function TableStep({ step, onChange, disabled, isCodeTable }) {
   return (
     <div className="space-y-1.5">
       {isCodeTable && (
-        <p className="text-[11px] text-deep-violet-blue/60">
+        <p className="text-[11px] text-deep-violet-blue/80">
           This is the product-code table. It is easier to edit under “Which of our products each code is”.
         </p>
       )}
@@ -117,7 +117,7 @@ function TableStep({ step, onChange, disabled, isCodeTable }) {
               onChange={(event) => setPairs(pairs.map((pair, i) => (i === index ? [event.target.value, pair[1]] : pair)))}
               className={codeInput}
             />
-            <span aria-hidden="true" className="text-xs text-deep-violet-blue/50">→</span>
+            <span aria-hidden="true" className="text-xs text-deep-violet-blue/80">→</span>
             <input
               type="text"
               value={to}
@@ -178,7 +178,7 @@ function RulesStep({ step, onChange, disabled }) {
               onChange={(event) => setRule(index, { value: event.target.value })}
               className={codeInput}
             />
-            <span aria-hidden="true" className="text-xs text-deep-violet-blue/50">→</span>
+            <span aria-hidden="true" className="text-xs text-deep-violet-blue/80">→</span>
             <input
               type="text"
               value={rule.output}
@@ -264,7 +264,7 @@ function UnitStep({ step, columns, onChange, disabled }) {
                 onChange={(event) => setFactors(factors.map((pair, i) => (i === index ? [event.target.value, pair[1]] : pair)))}
                 className={codeInput}
               />
-              <span aria-hidden="true" className="text-xs text-deep-violet-blue/50">×</span>
+              <span aria-hidden="true" className="text-xs text-deep-violet-blue/80">×</span>
               {byColumn ? (
                 <ColumnChoice
                   value={factor.column}
@@ -303,7 +303,7 @@ function UnitStep({ step, columns, onChange, disabled }) {
         <Plus aria-hidden="true" className="size-3" />
         Add a unit
       </button>
-      <label className="block text-[11px] text-deep-violet-blue/70">
+      <label className="block text-[11px] text-deep-violet-blue/80">
         Any other unit is multiplied by
         <input
           type="number"
@@ -355,7 +355,7 @@ export default function StepSettings({ step, columns, onChange, disabled = false
       return <UnitStep step={step} columns={columns} onChange={onChange} disabled={disabled} />;
     case 'month_start':
       return (
-        <label className="block text-[11px] text-deep-violet-blue/70">
+        <label className="block text-[11px] text-deep-violet-blue/80">
           How the dates are written (advanced, e.g. %d/%m/%Y) — leave empty to read them automatically
           <input
             type="text"

@@ -34,14 +34,14 @@ function LoadableFiles({ title, help, files, detail, buttonLabel, Icon, onLoad }
   return (
     <div className="rounded-md border border-deep-violet-blue/20 border-l-4 border-l-deep-violet-blue bg-cream/40 p-3">
       <p className="text-sm font-medium text-deep-violet-blue">{title}</p>
-      <p className="mt-0.5 text-xs text-deep-violet-blue/75">{help}</p>
+      <p className="mt-0.5 text-xs text-deep-violet-blue/80">{help}</p>
       <ul className="mt-2 space-y-0.5 text-xs text-deep-violet-blue">
         {files.map((file) => (
           <li key={file.blob_path} className="flex justify-between gap-x-3">
             <span className="min-w-0 truncate font-mono" title={file.filename}>
               {file.filename}
             </span>
-            <span className="shrink-0 text-deep-violet-blue/70">{detail(file)}</span>
+            <span className="shrink-0 text-deep-violet-blue/80">{detail(file)}</span>
           </li>
         ))}
       </ul>
@@ -93,7 +93,7 @@ export default function ApprovedSummary({ approved }) {
               v{version}
             </span>
           </h2>
-          <p className="mt-0.5 text-sm text-deep-violet-blue/75">
+          <p className="mt-0.5 text-sm text-deep-violet-blue/80">
             {approved.name} · {customer}
             {version > 1 && ` · replaces v${version - 1}`}
           </p>
@@ -195,7 +195,7 @@ export default function ApprovedSummary({ approved }) {
         )}
       </div>
 
-      <Disclosure variant="link" summary="Technical details" className="mt-4 text-xs text-deep-violet-blue/70">
+      <Disclosure variant="link" summary="Technical details" className="mt-4 text-xs text-deep-violet-blue/80">
         <p className="mt-1">
           Stored at <span className="font-mono">{approved.moved_to}</span>
           {approved.archived_previous && (

@@ -66,12 +66,12 @@ export default function ConfirmDiscardDialog({ mapping, isDiscarding, onCancel, 
                   className="flex items-start gap-2 rounded-md border border-lavander bg-cream px-3 py-2"
                   title={upload.blob_path}
                 >
-                  <FileSpreadsheet aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-deep-violet-blue/60" />
+                  <FileSpreadsheet aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-deep-violet-blue/80" />
                   <span className="min-w-0 flex-1 line-clamp-2 font-mono text-xs leading-5 text-deep-violet-blue">
                     {upload.filename}
                   </span>
                   {upload.uploaded_at && (
-                    <span className="shrink-0 text-xs leading-5 text-deep-violet-blue/60">
+                    <span className="shrink-0 text-xs leading-5 text-deep-violet-blue/80">
                       {formatDate(upload.uploaded_at)}
                     </span>
                   )}
@@ -88,7 +88,7 @@ export default function ConfirmDiscardDialog({ mapping, isDiscarding, onCancel, 
             className="flex items-start gap-2 rounded-md border border-lavander bg-cream px-3 py-2"
             title={source || undefined}
           >
-            <FileSpreadsheet aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-deep-violet-blue/60" />
+            <FileSpreadsheet aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-deep-violet-blue/80" />
             <span className="line-clamp-2 font-mono text-xs leading-5 text-deep-violet-blue">
               {fileLabel}
             </span>

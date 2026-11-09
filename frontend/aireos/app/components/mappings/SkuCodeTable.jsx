@@ -46,7 +46,7 @@ export default function SkuCodeTable({
 
       <div className="overflow-x-auto rounded-md border border-lavander">
         <table className="min-w-full text-left text-xs">
-          <thead className="bg-cream text-[11px] text-deep-violet-blue/70">
+          <thead className="bg-cream text-[11px] text-deep-violet-blue/80">
             <tr>
               <th className="px-2 py-1.5 font-medium">Code in the file</th>
               <th className="px-2 py-1.5 font-medium">Description</th>

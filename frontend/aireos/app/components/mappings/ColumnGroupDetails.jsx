@@ -84,10 +84,10 @@ export default function ColumnGroupDetails({ group, entry, columns, onSettingsCh
         <p className="mt-1 text-[11px] text-amber-900">Settings changed. Test your changes to see the result.</p>
       )}
 
-      <Disclosure variant="link" summary="How the headings are read" className="mt-1 text-[11px] text-deep-violet-blue/70">
+      <Disclosure variant="link" summary="How the headings are read" className="mt-1 text-[11px] text-deep-violet-blue/80">
         {readings.length > 0 && !edited && (
           <table className="w-full text-left text-[11px] text-deep-violet-blue">
-            <thead className="text-deep-violet-blue/60">
+            <thead className="text-deep-violet-blue/80">
               <tr>
                 <th className="py-0.5 pr-2 font-medium">Heading</th>
                 <th className="py-0.5 pr-2 font-medium">Reads as</th>
@@ -103,14 +103,14 @@ export default function ColumnGroupDetails({ group, entry, columns, onSettingsCh
                   <td className="py-0.5 pr-2 font-medium">
                     {isPeriod ? periodLabel(reading.readsAs, periodType) : reading.readsAs}
                   </td>
-                  <td className="py-0.5 font-mono text-deep-violet-blue/70">{reading.sample ?? '—'}</td>
+                  <td className="py-0.5 font-mono text-deep-violet-blue/80">{reading.sample ?? '—'}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
         {group.columns.length > readings.length && readings.length > 0 && !edited && (
-          <p className="text-[11px] text-deep-violet-blue/60">…and {group.columns.length - readings.length} more</p>
+          <p className="text-[11px] text-deep-violet-blue/80">…and {group.columns.length - readings.length} more</p>
         )}
         <div className="mt-1.5 space-y-1.5">
           {group.settings.select?.kind === 'pattern' && (

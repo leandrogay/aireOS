@@ -10,7 +10,7 @@ const LEVEL_STYLES = {
   warning: { Icon: HelpCircle, className: 'text-amber-700', box: 'border-amber-200 bg-amber-50' },
 };
 const PASSED = { Icon: CheckCircle2, className: 'text-green-700' };
-const INFO = { Icon: Info, className: 'text-deep-violet-blue/60' };
+const INFO = { Icon: Info, className: 'text-deep-violet-blue/80' };
 
 function CheckLine({ check }) {
   const style = check.passed ? (check.level === 'info' ? INFO : PASSED) : LEVEL_STYLES[check.level] || INFO;
@@ -26,7 +26,7 @@ function CheckLine({ check }) {
           {check.message}
         </p>
         {evidence.length > 0 && (
-          <ul className="mt-0.5 space-y-0.5 font-mono text-[11px] text-deep-violet-blue/70">
+          <ul className="mt-0.5 space-y-0.5 font-mono text-[11px] text-deep-violet-blue/80">
             {evidence.map((line) => (
               <li key={line} className="break-words">
                 {line}
@@ -54,7 +54,7 @@ function CheckLine({ check }) {
  */
 export default function MappingChecks({ checks, stale = false }) {
   if (!checks?.length) {
-    return <p className="text-xs text-deep-violet-blue/70">No checks have been run on this nomenclature yet.</p>;
+    return <p className="text-xs text-deep-violet-blue/80">No checks have been run on this nomenclature yet.</p>;
   }
   const sorted = sortChecks(checks);
   const open = sorted.filter((check) => !check.passed);

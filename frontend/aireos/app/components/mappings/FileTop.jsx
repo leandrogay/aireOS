@@ -27,7 +27,7 @@ export default function FileTop({ columns, layout, headRows }) {
       summary={
         <>
           Top of the file
-          <span className="font-normal text-deep-violet-blue/60">
+          <span className="font-normal text-deep-violet-blue/80">
             {' '}
             · {above.length ? `${above.length} row${above.length === 1 ? '' : 's'} above the headings, ` : ''}headings on row{' '}
             {headerRow}
@@ -40,7 +40,7 @@ export default function FileTop({ columns, layout, headRows }) {
           <tbody>
             {above.map((item) => (
               <tr key={`above-${item.row}`} className={cn(rowClass, 'bg-cream/40')}>
-                <th scope="row" className="sticky left-0 bg-cream px-2 py-1 font-sans font-medium text-deep-violet-blue/60">
+                <th scope="row" className="sticky left-0 bg-cream px-2 py-1 font-sans font-medium text-deep-violet-blue/80">
                   {item.row}
                 </th>
                 {columns.map((column) => (
@@ -51,7 +51,7 @@ export default function FileTop({ columns, layout, headRows }) {
               </tr>
             ))}
             <tr className={cn(rowClass, 'bg-lavander/50 font-sans font-medium')}>
-              <th scope="row" className="sticky left-0 bg-lavander px-2 py-1 font-medium text-deep-violet-blue/70">
+              <th scope="row" className="sticky left-0 bg-lavander px-2 py-1 font-medium text-deep-violet-blue/80">
                 {headerRow}
               </th>
               {columns.map((column) => (
@@ -62,7 +62,7 @@ export default function FileTop({ columns, layout, headRows }) {
             </tr>
             {headRows.map((row, index) => (
               <tr key={`row-${index}`} className={rowClass}>
-                <th scope="row" className="sticky left-0 bg-white px-2 py-1 font-sans font-medium text-deep-violet-blue/60">
+                <th scope="row" className="sticky left-0 bg-white px-2 py-1 font-sans font-medium text-deep-violet-blue/80">
                   {headerRow + index + 1}
                 </th>
                 {columns.map((column, columnIndex) => (
@@ -76,7 +76,7 @@ export default function FileTop({ columns, layout, headRows }) {
         </table>
       </div>
       {!headRows.length && (
-        <p className="border-t border-lavander px-2 py-1.5 text-[11px] text-deep-violet-blue/60">
+        <p className="border-t border-lavander px-2 py-1.5 text-[11px] text-deep-violet-blue/80">
           This nomenclature was proposed before the first rows were kept. Test it to read them from the example file.
         </p>
       )}

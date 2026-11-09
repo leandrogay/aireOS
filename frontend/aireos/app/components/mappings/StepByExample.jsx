@@ -52,7 +52,7 @@ export default function StepByExample({ values, onAdd, disabled = false }) {
   return (
     <div className="space-y-1.5 rounded-md border border-dashed border-lavander p-2 text-xs text-deep-violet-blue">
       <p className="flex items-center gap-1 font-medium">
-        <Sparkles aria-hidden="true" className="size-3.5 text-deep-violet-blue/60" />
+        <Sparkles aria-hidden="true" className="size-3.5 text-deep-violet-blue/80" />
         Or show what a value should become
       </p>
 
@@ -70,7 +70,7 @@ export default function StepByExample({ values, onAdd, disabled = false }) {
                 options={values.map((value) => ({ value, label: value }))}
               />
             </div>
-            <span aria-hidden="true" className="text-deep-violet-blue/40">
+            <span aria-hidden="true" className="text-deep-violet-blue/80">
               →
             </span>
             <input
@@ -98,7 +98,7 @@ export default function StepByExample({ values, onAdd, disabled = false }) {
         ))}
       </ul>
 
-      {unchanged && <p className="text-[11px] text-deep-violet-blue/60">That is the value as it is: no step needed.</p>}
+      {unchanged && <p className="text-[11px] text-deep-violet-blue/80">That is the value as it is: no step needed.</p>}
 
       {suggestions.length > 0 && (
         <ul className="space-y-1">
@@ -110,7 +110,7 @@ export default function StepByExample({ values, onAdd, disabled = false }) {
               <div className="min-w-0 flex-1">
                 <p className="font-medium">{suggestion.label}</p>
                 <p
-                  className="truncate font-mono text-[11px] text-deep-violet-blue/70"
+                  className="truncate font-mono text-[11px] text-deep-violet-blue/80"
                   title={suggestion.outputs.map((output) => output ?? '—').join(' · ')}
                 >
                   {suggestion.outputs
@@ -141,7 +141,7 @@ export default function StepByExample({ values, onAdd, disabled = false }) {
       )}
 
       {typed && suggestions.length > 1 && examples.length < MAX_EXAMPLES && (
-        <p className="text-[11px] text-deep-violet-blue/60">
+        <p className="text-[11px] text-deep-violet-blue/80">
           More than one way fits. Pick by the results, or give another example.
         </p>
       )}

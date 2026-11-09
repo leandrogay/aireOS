@@ -35,7 +35,7 @@ export default function UnusedColumns({ rows, unusedGroups, mapping, groups, ope
       summary={
         <>
           Ignored columns ({count})
-          <span className="font-normal text-deep-violet-blue/60"> · not imported</span>
+          <span className="font-normal text-deep-violet-blue/80"> · not imported</span>
         </>
       }
     >
@@ -47,7 +47,7 @@ export default function UnusedColumns({ rows, unusedGroups, mapping, groups, ope
           >
             <div className="min-w-0">
               <p className="font-mono text-xs text-deep-violet-blue">{groupOptionLabel(entry)}</p>
-              <p className="text-[11px] text-deep-violet-blue/60">Read as one row per {entry.kind === 'period' ? 'period' : 'outlet'}.</p>
+              <p className="text-[11px] text-deep-violet-blue/80">Read as one row per {entry.kind === 'period' ? 'period' : 'outlet'}.</p>
             </div>
             {/* An action menu: it keeps saying "Map to…" after a pick. */}
             <SelectDropdown
@@ -73,7 +73,7 @@ export default function UnusedColumns({ rows, unusedGroups, mapping, groups, ope
             <div className="min-w-0">
               <p className="font-mono text-xs text-deep-violet-blue">{row.column}</p>
               {row.samples.length > 0 && (
-                <p className="truncate font-mono text-[11px] text-deep-violet-blue/60" title={row.samples.join(' · ')}>
+                <p className="truncate font-mono text-[11px] text-deep-violet-blue/80" title={row.samples.join(' · ')}>
                   e.g. {row.samples.slice(0, 3).join(' · ')}
                 </p>
               )}

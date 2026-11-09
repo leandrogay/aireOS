@@ -50,7 +50,7 @@ export default function MappingRow({ mapping, onOpen }) {
           {mappingTitle(mapping)}
         </button>
         {sourceLine && (
-          <p className="truncate text-xs text-deep-violet-blue/60" title={mapping.filename || sourceLine}>
+          <p className="truncate text-xs text-deep-violet-blue/80" title={mapping.filename || sourceLine}>
             {sourceLine}
           </p>
         )}

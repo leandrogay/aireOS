@@ -41,10 +41,10 @@ export default function ReviewHeader({ mapping, changed, canDiscard, busy, disca
           </div>
           <h2 className="mt-2 text-sm font-medium text-deep-violet-blue">
             {mappingTitle(mapping)}
-            {customer && <span className="font-normal text-deep-violet-blue/70"> · {customer}</span>}
+            {customer && <span className="font-normal text-deep-violet-blue/80"> · {customer}</span>}
           </h2>
           {file && (
-            <p className="mt-0.5 flex items-center gap-1 text-xs text-deep-violet-blue/60" title={mapping.filename || undefined}>
+            <p className="mt-0.5 flex items-center gap-1 text-xs text-deep-violet-blue/80" title={mapping.filename || undefined}>
               <FileSpreadsheet aria-hidden="true" className="size-3.5 shrink-0" />
               <span className="truncate">
                 {file}

@@ -27,7 +27,7 @@ export default function ResetButton({ label, onClick, text = 'Reset', compact = 
       aria-label={label}
       title={label}
       className={cn(
-        'inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-deep-violet-blue/70 transition hover:bg-cream hover:text-deep-violet-blue focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-deep-violet-blue disabled:opacity-60',
+        'inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-deep-violet-blue/80 transition hover:bg-cream hover:text-deep-violet-blue focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-deep-violet-blue disabled:opacity-60',
         className,
       )}
     >

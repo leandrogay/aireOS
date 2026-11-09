@@ -47,7 +47,7 @@ export default function ChannelValueList({ rows, onChange, disabled }) {
           </li>
         ))}
       </ul>
-      <p className="text-[11px] text-deep-violet-blue/60">
+      <p className="text-[11px] text-deep-violet-blue/80">
         {online} online · {rows.length - online} offline. Values that are not here, such as new ones in later files,
         go offline.
       </p>
