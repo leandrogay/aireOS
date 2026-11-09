@@ -53,7 +53,8 @@ export default function DashboardPage() {
   // Only sets colours, so a failed read just leaves the customers with sales in
   // order, each still with its own colour, rather than an error on the page.
   const { customers: allCustomers, loading: allCustomersLoading } = useAllCustomers({ dataVersion });
-  const colorOrder = customerColorOrder(allCustomers, customerOptions.map((option) => option.value));
+  // Matched to the customer records by customer_id, not by name (see customerColorOrder).
+  const colorOrder = customerColorOrder(allCustomers, customerOptions);
   const [selectedCustomers, setSelectedCustomers] = useState(null);
   if (selectedCustomers === null && customerOptions.length > 0) {
     setSelectedCustomers(defaultCustomers(customerOptions));

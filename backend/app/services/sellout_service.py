@@ -1079,17 +1079,29 @@ def get_customer_options() -> list[dict]:
     # the page-header Customer selector, derived from whichever retailers
     # actually have sell-out rows (any period_type -- matches the original,
     # unfiltered). A newly ingested customer shows up automatically.
+    # customer_id is the customer record its retailers are linked to
+    # (customer_retailers), or None when none is: the dashboard orders
+    # customer colours by it, so a renamed customer (fairprice -> "FairPrice")
+    # keeps its colour rather than being matched by name.
     query = text(
         """
-        SELECT DISTINCT r.retailer_name
+        SELECT DISTINCT r.retailer_name, cr.customer_id
         FROM sellout s
         JOIN retailers r ON r.retailer_id = s.retailer_id
+        LEFT JOIN customer_retailers cr ON cr.retailer_id = r.retailer_id
         """
     )
     with _get_read_engine().connect() as conn:
         rows = conn.execute(query).all()
-    families = sorted({_retailer_family(row[0]) for row in rows})
-    return [{"value": family, "label": _customer_label(family)} for family in families]
+    customer_ids: dict[str, int | None] = {}
+    for row in rows:
+        family = _retailer_family(row[0])
+        if customer_ids.get(family) is None:
+            customer_ids[family] = row[1]
+    return [
+        {"value": family, "label": _customer_label(family), "customer_id": customer_ids[family]}
+        for family in sorted(customer_ids)
+    ]
 
 
 def _format_last_updated(value) -> str | None:

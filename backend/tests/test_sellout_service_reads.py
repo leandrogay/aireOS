@@ -257,21 +257,39 @@ def test_customer_options_have_no_period_type_filter(monkeypatch):
 
 
 def test_customer_options_strip_the_channel_suffix(monkeypatch):
-    rows = [("fairprice_offline",), ("fairprice_online",)]
+    rows = [("fairprice_offline", 1), ("fairprice_online", 1)]
     _install(monkeypatch, lambda sql, params: rows)
 
     options = sellout_service.get_customer_options()
 
-    assert options == [{"value": "fairprice", "label": "Fairprice"}]
+    assert options == [{"value": "fairprice", "label": "Fairprice", "customer_id": 1}]
 
 
 def test_customer_options_keep_a_short_code_uppercase(monkeypatch):
-    rows = [("nhg_offline",)]
+    rows = [("nhg_offline", 21)]
     _install(monkeypatch, lambda sql, params: rows)
 
     options = sellout_service.get_customer_options()
 
-    assert options == [{"value": "nhg", "label": "NHG"}]
+    assert options == [{"value": "nhg", "label": "NHG", "customer_id": 21}]
+
+
+def test_customer_options_carry_the_linked_customer_id_whatever_its_name(monkeypatch):
+    # The customer record may be renamed ("Sheng_Shiong"); the link through
+    # customer_retailers still ties sheng_siong's sales to customer 16. A
+    # retailer with no customer record gives None, and one linked channel is
+    # enough for the whole customer.
+    rows = [("sheng_siong_offline", None), ("sheng_siong_online", 16), ("giant_offline", None)]
+    conn = _install(monkeypatch, lambda sql, params: rows)
+
+    options = sellout_service.get_customer_options()
+
+    assert options == [
+        {"value": "giant", "label": "Giant", "customer_id": None},
+        {"value": "sheng_siong", "label": "Sheng Siong", "customer_id": 16},
+    ]
+    (sql, _params) = conn.calls[0]
+    assert "LEFT JOIN customer_retailers" in sql
 
 
 # ---- get_customer_totals ------------------------------------------------

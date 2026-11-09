@@ -55,16 +55,25 @@ function extraCustomerColor(position) {
 
 /**
  * The order customers take colours in: by customer_id, so a new customer takes
- * the next colour and nobody else's changes. `otherNames` are customers with
- * sales but no customer record; they go last, so they can't shift anyone either.
+ * the next colour and nobody else's changes. Each slot is named the way the
+ * page names that customer: the dashboard passes its Customer filter options,
+ * named from the sales data (`fairprice`) and linked to a customer record by
+ * `customer_id` (backend get_customer_options), so a renamed record
+ * ("FairPrice", "Sheng_Shiong") keeps its colour. A record no option links to
+ * keeps its own name (the inventory page names customers that way). Options
+ * with no customer record go last, so they can't shift anyone either.
  *
  * @param {Array<{ customer_id: number, customer_name: string }>} customers every customer (GET /api/inventory/customers)
- * @param {string[]} [otherNames] customer slugs that may not be in `customers`
- * @returns {string[]} customer slugs
+ * @param {Array<{ value: string, customer_id?: number | null }>} [options] the page's customers, when it names them differently
+ * @returns {string[]} customer names, as the page uses them
  */
-export function customerColorOrder(customers, otherNames = []) {
+export function customerColorOrder(customers, options = []) {
+  const nameById = new Map(
+    options.filter((option) => option.customer_id != null).map((option) => [option.customer_id, option.value]),
+  );
   const byId = [...customers].sort((a, b) => a.customer_id - b.customer_id);
-  return [...new Set([...byId.map((customer) => customer.customer_name), ...otherNames])];
+  const named = byId.map((customer) => nameById.get(customer.customer_id) ?? customer.customer_name);
+  return [...new Set([...named, ...options.map((option) => option.value)])];
 }
 
 // One customer's colour, the same on every page. No two customers in `order`
