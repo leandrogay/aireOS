@@ -3,6 +3,7 @@ import { FileSpreadsheet, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import InfoTooltip from '@/components/ui/InfoTooltip';
 import StatusBadge from '@/components/ui/StatusBadge';
+import { glassSurfaceClass } from '@/components/ui/surfaceStyles';
 import { formatDateTime } from '@/lib/formatDate';
 import { mappingTitle } from '@/app/utils/mappingList';
 import { PROPOSER, proposedByLabel } from '@/app/utils/mappingReview';
@@ -30,7 +31,7 @@ export default function ReviewHeader({ mapping, changed, canDiscard, busy, disca
   const file = mapping.sourceFilename || String(mapping.filename || '').split('/').pop();
 
   return (
-    <section className="rounded-lg border border-lavander bg-white p-4 shadow-sm">
+    <section className={`${glassSurfaceClass} p-4`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">

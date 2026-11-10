@@ -5,7 +5,7 @@ import BackLink from "@/components/ui/BackLink";
 import { cn } from "@/lib/utils";
 
 /**
- * Standard content page: sidebar shell, cream background, a max-w-6xl
+ * Standard content page: sidebar shell, AIRE glass background, a max-w-6xl
  * centred column and the page heading. Keeps the heading position and
  * gutters identical across pages. The notification bell sits at the right
  * end of every page's heading row.
@@ -22,18 +22,16 @@ import { cn } from "@/lib/utils";
  * If the window is too short for the content, the page scrolls as a fallback
  * rather than clipping it.
  *
- * `surface="glass"` gives the sales dashboard an opt-in branded backdrop.
- * Other pages retain the standard cream surface.
+ * `wide` lets a dense dashboard use a wider content column.
  *
- * @param {{ title: import('react').ReactNode, headerExtra?: import('react').ReactNode, back?: { href: string, label: string }, fitScreen?: boolean, surface?: 'default' | 'glass', children: import('react').ReactNode }} props
+ * @param {{ title: import('react').ReactNode, headerExtra?: import('react').ReactNode, back?: { href: string, label: string }, fitScreen?: boolean, wide?: boolean, children: import('react').ReactNode }} props
  */
-export default function PageLayout({ title, headerExtra, back, fitScreen = false, surface = 'default', children }) {
+export default function PageLayout({ title, headerExtra, back, fitScreen = false, wide = false, children }) {
   return (
     <AppShell>
       <main
         className={cn(
-          "min-w-0 bg-cream px-4 pt-4 pb-16 md:pb-4",
-          surface === 'glass' && 'dashboard-glass-scene md:px-6 md:pt-6',
+          "aire-glass-scene min-w-0 px-4 pt-4 pb-16 md:px-6 md:pt-6 md:pb-4",
           fitScreen ? "flex h-dvh flex-col overflow-y-auto" : "min-h-screen",
         )}
       >
@@ -41,19 +39,13 @@ export default function PageLayout({ title, headerExtra, back, fitScreen = false
             outside it stays still. */}
         <PageTransition className={cn(
           "mx-auto w-full min-w-0 max-w-6xl",
-          surface === 'glass' && 'max-w-[1440px]',
+          wide && 'max-w-[1440px]',
           fitScreen && "flex min-h-0 flex-1 flex-col",
         )}>
           {/* data-page-heading: NotificationBell measures this row, as wide
               as the page content, to size its panel. */}
-          <div data-page-heading className={cn(
-            "mb-3 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 md:flex md:items-center",
-            surface === 'glass' && 'rounded-2xl border border-card/75 bg-card/60 px-3 py-2 shadow-lg shadow-deep-violet-blue/5 backdrop-blur-xl',
-          )}>
-            <div className={cn(
-              "flex min-h-9 min-w-0 items-center gap-3 pl-10 md:flex-1 md:pl-0",
-              surface === 'glass' && 'pl-0',
-            )}>
+          <div data-page-heading className="mb-4 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 md:flex md:items-center">
+            <div className="flex min-h-9 min-w-0 items-center gap-3 pl-10 md:flex-1 md:pl-0">
               {back && (
                 <BackLink href={back.href} label={back.label} className="-mr-1.5 -ml-1" />
               )}

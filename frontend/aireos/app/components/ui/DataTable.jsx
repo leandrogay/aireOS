@@ -6,6 +6,7 @@ import TableGrid from '@/components/ui/TableGrid';
 import { cn } from '@/lib/utils';
 import { resultCountLabel } from '@/app/utils/tableView';
 import useMediaQuery from '@/hooks/useMediaQuery';
+import { glassSurfaceClass } from '@/components/ui/surfaceStyles';
 
 /**
  * The list-table card every feature uses (Customers, Promotions): a count on
@@ -81,13 +82,14 @@ export default function DataTable({
     <section
       aria-label={label}
       className={cn(
-        'flex w-full min-w-0 flex-col overflow-hidden rounded-lg border border-lavander bg-white shadow-sm',
+        glassSurfaceClass,
+        'flex w-full min-w-0 flex-col overflow-hidden',
         // min-h-80 keeps the table usable on a short window (the page
         // scrolls instead).
         fill && 'min-h-80 flex-1',
       )}
     >
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-white px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-card/45 px-4 py-3">
         <p className="text-sm text-deep-violet-blue/70" aria-live="polite">
           {firstLoad ? `Loading ${plural}…` : resultCountLabel(shownCount, totalCount, noun, plural)}
         </p>

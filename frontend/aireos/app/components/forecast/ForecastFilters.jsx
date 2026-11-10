@@ -2,6 +2,7 @@
 
 import { cn } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
+import { glassSurfaceClass } from '@/components/ui/surfaceStyles';
 import DateRangePicker from '@/components/ui/DateRangePicker';
 import SelectDropdown from '@/components/ui/SelectDropdown';
 import { customerLabel } from '@/app/utils/retailerLabel';
@@ -143,7 +144,7 @@ export default function ForecastFilters({
   }
 
   return (
-    <Card className="min-w-0 max-w-full rounded-lg border border-lavander bg-white text-deep-violet-blue shadow-sm ring-0">
+    <Card className={cn(glassSurfaceClass, 'min-w-0 max-w-full text-deep-violet-blue')}>
       <CardContent className="min-w-0 space-y-2">
         <div className="flex items-center gap-2">
           <p className="font-serif text-base text-deep-violet-blue">Filters</p>

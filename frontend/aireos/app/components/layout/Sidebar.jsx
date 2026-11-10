@@ -238,14 +238,14 @@ export default function Sidebar() {
                 // here: it would clip the highlight while it slides in from another
                 // tab, so the label clips itself instead (labelClass).
                 const tabClass = cn(
-                  'relative isolate flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm text-deep-violet-blue transition-[width,background-color] duration-300 hover:bg-card/70',
+                  'group/nav-item relative isolate flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm text-deep-violet-blue transition-[width,background-color,transform,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:scale-[1.06] hover:bg-card/85 hover:shadow-md focus-visible:outline-2 focus-visible:outline-violet motion-reduce:transform-none',
                   rail ? 'w-10' : 'w-full',
                   (isActive || childActive) && 'font-medium',
                 );
                 const tabContent = (
                   <>
                     {isHighlighted && <ActiveHighlight />}
-                    <Icon className="size-4 shrink-0" />
+                    <Icon className="size-4 shrink-0 transition-transform duration-200 group-hover/nav-item:scale-110 motion-reduce:transform-none" />
                     <span className={labelClass(rail)}>{item.label}</span>
                   </>
                 );
@@ -313,7 +313,7 @@ export default function Sidebar() {
                                   onClick={closeMobileNavigation}
                                   aria-current={isChildActive ? 'page' : undefined}
                                   className={cn(
-                                    'relative isolate block rounded-xl px-3 py-1.5 text-xs transition-colors hover:bg-card/70',
+                                    'relative isolate block rounded-xl px-3 py-1.5 text-xs transition-[background-color,transform,box-shadow] duration-200 ease-out hover:translate-x-0.5 hover:scale-[1.04] hover:bg-card/85 hover:shadow-sm focus-visible:outline-2 focus-visible:outline-violet motion-reduce:transform-none',
                                     isChildActive
                                       ? 'font-medium text-deep-violet-blue'
                                       : 'text-deep-violet-blue/70',
@@ -356,7 +356,7 @@ export default function Sidebar() {
               disabled={isSigningOut}
               title={rail ? 'Sign out' : undefined}
               className={cn(
-                'flex cursor-pointer items-center gap-3 overflow-hidden rounded-lg px-3 py-2 text-sm text-deep-violet-blue/75 transition-[width,background-color,color] duration-300 hover:bg-lavander hover:text-deep-violet-blue disabled:cursor-wait disabled:opacity-60',
+                'flex cursor-pointer items-center gap-3 overflow-hidden rounded-lg px-3 py-2 text-sm text-deep-violet-blue/75 transition-[width,background-color,color,transform] duration-200 hover:-translate-y-0.5 hover:scale-[1.06] hover:bg-lavander hover:text-deep-violet-blue disabled:cursor-wait disabled:opacity-60 motion-reduce:transform-none',
                 rail ? 'w-10' : 'w-full',
               )}
             >

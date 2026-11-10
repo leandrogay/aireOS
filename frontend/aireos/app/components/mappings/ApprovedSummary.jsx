@@ -6,6 +6,7 @@ import { ArrowRight, CheckCircle2, Database, RefreshCw, Upload } from 'lucide-re
 
 import { Button, buttonVariants } from '@/components/ui/button';
 import Disclosure from '@/components/ui/Disclosure';
+import { glassSurfaceClass } from '@/components/ui/surfaceStyles';
 import LoadConfirmDialog from '@/components/upload/LoadConfirmDialog';
 import { formatDateTime } from '@/lib/formatDate';
 import { customerLabel, vendorLabel } from '@/app/utils/retailerLabel';
@@ -83,7 +84,7 @@ export default function ApprovedSummary({ approved }) {
   }
 
   return (
-    <section className="rounded-lg border border-lavander bg-white p-5 shadow-sm">
+    <section className={`${glassSurfaceClass} p-5`}>
       <div className="flex items-start gap-3">
         <CheckCircle2 aria-hidden="true" className="mt-0.5 size-7 shrink-0 text-green-600" />
         <div className="min-w-0">

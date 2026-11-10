@@ -12,6 +12,7 @@ import StatusBadge from '@/components/ui/StatusBadge';
 import TablePagination, { PAGE_SIZES } from '@/components/ui/TablePagination';
 import TableSearch from '@/components/ui/TableSearch';
 import TableSkeleton from '@/components/ui/TableSkeleton';
+import { glassSurfaceClass } from '@/components/ui/surfaceStyles';
 import LoadConfirmDialog from '@/components/upload/LoadConfirmDialog';
 import RollbackDetailsDialog from '@/components/upload/RollbackDetailsDialog';
 import {
@@ -90,7 +91,7 @@ export default function RecentUploads({
   };
 
   return (
-    <section className="overflow-hidden rounded-lg border border-lavander bg-white shadow-sm">
+    <section className={`${glassSurfaceClass} overflow-hidden`}>
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
         <div className="flex flex-wrap items-baseline gap-x-3">
           <h2 className="font-serif text-xl text-deep-violet-blue">Recent uploads</h2>

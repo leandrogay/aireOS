@@ -4,6 +4,7 @@ import { CheckCircle2, Circle, Loader2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import InfoTooltip from '@/components/ui/InfoTooltip';
+import { glassSurfaceClass } from '@/components/ui/surfaceStyles';
 import { cn } from '@/lib/utils';
 
 /**
@@ -37,7 +38,7 @@ export default function ReviewChecklist({ items, isConfirmed, aiProposed = false
   return (
     <aside
       aria-labelledby="review-checklist-title"
-      className="rounded-lg border border-lavander bg-white p-4 shadow-sm lg:sticky lg:top-4"
+      className={`${glassSurfaceClass} p-4 lg:sticky lg:top-4`}
     >
       <div className="flex items-baseline justify-between gap-2">
         <h2 id="review-checklist-title" className="text-sm font-medium text-deep-violet-blue">

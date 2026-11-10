@@ -27,21 +27,23 @@ const MISSING_FORMAT = 'UNKNOWN';
 // off the legend, because there is no format to call it.
 export const UNNAMED_FORMAT = 'Total';
 
-// AIRE brand colours and their shades first, then the other colours the forecast
-// lines and promotion types use. No cream or lavender: both are too light to
-// see against the white card and cream page (the same reason FORMAT_COLORS
-// dropped cream).
-const CUSTOMER_COLORS = [
-  'var(--aire-violet)',
+// The original customer colours stay attached to their names, even if a new
+// customer is added or an old one is removed. These are shared by every
+// customer chart, summary tile and ranking.
+const KNOWN_CUSTOMER_COLORS = {
+  fairprice: 'var(--aire-violet)',
+  nhg: '#2E7BA6',
+  prime: '#8A7460',
+  sheng_siong: '#C4B6A6',
+  singhealth: '#C45C26',
+};
+
+const OTHER_CUSTOMER_COLORS = [
   'var(--aire-celest)',
-  '#2E7BA6',
   '#5C5299',
   '#0D9488',
   '#4F7A3A',
   '#7C3AED',
-  '#8A7460',
-  '#C4B6A6',
-  '#C45C26',
   '#E8922A',
 ];
 
@@ -67,11 +69,19 @@ export function customerColorOrder(customers, otherNames = []) {
   return [...new Set([...byId.map((customer) => customer.customer_name), ...otherNames])];
 }
 
+function customerColorKey(name) {
+  return String(name ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+}
+
 // One customer's colour, the same on every page. No two customers in `order`
 // (customerColorOrder) share a colour, however many there are.
 export function customerColor(customerName, order) {
-  const index = Math.max(order.indexOf(customerName), 0);
-  return CUSTOMER_COLORS[index] ?? extraCustomerColor(index - CUSTOMER_COLORS.length);
+  const key = customerColorKey(customerName);
+  if (Object.hasOwn(KNOWN_CUSTOMER_COLORS, key)) return KNOWN_CUSTOMER_COLORS[key];
+  const otherNames = [...new Set(order.map(customerColorKey))]
+    .filter((name) => !Object.hasOwn(KNOWN_CUSTOMER_COLORS, name));
+  const index = Math.max(otherNames.indexOf(key), 0);
+  return OTHER_CUSTOMER_COLORS[index] ?? extraCustomerColor(index - OTHER_CUSTOMER_COLORS.length);
 }
 
 // Named formats stay as they are. Rows with no format become one "Others"

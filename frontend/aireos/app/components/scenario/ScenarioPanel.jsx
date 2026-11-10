@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { ChevronsLeft, ChevronsRight } from 'lucide-react';
 
 import TabTransition from '@/components/ui/TabTransition';
+import { glassSurfaceClass } from '@/components/ui/surfaceStyles';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const triggerClass =
@@ -39,7 +40,7 @@ export default function ScenarioPanel({
     return (
       <aside
         aria-label="Scenario builder"
-        className="flex items-center justify-center gap-3 rounded-lg border border-lavander bg-white py-3 min-[1100px]:flex-col"
+        className={`${glassSurfaceClass} flex items-center justify-center gap-3 py-3 min-[1100px]:flex-col`}
       >
         <button
           type="button"
@@ -62,7 +63,7 @@ export default function ScenarioPanel({
   return (
     <aside
       aria-label="Scenario builder"
-      className="flex flex-col overflow-hidden rounded-lg border border-lavander bg-white text-deep-violet-blue"
+      className={`${glassSurfaceClass} flex flex-col overflow-hidden text-deep-violet-blue`}
     >
       <div className="flex items-start justify-between gap-2 border-b border-lavander px-3 py-2.5">
         <div className="min-w-0 flex-1">

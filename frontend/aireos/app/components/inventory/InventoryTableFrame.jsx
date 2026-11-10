@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { TABLE_HEADER_CLASS } from '@/components/ui/SortHeader';
 import { Skeleton } from '@/components/ui/skeleton';
 import TableSkeleton from '@/components/ui/TableSkeleton';
+import { glassSurfaceClass } from '@/components/ui/surfaceStyles';
 import { monthCheckboxOptions } from '@/app/utils/inventoryForm';
 import { resultCountLabel } from '@/app/utils/tableView';
 import { cn } from '@/lib/utils';
@@ -81,7 +82,7 @@ export default function InventoryTableFrame({ title, rows, description, loading 
   );
 
   return (
-    <section aria-label={title} className="flex flex-col overflow-hidden rounded-lg border border-lavander bg-white shadow-sm">
+    <section aria-label={title} className={cn(glassSurfaceClass, 'flex flex-col overflow-hidden')}>
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
         <div>
           <div className="flex items-baseline gap-2 text-sm">

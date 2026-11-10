@@ -213,14 +213,14 @@
   }
 }
 
-/* AIRE colours, softened into an ambient backdrop behind the dashboard's
-   translucent cards. Tables keep their solid headers and rows. */
-.dashboard-glass-scene {
+/* AIRE colours behind the shared translucent page cards. Tables keep their
+   solid headers and rows. */
+.aire-glass-scene {
   background-color: var(--aire-cream);
   background-image:
-    radial-gradient(ellipse at 8% 8%, color-mix(in srgb, var(--aire-lavender) 88%, transparent), transparent 48%),
-    radial-gradient(ellipse at 94% 22%, color-mix(in srgb, var(--aire-celest) 38%, transparent), transparent 40%),
-    radial-gradient(ellipse at 45% 88%, color-mix(in srgb, var(--aire-violet) 18%, transparent), transparent 54%);
+    radial-gradient(ellipse at 4% 8%, color-mix(in srgb, var(--aire-violet) 35%, transparent), transparent 58%),
+    radial-gradient(ellipse at 94% 20%, color-mix(in srgb, var(--aire-lavender) 90%, transparent), transparent 52%),
+    radial-gradient(ellipse at 52% 90%, color-mix(in srgb, var(--aire-celest) 22%, transparent), transparent 58%);
 }
 
 /* A chart line's dots fade in as the line is drawn past them; the delay is set

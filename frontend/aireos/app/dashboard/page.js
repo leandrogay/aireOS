@@ -368,7 +368,7 @@ export default function DashboardPage() {
   return (
     <PageLayout
       title="Sales Dashboard"
-      surface="glass"
+      wide
     >
       {(pageStatus === 'failed' || pageStatus === 'empty') ? (
         <DashboardStatus kind={pageStatus} error={customerOptionsError} />

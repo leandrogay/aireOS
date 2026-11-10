@@ -7,6 +7,7 @@ import { formatDateTime } from '@/lib/formatDate';
 import { Button } from '@/components/ui/button';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import Toast from '@/components/ui/Toast';
+import { glassSurfaceClass } from '@/components/ui/surfaceStyles';
 import Dropzone from '../components/upload/Dropzone';
 import RejectedFiles from '../components/upload/RejectedFiles';
 import UploadBatch from '../components/upload/UploadBatch';
@@ -152,7 +153,7 @@ export default function UploadPage() {
   return (
     <PageLayout title="Upload sales data">
       <div className="space-y-3">
-        <section className="rounded-lg border border-lavander bg-white p-6 shadow-sm">
+        <section className={`${glassSurfaceClass} p-6`}>
           {/* Files in flight don't hold the page: more can be added and
               uploaded while earlier ones are still being matched. */}
           <Dropzone onFiles={addFiles} />
@@ -219,7 +220,7 @@ export default function UploadPage() {
         {!!batches.length && (
           <section
             aria-labelledby="upload-results-heading"
-            className="rounded-lg border border-lavander bg-white p-6 shadow-sm"
+            className={`${glassSurfaceClass} p-6`}
           >
             <div className="mb-4 flex items-center justify-between gap-3 border-b border-lavander pb-2">
               <h2 id="upload-results-heading" className="font-serif text-lg text-deep-violet-blue">

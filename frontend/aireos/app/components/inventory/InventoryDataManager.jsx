@@ -3,6 +3,7 @@
 import { useState } from 'react';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { glassSurfaceClass } from '@/components/ui/surfaceStyles';
 import SegmentedControl from '@/components/ui/SegmentedControl';
 import SelectDropdown from '@/components/ui/SelectDropdown';
 import useMediaQuery from '@/hooks/useMediaQuery';
@@ -61,7 +62,7 @@ export default function InventoryDataManager({ customers, skus, editRow, onSaved
   }
 
   return (
-    <Card className="rounded-lg border border-lavander bg-white text-deep-violet-blue shadow-sm ring-0">
+    <Card className={`${glassSurfaceClass} text-deep-violet-blue`}>
       <CardHeader className="flex flex-col gap-2 pb-1 sm:flex-row sm:items-center sm:justify-between">
         <CardTitle className="font-serif text-base font-normal text-deep-violet-blue group-data-[size=sm]/card:text-base">
           {MODES.find((item) => item.value === mode)?.label} data
