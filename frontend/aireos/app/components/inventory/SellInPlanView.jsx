@@ -233,7 +233,7 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
         </div>
       </InventorySection>
 
-      {(data || loading) && <SellInDetailTable rows={data?.rows ?? []} loading={loading && !data} />}
+      {(data || loading) && <SellInDetailTable rows={data?.rows ?? []} loading={loading && !data} customerId={customerId} />}
     </div>
   );
 }
