@@ -7,13 +7,13 @@ from sqlalchemy.engine import Connection
 from app.services.scenario import building_blocks, common
 
 
-# Scenario builder promotions (scenario_promotions -- NOT CREATED YET: the page
-# runs on the in-memory store in scenarioPromotionsApi.js): planned by SKU
-# range (sku_ranges; sku only on ones saved before ranges),
+# Scenario builder promotions (scenario_promotions, migration 018): planned
+# by SKU range (sku_ranges; sku only on ones saved before ranges),
 # promotions that only move the Scenario builder's Simulated line, saved
 # and switched on/off exactly like building blocks (building_blocks.py).
 # Nothing here reads or writes the forecast, the real `promotions` table,
-# Inventory or Dashboard; the frontend applies a promotion to the Current
+# the promo anchors (an anchor moves only once real sales show the new
+# discount), Inventory or Dashboard; the frontend applies a promotion to the Current
 # forecast itself (app/utils/scenarioPromotions.js).
 #
 # Uplift values arrive in the body as the page copied them from Promotion

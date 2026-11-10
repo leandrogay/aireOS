@@ -1,6 +1,8 @@
 import json
+import re
 from datetime import date, datetime, timezone
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from conftest import FakeConnection, FakeEngine
@@ -213,3 +215,23 @@ def test_delete_removes_it_and_a_second_delete_returns_false(monkeypatch):
     assert promotions_service.delete_scenario_promotion(1) is True
     assert promotions_service.delete_scenario_promotion(1) is False
     assert promotions_service.list_scenario_promotions() == []
+
+
+# ---- Migration ---------------------------------------------------------------
+
+
+MIGRATION = Path(__file__).resolve().parents[1] / "migrations" / "018_create_scenario_promotions.sql"
+
+
+def test_the_migration_creates_every_column_the_service_reads_and_writes():
+    table = MIGRATION.read_text().split("CREATE TABLE IF NOT EXISTS scenario_promotions (", 1)[1]
+    created = set(re.findall(r"^    ([a-z_]+) ", table, flags=re.MULTILINE)) - {"CONSTRAINT"}
+    read = set(re.findall(r"promotion\.([a-z_]+)", promotions_service._PROMOTION_SELECT))
+
+    conn = FakeConnection(
+        lambda sql, params: [("Ultra Tape",)] if "ANY(:sku_ranges)" in sql else [(1,)] if "FROM customers" in sql else []
+    )
+    written = promotions_service._write_params(conn, _promotion(sku_ranges=["Ultra Tape"], product_name=None))
+
+    assert set(written) <= created
+    assert read <= created

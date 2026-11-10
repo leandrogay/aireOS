@@ -10,7 +10,7 @@ from app.schemas.catalog import _Base
 # ============================================================
 # SCENARIO PROMOTIONS
 #
-# Mirrors the scenario_promotions CHECKs (006), which stay as the
+# Mirrors the scenario_promotions CHECKs (018), which stay as the
 # backstop. Customer and product are named the way the Forecast page
 # names them, like building blocks; the service resolves them to
 # customer_id / sku. The frontend builds this body in
@@ -31,8 +31,7 @@ class ScenarioPromotionBase(_Base):
     # Promotions are planned by SKU range: sku_ranges = every SKU of those
     # ranges; None (or empty) with no product_name = all SKU ranges.
     # product_name (one SKU) is only for promotions saved before ranges, so
-    # they can still be edited; never both. (No table yet: the page runs on
-    # the in-memory store in scenarioPromotionsApi.js.)
+    # they can still be edited; never both.
     sku_ranges: list[str] | None = Field(default=None, max_length=100)
     product_name: str | None = Field(default=None, min_length=1, max_length=255)
 

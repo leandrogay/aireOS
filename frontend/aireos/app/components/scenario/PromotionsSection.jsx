@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { Percent, Plus, Trash2 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
-import { SCENARIO_PROMOTIONS_DEMO } from '@/app/services/scenarioPromotionsApi';
 import { customerLabel } from '@/app/utils/retailerLabel';
 import { monthSpanLabel } from '@/app/utils/scenarioPitch';
 import {
@@ -24,7 +23,6 @@ import {
   withReferences,
 } from '@/app/utils/scenarioPromotions';
 import { Button } from '@/components/ui/button';
-import InfoTooltip from '@/components/ui/InfoTooltip';
 import { Switch } from '@/components/ui/switch';
 import { primaryButtonClass, secondaryButtonClass } from '@/components/ui/formStyles';
 import PromoHowItWorks from '@/components/scenario/PromoHowItWorks';
@@ -208,14 +206,6 @@ export default function PromotionsSection({
       <div className="flex items-center justify-between gap-2">
         <p className="flex items-center gap-1 text-[11px] text-deep-violet-blue/70">
           Plan a promotion and see its uplift on the chart.
-          {SCENARIO_PROMOTIONS_DEMO ? (
-            <InfoTooltip label="About demo mode">
-              <p>
-                Saving is in demo mode until the scenario promotions table is set up: saved promotions last until the
-                page is reloaded.
-              </p>
-            </InfoTooltip>
-          ) : null}
         </p>
         {placeholderInUse ? (
           <span className="shrink-0 rounded-full border border-violet/40 bg-cream px-2 py-0.5 text-[10px] font-medium text-deep-violet-blue/70">
