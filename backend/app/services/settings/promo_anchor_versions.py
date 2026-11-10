@@ -132,22 +132,34 @@ def _next_month(month: date) -> date:
     return date(month.year + month.month // 12, month.month % 12 + 1, 1)
 
 
+def _takes_over(anchor: dict, previous: str | None) -> bool:
+    # A new mechanic takes over only with strictly more months in the window
+    # than the one before it; a tie keeps the one before.
+    new = anchor["mechanic_key"]
+    if new is None or new == previous:
+        return False
+    return previous is None or anchor["counts"].get(new, 0) > anchor["counts"].get(previous, 0)
+
+
 def project_anchors(
     moments: list[dict],
     planned: list[dict],
     sku_ranges: dict[str, str | None],
-    current: dict[tuple[int, str | None], str | None],
     this_month: date,
+    targets: set[tuple[int, str | None]] | None = None,
 ) -> dict[tuple[int, str | None], list[dict]]:
     """
     The anchor changes the official promotions already keyed in will bring,
-    per customer x SKU range and per customer (sku_range None): for each
-    month after `this_month` up to the target's last planned moment, the
-    anchor_counts rule over real and planned moments in the 12 months up to
-    it, kept only where it differs from the month before (starting from
-    `current`, the mechanic in effect this month). A month with too few
-    moments to say changes nothing. Each change has effective_from,
-    mechanic_key, mechanic_label, months and window_months.
+    per customer x SKU range and per customer (sku_range None; only `targets`
+    when given): for each month after `this_month` up to the target's last
+    planned moment, the anchor_counts rule over real and planned moments in
+    the 12 months up to it. It starts from what that rule says as of this
+    month, so a mechanic the sales already point to (shown as Recommended,
+    adopted by hand) is never saved as a projected change; only shifts the
+    future promotions bring are. A mechanic takes over only with strictly
+    more months than the one before it, and a month with too few moments to
+    say changes nothing. Each change has effective_from, mechanic_key,
+    mechanic_label, months, window_months and counts.
     """
 
     horizons: dict[tuple[int, str | None], date] = {}
@@ -155,14 +167,16 @@ def project_anchors(
         if moment["month"] <= this_month:
             continue
         sku_range = sku_ranges.get(moment["sku"])
-        targets = [(moment["customer_id"], None)] + ([(moment["customer_id"], sku_range)] if sku_range else [])
-        for target in targets:
-            horizons[target] = max(horizons.get(target, moment["month"]), moment["month"])
+        moment_targets = [(moment["customer_id"], None)] + ([(moment["customer_id"], sku_range)] if sku_range else [])
+        for target in moment_targets:
+            if targets is None or target in targets:
+                horizons[target] = max(horizons.get(target, moment["month"]), moment["month"])
     if not horizons:
         return {}
 
     everything = moments + planned
-    previous = {target: current.get(target) for target in horizons}
+    as_of_now = moment_rules.anchor_counts(everything, sku_ranges, this_month)
+    previous = {target: (as_of_now.get(target) or {}).get("mechanic_key") for target in horizons}
     changes: dict[tuple[int, str | None], list[dict]] = {target: [] for target in horizons}
 
     month = _next_month(this_month)
@@ -170,11 +184,10 @@ def project_anchors(
         counted = moment_rules.anchor_counts(everything, sku_ranges, month)
         for target, horizon in horizons.items():
             anchor = counted.get(target)
-            if month > horizon or anchor is None or anchor["mechanic_key"] is None:
+            if month > horizon or anchor is None or not _takes_over(anchor, previous[target]):
                 continue
-            if anchor["mechanic_key"] != previous[target]:
-                changes[target].append({"effective_from": month, **anchor})
-                previous[target] = anchor["mechanic_key"]
+            changes[target].append({"effective_from": month, **anchor})
+            previous[target] = anchor["mechanic_key"]
         month = _next_month(month)
 
     return {target: items for target, items in changes.items() if items}

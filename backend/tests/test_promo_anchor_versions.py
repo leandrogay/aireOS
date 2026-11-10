@@ -7,6 +7,7 @@ from app.services.settings import promo_anchor_versions as versions
 STAMP = datetime(2026, 11, 10, tzinfo=timezone.utc)
 NOV_2026 = date(2026, 11, 1)
 MAY_2027 = date(2027, 5, 1)
+JUNE_2027 = date(2027, 6, 1)
 
 DISCOUNTS = {"pct_off_15": Decimal("15"), "pct_off_20": Decimal("20"), "pct_off_30": Decimal("30")}
 
@@ -141,38 +142,48 @@ def _clients_case():
     return real, planned
 
 
-def test_the_clients_case_projects_15_off_from_may_2027_for_the_customer_and_its_range():
+def test_the_clients_case_projects_15_off_from_june_2027_for_the_customer_and_its_range():
     real, planned = _clients_case()
-    current = {(1, None): "pct_off_20", (1, "Pants"): "pct_off_20"}
 
-    changes = versions.project_anchors(real, planned, {"SKU-L": "Pants"}, current, NOV_2026)
+    changes = versions.project_anchors(real, planned, {"SKU-L": "Pants"}, NOV_2026)
 
     assert {target: [(c["effective_from"], c["mechanic_key"]) for c in items] for target, items in changes.items()} == {
-        (1, None): [(MAY_2027, "pct_off_15")],
-        (1, "Pants"): [(MAY_2027, "pct_off_15")],
+        (1, None): [(JUNE_2027, "pct_off_15")],
+        (1, "Pants"): [(JUNE_2027, "pct_off_15")],
     }
 
 
-def test_months_before_the_change_keep_the_current_anchor():
+def test_a_tie_keeps_the_current_anchor():
     real, planned = _clients_case()
 
-    changes = versions.project_anchors(real, planned, {}, {(1, None): "pct_off_20"}, NOV_2026)
+    changes = versions.project_anchors(real, planned, {}, NOV_2026)
 
-    # Apr 2027 counts 7 months at 20% off against 5 at 15%; only May tips it.
-    assert [c["effective_from"] for c in changes[(1, None)]] == [MAY_2027]
+    # May 2027 counts 6 months at 20% off and 6 at 15%: 20% holds until
+    # June, when 15% leads 7 to 5.
+    assert [(c["effective_from"], c["counts"]) for c in changes[(1, None)]] == [
+        (JUNE_2027, {"pct_off_20": 5, "pct_off_15": 7}),
+    ]
+
+
+def test_only_the_targets_asked_for_are_projected():
+    real, planned = _clients_case()
+
+    changes = versions.project_anchors(real, planned, {"SKU-L": "Pants"}, NOV_2026, targets={(1, "Pants")})
+
+    assert list(changes) == [(1, "Pants")]
 
 
 def test_without_planned_promotions_nothing_is_projected():
     real, _ = _clients_case()
 
-    assert versions.project_anchors(real, [], {}, {(1, None): "pct_off_20"}, NOV_2026) == {}
+    assert versions.project_anchors(real, [], {}, NOV_2026) == {}
 
 
-def test_a_projection_that_matches_the_current_anchor_is_no_change():
+def test_future_promotions_that_keep_what_the_sales_point_to_change_nothing():
     real, _ = _clients_case()
     planned = [_moment(month, "pct_off_20", planned=True) for month in _months(date(2026, 12, 1), 6)]
 
-    assert versions.project_anchors(real, planned, {}, {(1, None): "pct_off_20"}, NOV_2026) == {}
+    assert versions.project_anchors(real, planned, {}, NOV_2026) == {}
 
 
 # ---- measure_by_version ------------------------------------------------------------

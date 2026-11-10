@@ -260,6 +260,8 @@ def anchor_counts(
             "mechanic_label": labels.get(key) if key else None,
             "months": counts.get(key, 0) if key else 0,
             "window_months": window_months,
+            # Months per mechanic, so a projection can tell a tie from a lead.
+            "counts": counts,
         }
     return anchors
 
