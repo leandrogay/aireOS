@@ -3,18 +3,15 @@
 import { useState } from 'react';
 
 import HeaderCheckboxFilter from '@/components/ui/HeaderCheckboxFilter';
-import { Button } from '@/components/ui/button';
 import { TABLE_HEADER_CLASS } from '@/components/ui/SortHeader';
 import { Skeleton } from '@/components/ui/skeleton';
 import TableSkeleton from '@/components/ui/TableSkeleton';
+import TablePagination, { PAGE_SIZES } from '@/components/ui/TablePagination';
 import { monthCheckboxOptions } from '@/app/utils/inventoryForm';
-import { resultCountLabel } from '@/app/utils/tableView';
-import { cn } from '@/lib/utils';
+import { paginate, resultCountLabel } from '@/app/utils/tableView';
 
 // The same look as the list tables on Customers, Promotions and SKUs
 // (ui/DataTable + ui/TableGrid), so every table in the app reads alike.
-const actionButtonClass = 'rounded-md border-deep-violet-blue/30 bg-white text-deep-violet-blue hover:bg-cream';
-
 export const inventoryTableClass = 'aire-table-rows w-full text-left text-sm text-deep-violet-blue [&_td]:align-middle [&_th]:align-middle';
 // Solid cream keeps rows from showing through the sticky header;
 // the bottom rule is an inset shadow because a collapsed border does not move
@@ -37,9 +34,10 @@ export function InventoryTableSkeleton({ columns }) {
 
 /**
  * Table shell shared by the inventory tabs, in the list-table look (see
- * ui/DataTable): the title and row count, Clear, Expand/Collapse, and the
- * month checkbox filter, with the table flush to the card's edges. `children` draws the columns
- * for the rows still showing, and places `monthHeader` on the Month column.
+ * ui/DataTable): the title and row count, the month checkbox filter (cleared
+ * from its own popover) and the shared page footer (ui/TablePagination), with
+ * the table flush to the card's edges. `children` draws the columns for the
+ * current page's rows, and places `monthHeader` on the Month column.
  *
  * @param {object} props
  * @param {string} props.title
@@ -48,11 +46,16 @@ export function InventoryTableSkeleton({ columns }) {
  * @param {boolean} [props.loading] first load in flight: the row count shows a
  *   placeholder, and `children` should draw InventoryTableSkeleton rows
  * @param {(visible: object[], monthHeader: import('react').ReactNode) => import('react').ReactNode} props.children
+ *   `visible` is the current page's rows; it is empty only when nothing
+ *   matches, so a "no rows" message still works
  */
 export default function InventoryTableFrame({ title, rows, description, loading = false, children }) {
-  const [expanded, setExpanded] = useState(false);
   const [monthFilter, setMonthFilter] = useState([]);
   const [openFilter, setOpenFilter] = useState(null);
+  const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
+  // The page belongs to the list it was picked on: when the rows or the month
+  // filter change, the table starts again at page 1 (derived, no effect).
+  const [paging, setPaging] = useState({ page: 1, listKey: '' });
 
   const monthOptions = monthCheckboxOptions(rows);
   const knownMonths = new Set(monthOptions.map((option) => option.value));
@@ -61,9 +64,18 @@ export default function InventoryTableFrame({ title, rows, description, loading 
     ? rows.filter((row) => activeMonthFilter.includes(row.month.slice(0, 7)))
     : rows;
 
-  function clearMonthFilter() {
-    setMonthFilter([]);
-    setOpenFilter(null);
+  const listKey = `${rows.length}|${activeMonthFilter.join(',')}`;
+  const page = paging.listKey === listKey ? paging.page : 1;
+  // paginate clamps the page, so a shorter list never lands on an empty one.
+  const { pageRows, currentPage, totalPages } = paginate(visible, page, pageSize);
+
+  function changePage(next) {
+    setPaging({ page: next, listKey });
+  }
+
+  function changePageSize(size) {
+    setPageSize(size);
+    setPaging({ page: 1, listKey });
   }
 
   const monthHeader = (
@@ -98,30 +110,24 @@ export default function InventoryTableFrame({ title, rows, description, loading 
             <p className="mt-1 max-w-3xl text-xs text-deep-violet-blue/60">{description}</p>
           ) : null}
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={clearMonthFilter}
-            disabled={activeMonthFilter.length === 0}
-            className={actionButtonClass}
-          >
-            Clear
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setExpanded((current) => !current)}
-            className={actionButtonClass}
-          >
-            {expanded ? 'Collapse' : 'Expand'}
-          </Button>
-        </div>
       </div>
 
-      <div className={cn('overflow-auto border-t border-lavander', !expanded && 'max-h-[28vh]')}>
-        {children(visible, monthHeader)}
+      {/* One page at full height, so there is no inner scroll box and no long
+          page; overflow-x stays for wide tables on small screens. */}
+      <div className="overflow-x-auto border-t border-lavander">
+        {children(pageRows, monthHeader)}
       </div>
+
+      {!loading && visible.length > 0 && (
+        <TablePagination
+          page={currentPage}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          totalRows={visible.length}
+          onPageChange={changePage}
+          onPageSizeChange={changePageSize}
+        />
+      )}
     </section>
   );
 }
