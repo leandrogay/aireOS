@@ -35,8 +35,8 @@ export default function FileSettings({ instructions, changed, onChange, onReset,
           showState
           checked={instructions.aggregate}
           onChange={(checked) => onChange('aggregate', checked)}
-          onHint="Each store and product loads as one total per month. Weekly detail is lost, so leave this off for weekly files."
-          offHint="Rows load as they are. Weekly files stay weekly, and the dashboard still adds them up by month. Turn on for daily or per-delivery files, or when one product appears on several rows."
+          onHint="Each store and product loads as one total per month. Weekly detail is lost."
+          offHint="Rows load as they are. Weekly files stay weekly."
           disabled={disabled}
         />
       </div>
