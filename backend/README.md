@@ -77,6 +77,12 @@ succeeds or fails also appears in the notification bell (`rollback_success` /
 `rollback_failure`). Until then those notifications are skipped and logged; the
 rollback itself is unaffected.
 
+Apply `migrations/016_add_model_outdated_notification_type.sql` so a retired
+Gemini model (`MAPPING_MODEL` / `GEMINI_ASSISTANT_MODEL`) is reported in the
+notification bell and the "AI unavailable" notices (`app/services/ai_models.py`).
+Until then those notifications are skipped and logged; the 503 from the
+Assistant and the blank hand-fill proposal for new upload layouts still work.
+
 Apply `migrations/015_create_sell_in_plan_snapshots.sql` for the sell-in plan
 chart's "Sell-in Forecast (Previous)" line. Each forecast refresh that retrains
 (the event-triggered refresh and the scheduled run) saves every customer's

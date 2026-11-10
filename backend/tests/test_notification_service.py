@@ -179,3 +179,69 @@ def test_has_forecast_run_looks_the_run_up_by_name(monkeypatch):
 def test_a_best_effort_notification_that_cannot_be_written_is_skipped_not_raised():
     # conftest blocks the real engine, the same as an unreachable database.
     assert notification_service.insert_best_effort(notification_service.MAPPING_UPLOADED, {}) is None
+
+
+# ---- a Gemini model that is no longer available ---------------------------------
+
+
+def _model_router(unread):
+    """respond() for insert_model_outdated: whether an unread one names the model."""
+
+    def respond(sql, params):
+        if "SELECT 1 FROM notifications" in sql:
+            return [(1,)] if unread else []
+        if "INSERT INTO notifications" in sql:
+            return [(42,)]
+        return []
+
+    return respond
+
+
+def test_a_model_outdated_notification_is_written_when_none_is_unread(monkeypatch):
+    conn = _install(monkeypatch, _model_router(unread=False))
+
+    notification_id = notification_service.insert_model_outdated({"current_model": "gemini-old"})
+
+    assert notification_id == 42
+    insert_sql, insert_params = conn.sql_containing("INSERT INTO notifications")[0]
+    assert insert_params["notification_type"] == notification_service.MODEL_OUTDATED
+
+
+def test_an_unread_notification_for_the_same_model_is_not_repeated(monkeypatch):
+    conn = _install(monkeypatch, _model_router(unread=True))
+
+    assert notification_service.insert_model_outdated({"current_model": "gemini-old"}) is None
+    assert conn.sql_containing("INSERT INTO notifications") == []
+    _, params = conn.sql_containing("SELECT 1 FROM notifications")[0]
+    assert params == {"notification_type": notification_service.MODEL_OUTDATED, "model": "gemini-old"}
+
+
+def test_the_unread_check_and_the_insert_hold_one_lock(monkeypatch):
+    conn = _install(monkeypatch, _model_router(unread=False))
+
+    notification_service.insert_model_outdated({"current_model": "gemini-old"})
+
+    statements = [sql for sql, _ in conn.calls]
+    assert "pg_advisory_xact_lock" in statements[0]
+    assert "read_at IS NULL" in statements[1]
+
+
+def test_a_model_outdated_notification_that_cannot_be_written_is_skipped_not_raised():
+    # conftest blocks the real engine, the same as an unreachable database.
+    assert notification_service.insert_model_outdated({"current_model": "gemini-old"}) is None
+
+
+def test_models_reported_unavailable_reads_any_model_outdated_row_read_or_not(monkeypatch):
+    conn = _install(monkeypatch, lambda sql, params: [("gemini-old",)])
+
+    assert notification_service.models_reported_unavailable(["gemini-new", "gemini-old"]) == {"gemini-old"}
+    sql, params = conn.calls[0]
+    assert "read_at" not in sql
+    assert params == {"notification_type": notification_service.MODEL_OUTDATED, "models": ["gemini-new", "gemini-old"]}
+
+
+def test_no_models_reads_nothing(monkeypatch):
+    conn = _install(monkeypatch, _router())
+
+    assert notification_service.models_reported_unavailable([]) == set()
+    assert conn.calls == []

@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Loader2, Play } from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 
 import { Button } from '@/components/ui/button';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
@@ -9,6 +10,7 @@ import Disclosure from '@/components/ui/Disclosure';
 import useCustomers from '@/hooks/useCustomers';
 import useMappingEdits from '@/hooks/useMappingEdits';
 import { createRetailer, linkRetailer } from '@/app/services/catalogApi';
+import { CARD_REVEAL } from '@/app/config/transitions';
 import { checkSummary } from '@/app/utils/mappingChecks';
 import {
   newCustomerDefaults,
@@ -19,7 +21,7 @@ import {
 } from '@/app/utils/mappingCustomer';
 import { PROPOSER, isAiProposal, reviewIssues } from '@/app/utils/mappingReview';
 import { SECTION_IDS, reviewChecklist } from '@/app/utils/reviewChecklist';
-import { codeRows, unknownCodes } from '@/app/utils/skuCodeTable';
+import { codeRows, skuSourceKey, unknownCodes } from '@/app/utils/skuCodeTable';
 
 import ApprovedSummary from './ApprovedSummary';
 import ConfirmDiscardDialog from './ConfirmDiscardDialog';
@@ -28,6 +30,7 @@ import FieldEditorDialog from './FieldEditorDialog';
 import FieldTable from './FieldTable';
 import FileSettings from './FileSettings';
 import FileTop from './FileTop';
+import ProductCodesLoading from './ProductCodesLoading';
 import MappingChecks from './MappingChecks';
 import NewCustomerDialog from './NewCustomerDialog';
 import OutputPreview from './OutputPreview';
@@ -86,6 +89,11 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
   const [discardError, setDiscardError] = useState('');
   // The field whose editor is open (its coverage entry), or null.
   const [editing, setEditing] = useState(null);
+  // Where the sku was read from in the proposal, and when the product codes
+  // on screen were last asked for (each test's source after that).
+  const [initialSkuSource] = useState(() => skuSourceKey(edits.rows, edits.groups));
+  const [codesFor, setCodesFor] = useState(initialSkuSource);
+  const reduceMotion = useReducedMotion();
 
   const decision = retailerDecision(mapping, edits.rows, edits.fieldEdits, edits.groups);
   const outputs = retailerOutputs(decision);
@@ -108,8 +116,17 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
   const skuField = edits.rows
     .flatMap((row) => row.fields)
     .find((field) => field.targetField === 'sku');
+  const skuSource = skuSourceKey(edits.rows, edits.groups);
   const masterAvailable = mapping.masterSkusAvailable !== false;
-  const codes = skuField ? codeRows(preview?.sku_codes || mapping.skuCodes, skuField.transform, mapping.masterSkus) : [];
+  // Only codes read from the column the sku comes from now: the last test's
+  // when it ran on this source, else the proposal's while it is unchanged.
+  const codesSource = preview
+    ? preview.skuSource === skuSource ? preview.sku_codes : null
+    : skuSource === initialSkuSource ? mapping.skuCodes : null;
+  const codes = skuField && codesSource ? codeRows(codesSource, skuField.transform, mapping.masterSkus) : [];
+  // A new source's codes are on their way: the test is running, or about to
+  // (the auto-test effect starts it a tick after the column is chosen).
+  const codesLoading = Boolean(skuField) && !codes.length && (busy === 'preview' || skuSource !== codesFor);
   const unknown = masterAvailable ? unknownCodes(codes) : [];
 
   // Checks are the proposal's until the reviewer runs them, and go stale the
@@ -166,18 +183,32 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
     setNewCustomerName(null);
   }
 
-  async function runChecks() {
+  // useCallback because the auto-test effect below lists it (a correctness
+  // need, CLAUDE.md 3.2), not for speed.
+  const runChecks = useCallback(async () => {
     setBusy('preview');
     setPreviewError('');
+    setCodesFor(skuSource);
     try {
-      setPreview({ ...(await onPreview({ rules: edits.rules, instructions: edits.instructionsPayload })), rulesKey });
+      setPreview({ ...(await onPreview({ rules: edits.rules, instructions: edits.instructionsPayload })), rulesKey, skuSource });
     } catch (error) {
       setPreview(null);
       setPreviewError(error.message);
     } finally {
       setBusy(null);
     }
-  }
+  }, [onPreview, edits.rules, edits.instructionsPayload, rulesKey, skuSource]);
+
+  // Choosing where the product code comes from runs the test straight away, so
+  // step 3 lists the file's codes without waiting for "Test my changes": only
+  // the backend reads every row (the packet's column profile is a sample).
+  // Once per new source, and not while another request is running. Deferred a
+  // tick (as app/mappings/page.js loads) so the busy state lands after this
+  // render commits; it is still this render's runChecks, with the new rules.
+  useEffect(() => {
+    if (!skuSource || skuSource === codesFor || busy) return;
+    Promise.resolve().then(runChecks);
+  }, [skuSource, codesFor, busy, runChecks]);
 
   async function handleApprove() {
     setBusy('approve');
@@ -216,7 +247,7 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
   if (approved) return <ApprovedSummary approved={approved} />;
 
   const disabled = busy !== null;
-  const steps = [SECTION_IDS.customer, SECTION_IDS.fields, ...(codes.length ? [SECTION_IDS.products] : []), SECTION_IDS.checks];
+  const steps = [SECTION_IDS.customer, SECTION_IDS.fields, ...(codes.length || codesLoading ? [SECTION_IDS.products] : []), SECTION_IDS.checks];
   const stepOf = (id) => steps.indexOf(id) + 1;
   const openFields = issues.coverage.filter(
     (entry) => entry.decidable && (entry.status === 'unmapped' || entry.status === 'not_available'),
@@ -289,7 +320,10 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
             id={SECTION_IDS.fields}
             step={stepOf(SECTION_IDS.fields)}
             title="Where each field comes from"
-            info={`Change a field by choosing another column — or, for Units sold and Sales value, a group of period or outlet columns. Edit offers every other way: the headings or a row above them, the period in the title, units × a price, a fixed value, worked out from another field, and steps on the value. Medium and Low confidence fields are marked; confirm the Low ones with “Looks right”. Each field's ⓘ has its details.`}
+            info={`Change a field by choosing another column — or, for Units sold and Sales value, a group of period or outlet columns. Edit offers every other way: the headings or a row above them, the period in the title, units × a price, a fixed value, worked out from another field, and steps on the value.${
+              // A proposal made without AI has no confidence to mark (packet aiUnavailable).
+              mapping.aiUnavailable ? '' : ' Medium and Low confidence fields are marked; confirm the Low ones with “Looks right”.'
+            } Each field's ⓘ has its details.`}
             done={done(items, ['required', 'confirm', 'duplicates'])}
             action={
               canResetFields && (
@@ -339,87 +373,106 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
             />
           </ReviewSection>
 
-          {codes.length > 0 && (
+          {/* Springs in as soon as a product code column is chosen, with a
+              placeholder until the file's codes arrive (CARD_REVEAL). */}
+          <AnimatePresence initial={false}>
+            {(codes.length > 0 || codesLoading) && (
+              <motion.div
+                key="products"
+                initial={reduceMotion ? false : { opacity: 0, y: CARD_REVEAL.y }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={reduceMotion ? undefined : { opacity: 0, transition: { duration: 0.12 } }}
+                transition={CARD_REVEAL.transition}
+              >
+                <ReviewSection
+                  id={SECTION_IDS.products}
+                  step={stepOf(SECTION_IDS.products)}
+                  title="Which of our products each code is"
+                  info="Every product code in the example file has to be one of our master SKUs. Pick the product for any code that is not, or add the product to the SKU master first."
+                  done={codesLoading ? null : done(items, ['products'])}
+                  action={
+                    changedCodes.length > 0 && (
+                      <ResetButton
+                        text="Reset step"
+                        label={`Reset every product code to the ${PROPOSER}'s proposal`}
+                        onClick={() => setConfirmingReset('products')}
+                        disabled={disabled}
+                      />
+                    )
+                  }
+                >
+                  {codesLoading ? (
+                    <ProductCodesLoading />
+                  ) : (
+                    <SkuCodeTable
+                      rows={codes}
+                      masterSkus={mapping.masterSkus || []}
+                      masterAvailable={masterAvailable}
+                      onChange={edits.setSkuCode}
+                      codeChanged={edits.codeChanged}
+                      onResetCode={(code) => edits.resetSkuCodes([code])}
+                      readOnly={disabled}
+                    />
+                  )}
+                </ReviewSection>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Glides down when step 3 appears above it, and back up when it goes. */}
+          <motion.div layout={!reduceMotion} transition={{ layout: CARD_REVEAL.layout }}>
             <ReviewSection
-              id={SECTION_IDS.products}
-              step={stepOf(SECTION_IDS.products)}
-              title="Which of our products each code is"
-              info="Every product code in the example file has to be one of our master SKUs. Pick the product for any code that is not, or add the product to the SKU master first."
-              done={done(items, ['products'])}
+              id={SECTION_IDS.checks}
+              step={stepOf(SECTION_IDS.checks)}
+              title="Test it on the example file"
+              info={`Applies the nomenclature to the whole example file, without saving anything, and compares totals, periods and products with what the file says. ${preview ? 'Showing your last test.' : `Showing the results from when the ${PROPOSER} proposed it.`}`}
+              done={!failed && !stale}
+              doneLabel="Passing"
+              todoLabel={stale ? 'Changed since last test' : 'Failing'}
               action={
-                changedCodes.length > 0 && (
-                  <ResetButton
-                    text="Reset step"
-                    label={`Reset every product code to the ${PROPOSER}'s proposal`}
-                    onClick={() => setConfirmingReset('products')}
-                    disabled={disabled}
-                  />
-                )
+                // Never run on its own: the reviewer tests when they are ready.
+                // Once edits make the results stale, testing them is the next
+                // step, so the button becomes the primary one.
+                <Button
+                  type="button"
+                  variant={stale ? 'default' : 'outline'}
+                  size="sm"
+                  disabled={disabled}
+                  onClick={runChecks}
+                >
+                  {busy === 'preview' ? <Loader2 aria-hidden="true" className="animate-spin" /> : <Play aria-hidden="true" />}
+                  {busy === 'preview' ? 'Testing…' : stale ? 'Test my changes' : preview ? 'Test again' : 'Test nomenclature'}
+                </Button>
               }
             >
-              <SkuCodeTable
-                rows={codes}
-                masterSkus={mapping.masterSkus || []}
-                masterAvailable={masterAvailable}
-                onChange={edits.setSkuCode}
-                codeChanged={edits.codeChanged}
-                onResetCode={(code) => edits.resetSkuCodes([code])}
-                readOnly={disabled}
-              />
+              {previewError && (
+                <p role="alert" className="mb-2 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+                  {previewError}
+                </p>
+              )}
+              {stale && (
+                <p className="mb-2 text-xs text-amber-900">
+                  You&apos;ve changed the nomenclature since these results. Test your changes to see what they do.
+                </p>
+              )}
+              {preview?.preview_error && (
+                <p role="alert" className="mb-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+                  No sample rows: {preview.preview_error}
+                </p>
+              )}
+              <MappingChecks checks={checks} stale={stale} />
+
+              {/* Only once a run has rows to show -- an empty fold is a click
+                  that leads nowhere -- and open from the start then. */}
+              {preview?.preview?.length > 0 && (
+                <Disclosure open className="mt-2 rounded-md border border-lavander" summary="Sample sales rows">
+                  <div className="border-t border-lavander p-2">
+                    <OutputPreview preview={preview} fields={PREVIEW_FIELDS} />
+                  </div>
+                </Disclosure>
+              )}
             </ReviewSection>
-          )}
-
-          <ReviewSection
-            id={SECTION_IDS.checks}
-            step={stepOf(SECTION_IDS.checks)}
-            title="Test it on the example file"
-            info={`Applies the nomenclature to the whole example file, without saving anything, and compares totals, periods and products with what the file says. ${preview ? 'Showing your last test.' : `Showing the results from when the ${PROPOSER} proposed it.`}`}
-            done={!failed && !stale}
-            doneLabel="Passing"
-            todoLabel={stale ? 'Changed since last test' : 'Failing'}
-            action={
-              // Never run on its own: the reviewer tests when they are ready.
-              // Once edits make the results stale, testing them is the next
-              // step, so the button becomes the primary one.
-              <Button
-                type="button"
-                variant={stale ? 'default' : 'outline'}
-                size="sm"
-                disabled={disabled}
-                onClick={runChecks}
-              >
-                {busy === 'preview' ? <Loader2 aria-hidden="true" className="animate-spin" /> : <Play aria-hidden="true" />}
-                {busy === 'preview' ? 'Testing…' : stale ? 'Test my changes' : preview ? 'Test again' : 'Test nomenclature'}
-              </Button>
-            }
-          >
-            {previewError && (
-              <p role="alert" className="mb-2 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700">
-                {previewError}
-              </p>
-            )}
-            {stale && (
-              <p className="mb-2 text-xs text-amber-900">
-                You&apos;ve changed the nomenclature since these results. Test your changes to see what they do.
-              </p>
-            )}
-            {preview?.preview_error && (
-              <p role="alert" className="mb-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
-                No sample rows: {preview.preview_error}
-              </p>
-            )}
-            <MappingChecks checks={checks} stale={stale} />
-
-            {/* Only once a run has rows to show -- an empty fold is a click
-                that leads nowhere -- and open from the start then. */}
-            {preview?.preview?.length > 0 && (
-              <Disclosure open className="mt-2 rounded-md border border-lavander" summary="Sample sales rows">
-                <div className="border-t border-lavander p-2">
-                  <OutputPreview preview={preview} fields={PREVIEW_FIELDS} />
-                </div>
-              </Disclosure>
-            )}
-          </ReviewSection>
+          </motion.div>
         </div>
 
         <ReviewChecklist

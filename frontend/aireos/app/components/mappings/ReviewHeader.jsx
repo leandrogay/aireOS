@@ -1,4 +1,4 @@
-import { FileSpreadsheet, Trash2 } from 'lucide-react';
+import { AlertTriangle, FileSpreadsheet, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import InfoTooltip from '@/components/ui/InfoTooltip';
@@ -28,6 +28,10 @@ export default function ReviewHeader({ mapping, changed, canDiscard, busy, disca
   const customer = mapping.customerName ? customerLabel(mapping.customerName) : vendorLabel(mapping.vendor);
   const model = proposedByLabel(mapping.proposedBy);
   const file = mapping.sourceFilename || String(mapping.filename || '').split('/').pop();
+  // Packet aiUnavailable: the model was retired when this file was uploaded, so
+  // the proposal starts blank (backend generate_mapping.blank_mapping_contract).
+  const byHand = !isConfirmed && Boolean(mapping.aiUnavailable);
+  const proposedBy = byHand ? ' · to fill in by hand' : ` · proposed by ${PROPOSER}${model ? ` (${model})` : ''}`;
 
   return (
     <section className="rounded-lg border border-lavander bg-white p-4 shadow-sm">
@@ -48,7 +52,7 @@ export default function ReviewHeader({ mapping, changed, canDiscard, busy, disca
               <FileSpreadsheet aria-hidden="true" className="size-3.5 shrink-0" />
               <span className="truncate">
                 {file}
-                {!isConfirmed && ` · proposed by ${PROPOSER}${model ? ` (${model})` : ''}`}
+                {!isConfirmed && proposedBy}
                 {mapping.validatedAt && ` · approved ${formatDateTime(mapping.validatedAt)}`}
               </span>
             </p>
@@ -73,6 +77,18 @@ export default function ReviewHeader({ mapping, changed, canDiscard, busy, disca
             : 'Approving saves this nomenclature. Files with the same columns are then imported automatically, with no review. Any waiting uploads are imported now.'}
         </InfoTooltip>
       </p>
+
+      {byHand && (
+        // Amber like ModelUnavailableNotice: the reviewer has extra work to do.
+        // The fix (a setting) is for whoever deploys, so it sits behind the icon.
+        <p role="status" className="mt-2 flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900">
+          <AlertTriangle aria-hidden="true" className="size-3.5 shrink-0 text-amber-700" />
+          <span>
+            AI was unavailable when this file was uploaded, so the fields start blank. Choose where each one comes from below.
+          </span>
+          <InfoTooltip label="Why AI was unavailable">{mapping.aiUnavailable}</InfoTooltip>
+        </p>
+      )}
 
       {discardError && (
         <p role="alert" className="mt-2 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700">
