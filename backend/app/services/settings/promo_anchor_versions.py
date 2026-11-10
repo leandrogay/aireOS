@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from statistics import mean
 
@@ -372,3 +372,119 @@ def choose_uplift(measured: list[dict], mechanic_key: str, version: dict, discou
         "uplift_pct": float(uplift_rules.placeholder_uplift(discount, version["anchor_pct"])),
         "placeholder": {"discount_pct": float(discount), "anchor_pct": float(version["anchor_pct"])},
     }
+
+
+# ============================================================
+# WHAT A RECALCULATION SAVES (promo_recalc)
+# ============================================================
+
+# Rows not yet saved sort after every saved one when picking what is in
+# effect, as the next save would.
+_NOT_SAVED_YET = datetime.max.replace(tzinfo=timezone.utc)
+
+
+def projected_to_save(
+    anchor_rows: list[dict],
+    changes: dict[tuple[int, str | None], list[dict]],
+    customer_id: int,
+    this_month: date,
+    discounts: dict[str, dict],
+) -> tuple[list[dict], list[str]]:
+    """
+    The 'projected' anchor rows to add so one customer's saved timeline from
+    next month on follows `changes` (project_anchors), and warnings. The
+    customer comes before its ranges, so a range that follows its customer
+    needs no row of its own. A projected change that no longer holds is
+    undone by a row restating the anchor before it. Nothing is written from
+    the month of a manual or recommended row saved for a later month (an
+    edit of an upcoming anchor wins), or for a mechanic with no discount
+    (`discounts`: {mechanic_key: {label, discount_pct}}).
+    """
+
+    future = [
+        row for row in anchor_rows
+        if row["customer_id"] == customer_id and row["effective_from"] and row["effective_from"] > this_month
+    ]
+    targets = set(changes) | {(customer_id, row["sku_range"]) for row in future if row["source"] == "projected"}
+    months = sorted(
+        {change["effective_from"] for items in changes.values() for change in items}
+        | {row["effective_from"] for row in future if row["source"] == "projected"}
+    )
+
+    inserts: list[dict] = []
+    warnings: list[str] = []
+    for target in sorted(targets, key=lambda t: (t[1] is not None, t[1] or "")):
+        sku_range = target[1]
+        pinned = [
+            row["effective_from"] for row in future
+            if row["sku_range"] == sku_range and row["source"] != "projected"
+        ]
+        pinned_from = min(pinned) if pinned else None
+        start = version_lookup(anchor_rows)(customer_id, sku_range, this_month)["mechanic_key"]
+
+        for month in months:
+            if pinned_from is not None and month >= pinned_from:
+                continue
+            desired = start
+            for change in changes.get(target, []):
+                if change["effective_from"] <= month:
+                    desired = change["mechanic_key"]
+
+            saved_rows = anchor_rows + [
+                {**row, "id": -index - 1, "updated_at": _NOT_SAVED_YET} for index, row in enumerate(inserts)
+            ]
+            if desired is None or desired == version_lookup(saved_rows)(customer_id, sku_range, month)["mechanic_key"]:
+                continue
+
+            mechanic = discounts.get(desired)
+            if mechanic is None or mechanic.get("discount_pct") is None:
+                warnings.append(
+                    f"Anchor {desired} from {month.isoformat()} not saved: the mechanic has no discount in Promotion Uplift Settings."
+                )
+                continue
+            inserts.append({
+                "customer_id": customer_id,
+                "sku_range": sku_range,
+                "promotion_mechanic": mechanic["label"],
+                "anchor_pct": Decimal(mechanic["discount_pct"]),
+                "source": "projected",
+                "effective_from": month,
+            })
+    return inserts, warnings
+
+
+def uplifts_to_save(
+    measured: list[dict],
+    customer_id: int,
+    sku_ranges: dict[str, str | None],
+    anchor_for,
+    months: list[date],
+    discount_for,
+) -> list[dict]:
+    """
+    One choose_uplift per SKU x mechanic with measured moments x anchor
+    version in effect in any of `months` (this month and every later month a
+    version starts). Mechanics with no moments are left out: the placeholder
+    rule is worked out on read.
+    """
+
+    by_sku: dict[str, list[dict]] = {}
+    for moment in measured:
+        if moment["customer_id"] == customer_id:
+            by_sku.setdefault(moment["sku"], []).append(moment)
+
+    rows = []
+    for sku, sku_moments in sorted(by_sku.items()):
+        mechanics = sorted({m["mechanic_key"] for m in sku_moments if m["uplift_pct"] is not None})
+        sku_versions = {}
+        for month in months:
+            version = anchor_for(customer_id, sku_ranges.get(sku), month)
+            sku_versions.setdefault(version["version_id"], version)
+        for mechanic_key in mechanics:
+            for version in sku_versions.values():
+                rows.append({
+                    "customer_id": customer_id,
+                    "sku": sku,
+                    **choose_uplift(sku_moments, mechanic_key, version, discount_for),
+                })
+    return rows

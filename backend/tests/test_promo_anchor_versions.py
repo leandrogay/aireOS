@@ -313,3 +313,77 @@ def test_no_moments_and_no_discount_is_unavailable():
     chosen = versions.choose_uplift([], "b1g1", FIFTEEN, DISCOUNTS.get)
 
     assert (chosen["level"], chosen["uplift_pct"]) == (versions.UNAVAILABLE, None)
+
+
+# ---- projected_to_save -------------------------------------------------------------
+
+
+MECHANICS = {
+    "pct_off_15": {"label": "15% Off", "discount_pct": Decimal("15")},
+    "pct_off_20": {"label": "20% Off", "discount_pct": Decimal("20")},
+}
+FIFTEEN_FROM_MAY = [{"effective_from": MAY_2027, "mechanic_key": "pct_off_15"}]
+
+
+def _projected(row_id, mechanic, pct, effective_from, sku_range=None, source="projected"):
+    return {**_row(row_id, 1, mechanic, pct, sku_range=sku_range, effective_from=effective_from), "source": source}
+
+
+def _saved(rows):
+    return [{**row, "source": row.get("source", "recommended")} for row in rows]
+
+
+def test_the_customers_change_is_saved_once_and_its_range_follows_it():
+    changes = {(1, None): FIFTEEN_FROM_MAY, (1, "Pants"): FIFTEEN_FROM_MAY}
+
+    inserts, warnings = versions.projected_to_save(_saved([_row(1, 1, "20% Off", "20")]), changes, 1, NOV_2026, MECHANICS)
+
+    assert [(i["sku_range"], i["effective_from"], i["promotion_mechanic"], i["anchor_pct"], i["source"]) for i in inserts] == [
+        (None, MAY_2027, "15% Off", Decimal("15"), "projected"),
+    ]
+    assert warnings == []
+
+
+def test_saving_the_same_projection_again_writes_nothing():
+    rows = _saved([_row(1, 1, "20% Off", "20"), _projected(2, "15% Off", "15", MAY_2027)])
+
+    assert versions.projected_to_save(rows, {(1, None): FIFTEEN_FROM_MAY}, 1, NOV_2026, MECHANICS) == ([], [])
+
+
+def test_a_projected_change_that_no_longer_holds_is_undone():
+    rows = _saved([_row(1, 1, "20% Off", "20"), _projected(2, "15% Off", "15", MAY_2027)])
+
+    inserts, _ = versions.projected_to_save(rows, {}, 1, NOV_2026, MECHANICS)
+
+    assert [(i["effective_from"], i["promotion_mechanic"]) for i in inserts] == [(MAY_2027, "20% Off")]
+
+
+def test_an_edit_of_an_upcoming_anchor_is_never_overwritten_from_its_month():
+    rows = _saved([_row(1, 1, "20% Off", "20"), _projected(3, None, "10", date(2027, 3, 1), source="manual")])
+
+    assert versions.projected_to_save(rows, {(1, None): FIFTEEN_FROM_MAY}, 1, NOV_2026, MECHANICS) == ([], [])
+
+
+def test_a_mechanic_with_no_discount_is_not_saved_and_says_why():
+    changes = {(1, None): [{"effective_from": MAY_2027, "mechanic_key": "b1g1"}]}
+
+    inserts, warnings = versions.projected_to_save(_saved([_row(1, 1, "20% Off", "20")]), changes, 1, NOV_2026, MECHANICS)
+
+    assert inserts == []
+    assert warnings == ["Anchor b1g1 from 2027-05-01 not saved: the mechanic has no discount in Promotion Uplift Settings."]
+
+
+# ---- uplifts_to_save ---------------------------------------------------------------
+
+
+def test_one_uplift_per_mechanic_with_moments_for_each_version_from_this_month():
+    measured = [_measured(date(2026, 6, 1), "pct_off_30", 20.0, 1, "pct_off_20")]
+    anchor_for = versions.version_lookup(TWENTY_THEN_FIFTEEN)
+
+    rows = versions.uplifts_to_save(measured, 1, {}, anchor_for, [NOV_2026, MAY_2027], DISCOUNTS.get)
+
+    assert [(r["sku"], r["mechanic_key"], r["anchor"]["version_id"], r["level"]) for r in rows] == [
+        ("SKU-L", "pct_off_30", 1, versions.PLACEHOLDER),
+        ("SKU-L", "pct_off_30", 2, versions.PLACEHOLDER),
+    ]
+    assert [r["uplift_pct"] for r in rows] == [4.0, 6.0]

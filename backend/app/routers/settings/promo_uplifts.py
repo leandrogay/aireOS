@@ -9,6 +9,7 @@ from app.schemas.settings.promo_uplifts import (
     PromoUpliftUpdate,
 )
 from app.services.settings import promo_moments as promo_moment_service
+from app.services.settings import promo_recalc as promo_recalc_service
 from app.services.settings import promo_uplifts as promo_uplift_service
 from app.services.settings.common import CustomerNotFoundError
 
@@ -84,6 +85,20 @@ def list_moments():
 
     except Exception as e:
         raise _failed("retrieve promotion moments", e)
+
+
+@router.post("/recalculate")
+def recalculate(customer_id: int | None = None):
+    """Work out one customer's moments and uplifts now (no customer_id = every customer)."""
+
+    try:
+        return promo_recalc_service.recalculate(customer_id)
+
+    except CustomerNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    except Exception as e:
+        raise _failed("recalculate promotion moments and uplifts", e)
 
 
 @router.post("")

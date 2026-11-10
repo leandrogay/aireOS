@@ -304,3 +304,29 @@ def test_list_moments_failure_is_500(monkeypatch):
 
     assert response.status_code == 500
     assert "Failed to retrieve promotion moments" in response.json()["detail"]
+
+
+# ---- recalculate -------------------------------------------------------------------
+
+
+def test_recalculate_runs_for_one_customer_and_is_200(monkeypatch):
+    from app.services.settings import promo_recalc
+
+    seen = []
+    monkeypatch.setattr(promo_recalc, "recalculate", lambda customer_id: seen.append(customer_id) or {"customers": [], "failed": []})
+
+    response = client.post(f"{BASE}/recalculate", params={"customer_id": 3})
+
+    assert response.status_code == 200
+    assert seen == [3]
+
+
+def test_recalculate_for_an_unknown_customer_is_404(monkeypatch):
+    from app.services.settings import promo_recalc
+
+    monkeypatch.setattr(promo_recalc, "recalculate", _raises(common.CustomerNotFoundError("Customer 3 does not exist.")))
+
+    response = client.post(f"{BASE}/recalculate", params={"customer_id": 3})
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Customer 3 does not exist."
