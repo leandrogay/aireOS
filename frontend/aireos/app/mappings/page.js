@@ -96,7 +96,6 @@ function MappingsView() {
     <PageLayout
       title="Nomenclatures"
       fitScreen
-      back={{ href: '/upload', label: 'Upload' }}
       // Shown only once a mapping call found its model retired (backend ai_models).
       headerExtra={<ModelUnavailableNotice feature="mapping" />}
     >
