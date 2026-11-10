@@ -9,6 +9,7 @@ import { FormatTrendChart } from "@/components/dashboard/TrendChart"
 import { formatDateTime } from "@/lib/formatDate"
 import { relabelFormatRows } from "@/app/utils/storeFormats"
 import useDelayedLoading from "@/hooks/useDelayedLoading"
+import GlassPanel from "@/components/dashboard/GlassPanel"
 
 const METRIC_OPTIONS = [
   { value: "units", label: "Volume" },
@@ -72,7 +73,7 @@ export default function RevenueTrendCard({
   })
 
   return (
-    <div className="bg-white rounded-lg border border-lavander shadow-sm p-4 h-full flex flex-col">
+    <GlassPanel className="flex flex-col">
       {/* Top row: what data (Period, Compare to) on the left, lined up on
           their bottom edge, and which channel in the card's top right corner
           (self-start), level with the "Period" label. On a phone the channel
@@ -158,6 +159,6 @@ export default function RevenueTrendCard({
           <ChartFooter lastUpdated={lastUpdated} />
         </div>
       )}
-    </div>
+    </GlassPanel>
   )
 }

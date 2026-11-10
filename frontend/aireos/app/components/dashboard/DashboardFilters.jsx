@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import SelectDropdown from '@/components/ui/SelectDropdown';
+import GlassPanel from '@/components/dashboard/GlassPanel';
 
 // "Filter" side panel for the sales dashboard: Customer, SKU and Store. The
 // Period and Compare to controls live above the trend chart instead
@@ -117,7 +118,7 @@ export default function DashboardFilters({
   const hasActiveFilters = Boolean(activeFilters) || hasPeriodChanges || customersFiltered;
 
   return (
-    <div className="bg-white rounded-lg border border-lavander shadow-sm p-4 h-full">
+    <GlassPanel>
       <div className="mb-2 flex items-center gap-2">
         <h3 className="font-serif text-base text-deep-violet-blue">Filter</h3>
         <Button type="button" variant="outline" size="xs" onClick={onClearFilters} disabled={!hasActiveFilters}>
@@ -179,6 +180,6 @@ export default function DashboardFilters({
       {activeFilters && (
         <div className="mt-3 pt-3 border-t border-lavander flex flex-wrap gap-2">{activeFilters}</div>
       )}
-    </div>
+    </GlassPanel>
   );
 }

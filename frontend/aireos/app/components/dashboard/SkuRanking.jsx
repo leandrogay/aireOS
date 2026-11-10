@@ -9,6 +9,7 @@ import { customerColor } from '@/app/utils/storeFormats';
 import { formatRevenue } from '@/app/utils/trendChart';
 import EstMark from '@/components/dashboard/EstMark';
 import SelectDropdown from '@/components/ui/SelectDropdown';
+import GlassPanel from '@/components/dashboard/GlassPanel';
 
 const GRAINS = [
   { value: 'customer', label: 'Customers' },
@@ -331,7 +332,7 @@ export default function SkuRanking({
   const mobileRows = showCustomers ? customersRanked : skus;
 
   return (
-    <section className="bg-white rounded-lg border border-lavander shadow-sm p-4">
+    <GlassPanel as="section">
       <div className="mb-2">
         <h3 className="font-serif text-base text-deep-violet-blue">
           {showCustomers ? 'Customer Sales' : 'SKU Performance Ranking'}{' '}
@@ -501,7 +502,7 @@ export default function SkuRanking({
             </tbody>
           </table>
       </div>
-    </section>
+    </GlassPanel>
   );
 }
 

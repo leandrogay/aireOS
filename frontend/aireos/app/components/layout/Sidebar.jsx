@@ -27,8 +27,9 @@ const NAV_SPRING = { type: 'spring', stiffness: 400, damping: 40 };
 
 // Every page mounts its own Sidebar (PageLayout → AppShell), so whether the
 // bar is collapsed is kept here, at module level, to survive the page change:
-// clicking a rail tab keeps the rail. Only the toggle opens or closes it.
-let lastCollapsed = false;
+// clicking a rail tab keeps the rail. Hover only previews the expanded menu;
+// the toggle pins it open or closes it.
+let lastCollapsed = true;
 
 // Below Tailwind's md breakpoint the navigation opens over the page.
 const NARROW_QUERY = '(max-width: 767px)';
@@ -68,7 +69,7 @@ function ActiveHighlight() {
   return (
     <motion.span
       layoutId="nav-active"
-      className="absolute inset-0 -z-10 rounded-lg bg-lavander"
+      className="absolute inset-0 -z-10 rounded-xl bg-lavander/85 shadow-sm"
     />
   );
 }
@@ -80,18 +81,21 @@ function labelClass(rail) {
 }
 
 // Standardized left nav, shared across every app page via AppShell.
-// Open: logo + icon tabs. Collapsed: a rail of icon-only tabs; on narrow
-// screens only the toggle is left, so the page gets the full width.
+// Open: logo + icon tabs. Collapsed: a rail of icon-only tabs which expands
+// over the page on hover; on narrow screens only the toggle remains.
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [collapsed, setCollapsed] = useState(() => lastCollapsed);
+  const [peeking, setPeeking] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const narrow = useMediaQuery(NARROW_QUERY);
-  const rail = collapsed && !narrow;
+  const rail = collapsed && !narrow && !peeking;
   const hidden = narrow && !mobileOpen;
   const showingMobile = narrow && mobileOpen;
   const width = hidden ? HIDDEN_WIDTH : rail ? RAIL_WIDTH : OPEN_WIDTH;
+  // A hover expansion floats over the page without widening the layout.
+  const footprint = narrow ? HIDDEN_WIDTH : collapsed ? RAIL_WIDTH : OPEN_WIDTH;
   // The label of the rail section whose flyout is open; one at a time.
   const [openFlyout, setOpenFlyout] = useState(null);
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -107,6 +111,7 @@ export default function Sidebar() {
     }
     lastCollapsed = !collapsed;
     setCollapsed(!collapsed);
+    setPeeking(false);
   };
 
   const closeMobileNavigation = () => {
@@ -138,19 +143,26 @@ export default function Sidebar() {
           className="fixed inset-0 z-30 bg-deep-violet-blue/20 md:hidden"
         />
       )}
+      <div className="relative shrink-0 max-md:!w-12" style={{ width: footprint }}>
       <motion.nav
       initial={false}
       animate={{ width }}
       transition={reduceMotion ? { duration: 0 } : NAV_SPRING}
+      onMouseEnter={() => {
+        if (collapsed && !narrow) setPeeking(true);
+      }}
+      onMouseLeave={() => {
+        setPeeking(false);
+        setOpenFlyout(null);
+      }}
       className={cn(
-        // Border and background stay on CSS transitions; they fade alongside the width.
-        'flex h-screen shrink-0 flex-col self-start overflow-x-hidden overflow-y-auto border-r py-4 transition-colors duration-300',
+        'flex h-screen shrink-0 flex-col overflow-x-hidden overflow-y-auto border py-4 transition-[background-color,box-shadow] duration-300 md:top-2 md:h-[calc(100dvh-1rem)] md:rounded-2xl',
         // The first server render does not know the viewport width. Keep its
         // desktop-width nav out of the mobile layout until the media query settles.
-        narrow ? 'fixed inset-y-0 left-0 z-40' : 'fixed left-0 top-0 max-md:invisible md:sticky',
-        showingMobile && 'shadow-lg',
+        narrow ? 'fixed inset-y-0 left-0 z-40' : collapsed ? 'fixed left-2 z-40 max-md:invisible' : 'sticky max-md:invisible',
+        (showingMobile || peeking) && 'shadow-2xl shadow-deep-violet-blue/15',
         rail || hidden ? 'px-2' : 'px-3',
-        hidden ? 'pointer-events-none border-transparent bg-transparent' : 'border-lavander bg-white',
+        hidden ? 'pointer-events-none border-transparent bg-transparent' : 'border-card/75 bg-cream/75 shadow-lg shadow-deep-violet-blue/10 backdrop-blur-2xl',
       )}
     >
       <div className="relative mb-4 flex h-8 items-center md:mt-2">
@@ -186,7 +198,7 @@ export default function Sidebar() {
         <button
           type="button"
           onClick={toggleCollapsed}
-          aria-label={hidden || rail ? 'Expand navigation' : 'Collapse navigation'}
+          aria-label={hidden ? 'Open navigation' : collapsed ? 'Keep navigation expanded' : 'Collapse navigation'}
           className={cn(
             'pointer-events-auto ml-auto flex size-8 cursor-pointer items-center justify-center rounded-md text-deep-violet-blue/70 transition-colors hover:bg-lavander hover:text-deep-violet-blue',
             rail && 'mr-1',
@@ -226,7 +238,7 @@ export default function Sidebar() {
                 // here: it would clip the highlight while it slides in from another
                 // tab, so the label clips itself instead (labelClass).
                 const tabClass = cn(
-                  'relative isolate flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm text-deep-violet-blue transition-[width] duration-300',
+                  'relative isolate flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm text-deep-violet-blue transition-[width,background-color] duration-300 hover:bg-card/70',
                   rail ? 'w-10' : 'w-full',
                   (isActive || childActive) && 'font-medium',
                 );
@@ -301,7 +313,7 @@ export default function Sidebar() {
                                   onClick={closeMobileNavigation}
                                   aria-current={isChildActive ? 'page' : undefined}
                                   className={cn(
-                                    'relative isolate block rounded-lg px-3 py-1.5 text-xs',
+                                    'relative isolate block rounded-xl px-3 py-1.5 text-xs transition-colors hover:bg-card/70',
                                     isChildActive
                                       ? 'font-medium text-deep-violet-blue'
                                       : 'text-deep-violet-blue/70',
@@ -361,7 +373,8 @@ export default function Sidebar() {
           </motion.div>
         )}
       </AnimatePresence>
-    </motion.nav>
+      </motion.nav>
+      </div>
     </>
   );
 }

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { CloudOff, FileSpreadsheet } from 'lucide-react';
 
 import { Button, buttonVariants } from '@/components/ui/button';
+import GlassPanel from '@/components/dashboard/GlassPanel';
 import { cn } from '@/lib/utils';
 
 const primaryButtonClass = 'mt-4 bg-deep-violet-blue text-white hover:bg-deep-violet-blue/90';
@@ -21,9 +22,10 @@ export default function DashboardStatus({ kind, error = null }) {
   const Icon = failed ? CloudOff : FileSpreadsheet;
 
   return (
-    <div
+    <GlassPanel
+      as="div"
       role={failed ? 'alert' : 'status'}
-      className="flex min-h-[420px] flex-col items-center justify-center rounded-lg border border-lavander bg-white p-8 text-center shadow-sm"
+      className="flex min-h-[420px] flex-col items-center justify-center p-8 text-center"
     >
       <span className="mb-3 flex size-12 items-center justify-center rounded-full bg-lavander text-deep-violet-blue">
         <Icon className="size-6" aria-hidden="true" />
@@ -46,6 +48,6 @@ export default function DashboardStatus({ kind, error = null }) {
           Go to Upload
         </Link>
       )}
-    </div>
+    </GlassPanel>
   );
 }

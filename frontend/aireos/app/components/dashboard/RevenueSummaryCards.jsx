@@ -8,6 +8,7 @@ import { changePct, formatChangePct } from "@/app/utils/periodComparison"
 import { customerColor, formatColor, formatsToShow } from "@/app/utils/storeFormats"
 import { formatRevenue } from "@/app/utils/trendChart"
 import { PeriodSwatch, hatchTint } from "@/components/dashboard/PeriodTexture"
+import GlassPanel from "@/components/dashboard/GlassPanel"
 
 const TILE_GRID_CLASS =
   "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-flow-col lg:grid-cols-none lg:auto-cols-[minmax(0,1fr)]"
@@ -108,7 +109,7 @@ function SummaryCard({
       style={highlighted && color ? { boxShadow: `0 0 0 2px ${color}` } : undefined}
       // A column, so in a row of tiles stretched to the tallest the figures
       // still sit near each tile's bottom edge.
-      className={`flex min-w-[8rem] flex-col justify-between gap-1 rounded-lg bg-white px-2.5 pt-1.5 pb-1 text-deep-violet-blue transition-shadow ${
+      className={`flex min-w-[8rem] flex-col justify-between gap-1 rounded-xl bg-card/80 px-2.5 pt-1.5 pb-1 text-deep-violet-blue shadow-sm shadow-deep-violet-blue/5 transition-shadow ${
         emphasis ? "border-2 border-deep-violet-blue" : "border border-lavander"
       } ${className}`}
     >
@@ -259,7 +260,7 @@ export default function RevenueSummaryCards({
   const emptyTotals = { revenue: 0, units: 0 }
 
   return (
-    <div className="bg-white rounded-lg border border-lavander shadow-sm p-4 h-full">
+    <GlassPanel>
       <div className="mb-2">
         <h3 className="font-serif text-base text-deep-violet-blue">
           Sell-out Summary{" "}
@@ -337,6 +338,6 @@ export default function RevenueSummaryCards({
           })}
         </div>
       )}
-    </div>
+    </GlassPanel>
   )
 }
