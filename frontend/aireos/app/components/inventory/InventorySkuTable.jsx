@@ -79,7 +79,7 @@ export default function InventorySkuTable({
               showDoh && '4.5rem', // DOH
               showDoh && '5rem', // Target
               showDoh && '6rem', // vs target
-              showDoh && '7rem', // Status
+              showDoh && '8rem', // Status: fits "Within range" on one line
               Boolean(onEdit) && '4.5rem', // actions, as TableGrid's ACTIONS_COLUMN
             ]}
           />
@@ -134,7 +134,7 @@ export default function InventorySkuTable({
                       <td className={cn(inventoryTdClass, numClass)}>{formatDoh(row.doh)}</td>
                       <td className={cn(inventoryTdClass, numClass)}>{formatDoh(row.target_doh)}</td>
                       <td className={cn(inventoryTdClass, numClass)}>{formatGap(row.doh_vs_target)}</td>
-                      <td className={cn(inventoryTdClass, STATUS_CLASSES[row.doh_status])}>
+                      <td className={cn(inventoryTdClass, 'whitespace-nowrap', STATUS_CLASSES[row.doh_status])}>
                         {DOH_STATUS_LABELS[row.doh_status] ?? '—'}
                       </td>
                     </>
