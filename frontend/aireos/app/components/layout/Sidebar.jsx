@@ -4,7 +4,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { LogOut, PanelLeft } from 'lucide-react';
+import { LoaderCircle, LogOut, PanelLeft } from 'lucide-react';
 import { AnimatePresence, MotionConfig, motion, useReducedMotion } from 'motion/react';
 
 import { NAV_ITEMS, matchesPath } from '@/components/layout/navItems';
@@ -156,18 +156,29 @@ export default function Sidebar() {
         setOpenFlyout(null);
       }}
       className={cn(
-        'flex h-screen shrink-0 flex-col overflow-x-hidden overflow-y-auto border py-4 transition-[background-color,box-shadow] duration-300 md:top-2 md:h-[calc(100dvh-1rem)] md:rounded-2xl',
+        'flex h-screen shrink-0 flex-col overflow-x-hidden overflow-y-auto border border-transparent py-4 transition-[background-color,box-shadow] duration-300 md:top-2 md:h-[calc(100dvh-1rem)] md:rounded-2xl',
         // The first server render does not know the viewport width. Keep its
         // desktop-width nav out of the mobile layout until the media query settles.
         narrow ? 'fixed inset-y-0 left-0 z-40' : collapsed ? 'fixed left-2 z-40 max-md:invisible' : 'sticky max-md:invisible',
         (showingMobile || peeking) && 'shadow-2xl shadow-deep-violet-blue/15',
         rail || hidden ? 'px-2' : 'px-3',
-        hidden ? 'pointer-events-none border-transparent bg-transparent' : 'border-card/75 bg-cream/75 shadow-lg shadow-deep-violet-blue/10 backdrop-blur-2xl',
+        hidden ? 'pointer-events-none bg-transparent' : 'bg-card/35 shadow-md shadow-deep-violet-blue/5 backdrop-blur-2xl',
       )}
     >
       <div className="relative mb-4 flex h-8 items-center md:mt-2">
-        {/* Absolute, so the logo coming and going never pushes the toggle
-            around; it just fades over the row. */}
+        {/* The toggle stays at the rail's left edge while hover opens the
+            sidebar. A moving toggle could turn the same click into a click
+            on the home link underneath. */}
+        <button
+          type="button"
+          data-nav-toggle
+          onClick={toggleCollapsed}
+          aria-label={hidden ? 'Open navigation' : collapsed ? 'Keep navigation expanded' : 'Collapse navigation'}
+          className="pointer-events-auto relative z-10 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-deep-violet-blue/70 transition-colors hover:bg-card/80 hover:text-deep-violet-blue focus-visible:outline-2 focus-visible:outline-violet"
+        >
+          <PanelLeft className="size-4" />
+        </button>
+        {/* The logo fades into the space beside the fixed toggle. */}
         <AnimatePresence initial={false}>
           {!rail && !hidden && (
             <motion.div
@@ -176,7 +187,7 @@ export default function Sidebar() {
               initial="hidden"
               animate="shown"
               exit="hidden"
-              className="absolute top-1/2 left-1 -translate-y-1/2"
+              className="absolute top-1/2 left-10 -translate-y-1/2"
             >
               <Link href="/dashboard" aria-label="AireOS home" onClick={closeMobileNavigation}>
                 <Image
@@ -191,21 +202,6 @@ export default function Sidebar() {
             </motion.div>
           )}
         </AnimatePresence>
-        {/* ml-auto rides the toggle on the bar's right edge as it resizes. It
-            stays 12px in from that edge open and in the rail (px-3 vs px-2 +
-            mr-1), so it never jumps between them, and in the rail that centres
-            it over the icons. */}
-        <button
-          type="button"
-          onClick={toggleCollapsed}
-          aria-label={hidden ? 'Open navigation' : collapsed ? 'Keep navigation expanded' : 'Collapse navigation'}
-          className={cn(
-            'pointer-events-auto ml-auto flex size-8 cursor-pointer items-center justify-center rounded-md text-deep-violet-blue/70 transition-colors hover:bg-lavander hover:text-deep-violet-blue',
-            rail && 'mr-1',
-          )}
-        >
-          <PanelLeft className="size-4" />
-        </button>
       </div>
 
       {/* reducedMotion="user": slides and the line draw become instant for
@@ -238,14 +234,14 @@ export default function Sidebar() {
                 // here: it would clip the highlight while it slides in from another
                 // tab, so the label clips itself instead (labelClass).
                 const tabClass = cn(
-                  'group/nav-item relative isolate flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm text-deep-violet-blue transition-[width,background-color,transform,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:scale-[1.06] hover:bg-card/85 hover:shadow-md focus-visible:outline-2 focus-visible:outline-violet motion-reduce:transform-none',
+                  'group/nav-item relative isolate flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm text-deep-violet-blue transition-[width,background-color,box-shadow] duration-200 ease-out hover:bg-card/80 hover:shadow-sm focus-visible:outline-2 focus-visible:outline-violet',
                   rail ? 'w-10' : 'w-full',
                   (isActive || childActive) && 'font-medium',
                 );
                 const tabContent = (
                   <>
                     {isHighlighted && <ActiveHighlight />}
-                    <Icon className="size-4 shrink-0 transition-transform duration-200 group-hover/nav-item:scale-110 motion-reduce:transform-none" />
+                    <Icon className="size-4 shrink-0 transition-transform duration-200 group-hover/nav-item:scale-125 motion-reduce:transform-none" />
                     <span className={labelClass(rail)}>{item.label}</span>
                   </>
                 );
@@ -302,7 +298,7 @@ export default function Sidebar() {
                           <motion.span
                             aria-hidden
                             variants={SUB_LINE}
-                            className="absolute inset-y-0 left-0 w-px origin-top bg-violet/60"
+                            className="absolute inset-y-0 left-0 w-px origin-top bg-violet/25"
                           />
                           {item.children.map((child) => {
                             const isChildActive = matchesPath(pathname, child.href);
@@ -313,7 +309,7 @@ export default function Sidebar() {
                                   onClick={closeMobileNavigation}
                                   aria-current={isChildActive ? 'page' : undefined}
                                   className={cn(
-                                    'relative isolate block rounded-xl px-3 py-1.5 text-xs transition-[background-color,transform,box-shadow] duration-200 ease-out hover:translate-x-0.5 hover:scale-[1.04] hover:bg-card/85 hover:shadow-sm focus-visible:outline-2 focus-visible:outline-violet motion-reduce:transform-none',
+                                    'relative isolate block rounded-xl px-3 py-1.5 text-xs transition-[background-color,box-shadow] duration-200 ease-out hover:bg-card/80 hover:shadow-sm focus-visible:outline-2 focus-visible:outline-violet',
                                     isChildActive
                                       ? 'font-medium text-deep-violet-blue'
                                       : 'text-deep-violet-blue/70',
@@ -356,11 +352,11 @@ export default function Sidebar() {
               disabled={isSigningOut}
               title={rail ? 'Sign out' : undefined}
               className={cn(
-                'flex cursor-pointer items-center gap-3 overflow-hidden rounded-lg px-3 py-2 text-sm text-deep-violet-blue/75 transition-[width,background-color,color,transform] duration-200 hover:-translate-y-0.5 hover:scale-[1.06] hover:bg-lavander hover:text-deep-violet-blue disabled:cursor-wait disabled:opacity-60 motion-reduce:transform-none',
+                'flex cursor-pointer items-center gap-3 overflow-hidden rounded-lg px-3 py-2 text-sm text-deep-violet-blue/75 transition-[width,background-color,color] duration-200 hover:bg-card/80 hover:text-deep-violet-blue disabled:cursor-wait disabled:opacity-60',
                 rail ? 'w-10' : 'w-full',
               )}
             >
-              <LogOut className="size-4 shrink-0" />
+              {isSigningOut ? <LoaderCircle className="size-4 shrink-0 animate-spin motion-reduce:animate-none" /> : <LogOut className="size-4 shrink-0" />}
               <span className={labelClass(rail)}>
                 {isSigningOut ? 'Signing out...' : 'Sign out'}
               </span>

@@ -6,7 +6,7 @@ import Sidebar from './Sidebar';
 // rolling its own.
 export default function AppShell({ children }) {
   return (
-    <div className="flex min-h-screen bg-cream">
+    <div className="aire-glass-scene flex min-h-screen">
       <Sidebar />
       <div className="flex-1 min-w-0">{children}</div>
     </div>

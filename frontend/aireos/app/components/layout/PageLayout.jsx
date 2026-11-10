@@ -31,7 +31,7 @@ export default function PageLayout({ title, headerExtra, back, fitScreen = false
     <AppShell>
       <main
         className={cn(
-          "aire-glass-scene min-w-0 px-4 pt-4 pb-16 md:px-6 md:pt-6 md:pb-4",
+          "min-w-0 px-4 pt-4 pb-16 md:px-6 md:pt-6 md:pb-4",
           fitScreen ? "flex h-dvh flex-col overflow-y-auto" : "min-h-screen",
         )}
       >
