@@ -84,4 +84,11 @@ CREATE TABLE IF NOT EXISTS scenario_promotions (
 CREATE INDEX IF NOT EXISTS ix_scenario_promotions_created
     ON scenario_promotions (created_at DESC, promotion_id DESC);
 
+-- Same service accounts as 015_create_sell_in_plan_snapshots.sql. A delete
+-- is a real DELETE, like building blocks.
+GRANT SELECT, INSERT, UPDATE, DELETE ON scenario_promotions
+    TO "teamwip-backend-storage@aire-data.iam", "aireos-api@aire-data.iam";
+GRANT USAGE, SELECT ON SEQUENCE scenario_promotions_promotion_id_seq
+    TO "teamwip-backend-storage@aire-data.iam", "aireos-api@aire-data.iam";
+
 COMMIT;

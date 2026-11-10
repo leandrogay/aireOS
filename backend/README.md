@@ -85,6 +85,14 @@ line shows the newest plan saved before each month. Until the table exists the
 save is skipped and logged, and the line stays empty; the refresh itself is
 unaffected.
 
+Apply `migrations/018_create_scenario_promotions.sql` before using the
+Scenario builder's Promotions tab: it saves through `/api/scenario/promotions`,
+and until the table exists listing and saving fail with a database error.
+
+Apply `migrations/019_promo_anchor_effective_from.sql` after 018. It adds the
+month each promo anchor version applies from; existing rows apply from the
+start, so no anchor changes when it runs.
+
 The current fact schema does not retain sales UOM. FairPrice labels the source
 measure `Qty (in EA)`, while the established downstream forecasting contract
 currently treats the values as cartons. The pipeline performs no numeric unit
