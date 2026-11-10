@@ -31,12 +31,12 @@ export default function FileSettings({ instructions, changed, onChange, onReset,
 
       <div className="mt-2">
         <ToggleField
-          label="Add up rows into monthly totals"
+          label="Combine into monthly totals"
           showState
           checked={instructions.aggregate}
           onChange={(checked) => onChange('aggregate', checked)}
-          onHint="Rows for the same store and product are added together, so each month loads as one row. Use it for daily, weekly or per-delivery files."
-          offHint="Every row loads as the file has it, for example one per week. Turn on if the file is not already monthly."
+          onHint="Each store and product loads as one total per month. Weekly detail is lost, so leave this off for weekly files."
+          offHint="Rows load as they are. Weekly files stay weekly, and the dashboard still adds them up by month. Turn on for daily or per-delivery files, or when one product appears on several rows."
           disabled={disabled}
         />
       </div>

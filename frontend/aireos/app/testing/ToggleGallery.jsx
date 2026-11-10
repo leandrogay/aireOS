@@ -219,7 +219,7 @@ export default function ToggleGallery() {
         </Variant>
         <Variant name="Label + state + hints (file settings)" props="label showState onHint offHint" value={settings.full}>
           <ToggleField
-            label="Add up rows into monthly totals"
+            label="Combine into monthly totals"
             showState
             checked={settings.full}
             onChange={setSetting('full')}
