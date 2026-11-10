@@ -10,13 +10,14 @@ from app.services import forecast_refresh_events, forecast_refresh_worker
 router = APIRouter(prefix="/internal/forecast", tags=["forecast"])
 
 
-def _verify_task(request: Request) -> None:
+def _verify_task(request: Request, audience: str | None = None) -> None:
+    # `audience`: another task handler's own Cloud Run URL (internal_promo).
     authorization = request.headers.get("authorization", "")
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing task identity")
     try:
         claims = id_token.verify_oauth2_token(
-            authorization[7:], GoogleRequest(), forecast_refresh_events.handler_audience()
+            authorization[7:], GoogleRequest(), audience or forecast_refresh_events.handler_audience()
         )
     except Exception as exc:
         raise HTTPException(status_code=401, detail="Invalid task identity") from exc
