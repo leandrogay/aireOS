@@ -6,6 +6,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import MonthRangeCalendar from '@/components/ui/MonthRangeCalendar';
 import { cn } from '@/lib/utils';
 import { formatPeriodName } from '@/app/utils/periodComparison';
+import { isWithinData, outsideDataNote } from '@/app/utils/dataBounds';
 
 const actionButtonClass =
   'rounded-md px-3 py-1 text-xs font-medium transition-colors disabled:opacity-50';
@@ -26,10 +27,20 @@ const actionButtonClass =
  *   earliestDataStart: string,
  *   periodLength: number,
  *   disabled: boolean,
+ *   disabledReason?: string,
  *   onChange: (value: string, customRange?: { start: string, end: string }) => void,
  * }} props
  */
-export default function CompareControl({ value, options, latestDataEnd, earliestDataStart, periodLength, disabled = false, onChange }) {
+export default function CompareControl({
+  value,
+  options,
+  latestDataEnd,
+  earliestDataStart,
+  periodLength,
+  disabled = false,
+  disabledReason = 'Compare to applies when one customer is selected',
+  onChange,
+}) {
   const [open, setOpen] = useState(false);
   const [pickingCustom, setPickingCustom] = useState(false);
   const [draft, setDraft] = useState({ start: '', end: '' });
@@ -45,9 +56,12 @@ export default function CompareControl({ value, options, latestDataEnd, earliest
   function choose(option) {
     if (option.value === 'custom') {
       // Start from the current custom pick, else last year's range, so the
-      // month picker opens somewhere sensible rather than empty.
+      // month picker opens somewhere sensible rather than empty; but only a
+      // range inside the loaded data, so Apply can't compare against months
+      // the calendar disables (it opens empty and Apply waits for a pick).
       const lastYear = options.find((o) => o.value === 'last-year')?.range;
-      setDraft(option.range ?? lastYear ?? { start: '', end: '' });
+      const fits = (range) => Boolean(range) && isWithinData(range, earliestDataStart, latestDataEnd);
+      setDraft([option.range, lastYear].find(fits) ?? { start: '', end: '' });
       setPickingCustom(true);
       return;
     }
@@ -64,7 +78,7 @@ export default function CompareControl({ value, options, latestDataEnd, earliest
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger
         disabled={disabled}
-        title={disabled ? 'Compare to applies when one customer is selected' : undefined}
+        title={disabled ? disabledReason : undefined}
         className="flex items-center gap-1.5 rounded-md border border-violet bg-white px-2.5 py-1 text-xs text-deep-violet-blue hover:bg-lavander disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white"
       >
         <GitCompareArrows className="size-3.5" />
@@ -75,13 +89,19 @@ export default function CompareControl({ value, options, latestDataEnd, earliest
       <PopoverContent align="end" className="w-auto max-w-[calc(100vw-2rem)] bg-white p-3">
         {!pickingCustom ? (
           <div className="flex w-64 flex-col gap-1">
-            {options.map((option) => (
+            {options.map((option) => {
+              // Previous period / Last year outside the loaded data can't be
+              // picked (custom is limited month by month in the calendar).
+              const outside = option.value !== 'custom' && !isWithinData(option.range, earliestDataStart, latestDataEnd);
+              return (
               <button
                 key={option.value}
                 type="button"
                 onClick={() => choose(option)}
+                disabled={outside}
+                title={outside ? outsideDataNote(earliestDataStart, latestDataEnd) : undefined}
                 className={cn(
-                  'rounded-md px-2 py-1.5 text-left text-xs text-deep-violet-blue hover:bg-lavander',
+                  'rounded-md px-2 py-1.5 text-left text-xs text-deep-violet-blue hover:bg-lavander disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent',
                   value === option.value && 'bg-deep-violet-blue text-white hover:bg-deep-violet-blue',
                 )}
               >
@@ -95,7 +115,8 @@ export default function CompareControl({ value, options, latestDataEnd, earliest
                   <span className="block text-deep-violet-blue/60">Pick the first month, e.g. Mar vs Aug</span>
                 )}
               </button>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="flex flex-col gap-2">

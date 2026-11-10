@@ -251,16 +251,21 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 **Dashboard** (`app/dashboard/page.js`)
 1. `useDataFreshness` polls `/api/sales/last-updated`; a change bumps `dataVersion`, which every
    other hook lists as a dependency so data silently refreshes.
-2. `useCustomerOptions` → first customer auto-selected during render.
-3. `useDefaultDateRange` (week) gives the latest loaded period; every Period preset (whole
+2. `useCustomerOptions` → every customer ticked during render (no cap; colours by `customer_id`).
+   One customer draws the store-format chart, two or more `CustomerTrendChart`; either turns from
+   bars to lines past the bar limit (`utils/chartKind.js`).
+3. `useDefaultDateRange` (week) gives the latest loaded period across every ticked customer (and the
+   earliest, so the Period / Compare to pickers offer only months inside the data, `utils/dataBounds.js`);
+   while a new selection is read it keeps the last bounds with `updating` true. Every Period preset (whole
    months — the dashboard works in monthly figures) is built from its month on the client
    (`dateRangePresets.js`), and `comparisonSetup` derives the
    "Compare to" baseline range (none by default). `useDashboardSummary` is called for this
-   period and, while comparing, for the baseline. Hooks take
+   period and, while comparing, for the baseline; it waits for both dates and derives `loading` from
+   the filters its figures were fetched for. Hooks take
    `{ customer, sku, store, startDate, endDate, mode, dataVersion }` and hit `/api/sales/*`;
    each maps to one `sellout_service.get_*` function that builds a parameterised Cloud SQL query.
 4. The chart opens By month; By week is a drill-down, disabled when no month in the range has
-   weekly rows (`useMonthlyOnly`). Both sides of a comparison are read at the chart's
+   weekly rows for any ticked customer (`useMonthlyOnly` with `customers`). Both sides of a comparison are read at the chart's
    granularity — monthly totals by month, weekly rows by week — so they compare the same kind
    of data; `alignComparisonBuckets` pairs them on the client.
 5. While a comparison is on, `usePriceMix` fetches per-SKU sales for both periods
@@ -286,7 +291,10 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | `PromoType` Literal in `schemas/promotions.py` and `promo_type_enum` in Postgres | `PROMO_TYPES` in `app/utils/promotionForm.js` |
 | `PromotionBase` field names | `buildPromotionPayload` / `formFromPromotion` |
 | `_PROMOTION_COLUMNS` (nested `stores`, `skus`) | `PromotionList.jsx`, `promotionOverview.js` |
-| `sales.py` query-param names (`start_date`, `end_date`, `granularity`, `customer`, `store`, `sku` …) | `URLSearchParams` keys in `hooks/*.js` and `services/salesApi.js` |
+| `sales.py` query-param names (`start_date`, `end_date`, `granularity`, `customer`, `customers` (comma-separated, on `default-date-range` / `monthly-only`), `store`, `sku` …) | `URLSearchParams` keys in `hooks/*.js` and `services/salesApi.js` |
+| `sellout_service.get_customer_options` (`/api/sales/customer-options`: `value` slug, `label`, `customer_id` through `customer_retailers`, or null) | `useCustomerOptions.js`, `storeFormats.customerColorOrder` (colours matched by `customer_id`, not name), `CustomerSelector.jsx` |
+| `sellout_service.get_default_date_range` (`customers` → latest / earliest across them: `start`, `end`, `earliest_start`, `latest_week_start`) | `useDefaultDateRange.js`, `utils/dataBounds.js` (`isWithinData`), `MonthRangeCalendar.jsx`, `DateRangeControl.jsx`, `CompareControl.jsx`, `app/dashboard/page.js` (saved Period / Compare to fall back when outside) |
+| `sellout_service.get_customer_totals` per-channel `has_data` (rows loaded for the period) | `RevenueSummaryCards.jsx` ("No sales data"), `SkuRanking.jsx` customer rows ("No data") |
 | `sellout_service.get_customer_trends` (`/api/sales/customer-trends`: `customers[]` with `offline`/`online` period lists, `has_*`; no cap on customers) | `salesApi.getCustomerTrends`, `useCustomerTrends.js`, `utils/customerTrend.js`, `utils/chartKind.js` (`MAX_BARS_DESKTOP`/`MAX_BARS_MOBILE`), `CustomerTrendChart.jsx`, `CustomerSelector.jsx` |
 | `sellout_service` estimated part of revenue: `estimated_revenue` (dashboard summary rows, customer totals), `estimated_value` (SKU ranking), from the `revenue_estimated` row flag | `utils/estimatedRevenue.js`, `EstMark.jsx` (top right of each `RevenueSummaryCards` tile, beside `SkuRanking` values; `TrendChart` tooltip) |
 | `mapping_view` packet/rule keys (`targetField`, `sourceColumn`, `editable`, `status`, `field`, `meltGroup`, `options`, `description`, `requiredMissing`, `checks`) | `utils/mappingReview.js`, `components/mappings/*` |
@@ -434,12 +442,12 @@ Migrate these only when you are already in the file for other work (CLAUDE.md §
 - **Fetch wrappers.** `promotionsApi.request` is the one wrapper. Still on their own: `forecastApi.js`
   (own `request()`), `mappingApi.js` (`request(baseUrl, …)`, left over from the deleted upload2 harness),
   raw `fetch` in `uploadApi.js` (`/check`, history), the hooks `useAssistant`, `useCustomerOptions`,
-  `useDashboardSummary`, `useDataFreshness`, `useDefaultDateRange`, and the components
+  `useDataFreshness`, and the components
   `dashboard/DashboardFilters`, `dashboard/SkuRanking`, `assistant/AssistantMessage`.
 - **Router logic.** `mappings.py` reads GCS (`storage.download_json`, `list_mapping_fingerprints`,
   `download_bytes`) to build review packets; that belongs in a service. Don't add a third router like it.
 - **Oversized components** (over ~300 lines): `ForecastChart` (828), `ui/DateRangePicker` (804),
-  `PromotionForm` (683), `ScenarioBuilder` (590), `SkuRanking` (535), `app/dashboard/page.js` (511),
+  `PromotionForm` (683), `ScenarioBuilder` (590), `SkuRanking` (542), `app/dashboard/page.js` (525),
   `AssistantMessage` (491), `MappingReviewPanel` (485), `app/promotions/page.js` (477), `SkuForm` (474);
   360-420: `FieldTable`, `UploadProvider`, `PromotionsSection`, `CustomerStep`, `StepSettings`,
   `AssistantWidget`, `Sidebar`; 300-345: `PromotionEditor`, `RevenueSummaryCards`, `SellInOutlookChart`,

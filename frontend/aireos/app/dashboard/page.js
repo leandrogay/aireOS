@@ -24,12 +24,12 @@ import useCustomerTrends from "@/hooks/useCustomerTrends";
 import {
   DEFAULT_COMPARE,
   alignComparisonBuckets,
-  comparisonSetup,
   sumPeriodTotals,
 } from "@/app/utils/periodComparison";
 import { DEFAULT_PRESET_ID, buildDateRangePresets } from "@/app/utils/dateRangePresets";
 import { rangeHasWeeklyMonths, weeklyGapMessage } from "@/app/utils/weeklyGaps";
 import { customerColorOrder, relabelFormatRows } from "@/app/utils/storeFormats";
+import { comparisonInUse, periodInUse } from "@/app/utils/dataBounds";
 
 const NO_CUSTOMERS = [];
 
@@ -53,7 +53,8 @@ export default function DashboardPage() {
   // Only sets colours, so a failed read just leaves the customers with sales in
   // order, each still with its own colour, rather than an error on the page.
   const { customers: allCustomers, loading: allCustomersLoading } = useAllCustomers({ dataVersion });
-  const colorOrder = customerColorOrder(allCustomers, customerOptions.map((option) => option.value));
+  // Matched to the customer records by customer_id, not by name (see customerColorOrder).
+  const colorOrder = customerColorOrder(allCustomers, customerOptions);
   const [selectedCustomers, setSelectedCustomers] = useState(null);
   if (selectedCustomers === null && customerOptions.length > 0) {
     setSelectedCustomers(defaultCustomers(customerOptions));
@@ -139,25 +140,26 @@ export default function DashboardPage() {
   // GENUINE weekly row: anchoring them on a monthly total's start (Aug 1, a
   // Saturday) put every week on the wrong weekday, so a Jul 30 – Aug 5 week
   // was labelled "Aug 1 – Aug 7" and paired with the wrong weeks.
-  // The latest loaded period is read for one customer: the first ticked one
-  // that sells on this channel. The first ticked customer may not (NHG has no
-  // online sales), and asking for it would return no period at all, leaving
-  // the page on its loading state for ever. Before the freshness map loads,
-  // the first ticked customer stands in.
-  const rangeCustomer = customers.find((name) => channels[`${name}_${mode}`]) ?? customer;
+  // Read across every ticked customer (see useDefaultDateRange); one with no
+  // retailer on this channel just matches no rows.
   const {
     start: latestPeriodStart,
     end: latestDataEnd,
     earliestStart: earliestDataStart,
     latestWeekStart: latestGenuineWeekStart,
-  } = useDefaultDateRange({ customer: rangeCustomer, mode, dataVersion, period: 'week' });
+    error: dateRangeError,
+    updating: dateRangeUpdating,
+  } = useDefaultDateRange({ customer, customers, mode, dataVersion, period: 'week' });
   const latestWeekStart = latestGenuineWeekStart || latestPeriodStart;
   const presets = buildDateRangePresets(latestPeriodStart);
   const defaultRange = presets.find((preset) => preset.id === DEFAULT_PRESET_ID) ?? { start: '', end: '' };
 
-  const hasExplicitDateFilter = Boolean(startDate && endDate);
-  const effectiveStartDate = hasExplicitDateFilter ? startDate : defaultRange.start;
-  const effectiveEndDate = hasExplicitDateFilter ? endDate : defaultRange.end;
+  // A picked Period / Compare to applies only inside the ticked customers' data (dataBounds.js).
+  const dataBounds = { earliestDataStart, latestDataEnd, updating: dateRangeUpdating };
+  const period = periodInUse({ start: startDate, end: endDate }, defaultRange, dataBounds);
+  const hasExplicitDateFilter = period.picked;
+  const effectiveStartDate = period.start;
+  const effectiveEndDate = period.end;
 
   // What the page can show yet. 'loading' until the customer list and the
   // latest loaded period arrive: every section draws its placeholder then,
@@ -173,6 +175,9 @@ export default function DashboardPage() {
   if (customerOptionsError && customerOptions.length === 0) pageStatus = 'failed';
   else if (customerOptionsLoading || allCustomersLoading) pageStatus = 'loading';
   else if (customerOptions.length === 0) pageStatus = 'empty';
+  // The latest period couldn't be read for these customers: the failed card
+  // (with Try again) rather than a placeholder that would never resolve.
+  else if (customers.length > 0 && !latestPeriodStart && dateRangeError) pageStatus = 'failed';
   else if (customers.length > 0 && !latestPeriodStart) pageStatus = 'loading';
   const pageLoading = pageStatus === 'loading';
 
@@ -183,16 +188,23 @@ export default function DashboardPage() {
     latestDataEnd,
     custom: customCompare,
   };
-  const { options: compareOptions, baseline, periodNames } = comparisonSetup(compareTo, rangeInputs);
+  const {
+    compareTo: effectiveCompareTo,
+    options: compareOptions,
+    baseline,
+    periodNames,
+  } = comparisonInUse(compareTo, rangeInputs, dataBounds);
   const compareShort = baseline ? `vs ${periodNames.baseline}` : '';
 
   // Some months are loaded only as monthly totals (e.g. August 2026), and a
   // weekly summary leaves them out. Checked for both sides of a comparison
   // before picking the granularity, so either side being month-only puts
   // both on month bars instead of leaving one side empty.
+  // Across every ticked customer, like the date range above.
   const currentMonthlyOnly = useMonthlyOnly({
     dataVersion,
     customer,
+    customers,
     store,
     sku,
     startDate: effectiveStartDate,
@@ -201,6 +213,7 @@ export default function DashboardPage() {
   const baselineMonthlyOnly = useMonthlyOnly({
     dataVersion,
     customer,
+    customers,
     store,
     sku,
     startDate: baseline?.start ?? '',
@@ -309,7 +322,7 @@ export default function DashboardPage() {
   const baselineFormatRows = baseline ? (baselineSummary.summaryByMode[mode]?.periodByFormat ?? []) : [];
   const comparisonRows = baseline
     ? alignComparisonBuckets(currentTotals, baselineTotals, {
-        compareTo,
+        compareTo: effectiveCompareTo,
         granularity: chartGranularity,
         baselineGranularity,
         currentStart: effectiveStartDate,
@@ -370,7 +383,7 @@ export default function DashboardPage() {
       title="Sales Dashboard"
     >
       {(pageStatus === 'failed' || pageStatus === 'empty') ? (
-        <DashboardStatus kind={pageStatus} error={customerOptionsError} />
+        <DashboardStatus kind={pageStatus} error={customerOptionsError || dateRangeError} />
       ) : (
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
           <div className="lg:col-span-2">
@@ -408,10 +421,11 @@ export default function DashboardPage() {
                   earliestDataStart={earliestDataStart}
                   latestDataEnd={latestDataEnd}
                   onDateRangeChange={handleDateRangeChange}
-                  compareTo={compareTo}
+                  compareTo={effectiveCompareTo}
                   compareOptions={compareOptions}
                   compareDisabled={comparingCustomers}
                   onCompareChange={handleCompareChange}
+                  datesUpdating={dateRangeUpdating}
                 />
               }
             />
@@ -441,7 +455,7 @@ export default function DashboardPage() {
                 storeDisabled={customers.length !== 1}
                 store={store}
                 onStoreChange={handleStoreChange}
-                hasPeriodChanges={hasExplicitDateFilter || compareTo !== DEFAULT_COMPARE}
+                hasPeriodChanges={hasExplicitDateFilter || effectiveCompareTo !== DEFAULT_COMPARE}
                 customersFiltered={customerOptions.length > 0 && customers.length !== customerOptions.length}
                 dataVersion={dataVersion}
                 activeFilters={badges.length > 0 && badges}
