@@ -13,10 +13,6 @@ import { logout } from '@/app/services/authApi';
 import useMediaQuery from '@/hooks/useMediaQuery';
 import { cn } from '@/lib/utils';
 
-// Every row and the active highlight move on this one spring, so when a
-// sub-list opens or closes the highlight lands with the rows, not ahead of them.
-const LAYOUT_SPRING = { type: 'spring', stiffness: 500, damping: 40 };
-
 // The nav bar's widths in px, animated by Motion: open (14rem), the icon rail
 // (3.5rem: px-2 either side of a 2.5rem tab, so a tab's icon sits centred) and
 // hidden (3rem, just the toggle, narrow screens only).
@@ -46,21 +42,6 @@ const LABEL_FADE = 'min-w-0 overflow-hidden whitespace-nowrap transition-opacity
 const NAV_CONTENT = {
   hidden: { opacity: 0, transition: { duration: 0.1 } },
   shown: { opacity: 1, transition: { duration: 0.2, delay: 0.1 } },
-};
-
-// A sub-list draws its guide line down, then fades its labels in one by one.
-// Closing is quick: the rows below are already sliding up over it.
-const SUB_LIST = {
-  hidden: { transition: { duration: 0.1 } },
-  shown: { transition: { staggerChildren: 0.08, delayChildren: 0.1 } },
-};
-const SUB_LINE = {
-  hidden: { scaleY: 0, transition: { duration: 0.1 } },
-  shown: { scaleY: 1, transition: { duration: 0.4, ease: 'easeOut' } },
-};
-const SUB_LABEL = {
-  hidden: { opacity: 0, x: -6, transition: { duration: 0.1 } },
-  shown: { opacity: 1, x: 0, transition: { duration: 0.4, ease: 'easeOut' } },
 };
 
 // The active-tab background. One layoutId for parents and sub-items alike,
@@ -95,7 +76,7 @@ export default function Sidebar() {
   const showingMobile = narrow && mobileOpen;
   const width = hidden ? HIDDEN_WIDTH : rail ? RAIL_WIDTH : OPEN_WIDTH;
   // A hover expansion floats over the page without widening the layout.
-  const footprint = narrow ? HIDDEN_WIDTH : collapsed ? RAIL_WIDTH : OPEN_WIDTH;
+  const footprint = narrow ? 0 : collapsed ? RAIL_WIDTH : OPEN_WIDTH;
   // The label of the rail section whose flyout is open; one at a time.
   const [openFlyout, setOpenFlyout] = useState(null);
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -143,7 +124,7 @@ export default function Sidebar() {
           className="fixed inset-0 z-30 bg-deep-violet-blue/20 md:hidden"
         />
       )}
-      <div className="relative shrink-0 max-md:!w-12" style={{ width: footprint }}>
+      <div className="relative shrink-0 max-md:!w-0" style={{ width: footprint }}>
       <motion.nav
       initial={false}
       animate={{ width }}
@@ -165,7 +146,7 @@ export default function Sidebar() {
         hidden ? 'pointer-events-none bg-transparent' : 'bg-card/35 shadow-md shadow-deep-violet-blue/5 backdrop-blur-2xl',
       )}
     >
-      <div className="relative mb-4 flex h-8 items-center md:mt-2">
+      <div className="relative flex h-8 items-center md:mt-2">
         {/* The toggle stays at the rail's left edge while hover opens the
             sidebar. A moving toggle could turn the same click into a click
             on the home link underneath. */}
@@ -173,8 +154,8 @@ export default function Sidebar() {
           type="button"
           data-nav-toggle
           onClick={toggleCollapsed}
-          aria-label={hidden ? 'Open navigation' : collapsed ? 'Keep navigation expanded' : 'Collapse navigation'}
-          className="pointer-events-auto relative z-10 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-deep-violet-blue/70 transition-colors hover:bg-card/80 hover:text-deep-violet-blue focus-visible:outline-2 focus-visible:outline-violet"
+          aria-label={hidden ? 'Open navigation' : showingMobile ? 'Close navigation' : collapsed ? 'Keep navigation expanded' : 'Collapse navigation'}
+          className="pointer-events-auto relative z-10 ml-1 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-deep-violet-blue/70 transition-colors hover:bg-card/80 hover:text-deep-violet-blue focus-visible:outline-2 focus-visible:outline-violet"
         >
           <PanelLeft className="size-4" />
         </button>
@@ -204,9 +185,7 @@ export default function Sidebar() {
         </AnimatePresence>
       </div>
 
-      {/* reducedMotion="user": slides and the line draw become instant for
-          users who ask for less motion; fades still run. */}
-      <MotionConfig transition={LAYOUT_SPRING} reducedMotion="user">
+      <MotionConfig reducedMotion="user">
         <AnimatePresence initial={false}>
           {/* Fixed width (the open bar's content width), so the labels don't
               wrap while the bar narrows around them. */}
@@ -247,9 +226,7 @@ export default function Sidebar() {
                 );
 
                 return (
-                  // layout="position": when a sub-list above opens or closes, this
-                  // row slides to its new place instead of jumping.
-                  <motion.li key={item.label} layout="position" className="relative">
+                  <li key={item.label} className="relative">
                     {/* A section with sub-pages can't list them in the rail, so
                         it shows them in a flyout (RailFlyout decides whether the
                         icon also links to the section's own page). */}
@@ -281,54 +258,33 @@ export default function Sidebar() {
                       </Link>
                     )}
 
-                    {/* popLayout takes a closing sub-list out of the flow at once,
-                        so the rows and the highlight all aim at their final places
-                        while it fades out. */}
-                    <AnimatePresence initial={false} mode="popLayout">
-                      {showChildren && (
-                        <motion.ul
-                          key="children"
-                          layout="position"
-                          variants={SUB_LIST}
-                          initial="hidden"
-                          animate="shown"
-                          exit="hidden"
-                          className="relative mt-0.5 ml-5 space-y-0.5 pl-2"
-                        >
-                          <motion.span
-                            aria-hidden
-                            variants={SUB_LINE}
-                            className="absolute inset-y-0 left-0 w-px origin-top bg-violet/25"
-                          />
-                          {item.children.map((child) => {
-                            const isChildActive = matchesPath(pathname, child.href);
-                            return (
-                              <li key={child.label}>
-                                <Link
-                                  href={child.href}
-                                  onClick={closeMobileNavigation}
-                                  aria-current={isChildActive ? 'page' : undefined}
-                                  className={cn(
-                                    'relative isolate block rounded-xl px-3 py-1.5 text-xs transition-[background-color,box-shadow] duration-200 ease-out hover:bg-card/80 hover:shadow-sm focus-visible:outline-2 focus-visible:outline-violet',
-                                    isChildActive
-                                      ? 'font-medium text-deep-violet-blue'
-                                      : 'text-deep-violet-blue/70',
-                                  )}
-                                >
-                                  {isChildActive && <ActiveHighlight />}
-                                  {/* Only the label fades in, so a highlight sliding
-                                      into this row stays fully opaque. */}
-                                  <motion.span variants={SUB_LABEL} className="block">
-                                    {child.label}
-                                  </motion.span>
-                                </Link>
-                              </li>
-                            );
-                          })}
-                        </motion.ul>
-                      )}
-                    </AnimatePresence>
-                  </motion.li>
+                    {showChildren && (
+                      <ul className="relative mt-0.5 ml-5 space-y-0.5 pl-2">
+                        <li aria-hidden className="pointer-events-none absolute inset-y-0 left-0 w-px bg-violet/25" />
+                        {item.children.map((child) => {
+                          const isChildActive = matchesPath(pathname, child.href);
+                          return (
+                            <li key={child.label}>
+                              <Link
+                                href={child.href}
+                                onClick={closeMobileNavigation}
+                                aria-current={isChildActive ? 'page' : undefined}
+                                className={cn(
+                                  'relative isolate block rounded-xl px-3 py-1.5 text-xs transition-[background-color,box-shadow] duration-200 ease-out hover:bg-card/80 hover:shadow-sm focus-visible:outline-2 focus-visible:outline-violet',
+                                  isChildActive
+                                    ? 'font-medium text-deep-violet-blue'
+                                    : 'text-deep-violet-blue/70',
+                                )}
+                              >
+                                {isChildActive && <ActiveHighlight />}
+                                <span className="block">{child.label}</span>
+                              </Link>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </li>
                 );
               })}
             </motion.ul>
