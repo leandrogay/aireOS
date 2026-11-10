@@ -74,12 +74,13 @@ def _whole_month_monthly(promotion: dict, month: date) -> bool:
     )
 
 
-def find_moments(promotions: list[dict], units: dict[tuple[int, str], dict[date, float]]) -> list[dict]:
+def whole_month_promotions(promotions: list[dict]):
     """
-    Every moment, oldest first. Each promotion row is one promotion on one
-    customer's offline stores for one SKU (customer_id, sku, promotion_id,
-    period_start, period_end, promo_type, promotion_mechanic); units maps
-    (customer_id, sku) to {first of month: units} for complete months only.
+    Each customer x SKU x month that exactly one promotion touches, where
+    that promotion is a monthly one running the whole month with a readable
+    mechanic that is not a bare Voucher, oldest first, as (customer_id, sku,
+    month, promotion, mechanic_key). Moments are these months with complete
+    sales; planned moments (promo_anchor_versions) are the ones still ahead.
     """
 
     touching: dict[tuple[int, str, date], list[dict]] = {}
@@ -88,15 +89,29 @@ def find_moments(promotions: list[dict], units: dict[tuple[int, str], dict[date,
             key = (promotion["customer_id"], promotion["sku"], month)
             touching.setdefault(key, []).append(promotion)
 
-    moments = []
     for (customer_id, sku, month), month_promotions in sorted(touching.items()):
         if len({row["promotion_id"] for row in month_promotions}) != 1:
             continue
 
         promotion = month_promotions[0]
         key = rules.mechanic_key(promotion.get("promotion_mechanic"))
+        if key in (None, rules.VOUCHER_KEY) or not _whole_month_monthly(promotion, month):
+            continue
+        yield customer_id, sku, month, promotion, key
+
+
+def find_moments(promotions: list[dict], units: dict[tuple[int, str], dict[date, float]]) -> list[dict]:
+    """
+    Every moment, oldest first. Each promotion row is one promotion on one
+    customer's offline stores for one SKU (customer_id, sku, promotion_id,
+    period_start, period_end, promo_type, promotion_mechanic); units maps
+    (customer_id, sku) to {first of month: units} for complete months only.
+    """
+
+    moments = []
+    for customer_id, sku, month, promotion, key in whole_month_promotions(promotions):
         sold = units.get((customer_id, sku), {}).get(month)
-        if key in (None, rules.VOUCHER_KEY) or sold is None or not _whole_month_monthly(promotion, month):
+        if sold is None:
             continue
 
         moments.append({
@@ -200,12 +215,25 @@ def recommend_anchors(moments: list[dict], sku_ranges: dict[str, str | None]) ->
 
     if not moments:
         return {}
+    return anchor_counts(moments, sku_ranges, max(m["month"] for m in moments))
 
-    since = _months_back(max(m["month"] for m in moments), ANCHOR_WINDOW_MONTHS - 1)
+
+def anchor_counts(
+    moments: list[dict],
+    sku_ranges: dict[str, str | None],
+    until: date,
+) -> dict[tuple[int, str | None], dict]:
+    """
+    recommend_anchors for the ANCHOR_WINDOW_MONTHS months ending at `until`
+    (moments after it are left out), so the anchor can be worked out as of
+    any month, including months still ahead (promo_anchor_versions).
+    """
+
+    since = _months_back(until, ANCHOR_WINDOW_MONTHS - 1)
     seen: dict[tuple[int, str | None], set[tuple[date, str]]] = {}
     labels: dict[str, str] = {}
     for moment in moments:
-        if moment["month"] < since:
+        if not since <= moment["month"] <= until:
             continue
         labels[moment["mechanic_key"]] = moment["mechanic_label"]
         sku_range = sku_ranges.get(moment["sku"])

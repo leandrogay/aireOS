@@ -57,6 +57,10 @@ aireOS/
 │   │       ├── inventory_service.py inventory_metrics reads/writes + DOH thresholds via settings/doh (history by month) (raw SQL, one txn per write)
 │   │       ├── settings/common.py shared by every kind of setting: engines, CustomerNotFoundError, lock_customer
 │   │       ├── settings/doh.py    doh_settings (append-only versions) + customers alert columns; reads via the current_settings view; GLOBAL_DEFAULT_*_DOH 25/30/35
+│   │       ├── settings/promo_anchor_versions.py PURE: anchor versions by month (version_lookup), planned moments from official
+│   │       │                      future promotions, projected anchor changes, moments measured against their own month's
+│   │       │                      version (own-period baseline, else all-time), and the uplift chosen per version (latest 3 →
+│   │       │                      converted earlier versions → placeholder), each with what it was worked out from
 │   │       ├── scenario/common.py engines shared by every kind of Scenario builder item
 │   │       ├── scenario/building_blocks.py scenario_building_blocks CRUD; resolves customer_name/product_name to customer_id/sku;
 │   │       │                      fetch_blocks_for_customer for the sell-in chart's building blocks overlay
