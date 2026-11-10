@@ -214,6 +214,7 @@ def test_list_forecast_promotions_filters_product_customer_and_overlap(monkeypat
         "product_name": "Aire Adult Pants S/M",
         "start_date": "2026-01-01",
         "end_date": "2026-12-31",
+        "customer_name": "fairprice",
         "customer_offline": "fairprice_offline",
         "customer_online": "fairprice_online",
     }
@@ -236,6 +237,27 @@ def test_list_forecast_promotions_filters_product_customer_and_overlap(monkeypat
             ],
         }
     ]
+
+
+def test_list_forecast_promotions_matches_capitalised_customer_to_slug_retailers(monkeypatch):
+    # The forecast page sends the customer as named (FairPrice); its
+    # retailers are lowercase slugs, so a case-sensitive match found nothing.
+    def respond(sql, params):
+        assert "customer_retailers" in sql
+        assert "LOWER(c.customer_name) = LOWER(:customer_name)" in sql
+        return []
+
+    conn = FakeConnection(respond)
+    monkeypatch.setattr(promotion_service, "_get_engine", lambda: FakeEngine(conn))
+
+    promotion_service.list_forecast_promotions(customer_name="FairPrice")
+
+    [(_, params)] = conn.calls
+    assert params == {
+        "customer_name": "FairPrice",
+        "customer_offline": "fairprice_offline",
+        "customer_online": "fairprice_online",
+    }
 
 
 def test_list_forecast_promotions_skips_optional_filters(monkeypatch):
