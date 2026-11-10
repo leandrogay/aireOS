@@ -56,10 +56,10 @@ const MODES = [
 ];
 
 const VIEWS = [
-  { value: 'overview', label: 'Overview' },
+  { value: 'plan', label: 'Sell-in plan' },
+  { value: 'overview', label: 'Stock' },
   { value: 'customer', label: 'By customer' },
   { value: 'risk', label: 'At risk' },
-  { value: 'plan', label: 'Sell-in plan' },
 ];
 
 const DUPLICATE_CHOICES = [
@@ -121,7 +121,7 @@ export default function ToggleGallery() {
 
       <Section
         title="SegmentedControl — pick one of a few"
-        note="The highlight slides between options. Arrow keys move between them. Used by Inventory's tabs and the Enter / edit data modes."
+        note="The highlight slides between options. Arrow keys move between them. Used by Inventory's tabs and the Input data modes."
       >
         <Variant name="Tint, sm (chart metric)" props={'look="tint" size="sm"'} value={segments.metric}>
           <SegmentedControl value={segments.metric} onChange={setSegment('metric')} options={METRICS} />

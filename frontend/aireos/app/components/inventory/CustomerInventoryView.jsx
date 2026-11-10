@@ -26,7 +26,7 @@ const STATUS_OPTIONS = Object.entries(DOH_STATUS_LABELS).map(([value, label]) =>
 /**
  * One customer's inventory: sell-in per month, and the SKU-level table with
  * ending stock, DOH and the gap to target.
- * Opening and ending stock come from the same derivation as the overview;
+ * Opening and ending stock come from the same derivation as the Stock tab;
  * DOH is derived by the backend from ending stock and forward sell-out
  * (real where it exists, forecast after that).
  *
