@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 /**
  * Fetches dashboard-summary, shared by RevenueTrendCard and
@@ -33,35 +33,26 @@ export default function useDashboardSummary({
   granularity = 'week',
   enabled = true,
 }) {
-  const [summaryByMode, setSummaryByMode] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState(null);
+  // The last fetch that finished, with the filters and dataVersion it was for.
+  // loading / refreshing / error are worked out from it during render rather
+  // than switched on and off around each request: a request cancelled by a
+  // quick filter change (A, then B, then back to A) can then never leave the
+  // hook stuck on loading, and B's error never shows on A.
+  const [result, setResult] = useState({ key: null, version: null, summaryByMode: {}, error: null });
   const filterKey = JSON.stringify({ sku, customer, store, startDate, endDate, granularity });
-  const filterKeyRef = useRef(filterKey);
-  // The filters + dataVersion of the last fetch that succeeded. The page
-  // pauses this hook (`enabled` false) while its By week check reloads, which
-  // happens on every customer tick; resuming with the same filters and data
-  // must not fetch the same summary again.
-  const fetchedRef = useRef('');
+  const ready = enabled && Boolean(customer && startDate && endDate);
+  // Already holds these filters at this data version: nothing to fetch. The
+  // page pauses this hook (`enabled` false) while its By week check reloads on
+  // every customer tick, and resuming must not fetch the same summary again.
+  const upToDate = result.key === filterKey && result.version === dataVersion;
 
   useEffect(() => {
-    if (!enabled || !customer || !startDate || !endDate) return undefined;
-    if (fetchedRef.current === `${filterKey}|${dataVersion}`) return undefined;
+    if (!ready || upToDate) return undefined;
 
     let cancelled = false;
 
-    const silentRefresh = dataVersion !== 0 && filterKeyRef.current === filterKey;
-    filterKeyRef.current = filterKey;
-
     async function fetchSummary() {
       try {
-        if (silentRefresh) {
-          setRefreshing(true);
-        } else {
-          setLoading(true);
-        }
-
         const params = new URLSearchParams({ granularity, customer });
         if (sku) params.set('sku', sku);
         if (store) params.set('store', store);
@@ -73,17 +64,17 @@ export default function useDashboardSummary({
         );
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Failed to load dashboard summary');
-        if (cancelled) return;
-
-        setSummaryByMode(data);
-        setError(null);
-        fetchedRef.current = `${filterKey}|${dataVersion}`;
+        if (!cancelled) setResult({ key: filterKey, version: dataVersion, summaryByMode: data, error: null });
       } catch (err) {
-        if (!cancelled) setError(err.message);
-      } finally {
+        // A failed background refresh keeps the figures it had for these
+        // filters; a failed first load has none to keep.
         if (!cancelled) {
-          setLoading(false);
-          setRefreshing(false);
+          setResult((previous) => ({
+            key: filterKey,
+            version: dataVersion,
+            summaryByMode: previous.key === filterKey ? previous.summaryByMode : {},
+            error: err.message,
+          }));
         }
       }
     }
@@ -92,7 +83,12 @@ export default function useDashboardSummary({
     return () => {
       cancelled = true;
     };
-  }, [dataVersion, filterKey, sku, customer, store, startDate, endDate, granularity, enabled]);
+  }, [ready, upToDate, dataVersion, filterKey, sku, customer, store, startDate, endDate, granularity]);
 
-  return { summaryByMode, loading, refreshing, error };
+  // Holds these filters' figures: only a newer dataVersion is pending, so the
+  // figures stay and the refresh is quiet (refreshing), never loading.
+  const current = result.key === filterKey;
+  const loading = Boolean(customer) && !current;
+  const refreshing = ready && current && result.version !== dataVersion;
+  return { summaryByMode: result.summaryByMode, loading, refreshing, error: current ? result.error : null };
 }

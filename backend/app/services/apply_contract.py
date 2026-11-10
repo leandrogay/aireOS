@@ -345,6 +345,9 @@ def _aggregate(result: pd.DataFrame, aggregate: dict) -> pd.DataFrame:
             .dt.to_period("M")
             .dt.to_timestamp()
         )
+        # The totals are months whatever the file's rows were (weeks, days);
+        # left as 'week' they would be dated as a 7-day week on the 1st.
+        result["period_type"] = "month"
 
     keys = list(aggregate.get("by") or [])
     measures = list(aggregate.get("sum") or [])
