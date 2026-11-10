@@ -9,6 +9,7 @@ import { customerLabel } from '@/app/utils/retailerLabel';
 
 import { formFieldClass, formLabelClass, StatTag } from './InventoryChrome';
 import InventoryTableFrame, {
+  InventoryColGroup,
   inventoryHeadRowClass,
   inventoryRowClass,
   inventoryTableClass,
@@ -161,7 +162,18 @@ export default function SellInUploadForm({ onSaved }) {
 
           <InventoryTableFrame title="Values from the file" rows={preview.rows}>
             {(visible, monthHeader) => (
-              <table className={inventoryTableClass}>
+              // Fixed widths so the columns don't move between pages.
+              <table className={`${inventoryTableClass} table-fixed min-w-[46rem]`}>
+                <InventoryColGroup
+                  widths={[
+                    '8rem', // Customer
+                    '7rem', // Month
+                    null, // Product
+                    '6.5rem', // Qty in packs
+                    '5.5rem', // Current
+                    '7rem', // Status
+                  ]}
+                />
                 <thead className={inventoryTheadClass}>
                   <tr className={inventoryHeadRowClass}>
                     <th className={inventoryThClass}>Customer</th>

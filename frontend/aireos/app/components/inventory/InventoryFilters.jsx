@@ -8,7 +8,7 @@ import SkuDropdown from './SkuDropdown';
 import { filterLabelClass, InventoryFilterCard } from './InventoryChrome';
 
 /**
- * SKU multi-select and month range shared by the overview and the customer
+ * SKU multi-select and month range shared by the Stock tab and the customer
  * view, laid out like the sell-out forecast filter card. `statusOptions`
  * (customer view only) adds a DOH status filter, which the parent applies to
  * the rows it already has. `leading` is an extra field (the customer picker)

@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 
@@ -45,17 +45,26 @@ export default function TablePagination({
       <div className="flex items-center gap-3">
         <label className="flex items-center gap-2 text-deep-violet-blue/70">
           Rows per page
-          <select
-            value={pageSize}
-            onChange={(event) => onPageSizeChange(Number(event.target.value))}
-            className="h-8 rounded-lg border border-lavander bg-white px-2 text-sm text-deep-violet-blue outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-          >
-            {PAGE_SIZES.map((size) => (
-              <option key={size} value={size}>
-                {size}
-              </option>
-            ))}
-          </select>
+          {/* The browser's own arrow sits hard against the edge, so it is
+              hidden and the same chevron as the filter dropdowns
+              (ui/FilterSelect) is drawn with their spacing. */}
+          <span className="relative">
+            <select
+              value={pageSize}
+              onChange={(event) => onPageSizeChange(Number(event.target.value))}
+              className="h-8 appearance-none rounded-lg border border-lavander bg-white pl-2.5 pr-8 text-sm text-deep-violet-blue outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              {PAGE_SIZES.map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+            <ChevronDown
+              aria-hidden="true"
+              className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-deep-violet-blue/50"
+            />
+          </span>
         </label>
         <div className="flex items-center gap-1">
           <Button

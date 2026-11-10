@@ -555,7 +555,10 @@ export function sumHorizonForecast(points) {
 export function fullYearWindow(startDate, endDate, bounds = {}) {
   if (!startDate || !endDate) return null;
   let start = `${startDate.slice(0, 4)}-01-01`;
-  let end = `${endDate.slice(0, 4)}-12-31`;
+  // 1 Dec, the same end as the page's default range (dateRange.currentYearDateRange):
+  // monthly rows are keyed by the first of the month, so it still takes in
+  // December, and the default view needs no wider fetch.
+  let end = `${endDate.slice(0, 4)}-12-01`;
   if (bounds.start && bounds.start > start) start = bounds.start;
   if (bounds.end && bounds.end < end) end = bounds.end;
   return { start, end };
