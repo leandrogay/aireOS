@@ -482,9 +482,6 @@ export default function ScenarioBuilder() {
             lastRun={freshness.current_generated_at}
             salesLabel={customerName ? `${customerText} sales` : 'All customers sales'}
             salesLoadedAt={freshness.latest_sales_loaded_at}
-            yearTotals={years}
-            yearTotalsLoading={yearTotalsLoading}
-            horizonVolume={sumHorizonForecast(unitPoints)}
             loading={view.loading}
             scenario={scenario}
           />
