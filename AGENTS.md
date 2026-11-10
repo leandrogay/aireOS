@@ -41,7 +41,8 @@ aireOS/
 │   │   │   │   └── building_blocks.py /api/scenario/building-blocks  list/create/replace/delete what-if building blocks
 │   │   │   └── promotions.py      /api/promotions     promotion CRUD + /health/db
 │   │   ├── schemas/               Pydantic v2 request models (only catalog + promotions today)
-│   │   │   ├── catalog.py         _Base, normalise_name (names → lowercase slugs), CustomerCreate/Update,
+│   │   │   ├── catalog.py         _Base, normalise_name (retailer names → lowercase slugs), clean_customer_name
+│   │   │   │                      (customer names keep their capitals, spaces → _), CustomerCreate/Update,
 │   │   │   │                      RetailerCreate (needs customer_id)/Update/Link, StoreCreate/Update,
 │   │   │   │                      SkuItem + required SkuCreate/Update
 │   │   │   ├── inventory.py       InventoryRecordCreate/Update, ShippedSoFarUpdate
@@ -63,13 +64,13 @@ aireOS/
 │   │       │                      frontend scenarioEngine.js -- keep in step), for the sell-in plan chart's overlay
 │   │       ├── sellout_units.py   Cloud SQL monthly sell-out per SKU for inventory, via sellout_service's effective-sellout view
 │   │       ├── forecast_units.py  read-only BigQuery forecast units per SKU/month, from the aire_forecasting_output view (BQ_FORECAST_OUTPUT_VIEW)
-│   │       ├── sell_in_snapshots.py saves every customer's sell-in plan when a forecast refresh retrains (refresh worker), one
+│   │       ├── sell_in_snapshots.py saves every customer's sell-in plan when a forecast refresh retrains (forecast_refresh_worker), one
 │   │       │                      snapshot per customer per month (sell_in_plan_snapshots); the chart's "Sell-in Forecast (Previous)"
 │   │       ├── forecast_cache.py  single-flight + short cache for the Forecast page's BigQuery reads (kept until output_built_at changes, or 10 min)
 │   │       ├── catalog_service.py retailers/stores/skus CRUD; SKU history/archive; get_or_create_* seams; retailer
 │   │       │                      writes for the Customers page (always under a customer, blocked once it has stores)
 │   │       ├── customer_service.py customers CRUD + list_customers (customers with nested retailers, in_use flags,
-│   │       │                      unlinked retailers); a record with data can't be renamed/deleted (looked up by name)
+│   │       │                      unlinked retailers); a customer can always be renamed (linked by id), one with data can't be deleted
 │   │       ├── promotion_service.py promotions + promotion_stores + promotion_skus, raw SQL, one txn per write
 │   │       ├── promotion_pricing.py read-only estimated revenue for a blank-revenue sell-out row: SKU price on each sale
 │   │       │                      day, less the promotion mechanic and voucher (POST /api/promotions/revenue-estimate)
@@ -132,7 +133,9 @@ aireOS/
     │   ├── doh/page.js            DOH Settings: per-customer thresholds, alert toggle, edit, reset to global default (components/settings)
     │   ├── inventory/page.js      Inventory: overview, by-customer DOH, at-risk list, sell-in plan, enter/edit data (components/inventory)
     │   ├── components/
-    │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column), Sidebar (NAV_ITEMS; collapses
+    │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column; on navigation its heading and cards
+    │   │   │                      spring in one by one via PageTransition → lib/cardCascade.js, timing and the card selector in
+    │   │   │                      app/config/transitions.js), Sidebar (NAV_ITEMS; collapses
     │   │   │                      to an icon rail, hidden on narrow screens), RailFlyout (a rail section's sub-pages)
     │   │   ├── ui/                shadcn primitives: button, card, tabs, chart, switch, calendar (brand-styled), popover;
     │   │   │                      date kit on calendar: DatePicker (one day) / RangeDatePicker (start + end, Apply), each
@@ -147,7 +150,8 @@ aireOS/
     │   │   │                      closed button, popover panel, optional `searchable`, `look` field/filter/compact) →
     │   │   │                      SelectDropdown (pick one, ✓ rows), MultiSelectDropdown (pick many, tick-box rows + "All",
     │   │   │                      `noneMeansAll`), MonthDropdown (one 'YYYY-MM' month, wrapped by promotions MonthPicker and
-    │   │   │                      inventory MonthFilter); build new pickers on these, not on a raw Popover; toggle kit: SegmentedControl
+    │   │   │                      inventory MonthFilter); build new pickers on these, not on a raw Popover; TabTransition (on each tab
+    │   │   │                      switch the shown panel's cards spring in one by one, without remounting: Inventory, Scenario builder); toggle kit: SegmentedControl
     │   │   │                      (pick one of a few, sliding highlight, `look` tint/outline), LineToggle (chart line on/off pills, one row or stacked `groups` with a
     │   │   │                      `header`; Forecast + Scenario charts and the inventory sell-in chart), ToggleButton (one thing on/off,
     │   │   │                      `look` compact/chip), ToggleField (switch; `label` / `showState` / hints opt in, `ariaLabel` when unlabelled; used by DOH alerts and nomenclature file settings); app/testing shows both kits and the brand-coloured Button (default/outline/secondary/ghost/destructive/destructive-outline/link/scenario; sizes sm/default/lg) and lists the
@@ -155,7 +159,7 @@ aireOS/
     │   │   │                      filter, forecast + inventory tables); ComparisonFigures (ChangeFigure / ChangeValue / ComparisonNote: the
     │   │   │                      ▲/▼ % figures and note of a Comparison card, dashboard + inventory); ChartZoomButton (+ hooks/useChartZoom: drag across
     │   │   │                      a category chart to zoom, inventory sell-in chart); formStyles.js (cream form input/label/button classes
-    │   │   │                      shared by forms and dialogs); Toast (+ hooks/useToast);
+    │   │   │                      shared by forms and dialogs); Toast (+ hooks/useToast); popupShadow.js (the shadow of the notification panel, chatbot and toast);
     │   │   │                      list-table kit (Customers, Promotions, SKUs, Nomenclatures): DataTable (card: count, search slot,
     │   │   │                      refresh, Retry, empty state, footer) → TableGrid (column config → fixed widths, sort headers,
     │   │   │                      skeleton; `nested` variant + `inset` for tables inside rows), ExpandableRow, RowActions
@@ -173,7 +177,7 @@ aireOS/
     │   │   │                      MonthAxis (month labels + dividers under a long week run);
     │   │   │                      PeriodTexture (hatched "past period" fills), TooltipChange,
     │   │   │                      PeriodComparisonDetail, RevenueSummaryCards + FormatMixBar, SkuRanking;
-    │   │   │                      CustomerTrendChart (2-3 customers: grouped bars per period, lines past 6 periods);
+    │   │   │                      CustomerTrendChart (2+ customers: grouped bars, lines past the bar limit in utils/chartKind.js);
     │   │   │                      DashboardStatus (whole-page card: sales data couldn't load / none uploaded yet)
     │   │   ├── promotions/        PromotionForm, PromotionList → PromotionRow (on ui/DataTable), columns.js, MonthPicker (on ui/MonthDropdown)
     │   │   ├── customers/         CustomersView (state), CustomerTable → CustomerRow (expandable, retailers inside),
@@ -218,11 +222,12 @@ aireOS/
     │       ├── weeklyGaps.js      "No weekly data for …" message: monthly-only months merged into ranges, capped
     │       ├── priceMix.js        Avg-price change split into SKU price vs product mix
     │       ├── estimatedRevenue.js est. sign: when a revenue figure includes estimated revenue, and its hover text
-    │       ├── customerTrend.js   Cross-customer chart: MAX_COMPARED_CUSTOMERS (3), bars up to MAX_BAR_PERIODS (6) then lines, series/rows
+    │       ├── customerTrend.js   Cross-customer chart: series/rows (any number of customers)
+    │       ├── chartKind.js       PURE, import-free: bars vs lines for the trend charts -- customers x periods over 12 (desktop) / 3 (phone) → lines, one period always bars (tests/chartKind.test.mjs)
     │       ├── storeFormats.js    FORMAT_COLORS + formatColor() per store format; customerColor + customerColorOrder (one colour per customer on every page, by customer_id)
     │       ├── dohSettingsForm.js validate/build/formFrom helpers for the DOH threshold form, GLOBAL_DEFAULT_DOH
-    │       ├── customerForm.js    normaliseName (mirrors backend slug), validateName, edit/delete block reasons
-    │       ├── retailerLabel.js   shared display label for retailer/customer slugs (fairprice_online → Fairprice Online)
+    │       ├── customerForm.js    normaliseName / cleanCustomerName (mirror backend), validateName, edit/delete block reasons
+    │       ├── retailerLabel.js   shared display labels: retailerLabel (fairprice_online → Fairprice Online), customerLabel (Sheng_Shiong → Sheng Shiong, capitals as typed)
     │       └── mappingHelpers.js
     ├── proxy.js                   Optimistic route guard: missing session cookie → /login
     ├── hooks/                     Data-fetching hooks (cancel-flag pattern; dashboard calls services/*Api.js)
@@ -241,9 +246,15 @@ aireOS/
     │   ├── useExpandedRows.js     { isExpanded, toggle, expand } for ui/ExpandableRow (several open by default)
     │   ├── useConfirmAction.js    { target, isPending, request, cancel, confirm } for ui/ConfirmDialog (e.g. Delete)
     │   ├── useMediaQuery.js       boolean for a CSS media query (Sidebar: rail vs hidden when collapsed)
+    │   ├── useDelayedLoading.js   { pending, visible, placeholderClass }: a first-load chart skeleton shows only after 200ms and
+    │   │                          stays 400ms, so fast loads never flash it (dashboard trend, forecast, InventoryChartSlot)
+    │   ├── useChartTransition.js  tweens a chart's rows and y-axis range together on a change (pure blending in
+    │   │                          utils/chartTransition.js), so bars/lines, gridlines and tick labels move on one scale;
+    │   │                          every dashboard/forecast/inventory chart except ComparisonMixChart (animation off by design)
     │   └── useToast.js            { toast, notify, dismissToast } for components/ui/Toast
     ├── lib/                       cn() (clsx + tailwind-merge), formatDateRange, formatDate/formatDateTime (shared date display,
-    │                              Singapore time), singaporeTime (singaporeDateTimeParts, singaporeToday)
+    │                              Singapore time), singaporeTime (singaporeDateTimeParts, singaporeToday), cardCascade
+    │                              (springs a container's cards in one by one; PageTransition, TabTransition)
     ├── public/                    create-next-app SVGs
     ├── CONTRIBUTING.md            Frontend UI conventions (primitives, tokens, cn(), lucide) — binding
     ├── CLAUDE.md → @AGENTS.md     Next.js auto-generated notice: read node_modules/next/dist/docs before Next APIs
@@ -269,7 +280,7 @@ Node's built-in test runner (`node --test`, no packages) over `tests/*.test.mjs`
 | Authentication | `auth.py` | `auth_service`, shared `app.auth.require_user` dependency | Google Workspace OIDC; signed HTTP-only `aireos_session` cookie (no application password store) | `app/login`, root `proxy.js` |
 | Upload & mapping | `uploads.py`, `mappings.py` | Generation: `layout_detection`, `column_profile`, `generate_mapping`, `mapping_prompt`, `mapping_contract`, `mapping_checks`, `mapping_view`. Transformation: `sellout_ingestion`, `apply_contract`, `validation_service`; rollback: `ingestion_service` | **GCS** bucket: `uploads/` files, `mappings/pending/<fp>.json`, `mappings/confirmed/<fp>.json`, `mappings/history/<fp>/v<n>.json`. **Cloud SQL**: `skus` read-only during mapping checks; `ingestion_runs` + append-only `sellout_versions` audit transformed uploads and restore prior `sellout` values | `app/upload`, `app/mappings`, `services/mappingApi.js` |
 | Sales dashboard | `sales.py` | `sellout_service` | **Cloud SQL Postgres**: `sellout` (the source of truth -- every upload writes here first; `retailer_id`/`store_code`/`sku` rows, `period_type` `week` or `month`), joined to `retailers`/`stores`/`skus` for names (retailer name = `{customer}_{offline|online}`). A retailer+calendar-month with monthly-granularity rows uses only those (never both, see `EFFECTIVE_SELLOUT_CTE`); `granularity='week'` summary views read genuine weekly rows only. No more BigQuery/Datastream replication lag -- reads are real-time | `app/dashboard`, `hooks/use*.js`, `services/salesApi.js` |
-| Catalog | `catalog.py` | `catalog_service`, `customer_service` | **Cloud SQL Postgres**: `customers`, `customer_retailers`, `retailers`, `stores`, `skus`, `sku_history`. Names are lowercase slugs, unique case-insensitively. A retailer with stores, or a customer with any such retailer or `inventory_metrics` rows, is `in_use` and can't be renamed or deleted. `skus` keeps one stable foreign-key master row per code; `sku_history` stores its timestamped created/updated/archived versions. Historical price reads resolve the version effective on the requested date. | `app/customers`, `app/skus`, `services/catalogApi.js`; `services/promotionsApi.js` (getRetailers/getStores/getSkuRanges) |
+| Catalog | `catalog.py` | `catalog_service`, `customer_service` | **Cloud SQL Postgres**: `customers`, `customer_retailers`, `retailers`, `stores`, `skus`, `sku_history`. Retailer names are lowercase slugs; customer names keep the capitals they were typed with (`FairPrice`, `Sheng_Shiong`); both unique case-insensitively. A retailer with stores, or a customer with any such retailer or `inventory_metrics` rows, is `in_use` and can't be deleted (nor, for a retailer, renamed). A customer can always be renamed: everything links to it by id, its retailers keep their slug names, and the dashboard labels a retailer family with its owning customer's name (`sellout_service._customer_label`). `skus` keeps one stable foreign-key master row per code; `sku_history` stores its timestamped created/updated/archived versions. Historical price reads resolve the version effective on the requested date. | `app/customers`, `app/skus`, `services/catalogApi.js`; `services/promotionsApi.js` (getRetailers/getStores/getSkuRanges) |
 | Inventory | `inventory.py` | `inventory_service`, `inventory_calc`, `sellout_units`, `forecast_units` | **Cloud SQL Postgres**: `customers`, `customer_retailers`, `inventory_metrics` (long format; app writes carry `data_source='manual_entry'`; only sell-in, a first-month opening and building blocks (stock used outside sell-out) are read; workbook rows are never changed), `doh_settings` (read via `settings/doh.fetch_versions`; closed months use the version in effect at month end, the latest month, at-risk list and sell-in plan use the current one), `sellout` (sell-out, via `sellout_units`/`sellout_service`'s effective-sellout view, same monthly-preferred-over-weekly rule as the dashboard); **BigQuery** (read-only): the forecast table. Ending stock, DOH and the plan are computed, never stored | `app/inventory`, `services/inventoryApi.js` |
 | Scenario builder | `scenario/building_blocks.py` (`/api/scenario/building-blocks`) | `scenario/building_blocks`, `scenario/common` | **Cloud SQL Postgres**: `scenario_building_blocks` (what-if uplifts stored as entered: `uplift_mode` `pct` = % on Current each month, `units` = whole units over the whole range; a negative value is a decrease (a flood, a store closing; migration `014_scenario_building_blocks_decrease.sql`), and the Simulated line is floored at 0 per customer x SKU x month (`scenarioEngine.simulate`); `is_active` decides whether a block counts; `customer_id` ON DELETE CASCADE, `sku` NULL = all SKUs; blocks follow SKU ranges, several at once (migration `017_scenario_blocks_by_sku_range.sql`): `sku_ranges` TEXT[] = every SKU of those ranges, NULL = All SKU ranges (`fetch_blocks_for_customer` resolves it to `range_skus` for `block_effects`), `sku` alone only on blocks saved before ranges, never both; editors pick ranges with `scenario/SkuRangePicker` (multi-select, none = All SKU ranges); `kind` `block` or `growth` (migrations `016`/`017`): growth is the budget's year-on-year growth, next year = Tier 0 x (1 + g), stored as a `pct` block on exactly one SKU range (`sku_ranges` of length 1) from January to December, at most one per customer x range x year (a second one is 409 `GrowthBlockExistsError`), applied like any `pct` block. The Scenario builder filters by SKU range: `GET /api/forecast?sku_range=` (`bigquery.resolve_forecast_scope(sku_range=)` → SKU codes; rows carry `sku_range`; `/options` returns `sku_ranges`). Scenario promotions follow ranges too (`skuRanges`, several or none = All SKU ranges). They have no table yet: the page saves to the in-memory store in `scenarioPromotionsApi.js` (`SCENARIO_PROMOTIONS_DEMO`), and values come from `promo_uplift_settings` / `promo_anchor_settings` through `resolve_uplifts` (`range_uplifts`, `range_anchors`, `product_ranges`: one range takes its range's value; several or all take the customer's plus each product's own within them). Promotion uplift overrides are per customer or SKU range only (`PromoUpliftOverrideCreate` has no `sku` scope); SKU-level rows saved before stay in the history but never apply (`promo_uplifts._applies`). Tier 0 itself has no growth factor since 8 Nov 2026: `0.5 x same month last year + 0.5 x 3-month run-rate` (`pl_forecast`, `bigquery/views/010_…`)). Read by the Scenario builder's Simulated line, always on Tier 0 (the page opens on next year), the delta worked out on the client (`scenarioEngine.js`), and by the sell-in plan chart's building blocks overlay, where blocks picked by hand are applied by the backend with the same rules (`scenario/block_effects.py`) and the plan is worked out again on them -- a what-if line only: the Current forecast, the plan and its table, the saved sell-in snapshots and the Dashboard never include them. In units only -- the Scenario builder never predicts revenue, since a discount's price effect isn't modelled. Not the same as inventory's `sell_out_building_blocks` (confirmed blocks that count as actuals) | `app/scenario`, `services/scenarioBuildingBlocksApi.js` |
 | Settings (DOH) | `settings/doh.py` | `settings/doh`, `settings/common` | **Cloud SQL Postgres**: `doh_settings` (append-only: a change is an INSERT only when min/target/max differ from the newest row; newest by `updated_at DESC, setting_id DESC`; never UPDATE/DELETE, except that a new customer gets a global-default row; `customer_id` is ON DELETE CASCADE, so deleting a customer deletes its rows and DOH settings never block it), view `current_settings` (one row per customer), `customers.doh_alert_enabled` / `doh_alert_updated_at` (in-place toggle, no version). Also read by the inventory DOH calculations (`fetch_versions`, `thresholds_on`, `current_thresholds`) | `app/doh`, `services/settingsApi.js` |
@@ -417,7 +428,7 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | `PromotionBase` field names | `buildPromotionPayload` / `formFromPromotion` |
 | `_PROMOTION_COLUMNS` (nested `stores`, `skus`) | `PromotionList.jsx`, `promotionOverview.js` |
 | `sales.py` query-param names (`start_date`, `end_date`, `granularity`, `customer`, `store`, `sku` …) | `URLSearchParams` keys in `hooks/*.js` and `services/salesApi.js` |
-| `sellout_service.get_customer_trends` (`/api/sales/customer-trends`: `customers[]` with `offline`/`online` period lists, `has_*`), `MAX_COMPARED_CUSTOMERS` | `salesApi.getCustomerTrends`, `useCustomerTrends.js`, `utils/customerTrend.js` (`MAX_COMPARED_CUSTOMERS`), `CustomerTrendChart.jsx`, `CustomerSelector.jsx` |
+| `sellout_service.get_customer_trends` (`/api/sales/customer-trends`: `customers[]` with `offline`/`online` period lists, `has_*`; no cap on customers) | `salesApi.getCustomerTrends`, `useCustomerTrends.js`, `utils/customerTrend.js`, `utils/chartKind.js` (`MAX_BARS_DESKTOP`/`MAX_BARS_MOBILE`), `CustomerTrendChart.jsx`, `CustomerSelector.jsx` |
 | `sellout_service` estimated part of revenue: `estimated_revenue` (dashboard summary rows, customer totals), `estimated_value` (SKU ranking), from the `revenue_estimated` row flag | `utils/estimatedRevenue.js`, `EstMark.jsx` (top right of each `RevenueSummaryCards` tile, beside `SkuRanking` values; `TrendChart` tooltip) |
 | `mapping_view` packet/rule keys (`targetField`, `sourceColumn`, `editable`, `status`, `field`, `meltGroup`, `options`, `description`, `requiredMissing`, `checks`) | `utils/mappingReview.js`, `components/mappings/*` |
 | `mapping_checks` check shape (`id`, `level`, `passed`, `message`, `fields`, `evidence`) | `utils/mappingChecks.js`, `MappingChecks.jsx` |
@@ -431,7 +442,7 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | packet `columnGroups` (`mapping_view.column_groups`: detected groups from `column_profile.review_column_groups`, with contract-ready `group` settings, `readings`, `meltGroupId`/`field`) and `measureFields` | `utils/mappingReview.js` (`toGroups`, `groupChoices`, `toRules`), `FieldTable.jsx`, `ColumnGroupDetails.jsx`, `UnusedColumns.jsx`. `review_column_groups` adds month-named headings for review only -- never fold them into `detect_column_groups`, which the layout fingerprint is built from |
 | `CustomerCreate.retailer_names` (`customer_service._attach_retailer`: links a retailer an upload made, 409 for another customer's) | `NewCustomerDialog.jsx` |
 | `customer_service.list_customers` keys (`customers[].retailers[]`, `in_use`, `unlinked_retailers`), retailer writes' `{ retailer, customer }` | `useCustomers.js`, `components/customers/*` |
-| `schemas.catalog.normalise_name` slug rule, `in_use` rules | `customerForm.js` (`normaliseName`, `*BlockReason`) |
+| `schemas.catalog.normalise_name` slug rule, `clean_customer_name`, `in_use` rules | `customerForm.js` (`normaliseName`, `cleanCustomerName`, `*BlockReason`), `retailerLabel.customerLabel`, `mappingCustomer.customerRetailerFamily` |
 | Contract vocabulary: `mapping_contract` statuses, `TRANSFORM_TYPES`, `RULE_OPS`, `MELT_KEY_TARGETS`/`LABEL_TARGETS` (melt-group `labels`; `rows_above: 0` = the headings again, so any descriptive field (`HEADING_FIELDS`) can read them), `from_layout: "stated_period"` | `utils/fieldDecision.js` (`fieldMethods`, `currentDecision`, `decisionEntry`, `withFieldDecision`), `utils/transformSteps.js` (`STEP_TYPES`, `RULE_OPS`), `FieldEditorDialog.jsx` |
 | `mappings.ContractSettings` (`instructions.aggregate` on preview/confirm); packet `instructions`, `headRows`; preview `layout`, `head_rows`, `preview_error` | `useMappingEdits` (`instructionsPayload`), `FileSettings.jsx`, `FileTop.jsx`, `MappingReviewPanel.jsx`, `mappingApi.previewMapping/confirmMapping` |
 | Retailer = `{customer}_online` / `{customer}_offline` (`sellout_service._retailer_for`); `mapping_contract.retailer_outputs` (incl. retailers read off headings, given `columns`/`layout`); packet `columnValues` | `utils/retailerSplit.js` (`splitDecision`, `withCustomerChannels`), `ChannelSplit.jsx`, `mappingCustomer.retailerDecision` |

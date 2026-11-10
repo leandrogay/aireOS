@@ -5,7 +5,7 @@ import { TrendingUp, Trash2 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 import {
   MAX_UPLIFT_PCT,
   MIN_UPLIFT_PCT,
@@ -169,7 +169,7 @@ export default function GrowthControl({
         {growthInYears(blocks, years).map((block) => (
           <p key={block.id} className="flex justify-between gap-2 text-xs text-deep-violet-blue">
             <span className="min-w-0 truncate">
-              {retailerLabel(block.customer)} · {block.skuRanges[0]} · {block.startMonth.slice(0, 4)}
+              {customerLabel(block.customer)} · {block.skuRanges[0]} · {block.startMonth.slice(0, 4)}
             </span>
             <span className="font-semibold tabular-nums">{upliftLabel(block)}</span>
           </p>
@@ -222,7 +222,7 @@ export default function GrowthControl({
       <div className="flex items-center gap-1.5">
         <TrendingUp className="size-3.5 text-deep-violet-blue/60" aria-hidden="true" />
         <h3 className="text-xs font-semibold text-deep-violet-blue">
-          Growth{customer ? ` · ${retailerLabel(customer)}` : ''}
+          Growth{customer ? ` · ${customerLabel(customer)}` : ''}
           {years.length === 1 ? ` · ${years[0]}` : ''}
         </h3>
       </div>

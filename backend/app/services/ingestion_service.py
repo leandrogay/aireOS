@@ -322,27 +322,27 @@ def delete_upload_source(
     """Delete a raw GCS upload only when no active SQL load depends on it."""
     upload = storage.get_upload(source_blob)
     if upload is None:
-        raise UploadSourceNotFoundError("This upload is no longer in GCS.")
+        raise UploadSourceNotFoundError("This file is no longer in storage")
 
     run = _latest_run(source_blob, engine=engine)
     if run and run["status"] == "processing":
         raise IngestionInProgressError(
-            "This upload is still being loaded and cannot be deleted yet."
+            "Still loading; can't delete yet"
         )
     if run and run["status"] == "completed":
         raise UploadSourceStillLoadedError(
-            "Rollback this upload before deleting its raw GCS file."
+            "Roll back this upload first"
         )
     if run is None and upload.get("mapping_status") in {
         "mapped",
         "reload_available",
     }:
         raise UploadSourceStillLoadedError(
-            "This upload may still have active SQL data and cannot be safely deleted."
+            "Can't delete: data may still be loaded"
         )
 
     if not storage.delete_upload(source_blob):
-        raise UploadSourceNotFoundError("This upload is no longer in GCS.")
+        raise UploadSourceNotFoundError("This file is no longer in storage")
 
     pending_mapping_deleted = False
     fingerprint = upload.get("mapping_fingerprint")
@@ -529,15 +529,15 @@ def _rollback_latest_run(
             ).mappings().first()
             if run is None:
                 raise IngestionNotFoundError(
-                    "No completed transformation was found for this upload."
+                    "No completed load for this upload"
                 )
             if run["status"] == "rolled_back":
                 raise IngestionAlreadyRolledBackError(
-                    "This upload has already been rolled back."
+                    "Already rolled back"
                 )
             if run["status"] != "completed":
                 raise IngestionInProgressError(
-                    "This upload is still being transformed and cannot be rolled back yet."
+                    "Still loading; can't roll back yet"
                 )
 
             ingestion_id = int(run["ingestion_id"])

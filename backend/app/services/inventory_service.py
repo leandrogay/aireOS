@@ -321,11 +321,17 @@ def _fetch_actuals(
     actuals: dict[tuple[int, str], dict[date, dict[str, float]]] = {}
     for (customer_id, sku), months in metrics.items():
         units, data_through = sales.get(customer_id, ({}, None))
+        sku_units = units.get(sku, {})
+        # A month inside the SKU's history with sales but no inventory row
+        # (nothing shipped that month) still sold stock. Months after the last
+        # row stay out: they would move where the SKU's plan starts.
+        first, last = min(months), max(months)
+        sold_between = {month: {} for month in sku_units if first < month < last}
         by_month = {}
-        for month, values in months.items():
+        for month, values in {**sold_between, **months}.items():
             if data_through is None or data_through < _month_end(month):
                 continue
-            by_month[month] = {**values, "sell_out_base": units.get(sku, {}).get(month, 0.0)}
+            by_month[month] = {**values, "sell_out_base": sku_units.get(month, 0.0)}
         if by_month:
             actuals[(customer_id, sku)] = by_month
     return actuals
@@ -802,6 +808,10 @@ def _sku_plans(
     for sku, (last_month, ending_stock) in last_actual.items():
         sku_cols = _sku_columns(sku, details)
         first = inventory_calc.add_months(last_month, 1)
+        # Actuals already reach past the plan's end: nothing to plan, which
+        # is not the same as having no forecast.
+        if first > until:
+            continue
         plan = inventory_calc.build_sell_in_plan(
             ending_stock,
             first,
@@ -824,6 +834,7 @@ def get_sell_in_plan(
     months: int = inventory_calc.SELL_IN_PLAN_MONTHS,
     skus: list[str] | None = None,
     month: str | None = None,
+    forecast_lines: dict | None = None,
 ) -> dict:
     """
     Recommended sell-in per SKU and future month for one customer (in whole
@@ -834,7 +845,9 @@ def get_sell_in_plan(
     page's "Months ahead"), so entering actuals for only some SKUs moves only
     those. A SKU with no forecast for its start month cannot be
     planned and is listed in skus_without_forecast instead. `skus` narrows the
-    plan to those SKUs; the monthly totals then cover only them.
+    plan to those SKUs; the monthly totals then cover only them. `forecast_lines`
+    (forecast_units.get_forecast_lines) skips reading them again, for callers
+    that plan every customer from one read.
     """
 
     # The forecast runs in the background while Postgres answers the rest
@@ -843,12 +856,14 @@ def get_sell_in_plan(
         with _read_connection() as conn:
             customers = _fetch_customers(conn)
             _require_customers(customers, [customer_id])
-            forecast_job = pool.submit(forecast_units.get_forecast_lines, customer_id)
+            forecast_job = None
+            if forecast_lines is None:
+                forecast_job = pool.submit(forecast_units.get_forecast_lines, customer_id)
             metrics = _fetch_actuals(conn, [customer_id])
             versions = doh_settings.fetch_versions(conn, [customer_id]).get(customer_id, [])
             shipped = _fetch_shipped(conn, customer_id)
 
-        lines = forecast_job.result()
+        lines = forecast_lines if forecast_job is None else forecast_job.result()
 
     threshold = _threshold_view(customer_id, customers[customer_id], versions)
     customer = {"customer_id": customer_id, "customer_name": customers[customer_id]}
@@ -909,9 +924,8 @@ def get_sell_in_outlook(
     One customer's sell-in and sell-out by month for the sell-in plan chart:
     from January of `start_year` (the page's "Start from") to `months` months
     after the current month (its "Months ahead"), the same end month as the
-    plan. `start_year` defaults to the year of the latest actual month, so in
-    January the actuals from last year stay on the chart until this year has
-    one; it must be one of `start_years` (_start_years), or ValueError. Each SKU is actual up to its own last actual month and then
+    plan. `start_year` defaults to the current year; it must be one of
+    `start_years` (_start_years), or ValueError. Each SKU is actual up to its own last actual month and then
     uses the plan's recommended sell-in and the forecast sell-out, so a SKU
     only adds to the months its own data covers.
 
@@ -938,14 +952,20 @@ def get_sell_in_outlook(
     """
 
     current_month = _current_month()
-    with _read_connection() as conn:
-        customers = _fetch_customers(conn)
-        _require_customers(customers, [customer_id])
-        metrics = _fetch_actuals(conn, [customer_id])
-        versions = doh_settings.fetch_versions(conn, [customer_id]).get(customer_id, [])
-        shipped = _fetch_shipped(conn, customer_id)
-        snapshots = _fetch_plan_snapshots(conn, customer_id, current_month)
-        blocks = scenario_blocks.fetch_blocks_for_customer(conn, customer_id, block_ids or [])
+    # The forecast runs in the background while Postgres answers the rest
+    # (see get_customer_view).
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with _read_connection() as conn:
+            customers = _fetch_customers(conn)
+            _require_customers(customers, [customer_id])
+            forecast_job = pool.submit(forecast_units.get_forecast_lines, customer_id)
+            metrics = _fetch_actuals(conn, [customer_id])
+            versions = doh_settings.fetch_versions(conn, [customer_id]).get(customer_id, [])
+            shipped = _fetch_shipped(conn, customer_id)
+            snapshots = _fetch_plan_snapshots(conn, customer_id, current_month)
+            blocks = scenario_blocks.fetch_blocks_for_customer(conn, customer_id, block_ids or [])
+
+        lines = forecast_job.result()
 
     customer = {"customer_id": customer_id, "customer_name": customers[customer_id]}
     metrics = {key: sku_months for key, sku_months in metrics.items() if not skus or key[1] in skus}
@@ -961,7 +981,6 @@ def get_sell_in_outlook(
 
     threshold = _threshold_view(customer_id, customers[customer_id], versions)
     details = _sku_details()
-    lines = forecast_units.get_forecast_lines(customer_id)
     forecast, source, initial = _plan_forecast(lines, details)
     previous = _known_skus(lines.get("previous", {}), details)
     until = inventory_calc.add_months(current_month, months)
@@ -977,7 +996,7 @@ def get_sell_in_outlook(
     actuals_through = max(month for month, _ in last_actual.values())
     start_years = _start_years(metrics, actuals_through, current_month)
     if start_year is None:
-        start_year = actuals_through.year
+        start_year = current_month.year
     elif start_year not in start_years:
         raise ValueError(
             f"Start from must be one of {', '.join(str(year) for year in start_years)}, not {start_year}."
@@ -1136,8 +1155,8 @@ def _start_years(
     """
     The years the chart can start from: this year and last year (no further
     back, so the chart stays readable), last year only when the customer has
-    actuals in or before it, and always the year of the latest actual month
-    (the default), even when that is older.
+    actuals in or before it, and always the year of the latest actual month,
+    even when that is older, so those actuals can still be reached.
     """
 
     first_actual = min(month for sku_months in metrics.values() for month in sku_months)
@@ -1153,7 +1172,7 @@ def _fetch_plan_snapshots(
     """One customer's saved sell-in plans taken before `before`, as
     {snapshot_month: {plan_month: {sku: recommended}}} (sell_in_snapshots).
     None saved yet when migration 015 hasn't been run, so the rest of the
-    chart still loads. Must stay the last query on `conn`."""
+    chart still loads."""
 
     try:
         rows = conn.execute(

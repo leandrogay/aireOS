@@ -95,7 +95,7 @@ export default function UploadPage() {
         );
         notify(
           'warning',
-          `${upload.filename} rolled back: ${result.rows_restored} restored, ${result.rows_removed} removed.`,
+          `Rolled back: ${result.rows_restored} restored, ${result.rows_removed} removed`,
         );
         await loadHistory();
       } catch (error) {
@@ -113,7 +113,7 @@ export default function UploadPage() {
     onConfirm: async (upload) => {
       try {
         await deleteUpload(upload.blob_path);
-        notify('deleted', `${upload.filename} was deleted from GCS.`);
+        notify('deleted', 'Uploaded file deleted');
         await loadHistory();
       } catch (error) {
         notify('error', error.message || 'Failed to delete the uploaded file.');
@@ -151,7 +151,7 @@ export default function UploadPage() {
 
   return (
     <PageLayout title="Upload sales data">
-      <div className="space-y-1">
+      <div className="space-y-3">
         <section className="rounded-lg border border-lavander bg-white p-6 shadow-sm">
           {/* Files in flight don't hold the page: more can be added and
               uploaded while earlier ones are still being matched. */}

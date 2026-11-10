@@ -6,7 +6,7 @@ import StatusBadge from '@/components/ui/StatusBadge';
 import { formatDateTime } from '@/lib/formatDate';
 import { mappingTitle } from '@/app/utils/mappingList';
 import { PROPOSER, proposedByLabel } from '@/app/utils/mappingReview';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel, vendorLabel } from '@/app/utils/retailerLabel';
 
 /**
  * The top of the review: what this mapping is, what state it is in, and in a
@@ -25,12 +25,12 @@ import { retailerLabel } from '@/app/utils/retailerLabel';
  */
 export default function ReviewHeader({ mapping, changed, canDiscard, busy, discardError, onDiscard }) {
   const isConfirmed = mapping.state === 'confirmed';
-  const customer = mapping.customerName || mapping.vendor;
+  const customer = mapping.customerName ? customerLabel(mapping.customerName) : vendorLabel(mapping.vendor);
   const model = proposedByLabel(mapping.proposedBy);
   const file = mapping.sourceFilename || String(mapping.filename || '').split('/').pop();
 
   return (
-    <section className="rounded-lg border border-lavander bg-white p-3 shadow-sm">
+    <section className="rounded-lg border border-lavander bg-white p-4 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -41,7 +41,7 @@ export default function ReviewHeader({ mapping, changed, canDiscard, busy, disca
           </div>
           <h2 className="mt-2 text-sm font-medium text-deep-violet-blue">
             {mappingTitle(mapping)}
-            {customer && <span className="font-normal text-deep-violet-blue/70"> · {retailerLabel(customer)}</span>}
+            {customer && <span className="font-normal text-deep-violet-blue/70"> · {customer}</span>}
           </h2>
           {file && (
             <p className="mt-0.5 flex items-center gap-1 text-xs text-deep-violet-blue/60" title={mapping.filename || undefined}>

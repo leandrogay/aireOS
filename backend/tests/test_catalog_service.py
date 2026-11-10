@@ -666,7 +666,7 @@ def test_delete_removes_the_customer_link_before_the_retailer(monkeypatch):
 def test_a_retailer_in_use_cannot_be_deleted(monkeypatch):
     conn = _install_fake_engine(monkeypatch, _retailer_respond(retailer=_retailer_row(in_use=True)))
 
-    with pytest.raises(catalog_service.RetailerHasStoresError, match="can't be deleted"):
+    with pytest.raises(catalog_service.RetailerHasStoresError, match="Can't delete"):
         catalog_service.delete_retailer(8)
 
     assert conn.sql_containing("DELETE FROM") == []

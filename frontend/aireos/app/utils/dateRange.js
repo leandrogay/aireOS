@@ -51,3 +51,8 @@ export function writeForecastDateSession(start, end, key = FORECAST_DATE_SESSION
   if (typeof window === 'undefined' || !start || !end) return;
   sessionStorage.setItem(key, JSON.stringify({ start, end }));
 }
+
+export function clearForecastDateSession(key = FORECAST_DATE_SESSION_KEY) {
+  if (typeof window === 'undefined') return;
+  sessionStorage.removeItem(key);
+}

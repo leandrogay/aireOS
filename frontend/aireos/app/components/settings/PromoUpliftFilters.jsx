@@ -2,7 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import FilterSelect from '@/components/ui/FilterSelect';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 
 /**
  * Customer, SKU range and Mechanic filters for the Uplift by mechanic table,
@@ -30,7 +30,7 @@ export default function PromoUpliftFilters({ filters, customers, skuRangeOptions
           label="Customer"
           value={filters.customer}
           allLabel="All customers"
-          options={customers.map((name) => ({ value: name, label: retailerLabel(name) }))}
+          options={customers.map((name) => ({ value: name, label: customerLabel(name) }))}
           onChange={(value) => onChange('customer', value)}
         />
         <FilterSelect

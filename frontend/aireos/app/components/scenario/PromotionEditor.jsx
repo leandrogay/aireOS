@@ -3,7 +3,7 @@
 import { cn } from '@/lib/utils';
 import DateRangePicker from '@/components/ui/DateRangePicker';
 import { formatMonthLabel, PROMO_OVERLAY_TYPES } from '@/app/utils/forecastView';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 import { monthSpanLabel } from '@/app/utils/scenarioPitch';
 import {
   MAX_OVERRIDE_PCT,
@@ -121,7 +121,7 @@ export default function PromotionEditor({
           className={fieldClass}
         >
           {customerOptions.map((name) => (
-            <option key={name} value={name}>{retailerLabel(name)}</option>
+            <option key={name} value={name}>{customerLabel(name)}</option>
           ))}
         </select>
       </div>
@@ -171,7 +171,7 @@ export default function PromotionEditor({
         </select>
         {anchor ? (
           <p className="mt-0.5 text-[11px] text-deep-violet-blue/50">
-            Ordinary month for {retailerLabel(promotion.customer)}: {anchor.anchor_pct}% off
+            Ordinary month for {customerLabel(promotion.customer)}: {anchor.anchor_pct}% off
             {anchorNote(anchor, ownAnchorPct != null, anchorVaries)}
           </p>
         ) : null}
@@ -251,7 +251,7 @@ export default function PromotionEditor({
         )}
         <p className="text-[11px] text-deep-violet-blue/50">
           The forecast already reflects an ordinary month
-          {anchor ? ` for ${retailerLabel(promotion.customer)} (usual: ${anchor.anchor_pct}% off)` : ''}, so this is
+          {anchor ? ` for ${customerLabel(promotion.customer)} (usual: ${anchor.anchor_pct}% off)` : ''}, so this is
           the change on top of that, not the promotion&apos;s whole effect. Planning the usual discount adds about 0%.
         </p>
         <p className="text-[11px] text-deep-violet-blue/70">
@@ -337,7 +337,7 @@ export default function PromotionEditor({
       >
         {impact ? (
           <>
-            This promotion changes {retailerLabel(promotion.customer)} sell-out by{' '}
+            This promotion changes {customerLabel(promotion.customer)} sell-out by{' '}
             <b>{signedUnits(impact.deltaUnits)} units</b> across{' '}
             {monthSpanLabel(impact.months)}.
           </>

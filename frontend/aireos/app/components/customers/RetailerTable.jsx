@@ -12,15 +12,18 @@ import UsageStatus from './UsageStatus';
  * "without a customer" card: name, store count, status and a "..." menu.
  * The caller decides the menu items per retailer. Its columns follow the
  * customer table's (columns.js), narrowed by `inset`, how far this table
- * sits inside the customer table's edges.
+ * sits inside the customer table's edges. `customerName` (the owning
+ * customer, none for unlinked retailers) lets its channel retailers read
+ * with the customer's name as typed (retailerLabel).
  *
  * @param {{
  *   retailers: object[],
  *   inset: string,
+ *   customerName?: string,
  *   actionsFor: (retailer: object) => Parameters<typeof RowActions>[0]['actions'],
  * }} props
  */
-export default function RetailerTable({ retailers, inset, actionsFor }) {
+export default function RetailerTable({ retailers, inset, customerName, actionsFor }) {
   return (
     <TableGrid variant="nested" columns={RETAILER_COLUMNS} inset={inset} minWidth="36rem">
       {retailers.map((retailer) => (
@@ -28,7 +31,7 @@ export default function RetailerTable({ retailers, inset, actionsFor }) {
           {/* The stored name sits under the label: it is what uploads and
               mappings match on, and on one line it was cut off. */}
           <td className="px-4 py-2" title={retailer.retailer_name}>
-            <span className="block truncate font-medium">{retailerLabel(retailer.retailer_name)}</span>
+            <span className="block truncate font-medium">{retailerLabel(retailer.retailer_name, customerName)}</span>
             <span className="block truncate font-mono text-xs text-deep-violet-blue/50">{retailer.retailer_name}</span>
           </td>
           <td className="px-4 py-2 tabular-nums">{retailer.store_count}</td>
@@ -37,7 +40,7 @@ export default function RetailerTable({ retailers, inset, actionsFor }) {
           </td>
           <td className="px-2 py-1 text-right">
             <RowActions
-              label={`Actions for retailer ${retailerLabel(retailer.retailer_name)}`}
+              label={`Actions for retailer ${retailerLabel(retailer.retailer_name, customerName)}`}
               actions={actionsFor(retailer)}
             />
           </td>

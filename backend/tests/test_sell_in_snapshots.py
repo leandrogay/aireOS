@@ -2,7 +2,7 @@ from datetime import date
 
 from conftest import FakeConnection, FakeEngine
 
-from app.services import inventory_service, sell_in_snapshots
+from app.services import forecast_units, inventory_service, sell_in_snapshots
 
 NOV = date(2026, 11, 1)
 
@@ -24,7 +24,7 @@ def _install(monkeypatch, plans):
     )
     asked = []
 
-    def get_sell_in_plan(customer_id, months):
+    def get_sell_in_plan(customer_id, months, forecast_lines=None):
         asked.append((customer_id, months))
         plan = plans[customer_id]
         if isinstance(plan, Exception):
@@ -32,6 +32,9 @@ def _install(monkeypatch, plans):
         return plan
 
     monkeypatch.setattr(inventory_service, "get_sell_in_plan", get_sell_in_plan)
+    monkeypatch.setattr(
+        forecast_units, "get_forecast_lines_by_customer", lambda customer_ids: {i: {} for i in customer_ids}
+    )
     return conn, asked
 
 
@@ -100,3 +103,25 @@ def test_the_best_effort_snapshot_never_raises(monkeypatch):
     monkeypatch.setattr(inventory_service, "_current_month", lambda: NOV)
 
     sell_in_snapshots.take_snapshot_best_effort()
+
+
+def test_the_forecast_is_read_once_and_shared_across_customers(monkeypatch):
+    _install(monkeypatch, {1: _plan(), 2: _plan()})
+    lines = {1: {"current": {"A1": {}}}, 2: {"current": {"B2": {}}}}
+    reads, given = [], {}
+
+    def read_lines(customer_ids):
+        reads.append(list(customer_ids))
+        return lines
+
+    def plan(customer_id, months, forecast_lines=None):
+        given[customer_id] = forecast_lines
+        return _plan()
+
+    monkeypatch.setattr(forecast_units, "get_forecast_lines_by_customer", read_lines)
+    monkeypatch.setattr(inventory_service, "get_sell_in_plan", plan)
+
+    sell_in_snapshots.take_snapshot()
+
+    assert reads == [[1, 2]]
+    assert given == lines

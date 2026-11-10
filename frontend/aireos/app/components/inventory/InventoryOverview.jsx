@@ -4,6 +4,7 @@ import { useState } from 'react';
 
 import BarChartSkeleton from '@/components/ui/BarChartSkeleton';
 import useInventoryOverview from '@/hooks/useInventoryOverview';
+import { currentYearDateRange } from '@/app/utils/dateRange';
 import { earliestMonthInput, filterMonthRange, latestMonthInput } from '@/app/utils/inventoryForm';
 
 import EndingStockChart from './EndingStockChart';
@@ -23,8 +24,8 @@ import InventorySkuTable from './InventorySkuTable';
  */
 export default function InventoryOverview({ skuOptions, refreshKey, onEditRow }) {
   const [skus, setSkus] = useState([]);
-  // null = the user has not touched the range, so it shows the full span of
-  // the chart. Editing either picker (even to blank) makes the range theirs;
+  // null = the user has not touched the range, so it opens on this year, up to
+  // the latest month. Editing either picker (even to blank) makes the range theirs;
   // "Clear filters" returns it to null.
   const [startMonth, setStartMonth] = useState(null);
   const [endMonth, setEndMonth] = useState(null);
@@ -35,10 +36,11 @@ export default function InventoryOverview({ skuOptions, refreshKey, onEditRow })
     refreshKey,
   });
 
-  // The API returns the full history. From/To open on that whole span, which
-  // is what the chart draws, and both the chart and the table follow the range.
+  // The API returns the full history. From opens on January of this year, To
+  // on the latest month, and both the chart and the table follow the range.
   const rangeRows = data?.monthly?.length ? data.monthly : data?.skus ?? [];
-  const defaultStart = earliestMonthInput(rangeRows);
+  const dataStart = earliestMonthInput(rangeRows);
+  const defaultStart = currentYearDateRange().start.slice(0, 7);
   const defaultEnd = latestMonthInput(rangeRows);
   const shownStart = startMonth ?? defaultStart;
   const shownEnd = endMonth ?? defaultEnd;
@@ -67,7 +69,7 @@ export default function InventoryOverview({ skuOptions, refreshKey, onEditRow })
       : `Showing only the ${atRiskSkuCount} SKU${atRiskSkuCount === 1 ? '' : 's'} at risk. The chart and table both cover just these SKUs. See the At risk tab for the reasons.`;
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-3">
       <InventoryFilters
         skuOptions={skuOptions}
         skus={skus}
@@ -75,6 +77,7 @@ export default function InventoryOverview({ skuOptions, refreshKey, onEditRow })
         startMonth={shownStart}
         endMonth={shownEnd}
         defaultStart={defaultStart}
+        dataStart={dataStart}
         defaultEnd={defaultEnd}
         onStartMonthChange={setStartMonth}
         onEndMonthChange={setEndMonth}

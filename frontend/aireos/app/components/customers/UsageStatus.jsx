@@ -2,7 +2,7 @@ import StatusPill from '@/components/ui/StatusPill';
 
 /**
  * "In use" once a customer or retailer has data (it can then no longer be
- * renamed or deleted), "Unused" before.
+ * deleted, and a retailer no longer renamed), "Unused" before.
  *
  * @param {{ inUse: boolean }} props
  */

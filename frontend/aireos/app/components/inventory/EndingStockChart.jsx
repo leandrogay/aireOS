@@ -11,9 +11,10 @@ import {
 } from '@/components/ui/chart';
 
 import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 import { customerColor, customerColorOrder } from '@/app/utils/storeFormats';
-import { BAR_ANIMATION, yearAxisProps } from '@/app/utils/trendChart';
+import { BAR_ANIMATION, chartDataRange, metricYAxisProps, yearAxisProps } from '@/app/utils/trendChart';
+import useChartTransition from '@/hooks/useChartTransition';
 import useMediaQuery from '@/hooks/useMediaQuery';
 
 import { labelledTooltipRow } from './chartTooltip';
@@ -53,6 +54,17 @@ function pivotByCustomer(monthly) {
 export default function EndingStockChart({ monthly, allCustomers }) {
   const mobile = useMediaQuery('(max-width: 639px)');
   const { rows, customers } = pivotByCustomer(monthly);
+  const barKeys = customers.map(([id]) => `c${id}`);
+  // Fixed nice steps (below 0 too: ending stock can go negative), so a filter
+  // change can move the bars and the axis together.
+  const yAxisProps = metricYAxisProps('units', chartDataRange(rows, barKeys, { stacked: false }));
+  const transition = useChartTransition({
+    rows,
+    rowKey: 'month',
+    valueKeys: barKeys,
+    domain: yAxisProps.domain,
+    ticks: yAxisProps.ticks,
+  });
 
   if (rows.length === 0) {
     return <p className="text-sm text-deep-violet-blue/70">No inventory data for these filters.</p>;
@@ -62,7 +74,7 @@ export default function EndingStockChart({ monthly, allCustomers }) {
   const config = Object.fromEntries(
     customers.map(([id, name]) => [
       `c${id}`,
-      { label: retailerLabel(name), color: customerColor(name, colorOrder) },
+      { label: customerLabel(name), color: customerColor(name, colorOrder) },
     ]),
   );
 
@@ -72,7 +84,7 @@ export default function EndingStockChart({ monthly, allCustomers }) {
         <ChartContainer config={config} className="aspect-auto h-[308px] w-full">
           <BarChart
             accessibilityLayer
-            data={rows}
+            data={transition.rows}
             margin={{ top: 8, right: 8, left: 0, bottom: 8 }}
           >
             <CartesianGrid vertical={false} stroke="var(--aire-lavender)" />
@@ -87,6 +99,8 @@ export default function EndingStockChart({ monthly, allCustomers }) {
               {...(mobile ? yearAxisProps(rows, 'month') : {})}
             />
             <YAxis
+              domain={transition.domain}
+              ticks={transition.ticks}
               tickFormatter={formatUnits}
               width={48}
               tick={{ fontSize: 10, fill: '#3A4369' }}
@@ -111,6 +125,7 @@ export default function EndingStockChart({ monthly, allCustomers }) {
                 radius={[4, 4, 0, 0]}
                 maxBarSize={MAX_BAR_SIZE}
                 {...BAR_ANIMATION}
+                {...transition.seriesAnimation}
               />
             ))}
           </BarChart>

@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
 import DateRangePicker from '@/components/ui/DateRangePicker';
 import SelectDropdown from '@/components/ui/SelectDropdown';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 
 const labelClass = 'mb-0.5 block text-[11px] text-deep-violet-blue/70';
 const clearClass =
@@ -76,7 +76,7 @@ function CustomerField({ value, onChange, options }) {
         onChange={onChange}
         options={[
           { value: '', label: 'All customers' },
-          ...options.map((name) => ({ value: name, label: retailerLabel(name) })),
+          ...options.map((name) => ({ value: name, label: customerLabel(name) })),
         ]}
         placeholder="All customers"
         searchable
@@ -180,7 +180,7 @@ export default function ForecastFilters({
   }
 
   return (
-    <Card size="sm" className="min-w-0 max-w-full rounded-lg border border-lavander bg-white text-deep-violet-blue shadow-sm ring-0">
+    <Card className="min-w-0 max-w-full rounded-lg border border-lavander bg-white text-deep-violet-blue shadow-sm ring-0">
       <CardContent className="min-w-0 space-y-2">
         <div className="flex items-center gap-2">
           <p className="font-serif text-base text-deep-violet-blue">Filters</p>

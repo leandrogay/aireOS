@@ -1,6 +1,6 @@
 import { formatDate } from '@/lib/formatDate';
 import { forecastWarningLines, isRefreshFailure } from '@/app/utils/forecastNotificationText';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 
 // ==== Notification headings ====
 // The backend stores structured `payload` fields, not text (see backend
@@ -120,5 +120,5 @@ export function daysLeftText(value) {
 
 /** One SKU of a consolidated low-stock alert, e.g. "Diapers M (Fairprice) — 3 days left". */
 export function lowStockItemText(item) {
-  return `${item.product_name} (${retailerLabel(item.customer_name)}) — ${daysLeftText(item.doh_remaining)}`;
+  return `${item.product_name} (${customerLabel(item.customer_name)}) — ${daysLeftText(item.doh_remaining)}`;
 }

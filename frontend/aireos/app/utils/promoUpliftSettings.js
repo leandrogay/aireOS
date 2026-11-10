@@ -8,7 +8,7 @@
 // below copies it only so the anchor form can preview a change before it is
 // saved. Keep the two in step.
 
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 
 const ANCHOR_STEP_PCT = 5;
 const UPLIFT_PER_STEP_PCT = 2;
@@ -106,7 +106,7 @@ export function changedByLabel(changedBy) {
  */
 export function scopeLabel(row) {
   if (row.scope === 'all') return 'All customers';
-  const customer = retailerLabel(row.customer_name ?? '');
+  const customer = customerLabel(row.customer_name ?? '');
   if (row.scope === 'range') return `${customer} · range ${row.sku_range}`;
   if (row.scope === 'sku') return `${customer} · SKU ${row.sku} (no longer applies)`;
   return customer;
@@ -267,7 +267,7 @@ export function manualUplift(row) {
  * @param {object} row a setting row
  */
 export function customerColumn(row) {
-  return row.scope === 'all' ? 'All customers' : retailerLabel(row.customer_name ?? '');
+  return row.scope === 'all' ? 'All customers' : customerLabel(row.customer_name ?? '');
 }
 
 /**

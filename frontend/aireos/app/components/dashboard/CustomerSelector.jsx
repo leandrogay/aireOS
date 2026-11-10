@@ -1,16 +1,14 @@
 'use client';
 
 import MultiSelectDropdown from '@/components/ui/MultiSelectDropdown';
-import { MAX_COMPARED_CUSTOMERS } from '@/app/utils/customerTrend';
 
 /**
  * Customer ticks for the sales dashboard. One ticked customer keeps today's
  * time-series chart. Two or more switch that chart to each customer per week
- * or month (CustomerTrendChart), so at most MAX_COMPARED_CUSTOMERS can be
- * ticked: the rest are disabled until one is unticked. "All customers" is
- * offered only while that many or fewer exist (MultiSelectDropdown's
- * `maxSelected`). page.js owns the selection and starts with the first ones
- * ticked once the options load.
+ * or month (CustomerTrendChart). Any number can be ticked: the chart turns
+ * from bars to lines once there would be too many bars (utils/chartKind.js).
+ * page.js owns the selection and starts with every customer ticked once the
+ * options load.
  *
  * @param {{ selected: string[], onChange: (next: string[]) => void, options: Array<{ value: string, label: string }>, loading: boolean, error: string | null }} props
  */
@@ -26,7 +24,6 @@ export default function CustomerSelector({ selected, onChange, options, loading,
         onChange={onChange}
         allLabel="All customers"
         noneMeansAll={false}
-        maxSelected={MAX_COMPARED_CUSTOMERS}
         // With customers to pick from, an empty box asks for one; "No
         // customers" is only true when there are none.
         placeholder={loading ? 'Loading customers…' : options.length ? 'Select customers' : 'No customers'}

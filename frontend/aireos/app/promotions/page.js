@@ -376,12 +376,12 @@ export default function PromotionsPage() {
       // also highlighted in the overview.
       const storeCount = promotionStoreNames(created).length || newStores.length;
       const skipNote = skipped.length
-        ? ` · ${skipped.length} ${skipped.length === 1 ? 'store' : 'stores'} already had it, skipped`
+        ? ` · ${skipped.length} skipped`
         : '';
       // Amber when some stores were skipped, so that part is not missed.
       notify(
         skipped.length ? 'warning' : 'created',
-        (storeCount === 1 ? 'Promotion created' : `Promotion created across ${storeCount} stores`) +
+        (storeCount === 1 ? 'Promotion created' : `Created in ${storeCount} stores`) +
           skipNote,
       );
       setIsFormOpen(false);
@@ -414,7 +414,7 @@ export default function PromotionsPage() {
         </Button>
       }
     >
-      <div className="flex min-h-0 flex-1 flex-col gap-2.5">
+      <div className="flex min-h-0 flex-1 flex-col gap-3">
         <PromotionList
           promotions={promotions}
           isLoading={isLoadingList}

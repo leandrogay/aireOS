@@ -30,22 +30,20 @@ import {
 import { DEFAULT_PRESET_ID, buildDateRangePresets } from "@/app/utils/dateRangePresets";
 import { rangeHasWeeklyMonths, weeklyGapMessage } from "@/app/utils/weeklyGaps";
 import { customerColorOrder, relabelFormatRows } from "@/app/utils/storeFormats";
-import { MAX_COMPARED_CUSTOMERS } from "@/app/utils/customerTrend";
 
 const NO_CUSTOMERS = [];
 
-// The customers ticked when the options first load, and after Clear: the
-// first MAX_COMPARED_CUSTOMERS in the option list.
+// The customers ticked when the options first load, and after Clear: every
+// customer (there is no cap; the chart turns to lines past its bar limit).
 function defaultCustomers(options) {
-  return options.slice(0, MAX_COMPARED_CUSTOMERS).map((option) => option.value);
+  return options.map((option) => option.value);
 }
 
 export default function DashboardPage() {
   const { channels, dataVersion, refreshing } = useDataFreshness();
 
-  // Customer ticks. null until the options arrive, then the first
-  // MAX_COMPARED_CUSTOMERS are ticked (the cross-customer chart compares at
-  // most that many). [] is the user clearing every tick
+  // Customer ticks. null until the options arrive, then every customer is
+  // ticked. [] is the user clearing every tick
   // from the menu, and must not be filled back in on its own. Clear in the
   // filter card is the one action that ticks every customer again. The rest
   // of the page still reads one customer: the first ticked name in the
@@ -374,7 +372,7 @@ export default function DashboardPage() {
       {(pageStatus === 'failed' || pageStatus === 'empty') ? (
         <DashboardStatus kind={pageStatus} error={customerOptionsError} />
       ) : (
-        <div className="grid grid-cols-1 gap-1 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
           <div className="lg:col-span-2">
             <RevenueTrendCard
               summaryByMode={summary.summaryByMode}
@@ -423,7 +421,7 @@ export default function DashboardPage() {
               stacked beside the chart they explain. A grid rather than flex so
               the Comparison card's h-full fills whatever height the chart row
               leaves under the Filters. */}
-          <div className="grid grid-rows-[auto_1fr] gap-1">
+          <div className="grid grid-rows-[auto_1fr] gap-3">
             <div>
               <DashboardFilters
                 customerControl={
@@ -477,7 +475,10 @@ export default function DashboardPage() {
               mode={mode}
               comparingCustomers={comparingCustomers}
               customerRows={customerTotals.rows}
-              noCustomers={customers.length === 0}
+              // Not while the page loads: the selection is empty only because
+              // the default customers aren't picked yet, not because the user
+              // unticked them all.
+              noCustomers={!pageLoading && customers.length === 0}
               customerColorOrder={colorOrder}
             />
           </div>

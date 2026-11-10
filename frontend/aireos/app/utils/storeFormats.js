@@ -2,13 +2,14 @@
 // Sell-out Summary mix bar so a format is the same colour everywhere. Reused
 // across offline (4 formats) and online (1 format) since only one channel is
 // ever on screen at once — safe to reuse HYPER's colour for FPON since they
-// never render together. FPON previously used --aire-cream, which is nearly
-// invisible against the white card/cream page background.
+// never render together. FPON previously used --aire-cream, and UNITY
+// --aire-lavender; both are nearly invisible against the white card/cream
+// page background, so UNITY is dusty rose, which sits with the violets.
 export const FORMAT_COLORS = {
   HYPER: 'var(--aire-deep-blue)',
   SUPER: 'var(--aire-violet)',
   FINEST: 'var(--aire-celest)',
-  UNITY: 'var(--aire-lavender)',
+  UNITY: '#C98BA8',
   FPON: 'var(--aire-deep-blue)',
 };
 
@@ -27,15 +28,14 @@ const MISSING_FORMAT = 'UNKNOWN';
 export const UNNAMED_FORMAT = 'Total';
 
 // AIRE brand colours and their shades first, then the other colours the forecast
-// lines and promotion types use. Cream is second by design choice, though it and
-// lavender are the hardest to see on a white chart.
+// lines and promotion types use. No cream or lavender: both are too light to
+// see against the white card and cream page (the same reason FORMAT_COLORS
+// dropped cream).
 const CUSTOMER_COLORS = [
   'var(--aire-violet)',
-  'var(--aire-cream)',
   'var(--aire-celest)',
   '#2E7BA6',
   '#5C5299',
-  'var(--aire-lavender)',
   '#0D9488',
   '#4F7A3A',
   '#7C3AED',

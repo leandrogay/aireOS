@@ -1,6 +1,6 @@
 'use client';
 
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
 import { formFieldClass, formLabelClass } from './InventoryChrome';
@@ -40,7 +40,7 @@ export default function CustomerDropdown({ customers, customerIds, onChange, err
         </option>
         {customers.map((customer) => (
           <option key={customer.customer_id} value={customer.customer_id}>
-            {retailerLabel(customer.customer_name)}
+            {customerLabel(customer.customer_name)}
           </option>
         ))}
       </select>

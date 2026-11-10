@@ -60,11 +60,17 @@ export default function useChartZoom(labels) {
   return {
     picking,
     zoomed,
-    dragging,
+    // Only while picking: Recharts runs a chart's mouse handlers a frame late, so
+    // a last mouse move can land after the release and set `dragging` again,
+    // once there are no handlers left to clear it.
+    dragging: picking ? dragging : null,
     start: zoomed ? pickedFrom : 0,
     end: zoomed ? pickedTo : labels.length - 1,
     chartHandlers,
-    startPicking: () => setPicking(true),
+    startPicking: () => {
+      setDragging(null);
+      setPicking(true);
+    },
     cancelPicking: () => {
       setPicking(false);
       setDragging(null);

@@ -131,8 +131,8 @@ export async function getSellInPlan(customerId, { months, skus } = {}, { signal 
  *
  * Sell-in and sell-out per month for the sell-in plan chart: from January of
  * `startYear` to `months` months after the current month, the same end month
- * as getSellInPlan. Without `startYear` it starts in the year of the latest
- * actual month; `start_years` lists the years it can start from.
+ * as getSellInPlan. Without `startYear` it starts in the current year;
+ * `start_years` lists the years it can start from.
  *
  * `blockIds` are saved Scenario builder building blocks for the chart's
  * overlay: each month then also has sell_out_with_blocks / sell_in_with_blocks
@@ -141,7 +141,7 @@ export async function getSellInPlan(customerId, { months, skus } = {}, { signal 
  * itself never includes them.
  *
  * @param {number} customerId
- * @param {{ months?: number, skus?: string[], startYear?: number | null, blockIds?: number[] }} [options] how many months after the current month, 1 to 12 (default 6), the SKUs to include (default all), the year to start from (default the latest actual's), and the overlay's building blocks (default none)
+ * @param {{ months?: number, skus?: string[], startYear?: number | null, blockIds?: number[] }} [options] how many months after the current month, 1 to 12 (default 6), the SKUs to include (default all), the year to start from (default the current year), and the overlay's building blocks (default none)
  * @returns {Promise<{ customer: object, actuals_through: string | null, months: object[], start_year: number | null, start_years: number[], building_blocks: Array<{ block_id: number, name: string, sell_out_change: number }> }>}
  */
 export async function getSellInOutlook(customerId, { months, skus, startYear, blockIds = [] } = {}, { signal } = {}) {

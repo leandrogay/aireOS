@@ -7,7 +7,7 @@
 // ============================================================
 
 /**
- * The slug the backend stores a typed name as (see backend
+ * The slug the backend stores a typed retailer name as (see backend
  * schemas.catalog.normalise_name): lowercase, runs of spaces / hyphens
  * become one underscore. `Giant Online` → `giant_online`.
  *
@@ -22,10 +22,36 @@ export function normaliseName(value) {
 }
 
 /**
+ * The name the backend stores a typed customer name as (see backend
+ * schemas.catalog.clean_customer_name): the capitals as typed, runs of
+ * spaces / hyphens become one underscore. `Sheng Shiong` → `Sheng_Shiong`,
+ * `FairPrice` stays `FairPrice`.
+ *
+ * @param {string} value
+ * @returns {string}
+ */
+export function cleanCustomerName(value) {
+  return String(value ?? '')
+    .replace(/[\s-]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+/**
+ * How a typed name of either kind is stored.
+ *
+ * @param {string} value
+ * @param {'customer' | 'retailer'} kind
+ * @returns {string}
+ */
+export function storedName(value, kind) {
+  return kind === 'customer' ? cleanCustomerName(value) : normaliseName(value);
+}
+
+/**
  * Error message for a typed name, or '' when it can be saved. `takenNames`
- * holds the slugs of the other records of the same kind (the record being
- * edited is left out by the caller), so the duplicate check matches the
- * backend's case-insensitive one.
+ * holds the lowercase slugs (normaliseName) of the other records of the same
+ * kind (the record being edited is left out by the caller), so the duplicate
+ * check matches the backend's case-insensitive one: `NHG` is taken by `nhg`.
  *
  * @param {string} value
  * @param {Set<string>} takenNames
@@ -33,10 +59,10 @@ export function normaliseName(value) {
  * @returns {string}
  */
 export function validateName(value, takenNames, kind) {
-  const slug = normaliseName(value);
-  if (!slug) return 'Enter a name.';
-  if (!/^[a-z0-9_]+$/.test(slug)) return 'Use only letters, numbers, spaces, hyphens or underscores.';
-  if (takenNames.has(slug)) return `A ${kind} with this name already exists.`;
+  const name = storedName(value, kind);
+  if (!name) return 'Enter a name.';
+  if (!/^[A-Za-z0-9_]+$/.test(name)) return 'Use only letters, numbers, spaces, hyphens or underscores.';
+  if (takenNames.has(name.toLowerCase())) return `A ${kind} with this name already exists.`;
   return '';
 }
 
@@ -58,19 +84,12 @@ export function allRetailerNames(customers, unlinked) {
 // ============================================================
 // Why a record cannot be edited or deleted
 //
-// Same rules as backend customer_service / catalog_service: a record that
-// already has data keeps its name (the dashboard, uploads and forecast look
-// it up by name), and a customer is deleted only once its retailers are.
-// '' means the action is allowed.
+// Same rules as backend customer_service / catalog_service: a retailer
+// that already has data keeps its name (the dashboard, uploads and
+// promotions look it up by name), and a customer is deleted only once its
+// retailers are. A customer can always be renamed: everything links to it
+// by id. '' means the action is allowed.
 // ============================================================
-
-/**
- * @param {{ in_use: boolean }} customer
- * @returns {string}
- */
-export function customerEditBlockReason(customer) {
-  return customer.in_use ? 'Has sales or inventory data' : '';
-}
 
 /**
  * @param {{ in_use: boolean, retailers: object[] }} customer

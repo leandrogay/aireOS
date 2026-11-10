@@ -84,7 +84,7 @@ export default function SkusPage() {
       const withoutSaved = current.filter((item) => item.sku !== saved.sku);
       return [...withoutSaved, saved].sort((left, right) => left.product_name.localeCompare(right.product_name));
     });
-    notify(editor.sku ? 'updated' : 'created', editor.sku ? `SKU ${saved.sku} updated.` : `SKU ${saved.sku} created.`);
+    notify(editor.sku ? 'updated' : 'created', editor.sku ? `SKU ${saved.sku} updated` : `SKU ${saved.sku} created`);
     setEditor(null);
     getSkuOptions()
       .then(setOptions)
@@ -112,7 +112,7 @@ export default function SkusPage() {
     const [updatedDetails, updatedSkus] = await Promise.all([getSku(skuCode), getSkus()]);
     setDetails(updatedDetails);
     setSkus(updatedSkus);
-    notify('updated', `Price period for SKU ${skuCode} corrected.`);
+    notify('updated', `Price corrected for SKU ${skuCode}`);
   };
 
   async function archiveRecord(sku) {
@@ -127,7 +127,7 @@ export default function SkusPage() {
             `SKU ${sku.sku} was archived, but the catalog options could not be refreshed.`,
         );
       }
-      notify('deleted', `SKU ${sku.sku} was archived.`);
+      notify('deleted', `SKU ${sku.sku} archived`);
     } catch (archiveError) {
       notify('error', archiveError.message || 'Failed to archive SKU.');
     }

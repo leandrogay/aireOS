@@ -8,8 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import ChartLoading from '@/components/ui/ChartLoading';
 import LineChartSkeleton from '@/components/ui/LineChartSkeleton';
-import { Skeleton } from '@/components/ui/skeleton';
 import LineToggle from '@/components/ui/LineToggle';
+import { Skeleton } from '@/components/ui/skeleton';
 import ForecastConfidenceDetails from '@/components/forecast/ForecastConfidenceDetails';
 import ForecastPointDetails from '@/components/forecast/ForecastPointDetails';
 import ForecastPromoPanel from '@/components/forecast/ForecastPromoPanel';
@@ -35,6 +35,8 @@ import { withActualBridges } from '@/app/utils/forecastActuals';
 import { CURRENT_DOT_FILL, INITIAL_MISSING_HINT, forecastLineHints } from '@/app/utils/forecastLineText';
 import { dotRevealDelay, lineSweepTimings } from '@/app/utils/lineAnimation';
 import { yearAxisProps } from '@/app/utils/trendChart';
+import useChartTransition from '@/hooks/useChartTransition';
+import useDelayedLoading from '@/hooks/useDelayedLoading';
 import useMediaQuery from '@/hooks/useMediaQuery';
 
 // All lines draw in with one left-to-right sweep (see lineSweepTimings), so
@@ -291,6 +293,9 @@ export default function ForecastChart({
   const hasData = points.some((point) =>
     visibleKeys.some((key) => point[key] != null)
   );
+  // First load only (a refetch keeps the old chart under the overlay); a fast
+  // load skips the placeholder instead of flashing it.
+  const firstLoad = useDelayedLoading({ loading: loading && !hasData });
   const chartPoints = useMemo(
     () => padMonthlyPoints(points, startDate, endDate),
     [points, startDate, endDate]
@@ -362,36 +367,18 @@ export default function ForecastChart({
   // changes something in view, so its gap, markers and band wait for it too.
   const simulatedSeries = scenario?.series[0] ?? null;
   const showSimulated = Boolean(simulatedSeries) && Boolean(visibleSeries.simulated);
-  const composition = scenario?.composition ?? [];
-  const compositionVisible = scenario?.compositionVisible ?? {};
-  const showComposition = Boolean(composition.length);
-  const compositionKeys = composition.map((layer) => layer.key).join('|');
-  const compositionVisibility = composition
-    .map((layer) => `${layer.key}:${compositionVisible[layer.key] ? 'on' : 'off'}`)
-    .join('|');
-  const compositionDebugData = JSON.stringify({
-    firstPoint: points[0],
-    firstChartPoint: chartData[0],
-    composition,
-    compositionVisible,
-    renderedLayers: composition
-      .filter((layer) => compositionVisible[layer.key])
-      .map((layer) => ({
-        key: layer.key,
-        value: chartData[0]?.[layer.key],
-        numeric: typeof chartData[0]?.[layer.key] === 'number',
-      })) ?? [],
+  const showComposition = Boolean(scenario?.composition?.length);
+  // A filter change moves the lines, the simulated gap and the axis together.
+  // Same ticks as ever: the domain in 4 equal steps (none when it is flat).
+  const transition = useChartTransition({
+    rows: plotData,
+    rowKey: 'month_year',
+    valueKeys: showSimulated ? [...visibleKeys, 'simulatedGap'] : visibleKeys,
+    domain: yDomain,
+    ticks: yDomain[0] === yDomain[1]
+      ? undefined
+      : [0, 1, 2, 3, 4].map((i) => yDomain[0] + ((yDomain[1] - yDomain[0]) / 4) * i),
   });
-  useEffect(() => {
-    if (process.env.NODE_ENV !== 'development' || !showComposition) return;
-    const debugData = JSON.parse(compositionDebugData);
-    console.debug('[scenario composition] chart', {
-      showComposition,
-      ...debugData,
-    });
-  // Keep this diagnostic effect on a fixed-size dependency list. The chart
-  // receives new point objects as filters and scenario inputs change.
-  }, [compositionDebugData, compositionKeys, compositionVisibility, showComposition]);
   const scenarioMarkers = showSimulated
     ? scenario.markers
         .map((marker) => ({ ...marker, x: monthX(marker.month_year) }))
@@ -480,7 +467,7 @@ export default function ForecastChart({
   }
 
   return (
-    <Card size="sm" className="min-w-0 max-w-full overflow-visible rounded-lg border border-lavander bg-white text-deep-violet-blue shadow-sm ring-0">
+    <Card className="min-w-0 max-w-full overflow-visible rounded-lg border border-lavander bg-white text-deep-violet-blue shadow-sm ring-0">
       <CardHeader className="flex flex-row items-start justify-between gap-3 pb-1">
         <div className="min-w-0 space-y-1.5">
           <CardTitle className="font-serif text-base font-normal text-deep-violet-blue group-data-[size=sm]/card:text-base">
@@ -515,15 +502,15 @@ export default function ForecastChart({
 
         {!hasVisibleLine ? (
           <p className="text-sm text-muted-foreground">No lines selected. Turn a line on to plot values.</p>
-        ) : !hasData ? (
+        ) : firstLoad.pending || !hasData ? (
           // Rows start empty, so without this the first load would briefly
           // claim there is no data. Same box as the loaded chart below (its
           // pl-1 pr-3 pt-2 wrapper, 34vh / min 220px ChartContainer with the
           // 48px tilted month axis, then the legend footer line), one line per
           // series switched on and one point per month in the date range.
           // A refetch keeps the old chart under the overlay instead.
-          loading ? (
-            <div className="pl-1 pr-3 pt-2">
+          firstLoad.pending ? (
+            <div className={`pl-1 pr-3 pt-2 ${firstLoad.placeholderClass}`}>
               <LineChartSkeleton
                 points={chartPoints.length}
                 lines={visibleKeys.length}
@@ -556,7 +543,7 @@ export default function ForecastChart({
               <ChartContainer config={config} className="aspect-auto h-[34vh] min-h-[220px] w-full">
                 <ComposedChart
                   accessibilityLayer
-                  data={plotData}
+                  data={transition.rows}
                   margin={{ top: 8, right: 18, left: 0, bottom: 28 }}
                 >
                   <OverlayDefs bands={overlayBands} />
@@ -577,12 +564,8 @@ export default function ForecastChart({
                   />
                   <YAxis
                     width={Y_AXIS_WIDTH}
-                    domain={yDomain}
-                    ticks={
-                      yDomain[0] === yDomain[1]
-                        ? undefined
-                        : [0, 1, 2, 3, 4].map((i) => yDomain[0] + ((yDomain[1] - yDomain[0]) / 4) * i)
-                    }
+                    domain={transition.domain}
+                    ticks={transition.ticks}
                     allowDataOverflow
                     tick={{ fontSize: 10, fill: '#3A4369' }}
                     tickFormatter={(value) => formatAxisValue(value, 'units')}
@@ -736,6 +719,7 @@ export default function ForecastChart({
                       activeDot={{ r: 5, fill: series.color }}
                       connectNulls={series.connectNulls ?? true}
                       {...lineTimings[series.key]}
+                      {...transition.seriesAnimation}
                     />
                   ))}
                   {/* Dashed joins across months with no actual (a missing file),
@@ -763,7 +747,8 @@ export default function ForecastChart({
                     <ReferenceDot
                       key={`marker-${marker.key}`}
                       x={marker.x}
-                      y={chartData[marker.x].simulated}
+                      /* From the moving rows, so a marker rides its line through a change. */
+                      y={transition.rows[marker.x].simulated}
                       r={6}
                       fill={simulatedSeries.color}
                       stroke="#fff"

@@ -237,7 +237,7 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
   }
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-3">
       <ReviewHeader
         mapping={mapping}
         changed={changed}
@@ -250,8 +250,8 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
         }}
       />
 
-      <div className="grid gap-1 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start">
-        <div className="min-w-0 space-y-1">
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start">
+        <div className="min-w-0 space-y-3">
           <ReviewSection
             id={SECTION_IDS.customer}
             step={stepOf(SECTION_IDS.customer)}

@@ -4,7 +4,8 @@ so the sell-in plan chart can show "Sell-in Forecast (Previous)": what the
 platform actually recommended last month, read back by
 inventory_service.get_sell_in_outlook.
 
-Called when an event-triggered refresh retrains (forecast_refresh_worker).
+Called when a refresh retrains: the event-triggered refresh
+(forecast_refresh_worker).
 scripts/refresh_forecast.py writes the legacy P&L table, which the plan does
 not read, so it takes no snapshot.
 """
@@ -16,7 +17,7 @@ from functools import lru_cache
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
-from app.services import inventory_service, sql
+from app.services import forecast_units, inventory_service, sql
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -66,14 +67,20 @@ def take_snapshot() -> dict:
     Saves every customer's sell-in plan, all SKUs, as far ahead as the page
     can show (SNAPSHOT_MONTHS), under the current month. One customer
     failing doesn't stop the others; it is logged and listed in `failed`.
+    The forecast is read once and shared, so the time this adds to a refresh
+    doesn't grow with the number of customers.
     """
 
     snapshot_month = inventory_service._current_month()
     saved, failed = [], []
-    for customer in inventory_service.list_customers():
+    customers = inventory_service.list_customers()
+    lines = forecast_units.get_forecast_lines_by_customer([customer["customer_id"] for customer in customers])
+    for customer in customers:
         customer_id = customer["customer_id"]
         try:
-            plan = inventory_service.get_sell_in_plan(customer_id, months=SNAPSHOT_MONTHS)
+            plan = inventory_service.get_sell_in_plan(
+                customer_id, months=SNAPSHOT_MONTHS, forecast_lines=lines[customer_id]
+            )
             _replace_snapshot(customer_id, snapshot_month, plan["rows"])
         except Exception as exc:
             logger.warning("Could not save the sell-in plan of customer %s: %s", customer_id, exc)

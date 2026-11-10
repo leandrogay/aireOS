@@ -8,7 +8,7 @@ import { getSellInOutlook } from '@/app/services/inventoryApi';
  * Sell-in and sell-out by month for the sell-in plan chart (backend
  * inventory_service.get_sell_in_outlook). Does nothing until a customer is
  * chosen. `refreshKey` is bumped after a create/edit, since that moves actuals.
- * `startYear` null lets the backend pick its default (the latest actual's year).
+ * `startYear` null lets the backend pick its default (the current year).
  * `blockIds` are the building blocks overlay's picks (getSellInOutlook).
  *
  * @param {{ customerId?: number | null, months?: number, skus?: string[], startYear?: number | null, blockIds?: number[], refreshKey?: number }} [options]

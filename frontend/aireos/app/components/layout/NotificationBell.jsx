@@ -6,6 +6,9 @@ import { Bell } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import useNotifications from '@/hooks/useNotifications';
 
+import { POPUP_SHADOW_CLASS } from '@/components/ui/popupShadow';
+import { cn } from '@/lib/utils';
+
 import NotificationPanel from './NotificationPanel';
 
 // The panel is as wide as the dashboard's right-hand column (app/dashboard/page.js:
@@ -88,7 +91,9 @@ export default function NotificationBell() {
       <PopoverContent
         align="end"
         arrow
-        arrowClassName="data-[side=bottom]:border-lavander"
+        // Same colour and width as the popup's outline (ring-violet/40 below),
+        // so the tip reads as part of the panel's edge.
+        arrowClassName="text-violet/40"
         sideOffset={10}
         // fixed: placed against the viewport, so this tall popup never adds to
         // the page's scroll height (with the default "absolute" the page could
@@ -97,7 +102,7 @@ export default function NotificationBell() {
         // Width measured on open (see columnWidth); a style, not a class,
         // because it is computed.
         style={{ width: panelWidth }}
-        className="max-w-[90vw] gap-0 p-0 ring-violet/40 shadow-[0_2px_6px_rgb(15_30_74/0.12),0_16px_40px_rgb(15_30_74/0.18)]"
+        className={cn('max-w-[90vw] gap-0 p-0 ring-violet/40', POPUP_SHADOW_CLASS)}
       >
         <NotificationPanel notifications={notifications} markRead={markRead} />
       </PopoverContent>

@@ -14,7 +14,7 @@ import {
   primaryButtonClass,
   secondaryButtonClass,
 } from '@/components/ui/formStyles';
-import { normaliseName, validateName } from '@/app/utils/customerForm';
+import { storedName, validateName } from '@/app/utils/customerForm';
 import { cn } from '@/lib/utils';
 
 /**
@@ -54,7 +54,7 @@ function NameForm({
 
   const error = validateName(name, takenNames, kind);
   const shownError = submitAttempted || touched ? error : '';
-  const slug = normaliseName(name);
+  const slug = storedName(name, kind);
   // Say how the name will be stored whenever that differs from what was typed.
   const showSlug = !error && slug !== name.trim();
 
@@ -70,7 +70,8 @@ function NameForm({
     if (error) return;
 
     // Saving an edit with the same name changes nothing, so it is a Cancel.
-    if (initialName && slug === normaliseName(initialName)) {
+    // Exact match: a change of capitals (nhg → NHG) is a rename.
+    if (initialName && slug === initialName) {
       onCancel();
       return;
     }

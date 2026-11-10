@@ -6,12 +6,8 @@ import { Button } from '@/components/ui/button';
 import ExpandableRow from '@/components/ui/ExpandableRow';
 import RowActions from '@/components/ui/RowActions';
 import { EXPANDED_ROW_INSET } from '@/components/ui/TableGrid';
-import { retailerLabel } from '@/app/utils/retailerLabel';
-import {
-  customerDeleteBlockReason,
-  customerEditBlockReason,
-  retailerBlockReason,
-} from '@/app/utils/customerForm';
+import { customerLabel } from '@/app/utils/retailerLabel';
+import { customerDeleteBlockReason, retailerBlockReason } from '@/app/utils/customerForm';
 
 import { CUSTOMER_COLUMNS } from './columns';
 import RetailerTable from './RetailerTable';
@@ -40,7 +36,6 @@ export function customerRowActions(customer, onEdit, onDelete, onAddRetailer) {
       label: 'Edit name',
       icon: Pencil,
       onSelect: () => onEdit(customer),
-      disabledReason: customerEditBlockReason(customer),
     },
     { key: 'add-retailer', label: 'Add retailer', icon: Plus, onSelect: () => onAddRetailer(customer) },
     {
@@ -80,7 +75,7 @@ export default function CustomerRow({
   onEditRetailer,
   onDeleteRetailer,
 }) {
-  const name = retailerLabel(customer.customer_name);
+  const name = customerLabel(customer.customer_name);
 
   const customerActions = customerRowActions(customer, onEdit, onDelete, onAddRetailer);
 
@@ -99,7 +94,7 @@ export default function CustomerRow({
       details={
         <div className="grid gap-2">
           {customer.retailers.length > 0 ? (
-            <RetailerTable retailers={customer.retailers} inset={EXPANDED_ROW_INSET} actionsFor={retailerActions} />
+            <RetailerTable retailers={customer.retailers} inset={EXPANDED_ROW_INSET} customerName={customer.customer_name} actionsFor={retailerActions} />
           ) : (
             <p className="text-sm text-deep-violet-blue/70">{name} has no retailers yet.</p>
           )}

@@ -8,7 +8,7 @@ import TableSkeleton from '@/components/ui/TableSkeleton';
 import ToggleField from '@/components/ui/ToggleField';
 import { formatDohDays } from '@/app/utils/dohSettingsForm';
 import { formatDateTime } from '@/lib/formatDate';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
 const thClass = 'bg-cream px-2 py-1.5 text-left text-xs font-medium text-deep-violet-blue/60';
@@ -27,7 +27,8 @@ function editAction(row, editingId, onEdit) {
 
 /**
  * One row per customer: min / target / max DOH, when the thresholds were last
- * saved, the alert toggle, and an actions menu. Rows on the global default are badged.
+ * saved, the alert toggle, and an actions menu. Whether a customer is on the
+ * global default is shown in the edit dialog's badge, not here.
  * Reset to default lives in the edit form (DohThresholdForm). Holds no state
  * of its own; the parent (DohSettingsView) owns editing and pending requests.
  *
@@ -57,14 +58,11 @@ export default function DohSettingsTable({
       {rows.map((row) => {
         const alertPending = row.customer_id in pendingAlerts;
         const alertOn = alertPending ? pendingAlerts[row.customer_id] : row.doh_alert_enabled;
-        const customer = retailerLabel(row.customer_name);
+        const customer = customerLabel(row.customer_name);
         return (
           <MobileRecordCard
             key={row.customer_id}
             title={customer}
-            badge={row.is_global_default && (
-              <span className="rounded-full border border-violet bg-lavander px-2 py-0.5 text-[10px] text-deep-violet-blue">Global Default</span>
-            )}
             actions={<RowActions label={`Actions for DOH settings for ${customer}`} actions={editAction(row, editingId, onEdit)} />}
             fields={[
               { label: 'Min DOH', value: formatDohDays(row.min_doh) },
@@ -108,21 +106,14 @@ export default function DohSettingsTable({
                 key={row.customer_id}
                 className={cn('border-t border-lavander', editingId === row.customer_id && 'bg-cream')}
               >
-                <td className={tdClass}>
-                  <span className="font-medium">{retailerLabel(row.customer_name)}</span>
-                  {row.is_global_default && (
-                    <span className="ml-2 whitespace-nowrap rounded-full border border-violet bg-lavander px-2 py-0.5 text-[11px]">
-                      Global Default
-                    </span>
-                  )}
-                </td>
+                <td className={cn(tdClass, 'font-medium')}>{customerLabel(row.customer_name)}</td>
                 <td className={cn(tdClass, numClass)}>{formatDohDays(row.min_doh)}</td>
                 <td className={cn(tdClass, numClass)}>{formatDohDays(row.target_doh)}</td>
                 <td className={cn(tdClass, numClass)}>{formatDohDays(row.max_doh)}</td>
                 <td className={cn(tdClass, 'whitespace-nowrap')}>{formatDateTime(row.thresholds_updated_at)}</td>
                 <td className={tdClass}>
                   <ToggleField
-                    ariaLabel={`DOH alerts for ${retailerLabel(row.customer_name)}`}
+                    ariaLabel={`DOH alerts for ${customerLabel(row.customer_name)}`}
                     checked={alertOn}
                     disabled={alertPending}
                     onChange={(checked) => onToggleAlert(row, checked)}
@@ -131,7 +122,7 @@ export default function DohSettingsTable({
                 <td className={cn(tdClass, 'text-right')}>
                   <div className="flex justify-end">
                     <RowActions
-                      label={`Actions for DOH settings for ${retailerLabel(row.customer_name)}`}
+                      label={`Actions for DOH settings for ${customerLabel(row.customer_name)}`}
                       actions={editAction(row, editingId, onEdit)}
                     />
                   </div>

@@ -23,8 +23,9 @@ import { filterLabelClass, InventoryFilterCard } from './InventoryChrome';
  * @param {(skus: string[]) => void} props.onSkusChange
  * @param {string} props.startMonth 'YYYY-MM' or ''
  * @param {string} props.endMonth 'YYYY-MM' or ''
- * @param {string} [props.defaultStart] 'YYYY-MM' the From picker opens on; earlier months are faded
- * @param {string} [props.defaultEnd] 'YYYY-MM' the To picker opens on; later months are faded. Clear stays off while both match
+ * @param {string} [props.defaultStart] 'YYYY-MM' the From picker opens on. Clear stays off while this and defaultEnd match
+ * @param {string} [props.dataStart] 'YYYY-MM' the first month with data; earlier months are faded
+ * @param {string} [props.defaultEnd] 'YYYY-MM' the To picker opens on; later months are faded
  * @param {(value: string) => void} props.onStartMonthChange
  * @param {(value: string) => void} props.onEndMonthChange
  * @param {string} [props.status] '' or a doh_status value
@@ -44,6 +45,7 @@ export default function InventoryFilters({
   startMonth,
   endMonth,
   defaultStart = '',
+  dataStart = '',
   defaultEnd = '',
   onStartMonthChange,
   onEndMonthChange,
@@ -66,7 +68,7 @@ export default function InventoryFilters({
         label="From"
         value={startMonth}
         max={endMonth}
-        dataStart={defaultStart}
+        dataStart={dataStart}
         dataEnd={defaultEnd}
         onChange={onStartMonthChange}
       />
@@ -75,7 +77,7 @@ export default function InventoryFilters({
         label="To"
         value={endMonth}
         min={startMonth}
-        dataStart={defaultStart}
+        dataStart={dataStart}
         dataEnd={defaultEnd}
         onChange={onEndMonthChange}
       />
