@@ -21,7 +21,10 @@ import { monthCount, parseIso } from '@/app/utils/periodComparison';
  *   compareOptions: Array<object>,
  *   compareDisabled: boolean,
  *   onCompareChange: (value: string, customRange?: { start: string, end: string }) => void,
- * }} props
+ *   datesUpdating?: boolean,
+ * }} props `datesUpdating`: the data bounds are being read for a new
+ *   selection, so both pickers are locked rather than offering months from
+ *   the previous customers' data.
  */
 export default function PeriodControls({
   start,
@@ -34,6 +37,7 @@ export default function PeriodControls({
   compareOptions,
   compareDisabled = false,
   onCompareChange,
+  datesUpdating = false,
 }) {
   // latestDataEnd is the real last day loaded.
   const dataThrough = latestDataEnd
@@ -51,6 +55,7 @@ export default function PeriodControls({
           latestDataEnd={latestDataEnd}
           earliestDataStart={earliestDataStart}
           onChange={onDateRangeChange}
+          disabled={datesUpdating}
         />
       </div>
       <div>
@@ -62,7 +67,11 @@ export default function PeriodControls({
           earliestDataStart={earliestDataStart}
           // A custom comparison runs as many months as the Period.
           periodLength={start && end ? monthCount(start, end) : 1}
-          disabled={compareDisabled}
+          disabled={compareDisabled || datesUpdating}
+          // Said only when it's the reason: several customers outrank a brief update.
+          disabledReason={
+            compareDisabled ? 'Compare to applies when one customer is selected' : 'Updating the months for these customers…'
+          }
           onChange={onCompareChange}
         />
       </div>
