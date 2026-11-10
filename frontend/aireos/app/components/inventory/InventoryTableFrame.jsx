@@ -22,7 +22,7 @@ export const inventoryTheadClass = 'sticky top-0 z-10 bg-cream';
 export const inventoryHeadRowClass = 'h-10 bg-cream [&>th]:shadow-[inset_0_-1px_0_var(--color-lavander)]';
 export const inventoryThClass = TABLE_HEADER_CLASS;
 export const inventoryTdClass = 'px-4 py-2.5 text-deep-violet-blue';
-export const inventoryRowClass = 'border-b border-lavander/80 bg-white hover:bg-cream/50';
+export const inventoryRowClass = 'border-b border-lavander/80';
 
 /**
  * Fixed column widths for an inventory table, as ui/TableGrid does: with

@@ -154,7 +154,6 @@ export default function ScenarioBuilder() {
   // The block open in the panel's editor (a draft, or a saved block opened
   // from the table with Edit); its months are banded on the chart.
   const [selectedId, setSelectedId] = useState(null);
-  const [newIds, setNewIds] = useState([]);
   const [togglingIds, setTogglingIds] = useState([]);
   const [actionError, setActionError] = useState(null);
   const expandedRows = useExpandedRows();
@@ -349,8 +348,7 @@ export default function ScenarioBuilder() {
 
   async function savePanelBlock(block) {
     await scenarioBlocks.saveBlock(block);
-    // Saved: it moves to the table, marked new, and the panel lets it go.
-    setNewIds((current) => [...current, block.id]);
+    // Saved: it moves to the table, and the panel lets it go.
     setSelectedId((current) => (current === block.id ? null : current));
   }
 
@@ -545,7 +543,6 @@ export default function ScenarioBuilder() {
         monthsByItem={monthsByItem}
         isLoading={scenarioBlocks.loading}
         editingId={selectedBlock?.saved ? selectedBlock.id : null}
-        newIds={newIds}
         togglingIds={togglingIds}
         isExpanded={expandedRows.isExpanded}
         onToggleRow={expandedRows.toggle}
