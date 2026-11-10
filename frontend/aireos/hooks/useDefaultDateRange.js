@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 
+import { getDefaultDateRange } from '@/app/services/salesApi';
+
 const EMPTY_RANGE = { start: '', end: '', periodType: null, earliestStart: '', latestWeekStart: '', error: null };
 
 /**
@@ -52,20 +54,13 @@ export default function useDefaultDateRange({
 
     async function fetchRange() {
       try {
-        const params = new URLSearchParams({ period });
-        if (customersKey) params.set('customers', customersKey);
-        else params.set('customer', customer);
-        if (mode) params.set('mode', mode);
-        const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/api/sales/default-date-range?${params.toString()}`,
-          { credentials: 'include' },
-        );
-        const data = await res.json();
+        const data = await getDefaultDateRange({
+          customer,
+          customers: customersKey ? customersKey.split(',') : [],
+          mode,
+          period,
+        });
         if (cancelled) return;
-        if (!res.ok) {
-          setRange({ key, ...EMPTY_RANGE, error: data?.detail || 'Failed to load the latest loaded period' });
-          return;
-        }
         setRange({
           key,
           start: data.start ?? '',
@@ -91,5 +86,6 @@ export default function useDefaultDateRange({
   // Pending for a new selection: the last bounds stay (see above), and an
   // earlier error only counts for the selection it was read for.
   const updating = Boolean(customer || customersKey) && range.key !== key;
-  return { ...range, error: updating ? null : range.error, updating };
+  const { key: _readFor, ...bounds } = range;
+  return { ...bounds, error: updating ? null : bounds.error, updating };
 }

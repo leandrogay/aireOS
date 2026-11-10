@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 
+import { getDashboardSummary } from '@/app/services/salesApi';
+
 /**
  * Fetches dashboard-summary, shared by RevenueTrendCard and
  * RevenueSummaryCards so they don't each fetch the same data independently.
@@ -53,17 +55,7 @@ export default function useDashboardSummary({
 
     async function fetchSummary() {
       try {
-        const params = new URLSearchParams({ granularity, customer });
-        if (sku) params.set('sku', sku);
-        if (store) params.set('store', store);
-        if (startDate) params.set('start_date', startDate);
-        if (endDate) params.set('end_date', endDate);
-        const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/api/sales/dashboard-summary?${params.toString()}`,
-          { credentials: 'include' },
-        );
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Failed to load dashboard summary');
+        const data = await getDashboardSummary({ customer, sku, store, startDate, endDate, granularity });
         if (!cancelled) setResult({ key: filterKey, version: dataVersion, summaryByMode: data, error: null });
       } catch (err) {
         // A failed background refresh keeps the figures it had for these

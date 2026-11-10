@@ -442,12 +442,12 @@ Migrate these only when you are already in the file for other work (CLAUDE.md §
 - **Fetch wrappers.** `promotionsApi.request` is the one wrapper. Still on their own: `forecastApi.js`
   (own `request()`), `mappingApi.js` (`request(baseUrl, …)`, left over from the deleted upload2 harness),
   raw `fetch` in `uploadApi.js` (`/check`, history), the hooks `useAssistant`, `useCustomerOptions`,
-  `useDashboardSummary`, `useDataFreshness`, `useDefaultDateRange`, and the components
+  `useDataFreshness`, and the components
   `dashboard/DashboardFilters`, `dashboard/SkuRanking`, `assistant/AssistantMessage`.
 - **Router logic.** `mappings.py` reads GCS (`storage.download_json`, `list_mapping_fingerprints`,
   `download_bytes`) to build review packets; that belongs in a service. Don't add a third router like it.
 - **Oversized components** (over ~300 lines): `ForecastChart` (828), `ui/DateRangePicker` (804),
-  `PromotionForm` (683), `ScenarioBuilder` (590), `SkuRanking` (542), `app/dashboard/page.js` (543),
+  `PromotionForm` (683), `ScenarioBuilder` (590), `SkuRanking` (542), `app/dashboard/page.js` (525),
   `AssistantMessage` (491), `MappingReviewPanel` (485), `app/promotions/page.js` (477), `SkuForm` (474);
   360-420: `FieldTable`, `UploadProvider`, `PromotionsSection`, `CustomerStep`, `StepSettings`,
   `AssistantWidget`, `Sidebar`; 300-345: `PromotionEditor`, `RevenueSummaryCards`, `SellInOutlookChart`,

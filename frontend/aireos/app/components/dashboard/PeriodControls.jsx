@@ -68,6 +68,10 @@ export default function PeriodControls({
           // A custom comparison runs as many months as the Period.
           periodLength={start && end ? monthCount(start, end) : 1}
           disabled={compareDisabled || datesUpdating}
+          // Said only when it's the reason: several customers outrank a brief update.
+          disabledReason={
+            compareDisabled ? 'Compare to applies when one customer is selected' : 'Updating the months for these customers…'
+          }
           onChange={onCompareChange}
         />
       </div>

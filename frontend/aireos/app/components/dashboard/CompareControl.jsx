@@ -27,10 +27,20 @@ const actionButtonClass =
  *   earliestDataStart: string,
  *   periodLength: number,
  *   disabled: boolean,
+ *   disabledReason?: string,
  *   onChange: (value: string, customRange?: { start: string, end: string }) => void,
  * }} props
  */
-export default function CompareControl({ value, options, latestDataEnd, earliestDataStart, periodLength, disabled = false, onChange }) {
+export default function CompareControl({
+  value,
+  options,
+  latestDataEnd,
+  earliestDataStart,
+  periodLength,
+  disabled = false,
+  disabledReason = 'Compare to applies when one customer is selected',
+  onChange,
+}) {
   const [open, setOpen] = useState(false);
   const [pickingCustom, setPickingCustom] = useState(false);
   const [draft, setDraft] = useState({ start: '', end: '' });
@@ -68,7 +78,7 @@ export default function CompareControl({ value, options, latestDataEnd, earliest
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger
         disabled={disabled}
-        title={disabled ? 'Compare to applies when one customer is selected' : undefined}
+        title={disabled ? disabledReason : undefined}
         className="flex items-center gap-1.5 rounded-md border border-violet bg-white px-2.5 py-1 text-xs text-deep-violet-blue hover:bg-lavander disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white"
       >
         <GitCompareArrows className="size-3.5" />

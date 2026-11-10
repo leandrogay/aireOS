@@ -96,8 +96,15 @@ export default function MonthRangeCalendar({ draft, onDraftChange, latestDataEnd
         initialYear={initialYear}
         minYear={earliestMonth ? parseIso(earliestMonth).getFullYear() : null}
         // The last year a click can pick in: for a comparison, the year its
-        // range must start by, so the arrows never reach a fully disabled year.
-        maxYear={lastPickable && !nothingFits ? parseIso(lastPickable).getFullYear() : null}
+        // range must start by, so the arrows never reach a fully disabled year
+        // (when nothing fits, the latest data's year, so they don't wander on).
+        maxYear={
+          nothingFits
+            ? parseIso(latestMonth).getFullYear()
+            : lastPickable
+              ? parseIso(lastPickable).getFullYear()
+              : null
+        }
         onPick={pick}
         isSelected={(year, monthIndex) => {
           const month = monthStart(year, monthIndex);

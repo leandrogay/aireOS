@@ -81,3 +81,39 @@ export async function getCustomerTrends({ customers, granularity, sku, startDate
   params.set('end_date', endDate);
   return request(`/api/sales/customer-trends?${params.toString()}`);
 }
+
+/**
+ * GET /api/sales/dashboard-summary
+ *
+ * One customer's figures per week or month, split by channel and store
+ * format — see backend get_dashboard_summary. Read by useDashboardSummary.
+ *
+ * @param {{ customer: string, sku?: string, store?: string, startDate: string, endDate: string, granularity?: 'week' | 'month' }} filters
+ * @returns {Promise<Record<'offline' | 'online', { storeFormats: Array<object>, periodTotal: Array<object>, periodByFormat: Array<object> }>>}
+ */
+export async function getDashboardSummary({ customer, sku, store, startDate, endDate, granularity = 'week' }) {
+  const params = new URLSearchParams({ granularity, customer });
+  if (sku) params.set('sku', sku);
+  if (store) params.set('store', store);
+  params.set('start_date', startDate);
+  params.set('end_date', endDate);
+  return request(`/api/sales/dashboard-summary?${params.toString()}`);
+}
+
+/**
+ * GET /api/sales/default-date-range
+ *
+ * The latest loaded period (and the earliest, and the latest genuine week)
+ * for one customer, or across `customers` (the ticked ones) when given —
+ * see backend get_default_date_range. Read by useDefaultDateRange.
+ *
+ * @param {{ customer?: string, customers?: string[], mode?: string, period?: string }} filters
+ * @returns {Promise<{ start: string | null, end: string | null, period_type: string | null, earliest_start: string | null, latest_week_start: string | null }>}
+ */
+export async function getDefaultDateRange({ customer = '', customers = [], mode, period = 'month' }) {
+  const params = new URLSearchParams({ period });
+  if (customers.length > 0) params.set('customers', customers.join(','));
+  else params.set('customer', customer);
+  if (mode) params.set('mode', mode);
+  return request(`/api/sales/default-date-range?${params.toString()}`);
+}

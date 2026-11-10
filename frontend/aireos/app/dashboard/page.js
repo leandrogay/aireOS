@@ -24,13 +24,12 @@ import useCustomerTrends from "@/hooks/useCustomerTrends";
 import {
   DEFAULT_COMPARE,
   alignComparisonBuckets,
-  comparisonSetup,
   sumPeriodTotals,
 } from "@/app/utils/periodComparison";
 import { DEFAULT_PRESET_ID, buildDateRangePresets } from "@/app/utils/dateRangePresets";
 import { rangeHasWeeklyMonths, weeklyGapMessage } from "@/app/utils/weeklyGaps";
 import { customerColorOrder, relabelFormatRows } from "@/app/utils/storeFormats";
-import { isWithinData } from "@/app/utils/dataBounds";
+import { comparisonInUse, periodInUse } from "@/app/utils/dataBounds";
 
 const NO_CUSTOMERS = [];
 
@@ -141,12 +140,8 @@ export default function DashboardPage() {
   // GENUINE weekly row: anchoring them on a monthly total's start (Aug 1, a
   // Saturday) put every week on the wrong weekday, so a Jul 30 – Aug 5 week
   // was labelled "Aug 1 – Aug 7" and paired with the wrong weeks.
-  // The latest loaded period is read across every ticked customer, so one
-  // whose data stops sooner (FairPrice at August) doesn't hold the default
-  // month and the month picker back while others have September or October.
-  // Sent as ticked, without waiting for the freshness map: a customer with no
-  // retailer on this channel (NHG online) just matches no rows, and the page
-  // already switches to Offline when no ticked customer sells online.
+  // Read across every ticked customer (see useDefaultDateRange); one with no
+  // retailer on this channel just matches no rows.
   const {
     start: latestPeriodStart,
     end: latestDataEnd,
@@ -159,18 +154,12 @@ export default function DashboardPage() {
   const presets = buildDateRangePresets(latestPeriodStart);
   const defaultRange = presets.find((preset) => preset.id === DEFAULT_PRESET_ID) ?? { start: '', end: '' };
 
-  // A picked Period only applies while it is inside the ticked customers'
-  // data: switching from Prime (data to Oct) to FairPrice (to Aug) would
-  // otherwise leave the page on an empty October the picker no longer
-  // offers. Outside it, the page falls back to the default (Latest month);
-  // the pick is kept, so ticking Prime again brings it back. While the bounds
-  // are updating for a new selection they are the previous customers', so
-  // the pick stands until the new bounds say otherwise.
-  const hasExplicitDateFilter =
-    Boolean(startDate && endDate) &&
-    (dateRangeUpdating || isWithinData({ start: startDate, end: endDate }, earliestDataStart, latestDataEnd));
-  const effectiveStartDate = hasExplicitDateFilter ? startDate : defaultRange.start;
-  const effectiveEndDate = hasExplicitDateFilter ? endDate : defaultRange.end;
+  // A picked Period / Compare to applies only inside the ticked customers' data (dataBounds.js).
+  const dataBounds = { earliestDataStart, latestDataEnd, updating: dateRangeUpdating };
+  const period = periodInUse({ start: startDate, end: endDate }, defaultRange, dataBounds);
+  const hasExplicitDateFilter = period.picked;
+  const effectiveStartDate = period.start;
+  const effectiveEndDate = period.end;
 
   // What the page can show yet. 'loading' until the customer list and the
   // latest loaded period arrive: every section draws its placeholder then,
@@ -199,26 +188,19 @@ export default function DashboardPage() {
     latestDataEnd,
     custom: customCompare,
   };
-  // Likewise a Compare to whose period is outside the data (Same period last
-  // year after switching to a customer whose data starts this year) shows
-  // as no comparison rather than comparing against nothing.
-  const chosenComparison = comparisonSetup(compareTo, rangeInputs);
-  const comparisonFits =
-    !chosenComparison.baseline ||
-    dateRangeUpdating ||
-    isWithinData(chosenComparison.baseline, earliestDataStart, latestDataEnd);
-  const effectiveCompareTo = comparisonFits ? compareTo : DEFAULT_COMPARE;
-  const { options: compareOptions, baseline, periodNames } = comparisonFits
-    ? chosenComparison
-    : comparisonSetup(DEFAULT_COMPARE, rangeInputs);
+  const {
+    compareTo: effectiveCompareTo,
+    options: compareOptions,
+    baseline,
+    periodNames,
+  } = comparisonInUse(compareTo, rangeInputs, dataBounds);
   const compareShort = baseline ? `vs ${periodNames.baseline}` : '';
 
   // Some months are loaded only as monthly totals (e.g. August 2026), and a
   // weekly summary leaves them out. Checked for both sides of a comparison
   // before picking the granularity, so either side being month-only puts
   // both on month bars instead of leaving one side empty.
-  // Every ticked customer, like the date range above: the latest month can
-  // come from any of them, so By week is judged across all of them too.
+  // Across every ticked customer, like the date range above.
   const currentMonthlyOnly = useMonthlyOnly({
     dataVersion,
     customer,
