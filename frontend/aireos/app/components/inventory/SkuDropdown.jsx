@@ -5,7 +5,7 @@ import MultiSelectDropdown from '@/components/ui/MultiSelectDropdown';
 import { filterLabelClass } from './InventoryChrome';
 
 /**
- * SKU multi-select shared by the Overview, By customer and Sell-in plan tabs:
+ * SKU multi-select shared by the Sell-in plan, Stock and By customer tabs:
  * ui/MultiSelectDropdown in the compact filter look. Nothing ticked means
  * all SKUs, and ticking every SKU by hand collapses back to that.
  *

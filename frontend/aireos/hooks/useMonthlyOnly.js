@@ -13,11 +13,14 @@ import { getMonthlyOnly } from '@/app/services/salesApi';
  * Months are kept with the filters they were fetched for and only returned
  * while those filters still apply, so a new range reports `loading` instead
  * of the previous range's months. dataVersion refetches without that
- * loading state (the filters didn't change).
+ * loading state (the filters didn't change). With several customers ticked,
+ * `customers` reads across all of them (a month counts when any of them has
+ * only a monthly total for it).
  */
 export default function useMonthlyOnly({
   dataVersion = 0,
   customer = '',
+  customers = [],
   store = '',
   sku = '',
   startDate = '',
@@ -25,8 +28,10 @@ export default function useMonthlyOnly({
   enabled = true,
 }) {
   const [result, setResult] = useState({ key: '', flags: null, error: null });
-  const active = enabled && Boolean(customer && startDate && endDate);
-  const key = JSON.stringify({ customer, store, sku, startDate, endDate });
+  // One string, so a new array with the same names doesn't refetch.
+  const customersKey = customers.join(',');
+  const active = enabled && Boolean((customer || customersKey) && startDate && endDate);
+  const key = JSON.stringify({ customer, customersKey, store, sku, startDate, endDate });
 
   useEffect(() => {
     if (!active) return undefined;
@@ -35,7 +40,14 @@ export default function useMonthlyOnly({
 
     async function fetchFlags() {
       try {
-        const flags = await getMonthlyOnly({ customer, store, sku, startDate, endDate });
+        const flags = await getMonthlyOnly({
+          customer,
+          customers: customersKey ? customersKey.split(',') : [],
+          store,
+          sku,
+          startDate,
+          endDate,
+        });
         if (!cancelled) setResult({ key, flags, error: null });
       } catch (err) {
         if (!cancelled) setResult({ key, flags: null, error: err.message });
@@ -46,7 +58,7 @@ export default function useMonthlyOnly({
     return () => {
       cancelled = true;
     };
-  }, [active, key, dataVersion, customer, store, sku, startDate, endDate]);
+  }, [active, key, dataVersion, customer, customersKey, store, sku, startDate, endDate]);
 
   const current = active && result.key === key;
   return {

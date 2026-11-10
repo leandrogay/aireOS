@@ -18,8 +18,8 @@ const yearButtonClass =
  * dark blue (a single pick, or a range's first and last month),
  * `isInRange` months between them are lavender, `isMuted` months are faded
  * (e.g. no data loaded yet) but still pickable, and `isDisabled` months
- * can't be picked at all (e.g. before the first loaded data). `minYear`
- * stops the year switcher going back past it.
+ * can't be picked at all (e.g. outside the loaded data). `minYear` and
+ * `maxYear` stop the year switcher going back or forward past them.
  *
  * @param {{
  *   initialYear: number,
@@ -29,6 +29,7 @@ const yearButtonClass =
  *   isMuted?: (year: number, monthIndex: number) => boolean,
  *   isDisabled?: (year: number, monthIndex: number) => boolean,
  *   minYear?: number | null,
+ *   maxYear?: number | null,
  * }} props
  */
 export default function MonthGrid({
@@ -39,8 +40,12 @@ export default function MonthGrid({
   isMuted = () => false,
   isDisabled = () => false,
   minYear = null,
+  maxYear = null,
 }) {
-  const [viewYear, setViewYear] = useState(minYear ? Math.max(initialYear, minYear) : initialYear);
+  const [viewYear, setViewYear] = useState(() => {
+    const atLeast = minYear ? Math.max(initialYear, minYear) : initialYear;
+    return maxYear ? Math.min(atLeast, maxYear) : atLeast;
+  });
 
   return (
     <div>
@@ -60,6 +65,7 @@ export default function MonthGrid({
         <button
           type="button"
           onClick={() => setViewYear((year) => year + 1)}
+          disabled={maxYear !== null && viewYear >= maxYear}
           className={yearButtonClass}
           aria-label="Next year"
         >

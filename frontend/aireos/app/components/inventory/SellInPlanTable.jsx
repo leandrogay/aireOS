@@ -4,6 +4,8 @@ import { formatDoh, formatMonth, formatUnits } from '@/app/utils/inventoryForm';
 import { cn } from '@/lib/utils';
 
 import InventoryTableFrame, {
+  headingLabel,
+  InventoryColGroup,
   inventoryHeadRowClass,
   inventoryTableClass,
   inventoryTheadClass,
@@ -24,24 +26,46 @@ const numClass = 'text-right tabular-nums';
  * marked Initial is the Initial Yearly Forecast, used where the current
  * forecast does not reach the month yet.
  *
- * @param {{ rows: object[], loading?: boolean }} props `loading`: first load in
- *   flight, so placeholder rows
+ * @param {{ rows: object[], loading?: boolean, customerId?: number | null }} props
+ *   `loading`: first load in flight, so placeholder rows. `customerId`: the
+ *   plan's customer, which its rows don't carry, so another customer's plan
+ *   starts at page 1
  */
-export default function SellInDetailTable({ rows, loading = false }) {
+export default function SellInDetailTable({ rows, loading = false, customerId = null }) {
   return (
-    <InventoryTableFrame title="Sell-in plan by SKU and month" rows={rows} loading={loading}>
+    <InventoryTableFrame
+      title="Sell-in plan by SKU and month"
+      rows={rows}
+      loading={loading}
+      listId={customerId ?? ''}
+    >
       {(visible, monthHeader) => (
-        <table className={cn(inventoryTableClass, 'min-w-[68rem]')}>
+        // Fixed widths so the columns don't move between pages; Product takes
+        // what's left of the min-width.
+        <table className={cn(inventoryTableClass, 'table-fixed', 'min-w-[68rem]')}>
+          <InventoryColGroup
+            widths={[
+              '7rem', // Month
+              null, // Product
+              '6.5rem', // Opening inventory
+              '7.5rem', // Forecast sell-out (room for the Initial tag)
+              '6.5rem', // Temporary sell-in
+              '6rem', // Stock needed
+              '7rem', // Recommended sell-in
+              '6rem', // DOH after sell-in
+              '6.5rem', // Projected ending
+            ]}
+          />
           <thead className={inventoryTheadClass}>
             <tr className={inventoryHeadRowClass}>
               {monthHeader}
               <th className={inventoryThClass}>Product</th>
               <th className={cn(inventoryThClass, numClass)}>Opening inventory</th>
-              <th className={cn(inventoryThClass, numClass)}>Forecast sell-out</th>
-              <th className={cn(inventoryThClass, numClass)}>Temporary sell-in</th>
+              <th className={cn(inventoryThClass, numClass)}>{headingLabel('Forecast sell-out')}</th>
+              <th className={cn(inventoryThClass, numClass)}>{headingLabel('Temporary sell-in')}</th>
               <th className={cn(inventoryThClass, numClass)}>Stock needed</th>
-              <th className={cn(inventoryThClass, numClass)}>Recommended sell-in</th>
-              <th className={cn(inventoryThClass, numClass)}>DOH after sell-in</th>
+              <th className={cn(inventoryThClass, numClass)}>{headingLabel('Recommended sell-in')}</th>
+              <th className={cn(inventoryThClass, numClass)}>{headingLabel('DOH after sell-in')}</th>
               <th className={cn(inventoryThClass, numClass)}>Projected ending</th>
             </tr>
           </thead>
