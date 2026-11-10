@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { ArrowDown, ArrowUp, ChevronDown } from 'lucide-react';
 import TableSkeleton from '@/components/ui/TableSkeleton';
 import TableCard from '@/components/ui/TableCard';
+import TableCardHeader from '@/components/ui/TableCardHeader';
 import { TABLE_HEADER_ACTION_CLASS } from '@/components/ui/SortHeader';
 import { cn } from '@/lib/utils';
 import { changePct, formatChangePct } from '@/app/utils/periodComparison';
@@ -333,21 +334,19 @@ export default function SkuRanking({
     <TableCard
       label={`${showCustomers ? 'Customer' : 'Product'} sales ranking`}
       header={(
-        <div>
-          <h3 className="font-serif text-base text-deep-violet-blue">
+        <TableCardHeader
+          title={<>
             {showCustomers ? 'Customer Sales' : 'SKU Performance Ranking'}{' '}
             <span className="font-sans text-sm font-normal text-deep-violet-blue/50">
               ({channelLabel})
             </span>
-          </h3>
-          {comparingCustomers && (
-            <p className="text-[11px] text-deep-violet-blue/70">
-              {showCustomers
-                ? "Showing each customer's total for the selected period."
-                : 'Showing each product, summed across the selected customers.'}
-            </p>
-          )}
-        </div>
+          </>}
+          detail={comparingCustomers
+            ? (showCustomers
+              ? "Showing each customer's total for the selected period."
+              : 'Showing each product, summed across the selected customers.')
+            : null}
+        />
       )}
     >
       {tableError && <p className="px-4 pb-2 text-sm text-red-600">{tableError}</p>}

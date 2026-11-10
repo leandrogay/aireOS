@@ -116,25 +116,24 @@ function PromotionMechanicField({ form, onChange, error }) {
         Mechanic
         <RequiredMark />
       </legend>
-      <select
+      <SelectDropdown
+        ariaLabel="Promotion mechanic"
         value={form.mechanicType}
-        onChange={(event) => onChange({
-          mechanicType: event.target.value,
+        onChange={(mechanicType) => onChange({
+          mechanicType,
           buyQuantity: '',
           getQuantity: '',
           discountPercent: '',
           legacyMechanic: '',
         })}
-        className={cn(inputClass, error && invalidInputClass)}
-        aria-invalid={Boolean(error)}
-        aria-label="Promotion mechanic"
-        required={!form.legacyMechanic}
-      >
-        <option value="">Choose a mechanic</option>
-        <option value="buy_get_free">Buy [items], get [free items]</option>
-        <option value="buy_get_percent">Buy [items], get [discount %] off one item</option>
-        <option value="percent_off">Get [discount %] off every item</option>
-      </select>
+        options={[
+          { value: 'buy_get_free', label: 'Buy [items], get [free items]' },
+          { value: 'buy_get_percent', label: 'Buy [items], get [discount %] off one item' },
+          { value: 'percent_off', label: 'Get [discount %] off every item' },
+        ]}
+        placeholder="Choose a mechanic"
+        invalid={Boolean(error)}
+      />
       {!form.legacyMechanic && (
         <p className={hintClass}>Choose an offer, then enter the bracketed values below.</p>
       )}

@@ -80,14 +80,14 @@ function Amount({ value, emphasis = false, className }) {
  */
 export default function ForecastYearTotals({ years, loading = false, horizonVolume = null }) {
   if (loading) {
-    return <div className="h-12 animate-pulse rounded-md border border-lavander bg-white" />;
+    return <div className="mx-4 mb-3 h-12 animate-pulse rounded-md border border-lavander bg-white" />;
   }
 
   if (!years.length) return null;
 
   return (
-    <section aria-label="Full-year totals" className="min-w-0 space-y-1.5">
-      <div className="grid gap-2 sm:hidden">
+    <div className="min-w-0">
+      <div className="grid gap-2 border-t border-lavander p-3 sm:hidden">
         {years.map((year) => (
           <article key={year.year} className="rounded-lg border border-lavander bg-white p-3">
             <div className="mb-2 flex flex-wrap items-baseline gap-2 border-b border-lavander/70 pb-2">
@@ -110,7 +110,7 @@ export default function ForecastYearTotals({ years, loading = false, horizonVolu
           <p className="font-medium tabular-nums">{formatVolume(horizonVolume)}</p>
         </div>
       </div>
-      <div className="hidden min-w-0 overflow-x-auto rounded-md border border-lavander sm:block">
+      <div className="hidden min-w-0 overflow-x-auto border-t border-lavander sm:block">
         <table className="w-full border-separate border-spacing-0 text-left text-xs text-deep-violet-blue">
           <ColumnWidths />
           <thead>
@@ -162,7 +162,7 @@ export default function ForecastYearTotals({ years, loading = false, horizonVolu
           </tbody>
         </table>
       </div>
-      <div className="hidden min-w-0 overflow-x-auto rounded-md bg-[#F7F4F1] sm:block">
+      <div className="hidden min-w-0 overflow-x-auto border-t border-lavander bg-[#F7F4F1] sm:block">
         <table className="w-full border-separate border-spacing-0 text-left text-xs text-deep-violet-blue">
           <ColumnWidths />
           <tbody>
@@ -175,6 +175,6 @@ export default function ForecastYearTotals({ years, loading = false, horizonVolu
           </tbody>
         </table>
       </div>
-    </section>
+    </div>
   );
 }
