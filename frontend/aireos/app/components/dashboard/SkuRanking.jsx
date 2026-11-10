@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowDown, ArrowUp, ChevronDown } from 'lucide-react';
 import TableSkeleton from '@/components/ui/TableSkeleton';
+import TableCard from '@/components/ui/TableCard';
 import { TABLE_HEADER_ACTION_CLASS } from '@/components/ui/SortHeader';
 import { cn } from '@/lib/utils';
 import { changePct, formatChangePct } from '@/app/utils/periodComparison';
@@ -329,26 +330,29 @@ export default function SkuRanking({
   const mobileRows = showCustomers ? customersRanked : skus;
 
   return (
-    <section className="min-w-0">
-      <div className="mb-2">
-        <h3 className="font-serif text-base text-deep-violet-blue">
-          {showCustomers ? 'Customer Sales' : 'SKU Performance Ranking'}{' '}
-          <span className="font-sans text-sm font-normal text-deep-violet-blue/50">
-            ({channelLabel})
-          </span>
-        </h3>
-        {comparingCustomers && (
-          <p className="text-[11px] text-deep-violet-blue/70">
-            {showCustomers
-              ? "Showing each customer's total for the selected period."
-              : 'Showing each product, summed across the selected customers.'}
-          </p>
-        )}
-      </div>
+    <TableCard
+      label={`${showCustomers ? 'Customer' : 'Product'} sales ranking`}
+      header={(
+        <div>
+          <h3 className="font-serif text-base text-deep-violet-blue">
+            {showCustomers ? 'Customer Sales' : 'SKU Performance Ranking'}{' '}
+            <span className="font-sans text-sm font-normal text-deep-violet-blue/50">
+              ({channelLabel})
+            </span>
+          </h3>
+          {comparingCustomers && (
+            <p className="text-[11px] text-deep-violet-blue/70">
+              {showCustomers
+                ? "Showing each customer's total for the selected period."
+                : 'Showing each product, summed across the selected customers.'}
+            </p>
+          )}
+        </div>
+      )}
+    >
+      {tableError && <p className="px-4 pb-2 text-sm text-red-600">{tableError}</p>}
 
-      {tableError && <p className="mb-2 text-sm text-red-600">{tableError}</p>}
-
-      <div className="mb-2 grid grid-cols-2 gap-2 sm:hidden">
+      <div className="grid grid-cols-2 gap-2 px-4 pb-3 sm:hidden">
         {comparingCustomers && (
           <div className="min-w-0">
             <p className="mb-1 text-[11px] font-medium text-deep-violet-blue/65">Show</p>
@@ -375,7 +379,7 @@ export default function SkuRanking({
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-lavander sm:hidden" aria-label={`${showCustomers ? 'Customer' : 'Product'} sales ranking`}>
+      <div className="overflow-hidden border-t border-lavander sm:hidden">
         {tableLoading ? (
           <p className="p-4 text-sm text-deep-violet-blue/60">Loading sales ranking...</p>
         ) : !tableError && mobileRows.length === 0 ? (
@@ -401,7 +405,7 @@ export default function SkuRanking({
         ))}
       </div>
 
-      <div className="hidden w-full overflow-x-auto rounded-md border border-lavander sm:block">
+      <div className="hidden w-full overflow-x-auto border-t border-lavander sm:block">
           <table className="aire-table-rows w-full table-fixed text-left text-xs text-deep-violet-blue" aria-busy={tableLoading}>
             <colgroup>
               <col className="w-[8%]" />
@@ -499,7 +503,7 @@ export default function SkuRanking({
             </tbody>
           </table>
       </div>
-    </section>
+    </TableCard>
   );
 }
 
