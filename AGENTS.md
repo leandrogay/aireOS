@@ -130,7 +130,7 @@ aireOS/
     │   ├── forecast/page.js       Sell-out forecast chart/table, default view = current year only
     │   ├── customers/page.js      Customers: customers + their retailers, add/rename/delete, link unlinked retailers (components/customers)
     │   ├── doh/page.js            DOH Settings: per-customer thresholds, alert toggle, edit, reset to global default (components/settings)
-    │   ├── inventory/page.js      Inventory: overview, by-customer DOH, at-risk list, sell-in plan, enter/edit data (components/inventory)
+    │   ├── inventory/page.js      Inventory tabs: Sell-in plan (default), Stock, By customer (DOH), At risk, Input data (components/inventory)
     │   ├── components/
     │   │   ├── layout/            AppShell (sidebar + content), PageLayout (title + column; on navigation its heading and cards
     │   │   │                      spring in one by one via PageTransition → lib/cardCascade.js, timing and the card selector in

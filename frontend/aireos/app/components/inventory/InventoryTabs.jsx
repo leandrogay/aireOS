@@ -25,8 +25,9 @@ const TABS = [
 ];
 
 /**
- * The inventory page: overall view for all customers, one customer with DOH,
- * the at-risk list, the sell-in plan, and the create/edit form. A view tab is
+ * The inventory page, in tab order: the sell-in plan (the default), stock for
+ * all customers, one customer with DOH, the at-risk list, and the input data
+ * form. A view tab is
  * mounted the first time it is opened and then kept (hidden while inactive), so
  * switching back shows its data and filters straight away instead of refetching;
  * `refreshKey` (bumped after any write) makes every mounted view refetch. The
