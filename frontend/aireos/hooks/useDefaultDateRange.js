@@ -23,11 +23,14 @@ const EMPTY_RANGE = { start: '', end: '', periodType: null, earliestStart: '', l
  * `customers` (the ticked ones) reads across all of them instead of
  * `customer`: the latest period any of them has, the earliest any has.
  *
- * Bounds are kept with the customers / channel they were read for and only
- * returned while those still apply, so a new selection reads as blank
- * (loading) rather than the previous customers' months. A failed read
- * leaves them blank with `error` set, so the page can say so instead of
- * loading for ever. A dataVersion refetch keeps the current bounds.
+ * While a new selection (customers / channel) is being read, the last bounds
+ * stay, with `updating` true: the page keeps its charts and dates on screen
+ * instead of flashing placeholders on every tick, but must not *decide*
+ * anything from them (enable months, drop a saved Period) until `updating`
+ * is false, since they belong to the previous selection. A failed read
+ * blanks them with `error` set, so the page shows its failed card instead of
+ * loading for ever. A dataVersion refetch keeps the bounds and isn't
+ * `updating` (same selection).
  */
 export default function useDefaultDateRange({
   customer = '',
@@ -85,5 +88,8 @@ export default function useDefaultDateRange({
     };
   }, [key, customer, customersKey, mode, dataVersion, period]);
 
-  return range.key === key ? range : EMPTY_RANGE;
+  // Pending for a new selection: the last bounds stay (see above), and an
+  // earlier error only counts for the selection it was read for.
+  const updating = Boolean(customer || customersKey) && range.key !== key;
+  return { ...range, error: updating ? null : range.error, updating };
 }

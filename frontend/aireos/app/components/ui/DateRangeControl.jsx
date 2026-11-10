@@ -34,9 +34,10 @@ const sectionLabelClass = 'text-[11px] font-medium uppercase tracking-wide text-
  *   latestDataEnd: string,
  *   earliestDataStart: string,
  *   onChange: (start: string, end: string) => void,
- * }} props
+ *   disabled?: boolean,
+ * }} props `disabled` locks the control, e.g. while the data bounds update
  */
-export default function DateRangeControl({ start, end, presets, latestDataEnd, earliestDataStart, onChange }) {
+export default function DateRangeControl({ start, end, presets, latestDataEnd, earliestDataStart, onChange, disabled = false }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState({ start, end });
 
@@ -68,7 +69,7 @@ export default function DateRangeControl({ start, end, presets, latestDataEnd, e
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger
-        disabled={!start}
+        disabled={!start || disabled}
         className="flex items-center gap-1.5 rounded-md border border-violet bg-white px-2.5 py-1 text-xs text-deep-violet-blue hover:bg-lavander disabled:opacity-50"
       >
         <CalendarDays className="size-3.5" />

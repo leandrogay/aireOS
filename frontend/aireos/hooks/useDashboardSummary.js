@@ -18,7 +18,10 @@ import { useEffect, useRef, useState } from 'react';
  * `enabled` (default true) lets a caller skip fetching entirely — used by
  * the chart's side-by-side comparison overlay, which only needs a second
  * call (scoped to the comparison's "previous" period) while a comparison is
- * actually active, not an all-time fetch the rest of the time.
+ * actually active, not an all-time fetch the rest of the time. It also waits
+ * for both dates: without them the request would pull the customer's whole
+ * history, only to be fetched again once the range arrives (the same rule
+ * as useCustomerTotals / useCustomerTrends).
  */
 export default function useDashboardSummary({
   dataVersion = 0,
@@ -36,9 +39,15 @@ export default function useDashboardSummary({
   const [error, setError] = useState(null);
   const filterKey = JSON.stringify({ sku, customer, store, startDate, endDate, granularity });
   const filterKeyRef = useRef(filterKey);
+  // The filters + dataVersion of the last fetch that succeeded. The page
+  // pauses this hook (`enabled` false) while its By week check reloads, which
+  // happens on every customer tick; resuming with the same filters and data
+  // must not fetch the same summary again.
+  const fetchedRef = useRef('');
 
   useEffect(() => {
-    if (!enabled || !customer) return undefined;
+    if (!enabled || !customer || !startDate || !endDate) return undefined;
+    if (fetchedRef.current === `${filterKey}|${dataVersion}`) return undefined;
 
     let cancelled = false;
 
@@ -68,6 +77,7 @@ export default function useDashboardSummary({
 
         setSummaryByMode(data);
         setError(null);
+        fetchedRef.current = `${filterKey}|${dataVersion}`;
       } catch (err) {
         if (!cancelled) setError(err.message);
       } finally {

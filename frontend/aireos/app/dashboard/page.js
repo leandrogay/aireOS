@@ -153,6 +153,7 @@ export default function DashboardPage() {
     earliestStart: earliestDataStart,
     latestWeekStart: latestGenuineWeekStart,
     error: dateRangeError,
+    updating: dateRangeUpdating,
   } = useDefaultDateRange({ customer, customers, mode, dataVersion, period: 'week' });
   const latestWeekStart = latestGenuineWeekStart || latestPeriodStart;
   const presets = buildDateRangePresets(latestPeriodStart);
@@ -162,9 +163,12 @@ export default function DashboardPage() {
   // data: switching from Prime (data to Oct) to FairPrice (to Aug) would
   // otherwise leave the page on an empty October the picker no longer
   // offers. Outside it, the page falls back to the default (Latest month);
-  // the pick is kept, so ticking Prime again brings it back.
+  // the pick is kept, so ticking Prime again brings it back. While the bounds
+  // are updating for a new selection they are the previous customers', so
+  // the pick stands until the new bounds say otherwise.
   const hasExplicitDateFilter =
-    Boolean(startDate && endDate) && isWithinData({ start: startDate, end: endDate }, earliestDataStart, latestDataEnd);
+    Boolean(startDate && endDate) &&
+    (dateRangeUpdating || isWithinData({ start: startDate, end: endDate }, earliestDataStart, latestDataEnd));
   const effectiveStartDate = hasExplicitDateFilter ? startDate : defaultRange.start;
   const effectiveEndDate = hasExplicitDateFilter ? endDate : defaultRange.end;
 
@@ -200,7 +204,9 @@ export default function DashboardPage() {
   // as no comparison rather than comparing against nothing.
   const chosenComparison = comparisonSetup(compareTo, rangeInputs);
   const comparisonFits =
-    !chosenComparison.baseline || isWithinData(chosenComparison.baseline, earliestDataStart, latestDataEnd);
+    !chosenComparison.baseline ||
+    dateRangeUpdating ||
+    isWithinData(chosenComparison.baseline, earliestDataStart, latestDataEnd);
   const effectiveCompareTo = comparisonFits ? compareTo : DEFAULT_COMPARE;
   const { options: compareOptions, baseline, periodNames } = comparisonFits
     ? chosenComparison
@@ -437,6 +443,7 @@ export default function DashboardPage() {
                   compareOptions={compareOptions}
                   compareDisabled={comparingCustomers}
                   onCompareChange={handleCompareChange}
+                  datesUpdating={dateRangeUpdating}
                 />
               }
             />
