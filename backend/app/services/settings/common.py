@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime, timezone
 from functools import lru_cache
 
 from sqlalchemy import text
@@ -51,6 +51,34 @@ def read_connection() -> Connection:
 def iso(value: datetime | None) -> str | None:
     # TIMESTAMPTZ comes back timezone-aware, so the offset is kept.
     return value.isoformat() if value is not None else None
+
+
+def this_month() -> date:
+    # The UTC month (AGENTS.md: "today" is the UTC day), as its first day.
+    return datetime.now(timezone.utc).date().replace(day=1)
+
+
+def in_effect(rows: list[dict], target, month: date) -> dict[tuple, dict]:
+    """
+    The row in effect in `month` per target, for append-only settings tables
+    whose versions say the month they apply from (promo_anchor_settings,
+    migration 019): the latest effective_from on or before `month` (NULL =
+    from the start), then the newest save. Rows need effective_from,
+    updated_at and id.
+    """
+
+    latest: dict[tuple, dict] = {}
+    for row in rows:
+        starts = row["effective_from"] or date.min
+        if starts > month:
+            continue
+        key = target(row)
+        current = latest.get(key)
+        if current is None or (starts, row["updated_at"], row["id"]) > (
+            current["effective_from"] or date.min, current["updated_at"], current["id"]
+        ):
+            latest[key] = row
+    return latest
 
 
 def newest(rows: list[dict], target) -> dict[tuple, dict]:

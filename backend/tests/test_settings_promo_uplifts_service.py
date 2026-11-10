@@ -63,7 +63,8 @@ class FakePromoUpliftDatabase:
         self.uplifts.append(row)
         return {**row, "id": row["uplift_id"]}
 
-    def add_anchor(self, customer_id, anchor_pct, source, updated_by="aireos", sku_range=None, mechanic=None):
+    def add_anchor(self, customer_id, anchor_pct, source, updated_by="aireos", sku_range=None, mechanic=None,
+                   effective_from=None):
         row = {
             "anchor_id": len(self.anchors) + 1,
             "customer_id": customer_id,
@@ -71,6 +72,7 @@ class FakePromoUpliftDatabase:
             "promotion_mechanic": mechanic,
             "anchor_pct": Decimal(anchor_pct) if anchor_pct is not None else None,
             "source": source,
+            "effective_from": effective_from,
             "updated_by": updated_by,
             "updated_at": self._stamp(),
         }
@@ -125,7 +127,7 @@ class FakePromoUpliftDatabase:
         if sql.startswith("INSERT INTO promo_anchor_settings"):
             self.add_anchor(
                 params["customer_id"], params["anchor_pct"], params["source"], params["updated_by"],
-                params["sku_range"], params["promotion_mechanic"],
+                params["sku_range"], params["promotion_mechanic"], params["effective_from"],
             )
             return []
 
@@ -346,6 +348,87 @@ def test_anchor_history_is_per_target_and_newest_first(monkeypatch):
     assert [(row["source"], row["mechanic_label"]) for row in history] == [("manual", None), ("recommended", "30% Off")]
     assert [row["is_current"] for row in history] == [True, False]
     assert service.anchor_history(1) == []
+
+
+# ---- anchor versions by month (effective_from) ----------------------------------
+
+
+NOV_2026 = date(2026, 11, 1)
+MAY_2027 = date(2027, 5, 1)
+
+
+def _twenty_then_fifteen(monkeypatch, month=NOV_2026):
+    # The client's case: 20% off now, 15% off decided from May 2027.
+    db = FakePromoUpliftDatabase()
+    db.add_anchor(1, "20", "recommended", mechanic="20% Off")
+    db.add_anchor(1, "15", "projected", mechanic="15% Off", effective_from=MAY_2027)
+    monkeypatch.setattr(common, "this_month", lambda: month)
+    _install(monkeypatch, db)
+    return db
+
+
+def test_a_change_saved_for_a_later_month_is_upcoming_not_current(monkeypatch):
+    _twenty_then_fifteen(monkeypatch)
+
+    anchor = service.get_anchor(1)
+
+    assert (anchor["anchor_pct"], anchor["mechanic_label"]) == (20.0, "20% Off")
+    assert [(item["effective_from"], item["anchor_pct"], item["source"]) for item in anchor["upcoming"]] == [
+        ("2027-05-01", 15.0, "projected"),
+    ]
+
+
+def test_once_its_month_arrives_the_later_change_is_the_anchor(monkeypatch):
+    _twenty_then_fifteen(monkeypatch, month=MAY_2027)
+
+    anchor = service.get_anchor(1)
+
+    assert (anchor["anchor_pct"], anchor["source"], anchor["effective_from"]) == (15.0, "projected", "2027-05-01")
+    assert anchor["upcoming"] == []
+
+
+def test_a_range_with_nothing_saved_follows_its_customers_later_change(monkeypatch):
+    _twenty_then_fifteen(monkeypatch)
+
+    pants = service.get_anchor(1)["ranges"][0]
+
+    assert (pants["anchor_pct"], pants["source"]) == (20.0, "customer")
+    assert [(item["effective_from"], item["anchor_pct"], item["source"]) for item in pants["upcoming"]] == [
+        ("2027-05-01", 15.0, "customer"),
+    ]
+
+
+def test_an_edit_made_now_applies_from_this_month_and_keeps_the_later_change(monkeypatch):
+    db = _twenty_then_fifteen(monkeypatch)
+    _recommend(db, 1, None, None, window_months=2)
+
+    anchor = service.set_anchor(1, Decimal("25"))["anchor"]
+
+    assert db.anchors[-1]["effective_from"] == NOV_2026
+    assert (anchor["anchor_pct"], anchor["source"]) == (25.0, "manual")
+    assert [(item["effective_from"], item["anchor_pct"]) for item in anchor["upcoming"]] == [("2027-05-01", 15.0)]
+
+
+def test_a_later_save_for_the_same_month_replaces_the_change(monkeypatch):
+    db = _twenty_then_fifteen(monkeypatch)
+    db.add_anchor(1, "10", "manual", effective_from=MAY_2027)
+
+    upcoming = service.get_anchor(1)["upcoming"]
+
+    assert [(item["effective_from"], item["anchor_pct"], item["source"]) for item in upcoming] == [
+        ("2027-05-01", 10.0, "manual"),
+    ]
+
+
+def test_anchor_history_marks_the_version_in_effect_and_the_ones_to_come(monkeypatch):
+    _twenty_then_fifteen(monkeypatch)
+
+    history = service.anchor_history(1)
+
+    assert [(row["anchor_pct"], row["effective_from"], row["is_current"], row["is_upcoming"]) for row in history] == [
+        (15.0, "2027-05-01", False, True),
+        (20.0, None, True, False),
+    ]
 
 
 def test_anchor_writes_for_an_unknown_customer_are_404s(monkeypatch):

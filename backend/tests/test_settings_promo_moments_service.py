@@ -96,10 +96,10 @@ def test_a_saved_anchor_is_the_baseline_even_when_it_is_not_the_most_common(monk
 def test_saved_anchors_become_baselines_with_ranges_falling_back_to_the_customer():
     at = datetime(2026, 11, 5, tzinfo=timezone.utc)
     anchors = [
-        {"id": 1, "customer_id": 1, "sku_range": None, "promotion_mechanic": "20% Off", "updated_at": at},
-        {"id": 2, "customer_id": 1, "sku_range": "Pants", "promotion_mechanic": "Buy 2 Get 25% Off", "updated_at": at},
+        {"id": 1, "customer_id": 1, "sku_range": None, "promotion_mechanic": "20% Off", "effective_from": None, "updated_at": at},
+        {"id": 2, "customer_id": 1, "sku_range": "Pants", "promotion_mechanic": "Buy 2 Get 25% Off", "effective_from": None, "updated_at": at},
         # A typed anchor names no mechanic, so its range has no baseline mechanic.
-        {"id": 3, "customer_id": 1, "sku_range": "Tape", "promotion_mechanic": None, "updated_at": at},
+        {"id": 3, "customer_id": 1, "sku_range": "Tape", "promotion_mechanic": None, "effective_from": None, "updated_at": at},
     ]
 
     def respond(sql, params):
@@ -116,3 +116,23 @@ def test_saved_anchors_become_baselines_with_ranges_falling_back_to_the_customer
         (1, "Tape"): None,
         (1, "Ultra Pants"): "pct_off_20",
     }
+
+
+def test_an_anchor_saved_for_a_later_month_is_not_a_baseline_yet(monkeypatch):
+    at = datetime(2026, 11, 5, tzinfo=timezone.utc)
+    anchors = [
+        {"id": 1, "customer_id": 1, "sku_range": None, "promotion_mechanic": "20% Off",
+         "effective_from": None, "updated_at": at},
+        {"id": 2, "customer_id": 1, "sku_range": None, "promotion_mechanic": "15% Off",
+         "effective_from": date(2027, 5, 1), "updated_at": at},
+    ]
+    monkeypatch.setattr(service.common, "this_month", lambda: date(2026, 11, 1))
+
+    def respond(sql, params):
+        if "FROM promo_anchor_settings" in sql:
+            return anchors
+        if "FROM skus" in sql:
+            return [("Pants",)]
+        return []
+
+    assert service._saved_baselines(FakeConnection(respond)) == {(1, "Pants"): "pct_off_20"}

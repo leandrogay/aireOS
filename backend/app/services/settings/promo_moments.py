@@ -131,9 +131,15 @@ def _named(row: dict, customers: dict[int, str], products: dict[str, dict]) -> d
 def _saved_baselines(conn: Connection) -> dict[tuple[int, str], str | None]:
     """
     The saved anchor mechanic per customer x SKU range (promo_anchor_settings,
-    newest row per target), the range's own else its customer's; None where
+    the row in effect this month, so a change saved for a later month is not
+    used yet), the range's own else its customer's; None where
     the anchor is a typed discount. Ranges with neither are left out, so
     measure_moments uses their most common mechanic.
+
+    Stopgap: every moment is measured against this month's anchor. Once a
+    later anchor version starts, older moments must keep the version of
+    their own month instead, so measuring moves to one baseline per moment's
+    month (the plan's Phase 1) before projected anchors are saved.
     """
 
     rows = conn.execute(
@@ -144,6 +150,7 @@ def _saved_baselines(conn: Connection) -> dict[tuple[int, str], str | None]:
                 customer_id,
                 sku_range,
                 promotion_mechanic,
+                effective_from,
                 updated_at
 
             FROM promo_anchor_settings
@@ -154,7 +161,9 @@ def _saved_baselines(conn: Connection) -> dict[tuple[int, str], str | None]:
         )
     ).mappings().all()
 
-    current = common.newest([dict(row) for row in rows], lambda row: (row["customer_id"], row["sku_range"]))
+    current = common.in_effect(
+        [dict(row) for row in rows], lambda row: (row["customer_id"], row["sku_range"]), common.this_month()
+    )
     customer_level = {
         customer_id: uplift_rules.mechanic_key(row["promotion_mechanic"])
         for (customer_id, sku_range), row in current.items()

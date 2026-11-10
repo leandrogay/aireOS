@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import text
@@ -172,6 +173,11 @@ def _ranges(conn: Connection) -> list[str]:
 # (fewer than RECOMMEND_FROM months in the window) can a discount be typed
 # in instead ('manual'). A range with nothing saved uses its customer's
 # anchor, a customer the all-customers value, else 20%.
+#
+# Each version applies from a month (effective_from, migration 019; NULL =
+# from the start), so a change already decided for the future is saved
+# ahead without moving the months before it. The anchor shown is the one in
+# effect this month; `upcoming` lists the later changes.
 # ============================================================
 
 
@@ -186,6 +192,7 @@ def _anchor_rows(conn: Connection) -> list[dict]:
                 promotion_mechanic,
                 anchor_pct,
                 source,
+                effective_from,
                 updated_by,
                 updated_at
 
@@ -197,8 +204,21 @@ def _anchor_rows(conn: Connection) -> list[dict]:
     return [dict(row) for row in rows]
 
 
-def _current_anchors(anchor_rows: list[dict]) -> dict[tuple, dict]:
-    return common.newest(anchor_rows, lambda row: (row["customer_id"], row["sku_range"]))
+def _anchor_target(row: dict) -> tuple:
+    return (row["customer_id"], row["sku_range"])
+
+
+def _current_anchors(anchor_rows: list[dict], month: date | None = None) -> dict[tuple, dict]:
+    """The rows in effect in `month` (this month when not given), per customer x range."""
+
+    return common.in_effect(anchor_rows, _anchor_target, month or common.this_month())
+
+
+def _anchors_by_month(anchor_rows: list[dict], month: date) -> list[tuple[date, dict[tuple, dict]]]:
+    """The rows in effect from each later month a version starts in, oldest first."""
+
+    starts = sorted({row["effective_from"] for row in anchor_rows if row["effective_from"] and row["effective_from"] > month})
+    return [(start, _current_anchors(anchor_rows, start)) for start in starts]
 
 
 def _default_anchor(current: dict[tuple, dict]) -> Decimal:
@@ -221,23 +241,59 @@ def _recommended_view(recommendation: dict | None, current: list[dict]) -> dict 
     }
 
 
-def _anchor_entry(row: dict | None, fallback: dict, recommendation: dict | None, current: list[dict]) -> dict:
+def _anchor_values(saved: dict[tuple, dict], customer_id: int, sku_range: str | None) -> dict:
+    """
+    A target's anchor among `saved` (the rows in effect in one month): its
+    own row, else a range takes its customer's ('customer') and a customer
+    the all-customers value ('default').
+    """
+
+    row = saved.get((customer_id, sku_range))
     if row is not None:
-        values = {
+        return {
             "anchor_pct": _num(row["anchor_pct"]),
             "mechanic_key": rules.mechanic_key(row["promotion_mechanic"]),
             "mechanic_label": row["promotion_mechanic"],
             "source": row["source"],
+            "effective_from": row["effective_from"].isoformat() if row["effective_from"] else None,
             "changed_by": row["updated_by"],
             "changed_at": common.iso(row["updated_at"]),
         }
-    else:
-        values = {**fallback, "changed_by": None, "changed_at": None}
 
+    if sku_range is not None:
+        inherited = _anchor_values(saved, customer_id, None)
+        fallback = {key: inherited[key] for key in ("anchor_pct", "mechanic_key", "mechanic_label")}
+        source = "customer"
+    else:
+        fallback = {"anchor_pct": _num(_default_anchor(saved)), "mechanic_key": None, "mechanic_label": None}
+        source = "default"
+    return {**fallback, "source": source, "effective_from": None, "changed_by": None, "changed_at": None}
+
+
+def _upcoming(
+    values: dict,
+    later: list[tuple[date, dict[tuple, dict]]],
+    customer_id: int,
+    sku_range: str | None,
+) -> list[dict]:
+    """The months after this one where a target's anchor changes, and what it changes to."""
+
+    changes = []
+    previous = values
+    for start, saved in later:
+        values = _anchor_values(saved, customer_id, sku_range)
+        if (values["anchor_pct"], values["mechanic_key"]) != (previous["anchor_pct"], previous["mechanic_key"]):
+            changes.append({**values, "effective_from": start.isoformat()})
+        previous = values
+    return changes
+
+
+def _anchor_entry(values: dict, upcoming: list[dict], recommendation: dict | None, current: list[dict]) -> dict:
     window_months = recommendation["window_months"] if recommendation else 0
     recommended = _recommended_view(recommendation, current)
     return {
         **values,
+        "upcoming": upcoming,
         "recommended": recommended,
         "window_months": window_months,
         # A typed discount only where the data cannot recommend one.
@@ -248,41 +304,38 @@ def _anchor_entry(row: dict | None, fallback: dict, recommendation: dict | None,
     }
 
 
+def _target_view(
+    saved: dict[tuple, dict],
+    later: list[tuple[date, dict[tuple, dict]]],
+    customer_id: int,
+    sku_range: str | None,
+    recommendations: dict[tuple, dict],
+    current: list[dict],
+) -> dict:
+    values = _anchor_values(saved, customer_id, sku_range)
+    upcoming = _upcoming(values, later, customer_id, sku_range)
+    return _anchor_entry(values, upcoming, recommendations.get((customer_id, sku_range)), current)
+
+
 def _anchor_view(
     customer: dict,
     saved: dict[tuple, dict],
+    later: list[tuple[date, dict[tuple, dict]]],
     ranges: list[str],
     recommendations: dict[tuple, dict],
     current: list[dict],
 ) -> dict:
     customer_id = customer["customer_id"]
-    default = {
-        "anchor_pct": _num(_default_anchor(saved)),
-        "mechanic_key": None,
-        "mechanic_label": None,
-        "source": "default",
-    }
-    entry = _anchor_entry(saved.get((customer_id, None)), default, recommendations.get((customer_id, None)), current)
-    inherited = {key: entry[key] for key in ("anchor_pct", "mechanic_key", "mechanic_label")}
-
     range_views = [
-        {
-            "sku_range": sku_range,
-            **_anchor_entry(
-                saved.get((customer_id, sku_range)),
-                {**inherited, "source": "customer"},
-                recommendations.get((customer_id, sku_range)),
-                current,
-            ),
-        }
+        {"sku_range": sku_range, **_target_view(saved, later, customer_id, sku_range, recommendations, current)}
         for sku_range in ranges
     ]
 
     return {
         "customer_id": customer_id,
         "customer_name": customer["customer_name"],
-        **entry,
-        "default_anchor_pct": default["anchor_pct"],
+        **_target_view(saved, later, customer_id, None, recommendations, current),
+        "default_anchor_pct": _num(_default_anchor(saved)),
         "ranges": range_views,
     }
 
@@ -291,12 +344,15 @@ def _anchors(conn: Connection, customer_id: int | None = None, with_recommendati
     # Recommendations read every customer's sell-out, so resolve_uplifts,
     # which only needs the saved anchors, leaves them out.
     customers = _customers(conn, customer_id)
-    saved = _current_anchors(_anchor_rows(conn))
+    rows = _anchor_rows(conn)
+    month = common.this_month()
+    saved = _current_anchors(rows, month)
+    later = _anchors_by_month(rows, month)
     current = _current_uplifts(_uplift_rows(conn))
     ranges = _ranges(conn)
     recommendations = promo_moments.anchor_recommendations(conn) if with_recommendations else {}
 
-    return [_anchor_view(customer, saved, ranges, recommendations, current) for customer in customers]
+    return [_anchor_view(customer, saved, later, ranges, recommendations, current) for customer in customers]
 
 
 def _anchor_pct_for(anchor: dict, sku_range: str | None) -> Decimal:
@@ -338,6 +394,7 @@ def _insert_anchor(conn: Connection, values: dict) -> None:
                 promotion_mechanic,
                 anchor_pct,
                 source,
+                effective_from,
                 updated_by
             )
             VALUES (
@@ -346,6 +403,7 @@ def _insert_anchor(conn: Connection, values: dict) -> None:
                 :promotion_mechanic,
                 CAST(:anchor_pct AS numeric(5, 2)),
                 :source,
+                CAST(:effective_from AS date),
                 :updated_by
             )
             """
@@ -409,6 +467,7 @@ def set_anchor(
                 "promotion_mechanic": None,
                 "anchor_pct": anchor_pct,
                 "source": "manual",
+                "effective_from": common.this_month(),
                 "updated_by": updated_by or DEFAULT_CHANGED_BY,
             })
 
@@ -434,6 +493,7 @@ def _adopt_values(entry: dict, customer_id: int, sku_range: str | None, updated_
         "promotion_mechanic": recommended["mechanic_label"],
         "anchor_pct": recommended["anchor_pct"],
         "source": "recommended",
+        "effective_from": common.this_month(),
         "updated_by": updated_by,
     }
 
@@ -486,7 +546,11 @@ def seed_anchors(apply: bool = False, updated_by: str | None = None) -> list[dic
 
 
 def anchor_history(customer_id: int, sku_range: str | None = None) -> list[dict]:
-    """Every anchor version for a customer (or one of its ranges), newest first."""
+    """
+    Every anchor version for a customer (or one of its ranges), newest save
+    first: the month each applies from, the one in effect this month
+    (is_current) and those that start later (is_upcoming).
+    """
 
     with common.read_connection() as conn:
         _customers(conn, customer_id)
@@ -495,6 +559,8 @@ def anchor_history(customer_id: int, sku_range: str | None = None) -> list[dict]
             if row["customer_id"] == customer_id and row["sku_range"] == sku_range
         ]
 
+    month = common.this_month()
+    in_effect = _current_anchors(rows, month).get((customer_id, sku_range))
     rows.sort(key=lambda row: (row["updated_at"], row["id"]), reverse=True)
     return [
         {
@@ -502,11 +568,13 @@ def anchor_history(customer_id: int, sku_range: str | None = None) -> list[dict]
             "anchor_pct": _num(row["anchor_pct"]),
             "mechanic_label": row["promotion_mechanic"],
             "source": row["source"],
+            "effective_from": row["effective_from"].isoformat() if row["effective_from"] else None,
             "changed_by": row["updated_by"],
             "changed_at": common.iso(row["updated_at"]),
-            "is_current": index == 0,
+            "is_current": in_effect is not None and row["id"] == in_effect["id"],
+            "is_upcoming": row["effective_from"] is not None and row["effective_from"] > month,
         }
-        for index, row in enumerate(rows)
+        for row in rows
     ]
 
 
