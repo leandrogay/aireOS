@@ -585,15 +585,31 @@ def list_forecast_promotions(
                     ON r.retailer_id = s.retailer_id
                 WHERE
                     pst.promotion_id = p.promotion_id
-                    AND r.retailer_name IN (
-                        :customer_offline,
-                        :customer_online
+                    AND (
+                        r.retailer_name IN (
+                            :customer_offline,
+                            :customer_online
+                        )
+                        OR EXISTS (
+                            SELECT 1
+                            FROM customer_retailers cr
+                            JOIN customers c
+                                ON c.customer_id = cr.customer_id
+                            WHERE
+                                cr.retailer_id = r.retailer_id
+                                AND LOWER(c.customer_name) = LOWER(:customer_name)
+                        )
                     )
             )
             """
         )
-        params["customer_offline"] = f"{customer_name}_offline"
-        params["customer_online"] = f"{customer_name}_online"
+        # Customer names keep their capitals (FairPrice) but retailer names
+        # are lowercase slugs (fairprice_offline), and a renamed customer's
+        # retailers keep their old slug -- so match the customer's linked
+        # retailers, with the slug as a fallback for unlinked ones.
+        params["customer_name"] = customer_name
+        params["customer_offline"] = f"{customer_name.lower()}_offline"
+        params["customer_online"] = f"{customer_name.lower()}_online"
 
     query = text(
         f"""

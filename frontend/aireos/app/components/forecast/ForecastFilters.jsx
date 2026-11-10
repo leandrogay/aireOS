@@ -3,11 +3,14 @@
 import { cn } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
 import { glassSurfaceClass } from '@/components/ui/surfaceStyles';
-import DateRangePicker from '@/components/ui/DateRangePicker';
+import DatePicker from '@/components/ui/DatePicker';
+import { maxYmd, minYmd } from '@/components/ui/DateRangePicker';
 import SelectDropdown from '@/components/ui/SelectDropdown';
 import { customerLabel } from '@/app/utils/retailerLabel';
 
 const labelClass = 'mb-0.5 block text-[11px] text-deep-violet-blue/70';
+// The typed DatePicker box in the compact white look of the dropdowns beside it.
+const dateBoxClass = 'h-8 border-violet bg-white px-2 text-xs';
 const clearClass =
   'rounded-md border border-deep-violet-blue/30 bg-white px-2 py-0.5 text-[10px] font-medium text-deep-violet-blue transition hover:bg-cream disabled:cursor-not-allowed disabled:opacity-40';
 
@@ -58,6 +61,46 @@ function CustomerField({ value, onChange, options }) {
         size="sm"
         className="w-full"
       />
+    </div>
+  );
+}
+
+/**
+ * From / To as two bounded ui/DatePicker boxes (type dd/mm/yyyy or pick from
+ * the calendar). Both stay inside the forecast's data bounds, and each limits
+ * the other: From can't be after To, To can't be before From.
+ */
+function DateRangeFields({ startDate, endDate, onStartDateChange, onEndDateChange, minDate, maxDate }) {
+  return (
+    <div className="grid grid-cols-2 gap-2 [&>*]:min-w-0">
+      <div>
+        <label htmlFor="forecast-start-date" className={labelClass}>
+          From
+        </label>
+        <DatePicker
+          id="forecast-start-date"
+          variant="input"
+          value={startDate}
+          onChange={onStartDateChange}
+          min={minDate || ''}
+          max={minYmd(endDate, maxDate) ?? ''}
+          boxClassName={dateBoxClass}
+        />
+      </div>
+      <div>
+        <label htmlFor="forecast-end-date" className={labelClass}>
+          To
+        </label>
+        <DatePicker
+          id="forecast-end-date"
+          variant="input"
+          value={endDate}
+          onChange={onEndDateChange}
+          min={maxYmd(startDate, minDate) ?? ''}
+          max={maxDate || ''}
+          boxClassName={dateBoxClass}
+        />
+      </div>
     </div>
   );
 }
@@ -123,17 +166,13 @@ export default function ForecastFilters({
           <SkuField value={productName} onChange={onProductNameChange} options={productOptions} />
         </div>
         <div className="w-full sm:w-80">
-          <DateRangePicker
-            start={startDate}
-            end={endDate}
-            onStartChange={onStartDateChange}
-            onEndChange={onEndDateChange}
+          <DateRangeFields
+            startDate={startDate}
+            endDate={endDate}
+            onStartDateChange={onStartDateChange}
+            onEndDateChange={onEndDateChange}
             minDate={minDate}
             maxDate={maxDate}
-            startLabel="From"
-            endLabel="To"
-            className="grid-cols-2 gap-2"
-            inputClassName="border-violet bg-white h-8"
           />
         </div>
         <button type="button" onClick={onClearFilters} disabled={!canClearFilters} className={cn(clearClass, 'mb-1.5')}>
@@ -163,17 +202,13 @@ export default function ForecastFilters({
           ) : null}
 
           <div className="col-span-2">
-            <DateRangePicker
-              start={startDate}
-              end={endDate}
-              onStartChange={onStartDateChange}
-              onEndChange={onEndDateChange}
+            <DateRangeFields
+              startDate={startDate}
+              endDate={endDate}
+              onStartDateChange={onStartDateChange}
+              onEndDateChange={onEndDateChange}
               minDate={minDate}
               maxDate={maxDate}
-              startLabel="From"
-              endLabel="To"
-              className="grid-cols-2 gap-2"
-              inputClassName="border-violet bg-white h-8"
             />
           </div>
         </div>
