@@ -26,6 +26,7 @@ from app.services import (
     promotion_pricing,
     sql,
 )
+from app.services.settings import promo_recalc_events
 
 
 class SelloutLoadError(RuntimeError):
@@ -639,11 +640,19 @@ def load_clean_rows(
                 "sales_upload",
                 f"sales:{facts[0].get('source_file') or 'unknown'}",
             )
+            # New sales change the moments of the customers these retailers belong to.
+            recalc_recorded = promo_recalc_events.record_retailers(
+                connection,
+                "sales_upload",
+                [fact["retailer_id"] for fact in facts],
+                f"sales:{facts[0].get('source_file') or 'unknown'}",
+            )
     except SelloutLoadError:
         raise
     except Exception as exc:
         raise SelloutLoadError(f"Cloud SQL sell-out load failed: {exc}") from exc
 
+    promo_recalc_events.enqueue_best_effort(recalc_recorded)
     result = {
         "rows_stored": len(records),
         "rows_consolidated": rows_consolidated,

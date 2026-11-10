@@ -4,6 +4,7 @@ from functools import lru_cache
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 from app.services import forecast_refresh_events, sql
+from app.services.settings import promo_recalc_events
 from app.services.catalog_service import (
     get_or_create_retailers,
     get_or_create_stores,
@@ -488,8 +489,10 @@ def create_promotion(
         refresh_request_id = forecast_refresh_events.record_change(
             conn, "promotion_change", f"promotion:{promotion_id}"
         )
+        recalc_recorded = promo_recalc_events.record_promotion(conn, promotion_id)
 
     forecast_refresh_events.enqueue_best_effort(refresh_request_id)
+    promo_recalc_events.enqueue_best_effort(recalc_recorded)
     return created
 
 
@@ -764,6 +767,9 @@ def update_promotion(
             },
         )
 
+        # Its customers before the change also need their uplifts worked out again.
+        promo_recalc_events.record_promotion(conn, promotion_id)
+
         # Replace the store links with the set supplied by the
         # request. Rows in `stores` and `retailers` are master
         # data and are deliberately left in place.
@@ -817,8 +823,10 @@ def update_promotion(
         refresh_request_id = forecast_refresh_events.record_change(
             conn, "promotion_change", f"promotion:{promotion_id}"
         )
+        recalc_recorded = promo_recalc_events.record_promotion(conn, promotion_id)
 
     forecast_refresh_events.enqueue_best_effort(refresh_request_id)
+    promo_recalc_events.enqueue_best_effort(recalc_recorded)
     return updated
 
 
@@ -849,6 +857,8 @@ def delete_promotion(
 
         if existing is None:
             return False
+
+        recalc_recorded = promo_recalc_events.record_promotion(conn, promotion_id)
 
         # promotion_skus has ON DELETE CASCADE, but the link
         # deletes are kept explicit so the behaviour does not
@@ -900,4 +910,5 @@ def delete_promotion(
         )
 
     forecast_refresh_events.enqueue_best_effort(refresh_request_id)
+    promo_recalc_events.enqueue_best_effort(recalc_recorded)
     return True

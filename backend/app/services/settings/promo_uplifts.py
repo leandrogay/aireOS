@@ -7,6 +7,7 @@ from sqlalchemy.engine import Connection
 from app.services.settings import common
 from app.services.settings import promo_moment_rules as moment_rules
 from app.services.settings import promo_moments
+from app.services.settings import promo_recalc_events
 from app.services.settings import promo_uplift_rules as rules
 from app.services.settings.common import CustomerNotFoundError
 
@@ -410,6 +411,9 @@ def _insert_anchor(conn: Connection, values: dict) -> None:
         ),
         values,
     )
+    if values["source"] != "projected":
+        customer_ids = [values["customer_id"]] if values["customer_id"] is not None else None
+        promo_recalc_events.record_customers(conn, "anchor_change", customer_ids, "promo_anchor_settings")
 
 
 def _check_anchor_target(conn: Connection, customer_id: int | None, sku_range: str | None) -> None:
@@ -472,11 +476,12 @@ def set_anchor(
             })
 
         if customer_id is None:
-            default = _default_anchor(_current_anchors(_anchor_rows(conn)))
-            return {"changed": changed, "default_anchor_pct": _num(default)}
-        anchor = _anchors(conn, customer_id)[0]
+            result = {"changed": changed, "default_anchor_pct": _num(_default_anchor(_current_anchors(_anchor_rows(conn))))}
+        else:
+            result = {"changed": changed, "anchor": _anchors(conn, customer_id)[0]}
 
-    return {"changed": changed, "anchor": anchor}
+    promo_recalc_events.enqueue_best_effort(changed and promo_recalc_events.enabled())
+    return result
 
 
 def _adopt_values(entry: dict, customer_id: int, sku_range: str | None, updated_by: str) -> dict:
@@ -512,6 +517,7 @@ def adopt_anchor(customer_id: int, sku_range: str | None = None, updated_by: str
 
         anchor = _anchors(conn, customer_id)[0]
 
+    promo_recalc_events.enqueue_best_effort(changed and promo_recalc_events.enabled())
     return {"changed": changed, "anchor": anchor}
 
 
@@ -542,6 +548,7 @@ def seed_anchors(apply: bool = False, updated_by: str | None = None) -> list[dic
             for values in planned:
                 _insert_anchor(conn, {key: value for key, value in values.items() if key not in ("customer_name", "months")})
 
+    promo_recalc_events.enqueue_best_effort(apply and bool(planned) and promo_recalc_events.enabled())
     return planned
 
 
@@ -966,6 +973,7 @@ def _insert_uplift(conn: Connection, values: dict) -> int:
         values,
     ).first()
 
+    promo_recalc_events.record_customers(conn, "mechanic_change", None, "promo_uplift_settings")
     return row[0]
 
 
@@ -1006,6 +1014,7 @@ def update_uplift(
         )
         setting = _fetch_uplift(conn, new_id)
 
+    promo_recalc_events.enqueue_best_effort(promo_recalc_events.enabled())
     return {"changed": True, "setting": setting}
 
 
@@ -1053,6 +1062,7 @@ def reset_uplift(setting_id: int, updated_by: str | None = None) -> dict:
         )
         setting = _fetch_uplift(conn, new_id)
 
+    promo_recalc_events.enqueue_best_effort(promo_recalc_events.enabled())
     return {"changed": True, "setting": setting}
 
 
@@ -1105,4 +1115,5 @@ def add_override(
         )
         setting = _fetch_uplift(conn, new_id)
 
+    promo_recalc_events.enqueue_best_effort(promo_recalc_events.enabled())
     return {"changed": True, "setting": setting}
