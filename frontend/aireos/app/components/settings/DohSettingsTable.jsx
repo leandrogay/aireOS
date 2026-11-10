@@ -27,7 +27,8 @@ function editAction(row, editingId, onEdit) {
 
 /**
  * One row per customer: min / target / max DOH, when the thresholds were last
- * saved, the alert toggle, and an actions menu. Rows on the global default are badged.
+ * saved, the alert toggle, and an actions menu. Whether a customer is on the
+ * global default is shown in the edit dialog's badge, not here.
  * Reset to default lives in the edit form (DohThresholdForm). Holds no state
  * of its own; the parent (DohSettingsView) owns editing and pending requests.
  *
@@ -62,9 +63,6 @@ export default function DohSettingsTable({
           <MobileRecordCard
             key={row.customer_id}
             title={customer}
-            badge={row.is_global_default && (
-              <span className="rounded-full border border-violet bg-lavander px-2 py-0.5 text-[10px] text-deep-violet-blue">Global Default</span>
-            )}
             actions={<RowActions label={`Actions for DOH settings for ${customer}`} actions={editAction(row, editingId, onEdit)} />}
             fields={[
               { label: 'Min DOH', value: formatDohDays(row.min_doh) },
@@ -108,14 +106,7 @@ export default function DohSettingsTable({
                 key={row.customer_id}
                 className={cn('border-t border-lavander', editingId === row.customer_id && 'bg-cream')}
               >
-                <td className={tdClass}>
-                  <span className="font-medium">{customerLabel(row.customer_name)}</span>
-                  {row.is_global_default && (
-                    <span className="ml-2 whitespace-nowrap rounded-full border border-violet bg-lavander px-2 py-0.5 text-[11px]">
-                      Global Default
-                    </span>
-                  )}
-                </td>
+                <td className={cn(tdClass, 'font-medium')}>{customerLabel(row.customer_name)}</td>
                 <td className={cn(tdClass, numClass)}>{formatDohDays(row.min_doh)}</td>
                 <td className={cn(tdClass, numClass)}>{formatDohDays(row.target_doh)}</td>
                 <td className={cn(tdClass, numClass)}>{formatDohDays(row.max_doh)}</td>

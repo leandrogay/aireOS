@@ -65,7 +65,9 @@ export default function ToggleField({
         onCheckedChange={onChange}
         disabled={disabled}
         aria-label={label ? undefined : ariaLabel}
-        className={cn('mt-0.5', SWITCH_TONE[tone])}
+        // A pointer on hover so the switch reads as clickable; the primitive's
+        // data-disabled:cursor-not-allowed still wins while it is disabled.
+        className={cn('mt-0.5 cursor-pointer', SWITCH_TONE[tone])}
       />
       {hasText && (
         <label htmlFor={id} className={cn('min-w-0 text-xs text-deep-violet-blue', disabled ? 'cursor-not-allowed' : 'cursor-pointer')}>
