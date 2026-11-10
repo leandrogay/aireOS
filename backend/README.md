@@ -93,6 +93,19 @@ Apply `migrations/019_promo_anchor_effective_from.sql` after 018. It adds the
 month each promo anchor version applies from; existing rows apply from the
 start, so no anchor changes when it runs.
 
+Apply `migrations/020_create_promo_calc.sql` after 019, then fill it once with
+`python scripts/rebuild_promo_calc.py`. Promotion Uplift Settings reads its
+moments and recommendations from these tables, not live sell-out, so the
+page errors until 020 exists and shows no moments until the first rebuild.
+Then set `PROMO_RECALC_ENABLED=true` so promotion saves, sell-out loads and
+rollbacks, and anchor or uplift edits queue a recalculation of the customers
+they touch. Set `PROMO_RECALC_HANDLER_URL` to the API's
+`/internal/promo/recalc` URL to have a Cloud Task (on the forecast-refresh
+queue) work the queue out five minutes after a save; without it, use
+Recalculate on the page or rerun the script. When official promotions keyed in
+for the future change a customer's usual mechanic, the run saves that change
+as a `projected` anchor from the month it takes over.
+
 The current fact schema does not retain sales UOM. FairPrice labels the source
 measure `Qty (in EA)`, while the established downstream forecasting contract
 currently treats the values as cartons. The pipeline performs no numeric unit
