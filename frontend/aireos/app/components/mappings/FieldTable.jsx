@@ -1,6 +1,6 @@
 'use client';
 
-import { CheckCircle2, CircleAlert, SlidersHorizontal } from 'lucide-react';
+import { CheckCircle2, SlidersHorizontal } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import InfoTooltip from '@/components/ui/InfoTooltip';
@@ -147,7 +147,7 @@ function FieldInfo({ entry }) {
           </>
         )}
 
-        {entry.status !== 'unmapped' && (
+        {entry.status !== 'unmapped' && entry.confidence && (
           <>
             <dt className="text-deep-violet-blue/60">Confidence</dt>
             <dd>
@@ -185,7 +185,7 @@ function Confidence({ entry, canUndo, onConfirm, onUndo, canReset, onReset, disa
     <div className="flex flex-wrap items-center gap-1.5 sm:flex-col sm:items-end">
       {/* Only the fields that need a look are badged: a green "High" on every
           row became background and read as approval. High stays in the ⓘ card. */}
-      {filled && level !== 'high' && <ConfidenceBadge level={level} />}
+      {filled && entry.confidence && level !== 'high' && <ConfidenceBadge level={level} />}
       {guessed && !entry.reviewed && (
         <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={() => onConfirm(entry)} className="shrink-0">
           Looks right
@@ -315,12 +315,6 @@ function FieldRow({
             disabled={disabled}
           />
         )}
-        {missing && (
-          <p className="flex items-center gap-1 text-[11px] text-amber-900">
-            <CircleAlert aria-hidden="true" className="size-3 shrink-0" />
-            Required — choose where it comes from
-          </p>
-        )}
         {entry.samples?.length > 0 && (
           <p className="truncate font-mono text-[11px] text-deep-violet-blue/50" title={entry.samples.join(' · ')}>
             {entry.samples.slice(0, 3).join(' · ')}
@@ -391,11 +385,11 @@ export default function FieldTable({ coverage, confirmedNow, ...props }) {
 
   return (
     <div className="space-y-2">
-      <div className="rounded-md border border-lavander">{renderRows(required)}</div>
+      <div className="overflow-hidden rounded-md border border-lavander">{renderRows(required)}</div>
 
       <Disclosure
         open={optionalNeedsYou}
-        className="rounded-md border border-lavander"
+        className="overflow-hidden rounded-md border border-lavander"
         summary={
           <>
             Optional fields

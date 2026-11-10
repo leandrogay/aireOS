@@ -542,7 +542,9 @@ export function computeCoverage(mapping, state) {
     if (!entry) {
       return { ...base, status: 'unmapped', column: null, groupId: null, samples: [], confidence: null, reviewed: false, locked: false };
     }
-    return { ...base, ...entry };
+    // Made without AI (packet aiUnavailable): every decision is the
+    // reviewer's, so there is no AI confidence to show or confirm.
+    return mapping?.aiUnavailable ? { ...base, ...entry, confidence: null } : { ...base, ...entry };
   });
 }
 
