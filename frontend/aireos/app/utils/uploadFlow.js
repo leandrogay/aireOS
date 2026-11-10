@@ -6,7 +6,7 @@
  * @typedef {(
  *   | { kind: 'mapped', mappingId: string, name: string?, vendor: string?, processing: object? }
  *   | { kind: 'ready_to_load', mappingId: string, name: string?, vendor: string?, blobPath: string }
- *   | { kind: 'needs_review', why: 'new' | 'partial', mappingId: string?, matched: object? }
+ *   | { kind: 'needs_review', why: 'new' | 'partial', mappingId: string?, matched: object?, aiUnavailable: string? }
  *   | { kind: 'duplicate', matchedOn: 'content' | 'filename', existingFilename: string?, uploadedAt: string? }
  *   | { kind: 'failed', error: string }
  * )} FileOutcome
@@ -70,8 +70,16 @@ export function outcomeFromResult(result) {
         matched: mapping.matched || null,
       };
 
+    // ai_unavailable: the mapping model is retired, so the proposal starts
+    // blank for a person to fill in (backend generate_mapping.resolve_mapping).
     case 'pending_confirmation':
-      return { kind: 'needs_review', why: 'new', mappingId: mapping.fingerprint, matched: null };
+      return {
+        kind: 'needs_review',
+        why: 'new',
+        mappingId: mapping.fingerprint,
+        matched: null,
+        aiUnavailable: mapping.ai_unavailable || null,
+      };
 
     default:
       return {
