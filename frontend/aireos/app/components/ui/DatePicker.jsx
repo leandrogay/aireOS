@@ -79,6 +79,7 @@ function DayCalendar({ value, min, max, onPick }) {
  * @param {boolean} [props.disabled]
  * @param {string} [props.id] on the button / text box, for a <label htmlFor>
  * @param {string} [props.ariaLabel]
+ * @param {string} [props.boxClassName] input variant: extra classes on the box (e.g. a filter card's white look)
  */
 export default function DatePicker({
   value,
@@ -93,13 +94,14 @@ export default function DatePicker({
   disabled = false,
   id,
   ariaLabel,
+  boxClassName,
 }) {
   const [open, setOpen] = useState(false);
 
   if (variant === 'input') {
     return (
       <Popover open={open} onOpenChange={setOpen}>
-        <div className={cn(typedBoxClass, invalid && invalidInputClass)}>
+        <div className={cn(typedBoxClass, boxClassName, invalid && invalidInputClass)}>
           <DateInput
             id={id}
             value={value}
