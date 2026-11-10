@@ -4,10 +4,10 @@ import { useState } from 'react';
 import { Pencil, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import DataTable from '@/components/ui/DataTable';
+import PaginatedDataTable from '@/components/ui/PaginatedDataTable';
 import ExpandableRow from '@/components/ui/ExpandableRow';
 import RowActions from '@/components/ui/RowActions';
-import TablePagination, { PAGE_SIZES } from '@/components/ui/TablePagination';
+import { PAGE_SIZES } from '@/components/ui/TablePagination';
 import TableSearch from '@/components/ui/TableSearch';
 import { Switch } from '@/components/ui/switch';
 import { customerLabel } from '@/app/utils/retailerLabel';
@@ -167,7 +167,7 @@ export default function BlockTable({
   );
 
   return (
-    <DataTable
+    <PaginatedDataTable
       label="Building blocks"
       noun="building block"
       totalCount={blocks.length}
@@ -186,19 +186,7 @@ export default function BlockTable({
           placeholder="Search name, explanation…"
         />
       }
-      footer={
-        <TablePagination
-          page={currentPage}
-          totalPages={totalPages}
-          pageSize={pageSize}
-          totalRows={sorted.length}
-          onPageChange={setPage}
-          onPageSizeChange={(size) => {
-            setPageSize(size);
-            setPage(1);
-          }}
-        />
-      }
+      pagination={{ page: currentPage, totalPages, pageSize, totalRows: sorted.length, onPageChange: setPage, onPageSizeChange: (size) => { setPageSize(size); setPage(1); } }}
       columns={columns}
       minWidth="62rem"
       sort={sort}
@@ -270,6 +258,6 @@ export default function BlockTable({
           </ExpandableRow>
         );
       })}
-    </DataTable>
+    </PaginatedDataTable>
   );
 }

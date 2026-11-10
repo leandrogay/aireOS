@@ -2,22 +2,20 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowDown, ArrowUp } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronDown } from 'lucide-react';
 import TableSkeleton from '@/components/ui/TableSkeleton';
+import { TABLE_HEADER_ACTION_CLASS } from '@/components/ui/SortHeader';
+import { cn } from '@/lib/utils';
 import { changePct, formatChangePct } from '@/app/utils/periodComparison';
 import { customerColor } from '@/app/utils/storeFormats';
 import { formatRevenue } from '@/app/utils/trendChart';
 import EstMark from '@/components/dashboard/EstMark';
 import SelectDropdown from '@/components/ui/SelectDropdown';
-import GlassPanel from '@/components/dashboard/GlassPanel';
 
 const GRAINS = [
   { value: 'customer', label: 'Customers' },
   { value: 'product', label: 'Products' },
 ];
-
-const headerPillClass =
-  'inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide';
 
 function formatVolume(value) {
   return Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 });
@@ -29,7 +27,7 @@ function changeColorClass(pct) {
   return 'text-deep-violet-blue/60';
 }
 
-// Pill in a column header that opens a single-choice menu, same idea as the
+// Column header dropdown that opens a single-choice menu, same idea as the
 // forecast table's month filter. The menu is portalled because the table
 // scrolls and would clip a dropdown drawn inside it.
 function HeaderMenu({ id, label, active, openId, setOpenId, options, selected, onSelect }) {
@@ -78,14 +76,10 @@ function HeaderMenu({ id, label, active, openId, setOpenId, options, selected, o
         aria-expanded={open}
         aria-haspopup="listbox"
         onClick={() => setOpenId(open ? null : id)}
-        className={`${headerPillClass} ${
-          active
-            ? 'border-deep-violet-blue bg-deep-violet-blue text-white'
-            : 'border-lavander bg-white text-deep-violet-blue hover:bg-cream'
-        }`}
+        className={cn(TABLE_HEADER_ACTION_CLASS, 'uppercase tracking-wide', active && 'font-semibold text-deep-violet-blue')}
       >
         <span className="truncate">{label}</span>
-        <span className="text-[8px] leading-none" aria-hidden="true">{open ? '▲' : '▼'}</span>
+        <ChevronDown aria-hidden="true" className={cn('size-3.5 shrink-0 transition-transform', open && 'rotate-180')} />
       </button>
       {open && typeof document !== 'undefined' && createPortal(
         <div
@@ -128,11 +122,7 @@ function SortHeader({ label, active, order, onClick }) {
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`${headerPillClass} ${
-        active
-          ? 'border-deep-violet-blue bg-deep-violet-blue text-white'
-          : 'border-lavander bg-white text-deep-violet-blue hover:bg-cream'
-      }`}
+      className={cn(TABLE_HEADER_ACTION_CLASS, 'uppercase tracking-wide', active && 'font-semibold text-deep-violet-blue')}
     >
       <span className="truncate">{label}</span>
       {/* The slot stays either way, so the header does not jump when the
@@ -332,7 +322,7 @@ export default function SkuRanking({
   const mobileRows = showCustomers ? customersRanked : skus;
 
   return (
-    <GlassPanel as="section">
+    <section className="min-w-0">
       <div className="mb-2">
         <h3 className="font-serif text-base text-deep-violet-blue">
           {showCustomers ? 'Customer Sales' : 'SKU Performance Ranking'}{' '}
@@ -477,7 +467,7 @@ export default function SkuRanking({
                 </tr>
               )}
               {!tableLoading && !tableError && showCustomers && customersRanked.map((row) => (
-                <tr key={row.customer} className="border-b border-lavander/80 bg-white last:border-b-0 hover:bg-cream/50">
+                <tr key={row.customer} className="border-b border-lavander/80 last:border-b-0">
                   <td className={`${cellClass} tabular-nums`}>{row.rank}</td>
                   <td className={cellClass}>
                     <NameWithEst name={row.label} value={row.value} estimated={row.estimatedValue} color={row.color} />
@@ -487,7 +477,7 @@ export default function SkuRanking({
                 </tr>
               ))}
               {!tableLoading && !tableError && !showCustomers && shownSkus.map((s) => (
-                <tr key={s.sku} className="border-b border-lavander/80 bg-white last:border-b-0 hover:bg-cream/50">
+                <tr key={s.sku} className="border-b border-lavander/80 last:border-b-0">
                   <td className={`${cellClass} tabular-nums`}>{s.rank}</td>
                   <td className={cellClass} title={s.product_name}>
                     <NameWithEst name={s.product_name} value={s.value} estimated={s.estimated_value} />
@@ -502,7 +492,7 @@ export default function SkuRanking({
             </tbody>
           </table>
       </div>
-    </GlassPanel>
+    </section>
   );
 }
 

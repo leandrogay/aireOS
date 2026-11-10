@@ -321,7 +321,40 @@
   }
 }
 
-/* Keep long desktop lists scannable without changing their row content. */
+/* All list and paginated tables use the same solid row colours. Painting the
+   cells together also covers the sticky first column and expanded rows. */
+:is(.aire-table-grid, .aire-table-rows) tbody > tr:not(:has(> td[colspan])) > td {
+  transition: background-color 140ms ease, box-shadow 140ms ease;
+  background-color: white;
+}
+
+:is(.aire-table-grid, .aire-table-rows) tbody > tr:nth-child(even):not(:has(> td[colspan])) > td {
+  background-color: color-mix(in srgb, var(--aire-cream) 17%, white);
+}
+
+:is(.aire-table-grid, .aire-table-rows) tbody > tr:not(:has(> td[colspan])):hover > td,
+:is(.aire-table-grid, .aire-table-rows) tbody > tr:not(:has(> td[colspan])):focus-within > td {
+  background-color: color-mix(in srgb, var(--aire-lavender) 28%, white);
+}
+
+.aire-table-grid tbody > tr[data-expanded='true'] > td {
+  background-color: color-mix(in srgb, var(--aire-cream) 50%, white);
+}
+
+.aire-table-grid tbody > tr[data-highlight='new'] > td {
+  background-color: color-mix(in srgb, var(--aire-lavender) 70%, white);
+}
+
+.aire-table-grid tbody > tr[data-highlight='editing'] > td {
+  background-color: color-mix(in srgb, var(--aire-lavender) 90%, white);
+}
+
+:is(.aire-table-grid, .aire-table-rows) tbody > tr:not(:has(> td[colspan])):hover > td:first-child,
+:is(.aire-table-grid, .aire-table-rows) tbody > tr:not(:has(> td[colspan])):focus-within > td:first-child {
+  box-shadow: inset 3px 0 0 var(--aire-deep-blue);
+}
+
+/* Keep the first column in view on long desktop lists. */
 @media (min-width: 640px) {
   .aire-table-grid thead th:first-child {
     position: sticky;
@@ -334,25 +367,6 @@
     position: sticky;
     left: 0;
     z-index: 1;
-    background-color: white;
-  }
-
-  :is(.aire-table-grid, .aire-table-rows) tbody > tr:not(:has(> td[colspan])) > td {
-    transition: background-color 140ms ease, box-shadow 140ms ease;
-  }
-
-  :is(.aire-table-grid, .aire-table-rows) tbody > tr:nth-child(even):not(:has(> td[colspan])) > td {
-    background-color: color-mix(in srgb, var(--aire-cream) 17%, white);
-  }
-
-  :is(.aire-table-grid, .aire-table-rows) tbody > tr:not(:has(> td[colspan])):hover > td,
-  :is(.aire-table-grid, .aire-table-rows) tbody > tr:not(:has(> td[colspan])):focus-within > td {
-    background-color: color-mix(in srgb, var(--aire-lavender) 28%, white);
-  }
-
-  :is(.aire-table-grid, .aire-table-rows) tbody > tr:not(:has(> td[colspan])):hover > td:first-child,
-  :is(.aire-table-grid, .aire-table-rows) tbody > tr:not(:has(> td[colspan])):focus-within > td:first-child {
-    box-shadow: inset 3px 0 0 var(--aire-deep-blue);
   }
 }
 

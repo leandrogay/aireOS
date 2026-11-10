@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import PageLayout from "@/components/layout/PageLayout";
 import DashboardStatus from "@/components/dashboard/DashboardStatus";
 import ChannelSwitch from "@/components/dashboard/ChannelSwitch";
@@ -33,6 +33,15 @@ import { customerColorOrder, relabelFormatRows } from "@/app/utils/storeFormats"
 
 const NO_CUSTOMERS = [];
 
+function subscribeToLocation(onChange) {
+  window.addEventListener('popstate', onChange);
+  return () => window.removeEventListener('popstate', onChange);
+}
+
+function retailerFromLocation() {
+  return new URLSearchParams(window.location.search).get('retailer');
+}
+
 // The customers ticked when the options first load, and after Clear: every
 // customer (there is no cap; the chart turns to lines past its bar limit).
 function defaultCustomers(options) {
@@ -54,14 +63,19 @@ export default function DashboardPage() {
   // order, each still with its own colour, rather than an error on the page.
   const { customers: allCustomers, loading: allCustomersLoading } = useAllCustomers({ dataVersion });
   const colorOrder = customerColorOrder(allCustomers, customerOptions.map((option) => option.value));
+  const linkedRetailer = useSyncExternalStore(subscribeToLocation, retailerFromLocation, () => null);
+  const linkedMatch = linkedRetailer?.match(/^(.+)_(offline|online)$/i);
+  const linkedCustomer = linkedMatch
+    ? customerOptions.find((item) => item.value.toLowerCase() === linkedMatch[1].toLowerCase())
+    : null;
   const [selectedCustomers, setSelectedCustomers] = useState(null);
-  if (selectedCustomers === null && customerOptions.length > 0) {
-    setSelectedCustomers(defaultCustomers(customerOptions));
-  }
+  // A newly loaded retailer sets the initial dashboard scope. Once the reader
+  // changes the filter, their explicit selection wins over the link.
+  const activeSelection = selectedCustomers ?? (linkedCustomer ? [linkedCustomer.value] : defaultCustomers(customerOptions));
   // In the filter list's order, not the order they were ticked, so the chart,
   // its legend and its tooltip list customers the way the filter does.
-  const customers = selectedCustomers
-    ? customerOptions.filter((option) => selectedCustomers.includes(option.value)).map((option) => option.value)
+  const customers = customerOptions.length
+    ? customerOptions.filter((option) => activeSelection.includes(option.value)).map((option) => option.value)
     : NO_CUSTOMERS;
   const customer = customerOptions.find((option) => customers.includes(option.value))?.value ?? '';
   const comparingCustomers = customers.length > 1;
@@ -89,7 +103,8 @@ export default function DashboardPage() {
   const [storeLabel, setStoreLabel] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [mode, setMode] = useState('offline');
+  const [modeChoice, setMode] = useState(null);
+  const mode = modeChoice ?? (linkedCustomer ? linkedMatch[2].toLowerCase() : 'offline');
   // `{customer}_online` is absent from the freshness map when that channel
   // has no sell-out rows (NHG). Online is disabled only once that map has
   // loaded, and only when every ticked customer is offline-only.

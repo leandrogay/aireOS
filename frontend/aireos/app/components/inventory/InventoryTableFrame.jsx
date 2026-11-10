@@ -7,9 +7,10 @@ import { Button } from '@/components/ui/button';
 import { TABLE_HEADER_CLASS } from '@/components/ui/SortHeader';
 import { Skeleton } from '@/components/ui/skeleton';
 import TableSkeleton from '@/components/ui/TableSkeleton';
+import TablePagination from '@/components/ui/TablePagination';
 import { glassSurfaceClass } from '@/components/ui/surfaceStyles';
 import { monthCheckboxOptions } from '@/app/utils/inventoryForm';
-import { resultCountLabel } from '@/app/utils/tableView';
+import { paginate, resultCountLabel } from '@/app/utils/tableView';
 import { cn } from '@/lib/utils';
 
 // The same look as the list tables on Customers, Promotions and SKUs
@@ -24,7 +25,7 @@ export const inventoryTheadClass = 'sticky top-0 z-10 bg-cream';
 export const inventoryHeadRowClass = 'h-10 bg-cream [&>th]:shadow-[inset_0_-1px_0_var(--color-lavander)]';
 export const inventoryThClass = TABLE_HEADER_CLASS;
 export const inventoryTdClass = 'px-4 py-2.5 text-deep-violet-blue';
-export const inventoryRowClass = 'border-b border-lavander/80 bg-white hover:bg-cream/50';
+export const inventoryRowClass = 'border-b border-lavander/80';
 
 /**
  * Placeholder rows for an inventory table's first load, sized like the real
@@ -54,6 +55,8 @@ export default function InventoryTableFrame({ title, rows, description, loading 
   const [expanded, setExpanded] = useState(false);
   const [monthFilter, setMonthFilter] = useState([]);
   const [openFilter, setOpenFilter] = useState(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const monthOptions = monthCheckboxOptions(rows);
   const knownMonths = new Set(monthOptions.map((option) => option.value));
@@ -61,10 +64,12 @@ export default function InventoryTableFrame({ title, rows, description, loading 
   const visible = activeMonthFilter.length
     ? rows.filter((row) => activeMonthFilter.includes(row.month.slice(0, 7)))
     : rows;
+  const { pageRows, currentPage, totalPages } = paginate(visible, page, pageSize);
 
   function clearMonthFilter() {
     setMonthFilter([]);
     setOpenFilter(null);
+    setPage(1);
   }
 
   const monthHeader = (
@@ -76,7 +81,10 @@ export default function InventoryTableFrame({ title, rows, description, loading 
         options={monthOptions}
         openId={openFilter}
         setOpenId={setOpenFilter}
-        onChange={setMonthFilter}
+        onChange={(months) => {
+          setMonthFilter(months);
+          setPage(1);
+        }}
       />
     </th>
   );
@@ -121,8 +129,21 @@ export default function InventoryTableFrame({ title, rows, description, loading 
       </div>
 
       <div className={cn('overflow-auto border-t border-lavander', !expanded && 'max-h-[28vh]')}>
-        {children(visible, monthHeader)}
+        {children(pageRows, monthHeader)}
       </div>
+      {!loading && visible.length > 0 && (
+        <TablePagination
+          page={currentPage}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          totalRows={visible.length}
+          onPageChange={setPage}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setPage(1);
+          }}
+        />
+      )}
     </section>
   );
 }

@@ -107,7 +107,7 @@ function LoadConfirmForm({ pathsKey, reload, onClose, onLoaded, onPendingChange 
       </div>
 
       {outcome ? (
-        <LoadResult outcome={outcome} />
+        <LoadResult outcome={outcome} files={files ?? []} />
       ) : (
         <>
           <div className="max-h-[60vh] space-y-2 overflow-y-auto px-4 py-4">

@@ -5,13 +5,6 @@ import { ChevronRight } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 
-// `editing`: the record open in the form. `new`: the record just created or
-// changed, so the reader sees where it landed.
-const ROW_TINTS = {
-  editing: 'bg-lavander/90',
-  new: 'bg-lavander/70',
-};
-
 /**
  * One row of a list table that opens to show `details` underneath, plus the
  * row's "..." menu. Clicking anywhere on the row toggles it; the chevron
@@ -66,10 +59,9 @@ export default function ExpandableRow({
     <Fragment>
       <tr
         onClick={onToggle}
-        className={cn(
-          'h-12 cursor-pointer border-b border-lavander/80 transition-colors',
-          ROW_TINTS[highlight] || (isOpen ? 'bg-cream/80' : 'bg-white hover:bg-cream/50'),
-        )}
+        data-expanded={isOpen}
+        data-highlight={highlight || undefined}
+        className="h-12 cursor-pointer border-b border-lavander/80"
       >
         <td className="px-4 py-2.5 font-medium">
           <button
