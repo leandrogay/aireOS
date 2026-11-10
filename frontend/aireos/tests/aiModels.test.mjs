@@ -11,6 +11,7 @@ import {
   modelFeaturesText,
   modelImpactSentence,
   modelNotice,
+  modelToastText,
   modelUnavailableSentence,
 } from '../app/utils/aiModels.js';
 
@@ -106,5 +107,18 @@ describe('modelNotice', () => {
 
     assert.equal(notice.text, 'The Assistant is unavailable');
     assert.equal(notice.detail, MESSAGE);
+  });
+});
+
+// ---- The upload toast ----
+
+describe('modelToastText', () => {
+  test('says mapping must be done by hand when only the mapping model is retired', () => {
+    assert.equal(modelToastText(null), 'AI mapping unavailable: map by hand');
+    assert.equal(modelToastText({ assistant: { available: true } }), 'AI mapping unavailable: map by hand');
+  });
+
+  test('names both models when the Assistant model is retired too', () => {
+    assert.equal(modelToastText({ assistant: { available: false } }), 'Mapping and Assistant models outdated');
   });
 });
