@@ -424,6 +424,9 @@ def envelope_to_packet(
         # Which model proposed this mapping (recorded by generate_mapping), so
         # the review can say so once instead of naming a model throughout.
         "proposedBy": {"provider": envelope.get("provider"), "model": envelope.get("model")},
+        # Set when the model was no longer available (ai_models), so the
+        # proposal starts blank and the review says why.
+        "aiUnavailable": envelope.get("ai_unavailable"),
         "columns": columns,
         "columnSamples": envelope.get("column_samples") or {},
         # The first data rows lined up by column (older proposals have none;

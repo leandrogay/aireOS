@@ -218,6 +218,11 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoa
 
           {kind === 'needs_review' && (
             <>
+              {outcome.aiUnavailable && (
+                <p className="mt-1 text-xs text-amber-900" title={outcome.aiUnavailable}>
+                  AI unavailable: fill this nomenclature in by hand.
+                </p>
+              )}
               {outcome.why === 'partial' && (
                 <>
                   <p className="mt-1 text-xs text-deep-violet-blue">

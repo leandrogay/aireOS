@@ -1,6 +1,7 @@
 import { formatDate } from '@/lib/formatDate';
 import { forecastWarningLines, isRefreshFailure } from '@/app/utils/forecastNotificationText';
 import { customerLabel } from '@/app/utils/retailerLabel';
+import { modelFeaturesText } from '@/app/utils/aiModels';
 
 // ==== Notification headings ====
 // The backend stores structured `payload` fields, not text (see backend
@@ -41,31 +42,22 @@ function forecastHeading(payload, success) {
 }
 
 // ==== AI model outdated (model_outdated) ====
-// Payload contract -- what the backend producer must send (see
-// ModelDetails in components/layout/NotificationDetails.jsx):
-//   feature          'mapping' | 'assistant'  which part of the app uses the model
-//   setting          'MAPPING_MODEL' | 'GEMINI_ASSISTANT_MODEL'  the backend setting to change
+// Payload contract -- what the backend producer (ai_models.record_unavailable)
+// sends; see ModelDetails in components/layout/NotificationDetails.jsx:
+//   features         ['mapping', 'assistant']  every feature on that model
+//   settings         ['MAPPING_MODEL', 'GEMINI_ASSISTANT_MODEL']  the settings to change
 //   current_model    e.g. 'gemini-3.8-flash'
 //   status           'retiring' (still works, has an end date) | 'retired' (calls now fail)
 //   retires_on       'YYYY-MM-DD' calendar date, or null when unknown
 //   suggested_model  a newer model to switch to, or null
-
-const MODEL_FEATURES = {
-  mapping: 'Upload mapping',
-  assistant: 'Assistant',
-};
-
-/** The name staff know a model-using feature by, e.g. 'mapping' → 'Upload mapping'. */
-export function modelFeatureLabel(feature) {
-  return MODEL_FEATURES[feature] || feature || 'AI feature';
-}
+// The wording is in utils/aiModels.js, shared with the pages' notices.
 
 function modelHeading(payload) {
-  const feature = modelFeatureLabel(payload.feature);
+  const features = modelFeaturesText(payload.features);
   return {
     tag: 'AI model',
     tone: 'model',
-    title: payload.status === 'retired' ? `AI model retired – ${feature}` : `AI model retiring soon – ${feature}`,
+    title: payload.status === 'retired' ? `AI model retired – ${features}` : `AI model retiring soon – ${features}`,
   };
 }
 

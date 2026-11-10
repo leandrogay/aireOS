@@ -404,6 +404,92 @@ def test_a_near_match_still_gets_a_new_proposal_for_review(monkeypatch):
     assert "near_match" not in envelope
 
 
+# ---- A model that is no longer available ------------------------------------------------
+
+class GoneModels:
+    """Every call fails the way Vertex AI answers a retired model."""
+
+    def __init__(self, code=404, status="NOT_FOUND"):
+        self.code, self.status = code, status
+        self.calls = []
+
+    def generate_content(self, **kwargs):
+        self.calls.append(kwargs)
+        raise gm.genai_errors.ClientError(self.code, {"error": {"code": self.code, "message": "gone", "status": self.status}})
+
+
+def _install_gone_model(monkeypatch, code=404, status="NOT_FOUND"):
+    client = FakeClient([])
+    client.models = GoneModels(code, status)
+    monkeypatch.setattr(gm, "get_gemini_client", lambda: client)
+    recorded = []
+    monkeypatch.setattr(gm.ai_models, "record_unavailable", recorded.append)
+    return client.models, recorded
+
+
+def test_a_retired_model_is_a_model_unavailable_error_not_a_generation_error(monkeypatch):
+    _install_gone_model(monkeypatch)
+    frame, layout = _sheng_siong()
+
+    with pytest.raises(gm.ai_models.ModelUnavailableError) as raised:
+        gm.generate_mapping_contract("claim.xlsx", frame, layout)
+
+    assert raised.value.feature == "mapping"
+
+
+def test_other_gemini_errors_are_still_generation_errors(monkeypatch):
+    _install_gone_model(monkeypatch, code=429, status="RESOURCE_EXHAUSTED")
+    frame, layout = _sheng_siong()
+
+    with pytest.raises(gm.MappingGenerationError):
+        gm.generate_mapping_contract("claim.xlsx", frame, layout)
+
+
+def test_a_retired_model_parks_a_blank_proposal_to_fill_in_by_hand(monkeypatch):
+    written = _bucket(monkeypatch, {})
+    models, recorded = _install_gone_model(monkeypatch)
+
+    result = gm.resolve_mapping("claim.xlsx", sheng_siong_xlsx(), "gs://bucket/uploads/claim.xlsx")
+
+    assert len(models.calls) == 1  # no repair attempts against a model that is gone
+    assert result["status"] == "pending_confirmation"
+    assert result["source"] == "manual"
+    assert result["ai_unavailable"].startswith(f"The AI model {gm.config.MAPPING_MODEL} is no longer available. It's used by Nomenclature generation")
+    envelope = written[gm.storage.pending_mapping_path(result["fingerprint"])]
+    assert envelope["ai_unavailable"] == result["ai_unavailable"]
+    assert (envelope["provider"], envelope["model"], envelope["attempts"]) == (None, None, 0)
+    assert envelope["contract"]["layout"]["header_row"] == 7
+    assert envelope["contract"]["fields"]["sku"]["status"] == "not_available"
+    assert [recorded_error.feature for recorded_error in recorded] == ["mapping"]
+
+
+def test_the_blank_proposal_fails_its_required_checks_until_filled(monkeypatch):
+    frame, layout = _sheng_siong()
+
+    proposal = gm.blank_mapping_contract("claim.xlsx", frame, layout)
+
+    failed = {check["id"] for check in proposal["checks"] if not check["passed"]}
+    assert {"required_sku", "required_quantity_units"} <= failed
+
+
+def test_the_blank_proposal_has_nothing_low_confidence_to_confirm(monkeypatch):
+    frame, layout = _sheng_siong()
+
+    proposal = gm.blank_mapping_contract("claim.xlsx", frame, layout)
+
+    assert gm.unreviewed_low_confidence(proposal["contract"]) == []
+
+
+def test_a_model_proposal_records_no_ai_unavailable_message(monkeypatch):
+    written = _bucket(monkeypatch, {})
+    _install(monkeypatch, [_answer(reference_contracts.reference_contract("sheng_siong_claim"))])
+
+    result = gm.resolve_mapping("claim.xlsx", sheng_siong_xlsx(), "gs://bucket/uploads/claim.xlsx")
+
+    assert (result["source"], result["ai_unavailable"]) == ("generated", None)
+    assert written[gm.storage.pending_mapping_path(result["fingerprint"])]["ai_unavailable"] is None
+
+
 # ---- The schema ------------------------------------------------------------------------
 
 def _unions(schema) -> int:

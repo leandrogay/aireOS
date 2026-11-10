@@ -12,14 +12,31 @@ import {
   outcomeFromResult,
   uploadOptionsFor,
 } from '@/app/utils/uploadFlow';
+import { modelToastText } from '@/app/utils/aiModels';
 import { FINISH_PAUSE_MS } from '@/app/utils/uploadProgress';
+import { getAiModelStatus } from '@/app/services/aiModelsApi';
 import { checkUpload, uploadFile } from '@/app/services/uploadApi';
+import Toast from '@/components/ui/Toast';
 import UploadTray from '@/components/upload/UploadTray';
+import useToast from '@/hooks/useToast';
 
 let nextId = 0;
 const makeId = () => `file-${(nextId += 1)}`;
 let nextBatchId = 0;
 const makeBatchId = () => `batch-${(nextBatchId += 1)}`;
+
+// Tells the person an upload's mapping model is retired. The status read only
+// decides whether the Assistant's model is retired too; if it fails, the
+// mapping-only wording is still true.
+async function warnModelUnavailable(notify) {
+  let status = null;
+  try {
+    status = await getAiModelStatus();
+  } catch {
+    // Keep the mapping-only message.
+  }
+  notify('warning', modelToastText(status));
+}
 
 // A file in the list moves through phases:
 //   checking   dropped; POST /api/uploads/check is answering what would happen
@@ -46,6 +63,13 @@ function UploadQueue({ showTray, children }) {
   const [batchError, setBatchError] = useState('');
   // Counts uploads that answered; the upload page reloads Recent uploads on it.
   const [uploadsFinished, setUploadsFinished] = useState(0);
+  // Warns when an upload found its AI model retired. Here rather than on the
+  // upload page so it shows wherever the person is when the upload answers.
+  const { toast, notify, dismissToast } = useToast();
+  const notifyRef = useRef(notify);
+  useEffect(() => {
+    notifyRef.current = notify;
+  }, [notify]);
 
   // Validation and checks are async, so by the time one answers the list has
   // moved on. This is what the duplicate-name and same-contents checks read.
@@ -307,6 +331,7 @@ function UploadQueue({ showTray, children }) {
           if (outcome.kind !== 'failed') pendingHashes.current.delete(item.id);
           patchItem(item.id, { ...progressCleared, phase: 'done', outcome });
           setUploadsFinished((count) => count + 1);
+          if (outcome.aiUnavailable) warnModelUnavailable(notifyRef.current);
         }
       } catch (error) {
         patchItem(item.id, {
@@ -386,6 +411,7 @@ function UploadQueue({ showTray, children }) {
     <UploadContext.Provider value={value}>
       {children}
       {showTray && <UploadTray items={items} onRetry={retryItem} />}
+      <Toast toast={toast} onDismiss={dismissToast} />
     </UploadContext.Provider>
   );
 }

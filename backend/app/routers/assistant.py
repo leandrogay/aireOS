@@ -6,7 +6,7 @@ from google.genai import errors as genai_errors
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import ConfigError
-from app.services import assistant, sellout_service, promotion_service, inventory_service
+from app.services import ai_models, assistant, sellout_service, promotion_service, inventory_service
 
 router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 
@@ -58,6 +58,9 @@ def ask(payload: AskRequest):
         )
     except assistant.AssistantConfigError as e:
         raise HTTPException(status_code=503, detail=str(e))
+    except ai_models.ModelUnavailableError as e:
+        # Its message names the setting to change, so it is shown as it is.
+        raise HTTPException(status_code=503, detail=str(e))
     except assistant.AssistantLoopError as e:
         raise HTTPException(status_code=502, detail=str(e))
     except GoogleAPICallError as e:
@@ -75,6 +78,9 @@ def digest(payload: DigestRequest):
     try:
         return assistant.generate_digest(customer=payload.customer)
     except assistant.AssistantConfigError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except ai_models.ModelUnavailableError as e:
+        # Its message names the setting to change, so it is shown as it is.
         raise HTTPException(status_code=503, detail=str(e))
     except GoogleAPICallError as e:
         raise HTTPException(status_code=503, detail=f"Unable to reach BigQuery: {e.message}")

@@ -60,6 +60,16 @@ export const CHART_TRANSITION = { duration: 0.7, ease: 'easeOut' };
 // The placeholder fades in over 150ms (the `duration-150` class in the hook).
 export const PLACEHOLDER_TIMING = { delay: 0.2, minDuration: 0.4 };
 
+// A card that joins a page already on screen (the mapping review's product
+// codes, once a product code column is chosen): it rises on the page spring,
+// and the cards below glide down to make room (`layout`, a calmer spring so
+// the whole column does not wobble) instead of jumping.
+export const CARD_REVEAL = {
+  y: PAGE_CASCADE.y,
+  transition: PAGE_CASCADE.transition,
+  layout: { type: 'spring', visualDuration: 0.3, bounce: 0.15 },
+};
+
 // A tab moves less than a page: it is the same place.
 export const TAB_CASCADE = {
   ...PAGE_CASCADE,

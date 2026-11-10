@@ -12,6 +12,32 @@ export function sortChecks(checks) {
   );
 }
 
+/**
+ * The failed required_<field> checks (backend mapping_checks), one per field,
+ * folded into one: they all say the same thing, and a blank proposal fails
+ * five of them at once. Everything else is returned as it was.
+ *
+ * @param {object[]} checks
+ * @param {(field: string) => string} labelOf the name a reviewer knows a field by
+ */
+export function groupRequiredChecks(checks, labelOf = (field) => field) {
+  const list = checks || [];
+  const missing = list.filter((check) => !check.passed && check.level === 'error' && check.id?.startsWith('required_'));
+  if (missing.length < 2) return list;
+  const fields = missing.flatMap((check) => check.fields || []);
+  const merged = {
+    id: 'required_fields',
+    level: 'error',
+    passed: false,
+    message: `${missing.length} required fields have no source yet: ${fields.map(labelOf).join(', ')}.`,
+    fields,
+    evidence: {},
+  };
+  const firstAt = list.indexOf(missing[0]);
+  const rest = list.filter((check) => !missing.includes(check));
+  return [...rest.slice(0, firstAt), merged, ...rest.slice(firstAt)];
+}
+
 /** How many checks failed, warned and passed. */
 export function checkSummary(checks) {
   const list = checks || [];

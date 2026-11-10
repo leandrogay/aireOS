@@ -32,9 +32,6 @@ const COLUMN_COUNT = 6;
  * sortable, and paging below. No filter bar; the list is short enough that
  * search covers it.
  *
- * `months` is the window the page fetched, shown in the count line; the
- * filtering itself happens on the backend.
- *
  * A file whose mapping is approved but whose data is not loaded (or was
  * loaded with an older version) has a Load / Reload button beside its
  * status. It opens the load confirmation, so files are never forgotten once
@@ -48,7 +45,6 @@ const COLUMN_COUNT = 6;
  *   onRollback: (upload: object) => void,
  *   onDelete: (upload: object) => void,
  *   onLoaded: (response: object) => void,
- *   months: number,
  * }} props
  */
 export default function RecentUploads({
@@ -59,7 +55,6 @@ export default function RecentUploads({
   onRollback,
   onDelete,
   onLoaded,
-  months,
 }) {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState({ field: 'uploaded_at', direction: 'desc' });
@@ -71,7 +66,6 @@ export default function RecentUploads({
   const sorted = sortUploadsByDate(searchUploads(uploads, search), sort.direction);
   const { pageRows, currentPage, totalPages } = paginate(sorted, page, pageSize);
   const showTable = uploads.length > 0 || isLoading;
-  const windowLabel = `last ${months} month${months === 1 ? '' : 's'}`;
 
   // Any change to what is listed goes back to page 1, where the result starts.
   const changeSearch = (value) => {
@@ -97,7 +91,7 @@ export default function RecentUploads({
           <p className="text-sm text-deep-violet-blue/70" aria-live="polite">
             {isLoading && !uploads.length
               ? 'Loading uploads…'
-              : `${resultCountLabel(sorted.length, uploads.length, 'upload')} · ${windowLabel}`}
+              : resultCountLabel(sorted.length, uploads.length, 'upload')}
           </p>
         </div>
         <div className="flex items-center gap-2">

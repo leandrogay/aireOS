@@ -245,7 +245,7 @@ def _check_required(contract: dict) -> list[dict]:
         checks.append(_check(
             f"required_{field}", "error", ok,
             f"{field} is filled ({entry['status']})." if ok
-            else f"{field} is required but marked not available: {entry.get('reason') or 'no reason given'}.",
+            else f"{field} is required but marked not available: {(entry.get('reason') or 'no reason given').rstrip('.')}.",
             [field],
         ))
     return checks
