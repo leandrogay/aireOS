@@ -4,7 +4,8 @@ import { Suspense, useEffect, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
 import PageLayout from '@/components/layout/PageLayout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import TableCard from '@/components/ui/TableCard';
+import TableCardHeader from '@/components/ui/TableCardHeader';
 import ForecastChart from '@/components/forecast/ForecastChart';
 import ForecastFilters from '@/components/forecast/ForecastFilters';
 import ForecastTable from '@/components/forecast/ForecastTable';
@@ -35,11 +36,6 @@ import useForecastView from '@/hooks/useForecastView';
 import useForecastInitialStatus from '@/hooks/useForecastInitialStatus';
 import useForecastRefreshStatus from '@/hooks/useForecastRefreshStatus';
 import useForecastYearTotals from '@/hooks/useForecastYearTotals';
-
-// Same shell as the filter and chart cards above them.
-const cardClass =
-  'min-w-0 max-w-full rounded-lg border border-lavander bg-white text-deep-violet-blue shadow-sm ring-0';
-const cardTitleClass = 'font-serif text-base font-normal text-deep-violet-blue group-data-[size=sm]/card:text-base';
 
 // useSearchParams (the ?tier= model) wants a Suspense boundary above it.
 export default function ForecastPage() {
@@ -248,26 +244,16 @@ function ForecastView() {
         {/* Each table is a card of its own under the chart card, as on the
             other pages -- never a table inside the chart's card. */}
         {yearTotalsBusy || yearTotals.length ? (
-          <Card className={cardClass}>
-            <CardHeader className="pb-1">
-              <CardTitle className={cardTitleClass}>Full-year totals</CardTitle>
-              <p className="text-[11px] text-deep-violet-blue/70">
-                Actual and forecast volume in cartons for each calendar year in view
-                {modelLabel ? ` · ${modelLabel}` : ''}
-              </p>
-            </CardHeader>
-            <CardContent className="min-w-0">
-              <ForecastYearTotals years={yearTotals} loading={yearTotalsBusy} horizonVolume={horizonVolume} />
-            </CardContent>
-          </Card>
+          <TableCard
+            label="Full-year totals"
+            header={<TableCardHeader title="Full-year totals" detail={<>Actual and forecast volume in cartons for each calendar year in view{modelLabel ? ` · ${modelLabel}` : ''}</>} />}
+          >
+            <ForecastYearTotals years={yearTotals} loading={yearTotalsBusy} horizonVolume={horizonVolume} />
+          </TableCard>
         ) : null}
 
         {points.length > 0 && hasTableColumn ? (
-          <Card className={cardClass}>
-            <CardContent className="min-w-0">
-              <ForecastTable points={points} visibleSeries={tableSeries} modelLabel={modelLabel} />
-            </CardContent>
-          </Card>
+          <ForecastTable points={points} visibleSeries={tableSeries} modelLabel={modelLabel} />
         ) : null}
       </div>
     </PageLayout>

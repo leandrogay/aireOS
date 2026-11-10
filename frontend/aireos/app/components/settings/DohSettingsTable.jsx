@@ -51,7 +51,7 @@ export default function DohSettingsTable({
 }) {
   return (
     <>
-    <div className="grid min-w-0 gap-2 sm:hidden">
+    <div className="grid min-w-0 gap-2 border-t border-lavander p-3 sm:hidden">
       {loading && Array.from({ length: 4 }, (_, index) => (
         <div key={index} className="h-28 animate-pulse rounded-lg border border-lavander bg-white" />
       ))}
@@ -75,7 +75,7 @@ export default function DohSettingsTable({
         );
       })}
     </div>
-    <div className="hidden max-w-full min-w-0 overflow-auto rounded-md border border-lavander sm:block">
+    <div className="hidden max-w-full min-w-0 overflow-auto border-t border-lavander sm:block">
       <table className="aire-table-rows w-full min-w-[44rem] border-collapse">
         <thead>
           <tr>

@@ -3,8 +3,8 @@
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import DataTable from '@/components/ui/DataTable';
-import TablePagination, { PAGE_SIZES } from '@/components/ui/TablePagination';
+import PaginatedDataTable from '@/components/ui/PaginatedDataTable';
+import { PAGE_SIZES } from '@/components/ui/TablePagination';
 import TableSearch from '@/components/ui/TableSearch';
 import ConfirmDeleteDialog from '@/components/promotions/ConfirmDeleteDialog';
 import PromotionFilters from '@/components/promotions/PromotionFilters';
@@ -156,7 +156,7 @@ export default function PromotionList({
         onReset={resetFilters}
       />
 
-      <DataTable
+      <PaginatedDataTable
         label="Promotion overview"
         noun="promotion"
         totalCount={uniquePromotions.length}
@@ -174,16 +174,7 @@ export default function PromotionList({
             placeholder="Search store, period, mechanic…"
           />
         }
-        footer={
-          <TablePagination
-            page={currentPage}
-            totalPages={totalPages}
-            pageSize={pageSize}
-            totalRows={sorted.length}
-            onPageChange={setPage}
-            onPageSizeChange={changePageSize}
-          />
-        }
+        pagination={{ page: currentPage, totalPages, pageSize, totalRows: sorted.length, onPageChange: setPage, onPageSizeChange: changePageSize }}
         columns={PROMOTION_COLUMNS}
         minWidth="72rem"
         sort={sort}
@@ -234,7 +225,7 @@ export default function PromotionList({
             />
           );
         })}
-      </DataTable>
+      </PaginatedDataTable>
 
       <ConfirmDeleteDialog
         promotion={deletion.target}

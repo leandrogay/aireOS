@@ -327,6 +327,18 @@
     background-color: color-mix(in srgb, var(--aire-lavender) 28%, white);
   }
 
+  .aire-table-grid tbody > tr[data-expanded='true'] > td {
+    background-color: color-mix(in srgb, var(--aire-cream) 50%, white);
+  }
+
+  .aire-table-grid tbody > tr[data-highlight='new'] > td {
+    background-color: color-mix(in srgb, var(--aire-lavender) 70%, white);
+  }
+
+  .aire-table-grid tbody > tr[data-highlight='editing'] > td {
+    background-color: color-mix(in srgb, var(--aire-lavender) 90%, white);
+  }
+
   :is(.aire-table-grid, .aire-table-rows) tbody > tr:not(:has(> td[colspan])):hover > td:first-child,
   :is(.aire-table-grid, .aire-table-rows) tbody > tr:not(:has(> td[colspan])):focus-within > td:first-child {
     box-shadow: inset 3px 0 0 var(--aire-deep-blue);
