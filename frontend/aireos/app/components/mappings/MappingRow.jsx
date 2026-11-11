@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronRight, Trash2 } from 'lucide-react';
+import { ClipboardCheck, Trash2 } from 'lucide-react';
 
 import RowActions from '@/components/ui/RowActions';
 import StatusPill from '@/components/ui/StatusPill';
@@ -31,7 +31,7 @@ const STATUS_TONES = {
  */
 export function mappingRowActions(mapping, onOpen, onDelete) {
   return [
-    { key: 'open', label: 'Open nomenclature', icon: ChevronRight, onSelect: () => onOpen(mapping.mappingId) },
+    { key: 'open', label: 'Review nomenclature', icon: ClipboardCheck, onSelect: () => onOpen(mapping.mappingId) },
     { key: 'delete', label: 'Delete nomenclature', icon: Trash2, onSelect: () => onDelete(mapping), destructive: true },
   ];
 }
