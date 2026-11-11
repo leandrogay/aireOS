@@ -16,6 +16,7 @@ import { NotMigrated, Section, Variant, WhichToUse } from './GalleryParts';
 // Which component to reach for; keep in step with the components themselves.
 const GUIDE = [
   ['Pick one of a few, side by side', 'SegmentedControl', 'value, onChange, options, look, size, fullWidth'],
+  ['…with an option shown but not available', 'SegmentedControl', 'options[].disabled, options[].disabledReason'],
   ['Turn one thing on or off', 'ToggleButton', 'pressed, onChange, look'],
   ['A setting with a switch and an explanation', 'ToggleField', 'label or ariaLabel, checked, onChange, showState, onHint, offHint, tone'],
 ];
@@ -43,10 +44,19 @@ const METRICS = [
   { value: 'revenue', label: 'Revenue' },
 ];
 
-const GRANULARITIES = [
-  { value: 'week', label: 'By week', disabled: true, title: 'No weekly data in this range' },
-  { value: 'month', label: 'By month' },
-];
+// The dashboard's By week / By month switch: By week stays in the track but
+// can't be picked when no month in the range has weekly rows.
+function granularityOptions(weekAvailable) {
+  return [
+    {
+      value: 'week',
+      label: 'By week',
+      disabled: !weekAvailable,
+      disabledReason: 'No weekly data for this selection. Only monthly totals are loaded.',
+    },
+    { value: 'month', label: 'By month' },
+  ];
+}
 
 const MODES = [
   { value: 'upload', label: 'Upload' },
@@ -78,6 +88,7 @@ export default function ToggleGallery() {
   const [segments, setSegments] = useState({
     metric: 'revenue',
     granularity: 'month',
+    granularityLive: 'week',
     mode: 'upload',
     view: 'overview',
     duplicate: 'replace',
@@ -94,9 +105,17 @@ export default function ToggleGallery() {
     scenario: true,
   });
   const [legacy, setLegacy] = useState('week');
+  const [weekAvailable, setWeekAvailable] = useState(true);
 
   const setSetting = (key) => (value) => setSettings((prev) => ({ ...prev, [key]: value }));
   const setSegment = (key) => (value) => setSegments((prev) => ({ ...prev, [key]: value }));
+
+  // Turning weekly data off while By week is picked falls back to By month, as
+  // the dashboard would: a disabled option can't stay selected.
+  function changeWeekAvailable(available) {
+    setWeekAvailable(available);
+    if (!available) setSegments((prev) => ({ ...prev, granularityLive: 'month' }));
+  }
 
   function toggleFormat(format) {
     setPressed((prev) => ({
@@ -129,8 +148,39 @@ export default function ToggleGallery() {
         <Variant name="Tint, sm, form modes (inventory)" props={'look="tint" size="sm"'} value={segments.mode}>
           <SegmentedControl value={segments.mode} onChange={setSegment('mode')} options={MODES} />
         </Variant>
-        <Variant name="Disabled option, with title" props="options[].disabled, options[].title" value={segments.granularity}>
-          <SegmentedControl value={segments.granularity} onChange={setSegment('granularity')} options={GRANULARITIES} />
+        <Variant
+          name="Disabled option, with reason (dashboard By week)"
+          props="options[].disabled, options[].disabledReason"
+          value={segments.granularity}
+        >
+          {/* 152px and fullWidth, as on the dashboard (RevenueTrendCard). Hover By week for the reason. */}
+          <SegmentedControl
+            fullWidth
+            className="w-[152px]"
+            value={segments.granularity}
+            onChange={setSegment('granularity')}
+            options={granularityOptions(false)}
+            ariaLabel="Group by"
+          />
+        </Variant>
+        <Variant
+          name="Disabled by the filters (try it)"
+          props="options[].disabled = !weekAvailable"
+          value={{ granularity: segments.granularityLive, weekAvailable }}
+        >
+          <div className="space-y-2">
+            <SegmentedControl
+              fullWidth
+              className="w-[152px]"
+              value={segments.granularityLive}
+              onChange={setSegment('granularityLive')}
+              options={granularityOptions(weekAvailable)}
+              ariaLabel="Group by"
+            />
+            <ToggleButton pressed={weekAvailable} onChange={changeWeekAvailable}>
+              Weekly data loaded
+            </ToggleButton>
+          </div>
         </Variant>
         <Variant name="With icons" props="options[].icon" value={segments.duplicate}>
           <SegmentedControl value={segments.duplicate} onChange={setSegment('duplicate')} options={DUPLICATE_CHOICES} />
