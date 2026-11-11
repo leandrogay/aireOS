@@ -81,7 +81,7 @@ export default function TableGallery() {
 
       <Panel
         title="Titled table card — TableCard + TableCardHeader"
-        note="For a table that sits among other cards and needs its own title. Left: a TableGrid inside, the shape SKU ranking and DOH settings are moving to. Right: the Inventory tabs' InventoryTableFrame, with a HeaderCheckboxFilter on the Month column and paging."
+        note="For a table that sits among other cards and needs its own title. Left: a TableGrid inside, the shape SKU ranking is moving to. Right: the Inventory tabs' InventoryTableFrame, with a HeaderCheckboxFilter on the Month column and paging."
       >
         <TableCardDemo />
       </Panel>
@@ -139,7 +139,7 @@ export default function TableGallery() {
 
       <NotMigrated rows={NOT_MIGRATED} leaveAsIs={LEAVE_AS_IS}>
         <div className="sm:col-span-2 lg:col-span-2">
-          <Variant name="Old: hand-rolled <table> (DOH settings, SKU ranking)" props="own classes per file" value={null}>
+          <Variant name="Old: hand-rolled <table> (SKU ranking)" props="own classes per file" value={null}>
             <table className="w-full text-left text-sm text-deep-violet-blue">
               <thead className="bg-cream">
                 <tr className="border-b border-lavander">

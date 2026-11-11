@@ -25,7 +25,6 @@ export const GUIDE = [
 // Tables that should move to the kit, page by page. Remove a row when its
 // page migrates.
 export const NOT_MIGRATED = [
-  ['Settings (DOH)', 'settings/DohSettingsTable.jsx', 'Hand-rolled <table> inside TableCard', 'TableGrid inside TableCard'],
   ['Dashboard', 'dashboard/SkuRanking.jsx', 'Hand-rolled <table> with SortHeader inside TableCard', 'TableGrid inside TableCard'],
   ['Forecast', 'forecast/ForecastTable.jsx', 'Hand-rolled <table> with HeaderCheckboxFilter inside TableCard', 'TableGrid (needs a header-filter column option first)'],
   ['Inventory', 'inventory/InventorySkuTable.jsx, SellInPlanTable.jsx, AtRiskView.jsx', 'Hand-rolled <table> on the inventoryTableClass strings, in InventoryTableFrame', 'TableGrid (needs a header-filter column option first)'],

@@ -114,12 +114,12 @@ def list_promotions(
     search: str = Query(default="", max_length=200),
     sort: str = "period_start",
     direction: str = "desc",
-    retailer: str = "",
-    store: str = "",
-    period: str = "",
-    promo_type: str = "",
-    mechanic: str = "",
-    status: str = "",
+    retailer: list[str] = Query(default=[]),
+    store: list[str] = Query(default=[]),
+    period: list[str] = Query(default=[]),
+    promo_type: list[str] = Query(default=[]),
+    mechanic: list[str] = Query(default=[]),
+    status: list[str] = Query(default=[]),
 ):
     """One page of the promotion overview (promotion_service.list_promotion_page)."""
     try:

@@ -42,8 +42,19 @@ def test_list_passes_the_query_to_the_service(monkeypatch):
     assert response.status_code == 200
     assert response.json() == PAGE
     assert calls[0]["limit"] == 10
-    assert calls[0]["status"] == "past"
-    assert calls[0]["retailer"] == ""
+    assert calls[0]["status"] == ["past"]
+    assert calls[0]["retailer"] == []
+
+
+def test_list_passes_multiple_filter_values(monkeypatch):
+    calls = []
+    monkeypatch.setattr(promotion_service, "list_promotion_page", lambda **query: calls.append(query) or PAGE)
+
+    response = client.get("/api/promotions", params=[("retailer", "fairprice_offline"), ("retailer", "prime_offline"), ("status", "active"), ("status", "upcoming")])
+
+    assert response.status_code == 200
+    assert calls[0]["retailer"] == ["fairprice_offline", "prime_offline"]
+    assert calls[0]["status"] == ["active", "upcoming"]
 
 
 def test_list_maps_a_bad_sort_to_400(monkeypatch):

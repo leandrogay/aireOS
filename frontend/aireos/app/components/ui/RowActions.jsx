@@ -4,6 +4,7 @@ import { Fragment } from 'react';
 import { MoreHorizontal } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,7 +36,7 @@ import {
 export default function RowActions({ label, actions }) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={<Button variant="ghost" size="icon" aria-label={label} />}>
+      <DropdownMenuTrigger render={<Button variant="ghost" size="icon" aria-label={label} className="text-deep-violet-blue" />}>
         <MoreHorizontal />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-52">
@@ -48,7 +49,12 @@ export default function RowActions({ label, actions }) {
                 variant={action.destructive ? 'destructive' : 'default'}
                 disabled={Boolean(action.disabledReason)}
                 onClick={action.onSelect}
-                className="items-start"
+                // The page's text colour, not the popover default; destructive
+                // items keep their red.
+                className={cn(
+                  'items-start',
+                  !action.destructive && 'text-deep-violet-blue focus:text-deep-violet-blue focus:**:text-deep-violet-blue',
+                )}
               >
                 <Icon className="mt-0.5" />
                 <span className="grid">

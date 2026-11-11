@@ -440,14 +440,31 @@ def test_filters_are_bound_parameters(monkeypatch):
 
     sql, params = _page_query(conn)
     assert {key: params[key] for key in ("retailer", "store", "period", "promo_type", "mechanic")} == {
-        "retailer": "fairprice_offline",
-        "store": "Bedok",
-        "period": "Nov 2026",
-        "promo_type": "monthly",
-        "mechanic": "10% off",
+        "retailer": ["fairprice_offline"],
+        "store": ["Bedok"],
+        "period": ["Nov 2026"],
+        "promo_type": ["monthly"],
+        "mechanic": ["10% off"],
     }
-    assert "r.retailer_name = :retailer" in sql
-    assert "s.store_name = :store" in sql
+    assert "r.retailer_name = ANY(CAST(:retailer AS text[]))" in sql
+    assert "s.store_name = ANY(CAST(:store AS text[]))" in sql
+
+
+def test_multi_select_filters_match_any_selected_value(monkeypatch):
+    conn = _install_fake_engine(monkeypatch, _page_respond())
+
+    promotion_service.list_promotion_page(
+        limit=25,
+        retailer=["fairprice_offline", "prime_offline"],
+        status=["active", "upcoming"],
+        today=TODAY,
+    )
+
+    sql, params = _page_query(conn)
+    assert params["retailer"] == ["fairprice_offline", "prime_offline"]
+    assert "r.retailer_name = ANY(CAST(:retailer AS text[]))" in sql
+    assert " OR " in sql
+    assert "CAST(:today AS date) < p.period_start" in sql
 
 
 def test_status_filter_compares_dates_to_the_given_day(monkeypatch):

@@ -988,26 +988,30 @@ def _search_clauses(search: str, params: dict) -> list[str]:
 
 
 def _filter_clauses(filters: dict, params: dict) -> list[str]:
-    """The filter bar's choices; an empty value means "all"."""
+    """The filter bar's choices; an empty list means "all"."""
     clauses = []
 
-    if filters.get("retailer"):
-        params["retailer"] = filters["retailer"]
-        clauses.append(_STORE_LINK_EXISTS.format(condition="r.retailer_name = :retailer"))
-    if filters.get("store"):
-        params["store"] = filters["store"]
-        clauses.append(_STORE_LINK_EXISTS.format(condition="s.store_name = :store"))
-    if filters.get("period"):
-        params["period"] = filters["period"]
-        clauses.append("p.period_label = :period")
-    if filters.get("promo_type"):
-        params["promo_type"] = filters["promo_type"]
-        clauses.append("CAST(p.promo_type AS text) = :promo_type")
-    if filters.get("mechanic"):
-        params["mechanic"] = filters["mechanic"]
-        clauses.append("p.promotion_mechanic = :mechanic")
-    if filters.get("status"):
-        clauses.append(_STATUS_SQL[filters["status"]])
+    for key, column in (
+        ("retailer", "r.retailer_name"),
+        ("store", "s.store_name"),
+    ):
+        if filters[key]:
+            params[key] = filters[key]
+            clauses.append(_STORE_LINK_EXISTS.format(
+                condition=f"{column} = ANY(CAST(:{key} AS text[]))"
+            ))
+
+    for key, column in (
+        ("period", "p.period_label"),
+        ("promo_type", "CAST(p.promo_type AS text)"),
+        ("mechanic", "p.promotion_mechanic"),
+    ):
+        if filters[key]:
+            params[key] = filters[key]
+            clauses.append(f"{column} = ANY(CAST(:{key} AS text[]))")
+
+    if filters["status"]:
+        clauses.append("(" + " OR ".join(_STATUS_SQL[value] for value in filters["status"]) + ")")
 
     return clauses
 
@@ -1026,12 +1030,12 @@ def list_promotion_page(
     search: str = "",
     sort: str = "period_start",
     direction: str = "desc",
-    retailer: str = "",
-    store: str = "",
-    period: str = "",
-    promo_type: str = "",
-    mechanic: str = "",
-    status: str = "",
+    retailer: list[str] | str = "",
+    store: list[str] | str = "",
+    period: list[str] | str = "",
+    promo_type: list[str] | str = "",
+    mechanic: list[str] | str = "",
+    status: list[str] | str = "",
     today: date | None = None,
 ) -> dict:
     """
@@ -1047,17 +1051,22 @@ def list_promotion_page(
         raise ValueError(f"sort must be one of {', '.join(PROMOTION_SORT_FIELDS)}")
     if direction not in SORT_DIRECTIONS:
         raise ValueError(f"direction must be one of {', '.join(SORT_DIRECTIONS)}")
-    if status and status not in PROMOTION_STATUSES:
+    def values(choice: list[str] | str) -> list[str]:
+        if isinstance(choice, str):
+            return [choice] if choice else []
+        return list(choice)
+
+    if any(value not in PROMOTION_STATUSES for value in values(status)):
         raise ValueError(f"status must be one of {', '.join(PROMOTION_STATUSES)}")
 
     params: dict = {"today": today or _singapore_today()}
     filters = {
-        "retailer": retailer,
-        "store": store,
-        "period": period,
-        "promo_type": promo_type,
-        "mechanic": mechanic,
-        "status": status,
+        "retailer": values(retailer),
+        "store": values(store),
+        "period": values(period),
+        "promo_type": values(promo_type),
+        "mechanic": values(mechanic),
+        "status": values(status),
     }
     where = _filter_clauses(filters, params) + _search_clauses(search, params)
     where_sql = " AND ".join(where) if where else "TRUE"

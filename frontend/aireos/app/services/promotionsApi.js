@@ -150,12 +150,12 @@ export async function getRetailers() {
  *   search?: string,
  *   sort?: 'period_start' | 'period_end',
  *   direction?: 'asc' | 'desc',
- *   retailer?: string,
- *   store?: string,
- *   period?: string,
- *   promoType?: string,
- *   mechanic?: string,
- *   status?: '' | 'upcoming' | 'active' | 'past',
+ *   retailer?: string[],
+ *   store?: string[],
+ *   period?: string[],
+ *   promoType?: string[],
+ *   mechanic?: string[],
+ *   status?: string[],
  * }} [query]
  * @returns {Promise<{ promotions: object[], total: number, unfiltered_total: number, limit: number, offset: number }>}
  */
@@ -182,7 +182,11 @@ export async function getPromotionPage(query = {}) {
   });
   const optional = { search: search.trim(), retailer, store, period, promo_type: promoType, mechanic, status };
   for (const [key, value] of Object.entries(optional)) {
-    if (value) params.set(key, value);
+    if (Array.isArray(value)) {
+      value.forEach((item) => params.append(key, item));
+    } else if (value) {
+      params.set(key, value);
+    }
   }
 
   return request(`/api/promotions?${params}`);
