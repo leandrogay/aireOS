@@ -76,6 +76,27 @@
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
 
+  /* Liquid Glass look: the values live in :root below, these only expose them
+     as utilities (text-ink-soft, outline-focus, rounded-glass-md,
+     shadow-glass-2, ease-enter, duration-popover, ...). */
+  --color-ink-soft: var(--aire-ink-soft);
+  --color-focus: var(--aire-focus);
+  --radius-glass-sm: var(--glass-radius-sm);
+  --radius-glass-md: var(--glass-radius-md);
+  --radius-glass-lg: var(--glass-radius-lg);
+  --shadow-glass-1: var(--glass-shadow-1);
+  --shadow-glass-2: var(--glass-shadow-2);
+  --shadow-glass-3: var(--glass-shadow-3);
+  --shadow-card: var(--aire-card-shadow);
+  --ease-standard: var(--motion-ease-standard);
+  --ease-enter: var(--motion-ease-enter);
+  --ease-exit: var(--motion-ease-exit);
+  --transition-duration-press: var(--motion-press);
+  --transition-duration-hover: var(--motion-hover);
+  --transition-duration-popover: var(--motion-popover);
+  --transition-duration-dialog: var(--motion-dialog);
+  --transition-duration-page: var(--motion-page);
+
   /* One lavender pulse on the promotion form when Edit is pressed. */
   --animate-edit-flash: edit-flash 0.9s ease-in-out;
   @keyframes edit-flash {
@@ -142,6 +163,63 @@
 
   /* Scrollbar thumb on every scrolling area (set on html, inherited). */
   --scrollbar-thumb: oklch(0.75 0 0);
+
+  /* The one secondary text colour: 4.93:1 on lavender, 4.95:1 on cream,
+     6.24:1 on white. */
+  --aire-ink-soft: #585F80;
+  /* The one focus colour (.focus-ring below). */
+  --aire-focus: var(--aire-deep-blue);
+
+  /* Liquid Glass. Glass is for the control layer only (sidebar, popups,
+     dialogs, toasts, the assistant); cards, tables, charts and forms stay
+     solid. Everything is mixed from the brand kit above.
+     Fills: 1 = sidebar, 2 = popovers / menus / toasts / notification panel,
+     3 = dialogs / assistant panel. Fill 1 only ever sits over the page wash.
+     Fills 2 and 3 open over content, and their alphas are the lowest that
+     keep text at 4.5:1 when a dark button or chart is underneath; do not
+     lower them. */
+  --glass-base: color-mix(in oklab, var(--aire-lavender) 40%, white);
+  --glass-fill-1: color-mix(in oklab, var(--glass-base) 72%, transparent);
+  --glass-fill-2: color-mix(in oklab, var(--glass-base) 88%, transparent);
+  --glass-fill-3: color-mix(in oklab, var(--glass-base) 92%, transparent);
+  /* What glass falls back to with no backdrop-filter, or when the user asks
+     for less transparency or more contrast. */
+  --glass-solid-1: color-mix(in oklab, var(--aire-lavender) 30%, white);
+  --glass-solid-2: white;
+  --glass-solid-3: white;
+  --glass-blur-1: 16px;
+  --glass-blur-2: 20px;
+  --glass-saturate: 1.4;
+  --glass-border: color-mix(in srgb, var(--aire-deep-blue) 12%, transparent);
+  /* The lit edge: bright along the top, a faint shade along the bottom, a
+     hairline all round. */
+  --glass-rim:
+    inset 0 1px 0 rgb(255 255 255 / 0.65),
+    inset 0 -1px 0 color-mix(in srgb, var(--aire-deep-blue) 10%, transparent),
+    inset 0 0 0 1px rgb(255 255 255 / 0.28);
+  --glass-shadow-1: 0 1px 2px color-mix(in srgb, var(--aire-deep-blue) 10%, transparent);
+  --glass-shadow-2: 0 8px 24px -6px color-mix(in srgb, var(--aire-deep-blue) 22%, transparent);
+  --glass-shadow-3: 0 18px 48px -12px color-mix(in srgb, var(--aire-deep-blue) 32%, transparent);
+  /* Radii nest: inner radius = outer radius - the padding between them. */
+  --glass-radius-sm: 10px;
+  --glass-radius-md: 16px;
+  --glass-radius-lg: 24px;
+
+  /* The solid card (.aire-card below). */
+  --aire-card-border: color-mix(in srgb, var(--aire-deep-blue) 11%, transparent);
+  --aire-card-shadow:
+    0 1px 2px color-mix(in srgb, var(--aire-deep-blue) 6%, transparent),
+    0 6px 16px -8px color-mix(in srgb, var(--aire-deep-blue) 16%, transparent);
+
+  /* Motion. Only transform and opacity move. */
+  --motion-press: 80ms;
+  --motion-hover: 140ms;
+  --motion-popover: 220ms;
+  --motion-dialog: 320ms;
+  --motion-page: 420ms;
+  --motion-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --motion-ease-enter: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --motion-ease-exit: cubic-bezier(0.3, 0, 0.8, 0.15);
 }
 
 .dark {
@@ -210,6 +288,146 @@
 @layer utilities {
   .tabular-nums:not(.font-mono) {
     font-family: var(--font-numeric), var(--font-sans);
+  }
+}
+
+/* ==== Liquid Glass surfaces ====
+   In the components layer on purpose: any Tailwind utility on the same
+   element (rounded-*, border-0, shadow-*, bg-*) wins over these.
+   The lit edge and the drop shadow go through Tailwind's own shadow
+   variables, so a ring-* or shadow-* utility adds to them instead of
+   replacing the whole box-shadow. */
+@layer components {
+  /* glass-1 sidebar; glass-2 popovers, menus, tooltips, toasts, notification
+     panel; glass-3 dialogs, assistant panel. Never put one inside another
+     (blur in blur), never on a card, table cell, chart or skeleton, and never
+     animate the blur. No radius is set: use rounded-glass-sm / -md / -lg or
+     rounded-full. */
+  .glass-1 {
+    --glass-fill: var(--glass-fill-1);
+    --glass-solid: var(--glass-solid-1);
+    --glass-blur: var(--glass-blur-1);
+    --tw-shadow: var(--glass-shadow-1);
+  }
+
+  .glass-2 {
+    --glass-fill: var(--glass-fill-2);
+    --glass-solid: var(--glass-solid-2);
+    --glass-blur: var(--glass-blur-2);
+    --tw-shadow: var(--glass-shadow-2);
+  }
+
+  .glass-3 {
+    --glass-fill: var(--glass-fill-3);
+    --glass-solid: var(--glass-solid-3);
+    --glass-blur: var(--glass-blur-2);
+    --tw-shadow: var(--glass-shadow-3);
+  }
+
+  /* Solid first; see-through only where the browser can blur behind it. */
+  .glass-1,
+  .glass-2,
+  .glass-3 {
+    background-color: var(--glass-solid);
+    border: 1px solid var(--glass-border);
+    --tw-inset-shadow: var(--glass-rim);
+    box-shadow:
+      var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow),
+      var(--tw-ring-shadow), var(--tw-shadow);
+
+    @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+      background-color: var(--glass-fill);
+      -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+      backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    }
+
+    /* Back to solid for anyone who asked the OS for it. */
+    @media (prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active) {
+      background-color: var(--glass-solid);
+      border-color: color-mix(in srgb, var(--aire-deep-blue) 60%, transparent);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
+
+  /* The solid content card: white, never glass, so text and sticky table
+     cells inside it stay on an opaque ground. */
+  .aire-card {
+    background-color: white;
+    border: 1px solid var(--aire-card-border);
+    border-radius: var(--glass-radius-md);
+    --tw-shadow: var(--aire-card-shadow);
+    box-shadow:
+      var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow),
+      var(--tw-ring-shadow), var(--tw-shadow);
+  }
+
+  /* The page background: cream running into lavender, with a faint violet
+     and a faint celest glow. Static (no animation, no filter) and pinned to
+     the window, so glass has something to blur while the page scrolls over
+     it. It is drawn behind the element, so the element itself (and anything
+     between it and <body>) must have no background of its own. Put it on the
+     outermost layout element, never inside a wrapper that animates: a
+     transform or filter on an ancestor re-anchors `position: fixed` and the
+     wash would jump. The glows are kept this faint so ink-soft text straight
+     on the wash stays above 4.5:1. */
+  .aire-wash::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-color: var(--aire-cream);
+    background-image:
+      radial-gradient(60% 50% at 12% 0%, color-mix(in srgb, var(--aire-violet) 16%, transparent), transparent 70%),
+      radial-gradient(55% 55% at 100% 100%, color-mix(in srgb, var(--aire-celest) 18%, transparent), transparent 70%),
+      linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--aire-cream) 70%, white),
+        color-mix(in srgb, var(--aire-lavender) 80%, white)
+      );
+
+    @media (forced-colors: active) {
+      background: Canvas;
+    }
+  }
+
+  /* Press feedback for buttons and other pressable controls. A transition-*
+     utility on the same element replaces this transition (the press then
+     follows that one, or snaps if it does not list `scale`). */
+  .press {
+    transition: scale var(--motion-press) var(--motion-ease-standard);
+
+    &:active:not(:disabled, [aria-disabled='true'], [data-disabled]) {
+      scale: 0.97;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      transition: none;
+
+      &:active:not(:disabled, [aria-disabled='true'], [data-disabled]) {
+        scale: none;
+      }
+    }
+  }
+}
+
+/* The one focus style: a 2px deep-blue line with a gap. An outline, not a
+   box-shadow ring, so it survives forced colours and follows the radius.
+   Utilities (not the components layer) so they beat `outline-none` on the
+   same element. focus-ring-inset is for controls inside something that clips
+   (menu items, table cells). */
+@utility focus-ring {
+  &:focus-visible {
+    outline: 2px solid var(--aire-focus);
+    outline-offset: 2px;
+  }
+}
+
+@utility focus-ring-inset {
+  &:focus-visible {
+    outline: 2px solid var(--aire-focus);
+    outline-offset: -2px;
   }
 }
 
@@ -296,6 +514,35 @@
     background-image: none;
     color: color-mix(in srgb, var(--aire-deep-blue) 60%, transparent);
   }
+
+  /* The Tailwind / tw-animate-css animations, gated here once instead of in
+     every component. Matched by attribute so variant forms
+     (`data-open:animate-in`) are caught too. */
+
+  /* Popups that animate with these classes (dialog, popover, menu, tooltip,
+     toast) open and close at once. Unlayered, so this also wins over any
+     `motion-reduce:animate-*` utility on the same element. */
+  [class*='animate-in'],
+  [class*='animate-out'] {
+    animation: none;
+  }
+
+  /* Skeletons hold still. */
+  [class*='animate-pulse'] {
+    animation: none;
+  }
+
+  /* A spinner that stops looks like a hang, so it keeps turning, slowly.
+     (One already marked motion-reduce:animate-none / motion-safe: stays still.) */
+  [class*='animate-spin'] {
+    animation-duration: 3s;
+  }
+
+  /* Not `none`: PromotionForm waits for this animation's animationend, so it
+     still runs, just too briefly to be seen. */
+  [class*='animate-edit-flash'] {
+    animation-duration: 0.01ms;
+  }
 }
 
 /* Keep long desktop lists scannable without changing their row content. */
@@ -353,4 +600,13 @@
 @keyframes toast-countdown {
   from { transform: scaleX(1); }
   to { transform: scaleX(0); }
+}
+
+/* Forced colours (Windows High Contrast) drops box-shadows, which is how most
+   controls here draw focus, so every focused control gets a real outline.
+   Unlayered, so it beats `outline-none`. */
+@media (forced-colors: active) {
+  :focus-visible {
+    outline: 2px solid Highlight;
+  }
 }
