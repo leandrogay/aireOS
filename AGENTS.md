@@ -484,3 +484,29 @@ Migrate these only when you are already in the file for other work (CLAUDE.md §
   the service and schema comments still say "migration 006".
 - **`components/landing/`** (LandingHeader, ModuleGrid, …) isn't mounted by any page since `/` redirects
   to `/dashboard`; only a comment in `navItems.js` mentions it.
+
+### Visual audit findings (11 Nov 2026)
+
+Log these separately from the visual revamp; do not change application behavior to address them.
+
+| File and line | Severity | Finding | Suggested fix |
+| --- | --- | --- | --- |
+| `frontend/aireos/app/components/ui/Dropdown.jsx:118` | Medium, accessibility | Placeholder text uses 50% deep blue on cream, about 2.4:1 contrast on a solid cream background. | Use a muted text token verified at 4.5:1 on every field surface. |
+| `frontend/aireos/app/components/ui/SortHeader.jsx:9` | Medium, accessibility | Table labels use 60% deep blue; the contrast is below the normal-text AA target on some light surfaces. | Raise the shared table-header text contrast without changing sorting behavior. |
+| `frontend/aireos/app/config/transitions.js:18` | Low, consistency | The card selector names an older opaque card class and may miss newer glass card frames during page cascades. | Use a stable, presentational card marker after checking every caller. |
+| `frontend/aireos/app/components/layout/Sidebar.jsx:130` | Low, performance | Opening the sidebar animates its width, which can trigger layout work on slower devices. | Profile on mobile and consider a transform-based visual treatment if it causes jank. |
+| `frontend/aireos/app/globals.css:4` | Medium, maintenance | The `tw-animate-css` workaround comment documents a hardcoded package path risk; the current import differs from the comment. | Reconcile the comment and import after checking a clean install and build. |
+| `frontend/aireos/app/components/ui/surfaceStyles.js:3` | Medium, accessibility/performance | The earlier shared card style put `backdrop-blur-xl` on large content surfaces without a reduced-transparency fallback. | Keep the existing class for compatibility, cap blur to small floating surfaces, and supply opaque fallbacks in the visual theme. |
+| `frontend/aireos/app/login/page.js:83` | Low, copy | The Google Workspace note contains a mojibake separator (`Â·`) in the source. | Replace the corrupted separator in a separate copy fix. |
+
+The visual pass adds a manual light/dark toggle, the one approved exception to
+the visual-only rule. It stores `aireos-theme` locally; it does not follow the
+device setting or change application data.
+
+### Visual issues addressed on the glass branch (11 Nov 2026)
+
+| File and line | Severity | Finding | Visual fix |
+| --- | --- | --- | --- |
+| `frontend/aireos/app/components/upload/Dropzone.jsx:89`, `frontend/aireos/app/components/inventory/SellInUploadForm.jsx:122` | Low, affordance | File-picker text and the native file chooser did not consistently show a pointer cursor. | Give the actionable text and file input an explicit pointer cursor. |
+| `frontend/aireos/app/components/layout/PageLayout.jsx:35` | Medium, mobile usability | Height-locked list pages could place the assistant over Promotions and SKU pagination. | Let fit-screen pages grow and scroll on mobile, preserving room after the table. |
+| `frontend/aireos/app/components/ui/LineToggle.jsx:76` | Medium, accessibility | Active chart legend pills kept pale backgrounds while the dark theme made their text nearly white. | Use AIRE deep blue text on the light legend pills in both themes. |

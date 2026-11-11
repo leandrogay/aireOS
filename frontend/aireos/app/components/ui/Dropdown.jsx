@@ -24,7 +24,7 @@ import { cn } from '@/lib/utils';
  */
 function lookClass(look, size, active) {
   if (look === 'filter') return filterControlClass(active);
-  if (look === 'compact') return 'h-8 rounded-md border border-violet bg-white px-2 text-xs';
+  if (look === 'compact') return 'h-8 rounded-md border border-deep-violet-blue/45 bg-white px-2 text-xs';
   if (look === 'outline') {
     // Mirrors ui/button's outline variant at its default size (h-8).
     return 'h-8 rounded-lg border border-deep-violet-blue/30 bg-white px-2.5 text-sm transition-colors hover:bg-cream aria-expanded:bg-cream focus-visible:border-violet focus-visible:ring-3 focus-visible:ring-violet/40';
@@ -116,7 +116,7 @@ export default function Dropdown({
         aria-labelledby={ariaLabelledby}
         title={title ?? (summary || undefined)}
         className={cn(
-          'flex w-full min-w-0 cursor-pointer items-center justify-between overflow-hidden text-left text-deep-violet-blue outline-none disabled:cursor-not-allowed disabled:opacity-60',
+          'aire-glass-control flex w-full min-w-0 cursor-pointer items-center justify-between overflow-hidden text-left text-deep-violet-blue outline-none disabled:cursor-not-allowed disabled:opacity-60',
           lookClass(look, size, active),
           invalid && 'border-red-400 focus:border-red-500',
           className,
@@ -139,7 +139,7 @@ export default function Dropdown({
         align="start"
         initialFocus={searchable ? searchRef : undefined}
         className={cn(
-          'w-max min-w-(--anchor-width) max-w-[min(28rem,90vw)] gap-0 overflow-hidden rounded-md border border-lavander bg-white p-0 text-deep-violet-blue ring-0',
+          'aire-glass-dropdown-panel w-max min-w-(--anchor-width) max-w-[min(28rem,90vw)] gap-0 overflow-hidden rounded-md border border-lavander bg-white p-0 text-deep-violet-blue ring-0',
           panelClassName,
         )}
       >

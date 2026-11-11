@@ -4,6 +4,7 @@ import { motion, useReducedMotion } from 'motion/react';
 
 import { cn } from '@/lib/utils';
 import { Card } from '@/components/ui/card';
+import { glassSurfaceClass } from '@/components/ui/surfaceStyles';
 import { rowMotionProps } from '@/components/ui/rowMotion';
 
 /**
@@ -20,7 +21,7 @@ export default function MobileRecordCard({ title, subtitle, badge, actions, fiel
 
   return (
     <motion.div {...rowMotionProps(reduceMotion)}>
-      <Card role="article" size="sm" className={cn('gap-0 rounded-lg border border-lavander bg-white p-3 shadow-sm ring-0', className)}>
+      <Card role="article" size="sm" className={cn(glassSurfaceClass, 'gap-0 p-3', className)}>
         <div className="flex min-w-0 items-start gap-2">
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 flex-wrap items-center gap-2">

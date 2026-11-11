@@ -153,6 +153,7 @@ export default function PromoUpliftSettingsView() {
     >
       <div className="grid grid-cols-1 gap-3">
         <TableCard
+          variant="glass"
           label="Ordinary-month discount by customer"
           header={
             <TableCardHeader
@@ -218,6 +219,7 @@ export default function PromoUpliftSettingsView() {
         ) : null}
 
         <TableCard
+          variant="glass"
           label="Uplift by mechanic"
           header={
             <TableCardHeader

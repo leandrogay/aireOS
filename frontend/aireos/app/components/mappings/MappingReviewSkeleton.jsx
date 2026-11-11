@@ -1,6 +1,7 @@
 import { Skeleton } from '@/components/ui/skeleton';
+import { glassSurfaceClass } from '@/components/ui/surfaceStyles';
 
-const card = 'rounded-lg border border-lavander bg-white p-4 shadow-sm';
+const card = `${glassSurfaceClass} p-4`;
 const bar = 'rounded bg-lavander';
 
 /**

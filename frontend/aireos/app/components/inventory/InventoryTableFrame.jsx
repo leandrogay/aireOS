@@ -168,6 +168,7 @@ export default function InventoryTableFrame({ title, rows, description, loading 
 
   return (
     <TableCard
+      variant="glass"
       label={title}
       header={(
         <TableCardHeader

@@ -2,6 +2,7 @@
 
 import { cn } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
+import { glassSurfaceClass } from '@/components/ui/surfaceStyles';
 import DatePicker from '@/components/ui/DatePicker';
 import { maxYmd, minYmd } from '@/components/ui/DateRangePicker';
 import SelectDropdown from '@/components/ui/SelectDropdown';
@@ -9,7 +10,7 @@ import { customerLabel } from '@/app/utils/retailerLabel';
 
 const labelClass = 'mb-0.5 block text-[11px] text-deep-violet-blue/70';
 // The typed DatePicker box in the compact white look of the dropdowns beside it.
-const dateBoxClass = 'h-8 border-violet bg-white px-2 text-xs';
+const dateBoxClass = 'h-8 border-deep-violet-blue/45 bg-white px-2 text-xs';
 const clearClass =
   'rounded-md border border-deep-violet-blue/30 bg-white px-2 py-0.5 text-[10px] font-medium text-deep-violet-blue transition hover:bg-cream disabled:cursor-not-allowed disabled:opacity-40';
 
@@ -182,7 +183,7 @@ export default function ForecastFilters({
   }
 
   return (
-    <Card className="min-w-0 max-w-full rounded-lg border border-lavander bg-white text-deep-violet-blue shadow-sm ring-0">
+    <Card className={cn(glassSurfaceClass, 'min-w-0 max-w-full text-deep-violet-blue')}>
       <CardContent className="min-w-0 space-y-2">
         <div className="flex items-center gap-2">
           <p className="font-serif text-base text-deep-violet-blue">Filters</p>

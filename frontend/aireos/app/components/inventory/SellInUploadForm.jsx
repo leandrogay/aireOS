@@ -119,7 +119,7 @@ export default function SellInUploadForm({ onSaved }) {
           type="file"
           accept=".xlsx"
           onChange={(e) => chooseFile(e.target.files?.[0] ?? null)}
-          className={`${formFieldClass} max-w-xl py-1 file:mr-3 file:rounded-md file:border-0 file:bg-lavander file:px-2.5 file:py-1 file:text-xs file:text-deep-violet-blue`}
+          className={`${formFieldClass} max-w-xl cursor-pointer py-1 file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-lavander file:px-2.5 file:py-1 file:text-xs file:text-deep-violet-blue`}
         />
       </label>
 

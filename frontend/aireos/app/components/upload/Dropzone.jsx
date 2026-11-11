@@ -86,7 +86,7 @@ export default function Dropzone({ onFiles, disabled = false }) {
         ) : (
           <>
             Drop files here, or{' '}
-            <span className="font-semibold underline decoration-violet decoration-2 underline-offset-4 group-hover:decoration-deep-violet-blue">
+            <span className="cursor-pointer font-semibold underline decoration-violet decoration-2 underline-offset-4 group-hover:decoration-deep-violet-blue">
               click to browse
             </span>
           </>

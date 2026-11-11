@@ -38,6 +38,7 @@ export default function RootLayout({ children }) {
   return (
     <html
       lang="en"
+      suppressHydrationWarning
       className={`${dmSans.variable} ${dmSerif.variable} ${geistMono.variable} ${figtree.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col font-sans">

@@ -31,10 +31,10 @@
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-dm-serif);
   --font-serif: var(--font-dm-serif);
-  --color-deep-violet-blue: var(--aire-deep-blue);
-  --color-cream: var(--aire-cream);
-  --color-lavander: var(--aire-lavender);
-  --color-violet: var(--aire-violet);
+  --color-deep-violet-blue: var(--aire-ink);
+  --color-cream: var(--aire-canvas);
+  --color-lavander: var(--aire-soft);
+  --color-violet: var(--aire-accent);
   --color-celest: var(--aire-celest);
   --color-scenario: var(--aire-scenario);
   --color-scenario-soft: var(--aire-scenario-soft);
@@ -92,38 +92,39 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  color-scheme: light;
+  --background: var(--aire-cream);
+  --foreground: var(--aire-deep-blue);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: var(--aire-deep-blue);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
+  --popover-foreground: var(--aire-deep-blue);
+  --primary: var(--aire-deep-blue);
   --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --secondary: var(--aire-lavender);
+  --secondary-foreground: var(--aire-deep-blue);
+  --muted: color-mix(in srgb, var(--aire-lavender) 45%, white);
+  --muted-foreground: color-mix(in srgb, var(--aire-deep-blue) 82%, white);
+  --accent: var(--aire-lavender);
+  --accent-foreground: var(--aire-deep-blue);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --border: color-mix(in srgb, var(--aire-violet) 38%, white);
+  --input: color-mix(in srgb, var(--aire-violet) 38%, white);
+  --ring: var(--aire-violet);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar: color-mix(in srgb, var(--aire-cream) 45%, white);
+  --sidebar-foreground: var(--aire-deep-blue);
+  --sidebar-primary: var(--aire-deep-blue);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar-accent: var(--aire-lavender);
+  --sidebar-accent-foreground: var(--aire-deep-blue);
+  --sidebar-border: color-mix(in srgb, var(--aire-violet) 35%, white);
+  --sidebar-ring: var(--aire-violet);
 
   /* AIRE brand kit */
   --aire-cream: #EAE4DE;
@@ -133,6 +134,22 @@
   /* Brand PDF is inconsistent here: hex swatch says #E62A39 (red), RGB value says a
      light blue. Went with the RGB reading — flag to Sandra if this renders wrong. */
   --aire-celest: #A7D2F2;
+  --aire-ink: var(--aire-deep-blue);
+  --aire-canvas: var(--aire-cream);
+  --aire-soft: var(--aire-lavender);
+  --aire-accent: var(--aire-violet);
+  --aire-glass-tint: color-mix(in srgb, var(--aire-cream) 18%, white);
+  --aire-glass-edge: color-mix(in srgb, var(--aire-lavender) 65%, white);
+  --aire-glass-sheen: rgb(255 255 255 / 65%);
+  --aire-glass-shadow: rgb(58 67 105 / 13%);
+  --aire-row-base: white;
+  --aire-row-alt: color-mix(in srgb, var(--aire-cream) 17%, white);
+  --aire-row-hover: color-mix(in srgb, var(--aire-lavender) 28%, white);
+  --aire-row-selected: color-mix(in srgb, var(--aire-lavender) 45%, white);
+  --motion-quick: 120ms;
+  --motion-control: 200ms;
+  --motion-enter: 280ms;
+  --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
   /* Scenario builder: the Simulated line and everything that belongs to a
      draft (pins, tinted rows, pitch card), kept apart from the committed
      forecast colours in forecastView.js. */
@@ -145,37 +162,50 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  color-scheme: dark;
+  --aire-ink: #F6F3F1;
+  --aire-canvas: #171B2A;
+  --aire-soft: #313954;
+  --aire-accent: #BEB8E5;
+  --aire-glass-tint: #232A40;
+  --aire-glass-edge: #69759A;
+  --aire-glass-sheen: rgb(246 243 241 / 16%);
+  --aire-glass-shadow: rgb(5 8 19 / 30%);
+  --aire-row-base: #232A40;
+  --aire-row-alt: #293149;
+  --aire-row-hover: #374363;
+  --aire-row-selected: #414D70;
+  --background: var(--aire-canvas);
+  --foreground: var(--aire-ink);
+  --card: #232A40;
+  --card-foreground: var(--aire-ink);
+  --popover: #293149;
+  --popover-foreground: var(--aire-ink);
+  --primary: var(--aire-accent);
+  --primary-foreground: var(--aire-canvas);
+  --secondary: var(--aire-soft);
+  --secondary-foreground: var(--aire-ink);
+  --muted: var(--aire-soft);
+  --muted-foreground: #C5CBE0;
+  --accent: #414D70;
+  --accent-foreground: var(--aire-ink);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --border: #535D80;
+  --input: #535D80;
+  --ring: var(--aire-accent);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar: #232A40;
+  --sidebar-foreground: var(--aire-ink);
+  --sidebar-primary: var(--aire-accent);
+  --sidebar-primary-foreground: var(--aire-canvas);
+  --sidebar-accent: var(--aire-soft);
+  --sidebar-accent-foreground: var(--aire-ink);
+  --sidebar-border: var(--aire-glass-edge);
+  --sidebar-ring: var(--aire-accent);
 }
 
 @layer base {
@@ -217,6 +247,120 @@
   .tabular-nums:not(.font-mono) {
     font-family: var(--font-numeric), var(--font-sans);
   }
+}
+
+/* AIRE colours behind the shared translucent page cards. Tables keep their
+   solid headers and rows. */
+.aire-glass-scene {
+  background-color: var(--aire-canvas);
+  background-image:
+    radial-gradient(ellipse at 4% 8%, color-mix(in srgb, var(--aire-soft) 75%, transparent), transparent 60%),
+    radial-gradient(ellipse at 92% 12%, color-mix(in srgb, var(--aire-accent) 18%, transparent), transparent 55%),
+    radial-gradient(ellipse at 54% 88%, color-mix(in srgb, var(--aire-celest) 20%, transparent), transparent 58%);
+}
+
+/* Outer content cards get a glass edge and depth without blurring a large
+   scrolling area. The solid background remains the fallback. */
+.aire-glass-surface {
+  background-color: var(--card);
+  background-color: color-mix(in srgb, var(--aire-glass-tint) 80%, transparent);
+  background-image: linear-gradient(145deg, color-mix(in srgb, var(--aire-glass-edge) 28%, transparent), transparent 48%);
+  border-color: var(--aire-glass-edge);
+  box-shadow: inset 0 1px 0 var(--aire-glass-sheen), 0 18px 38px -22px var(--aire-glass-shadow);
+  backdrop-filter: none;
+}
+
+.aire-glass-float {
+  background-color: var(--card);
+  border-color: var(--aire-glass-edge);
+  box-shadow: inset 0 1px 0 var(--aire-glass-sheen), 0 16px 34px -20px var(--aire-glass-shadow);
+}
+
+/* Motion belongs to the shared control and popup shells. It never changes
+   when their existing click or open handlers run. */
+.aire-glass-control {
+  transition: background-color var(--motion-control) var(--motion-ease),
+    border-color var(--motion-control) var(--motion-ease),
+    box-shadow var(--motion-control) var(--motion-ease),
+    opacity var(--motion-quick) ease;
+}
+.aire-glass-control:not(:disabled):hover {
+  box-shadow: inset 0 1px 0 var(--aire-glass-sheen), 0 5px 14px -10px var(--aire-glass-shadow);
+}
+.aire-glass-control:not(:disabled):active { opacity: 0.84; }
+.aire-glass-float[data-open] { animation-duration: var(--motion-enter); }
+.aire-glass-float[data-closed] { animation-duration: var(--motion-control); }
+.aire-theme-toggle { min-height: 2.5rem; }
+
+/* Legacy white and dark-blue utility classes remain intact for callers and
+   tests. These theme overrides make their existing surfaces legible in dark mode. */
+.dark [class~="bg-white"] { background-color: var(--card); }
+.dark [class~="bg-white/90"] { background-color: color-mix(in srgb, var(--card) 90%, transparent); }
+.dark [class~="bg-white/70"] { background-color: color-mix(in srgb, var(--card) 70%, transparent); }
+.dark [class~="bg-white/60"] { background-color: color-mix(in srgb, var(--card) 60%, transparent); }
+.dark [class~="bg-white/40"] { background-color: color-mix(in srgb, var(--card) 40%, transparent); }
+.dark [class~="bg-white/10"] { background-color: color-mix(in srgb, var(--card) 10%, transparent); }
+.dark [class~="bg-deep-violet-blue"] { background-color: var(--aire-deep-blue); }
+.dark [class~="bg-deep-violet-blue"]:hover { background-color: var(--aire-deep-blue); }
+.dark [data-active][class*="data-active:bg-deep-violet-blue"],
+.dark [data-pressed][class*="data-pressed:bg-deep-violet-blue"],
+.dark [data-range-start="true"][class*="bg-deep-violet-blue"],
+.dark [data-range-end="true"][class*="bg-deep-violet-blue"],
+.dark [data-selected-single="true"][class*="bg-deep-violet-blue"],
+.dark [class*="has-[:checked]:bg-deep-violet-blue"]:has(:checked) {
+  background-color: var(--aire-deep-blue);
+}
+.dark [class~="bg-violet"] { background-color: #625B90; }
+.dark [class~="text-lavander"] { color: var(--aire-accent); }
+.dark [class~="bg-white"][class*="hover:bg-cream"]:hover,
+.dark [class~="bg-white"][class*="aria-expanded:bg-cream"][aria-expanded="true"] {
+  background-color: var(--aire-soft);
+}
+.dark .aire-glass-surface[class~="bg-white"] {
+  background-color: color-mix(in srgb, var(--aire-glass-tint) 86%, transparent);
+}
+.dark .aire-brand-mark { filter: brightness(0) invert(0.94); }
+.dark .recharts-cartesian-axis-tick-value { fill: var(--aire-ink); }
+
+@supports (backdrop-filter: blur(1px)) {
+  .aire-glass-float {
+    background-color: color-mix(in srgb, var(--aire-glass-tint) 82%, transparent);
+    backdrop-filter: blur(10px) saturate(1.12);
+  }
+  .aire-glass-float.aire-glass-dropdown-panel {
+    background-color: color-mix(in srgb, var(--aire-glass-tint) 96%, transparent);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .aire-glass-surface,
+  .aire-glass-float,
+  .aire-glass-float.aire-glass-dropdown-panel {
+    background-color: var(--card);
+    background-image: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aire-glass-control,
+  .aire-glass-float {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@keyframes auth-glass-arrive {
+  from { opacity: 0; transform: translateY(16px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.auth-glass-arrive {
+  animation: auth-glass-arrive 550ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-glass-arrive { animation: none; }
 }
 
 /* A chart line's dots fade in as the line is drawn past them; the delay is set
@@ -310,7 +454,7 @@
     position: sticky;
     left: 0;
     z-index: 2;
-    background-color: var(--aire-cream);
+    background-color: var(--aire-canvas);
   }
 
   .aire-table-grid tbody > tr:not(:has(> td[colspan])) > td:first-child {
@@ -320,7 +464,7 @@
   }
 
   :is(.aire-table-grid, .aire-table-rows) tbody > tr:not(:has(> td[colspan])) {
-    --aire-row-background: white;
+    --aire-row-background: var(--aire-row-base);
   }
 
   :is(.aire-table-grid, .aire-table-rows) tbody > tr:not(:has(> td[colspan])) > td {
@@ -329,23 +473,23 @@
   }
 
   :is(.aire-table-grid, .aire-table-rows) tbody > tr:nth-child(even):not(:has(> td[colspan])) {
-    --aire-row-background: color-mix(in srgb, var(--aire-cream) 17%, white);
+    --aire-row-background: var(--aire-row-alt);
   }
 
   :is(.aire-table-grid, .aire-table-rows) tbody > tr:not(:has(> td[colspan])):hover {
-    --aire-row-background: color-mix(in srgb, var(--aire-lavender) 28%, white);
+    --aire-row-background: var(--aire-row-hover);
   }
 
   .aire-table-grid tbody > tr[data-highlight='new']:not(:has(> td[colspan])) {
-    --aire-row-background: color-mix(in srgb, var(--aire-lavender) 28%, white);
+    --aire-row-background: var(--aire-row-hover);
   }
 
   .aire-table-grid tbody > tr[data-highlight='editing']:not(:has(> td[colspan])) {
-    --aire-row-background: color-mix(in srgb, var(--aire-lavender) 45%, white);
+    --aire-row-background: var(--aire-row-selected);
   }
 
   :is(.aire-table-grid, .aire-table-rows) tbody > tr:not(:has(> td[colspan])):hover > td:first-child {
-    box-shadow: inset 3px 0 0 var(--aire-deep-blue);
+    box-shadow: inset 3px 0 0 var(--aire-accent);
   }
 }
 

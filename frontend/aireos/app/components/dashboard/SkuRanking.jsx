@@ -332,6 +332,7 @@ export default function SkuRanking({
 
   return (
     <TableCard
+      variant="glass"
       label={`${showCustomers ? 'Customer' : 'Product'} sales ranking`}
       header={(
         <TableCardHeader

@@ -83,4 +83,3 @@ describe('comparisonInUse', () => {
     assert.equal(comparisonInUse('last-year', inputs, { ...SINGHEALTH, updating: true }).compareTo, 'last-year');
   });
 });
-

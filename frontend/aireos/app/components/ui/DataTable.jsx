@@ -107,6 +107,7 @@ export default function DataTable({
     // names the list); the aria-label still names the region for screen
     // readers.
     <TableCard
+      variant="glass"
       label={label}
       // min-h-80 keeps the table usable on a short window.
       className={fill ? 'min-h-80 flex-1' : undefined}
