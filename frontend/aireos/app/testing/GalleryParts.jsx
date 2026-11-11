@@ -158,7 +158,11 @@ export function NotMigrated({ rows, leaveAsIs, children }) {
       title="Not migrated yet"
       note="Pages that still use the old version. Move one to the kit when you're next working in its file, not as a standalone change, and remove its row here."
     >
-      <ReferenceTable head={['Page', 'File (components/)', 'Uses now', 'Migrate to']} rows={rows} />
+      {rows.length > 0 ? (
+        <ReferenceTable head={['Page', 'File (components/)', 'Uses now', 'Migrate to']} rows={rows} />
+      ) : (
+        <p className="text-xs text-deep-violet-blue/70">Nothing left: every page uses the kit.</p>
+      )}
 
       {leaveAsIs && (
         <>

@@ -1,0 +1,58 @@
+// The Dashboard sales ranking's client-side order: which row comes first for
+// each sort, ties, and the rank each row gets.
+// Run with `npm test` -- Node's built-in test runner, no extra packages.
+
+import assert from 'node:assert/strict';
+import { describe, test } from 'node:test';
+
+import { rankCustomers, rankSkus } from '../app/utils/salesRanking.js';
+
+const SKUS = [
+  { sku: 'A', product_name: 'Tape M', volume: 10, value: 300 },
+  { sku: 'B', product_name: 'Pants L', volume: 30, value: 200 },
+  { sku: 'C', product_name: 'Pants XL', volume: 20, value: 200 },
+];
+
+describe('rankSkus', () => {
+  test('sorts by the metric, highest first, and numbers the rows', () => {
+    const ranked = rankSkus(SKUS, 'volume', 'desc');
+    assert.deepEqual(ranked.map((row) => [row.sku, row.rank]), [['B', 1], ['C', 2], ['A', 3]]);
+  });
+
+  test('asc puts the lowest first and ranks from there', () => {
+    const ranked = rankSkus(SKUS, 'volume', 'asc');
+    assert.deepEqual(ranked.map((row) => [row.sku, row.rank]), [['A', 1], ['C', 2], ['B', 3]]);
+  });
+
+  test('ties go by product name, A to Z, whatever the order', () => {
+    assert.deepEqual(rankSkus(SKUS, 'value', 'desc').map((row) => row.sku), ['A', 'B', 'C']);
+    assert.deepEqual(rankSkus(SKUS, 'value', 'asc').map((row) => row.sku), ['B', 'C', 'A']);
+  });
+
+  test('leaves the rows it was given unchanged', () => {
+    const input = SKUS.map((row) => ({ ...row }));
+    rankSkus(input, 'volume', 'desc');
+    assert.deepEqual(input, SKUS);
+  });
+});
+
+describe('rankCustomers', () => {
+  const ROWS = [
+    { customer: 'fairprice', label: 'FairPrice', has_offline: true, offline: { units: 5, revenue: 50, has_data: true } },
+    { customer: 'sheng_shiong', label: 'Sheng Shiong', has_offline: true, offline: { units: 9, revenue: 20, has_data: false } },
+    { customer: 'shopee', label: 'Shopee', has_offline: false, online: { units: 99, revenue: 999 } },
+  ];
+
+  test('keeps only customers on the channel, ranked by the metric', () => {
+    const ranked = rankCustomers(ROWS, 'offline', 'value', 'desc', []);
+    assert.deepEqual(ranked.map((row) => [row.customer, row.rank]), [['fairprice', 1], ['sheng_shiong', 2]]);
+  });
+
+  test('carries the channel totals and whether anything is loaded', () => {
+    const [first, second] = rankCustomers(ROWS, 'offline', 'volume', 'desc', []);
+    assert.equal(first.customer, 'sheng_shiong');
+    assert.equal(first.volume, 9);
+    assert.equal(first.hasData, false);
+    assert.equal(second.hasData, true);
+  });
+});

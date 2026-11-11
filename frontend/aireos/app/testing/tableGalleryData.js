@@ -16,7 +16,7 @@ export const GUIDE = [
   ['The "…" menu at the end of a row', 'RowActions + ACTIONS_COLUMN', 'label, actions[] (icon, onSelect, disabledReason, destructive)'],
   ['A table inside an expanded row or a card', 'TableGrid variant="nested"', 'columns, inset (EXPANDED_ROW_INSET / CARD_INSET), minWidth'],
   ['A titled table among other cards', 'TableCard + TableCardHeader', 'label, header; title, detail, actions'],
-  ['Filter a column from its header', 'HeaderCheckboxFilter', 'id, label, selected, options, openId, setOpenId, onChange'],
+  ['Filter a column from its header', 'TableGrid column filter (draws a HeaderCheckboxFilter)', 'filter: { selected, options, onChange }'],
   ['Show a record status in a cell', 'StatusPill', 'tone: success | info | muted | warning | danger'],
   ['Show an upload or processing state', 'StatusBadge', 'tone: ready | failed | review | duplicate | busy | neutral'],
   ['The same list on a phone', 'MobileRecordCard (DataTable mobileContent)', 'title, subtitle, badge, actions, fields'],
@@ -24,11 +24,7 @@ export const GUIDE = [
 
 // Tables that should move to the kit, page by page. Remove a row when its
 // page migrates.
-export const NOT_MIGRATED = [
-  ['Dashboard', 'dashboard/SkuRanking.jsx', 'Hand-rolled <table> with SortHeader inside TableCard', 'TableGrid inside TableCard'],
-  ['Forecast', 'forecast/ForecastTable.jsx', 'Hand-rolled <table> with HeaderCheckboxFilter inside TableCard', 'TableGrid (needs a header-filter column option first)'],
-  ['Inventory', 'inventory/InventorySkuTable.jsx, SellInPlanTable.jsx, AtRiskView.jsx', 'Hand-rolled <table> on the inventoryTableClass strings, in InventoryTableFrame', 'TableGrid (needs a header-filter column option first)'],
-];
+export const NOT_MIGRATED = [];
 
 // Tables that look like a list table but aren't one, so they stay as they are.
 export const LEAVE_AS_IS = [
@@ -36,7 +32,7 @@ export const LEAVE_AS_IS = [
   ['Inventory', 'inventory/SellInComparisonTable.jsx', 'Compact report table, the same style as the year totals'],
   ['Scenario', 'scenario/MonthlyPlanTable.jsx, ScenarioYearComparison.jsx', 'Compact report tables with saved / draft chips'],
   ['Inventory', 'inventory/InventoryQuantityTable.jsx', 'A form: a grid of quantity inputs, not a list of records'],
-  ['Inventory', 'inventory/SellInUploadForm.jsx', 'Import preview of the new and changed lines'],
+  ['Inventory', 'inventory/SellInUploadForm.jsx ("Not saved" lines)', 'A short list of skipped lines folded inside an import notice'],
   ['Nomenclatures', 'mappings/FileTop.jsx, OutputPreview.jsx, ColumnGroupDetails.jsx, SkuCodeTable.jsx, StepsEditor.jsx', 'Previews of the example file and editable contract tables, read like the spreadsheet'],
   ['Upload', 'upload/UploadPreview.jsx', 'A few rows of mapped output, read like the spreadsheet'],
   ['Settings', 'settings/PromoAnchorForm.jsx', 'Live preview inside a form'],

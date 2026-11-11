@@ -1,11 +1,14 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 
 import HeaderCheckboxFilter from '@/components/ui/HeaderCheckboxFilter';
+import MobileRecordCard from '@/components/ui/MobileRecordCard';
+import RecordCardList from '@/components/ui/RecordCardList';
 import TableCard from '@/components/ui/TableCard';
 import TableCardHeader from '@/components/ui/TableCardHeader';
-import { TABLE_HEADER_CLASS } from '@/components/ui/SortHeader';
+import TableGrid from '@/components/ui/TableGrid';
+import TableRow from '@/components/ui/TableRow';
 import { cn } from '@/lib/utils';
 import {
   TABLE_MISSING_HINT,
@@ -14,6 +17,8 @@ import {
   TABLE_PARTIAL_LABEL,
 } from '@/app/utils/forecastLineText';
 import { FORECAST_SERIES, uniqueMonthOptions } from '@/app/utils/forecastView';
+
+const NO_MATCHES = 'No rows match these table filters.';
 
 // Cartons, whole numbers.
 function formatTableValue(value) {
@@ -54,29 +59,32 @@ function CellValue({ point, seriesKey }) {
  */
 export default function ForecastTable({ points, visibleSeries, modelLabel = '' }) {
   const [monthFilter, setMonthFilter] = useState([]);
-  const [openFilter, setOpenFilter] = useState(null);
+  // The phone view's Month filter, above the cards (the table's is in its header).
+  const [openMobileFilter, setOpenMobileFilter] = useState(null);
   const [expanded, setExpanded] = useState(false);
-  const monthOptions = useMemo(() => uniqueMonthOptions(points), [points]);
+  const monthOptions = uniqueMonthOptions(points);
   const visibleColumns = FORECAST_SERIES.filter((series) => visibleSeries[series.key]);
 
-  const activeMonthFilter = useMemo(() => {
-    const valid = new Set(monthOptions.map((option) => option.value));
-    return monthFilter.filter((value) => valid.has(value));
-  }, [monthFilter, monthOptions]);
+  const validMonths = new Set(monthOptions.map((option) => option.value));
+  const activeMonthFilter = monthFilter.filter((value) => validMonths.has(value));
   const hasTableFilters = activeMonthFilter.length > 0;
+  const rows = hasTableFilters
+    ? points.filter((point) => activeMonthFilter.includes(point.month_year))
+    : points;
 
-  const rows = useMemo(
-    () =>
-      points.filter((point) => {
-        if (activeMonthFilter.length && !activeMonthFilter.includes(point.month_year)) return false;
-        return true;
-      }),
-    [points, activeMonthFilter]
-  );
+  const columns = [
+    {
+      key: 'month',
+      label: 'Month',
+      width: '16%',
+      filter: { selected: activeMonthFilter, options: monthOptions, onChange: setMonthFilter },
+    },
+    ...visibleColumns.map((series) => ({ key: series.key, label: series.label, align: 'right' })),
+  ];
 
   function clearTableFilters() {
     setMonthFilter([]);
-    setOpenFilter(null);
+    setOpenMobileFilter(null);
   }
 
   return (
@@ -95,8 +103,8 @@ export default function ForecastTable({ points, visibleSeries, modelLabel = '' }
                   label="Month"
                   selected={activeMonthFilter}
                   options={monthOptions}
-                  openId={openFilter}
-                  setOpenId={setOpenFilter}
+                  openId={openMobileFilter}
+                  setOpenId={setOpenMobileFilter}
                   onChange={setMonthFilter}
                 />
               </div>
@@ -120,82 +128,47 @@ export default function ForecastTable({ points, visibleSeries, modelLabel = '' }
         />
       )}
     >
-
-      <div className={`${expanded ? '' : 'max-h-[55vh]'} overflow-y-auto border-t border-lavander sm:hidden`} aria-label="Monthly forecast values">
+      <div
+        className={cn('overflow-y-auto border-t border-lavander bg-cream/25 p-3 sm:hidden', !expanded && 'max-h-[55vh]')}
+        aria-label="Monthly forecast values"
+      >
         {rows.length === 0 ? (
-          <p className="p-4 text-sm text-deep-violet-blue/70">No rows match these table filters.</p>
-        ) : rows.map((point) => (
-          <article key={point.month_year} className="border-b border-lavander/70 p-3 last:border-b-0 even:bg-cream/30">
-            <h4 className="mb-2 font-semibold text-deep-violet-blue">{point.label}</h4>
-            <dl className="grid grid-cols-2 gap-x-3 gap-y-2">
-              {visibleColumns.map((series) => (
-                <div key={series.key} className="min-w-0">
-                  <dt className="text-[10px] font-semibold uppercase leading-tight tracking-wide text-deep-violet-blue/60">{series.label}</dt>
-                  <dd className="mt-0.5 text-sm font-medium tabular-nums text-deep-violet-blue"><CellValue point={point} seriesKey={series.key} /></dd>
-                </div>
-              ))}
-            </dl>
-          </article>
-        ))}
+          <p className="rounded-lg border border-lavander bg-white p-6 text-center text-sm text-deep-violet-blue/70">{NO_MATCHES}</p>
+        ) : (
+          <RecordCardList>
+            {rows.map((point) => (
+              <MobileRecordCard
+                key={point.month_year}
+                title={point.label}
+                fields={visibleColumns.map((series) => ({
+                  label: series.label,
+                  value: <span className="tabular-nums"><CellValue point={point} seriesKey={series.key} /></span>,
+                }))}
+              />
+            ))}
+          </RecordCardList>
+        )}
       </div>
 
-      <div className="hidden min-w-0 overflow-x-auto border-t border-lavander sm:block">
-        <div className={expanded ? '' : 'max-h-[28vh] overflow-y-auto'}>
-          <table className="aire-table-rows w-full min-w-[56rem] table-fixed text-left text-sm text-deep-violet-blue">
-            <colgroup>
-              <col className="w-[16%]" />
+      {/* Collapsed, the table scrolls inside a short box under its sticky
+          header; expanded, it shows every month. */}
+      <div className={cn('hidden min-h-0 flex-col sm:flex', !expanded && 'max-h-[28vh]')}>
+        <TableGrid
+          columns={columns}
+          minWidth="56rem"
+          emptyState={rows.length === 0 ? NO_MATCHES : null}
+        >
+          {rows.map((point) => (
+            <TableRow key={point.month_year} className="h-12 border-b border-lavander/80">
+              <td className="px-4 py-2.5 font-medium">{point.label}</td>
               {visibleColumns.map((series) => (
-                <col key={series.key} />
+                <td key={series.key} className="px-4 py-2.5 text-right tabular-nums">
+                  <CellValue point={point} seriesKey={series.key} />
+                </td>
               ))}
-            </colgroup>
-            <thead className="sticky top-0 z-10 bg-cream">
-              <tr className="h-10 border-b border-lavander">
-                <th className={cn(TABLE_HEADER_CLASS, 'px-2.5 py-1.5')}>
-                  <HeaderCheckboxFilter
-                    id="month"
-                    label="Month"
-                    selected={activeMonthFilter}
-                    options={monthOptions}
-                    openId={openFilter}
-                    setOpenId={setOpenFilter}
-                    onChange={setMonthFilter}
-                  />
-                </th>
-                {visibleColumns.map((series) => (
-                  <th
-                    key={series.key}
-                    className={cn(TABLE_HEADER_CLASS, 'whitespace-nowrap px-2.5 text-right')}
-                  >
-                    {series.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 ? (
-                <tr>
-                  <td className="px-2.5 py-3 text-deep-violet-blue/80" colSpan={visibleColumns.length + 1}>
-                    No rows match these table filters.
-                  </td>
-                </tr>
-              ) : (
-                rows.map((point) => (
-                  <tr
-                    key={point.month_year}
-                    className="h-10 border-b border-lavander/80 last:border-b-0"
-                  >
-                    <td className="whitespace-nowrap px-2.5 py-2 font-medium">{point.label}</td>
-                    {visibleColumns.map((series) => (
-                      <td key={series.key} className="px-2.5 py-2 text-right tabular-nums">
-                        <CellValue point={point} seriesKey={series.key} />
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+            </TableRow>
+          ))}
+        </TableGrid>
       </div>
     </TableCard>
   );

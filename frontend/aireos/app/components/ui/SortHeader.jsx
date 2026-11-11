@@ -15,6 +15,10 @@ export const TABLE_HEADER_ACTION_CLASS =
  * the active column again is expected to flip its direction (nextSort() in
  * app/utils/tableView.js).
  *
+ * The arrow shows the order the rows are in now, not the order a press would
+ * give: up is highest first (descending; Z to A for text), down is lowest
+ * first (ascending).
+ *
  * @param {{
  *   label: string,
  *   field: string,
@@ -26,7 +30,7 @@ export const TABLE_HEADER_ACTION_CLASS =
  */
 export default function SortHeader({ label, field, sortField, sortDirection, onSort, className }) {
   const active = sortField === field;
-  const Icon = !active ? ArrowUpDown : sortDirection === 'asc' ? ArrowUp : ArrowDown;
+  const Icon = !active ? ArrowUpDown : sortDirection === 'desc' ? ArrowUp : ArrowDown;
   const ariaSort = !active ? 'none' : sortDirection === 'asc' ? 'ascending' : 'descending';
 
   return (

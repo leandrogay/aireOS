@@ -1,11 +1,12 @@
 'use client';
 
-import { Children } from 'react';
+import { Children, useState } from 'react';
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from 'motion/react';
 
 import { cn } from '@/lib/utils';
 import { TABLE_ROWS } from '@/app/config/transitions';
 import { LIST_MOTION_PROPS } from '@/components/ui/rowMotion';
+import HeaderCheckboxFilter from '@/components/ui/HeaderCheckboxFilter';
 import SortHeader, { TABLE_HEADER_CLASS } from '@/components/ui/SortHeader';
 import TableRow from '@/components/ui/TableRow';
 import TableSkeleton from '@/components/ui/TableSkeleton';
@@ -93,6 +94,9 @@ function columnStyle(width, isEdge, inset) {
  * nested or not (`inset`).
  *
  * A column with `sortField` gets a SortHeader driven by `sort` / `onSort`.
+ * A column with `filter` ({ selected, options, onChange }) gets a
+ * HeaderCheckboxFilter instead: its label opens a checkbox list of `options`
+ * and the parent filters the rows (the Month column on Inventory and Forecast).
  * `hideBelow` (a key of HIDE_BELOW) hides a column (header, <col> and, through
  * hideClass, the rows' cells) under that breakpoint or pixel width (HIDE_BELOW).
  * `align: 'right'` right-aligns the header, for numeric columns; the rows'
@@ -111,7 +115,11 @@ function columnStyle(width, isEdge, inset) {
  * Reduced motion: no animation.
  *
  * @param {{
- *   columns: Array<{ key: string, label: string, width?: string, sortField?: string, hideLabel?: boolean, align?: 'left' | 'right' }>,
+ *   columns: Array<{
+ *     key: string, label: string, width?: string, sortField?: string, hideLabel?: boolean, align?: 'left' | 'right',
+ *     hideBelow?: string,
+ *     filter?: { selected: string[], options: Array<{ value: string, label: string }>, onChange: (selected: string[]) => void },
+ *   }>,
  *   children?: import('react').ReactNode,
  *   variant?: 'card' | 'nested',
  *   minWidth?: string,
@@ -140,6 +148,8 @@ export default function TableGrid({
   animateHeight = false,
 }) {
   const reduceMotion = useReducedMotion();
+  // Which header filter's list is open (a column key); one at a time.
+  const [openFilter, setOpenFilter] = useState(null);
   const { frameRef, contentRef, height } = useAnimatedHeight({
     enabled: animateHeight && !reduceMotion,
     transition: TABLE_ROWS.glide,
@@ -206,11 +216,28 @@ export default function TableGrid({
             )}
           >
             {columns.map((column) => {
-              const alignClass = cn(column.align === 'right' && 'text-right', hideClass(column));
+              // whitespace-normal: a label longer than its fixed width wraps
+              // inside it rather than spilling over the next heading.
+              const alignClass = cn('whitespace-normal', column.align === 'right' && 'text-right', hideClass(column));
               if (column.hideLabel) {
                 return (
                   <th key={column.key} scope="col" className={cn('px-2 py-2', hideClass(column))}>
                     <span className="sr-only">{column.label}</span>
+                  </th>
+                );
+              }
+              if (column.filter) {
+                return (
+                  <th key={column.key} scope="col" className={cn('px-3 py-1.5', alignClass)}>
+                    <HeaderCheckboxFilter
+                      id={column.key}
+                      label={column.label}
+                      selected={column.filter.selected}
+                      options={column.filter.options}
+                      openId={openFilter}
+                      setOpenId={setOpenFilter}
+                      onChange={column.filter.onChange}
+                    />
                   </th>
                 );
               }

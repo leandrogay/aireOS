@@ -81,7 +81,7 @@ export default function TableGallery() {
 
       <Panel
         title="Titled table card — TableCard + TableCardHeader"
-        note="For a table that sits among other cards and needs its own title. Left: a TableGrid inside, the shape SKU ranking is moving to. Right: the Inventory tabs' InventoryTableFrame, with a HeaderCheckboxFilter on the Month column and paging."
+        note="For a table that sits among other cards and needs its own title. Left: a TableGrid inside, as on the Dashboard SKU ranking and the Forecast monthly values. Right: the Inventory tabs' InventoryTableFrame, a TableGrid whose Month column filters from its header, with paging."
       >
         <TableCardDemo />
       </Panel>
