@@ -28,8 +28,7 @@ export const NOT_MIGRATED = [];
 
 // Tables that look like a list table but aren't one, so they stay as they are.
 export const LEAVE_AS_IS = [
-  ['Forecast', 'forecast/ForecastYearTotals.jsx', 'Compact report table: one thin row per year under the chart'],
-  ['Inventory', 'inventory/SellInComparisonTable.jsx', 'Compact report table, the same style as the year totals'],
+  ['Inventory', 'inventory/SellInComparisonTable.jsx', 'Compact report table with grouped Actual / Forecast columns'],
   ['Scenario', 'scenario/MonthlyPlanTable.jsx, ScenarioYearComparison.jsx', 'Compact report tables with saved / draft chips'],
   ['Inventory', 'inventory/InventoryQuantityTable.jsx', 'A form: a grid of quantity inputs, not a list of records'],
   ['Inventory', 'inventory/SellInUploadForm.jsx ("Not saved" lines)', 'A short list of skipped lines folded inside an import notice'],

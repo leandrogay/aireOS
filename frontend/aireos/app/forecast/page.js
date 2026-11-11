@@ -245,6 +245,7 @@ function ForecastView() {
             other pages -- never a table inside the chart's card. */}
         {yearTotalsBusy || yearTotals.length ? (
           <TableCard
+            variant="glass"
             label="Full-year totals"
             header={<TableCardHeader title="Full-year totals" detail={<>Actual and forecast volume in cartons for each calendar year in view{modelLabel ? ` · ${modelLabel}` : ''}</>} />}
           >
