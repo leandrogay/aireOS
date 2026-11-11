@@ -506,6 +506,22 @@ def history_mapping_path(fingerprint: str, version: int) -> str:
     return f"{MAPPING_PREFIX}history/{fingerprint}/v{version}.json"
 
 
+def list_mapping_history_paths(fingerprint: str) -> list[str]:
+    """The archived versions belonging to one exact nomenclature."""
+    prefix = f"{MAPPING_PREFIX}history/{fingerprint}/"
+    try:
+        return [
+            blob.name for blob in get_storage_client().list_blobs(BUCKET_NAME, prefix=prefix)
+            if blob.name.startswith(prefix) and blob.name.endswith(".json")
+        ]
+    except gcloud_exceptions.NotFound:
+        return []
+    except gcloud_exceptions.Forbidden as e:
+        raise GCSPermissionError(f"List denied on {prefix}. Details: {e}") from e
+    except Exception as e:
+        raise GCSUploadError(f"Failed listing {prefix}: {e}") from e
+
+
 def _blob(path: str):
     return get_storage_client().bucket(BUCKET_NAME).blob(path)
 

@@ -8,5 +8,5 @@ export const MAPPING_COLUMNS = [
   { key: 'customer', label: 'Customer', width: '12rem', sortField: 'customer' },
   { key: 'status', label: 'Status', width: '11rem' },
   { key: 'approved', label: 'Approved', width: '8rem' },
-  { key: 'open', label: 'Open', width: '2.5rem', hideLabel: true },
+  { key: 'open', label: 'Actions', width: '3.5rem', hideLabel: true },
 ];

@@ -571,3 +571,17 @@ async def discard_pending_mapping(fingerprint: str):
         "fingerprint": fingerprint,
         "removed_uploads": result["removed_uploads"],
     }
+
+
+@router.delete("/{fingerprint}")
+async def delete_confirmed_mapping(fingerprint: str):
+    """Delete an approved nomenclature only when no uploads still use it."""
+    try:
+        deleted = await asyncio.to_thread(upload_loading.delete_confirmed_mapping, fingerprint)
+    except upload_loading.MappingHasUploadsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except storage.GCSUploadError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if not deleted:
+        raise HTTPException(status_code=404, detail="No confirmed nomenclature for that fingerprint.")
+    return {"success": True, "fingerprint": fingerprint}

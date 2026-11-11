@@ -107,6 +107,14 @@ export async function discardMapping(baseUrl, fingerprint, onLog) {
   });
 }
 
+// DELETE /api/mappings/:fingerprint removes a confirmed nomenclature only
+// after its associated source uploads have been removed.
+export async function deleteMapping(baseUrl, fingerprint) {
+  return request(baseUrl, `/api/mappings/${encodeURIComponent(fingerprint)}`, {
+    method: 'DELETE',
+  });
+}
+
 // ========================================
 // API CALL
 // GET /api/mappings/:fingerprint

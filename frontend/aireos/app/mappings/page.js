@@ -5,10 +5,13 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import ModelUnavailableNotice from '@/components/layout/ModelUnavailableNotice';
 import PageLayout from '@/components/layout/PageLayout';
 import MappingList from '@/components/mappings/MappingList';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import Toast from '@/components/ui/Toast';
+import useConfirmAction from '@/hooks/useConfirmAction';
 import useToast from '@/hooks/useToast';
+import { mappingTitle } from '@/app/utils/mappingList';
 import { normalizeBaseUrl } from '../utils/mappingHelpers';
-import { listMappings } from '../services/mappingApi';
+import { deleteMapping, discardMapping, listMappings } from '../services/mappingApi';
 
 // Listing mappings is several GCS round trips per stored contract, so this is
 // well above a normal load — it is a floor for "the backend is not answering",
@@ -90,6 +93,20 @@ function MappingsView() {
   // one more click before anything could be done.
   const openMapping = (mappingId) => router.push(`/mappings/${encodeURIComponent(mappingId)}`);
 
+  const deletion = useConfirmAction({ onConfirm: async (mapping) => {
+    try {
+      if (mapping.state === 'pending') {
+        await discardMapping(baseUrl, mapping.mappingId);
+      } else {
+        await deleteMapping(baseUrl, mapping.mappingId);
+      }
+      notify('deleted', `${mappingTitle(mapping)} deleted`);
+      await loadMappings();
+    } catch (error) {
+      notify('error', error.message || 'Unable to delete nomenclature.');
+    }
+  } });
+
   // ---- Render -----------------------------------------------------------
 
   return (
@@ -105,6 +122,20 @@ function MappingsView() {
         error={mappingLoadError}
         onOpen={openMapping}
         onRefresh={loadMappings}
+        onDelete={deletion.request}
+      />
+      <ConfirmDialog
+        open={Boolean(deletion.target)}
+        title="Delete nomenclature?"
+        description={deletion.target?.state === 'pending'
+          ? 'This also deletes files still waiting for this proposal. This cannot be undone.'
+          : 'Its uploaded files must be removed first. Loaded sales are never deleted by this action.'}
+        details={deletion.target ? [{ label: 'Nomenclature', value: mappingTitle(deletion.target) }] : []}
+        confirmLabel="Delete nomenclature"
+        pendingLabel="Deleting…"
+        isPending={deletion.isPending}
+        onConfirm={deletion.confirm}
+        onCancel={deletion.cancel}
       />
       <Toast toast={toast} onDismiss={dismissToast} />
     </PageLayout>
