@@ -1,11 +1,11 @@
 // Reading a Recent uploads row (backend GET /api/uploads/history): its status
-// badge, whether it can be deleted yet, and the table's sort.
+// badge and whether it can be deleted yet.
 // Run with `npm test` -- Node's built-in test runner, no extra packages.
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import { deleteBlockedReason, sortUploads, uploadStatus } from '../app/utils/uploadHistory.js';
+import { deleteBlockedReason, uploadStatus } from '../app/utils/uploadHistory.js';
 
 // ---- uploadStatus ----
 
@@ -58,62 +58,5 @@ describe('deleteBlockedReason', () => {
 
   test('an upload never loaded can be deleted', () => {
     assert.equal(deleteBlockedReason({ mapping_status: 'pending_confirmation' }), null);
-  });
-});
-
-// ---- sortUploads ----
-
-function upload(name, mappingStatus, uploadedAt, status = 'completed') {
-  return { filename: name, mapping_status: mappingStatus, uploaded_at: uploadedAt, status };
-}
-
-const names = (uploads) => uploads.map((item) => item.filename);
-
-describe('sortUploads', () => {
-  const uploads = [
-    upload('loaded', 'mapped', '2026-11-01T00:00:00Z'),
-    upload('rolled-back', 'mapped', '2026-11-02T00:00:00Z', 'rolled_back'),
-    upload('unknown', 'something_new', '2026-11-03T00:00:00Z'),
-    upload('waiting', 'ready_to_load', '2026-11-04T00:00:00Z'),
-    upload('review', 'pending_confirmation', '2026-11-05T00:00:00Z'),
-    upload('failed', 'mapping_failed', '2026-11-06T00:00:00Z'),
-    upload('reload', 'reload_available', '2026-11-07T00:00:00Z'),
-  ];
-
-  test('status ascending puts what needs acting on first and unknown statuses last', () => {
-    assert.deepEqual(names(sortUploads(uploads, { field: 'status', direction: 'asc' })), [
-      'failed', 'review', 'waiting', 'reload', 'loaded', 'rolled-back', 'unknown',
-    ]);
-  });
-
-  test('status descending reverses the status order', () => {
-    assert.deepEqual(names(sortUploads(uploads, { field: 'status', direction: 'desc' })), [
-      'unknown', 'rolled-back', 'loaded', 'reload', 'waiting', 'review', 'failed',
-    ]);
-  });
-
-  test('uploads with the same status are newest first either way', () => {
-    const sameStatus = [
-      upload('older', 'mapped', '2026-11-01T00:00:00Z'),
-      upload('newer', 'mapped', '2026-11-09T00:00:00Z'),
-    ];
-    assert.deepEqual(names(sortUploads(sameStatus, { field: 'status', direction: 'asc' })), ['newer', 'older']);
-    assert.deepEqual(names(sortUploads(sameStatus, { field: 'status', direction: 'desc' })), ['newer', 'older']);
-  });
-
-  test('uploaded_at sorts by time, a missing time as the oldest', () => {
-    const timed = [
-      upload('middle', 'mapped', '2026-11-05T00:00:00Z'),
-      upload('none', 'mapped', null),
-      upload('latest', 'mapped', '2026-11-09T00:00:00Z'),
-    ];
-    assert.deepEqual(names(sortUploads(timed, { field: 'uploaded_at', direction: 'desc' })), ['latest', 'middle', 'none']);
-    assert.deepEqual(names(sortUploads(timed, { field: 'uploaded_at', direction: 'asc' })), ['none', 'middle', 'latest']);
-  });
-
-  test('does not reorder the list it was given', () => {
-    const copy = [...uploads];
-    sortUploads(uploads, { field: 'status', direction: 'asc' });
-    assert.deepEqual(uploads, copy);
   });
 });

@@ -160,30 +160,34 @@ export async function checkUpload(file) {
 // ========================================
 // API CALL
 // GET /api/uploads/history
-// Recent uploads, newest first: filename, vendor, date, and the mapping each
-// file was run through. `months` keeps only uploads from that many calendar
-// months back (see backend storage.months_before); `limit` caps the count.
+// One page of recent uploads: filename, vendor, date, load state and the
+// mapping each file was run through. The backend searches, sorts and pages
+// (upload_history.list_history), so `search` and `sort` apply to every
+// upload, not just this page. `limit` is 1-100. An `offset` past the end comes back moved to the last
+// page, and the response's `offset` is the one used.
 // ========================================
-export async function fetchUploadHistory({ limit = 25, months } = {}) {
-  const params = new URLSearchParams({ limit: String(limit) });
-  if (months) params.set('months', String(months));
+/**
+ * @param {{ limit?: number, offset?: number, search?: string, sort?: 'status' | 'uploaded_at', direction?: 'asc' | 'desc' }} [query]
+ * @returns {Promise<{ uploads: object[], total: number, unfiltered_total: number, limit: number, offset: number }>}
+ */
+export async function fetchUploadHistory({
+  limit = 25,
+  offset = 0,
+  search = '',
+  sort = 'status',
+  direction = 'asc',
+} = {}) {
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+    sort,
+    direction,
+  });
+  if (search.trim()) params.set('search', search.trim());
 
-  let response;
-  try {
-    response = await fetch(`${API_BASE}/api/uploads/history?${params}`, {
-      credentials: 'include',
-      signal: AbortSignal.timeout(HISTORY_TIMEOUT_MS),
-    });
-  } catch (error) {
-    throw new Error(describeNetworkFailure(error));
-  }
-
-  if (!response.ok) {
-    throw new Error(await readError(response));
-  }
-
-  const data = await response.json().catch(() => null);
-  return Array.isArray(data?.uploads) ? data.uploads : [];
+  return request(`/api/uploads/history?${params}`, {
+    signal: AbortSignal.timeout(HISTORY_TIMEOUT_MS),
+  });
 }
 
 // ========================================
