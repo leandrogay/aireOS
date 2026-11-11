@@ -95,3 +95,11 @@ export const TAB_CASCADE = {
   ...PAGE_CASCADE,
   y: 8,
 };
+
+// The refresh arrow (components/ui/RefreshButton). A reload that answers
+// in a few milliseconds would barely twitch it, which reads as a broken
+// button, so a click spins it at once and it always finishes whole turns:
+// at least `minTurns`, then on to the end of the turn it is in when the
+// reload lands, so it never snaps back mid-rotation. `turn` (seconds) must
+// match the spin class in RefreshButton (SPIN_CLASS).
+export const REFRESH_SPIN = { turn: 0.7, minTurns: 1 };
