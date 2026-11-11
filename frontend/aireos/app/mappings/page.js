@@ -2,6 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import ModelUnavailableNotice from '@/components/layout/ModelUnavailableNotice';
 import PageLayout from '@/components/layout/PageLayout';
 import MappingList from '@/components/mappings/MappingList';
 import Toast from '@/components/ui/Toast';
@@ -95,7 +96,8 @@ function MappingsView() {
     <PageLayout
       title="Nomenclatures"
       fitScreen
-      back={{ href: '/upload', label: 'Upload' }}
+      // Shown only once a mapping call found its model retired (backend ai_models).
+      headerExtra={<ModelUnavailableNotice feature="mapping" />}
     >
       <MappingList
         mappings={mappingReviews}

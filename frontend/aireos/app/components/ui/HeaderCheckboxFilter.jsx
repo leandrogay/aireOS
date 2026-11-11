@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-
-const pillClass =
-  'inline-flex w-max max-w-[11rem] cursor-pointer items-center gap-1 whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide';
+import { ChevronDown } from 'lucide-react';
+import { TABLE_HEADER_ACTION_CLASS } from '@/components/ui/SortHeader';
+import { cn } from '@/lib/utils';
 
 function toggleValue(selected, value) {
   return selected.includes(value)
@@ -12,7 +12,8 @@ function toggleValue(selected, value) {
     : [...selected, value];
 }
 
-// Used by ForecastTable and inventory's InventoryTableFrame: a pill button that opens a portal-rendered checkbox
+// Used by ForecastTable and inventory's InventoryTableFrame: a plain table
+// header button that opens a portal-rendered checkbox
 // list, positioned relative to the button so it still works inside a
 // scrolling/overflow-hidden table header.
 export default function HeaderCheckboxFilter({ id, label, selected, options, openId, setOpenId, onChange }) {
@@ -71,17 +72,11 @@ export default function HeaderCheckboxFilter({ id, label, selected, options, ope
         aria-expanded={open}
         aria-haspopup="listbox"
         onClick={() => setOpenId(open ? null : id)}
-        className={`${pillClass} ${
-          isActive
-            ? 'border-deep-violet-blue bg-deep-violet-blue text-white'
-            : 'border-lavander bg-white text-deep-violet-blue hover:bg-cream'
-        }`}
+        className={cn(TABLE_HEADER_ACTION_CLASS, 'max-w-[11rem] whitespace-nowrap uppercase tracking-wide', isActive && 'font-semibold text-deep-violet-blue')}
       >
         <span className="truncate">{label}</span>
         {isActive ? <span className="text-[9px] font-bold">{selected.length}</span> : null}
-        <span className="text-[8px] leading-none" aria-hidden="true">
-          {open ? '▲' : '▼'}
-        </span>
+        <ChevronDown aria-hidden="true" className={cn('size-3.5 shrink-0 transition-transform', open && 'rotate-180')} />
       </button>
       {open &&
         typeof document !== 'undefined' &&

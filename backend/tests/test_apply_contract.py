@@ -16,6 +16,7 @@ from app.services import (
 )
 from app.services.reference_contracts import (
     FAIRPRICE_MONTHLY,
+    FAIRPRICE_WEEKLY,
     NHG_SAP,
     PRIME_JKDC,
     SHENG_SIONG_CLAIM,
@@ -82,6 +83,34 @@ def test_fairprice_contract_melts_transforms_and_aggregates_rows():
     assert row["quantity_units"] == 12
     assert row["revenue"] == 120
     assert row["source_file"] == "fairprice.txt"
+
+
+def test_weekly_rows_rolled_up_to_months_are_stored_as_months():
+    # A weekly file with "Add up rows into monthly totals" on: the totals are
+    # months, so they must not keep period_type 'week' (the dashboard's By week
+    # view would show a whole month as one week starting on the 1st).
+    contract = copy.deepcopy(FAIRPRICE_WEEKLY)
+    contract["aggregate"] = mapping_contract.monthly_aggregate()
+    row = {"Store Format": "FPON", "Store Code": "4", "Store Name": "FAIRPRICE ON",
+           "SKU No.": "13255043", "Article Description": "AIRE ADULT PANTS XL 10S",
+           "Brand": "AIRE", "Dept Description": "TOILETRIES", "MCH": "ADULT DIAPER PANTS",
+           "Sales UOM": "EA"}
+    dataframe = pd.DataFrame([{
+        **row,
+        "SALES | Week 1 | 05-01-2026": "100",
+        "Qty (in EA) | Week 1 | 05-01-2026": "10",
+        "SALES | Week 2 | 12-01-2026": "50",
+        "Qty (in EA) | Week 2 | 12-01-2026": "5",
+    }])
+
+    result = apply_contract.apply_contract(dataframe, _validated(contract, dataframe), source_file="fp.txt")
+
+    assert len(result) == 1
+    month = result.iloc[0]
+    assert month["period_type"] == "month"
+    assert month["period_start"] == pd.Timestamp("2026-01-01")
+    assert month["period_end"] == pd.Timestamp("2026-01-31")
+    assert month["quantity_units"] == 15
 
 
 def test_nhg_contract_maps_codes_negates_sales_and_rolls_up_without_a_store():

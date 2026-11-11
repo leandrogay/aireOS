@@ -263,7 +263,6 @@ export default function UploadPage() {
           onRollback={requestRollback}
           onDelete={deletion.request}
           onLoaded={handleLoaded}
-          months={UPLOAD_HISTORY_MONTHS}
         />
         <ConfirmDialog
           open={Boolean(rollback.target)}

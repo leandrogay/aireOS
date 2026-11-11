@@ -3,7 +3,8 @@
 import { AlertTriangle, CheckCircle2, HelpCircle, Info } from 'lucide-react';
 
 import Disclosure from '@/components/ui/Disclosure';
-import { evidenceLines, sortChecks } from '../../utils/mappingChecks';
+import { fieldLabel } from '@/app/utils/mappingReview';
+import { evidenceLines, groupRequiredChecks, sortChecks } from '../../utils/mappingChecks';
 
 const LEVEL_STYLES = {
   error: { Icon: AlertTriangle, className: 'text-red-700', box: 'border-red-200 bg-red-50' },
@@ -56,7 +57,7 @@ export default function MappingChecks({ checks, stale = false }) {
   if (!checks?.length) {
     return <p className="text-xs text-deep-violet-blue/70">No checks have been run on this nomenclature yet.</p>;
   }
-  const sorted = sortChecks(checks);
+  const sorted = sortChecks(groupRequiredChecks(checks, fieldLabel));
   const open = sorted.filter((check) => !check.passed);
   const done = sorted.filter((check) => check.passed);
 

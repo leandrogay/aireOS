@@ -29,9 +29,12 @@ import { cn } from "@/lib/utils";
 export default function PageLayout({ title, headerExtra, back, fitScreen = false, wide = false, children }) {
   return (
     <AppShell>
+      {/* pb-20: room under the last card for the assistant's floating button
+          (AssistantWidget: 48px, 16px from the bottom), so it never sits on
+          a table's pagination or any other bottom-right control. */}
       <main
         className={cn(
-          "min-w-0 px-4 pt-4 pb-16 md:px-6 md:pt-6 md:pb-4",
+          "min-w-0 px-4 pt-4 pb-20 md:px-6 md:pt-6",
           fitScreen ? "flex h-dvh flex-col overflow-y-auto" : "min-h-screen",
         )}
       >

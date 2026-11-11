@@ -2,10 +2,12 @@
 
 import { useState } from 'react';
 import { AlertTriangle, Plus, X } from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 
 import { Button } from '@/components/ui/button';
 import SelectDropdown from '@/components/ui/SelectDropdown';
 import { inputClass } from '@/components/ui/formStyles';
+import { CARD_REVEAL } from '@/app/config/transitions';
 import { channelRetailerName, customerRetailerFamily } from '@/app/utils/mappingCustomer';
 import { customerLabel } from '@/app/utils/retailerLabel';
 import {
@@ -80,15 +82,30 @@ export default function ChannelSplit({ customer, decision, outputs, mapping, sta
   const name = customerRetailerFamily(customer);
   const sources = splitSources(mapping, state, layout);
   const current = splitFromDecision(decision);
-  const [draft, setDraft] = useState(() => (current.mode === 'split' ? current : suggestSplit(sources) || EMPTY_SPLIT));
-  // Split is open for editing when the mapping splits now, or once chosen.
-  const [mode, setMode] = useState(current.mode);
+  const reduceMotion = useReducedMotion();
+  // Where the editor starts from: what the mapping does now, else a suggestion.
+  const startDraft = current.mode === 'split' ? current : suggestSplit(sources) || EMPTY_SPLIT;
+  const startSource = sources.find((item) => item.value === startDraft.source);
   // A split that a list of values cannot show stays a pattern until the
   // reviewer turns it into one.
-  const [byPattern, setByPattern] = useState(() => {
-    const start = sources.find((item) => item.value === draft.source);
-    return listableSource(start) && !fitsValueList(start, draft.matches);
-  });
+  const startByPattern = listableSource(startSource) && !fitsValueList(startSource, startDraft.matches);
+
+  const [draft, setDraft] = useState(startDraft);
+  // Split is open for editing when the mapping splits now, or once chosen.
+  const [mode, setMode] = useState(current.mode);
+  const [byPattern, setByPattern] = useState(startByPattern);
+  // The parent used to remount this on every change of the decision (a `key`),
+  // which cut short any animation of the split panel closing. It now starts
+  // again from the mapping during render instead, when the decision or the
+  // customer changes -- the one-time "adjust state during render" case.
+  const decisionKey = `${customer.customer_id}:${JSON.stringify(decision.transforms)}:${decision.value ?? ''}:${decision.kind}`;
+  const [syncedTo, setSyncedTo] = useState(decisionKey);
+  if (syncedTo !== decisionKey) {
+    setSyncedTo(decisionKey);
+    setDraft(startDraft);
+    setMode(current.mode);
+    setByPattern(startByPattern);
+  }
 
   const source = sources.find((item) => item.value === draft.source);
   const showList = listableSource(source) && !byPattern;
@@ -150,155 +167,179 @@ export default function ChannelSplit({ customer, decision, outputs, mapping, sta
   const preview = source && !showList ? splitPreview(source.values, draft.matches) : null;
 
   return (
-    <div className="space-y-3">
-      {renamed && (
-        <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900">
-          <AlertTriangle aria-hidden="true" className="size-3.5 shrink-0" />
-          <span>
-            The nomenclature writes <span className="font-mono">{foreign.join(', ')}</span>, which{' '}
-            {foreign.length === 1 ? 'is' : 'are'} not {customerLabel(customer.customer_name)}&apos;s.
-          </span>
-          <Button type="button" variant="outline" disabled={disabled} onClick={() => onApply(renamed)} className={cn(smallButton, 'ml-auto')}>
-            Use {customerLabel(customer.customer_name)}&apos;s retailers
-          </Button>
-        </div>
-      )}
-
-      <div role="radiogroup" aria-label="Retailer of each row" className="grid gap-2 sm:grid-cols-3">
-        {options.map((option) => (
-          <label
-            key={option.mode}
-            title={option.mode === 'split' ? undefined : `Written to ${channelRetailerName(name, option.mode)}`}
-            className={cn(
-              'flex cursor-pointer items-start gap-2 rounded-md border px-3 py-2 text-xs text-deep-violet-blue',
-              mode === option.mode ? 'border-deep-violet-blue bg-lavander/40 ring-1 ring-deep-violet-blue' : 'border-lavander hover:bg-cream/60',
-            )}
-          >
-            <input
-              type="radio"
-              name="channel-split"
-              checked={mode === option.mode}
-              disabled={disabled}
-              onChange={() => choose(option.mode)}
-              className="mt-0.5 size-3.5 accent-deep-violet-blue"
-            />
+    <div>
+      <div className="space-y-3">
+        {renamed && (
+          <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900">
+            <AlertTriangle aria-hidden="true" className="size-3.5 shrink-0" />
             <span>
-              <span className="font-medium">{option.label}</span>
-              <span className="block text-[11px] text-deep-violet-blue/60">{option.hint}</span>
+              The nomenclature writes <span className="font-mono">{foreign.join(', ')}</span>, which{' '}
+              {foreign.length === 1 ? 'is' : 'are'} not {customerLabel(customer.customer_name)}&apos;s.
             </span>
-          </label>
-        ))}
-      </div>
-      {mode === 'custom' && (
-        <p className="text-[11px] text-deep-violet-blue/60">
-          The nomenclature sets the retailer its own way, shown below. Choose one of these to replace it.
-        </p>
-      )}
-
-      {mode === 'split' && (
-        <div className="space-y-1.5 rounded-md border border-lavander p-3 text-xs text-deep-violet-blue">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span>Column</span>
-            <div className="min-w-48 flex-1">
-              <SelectDropdown
-                value={draft.source}
-                onChange={chooseSource}
-                size="sm"
-                searchable={sources.length > 8}
-                placeholder="Choose a field or column…"
-                ariaLabel="The column that says which rows are online"
-                disabled={disabled}
-                options={sources.map((item) => ({ value: item.value, label: item.label, hint: item.values.slice(0, 3).join(', ') }))}
-              />
-            </div>
+            <Button type="button" variant="outline" disabled={disabled} onClick={() => onApply(renamed)} className={cn(smallButton, 'ml-auto')}>
+              Use {customerLabel(customer.customer_name)}&apos;s retailers
+            </Button>
           </div>
+        )}
 
-          {showList && (
-            <ChannelValueList
-              rows={valueChannels(source.values, draft.matches)}
-              onChange={setValueChannel}
-              disabled={disabled}
-            />
-          )}
-
-          {source && !showList && (
-            <>
-              <ul className="space-y-1">
-                {draft.matches.map((match, index) => (
-                  <li key={index} className="flex flex-wrap items-center gap-1.5">
-                    <span className="w-24 shrink-0">{index === 0 ? 'Online when it' : 'or'}</span>
-                    <div className="w-36">
-                      <SelectDropdown
-                        value={match.op}
-                        onChange={(op) => update(withMatch(index, { op }))}
-                        size="sm"
-                        ariaLabel={`How match ${index + 1} compares`}
-                        disabled={disabled}
-                        options={RULE_OPS}
-                      />
-                    </div>
-                    {/* Applied on leaving the box: applying remounts this
-                        editor, which would lose the cursor mid-word. */}
-                    <input
-                      type="text"
-                      value={match.value}
-                      placeholder="e.g. ONLINE"
-                      aria-label={`What marks a row online (${index + 1})`}
-                      disabled={disabled}
-                      onChange={(event) => setDraft(withMatch(index, { value: event.target.value }))}
-                      onBlur={() => commit(draft)}
-                      className={cn(inputClass, 'w-40 py-1 font-mono text-xs')}
-                    />
-                    {draft.matches.length > 1 && (
-                      <button
-                        type="button"
-                        aria-label={`Remove match ${index + 1}`}
-                        disabled={disabled}
-                        onClick={() => update({ ...draft, matches: draft.matches.filter((_, i) => i !== index) })}
-                        className={iconButton}
-                      >
-                        <X aria-hidden="true" className="size-3.5" />
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-              <button
-                type="button"
-                disabled={disabled}
-                onClick={() => setDraft({ ...draft, matches: [...draft.matches, { op: 'contains', value: '' }] })}
-                className={linkButton}
-              >
-                <Plus aria-hidden="true" className="size-3" />
-                {draft.matches.length ? 'Another way it is named' : 'Say what marks a row online'}
-              </button>
-              <p className="text-[11px] text-deep-violet-blue/60">Capital letters do not matter. Everything else goes offline.</p>
-
-              <div className="grid gap-1 sm:grid-cols-2">
-                <Values title="Online" values={preview.online} partial={source.partial} />
-                <Values title="Offline" values={preview.offline} partial={source.partial} />
-              </div>
-              {source.partial && (
-                <p className="text-[11px] text-deep-violet-blue/60">Some of its values. Testing the nomenclature checks every row.</p>
+        <div role="radiogroup" aria-label="Retailer of each row" className="grid gap-2 sm:grid-cols-3">
+          {options.map((option) => (
+            <label
+              key={option.mode}
+              title={option.mode === 'split' ? undefined : `Written to ${channelRetailerName(name, option.mode)}`}
+              className={cn(
+                'flex cursor-pointer items-start gap-2 rounded-md border px-3 py-2 text-xs text-deep-violet-blue',
+                mode === option.mode ? 'border-deep-violet-blue bg-lavander/40 ring-1 ring-deep-violet-blue' : 'border-lavander hover:bg-cream/60',
               )}
-            </>
-          )}
-
-          <div className="flex flex-wrap items-center gap-2">
-            {problem && <span className="text-[11px] text-amber-900">{problem}</span>}
-            {showList && (
-              <button type="button" disabled={disabled} onClick={() => setByPattern(true)} className={cn(linkButton, 'ml-auto')}>
-                Match by pattern instead
-              </button>
-            )}
-            {listableSource(source) && !showList && (
-              <button type="button" disabled={disabled} onClick={useValueList} className={cn(linkButton, 'ml-auto')}>
-                Choose value by value instead
-              </button>
-            )}
-          </div>
+            >
+              <input
+                type="radio"
+                name="channel-split"
+                checked={mode === option.mode}
+                disabled={disabled}
+                onChange={() => choose(option.mode)}
+                className="mt-0.5 size-3.5 accent-deep-violet-blue"
+              />
+              <span>
+                <span className="font-medium">{option.label}</span>
+                <span className="block text-[11px] text-deep-violet-blue/60">{option.hint}</span>
+              </span>
+            </label>
+          ))}
         </div>
-      )}
+        {mode === 'custom' && (
+          <p className="text-[11px] text-deep-violet-blue/60">
+            The nomenclature sets the retailer its own way, shown below. Choose one of these to replace it.
+          </p>
+        )}
+      </div>
+
+      {/* Opens and shuts with the "Varies by row" choice: the panel grows to
+          its height (what is below slides with it) and its contents rise on
+          the page spring, as the retailer options do (CARD_REVEAL). The gap
+          above it is inside, so it grows with it instead of jumping. */}
+      <AnimatePresence initial={false}>
+        {mode === 'split' && (
+          <motion.div
+            key="split-panel"
+            initial={reduceMotion ? false : { opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={reduceMotion ? undefined : { opacity: 0, height: 0 }}
+            transition={{ height: CARD_REVEAL.layout, opacity: { duration: 0.15, ease: 'easeOut' } }}
+            className="-mx-1 overflow-hidden px-1 pb-1"
+          >
+            <motion.div
+              initial={reduceMotion ? false : { y: CARD_REVEAL.y }}
+              animate={{ y: 0 }}
+              transition={CARD_REVEAL.transition}
+              className="pt-3"
+            >
+              <div className="space-y-1.5 rounded-md border border-lavander p-3 text-xs text-deep-violet-blue">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span>Column</span>
+                  <div className="min-w-48 flex-1">
+                    <SelectDropdown
+                      value={draft.source}
+                      onChange={chooseSource}
+                      size="sm"
+                      searchable={sources.length > 8}
+                      placeholder="Choose a field or column…"
+                      ariaLabel="The column that says which rows are online"
+                      disabled={disabled}
+                      options={sources.map((item) => ({ value: item.value, label: item.label, hint: item.values.slice(0, 3).join(', ') }))}
+                    />
+                  </div>
+                </div>
+
+                {showList && (
+                  <ChannelValueList
+                    rows={valueChannels(source.values, draft.matches)}
+                    onChange={setValueChannel}
+                    disabled={disabled}
+                  />
+                )}
+
+                {source && !showList && (
+                  <>
+                    <ul className="space-y-1">
+                      {draft.matches.map((match, index) => (
+                        <li key={index} className="flex flex-wrap items-center gap-1.5">
+                          <span className="w-24 shrink-0">{index === 0 ? 'Online when it' : 'or'}</span>
+                          <div className="w-36">
+                            <SelectDropdown
+                              value={match.op}
+                              onChange={(op) => update(withMatch(index, { op }))}
+                              size="sm"
+                              ariaLabel={`How match ${index + 1} compares`}
+                              disabled={disabled}
+                              options={RULE_OPS}
+                            />
+                          </div>
+                          {/* Applied on leaving the box: applying remounts this
+                              editor, which would lose the cursor mid-word. */}
+                          <input
+                            type="text"
+                            value={match.value}
+                            placeholder="e.g. ONLINE"
+                            aria-label={`What marks a row online (${index + 1})`}
+                            disabled={disabled}
+                            onChange={(event) => setDraft(withMatch(index, { value: event.target.value }))}
+                            onBlur={() => commit(draft)}
+                            className={cn(inputClass, 'w-40 py-1 font-mono text-xs')}
+                          />
+                          {draft.matches.length > 1 && (
+                            <button
+                              type="button"
+                              aria-label={`Remove match ${index + 1}`}
+                              disabled={disabled}
+                              onClick={() => update({ ...draft, matches: draft.matches.filter((_, i) => i !== index) })}
+                              className={iconButton}
+                            >
+                              <X aria-hidden="true" className="size-3.5" />
+                            </button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                    <button
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => setDraft({ ...draft, matches: [...draft.matches, { op: 'contains', value: '' }] })}
+                      className={linkButton}
+                    >
+                      <Plus aria-hidden="true" className="size-3" />
+                      {draft.matches.length ? 'Another way it is named' : 'Say what marks a row online'}
+                    </button>
+                    <p className="text-[11px] text-deep-violet-blue/60">Capital letters do not matter. Everything else goes offline.</p>
+
+                    <div className="grid gap-1 sm:grid-cols-2">
+                      <Values title="Online" values={preview.online} partial={source.partial} />
+                      <Values title="Offline" values={preview.offline} partial={source.partial} />
+                    </div>
+                    {source.partial && (
+                      <p className="text-[11px] text-deep-violet-blue/60">Some of its values. Testing the nomenclature checks every row.</p>
+                    )}
+                  </>
+                )}
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {problem && <span className="text-[11px] text-amber-900">{problem}</span>}
+                  {showList && (
+                    <button type="button" disabled={disabled} onClick={() => setByPattern(true)} className={cn(linkButton, 'ml-auto')}>
+                      Match by pattern instead
+                    </button>
+                  )}
+                  {listableSource(source) && !showList && (
+                    <button type="button" disabled={disabled} onClick={useValueList} className={cn(linkButton, 'ml-auto')}>
+                      Choose value by value instead
+                    </button>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

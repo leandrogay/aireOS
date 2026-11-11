@@ -7,6 +7,8 @@ import { cn } from '@/lib/utils';
 // Shared by every header cell of the list tables (promotions, uploads,
 // mappings), sortable or not, so the columns line up and read the same.
 export const TABLE_HEADER_CLASS = 'px-4 py-2.5 text-xs font-medium text-deep-violet-blue/60';
+export const TABLE_HEADER_ACTION_CLASS =
+  'inline-flex max-w-full cursor-pointer items-center gap-1 bg-transparent py-1 text-xs font-medium text-deep-violet-blue/60 outline-none transition-colors hover:text-deep-violet-blue focus-visible:ring-2 focus-visible:ring-ring/50';
 
 /**
  * Column header that sorts on press. The parent owns the sort state; pressing
@@ -33,7 +35,7 @@ export default function SortHeader({ label, field, sortField, sortDirection, onS
         type="button"
         onClick={() => onSort(field)}
         className={cn(
-          'inline-flex items-center gap-1 rounded-md outline-none transition-colors hover:text-deep-violet-blue focus-visible:ring-3 focus-visible:ring-ring/50',
+          TABLE_HEADER_ACTION_CLASS,
           active && 'text-deep-violet-blue',
         )}
       >

@@ -114,6 +114,7 @@ function OptionField({
         <RequiredMark />
       </legend>
       <Dropdown
+        look="compact"
         summary={String(value || '')}
         placeholder={`Select ${label.toLowerCase()}`}
         invalid={Boolean(error)}

@@ -111,7 +111,6 @@ export default function PromoUpliftTable({ rows, shownUplift, moments, productNa
 
   return (
     <TableGrid
-      variant="nested"
       columns={columns}
       minWidth="66rem"
       emptyState={rows.length === 0 ? 'No uplift values match these filters.' : null}

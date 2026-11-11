@@ -67,6 +67,17 @@ export function retailerNames(preview) {
   return Object.keys(preview?.retailers || {});
 }
 
+/** Retailers actually loaded, taken from the matching file previews. */
+export function loadedRetailers(outcome, files = []) {
+  const previews = new Map(files.map((file) => [file.blob_path, file.preview]));
+  return [...new Set(outcome.saved.flatMap((item) => retailerNames(previews.get(item.blob_path))))];
+}
+
+/** Open the dashboard with one loaded retailer's customer and channel selected. */
+export function dashboardHrefForRetailer(retailer) {
+  return `/dashboard?retailer=${encodeURIComponent(retailer)}`;
+}
+
 /**
  * What the ticked files would do together, for the line above the button.
  *

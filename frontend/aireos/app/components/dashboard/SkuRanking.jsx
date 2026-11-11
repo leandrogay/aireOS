@@ -2,22 +2,22 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowDown, ArrowUp } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronDown } from 'lucide-react';
 import TableSkeleton from '@/components/ui/TableSkeleton';
+import TableCard from '@/components/ui/TableCard';
+import TableCardHeader from '@/components/ui/TableCardHeader';
+import { TABLE_HEADER_ACTION_CLASS } from '@/components/ui/SortHeader';
+import { cn } from '@/lib/utils';
 import { changePct, formatChangePct } from '@/app/utils/periodComparison';
 import { customerColor } from '@/app/utils/storeFormats';
 import { formatRevenue } from '@/app/utils/trendChart';
 import EstMark from '@/components/dashboard/EstMark';
 import SelectDropdown from '@/components/ui/SelectDropdown';
-import GlassPanel from '@/components/dashboard/GlassPanel';
 
 const GRAINS = [
   { value: 'customer', label: 'Customers' },
   { value: 'product', label: 'Products' },
 ];
-
-const headerPillClass =
-  'inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide';
 
 function formatVolume(value) {
   return Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 });
@@ -29,7 +29,7 @@ function changeColorClass(pct) {
   return 'text-deep-violet-blue/60';
 }
 
-// Pill in a column header that opens a single-choice menu, same idea as the
+// Column header dropdown that opens a single-choice menu, same idea as the
 // forecast table's month filter. The menu is portalled because the table
 // scrolls and would clip a dropdown drawn inside it.
 function HeaderMenu({ id, label, active, openId, setOpenId, options, selected, onSelect }) {
@@ -78,14 +78,10 @@ function HeaderMenu({ id, label, active, openId, setOpenId, options, selected, o
         aria-expanded={open}
         aria-haspopup="listbox"
         onClick={() => setOpenId(open ? null : id)}
-        className={`${headerPillClass} ${
-          active
-            ? 'border-deep-violet-blue bg-deep-violet-blue text-white'
-            : 'border-lavander bg-white text-deep-violet-blue hover:bg-cream'
-        }`}
+        className={cn(TABLE_HEADER_ACTION_CLASS, 'uppercase tracking-wide', active && 'font-semibold text-deep-violet-blue')}
       >
         <span className="truncate">{label}</span>
-        <span className="text-[8px] leading-none" aria-hidden="true">{open ? '▲' : '▼'}</span>
+        <ChevronDown aria-hidden="true" className={cn('size-3.5 shrink-0 transition-transform', open && 'rotate-180')} />
       </button>
       {open && typeof document !== 'undefined' && createPortal(
         <div
@@ -128,11 +124,7 @@ function SortHeader({ label, active, order, onClick }) {
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`${headerPillClass} ${
-        active
-          ? 'border-deep-violet-blue bg-deep-violet-blue text-white'
-          : 'border-lavander bg-white text-deep-violet-blue hover:bg-cream'
-      }`}
+      className={cn(TABLE_HEADER_ACTION_CLASS, 'uppercase tracking-wide', active && 'font-semibold text-deep-violet-blue')}
     >
       <span className="truncate">{label}</span>
       {/* The slot stays either way, so the header does not jump when the
@@ -151,10 +143,15 @@ function SortHeader({ label, active, order, onClick }) {
   );
 }
 
+// A customer with nothing loaded for the period, in place of a 0 that would
+// read as no sales.
+const NO_DATA = <span className="text-deep-violet-blue/50">No data</span>;
+
 // One row per customer that sells through the active channel, highest metric
 // first unless order is 'asc'. A customer with no sales in the period stays,
-// at 0, so the bottom of the list is the quiet one. Rank is the row number
-// after that sort.
+// sorted as 0, so the bottom of the list is the quiet one; one with nothing
+// loaded for the period reads "No data" there (NO_DATA). Rank is the row
+// number after that sort.
 function rankCustomers(rows, mode, metric, order, colorOrder) {
   const shown = rows.filter((row) => (mode === 'online' ? row.has_online : row.has_offline));
   const ranked = shown
@@ -167,6 +164,8 @@ function rankCustomers(rows, mode, metric, order, colorOrder) {
         volume: channel.units ?? 0,
         value: channel.revenue ?? 0,
         estimatedValue: channel.estimated_revenue ?? 0,
+        // Nothing loaded for the period (backend has_data): "No data", not 0.
+        hasData: channel.has_data ?? true,
       };
     });
   ranked.sort((a, b) => {
@@ -332,26 +331,28 @@ export default function SkuRanking({
   const mobileRows = showCustomers ? customersRanked : skus;
 
   return (
-    <GlassPanel as="section">
-      <div className="mb-2">
-        <h3 className="font-serif text-base text-deep-violet-blue">
-          {showCustomers ? 'Customer Sales' : 'SKU Performance Ranking'}{' '}
-          <span className="font-sans text-sm font-normal text-deep-violet-blue/50">
-            ({channelLabel})
-          </span>
-        </h3>
-        {comparingCustomers && (
-          <p className="text-[11px] text-deep-violet-blue/70">
-            {showCustomers
+    <TableCard
+      variant="glass"
+      label={`${showCustomers ? 'Customer' : 'Product'} sales ranking`}
+      header={(
+        <TableCardHeader
+          title={<>
+            {showCustomers ? 'Customer Sales' : 'SKU Performance Ranking'}{' '}
+            <span className="font-sans text-sm font-normal text-deep-violet-blue/50">
+              ({channelLabel})
+            </span>
+          </>}
+          detail={comparingCustomers
+            ? (showCustomers
               ? "Showing each customer's total for the selected period."
-              : 'Showing each product, summed across the selected customers.'}
-          </p>
-        )}
-      </div>
+              : 'Showing each product, summed across the selected customers.')
+            : null}
+        />
+      )}
+    >
+      {tableError && <p className="px-4 pb-2 text-sm text-red-600">{tableError}</p>}
 
-      {tableError && <p className="mb-2 text-sm text-red-600">{tableError}</p>}
-
-      <div className="mb-2 grid grid-cols-2 gap-2 sm:hidden">
+      <div className="grid grid-cols-2 gap-2 px-4 pb-3 sm:hidden">
         {comparingCustomers && (
           <div className="min-w-0">
             <p className="mb-1 text-[11px] font-medium text-deep-violet-blue/65">Show</p>
@@ -378,7 +379,7 @@ export default function SkuRanking({
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-lavander sm:hidden" aria-label={`${showCustomers ? 'Customer' : 'Product'} sales ranking`}>
+      <div className="overflow-hidden border-t border-lavander sm:hidden">
         {tableLoading ? (
           <p className="p-4 text-sm text-deep-violet-blue/60">Loading sales ranking...</p>
         ) : !tableError && mobileRows.length === 0 ? (
@@ -394,8 +395,8 @@ export default function SkuRanking({
               </span>
             </div>
             <dl className="mt-3 grid grid-cols-2 gap-3 pl-8">
-              <div><dt className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">Volume</dt><dd>{formatVolume(row.volume)}</dd></div>
-              <div><dt className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">Value</dt><dd>{formatRevenue(row.value)}</dd></div>
+              <div><dt className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">Volume</dt><dd>{row.hasData === false ? NO_DATA : formatVolume(row.volume)}</dd></div>
+              <div><dt className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">Value</dt><dd>{row.hasData === false ? NO_DATA : formatRevenue(row.value)}</dd></div>
               {!showCustomers && baselineBySku && (
                 <div className="col-span-2"><dt className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">Change {compareShort}</dt><dd>{baselineBySku.get(row.sku)?.[metric] ? formatChangePct(changePct(row[metric], baselineBySku.get(row.sku)[metric])) : 'New'}</dd></div>
               )}
@@ -404,7 +405,7 @@ export default function SkuRanking({
         ))}
       </div>
 
-      <div className="hidden w-full overflow-x-auto rounded-md border border-lavander sm:block">
+      <div className="hidden w-full overflow-x-auto border-t border-lavander sm:block">
           <table className="aire-table-rows w-full table-fixed text-left text-xs text-deep-violet-blue" aria-busy={tableLoading}>
             <colgroup>
               <col className="w-[8%]" />
@@ -477,17 +478,17 @@ export default function SkuRanking({
                 </tr>
               )}
               {!tableLoading && !tableError && showCustomers && customersRanked.map((row) => (
-                <tr key={row.customer} className="border-b border-lavander/80 bg-white last:border-b-0 hover:bg-cream/50">
+                <tr key={row.customer} className="h-10 border-b border-lavander/80 last:border-b-0">
                   <td className={`${cellClass} tabular-nums`}>{row.rank}</td>
                   <td className={cellClass}>
                     <NameWithEst name={row.label} value={row.value} estimated={row.estimatedValue} color={row.color} />
                   </td>
-                  <td className={numCellClass}>{formatVolume(row.volume)}</td>
-                  <td className={numCellClass}>{formatRevenue(row.value)}</td>
+                  <td className={numCellClass}>{row.hasData ? formatVolume(row.volume) : NO_DATA}</td>
+                  <td className={numCellClass}>{row.hasData ? formatRevenue(row.value) : NO_DATA}</td>
                 </tr>
               ))}
               {!tableLoading && !tableError && !showCustomers && shownSkus.map((s) => (
-                <tr key={s.sku} className="border-b border-lavander/80 bg-white last:border-b-0 hover:bg-cream/50">
+                <tr key={s.sku} className="h-10 border-b border-lavander/80 last:border-b-0">
                   <td className={`${cellClass} tabular-nums`}>{s.rank}</td>
                   <td className={cellClass} title={s.product_name}>
                     <NameWithEst name={s.product_name} value={s.value} estimated={s.estimated_value} />
@@ -502,7 +503,7 @@ export default function SkuRanking({
             </tbody>
           </table>
       </div>
-    </GlassPanel>
+    </TableCard>
   );
 }
 

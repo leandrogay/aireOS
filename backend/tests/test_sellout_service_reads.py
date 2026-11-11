@@ -258,20 +258,20 @@ def test_customer_options_have_no_period_type_filter(monkeypatch):
 
 def test_customer_options_strip_the_channel_suffix(monkeypatch):
     rows = [
-        {"retailer_name": "fairprice_offline", "customer_name": None},
-        {"retailer_name": "fairprice_online", "customer_name": None},
+        {"retailer_name": "fairprice_offline", "customer_id": None, "customer_name": None},
+        {"retailer_name": "fairprice_online", "customer_id": None, "customer_name": None},
     ]
     _install(monkeypatch, lambda sql, params: rows)
 
     options = sellout_service.get_customer_options()
 
-    assert options == [{"value": "fairprice", "label": "Fairprice"}]
+    assert options == [{"value": "fairprice", "label": "Fairprice", "customer_id": None}]
 
 
 def test_customer_options_are_labelled_with_the_owning_customers_name(monkeypatch):
     rows = [
-        {"retailer_name": "fairprice_offline", "customer_name": "FairPrice"},
-        {"retailer_name": "sheng_shiong_offline", "customer_name": "Sheng_Shiong"},
+        {"retailer_name": "fairprice_offline", "customer_id": 1, "customer_name": "FairPrice"},
+        {"retailer_name": "sheng_shiong_offline", "customer_id": 16, "customer_name": "Sheng_Shiong"},
     ]
     conn = _install(monkeypatch, lambda sql, params: rows)
 
@@ -279,18 +279,52 @@ def test_customer_options_are_labelled_with_the_owning_customers_name(monkeypatc
 
     assert "LEFT JOIN customers c" in conn.calls[0][0]
     assert options == [
-        {"value": "fairprice", "label": "FairPrice"},
-        {"value": "sheng_shiong", "label": "Sheng Shiong"},
+        {"value": "fairprice", "label": "FairPrice", "customer_id": 1},
+        {"value": "sheng_shiong", "label": "Sheng Shiong", "customer_id": 16},
     ]
 
 
 def test_customer_options_keep_a_short_code_uppercase(monkeypatch):
-    rows = [{"retailer_name": "nhg_offline", "customer_name": None}]
+    rows = [{"retailer_name": "nhg_offline", "customer_id": None, "customer_name": None}]
     _install(monkeypatch, lambda sql, params: rows)
 
     options = sellout_service.get_customer_options()
 
-    assert options == [{"value": "nhg", "label": "NHG"}]
+    assert options == [{"value": "nhg", "label": "NHG", "customer_id": None}]
+
+
+def test_customer_options_carry_the_linked_customer_id_whatever_its_name(monkeypatch):
+    # The customer record may be renamed ("Sheng_Shiong"); the link through
+    # customer_retailers still ties sheng_siong's sales to customer 16. A
+    # retailer with no customer record gives None, and one linked channel is
+    # enough for the whole customer.
+    rows = [
+        {"retailer_name": "sheng_siong_offline", "customer_id": None, "customer_name": None},
+        {"retailer_name": "sheng_siong_online", "customer_id": 16, "customer_name": "Sheng_Shiong"},
+        {"retailer_name": "giant_offline", "customer_id": None, "customer_name": None},
+    ]
+    conn = _install(monkeypatch, lambda sql, params: rows)
+
+    options = sellout_service.get_customer_options()
+
+    assert [(o["value"], o["customer_id"]) for o in options] == [("giant", None), ("sheng_siong", 16)]
+    (sql, _params) = conn.calls[0]
+    assert "LEFT JOIN customer_retailers" in sql
+
+
+def test_customer_options_take_id_and_label_from_the_same_linked_retailer(monkeypatch):
+    # Bad link data: fairprice's channels point at two customer records. The
+    # first linked retailer by name (offline) gives both id and label, in
+    # whatever order the rows arrive.
+    rows = [
+        {"retailer_name": "fairprice_online", "customer_id": 9, "customer_name": "Other"},
+        {"retailer_name": "fairprice_offline", "customer_id": 1, "customer_name": "FairPrice"},
+    ]
+    _install(monkeypatch, lambda sql, params: rows)
+
+    options = sellout_service.get_customer_options()
+
+    assert options == [{"value": "fairprice", "label": "FairPrice", "customer_id": 1}]
 
 
 # ---- get_customer_totals ------------------------------------------------
@@ -346,17 +380,19 @@ def test_customer_totals_reports_channel_presence_and_period_sums(monkeypatch):
         {
             "customer": "nhg",
             "label": "NHG",
-            "offline": {"revenue": 40.0, "units": 4.0, "estimated_revenue": 0.0},
+            "offline": {"revenue": 40.0, "units": 4.0, "estimated_revenue": 0.0, "has_data": True},
             "has_offline": True,
-            "online": {"revenue": 0.0, "units": 0.0, "estimated_revenue": 0.0},
+            "online": {"revenue": 0.0, "units": 0.0, "estimated_revenue": 0.0, "has_data": False},
             "has_online": False,
         },
         {
             "customer": "fairprice",
             "label": "Fairprice",
-            "offline": {"revenue": 100.13, "units": 10.0, "estimated_revenue": 20.0},
+            "offline": {"revenue": 100.13, "units": 10.0, "estimated_revenue": 20.0, "has_data": True},
             "has_offline": True,
-            "online": {"revenue": 0.0, "units": 0.0, "estimated_revenue": 0.0},
+            # FairPrice sells online but loaded nothing for this period: the
+            # 0s are a missing upload, not no sales.
+            "online": {"revenue": 0.0, "units": 0.0, "estimated_revenue": 0.0, "has_data": False},
             "has_online": True,
         },
     ]
@@ -473,6 +509,20 @@ def test_monthly_only_lists_each_channels_months_sorted_and_deduplicated(monkeyp
     assert result == {"offline": ["2026-06-01", "2026-08-01"], "online": ["2026-08-01"]}
 
 
+def test_monthly_only_for_several_customers_reads_all_their_retailers(monkeypatch):
+    # Prime's October is a monthly total only; FairPrice has nothing for
+    # October. With both ticked, October is monthly-only, so By week isn't
+    # offered for a month that would drop Prime's sales.
+    rows = [{"retailer": "prime_offline", "month": date(2026, 10, 1)}]
+    conn = _install(monkeypatch, lambda sql, params: rows)
+
+    result = sellout_service.get_monthly_only_months(customers=["fairprice", " prime ", ""])
+
+    assert result == {"offline": ["2026-10-01"], "online": []}
+    (_sql, params) = conn.calls[0]
+    assert params["retailer_names"] == ["fairprice_offline", "fairprice_online", "prime_offline", "prime_online"]
+
+
 def test_monthly_only_with_no_monthly_only_months_gives_empty_lists(monkeypatch):
     _install(monkeypatch, lambda sql, params: [])
 
@@ -554,6 +604,35 @@ def test_default_date_range_earliest_start_is_scoped_to_the_channel(monkeypatch)
 
     [(_sql, params)] = conn.sql_containing("MIN(period_start)")
     assert params == {"retailer_name": "fairprice_offline"}
+
+
+def test_default_date_range_for_several_customers_reads_all_their_retailers(monkeypatch):
+    # FairPrice stops at August while Prime runs to October: with both ticked,
+    # the latest (and earliest) period is read across both, not FairPrice alone.
+    rows = [{"period_start": date(2026, 10, 1), "period_end": date(2026, 10, 31), "period_type": "month"}]
+    conn = _install(monkeypatch, _latest_and_earliest(rows, date(2024, 1, 4)))
+
+    result = sellout_service.get_default_date_range(
+        customers=["fairprice", " prime ", ""], mode="offline", period="week",
+    )
+
+    assert result["start"] == "2026-10-01"
+    both = ["fairprice_offline", "prime_offline"]
+    [(latest_sql, latest_params)] = conn.sql_containing("ORDER BY period_end DESC")
+    assert "ANY(CAST(:retailer_names AS text[]))" in latest_sql
+    assert latest_params["retailer_names"] == both
+    [(_sql, earliest_params)] = conn.sql_containing("MIN(period_start)")
+    assert earliest_params == {"retailer_names": both}
+
+
+def test_default_date_range_for_several_customers_without_mode_reads_both_channels(monkeypatch):
+    rows = [{"period_start": date(2026, 9, 1), "period_end": date(2026, 9, 30), "period_type": "month"}]
+    conn = _install(monkeypatch, _latest_and_earliest(rows, date(2024, 1, 4)))
+
+    sellout_service.get_default_date_range(customers=["fairprice", "nhg"])
+
+    [(_sql, params)] = conn.sql_containing("MIN(period_start)")
+    assert params == {"retailer_names": ["fairprice_offline", "fairprice_online", "nhg_offline", "nhg_online"]}
 
 
 def test_default_date_range_month_spans_count_back_from_the_latest_periods_month(monkeypatch):

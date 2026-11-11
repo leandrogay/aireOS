@@ -14,6 +14,8 @@ import RowActions from '@/components/ui/RowActions';
 import { cn } from '@/lib/utils';
 
 import InventoryTableFrame, {
+  headingLabel,
+  InventoryColGroup,
   inventoryHeadRowClass,
   inventoryTableClass,
   inventoryTheadClass,
@@ -60,7 +62,27 @@ export default function InventorySkuTable({
   return (
     <InventoryTableFrame title={title} rows={sorted} loading={loading}>
       {(visible, monthHeader) => (
-        <table className={cn(inventoryTableClass, showDoh ? 'min-w-[84rem]' : 'min-w-[64rem]')}>
+        // Fixed widths (InventoryColGroup) so the columns don't move between
+        // pages; Product takes what's left of the min-width.
+        <table className={cn(inventoryTableClass, 'table-fixed', showDoh ? 'min-w-[84rem]' : 'min-w-[68rem]')}>
+          <InventoryColGroup
+            widths={[
+              showCustomer && '8rem',
+              '7rem', // Month
+              '6.5rem', // SKU
+              null, // Product
+              '5rem', // Opening
+              '5rem', // Sell-in
+              '5rem', // Sell-out
+              '6rem', // Building blocks
+              '5.5rem', // Ending stock
+              showDoh && '4.5rem', // DOH
+              showDoh && '5rem', // Target
+              showDoh && '6rem', // vs target
+              showDoh && '8rem', // Status: fits "Within range" on one line
+              Boolean(onEdit) && '4.5rem', // actions, as TableGrid's ACTIONS_COLUMN
+            ]}
+          />
           <thead className={inventoryTheadClass}>
             <tr className={inventoryHeadRowClass}>
               {showCustomer && <th className={inventoryThClass}>Customer</th>}
@@ -68,8 +90,8 @@ export default function InventorySkuTable({
               <th className={inventoryThClass}>SKU</th>
               <th className={inventoryThClass}>Product</th>
               <th className={cn(inventoryThClass, numClass)}>Opening</th>
-              <th className={cn(inventoryThClass, numClass)}>Sell-in</th>
-              <th className={cn(inventoryThClass, numClass)}>Sell-out</th>
+              <th className={cn(inventoryThClass, numClass)}>{headingLabel('Sell-in')}</th>
+              <th className={cn(inventoryThClass, numClass)}>{headingLabel('Sell-out')}</th>
               <th className={cn(inventoryThClass, numClass)}>Building blocks</th>
               <th className={cn(inventoryThClass, numClass)}>Ending stock</th>
               {showDoh && (
@@ -112,13 +134,15 @@ export default function InventorySkuTable({
                       <td className={cn(inventoryTdClass, numClass)}>{formatDoh(row.doh)}</td>
                       <td className={cn(inventoryTdClass, numClass)}>{formatDoh(row.target_doh)}</td>
                       <td className={cn(inventoryTdClass, numClass)}>{formatGap(row.doh_vs_target)}</td>
-                      <td className={cn(inventoryTdClass, STATUS_CLASSES[row.doh_status])}>
+                      <td className={cn(inventoryTdClass, 'whitespace-nowrap', STATUS_CLASSES[row.doh_status])}>
                         {DOH_STATUS_LABELS[row.doh_status] ?? '—'}
                       </td>
                     </>
                   )}
                   {onEdit && (
-                    <td className={cn(inventoryTdClass, 'text-right')}>
+                    // py-1: the menu button is 32px, so the row stays the
+                    // height of one without a menu and every page is as tall.
+                    <td className={cn(inventoryTdClass, 'py-1 text-right')}>
                       {/* A month with no rows of its own (stock carried forward) has nothing to edit. */}
                       {row.has_data && (
                         <RowActions

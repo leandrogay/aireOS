@@ -4,8 +4,9 @@ this app, so read state is shared across everyone rather than per-account.
 What writes here: low-stock/stockout (from inventory_service, when a SKU
 written via Create/Edit/Upload drops below its DOH threshold), forecast
 pipeline success/failure (scripts/refresh_forecast.py, and the event-driven
-refresh via forecast_refresh_worker), an approved mapping, and an upload
-rollback that succeeded or failed (ingestion_service.rollback_upload).
+refresh via forecast_refresh_worker), an approved mapping, an upload
+rollback that succeeded or failed (ingestion_service.rollback_upload), and a
+Gemini model that is no longer available (ai_models).
 
 `payload` is structured JSON, not pre-rendered text, so the wording staff see
 lives in the frontend and can change without a migration. This module only
@@ -35,6 +36,7 @@ FORECAST_FAILURE = "forecast_failure"
 MAPPING_UPLOADED = "mapping_uploaded"
 ROLLBACK_SUCCESS = "rollback_success"
 ROLLBACK_FAILURE = "rollback_failure"
+MODEL_OUTDATED = "model_outdated"
 
 NOTIFY_CHANNEL = "notifications_changed"
 
@@ -151,6 +153,30 @@ def has_forecast_run(run_name: str) -> bool:
         ).scalar_one()
 
 
+def models_reported_unavailable(models: list[str]) -> set[str]:
+    """
+    Which of these model names a model_outdated notification has named, read
+    or not -- what ai_models.model_status reads to keep its notices up until
+    the setting names a different model.
+    """
+
+    if not models:
+        return set()
+    with _read_connection() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT DISTINCT payload->>'current_model'
+                FROM notifications
+                WHERE notification_type = :notification_type
+                  AND payload->>'current_model' = ANY(:models)
+                """
+            ),
+            {"notification_type": MODEL_OUTDATED, "models": models},
+        ).all()
+    return {row[0] for row in rows}
+
+
 # ============================================================
 # WRITES
 # ============================================================
@@ -244,4 +270,40 @@ def insert_best_effort(notification_type: str, payload: dict) -> int | None:
         return insert(notification_type, payload)
     except Exception as exc:
         logger.warning("Could not write a %s notification: %s", notification_type, exc)
+        return None
+
+
+def insert_model_outdated(payload: dict) -> int | None:
+    """
+    Writes one model_outdated notification unless an unread one already names
+    the same model (`payload["current_model"]`), so every upload and question
+    that hits a retired model does not add another. Once it has been read, the
+    next failure writes a new one. Best effort like insert_best_effort: never
+    raises, returns None when skipped.
+
+    Several uploads run at once and can fail together, so the check and the
+    insert hold a transaction-scoped advisory lock: the second one waits, then
+    sees the first one's row.
+    """
+
+    try:
+        with _get_engine().begin() as conn:
+            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": MODEL_OUTDATED})
+            unread = conn.execute(
+                text(
+                    """
+                    SELECT 1 FROM notifications
+                    WHERE notification_type = :notification_type
+                      AND payload->>'current_model' = :model
+                      AND read_at IS NULL
+                    LIMIT 1
+                    """
+                ),
+                {"notification_type": MODEL_OUTDATED, "model": payload.get("current_model")},
+            ).first()
+            if unread:
+                return None
+            return _insert(conn, MODEL_OUTDATED, payload, None, None)
+    except Exception as exc:
+        logger.warning("Could not write a %s notification: %s", MODEL_OUTDATED, exc)
         return None

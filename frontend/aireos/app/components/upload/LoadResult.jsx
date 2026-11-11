@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { AlertTriangle, ArrowRight, CheckCircle2, XCircle } from 'lucide-react';
 
 import { buttonVariants } from '@/components/ui/button';
+import { dashboardHrefForRetailer, loadedRetailers } from '@/app/utils/loadPreview';
+import { retailerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
 function plural(count, one, many) {
@@ -56,9 +58,10 @@ function MappingLabel({ item }) {
  * were written, the same footer bar as the confirmation step with the way on
  * to the dashboard. There is no Done: the dialog's X closes it.
  *
- * @param {{ outcome: ReturnType<typeof import('@/app/utils/loadPreview').loadOutcome> }} props
+ * @param {{ outcome: ReturnType<typeof import('@/app/utils/loadPreview').loadOutcome>, files: object[] }} props
  */
-export default function LoadResult({ outcome }) {
+export default function LoadResult({ outcome, files }) {
+  const retailers = loadedRetailers(outcome, files);
   return (
     <>
       <div role="status" className="max-h-[60vh] space-y-4 overflow-y-auto px-4 py-4">
@@ -116,11 +119,18 @@ export default function LoadResult({ outcome }) {
       {/* ==== Actions ==== same bar as the confirmation step. The one way on
           is the dashboard, once rows were written; closing is the dialog's X. */}
       {outcome.saved.length > 0 && (
-        <div className="flex items-center justify-end gap-2 rounded-b-lg border-t border-lavander bg-cream/40 px-4 py-3">
-          <Link href="/dashboard" className={buttonVariants()}>
-            View Sales Dashboard
-            <ArrowRight aria-hidden="true" />
-          </Link>
+        <div className="flex flex-wrap items-center justify-end gap-2 rounded-b-lg border-t border-lavander bg-cream/40 px-4 py-3">
+          {retailers.length > 1 && <span className="mr-auto text-xs text-deep-violet-blue/70">View sales for a loaded retailer:</span>}
+          {(retailers.length ? retailers : [null]).map((retailer) => (
+            <Link
+              key={retailer ?? 'all'}
+              href={retailer ? dashboardHrefForRetailer(retailer) : '/dashboard'}
+              className={buttonVariants()}
+            >
+              {retailer ? retailerLabel(retailer) : 'View Sales Dashboard'}
+              <ArrowRight aria-hidden="true" />
+            </Link>
+          ))}
         </div>
       )}
     </>

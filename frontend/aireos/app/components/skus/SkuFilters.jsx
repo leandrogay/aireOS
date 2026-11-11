@@ -27,7 +27,7 @@ export default function SkuFilters({ filters, values, hasFilters, onChange, onRe
   return (
     <FilterBar label="Filter SKUs" hasFilters={hasFilters} onReset={onReset}>
       <MultiSelectDropdown
-        look="filter"
+        look="compact"
         label="SKU range"
         allLabel="All ranges"
         placeholder="No ranges yet"
@@ -38,7 +38,7 @@ export default function SkuFilters({ filters, values, hasFilters, onChange, onRe
         searchPlaceholder="Search ranges…"
       />
       <MultiSelectDropdown
-        look="filter"
+        look="compact"
         label="Brand"
         allLabel="All brands"
         placeholder="No brands yet"
@@ -49,6 +49,7 @@ export default function SkuFilters({ filters, values, hasFilters, onChange, onRe
         searchPlaceholder="Search brands…"
       />
       <PriceRangeFilter
+        look="compact"
         label="Price"
         min={filters.minPrice}
         max={filters.maxPrice}

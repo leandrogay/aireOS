@@ -234,7 +234,9 @@ export default function RevenueSummaryCards({
   const shownFormats = formatsToShow(currentFormats)
   const shownBaseline = formatsToShow(baselineFormats)
   // Two or more customers: one tile per customer for this channel, not store
-  // formats. A customer who sells on the channel stays, at 0, like the chart.
+  // formats. A customer who sells on the channel stays, like the chart; one
+  // with nothing loaded for the period (backend has_data, e.g. the latest
+  // month came from another ticked customer) reads "No sales data", not $0.
   const customerTiles = customerRows
     .filter((row) => (mode === "online" ? row.has_online : row.has_offline))
     .map((row) => {
@@ -245,6 +247,7 @@ export default function RevenueSummaryCards({
         revenue: channel.revenue ?? 0,
         units: channel.units ?? 0,
         estimated_revenue: channel.estimated_revenue ?? 0,
+        hasData: channel.has_data ?? true,
       }
     })
     .sort((a, b) => (b.revenue ?? 0) - (a.revenue ?? 0))
@@ -312,7 +315,7 @@ export default function RevenueSummaryCards({
             totals={tileTotal}
             baselineTotals={!comparingCustomers && baselineData ? sumFormats(baselineData.storeFormats) : null}
             periodNames={periodNames}
-            available={comparingCustomers ? customerTiles.length > 0 : currentFormats.length > 0}
+            available={comparingCustomers ? customerTiles.some((tile) => tile.hasData) : currentFormats.length > 0}
             baselineAvailable={!comparingCustomers && baselineFormats.length > 0}
             emphasis
             className="col-span-2 sm:col-span-1"
@@ -327,7 +330,7 @@ export default function RevenueSummaryCards({
                 share={format && tileTotal.revenue ? (format.revenue / tileTotal.revenue) * 100 : null}
                 shareLabel="Share of total revenue"
                 color={colorForName(name)}
-                available={Boolean(format)}
+                available={Boolean(format) && (format.hasData ?? true)}
                 baselineAvailable={!comparingCustomers && baselineByFormat.has(name)}
                 highlighted={hoveredFormat === name}
                 onHover={setHoveredFormat}

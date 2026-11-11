@@ -3,10 +3,10 @@
 import { Button } from '@/components/ui/button';
 import RefreshButton from '@/components/ui/RefreshButton';
 import TableGrid from '@/components/ui/TableGrid';
+import TableCard from '@/components/ui/TableCard';
 import { cn } from '@/lib/utils';
 import { resultCountLabel } from '@/app/utils/tableView';
 import useMediaQuery from '@/hooks/useMediaQuery';
-import { glassSurfaceClass } from '@/components/ui/surfaceStyles';
 
 /**
  * The list-table card every feature uses (Customers, Promotions): a count on
@@ -79,31 +79,28 @@ export default function DataTable({
   return (
     // No visible heading (the page title already names the list); the
     // aria-label still names the region for screen readers.
-    <section
-      aria-label={label}
-      className={cn(
-        glassSurfaceClass,
-        'flex w-full min-w-0 flex-col overflow-hidden',
-        // min-h-80 keeps the table usable on a short window (the page
-        // scrolls instead).
-        fill && 'min-h-80 flex-1',
+    <TableCard
+      variant="glass"
+      label={label}
+      // min-h-80 keeps the table usable on a short window.
+      className={fill ? 'min-h-80 flex-1' : undefined}
+      header={(
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-deep-violet-blue/70" aria-live="polite">
+            {firstLoad ? `Loading ${plural}…` : resultCountLabel(shownCount, totalCount, noun, plural)}
+          </p>
+          <div className={cn('flex min-w-0 flex-wrap items-center gap-2', toolbar ? 'w-full sm:w-auto' : 'ml-auto')}>
+            {toolbar}
+            <RefreshButton
+              onClick={onRefresh}
+              isRefreshing={isLoading}
+              label={`Refresh ${plural}`}
+              className="rounded-md border-deep-violet-blue/30 bg-white text-deep-violet-blue hover:bg-cream"
+            />
+          </div>
+        </div>
       )}
     >
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-card/45 px-4 py-3">
-        <p className="text-sm text-deep-violet-blue/70" aria-live="polite">
-          {firstLoad ? `Loading ${plural}…` : resultCountLabel(shownCount, totalCount, noun, plural)}
-        </p>
-        <div className={cn('flex min-w-0 flex-wrap items-center gap-2', toolbar ? 'w-full sm:w-auto' : 'ml-auto')}>
-          {toolbar}
-          <RefreshButton
-            onClick={onRefresh}
-            isRefreshing={isLoading}
-            label={`Refresh ${plural}`}
-            className="rounded-md border-deep-violet-blue/30 bg-white text-deep-violet-blue hover:bg-cream"
-          />
-        </div>
-      </div>
-
       {error && (
         <div
           role="alert"
@@ -145,6 +142,6 @@ export default function DataTable({
           {footer}
         </>
       )}
-    </section>
+    </TableCard>
   );
 }

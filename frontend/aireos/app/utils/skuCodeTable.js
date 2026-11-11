@@ -51,3 +51,18 @@ export function codeRows(skuCodes, transforms, masterSkus) {
 export function unknownCodes(rows) {
   return rows.filter((row) => !row.known).map((row) => row.code);
 }
+
+/**
+ * Where the sku field is read from right now -- its column, or the column
+ * group whose headings carry it -- as a string to compare, or null when
+ * nothing fills it. The review re-reads the file's codes when this changes.
+ *
+ * @param {{ column: string, fields: { targetField: string }[] }[]} rows
+ * @param {{ field: string }[]} groups
+ */
+export function skuSourceKey(rows, groups) {
+  const row = (rows || []).find((item) => item.fields.some((field) => field.targetField === 'sku'));
+  if (row) return `column:${row.column}`;
+  const group = (groups || []).find((item) => item.field === 'sku');
+  return group ? `group:${JSON.stringify(group)}` : null;
+}
