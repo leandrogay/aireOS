@@ -15,6 +15,7 @@ import {
 // mappingStatus() kinds → StatusPill tones.
 const STATUS_TONES = {
   confirmed: 'success',
+  unused: 'muted',
   pending: 'warning',
   missing: 'danger',
   warnings: 'warning',

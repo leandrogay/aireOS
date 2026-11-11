@@ -138,7 +138,7 @@ export default function MappingList({ mappings, isLoading, error, onOpen, onRefr
           <div className="grid gap-2">
             {pageRows.map((mapping) => {
               const status = mappingStatus(mapping);
-              const tones = { confirmed: 'success', pending: 'warning', missing: 'danger', warnings: 'warning', unknown: 'muted' };
+              const tones = { confirmed: 'success', unused: 'muted', pending: 'warning', missing: 'danger', warnings: 'warning', unknown: 'muted' };
               return (
                 <MobileRecordCard
                   key={mapping.mappingId}

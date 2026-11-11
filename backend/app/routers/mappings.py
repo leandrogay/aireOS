@@ -174,6 +174,11 @@ async def list_mappings():
 
     def collect() -> list[dict]:
         packets = []
+        upload_counts = {}
+        for upload in storage.list_uploads(limit=None):
+            fingerprint = upload.get("mapping_fingerprint")
+            if fingerprint:
+                upload_counts[fingerprint] = upload_counts.get(fingerprint, 0) + 1
         confirmed = storage.list_mapping_fingerprints("confirmed")
         # A pending copy whose cleanup failed at approval is superseded by its
         # confirmed one; listing both would show the mapping twice.
@@ -189,9 +194,9 @@ async def list_mappings():
             for fingerprint in fingerprints:
                 envelope = storage.download_json(path_for(fingerprint))
                 if envelope:
-                    packets.append(
-                        mapping_view.envelope_to_packet(fingerprint, envelope, state)
-                    )
+                    packet = mapping_view.envelope_to_packet(fingerprint, envelope, state)
+                    packet["uploadCount"] = upload_counts.get(fingerprint, 0)
+                    packets.append(packet)
 
         return packets
 

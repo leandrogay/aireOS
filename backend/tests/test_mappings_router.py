@@ -247,6 +247,7 @@ def test_amending_builds_on_the_confirmed_copy_not_a_stale_pending_one(monkeypat
 def test_listing_leaves_out_a_pending_copy_that_has_been_confirmed(monkeypatch):
     fingerprints = {"confirmed": ["fp"], "pending": ["fp", "new"]}
     monkeypatch.setattr(storage, "list_mapping_fingerprints", lambda state: fingerprints[state])
+    monkeypatch.setattr(storage, "list_uploads", lambda limit=None: [{"mapping_fingerprint": "fp"}])
     _serve(
         monkeypatch,
         {
@@ -260,6 +261,7 @@ def test_listing_leaves_out_a_pending_copy_that_has_been_confirmed(monkeypatch):
 
     listed = [(m["fingerprint"], m["state"]) for m in response.json()["mappings"]]
     assert listed == [("fp", "confirmed"), ("new", "pending")]
+    assert [m["uploadCount"] for m in response.json()["mappings"]] == [1, 0]
 
 
 # ---- Contract-wide instructions ---------------------------------------------------------

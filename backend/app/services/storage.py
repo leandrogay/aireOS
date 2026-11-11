@@ -451,10 +451,11 @@ def months_before(moment: datetime.datetime, months: int) -> datetime.datetime:
     return moment.replace(year=year, month=month, day=day)
 
 
-def list_uploads(limit: int = 50, since: datetime.datetime | None = None) -> list[dict]:
+def list_uploads(limit: int | None = 50, since: datetime.datetime | None = None) -> list[dict]:
     """
     Recent uploads, newest first, optionally only those created at or after
     `since` (timezone-aware UTC, like GCS times).
+    Pass `limit=None` when a caller needs every upload.
 
     The bucket is the record of what has been uploaded -- there is no upload
     table -- so this reads the blob listing and its custom metadata. Sorting
