@@ -273,16 +273,36 @@ def test_overview_passes_the_customer_filter_to_the_query(monkeypatch):
     assert conn.sql_containing("DISTINCT ON")[0][1]["customer_ids"] == [1]
 
 
-def test_a_month_filled_in_after_a_skus_last_data_is_flagged_as_having_no_data(monkeypatch):
-    # B2 stops after January, A1 runs to February: B2 still shows its stock for February.
+def test_a_sku_with_no_sell_in_in_a_month_the_customers_other_skus_have_it_shipped_nothing(monkeypatch):
+    # A1 has a February sell-in entry and B2 none: the tracker had nothing for
+    # B2 that month, so B2's February is an actual month with 0 shipped, not
+    # a month still to be entered.
     _install(monkeypatch, _router(_customers("fairprice"), _two_month_metrics()))
+
+    rows = inventory_service.get_overview()["skus"]
+
+    b2 = {r["month"]: r for r in rows if r["sku"] == "B2"}
+    assert b2["2026-02-01"]["has_data"] is True
+    assert b2["2026-02-01"]["sell_in"] == 0
+    assert b2["2026-02-01"]["ending_stock"] == 30
+
+
+def test_a_month_no_sku_of_the_customer_has_sell_in_for_is_not_counted_as_actual(monkeypatch):
+    # A1's February row has sell-out but no sell-in, so the customer's last
+    # sell-in month is still January: B2's February is only filled in.
+    jan, feb = date(2026, 1, 1), date(2026, 2, 1)
+    metrics = [
+        _metric(1, "A1", jan, "sell_in", 100),
+        _metric(1, "A1", feb, "sell_out_base", 10),
+        _metric(1, "B2", jan, "sell_in", 50),
+    ]
+    _install(monkeypatch, _router(_customers("fairprice"), metrics))
 
     rows = inventory_service.get_overview()["skus"]
 
     b2 = {r["month"]: r for r in rows if r["sku"] == "B2"}
     assert b2["2026-01-01"]["has_data"] is True
     assert b2["2026-02-01"]["has_data"] is False
-    assert b2["2026-02-01"]["ending_stock"] == 30
 
 
 def test_an_unknown_sku_code_is_shown_by_its_code(monkeypatch):
@@ -1015,7 +1035,8 @@ def test_the_outlook_is_limited_to_the_skus_chosen(monkeypatch):
     view = _outlook_view(monkeypatch, skus=["B2"])
 
     assert _month(view, "2026-01-01")["sell_in_actual"] == 50
-    assert _month(view, "2026-02-01")["sell_in_actual"] is None
+    # Nothing shipped to B2 in February, the customer's last sell-in month.
+    assert _month(view, "2026-02-01")["sell_in_actual"] == 0
 
 
 def test_a_customer_with_no_inventory_gets_an_empty_outlook(monkeypatch):
@@ -1289,13 +1310,15 @@ def _two_sku_plan(monkeypatch, months=2):
     return inventory_service.get_sell_in_plan(1, months=months)
 
 
-def test_each_sku_plans_from_the_month_after_its_own_last_actual(monkeypatch):
+def test_a_sku_with_nothing_shipped_last_month_plans_from_the_same_month_as_the_rest(monkeypatch):
+    # B2 had no February sell-in while A1 did: B2 shipped nothing that month,
+    # so both plan from March.
     plan = _two_sku_plan(monkeypatch)
 
     first_month = {}
     for row in plan["rows"]:
         first_month.setdefault(row["sku"], row["month"])
-    assert first_month == {"A1": "2026-03-01", "B2": "2026-02-01"}
+    assert first_month == {"A1": "2026-03-01", "B2": "2026-03-01"}
 
 
 def test_a_sku_without_a_recent_month_opens_at_its_own_last_ending_stock(monkeypatch):
@@ -1314,23 +1337,23 @@ def test_every_sku_plans_from_its_own_start_to_the_same_end_month(monkeypatch):
         months_by_sku.setdefault(row["sku"], []).append(row["month"])
     assert months_by_sku == {
         "A1": ["2026-03-01", "2026-04-01"],
-        "B2": ["2026-02-01", "2026-03-01", "2026-04-01"],
+        "B2": ["2026-03-01", "2026-04-01"],
     }
 
 
 def test_the_plan_reports_each_skus_last_actual_month(monkeypatch):
     plan = _two_sku_plan(monkeypatch)
 
-    assert plan["actuals_through_by_sku"] == {"A1": "2026-02-01", "B2": "2026-01-01"}
+    assert plan["actuals_through_by_sku"] == {"A1": "2026-02-01", "B2": "2026-02-01"}
     assert plan["actuals_through"] == "2026-02-01"
 
 
-def test_a_month_total_only_adds_the_skus_being_planned_that_month(monkeypatch):
+def test_a_month_total_adds_every_sku_planned_that_month(monkeypatch):
     plan = _two_sku_plan(monkeypatch)
 
-    february = next(t for t in plan["monthly_totals"] if t["month"] == "2026-02-01")
-    b2_february = next(r for r in plan["rows"] if r["sku"] == "B2" and r["month"] == "2026-02-01")
-    assert february["recommended_sell_in"] == b2_february["recommended_sell_in"]
+    march = next(t for t in plan["monthly_totals"] if t["month"] == "2026-03-01")
+    march_rows = [r for r in plan["rows"] if r["month"] == "2026-03-01"]
+    assert march["recommended_sell_in"] == sum(r["recommended_sell_in"] for r in march_rows)
 
 
 def test_the_shipped_so_far_check_looks_only_at_that_skus_actuals(monkeypatch):
@@ -2036,12 +2059,13 @@ def test_last_month_sell_out_is_compared_with_its_forecast(monkeypatch):
         "difference": 30,
         "percent": 12.0,
         "skus_compared": 1,
-        "skus_with_actuals": 1,
+        # B2 shipped nothing in February but still has its actuals for it.
+        "skus_with_actuals": 2,
     }
 
 
 def test_last_month_comparison_only_counts_skus_with_a_forecast_for_it(monkeypatch):
-    # B2 has no February actual and no forecast; only A1 is compared.
+    # B2 shipped nothing in February and has no forecast; only A1 is compared.
     view = _outlook_view(monkeypatch, initial=_INITIAL)
 
     assert view["last_month_vs_forecast"]["actual"] == 280

@@ -29,8 +29,10 @@ import SkuDropdown from './SkuDropdown';
 const MONTH_OPTIONS = [3, 6, 12].map((n) => ({ value: String(n), label: `${n} months` }));
 
 /**
- * Where the plan starts. Each SKU plans from its own last actual month, so when
- * they differ (actuals were entered for only some SKUs) the range is shown.
+ * Where the plan starts. Each SKU plans from its own last actual month. A SKU
+ * with no sell-in in the customer's last sell-in month counts it as 0 shipped
+ * (backend _fetch_actuals), so they normally agree; when they don't, the
+ * range is shown.
  *
  * @param {Record<string, string>} lastActualBySku 'YYYY-MM-DD' per SKU
  * @returns {string}

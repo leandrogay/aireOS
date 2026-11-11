@@ -343,9 +343,11 @@ def _fetch_actuals(
     Actuals per {(customer_id, sku): {month: {metric: value}}}: sell-in, the
     first month's opening and any building blocks from inventory_metrics,
     sell-out from the sales dashboard's weekly data (each week counted in the
-    month it starts, a SKU with no sales that month is 0). A month is only
-    kept once the sales data covers all of it, so a half-loaded month never
-    counts as actual.
+    month it starts, a SKU with no sales that month is 0). A SKU's actuals run
+    to the customer's last month of sell-in: a month the customer's other SKUs
+    have sell-in for and this one doesn't is 0 shipped, not missing. A month is
+    only kept once the sales data covers all of it, so a half-loaded month
+    never counts as actual.
     """
 
     metrics = _fetch_metrics(conn, customer_ids)
@@ -355,23 +357,54 @@ def _fetch_actuals(
         for customer, retailer_ids in retailers.items()
     }
 
+    last_sell_in = _last_sell_in_month_by_customer(metrics)
     actuals: dict[tuple[int, str], dict[date, dict[str, float]]] = {}
     for (customer_id, sku), months in metrics.items():
         units, data_through = sales.get(customer_id, ({}, None))
         sku_units = units.get(sku, {})
         # A month inside the SKU's history with sales but no inventory row
-        # (nothing shipped that month) still sold stock. Months after the last
-        # row stay out: they would move where the SKU's plan starts.
+        # (nothing shipped that month) still sold stock. So does a month after
+        # the SKU's last row up to the customer's last month of sell-in: the
+        # tracker had sell-in for the customer's other SKUs that month and none
+        # for this one, so nothing was shipped (0), not "not entered yet". A
+        # month no SKU of the customer has sell-in for stays out.
         first, last = min(months), max(months)
         sold_between = {month: {} for month in sku_units if first < month < last}
+        shipped_none_since = {
+            month: {} for month in _months_after(last, last_sell_in.get(customer_id, last))
+        }
         by_month = {}
-        for month, values in {**sold_between, **months}.items():
+        for month, values in {**sold_between, **shipped_none_since, **months}.items():
             if data_through is None or data_through < _month_end(month):
                 continue
             by_month[month] = {**values, "sell_out_base": sku_units.get(month, 0.0)}
         if by_month:
             actuals[(customer_id, sku)] = by_month
     return actuals
+
+
+def _last_sell_in_month_by_customer(
+    metrics: dict[tuple[int, str], dict[date, dict[str, float]]],
+) -> dict[int, date]:
+    """Each customer's most recent month with a sell-in value for any SKU."""
+
+    latest: dict[int, date] = {}
+    for (customer_id, _), months in metrics.items():
+        for month, values in months.items():
+            if "sell_in" in values and month > latest.get(customer_id, date.min):
+                latest[customer_id] = month
+    return latest
+
+
+def _months_after(start: date, through: date) -> list[date]:
+    """The month starts after `start` up to and including `through`."""
+
+    months = []
+    month = inventory_calc.add_months(start, 1)
+    while month <= through:
+        months.append(month)
+        month = inventory_calc.add_months(month, 1)
+    return months
 
 
 def _latest_month_by_customer(
@@ -879,8 +912,9 @@ def get_sell_in_plan(
     totals per month and per SKU that an order to the factory is built from.
     Each SKU plans from the month after its own last actual month, on that
     SKU's own ending stock, up to `months` months after the current month (the
-    page's "Months ahead"), so entering actuals for only some SKUs moves only
-    those. A SKU with no forecast for its start month cannot be
+    page's "Months ahead"). A SKU's actuals run to the customer's last month of
+    sell-in (_fetch_actuals), so a SKU with nothing shipped lately still plans
+    from the same month as the rest. A SKU with no forecast for its start month cannot be
     planned and is listed in skus_without_forecast instead. `skus` narrows the
     plan to those SKUs; the monthly totals then cover only them. `forecast_lines`
     (forecast_units.get_forecast_lines) skips reading them again, for callers
@@ -962,7 +996,8 @@ def get_sell_in_outlook(
     from January of `start_year` (the page's "Start from") to `months` months
     after the current month (its "Months ahead"), the same end month as the
     plan. `start_year` defaults to the current year; it must be one of
-    `start_years` (_start_years), or ValueError. Each SKU is actual up to its own last actual month and then
+    `start_years` (_start_years), or ValueError. Each SKU is actual up to its own last actual month (the
+    customer's last sell-in month, see _fetch_actuals) and then
     uses the plan's recommended sell-in and the forecast sell-out, so a SKU
     only adds to the months its own data covers.
 
