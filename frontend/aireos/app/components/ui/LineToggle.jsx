@@ -71,7 +71,10 @@ function LineRow({ label, labelClassName, series, visible, onToggle, hints, disa
                 )}
                 style={
                   isActive
-                    ? { backgroundColor: `color-mix(in srgb, ${line.color} 20%, white)` }
+                    ? {
+                        backgroundColor: `color-mix(in srgb, ${line.color} 20%, white)`,
+                        color: 'var(--aire-deep-blue)',
+                      }
                     : undefined
                 }
               >

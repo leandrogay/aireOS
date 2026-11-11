@@ -16,11 +16,9 @@ import { cn } from "@/lib/utils";
  * `back` ({ href, label }) puts a back arrow just left of the title, for
  * pages one level below another (a detail page under its list).
  *
- * `fitScreen` makes the page exactly the window's height instead of growing
- * with its content: the content column becomes a flex column, so one child
- * can take `min-h-0 flex-1` and scroll inside itself (the promotions table).
- * If the window is too short for the content, the page scrolls as a fallback
- * rather than clipping it.
+ * `fitScreen` fills the window on wider screens, so a table can scroll inside
+ * its card. On mobile the page grows with its cards instead, leaving scroll
+ * room below pagination for the floating assistant button.
  *
  * `wide` lets a dense dashboard use a wider content column.
  *
@@ -29,13 +27,12 @@ import { cn } from "@/lib/utils";
 export default function PageLayout({ title, headerExtra, back, fitScreen = false, wide = false, children }) {
   return (
     <AppShell>
-      {/* pb-20: room under the last card for the assistant's floating button
-          (AssistantWidget: 48px, 16px from the bottom), so it never sits on
-          a table's pagination or any other bottom-right control. */}
+      {/* Room after the last card for the assistant's floating button
+          (AssistantWidget: 48px, 16px from the bottom). */}
       <main
         className={cn(
           "min-w-0 px-4 pt-4 pb-20 md:px-6 md:pt-6",
-          fitScreen ? "flex h-dvh flex-col overflow-y-auto" : "min-h-screen",
+          fitScreen ? "flex min-h-dvh flex-col sm:h-dvh sm:overflow-y-auto" : "min-h-screen",
         )}
       >
         {/* The column springs in on navigation (PageTransition); the sidebar
@@ -43,7 +40,7 @@ export default function PageLayout({ title, headerExtra, back, fitScreen = false
         <PageTransition className={cn(
           "mx-auto w-full min-w-0 max-w-6xl",
           wide && 'max-w-[1440px]',
-          fitScreen && "flex min-h-0 flex-1 flex-col",
+          fitScreen && "flex min-h-0 flex-col sm:flex-1",
         )}>
           {/* data-page-heading: NotificationBell measures this row, as wide
               as the page content, to size its panel. */}

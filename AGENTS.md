@@ -489,3 +489,11 @@ Log these separately from the visual revamp; do not change application behavior 
 The visual pass adds a manual light/dark toggle, the one approved exception to
 the visual-only rule. It stores `aireos-theme` locally; it does not follow the
 device setting or change application data.
+
+### Visual issues addressed on the glass branch (11 Nov 2026)
+
+| File and line | Severity | Finding | Visual fix |
+| --- | --- | --- | --- |
+| `frontend/aireos/app/components/upload/Dropzone.jsx:89`, `frontend/aireos/app/components/inventory/SellInUploadForm.jsx:122` | Low, affordance | File-picker text and the native file chooser did not consistently show a pointer cursor. | Give the actionable text and file input an explicit pointer cursor. |
+| `frontend/aireos/app/components/layout/PageLayout.jsx:35` | Medium, mobile usability | Height-locked list pages could place the assistant over Promotions and SKU pagination. | Let fit-screen pages grow and scroll on mobile, preserving room after the table. |
+| `frontend/aireos/app/components/ui/LineToggle.jsx:76` | Medium, accessibility | Active chart legend pills kept pale backgrounds while the dark theme made their text nearly white. | Use AIRE deep blue text on the light legend pills in both themes. |
