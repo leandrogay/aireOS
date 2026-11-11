@@ -334,6 +334,7 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | `GET /api/inventory/customers/{id}/sell-in-outlook?block_id=` (`get_sell_in_outlook(block_ids=)`: per month `sell_in_with_blocks` / `sell_out_with_blocks`, top-level `building_blocks[]` of `block_id`, `name`, `sell_out_change`); `scenario/block_effects` rules = `scenarioEngine.js` (`upliftDeltaCells`, `unitsDeltaCells`, `floorAtZero`) | `inventoryApi.getSellInOutlook` (`blockIds`), `useSellInOutlook`, `hooks/useSavedBuildingBlocks.js`, `utils/buildingBlocksOverlay.js`, `BuildingBlocksOverlay.jsx`, `SellInOutlookChart.jsx` (`showBlocks`) |
 | `GET /api/forecast/initial-status` (`forecast_service.get_initial_status`: `years[]` of `forecast_year`, `lock_at`, `refreshed_at`, `locked`, from `aire_forecasting_initial_meta`; best effort, `[]` on error) | `forecastApi.getForecastInitialStatus`, `hooks/useForecastInitialStatus.js`, `utils/forecastLineText.js` (`initialStatusNotes`), `ForecastLegendFooter.jsx` |
 | `GET /api/forecast/refresh-status` (`forecast_refresh_worker.refresh_status_best_effort`: `{ updating, since }` from pending/running `forecast_refresh_requests`; false on error or while event refresh is off) | `forecastApi.getForecastRefreshStatus`, `hooks/useForecastRefreshStatus.js` (60 s re-check only while updating), `utils/forecastLineText.js` (`forecastUpdatingBadge`, `nextStatusCheckDelay`), `ForecastLegendFooter.jsx` |
+| `GET /api/uploads/history` (`upload_history.list_history`: `limit` 1-100, `offset`, `search`, `sort` `HISTORY_SORT_FIELDS`, `direction`; returns `uploads`, `total`, `unfiltered_total`, `limit`, `offset` (moved back to the last page when past the end); `STATUS_SORT_ORDER`) | `uploadApi.fetchUploadHistory`, `hooks/useUploadHistory.js`, `RecentUploads.jsx` (pages locally through a block of `config/upload.js` `UPLOAD_HISTORY_BLOCK` rows, at most the `limit` max, via `utils/tableView.js` `blockQuery`/`pageFromBlock`), `upload/columns.js` (`sortField`s) |
 | `HTTPException.detail` shapes | `parseApiError()` |
 
 When you change the left column, grep the right column in the same PR.
@@ -454,7 +455,7 @@ Migrate these only when you are already in the file for other work (CLAUDE.md §
 
 - **Fetch wrappers.** `promotionsApi.request` is the one wrapper. Still on their own: `forecastApi.js`
   (own `request()`), `mappingApi.js` (`request(baseUrl, …)`, left over from the deleted upload2 harness),
-  raw `fetch` in `uploadApi.js` (`/check`, history), the hooks `useAssistant`, `useCustomerOptions`,
+  raw `fetch` in `uploadApi.js` (`/check`), the hooks `useAssistant`, `useCustomerOptions`,
   `useDataFreshness`, and the components
   `dashboard/DashboardFilters`, `dashboard/SkuRanking`, `assistant/AssistantMessage`.
 - **Router logic.** `mappings.py` reads GCS (`storage.download_json`, `list_mapping_fingerprints`,
@@ -474,8 +475,8 @@ Migrate these only when you are already in the file for other work (CLAUDE.md §
   `ui/Toast`'s timer effect), which effects list as dependencies.
 - **Route tests incomplete.** `promotions.py` has `/revenue-estimate` (in `test_promotion_pricing.py`) and the
   list, `/filter-options` and the create/update 409 (in `test_promotions_router.py`): `GET /{id}`, `DELETE` and
-  `/health/db` are untested. `uploads.py` has `/check` and `/load[/preview]` (in
-  `test_upload_check.py`, `test_upload_loading.py`): `POST ""`, `/history`, `/rollback` and
+  `/health/db` are untested. `uploads.py` has `/check`, `/load[/preview]` and `/history` (in
+  `test_upload_check.py`, `test_upload_loading.py`, `test_upload_history.py`): `POST ""`, `/rollback` and
   `DELETE /source` are untested. (`internal_forecast.py` is covered in `test_forecast_refresh_worker.py`.)
 - **`scenario_promotions` has no migration on `main`.** Its DDL is
   `backend/migrations/007_create_scenario_promotions.sql` on `feat/AO5-18&19-promotion-uplift-settings`

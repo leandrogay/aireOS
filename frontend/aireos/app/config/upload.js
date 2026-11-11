@@ -25,8 +25,8 @@ export const UPLOAD_LIMITS_TEXT =
   `${ALLOWED_EXTENSIONS.map((ext) => `.${ext}`).join(', ')} · ` +
   `max ${MAX_FILE_SIZE_MB} MB each`;
 
-// How far back the upload page's history goes. The cap is the backend's
-// largest `limit` (routers/uploads.py upload_history), so the window rather
-// than the count decides what is listed.
-export const UPLOAD_HISTORY_MONTHS = 3;
-export const UPLOAD_HISTORY_LIMIT = 200;
+// How many Recent uploads rows are fetched at once; the table pages through
+// them locally (utils/tableView.js blockQuery). The backend's largest `limit`
+// (routers/uploads.py upload_history), and a multiple of every page size in
+// ui/TablePagination PAGE_SIZES, so a page never straddles two blocks.
+export const UPLOAD_HISTORY_BLOCK = 100;
