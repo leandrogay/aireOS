@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button';
 import { cardClass } from '@/components/ui/formStyles';
 import InfoTooltip from '@/components/ui/InfoTooltip';
 import RefreshButton from '@/components/ui/RefreshButton';
+import TableCard from '@/components/ui/TableCard';
+import TableCardHeader from '@/components/ui/TableCardHeader';
 import Toast from '@/components/ui/Toast';
 import usePromoMoments from '@/hooks/usePromoMoments';
 import usePromoUpliftSettings from '@/hooks/usePromoUpliftSettings';
@@ -150,13 +152,18 @@ export default function PromoUpliftSettingsView() {
       }
     >
       <div className="grid grid-cols-1 gap-3">
-        <section className={cardClass}>
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <h2 className="text-sm font-medium text-deep-violet-blue">Ordinary-month discount by customer</h2>
-            <RefreshButton onClick={refresh} isRefreshing={loading} label="Refresh promotion uplift settings" />
-          </div>
+        <TableCard
+          label="Ordinary-month discount by customer"
+          header={
+            <TableCardHeader
+              title="Ordinary-month discount by customer"
+              detail={anchors ? `${anchors.customers.length + 1} customers including the fallback` : 'Loading customers…'}
+              actions={<RefreshButton onClick={refresh} isRefreshing={loading} label="Refresh promotion uplift settings" />}
+            />
+          }
+        >
           {error ? (
-            <p className="mb-2 text-sm text-red-600" role="alert">
+            <p className="px-4 pb-3 text-sm text-red-600" role="alert">
               {error}
             </p>
           ) : null}
@@ -170,9 +177,9 @@ export default function PromoUpliftSettingsView() {
               onAdopt={handleAnchorAdopt}
             />
           ) : (
-            !error && <p className="text-sm text-deep-violet-blue/70">Loading…</p>
+            !error && <p className="px-4 pb-3 text-sm text-deep-violet-blue/70">Loading…</p>
           )}
-        </section>
+        </TableCard>
 
         {anchorDetails ? (
           <PromoAnchorDetails
@@ -210,22 +217,31 @@ export default function PromoUpliftSettingsView() {
           </section>
         ) : null}
 
-        <section className={cardClass}>
-          <h2 className="mb-2 flex items-center gap-1 text-sm font-medium text-deep-violet-blue">
-            Uplift by mechanic
-            <InfoTooltip label="About uplift">
-              How much more or less a month with this mechanic sells than an ordinary month, which the forecast already
-              reflects. Used when planning future promotions in the Scenario builder.
-            </InfoTooltip>
-          </h2>
-          <PromoUpliftFilters
-            filters={filters}
-            customers={customerNames}
-            skuOptions={overrideTargetChoices(catalog.skus).skus}
-            mechanicOptions={mechanics.map((row) => ({ value: row.mechanic_key, label: row.mechanic_label }))}
-            onChange={handleFilterChange}
-            onReset={() => setFilters(NO_FILTERS)}
-          />
+        <TableCard
+          label="Uplift by mechanic"
+          header={
+            <TableCardHeader
+              title="Uplift by mechanic"
+              detail={`${tableRows.length} values`}
+              actions={
+                <InfoTooltip label="About uplift">
+                  How much more or less a month with this mechanic sells than an ordinary month, which the forecast already
+                  reflects. Used when planning future promotions in the Scenario builder.
+                </InfoTooltip>
+              }
+            />
+          }
+        >
+          <div className="px-4 pb-3">
+            <PromoUpliftFilters
+              filters={filters}
+              customers={customerNames}
+              skuOptions={overrideTargetChoices(catalog.skus).skus}
+              mechanicOptions={mechanics.map((row) => ({ value: row.mechanic_key, label: row.mechanic_label }))}
+              onChange={handleFilterChange}
+              onReset={() => setFilters(NO_FILTERS)}
+            />
+          </div>
           <PromoUpliftTable
             rows={tableRows}
             shownUplift={shownUplift}
@@ -236,15 +252,15 @@ export default function PromoUpliftSettingsView() {
             onReset={handleUpliftReset}
           />
           {moments.error ? (
-            <p className="mt-2 text-xs text-red-600" role="alert">
+            <p className="px-4 pt-2 text-xs text-red-600" role="alert">
               Moments could not be loaded: {moments.error}
             </p>
           ) : null}
-          <p className="mt-2 text-xs text-deep-violet-blue/60">
+          <p className="px-4 py-3 text-xs text-deep-violet-blue/60">
             Placeholder values move with each customer&apos;s ordinary-month discount ({defaultAnchorPct}% for all
             customers).
           </p>
-        </section>
+        </TableCard>
 
         {addingOverride && anchors ? (
           <PromoOverrideForm

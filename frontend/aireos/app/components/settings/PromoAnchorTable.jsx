@@ -99,7 +99,7 @@ export default function PromoAnchorTable({ anchors, editingKey, readOnly, onView
   }
 
   return (
-    <TableGrid variant="nested" columns={CUSTOMER_COLUMNS} minWidth="52rem">
+    <TableGrid columns={CUSTOMER_COLUMNS} minWidth="52rem">
       {anchors.customers.map((customer) => {
         const name = customerLabel(customer.customer_name);
         const target = {

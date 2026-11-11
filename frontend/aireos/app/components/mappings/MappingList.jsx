@@ -3,8 +3,8 @@
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import DataTable from '@/components/ui/DataTable';
-import TablePagination, { PAGE_SIZES } from '@/components/ui/TablePagination';
+import PaginatedDataTable from '@/components/ui/PaginatedDataTable';
+import { PAGE_SIZES } from '@/components/ui/TablePagination';
 import TableSearch from '@/components/ui/TableSearch';
 import MappingFilters from '@/components/mappings/MappingFilters';
 import MappingRow from '@/components/mappings/MappingRow';
@@ -108,7 +108,7 @@ export default function MappingList({ mappings, isLoading, error, onOpen, onRefr
         onReset={resetFilters}
       />
 
-      <DataTable
+      <PaginatedDataTable
         label="Stored nomenclatures"
         noun="nomenclature"
         totalCount={mappings.length}
@@ -126,16 +126,7 @@ export default function MappingList({ mappings, isLoading, error, onOpen, onRefr
             placeholder="Search name, file, customer…"
           />
         }
-        footer={
-          <TablePagination
-            page={currentPage}
-            totalPages={totalPages}
-            pageSize={pageSize}
-            totalRows={sorted.length}
-            onPageChange={setPage}
-            onPageSizeChange={changePageSize}
-          />
-        }
+        pagination={{ page: currentPage, totalPages, pageSize, totalRows: sorted.length, onPageChange: setPage, onPageSizeChange: changePageSize }}
         columns={MAPPING_COLUMNS}
         minWidth="48rem"
         sort={sort}
@@ -167,7 +158,7 @@ export default function MappingList({ mappings, isLoading, error, onOpen, onRefr
         {pageRows.map((mapping) => (
           <MappingRow key={mapping.mappingId} mapping={mapping} onOpen={onOpen} />
         ))}
-      </DataTable>
+      </PaginatedDataTable>
     </div>
   );
 }

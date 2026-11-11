@@ -7,6 +7,8 @@ import { TABLE_HEADER_CLASS } from '@/components/ui/SortHeader';
 import { Skeleton } from '@/components/ui/skeleton';
 import TableSkeleton from '@/components/ui/TableSkeleton';
 import TablePagination, { PAGE_SIZES } from '@/components/ui/TablePagination';
+import TableCard from '@/components/ui/TableCard';
+import TableCardHeader from '@/components/ui/TableCardHeader';
 import { monthCheckboxOptions } from '@/app/utils/inventoryForm';
 import { paginate, resultCountLabel } from '@/app/utils/tableView';
 
@@ -20,7 +22,7 @@ export const inventoryTheadClass = 'sticky top-0 z-10 bg-cream';
 export const inventoryHeadRowClass = 'h-10 bg-cream [&>th]:shadow-[inset_0_-1px_0_var(--color-lavander)]';
 export const inventoryThClass = TABLE_HEADER_CLASS;
 export const inventoryTdClass = 'px-4 py-2.5 text-deep-violet-blue';
-export const inventoryRowClass = 'border-b border-lavander/80 bg-white hover:bg-cream/50';
+export const inventoryRowClass = 'border-b border-lavander/80';
 
 /**
  * Fixed column widths for an inventory table, as ui/TableGrid does: with
@@ -165,24 +167,17 @@ export default function InventoryTableFrame({ title, rows, description, loading 
   );
 
   return (
-    <section aria-label={title} className="flex flex-col overflow-hidden rounded-lg border border-lavander bg-white shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-        <div>
-          <div className="flex items-baseline gap-2 text-sm">
-            <h3 className="font-medium text-deep-violet-blue">{title}</h3>
-            {loading ? (
-              <Skeleton aria-hidden="true" className="h-3 w-20 rounded bg-lavander" />
-            ) : (
-              <span className="text-deep-violet-blue/70" aria-live="polite">
-                {resultCountLabel(visible.length, rows.length, 'row')}
-              </span>
-            )}
-          </div>
-          {description ? (
-            <p className="mt-1 max-w-3xl text-xs text-deep-violet-blue/60">{description}</p>
-          ) : null}
-        </div>
-      </div>
+    <TableCard
+      label={title}
+      header={(
+        <TableCardHeader
+          title={title}
+          detail={loading
+            ? <Skeleton aria-label="Loading rows" className="h-3 w-20 rounded bg-lavander" />
+            : <>{resultCountLabel(visible.length, rows.length, 'row')}{description ? ` · ${description}` : ''}</>}
+        />
+      )}
+    >
 
       {/* One page at full height, so there is no inner scroll box and no long
           page; overflow-x stays for wide tables on small screens. */}
@@ -200,6 +195,6 @@ export default function InventoryTableFrame({ title, rows, description, loading 
           onPageSizeChange={changePageSize}
         />
       )}
-    </section>
+    </TableCard>
   );
 }

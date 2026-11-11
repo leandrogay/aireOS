@@ -20,9 +20,10 @@ import { isPriceRangeInverted, priceRangeSummary } from '@/app/utils/priceRange'
  *   min: string,
  *   max: string,
  *   onChange: (bounds: { min: string, max: string }) => void,
+ *   look?: 'filter' | 'compact',
  * }} props
  */
-export default function PriceRangeFilter({ label, min, max, onChange }) {
+export default function PriceRangeFilter({ label, min, max, onChange, look = 'filter' }) {
   const labelId = useId();
   const minId = useId();
   const maxId = useId();
@@ -35,7 +36,7 @@ export default function PriceRangeFilter({ label, min, max, onChange }) {
         {label}
       </span>
       <Dropdown
-        look="filter"
+        look={look}
         summary={priceRangeSummary(min, max)}
         active={active}
         ariaLabelledby={labelId}

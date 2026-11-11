@@ -54,7 +54,7 @@ function Amount({ value, emphasis = false, className }) {
   return (
     <td
       className={cn(
-        'whitespace-nowrap border-l border-lavander/80 px-2 py-1 text-right tabular-nums',
+        'whitespace-nowrap border-l border-lavander/80 px-2.5 py-2 text-right tabular-nums',
         emphasis ? 'font-medium text-deep-violet-blue' : 'text-deep-violet-blue/75',
         className
       )}
@@ -80,14 +80,14 @@ function Amount({ value, emphasis = false, className }) {
  */
 export default function ForecastYearTotals({ years, loading = false, horizonVolume = null }) {
   if (loading) {
-    return <div className="h-12 animate-pulse rounded-md border border-lavander bg-white" />;
+    return <div className="mx-4 mb-3 h-12 animate-pulse rounded-md border border-lavander bg-white" />;
   }
 
   if (!years.length) return null;
 
   return (
-    <section aria-label="Full-year totals" className="min-w-0 space-y-1.5">
-      <div className="grid gap-2 sm:hidden">
+    <div className="min-w-0">
+      <div className="grid gap-2 border-t border-lavander p-3 sm:hidden">
         {years.map((year) => (
           <article key={year.year} className="rounded-lg border border-lavander bg-white p-3">
             <div className="mb-2 flex flex-wrap items-baseline gap-2 border-b border-lavander/70 pb-2">
@@ -110,8 +110,8 @@ export default function ForecastYearTotals({ years, loading = false, horizonVolu
           <p className="font-medium tabular-nums">{formatVolume(horizonVolume)}</p>
         </div>
       </div>
-      <div className="hidden min-w-0 overflow-x-auto rounded-md border border-lavander sm:block">
-        <table className="w-full border-separate border-spacing-0 text-left text-xs text-deep-violet-blue">
+      <div className="hidden min-w-0 overflow-x-auto border-t border-lavander sm:block">
+        <table className="aire-table-rows w-full border-separate border-spacing-0 text-left text-xs text-deep-violet-blue">
           <ColumnWidths />
           <thead>
             <tr>
@@ -141,8 +141,8 @@ export default function ForecastYearTotals({ years, loading = false, horizonVolu
               const mix = mixCaption(year);
               const rowRule = index < years.length - 1 ? 'border-b border-lavander/70' : '';
               return (
-                <tr key={year.year} className="bg-white">
-                  <td className={cn('whitespace-nowrap px-2.5 py-1 align-middle', rowRule)}>
+                <tr key={year.year} className="h-10">
+                  <td className={cn('whitespace-nowrap px-2.5 py-2 align-middle', rowRule)}>
                     <span className="font-medium">{year.year}</span>
                     {mix ? (
                       <span className="ml-1.5 text-[10px] font-normal text-deep-violet-blue/50">{mix}</span>
@@ -162,19 +162,19 @@ export default function ForecastYearTotals({ years, loading = false, horizonVolu
           </tbody>
         </table>
       </div>
-      <div className="hidden min-w-0 overflow-x-auto rounded-md bg-[#F7F4F1] sm:block">
+      <div className="hidden min-w-0 overflow-x-auto border-t border-lavander bg-[#F7F4F1] sm:block">
         <table className="w-full border-separate border-spacing-0 text-left text-xs text-deep-violet-blue">
           <ColumnWidths />
           <tbody>
-            <tr>
-              <td className="whitespace-nowrap px-2.5 py-1 font-medium">Next 12 months forecast</td>
-              <td colSpan={3} className={cn('border-l px-2 py-1 text-center font-medium tabular-nums', HEADER_RULE)}>
+            <tr className="h-10">
+              <td className="whitespace-nowrap px-2.5 py-2 font-medium">Next 12 months forecast</td>
+              <td colSpan={3} className={cn('border-l px-2.5 py-2 text-center font-medium tabular-nums', HEADER_RULE)}>
                 {formatVolume(horizonVolume)}
               </td>
             </tr>
           </tbody>
         </table>
       </div>
-    </section>
+    </div>
   );
 }

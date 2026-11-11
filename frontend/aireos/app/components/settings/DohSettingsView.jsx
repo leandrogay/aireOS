@@ -2,8 +2,9 @@
 
 import { useState } from 'react';
 
-import { cardClass } from '@/components/ui/formStyles';
 import RefreshButton from '@/components/ui/RefreshButton';
+import TableCard from '@/components/ui/TableCard';
+import TableCardHeader from '@/components/ui/TableCardHeader';
 import Toast from '@/components/ui/Toast';
 import useDohSettings from '@/hooks/useDohSettings';
 import useToast from '@/hooks/useToast';
@@ -67,24 +68,25 @@ export default function DohSettingsView() {
 
   return (
     <div className="grid min-w-0 gap-3">
-      <section className={`${cardClass} min-w-0`}>
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <h2 className="text-sm font-medium text-deep-violet-blue">Customer DOH thresholds</h2>
-          <RefreshButton
-            onClick={() => setRefreshKey((key) => key + 1)}
-            isRefreshing={loading}
-            label="Refresh DOH settings"
+      <TableCard
+        label="Customer DOH thresholds"
+        header={(
+          <TableCardHeader
+            title="Customer DOH thresholds"
+            detail={loading && data.length === 0 ? 'Loading customers…' : `${data.length} ${data.length === 1 ? 'customer' : 'customers'} · Customers without thresholds of their own use the Global Default.`}
+            actions={<RefreshButton onClick={() => setRefreshKey((key) => key + 1)} isRefreshing={loading} label="Refresh DOH settings" />}
           />
-        </div>
+        )}
+      >
 
         {error && (
-          <p className="mb-2 text-sm text-red-600" role="alert">
+          <p className="px-4 pb-2 text-sm text-red-600" role="alert">
             {error}
           </p>
         )}
 
         {!loading && data.length === 0 ? (
-          !error && <p className="text-sm text-deep-violet-blue/70">No customers found.</p>
+          !error && <p className="px-4 pb-4 text-sm text-deep-violet-blue/70">No customers found.</p>
         ) : (
           <DohSettingsTable
             rows={data}
@@ -96,10 +98,7 @@ export default function DohSettingsView() {
           />
         )}
 
-        <p className="mt-2 text-xs text-deep-violet-blue/60">
-          Customers without thresholds of their own use the Global Default.
-        </p>
-      </section>
+      </TableCard>
 
       {editingRow && (
         <DohThresholdForm

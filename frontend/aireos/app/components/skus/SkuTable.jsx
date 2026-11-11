@@ -1,7 +1,6 @@
 'use client';
 
-import DataTable from '@/components/ui/DataTable';
-import TablePagination from '@/components/ui/TablePagination';
+import PaginatedDataTable from '@/components/ui/PaginatedDataTable';
 import TableSearch from '@/components/ui/TableSearch';
 import SkuRow from '@/components/skus/SkuRow';
 import { formatSkuPrice, skuRowActions } from '@/components/skus/SkuRow';
@@ -29,7 +28,7 @@ export default function SkuTable({
   onSearch,
 }) {
   return (
-    <DataTable
+    <PaginatedDataTable
       label="SKU catalog"
       noun="SKU"
       plural="SKUs"
@@ -48,16 +47,7 @@ export default function SkuTable({
           placeholder="Search SKU, range or product…"
         />
       }
-      footer={
-        <TablePagination
-          page={page}
-          totalPages={totalPages}
-          pageSize={pageSize}
-          totalRows={total}
-          onPageChange={onPageChange}
-          onPageSizeChange={onPageSizeChange}
-        />
-      }
+      pagination={{ page, totalPages, pageSize, totalRows: total, onPageChange, onPageSizeChange }}
       columns={SKU_COLUMNS}
       emptyState={!loading && totalCount > 0 && total === 0 ? 'No SKUs match the current search and filters.' : null}
       mobileContent={
@@ -89,6 +79,6 @@ export default function SkuTable({
           onDelete={onDelete}
         />
       ))}
-    </DataTable>
+    </PaginatedDataTable>
   );
 }

@@ -3,6 +3,8 @@
 import { useMemo, useState } from 'react';
 
 import HeaderCheckboxFilter from '@/components/ui/HeaderCheckboxFilter';
+import TableCard from '@/components/ui/TableCard';
+import TableCardHeader from '@/components/ui/TableCardHeader';
 import {
   TABLE_MISSING_HINT,
   TABLE_MISSING_LABEL,
@@ -76,46 +78,47 @@ export default function ForecastTable({ points, visibleSeries, modelLabel = '' }
   }
 
   return (
-    <section className="min-w-0 bg-white">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h3 className="font-serif text-base text-deep-violet-blue">Monthly values</h3>
-          <p className="text-[11px] text-deep-violet-blue/70">
-            {rows.length} of {points.length} months shown
-            {modelLabel ? ` · ${modelLabel}` : ''}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="sm:hidden">
-            <HeaderCheckboxFilter
-              id="month-mobile"
-              label="Month"
-              selected={activeMonthFilter}
-              options={monthOptions}
-              openId={openFilter}
-              setOpenId={setOpenFilter}
-              onChange={setMonthFilter}
-            />
-          </div>
-          <button
-            type="button"
-            onClick={clearTableFilters}
-            disabled={!hasTableFilters}
-            className="rounded-md border border-deep-violet-blue/30 bg-white px-3 py-1 text-xs font-medium text-deep-violet-blue transition hover:bg-cream disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Clear
-          </button>
-          <button
-            type="button"
-            onClick={() => setExpanded((current) => !current)}
-            className="rounded-md border border-deep-violet-blue/30 bg-white px-3 py-1 text-xs font-medium text-deep-violet-blue transition hover:bg-cream"
-          >
-            {expanded ? 'Collapse' : 'Expand'}
-          </button>
-        </div>
-      </div>
+    <TableCard
+      label="Monthly forecast values"
+      header={(
+        <TableCardHeader
+          title="Monthly values"
+          detail={<>{rows.length} of {points.length} months shown{modelLabel ? ` · ${modelLabel}` : ''}</>}
+          actions={(
+            <>
+              <div className="sm:hidden">
+                <HeaderCheckboxFilter
+                  id="month-mobile"
+                  label="Month"
+                  selected={activeMonthFilter}
+                  options={monthOptions}
+                  openId={openFilter}
+                  setOpenId={setOpenFilter}
+                  onChange={setMonthFilter}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={clearTableFilters}
+                disabled={!hasTableFilters}
+                className="rounded-md border border-deep-violet-blue/30 bg-white px-3 py-1 text-xs font-medium text-deep-violet-blue transition hover:bg-cream disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                onClick={() => setExpanded((current) => !current)}
+                className="rounded-md border border-deep-violet-blue/30 bg-white px-3 py-1 text-xs font-medium text-deep-violet-blue transition hover:bg-cream"
+              >
+                {expanded ? 'Collapse' : 'Expand'}
+              </button>
+            </>
+          )}
+        />
+      )}
+    >
 
-      <div className={`${expanded ? '' : 'max-h-[55vh]'} overflow-y-auto rounded-lg border border-lavander sm:hidden`} aria-label="Monthly forecast values">
+      <div className={`${expanded ? '' : 'max-h-[55vh]'} overflow-y-auto border-t border-lavander sm:hidden`} aria-label="Monthly forecast values">
         {rows.length === 0 ? (
           <p className="p-4 text-sm text-deep-violet-blue/70">No rows match these table filters.</p>
         ) : rows.map((point) => (
@@ -133,7 +136,7 @@ export default function ForecastTable({ points, visibleSeries, modelLabel = '' }
         ))}
       </div>
 
-      <div className="hidden min-w-0 overflow-x-auto rounded-md border border-lavander sm:block">
+      <div className="hidden min-w-0 overflow-x-auto border-t border-lavander sm:block">
         <div className={expanded ? '' : 'max-h-[28vh] overflow-y-auto'}>
           <table className="aire-table-rows w-full min-w-[44rem] table-fixed text-left text-xs text-deep-violet-blue">
             <colgroup>
@@ -176,9 +179,9 @@ export default function ForecastTable({ points, visibleSeries, modelLabel = '' }
                 rows.map((point) => (
                   <tr
                     key={point.month_year}
-                    className="border-b border-lavander/80 bg-white hover:bg-cream/50"
+                    className="h-10 border-b border-lavander/80 last:border-b-0"
                   >
-                    <td className="px-2 py-2 font-medium">{point.label}</td>
+                    <td className="whitespace-nowrap px-2.5 py-2 font-medium">{point.label}</td>
                     {visibleColumns.map((series) => (
                       <td key={series.key} className="px-2.5 py-2 text-right tabular-nums">
                         <CellValue point={point} seriesKey={series.key} />
@@ -191,6 +194,6 @@ export default function ForecastTable({ points, visibleSeries, modelLabel = '' }
           </table>
         </div>
       </div>
-    </section>
+    </TableCard>
   );
 }
