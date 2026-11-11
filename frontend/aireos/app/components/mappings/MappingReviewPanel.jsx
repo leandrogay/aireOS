@@ -10,7 +10,7 @@ import Disclosure from '@/components/ui/Disclosure';
 import useCustomers from '@/hooks/useCustomers';
 import useMappingEdits from '@/hooks/useMappingEdits';
 import { createRetailer, linkRetailer } from '@/app/services/catalogApi';
-import { CARD_REVEAL } from '@/app/config/transitions';
+import { CARD_REVEAL, EXIT_FADE } from '@/app/config/transitions';
 import { checkSummary } from '@/app/utils/mappingChecks';
 import {
   newCustomerDefaults,
@@ -381,7 +381,7 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
                 key="products"
                 initial={reduceMotion ? false : { opacity: 0, y: CARD_REVEAL.y }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={reduceMotion ? undefined : { opacity: 0, transition: { duration: 0.12 } }}
+                exit={reduceMotion ? undefined : { opacity: 0, transition: EXIT_FADE }}
                 transition={CARD_REVEAL.transition}
               >
                 <ReviewSection

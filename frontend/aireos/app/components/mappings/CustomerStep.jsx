@@ -321,7 +321,7 @@ export default function CustomerStep({
               initial={reduceMotion ? false : { opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={reduceMotion ? undefined : { opacity: 0, height: 0 }}
-              transition={{ height: CARD_REVEAL.layout, opacity: { duration: 0.15, ease: 'easeOut' } }}
+              transition={CARD_REVEAL.expand}
               // Clipped while it grows; the padding keeps focus rings inside the clip.
               className="-mx-1 overflow-hidden px-1 pb-1"
             >
@@ -367,7 +367,7 @@ export default function CustomerStep({
                     initial={reduceMotion ? false : { opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
                     exit={reduceMotion ? undefined : { opacity: 0, height: 0 }}
-                    transition={{ height: CARD_REVEAL.layout, opacity: { duration: 0.15, ease: 'easeOut' } }}
+                    transition={CARD_REVEAL.expand}
                     className="-mx-1 overflow-hidden px-1"
                   >
                     <ul className="space-y-1 pt-1.5 pb-px">

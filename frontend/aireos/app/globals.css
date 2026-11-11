@@ -155,9 +155,15 @@
   /* Shared table header (ui/TableGrid): a cool lavender tint that sits with
      the glass cards, rather than the warm cream canvas. */
   --aire-table-head: color-mix(in srgb, var(--aire-lavender) 60%, white);
-  --motion-quick: 120ms;
-  --motion-control: 200ms;
-  --motion-enter: 280ms;
+  /* Motion timing for CSS transitions and tw-animate popups. MOTION in
+     app/config/transitions.js is the same scale, in seconds, for Motion
+     (motion/react); change a step in both places. Use them as
+     `duration-(--motion-enter)`, `delay-(--motion-exit)`, ... */
+  --motion-quick: 120ms;   /* opacity ramps under a spring */
+  --motion-exit: 150ms;    /* things leaving: rows, popups, panels closing */
+  --motion-control: 200ms; /* hover, press, colour and toggle changes */
+  --motion-enter: 300ms;   /* things arriving: popups, dialogs, toasts, panel moves */
+  --motion-panel: 350ms;   /* the side bar opening and closing */
   --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
   /* Scenario builder: the Simulated line and everything that belongs to a
      draft (pins, tinted rows, pitch card), kept apart from the committed
@@ -338,8 +344,6 @@ html.dark { background-color: var(--aire-canvas); }
   box-shadow: inset 0 1px 0 var(--aire-glass-sheen), 0 5px 14px -10px var(--aire-glass-shadow);
 }
 .aire-glass-control:not(:disabled):active { opacity: 0.84; }
-.aire-glass-float[data-open] { animation-duration: var(--motion-enter); }
-.aire-glass-float[data-closed] { animation-duration: var(--motion-control); }
 .aire-theme-toggle { min-height: 2.5rem; }
 
 /* Legacy white and dark-blue utility classes remain intact for callers and

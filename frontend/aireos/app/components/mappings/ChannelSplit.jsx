@@ -225,7 +225,7 @@ export default function ChannelSplit({ customer, decision, outputs, mapping, sta
             initial={reduceMotion ? false : { opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={reduceMotion ? undefined : { opacity: 0, height: 0 }}
-            transition={{ height: CARD_REVEAL.layout, opacity: { duration: 0.15, ease: 'easeOut' } }}
+            transition={CARD_REVEAL.expand}
             className="-mx-1 overflow-hidden px-1 pb-1"
           >
             <motion.div

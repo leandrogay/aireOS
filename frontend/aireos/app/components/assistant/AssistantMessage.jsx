@@ -160,7 +160,7 @@ function AssistantChart({
       <ChartContainer
         config={chartConfig}
         className={cn(
-          'w-full overflow-hidden transition-[height] duration-300 ease-out motion-reduce:transition-none',
+          'w-full overflow-hidden transition-[height] duration-(--motion-enter) ease-out motion-reduce:transition-none',
           expanded ? 'h-[280px]' : isForecast ? 'h-[200px]' : 'h-[140px]',
         )}
       >

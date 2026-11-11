@@ -59,10 +59,10 @@ function ActiveHighlight() {
 
 // The classes for a tab label: hidden in the rail, shown (after a short
 // delay, so it isn't squeezed into a half-open bar) otherwise. The durations
-// mirror SIDEBAR.contentOut / contentIn in config/transitions.js; a tab's own
-// width tween (350ms) keeps pace with SIDEBAR.width.
+// are the --motion-* tokens SIDEBAR.contentOut / contentIn use; a tab's own
+// width tween (--motion-panel) keeps pace with SIDEBAR.width.
 function labelClass(rail) {
-  return cn(LABEL_FADE, rail ? 'opacity-0 duration-150 ease-in' : 'opacity-100 delay-150 duration-200 ease-out');
+  return cn(LABEL_FADE, rail ? 'opacity-0 duration-(--motion-exit) ease-in' : 'opacity-100 delay-(--motion-exit) duration-(--motion-control) ease-out');
 }
 
 // Standardized left nav, shared across every app page via AppShell.
@@ -222,7 +222,7 @@ export default function Sidebar() {
                 // here: it would clip the highlight while it slides in from another
                 // tab, so the label clips itself instead (labelClass).
                 const tabClass = cn(
-                  'group/nav-item relative isolate flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm text-deep-violet-blue transition-[width,background-color,box-shadow] ease-out [transition-duration:350ms,200ms,200ms] hover:bg-card/80 hover:shadow-sm focus-visible:outline-2 focus-visible:outline-violet',
+                  'group/nav-item relative isolate flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm text-deep-violet-blue transition-[width,background-color,box-shadow] ease-out [transition-duration:var(--motion-panel),var(--motion-control),var(--motion-control)] hover:bg-card/80 hover:shadow-sm focus-visible:outline-2 focus-visible:outline-violet',
                   rail ? 'w-10' : 'w-full',
                   (isActive || childActive) && 'font-medium',
                 );
@@ -317,7 +317,7 @@ export default function Sidebar() {
               disabled={isSigningOut}
               title={rail ? 'Sign out' : undefined}
               className={cn(
-                'flex cursor-pointer items-center gap-3 overflow-hidden rounded-lg px-3 py-2 text-sm text-deep-violet-blue/75 transition-[width,background-color,color] [transition-duration:350ms,200ms,200ms] hover:bg-lavander/85 hover:text-deep-violet-blue disabled:cursor-wait disabled:opacity-60',
+                'flex cursor-pointer items-center gap-3 overflow-hidden rounded-lg px-3 py-2 text-sm text-deep-violet-blue/75 transition-[width,background-color,color] [transition-duration:var(--motion-panel),var(--motion-control),var(--motion-control)] hover:bg-lavander/85 hover:text-deep-violet-blue disabled:cursor-wait disabled:opacity-60',
                 rail ? 'w-10' : 'w-full',
               )}
             >

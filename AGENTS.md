@@ -76,7 +76,8 @@ aireOS/
     │   │                      customers, skus, promotions, inventory, forecast, scenario, doh,
     │   │                      promo-uplift-settings, testing (UI kit gallery). page.js files stay server
     │   │                      components when they only compose a client view
-    │   ├── config/            App constants: transitions.js (card cascade timing/selector), upload.js
+    │   ├── config/            App constants: transitions.js (the MOTION timing scale, mirrored by --motion-* in
+    │   │                      globals.css; card cascade, rows, sidebar, assistant), upload.js
     │   ├── components/        One folder per feature (assistant, auth, customers, dashboard, forecast,
     │   │                      inventory, landing, layout, mappings, promotions, scenario, settings, skus,
     │   │                      upload) + ui/ -- see "UI kit" below
