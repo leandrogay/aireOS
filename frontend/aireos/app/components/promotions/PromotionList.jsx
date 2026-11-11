@@ -12,6 +12,7 @@ import PromotionRow from '@/components/promotions/PromotionRow';
 import { promotionRowActions } from '@/components/promotions/PromotionRow';
 import PromotionDetails from '@/components/promotions/PromotionDetails';
 import MobileRecordCard from '@/components/ui/MobileRecordCard';
+import RecordCardList from '@/components/ui/RecordCardList';
 import RowActions from '@/components/ui/RowActions';
 import StatusPill from '@/components/ui/StatusPill';
 import { formatDate } from '@/lib/formatDate';
@@ -181,7 +182,7 @@ export default function PromotionList({
         onSort={handleSort}
         emptyState={noMatches || null}
         mobileContent={
-          <div className="grid gap-2">
+          <RecordCardList>
             {pageRows.map((promotion) => {
               const id = promotion.promotion_id;
               const status = promotionStatus(promotion);
@@ -207,7 +208,7 @@ export default function PromotionList({
                 </MobileRecordCard>
               );
             })}
-          </div>
+          </RecordCardList>
         }
       >
         {pageRows.map((promotion) => {

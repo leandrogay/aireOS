@@ -36,7 +36,7 @@ function monthValue(year, monthIndex) {
  * @param {string} [props.summary] text on the closed button
  * @param {string} [props.placeholder]
  * @param {boolean} [props.invalid]
- * @param {'field' | 'filter' | 'compact'} [props.look] see ui/Dropdown
+ * @param {'field' | 'filter' | 'compact' | 'outline'} [props.look] see ui/Dropdown
  * @param {string} [props.ariaLabel]
  */
 export default function MonthDropdown({

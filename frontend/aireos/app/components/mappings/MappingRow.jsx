@@ -3,6 +3,7 @@
 import { ChevronRight } from 'lucide-react';
 
 import StatusPill from '@/components/ui/StatusPill';
+import TableRow from '@/components/ui/TableRow';
 import { formatDate } from '@/lib/formatDate';
 import {
   mappingCustomer,
@@ -32,7 +33,7 @@ export default function MappingRow({ mapping, onOpen }) {
   const customer = mappingCustomer(mapping);
 
   return (
-    <tr
+    <TableRow
       onClick={() => onOpen(mapping.mappingId)}
       className="group h-14 cursor-pointer border-b border-lavander/80 bg-white transition-colors focus-within:bg-cream/50 hover:bg-cream/50"
     >
@@ -74,6 +75,6 @@ export default function MappingRow({ mapping, onOpen }) {
           className="size-4 text-deep-violet-blue/30 transition-colors group-focus-within:text-deep-violet-blue group-hover:text-deep-violet-blue"
         />
       </td>
-    </tr>
+    </TableRow>
   );
 }

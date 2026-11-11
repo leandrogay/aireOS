@@ -107,8 +107,10 @@ calendar, skeleton) plus the team kits:
   `MonthRangeCalendar` (helpers in `utils/datePicker.js`).
 - **Toggles:** `SegmentedControl`, `LineToggle`, `ToggleButton`, `ToggleField`.
 - **Tables:** `DataTable` → `TableGrid` (+ `SortHeader`, `TableSearch`, `TablePagination`,
-  `TableSkeleton`), `ExpandableRow`, `RowActions`, `StatusPill`/`StatusBadge`, `MobileRecordCard`,
-  `HeaderCheckboxFilter`; hooks `useExpandedRows`, `useConfirmAction` + `ConfirmDialog`.
+  `TableSkeleton`), `TableRow`, `ExpandableRow`, `RowActions`, `StatusPill`/`StatusBadge`, `MobileRecordCard`
+  in a `RecordCardList`, `HeaderCheckboxFilter`; hooks `useExpandedRows`, `useConfirmAction` + `ConfirmDialog`.
+  Rows animate as the data changes (`ui/rowMotion.js`, timing `TABLE_ROWS` in `config/transitions.js`): list a
+  TableGrid's rows as `TableRow`/`ExpandableRow` and phone cards in `RecordCardList`, or they just snap.
 - **Filters:** `FilterBar` holding `FilterSelect` / `MultiSelectDropdown` / `PriceRangeFilter`
   (closed look from `filterControl.js`).
 - **Loading:** `PageSkeleton` + `CardSkeleton`, `ChartSkeletonFrame` → `BarChartSkeleton` /

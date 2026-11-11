@@ -3,6 +3,7 @@
 import { History, Pencil, Trash2 } from 'lucide-react';
 
 import RowActions from '@/components/ui/RowActions';
+import TableRow from '@/components/ui/TableRow';
 import { cn } from '@/lib/utils';
 
 import { SKU_CELL_CLASS, SKU_HIDE } from './columns';
@@ -37,7 +38,7 @@ export default function SkuRow({ sku, onHistory, onEdit, onDelete }) {
   const actions = skuRowActions(sku, onHistory, onEdit, onDelete);
 
   return (
-    <tr className="h-11 border-b border-lavander/80 last:border-b-0 hover:bg-cream/60">
+    <TableRow className="h-11 border-b border-lavander/80 last:border-b-0 hover:bg-cream/60">
       <td className={cn(SKU_CELL_CLASS, 'px-4 py-2.5 font-medium')}>{sku.sku}</td>
       <td className={cn(SKU_CELL_CLASS, 'px-4 py-2.5')}>{sku.product_name}</td>
       <td className={cn(SKU_CELL_CLASS, 'px-4 py-2.5')}>{sku.sku_range}</td>
@@ -51,6 +52,6 @@ export default function SkuRow({ sku, onHistory, onEdit, onDelete }) {
       <td className="px-2 py-1 text-right">
         <RowActions label={`Actions for SKU ${sku.sku}`} actions={actions} />
       </td>
-    </tr>
+    </TableRow>
   );
 }

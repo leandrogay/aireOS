@@ -1,10 +1,12 @@
 'use client';
 
-import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import SelectDropdown from '@/components/ui/SelectDropdown';
 
 export const PAGE_SIZES = [10, 25, 50];
+const PAGE_SIZE_OPTIONS = PAGE_SIZES.map((size) => ({ value: String(size), label: String(size) }));
 
 /**
  * Footer of a paged table card: where you are, rows per page, prev / next.
@@ -43,29 +45,19 @@ export default function TablePagination({
       </p>
 
       <div className="flex items-center gap-3">
-        <label className="flex items-center gap-2 text-deep-violet-blue/70">
-          Rows per page
-          {/* The browser's own arrow sits hard against the edge, so it is
-              hidden and the same chevron as the filter dropdowns
-              (ui/FilterSelect) is drawn with their spacing. */}
-          <span className="relative">
-            <select
-              value={pageSize}
-              onChange={(event) => onPageSizeChange(Number(event.target.value))}
-              className="h-8 appearance-none rounded-lg border border-lavander bg-white pl-2.5 pr-8 text-sm text-deep-violet-blue outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-            >
-              {PAGE_SIZES.map((size) => (
-                <option key={size} value={size}>
-                  {size}
-                </option>
-              ))}
-            </select>
-            <ChevronDown
-              aria-hidden="true"
-              className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-deep-violet-blue/50"
-            />
-          </span>
-        </label>
+        <div className="flex items-center gap-2 text-deep-violet-blue/70">
+          <span>Rows per page</span>
+          {/* The outline look matches the prev / next buttons beside it. */}
+          <SelectDropdown
+            value={String(pageSize)}
+            onChange={(value) => onPageSizeChange(Number(value))}
+            options={PAGE_SIZE_OPTIONS}
+            look="outline"
+            tick={false}
+            ariaLabel="Rows per page"
+            className="w-[4.5rem]"
+          />
+        </div>
         <div className="flex items-center gap-1">
           <Button
             variant="outline"
