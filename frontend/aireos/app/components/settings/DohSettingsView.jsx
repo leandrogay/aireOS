@@ -2,9 +2,6 @@
 
 import { useState } from 'react';
 
-import RefreshButton from '@/components/ui/RefreshButton';
-import TableCard from '@/components/ui/TableCard';
-import TableCardHeader from '@/components/ui/TableCardHeader';
 import Toast from '@/components/ui/Toast';
 import useDohSettings from '@/hooks/useDohSettings';
 import useToast from '@/hooks/useToast';
@@ -18,9 +15,10 @@ import DohThresholdForm from './DohThresholdForm';
 /**
  * The DOH Settings page: every customer's current thresholds and alert
  * toggle, and an edit dialog (opened from a row) to change one customer's
- * thresholds or reset them to the global default. Each write returns the
- * customer's new settings row, which replaces that row in place; the refresh
- * button refetches everything.
+ * thresholds or reset them to the global default, in the shared list table
+ * (DohSettingsTable on DataTable). Each write returns the customer's new
+ * settings row, which replaces that row in place; the refresh button
+ * refetches everything.
  */
 export default function DohSettingsView() {
   const [refreshKey, setRefreshKey] = useState(0);
@@ -68,37 +66,20 @@ export default function DohSettingsView() {
 
   return (
     <div className="grid min-w-0 gap-3">
-      <TableCard
-        label="Customer DOH thresholds"
-        header={(
-          <TableCardHeader
-            title="Customer DOH thresholds"
-            detail={loading && data.length === 0 ? 'Loading customers…' : `${data.length} ${data.length === 1 ? 'customer' : 'customers'} · Customers without thresholds of their own use the Global Default.`}
-            actions={<RefreshButton onClick={() => setRefreshKey((key) => key + 1)} isRefreshing={loading} label="Refresh DOH settings" />}
-          />
-        )}
-      >
+      <p className="text-sm text-deep-violet-blue/70">
+        Customers without thresholds of their own use the Global Default.
+      </p>
 
-        {error && (
-          <p className="px-4 pb-2 text-sm text-red-600" role="alert">
-            {error}
-          </p>
-        )}
-
-        {!loading && data.length === 0 ? (
-          !error && <p className="px-4 pb-4 text-sm text-deep-violet-blue/70">No customers found.</p>
-        ) : (
-          <DohSettingsTable
-            rows={data}
-            loading={loading && data.length === 0}
-            editingId={editingId}
-            pendingAlerts={pendingAlerts}
-            onEdit={handleEdit}
-            onToggleAlert={handleToggleAlert}
-          />
-        )}
-
-      </TableCard>
+      <DohSettingsTable
+        rows={data}
+        loading={loading}
+        error={error}
+        editingId={editingId}
+        pendingAlerts={pendingAlerts}
+        onEdit={handleEdit}
+        onToggleAlert={handleToggleAlert}
+        onRefresh={() => setRefreshKey((key) => key + 1)}
+      />
 
       {editingRow && (
         <DohThresholdForm
