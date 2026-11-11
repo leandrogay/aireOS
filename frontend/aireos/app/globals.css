@@ -230,9 +230,10 @@
     /* Keep the scrollbar's space even when the page doesn't scroll, so a
        table growing past the fold doesn't narrow the page and shift every card. */
     scrollbar-gutter: stable;
-    /* The gutter shows the root background, not <main>'s. Paint it the page
-       cream (PageLayout) so the reserved strip doesn't read as a white bar. */
-    background-color: var(--aire-cream);
+    /* The gutter shows the root background, not <main>'s. Paint it the
+       wallpaper's base (aire-glass-scene) so the reserved strip doesn't read
+       as a white bar. */
+    background-color: var(--aire-lavender);
   }
   /* Recharts draws axis ticks as SVG text, out of reach of a className.
      Fixed-width digits keep the value axis ("$1.2k" / "$11.8k") evenly set
@@ -253,25 +254,44 @@
   }
 }
 
-/* AIRE colours behind the shared translucent page cards. Tables keep their
-   solid headers and rows. */
+/* The AIRE wallpaper behind the shared translucent page cards: layered
+   lavender/violet waves (public/wallpapers), after the macOS stock wallpapers.
+   It sits in a fixed layer so it stays put while the page scrolls -- a
+   background-attachment: fixed would repaint on every scroll on mobile.
+   isolation keeps the z-index:-1 layer above the html background. Tables keep
+   their solid headers and rows. */
 .aire-glass-scene {
+  position: relative;
+  isolation: isolate;
   background-color: var(--aire-canvas);
-  background-image:
-    radial-gradient(ellipse at 4% 8%, color-mix(in srgb, var(--aire-soft) 75%, transparent), transparent 60%),
-    radial-gradient(ellipse at 92% 12%, color-mix(in srgb, var(--aire-accent) 18%, transparent), transparent 55%),
-    radial-gradient(ellipse at 54% 88%, color-mix(in srgb, var(--aire-celest) 20%, transparent), transparent 58%);
+}
+.aire-glass-scene::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--aire-lavender) url('/wallpapers/aire-waves-lavender-light.svg') center / cover no-repeat;
+}
+html.dark { background-color: var(--aire-canvas); }
+.dark .aire-glass-scene::before {
+  background: var(--aire-canvas) url('/wallpapers/aire-waves-lavender-dark.svg') center / cover no-repeat;
 }
 
-/* Outer content cards get a glass edge and depth without blurring a large
-   scrolling area. The solid background remains the fallback. */
+/* Outer content cards are frosted glass over the wallpaper. The solid card
+   colour is the fallback where backdrop-filter is unsupported or the user
+   asks for less transparency (see prefers-reduced-transparency below). */
 .aire-glass-surface {
   background-color: var(--card);
-  background-color: color-mix(in srgb, var(--aire-glass-tint) 80%, transparent);
   background-image: linear-gradient(145deg, color-mix(in srgb, var(--aire-glass-edge) 28%, transparent), transparent 48%);
   border-color: var(--aire-glass-edge);
   box-shadow: inset 0 1px 0 var(--aire-glass-sheen), 0 18px 38px -22px var(--aire-glass-shadow);
-  backdrop-filter: none;
+}
+@supports (backdrop-filter: blur(1px)) {
+  .aire-glass-surface {
+    background-color: color-mix(in srgb, var(--aire-glass-tint) 62%, transparent);
+    backdrop-filter: blur(24px) saturate(1.5);
+  }
 }
 
 .aire-glass-float {
@@ -321,7 +341,7 @@
   background-color: var(--aire-soft);
 }
 .dark .aire-glass-surface[class~="bg-white"] {
-  background-color: color-mix(in srgb, var(--aire-glass-tint) 86%, transparent);
+  background-color: color-mix(in srgb, var(--aire-glass-tint) 70%, transparent);
 }
 .dark .aire-brand-mark { filter: brightness(0) invert(0.94); }
 .dark .recharts-cartesian-axis-tick-value { fill: var(--aire-ink); }
