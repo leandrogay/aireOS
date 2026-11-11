@@ -146,6 +146,9 @@
   --aire-row-alt: color-mix(in srgb, var(--aire-cream) 17%, white);
   --aire-row-hover: color-mix(in srgb, var(--aire-lavender) 28%, white);
   --aire-row-selected: color-mix(in srgb, var(--aire-lavender) 45%, white);
+  /* Shared table header (ui/TableGrid): a cool lavender tint that sits with
+     the glass cards, rather than the warm cream canvas. */
+  --aire-table-head: color-mix(in srgb, var(--aire-lavender) 60%, white);
   --motion-quick: 120ms;
   --motion-control: 200ms;
   --motion-enter: 280ms;
@@ -175,6 +178,7 @@
   --aire-row-alt: #293149;
   --aire-row-hover: #374363;
   --aire-row-selected: #414D70;
+  --aire-table-head: #2C3450;
   --background: var(--aire-canvas);
   --foreground: var(--aire-ink);
   --card: #232A40;
@@ -454,7 +458,7 @@
     position: sticky;
     left: 0;
     z-index: 2;
-    background-color: var(--aire-canvas);
+    background-color: var(--aire-table-head);
   }
 
   .aire-table-grid tbody > tr:not(:has(> td[colspan])) > td:first-child {
