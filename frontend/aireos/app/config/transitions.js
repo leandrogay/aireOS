@@ -128,7 +128,9 @@ export const REFRESH_SPIN = { turn: 0.7, minTurns: 1 };
 // The side bar (components/layout/Sidebar) opening to its full width and
 // closing to the icon rail, on hover or the toggle. `width` is a spring like
 // the page's, a little slower than a card since the bar travels ~170px, and
-// with no bounce: an overshooting panel edge reads as a wobble. The logo,
+// with no bounce: an overshooting panel edge reads as a wobble. Pinning or
+// unpinning moves the page's room for the bar on this same spring, so the
+// content travels with the glass. The logo,
 // tab labels and sign-out fade out fast as it closes (`contentOut`, like a
 // table row's exit) and fade in once it is mostly open (`contentIn`), so a
 // label never shows squeezed into a half-open bar. The tab labels fade in
