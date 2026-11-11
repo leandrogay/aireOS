@@ -42,7 +42,11 @@ export default function PromoHowItWorks() {
             The Scenario builder always starts from <b>Tier 0 · Baseline</b>, which never includes the promotions
             entered on the Promotions page, so your promotion is never added on top of one already in the forecast.
           </li>
-          <li>All values are placeholders until they are measured from sales data.</li>
+          <li>
+            Each uplift is worked out on Promotion uplift settings against the anchor in effect that month: measured
+            from sales where there are enough promotion months, otherwise a placeholder rule. Saved promotions follow
+            those values as they change; an uplift edited here counts for this scenario only.
+          </li>
           <li>
             The Scenario builder is for exploring: the Simulated line is never saved into the official forecast.
             The Current forecast, Inventory and Dashboard change only through new sales data and the forecasting

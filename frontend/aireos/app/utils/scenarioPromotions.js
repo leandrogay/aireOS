@@ -30,12 +30,16 @@
 //
 // Saved and switched on/off exactly like building blocks (scenarioBlocks.js):
 // edits show on the chart at once, `saved` is what Discard goes back to.
-// The reference values are saved with the promotion, so Promotion Uplift
-// Settings changes (including measured values replacing placeholders)
-// never move a promotion already saved.
 //
-// Reference values are copied in when the customer, SKU or mechanic is
-// chosen, so a later settings change does not quietly alter a draft.
+// The mechanic's uplift is live: each product and month takes the value
+// Promotion Uplift Settings has worked out now, for the anchor version in
+// effect that month (scenarioLiveUplifts.js, through `liveIndex`, which
+// withLiveIndex puts on a copy of each promotion). The reference values are
+// what it was worth when saved, kept as the fallback for products the
+// calculation has no value for, and shown as "When saved" beside "Now". An
+// override ("Edited for this scenario") beats both. The voucher is never
+// measured, so it always uses the value saved with the promotion, which can
+// be edited for this scenario.
 // Uplifts are relative to an ordinary month (the model forecast), so they
 // can be negative: a shallower discount than usual sells less.
 //
@@ -44,7 +48,9 @@
 // from usePromoUplifts. A range promotion takes its range's values.
 
 import { PROMO_OVERLAY_TYPES } from '@/app/utils/forecastView';
+import { levelLabel } from '@/app/utils/promoUpliftCalc';
 import { upliftDeltaCells } from '@/app/utils/scenarioEngine';
+import { liveReferences, liveUplift, liveUpliftValues, weakestLevel } from '@/app/utils/scenarioLiveUplifts';
 
 export const MIN_OVERRIDE_PCT = -20;
 export const MAX_OVERRIDE_PCT = 50;
@@ -62,20 +68,21 @@ export const SIDE_OFFER_TYPE = 'side_offer';
 // shows another tier.
 export const MODEL_INCLUDES_PROMOS = 'tier1_arimax';
 
-const SOURCE_LABELS = {
-  placeholder: 'Placeholder',
-  measured: 'Measured',
+// Sources saved before the uplifts were worked out (Phase 3) that are not
+// a level of promoUpliftCalc.
+const OLD_SOURCE_LABELS = {
   estimate: 'Estimate',
   learned: 'Learned by model',
 };
 
 /**
- * Display label for an uplift source tag.
+ * Display label for the level or source an uplift was saved with.
  *
  * @param {string} source
  */
 export function sourceLabel(source) {
-  return SOURCE_LABELS[source] ?? source ?? '';
+  if (!source) return '';
+  return OLD_SOURCE_LABELS[source] ?? levelLabel(source);
 }
 
 /**
@@ -173,21 +180,79 @@ function valueFor(resolved, key, skuRanges, sku) {
  * @param {object} promotion
  * @param {object | undefined} resolved the promotion customer's resolved set
  */
-export function withReferences(promotion, resolved) {
+export function withReferences(promotion, resolved, liveIndex) {
   if (!resolved) return promotion;
   const mechanic = valueFor(resolved, promotion.mechanicKey, promotion.skuRanges ?? [], promotion.sku);
   const voucher = valueFor(resolved, VOUCHER_KEY, promotion.skuRanges ?? [], promotion.sku);
   const row = mechanicOptions(resolved).find((option) => option.mechanic_key === promotion.mechanicKey);
+  // The worked-out value when there is one; the resolved setting otherwise.
+  const live = liveIndex ? liveReferences(liveIndex, promotion) : null;
 
   return {
     ...promotion,
     mechanicLabel: row?.mechanic_label ?? promotion.mechanicLabel,
-    referenceUpliftPct: mechanic.value ?? promotion.referenceUpliftPct,
-    referenceSource: mechanic.source || promotion.referenceSource,
-    referenceBySku: mechanic.bySku,
+    referenceUpliftPct: live?.referenceUpliftPct ?? mechanic.value ?? promotion.referenceUpliftPct,
+    referenceSource: live?.referenceSource ?? (mechanic.source || promotion.referenceSource),
+    referenceBySku: live?.referenceBySku ?? mechanic.bySku,
     voucherUpliftPct: voucher.value ?? promotion.voucherUpliftPct,
     voucherBySku: voucher.bySku,
   };
+}
+
+/**
+ * The voucher's value from Promotion uplift settings for this promotion's
+ * customer and SKU ranges: what "Reset" goes back to after the voucher was
+ * edited for this scenario.
+ *
+ * @param {object} promotion
+ * @param {object | undefined} resolved
+ * @returns {{ voucherUpliftPct: number, voucherBySku: Record<string, number> } | null}
+ */
+export function voucherReferences(promotion, resolved) {
+  const voucher = valueFor(resolved, VOUCHER_KEY, promotion.skuRanges ?? [], promotion.sku);
+  if (voucher.value == null) return null;
+  return { voucherUpliftPct: voucher.value, voucherBySku: voucher.bySku };
+}
+
+/**
+ * True when the voucher's value was edited for this scenario (it differs
+ * from the setting's).
+ *
+ * @param {object} promotion
+ * @param {object | undefined} resolved
+ */
+export function voucherEdited(promotion, resolved) {
+  const setting = voucherReferences(promotion, resolved);
+  if (!setting) return false;
+  return (
+    setting.voucherUpliftPct !== promotion.voucherUpliftPct ||
+    !sameValue(setting.voucherBySku, promotion.voucherBySku ?? {})
+  );
+}
+
+/**
+ * The promotion with its "when saved" values set to what is worked out now,
+ * so a save records them (the fallback, and the note's "When saved"). The
+ * voucher is left as it is. Unchanged when nothing is worked out for it.
+ *
+ * @param {object} promotion
+ * @param {Map<string, object[]> | null} liveIndex
+ */
+export function withLiveReferences(promotion, liveIndex) {
+  const live = liveIndex ? liveReferences(liveIndex, promotion) : null;
+  return live ? { ...promotion, ...live } : promotion;
+}
+
+/**
+ * Copies of the promotions carrying the live uplifts, for the engine
+ * (scenarioPromotionsSource.deltas) and describe(). Never stored on the page's
+ * promotions, so saving and unsaved-change checks never see it.
+ *
+ * @param {object[]} promotions
+ * @param {Map<string, object[]> | null} liveIndex
+ */
+export function withLiveIndex(promotions, liveIndex) {
+  return liveIndex ? promotions.map((promotion) => ({ ...promotion, liveIndex })) : promotions;
 }
 
 /**
@@ -275,41 +340,117 @@ export function updateDraftPromotion(promotion, changes) {
 }
 
 /**
- * The mechanic part of the uplift for one product (or the promotion's own
- * SKU): the override if set, else that product's reference.
+ * The mechanic part of the uplift for one product in one month: the
+ * override if set, else the value worked out now for that month (when the
+ * promotion carries `liveIndex` and a month is given), else that product's
+ * value when saved.
  *
  * @param {object} promotion
- * @param {string} [product] a product_name, for all-SKUs promotions
+ * @param {string} [product] a product_name
+ * @param {string} [month] 'YYYY-MM-01'
  */
-export function mechanicUpliftPct(promotion, product) {
+export function mechanicUpliftPct(promotion, product, month) {
   if (promotion.overrideUpliftPct != null) return promotion.overrideUpliftPct;
+  if (promotion.liveIndex && product && month) {
+    const live = liveUplift(promotion.liveIndex, {
+      customer: promotion.customer,
+      mechanicKey: promotion.mechanicKey,
+      product,
+      month,
+    });
+    if (live) return live.upliftPct;
+  }
   return promotion.referenceBySku?.[product] ?? promotion.referenceUpliftPct ?? 0;
 }
 
 /**
- * Effective uplift = mechanic uplift (override or reference) + voucher
- * uplift when the voucher is Yes (design Section 6.2).
+ * The voucher part for one product: the value saved with the promotion
+ * (vouchers are never measured), when the voucher is Yes.
  *
  * @param {object} promotion
  * @param {string} [product]
  */
-export function effectiveUpliftPct(promotion, product) {
-  const voucher = promotion.voucher ? promotion.voucherBySku?.[product] ?? promotion.voucherUpliftPct ?? 0 : 0;
-  return mechanicUpliftPct(promotion, product) + voucher;
+export function voucherUpliftPct(promotion, product) {
+  if (!promotion.voucher) return 0;
+  return promotion.voucherBySku?.[product] ?? promotion.voucherUpliftPct ?? 0;
 }
 
 /**
- * Every effective uplift an all-SKUs promotion can take (one per product
- * with its own value, plus the customer's).
+ * Effective uplift = mechanic uplift + voucher uplift when the voucher is
+ * Yes (design Section 6.2).
  *
  * @param {object} promotion
+ * @param {string} [product]
+ * @param {string} [month]
  */
-export function effectiveUpliftRange(promotion) {
-  const products = new Set([
-    ...Object.keys(promotion.referenceBySku ?? {}),
-    ...Object.keys(promotion.voucherBySku ?? {}),
-  ]);
-  return [effectiveUpliftPct(promotion), ...[...products].map((product) => effectiveUpliftPct(promotion, product))];
+export function effectiveUpliftPct(promotion, product, month) {
+  return mechanicUpliftPct(promotion, product, month) + voucherUpliftPct(promotion, product);
+}
+
+/**
+ * The mechanic values a promotion takes now, over its products and months:
+ * the override alone, else the live values (the saved ones when nothing is
+ * worked out for it).
+ *
+ * @param {object} promotion
+ * @param {Map<string, object[]> | null} [liveIndex] defaults to the promotion's own
+ * @returns {number[]}
+ */
+export function mechanicUpliftRange(promotion, liveIndex = promotion.liveIndex) {
+  if (promotion.overrideUpliftPct != null) return [promotion.overrideUpliftPct];
+  const live = liveIndex ? liveUpliftValues(liveIndex, promotion) : [];
+  if (live.length) return live.map((item) => item.upliftPct);
+  return [promotion.referenceUpliftPct ?? 0, ...Object.values(promotion.referenceBySku ?? {})];
+}
+
+/**
+ * Every effective uplift a promotion can take (mechanic + voucher).
+ *
+ * @param {object} promotion
+ * @param {Map<string, object[]> | null} [liveIndex]
+ */
+export function effectiveUpliftRange(promotion, liveIndex = promotion.liveIndex) {
+  const vouchers = promotion.voucher
+    ? [promotion.voucherUpliftPct ?? 0, ...Object.values(promotion.voucherBySku ?? {})]
+    : [0];
+  const mechanics = mechanicUpliftRange(promotion, liveIndex);
+  return mechanics.flatMap((mechanic) => vouchers.map((voucher) => mechanic + voucher));
+}
+
+/**
+ * Where the mechanic's uplift comes from now: 'override', 'live' (worked
+ * out, with the weakest level among its values) or 'saved' (nothing worked
+ * out for it, or the calculation couldn't load).
+ *
+ * @param {object} promotion
+ * @param {Map<string, object[]> | null} liveIndex
+ * @returns {{ kind: 'override' | 'live' | 'saved', level: string | null, values: object[] }}
+ */
+export function upliftBasis(promotion, liveIndex) {
+  if (promotion.overrideUpliftPct != null) return { kind: 'override', level: null, values: [] };
+  const values = liveIndex ? liveUpliftValues(liveIndex, promotion) : [];
+  if (values.length) return { kind: 'live', level: weakestLevel(values), values };
+  return { kind: 'saved', level: promotion.referenceSource || null, values: [] };
+}
+
+/**
+ * For a saved promotion whose worked-out value has moved since it was
+ * saved: { saved: number[], savedLevel, now: number[], nowLevel }. Null when
+ * it was never saved, is overridden, nothing is worked out for it, or the
+ * values match. Nothing to apply: the live value already counts.
+ *
+ * @param {object} promotion
+ * @param {Map<string, object[]> | null} liveIndex
+ */
+export function upliftChangedSinceSaved(promotion, liveIndex) {
+  if (!promotion.saved || promotion.overrideUpliftPct != null || !liveIndex) return null;
+  const values = liveUpliftValues(liveIndex, promotion);
+  if (!values.length) return null;
+  const saved = [promotion.saved.referenceUpliftPct ?? 0, ...Object.values(promotion.saved.referenceBySku ?? {})];
+  const now = values.map((item) => item.upliftPct);
+  const sameValues = Math.min(...saved) === Math.min(...now) && Math.max(...saved) === Math.max(...now);
+  if (sameValues) return null;
+  return { saved, savedLevel: promotion.saved.referenceSource || null, now, nowLevel: weakestLevel(values) };
 }
 
 function inPromotion(row, promotion) {
@@ -358,11 +499,11 @@ function describeTitle(promotion) {
   const overridden = promotion.overrideUpliftPct != null;
   if (promotion.voucher) {
     const mechanicPart = overridden
-      ? `adjusted to ${formatPct(promotion.overrideUpliftPct)}`
-      : `reference ${formatPct(promotion.referenceUpliftPct)}`;
+      ? `edited to ${formatPct(promotion.overrideUpliftPct)}`
+      : formatPctRange(mechanicUpliftRange(promotion));
     return `${label} + voucher (${mechanicPart}, voucher ${formatPct(promotion.voucherUpliftPct)})`;
   }
-  if (overridden) return `${label} (adjusted to ${formatPct(promotion.overrideUpliftPct)})`;
+  if (overridden) return `${label} (edited to ${formatPct(promotion.overrideUpliftPct)})`;
   return label;
 }
 
@@ -370,8 +511,8 @@ export const scenarioPromotionsSource = {
   key: 'promotions',
   itemsKey: 'promotions',
   label: 'Promotion',
-  // Rows are taken one product at a time, so an all-SKUs promotion applies
-  // each product's own value.
+  // Rows are taken one product and month at a time, so each product takes
+  // its own value for the anchor version in effect that month.
   // A promotion running part of a month counts for that share of it
   // (dayShare), the same day-weighting the anchor uses.
   deltas(promotions, rows) {
@@ -386,7 +527,7 @@ export const scenarioPromotionsSource = {
         upliftDeltaCells(
           group.rows,
           promotion,
-          effectiveUpliftPct(promotion, group.product) * dayShare(promotion, group.month),
+          effectiveUpliftPct(promotion, group.product, group.month) * dayShare(promotion, group.month),
           'promotions'
         )
       )
@@ -639,40 +780,6 @@ export function dayShare(promotion, month) {
   if (to < from) return 0;
   const days = (Date.parse(to) - Date.parse(from)) / 86400000 + 1;
   return days / daysInMonth(month);
-}
-
-// ============================================================
-// SETTINGS CHANGED SINCE SAVING
-// ============================================================
-
-/**
- * When Promotion uplift settings now give a different value than the one a
- * saved promotion was set up with: { savedPct, currentPct, voucherChanged }.
- * Null when nothing changed, the promotion was never saved, or settings
- * aren't loaded. Saved promotions keep their value on purpose (so a
- * settings change never moves them silently); this lets the user choose.
- *
- * @param {object} promotion
- * @param {object | undefined} resolved the promotion customer's resolved set
- */
-export function settingsChange(promotion, resolved) {
-  if (!promotion.saved || !resolved) return null;
-  const fresh = withReferences(promotion, resolved);
-  const mechanicChanged =
-    fresh.referenceUpliftPct !== promotion.referenceUpliftPct ||
-    JSON.stringify(fresh.referenceBySku ?? {}) !== JSON.stringify(promotion.referenceBySku ?? {});
-  const voucherChanged =
-    fresh.voucherUpliftPct !== promotion.voucherUpliftPct ||
-    JSON.stringify(fresh.voucherBySku ?? {}) !== JSON.stringify(promotion.voucherBySku ?? {});
-  if (!mechanicChanged && !voucherChanged) return null;
-  return {
-    savedPct: promotion.referenceUpliftPct,
-    currentPct: fresh.referenceUpliftPct,
-    mechanicChanged,
-    voucherChanged,
-    savedVoucherPct: promotion.voucherUpliftPct,
-    currentVoucherPct: fresh.voucherUpliftPct,
-  };
 }
 
 // ============================================================

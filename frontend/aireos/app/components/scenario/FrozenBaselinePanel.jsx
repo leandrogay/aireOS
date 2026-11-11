@@ -6,6 +6,7 @@ import { LockKeyhole } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import LineToggle from '@/components/ui/LineToggle';
 import SelectDropdown from '@/components/ui/SelectDropdown';
+import ScenarioAnchors from '@/components/scenario/ScenarioAnchors';
 import { formatMonthLabel } from '@/app/utils/forecastView';
 import {
   breakdownMonths,
@@ -14,19 +15,26 @@ import {
   tier0Breakdown,
 } from '@/app/utils/scenarioBreakdown';
 
-// Same colours as the chart's composition layers (ScenarioBuilder.jsx).
+// The chart's shaded layers, bottom to top (scenarioComposition.js; the
+// chart stacks them in this order). Tier 0 is kept faint so what the
+// scenario adds stands out; decreases are hatched in the Simulated colour.
+// Official promotions get their own shade once Tier 0 can be split into its
+// ordinary-month baseline and the promotions in it (Phase 5).
 export const COMPOSITION_LAYERS = [
-  { key: 'tier0Layer', label: 'Tier 0 base', color: '#3A4369', opacity: 0.18 },
+  { key: 'tier0Layer', label: 'Tier 0', color: '#3A4369', opacity: 0.08 },
   { key: 'growthLayer', label: 'Growth', color: '#5E8C6A', opacity: 0.35 },
-  { key: 'blocksLayer', label: 'Blocks', color: '#8E7CC3', opacity: 0.35 },
-  { key: 'promotionsLayer', label: 'Promotions', color: '#D68B6D', opacity: 0.35 },
+  { key: 'blocksLayer', label: 'Building blocks', color: '#8E7CC3', opacity: 0.35 },
+  { key: 'promotionsLayer', label: 'Scenario promotions', color: '#D68B6D', opacity: 0.35 },
+  { key: 'decreaseLayer', label: 'Decreases', color: '#D23F74', hatch: true },
 ];
 
 const LAYER_HINTS = {
-  tier0Layer: 'The Tier 0 forecast is the baseline. It cannot be edited here.',
+  tier0Layer:
+    'The Tier 0 forecast, which still includes the promotions of the months it is built from. It cannot be edited here.',
   growthLayer: 'Growth on Tier 0, set above.',
-  blocksLayer: 'Building block changes on Tier 0.',
-  promotionsLayer: 'Planned promotion changes on Tier 0.',
+  blocksLayer: 'What building blocks add.',
+  promotionsLayer: 'What the promotions planned here add.',
+  decreaseLayer: 'Units a block or promotion takes away: the hatched band above the Simulated line.',
 };
 
 function units(value) {
@@ -145,13 +153,18 @@ function Tier0Card({ breakdown, bakedIn, rangePicked }) {
  * that ran in those months -- and what the scenario adds on top. Tier 0 is
  * read-only; the totals cover every row in view (scenarioBreakdown.js).
  * Discounts are per customer x SKU range (as promo anchors are stored), so
- * they show once both are picked (rangePicked).
+ * they show once both are picked (rangePicked). The anchors in the picked
+ * month follow (ScenarioAnchors), filtered from the chart's customer and
+ * SKU range.
  *
  * @param {{
  *   rows: object[],
  *   monthItems: Map<string, Array<{ source: string, deltaUnits: number }>>,
  *   bakedIn: object | null,
  *   rangePicked: boolean,
+ *   anchors: { data: object | null, loading: boolean, error: string | null },
+ *   customerName: string,
+ *   skuRange: string,
  *   growthSection: import('react').ReactNode,
  *   compositionVisible: object,
  *   onToggleComposition: (key: string) => void,
@@ -162,6 +175,9 @@ export default function FrozenBaselinePanel({
   monthItems,
   bakedIn,
   rangePicked,
+  anchors,
+  customerName,
+  skuRange,
   growthSection,
   compositionVisible,
   onToggleComposition,
@@ -213,10 +229,12 @@ export default function FrozenBaselinePanel({
               <Fact label="Tier 0" value={units(breakdown.tier0)} />
               <Fact label="Growth" value={signedUnits(adjustments.growth)} />
               <Fact label="Building blocks" value={signedUnits(adjustments.blocks)} />
-              <Fact label="Planned promotions" value={signedUnits(adjustments.promotions)} />
+              <Fact label="Scenario promotions" value={signedUnits(adjustments.promotions)} />
               <Fact label="Simulated" value={units(breakdown.tier0 + adjustments.total)} strong />
             </dl>
           </div>
+
+          <ScenarioAnchors anchors={anchors} month={month} customerName={customerName} skuRange={skuRange} />
         </>
       ) : (
         <p className="text-[11px] text-deep-violet-blue/60">No Tier 0 forecast in view to break down.</p>

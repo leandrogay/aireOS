@@ -1,10 +1,16 @@
 'use client';
 
+import { useState } from 'react';
+
 import { cn } from '@/lib/utils';
 import DateRangePicker from '@/components/ui/DateRangePicker';
+import InfoTooltip from '@/components/ui/InfoTooltip';
+import StatusPill from '@/components/ui/StatusPill';
 import { formatMonthLabel, PROMO_OVERLAY_TYPES } from '@/app/utils/forecastView';
+import { anchorLine, explanationLines, levelLabel, levelTone, monthText } from '@/app/utils/promoUpliftCalc';
 import { customerLabel } from '@/app/utils/retailerLabel';
 import { monthSpanLabel } from '@/app/utils/scenarioPitch';
+import { liveReferences, liveUpliftValues, weakestLevel } from '@/app/utils/scenarioLiveUplifts';
 import {
   MAX_OVERRIDE_PCT,
   MIN_OVERRIDE_PCT,
@@ -12,12 +18,14 @@ import {
   formatPct,
   formatPctRange,
   mechanicOptions,
-  mechanicUpliftPct,
   lastDayOf,
   SIDE_OFFER_TYPE,
   sourceLabel,
+  upliftBasis,
   valuesAcrossSkus,
+  voucherEdited,
   voucherOption,
+  voucherReferences,
 } from '@/app/utils/scenarioPromotions';
 import MechanicLookupPopover from '@/components/scenario/MechanicLookupPopover';
 import SkuRangePicker from '@/components/scenario/SkuRangePicker';
@@ -37,9 +45,67 @@ function signedUnits(value) {
 function anchorNote(anchor, ownRange, varies) {
   if (ownRange) return " (this SKU range's anchor)";
   if (varies) return ' (customer anchor; some picked SKU ranges have their own)';
-  if (anchor.source === 'default') return ' (all-customers default)';
+  if (anchor.source === 'default') return ' (fallback anchor)';
   const mechanic = anchor.mechanic_label ? `, ${anchor.mechanic_label}` : '';
-  return anchor.source === 'manual' ? ' (typed in on Promotion uplift settings)' : ` (usual mechanic${mechanic})`;
+  return anchor.source === 'manual' ? ' (overwritten on Promotion uplift settings)' : ` (usual mechanic${mechanic})`;
+}
+
+// The 'i' card under the slider: how the value now was worked out. One
+// value explains itself (promoUpliftCalc.explanationLines); several (SKUs
+// or anchor versions differ) say so and name each anchor change.
+function basisLines(values) {
+  const distinct = new Set(values.map((item) => `${item.upliftPct}|${item.level}|${item.effectiveFrom}`));
+  if (distinct.size === 1) return explanationLines(values[0].value, values[0].anchor);
+  const lines = [anchorLine(values[0].anchor), `Values differ by SKU or month: ${formatPctRange(values.map((item) => item.upliftPct))}.`];
+  const changes = [...new Map(values.slice(1).map((item) => [item.effectiveFrom, item])).values()]
+    .filter((item) => item.effectiveFrom !== values[0].effectiveFrom);
+  for (const item of changes) {
+    lines.push(`From ${monthText(item.effectiveFrom)} the anchor is ${item.anchor.mechanic_label}.`);
+  }
+  lines.push('Promotion uplift settings shows each SKU.');
+  return lines;
+}
+
+function UpliftBasis({ basis, onReset, workedOut, loading }) {
+  if (loading && basis.kind === 'saved') {
+    return <p className="text-[11px] text-deep-violet-blue/50">Loading worked-out uplifts…</p>;
+  }
+  if (basis.kind === 'override') {
+    return (
+      <p className="flex flex-wrap items-center gap-1.5 text-[11px] text-deep-violet-blue/70">
+        <StatusPill tone="info">Edited for this scenario</StatusPill>
+        Worked out: {formatPct(workedOut)} ·
+        <button
+          type="button"
+          onClick={onReset}
+          className="font-medium text-scenario underline-offset-2 hover:underline"
+        >
+          Reset
+        </button>
+      </p>
+    );
+  }
+  if (basis.kind === 'live') {
+    return (
+      <p className="flex flex-wrap items-center gap-1.5 text-[11px] text-deep-violet-blue/50">
+        <span className="inline-flex items-center gap-1">
+          <StatusPill tone={levelTone(basis.level)}>{levelLabel(basis.level)}</StatusPill>
+          <InfoTooltip label={`How ${levelLabel(basis.level)} was worked out`} variant="card" className="w-72">
+            {basisLines(basis.values).map((line) => (
+              <span key={line} className="block">{line}</span>
+            ))}
+          </InfoTooltip>
+        </span>
+        Move the slider to edit it for this scenario only.
+      </p>
+    );
+  }
+  return (
+    <p className="text-[11px] text-deep-violet-blue/50">
+      The value saved with this promotion{basis.level ? ` (${sourceLabel(basis.level)})` : ''}: nothing is worked out
+      for it now. Move the slider to edit it for this scenario only.
+    </p>
+  );
 }
 
 /**
@@ -47,14 +113,20 @@ function anchorNote(anchor, ownRange, varies) {
  * Section 6.1 step 6): mechanic from the uplift lookup, voucher Yes/No, an
  * optional override of the mechanic's uplift, the months and an explanation.
  *
- * Mechanic and voucher values come from `resolved` (the promotion customer's
- * GET /api/settings/promo-uplifts/resolved answer); choosing a mechanic only
- * sends its key, and the section copies the values in (withReferences).
+ * The mechanic's uplift is the one worked out now (`liveIndex`,
+ * scenarioLiveUplifts), with its level and an 'i' card; the mechanic list,
+ * anchor and voucher come from `resolved` (the promotion customer's
+ * GET /api/settings/promo-uplifts/resolved answer). Choosing a mechanic only
+ * sends its key, and the section copies the values in (withReferences). The
+ * voucher's value can be edited for this scenario, and Reset goes back to the
+ * setting's.
  *
  * @param {{
  *   promotion: object,
  *   onUpdate: (changes: object) => void,
  *   resolved: object | undefined,
+ *   liveIndex?: Map<string, object[]> | null,
+ *   liveLoading?: boolean,
  *   customerOptions: string[],
  *   skuRangeOptions: string[],
  *   months: string[],
@@ -66,6 +138,8 @@ export default function PromotionEditor({
   promotion,
   onUpdate,
   resolved,
+  liveIndex = null,
+  liveLoading = false,
   customerOptions,
   skuRangeOptions,
   months,
@@ -88,11 +162,55 @@ export default function PromotionEditor({
   // One SKU (older promotions) or one range has a single value; otherwise
   // the value can differ by SKU range.
   const singleValue = skuRanges.length === 1 || (!skuRanges.length && Boolean(promotion.sku));
-  const overridden = promotion.overrideUpliftPct != null;
-  const sliderValue = mechanicUpliftPct(promotion);
+  const basis = upliftBasis(promotion, liveIndex);
+  // What the slider sits on unless edited: the value worked out now for the
+  // first month, else the one saved with the promotion.
+  const workedOut = (liveIndex ? liveReferences(liveIndex, promotion)?.referenceUpliftPct : null) ?? promotion.referenceUpliftPct;
+  const sliderValue = promotion.overrideUpliftPct ?? workedOut;
   const range = MAX_OVERRIDE_PCT - MIN_OVERRIDE_PCT;
-  const markerLeft = `${((promotion.referenceUpliftPct - MIN_OVERRIDE_PCT) / range) * 100}%`;
-  const bySkuCount = Object.keys(promotion.referenceBySku ?? {}).length;
+  const markerLeft = `${((workedOut - MIN_OVERRIDE_PCT) / range) * 100}%`;
+  const voucherSetting = voucherReferences(promotion, resolved);
+  const voucherChanged = voucherEdited(promotion, resolved);
+  // What is being typed in the voucher box, kept until it is left, so the
+  // box can be emptied and retyped; null = show the promotion's value.
+  const [voucherText, setVoucherText] = useState(null);
+
+  function commitVoucher() {
+    const value = Number(voucherText);
+    setVoucherText(null);
+    if (voucherText == null || voucherText.trim() === '' || !Number.isFinite(value)) return;
+    const pct = Math.min(MAX_OVERRIDE_PCT, Math.max(0, Math.round(value)));
+    // Typing the setting's own value back is the setting again, per-SKU values included.
+    if (voucherSetting && pct === voucherSetting.voucherUpliftPct) onUpdate(voucherSetting);
+    else onUpdate({ voucherUpliftPct: pct, voucherBySku: {} });
+  }
+
+  // What each mechanic is worth now for this promotion: its worked-out
+  // values and their weakest level, else the resolved settings.
+  function liveOption(row) {
+    if (!liveIndex) return null;
+    const values = liveUpliftValues(liveIndex, { ...promotion, mechanicKey: row.mechanic_key });
+    return values.length ? values : null;
+  }
+
+  function optionParts(row) {
+    const live = liveOption(row);
+    if (live) {
+      return {
+        key: row.mechanic_key,
+        label: row.mechanic_label,
+        uplift: formatPctRange(live.map((item) => item.upliftPct)),
+        basis: levelLabel(weakestLevel(live)),
+      };
+    }
+    const varies = !singleValue && new Set(optionValues(row)).size > 1 ? ' by SKU range' : '';
+    return { key: row.mechanic_key, label: row.mechanic_label, uplift: `${optionValue(row)}${varies}`, basis: sourceLabel(row.source) };
+  }
+
+  function optionText(row) {
+    const parts = optionParts(row);
+    return `${parts.label} · ${parts.uplift} (${parts.basis})`;
+  }
 
   // What each mechanic is worth for this promotion's SKU ranges.
   function optionValues(row) {
@@ -154,7 +272,10 @@ export default function PromotionEditor({
       <div>
         <div className="flex items-center justify-between">
           <label className={labelClass} htmlFor="promo-mechanic">Mechanic</label>
-          <MechanicLookupPopover uplifts={resolved?.uplifts ?? []} anchorPct={anchor?.anchor_pct ?? null} />
+          <MechanicLookupPopover
+            rows={mechanics.map(optionParts)}
+            anchorPct={anchor?.anchor_pct ?? null}
+          />
         </div>
         <select
           id="promo-mechanic"
@@ -164,8 +285,7 @@ export default function PromotionEditor({
         >
           {mechanics.map((row) => (
             <option key={row.mechanic_key} value={row.mechanic_key}>
-              {row.mechanic_label} · {optionValue(row)}
-              {!singleValue && new Set(optionValues(row)).size > 1 ? ' by SKU range' : ''} ({sourceLabel(row.source)})
+              {optionText(row)}
             </option>
           ))}
         </select>
@@ -179,7 +299,10 @@ export default function PromotionEditor({
 
       <div>
         <span className={labelClass}>
-          Voucher{voucherRow ? ` · ${singleValue ? formatPct(promotion.voucherUpliftPct) : formatPctRange(optionValues(voucherRow))}` : ''}
+          Voucher
+          {voucherRow && !promotion.voucher
+            ? ` · ${singleValue ? formatPct(voucherSetting?.voucherUpliftPct ?? 0) : formatPctRange(optionValues(voucherRow))}`
+            : ''}
         </span>
         <div className="flex gap-1" role="group" aria-label="Voucher">
           {[
@@ -201,6 +324,42 @@ export default function PromotionEditor({
             </button>
           ))}
         </div>
+        {/* Vouchers are never measured: the value saved with the promotion
+            counts, and can be edited for this scenario. */}
+        {promotion.voucher ? (
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <label className="text-[11px] text-deep-violet-blue/70" htmlFor="promo-voucher-uplift">
+              Voucher uplift
+            </label>
+            <input
+              id="promo-voucher-uplift"
+              type="number"
+              min={0}
+              max={MAX_OVERRIDE_PCT}
+              step={1}
+              value={voucherText ?? String(promotion.voucherUpliftPct)}
+              onChange={(event) => setVoucherText(event.target.value)}
+              onBlur={commitVoucher}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') commitVoucher();
+              }}
+              className={cn(fieldClass, 'w-16 text-right tabular-nums')}
+            />
+            <span className="text-[11px] text-deep-violet-blue/70">%</span>
+            {voucherChanged ? (
+              <>
+                <StatusPill tone="info">Edited for this scenario</StatusPill>
+                <button
+                  type="button"
+                  onClick={() => onUpdate(voucherSetting)}
+                  className="text-[11px] font-medium text-scenario underline-offset-2 hover:underline"
+                >
+                  Reset to {formatPct(voucherSetting.voucherUpliftPct)}
+                </button>
+              </>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       <div className="space-y-1">
@@ -220,42 +379,30 @@ export default function PromotionEditor({
             value={sliderValue}
             onChange={(event) => {
               const value = Number(event.target.value);
-              onUpdate({ overrideUpliftPct: value === promotion.referenceUpliftPct ? null : value });
+              onUpdate({ overrideUpliftPct: value === workedOut ? null : value });
             }}
             className="w-full accent-scenario"
           />
           <span
             className="pointer-events-none absolute -bottom-1.5 h-2 w-0.5 -translate-x-1/2 bg-deep-violet-blue/50"
             style={{ left: markerLeft }}
-            title={`Reference ${formatPct(promotion.referenceUpliftPct)}`}
+            title={`Worked out ${formatPct(workedOut)}`}
             aria-hidden="true"
           />
         </div>
-        {overridden ? (
-          <p className="text-[11px] text-deep-violet-blue/70">
-            Adjusted from {formatPct(promotion.referenceUpliftPct)} ·{' '}
-            <button
-              type="button"
-              onClick={() => onUpdate({ overrideUpliftPct: null })}
-              className="font-medium text-scenario underline-offset-2 hover:underline"
-            >
-              Reset
-            </button>
-          </p>
-        ) : (
-          <p className="text-[11px] text-deep-violet-blue/50">
-            Reference value ({sourceLabel(promotion.referenceSource)}
-            {bySkuCount ? `; ${bySkuCount} SKU${bySkuCount === 1 ? ' has' : 's have'} its own value` : ''}). Move the
-            slider to override it for this promotion only.
-          </p>
-        )}
+        <UpliftBasis
+          basis={basis}
+          workedOut={workedOut}
+          loading={liveLoading}
+          onReset={() => onUpdate({ overrideUpliftPct: null })}
+        />
         <p className="text-[11px] text-deep-violet-blue/50">
           The forecast already reflects an ordinary month
           {anchor ? ` for ${customerLabel(promotion.customer)} (usual: ${anchor.anchor_pct}% off)` : ''}, so this is
           the change on top of that, not the promotion&apos;s whole effect. Planning the usual discount adds about 0%.
         </p>
         <p className="text-[11px] text-deep-violet-blue/70">
-          Total uplift: <b>{formatPctRange(effectiveUpliftRange(promotion))}</b>
+          Total uplift: <b>{formatPctRange(effectiveUpliftRange(promotion, liveIndex))}</b>
           {promotion.voucher ? ' (mechanic + voucher)' : ''}
         </p>
       </div>

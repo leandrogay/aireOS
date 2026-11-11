@@ -165,6 +165,44 @@ export function upcomingAnchorText(anchor, monthText) {
 }
 
 // ============================================================
+// ANCHORS BY MONTH (the Scenario builder's Breakdown tab and hover card)
+// ============================================================
+
+/**
+ * Every anchor target in a list_anchors answer: each customer's own, then
+ * each of its SKU ranges', as { key, customerName, skuRange (null for the
+ * customer's own), entry }.
+ *
+ * @param {{ customers?: object[] } | null} anchors getPromoAnchors
+ */
+export function anchorTargets(anchors) {
+  return (anchors?.customers ?? []).flatMap((customer) => [
+    { key: `${customer.customer_id}:`, customerName: customer.customer_name, skuRange: null, entry: customer },
+    ...(customer.ranges ?? []).map((range) => ({
+      key: `${customer.customer_id}:${range.sku_range}`,
+      customerName: customer.customer_name,
+      skuRange: range.sku_range,
+      entry: range,
+    })),
+  ]);
+}
+
+/**
+ * The anchor in effect in a month: the latest of the entry's upcoming
+ * changes starting on or before it, else the entry itself (this month's).
+ *
+ * @param {{ upcoming?: object[] }} entry a list_anchors customer or range entry
+ * @param {string} month 'YYYY-MM-01'
+ */
+export function anchorInMonth(entry, month) {
+  let chosen = entry;
+  for (const change of entry.upcoming ?? []) {
+    if (change.effective_from <= month) chosen = change;
+  }
+  return chosen;
+}
+
+// ============================================================
 // MOMENTS
 // see backend app/services/settings/promo_moment_rules.py
 // ============================================================

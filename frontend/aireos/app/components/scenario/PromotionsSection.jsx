@@ -15,11 +15,12 @@ import {
   mechanicOptions,
   newDraftPromotion,
   promotionScopeLabel,
-  settingsChange,
+  sourceLabel,
   stackedModelCells,
   updateDraftPromotion,
-  formatPct,
+  upliftChangedSinceSaved,
   validateScenarioPromotion,
+  withLiveReferences,
   withReferences,
 } from '@/app/utils/scenarioPromotions';
 import { Button } from '@/components/ui/button';
@@ -32,18 +33,17 @@ import usePromoUplifts from '@/hooks/usePromoUplifts';
 // Changing any of these picks the setting values again (withReferences).
 const REFERENCE_FIELDS = ['customer', 'skuRanges', 'sku', 'mechanicKey'];
 
-function SettingsChangedNote({ change, onUpdate }) {
-  const parts = [];
-  if (change.mechanicChanged) parts.push(`${formatPct(change.currentPct)} (saved with ${formatPct(change.savedPct)})`);
-  if (change.voucherChanged) {
-    parts.push(`voucher ${formatPct(change.currentVoucherPct)} (saved with ${formatPct(change.savedVoucherPct)})`);
-  }
+// A saved promotion takes the uplift worked out now; this says what it was
+// when saved, so a change since then is never silent. Nothing to apply.
+function SavedNowNote({ change }) {
+  const savedLevel = sourceLabel(change.savedLevel);
   return (
-    <p className="rounded-md border border-violet/40 bg-lavander/40 px-2.5 py-2 text-[11px] text-deep-violet-blue">
-      Promotion uplift settings now say {parts.join(', ')}.{' '}
-      <button type="button" onClick={onUpdate} className="font-medium text-scenario underline-offset-2 hover:underline">
-        Update
-      </button>
+    <p
+      className="rounded-md border border-violet/40 bg-lavander/40 px-2.5 py-2 text-[11px] text-deep-violet-blue"
+      role="status"
+    >
+      When saved: {formatPctRange(change.saved)}
+      {savedLevel ? ` · ${savedLevel}` : ''}. Now: <b>{formatPctRange(change.now)}</b> · {sourceLabel(change.nowLevel)}.
     </p>
   );
 }
@@ -53,10 +53,10 @@ function statusText(promotion) {
   return promotion.isActive ? 'Saved' : 'Saved, not on the chart';
 }
 
-function promotionSummary(promotion) {
+function promotionSummary(promotion, liveIndex) {
   const span = monthSpanLabel([promotion.startMonth, promotion.endMonth].filter(Boolean));
   const voucher = promotion.voucher ? ' + voucher' : '';
-  return `${promotionScopeLabel(promotion)} · ${formatPctRange(effectiveUpliftRange(promotion))}${voucher} · ${span}`;
+  return `${promotionScopeLabel(promotion)} · ${formatPctRange(effectiveUpliftRange(promotion, liveIndex))}${voucher} · ${span}`;
 }
 
 /**
@@ -67,9 +67,14 @@ function promotionSummary(promotion) {
  * (useScenarioPromotions) are the only calls that reach the server, and a
  * switched-off promotion stays saved but leaves the Simulated line.
  *
- * Uplift values come from Promotion uplift settings through usePromoUplifts,
- * never from this file. `rows` are the fetched forecast rows, used only to count the months
- * where no promotion uplift is added (design Section 6.4.5).
+ * Uplift values come from Promotion uplift settings, never from this file:
+ * the mechanics, anchors and vouchers through usePromoUplifts, and the
+ * worked-out uplift per product and month through `liveIndex`
+ * (scenarioLiveUplifts.liveUpliftIndex of GET /promo-uplifts/calculated,
+ * loaded by ScenarioBuilder; null while loading or when it failed, and then
+ * the values saved with each promotion are used). `rows` are the fetched
+ * forecast rows, used only to count the months where no promotion uplift is
+ * added (design Section 6.4.5).
  *
  * @param {{
  *   items: object[],
@@ -83,6 +88,9 @@ function promotionSummary(promotion) {
  *   defaultSkuRange: string,
  *   impacts: Map<string, { deltaUnits: number, months: string[] }>,
  *   rows: object[],
+ *   liveIndex: Map<string, object[]> | null,
+ *   liveLoading: boolean,
+ *   liveError: string | null,
  * }} props
  */
 export default function PromotionsSection({
@@ -97,6 +105,9 @@ export default function PromotionsSection({
   defaultSkuRange,
   impacts,
   rows = [],
+  liveIndex = null,
+  liveLoading = false,
+  liveError = null,
 }) {
   const [selectedId, setSelectedId] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -106,9 +117,7 @@ export default function PromotionsSection({
   const selected = items.find((promotion) => promotion.id === selectedId) ?? items[0] ?? null;
   const addCustomer = defaultCustomer || customerOptions[0] || '';
   const canAdd = months.length > 0 && customerOptions.length > 0 && mechanicOptions(uplifts.data[addCustomer]).length > 0;
-  const placeholderInUse = Object.values(uplifts.data).some((resolved) =>
-    resolved.uplifts.some((row) => row.source === 'placeholder')
-  );
+  const savedNow = selected ? upliftChangedSinceSaved(selected, liveIndex) : null;
 
   function addPromotion() {
     const promotion = newDraftPromotion({
@@ -118,7 +127,8 @@ export default function PromotionsSection({
       months,
       resolved: uplifts.data[addCustomer],
     });
-    onChange((current) => [...current, promotion]);
+    const withLive = withLiveReferences(promotion, liveIndex);
+    onChange((current) => [...current, withLive]);
     setSelectedId(promotion.id);
   }
 
@@ -137,11 +147,16 @@ export default function PromotionsSection({
       setSaveError(problem);
       return;
     }
+    // Saved with what it is worth now, the "When saved" value from then on.
+    const toSave = withLiveReferences(promotion, liveIndex);
+    if (toSave !== promotion) {
+      onChange((current) => current.map((item) => (item.id === promotion.id ? toSave : item)));
+    }
     setSaving(true);
     setSaveError(null);
     try {
-      await onSave(promotion);
-      if (promotion.isActive) await switchOffClashes(promotion);
+      await onSave(toSave);
+      if (toSave.isActive) await switchOffClashes(toSave);
     } catch (err) {
       setSaveError(err.message);
     } finally {
@@ -181,16 +196,10 @@ export default function PromotionsSection({
     }
   }
 
-  function updateToCurrentSettings(promotion) {
-    onChange((current) =>
-      current.map((item) => (item.id === promotion.id ? withReferences(item, uplifts.data[item.customer]) : item))
-    );
-  }
-
   function applyChanges(promotion, changes) {
     const next = updateDraftPromotion(promotion, changes);
     const needsReferences = REFERENCE_FIELDS.some((field) => field in changes);
-    return needsReferences ? withReferences(next, uplifts.data[next.customer]) : next;
+    return needsReferences ? withReferences(next, uplifts.data[next.customer], liveIndex) : next;
   }
 
   function updateSelected(changes) {
@@ -203,22 +212,20 @@ export default function PromotionsSection({
   // scrolls this tab inside it.
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <p className="flex items-center gap-1 text-[11px] text-deep-violet-blue/70">
-          Plan a promotion and see its uplift on the chart.
-        </p>
-        {placeholderInUse ? (
-          <span className="shrink-0 rounded-full border border-violet/40 bg-cream px-2 py-0.5 text-[10px] font-medium text-deep-violet-blue/70">
-            Placeholder values
-          </span>
-        ) : null}
-      </div>
+      <p className="flex items-center gap-1 text-[11px] text-deep-violet-blue/70">
+        Plan a promotion and see its uplift on the chart.
+      </p>
 
       <PromoHowItWorks />
 
       {uplifts.error ? (
         <p className="rounded-md border border-violet bg-lavander/50 px-2.5 py-2 text-xs text-deep-violet-blue" role="alert">
           Promotion uplift values could not be loaded: {uplifts.error}
+        </p>
+      ) : null}
+      {liveError ? (
+        <p className="rounded-md border border-violet bg-lavander/50 px-2.5 py-2 text-xs text-deep-violet-blue" role="alert">
+          Calculated uplifts could not be loaded; saved values are used: {liveError}
         </p>
       ) : null}
 
@@ -248,7 +255,7 @@ export default function PromotionsSection({
                   {customerLabel(promotion.customer)} · {promotion.mechanicLabel || 'Draft promotion'}
                 </span>
                 <span className="block truncate text-[11px] text-deep-violet-blue/60">
-                  {promotionSummary(promotion)}
+                  {promotionSummary(promotion, liveIndex)}
                 </span>
                 <span
                   className={cn(
@@ -310,18 +317,15 @@ export default function PromotionsSection({
         </p>
       ) : null}
 
-      {selected && settingsChange(selected, uplifts.data[selected.customer]) ? (
-        <SettingsChangedNote
-          change={settingsChange(selected, uplifts.data[selected.customer])}
-          onUpdate={() => updateToCurrentSettings(selected)}
-        />
-      ) : null}
+      {savedNow ? <SavedNowNote change={savedNow} /> : null}
 
       {selected ? (
         <PromotionEditor
           promotion={selected}
           onUpdate={updateSelected}
           resolved={uplifts.data[selected.customer]}
+          liveIndex={liveIndex}
+          liveLoading={liveLoading}
           customerOptions={customerOptions}
           skuRangeOptions={skuRangeOptions}
           months={months}

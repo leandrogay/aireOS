@@ -1,7 +1,18 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Area, ComposedChart, Line, ReferenceArea, ReferenceDot, ReferenceLine, XAxis, YAxis } from 'recharts';
+import {
+  Area,
+  ComposedChart,
+  Line,
+  ReferenceArea,
+  ReferenceDot,
+  ReferenceLine,
+  XAxis,
+  YAxis,
+  useXAxisScale,
+  useYAxisScale,
+} from 'recharts';
 
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -31,6 +42,7 @@ import {
   promoPeriodDividerXs,
   promosOverlappingMonth,
 } from '@/app/utils/forecastView';
+import { MIN_LABEL_PX, MIN_LABEL_SLOT_PX, bandLabels, totalLabel } from '@/app/utils/scenarioComposition';
 import { withActualBridges } from '@/app/utils/forecastActuals';
 import { CURRENT_DOT_FILL, INITIAL_MISSING_HINT, forecastLineHints } from '@/app/utils/forecastLineText';
 import { dotRevealDelay, lineSweepTimings } from '@/app/utils/lineAnimation';
@@ -171,26 +183,130 @@ const SCENARIO_ITEM_GROUPS = [
   { source: 'promotions', title: 'Planned promotions added' },
 ];
 
+// Units a decrease takes away: diagonal lines, so the band reads as taken
+// away rather than added.
+const COMPOSITION_HATCH_ID = 'scenario-decrease-hatch';
+
+function CompositionHatch({ color }) {
+  return (
+    <defs>
+      <pattern id={COMPOSITION_HATCH_ID} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+        <rect width="6" height="6" fill={color} fillOpacity={0.08} />
+        <line x1="0" y1="0" x2="0" y2="6" stroke={color} strokeWidth="2" strokeOpacity={0.55} />
+      </pattern>
+    </defs>
+  );
+}
+
+// The hover card's breakdown, in the order the chart stacks it.
+const SCENARIO_BREAKDOWN_ROWS = [
+  { key: 'tier0', label: 'Tier 0 (includes past promotions)' },
+  { key: 'growth', label: 'Growth' },
+  { key: 'blocks', label: 'Building blocks' },
+  { key: 'promotions', label: 'Scenario promotions' },
+];
+
+// Tiny numbers on the Scenario builder's shaded layers: each band's own
+// figure inside it when there is room (MIN_LABEL_PX tall, months
+// MIN_LABEL_SLOT_PX apart), and the Simulated total on top. Drawn inside the
+// chart's SVG with its scales, like dashboard/MonthAxis.
+function CompositionLabels({ rows, visible }) {
+  const xScale = useXAxisScale();
+  const yScale = useYAxisScale();
+  if (!xScale || !yScale) return null;
+  const points = rows.filter((row) => row.breakdown);
+  if (points.length > 1 && Math.abs(xScale(points[1].x) - xScale(points[0].x)) < MIN_LABEL_SLOT_PX) return null;
+
+  return (
+    <g aria-hidden="true" className="pointer-events-none">
+      {points.flatMap((point) => {
+        const x = xScale(point.x);
+        const bands = bandLabels(point, visible)
+          .map((band) => ({ ...band, top: yScale(band.high), bottom: yScale(band.low) }))
+          .filter((band) => band.bottom - band.top >= MIN_LABEL_PX)
+          .map((band) => (
+            <text
+              key={`${point.x}-${band.key}`}
+              x={x}
+              y={(band.top + band.bottom) / 2}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              className="fill-deep-violet-blue/80 text-[9px] tabular-nums"
+            >
+              {band.text}
+            </text>
+          ));
+        const total = totalLabel(point, visible);
+        if (!total) return bands;
+        return [
+          ...bands,
+          <text
+            key={`${point.x}-total`}
+            x={x}
+            y={yScale(total.value) - 6}
+            textAnchor="middle"
+            className="fill-scenario-ink text-[9px] font-semibold tabular-nums"
+          >
+            {total.text}
+          </text>,
+        ];
+      })}
+    </g>
+  );
+}
+
 // Scenario section of the hover card (and of the entered-promotions panel,
-// which replaces the card in months with an entered promotion): how far
-// Simulated sits from Current this month, and every switched-on building
-// block and planned promotion in it, even one that adds 0%.
-function ScenarioPointDetails({ point, items, formatValue, className }) {
+// which replaces the card in months with an entered promotion): what this
+// month's Simulated figure is made of (Tier 0, then what growth, blocks and
+// scenario promotions add, scenarioComposition.withComposition), the anchor
+// in effect when one customer and SKU range is in view, and every
+// switched-on building block and planned promotion in it, even one that
+// adds 0%.
+function ScenarioPointDetails({ point, items, anchor, formatValue, className }) {
   if (point?.simulated == null || point.current == null) return null;
   const delta = point.simulated - point.current;
   if (!delta && !items.length) return null;
   const pct = point.current ? ` (${delta < 0 ? '−' : '+'}${Math.abs((delta / point.current) * 100).toFixed(1)}%)` : '';
   // Sign written here, figure unsigned, so it reads "+2,555".
   const signed = (value) => `${value < 0 ? '−' : '+'}${formatValue(Math.abs(value))}`;
+  const breakdown = point.breakdown;
   return (
     <div className={cn('space-y-0.5 text-[11px] tabular-nums', className)}>
-      <div className="flex justify-between gap-3">
-        <span>Difference from Current</span>
-        <span className="font-semibold text-scenario-ink">
-          {signed(delta)}
-          {pct}
-        </span>
-      </div>
+      {breakdown ? (
+        <>
+          {SCENARIO_BREAKDOWN_ROWS.map((row) => (
+            <div key={row.key} className="flex justify-between gap-3">
+              <span>{row.label}</span>
+              <span className={row.key === 'tier0' ? 'font-semibold' : 'font-semibold text-scenario-ink'}>
+                {row.key === 'tier0' ? formatValue(breakdown.tier0) : signed(breakdown[row.key])}
+              </span>
+            </div>
+          ))}
+          <div className="flex justify-between gap-3 border-t border-lavander pt-0.5">
+            <span className="font-semibold">Simulated</span>
+            <span className="font-semibold text-scenario-ink">
+              {formatValue(breakdown.simulated)}
+              {pct}
+            </span>
+          </div>
+        </>
+      ) : (
+        <div className="flex justify-between gap-3">
+          <span>Difference from Current</span>
+          <span className="font-semibold text-scenario-ink">
+            {signed(delta)}
+            {pct}
+          </span>
+        </div>
+      )}
+      {breakdown &&
+      Math.round(breakdown.tier0 + breakdown.growth + breakdown.blocks + breakdown.promotions) !==
+        Math.round(breakdown.simulated) ? (
+        <p className="pt-0.5 text-deep-violet-blue/60">
+          Some SKUs would fall below 0 and are kept at 0, so Simulated is more than the sum.
+        </p>
+      ) : null}
+      {anchor ? <p className="pt-0.5 text-deep-violet-blue/60">Anchor: {anchor}</p> : null}
       {SCENARIO_ITEM_GROUPS.map((group) => {
         const groupItems = items.filter((item) => item.source === group.source);
         if (!groupItems.length) return null;
@@ -338,8 +454,12 @@ export default function ForecastChart({
 
   // No 80% range is drawn: the tooltip's CONFIDENCE section gives it in
   // figures, so the axis only has to fit the lines.
-  const visibleValues = chartData
-    .flatMap((point) => visibleKeys.map((key) => point[key]))
+  // The Scenario builder's shaded layers can reach above both lines (units a
+  // decrease took away sit above the Simulated line), so their tops count too.
+  const compositionTops = scenario?.composition?.length
+    ? chartData.map((point) => totalLabel(point, scenario.compositionVisible ?? {})?.value)
+    : [];
+  const visibleValues = [...chartData.flatMap((point) => visibleKeys.map((key) => point[key])), ...compositionTops]
     .filter((value) => typeof value === 'number');
   // Hover text for the line pills, so the explanations don't crowd the chart.
   const lineHints = forecastLineHints({
@@ -547,6 +667,11 @@ export default function ForecastChart({
                   margin={{ top: 8, right: 18, left: 0, bottom: 28 }}
                 >
                   <OverlayDefs bands={overlayBands} />
+                  {showComposition ? (
+                    <CompositionHatch
+                      color={scenario.composition.find((layer) => layer.hatch)?.color ?? simulatedSeries?.color}
+                    />
+                  ) : null}
                   <XAxis
                     dataKey="x"
                     type="number"
@@ -588,6 +713,7 @@ export default function ForecastChart({
                                 <ScenarioPointDetails
                                   point={point}
                                   items={scenario.monthItems?.get(point.month_year) ?? []}
+                                  anchor={scenario.anchorForMonth?.(point.month_year) ?? null}
                                   formatValue={formatValue}
                                   className="mt-1 border-t border-lavander pt-1.5"
                                 />
@@ -674,8 +800,8 @@ export default function ForecastChart({
                           type="monotone"
                           stackId="scenario-composition"
                           stroke="none"
-                          fill={layer.color}
-                          fillOpacity={layer.opacity ?? 0.3}
+                          fill={layer.hatch ? `url(#${COMPOSITION_HATCH_ID})` : layer.color}
+                          fillOpacity={layer.hatch ? 1 : (layer.opacity ?? 0.3)}
                           tooltipType="none"
                           legendType="none"
                           activeDot={false}
@@ -683,7 +809,11 @@ export default function ForecastChart({
                         />
                       ))
                   ) : null}
-                  {showSimulated ? (
+                  {showComposition ? (
+                    <CompositionLabels rows={transition.rows} visible={scenario.compositionVisible ?? {}} />
+                  ) : null}
+                  {/* The layers already show what the gap is made of. */}
+                  {showSimulated && !showComposition ? (
                     <Area
                       dataKey="simulatedGap"
                       type="monotone"
@@ -791,6 +921,7 @@ export default function ForecastChart({
                         <ScenarioPointDetails
                           point={hoverPoint}
                           items={scenario.monthItems?.get(hoverMonth) ?? []}
+                          anchor={scenario.anchorForMonth?.(hoverMonth) ?? null}
                           formatValue={formatValue}
                         />
                       ) : null

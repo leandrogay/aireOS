@@ -46,7 +46,11 @@ import {
   activeScenarioPromotions,
   draftPromotionBands,
   hasUnsavedPromotionChanges,
+  withLiveIndex,
 } from '@/app/utils/scenarioPromotions';
+import { liveUpliftIndex } from '@/app/utils/scenarioLiveUplifts';
+import { withComposition } from '@/app/utils/scenarioComposition';
+import { anchorInMonth, anchorLabel, anchorSourceLabel, anchorTargets } from '@/app/utils/promoUpliftSettings';
 import {
   activeScenarioBlocks,
   blockScopeLabel,
@@ -58,6 +62,8 @@ import { SCENARIO_SOURCES } from '@/app/utils/scenarioSources';
 import useForecastFilters from '@/hooks/useForecastFilters';
 import useForecastView from '@/hooks/useForecastView';
 import useForecastYearTotals from '@/hooks/useForecastYearTotals';
+import usePromoAnchors from '@/hooks/usePromoAnchors';
+import usePromoUpliftCalc from '@/hooks/usePromoUpliftCalc';
 import useConfirmAction from '@/hooks/useConfirmAction';
 import useExpandedRows from '@/hooks/useExpandedRows';
 import useScenarioBlocks from '@/hooks/useScenarioBlocks';
@@ -146,6 +152,10 @@ export default function ScenarioBuilder() {
   const scenarioBlocks = useScenarioBlocks();
   // Planned promotions: saved like blocks (hooks/useScenarioPromotions.js).
   const scenarioPromotions = useScenarioPromotions();
+  // The uplifts Promotion Uplift Settings has worked out now: promotions take
+  // these per product and month (scenarioLiveUplifts.js), else their saved values.
+  const calculated = usePromoUpliftCalc();
+  const anchors = usePromoAnchors();
   // The block open in the panel's editor (a draft, or a saved block opened
   // from the table with Edit); its months are banded on the chart.
   const [selectedId, setSelectedId] = useState(null);
@@ -211,10 +221,11 @@ export default function ScenarioBuilder() {
   const allBlocks = scenarioBlocks.blocks.filter((block) => !isGrowthBlock(block));
   const growthBlocks = scenarioBlocks.blocks.filter(isGrowthBlock);
   const activePromotions = activeScenarioPromotions(scenarioPromotions.promotions);
+  const liveIndex = calculated.data ? liveUpliftIndex(calculated.data.rows) : null;
   const counted = {
     growth: activeScenarioBlocks(growthBlocks),
     blocks: activeScenarioBlocks(allBlocks),
-    promotions: activePromotions,
+    promotions: withLiveIndex(activePromotions, liveIndex),
   };
   const itemInfo = new Map([
     ...counted.growth.map((block) => [block.id, { name: block.name, kind: 'growth', state: itemState(block, false) }]),
@@ -254,27 +265,21 @@ export default function ScenarioBuilder() {
       })),
     ])
   );
-  const compositionPoints = basePoints.map((point) => {
-    const current = point.current ?? null;
-    if (current == null) return point;
-    const monthTotals = [...(monthCells.get(point.month_year)?.values() ?? [])];
-    const growth = monthTotals
-      .filter((item) => item.source === 'growth')
-      .reduce((sum, item) => sum + item.deltaUnits, 0);
-    const blocks = monthTotals
-      .filter((item) => item.source === 'blocks')
-      .reduce((sum, item) => sum + item.deltaUnits, 0);
-    const promotions = monthTotals
-      .filter((item) => item.source === 'promotions')
-      .reduce((sum, item) => sum + item.deltaUnits, 0);
-    return {
-      ...point,
-      tier0Layer: current,
-      growthLayer: growth,
-      blocksLayer: blocks,
-      promotionsLayer: promotions,
-    };
-  });
+  // What each month is made of, for the shaded layers, their labels and the
+  // hover card (scenarioComposition.js): built on the Simulated line, so the
+  // layers always meet it.
+  const chartPoints = (hasSimulated ? withSimulatedLine(basePoints, byMonth) : basePoints).map((point) =>
+    withComposition(point, [...(monthCells.get(point.month_year)?.values() ?? [])])
+  );
+  // The anchor in the hover card: one customer x SKU range has one.
+  const anchorTarget = rangePicked
+    ? anchorTargets(anchors.data).find((target) => target.customerName === customerName && target.skuRange === skuRange)
+    : null;
+  function anchorForMonth(month) {
+    if (!anchorTarget) return null;
+    const anchor = anchorInMonth(anchorTarget.entry, month);
+    return `${anchorLabel(anchor)} · ${anchorSourceLabel(anchor.source)}`;
+  }
   const monthsByItem = new Map();
   for (const [month, items] of [...monthCells].sort(([a], [b]) => a.localeCompare(b))) {
     for (const [itemId, totals] of items) {
@@ -325,6 +330,7 @@ export default function ScenarioBuilder() {
     promoBands: draftPromotionBands(activePromotions),
     seasonalAverage: seasonalAverage(basePoints),
     monthItems,
+    anchorForMonth,
     selectedBand:
       selectedBlock && byItem.has(selectedBlock.id)
         ? { startMonth: selectedBlock.startMonth, endMonth: selectedBlock.endMonth, label: selectedBlock.name }
@@ -438,7 +444,7 @@ export default function ScenarioBuilder() {
       >
         <div className="min-w-0 space-y-3 min-[1100px]:flex min-[1100px]:flex-col min-[1100px]:[&>[data-slot=card]]:flex-1">
           <ForecastChart
-          points={hasSimulated ? withSimulatedLine(compositionPoints, byMonth) : compositionPoints}
+          points={chartPoints}
             startDate={startDate}
             endDate={endDate}
             metric="units"
@@ -508,9 +514,10 @@ export default function ScenarioBuilder() {
             scenario={{
               ...scenario,
               compositionVisible,
-              // Stacked bottom to top: Tier 0, then what growth, blocks and
-              // promotions add (FrozenBaselinePanel's COMPOSITION_LAYERS).
-              composition: COMPOSITION_LAYERS.map(({ key, color, opacity }) => ({ key, color, opacity })),
+              // Stacked bottom to top: Tier 0, what growth, blocks and
+              // promotions add, then any decrease, hatched
+              // (FrozenBaselinePanel's COMPOSITION_LAYERS).
+              composition: COMPOSITION_LAYERS.map(({ key, color, opacity, hatch }) => ({ key, color, opacity, hatch })),
             }}
           />
 
@@ -531,6 +538,9 @@ export default function ScenarioBuilder() {
               monthItems={monthItems}
               bakedIn={bakedIn}
               rangePicked={rangePicked}
+              anchors={anchors}
+              customerName={customerName}
+              skuRange={skuRange}
               growthSection={
                 scenarioBlocks.loading ? (
                   <p className="text-xs text-deep-violet-blue/60">Loading growth…</p>
@@ -591,6 +601,9 @@ export default function ScenarioBuilder() {
                 rows={rows}
                 skuRangeOptions={filters.skuRangeOptions}
                 defaultSkuRange={skuRange}
+                liveIndex={liveIndex}
+                liveLoading={calculated.loading}
+                liveError={calculated.error}
                 {...sectionProps}
               />
             )
