@@ -552,7 +552,7 @@ export default function ForecastChart({
                     ticks={ticks}
                     interval={0}
                     height={mobile ? 28 : 48}
-                    tick={{ fontSize: 9, fill: '#3A4369' }}
+                    tick={{ fontSize: 9, fill: 'var(--aire-deep-blue)' }}
                     tickFormatter={(index) => mobile
                       ? formatMobileYear(plotData[index]?.month_year)
                       : (plotData[index]?.label ?? '')}
@@ -565,7 +565,7 @@ export default function ForecastChart({
                     domain={transition.domain}
                     ticks={transition.ticks}
                     allowDataOverflow
-                    tick={{ fontSize: 10, fill: '#3A4369' }}
+                    tick={{ fontSize: 10, fill: 'var(--aire-deep-blue)' }}
                     tickFormatter={(value) => formatAxisValue(value, 'units')}
                   />
                   <ChartTooltip
@@ -612,7 +612,7 @@ export default function ForecastChart({
                     <ReferenceLine
                       key={`promo-divider-${x}`}
                       x={x}
-                      stroke="#3A4369"
+                      stroke="var(--aire-deep-blue)"
                       strokeOpacity={0.16}
                       strokeWidth={1}
                       ifOverflow="visible"

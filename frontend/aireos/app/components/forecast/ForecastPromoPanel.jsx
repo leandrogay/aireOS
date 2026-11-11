@@ -102,7 +102,7 @@ export default function ForecastPromoPanel({
           const key = promoIdentity(promo);
           const isOpen = openPromoId === key;
           const { promoType, packType } = splitPromoType(promo.promo_type);
-          const swatch = promoOverlayStyle(promoType)?.fill ?? '#DFE4F7';
+          const swatch = promoOverlayStyle(promoType)?.fill ?? 'var(--aire-lavender)';
           const skuNames = [...new Set((promo.skus ?? []).map((sku) => sku.product_name).filter(Boolean))];
           return (
             <li key={key}>

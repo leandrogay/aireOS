@@ -92,7 +92,7 @@ export default function EndingStockChart({ monthly, allCustomers }) {
               dataKey={mobile ? 'month' : 'label'}
               interval={0}
               height={mobile ? 28 : 52}
-              tick={{ fontSize: 9, fill: '#3A4369' }}
+              tick={{ fontSize: 9, fill: 'var(--aire-deep-blue)' }}
               angle={mobile ? 0 : -40}
               textAnchor={mobile ? 'middle' : 'end'}
               tickMargin={6}
@@ -103,7 +103,7 @@ export default function EndingStockChart({ monthly, allCustomers }) {
               ticks={transition.ticks}
               tickFormatter={formatUnits}
               width={48}
-              tick={{ fontSize: 10, fill: '#3A4369' }}
+              tick={{ fontSize: 10, fill: 'var(--aire-deep-blue)' }}
             />
             {/* Above the legend, which is drawn after it and would show through. */}
             <ChartTooltip

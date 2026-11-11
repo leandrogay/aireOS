@@ -43,7 +43,7 @@ const DASH = {
 // other eight (dataviz palette validator), and the shared colour reads as
 // "this Current line, with the blocks".
 const SELL_IN_CURRENT_COLOR = '#0B4FD9';
-const SELL_OUT_CURRENT_COLOR = '#00AEC2';
+const SELL_OUT_CURRENT_COLOR = '#009EB1';
 
 // `dot`: the line has a dot per month (the actual lines), so its sample does too.
 // `shape: 'line'` makes LineToggle show that line sample on its pill.
@@ -71,7 +71,7 @@ const SERIES = [
     overlay: true,
   },
   { key: 'sell_out_previous', group: 'Sell-out', label: 'Sell-out Forecast (Previous)', color: '#E02FA6', dash: DASH.previous },
-  { key: 'sell_out_initial', group: 'Sell-out', label: 'Initial Yearly Sell-out Forecast', color: '#F58A00', dash: DASH.initial },
+  { key: 'sell_out_initial', group: 'Sell-out', label: 'Initial Yearly Sell-out Forecast', color: '#D57800', dash: DASH.initial },
 ];
 
 // The lines on the chart: the overlay's two only while blocks are picked.
@@ -277,7 +277,7 @@ export default function SellInOutlookChart({
               dataKey={mobile ? 'month' : 'label'}
               interval={0}
               height={mobile ? 28 : 52}
-              tick={{ fontSize: 9, fill: '#3A4369' }}
+              tick={{ fontSize: 9, fill: 'var(--aire-deep-blue)' }}
               angle={mobile ? 0 : -40}
               textAnchor={mobile ? 'middle' : 'end'}
               tickMargin={6}
@@ -287,7 +287,7 @@ export default function SellInOutlookChart({
               domain={transition.domain}
               ticks={transition.ticks}
               width={48}
-              tick={{ fontSize: 10, fill: '#3A4369' }}
+              tick={{ fontSize: 10, fill: 'var(--aire-deep-blue)' }}
               tickFormatter={formatUnits}
             />
             <ChartTooltip

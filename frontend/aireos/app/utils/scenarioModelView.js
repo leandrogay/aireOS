@@ -29,7 +29,7 @@ const MODEL_INCLUDES_PROMOS = 'tier1_arimax';
 export const OFFICIAL_REFERENCE_SERIES = {
   key: 'officialCurrent',
   label: 'Official forecast',
-  color: '#9AA0B4',
+  color: '#888FA7',
   dash: '2 3',
   shape: 'circle',
   connectNulls: false,

@@ -50,7 +50,7 @@ export default function SellInTrendChart({ trend }) {
             dataKey={mobile ? 'month' : 'label'}
             interval={0}
             height={mobile ? 28 : 52}
-            tick={{ fontSize: 9, fill: '#3A4369' }}
+            tick={{ fontSize: 9, fill: 'var(--aire-deep-blue)' }}
             angle={mobile ? 0 : -40}
             textAnchor={mobile ? 'middle' : 'end'}
             tickMargin={6}
@@ -60,7 +60,7 @@ export default function SellInTrendChart({ trend }) {
             domain={transition.domain}
             ticks={transition.ticks}
             width={48}
-            tick={{ fontSize: 10, fill: '#3A4369' }}
+            tick={{ fontSize: 10, fill: 'var(--aire-deep-blue)' }}
             tickFormatter={formatUnits}
           />
           <ChartTooltip

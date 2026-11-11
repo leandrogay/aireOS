@@ -5,16 +5,18 @@
 // never render together. FPON previously used --aire-cream, and UNITY
 // --aire-lavender; both are nearly invisible against the white card/cream
 // page background, so UNITY is dusty rose, which sits with the violets.
+// Every colour here is at least 3:1 against the white card: SUPER and FINEST use
+// the chart-safe brand shades (globals.css), UNITY a deeper dusty rose (3.22:1).
 export const FORMAT_COLORS = {
   HYPER: 'var(--aire-deep-blue)',
-  SUPER: 'var(--aire-violet)',
-  FINEST: 'var(--aire-celest)',
-  UNITY: '#C98BA8',
+  SUPER: 'var(--aire-chart-violet)',
+  FINEST: 'var(--aire-chart-celest)',
+  UNITY: '#C17A9B',
   FPON: 'var(--aire-deep-blue)',
 };
 
 // Formats the catalog doesn't know ("UNKNOWN") still get a visible colour.
-export const FALLBACK_FORMAT_COLOR = 'var(--aire-violet)';
+export const FALLBACK_FORMAT_COLOR = 'var(--aire-chart-violet)';
 
 export function formatColor(format) {
   return FORMAT_COLORS[format] ?? FALLBACK_FORMAT_COLOR;
@@ -30,19 +32,21 @@ export const UNNAMED_FORMAT = 'Total';
 // AIRE brand colours and their shades first, then the other colours the forecast
 // lines and promotion types use. No cream or lavender: both are too light to
 // see against the white card and cream page (the same reason FORMAT_COLORS
-// dropped cream).
+// dropped cream). Each is at least 3:1 against white; the blue (#1F5F87) and
+// brown (#6F5E4B) slots are deeper than the forecast pills' so they stay apart
+// from the lighter celest and tan slots next to them.
 const CUSTOMER_COLORS = [
-  'var(--aire-violet)',
-  'var(--aire-celest)',
-  '#2E7BA6',
+  'var(--aire-chart-violet)',
+  'var(--aire-chart-celest)',
+  '#1F5F87',
   '#5C5299',
   '#0D9488',
   '#4F7A3A',
   '#7C3AED',
-  '#8A7460',
-  '#C4B6A6',
+  '#6F5E4B',
+  '#A28C73',
   '#C45C26',
-  '#E8922A',
+  '#CF7B16',
 ];
 
 // Past the palette, each customer still gets a colour of its own: this angle
@@ -50,7 +54,7 @@ const CUSTOMER_COLORS = [
 const GOLDEN_ANGLE_DEGREES = 137.508;
 
 function extraCustomerColor(position) {
-  return `hsl(${(position * GOLDEN_ANGLE_DEGREES) % 360} 55% 45%)`;
+  return `hsl(${(position * GOLDEN_ANGLE_DEGREES) % 360} 55% 36%)`;
 }
 
 /**

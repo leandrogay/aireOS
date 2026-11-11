@@ -155,6 +155,12 @@
   /* Brand PDF is inconsistent here: hex swatch says #E62A39 (red), RGB value says a
      light blue. Went with the RGB reading — flag to Sandra if this renders wrong. */
   --aire-celest: #A7D2F2;
+  /* Chart-safe shades of the two pale brand tints. Violet (2.59:1) and celest
+     (1.60:1) are too light to read as a line, bar or legend swatch on a white
+     card, so data marks use these deeper shades of the same hues instead; the
+     pale tokens stay for backgrounds, grid lines and area fills. */
+  --aire-chart-violet: #9088C2; /* 3.24:1 on white */
+  --aire-chart-celest: #4F95C4; /* 3.27:1 on white */
   /* Scenario builder: the Simulated line and everything that belongs to a
      draft (pins, tinted rows, pitch card), kept apart from the committed
      forecast colours in forecastView.js. */
