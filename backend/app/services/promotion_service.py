@@ -1,13 +1,33 @@
 import json
 from datetime import date, datetime
 from functools import lru_cache
+from zoneinfo import ZoneInfo
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
+from app.schemas.promotions import PromoType
 from app.services import forecast_refresh_events, sql
 from app.services.catalog_service import (
     get_or_create_retailers,
     get_or_create_stores,
 )
+
+
+# ============================================================
+# ERRORS
+# ============================================================
+
+
+class PromotionClashError(Exception):
+    """
+    The promotion would repeat an event (same dates, promo type and
+    mechanic) in stores that already run it. `stores` are the clashing
+    request refs, for the message.
+    """
+
+    def __init__(self, stores: list):
+        self.stores = stores
+        names = "; ".join(f"{ref.retailer} / {ref.store_name}" for ref in stores)
+        super().__init__(f"This combination already exists for {names}.")
 
 
 # ============================================================
@@ -213,6 +233,84 @@ def _add_stores_to_promotion(
             "store_ids": store_ids,
         },
     )
+
+
+# ============================================================
+# DUPLICATE EVENTS
+#
+# A store runs one event (period, promo type, mechanic) once.
+# Voucher and SKU changes do not make a new event. The check
+# runs inside the write's transaction, against every stored
+# promotion -- the overview only ever holds one page of them.
+# ============================================================
+
+
+def _store_key(retailer: str | None, store_code) -> str:
+    """retailer + store_code, the stores natural key (utils/promotionOverview promotionStoreKey)."""
+    return f"{(retailer or '').strip().lower()}|{str(store_code or '').strip()}"
+
+
+def _covered_store_keys(
+    conn: Connection,
+    promotion,
+    exclude_id: int | None = None,
+) -> set[str]:
+    """Store keys already running this promotion's event, other than `exclude_id`."""
+    rows = conn.execute(
+        text(
+            """
+            SELECT DISTINCT
+                r.retailer_name,
+                CAST(s.store_code AS text) AS store_code
+
+            FROM promotions p
+
+            JOIN promotion_stores pst
+                ON pst.promotion_id = p.promotion_id
+
+            JOIN stores s
+                ON s.store_id = pst.store_id
+
+            JOIN retailers r
+                ON r.retailer_id = s.retailer_id
+
+            WHERE
+                p.period_start = :period_start
+                AND p.period_end = :period_end
+                AND CAST(p.promo_type AS text) = :promo_type
+                AND TRIM(COALESCE(p.promotion_mechanic, '')) = :mechanic
+                AND (
+                    CAST(:exclude_id AS integer) IS NULL
+                    OR p.promotion_id <> CAST(:exclude_id AS integer)
+                )
+            """
+        ),
+        {
+            "period_start": promotion.period_start,
+            "period_end": promotion.period_end,
+            "promo_type": promotion.promo_type,
+            "mechanic": (promotion.promotion_mechanic or "").strip(),
+            "exclude_id": exclude_id,
+        },
+    ).all()
+
+    return {_store_key(retailer, code) for retailer, code in rows}
+
+
+def _split_covered_stores(
+    conn: Connection,
+    promotion,
+    exclude_id: int | None = None,
+) -> tuple[list, list]:
+    """The request's store refs as (new, already running this event)."""
+    covered = _covered_store_keys(conn, promotion, exclude_id)
+    new, clashing = [], []
+    for ref in promotion.stores:
+        if _store_key(ref.retailer, ref.store_code) in covered:
+            clashing.append(ref)
+        else:
+            new.append(ref)
+    return new, clashing
 
 
 # ============================================================
@@ -432,7 +530,19 @@ def _fetch_promotion(
 def create_promotion(
     promotion,
 ) -> dict:
+    """
+    Insert one promotion with its store and SKU links, in one transaction.
+
+    Stores already running this exact event are left out rather than
+    duplicated and returned as `skipped_stores`; when every store is
+    already running it, PromotionClashError and nothing is written.
+    """
     with _get_engine().begin() as conn:
+        new_stores, skipped = _split_covered_stores(conn, promotion)
+
+        if not new_stores:
+            raise PromotionClashError(skipped)
+
         promotion_id = conn.execute(
             text(
                 """
@@ -472,7 +582,7 @@ def create_promotion(
         _add_stores_to_promotion(
             conn,
             promotion_id,
-            promotion.stores,
+            new_stores,
         )
 
         _add_skus_to_promotion(
@@ -485,6 +595,10 @@ def create_promotion(
             conn,
             promotion_id,
         )
+        created["skipped_stores"] = [
+            {"retailer": ref.retailer, "store_name": ref.store_name, "store_code": ref.store_code}
+            for ref in skipped
+        ]
         refresh_request_id = forecast_refresh_events.record_change(
             conn, "promotion_change", f"promotion:{promotion_id}"
         )
@@ -683,6 +797,403 @@ def get_promotions() -> list[dict]:
 
 
 # ============================================================
+# PROMOTION OVERVIEW PAGE
+#
+# The Promotions page lists one page at a time: filtered,
+# searched, sorted and paged here in SQL, because the table
+# grows with every event x store and each row carries its
+# store and SKU lists. Only the page's rows are aggregated.
+#
+# Older copies of one promotion (same event and the same store
+# set) are hidden, newest promotion_id kept -- read-only, the
+# rows themselves are never changed. New copies cannot appear:
+# create and update refuse a store already running the event.
+# ============================================================
+
+
+PROMOTION_SORT_FIELDS = ("period_start", "period_end")
+SORT_DIRECTIONS = ("asc", "desc")
+PROMOTION_STATUSES = ("upcoming", "active", "past")
+
+# What the overview shows for each promo type, so a search for
+# "side offer" finds side_offer. Mirrors PROMO_TYPES and
+# promoTypeLabel in app/utils/promotionForm.js.
+_PROMO_TYPE_LABELS = {
+    "monthly": "Monthly",
+    "side_offer": "Side Offer",
+    "bundle": "Bundle",
+    "others": "Others",
+}
+_STATUS_LABELS = {"upcoming": "Upcoming", "active": "Active", "past": "Past"}
+
+# Every word typed must match somewhere; more than this many
+# words is not a search a person types.
+_MAX_SEARCH_WORDS = 10
+
+_VISIBLE_PROMOTIONS_CTE = """
+    store_sets AS (
+        SELECT
+            p.promotion_id,
+            ROW_NUMBER() OVER (
+                PARTITION BY
+                    p.period_start,
+                    p.period_end,
+                    CAST(p.promo_type AS text),
+                    TRIM(COALESCE(p.promotion_mechanic, '')),
+                    store_keys.store_set
+                ORDER BY
+                    p.promotion_id DESC
+            ) AS copy_rank
+
+        FROM promotions p
+
+        LEFT JOIN LATERAL (
+            SELECT
+                string_agg(DISTINCT link.store_key, ',' ORDER BY link.store_key) AS store_set
+
+            FROM (
+                SELECT
+                    LOWER(TRIM(r.retailer_name)) || '|' || TRIM(CAST(s.store_code AS text)) AS store_key
+
+                FROM promotion_stores pst
+
+                JOIN stores s
+                    ON s.store_id = pst.store_id
+
+                JOIN retailers r
+                    ON r.retailer_id = s.retailer_id
+
+                WHERE
+                    pst.promotion_id = p.promotion_id
+            ) AS link
+        ) AS store_keys ON TRUE
+    ),
+
+    visible AS (
+        SELECT promotion_id
+        FROM store_sets
+        WHERE copy_rank = 1
+    )
+"""
+
+_STORE_LINK_EXISTS = """
+    EXISTS (
+        SELECT 1
+
+        FROM promotion_stores pst
+
+        JOIN stores s
+            ON s.store_id = pst.store_id
+
+        JOIN retailers r
+            ON r.retailer_id = s.retailer_id
+
+        WHERE
+            pst.promotion_id = p.promotion_id
+            AND ({condition})
+    )
+"""
+
+# Status against the Singapore calendar day, as the overview
+# shows it (promotionStatus in utils/promotionOverview.js):
+# before the start is upcoming, after the end is past.
+_UPCOMING_SQL = "(p.period_start IS NOT NULL AND CAST(:today AS date) < p.period_start)"
+_ENDED_SQL = "(p.period_end IS NOT NULL AND CAST(:today AS date) > p.period_end)"
+_STATUS_SQL = {
+    "upcoming": _UPCOMING_SQL,
+    "past": f"(NOT {_UPCOMING_SQL} AND {_ENDED_SQL})",
+    "active": f"(NOT {_UPCOMING_SQL} AND NOT {_ENDED_SQL})",
+}
+
+
+def _singapore_today() -> date:
+    return datetime.now(ZoneInfo("Asia/Singapore")).date()
+
+
+def _promo_type_label(value: str) -> str:
+    base = value.removeprefix("carton_")
+    label = _PROMO_TYPE_LABELS.get(base, value)
+    return f"Carton {label}" if value.startswith("carton_") else label
+
+
+def _like_pattern(word: str) -> str:
+    """`word` anywhere, with LIKE's own wildcards taken literally."""
+    escaped = word.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
+
+def _search_clauses(search: str, params: dict) -> list[str]:
+    """
+    One clause per word typed, each matching what a row shows:
+    retailer (slug or its label) or the customer that owns it, store,
+    period, promo type label, mechanic, voucher, status label.
+    """
+    words = search.lower().split()[:_MAX_SEARCH_WORDS]
+    clauses = []
+
+    for index, word in enumerate(words):
+        name = f"word_{index}"
+        params[name] = _like_pattern(word)
+        like = f"ILIKE :{name} ESCAPE '\\'"
+
+        # The owning customer's name too: a retailer keeps its slug when
+        # its customer is renamed (sheng_siong_offline under Sheng_Shiong),
+        # so the slug alone misses the name people type.
+        customer_match = f"""
+            EXISTS (
+                SELECT 1
+
+                FROM customer_retailers cr
+
+                JOIN customers c
+                    ON c.customer_id = cr.customer_id
+
+                WHERE
+                    cr.retailer_id = r.retailer_id
+                    AND (
+                        c.customer_name {like}
+                        OR REPLACE(c.customer_name, '_', ' ') {like}
+                    )
+            )
+        """
+        options = [
+            _STORE_LINK_EXISTS.format(condition=(
+                f"r.retailer_name {like}"
+                f" OR REPLACE(r.retailer_name, '_', ' ') {like}"
+                f" OR s.store_name {like}"
+                f" OR {customer_match}"
+            )),
+            f"p.period_label {like}",
+            f"p.promotion_mechanic {like}",
+            f"p.voucher {like}",
+        ]
+
+        types = [
+            promo_type for promo_type in PromoType.__args__
+            if word in _promo_type_label(promo_type).lower()
+        ]
+        if types:
+            params[f"{name}_types"] = types
+            options.append(f"CAST(p.promo_type AS text) = ANY(CAST(:{name}_types AS text[]))")
+
+        options.extend(
+            _STATUS_SQL[status]
+            for status, label in _STATUS_LABELS.items()
+            if word in label.lower()
+        )
+
+        clauses.append("(" + " OR ".join(options) + ")")
+
+    return clauses
+
+
+def _filter_clauses(filters: dict, params: dict) -> list[str]:
+    """The filter bar's choices; an empty list means "all"."""
+    clauses = []
+
+    for key, column in (
+        ("retailer", "r.retailer_name"),
+        ("store", "s.store_name"),
+    ):
+        if filters[key]:
+            params[key] = filters[key]
+            clauses.append(_STORE_LINK_EXISTS.format(
+                condition=f"{column} = ANY(CAST(:{key} AS text[]))"
+            ))
+
+    for key, column in (
+        ("period", "p.period_label"),
+        ("promo_type", "CAST(p.promo_type AS text)"),
+        ("mechanic", "p.promotion_mechanic"),
+    ):
+        if filters[key]:
+            params[key] = filters[key]
+            clauses.append(f"{column} = ANY(CAST(:{key} AS text[]))")
+
+    if filters["status"]:
+        clauses.append("(" + " OR ".join(_STATUS_SQL[value] for value in filters["status"]) + ")")
+
+    return clauses
+
+
+def _clamped_offset(offset: int, limit: int, total: int) -> int:
+    """`offset`, or the start of the last page when it is past the end."""
+    if offset < total:
+        return offset
+    return max(0, (total - 1) // limit) * limit
+
+
+def list_promotion_page(
+    *,
+    limit: int,
+    offset: int = 0,
+    search: str = "",
+    sort: str = "period_start",
+    direction: str = "desc",
+    retailer: list[str] | str = "",
+    store: list[str] | str = "",
+    period: list[str] | str = "",
+    promo_type: list[str] | str = "",
+    mechanic: list[str] | str = "",
+    status: list[str] | str = "",
+    today: date | None = None,
+) -> dict:
+    """
+    One page of the promotion overview, plus how many match (`total`) and
+    how many there are before filters and search (`unfiltered_total`).
+
+    An `offset` past the end is moved back to the last page rather than
+    returning an empty one, so deleting the last row of the last page lands
+    on the new last page; the offset actually used is returned. Ties on the
+    sorted date go newest promotion first, either direction.
+    """
+    if sort not in PROMOTION_SORT_FIELDS:
+        raise ValueError(f"sort must be one of {', '.join(PROMOTION_SORT_FIELDS)}")
+    if direction not in SORT_DIRECTIONS:
+        raise ValueError(f"direction must be one of {', '.join(SORT_DIRECTIONS)}")
+    def values(choice: list[str] | str) -> list[str]:
+        if isinstance(choice, str):
+            return [choice] if choice else []
+        return list(choice)
+
+    if any(value not in PROMOTION_STATUSES for value in values(status)):
+        raise ValueError(f"status must be one of {', '.join(PROMOTION_STATUSES)}")
+
+    params: dict = {"today": today or _singapore_today()}
+    filters = {
+        "retailer": values(retailer),
+        "store": values(store),
+        "period": values(period),
+        "promo_type": values(promo_type),
+        "mechanic": values(mechanic),
+        "status": values(status),
+    }
+    where = _filter_clauses(filters, params) + _search_clauses(search, params)
+    where_sql = " AND ".join(where) if where else "TRUE"
+
+    with _get_engine().connect() as conn:
+        counts = conn.execute(
+            text(
+                f"""
+                WITH {_VISIBLE_PROMOTIONS_CTE}
+
+                SELECT
+                    (SELECT COUNT(*) FROM visible) AS unfiltered_total,
+                    (
+                        SELECT COUNT(*)
+                        FROM promotions p
+                        JOIN visible v
+                            ON v.promotion_id = p.promotion_id
+                        WHERE {where_sql}
+                    ) AS total
+                """
+            ),
+            params,
+        ).mappings().first()
+
+        total = int(counts["total"])
+        offset = _clamped_offset(offset, limit, total)
+
+        # sort and direction were checked against the tuples above,
+        # so they are trusted fragments here.
+        rows = conn.execute(
+            text(
+                f"""
+                WITH {_VISIBLE_PROMOTIONS_CTE}
+
+                SELECT
+                    {_PROMOTION_COLUMNS}
+
+                FROM promotions p
+
+                JOIN visible v
+                    ON v.promotion_id = p.promotion_id
+
+                WHERE {where_sql}
+
+                ORDER BY
+                    p.{sort} {direction.upper()},
+                    p.promotion_id DESC
+
+                LIMIT :limit
+                OFFSET :offset
+                """
+            ),
+            {**params, "limit": limit, "offset": offset},
+        ).mappings().all()
+
+    return {
+        "promotions": [dict(row) for row in rows],
+        "total": total,
+        "unfiltered_total": int(counts["unfiltered_total"]),
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+_STORE_OPTION_SQL = """
+    WITH {cte}
+
+    SELECT DISTINCT {column} AS value
+
+    FROM visible v
+
+    JOIN promotion_stores pst
+        ON pst.promotion_id = v.promotion_id
+
+    JOIN stores s
+        ON s.store_id = pst.store_id
+
+    JOIN retailers r
+        ON r.retailer_id = s.retailer_id
+
+    WHERE {column} IS NOT NULL AND {column} <> ''
+
+    ORDER BY value
+"""
+
+_PROMOTION_OPTION_SQL = """
+    WITH {cte}
+
+    SELECT DISTINCT {column} AS value
+
+    FROM promotions p
+
+    JOIN visible v
+        ON v.promotion_id = p.promotion_id
+
+    WHERE {column} IS NOT NULL AND {column} <> ''
+
+    ORDER BY value
+"""
+
+# Filter key -> (query template, column). Trusted fragments only.
+_FILTER_OPTION_COLUMNS = {
+    "retailers": (_STORE_OPTION_SQL, "r.retailer_name"),
+    "stores": (_STORE_OPTION_SQL, "s.store_name"),
+    "periods": (_PROMOTION_OPTION_SQL, "p.period_label"),
+    "types": (_PROMOTION_OPTION_SQL, "CAST(p.promo_type AS text)"),
+    "mechanics": (_PROMOTION_OPTION_SQL, "p.promotion_mechanic"),
+}
+
+
+def get_promotion_filter_options() -> dict:
+    """
+    The values the overview's filter dropdowns offer, taken from every
+    listed promotion rather than the page on screen.
+    """
+    with _get_engine().connect() as conn:
+        return {
+            key: list(
+                conn.execute(
+                    text(template.format(cte=_VISIBLE_PROMOTIONS_CTE, column=column))
+                ).scalars().all()
+            )
+            for key, (template, column) in _FILTER_OPTION_COLUMNS.items()
+        }
+
+
+# ============================================================
 # PROMOTION READ ONE
 # ============================================================
 
@@ -725,6 +1236,10 @@ def update_promotion(
 
         if existing is None:
             return None
+
+        _, clashing = _split_covered_stores(conn, promotion, exclude_id=promotion_id)
+        if clashing:
+            raise PromotionClashError(clashing)
 
         # updated_at is set by the trg_promotions_updated_at
         # trigger, so it is not listed here.

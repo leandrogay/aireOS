@@ -55,7 +55,7 @@ function summaryOf(options, values, allLabel, noneMeansAll) {
  *   allLabel?: string,
  *   noneMeansAll?: boolean,
  *   placeholder?: string,
- *   look?: 'field' | 'filter' | 'compact',
+ *   look?: 'field' | 'filter' | 'compact' | 'outline',
  *   searchable?: boolean,
  *   searchPlaceholder?: string,
  *   listClassName?: string,

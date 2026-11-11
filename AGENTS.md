@@ -107,8 +107,10 @@ calendar, skeleton) plus the team kits:
   `MonthRangeCalendar` (helpers in `utils/datePicker.js`).
 - **Toggles:** `SegmentedControl`, `LineToggle`, `ToggleButton`, `ToggleField`.
 - **Tables:** `DataTable` → `TableGrid` (+ `SortHeader`, `TableSearch`, `TablePagination`,
-  `TableSkeleton`), `ExpandableRow`, `RowActions`, `StatusPill`/`StatusBadge`, `MobileRecordCard`,
-  `HeaderCheckboxFilter`; hooks `useExpandedRows`, `useConfirmAction` + `ConfirmDialog`.
+  `TableSkeleton`), `TableRow`, `ExpandableRow`, `RowActions`, `StatusPill`/`StatusBadge`, `MobileRecordCard`
+  in a `RecordCardList`, `HeaderCheckboxFilter`; hooks `useExpandedRows`, `useConfirmAction` + `ConfirmDialog`.
+  Rows animate as the data changes (`ui/rowMotion.js`, timing `TABLE_ROWS` in `config/transitions.js`): list a
+  TableGrid's rows as `TableRow`/`ExpandableRow` and phone cards in `RecordCardList`, or they just snap.
 - **Filters:** `FilterBar` holding `FilterSelect` / `MultiSelectDropdown` / `PriceRangeFilter`
   (closed look from `filterControl.js`).
 - **Loading:** `PageSkeleton` + `CardSkeleton`, `ChartSkeletonFrame` → `BarChartSkeleton` /
@@ -173,8 +175,9 @@ Invariants that cross domains:
   `singaporeToday()` instead of `new Date()` for "today / this month / this year". Bare `YYYY-MM-DD`
   dates are calendar dates and are never shifted. (Exceptions by design: DOH month boundaries in
   `settings/doh.py`, the date printed on assistant reports, the assistant's "today" (so "this month" /
-  "next month" in a question mean the Singapore month) and `forecast_summary.py`'s month-to-date
-  check are Singapore days.)
+  "next month" in a question mean the Singapore month), `forecast_summary.py`'s month-to-date
+  check and the promotion overview's status (`promotion_service._STATUS_SQL`, as `promotionStatus` shows
+  it) are Singapore days.)
 
 ---
 
@@ -273,16 +276,23 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
    (`/api/sales/skus`) so the Comparison panel can split the average-price change.
 
 **Promotions** (`app/promotions/page.js`)
-1. On mount: `getRetailers`, `getStores`, `getSkuRanges`, `getPromotions` (all in `promotionsApi.js`).
+1. On mount: `getRetailers`, `getStores`, `getSkuRanges` (all in `promotionsApi.js`). The overview
+   (`PromotionList`) reads one page at a time, `GET /api/promotions` through `usePromotionPage` and its
+   dropdowns through `usePromotionFilterOptions`; the backend filters, searches, sorts and pages
+   (`promotion_service.list_promotion_page`) and hides older copies of a promotion (same event, same
+   stores) without changing the rows. The page bumps a refresh key after a save or delete.
 2. Form state lives in one `form` object; `validatePromotionForm` → `buildPromotionPayload`
    produces `{ stores:[{retailer, store_name, store_code, store_format}], period_start,
    period_end, period_label, promo_type, promotion_mechanic, voucher, skus:[{sku, sku_range}] }`.
 3. `POST /api/promotions` → Pydantic `PromotionCreate` (date order, unique stores, unique skus)
-   → `promotion_service.create_promotion` in **one transaction**: insert `promotions` →
+   → `promotion_service.create_promotion` in **one transaction**: leave out stores already running the
+   event (same period, type, trimmed mechanic; returned as `skipped_stores`, 409 when that is every store) →
+   insert `promotions` →
    `get_or_create_retailers/stores` for the whole batch → insert `promotion_stores` → resolve `sku_range` to
    catalog `skus` → upsert `promotion_skus` → `_fetch_promotion` returns the row with nested
    `stores[]` / `skus[]` via `json_agg`.
-4. `PUT` replaces link rows wholesale; `DELETE` removes links then the promotion.
+4. `PUT` replaces link rows wholesale (409 if a store already runs the event); `DELETE` removes links
+   then the promotion.
    The response `promotion` object is what `formFromPromotion` reads back for edit.
 
 ### 3.4 Contracts that must stay in sync across the stack
@@ -292,6 +302,7 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | `PromoType` Literal in `schemas/promotions.py` and `promo_type_enum` in Postgres | `PROMO_TYPES` in `app/utils/promotionForm.js` |
 | `PromotionBase` field names | `buildPromotionPayload` / `formFromPromotion` |
 | `_PROMOTION_COLUMNS` (nested `stores`, `skus`) | `PromotionList.jsx`, `promotionOverview.js` |
+| `GET /api/promotions` (`promotion_service.list_promotion_page`: `limit` 1-100, `offset`, `search`, `sort` `PROMOTION_SORT_FIELDS`, `direction`, filters `retailer`/`store`/`period`/`promo_type`/`mechanic`/`status` `PROMOTION_STATUSES`; returns `promotions`, `total`, `unfiltered_total`, `limit`, `offset`; search labels `_PROMO_TYPE_LABELS` / `_STATUS_LABELS`), `GET /api/promotions/filter-options`, create `skipped_stores` and the 409 `PromotionClashError` | `promotionsApi.getPromotionPage` / `getPromotionFilterOptions` / `createPromotion`, `hooks/usePromotionPage.js`, `hooks/usePromotionFilterOptions.js`, `PromotionList.jsx` (`EMPTY_FILTERS`), `promotions/columns.js` (`sortField`s), `PROMO_TYPES` / `promoTypeLabel` and `promotionStatus` (the labels and status rule search and filter by) |
 | `sales.py` query-param names (`start_date`, `end_date`, `granularity`, `customer`, `customers` (comma-separated, on `default-date-range` / `monthly-only`), `store`, `sku` …) | `URLSearchParams` keys in `hooks/*.js` and `services/salesApi.js` |
 | `sellout_service.get_customer_options` (`/api/sales/customer-options`: `value` slug, `label`, `customer_id` through `customer_retailers`, or null) | `useCustomerOptions.js`, `storeFormats.customerColorOrder` (colours matched by `customer_id`, not name), `CustomerSelector.jsx` |
 | `sellout_service.get_default_date_range` (`customers` → latest / earliest across them: `start`, `end`, `earliest_start`, `latest_week_start`) | `useDefaultDateRange.js`, `utils/dataBounds.js` (`isWithinData`), `MonthRangeCalendar.jsx`, `DateRangeControl.jsx`, `CompareControl.jsx`, `app/dashboard/page.js` (saved Period / Compare to fall back when outside) |
@@ -323,6 +334,7 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | `GET /api/inventory/customers/{id}/sell-in-outlook?block_id=` (`get_sell_in_outlook(block_ids=)`: per month `sell_in_with_blocks` / `sell_out_with_blocks`, top-level `building_blocks[]` of `block_id`, `name`, `sell_out_change`); `scenario/block_effects` rules = `scenarioEngine.js` (`upliftDeltaCells`, `unitsDeltaCells`, `floorAtZero`) | `inventoryApi.getSellInOutlook` (`blockIds`), `useSellInOutlook`, `hooks/useSavedBuildingBlocks.js`, `utils/buildingBlocksOverlay.js`, `BuildingBlocksOverlay.jsx`, `SellInOutlookChart.jsx` (`showBlocks`) |
 | `GET /api/forecast/initial-status` (`forecast_service.get_initial_status`: `years[]` of `forecast_year`, `lock_at`, `refreshed_at`, `locked`, from `aire_forecasting_initial_meta`; best effort, `[]` on error) | `forecastApi.getForecastInitialStatus`, `hooks/useForecastInitialStatus.js`, `utils/forecastLineText.js` (`initialStatusNotes`), `ForecastLegendFooter.jsx` |
 | `GET /api/forecast/refresh-status` (`forecast_refresh_worker.refresh_status_best_effort`: `{ updating, since }` from pending/running `forecast_refresh_requests`; false on error or while event refresh is off) | `forecastApi.getForecastRefreshStatus`, `hooks/useForecastRefreshStatus.js` (60 s re-check only while updating), `utils/forecastLineText.js` (`forecastUpdatingBadge`, `nextStatusCheckDelay`), `ForecastLegendFooter.jsx` |
+| `GET /api/uploads/history` (`upload_history.list_history`: `limit` 1-100, `offset`, `search`, `sort` `HISTORY_SORT_FIELDS`, `direction`; returns `uploads`, `total`, `unfiltered_total`, `limit`, `offset` (moved back to the last page when past the end); `STATUS_SORT_ORDER`) | `uploadApi.fetchUploadHistory`, `hooks/useUploadHistory.js`, `RecentUploads.jsx` (pages locally through a block of `config/upload.js` `UPLOAD_HISTORY_BLOCK` rows, at most the `limit` max, via `utils/tableView.js` `blockQuery`/`pageFromBlock`), `upload/columns.js` (`sortField`s) |
 | `HTTPException.detail` shapes | `parseApiError()` |
 
 When you change the left column, grep the right column in the same PR.
@@ -443,14 +455,14 @@ Migrate these only when you are already in the file for other work (CLAUDE.md §
 
 - **Fetch wrappers.** `promotionsApi.request` is the one wrapper. Still on their own: `forecastApi.js`
   (own `request()`), `mappingApi.js` (`request(baseUrl, …)`, left over from the deleted upload2 harness),
-  raw `fetch` in `uploadApi.js` (`/check`, history), the hooks `useAssistant`, `useCustomerOptions`,
+  raw `fetch` in `uploadApi.js` (`/check`), the hooks `useAssistant`, `useCustomerOptions`,
   `useDataFreshness`, and the components
   `dashboard/DashboardFilters`, `dashboard/SkuRanking`, `assistant/AssistantMessage`.
 - **Router logic.** `mappings.py` reads GCS (`storage.download_json`, `list_mapping_fingerprints`,
   `download_bytes`) to build review packets; that belongs in a service. Don't add a third router like it.
 - **Oversized components** (over ~300 lines): `ForecastChart` (828), `ui/DateRangePicker` (804),
   `PromotionForm` (683), `ScenarioBuilder` (590), `SkuRanking` (542), `app/dashboard/page.js` (525),
-  `AssistantMessage` (491), `MappingReviewPanel` (538), `app/promotions/page.js` (477), `SkuForm` (474);
+  `AssistantMessage` (491), `MappingReviewPanel` (538), `app/promotions/page.js` (382), `SkuForm` (474);
   360-420: `FieldTable`, `UploadProvider`, `PromotionsSection`, `CustomerStep` (413), `StepSettings`,
   `AssistantWidget`, `Sidebar`; 300-345: `PromotionEditor`, `RevenueSummaryCards`, `SellInOutlookChart`,
   `FieldMethodSettings`, `app/upload/page.js`, `ChannelSplit`, `UploadFileRow`. (`ui/chart.jsx` is shadcn-generated and the
@@ -461,9 +473,10 @@ Migrate these only when you are already in the file for other work (CLAUDE.md §
   `askDigest`. Allowed (identity is a correctness need): `UploadProvider`'s context actions, and the
   loaders in `app/upload`, `app/mappings`, `app/promotions`, `MappingReviewPanel`'s `runChecks` (its SKU auto-test effect lists it) and `useToast`'s `dismissToast` (read by
   `ui/Toast`'s timer effect), which effects list as dependencies.
-- **Route tests incomplete.** `promotions.py` has only `/revenue-estimate` (in `test_promotion_pricing.py`):
-  CRUD and `/health/db` are untested. `uploads.py` has `/check` and `/load[/preview]` (in
-  `test_upload_check.py`, `test_upload_loading.py`): `POST ""`, `/history`, `/rollback` and
+- **Route tests incomplete.** `promotions.py` has `/revenue-estimate` (in `test_promotion_pricing.py`) and the
+  list, `/filter-options` and the create/update 409 (in `test_promotions_router.py`): `GET /{id}`, `DELETE` and
+  `/health/db` are untested. `uploads.py` has `/check`, `/load[/preview]` and `/history` (in
+  `test_upload_check.py`, `test_upload_loading.py`, `test_upload_history.py`): `POST ""`, `/rollback` and
   `DELETE /source` are untested. (`internal_forecast.py` is covered in `test_forecast_refresh_worker.py`.)
 - **`scenario_promotions` has no migration on `main`.** Its DDL is
   `backend/migrations/007_create_scenario_promotions.sql` on `feat/AO5-18&19-promotion-uplift-settings`

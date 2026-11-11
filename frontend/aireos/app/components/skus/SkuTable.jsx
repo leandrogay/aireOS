@@ -5,6 +5,7 @@ import TableSearch from '@/components/ui/TableSearch';
 import SkuRow from '@/components/skus/SkuRow';
 import { formatSkuPrice, skuRowActions } from '@/components/skus/SkuRow';
 import MobileRecordCard from '@/components/ui/MobileRecordCard';
+import RecordCardList from '@/components/ui/RecordCardList';
 import RowActions from '@/components/ui/RowActions';
 
 import { SKU_COLUMNS } from './columns';
@@ -51,7 +52,7 @@ export default function SkuTable({
       columns={SKU_COLUMNS}
       emptyState={!loading && totalCount > 0 && total === 0 ? 'No SKUs match the current search and filters.' : null}
       mobileContent={
-        <div className="grid gap-2">
+        <RecordCardList>
           {rows.map((sku) => (
             <MobileRecordCard
               key={sku.sku}
@@ -67,7 +68,7 @@ export default function SkuTable({
               ]}
             />
           ))}
-        </div>
+        </RecordCardList>
       }
     >
       {rows.map((sku) => (

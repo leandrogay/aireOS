@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { inputClass } from '@/components/ui/formStyles';
+import TableRow from '@/components/ui/TableRow';
 import { getPromoUpliftHistory } from '@/app/services/promoUpliftsApi';
 import { changedByLabel, parseUpliftInput, scopeLabel, sourceTone } from '@/app/utils/promoUpliftSettings';
 import { formatPct, sourceLabel } from '@/app/utils/scenarioPromotions';
@@ -152,7 +153,7 @@ export default function PromoUpliftDetails({ row, shownUplift, moments, startEdi
           {history.rows.length ? (
             <TableGrid variant="nested" columns={HISTORY_COLUMNS} minWidth="46rem">
               {history.rows.map((entry) => (
-                <tr key={entry.id} className="h-11 border-b border-lavander/80 last:border-b-0">
+                <TableRow key={entry.id} className="h-11 border-b border-lavander/80 last:border-b-0">
                   <td className="px-4 py-2 tabular-nums">
                     {/* One line, so the Current pill never runs into Applies to. */}
                     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
@@ -168,7 +169,7 @@ export default function PromoUpliftDetails({ row, shownUplift, moments, startEdi
                   <td className="truncate px-4 py-2 text-muted-foreground" title={entry.note ?? undefined}>
                     {entry.note || '—'}
                   </td>
-                </tr>
+                </TableRow>
               ))}
             </TableGrid>
           ) : null}

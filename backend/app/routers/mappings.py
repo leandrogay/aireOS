@@ -175,7 +175,7 @@ async def list_mappings():
     def collect() -> list[dict]:
         packets = []
         upload_counts = {}
-        for upload in storage.list_uploads(limit=None):
+        for upload in storage.list_uploads():
             fingerprint = upload.get("mapping_fingerprint")
             if fingerprint:
                 upload_counts[fingerprint] = upload_counts.get(fingerprint, 0) + 1

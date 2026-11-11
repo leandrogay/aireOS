@@ -2,6 +2,7 @@
 
 import RowActions from '@/components/ui/RowActions';
 import TableGrid from '@/components/ui/TableGrid';
+import TableRow from '@/components/ui/TableRow';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 
 import { RETAILER_COLUMNS } from './columns';
@@ -27,7 +28,7 @@ export default function RetailerTable({ retailers, inset, customerName, actionsF
   return (
     <TableGrid variant="nested" columns={RETAILER_COLUMNS} inset={inset} minWidth="36rem">
       {retailers.map((retailer) => (
-        <tr key={retailer.retailer_id} className="h-11 border-b border-lavander/80 last:border-b-0">
+        <TableRow key={retailer.retailer_id} className="h-11 border-b border-lavander/80 last:border-b-0">
           {/* The stored name sits under the label: it is what uploads and
               mappings match on, and on one line it was cut off. */}
           <td className="px-4 py-2" title={retailer.retailer_name}>
@@ -44,7 +45,7 @@ export default function RetailerTable({ retailers, inset, customerName, actionsF
               actions={actionsFor(retailer)}
             />
           </td>
-        </tr>
+        </TableRow>
       ))}
     </TableGrid>
   );

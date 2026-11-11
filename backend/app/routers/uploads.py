@@ -1,5 +1,4 @@
 import asyncio
-import datetime
 from typing import List
 
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Query
@@ -12,6 +11,7 @@ from app.services import generate_mapping
 from app.services import apply_contract as contract_application
 from app.services import ingestion_service, sellout_ingestion, sellout_service
 from app.services import upload_check
+from app.services import upload_history as upload_history_service
 from app.services import upload_loading
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
@@ -72,56 +72,6 @@ def resolve_and_apply_mapping(
         mapping_fingerprint=resolved.get("fingerprint"),
     )
     return resolved
-
-
-def _list_upload_history(limit: int, months: int | None = None) -> list[dict]:
-    """Return uploads whose referenced mapping still exists.
-
-    An upload whose mapping was discarded points at a fingerprint with no
-    GCS contract, so it is omitted rather than presented as an addressable
-    mapping or as a new review state.
-
-    ``months`` keeps only uploads from that many calendar months back, counted
-    from now in UTC.
-    """
-    since = None
-    if months is not None:
-        since = storage.months_before(datetime.datetime.now(datetime.timezone.utc), months)
-
-    uploads = storage.list_uploads(limit, since=since)
-    available_fingerprints = {
-        *storage.list_mapping_fingerprints("confirmed"),
-        *storage.list_mapping_fingerprints("pending"),
-    }
-
-    visible = [
-        {
-            **upload,
-            "mapping_available": bool(upload.get("mapping_fingerprint")),
-        }
-        for upload in uploads
-        if not upload.get("mapping_fingerprint")
-        or upload["mapping_fingerprint"] in available_fingerprints
-    ]
-    blob_paths = [
-        upload["blob_path"]
-        for upload in visible
-        if upload.get("blob_path")
-    ]
-    states = (
-        ingestion_service.upload_states(blob_paths)
-        if sellout_service.cloud_sql_loading_enabled()
-        else {}
-    )
-    return [
-        {
-            **upload,
-            **states.get(upload.get("blob_path"), {}),
-            "rollback_available": states.get(upload.get("blob_path"), {}).get("status")
-            == "completed",
-        }
-        for upload in visible
-    ]
 
 
 @router.post("")
@@ -248,12 +198,24 @@ async def check_files(files: List[UploadFile] = File(...)):
 
 @router.get("/history")
 async def upload_history(
-    limit: int = Query(default=50, ge=1, le=200),
-    months: int | None = Query(default=None, ge=1, le=24),
+    limit: int = Query(default=25, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    search: str = Query(default="", max_length=200),
+    sort: str = "status",
+    direction: str = "asc",
 ):
-    """Return recent GCS uploads with only live mapping references."""
+    """One page of recent GCS uploads, searched and sorted (upload_history.list_history)."""
     try:
-        return {"uploads": await asyncio.to_thread(_list_upload_history, limit, months)}
+        return await asyncio.to_thread(
+            upload_history_service.list_history,
+            limit=limit,
+            offset=offset,
+            search=search,
+            sort=sort,
+            direction=direction,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(
             status_code=503,

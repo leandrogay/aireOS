@@ -193,6 +193,12 @@
     /* One grey scrollbar for the page and every panel inside it:
        scrollbar-color is inherited, so nested scroll areas pick it up. */
     scrollbar-color: var(--scrollbar-thumb) transparent;
+    /* Keep the scrollbar's space even when the page doesn't scroll, so a
+       table growing past the fold doesn't narrow the page and shift every card. */
+    scrollbar-gutter: stable;
+    /* The gutter shows the root background, not <main>'s. Paint it the page
+       cream (PageLayout) so the reserved strip doesn't read as a white bar. */
+    background-color: var(--aire-cream);
   }
   /* Recharts draws axis ticks as SVG text, out of reach of a className.
      Fixed-width digits keep the value axis ("$1.2k" / "$11.8k") evenly set

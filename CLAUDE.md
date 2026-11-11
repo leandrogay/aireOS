@@ -171,7 +171,8 @@ Every error the client can see is `HTTPException(status_code=..., detail=...)`. 
   `lucide-react`, no second icon library).
 - Animation uses `motion/react` (the only animation library) or the card cascade
   (`lib/cardCascade` via `PageTransition` / `ui/TabTransition`, timing in `app/config/transitions.js`).
-  Cards spring in one by one; no plain fades. Always respect `useReducedMotion`.
+  Cards spring in one by one; no plain fades. Table rows animate through `ui/TableRow` /
+  `ExpandableRow` / `RecordCardList` (`ui/rowMotion.js`). Always respect `useReducedMotion`.
 - Keep components (`.jsx` and `page.js`) under ~300 lines. When one grows past that, move pure
   logic to `app/utils/<feature>.js` (pure functions, no React) and data fetching to `hooks/`.
   `app/utils/` files may run longer as long as they stay one concern. The current oversized

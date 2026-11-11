@@ -10,6 +10,7 @@ import MappingFilters from '@/components/mappings/MappingFilters';
 import MappingRow, { mappingRowActions } from '@/components/mappings/MappingRow';
 import MobileRecordCard from '@/components/ui/MobileRecordCard';
 import RowActions from '@/components/ui/RowActions';
+import RecordCardList from '@/components/ui/RecordCardList';
 import StatusPill from '@/components/ui/StatusPill';
 import { formatDate } from '@/lib/formatDate';
 import {
@@ -135,7 +136,7 @@ export default function MappingList({ mappings, isLoading, error, onOpen, onRefr
         onSort={changeSort}
         emptyState={noMatches || null}
         mobileContent={
-          <div className="grid gap-2">
+          <RecordCardList>
             {pageRows.map((mapping) => {
               const status = mappingStatus(mapping);
               const tones = { confirmed: 'success', unused: 'muted', pending: 'warning', missing: 'danger', warnings: 'warning', unknown: 'muted' };
@@ -155,7 +156,7 @@ export default function MappingList({ mappings, isLoading, error, onOpen, onRefr
                 </MobileRecordCard>
               );
             })}
-          </div>
+          </RecordCardList>
         }
       >
         {pageRows.map((mapping) => (
