@@ -13,14 +13,18 @@ import NotificationDetails from './NotificationDetails';
 // Each notification is a row that opens like the forecast page's promo
 // dropdown (ForecastPromoPanel): the tag, time and title on the row, the
 // details underneath once clicked. Several can be open at once.
-// Rows stay white; only the row under the cursor is tinted lavender. Unread
-// notifications get a bar down the left edge and a bold title, so the state
-// is not shown by colour alone (WCAG 1.4.1).
-// Muted text is deep-violet-blue/80: about 5.4:1 on white and 5:1 on the hover
-// tint; /60 and /50 fall below the WCAG 1.4.3 minimum of 4.5:1. Read notifications
-// are not faded with opacity for the same reason.
+// Rows sit on the glass-2 panel (ui/popover) over a white/40 underlay, split by
+// hairlines in the glass border colour; only the row under the cursor takes a
+// faint deep-blue tint, laid over the underlay as an image so it never
+// replaces it. Unread notifications get a bar down the left edge and a bold
+// title, so the state is not shown by colour alone (WCAG 1.4.1).
+// Muted text is the one secondary colour, ink-soft. On the bare glass it is
+// 5.8:1 over white content but only 4.69:1 over a deep-blue button and
+// 4.34:1 over solid black (before the blur averages it out); the underlay
+// lifts that worst case to 5.05:1, and 4.68:1 on a hovered row. Read
+// notifications are not faded with opacity, which would drop below 4.5:1.
 // wrap-anywhere: file and mapping names have no spaces, so they break to stay in the panel.
-const MUTED_TEXT_CLASS = 'text-deep-violet-blue/80';
+const MUTED_TEXT_CLASS = 'text-ink-soft';
 
 // Per tone (notificationHeading): the tag's fill and text, and the bar down
 // the left edge of an unread row. Five tones cover all seven notification types
@@ -89,7 +93,7 @@ function NotificationItem({ notification, isOpen, onToggle, onMarkRead }) {
   return (
     // The whole notification tints on hover -- its row, its "Mark as read"
     // and its open details -- so it reads as one item.
-    <li className="relative wrap-anywhere transition-colors hover:bg-lavander/40">
+    <li className="relative wrap-anywhere bg-white/40 hover:bg-[linear-gradient(color-mix(in_srgb,var(--aire-deep-blue)_5%,transparent),color-mix(in_srgb,var(--aire-deep-blue)_5%,transparent))]">
       {/* Unread rows get a bar in their type's colour down the left edge. */}
       {unread && (
         <span aria-hidden="true" className={cn('absolute inset-y-0 left-0 w-1', (TONES[tone] || TONES.muted).bar)} />
@@ -105,7 +109,7 @@ function NotificationItem({ notification, isOpen, onToggle, onMarkRead }) {
           aria-expanded={isOpen}
           aria-controls={detailsId}
           onClick={onToggle}
-          className="block w-full px-3.5 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-deep-violet-blue"
+          className="block w-full px-3.5 py-2.5 text-left outline-none focus-ring-inset"
         >
           <span
             className={cn(
@@ -141,16 +145,17 @@ function NotificationItem({ notification, isOpen, onToggle, onMarkRead }) {
             tabIndex={-1}
             aria-hidden="true"
             onClick={onToggle}
-            className="text-deep-violet-blue/70 hover:text-deep-violet-blue"
+            className="text-ink-soft hover:text-deep-violet-blue"
           >
             <ChevronDown className={cn('size-4 transition', isOpen && 'rotate-180')} />
           </Button>
         </div>
       </div>
       {isOpen && (
-        // White, so the details card stays a white card even while the row
-        // above it is tinted on hover.
-        <div id={detailsId} className="mx-3.5 mb-3 rounded-lg border border-violet/30 bg-white px-3 py-2.5">
+        // A flat solid card (the aire-card fill and hairline, no shadow and no
+        // blur: it sits inside the glass panel), so the details read on white
+        // even while the row above it is tinted on hover.
+        <div id={detailsId} className="mx-3.5 mb-3 rounded-glass-sm border border-(--aire-card-border) bg-white px-3 py-2.5">
           <NotificationDetails type={type} payload={payload} />
         </div>
       )}
@@ -170,7 +175,7 @@ export default function NotificationPanel({ notifications, markRead }) {
   const { isExpanded, toggle } = useExpandedRows();
 
   if (notifications.length === 0) {
-    return <p className="px-3 py-3 text-xs text-deep-violet-blue/75">No notifications yet.</p>;
+    return <p className="bg-white/40 px-3 py-3 text-xs text-ink-soft">No notifications yet.</p>;
   }
 
   const unread = notifications.filter((n) => !n.read_at);
@@ -184,7 +189,7 @@ export default function NotificationPanel({ notifications, markRead }) {
   // the rows pad themselves with px-3, so hover tints run edge to edge.
   return (
     <div className="flex flex-col">
-      <div className="flex items-center justify-between gap-3 border-b border-lavander px-3 py-2.5">
+      <div className="flex items-center justify-between gap-3 border-b border-(--glass-border) bg-white/40 px-3 py-2.5">
         <div>
           <p className="font-serif text-base leading-tight text-deep-violet-blue">Notifications</p>
           <p className={cn('mt-0.5 text-[11px]', MUTED_TEXT_CLASS)}>
@@ -195,9 +200,10 @@ export default function NotificationPanel({ notifications, markRead }) {
           <MarkReadButton onClick={() => markRead(unreadIds)}>Mark all as read</MarkReadButton>
         )}
       </div>
-      {/* rounded-b-lg clips the last row's hover tint to the popup's corners.
+      {/* The rounded bottom (the popup's 16px corner less its 1px border)
+          clips the last row's hover tint to the popup's corners.
           Thin scrollbar (no arrow buttons) in the page's grey (globals.css). */}
-      <ul className="max-h-[65vh] divide-y divide-lavander overflow-y-auto rounded-b-lg [scrollbar-width:thin]">
+      <ul className="max-h-[65vh] divide-y divide-(--glass-border) overflow-y-auto rounded-b-[calc(var(--glass-radius-md)-1px)] [scrollbar-width:thin]">
         {ordered.map((notification) => (
           <NotificationItem
             key={notification.notification_id}

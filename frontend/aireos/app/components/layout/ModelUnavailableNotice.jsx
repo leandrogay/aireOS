@@ -28,7 +28,7 @@ export default function ModelUnavailableNotice({ feature, className }) {
     <p
       role="status"
       className={cn(
-        'flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900',
+        'flex items-center gap-1.5 rounded-glass-sm border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900',
         className,
       )}
     >

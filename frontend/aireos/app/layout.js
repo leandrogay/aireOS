@@ -40,7 +40,11 @@ export default function RootLayout({ children }) {
       lang="en"
       className={`${dmSans.variable} ${dmSerif.variable} ${geistMono.variable} ${figtree.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col font-sans">
+      {/* aire-wash: the fixed page background (globals.css), on the outermost
+          element so it sits behind every page, AppShell or not; nothing
+          between it and the pages has a background or a transform. The
+          login page covers it with its own packshot backdrop. */}
+      <body className="aire-wash min-h-full flex flex-col font-sans">
         <UploadProvider>{children}</UploadProvider>
         <AssistantWidget />
       </body>

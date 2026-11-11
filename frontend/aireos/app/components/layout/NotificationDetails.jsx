@@ -15,14 +15,15 @@ import { cn } from '@/lib/utils';
 // label / value rows with short sentence-case labels, so each row stays on
 // one line. Lists are chips. Every value the old always-open panel showed is
 // still here; only the wording around them is shorter.
-// Labels are deep-violet-blue/80, not the promo panel's /45: /60 and below
-// fall under the WCAG 1.4.3 minimum of 4.5:1 on the tinted rows.
-const LABEL_CLASS = 'text-[11px] text-deep-violet-blue/80';
+// Labels and the summary line are the one secondary colour, ink-soft (6.2:1
+// on the white details card), not the promo panel's /45, which falls under the
+// WCAG 1.4.3 minimum of 4.5:1.
+const LABEL_CLASS = 'text-[11px] text-ink-soft';
 const VALUE_CLASS = 'min-w-0 text-xs font-medium text-deep-violet-blue';
 const ROW_CLASS = 'grid grid-cols-[6.5rem_1fr] items-baseline gap-2';
 
 function Summary({ children }) {
-  return <p className="text-xs leading-normal text-deep-violet-blue/80">{children}</p>;
+  return <p className="text-xs leading-normal text-ink-soft">{children}</p>;
 }
 
 function Field({ label, value }) {
@@ -41,7 +42,7 @@ const CHIP_COLUMN_AFTER = 5;
 // otherwise wrap a name inside its pill. A name too long for the panel ends
 // in "…" and is shown in full on hover (title).
 const CHIP_CLASS =
-  'max-w-full truncate whitespace-nowrap rounded-full border border-lavander bg-white px-2 py-0.5 text-[10px] font-medium text-deep-violet-blue';
+  'max-w-full truncate whitespace-nowrap rounded-full border border-(--aire-card-border) bg-white px-2 py-0.5 text-[10px] font-medium text-deep-violet-blue';
 
 // A count plus one chip per name (customers, SKUs), like the promo panel's SKU
 // chips, beside their label. Up to CHIP_COLUMN_AFTER sit in a row, as wide as
@@ -87,7 +88,7 @@ function LowStockDetails({ payload }) {
     return (
       <>
         <Summary>Critical stock levels on these products. Please review and take action.</Summary>
-        <ul className="divide-y divide-lavander overflow-hidden rounded-lg border border-lavander bg-white">
+        <ul className="divide-y divide-(--aire-card-border) overflow-hidden rounded-glass-sm border border-(--aire-card-border) bg-white">
           {payload.items.map((item) => (
             <li key={item.sku} className="px-2.5 py-1.5 text-xs text-deep-violet-blue">
               {lowStockItemText(item)}

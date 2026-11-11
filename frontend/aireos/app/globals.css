@@ -308,6 +308,22 @@
    variables, so a ring-* or shadow-* utility adds to them instead of
    replacing the whole box-shadow. */
 @layer components {
+  /* The solid content card: white, never glass, so text and sticky table
+     cells inside it stay on an opaque ground. Defined before the glass
+     surfaces on purpose: ui/card's Card is always an aire-card, so a Card
+     that is itself a floating surface (the login card, the assistant panel)
+     adds glass-N and these later rules replace its fill, border and shadow
+     (the 16px corner stays unless a rounded-* utility changes it). */
+  .aire-card {
+    background-color: white;
+    border: 1px solid var(--aire-card-border);
+    border-radius: var(--glass-radius-md);
+    --tw-shadow: var(--aire-card-shadow);
+    box-shadow:
+      var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow),
+      var(--tw-ring-shadow), var(--tw-shadow);
+  }
+
   /* glass-1 sidebar; glass-2 popovers, menus, tooltips, toasts, notification
      panel; glass-3 dialogs, assistant panel. Never put one inside another
      (blur in blur), never on a card, table cell, chart or skeleton, and never
@@ -365,27 +381,25 @@
     }
   }
 
-  /* The solid content card: white, never glass, so text and sticky table
-     cells inside it stay on an opaque ground. */
-  .aire-card {
-    background-color: white;
-    border: 1px solid var(--aire-card-border);
-    border-radius: var(--glass-radius-md);
-    --tw-shadow: var(--aire-card-shadow);
-    box-shadow:
-      var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow),
-      var(--tw-ring-shadow), var(--tw-shadow);
-  }
-
   /* The page background: cream running into lavender, with a faint violet
      and a faint celest glow. Static (no animation, no filter) and pinned to
      the window, so glass has something to blur while the page scrolls over
-     it. It is drawn behind the element, so the element itself (and anything
-     between it and <body>) must have no background of its own. Put it on the
-     outermost layout element, never inside a wrapper that animates: a
-     transform or filter on an ancestor re-anchors `position: fixed` and the
-     wash would jump. The glows are kept this faint so ink-soft text straight
-     on the wash stays above 4.5:1. */
+     it. It is drawn behind the element, so nothing between it and the page
+     may have a background of its own. Put it on the outermost layout element,
+     never inside a wrapper that animates: a transform or filter on an
+     ancestor re-anchors `position: fixed` and the wash would jump. The glows
+     are kept this faint so ink-soft text straight on the wash stays above
+     4.5:1.
+     It lives on <body> (app/layout.js), whose cream background below (beating
+     the base layer's bg-background) paints the canvas: overscroll and
+     rubber-banding show cream, not white. That works only because body's
+     background propagates to the canvas, under the wash's z-index -1 layer;
+     never give `html` a background, or body would paint its own box over the
+     wash. */
+  .aire-wash {
+    background-color: var(--aire-cream);
+  }
+
   .aire-wash::before {
     content: '';
     position: fixed;

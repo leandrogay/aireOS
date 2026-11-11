@@ -5,7 +5,7 @@ import BackLink from "@/components/ui/BackLink";
 import { cn } from "@/lib/utils";
 
 /**
- * Standard content page: sidebar shell, cream background, a max-w-6xl
+ * Standard content page: sidebar shell over the page wash, a max-w-6xl
  * centred column and the page heading. Keeps the heading position and
  * gutters identical across pages. The notification bell sits at the right
  * end of every page's heading row.
@@ -32,7 +32,8 @@ export default function PageLayout({ title, headerExtra, back, fitScreen = false
           a table's pagination or any other bottom-right control. */}
       <main
         className={cn(
-          "min-w-0 bg-cream px-4 pt-4 pb-20",
+          // No background: the page wash (app/layout.js) shows through.
+          "min-w-0 px-4 pt-4 pb-20",
           fitScreen ? "flex h-dvh flex-col overflow-y-auto" : "min-h-screen",
         )}
       >
@@ -46,7 +47,9 @@ export default function PageLayout({ title, headerExtra, back, fitScreen = false
               {back && (
                 <BackLink href={back.href} label={back.label} className="-mr-1.5 -ml-1" />
               )}
-              <h1 className="min-w-0 font-serif text-xl leading-tight text-deep-violet-blue md:text-2xl">
+              {/* Slightly tightened and balanced, so a long title wraps evenly
+                  rather than leaving one word on its own line. */}
+              <h1 className="min-w-0 font-serif text-xl leading-tight tracking-[-0.01em] text-balance text-deep-violet-blue md:text-2xl">
                 {title}
               </h1>
             </div>

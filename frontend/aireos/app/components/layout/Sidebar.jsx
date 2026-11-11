@@ -64,14 +64,24 @@ const SUB_LABEL = {
 
 // The active-tab background. One layoutId for parents and sub-items alike,
 // so it slides (and resizes) between the two levels instead of popping.
+// A tinted glass-like pill (a deep-blue tint, a lit top edge and a hairline)
+// with no backdrop-filter of its own: it sits inside the glass panel. The 3px
+// deep-blue bar down its left edge (7:1 on the pill) is the state cue, so the
+// current page never rests on the faint tint; a hover is a fainter tint with
+// no bar.
 function ActiveHighlight() {
   return (
     <motion.span
       layoutId="nav-active"
-      className="absolute inset-0 -z-10 rounded-lg bg-lavander"
+      className="absolute inset-0 -z-10 rounded-glass-sm bg-deep-violet-blue/10 inset-ring inset-ring-deep-violet-blue/10 inset-shadow-[0_1px_0_rgb(255_255_255/0.6)] before:absolute before:inset-y-2 before:left-0 before:w-[3px] before:rounded-full before:bg-deep-violet-blue"
     />
   );
 }
+
+// Hover and keyboard focus for every row in the bar (tabs, sub-pages, the
+// toggle, Sign out): a faint deep-blue tint, and the shared focus ring drawn
+// inside the row, since the bar clips anything outside its edge.
+const ROW_INTERACTION = 'outline-none hover:bg-deep-violet-blue/5 focus-ring-inset';
 
 // The classes for a tab label: hidden in the rail, shown (after a short
 // delay, so it isn't squeezed into a half-open bar) otherwise.
@@ -135,7 +145,9 @@ export default function Sidebar() {
           type="button"
           aria-label="Close navigation"
           onClick={() => setMobileOpen(false)}
-          className="fixed inset-0 z-30 bg-deep-violet-blue/20 md:hidden"
+          // The dialogs' deep-blue scrim tint (ui/dialog DIALOG_BACKDROP_CLASS),
+          // without its blur: the panel beside it is springing open.
+          className="fixed inset-0 z-30 bg-deep-violet-blue/30 md:hidden"
         />
       )}
       <motion.nav
@@ -143,16 +155,43 @@ export default function Sidebar() {
       animate={{ width }}
       transition={reduceMotion ? { duration: 0 } : NAV_SPRING}
       className={cn(
-        // Border and background stay on CSS transitions; they fade alongside the width.
-        'flex h-screen shrink-0 flex-col self-start overflow-x-hidden overflow-y-auto border-r py-4 transition-colors duration-300',
+        // The border stays on a CSS transition; it fades alongside the width.
+        // isolate: the glass layer below sits behind the content (-z-10) but
+        // inside the bar. overflow-hidden clips that layer to the bar's width.
+        'isolate flex h-screen shrink-0 flex-col self-start overflow-hidden border-r transition-colors duration-300',
         // The first server render does not know the viewport width. Keep its
         // desktop-width nav out of the mobile layout until the media query settles.
         narrow ? 'fixed inset-y-0 left-0 z-40' : 'fixed left-0 top-0 max-md:invisible md:sticky',
-        showingMobile && 'shadow-lg',
-        rail || hidden ? 'px-2' : 'px-3',
-        hidden ? 'pointer-events-none border-transparent bg-transparent' : 'border-lavander bg-white',
+        showingMobile && 'shadow-glass-2',
+        hidden ? 'pointer-events-none border-transparent' : 'border-(--glass-border)',
       )}
     >
+      {/* The frosted panel (glass-1, the app's only glass-1 surface), as a
+          layer of its own that is always the open bar's full width (OPEN_WIDTH,
+          w-56) and the bar's full height: the spring only changes how much of it
+          the bar's overflow-hidden shows, never the size of the blurred area,
+          so the blur is not re-laid out on every frame of the width spring.
+          Open on a phone it lies over page text, so it takes the denser glass-3
+          fill (92%: ink-soft text stays above 4.5:1 even over black). Hidden
+          (the phone's toggle-only state) it fades out with the border. */}
+      <div
+        aria-hidden="true"
+        className={cn(
+          'glass-1 pointer-events-none absolute inset-y-0 left-0 -z-10 w-56 rounded-none border-0 transition-opacity duration-300',
+          showingMobile && '[--glass-fill:var(--glass-fill-3)]',
+          // Hidden, it also drops its blur, so an invisible layer costs nothing.
+          // The blur goes at once and only the fill fades; nothing animates it.
+          hidden && 'opacity-0 backdrop-blur-none',
+        )}
+      />
+      {/* The bar's content, scrolling inside it when the window is short. A
+          wrapper only so the glass layer above stays put while it scrolls. */}
+      <div
+        className={cn(
+          'flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto py-4',
+          rail || hidden ? 'px-2' : 'px-3',
+        )}
+      >
       <div className="relative mb-4 flex h-8 items-center md:mt-2">
         {/* Absolute, so the logo coming and going never pushes the toggle
             around; it just fades over the row. */}
@@ -166,7 +205,12 @@ export default function Sidebar() {
               exit="hidden"
               className="absolute top-1/2 left-1 -translate-y-1/2"
             >
-              <Link href="/dashboard" aria-label="AireOS home" onClick={closeMobileNavigation}>
+              <Link
+                href="/dashboard"
+                aria-label="AireOS home"
+                onClick={closeMobileNavigation}
+                className="rounded-sm outline-none focus-ring-inset"
+              >
                 <Image
                   src="/aireos-wordmark.svg"
                   alt="AireOS"
@@ -188,7 +232,9 @@ export default function Sidebar() {
           onClick={toggleCollapsed}
           aria-label={hidden || rail ? 'Expand navigation' : 'Collapse navigation'}
           className={cn(
-            'pointer-events-auto ml-auto flex size-8 cursor-pointer items-center justify-center rounded-md text-deep-violet-blue/70 transition-colors hover:bg-lavander hover:text-deep-violet-blue',
+            'press press-transition pointer-events-auto ml-auto flex size-8 cursor-pointer items-center justify-center rounded-glass-sm text-ink-soft hover:text-deep-violet-blue',
+            ROW_INTERACTION,
+            'hover:bg-deep-violet-blue/8',
             rail && 'mr-1',
           )}
         >
@@ -226,7 +272,8 @@ export default function Sidebar() {
                 // here: it would clip the highlight while it slides in from another
                 // tab, so the label clips itself instead (labelClass).
                 const tabClass = cn(
-                  'relative isolate flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm text-deep-violet-blue transition-[width] duration-300',
+                  'relative isolate flex cursor-pointer items-center gap-3 rounded-glass-sm px-3 py-2 text-sm text-deep-violet-blue transition-[width,background-color] duration-300',
+                  ROW_INTERACTION,
                   rail ? 'w-10' : 'w-full',
                   (isActive || childActive) && 'font-medium',
                 );
@@ -290,7 +337,7 @@ export default function Sidebar() {
                           <motion.span
                             aria-hidden
                             variants={SUB_LINE}
-                            className="absolute inset-y-0 left-0 w-px origin-top bg-violet/60"
+                            className="absolute inset-y-0 left-0 w-px origin-top bg-deep-violet-blue/20"
                           />
                           {item.children.map((child) => {
                             const isChildActive = matchesPath(pathname, child.href);
@@ -301,10 +348,11 @@ export default function Sidebar() {
                                   onClick={closeMobileNavigation}
                                   aria-current={isChildActive ? 'page' : undefined}
                                   className={cn(
-                                    'relative isolate block rounded-lg px-3 py-1.5 text-xs',
+                                    'relative isolate block rounded-glass-sm px-3 py-1.5 text-xs transition-colors duration-hover',
+                                    ROW_INTERACTION,
                                     isChildActive
                                       ? 'font-medium text-deep-violet-blue'
-                                      : 'text-deep-violet-blue/70',
+                                      : 'text-ink-soft hover:text-deep-violet-blue',
                                   )}
                                 >
                                   {isChildActive && <ActiveHighlight />}
@@ -344,7 +392,9 @@ export default function Sidebar() {
               disabled={isSigningOut}
               title={rail ? 'Sign out' : undefined}
               className={cn(
-                'flex cursor-pointer items-center gap-3 overflow-hidden rounded-lg px-3 py-2 text-sm text-deep-violet-blue/75 transition-[width,background-color,color] duration-300 hover:bg-lavander hover:text-deep-violet-blue disabled:cursor-wait disabled:opacity-60',
+                'flex cursor-pointer items-center gap-3 overflow-hidden rounded-glass-sm px-3 py-2 text-sm text-ink-soft transition-[width,background-color,color] duration-300 hover:text-deep-violet-blue disabled:cursor-wait disabled:opacity-60',
+                ROW_INTERACTION,
+                'hover:bg-deep-violet-blue/8',
                 rail ? 'w-10' : 'w-full',
               )}
             >
@@ -361,6 +411,7 @@ export default function Sidebar() {
           </motion.div>
         )}
       </AnimatePresence>
+      </div>
     </motion.nav>
     </>
   );

@@ -15,7 +15,7 @@ import { BAR_ANIMATION } from '@/app/utils/trendChart';
 // BAR_ANIMATION, a line chart draws in with the forecast chart's sweep, and a
 // trend line over bars starts once they're growing, as the sell-in outlook's does.
 const DOWNLOAD_BUTTON_CLASS =
-  'h-auto w-fit rounded-md border-violet bg-white px-2 py-1 text-[11px] font-medium text-deep-violet-blue hover:bg-lavander hover:text-deep-violet-blue';
+  'h-auto w-fit rounded-glass-sm border-deep-violet-blue/60 bg-white px-2 py-1 text-[11px] font-medium text-deep-violet-blue hover:bg-lavander hover:text-deep-violet-blue';
 
 const LINE_SWEEP = { begin: 0, duration: 1200 };
 const LINE_OVER_BARS_SWEEP = { begin: 500, duration: 900 };
@@ -263,7 +263,7 @@ function AssistantTable({ columns, rows, animate, startDelay }) {
     <div className="overflow-x-auto">
       <table className="w-full text-[11px]">
         <thead>
-          <tr className="border-b border-lavander text-left text-deep-violet-blue/60">
+          <tr className="border-b border-lavander text-left text-ink-soft">
             {columns.map((col) => (
               <th key={col} className="py-1 pr-3 font-medium">
                 {col}
@@ -404,12 +404,12 @@ export default function AssistantMessage({ message, onFollowUp, animate = false,
       <MessageContent>
         <div
           className={cn(
-            'max-w-[85%] rounded-lg px-3 py-2 text-xs',
+            'max-w-[85%] rounded-glass-sm px-3 py-2 text-xs',
             isUser ? 'self-end bg-deep-violet-blue text-white' : 'self-start bg-lavander text-deep-violet-blue',
           )}
         >
           {!isUser && message.dataSource === 'analysis' && (
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/50">
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-ink-soft">
               💡 AI analysis
             </p>
           )}
@@ -449,7 +449,7 @@ export default function AssistantMessage({ message, onFollowUp, animate = false,
                 startDelay={message.hasChart ? ROWS_AFTER_CHART_MS : 0}
               />
               {message.tableNote && (
-                <p className="mt-1 text-[10px] italic text-deep-violet-blue/60">{message.tableNote}</p>
+                <p className="mt-1 text-[10px] italic text-ink-soft">{message.tableNote}</p>
               )}
             </div>
           )}
@@ -477,7 +477,7 @@ export default function AssistantMessage({ message, onFollowUp, animate = false,
                   variant="outline"
                   size="xs"
                   onClick={() => onFollowUp(prompt)}
-                  className="h-auto max-w-full shrink rounded-full border-violet bg-white px-2 py-1 text-[11px] font-normal whitespace-normal text-deep-violet-blue hover:bg-lavander hover:text-deep-violet-blue"
+                  className="h-auto max-w-full shrink rounded-full border-deep-violet-blue/60 bg-white px-2 py-1 text-[11px] font-normal whitespace-normal text-deep-violet-blue hover:bg-lavander hover:text-deep-violet-blue"
                 >
                   {prompt}
                 </Button>

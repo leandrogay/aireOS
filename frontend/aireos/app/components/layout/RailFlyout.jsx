@@ -3,6 +3,7 @@
 import Link from 'next/link';
 
 import { matchesPath } from '@/components/layout/navItems';
+import { DROPDOWN_ROW_CLASS } from '@/components/ui/Dropdown';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 
@@ -16,9 +17,15 @@ function hasOwnPage(item) {
   return !item.children.some((child) => child.href === item.href);
 }
 
-// The flyout's section row, sized like a top-level tab in the open sidebar.
-const SECTION_ROW =
-  'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-deep-violet-blue';
+// The flyout is a glass popover (ui/popover), so its rows are the dropdown
+// panels' rows (ui/Dropdown DROPDOWN_ROW_CLASS: 10px inside the panel's 16px
+// corner, deep-blue hover tint, inset focus ring). The section row heads the
+// list with its icon. The current page carries the sidebar's own state cue
+// (Sidebar ActiveHighlight): the 3px deep-blue bar down its left edge, on a
+// tint that holds under hover and focus instead of turning lighter.
+const SECTION_ROW = 'flex items-center gap-3 px-2 py-1.5 text-sm font-medium text-deep-violet-blue';
+const CURRENT_ROW =
+  'relative bg-deep-violet-blue/10 font-medium hover:bg-deep-violet-blue/10 focus-visible:bg-deep-violet-blue/10 before:absolute before:inset-y-1.5 before:left-0 before:w-[3px] before:rounded-full before:bg-deep-violet-blue';
 
 /**
  * A rail tab for a section with sub-pages (see Sidebar). The rail has no room
@@ -90,7 +97,7 @@ export default function RailFlyout({
           <Link
             href={item.href}
             aria-current={isActive ? 'page' : undefined}
-            className={cn(SECTION_ROW, 'transition-colors hover:bg-lavander', isActive && 'bg-lavander')}
+            className={cn(DROPDOWN_ROW_CLASS, SECTION_ROW, isActive && CURRENT_ROW)}
           >
             <Icon className="size-4 shrink-0" />
             {item.label}
@@ -102,7 +109,7 @@ export default function RailFlyout({
           </p>
         )}
         <ul className="relative ml-5 space-y-0.5 pl-2">
-          <span aria-hidden className="absolute inset-y-0 left-0 w-px bg-violet/60" />
+          <span aria-hidden className="absolute inset-y-0 left-0 w-px bg-deep-violet-blue/20" />
           {item.children.map((child) => {
             const isChildActive = matchesPath(pathname, child.href);
             return (
@@ -111,10 +118,9 @@ export default function RailFlyout({
                   href={child.href}
                   aria-current={isChildActive ? 'page' : undefined}
                   className={cn(
-                    'block rounded-lg px-3 py-1.5 text-xs transition-colors hover:bg-lavander',
-                    isChildActive
-                      ? 'bg-lavander font-medium text-deep-violet-blue'
-                      : 'text-deep-violet-blue/70 hover:text-deep-violet-blue',
+                    DROPDOWN_ROW_CLASS,
+                    'text-xs',
+                    isChildActive ? CURRENT_ROW : 'text-ink-soft hover:text-deep-violet-blue',
                   )}
                 >
                   {child.label}

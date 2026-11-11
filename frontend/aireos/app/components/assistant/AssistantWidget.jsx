@@ -17,7 +17,6 @@ import {
   MessageScrollerViewport,
   useMessageScroller,
 } from '@/components/ui/message-scroller';
-import { POPUP_SHADOW_CLASS } from '@/components/ui/popupShadow';
 import { cn } from '@/lib/utils';
 import { modelNotice } from '@/app/utils/aiModels';
 import useAiModelStatus from '@/hooks/useAiModelStatus';
@@ -28,11 +27,18 @@ import AssistantUnavailable from './AssistantUnavailable';
 // The words shown while the assistant works ("Pondering…"); edit the list there.
 import THINKING_WORDS from './thinkingWords';
 
-// Brand colours instead of the shadcn default (near-black `primary`), as the
-// other pages override the shared Button.
-const primaryButtonClass = 'bg-deep-violet-blue text-white hover:bg-deep-violet-blue/90';
-const chipButtonClass = 'rounded-full border-violet bg-white text-[11px] font-normal text-deep-violet-blue hover:bg-lavander';
-const headerButtonClass = 'text-white/70 hover:bg-white/10 hover:text-white';
+// The shared Button's default (deep blue, opaque lighter hover) already is the
+// brand primary; kept as a name for the Ask button and the launcher.
+const primaryButtonClass = 'bg-deep-violet-blue text-white';
+// Outline chips with the shared 3:1 boundary (deep blue at 60%).
+const chipButtonClass = 'rounded-full border-deep-violet-blue/60 bg-white text-[11px] font-normal text-deep-violet-blue hover:bg-lavander';
+// On the deep-blue header: white/80 is 6.8:1 there, white 9.6:1. The focus ring
+// is white too, since the shared deep-blue one would vanish on the header.
+const headerButtonClass = 'text-white/80 hover:bg-white/10 hover:text-white focus-visible:outline-white';
+// The launcher: the brand fill with the glass rim's lit top edge and the glass
+// lift, so it floats like the panel it opens. Button brings press and focus-ring.
+const launcherClass =
+  'fixed bottom-4 right-4 z-50 size-12 rounded-full inset-shadow-[0_1px_0_rgb(255_255_255/0.25)] shadow-glass-2';
 
 // shadcn's "Spring Bounce" message preset (lib/message-animations.ts on the
 // shadcn docs site): a message rises 12px and grows from 96% with a quick
@@ -179,7 +185,7 @@ function QuestionForm({ onAsk, loading, unavailable }) {
         placeholder={unavailable ? 'The Assistant is unavailable' : 'Ask a business question...'}
         disabled={loading || unavailable}
         aria-label="Business question"
-        className="border-violet text-xs text-deep-violet-blue md:text-xs"
+        className="text-xs text-deep-violet-blue md:text-xs"
       />
       <Button type="submit" size="sm" disabled={loading || unavailable || !draft.trim()} className={primaryButtonClass}>
         Ask
@@ -277,8 +283,11 @@ export default function AssistantWidget() {
             exit={reduceMotion ? undefined : 'closed'}
             style={{ transformOrigin: 'bottom right' }}
             className={cn(
-              'fixed z-50 gap-0 rounded-lg border border-deep-violet-blue bg-white py-0 ring-0',
-              POPUP_SHADOW_CLASS,
+              // A glass-3 window. The Card underneath is an aire-card, and the
+              // glass rules come after it in globals.css, so glass-3 replaces its
+              // white fill, border and shadow rather than stacking on them.
+              // Nothing inside has a backdrop-filter of its own.
+              'glass-3 fixed z-50 gap-0 rounded-glass-lg py-0',
               // Placed by its four edges (not width/height) so the move between the
               // two sizes can be animated; 100% is the window, scrollbar excluded.
               'transition-[top,left,right,bottom] duration-300 ease-out motion-reduce:transition-none',
@@ -289,6 +298,8 @@ export default function AssistantWidget() {
                 : 'top-[max(1rem,calc(100%-5rem-480px))] right-4 bottom-20 left-[max(1rem,calc(100%-1rem-360px))]',
             )}
           >
+            {/* The header stays solid deep blue (white text 9.6:1): it names the
+                window at a glance over any page, which a glass header would not. */}
             <CardHeader className="flex items-center justify-between rounded-t-none bg-deep-violet-blue py-2">
               <CardTitle className="font-sans text-sm text-white">Ask AireOS</CardTitle>
               <div className="-mr-1 flex items-center gap-1">
@@ -318,13 +329,15 @@ export default function AssistantWidget() {
 
             <MessageScrollerProvider autoScroll defaultScrollPosition="end">
               <FollowNewQuestions messages={messages} />
-              <CardContent className="min-h-0 flex-1 overflow-hidden px-0">
+              {/* Near solid for reading: white/70 over the 92% glass leaves about
+                  2% of the page showing through, so long answers sit on white. */}
+              <CardContent className="min-h-0 flex-1 overflow-hidden bg-white/70 px-0">
                 <MessageScroller>
                   <MessageScrollerViewport>
                     <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-3 p-3">
                       {messages.length === 0 && (
                         <MessageScrollerItem className="space-y-2">
-                          <p className="text-xs text-deep-violet-blue/60">
+                          <p className="text-xs text-ink-soft">
                             Ask a plain-English question about your sales or inventory data
                           </p>
                           <DigestChips options={customerOptions} onAsk={askDigest} loading={loading || Boolean(unavailable)} />
@@ -356,7 +369,7 @@ export default function AssistantWidget() {
                         <MessageScrollerItem>
                           <div
                             role="alert"
-                            className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-xs leading-relaxed text-red-800"
+                            className="flex items-start gap-2 rounded-glass-sm border border-red-200 bg-red-50 p-3 text-xs leading-relaxed text-red-800"
                           >
                             <AlertCircle aria-hidden="true" className="mt-px size-4 shrink-0 text-red-600" />
                             <span>{error}</span>
@@ -369,7 +382,7 @@ export default function AssistantWidget() {
                 </MessageScroller>
               </CardContent>
 
-              <CardFooter className="border-lavander bg-white p-2">
+              <CardFooter className="border-(--glass-border) bg-white/70 p-2">
                 <QuestionForm onAsk={askQuestion} loading={loading} unavailable={Boolean(unavailable)} />
               </CardFooter>
             </MessageScrollerProvider>
@@ -382,7 +395,7 @@ export default function AssistantWidget() {
         onClick={toggleOpen}
         hidden={open && expanded}
         aria-label={open ? 'Close AireOS assistant' : 'Open AireOS assistant'}
-        className={`fixed bottom-4 right-4 z-50 size-12 rounded-full shadow-lg ${primaryButtonClass}`}
+        className={cn(launcherClass, primaryButtonClass)}
       >
         {open ? <X aria-hidden="true" className="size-5" /> : <MessageCircle aria-hidden="true" className="size-5" />}
       </Button>

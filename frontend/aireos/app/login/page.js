@@ -34,10 +34,18 @@ export default async function LoginPage({ searchParams }) {
   const errorMessage = ERROR_MESSAGES[params?.error];
 
   return (
+    // Its own cream ground, under the packshot backdrop, covers the app's page
+    // wash (aire-wash on <body>), so the two never show at once.
     <main className="relative isolate flex min-h-dvh items-center justify-center overflow-hidden bg-cream px-4 py-6 sm:px-6 sm:py-12">
       <PackshotBackdrop />
-      <Card className="relative z-10 w-full max-w-3xl gap-0 overflow-hidden border-border/70 py-0 shadow-xl shadow-primary/10 sm:min-h-[34rem]">
-        <CardHeader className="flex flex-1 flex-col items-center justify-center px-6 pt-9 pb-8 text-center sm:px-16 sm:pt-16 sm:pb-10">
+      {/* The showcase glass: glass-2 (text-heavy, so no thinner) frosting the
+          packshots as they drift behind it, with the dialogs' larger lift. The
+          Card is an aire-card, which the later glass rules replace (globals.css). */}
+      <Card className="glass-2 relative z-10 w-full max-w-3xl gap-0 overflow-hidden rounded-glass-lg py-0 shadow-glass-3 sm:min-h-[34rem]">
+        {/* The same white/50 underlay as the content below, so the whole card
+            reads as one surface and the ink-soft description keeps 5.2:1 even
+            over a dark packshot (4.3:1 on the bare glass). */}
+        <CardHeader className="flex flex-1 flex-col items-center justify-center bg-white/50 px-6 pt-9 pb-8 text-center sm:px-16 sm:pt-16 sm:pb-10">
           <Image
             src="/aire-logo.png"
             alt="AIRE"
@@ -53,14 +61,16 @@ export default async function LoginPage({ searchParams }) {
             Sign in securely with your Aire Google Workspace account to continue.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-5 border-t border-border/60 bg-card/60 px-6 py-8 sm:space-y-6 sm:px-16 sm:py-12">
+        <CardContent className="space-y-5 border-t border-(--glass-border) bg-white/50 px-6 py-8 sm:space-y-6 sm:px-16 sm:py-12">
+          {/* Solid red-50 with red-800 text (about 8:1), so the reason is
+              readable whatever drifts behind the glass. */}
           {errorMessage && (
-            <p role="alert" className="rounded-lg bg-destructive/10 px-4 py-3 text-base text-destructive">
+            <p role="alert" className="rounded-glass-sm border border-red-200 bg-red-50 px-4 py-3 text-base text-red-800">
               {errorMessage}
             </p>
           )}
           {!apiBase && (
-            <p role="alert" className="rounded-lg bg-destructive/10 px-4 py-3 text-base text-destructive">
+            <p role="alert" className="rounded-glass-sm border border-red-200 bg-red-50 px-4 py-3 text-base text-red-800">
               NEXT_PUBLIC_API_URL is not configured.
             </p>
           )}
@@ -71,14 +81,16 @@ export default async function LoginPage({ searchParams }) {
               variant: 'outline',
               size: 'lg',
               className:
-                'h-14 w-full gap-3 border-border bg-background px-4 text-base font-semibold shadow-sm hover:border-primary/40 hover:bg-primary/5 sm:h-16 sm:px-6 sm:text-xl',
+                // The outline Button (press, focus-ring, the 3:1 deep-blue edge),
+                // solid white so the one action stands off the glass.
+                'h-14 w-full gap-3 rounded-glass-md bg-white px-4 text-base font-semibold shadow-sm hover:bg-cream sm:h-16 sm:px-6 sm:text-xl',
             })}
           >
             <Image src="/google-g-logo.svg" alt="" width={24} height={24} />
             Continue with Google
           </a>
-          <div className="flex items-start justify-center gap-2 text-center text-xs leading-5 text-muted-foreground sm:items-center sm:text-sm">
-            <ShieldCheck aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-primary sm:mt-0" />
+          <div className="flex items-start justify-center gap-2 text-center text-xs leading-5 text-ink-soft sm:items-center sm:text-sm">
+            <ShieldCheck aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-deep-violet-blue sm:mt-0" />
             <span>Google Workspace SSO · Verified @shop-aire.com accounts only</span>
           </div>
         </CardContent>

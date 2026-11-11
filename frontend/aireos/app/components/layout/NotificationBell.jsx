@@ -6,9 +6,6 @@ import { Bell } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import useNotifications from '@/hooks/useNotifications';
 
-import { POPUP_SHADOW_CLASS } from '@/components/ui/popupShadow';
-import { cn } from '@/lib/utils';
-
 import NotificationPanel from './NotificationPanel';
 
 // The panel is as wide as the dashboard's right-hand column (app/dashboard/page.js:
@@ -73,7 +70,7 @@ export default function NotificationBell() {
         ref={triggerRef}
         data-notification-bell
         aria-label={unreadCount > 0 ? `Notifications (${unreadCount} unread)` : 'Notifications'}
-        className="relative flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-md text-deep-violet-blue/70 transition-colors hover:bg-lavander hover:text-deep-violet-blue"
+        className="press press-transition relative flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-glass-sm text-ink-soft outline-none hover:bg-deep-violet-blue/8 hover:text-deep-violet-blue focus-ring"
       >
         <Bell className="size-5" />
         {unreadCount > 0 && (
@@ -82,12 +79,11 @@ export default function NotificationBell() {
           </span>
         )}
       </PopoverTrigger>
-      {/* Two stacked shadows (tight edge + soft lift) tinted with deep violet blue
-          (#0F1E4A) rather than black, so the popup floats above the page. Set
-          here, not in ui/popover, so the other dropdowns keep their look.
-          align="end" with no offset: the bell ends the heading row (PageLayout), whose
-          right edge is the page content's, so the popup's right edge lines up with the
-          cards below instead of hanging past them. */}
+      {/* The glass-2 panel and its shadow come from ui/popover. align="end"
+          with no alignOffset (sideOffset only lowers it under the bell): the
+          bell ends the heading row (PageLayout), whose right edge is the page
+          content's, so the popup's right edge lines up with the cards below
+          instead of hanging past them. */}
       <PopoverContent
         align="end"
         // The arrow takes the glass border's colour by default, so the tip
@@ -101,7 +97,7 @@ export default function NotificationBell() {
         // Width measured on open (see columnWidth); a style, not a class,
         // because it is computed.
         style={{ width: panelWidth }}
-        className={cn('max-w-[90vw] gap-0 p-0', POPUP_SHADOW_CLASS)}
+        className="max-w-[90vw] gap-0 p-0"
       >
         <NotificationPanel notifications={notifications} markRead={markRead} />
       </PopoverContent>
