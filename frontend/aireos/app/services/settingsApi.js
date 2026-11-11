@@ -166,51 +166,51 @@ export async function getResolvedPromoUplifts({ customer, product = '' }) {
 }
 
 /**
- * PUT /api/settings/promo-uplifts/{settingId}
+ * GET /api/settings/promo-uplifts/calculated[?customer_id=]
  *
- * Saves a typed value as a new version (source 'estimate', so it no longer
- * follows the anchor). Learned rows answer 409.
+ * The worked-out uplift per customer x SKU range x mechanic (backend
+ * settings/promo_uplift_calc.list_calculated): each row's anchor `versions`
+ * from this month on, each with its level, uplift_min / uplift_max and every
+ * SKU of the range with how its value was reached; and `calc_status` per
+ * customer id. Read from the calc tables, never worked out from sell-out.
  *
- * @param {number} settingId
- * @param {{ uplift_pct: number, note?: string | null }} payload
+ * @param {{ customerId?: number | null }} [options]
+ * @returns {Promise<{ rows: object[], calc_status: Record<string, object> }>}
+ */
+export async function getCalculatedUplifts({ customerId = null } = {}) {
+  const query = customerId != null ? `?${new URLSearchParams({ customer_id: String(customerId) })}` : '';
+  return request(`${PROMO_UPLIFTS}/calculated${query}`);
+}
+
+/**
+ * PUT /api/settings/promo-uplifts/mechanics/{mechanicKey}
+ *
+ * A mechanic's effective discount, as a new version from now on; every
+ * customer is recalculated. Uplifts themselves are never typed.
+ *
+ * @param {string} mechanicKey
+ * @param {{ effective_discount_pct: number, note?: string | null }} payload
  * @returns {Promise<{ changed: boolean, setting: object }>}
  */
-export async function savePromoUplift(settingId, payload) {
-  return request(`${PROMO_UPLIFTS}/${encodeURIComponent(settingId)}`, {
+export async function saveMechanicDiscount(mechanicKey, payload) {
+  return request(`${PROMO_UPLIFTS}/mechanics/${encodeURIComponent(mechanicKey)}`, {
     method: 'PUT',
     body: payload,
   });
 }
 
 /**
- * POST /api/settings/promo-uplifts/{settingId}/reset
+ * POST /api/settings/promo-uplifts/recalculate[?customer_id=]
  *
- * An all-customers row goes back on the placeholder rule; a customer, range
- * or SKU override is retired (`setting` is then null).
+ * Work out the customer's (none = every customer's) moments and uplifts now
+ * instead of waiting for the queue.
  *
- * @param {number} settingId
- * @returns {Promise<{ changed: boolean, setting: object | null }>}
+ * @param {{ customerId?: number | null }} [options]
+ * @returns {Promise<{ customers: object[], failed: Array<{ customer_id: number, error: string }> }>}
  */
-export async function resetPromoUplift(settingId) {
-  return request(`${PROMO_UPLIFTS}/${encodeURIComponent(settingId)}/reset`, {
-    method: 'POST',
-  });
-}
-
-/**
- * POST /api/settings/promo-uplifts
- *
- * A mechanic's own value for one customer, SKU range or SKU. 409 when that
- * scope already has a value.
- *
- * @param {{ mechanic_key: string, scope: 'customer' | 'range' | 'sku', customer_id: number, sku_range?: string, sku?: string, uplift_pct: number, note?: string }} payload
- * @returns {Promise<{ changed: boolean, setting: object }>}
- */
-export async function addPromoUpliftOverride(payload) {
-  return request(PROMO_UPLIFTS, {
-    method: 'POST',
-    body: payload,
-  });
+export async function recalculatePromoUplifts({ customerId = null } = {}) {
+  const query = customerId != null ? `?${new URLSearchParams({ customer_id: String(customerId) })}` : '';
+  return request(`${PROMO_UPLIFTS}/recalculate${query}`, { method: 'POST' });
 }
 
 /**
@@ -241,31 +241,49 @@ export async function getPromoUpliftHistory(mechanicKey) {
 /**
  * GET /api/settings/promo-uplifts/anchors
  *
- * Every customer's ordinary-month discount: the value in use, its source
- * ('manual', 'suggested' or 'default'), and the suggestion from data with the
- * months it used.
+ * Every customer's anchor and each of its ranges': the value in use this
+ * month, its source ('recommended', 'manual', 'projected', 'customer' or
+ * 'default'), `upcoming` changes, `mechanic_options` an overwrite can pick,
+ * and the recommendation from data; plus the `fallback` anchor.
  *
- * @returns {Promise<{ default_anchor_pct: number, customers: object[] }>}
+ * @returns {Promise<{ default_anchor_pct: number, fallback: object, customers: object[] }>}
  */
 export async function getPromoAnchors() {
   return request(`${PROMO_UPLIFTS}/anchors`);
 }
 
 /**
- * PUT /api/settings/promo-uplifts/anchors/{customerId}, or .../anchors/default
- * when customerId is null (the all-customers value). `skuRange` sets one of
- * the customer's SKU ranges instead of the whole customer.
+ * PUT /api/settings/promo-uplifts/anchors/{customerId}
  *
- * @param {number | null} customerId
- * @param {number} anchorPct 0-100
+ * Overwrite a customer's (or, with `skuRange`, one of its ranges') anchor
+ * with one of its `mechanic_options` -- a mechanic its official promotions
+ * use -- from this month on. Any other mechanic answers 400.
+ *
+ * @param {number} customerId
+ * @param {string} mechanicKey
  * @param {string | null} [skuRange]
- * @returns {Promise<{ changed: boolean, anchor?: object, default_anchor_pct?: number }>}
+ * @returns {Promise<{ changed: boolean, anchor: object }>}
  */
-export async function savePromoAnchor(customerId, anchorPct, skuRange = null) {
-  const target = customerId == null ? 'default' : encodeURIComponent(customerId);
-  return request(`${PROMO_UPLIFTS}/anchors/${target}`, {
+export async function overwritePromoAnchor(customerId, mechanicKey, skuRange = null) {
+  return request(`${PROMO_UPLIFTS}/anchors/${encodeURIComponent(customerId)}`, {
     method: 'PUT',
-    body: { anchor_pct: anchorPct, sku_range: skuRange ?? undefined },
+    body: { mechanic_key: mechanicKey, sku_range: skuRange ?? undefined },
+  });
+}
+
+/**
+ * PUT /api/settings/promo-uplifts/anchors/default
+ *
+ * The fallback anchor, used wherever a customer x SKU range has no anchor of
+ * its own or its customer's, from this month on.
+ *
+ * @param {number} anchorPct 0-100
+ * @returns {Promise<{ changed: boolean, fallback: object }>}
+ */
+export async function saveFallbackAnchor(anchorPct) {
+  return request(`${PROMO_UPLIFTS}/anchors/default`, {
+    method: 'PUT',
+    body: { anchor_pct: anchorPct },
   });
 }
 

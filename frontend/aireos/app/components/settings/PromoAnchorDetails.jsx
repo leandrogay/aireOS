@@ -14,19 +14,22 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { getPromoAnchorHistory } from '@/app/services/promoUpliftsApi';
+import { monthText } from '@/app/utils/promoUpliftCalc';
 import {
   anchorLabel,
   anchorSourceLabel,
   sourceTone,
   changedByLabel,
   recommendedAnchorLabel,
+  upcomingAnchorText,
 } from '@/app/utils/promoUpliftSettings';
 import { formatDateTime } from '@/lib/formatDate';
 
 const HISTORY_COLUMNS = [
   { key: 'anchor', label: 'Anchor', width: '16rem' },
+  { key: 'from', label: 'From', width: '7rem' },
   { key: 'source', label: 'Source' },
-  { key: 'when', label: 'When', width: '15rem' },
+  { key: 'when', label: 'Saved', width: '15rem' },
 ];
 
 function changedLabel(row) {
@@ -35,14 +38,13 @@ function changedLabel(row) {
 
 /**
  * One anchor clicked open (the SKU catalogue's SkuDetails is the model): a
- * customer's or SKU range's current anchor, what the data recommends now,
- * and every saved version, newest first. Adopt saves the recommendation;
- * a discount can be typed (PromoAnchorForm) only with too few moments to
- * recommend from. The all-customers value (`target.row` null) has no
- * history to show.
+ * customer's or SKU range's anchor this month, its next change, what the
+ * data recommends now, and every saved version, newest first, with the
+ * month each applies from. Adopt saves the recommendation; Overwrite picks a
+ * mechanic (PromoAnchorOverwriteForm).
  *
  * @param {{
- *   target: { key: string, customerId: number | null, skuRange: string | null, name: string, anchorPct: number, row: object | null },
+ *   target: { key: string, customerId: number, skuRange: string | null, name: string, anchorPct: number, row: object },
  *   windowMonths: number,
  *   readOnly: boolean,
  *   onEdit: (target: object) => void,
@@ -52,10 +54,9 @@ function changedLabel(row) {
  */
 export default function PromoAnchorDetails({ target, windowMonths, readOnly, onEdit, onAdopt, onClose }) {
   const { row } = target;
-  const [history, setHistory] = useState({ rows: [], loading: Boolean(row), error: null });
+  const [history, setHistory] = useState({ rows: [], loading: true, error: null });
 
   useEffect(() => {
-    if (target.customerId == null) return undefined;
     let cancelled = false;
     getPromoAnchorHistory(target.customerId, target.skuRange)
       .then((rows) => {
@@ -69,27 +70,22 @@ export default function PromoAnchorDetails({ target, windowMonths, readOnly, onE
     };
   }, [target.customerId, target.skuRange]);
 
-  const fields = row
-    ? [
-        ['Anchor', anchorLabel(row)],
-        ['Source', <StatusPill key="source" tone={sourceTone(row.source)}>{anchorSourceLabel(row.source)}</StatusPill>],
-        ['Recommended now', recommendedAnchorLabel(row, windowMonths)],
-        ['Last changed', row.changed_at ? formatDateTime(row.changed_at) : '—'],
-      ]
-    : [
-        ['Anchor', `${target.anchorPct}% off`],
-        ['Used for', 'A customer with no anchor of its own'],
-      ];
+  const fields = [
+    ['Anchor this month', anchorLabel(row)],
+    ['Source', <StatusPill key="source" tone={sourceTone(row.source)}>{anchorSourceLabel(row.source)}</StatusPill>],
+    ['Next change', upcomingAnchorText(row, monthText) ?? 'None planned'],
+    ['Recommended now', recommendedAnchorLabel(row, windowMonths)],
+    ['Last changed', row.changed_at ? formatDateTime(row.changed_at) : '—'],
+  ];
 
   return (
     <Dialog open onOpenChange={(next) => { if (!next) onClose(); }}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{row ? target.name : 'All customers (fallback)'}</DialogTitle>
+          <DialogTitle>{target.name}</DialogTitle>
           <DialogDescription>
-            {row
-              ? 'The mechanic an ordinary month runs, which uplifts are measured from. It only changes when you adopt a new recommendation.'
-              : 'The ordinary-month discount used when a customer has no anchor of its own.'}
+            The mechanic an ordinary month runs, which uplifts are measured from. It changes when you adopt a
+            recommendation or overwrite it, and when official future promotions point to a new one.
           </DialogDescription>
         </DialogHeader>
         <dl className="grid gap-x-6 gap-y-3 rounded-lg border border-border p-4 sm:grid-cols-2">
@@ -100,46 +96,52 @@ export default function PromoAnchorDetails({ target, windowMonths, readOnly, onE
             </div>
           ))}
         </dl>
-        {row ? (
-          <section>
-            <h3 className="mb-2 font-medium">Update history</h3>
-            {history.loading ? <p className="text-sm text-muted-foreground">Loading history…</p> : null}
-            {history.error ? (
-              <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{history.error}</p>
-            ) : null}
-            {!history.loading && !history.error && history.rows.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No versions saved yet.</p>
-            ) : null}
-            {history.rows.length ? (
-              <TableGrid variant="nested" columns={HISTORY_COLUMNS} minWidth="36rem">
-                {history.rows.map((entry) => (
-                  <tr key={entry.id} className="h-11 border-b border-lavander/80 last:border-b-0">
-                    <td className="px-4 py-2 tabular-nums">
-                      <span className="inline-flex max-w-full items-center gap-1.5">
-                        <span className="truncate font-medium" title={anchorLabel(entry)}>{anchorLabel(entry)}</span>
-                        {entry.is_current ? (
-                          <span className="shrink-0">
-                            <StatusPill tone="success">Current</StatusPill>
-                          </span>
-                        ) : null}
-                      </span>
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-2">
-                      <StatusPill tone={sourceTone(entry.source)}>{anchorSourceLabel(entry.source)}</StatusPill>
-                    </td>
-                    <td className="px-4 py-2 text-muted-foreground">{changedLabel(entry)}</td>
-                  </tr>
-                ))}
-              </TableGrid>
-            ) : null}
-          </section>
-        ) : null}
+        <section>
+          <h3 className="mb-2 font-medium">Update history</h3>
+          {history.loading ? <p className="text-sm text-muted-foreground">Loading history…</p> : null}
+          {history.error ? (
+            <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{history.error}</p>
+          ) : null}
+          {!history.loading && !history.error && history.rows.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No versions saved yet.</p>
+          ) : null}
+          {history.rows.length ? (
+            <TableGrid variant="nested" columns={HISTORY_COLUMNS} minWidth="42rem">
+              {history.rows.map((entry) => (
+                <tr key={entry.id} className="h-11 border-b border-lavander/80 last:border-b-0">
+                  <td className="px-4 py-2 tabular-nums">
+                    <span className="inline-flex max-w-full items-center gap-1.5">
+                      <span className="truncate font-medium" title={anchorLabel(entry)}>{anchorLabel(entry)}</span>
+                      {entry.is_current ? (
+                        <span className="shrink-0">
+                          <StatusPill tone="success">Current</StatusPill>
+                        </span>
+                      ) : null}
+                      {entry.is_upcoming ? (
+                        <span className="shrink-0">
+                          <StatusPill tone="info">Upcoming</StatusPill>
+                        </span>
+                      ) : null}
+                    </span>
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-2">
+                    {entry.effective_from ? monthText(entry.effective_from) : 'The start'}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-2">
+                    <StatusPill tone={sourceTone(entry.source)}>{anchorSourceLabel(entry.source)}</StatusPill>
+                  </td>
+                  <td className="px-4 py-2 text-muted-foreground">{changedLabel(entry)}</td>
+                </tr>
+              ))}
+            </TableGrid>
+          ) : null}
+        </section>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Close</Button>
-          {!readOnly && (!row || row.manual_allowed) ? (
-            <Button variant="outline" onClick={() => onEdit(target)}>Type a discount</Button>
+          {!readOnly ? (
+            <Button variant="outline" onClick={() => onEdit(target)}>Overwrite anchor</Button>
           ) : null}
-          {!readOnly && row?.recommendation_differs ? (
+          {!readOnly && row.recommendation_differs ? (
             <Button onClick={() => onAdopt(target)}>Adopt {row.recommended.mechanic_label}</Button>
           ) : null}
         </DialogFooter>

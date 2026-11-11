@@ -7,9 +7,9 @@ import { customerLabel } from '@/app/utils/retailerLabel';
 /**
  * Customer, SKU range and Mechanic filters for the Uplift by mechanic table,
  * laid out like the SKU catalogue's filters (SkuFilters) but inside the
- * table's own card. Uplifts and anchors follow SKU ranges, so the narrowest
- * filter is a range: a range on its own lists that range's value for every
- * customer; a mechanic on its own lists every value saved for it.
+ * table's own card. Every row is one customer x SKU range x mechanic, so
+ * "All" on a filter shows every combination (utils/promoUpliftCalc
+ * filterCalculatedRows), never a value for all customers at once.
  *
  * @param {{
  *   filters: { customer: string, skuRange: string, mechanic: string },
