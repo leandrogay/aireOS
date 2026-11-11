@@ -6,7 +6,9 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
-const triggerClass = 'cursor-pointer rounded-full p-0.5 text-deep-violet-blue/50 hover:text-deep-violet-blue';
+// cursor-default: the icon only shows a hint on hover and does nothing on
+// click, so a pointer hand would invite a click that goes nowhere.
+const triggerClass = 'cursor-default rounded-full p-0.5 text-deep-violet-blue/50 hover:text-deep-violet-blue';
 
 /**
  * A small info icon that shows help on hover, for a table column header or
