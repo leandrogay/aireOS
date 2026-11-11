@@ -4,6 +4,7 @@ import { ShieldCheck } from 'lucide-react';
 import { PackshotBackdrop } from '@/components/auth/PackshotBackdrop';
 import { buttonVariants } from '@/components/ui/button';
 import { glassSurfaceClass } from '@/components/ui/surfaceStyles';
+import ThemeToggle from '@/components/ui/ThemeToggle';
 import {
   Card,
   CardContent,
@@ -37,6 +38,7 @@ export default async function LoginPage({ searchParams }) {
 
   return (
     <main className="aire-glass-scene relative isolate flex min-h-dvh items-center justify-center overflow-hidden px-4 py-6 sm:px-6 sm:py-12">
+      <ThemeToggle compact className="absolute top-4 right-4 z-20" />
       <PackshotBackdrop />
       <Card className={cn(glassSurfaceClass, 'auth-glass-arrive relative z-10 w-full max-w-3xl gap-0 overflow-hidden py-0 sm:min-h-[34rem]')}>
         <CardHeader className="flex flex-1 flex-col items-center justify-center px-6 pt-9 pb-8 text-center sm:px-16 sm:pt-16 sm:pb-10">
@@ -45,7 +47,7 @@ export default async function LoginPage({ searchParams }) {
             alt="AIRE"
             width={150}
             height={61}
-            className="mx-auto h-auto w-28 sm:w-[150px]"
+            className="aire-brand-mark mx-auto h-auto w-28 sm:w-[150px]"
             priority
           />
           <CardTitle className="mt-6 text-3xl leading-tight tracking-tight text-deep-violet-blue sm:mt-9 sm:text-5xl">

@@ -9,6 +9,7 @@ import { AnimatePresence, MotionConfig, motion, useReducedMotion } from 'motion/
 
 import { NAV_ITEMS, matchesPath } from '@/components/layout/navItems';
 import RailFlyout from '@/components/layout/RailFlyout';
+import ThemeToggle from '@/components/ui/ThemeToggle';
 import { logout } from '@/app/services/authApi';
 import useMediaQuery from '@/hooks/useMediaQuery';
 import { cn } from '@/lib/utils';
@@ -143,7 +144,7 @@ export default function Sidebar() {
         narrow ? 'fixed inset-y-0 left-0 z-40' : collapsed ? 'fixed left-2 z-40 max-md:invisible' : 'sticky max-md:invisible',
         (showingMobile || peeking) && 'shadow-2xl shadow-deep-violet-blue/15',
         rail || hidden ? 'px-2' : 'px-3',
-        hidden ? 'pointer-events-none bg-transparent' : 'bg-card/35 shadow-md shadow-deep-violet-blue/5 backdrop-blur-2xl',
+        hidden ? 'pointer-events-none bg-transparent' : 'aire-glass-float bg-card/35 shadow-md shadow-deep-violet-blue/5 backdrop-blur-2xl',
       )}
     >
       <div className="relative flex h-8 items-center md:mt-2">
@@ -176,7 +177,7 @@ export default function Sidebar() {
                   alt="AireOS"
                   width={120}
                   height={36}
-                  className="h-auto"
+                  className="aire-brand-mark h-auto"
                   priority
                 />
               </Link>
@@ -292,6 +293,11 @@ export default function Sidebar() {
         </AnimatePresence>
       </MotionConfig>
 
+      {!hidden && (
+        <div className="mt-auto w-50 shrink-0 pt-4">
+          <ThemeToggle compact={rail} />
+        </div>
+      )}
       <AnimatePresence initial={false}>
         {authEnabled && !hidden && (
           <motion.div
@@ -300,7 +306,7 @@ export default function Sidebar() {
             initial="hidden"
             animate="shown"
             exit="hidden"
-            className="mt-auto w-50 shrink-0 pt-4"
+            className="w-50 shrink-0 pt-1"
           >
             <button
               type="button"

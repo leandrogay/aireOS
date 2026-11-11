@@ -38,8 +38,12 @@ export default function RootLayout({ children }) {
   return (
     <html
       lang="en"
+      suppressHydrationWarning
       className={`${dmSans.variable} ${dmSerif.variable} ${geistMono.variable} ${figtree.variable} h-full antialiased`}
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: "try{if(localStorage.getItem('aireos-theme')==='dark')document.documentElement.classList.add('dark')}catch(e){}" }} />
+      </head>
       <body className="min-h-full flex flex-col font-sans">
         <UploadProvider>{children}</UploadProvider>
         <AssistantWidget />

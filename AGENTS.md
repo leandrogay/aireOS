@@ -484,3 +484,8 @@ Log these separately from the visual revamp; do not change application behavior 
 | `frontend/aireos/app/components/layout/Sidebar.jsx:130` | Low, performance | Opening the sidebar animates its width, which can trigger layout work on slower devices. | Profile on mobile and consider a transform-based visual treatment if it causes jank. |
 | `frontend/aireos/app/globals.css:4` | Medium, maintenance | The `tw-animate-css` workaround comment documents a hardcoded package path risk; the current import differs from the comment. | Reconcile the comment and import after checking a clean install and build. |
 | `frontend/aireos/app/components/ui/surfaceStyles.js:3` | Medium, accessibility/performance | The earlier shared card style put `backdrop-blur-xl` on large content surfaces without a reduced-transparency fallback. | Keep the existing class for compatibility, cap blur to small floating surfaces, and supply opaque fallbacks in the visual theme. |
+| `frontend/aireos/app/login/page.js:83` | Low, copy | The Google Workspace note contains a mojibake separator (`Â·`) in the source. | Replace the corrupted separator in a separate copy fix. |
+
+The visual pass adds a manual light/dark toggle, the one approved exception to
+the visual-only rule. It stores `aireos-theme` locally; it does not follow the
+device setting or change application data.
