@@ -12,40 +12,45 @@ import { cn } from '@/lib/utils';
 // ui/tabs) so it doesn't fight the shadcn defaults; Base UI gives the
 // keyboard handling (arrow keys between options) and tablist semantics.
 
-// Same spring as the Sidebar's active highlight, so every slide in the app
-// moves alike.
+// A short spring keeps the thumb attached to the selected option.
 const HIGHLIGHT_SPRING = { type: 'spring', stiffness: 500, damping: 40 };
 
 // `tint`: lavender track, for a switch inside a card (chart metric, form
 // mode). `outline`: white track with a border, for a page's top-level tabs.
-// `soft`: a see-through track with the chosen option as a white pill, lighter
+// `glass`: a tinted track with a bordered white thumb for the dashboard's
+// chart controls. `soft`: a see-through track with a white pill, lighter
 // than the solid navy of `tint`; for choosing which data a page shows (the
 // dashboard's Offline / Online) as opposed to how to draw it.
 const TRACK_LOOK = {
   tint: 'rounded-lg bg-lavander',
-  outline: 'rounded-md border border-violet/40 bg-white',
+  outline: 'rounded-md border border-violet/40 bg-lavander/35 shadow-sm',
+  glass: 'rounded-lg border border-deep-violet-blue/30 bg-lavander/55 shadow-sm',
   soft: 'rounded-lg bg-lavander/45 shadow-sm ring-1 ring-violet/25 backdrop-blur-sm',
 };
 // not-data-disabled: a disabled option keeps its faded look under the pointer.
 const SEGMENT_HOVER = {
   tint: 'not-data-disabled:hover:bg-white/60',
   outline: 'not-data-disabled:hover:bg-cream',
+  glass: 'not-data-disabled:hover:bg-white/45',
   soft: '',
 };
 const HIGHLIGHT_LOOK = {
   tint: 'bg-deep-violet-blue shadow-sm',
-  outline: 'bg-deep-violet-blue shadow-sm',
-  soft: 'bg-white shadow-sm ring-1 ring-violet/30',
+  outline: 'bg-deep-violet-blue shadow-sm ring-1 ring-deep-violet-blue/40',
+  glass: 'bg-white shadow-sm ring-1 ring-deep-violet-blue/55',
+  soft: 'bg-white shadow-sm ring-1 ring-deep-violet-blue/45',
 };
 const ACTIVE_TEXT = {
   tint: 'text-white',
   outline: 'text-white',
+  glass: 'text-deep-violet-blue',
   soft: 'text-deep-violet-blue',
 };
 const INACTIVE_TEXT = {
   tint: 'text-deep-violet-blue/70',
   outline: 'text-deep-violet-blue/70',
-  soft: 'text-deep-violet-blue/55',
+  glass: 'text-deep-violet-blue/80',
+  soft: 'text-deep-violet-blue/75',
 };
 const TRACK_SIZE = {
   sm: 'h-7 text-[11px]',
@@ -57,7 +62,7 @@ const TRACK_SIZE = {
  *   value: string,
  *   onChange: (value: string) => void,
  *   options: { value: string, label: string, icon?: import('react').ElementType, disabled?: boolean, disabledReason?: string, title?: string }[],
- *   look?: 'tint' | 'outline' | 'soft',
+ *   look?: 'tint' | 'outline' | 'glass' | 'soft',
  *   size?: 'sm' | 'md',
  *   fullWidth?: boolean,
  *   ariaLabel?: string,

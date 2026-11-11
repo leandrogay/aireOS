@@ -51,7 +51,7 @@ export const PAGE_CASCADE = {
 // what a chart draws, its bars/lines and its y-axis (range, gridlines, tick
 // labels) move together on this one tween, so the axis never snaps while the
 // data glides. Seconds; matches the bars' first draw (trendChart BAR_ANIMATION).
-export const CHART_TRANSITION = { duration: 0.7, ease: 'easeOut' };
+export const CHART_TRANSITION = { duration: 0.45, ease: 'easeOut' };
 
 // Loading placeholders (hooks/useDelayedLoading). A placeholder that shows
 // for a frame or two before the chart replaces it reads as a flicker, so:
@@ -59,7 +59,7 @@ export const CHART_TRANSITION = { duration: 0.7, ease: 'easeOut' };
 // faster than this goes straight to the chart (its space is held, blank).
 // `minDuration`: once shown, seconds it stays at least, so it never blinks.
 // The placeholder fades in over 150ms (the `duration-150` class in the hook).
-export const PLACEHOLDER_TIMING = { delay: 0.2, minDuration: 0.4 };
+export const PLACEHOLDER_TIMING = { delay: 0.18, minDuration: 0.15 };
 
 // A card that joins a page already on screen (the mapping review's product
 // codes, once a product code column is chosen): it rises on the page spring,

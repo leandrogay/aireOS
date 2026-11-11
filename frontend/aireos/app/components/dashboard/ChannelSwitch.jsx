@@ -5,11 +5,9 @@ import SegmentedControl from '@/components/ui/SegmentedControl';
 /**
  * Offline / Online for the whole Sales Dashboard (the chart, the summary and
  * the ranking all follow it), at the top right of the trend card beside the
- * Period controls. The `soft` look (a see-through track, the chosen channel as
- * a white pill) is lighter than the solid navy of the view switches below it,
- * so choosing the data (channel) reads differently from choosing how to draw
- * it. 152px wide and size sm, like the By week / By month switch in
- * RevenueTrendCard, so the two right-aligned switches line up on both edges.
+ * Period controls. The `soft` look keeps the chosen channel distinct from
+ * the chart's metric and grouping controls. 152px wide and size sm, like the By week / By month switch in
+ * RevenueTrendCard, so the right-aligned controls line up on both edges.
  * Online is disabled when no ticked customer sells online (NHG).
  *
  * @param {{ mode: 'offline' | 'online', onChange: (mode: string) => void, onlineEnabled?: boolean }} props

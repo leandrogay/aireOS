@@ -5,6 +5,8 @@ import { useMemo, useState } from 'react';
 import HeaderCheckboxFilter from '@/components/ui/HeaderCheckboxFilter';
 import TableCard from '@/components/ui/TableCard';
 import TableCardHeader from '@/components/ui/TableCardHeader';
+import { TABLE_HEADER_CLASS } from '@/components/ui/SortHeader';
+import { cn } from '@/lib/utils';
 import {
   TABLE_MISSING_HINT,
   TABLE_MISSING_LABEL,
@@ -139,7 +141,7 @@ export default function ForecastTable({ points, visibleSeries, modelLabel = '' }
 
       <div className="hidden min-w-0 overflow-x-auto border-t border-lavander sm:block">
         <div className={expanded ? '' : 'max-h-[28vh] overflow-y-auto'}>
-          <table className="aire-table-rows w-full min-w-[44rem] table-fixed text-left text-xs text-deep-violet-blue">
+          <table className="aire-table-rows w-full min-w-[56rem] table-fixed text-left text-sm text-deep-violet-blue">
             <colgroup>
               <col className="w-[16%]" />
               {visibleColumns.map((series) => (
@@ -147,8 +149,8 @@ export default function ForecastTable({ points, visibleSeries, modelLabel = '' }
               ))}
             </colgroup>
             <thead className="sticky top-0 z-10 bg-cream">
-              <tr className="border-b border-lavander">
-                <th className="px-1.5 py-2">
+              <tr className="h-10 border-b border-lavander">
+                <th className={cn(TABLE_HEADER_CLASS, 'px-2.5 py-1.5')}>
                   <HeaderCheckboxFilter
                     id="month"
                     label="Month"
@@ -162,7 +164,7 @@ export default function ForecastTable({ points, visibleSeries, modelLabel = '' }
                 {visibleColumns.map((series) => (
                   <th
                     key={series.key}
-                    className="px-2.5 py-2 text-right text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60"
+                    className={cn(TABLE_HEADER_CLASS, 'whitespace-nowrap px-2.5 text-right')}
                   >
                     {series.label}
                   </th>

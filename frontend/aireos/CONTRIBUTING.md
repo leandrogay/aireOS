@@ -62,10 +62,10 @@ Use the semantic tokens defined in `app/globals.css` — `bg-card`,
 `text-card-foreground`, `border-border`, `bg-primary`, `text-muted-foreground`
 — instead of `bg-white`, `text-gray-900`, `border-gray-200`.
 
-**Why this matters, concretely:** those tokens have both a light and a `.dark`
-definition already wired up in `globals.css`. Anything built with them gets
-dark mode automatically. Anything built with raw `gray-*`/`white` classes
-doesn't, and would need a manual `dark:` variant added to every element later.
+**Why this matters, concretely:** these tokens keep colours consistent across
+the app. The `.dark` definitions remain in `globals.css` for a possible future
+theme, but dark mode is currently disabled. Raw `gray-*`/`white` classes can
+drift from the shared palette and would need manual overrides for another theme.
 
 If you need an AIRE brand color that isn't one of the generic tokens, use the
 ones already defined in the `/* AIRE brand kit */` block in `globals.css`

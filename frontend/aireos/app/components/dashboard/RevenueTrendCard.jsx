@@ -87,13 +87,14 @@ export default function RevenueTrendCard({
       {/* How to draw it: the view switches on their own line, on the right,
           just above the chart they change. */}
       <div className="mb-2 flex flex-wrap items-center justify-end gap-2">
-        <SegmentedControl value={metric} onChange={onMetricChange} options={METRIC_OPTIONS} ariaLabel="Metric" />
+        <SegmentedControl look="glass" value={metric} onChange={onMetricChange} options={METRIC_OPTIONS} ariaLabel="Metric" />
         {/* By week is disabled (faded) when no month in the range has weekly
             rows (page.js weekAvailable). */}
         {/* 152px, as wide as the Offline / Online switch above it
             (ChannelSwitch), so the two line up on both edges; wide enough
             for "By month" in an equal half. */}
         <SegmentedControl
+          look="glass"
           fullWidth
           className="w-[152px]"
           value={granularity}

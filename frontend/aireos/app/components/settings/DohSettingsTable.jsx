@@ -6,12 +6,13 @@ import RowActions from '@/components/ui/RowActions';
 import MobileRecordCard from '@/components/ui/MobileRecordCard';
 import TableSkeleton from '@/components/ui/TableSkeleton';
 import ToggleField from '@/components/ui/ToggleField';
+import { TABLE_HEADER_CLASS } from '@/components/ui/SortHeader';
 import { formatDohDays } from '@/app/utils/dohSettingsForm';
 import { formatDateTime } from '@/lib/formatDate';
 import { customerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
-const thClass = 'bg-cream px-2 py-1.5 text-left text-xs font-medium text-deep-violet-blue/60';
+const thClass = cn(TABLE_HEADER_CLASS, 'bg-cream px-2 text-left');
 const tdClass = 'px-2 py-1.5 text-sm text-deep-violet-blue';
 const numClass = 'text-right tabular-nums';
 
@@ -78,7 +79,7 @@ export default function DohSettingsTable({
     <div className="hidden max-w-full min-w-0 overflow-auto border-t border-lavander sm:block">
       <table className="aire-table-rows w-full min-w-[44rem] border-collapse">
         <thead>
-          <tr>
+          <tr className="h-10">
             <th className={thClass}>Customer</th>
             <th className={cn(thClass, numClass)}>Min DOH</th>
             <th className={cn(thClass, numClass)}>Target DOH</th>

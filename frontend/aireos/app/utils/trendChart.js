@@ -291,7 +291,7 @@ export const MAX_BAR_SIZE = 56;
 // other re-render, and 'auto' skips it for prefers-reduced-motion.
 export const BAR_ANIMATION = {
   isAnimationActive: 'auto',
-  animationDuration: 700,
+  animationDuration: 450,
   animationEasing: 'ease-out',
 };
 

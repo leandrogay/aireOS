@@ -72,7 +72,7 @@ export default function HeaderCheckboxFilter({ id, label, selected, options, ope
         aria-expanded={open}
         aria-haspopup="listbox"
         onClick={() => setOpenId(open ? null : id)}
-        className={cn(TABLE_HEADER_ACTION_CLASS, 'max-w-[11rem] whitespace-nowrap uppercase tracking-wide', isActive && 'font-semibold text-deep-violet-blue')}
+        className={cn(TABLE_HEADER_ACTION_CLASS, 'max-w-[11rem] whitespace-nowrap', isActive && 'font-semibold text-deep-violet-blue')}
       >
         <span className="truncate">{label}</span>
         {isActive ? <span className="text-[9px] font-bold">{selected.length}</span> : null}

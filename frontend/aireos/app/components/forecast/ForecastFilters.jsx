@@ -10,7 +10,7 @@ import { customerLabel } from '@/app/utils/retailerLabel';
 
 const labelClass = 'mb-0.5 block text-[11px] text-deep-violet-blue/70';
 // The typed DatePicker box in the compact white look of the dropdowns beside it.
-const dateBoxClass = 'h-8 border-violet bg-white px-2 text-xs';
+const dateBoxClass = 'h-8 border-deep-violet-blue/45 bg-white px-2 text-xs';
 const clearClass =
   'rounded-md border border-deep-violet-blue/30 bg-white px-2 py-0.5 text-[10px] font-medium text-deep-violet-blue transition hover:bg-cream disabled:cursor-not-allowed disabled:opacity-40';
 

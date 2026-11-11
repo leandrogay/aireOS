@@ -10,8 +10,8 @@ import { cn } from '@/lib/utils';
 // Scenario builder's pink (the scenario tokens in globals.css), as on its
 // block and promotion switches.
 const SWITCH_TONE = {
-  default: 'data-checked:bg-deep-violet-blue data-unchecked:bg-lavander',
-  scenario: 'data-checked:bg-scenario data-unchecked:bg-lavander',
+  default: 'data-checked:bg-deep-violet-blue',
+  scenario: 'data-checked:bg-scenario',
 };
 // The showState "On" pill, in the same colour as the switch.
 const ON_PILL_TONE = {

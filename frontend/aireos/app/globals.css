@@ -263,7 +263,7 @@
    scrolling area. The solid background remains the fallback. */
 .aire-glass-surface {
   background-color: var(--card);
-  background-color: color-mix(in srgb, var(--aire-glass-tint) 86%, transparent);
+  background-color: color-mix(in srgb, var(--aire-glass-tint) 80%, transparent);
   background-image: linear-gradient(145deg, color-mix(in srgb, var(--aire-glass-edge) 28%, transparent), transparent 48%);
   border-color: var(--aire-glass-edge);
   box-shadow: inset 0 1px 0 var(--aire-glass-sheen), 0 18px 38px -22px var(--aire-glass-shadow);
@@ -324,14 +324,18 @@
 
 @supports (backdrop-filter: blur(1px)) {
   .aire-glass-float {
-    background-color: color-mix(in srgb, var(--aire-glass-tint) 88%, transparent);
+    background-color: color-mix(in srgb, var(--aire-glass-tint) 82%, transparent);
     backdrop-filter: blur(10px) saturate(1.12);
+  }
+  .aire-glass-float.aire-glass-dropdown-panel {
+    background-color: color-mix(in srgb, var(--aire-glass-tint) 96%, transparent);
   }
 }
 
 @media (prefers-reduced-transparency: reduce) {
   .aire-glass-surface,
-  .aire-glass-float {
+  .aire-glass-float,
+  .aire-glass-float.aire-glass-dropdown-panel {
     background-color: var(--card);
     background-image: none;
     backdrop-filter: none;
