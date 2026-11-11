@@ -6,6 +6,8 @@ inventory_service matches the lines to customers and SKUs and decides which
 ones can be written.
 """
 
+import re
+import unicodedata
 from datetime import date
 from io import BytesIO
 from zipfile import BadZipFile
@@ -34,11 +36,21 @@ DESCRIPTION_PRODUCTS = {
     "ADULT TAPE ULTRA XL": "Aire Ultra Tape XL",
 }
 
-# The tracker's trading name for a customer, mapped to the customer_name
-# AireOS stores them under, for customers whose name in the tracker differs
-# from what they are called in the inventory customer list.
+# The tracker's trading name for a customer, mapped to the retailer family its
+# sales are filed under in AireOS (sheng_siong for sheng_siong_offline /
+# _online), only for a company name that customer_match_key can't tie to the
+# customer by itself. The upload finds the customer through that family's
+# retailers, so renaming the customer record doesn't break it
+# (inventory_service._fetch_customer_families).
 CUSTOMER_ALIASES = {
     "CMM MARKETING SERVICES PTE LTD": "sheng_siong",
+}
+
+# Words a company name can end with that don't tell customers apart:
+# "Cold Storage Singapore (1983) Pte Ltd" is the customer "Cold Storage".
+_COMPANY_ENDINGS = {
+    "pte", "ltd", "limited", "private", "llp", "inc", "co", "company",
+    "cooperative", "operative", "corp", "corporation", "singapore", "spore", "sg",
 }
 
 _NO_ROWS_MESSAGE = (
@@ -52,10 +64,38 @@ def product_for_description(description: str) -> str | None:
 
 
 def canonical_customer_name(tracker_name: str) -> str:
-    """The tracker's customer name, translated to AireOS's own name for that
-    customer when the two differ (see CUSTOMER_ALIASES); unchanged otherwise."""
+    """The tracker's customer name, or for a listed trading name (see
+    CUSTOMER_ALIASES) the retailer family that customer's sales are filed
+    under (sheng_siong for CMM Marketing Services); unchanged otherwise."""
 
-    return CUSTOMER_ALIASES.get(tracker_name.upper(), tracker_name)
+    return _ALIASES_BY_KEY.get(customer_match_key(tracker_name), tracker_name)
+
+
+def customer_match_key(name: str) -> str:
+    """A customer name reduced to what identifies it, so the tracker's
+    spelling and AireOS's compare equal: case, spaces, underscores and
+    punctuation and accents are ignored, "&" reads as "and", a leading "The"
+    and bracketed text (closed or not) are dropped, and so are company endings
+    (Pte Ltd, Singapore, S'pore, ...) at the end.
+    "Sheng_Siong", "SHENG SIONG" and "Sheng-Siong" all give "shengsiong";
+    "Cold Storage Singapore (1983) Pte Ltd" gives "coldstorage". Empty when
+    nothing identifying is left, which never matches. Different words are
+    never treated as the same: there is no guessing at typos."""
+
+    text = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower()
+    text = re.sub(r"\([^)]*(\)|$)", " ", text)
+    text = re.sub(r"['’]", "", text).replace("&", " and ")
+    words = re.findall(r"[a-z0-9]+", text)
+    if len(words) > 1 and words[0] == "the":
+        words.pop(0)
+    while words and words[-1] in _COMPANY_ENDINGS:
+        words.pop()
+    return "".join(words)
+
+
+# CUSTOMER_ALIASES by customer_match_key, so "CMM Marketing Services Pte. Ltd."
+# or a stray space still finds its alias.
+_ALIASES_BY_KEY = {customer_match_key(name): family for name, family in CUSTOMER_ALIASES.items()}
 
 
 def quantity_problem(qty: float | None) -> str | None:

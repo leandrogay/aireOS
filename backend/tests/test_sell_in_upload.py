@@ -6,6 +6,7 @@ import pytest
 
 from app.services.sell_in_upload import (
     canonical_customer_name,
+    customer_match_key,
     product_for_description,
     quantity_problem,
     read_sell_in_lines,
@@ -140,8 +141,55 @@ def test_cmm_marketing_services_is_known_as_sheng_siong():
     assert canonical_customer_name("CMM Marketing Services Pte Ltd") == "sheng_siong"
 
 
+@pytest.mark.parametrize(
+    "written",
+    ["CMM Marketing Services Pte. Ltd.", "cmm marketing services pte ltd", "CMM  Marketing Services Private Limited"],
+)
+def test_the_cmm_alias_is_found_however_the_company_name_is_punctuated(written):
+    assert canonical_customer_name(written) == "sheng_siong"
+
+
 def test_an_unlisted_customer_name_is_returned_unchanged():
     assert canonical_customer_name("Fairprice") == "Fairprice"
+
+
+@pytest.mark.parametrize(
+    "tracker, platform",
+    [
+        ("Fairprice", "FairPrice"),
+        ("SHENG SIONG", "Sheng_Siong"),
+        ("Sheng-Siong", "sheng_siong"),
+        ("Cold Storage Singapore (1983) Pte Ltd", "Cold Storage"),
+        ("Pantrade Pacific Pte Ltd", "Pantrade Pacific"),
+        ("Ng Teng Fong General Hospital & Jurong Community Hospital", "Ng Teng Fong General Hospital and Jurong Community Hospital"),
+        ("The Golden Concepts", "Golden Concepts"),
+        ("Watsons S'pore", "Watsons"),
+        ("Watson’s", "Watsons"),
+        ("Cold Storage (1983", "Cold Storage"),
+        ("Café Aire", "Cafe Aire"),
+        ("  Sheng Siong  ", "Sheng_Siong"),
+    ],
+)
+def test_customer_names_that_differ_only_in_spelling_or_company_endings_match(tracker, platform):
+    assert customer_match_key(tracker) == customer_match_key(platform)
+
+
+@pytest.mark.parametrize(
+    "tracker, platform",
+    [
+        ("Sheng Siong", "Sheng Shiong"),
+        ("NTUC FairPrice", "FairPrice"),
+        ("Singapore General Hospital", "SingHealth"),
+        ("Fairpirce", "FairPrice"),
+    ],
+)
+def test_different_customer_names_are_not_guessed_to_match(tracker, platform):
+    assert customer_match_key(tracker) != customer_match_key(platform)
+
+
+def test_a_name_that_is_only_company_endings_matches_nothing():
+    assert customer_match_key("Pte Ltd") == ""
+    assert customer_match_key("") == ""
 
 
 def test_a_sheet_with_only_a_header_is_refused_with_a_message_about_rows():

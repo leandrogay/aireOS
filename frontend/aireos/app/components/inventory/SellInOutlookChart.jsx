@@ -103,8 +103,9 @@ const NO_DATA_HINT = {
 // carry on from where they ended.
 const LINE_SWEEP = { begin: 0, duration: 1200 };
 
-// The current sell-in and sell-out lines start from the last actual point, so
-// each reads as one stroke from actual into plan (see rows below). There the
+// The current sell-in and sell-out lines start from the last actual point while
+// that actual line is shown, so each reads as one stroke from actual into plan
+// (currentLineValues). There the
 // value is the actual, not a forecast, so the tooltip leaves it out. The
 // Previous and Initial lines have values of their own in the actual months
 // (backend _previous_sell_in, _past_recommendations), so they never join.
@@ -175,7 +176,11 @@ export default function SellInOutlookChart({
   // The zoom works in x-axis values, which on a phone are the months themselves.
   const zoom = useChartZoom(months.map((row) => (mobile ? row.month : formatMonth(row.month))));
 
-  const currentLines = currentLineValues(months, actualsThrough);
+  // Joined to the actuals only while their line is shown (see currentLineValues).
+  const currentLines = currentLineValues(months, actualsThrough, {
+    joinSellIn: visible.sell_in_actual,
+    joinSellOut: visible.sell_out_actual,
+  });
   const rows = months.map((row, index) => ({
     ...row,
     label: formatMonth(row.month),
