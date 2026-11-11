@@ -55,7 +55,7 @@ export default function TablePagination({
             look="outline"
             tick={false}
             ariaLabel="Rows per page"
-            className="w-[4.5rem]"
+            className="w-[4rem]"
           />
         </div>
         <div className="flex items-center gap-1">
