@@ -39,8 +39,13 @@ import useMediaQuery from '@/hooks/useMediaQuery';
  * fitScreen) with the rows scrolling inside, so searching or paging never
  * resizes it.
  *
+ * `title` shows a heading before the count, for a list that shares its page
+ * with other sections (Recent uploads under the upload area). Leave it out
+ * when the page title already names the list.
+ *
  * @param {{
  *   label: string,
+ *   title?: string,
  *   noun: string,
  *   plural?: string,
  *   totalCount: number,
@@ -57,6 +62,7 @@ import useMediaQuery from '@/hooks/useMediaQuery';
  */
 export default function DataTable({
   label,
+  title = null,
   noun,
   plural = `${noun}s`,
   totalCount,
@@ -77,17 +83,21 @@ export default function DataTable({
   const showTable = firstLoad || totalCount > 0;
 
   return (
-    // No visible heading (the page title already names the list); the
-    // aria-label still names the region for screen readers.
+    // No visible heading unless `title` is given (the page title usually
+    // names the list); the aria-label still names the region for screen
+    // readers.
     <TableCard
       label={label}
       // min-h-80 keeps the table usable on a short window.
       className={fill ? 'min-h-80 flex-1' : undefined}
       header={(
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-deep-violet-blue/70" aria-live="polite">
-            {firstLoad ? `Loading ${plural}…` : resultCountLabel(shownCount, totalCount, noun, plural)}
-          </p>
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-3">
+            {title && <h2 className="font-serif text-xl text-deep-violet-blue">{title}</h2>}
+            <p className="text-sm text-deep-violet-blue/70" aria-live="polite">
+              {firstLoad ? `Loading ${plural}…` : resultCountLabel(shownCount, totalCount, noun, plural)}
+            </p>
+          </div>
           <div className={cn('flex min-w-0 flex-wrap items-center gap-2', toolbar ? 'w-full sm:w-auto' : 'ml-auto')}>
             {toolbar}
             <RefreshButton

@@ -11,6 +11,7 @@ import { matchesSearch } from '@/app/utils/tableView';
 export const GUIDE = [
   ['List records with search, sort and paging', 'PaginatedDataTable', 'label, noun, totalCount, shownCount, columns, toolbar, pagination, sort, onSort'],
   ['…a short list that needs no paging', 'DataTable', 'the same, without pagination (footer for anything else)'],
+  ['…sharing its page with other sections', 'DataTable / PaginatedDataTable', 'title (a heading before the count; Recent uploads)'],
   ['A row that opens to show more', 'ExpandableRow (+ useExpandedRows)', 'columnCount, isOpen, onToggle, primary, actions, details, highlight'],
   ['The "…" menu at the end of a row', 'RowActions + ACTIONS_COLUMN', 'label, actions[] (icon, onSelect, disabledReason, destructive)'],
   ['A table inside an expanded row or a card', 'TableGrid variant="nested"', 'columns, inset (EXPANDED_ROW_INSET / CARD_INSET), minWidth'],
@@ -24,7 +25,6 @@ export const GUIDE = [
 // Tables that should move to the kit, page by page. Remove a row when its
 // page migrates.
 export const NOT_MIGRATED = [
-  ['Upload', 'upload/RecentUploads.jsx', 'Hand-rolled <table> with SortHeader, TableSkeleton, TablePagination', 'PaginatedDataTable + TableGrid'],
   ['Settings (DOH)', 'settings/DohSettingsTable.jsx', 'Hand-rolled <table> inside TableCard', 'TableGrid inside TableCard'],
   ['Dashboard', 'dashboard/SkuRanking.jsx', 'Hand-rolled <table> with SortHeader inside TableCard', 'TableGrid inside TableCard'],
   ['Forecast', 'forecast/ForecastTable.jsx', 'Hand-rolled <table> with HeaderCheckboxFilter inside TableCard', 'TableGrid (needs a header-filter column option first)'],

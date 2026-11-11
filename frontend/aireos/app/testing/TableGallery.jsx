@@ -62,7 +62,7 @@ export default function TableGallery() {
     <div>
       <WhichToUse
         rows={GUIDE}
-        note="Build new tables on these rather than on a raw <table>. Promotions and Customers are the reference for the list table; Settings (promotion uplifts) and Inventory for the titled card."
+        note="Build new tables on these rather than on a raw <table>. Promotions and Customers are the reference for the list table (Recent uploads for one with a title); Settings (promotion uplifts) and Inventory for the titled card."
       >
         Every column is declared once (a <span className="font-mono">columns.js</span> per feature):{' '}
         <span className="font-mono">width</span> fixes it, <span className="font-mono">sortField</span> makes its header
@@ -139,7 +139,7 @@ export default function TableGallery() {
 
       <NotMigrated rows={NOT_MIGRATED} leaveAsIs={LEAVE_AS_IS}>
         <div className="sm:col-span-2 lg:col-span-2">
-          <Variant name="Old: hand-rolled <table> (RecentUploads, DOH)" props="own classes per file" value={null}>
+          <Variant name="Old: hand-rolled <table> (DOH settings, SKU ranking)" props="own classes per file" value={null}>
             <table className="w-full text-left text-sm text-deep-violet-blue">
               <thead className="bg-cream">
                 <tr className="border-b border-lavander">

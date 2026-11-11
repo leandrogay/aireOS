@@ -1,4 +1,4 @@
-import { matchesSearch } from '@/app/utils/tableView';
+import { matchesSearch } from './tableView.js';
 
 // The mapping status recorded on each blob, as something a person reads.
 // Anything unrecognised falls through to the raw value rather than being
@@ -42,18 +42,76 @@ export function searchUploads(uploads, query) {
   );
 }
 
+// The Status column's ascending order: what needs someone to act on it
+// first (a failed nomenclature, a review, a load or reload waiting), then
+// what is done. Keys are mapping_status values, plus `rolled_back` for an
+// upload whose load was reversed; anything not listed sorts last.
+const STATUS_SORT_ORDER = [
+  'mapping_failed',
+  'pending_confirmation',
+  'partial_match',
+  'ready_to_load',
+  'reload_available',
+  'mapped',
+  'rolled_back',
+];
+
+function statusRank(upload) {
+  const key = upload.status === 'rolled_back' ? 'rolled_back' : upload.mapping_status;
+  const rank = STATUS_SORT_ORDER.indexOf(key);
+  return rank === -1 ? STATUS_SORT_ORDER.length : rank;
+}
+
+// `uploaded_at` is an ISO UTC instant, so comparing the strings orders them in
+// time; a missing one sorts as the oldest.
+function compareUploadedAt(a, b) {
+  return String(a.uploaded_at || '').localeCompare(String(b.uploaded_at || ''));
+}
+
 /**
- * Uploads ordered by when they were uploaded. `uploaded_at` is an ISO UTC
- * instant, so comparing the strings orders them in time; a missing one sorts
- * as the oldest.
+ * Uploads in the order Recent uploads' sortable columns ask for: `status`
+ * (STATUS_SORT_ORDER, uploads with the same status newest first whichever
+ * way it runs) or `uploaded_at`.
  *
  * @param {object[]} uploads
- * @param {'asc' | 'desc'} direction
+ * @param {{ field: 'status' | 'uploaded_at', direction: 'asc' | 'desc' }} sort
  * @returns {object[]}
  */
-export function sortUploadsByDate(uploads, direction) {
-  const sign = direction === 'asc' ? 1 : -1;
-  return [...uploads].sort(
-    (a, b) => sign * String(a.uploaded_at || '').localeCompare(String(b.uploaded_at || '')),
+export function sortUploads(uploads, sort) {
+  const sign = sort.direction === 'asc' ? 1 : -1;
+  if (sort.field === 'status') {
+    return [...uploads].sort((a, b) => sign * (statusRank(a) - statusRank(b)) || compareUploadedAt(b, a));
+  }
+  return [...uploads].sort((a, b) => sign * compareUploadedAt(a, b));
+}
+
+/**
+ * The status badge an upload shows: Rolled back once its load was reversed,
+ * else its mapping status's label, else the raw status in a neutral badge.
+ *
+ * @param {object} upload GET /api/uploads/history row
+ * @returns {{ tone: string, label: string }}
+ */
+export function uploadStatus(upload) {
+  if (upload.status === 'rolled_back') return ROLLED_BACK_STATUS;
+  return UPLOAD_STATUS_LABELS[upload.mapping_status]
+    || { tone: 'neutral', label: upload.mapping_status || 'Unknown' };
+}
+
+/**
+ * Why an upload can't be deleted yet, or null when it can. A load still
+ * running has to finish, and data still in sell-out has to be rolled back
+ * first, so deleting the file never leaves rows without their source (backend
+ * DELETE /api/uploads/source refuses the same cases).
+ *
+ * @param {object} upload GET /api/uploads/history row
+ * @returns {string | null}
+ */
+export function deleteBlockedReason(upload) {
+  if (upload.status === 'processing') return 'Wait for this load to finish';
+  const hasActiveLoad = upload.status !== 'rolled_back' && (
+    upload.rollback_available
+    || ['mapped', 'reload_available'].includes(upload.mapping_status)
   );
+  return hasActiveLoad ? 'Rollback this upload first' : null;
 }
