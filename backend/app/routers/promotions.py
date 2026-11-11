@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from google.api_core.exceptions import GoogleAPICallError
 from google.auth.exceptions import DefaultCredentialsError
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -72,6 +72,12 @@ def create_promotion(
             promotion
         )
 
+    except promotion_service.PromotionClashError as e:
+        raise HTTPException(
+            status_code=409,
+            detail=str(e),
+        )
+
     except IntegrityError as e:
         raise HTTPException(
             status_code=400,
@@ -102,15 +108,69 @@ def create_promotion(
 
 
 @router.get("")
-def get_promotions():
+def list_promotions(
+    limit: int = Query(default=25, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    search: str = Query(default="", max_length=200),
+    sort: str = "period_start",
+    direction: str = "desc",
+    retailer: str = "",
+    store: str = "",
+    period: str = "",
+    promo_type: str = "",
+    mechanic: str = "",
+    status: str = "",
+):
+    """One page of the promotion overview (promotion_service.list_promotion_page)."""
     try:
-        return promotion_service.get_promotions()
+        return promotion_service.list_promotion_page(
+            limit=limit,
+            offset=offset,
+            search=search,
+            sort=sort,
+            direction=direction,
+            retailer=retailer,
+            store=store,
+            period=period,
+            promo_type=promo_type,
+            mechanic=mechanic,
+            status=status,
+        )
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )
 
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=(
                 f"Failed to retrieve promotions: "
+                f"{type(e).__name__}: {e}"
+            ),
+        )
+
+
+# ============================================================
+# FILTER OPTIONS
+#
+# Declared before /{promotion_id}, which would otherwise take
+# "filter-options" as an id.
+# ============================================================
+
+
+@router.get("/filter-options")
+def get_filter_options():
+    try:
+        return promotion_service.get_promotion_filter_options()
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Failed to retrieve promotion filter options: "
                 f"{type(e).__name__}: {e}"
             ),
         )
@@ -177,6 +237,12 @@ def update_promotion(
 
     except HTTPException:
         raise
+
+    except promotion_service.PromotionClashError as e:
+        raise HTTPException(
+            status_code=409,
+            detail=str(e),
+        )
 
     except IntegrityError as e:
         raise HTTPException(
