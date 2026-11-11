@@ -1982,7 +1982,8 @@ def _plan_sell_in_upload(conn: Connection, data: bytes, today: date) -> tuple[li
         if not matched:
             skip("Customer is not in inventory", line)
             continue
-        (customer_id,) = matched
+        # Exactly one customer is left after the two checks above.
+        customer_id = next(iter(matched))
         if line["month"] is None:
             skip("Month of sales or invoice year is not recognised", line)
             continue

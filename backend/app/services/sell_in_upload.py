@@ -64,8 +64,9 @@ def product_for_description(description: str) -> str | None:
 
 
 def canonical_customer_name(tracker_name: str) -> str:
-    """The tracker's customer name, translated to AireOS's own name for that
-    customer when the two differ (see CUSTOMER_ALIASES); unchanged otherwise."""
+    """The tracker's customer name, or for a listed trading name (see
+    CUSTOMER_ALIASES) the retailer family that customer's sales are filed
+    under (sheng_siong for CMM Marketing Services); unchanged otherwise."""
 
     return _ALIASES_BY_KEY.get(customer_match_key(tracker_name), tracker_name)
 
