@@ -7,6 +7,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Button } from '@/components/ui/button';
 import SelectDropdown from '@/components/ui/SelectDropdown';
 import { inputClass } from '@/components/ui/formStyles';
+import { glassInsetClass } from '@/components/ui/surfaceStyles';
 import { CARD_REVEAL } from '@/app/config/transitions';
 import { channelRetailerName, customerRetailerFamily } from '@/app/utils/mappingCustomer';
 import { customerLabel } from '@/app/utils/retailerLabel';
@@ -30,10 +31,10 @@ import { cn } from '@/lib/utils';
 
 import ChannelValueList from './ChannelValueList';
 
-const smallButton = 'h-7 border-deep-violet-blue/30 bg-white px-2 text-xs text-deep-violet-blue hover:bg-cream';
-const iconButton = 'rounded-md p-1 text-deep-violet-blue/50 hover:bg-cream hover:text-deep-violet-blue disabled:opacity-60';
+const smallButton = 'h-7 border-deep-violet-blue/30 bg-white px-2 text-xs text-deep-violet-blue hover:bg-lavander/50';
+const iconButton = 'rounded-md p-1 text-deep-violet-blue/50 hover:bg-lavander/50 hover:text-deep-violet-blue disabled:opacity-60';
 const linkButton =
-  'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-deep-violet-blue/70 hover:bg-cream disabled:opacity-60';
+  'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-deep-violet-blue/70 hover:bg-lavander/50 disabled:opacity-60';
 
 // How many of a side's values are listed before "and n more".
 const LISTED = 8;
@@ -42,7 +43,7 @@ const EMPTY_SPLIT = { mode: 'split', source: '', matches: [] };
 
 function Values({ title, values, partial }) {
   return (
-    <div className="min-w-0 rounded-md border border-lavander px-2 py-1.5">
+    <div className={cn(glassInsetClass, 'min-w-0 px-2 py-1.5')}>
       <p className="text-[11px] text-deep-violet-blue/70">
         {title} · {values.length}
         {partial ? '+' : ''}
@@ -188,8 +189,12 @@ export default function ChannelSplit({ customer, decision, outputs, mapping, sta
               key={option.mode}
               title={option.mode === 'split' ? undefined : `Written to ${channelRetailerName(name, option.mode)}`}
               className={cn(
-                'flex cursor-pointer items-start gap-2 rounded-md border px-3 py-2 text-xs text-deep-violet-blue',
-                mode === option.mode ? 'border-deep-violet-blue bg-lavander/40 ring-1 ring-deep-violet-blue' : 'border-lavander hover:bg-cream/60',
+                'flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-xs text-deep-violet-blue transition-colors duration-(--motion-control)',
+                // Unchosen options are frosted panes with a clear edge; the
+                // chosen one is tinted and outlined in ink.
+                mode === option.mode
+                  ? 'border-deep-violet-blue bg-lavander/60 ring-1 ring-deep-violet-blue'
+                  : 'border-deep-violet-blue/15 bg-white/40 hover:bg-white/70',
               )}
             >
               <input
@@ -234,7 +239,7 @@ export default function ChannelSplit({ customer, decision, outputs, mapping, sta
               transition={CARD_REVEAL.transition}
               className="pt-3"
             >
-              <div className="space-y-1.5 rounded-md border border-lavander p-3 text-xs text-deep-violet-blue">
+              <div className={cn(glassInsetClass, 'space-y-1.5 p-3 text-xs text-deep-violet-blue')}>
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span>Column</span>
                   <div className="min-w-48 flex-1">

@@ -14,7 +14,7 @@ export default function ProductCodesLoading() {
         <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />
         Reading the product codes in the example file…
       </p>
-      <div aria-hidden="true" className="divide-y divide-lavander/80 rounded-md border border-lavander">
+      <div aria-hidden="true" className="divide-y divide-lavander/80 rounded-lg border border-deep-violet-blue/15 bg-white">
         {[0, 1, 2].map((row) => (
           <div key={row} className="flex items-center gap-4 px-3 py-2.5">
             <Skeleton className="h-3.5 w-20 rounded bg-lavander" />

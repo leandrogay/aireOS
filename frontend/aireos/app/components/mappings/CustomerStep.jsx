@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils';
 import ChannelSplit from './ChannelSplit';
 import ResetButton from './ResetButton';
 
-const smallButton = 'h-7 border-deep-violet-blue/30 bg-white px-2 text-xs text-deep-violet-blue hover:bg-cream';
+const smallButton = 'h-7 border-deep-violet-blue/30 bg-white px-2 text-xs text-deep-violet-blue hover:bg-lavander/50';
 
 // The retailer decisions ChannelSplit can show (retailerSplit.splitFromDecision).
 const SPLIT_MODES = ['offline', 'online', 'split'];

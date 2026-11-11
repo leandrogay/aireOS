@@ -9,7 +9,8 @@ import { cn } from '@/lib/utils';
 
 /**
  * The closed button's look, one per kind of place a dropdown sits:
- * - field: forms and the mapping review (translucent white, lavender border). `size`
+ * - field: forms and the mapping review (translucent white, faint ink border,
+ *   the same as formStyles.inputClass). `size`
  *   'sm' is the compact version used inside tables.
  * - filter: a FilterBar (filterControl.js), shared with FilterSelect, with
  *   the darker border while `active`.
@@ -30,7 +31,7 @@ function lookClass(look, size, active) {
     return 'h-8 rounded-lg border border-deep-violet-blue/30 bg-white px-2.5 text-sm transition-colors hover:bg-lavander/50 aria-expanded:bg-lavander/50 focus-visible:border-violet focus-visible:ring-3 focus-visible:ring-violet/40';
   }
   return cn(
-    'rounded-md border border-lavander bg-white/70 focus:border-violet',
+    'rounded-md border border-deep-violet-blue/20 bg-white/70 focus:border-violet',
     size === 'sm' ? 'h-7 px-2 text-xs' : 'px-2.5 py-1.5 text-sm',
   );
 }
