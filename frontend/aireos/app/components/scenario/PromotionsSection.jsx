@@ -282,7 +282,7 @@ export default function PromotionsSection({
               onCheckedChange={(checked) => toggleActive(promotion, checked)}
               aria-label={`${promotion.isActive ? 'Make inactive' : 'Make active'}: ${promotion.mechanicLabel || 'promotion'}`}
               title={promotion.isActive ? 'On the Simulated line' : 'Off the Simulated line'}
-              className="data-checked:bg-scenario"
+              className="data-checked:bg-switch-on-scenario"
             />
           </li>
         ))}
