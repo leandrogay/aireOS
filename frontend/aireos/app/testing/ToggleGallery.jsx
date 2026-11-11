@@ -24,7 +24,6 @@ const GUIDE = [
 // Controls that should move to the kit, page by page. Remove a row when its
 // page migrates.
 const NOT_MIGRATED = [
-  ['Dashboard', 'dashboard/ChannelSwitch.jsx', 'ui/tabs with hand-written soft styling: Offline / Online (jumps)', 'SegmentedControl look="soft"'],
   ['Forecast, Inventory', 'ui/LineToggle.jsx (shared chart line pills), forecast/ForecastPromoToggle.jsx', 'Hand-rolled chips with per-series colours', 'ToggleButton look="chip" (needs a colour option first)'],
   ['Promotions', 'promotions/PromotionDetails.jsx (FormatTab)', 'Hand-rolled chips with a count', 'ToggleButton look="chip"'],
   ['Upload', 'upload/DuplicateChoice.jsx', 'Radio inputs styled as a track, with icons', 'SegmentedControl with option icons'],
@@ -324,7 +323,7 @@ export default function ToggleGallery() {
       </Section>
 
       <NotMigrated rows={NOT_MIGRATED} leaveAsIs={LEAVE_AS_IS}>
-        <Variant name="Old: ui/tabs (Dashboard)" props="jumps, doesn't slide" value={legacy}>
+        <Variant name="Old: ui/tabs (Dashboard, before the move)" props="jumps, doesn't slide" value={legacy}>
           <Tabs value={legacy} onValueChange={setLegacy}>
             <TabsList className="h-7 bg-lavander">
               <TabsTrigger value="week" className={`text-xs ${LEGACY_TAB_TRIGGER_CLASS}`}>
