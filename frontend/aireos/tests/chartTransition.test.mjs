@@ -7,6 +7,7 @@ import { describe, test } from 'node:test';
 import {
   blendSnapshots,
   chartSnapshot,
+  hasDrawnValues,
   snapshotSignature,
   ticksWithin,
   withSnapshotValues,
@@ -87,5 +88,18 @@ describe('snapshotSignature', () => {
     assert.equal(snapshotSignature(a), snapshotSignature(same));
     assert.notEqual(snapshotSignature(a), snapshotSignature(value));
     assert.notEqual(snapshotSignature(a), snapshotSignature(domain));
+  });
+});
+
+// ---- First draw ----
+
+describe('hasDrawnValues', () => {
+  test('is false for no rows and for rows that are all empty', () => {
+    assert.equal(hasDrawnValues(chartSnapshot([], 'month', ['units'], [0, 1])), false);
+    assert.equal(hasDrawnValues(chartSnapshot(rows([['2026-01', null]]), 'month', ['units'], [0, 1])), false);
+  });
+
+  test('is true once any row has a value, including 0', () => {
+    assert.equal(hasDrawnValues(chartSnapshot(rows([['2026-01', null], ['2026-02', 0]]), 'month', ['units'], [0, 1])), true);
   });
 });

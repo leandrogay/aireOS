@@ -5,6 +5,7 @@ import { CHART_TRANSITION } from '@/app/config/transitions';
 import {
   blendSnapshots,
   chartSnapshot,
+  hasDrawnValues,
   snapshotSignature,
   ticksWithin,
   withSnapshotValues,
@@ -23,8 +24,9 @@ const OWN_SERIES_ANIMATION = {};
  * fall inside the moving range, so a label never reads an odd in-between
  * number.
  *
- * The first draw keeps the chart's own Recharts animation (bars grow, lines
- * sweep); once a change has been tweened, spread `seriesAnimation` on every
+ * The first draw -- the first rows with any value, including after a load
+ * that started empty -- keeps the chart's own Recharts animation (bars grow,
+ * lines sweep); once a change has been tweened, spread `seriesAnimation` on every
  * series so Recharts doesn't also animate each frame. A change during a
  * change carries on from where the chart is. Reduced motion: no tween.
  * Timing lives in app/config/transitions.js.
@@ -53,9 +55,26 @@ export default function useChartTransition({ rows, rowKey, valueKeys, domain, ti
   // from the animation's callbacks, never during render.
   const drawnRef = useRef(settled.snapshot);
 
+  // Nothing was drawn before (rows still loading behind a skeleton, or none
+  // for the filters), so the arriving rows are the chart's first draw, not a
+  // change. Without this the load itself was tweened -- often while the
+  // skeleton still showed -- and the lines then mounted with Recharts'
+  // draw-in already switched off.
+  // Adjusting state during render (not in the effect) so the first frame with
+  // the rows is already the settled chart: rest on the new rows and hand the
+  // draw-in back to Recharts (bars grow, lines sweep), also after an empty
+  // state between two loads.
+  const firstDraw = frame === null && signature !== settled.signature && !hasDrawnValues(settled.snapshot);
+  if (firstDraw) {
+    setSettled({ signature, snapshot: target });
+    setTweened(false);
+  }
+
   const startTransition = useEffectEvent(() => {
     if (frame === null && signature === settled.signature) return undefined;
-    const from = drawnRef.current;
+    // Mid-transition, carry on from the last frame drawn; at rest, from the
+    // settled chart (which a first draw sets during render, not the ref).
+    const from = frame ? drawnRef.current : settled.snapshot;
     const controls = animate(0, 1, {
       ...(reduceMotion ? { duration: 0 } : CHART_TRANSITION),
       onUpdate: (t) => {
@@ -78,7 +97,8 @@ export default function useChartTransition({ rows, rowKey, valueKeys, domain, ti
   // Until the transition's first frame, keep drawing where the chart was, with
   // the new rows' set: rows that arrive start at 0, rows that left are gone.
   let shown = target;
-  if (frame) shown = frame.signature === signature ? frame.snapshot : blendSnapshots(frame.snapshot, target, 0);
+  if (firstDraw) shown = target;
+  else if (frame) shown = frame.signature === signature ? frame.snapshot : blendSnapshots(frame.snapshot, target, 0);
   else if (settled.signature !== signature) shown = blendSnapshots(settled.snapshot, target, 0);
 
   const resting = shown === target;

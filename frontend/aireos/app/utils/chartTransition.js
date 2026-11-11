@@ -105,3 +105,17 @@ export function ticksWithin(ticks, domain) {
 export function snapshotSignature(snapshot) {
   return JSON.stringify([snapshot.domain, [...snapshot.values]]);
 }
+
+/**
+ * Whether a snapshot has anything to draw: at least one number (or range).
+ * A chart whose rows are still loading, or are all empty, has nothing on
+ * screen, so its next snapshot is a first draw rather than a change.
+ *
+ * @param {{ values: Map<any, object> }} snapshot
+ */
+export function hasDrawnValues(snapshot) {
+  for (const entry of snapshot.values.values()) {
+    if (Object.values(entry).some((value) => value != null)) return true;
+  }
+  return false;
+}
