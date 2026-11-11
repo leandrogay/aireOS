@@ -104,3 +104,20 @@ export const TAB_CASCADE = {
 // reload lands, so it never snaps back mid-rotation. `turn` (seconds) must
 // match the spin class in RefreshButton (SPIN_CLASS).
 export const REFRESH_SPIN = { turn: 0.7, minTurns: 1 };
+
+// The side bar (components/layout/Sidebar) opening to its full width and
+// closing to the icon rail, on hover or the toggle. `width` is a spring like
+// the page's, a little slower than a card since the bar travels ~170px, and
+// with no bounce: an overshooting panel edge reads as a wobble. The logo,
+// tab labels and sign-out fade out fast as it closes (`contentOut`, like a
+// table row's exit) and fade in once it is mostly open (`contentIn`), so a
+// label never shows squeezed into a half-open bar. The tab labels fade in
+// CSS (Sidebar's labelClass); keep its `delay-150 duration-200` in step with
+// `contentIn`. `highlight` slides the active-tab background between tabs on
+// the calm layout spring the cards and rows glide on.
+export const SIDEBAR = {
+  width: { type: 'spring', visualDuration: 0.35, bounce: 0 },
+  contentOut: TABLE_ROWS.exit,
+  contentIn: { duration: 0.2, delay: 0.15, ease: 'easeOut' },
+  highlight: CARD_REVEAL.layout,
+};

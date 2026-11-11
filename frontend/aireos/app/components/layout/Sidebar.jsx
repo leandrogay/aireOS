@@ -11,6 +11,7 @@ import { NAV_ITEMS, matchesPath } from '@/components/layout/navItems';
 import RailFlyout from '@/components/layout/RailFlyout';
 import { logout } from '@/app/services/authApi';
 import useMediaQuery from '@/hooks/useMediaQuery';
+import { SIDEBAR } from '@/app/config/transitions';
 import { cn } from '@/lib/utils';
 
 // The nav bar's widths in px, animated by Motion: open (14rem), the icon rail
@@ -19,7 +20,6 @@ import { cn } from '@/lib/utils';
 const OPEN_WIDTH = 224;
 const RAIL_WIDTH = 56;
 const HIDDEN_WIDTH = 48;
-const NAV_TRANSITION = { duration: 0.2, ease: [0.22, 1, 0.36, 1] };
 
 // Every page mounts its own Sidebar (PageLayout → AppShell), so whether the
 // bar is collapsed is kept here, at module level, to survive the page change:
@@ -39,9 +39,10 @@ const LABEL_FADE = 'min-w-0 overflow-hidden whitespace-nowrap transition-opacity
 
 // The logo and tabs fade out fast as the bar closes, and fade in once it has
 // mostly opened, so labels never show squeezed into a half-open bar.
+// Timing in config/transitions.js (SIDEBAR).
 const NAV_CONTENT = {
-  hidden: { opacity: 0, transition: { duration: 0.1 } },
-  shown: { opacity: 1, transition: { duration: 0.15, delay: 0.05 } },
+  hidden: { opacity: 0, transition: SIDEBAR.contentOut },
+  shown: { opacity: 1, transition: SIDEBAR.contentIn },
 };
 
 // The active-tab background. One layoutId for parents and sub-items alike,
@@ -50,16 +51,18 @@ function ActiveHighlight() {
   return (
     <motion.span
       layoutId="nav-active"
-      transition={{ duration: 0.12, ease: 'easeOut' }}
+      transition={SIDEBAR.highlight}
       className="absolute inset-0 -z-10 rounded-xl bg-lavander/85 shadow-sm"
     />
   );
 }
 
 // The classes for a tab label: hidden in the rail, shown (after a short
-// delay, so it isn't squeezed into a half-open bar) otherwise.
+// delay, so it isn't squeezed into a half-open bar) otherwise. The durations
+// mirror SIDEBAR.contentOut / contentIn in config/transitions.js; a tab's own
+// width tween (350ms) keeps pace with SIDEBAR.width.
 function labelClass(rail) {
-  return cn(LABEL_FADE, rail ? 'opacity-0 duration-100' : 'opacity-100 delay-100 duration-200');
+  return cn(LABEL_FADE, rail ? 'opacity-0 duration-150 ease-in' : 'opacity-100 delay-150 duration-200 ease-out');
 }
 
 // Standardized left nav, shared across every app page via AppShell.
@@ -132,7 +135,7 @@ export default function Sidebar() {
       <motion.nav
       initial={false}
       animate={{ width }}
-      transition={reduceMotion ? { duration: 0 } : NAV_TRANSITION}
+      transition={reduceMotion ? { duration: 0 } : SIDEBAR.width}
       onMouseLeave={() => {
         setPeeking(false);
       }}
@@ -219,7 +222,7 @@ export default function Sidebar() {
                 // here: it would clip the highlight while it slides in from another
                 // tab, so the label clips itself instead (labelClass).
                 const tabClass = cn(
-                  'group/nav-item relative isolate flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm text-deep-violet-blue transition-[width,background-color,box-shadow] duration-200 ease-out hover:bg-card/80 hover:shadow-sm focus-visible:outline-2 focus-visible:outline-violet',
+                  'group/nav-item relative isolate flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm text-deep-violet-blue transition-[width,background-color,box-shadow] ease-out [transition-duration:350ms,200ms,200ms] hover:bg-card/80 hover:shadow-sm focus-visible:outline-2 focus-visible:outline-violet',
                   rail ? 'w-10' : 'w-full',
                   (isActive || childActive) && 'font-medium',
                 );
@@ -314,7 +317,7 @@ export default function Sidebar() {
               disabled={isSigningOut}
               title={rail ? 'Sign out' : undefined}
               className={cn(
-                'flex cursor-pointer items-center gap-3 overflow-hidden rounded-lg px-3 py-2 text-sm text-deep-violet-blue/75 transition-[width,background-color,color] duration-200 hover:bg-lavander/85 hover:text-deep-violet-blue disabled:cursor-wait disabled:opacity-60',
+                'flex cursor-pointer items-center gap-3 overflow-hidden rounded-lg px-3 py-2 text-sm text-deep-violet-blue/75 transition-[width,background-color,color] [transition-duration:350ms,200ms,200ms] hover:bg-lavander/85 hover:text-deep-violet-blue disabled:cursor-wait disabled:opacity-60',
                 rail ? 'w-10' : 'w-full',
               )}
             >
