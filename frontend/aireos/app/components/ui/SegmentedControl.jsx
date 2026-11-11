@@ -18,14 +18,34 @@ const HIGHLIGHT_SPRING = { type: 'spring', stiffness: 500, damping: 40 };
 
 // `tint`: lavender track, for a switch inside a card (chart metric, form
 // mode). `outline`: white track with a border, for a page's top-level tabs.
+// `soft`: a see-through track with the chosen option as a white pill, lighter
+// than the solid navy of `tint`; for choosing which data a page shows (the
+// dashboard's Offline / Online) as opposed to how to draw it.
 const TRACK_LOOK = {
   tint: 'rounded-lg bg-lavander',
   outline: 'rounded-md border border-violet/40 bg-white',
+  soft: 'rounded-lg bg-lavander/45 shadow-sm ring-1 ring-violet/25 backdrop-blur-sm',
 };
 // not-data-disabled: a disabled option keeps its faded look under the pointer.
 const SEGMENT_HOVER = {
   tint: 'not-data-disabled:hover:bg-white/60',
   outline: 'not-data-disabled:hover:bg-cream',
+  soft: '',
+};
+const HIGHLIGHT_LOOK = {
+  tint: 'bg-deep-violet-blue shadow-sm',
+  outline: 'bg-deep-violet-blue shadow-sm',
+  soft: 'bg-white shadow-sm ring-1 ring-violet/30',
+};
+const ACTIVE_TEXT = {
+  tint: 'text-white',
+  outline: 'text-white',
+  soft: 'text-deep-violet-blue',
+};
+const INACTIVE_TEXT = {
+  tint: 'text-deep-violet-blue/70',
+  outline: 'text-deep-violet-blue/70',
+  soft: 'text-deep-violet-blue/55',
 };
 const TRACK_SIZE = {
   sm: 'h-7 text-[11px]',
@@ -37,7 +57,7 @@ const TRACK_SIZE = {
  *   value: string,
  *   onChange: (value: string) => void,
  *   options: { value: string, label: string, icon?: import('react').ElementType, disabled?: boolean, disabledReason?: string, title?: string }[],
- *   look?: 'tint' | 'outline',
+ *   look?: 'tint' | 'outline' | 'soft',
  *   size?: 'sm' | 'md',
  *   fullWidth?: boolean,
  *   ariaLabel?: string,
@@ -87,14 +107,14 @@ export default function SegmentedControl({
                   'cursor-pointer data-disabled:cursor-not-allowed data-disabled:opacity-40',
                   fullWidth && 'flex-1',
                   active
-                    ? 'text-white'
-                    : cn('text-deep-violet-blue/70 not-data-disabled:hover:text-deep-violet-blue', SEGMENT_HOVER[look]),
+                    ? ACTIVE_TEXT[look]
+                    : cn(INACTIVE_TEXT[look], 'not-data-disabled:hover:text-deep-violet-blue', SEGMENT_HOVER[look]),
                 )}
               >
                 {active && (
                   <motion.span
                     layoutId={layoutId}
-                    className="absolute inset-0 -z-10 rounded-md bg-deep-violet-blue shadow-sm"
+                    className={cn('absolute inset-0 -z-10 rounded-md', HIGHLIGHT_LOOK[look])}
                   />
                 )}
                 {Icon && <Icon aria-hidden="true" className="size-3.5 shrink-0" />}

@@ -24,7 +24,7 @@ const GUIDE = [
 // Controls that should move to the kit, page by page. Remove a row when its
 // page migrates.
 const NOT_MIGRATED = [
-  ['Dashboard', 'dashboard/RevenueTrendCard.jsx', 'ui/tabs: Offline / Online, Volume / Revenue, By week / By month (jumps)', 'SegmentedControl'],
+  ['Dashboard', 'dashboard/ChannelSwitch.jsx', 'ui/tabs with hand-written soft styling: Offline / Online (jumps)', 'SegmentedControl look="soft"'],
   ['Forecast, Inventory', 'ui/LineToggle.jsx (shared chart line pills), forecast/ForecastPromoToggle.jsx', 'Hand-rolled chips with per-series colours', 'ToggleButton look="chip" (needs a colour option first)'],
   ['Promotions', 'promotions/PromotionDetails.jsx (FormatTab)', 'Hand-rolled chips with a count', 'ToggleButton look="chip"'],
   ['Upload', 'upload/DuplicateChoice.jsx', 'Radio inputs styled as a track, with icons', 'SegmentedControl with option icons'],
@@ -58,6 +58,11 @@ function granularityOptions(weekAvailable) {
   ];
 }
 
+const CHANNELS = [
+  { value: 'offline', label: 'Offline' },
+  { value: 'online', label: 'Online', disabled: true, disabledReason: 'No ticked customer sells online.' },
+];
+
 const MODES = [
   { value: 'upload', label: 'Upload' },
   { value: 'create', label: 'Create' },
@@ -89,6 +94,7 @@ export default function ToggleGallery() {
     metric: 'revenue',
     granularity: 'month',
     granularityLive: 'week',
+    channel: 'offline',
     mode: 'upload',
     view: 'overview',
     duplicate: 'replace',
@@ -134,7 +140,8 @@ export default function ToggleGallery() {
       >
         SegmentedControl&apos;s <span className="font-medium">look</span>: <span className="font-mono">tint</span>{' '}
         (lavender track) inside cards, <span className="font-mono">outline</span> (white, bordered) for a
-        page&apos;s top-level tabs. Its highlight slides on the Sidebar&apos;s spring and is instant for users who
+        page&apos;s top-level tabs, <span className="font-mono">soft</span> (see-through track, white pill) for
+        choosing which data a page shows. Its highlight slides on the Sidebar&apos;s spring and is instant for users who
         ask for reduced motion.
       </WhichToUse>
 
@@ -181,6 +188,28 @@ export default function ToggleGallery() {
               Weekly data loaded
             </ToggleButton>
           </div>
+        </Variant>
+        <Variant name="Soft (dashboard Offline / Online)" props={'look="soft" fullWidth'} value={segments.channel}>
+          <SegmentedControl
+            look="soft"
+            fullWidth
+            className="w-[152px]"
+            value={segments.channel}
+            onChange={setSegment('channel')}
+            options={[CHANNELS[0], { value: 'online', label: 'Online' }]}
+            ariaLabel="Sales channel"
+          />
+        </Variant>
+        <Variant name="Soft, with a disabled option" props={'look="soft" options[].disabled'} value={segments.channel}>
+          <SegmentedControl
+            look="soft"
+            fullWidth
+            className="w-[152px]"
+            value="offline"
+            onChange={() => {}}
+            options={CHANNELS}
+            ariaLabel="Sales channel"
+          />
         </Variant>
         <Variant name="With icons" props="options[].icon" value={segments.duplicate}>
           <SegmentedControl value={segments.duplicate} onChange={setSegment('duplicate')} options={DUPLICATE_CHOICES} />
