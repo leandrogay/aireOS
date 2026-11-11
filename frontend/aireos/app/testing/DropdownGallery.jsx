@@ -29,7 +29,6 @@ const GUIDE = [
 // Selects that should move to the kit, page by page. Remove a row when its
 // page migrates.
 const NOT_MIGRATED = [
-  ['Promotions', 'promotions/PromotionFilters.jsx', 'ui/FilterSelect (native select)', 'SelectDropdown look="filter"'],
   ['SKUs', 'skus/SkuFilters.jsx', 'ui/FilterSelect (native select)', 'SelectDropdown look="filter"'],
   ['Settings', 'settings/PromoUpliftFilters.jsx', 'ui/FilterSelect (native select)', 'SelectDropdown look="filter"'],
   ['Dashboard', 'dashboard/DashboardFilters.jsx', 'Raw <select> (2)', 'SelectDropdown look="compact"'],

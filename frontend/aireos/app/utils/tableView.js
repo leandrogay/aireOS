@@ -78,3 +78,54 @@ export function summariseNames(names, empty = '—') {
   if (names.length === 1) return names[0];
   return `${names[0]} +${names.length - 1}`;
 }
+
+// ---- Block paging ----------------------------------------------------------
+//
+// For a list the backend pages (Recent uploads): the table asks for a block of
+// rows bigger than one page and pages through it locally, so Next / Prev
+// inside the block need no request. The block size must be a multiple of
+// every page size, so a page never straddles two blocks.
+
+/**
+ * The block of rows to ask the backend for, so that `page` is inside it.
+ *
+ * @param {number} page
+ * @param {number} pageSize
+ * @param {number} blockSize
+ * @returns {{ offset: number, limit: number }}
+ */
+export function blockQuery(page, pageSize, blockSize) {
+  const start = (page - 1) * pageSize;
+  return { offset: Math.floor(start / blockSize) * blockSize, limit: blockSize };
+}
+
+/**
+ * The page to show from the block the backend last answered with: `page`
+ * clamped to the last page (the list may have shrunk), its rows sliced out
+ * of the block. While the block for `page` is still being read, the nearest
+ * page of the loaded block is shown instead, so the rows on screen and the
+ * page number in the footer always agree.
+ *
+ * @template T
+ * @param {{ rows: T[], offset: number, total: number } | null} block
+ * @param {number} page
+ * @param {number} pageSize
+ * @returns {{ pageRows: T[], currentPage: number, totalPages: number }}
+ */
+export function pageFromBlock(block, page, pageSize) {
+  if (!block) return { pageRows: [], currentPage: page, totalPages: 1 };
+
+  const totalPages = Math.max(1, Math.ceil(block.total / pageSize));
+  const wanted = (Math.min(page, totalPages) - 1) * pageSize;
+  const blockEnd = block.offset + block.rows.length;
+  const covered = block.rows.length === 0 || (wanted >= block.offset && wanted < blockEnd);
+  const start = covered
+    ? wanted
+    : Math.floor(Math.min(Math.max(wanted, block.offset), blockEnd - 1) / pageSize) * pageSize;
+
+  return {
+    pageRows: block.rows.slice(start - block.offset, start - block.offset + pageSize),
+    currentPage: Math.floor(start / pageSize) + 1,
+    totalPages,
+  };
+}

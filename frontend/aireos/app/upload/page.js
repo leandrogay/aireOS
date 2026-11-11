@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Eraser, ListX } from 'lucide-react';
 import PageLayout from '@/components/layout/PageLayout';
 import { formatDateTime } from '@/lib/formatDate';
@@ -15,10 +15,6 @@ import UploadGroup from '../components/upload/UploadGroup';
 import RecentUploads from '../components/upload/RecentUploads';
 import LoadConfirmDialog from '../components/upload/LoadConfirmDialog';
 import {
-  UPLOAD_HISTORY_LIMIT,
-  UPLOAD_HISTORY_MONTHS,
-} from '../config/upload';
-import {
   filesLabel,
   groupFiles,
   isSkipped,
@@ -29,7 +25,6 @@ import {
 } from '../utils/uploadFlow';
 import {
   deleteUpload,
-  fetchUploadHistory,
   rollbackUpload,
 } from '../services/uploadApi';
 import useConfirmAction from '@/hooks/useConfirmAction';
@@ -53,9 +48,8 @@ export default function UploadPage() {
     retryItem,
     markLoaded,
   } = useUploads();
-  const [history, setHistory] = useState([]);
-  const [historyError, setHistoryError] = useState('');
-  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  // Bumped whenever Recent uploads should read its page again.
+  const [historyVersion, setHistoryVersion] = useState(0);
   const [rollbackReason, setRollbackReason] = useState('');
   const { toast, notify, dismissToast } = useToast();
   // The rows whose files the load confirmation is open for, or null.
@@ -63,29 +57,9 @@ export default function UploadPage() {
 
   // ---- History ----------------------------------------------------------
 
-  const loadHistory = useCallback(async () => {
-    setIsLoadingHistory(true);
-    setHistoryError('');
-    try {
-      setHistory(
-        await fetchUploadHistory({
-          limit: UPLOAD_HISTORY_LIMIT,
-          months: UPLOAD_HISTORY_MONTHS,
-        }),
-      );
-    } catch (error) {
-      setHistoryError(error.message);
-    } finally {
-      setIsLoadingHistory(false);
-    }
+  const refreshHistory = useCallback(() => {
+    setHistoryVersion((version) => version + 1);
   }, []);
-
-  useEffect(() => {
-    // Deferred a tick so the first render commits before the loading state
-    // lands, rather than re-rendering the page on the way into it.
-    Promise.resolve().then(loadHistory);
-    // uploadsFinished: an upload that answered belongs in Recent uploads.
-  }, [loadHistory, uploadsFinished]);
 
   const rollback = useConfirmAction({
     onConfirm: async (upload) => {
@@ -98,7 +72,7 @@ export default function UploadPage() {
           'warning',
           `Rolled back: ${result.rows_restored} restored, ${result.rows_removed} removed`,
         );
-        await loadHistory();
+        refreshHistory();
       } catch (error) {
         notify('error', error.message || 'Failed to roll back the upload.');
       }
@@ -115,7 +89,7 @@ export default function UploadPage() {
       try {
         await deleteUpload(upload.blob_path);
         notify('deleted', 'Uploaded file deleted');
-        await loadHistory();
+        refreshHistory();
       } catch (error) {
         notify('error', error.message || 'Failed to delete the uploaded file.');
       }
@@ -127,9 +101,9 @@ export default function UploadPage() {
   const handleLoaded = useCallback(
     (response) => {
       markLoaded(response);
-      loadHistory();
+      refreshHistory();
     },
-    [loadHistory, markLoaded],
+    [refreshHistory, markLoaded],
   );
 
   const loadingPaths = (loadingIds || [])
@@ -255,11 +229,9 @@ export default function UploadPage() {
           </section>
         )}
 
+        {/* uploadsFinished: an upload that answered belongs in Recent uploads. */}
         <RecentUploads
-          uploads={history}
-          isLoading={isLoadingHistory}
-          error={historyError}
-          onRefresh={loadHistory}
+          refreshKey={`${historyVersion}:${uploadsFinished}`}
           onRollback={requestRollback}
           onDelete={deletion.request}
           onLoaded={handleLoaded}

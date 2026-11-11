@@ -137,14 +137,72 @@ export async function getRetailers() {
 /**
  * GET /api/promotions
  *
- * Returns every stored promotion, newest period_start first. This is the
- * overview list shown after a successful monthly create.
+ * One page of the promotion overview. The backend filters, searches, sorts
+ * and pages (promotion_service.list_promotion_page), so they apply to every
+ * promotion, not just this page; older copies of the same promotion are left
+ * out. `limit` is 1-100. An `offset` past the end comes back moved to the
+ * last page, and the response's `offset` is the one used. An empty filter
+ * means "all".
  *
- * @returns {Promise<object[]>}
+ * @param {{
+ *   limit?: number,
+ *   offset?: number,
+ *   search?: string,
+ *   sort?: 'period_start' | 'period_end',
+ *   direction?: 'asc' | 'desc',
+ *   retailer?: string[],
+ *   store?: string[],
+ *   period?: string[],
+ *   promoType?: string[],
+ *   mechanic?: string[],
+ *   status?: string[],
+ * }} [query]
+ * @returns {Promise<{ promotions: object[], total: number, unfiltered_total: number, limit: number, offset: number }>}
  */
-export async function getPromotions() {
-  const data = await request('/api/promotions');
-  return Array.isArray(data) ? data : [];
+export async function getPromotionPage(query = {}) {
+  const {
+    limit = 25,
+    offset = 0,
+    search = '',
+    sort = 'period_start',
+    direction = 'desc',
+    retailer = '',
+    store = '',
+    period = '',
+    promoType = '',
+    mechanic = '',
+    status = '',
+  } = query;
+
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+    sort,
+    direction,
+  });
+  const optional = { search: search.trim(), retailer, store, period, promo_type: promoType, mechanic, status };
+  for (const [key, value] of Object.entries(optional)) {
+    if (Array.isArray(value)) {
+      value.forEach((item) => params.append(key, item));
+    } else if (value) {
+      params.set(key, value);
+    }
+  }
+
+  return request(`/api/promotions?${params}`);
+}
+
+/**
+ * GET /api/promotions/filter-options
+ *
+ * The values the overview's filter dropdowns offer, from every listed
+ * promotion (promotion_service.get_promotion_filter_options), not just the
+ * page on screen.
+ *
+ * @returns {Promise<{ retailers: string[], stores: string[], periods: string[], types: string[], mechanics: string[] }>}
+ */
+export async function getPromotionFilterOptions() {
+  return request('/api/promotions/filter-options');
 }
 
 /**
@@ -193,8 +251,12 @@ export async function getSkuRanges() {
  * ranges to existing skus rows, and writes promotion_skus. The
  * frontend does not insert into skus, stores, or the link tables.
  *
+ * Stores already running the same event (period, type, mechanic) are left
+ * out and listed in `skipped_stores`; when every store is, it fails with
+ * 409 naming them (promotion_service.create_promotion).
+ *
  * @param {object} payload
- * @returns {Promise<object>} the created promotion, with `stores` and `skus`
+ * @returns {Promise<object>} the created promotion, with `stores`, `skus` and `skipped_stores`
  */
 export async function createPromotion(payload) {
   return request('/api/promotions', {

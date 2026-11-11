@@ -5,8 +5,8 @@ import { ACTIONS_COLUMN, hideClass } from '@/components/ui/TableGrid';
 // Uploaded: "11 Nov 2026, 14:05"), so paging and searching never move the
 // columns. File and Nomenclature share the rest and truncate (full text in
 // the cell's title); Nomenclature drops out first on a narrow window, and
-// the phone card view shows it again. `sortField`s are the fields
-// sortUploads() in app/utils/uploadHistory.js accepts.
+// the phone card view shows it again. `sortField`s are the `sort` values
+// backend upload_history.HISTORY_SORT_FIELDS accepts.
 export const UPLOAD_COLUMNS = [
   { key: 'file', label: 'File' },
   { key: 'customer', label: 'Customer', width: '10rem' },

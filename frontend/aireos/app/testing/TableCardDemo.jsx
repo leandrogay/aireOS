@@ -51,8 +51,8 @@ function monthLabel(month) {
 }
 
 /**
- * A titled card holding a TableGrid: the shape the Dashboard SKU ranking and
- * DOH settings are moving to.
+ * A titled card holding a TableGrid: the shape the Dashboard SKU ranking is
+ * moving to.
  */
 function SummaryCard() {
   const [loading, setLoading] = useState(false);

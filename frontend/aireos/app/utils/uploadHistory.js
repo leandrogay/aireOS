@@ -1,5 +1,3 @@
-import { matchesSearch } from './tableView.js';
-
 // The mapping status recorded on each blob, as something a person reads.
 // Anything unrecognised falls through to the raw value rather than being
 // hidden. Keys are backend storage.list_uploads mapping_status; the load
@@ -27,62 +25,6 @@ export function loadActionFor(upload) {
   if (upload.mapping_status === 'ready_to_load') return { label: 'Load', reload: false };
   if (upload.mapping_status === 'reload_available') return { label: 'Reload', reload: true };
   return null;
-}
-
-/**
- * Uploads whose file name, vendor or mapping name contains the query.
- *
- * @param {object[]} uploads GET /api/uploads/history rows
- * @param {string} query
- * @returns {object[]}
- */
-export function searchUploads(uploads, query) {
-  return uploads.filter((upload) =>
-    matchesSearch([upload.filename, upload.vendor, upload.mapping_name], query),
-  );
-}
-
-// The Status column's ascending order: what needs someone to act on it
-// first (a failed nomenclature, a review, a load or reload waiting), then
-// what is done. Keys are mapping_status values, plus `rolled_back` for an
-// upload whose load was reversed; anything not listed sorts last.
-const STATUS_SORT_ORDER = [
-  'mapping_failed',
-  'pending_confirmation',
-  'partial_match',
-  'ready_to_load',
-  'reload_available',
-  'mapped',
-  'rolled_back',
-];
-
-function statusRank(upload) {
-  const key = upload.status === 'rolled_back' ? 'rolled_back' : upload.mapping_status;
-  const rank = STATUS_SORT_ORDER.indexOf(key);
-  return rank === -1 ? STATUS_SORT_ORDER.length : rank;
-}
-
-// `uploaded_at` is an ISO UTC instant, so comparing the strings orders them in
-// time; a missing one sorts as the oldest.
-function compareUploadedAt(a, b) {
-  return String(a.uploaded_at || '').localeCompare(String(b.uploaded_at || ''));
-}
-
-/**
- * Uploads in the order Recent uploads' sortable columns ask for: `status`
- * (STATUS_SORT_ORDER, uploads with the same status newest first whichever
- * way it runs) or `uploaded_at`.
- *
- * @param {object[]} uploads
- * @param {{ field: 'status' | 'uploaded_at', direction: 'asc' | 'desc' }} sort
- * @returns {object[]}
- */
-export function sortUploads(uploads, sort) {
-  const sign = sort.direction === 'asc' ? 1 : -1;
-  if (sort.field === 'status') {
-    return [...uploads].sort((a, b) => sign * (statusRank(a) - statusRank(b)) || compareUploadedAt(b, a));
-  }
-  return [...uploads].sort((a, b) => sign * compareUploadedAt(a, b));
 }
 
 /**
