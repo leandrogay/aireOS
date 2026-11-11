@@ -8,7 +8,13 @@ from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.exc import DatabaseError
 
 from app.services import catalog_service, forecast_units, inventory_calc, notification_service, sellout_units, sql
-from app.services.sell_in_upload import canonical_customer_name, product_for_description, quantity_problem, read_sell_in_lines
+from app.services.sell_in_upload import (
+    canonical_customer_name,
+    customer_match_key,
+    product_for_description,
+    quantity_problem,
+    read_sell_in_lines,
+)
 from app.services.scenario import block_effects
 from app.services.scenario import building_blocks as scenario_blocks
 from app.services.settings import doh as doh_settings
@@ -285,6 +291,37 @@ _CUSTOMER_RETAILERS_SQL = """
     WHERE
         customer_id = ANY(CAST(:customer_ids AS integer[]))
 """
+
+
+_CUSTOMER_FAMILIES_SQL = """
+    SELECT
+        cr.customer_id,
+        regexp_replace(r.retailer_name, '_(offline|online)$', '') AS family
+
+    FROM retailers r
+    JOIN customer_retailers cr ON cr.retailer_id = r.retailer_id
+"""
+
+
+def _fetch_customer_families(conn: Connection) -> list[tuple[str, int]]:
+    """(retailer family, customer_id) for every linked retailer: the name a
+    customer's sales are filed under (sheng_siong for sheng_siong_offline /
+    _online). Linked by id, so it holds whatever the customer is renamed to."""
+
+    rows = conn.execute(text(_CUSTOMER_FAMILIES_SQL)).mappings().all()
+    return [(row["family"], row["customer_id"]) for row in rows]
+
+
+def _customers_by_match_key(names: list[tuple[str, int]]) -> dict[str, set[int]]:
+    """The customers each name stands for, keyed by customer_match_key. A key
+    with more than one customer is ambiguous and must not be guessed at."""
+
+    customers: dict[str, set[int]] = {}
+    for name, customer_id in names:
+        key = customer_match_key(name)
+        if key:
+            customers.setdefault(key, set()).add(customer_id)
+    return customers
 
 
 def _fetch_customer_retailers(conn: Connection, customer_ids: list[int]) -> dict[int, list[int]]:
@@ -1907,7 +1944,13 @@ def set_shipped_so_far(record, today: date | None = None) -> dict:
 
 def _plan_sell_in_upload(conn: Connection, data: bytes, today: date) -> tuple[list[dict], list[dict]]:
     customers = _fetch_customers(conn)
-    customer_by_name = {name.lower(): customer_id for customer_id, name in customers.items()}
+    # A tracker name matches a customer by its name or by the family its sales
+    # are filed under (CUSTOMER_ALIASES map to those), both compared by
+    # customer_match_key: spelling, spacing and company endings don't matter,
+    # and a renamed customer record (Sheng_Shiong vs sheng_siong) still matches.
+    # A name that fits two customers, by either route, is skipped, never guessed.
+    by_name = _customers_by_match_key([(name, customer_id) for customer_id, name in customers.items()])
+    by_family = _customers_by_match_key(_fetch_customer_families(conn))
     details = _sku_details()
     sku_by_product = {info["product_name"]: sku for sku, info in details.items()}
 
@@ -1931,10 +1974,15 @@ def _plan_sell_in_upload(conn: Connection, data: bytes, today: date) -> tuple[li
 
     candidates = []
     for line in read_sell_in_lines(data):
-        customer_id = customer_by_name.get(canonical_customer_name(line["customer_name"]).lower())
-        if customer_id is None:
+        key = customer_match_key(canonical_customer_name(line["customer_name"]))
+        matched = by_name.get(key, set()) | by_family.get(key, set())
+        if len(matched) > 1:
+            skip("Customer name matches more than one customer", line)
+            continue
+        if not matched:
             skip("Customer is not in inventory", line)
             continue
+        (customer_id,) = matched
         if line["month"] is None:
             skip("Month of sales or invoice year is not recognised", line)
             continue

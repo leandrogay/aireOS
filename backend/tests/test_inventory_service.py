@@ -1850,6 +1850,109 @@ def test_customer_name_matching_is_case_insensitive(monkeypatch):
     assert preview["rows"][0]["customer_id"] == 1
 
 
+def test_a_tracker_alias_matches_the_customer_through_its_retailers_whatever_the_record_is_called(monkeypatch):
+    # CMM Marketing Services is Sheng Siong: its alias is the family its sales
+    # are filed under (sheng_siong), while the customer record is spelled
+    # Sheng_Shiong. The retailers link the two by id.
+    conn = _install(
+        monkeypatch,
+        _router(
+            customers=_customers("Sheng_Shiong"),
+            metrics=[],
+            **{"FROM retailers r": [{"customer_id": 1, "family": "sheng_siong"}]},
+        ),
+    )
+    monkeypatch.setattr(catalog_service, "get_skus", lambda: [UPLOAD_SKU])
+    monkeypatch.setattr(
+        inventory_service,
+        "read_sell_in_lines",
+        lambda data: [_upload_line(customer_name="CMM Marketing Services Pte Ltd")],
+    )
+
+    preview = inventory_service.preview_sell_in_upload(b"", today=TODAY)
+
+    assert preview["skipped"] == []
+    assert preview["rows"][0]["customer_id"] == 1
+    assert any("JOIN customer_retailers" in sql for sql, _ in conn.calls)
+
+
+def _upload_with_customers(monkeypatch, tracker_name, customer_names, families=()):
+    _install(
+        monkeypatch,
+        _router(
+            customers=_customers(*customer_names),
+            metrics=[],
+            **{"FROM retailers r": [{"customer_id": cid, "family": family} for family, cid in families]},
+        ),
+    )
+    monkeypatch.setattr(catalog_service, "get_skus", lambda: [UPLOAD_SKU])
+    monkeypatch.setattr(inventory_service, "read_sell_in_lines", lambda data: [_upload_line(customer_name=tracker_name)])
+    return inventory_service.preview_sell_in_upload(b"", today=TODAY)
+
+
+def test_a_tracker_company_name_matches_the_customer_without_its_company_endings(monkeypatch):
+    # Customer 1: the fake retailers (and so the sell-out) are customer 1's.
+    preview = _upload_with_customers(monkeypatch, "Cold Storage Singapore (1983) Pte Ltd", ["Cold Storage", "Fairprice"])
+
+    assert preview["skipped"] == []
+    assert preview["rows"][0]["customer_id"] == 1
+
+
+def test_spacing_and_underscores_in_a_customer_name_do_not_stop_a_match(monkeypatch):
+    preview = _upload_with_customers(monkeypatch, "SHENG SIONG", ["Sheng_Siong"])
+
+    assert preview["skipped"] == []
+    assert preview["rows"][0]["customer_id"] == 1
+
+
+def test_a_tracker_name_that_fits_two_customers_is_skipped_not_guessed(monkeypatch):
+    preview = _upload_with_customers(monkeypatch, "Cold Storage", ["Cold Storage", "Cold Storage Pte Ltd"])
+
+    assert preview["rows"] == []
+    assert preview["skipped"][0]["reason"] == "Customer name matches more than one customer"
+
+
+def test_a_tracker_customer_not_on_the_platform_is_still_skipped(monkeypatch):
+    preview = _upload_with_customers(monkeypatch, "Pharmex", ["Fairprice"], families=[("fairprice", 1)])
+
+    assert preview["rows"] == []
+    assert preview["skipped"][0]["reason"] == "Customer is not in inventory"
+
+
+def test_a_name_that_is_one_customers_name_and_another_customers_sales_family_is_skipped(monkeypatch):
+    _install(
+        monkeypatch,
+        _router(
+            customers=_customers("Fairprice", "Other"),
+            metrics=[],
+            **{"FROM retailers r": [{"customer_id": 2, "family": "fairprice"}]},
+        ),
+    )
+    monkeypatch.setattr(catalog_service, "get_skus", lambda: [UPLOAD_SKU])
+    monkeypatch.setattr(inventory_service, "read_sell_in_lines", lambda data: [_upload_line()])
+
+    preview = inventory_service.preview_sell_in_upload(b"", today=TODAY)
+
+    assert preview["rows"] == []
+    assert preview["skipped"][0]["reason"] == "Customer name matches more than one customer"
+
+
+def test_a_name_that_is_a_customers_name_and_its_own_sales_family_matches_it(monkeypatch):
+    preview = _upload_with_customers(monkeypatch, "FAIRPRICE", ["FairPrice"], families=[("fairprice", 1)])
+
+    assert preview["skipped"] == []
+    assert preview["rows"][0]["customer_id"] == 1
+
+
+def test_an_alias_written_with_different_punctuation_still_matches(monkeypatch):
+    preview = _upload_with_customers(
+        monkeypatch, "CMM Marketing Services Pte. Ltd.", ["Sheng_Shiong"], families=[("sheng_siong", 1)]
+    )
+
+    assert preview["skipped"] == []
+    assert preview["rows"][0]["customer_id"] == 1
+
+
 # ---- sell-in plan: the initial forecast covers months the current one does not -------
 # The current run starts after the newest sales month, which can be later than
 # the last month with sell-in actuals; the plan falls back to the initial there.
