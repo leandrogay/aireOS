@@ -177,7 +177,7 @@ export default function PromotionList({
         }
         pagination={{ page: currentPage, totalPages, pageSize, totalRows: sorted.length, onPageChange: setPage, onPageSizeChange: changePageSize }}
         columns={PROMOTION_COLUMNS}
-        minWidth="72rem"
+        minWidth="64rem"
         sort={sort}
         onSort={handleSort}
         emptyState={noMatches || null}
