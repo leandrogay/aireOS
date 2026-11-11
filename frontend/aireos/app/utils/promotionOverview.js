@@ -3,7 +3,6 @@ import {
   formatYmd,
   promoTypeLabel,
 } from '@/app/utils/promotionForm';
-import { retailerLabel } from '@/app/utils/retailerLabel';
 import { singaporeToday } from '@/lib/singaporeTime';
 
 const RECURRENCE_OPTIONS = [
@@ -25,7 +24,8 @@ export const PROMOTION_STATUSES = [
  * Compare period_start / period_end to today (the Singapore calendar day).
  *
  * Upcoming: today is before start. Active: today is in range.
- * Past: today is after end. Dates from GET /api/promotions.
+ * Past: today is after end. Dates from GET /api/promotions. The backend's
+ * status filter and search use the same rule (promotion_service _STATUS_SQL).
  *
  * @param {object} promotion
  * @param {Date} [now]
@@ -77,72 +77,6 @@ export function promotionStores(promotion) {
 }
 
 /**
- * Identity of one store link: retailer + store_code, matching the
- * stores natural key on the catalog.
- *
- * @param {{ retailer?: string, store_code?: string | number }} store
- * @returns {string}
- */
-export function promotionStoreKey(store) {
-  return [
-    String(store?.retailer || '').trim().toLowerCase(),
-    String(store?.store_code ?? '').trim(),
-  ].join('|');
-}
-
-/**
- * Identity of the event itself: period, promo type, and mechanic.
- * Voucher / SKU changes do not make a new event.
- *
- * @param {object} promotion
- * @returns {string}
- */
-export function promotionEventKey(promotion) {
-  return [
-    formatPromoDate(promotion.period_start),
-    formatPromoDate(promotion.period_end),
-    String(promotion.promo_type || ''),
-    String(promotion.promotion_mechanic || '').trim(),
-  ].join('|');
-}
-
-/**
- * Identity of one full promotion: the event plus its store set.
- *
- * @param {object} promotion
- * @returns {string}
- */
-export function promotionCombinationKey(promotion) {
-  const storeKeys = [...new Set(promotionStores(promotion).map(promotionStoreKey))].sort();
-  return `${promotionEventKey(promotion)}||${storeKeys.join(',')}`;
-}
-
-/**
- * Stores already covered by an existing promotion with the same event
- * (period, type, mechanic), keyed by promotionStoreKey.
- *
- * @param {object[]} promotions existing rows
- * @param {object} candidate the row being created or edited
- * @param {number | string | null} [excludeId] promotion_id to ignore (edit)
- * @returns {Map<string, object>} store key -> the promotion covering it
- */
-export function storesCoveredByEvent(promotions, candidate, excludeId = null) {
-  const eventKey = promotionEventKey(candidate);
-  const covered = new Map();
-
-  for (const item of promotions || []) {
-    if (excludeId != null && String(item.promotion_id) === String(excludeId)) continue;
-    if (promotionEventKey(item) !== eventKey) continue;
-    for (const store of promotionStores(item)) {
-      const key = promotionStoreKey(store);
-      if (!covered.has(key)) covered.set(key, item);
-    }
-  }
-
-  return covered;
-}
-
-/**
  * Unique retailer names linked to one promotion.
  *
  * @param {object} promotion
@@ -164,26 +98,6 @@ export function promotionStoreNames(promotion) {
   return [
     ...new Set(promotionStores(promotion).map((store) => store.store_name).filter(Boolean)),
   ].sort((left, right) => left.localeCompare(right));
-}
-
-/**
- * Keep one row per input combination, preferring the newest promotion_id.
- *
- * @param {object[]} promotions
- * @returns {object[]}
- */
-export function dedupePromotions(promotions) {
-  const newest = new Map();
-
-  for (const item of promotions || []) {
-    const key = promotionCombinationKey(item);
-    const current = newest.get(key);
-    if (!current || Number(item.promotion_id || 0) > Number(current.promotion_id || 0)) {
-      newest.set(key, item);
-    }
-  }
-
-  return [...newest.values()];
 }
 
 /**
@@ -296,152 +210,4 @@ export function promotionOccurrences(promotion, recurrence = 'none') {
     });
   }
   return items;
-}
-
-/**
- * Unique retailer names across every linked store of the loaded rows.
- *
- * @param {object[]} promotions
- * @returns {string[]}
- */
-export function uniquePromotionRetailers(promotions) {
-  return [
-    ...new Set((promotions || []).flatMap((item) => promotionRetailerNames(item))),
-  ].sort((left, right) => left.localeCompare(right));
-}
-
-/**
- * Unique period_label values for the time-period filter.
- *
- * @param {object[]} promotions
- * @returns {string[]}
- */
-export function uniquePromotionPeriods(promotions) {
-  return [...new Set((promotions || []).map((item) => item.period_label).filter(Boolean))].sort();
-}
-
-/**
- * Unique store names across every linked store of the loaded rows.
- *
- * @param {object[]} promotions
- * @returns {string[]}
- */
-export function uniquePromotionStoreNames(promotions) {
-  return [
-    ...new Set((promotions || []).flatMap((item) => promotionStoreNames(item))),
-  ].sort((left, right) => left.localeCompare(right));
-}
-
-/**
- * Unique promo_type values.
- *
- * @param {object[]} promotions
- * @returns {string[]}
- */
-export function uniquePromotionTypes(promotions) {
-  return [...new Set((promotions || []).map((item) => item.promo_type).filter(Boolean))].sort();
-}
-
-/**
- * Unique promotion_mechanic values.
- *
- * @param {object[]} promotions
- * @returns {string[]}
- */
-export function uniquePromotionMechanics(promotions) {
-  return [
-    ...new Set((promotions || []).map((item) => item.promotion_mechanic).filter(Boolean)),
-  ].sort((left, right) => left.localeCompare(right));
-}
-
-/**
- * Apply column filters. Store and retailer match when any linked store
- * matches. Overlapping different combinations stay listed.
- *
- * @param {object[]} promotions
- * @param {{
- *   storeName?: string,
- *   period?: string,
- *   promoType?: string,
- *   mechanic?: string,
- *   recurrence?: string,
- *   retailer?: string,
- *   status?: string,
- * }} filters
- * @param {Record<string, string>} [recurrenceMap]
- * @returns {object[]}
- */
-export function filterPromotions(promotions, filters, recurrenceMap = {}) {
-  const storeName = filters.storeName || '';
-  const period = filters.period || '';
-  const promoType = filters.promoType || '';
-  const mechanic = filters.mechanic || '';
-  const recurrence = filters.recurrence || '';
-  const retailer = filters.retailer || '';
-  const status = filters.status || '';
-
-  return (promotions || []).filter((promotion) => {
-    if (storeName && !promotionStoreNames(promotion).includes(storeName)) return false;
-    if (period && promotion.period_label !== period) return false;
-    if (promoType && promotion.promo_type !== promoType) return false;
-    if (mechanic && promotion.promotion_mechanic !== mechanic) return false;
-    if (recurrence && recurrenceForPromotion(promotion, recurrenceMap) !== recurrence) {
-      return false;
-    }
-    if (retailer && !promotionRetailerNames(promotion).includes(retailer)) return false;
-    if (status && promotionStatus(promotion) !== status) return false;
-    return true;
-  });
-}
-
-/**
- * Sort by period_start or period_end.
- *
- * @param {object[]} promotions
- * @param {'period_start' | 'period_end'} field
- * @param {'asc' | 'desc'} direction
- * @returns {object[]}
- */
-export function sortPromotions(promotions, field, direction) {
-  const factor = direction === 'desc' ? -1 : 1;
-  return [...(promotions || [])].sort((left, right) => {
-    const leftValue = formatPromoDate(left[field]);
-    const rightValue = formatPromoDate(right[field]);
-    if (leftValue === rightValue) {
-      return Number(right.promotion_id || 0) - Number(left.promotion_id || 0);
-    }
-    return leftValue < rightValue ? -1 * factor : 1 * factor;
-  });
-}
-
-/**
- * Free-text search across what a row shows: retailer, store, period, promo
- * type, mechanic, voucher and status. Every word typed must match somewhere,
- * so "fairprice feb" narrows instead of widening.
- *
- * @param {object[]} promotions
- * @param {string} query
- * @returns {object[]}
- */
-export function searchPromotions(promotions, query) {
-  const words = String(query || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
-  if (!words.length) return promotions || [];
-
-  return (promotions || []).filter((promotion) => {
-    const retailers = promotionRetailerNames(promotion);
-    const haystack = [
-      ...retailers,
-      ...retailers.map(retailerLabel),
-      ...promotionStoreNames(promotion),
-      promotion.period_label,
-      promoTypeLabel(promotion.promo_type),
-      promotion.promotion_mechanic,
-      promotion.voucher,
-      promotionStatusLabel(promotionStatus(promotion)),
-    ]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase();
-    return words.every((word) => haystack.includes(word));
-  });
 }
