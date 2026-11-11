@@ -174,6 +174,11 @@ async def list_mappings():
 
     def collect() -> list[dict]:
         packets = []
+        upload_counts = {}
+        for upload in storage.list_uploads():
+            fingerprint = upload.get("mapping_fingerprint")
+            if fingerprint:
+                upload_counts[fingerprint] = upload_counts.get(fingerprint, 0) + 1
         confirmed = storage.list_mapping_fingerprints("confirmed")
         # A pending copy whose cleanup failed at approval is superseded by its
         # confirmed one; listing both would show the mapping twice.
@@ -189,9 +194,9 @@ async def list_mappings():
             for fingerprint in fingerprints:
                 envelope = storage.download_json(path_for(fingerprint))
                 if envelope:
-                    packets.append(
-                        mapping_view.envelope_to_packet(fingerprint, envelope, state)
-                    )
+                    packet = mapping_view.envelope_to_packet(fingerprint, envelope, state)
+                    packet["uploadCount"] = upload_counts.get(fingerprint, 0)
+                    packets.append(packet)
 
         return packets
 
@@ -571,3 +576,29 @@ async def discard_pending_mapping(fingerprint: str):
         "fingerprint": fingerprint,
         "removed_uploads": result["removed_uploads"],
     }
+
+
+@router.delete("/{fingerprint}")
+async def delete_confirmed_mapping(fingerprint: str):
+    """Delete an approved nomenclature only when no uploads still use it."""
+    try:
+        deleted = await asyncio.to_thread(upload_loading.delete_confirmed_mapping, fingerprint)
+    except upload_loading.MappingHasUploadsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except storage.GCSUploadError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if not deleted:
+        raise HTTPException(status_code=404, detail="No confirmed nomenclature for that fingerprint.")
+    return {"success": True, "fingerprint": fingerprint}
+
+
+@router.get("/{fingerprint}/delete-status")
+async def confirmed_mapping_delete_status(fingerprint: str):
+    """Tell the confirmation dialog whether source uploads block deletion."""
+    try:
+        status = await asyncio.to_thread(upload_loading.confirmed_mapping_deletion_status, fingerprint)
+    except storage.GCSUploadError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if status is None:
+        raise HTTPException(status_code=404, detail="No confirmed nomenclature for that fingerprint.")
+    return status

@@ -1,7 +1,8 @@
 'use client';
 
-import { ChevronRight } from 'lucide-react';
+import { ClipboardCheck, Trash2 } from 'lucide-react';
 
+import RowActions from '@/components/ui/RowActions';
 import StatusPill from '@/components/ui/StatusPill';
 import TableRow from '@/components/ui/TableRow';
 import { formatDate } from '@/lib/formatDate';
@@ -15,6 +16,7 @@ import {
 // mappingStatus() kinds → StatusPill tones.
 const STATUS_TONES = {
   confirmed: 'success',
+  unused: 'muted',
   pending: 'warning',
   missing: 'danger',
   warnings: 'warning',
@@ -22,12 +24,19 @@ const STATUS_TONES = {
 };
 
 /**
- * One stored mapping as a table row. Clicking anywhere on the row opens it
- * for review; the name button is the keyboard route to the same action.
+ * One stored mapping as a table row. Clicking the row opens it for review;
+ * the name button and action menu provide keyboard access.
  *
- * @param {{ mapping: object, onOpen: (mappingId: string) => void }} props
+ * @param {{ mapping: object, onOpen: (mappingId: string) => void, onDelete: (mapping: object) => void }} props
  */
-export default function MappingRow({ mapping, onOpen }) {
+export function mappingRowActions(mapping, onOpen, onDelete) {
+  return [
+    { key: 'open', label: 'Review nomenclature', icon: ClipboardCheck, onSelect: () => onOpen(mapping.mappingId) },
+    { key: 'delete', label: 'Delete nomenclature', icon: Trash2, onSelect: () => onDelete(mapping), destructive: true },
+  ];
+}
+
+export default function MappingRow({ mapping, onOpen, onDelete }) {
   const status = mappingStatus(mapping);
   const sourceLine = mappingSourceLine(mapping);
   const customer = mappingCustomer(mapping);
@@ -70,10 +79,12 @@ export default function MappingRow({ mapping, onOpen }) {
       </td>
       <td className="px-4 py-2.5">{mapping.validatedAt ? formatDate(mapping.validatedAt) : '—'}</td>
       <td className="px-2 py-2.5">
-        <ChevronRight
-          aria-hidden="true"
-          className="size-4 text-deep-violet-blue/30 transition-colors group-focus-within:text-deep-violet-blue group-hover:text-deep-violet-blue"
-        />
+        <div onClick={(event) => event.stopPropagation()}>
+          <RowActions
+            label={`Actions for nomenclature ${mappingTitle(mapping)}`}
+            actions={mappingRowActions(mapping, onOpen, onDelete)}
+          />
+        </div>
       </td>
     </TableRow>
   );

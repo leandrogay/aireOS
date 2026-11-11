@@ -62,6 +62,59 @@ class FakeBucket:
         return True
 
 
+def test_delete_confirmed_mapping_refuses_uploads(monkeypatch):
+    bucket = FakeBucket([_upload("uploads/a.txt", "mapped")]).install(monkeypatch)
+    deleted = []
+    monkeypatch.setattr(storage, "delete_blob", lambda path: deleted.append(path))
+
+    with pytest.raises(upload_loading.MappingHasUploadsError, match="uploads"):
+        upload_loading.delete_confirmed_mapping("fp")
+
+    assert bucket.uploads
+    assert deleted == []
+
+
+def test_confirmed_mapping_deletion_status_counts_uploads(monkeypatch):
+    FakeBucket([_upload("uploads/a.txt", "mapped")]).install(monkeypatch)
+
+    assert upload_loading.confirmed_mapping_deletion_status("fp") == {
+        "allowed": False,
+        "upload_count": 1,
+    }
+
+    response = client.get("/api/mappings/fp/delete-status")
+
+    assert response.status_code == 200
+    assert response.json() == {"allowed": False, "upload_count": 1}
+
+
+def test_delete_confirmed_mapping_removes_history_before_live_contract(monkeypatch):
+    FakeBucket([]).install(monkeypatch)
+    history = storage.history_mapping_path("fp", 1)
+    monkeypatch.setattr(storage, "list_mapping_history_paths", lambda fingerprint: [history])
+    deleted = []
+    monkeypatch.setattr(storage, "delete_blob", lambda path: deleted.append(path) or True)
+
+    assert upload_loading.delete_confirmed_mapping("fp") is True
+    assert deleted == [
+        history,
+        storage.pending_mapping_path("fp"),
+        storage.confirmed_mapping_path("fp"),
+    ]
+
+
+def test_delete_confirmed_mapping_endpoint_reports_blocked_uploads(monkeypatch):
+    def blocked(_fingerprint):
+        raise upload_loading.MappingHasUploadsError("Delete uploads first")
+
+    monkeypatch.setattr(upload_loading, "delete_confirmed_mapping", blocked)
+
+    response = client.delete("/api/mappings/fp")
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Delete uploads first"}
+
+
 def _no_transform_allowed(*args, **kwargs):
     raise AssertionError("a file that cannot be loaded must not be transformed")
 

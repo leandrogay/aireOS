@@ -133,6 +133,7 @@ export default function ConfirmDialog({
             variant={CONFIRM_VARIANTS[tone] || CONFIRM_VARIANTS.destructive}
             onClick={onConfirm}
             disabled={isPending || confirmDisabled}
+            className="disabled:bg-muted disabled:text-muted-foreground"
           >
             {isPending ? pendingLabel : confirmLabel}
           </Button>

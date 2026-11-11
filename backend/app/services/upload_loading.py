@@ -128,6 +128,37 @@ def discard_proposal(fingerprint: str) -> dict:
     return {"proposal_deleted": proposal_deleted, "removed_uploads": removed}
 
 
+class MappingHasUploadsError(ValueError):
+    """A nomenclature still belongs to uploaded source files."""
+
+
+def confirmed_mapping_deletion_status(fingerprint: str) -> dict | None:
+    """Check the same upload condition enforced again during deletion."""
+    if storage.download_json(storage.confirmed_mapping_path(fingerprint)) is None:
+        return None
+    upload_count = len(storage.list_uploads_for_mapping(fingerprint))
+    return {"allowed": upload_count == 0, "upload_count": upload_count}
+
+
+def delete_confirmed_mapping(fingerprint: str) -> bool:
+    """Remove a confirmed contract only after all source uploads are gone.
+
+    Archived versions go first so an interrupted delete leaves the live
+    contract available and the action can be retried.
+    """
+    path = storage.confirmed_mapping_path(fingerprint)
+    if storage.download_json(path) is None:
+        return False
+    if storage.list_uploads_for_mapping(fingerprint):
+        raise MappingHasUploadsError(
+            "Delete or roll back and delete the uploads using this nomenclature first."
+        )
+    for archived_path in storage.list_mapping_history_paths(fingerprint):
+        storage.delete_blob(archived_path)
+    storage.delete_blob(storage.pending_mapping_path(fingerprint))
+    return storage.delete_blob(path)
+
+
 # ============================================================
 # Preview and load
 # ============================================================
