@@ -49,12 +49,7 @@ def _jsonable(value):
 def _discounts(conn: Connection) -> dict[str, dict]:
     """Each mechanic's standard label and effective discount, from its all-customers uplift row."""
 
-    current = promo_uplifts._current_uplifts(promo_uplifts._uplift_rows(conn))
-    return {
-        row["mechanic_key"]: {"label": row["promotion_mechanic"], "discount_pct": row["effective_discount_pct"]}
-        for row in current
-        if row["scope"] == "all" and row["mechanic_key"]
-    }
+    return promo_uplifts.mechanic_discounts(conn)
 
 
 def _version_months(anchor_rows: list[dict], this_month: date) -> list[date]:

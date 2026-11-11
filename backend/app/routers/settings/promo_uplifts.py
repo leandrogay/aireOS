@@ -3,13 +3,14 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from app.auth import current_user_email
 
 from app.schemas.settings.promo_uplifts import (
+    MechanicDiscountUpdate,
     PromoAnchorAdopt,
-    PromoAnchorUpdate,
-    PromoUpliftOverrideCreate,
-    PromoUpliftUpdate,
+    PromoAnchorOverwrite,
+    PromoFallbackAnchorUpdate,
 )
 from app.services.settings import promo_moments as promo_moment_service
 from app.services.settings import promo_recalc as promo_recalc_service
+from app.services.settings import promo_uplift_calc as promo_uplift_calc_service
 from app.services.settings import promo_uplifts as promo_uplift_service
 from app.services.settings.common import CustomerNotFoundError
 
@@ -25,7 +26,6 @@ router = APIRouter(
 
 _NOT_FOUND = (
     CustomerNotFoundError,
-    promo_uplift_service.UpliftSettingNotFoundError,
     promo_uplift_service.MechanicNotFoundError,
 )
 
@@ -101,19 +101,31 @@ def recalculate(customer_id: int | None = None):
         raise _failed("recalculate promotion moments and uplifts", e)
 
 
-@router.post("")
-def add_override(
-    body: PromoUpliftOverrideCreate,
+@router.get("/calculated")
+def list_calculated(customer_id: int | None = None):
+    """The worked-out uplift per customer x SKU range x mechanic, with its anchor versions and SKUs."""
+
+    try:
+        return promo_uplift_calc_service.list_calculated(customer_id)
+
+    except CustomerNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    except Exception as e:
+        raise _failed("retrieve the calculated promotion uplifts", e)
+
+
+@router.put("/mechanics/{mechanic_key}")
+def set_mechanic_discount(
+    mechanic_key: str,
+    body: MechanicDiscountUpdate,
     response: Response,
     updated_by: str = Depends(current_user_email),
 ):
     try:
-        result = promo_uplift_service.add_override(
-            body.mechanic_key,
-            body.scope,
-            body.customer_id,
-            body.uplift_pct,
-            sku_range=body.sku_range,
+        result = promo_uplift_service.set_mechanic_discount(
+            mechanic_key,
+            body.effective_discount_pct,
             note=body.note,
             updated_by=updated_by,
         )
@@ -122,60 +134,8 @@ def add_override(
     except _NOT_FOUND as e:
         raise HTTPException(status_code=404, detail=str(e))
 
-    except promo_uplift_service.UpliftSettingConflictError as e:
-        raise HTTPException(status_code=409, detail=str(e))
-
     except Exception as e:
-        raise _failed("add the promotion uplift override", e)
-
-
-@router.put("/{setting_id}")
-def update_uplift(
-    setting_id: int,
-    body: PromoUpliftUpdate,
-    response: Response,
-    updated_by: str = Depends(current_user_email),
-):
-    try:
-        result = promo_uplift_service.update_uplift(
-            setting_id,
-            body.uplift_pct,
-            note=body.note,
-            updated_by=updated_by,
-        )
-        return _version_status(response, result)
-
-    except _NOT_FOUND as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-    except promo_uplift_service.UpliftSettingConflictError as e:
-        raise HTTPException(status_code=409, detail=str(e))
-
-    except Exception as e:
-        raise _failed("save the promotion uplift", e)
-
-
-@router.post("/{setting_id}/reset")
-def reset_uplift(
-    setting_id: int,
-    response: Response,
-    updated_by: str = Depends(current_user_email),
-):
-    try:
-        result = promo_uplift_service.reset_uplift(
-            setting_id,
-            updated_by,
-        )
-        return _version_status(response, result)
-
-    except _NOT_FOUND as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-    except promo_uplift_service.UpliftSettingConflictError as e:
-        raise HTTPException(status_code=409, detail=str(e))
-
-    except Exception as e:
-        raise _failed("reset the promotion uplift", e)
+        raise _failed("save the mechanic's discount", e)
 
 
 @router.get("/mechanics/{mechanic_key}/history")
@@ -204,21 +164,29 @@ def list_anchors():
         raise _failed("retrieve the ordinary-month discounts", e)
 
 
+# The fallback anchor's routes come before /anchors/{customer_id}, which
+# would otherwise take "default" as a customer id.
 @router.put("/anchors/default")
-def set_default_anchor(
-    body: PromoAnchorUpdate,
+def set_fallback_anchor(
+    body: PromoFallbackAnchorUpdate,
     response: Response,
     updated_by: str = Depends(current_user_email),
 ):
     try:
-        result = promo_uplift_service.set_anchor(None, body.anchor_pct, body.sku_range, updated_by)
+        result = promo_uplift_service.set_fallback_anchor(body.anchor_pct, updated_by)
         return _version_status(response, result)
 
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise _failed("save the fallback ordinary-month discount", e)
+
+
+@router.get("/anchors/default/history")
+def fallback_anchor_history():
+    try:
+        return promo_uplift_service.anchor_history(None)
 
     except Exception as e:
-        raise _failed("save the all-customers ordinary-month discount", e)
+        raise _failed("retrieve the fallback ordinary-month discount history", e)
 
 
 @router.get("/anchors/{customer_id}")
@@ -234,14 +202,14 @@ def get_anchor(customer_id: int):
 
 
 @router.put("/anchors/{customer_id}")
-def set_anchor(
+def overwrite_anchor(
     customer_id: int,
-    body: PromoAnchorUpdate,
+    body: PromoAnchorOverwrite,
     response: Response,
     updated_by: str = Depends(current_user_email),
 ):
     try:
-        result = promo_uplift_service.set_anchor(customer_id, body.anchor_pct, body.sku_range, updated_by)
+        result = promo_uplift_service.overwrite_anchor(customer_id, body.mechanic_key, body.sku_range, updated_by)
         return _version_status(response, result)
 
     except CustomerNotFoundError as e:
@@ -249,9 +217,6 @@ def set_anchor(
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-
-    except promo_uplift_service.UpliftSettingConflictError as e:
-        raise HTTPException(status_code=409, detail=str(e))
 
     except Exception as e:
         raise _failed("save the ordinary-month discount", e)
