@@ -471,3 +471,16 @@ Migrate these only when you are already in the file for other work (CLAUDE.md §
   the service and schema comments still say "migration 006".
 - **`components/landing/`** (LandingHeader, ModuleGrid, …) isn't mounted by any page since `/` redirects
   to `/dashboard`; only a comment in `navItems.js` mentions it.
+
+### Visual audit findings (11 Nov 2026)
+
+Log these separately from the visual revamp; do not change application behavior to address them.
+
+| File and line | Severity | Finding | Suggested fix |
+| --- | --- | --- | --- |
+| `frontend/aireos/app/components/ui/Dropdown.jsx:118` | Medium, accessibility | Placeholder text uses 50% deep blue on cream, about 2.4:1 contrast on a solid cream background. | Use a muted text token verified at 4.5:1 on every field surface. |
+| `frontend/aireos/app/components/ui/SortHeader.jsx:9` | Medium, accessibility | Table labels use 60% deep blue; the contrast is below the normal-text AA target on some light surfaces. | Raise the shared table-header text contrast without changing sorting behavior. |
+| `frontend/aireos/app/config/transitions.js:18` | Low, consistency | The card selector names an older opaque card class and may miss newer glass card frames during page cascades. | Use a stable, presentational card marker after checking every caller. |
+| `frontend/aireos/app/components/layout/Sidebar.jsx:130` | Low, performance | Opening the sidebar animates its width, which can trigger layout work on slower devices. | Profile on mobile and consider a transform-based visual treatment if it causes jank. |
+| `frontend/aireos/app/globals.css:4` | Medium, maintenance | The `tw-animate-css` workaround comment documents a hardcoded package path risk; the current import differs from the comment. | Reconcile the comment and import after checking a clean install and build. |
+| `frontend/aireos/app/components/ui/surfaceStyles.js:3` | Medium, accessibility/performance | The earlier shared card style put `backdrop-blur-xl` on large content surfaces without a reduced-transparency fallback. | Keep the existing class for compatibility, cap blur to small floating surfaces, and supply opaque fallbacks in the visual theme. |
