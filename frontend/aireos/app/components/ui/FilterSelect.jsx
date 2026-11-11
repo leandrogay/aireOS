@@ -17,7 +17,7 @@ import SelectDropdown from '@/components/ui/SelectDropdown';
  */
 export default function FilterSelect({ label, value, allLabel, options, onChange }) {
   return (
-    <div className="grid min-w-0 gap-1 text-xs font-medium text-deep-violet-blue/70">
+    <div className="grid min-w-0 gap-1 text-xs font-medium text-ink-soft">
       <span>{label}</span>
       <SelectDropdown
         value={value}

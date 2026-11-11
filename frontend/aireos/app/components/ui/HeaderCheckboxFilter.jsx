@@ -90,20 +90,20 @@ export default function HeaderCheckboxFilter({ id, label, selected, options, ope
               left: menuPos.left,
               maxHeight: menuPos.maxHeight,
             }}
-            className="fixed z-50 flex min-w-[12rem] flex-col overflow-hidden rounded-xl border border-lavander bg-white shadow-lg"
+            className="glass-2 fixed z-50 flex min-w-[12rem] flex-col overflow-hidden rounded-glass-md text-deep-violet-blue"
           >
             {isActive ? (
               <button
                 type="button"
                 onClick={() => onChange([])}
-                className="shrink-0 cursor-pointer border-b border-lavander bg-white px-3 py-1.5 text-left text-[11px] font-medium text-deep-violet-blue hover:bg-cream"
+                className="shrink-0 cursor-pointer border-b border-deep-violet-blue/10 px-3.5 py-2 text-left text-[11px] font-medium text-deep-violet-blue outline-none transition-colors duration-hover hover:bg-deep-violet-blue/8 focus-ring-inset"
               >
                 Clear
               </button>
             ) : null}
-            <div className="min-h-0 flex-1 overflow-y-auto py-1">
+            <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
               {options.length === 0 ? (
-                <p className="px-3 py-2 text-[11px] font-normal normal-case tracking-normal text-deep-violet-blue/70">
+                <p className="px-2 py-1.5 text-[11px] font-normal normal-case tracking-normal text-ink-soft">
                   No values in the current data.
                 </p>
               ) : (
@@ -112,13 +112,13 @@ export default function HeaderCheckboxFilter({ id, label, selected, options, ope
                   return (
                     <label
                       key={option.value}
-                      className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-[11px] font-normal normal-case tracking-normal text-deep-violet-blue hover:bg-cream"
+                      className="flex cursor-pointer items-center gap-2 rounded-glass-sm px-2 py-1.5 text-[11px] font-normal normal-case tracking-normal text-deep-violet-blue transition-colors duration-hover hover:bg-deep-violet-blue/8 has-focus-visible:bg-deep-violet-blue/8"
                     >
                       <input
                         type="checkbox"
                         checked={checked}
                         onChange={() => onChange(toggleValue(selected, option.value))}
-                        className="size-3.5 accent-deep-violet-blue"
+                        className="size-3.5 accent-deep-violet-blue focus-ring"
                       />
                       {option.label}
                     </label>

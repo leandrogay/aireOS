@@ -37,7 +37,7 @@ export default function Disclosure({ summary, children, variant = 'bar', open = 
       <summary
         className={cn(
           // Hides the browser's own marker; the chevron replaces it.
-          'flex cursor-pointer list-none items-center gap-1.5 rounded-md text-deep-violet-blue outline-none transition-colors select-none focus-visible:ring-2 focus-visible:ring-deep-violet-blue [&::-webkit-details-marker]:hidden',
+          'flex cursor-pointer list-none items-center gap-1.5 rounded-md text-deep-violet-blue outline-none transition-colors duration-hover select-none focus-ring [&::-webkit-details-marker]:hidden',
           bar ? 'px-2 py-1.5 text-xs font-medium hover:bg-cream' : 'w-fit py-0.5 pr-1 text-[11px] font-medium hover:text-deep-violet-blue hover:underline underline-offset-2',
           summaryClassName,
         )}
@@ -48,7 +48,7 @@ export default function Disclosure({ summary, children, variant = 'bar', open = 
         />
         <span className="min-w-0 flex-1">{summary}</span>
         {bar && (
-          <span aria-hidden="true" className="shrink-0 text-[11px] font-medium text-deep-violet-blue/70">
+          <span aria-hidden="true" className="shrink-0 text-[11px] font-medium text-ink-soft">
             <span className="[details[open]>summary_&]:hidden">Show</span>
             <span className="hidden [details[open]>summary_&]:inline">Hide</span>
           </span>

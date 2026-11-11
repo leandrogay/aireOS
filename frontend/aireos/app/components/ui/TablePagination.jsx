@@ -32,7 +32,7 @@ export default function TablePagination({
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-lavander px-4 py-3 text-sm text-deep-violet-blue">
-      <p className="text-deep-violet-blue/70">
+      <p className="text-ink-soft">
         <span className="tabular-nums">
           {first}–{last}
         </span>{' '}
@@ -43,7 +43,7 @@ export default function TablePagination({
       </p>
 
       <div className="flex items-center gap-3">
-        <label className="flex items-center gap-2 text-deep-violet-blue/70">
+        <label className="flex items-center gap-2 text-ink-soft">
           Rows per page
           {/* The browser's own arrow sits hard against the edge, so it is
               hidden and the same chevron as the filter dropdowns
@@ -52,7 +52,7 @@ export default function TablePagination({
             <select
               value={pageSize}
               onChange={(event) => onPageSizeChange(Number(event.target.value))}
-              className="h-8 appearance-none rounded-lg border border-lavander bg-white pl-2.5 pr-8 text-sm text-deep-violet-blue outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+              className="h-8 appearance-none rounded-glass-sm border border-deep-violet-blue/60 bg-white pl-2.5 pr-8 text-sm text-deep-violet-blue outline-none transition-[border-color] duration-hover hover:border-deep-violet-blue/75 focus-ring"
             >
               {PAGE_SIZES.map((size) => (
                 <option key={size} value={size}>

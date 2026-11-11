@@ -6,7 +6,11 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
-const triggerClass = 'cursor-pointer rounded-full p-0.5 text-deep-violet-blue/50 hover:text-deep-violet-blue';
+// The icon is the control, so it takes the secondary text colour, not a
+// decorative fade. `after:` widens the hit area to 26px without moving the
+// layout (the visible icon stays 18px).
+const triggerClass =
+  'relative cursor-pointer rounded-full p-0.5 text-ink-soft outline-none transition-colors duration-hover after:absolute after:-inset-1 hover:text-deep-violet-blue focus-ring';
 
 /**
  * A small info icon that shows help on hover, for a table column header or

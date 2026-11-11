@@ -7,7 +7,7 @@ import { POPUP_SHADOW_CLASS } from '@/components/ui/popupShadow';
 import { cn } from '@/lib/utils';
 
 const DISMISS_AFTER_MS = 4000;
-// A white card for every outcome, like the notification panel; the kind of
+// One glass panel for every outcome, like the notification panel; the kind of
 // outcome is its solid badge, its label and its countdown bar. The icon and
 // label say it as well, so it never rests on colour alone (WCAG 1.4.1).
 const KINDS = {
@@ -98,7 +98,7 @@ export default function Toast({ toast, onDismiss }) {
         role={toast.type === 'error' ? 'alert' : 'status'}
         aria-live={toast.type === 'error' ? 'assertive' : 'polite'}
         className={cn(
-          'relative w-96 max-w-full overflow-hidden rounded-2xl border border-lavander bg-white',
+          'glass-2 relative w-96 max-w-full overflow-hidden rounded-glass-md',
           'animate-in fade-in-0 zoom-in-95 slide-in-from-right-2 duration-300 ease-out motion-reduce:animate-none',
           POPUP_SHADOW_CLASS,
         )}
@@ -120,7 +120,7 @@ export default function Toast({ toast, onDismiss }) {
             type="button"
             onClick={onDismiss}
             aria-label="Dismiss"
-            className="pointer-events-auto flex size-7 shrink-0 cursor-pointer items-center justify-center self-start rounded-full text-deep-violet-blue/60 transition-colors hover:bg-lavander hover:text-deep-violet-blue focus-visible:ring-2 focus-visible:ring-deep-violet-blue focus-visible:outline-none"
+            className="press pointer-events-auto flex size-7 shrink-0 cursor-pointer items-center justify-center self-start rounded-full text-ink-soft outline-none press-transition hover:bg-deep-violet-blue/8 hover:text-deep-violet-blue focus-ring"
           >
             <X className="size-4" aria-hidden="true" />
           </button>

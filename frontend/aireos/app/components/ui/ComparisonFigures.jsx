@@ -17,7 +17,7 @@ function shown(pct, decimals) {
 
 function toneClass(pct, decimals) {
   const value = shown(pct, decimals);
-  if (value === null || value === 0) return 'text-deep-violet-blue/70';
+  if (value === null || value === 0) return 'text-ink-soft';
   return value > 0 ? 'text-green-600' : 'text-red-600';
 }
 
@@ -40,9 +40,9 @@ function Arrow({ pct, decimals }) {
 export function ChangeFigure({ label, pct, detail, decimals = 1 }) {
   return (
     <div className="flex-1">
-      <p className="text-xs text-deep-violet-blue/70">{label}</p>
+      <p className="text-xs text-ink-soft">{label}</p>
       {pct === null ? (
-        <p className="text-xl font-semibold text-deep-violet-blue/40" title="Data not available">
+        <p className="text-xl font-semibold text-ink-soft" title="Data not available">
           N/A
         </p>
       ) : (
@@ -51,7 +51,7 @@ export function ChangeFigure({ label, pct, detail, decimals = 1 }) {
           {formatChangePct(pct, decimals)}
         </p>
       )}
-      {detail ? <p className="text-xs tabular-nums text-deep-violet-blue/60">{detail}</p> : null}
+      {detail ? <p className="text-xs tabular-nums text-ink-soft">{detail}</p> : null}
     </div>
   );
 }

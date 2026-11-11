@@ -42,9 +42,11 @@ function DialogClose({
   return <DialogPrimitive.Close data-slot="dialog-close" {...props} />;
 }
 
-// The dimmed, blurred page behind a dialog; the assistant's full screen uses it too.
+// The dimmed, blurred page behind a dialog; the assistant's full screen and
+// ui/ConfirmDialog use it too. A deep-blue scrim (not grey) strong enough that
+// the glass dialog reads as a separate layer over a busy page.
 export const DIALOG_BACKDROP_CLASS =
-  "fixed inset-0 isolate z-50 bg-black/10 supports-backdrop-filter:backdrop-blur-xs"
+  "fixed inset-0 isolate z-50 bg-deep-violet-blue/30 supports-backdrop-filter:backdrop-blur-xs"
 
 function DialogOverlay({
   className,
@@ -74,7 +76,12 @@ function DialogContent({
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full grid-cols-1 max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "glass-3 fixed top-1/2 left-1/2 z-50 grid w-full grid-cols-1 max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-glass-lg p-4 text-sm text-deep-violet-blue duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          // A dialog drawn as a card inside a transparent popup (callers pass
+          // `bg-transparent p-0 ring-0`) brings its own frame, so the glass
+          // border, rim, shadow and blur are dropped too: otherwise a blurred
+          // halo would show round the card's corners.
+          "[&.bg-transparent]:border-0 [&.bg-transparent]:shadow-none [&.bg-transparent]:inset-shadow-none [&.bg-transparent]:backdrop-blur-none",
           className
         )}
         {...props}>
@@ -116,7 +123,8 @@ function DialogFooter({
     <div
       data-slot="dialog-footer"
       className={cn(
-        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 p-4 sm:flex-row sm:justify-end",
+        // The popup's corner less its 1px border, so the tint fills the curve.
+        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-[calc(var(--glass-radius-lg)-1px)] border-t border-deep-violet-blue/10 bg-deep-violet-blue/[0.03] p-4 sm:flex-row sm:justify-end",
         className
       )}
       {...props}>
@@ -150,7 +158,7 @@ function DialogDescription({
     <DialogPrimitive.Description
       data-slot="dialog-description"
       className={cn(
-        "text-sm text-muted-foreground *:[a]:underline *:[a]:underline-offset-3 *:[a]:hover:text-foreground",
+        "text-sm text-ink-soft *:[a]:underline *:[a]:underline-offset-3 *:[a]:hover:text-deep-violet-blue",
         className
       )}
       {...props} />

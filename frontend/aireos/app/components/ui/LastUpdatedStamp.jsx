@@ -13,12 +13,12 @@ export default function LastUpdatedStamp({ items = [], className }) {
         className
       )}
     >
-      <span className="font-semibold uppercase tracking-wide text-deep-violet-blue/45">
+      <span className="font-semibold uppercase tracking-wide text-ink-soft">
         Last updated
       </span>
       {items.map((item) => (
         <span key={item.label} className="inline-flex items-center gap-1">
-          <span className="text-deep-violet-blue/45">{item.label}</span>
+          <span className="text-ink-soft">{item.label}</span>
           <span className="font-medium">{item.value || '—'}</span>
         </span>
       ))}

@@ -56,8 +56,8 @@ function RangePanel({ start, end, min, max, clearable, onApply, onClear }) {
         // react-day-picker's, which stretches a finished range instead.
         onSelect={(_range, day) => setDraft((current) => nextRangeDraft(current, toYmd(day)))}
       />
-      <div className="flex flex-wrap items-center justify-end gap-2 border-t border-lavander px-1.5 pt-1.5 pb-0.5">
-        <p className="mr-auto text-xs text-deep-violet-blue/70" aria-live="polite">
+      <div className="flex flex-wrap items-center justify-end gap-2 border-t border-deep-violet-blue/10 px-1.5 pt-1.5 pb-0.5">
+        <p className="mr-auto text-xs text-ink-soft" aria-live="polite">
           {status}
         </p>
         {clearable && (

@@ -54,7 +54,7 @@ export default function RowActions({ label, actions }) {
                 <span className="grid">
                   {action.label}
                   {action.disabledReason && (
-                    <span className="text-[11px] text-deep-violet-blue/70">{action.disabledReason}</span>
+                    <span className="text-[11px] text-ink-soft">{action.disabledReason}</span>
                   )}
                 </span>
               </DropdownMenuItem>

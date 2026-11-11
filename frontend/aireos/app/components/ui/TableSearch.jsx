@@ -26,7 +26,7 @@ export default function TableSearch({ value, onChange, label, placeholder = 'Sea
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="h-9 w-full min-w-0 rounded-lg border border-lavander bg-white pl-8 pr-2.5 text-sm text-deep-violet-blue outline-none placeholder:text-deep-violet-blue/40 focus-visible:ring-3 focus-visible:ring-ring/50 sm:w-64"
+        className="h-9 w-full min-w-0 rounded-glass-sm border border-deep-violet-blue/60 bg-white pl-8 pr-2.5 text-sm text-deep-violet-blue outline-none transition-[border-color] duration-hover placeholder:text-ink-soft hover:border-deep-violet-blue/75 focus-ring sm:w-64"
       />
     </label>
   );

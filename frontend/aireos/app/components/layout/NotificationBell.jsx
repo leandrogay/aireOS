@@ -90,10 +90,9 @@ export default function NotificationBell() {
           cards below instead of hanging past them. */}
       <PopoverContent
         align="end"
+        // The arrow takes the glass border's colour by default, so the tip
+        // reads as part of the panel's edge.
         arrow
-        // Same colour and width as the popup's outline (ring-violet/40 below),
-        // so the tip reads as part of the panel's edge.
-        arrowClassName="text-violet/40"
         sideOffset={10}
         // fixed: placed against the viewport, so this tall popup never adds to
         // the page's scroll height (with the default "absolute" the page could
@@ -102,7 +101,7 @@ export default function NotificationBell() {
         // Width measured on open (see columnWidth); a style, not a class,
         // because it is computed.
         style={{ width: panelWidth }}
-        className={cn('max-w-[90vw] gap-0 p-0 ring-violet/40', POPUP_SHADOW_CLASS)}
+        className={cn('max-w-[90vw] gap-0 p-0', POPUP_SHADOW_CLASS)}
       >
         <NotificationPanel notifications={notifications} markRead={markRead} />
       </PopoverContent>

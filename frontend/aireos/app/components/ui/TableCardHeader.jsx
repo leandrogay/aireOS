@@ -16,7 +16,7 @@ export default function TableCardHeader({ title, detail, actions, className }) {
     <div className={cn('flex min-w-0 flex-wrap items-start justify-between gap-2', className)}>
       <div className="min-w-0">
         <h3 className="font-serif text-base text-deep-violet-blue">{title}</h3>
-        {detail ? <div className="mt-0.5 text-xs text-deep-violet-blue/70" aria-live="polite">{detail}</div> : null}
+        {detail ? <div className="mt-0.5 text-xs text-ink-soft" aria-live="polite">{detail}</div> : null}
       </div>
       {actions ? <div className="flex min-w-0 flex-wrap items-center gap-2">{actions}</div> : null}
     </div>

@@ -10,8 +10,8 @@ import { isWithinData, outsideDataNote } from '@/app/utils/dataBounds';
 import { formatPeriodName, periodBounds } from '@/app/utils/periodComparison';
 
 const actionButtonClass =
-  'rounded-md px-3 py-1 text-xs font-medium transition-colors disabled:opacity-50';
-const sectionLabelClass = 'text-[11px] font-medium uppercase tracking-wide text-deep-violet-blue/60';
+  'press rounded-glass-sm px-3 py-1 text-xs font-medium outline-none press-transition focus-ring disabled:opacity-50';
+const sectionLabelClass = 'text-[11px] font-medium uppercase tracking-wide text-ink-soft';
 
 /**
  * A Period control (the dashboard's, above its trend chart; the Scenario
@@ -70,18 +70,18 @@ export default function DateRangeControl({ start, end, presets, latestDataEnd, e
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger
         disabled={!start || disabled}
-        className="flex items-center gap-1.5 rounded-md border border-violet bg-white px-2.5 py-1 text-xs text-deep-violet-blue hover:bg-lavander disabled:opacity-50"
+        className="flex items-center gap-1.5 rounded-glass-sm border border-deep-violet-blue/60 bg-white px-2.5 py-1 text-xs text-deep-violet-blue outline-none transition-[border-color,background-color] duration-hover hover:border-deep-violet-blue/75 hover:bg-cream focus-ring disabled:opacity-50"
       >
         <CalendarDays className="size-3.5" />
         <span className="font-semibold">{activePreset ? activePreset.label : 'Custom'}</span>
-        <span className="text-deep-violet-blue/70">· {formatPeriodName(start, displayEnd) || 'Loading…'}</span>
+        <span className="text-ink-soft">· {formatPeriodName(start, displayEnd) || 'Loading…'}</span>
         <ChevronDown className="size-3.5" />
       </PopoverTrigger>
       {/* Start-aligned: Period is the left-hand control, so the popover has
           room to open rightwards instead of over the sidebar. */}
-      <PopoverContent align="start" className="w-auto max-w-[calc(100vw-2rem)] bg-white p-4">
+      <PopoverContent align="start" className="w-auto max-w-[calc(100vw-2rem)] p-4">
         <div className="flex flex-col gap-4 sm:flex-row sm:gap-5">
-          <div className="flex flex-col gap-2 sm:w-36 sm:border-r sm:border-lavander sm:pr-5">
+          <div className="flex flex-col gap-2 sm:w-36 sm:border-r sm:border-deep-violet-blue/10 sm:pr-5">
             <p className={sectionLabelClass}>Presets</p>
             <div className="flex flex-row flex-wrap gap-1 sm:flex-col">
               {presets.map((preset) => {
@@ -95,7 +95,7 @@ export default function DateRangeControl({ start, end, presets, latestDataEnd, e
                   title={outside ? outsideDataNote(earliestDataStart, latestDataEnd) : undefined}
                   aria-pressed={activePreset?.id === preset.id}
                   className={cn(
-                    'rounded-md border border-lavander bg-white px-2 py-1 text-left text-xs text-deep-violet-blue transition-colors hover:border-violet hover:bg-lavander focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-lavander disabled:hover:bg-white',
+                    'rounded-glass-sm border border-deep-violet-blue/60 bg-white px-2 py-1 text-left text-xs text-deep-violet-blue outline-none transition-[color,background-color,border-color] duration-hover hover:border-deep-violet-blue/75 hover:bg-cream focus-ring disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-deep-violet-blue/60 disabled:hover:bg-white',
                     activePreset?.id === preset.id &&
                       'border-deep-violet-blue bg-deep-violet-blue text-white hover:border-deep-violet-blue hover:bg-deep-violet-blue',
                   )}
@@ -118,15 +118,17 @@ export default function DateRangeControl({ start, end, presets, latestDataEnd, e
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className={cn(actionButtonClass, 'text-deep-violet-blue hover:bg-lavander')}
+                className={cn(actionButtonClass, 'text-deep-violet-blue hover:bg-deep-violet-blue/8')}
               >
                 Cancel
               </button>
+              {/* The hover keeps the fill dark (ui/button's default): white
+                  text on violet fell well short of 4.5:1. */}
               <button
                 type="button"
                 onClick={applyDraft}
                 disabled={!draft.start}
-                className={cn(actionButtonClass, 'bg-deep-violet-blue text-white hover:bg-violet')}
+                className={cn(actionButtonClass, 'bg-deep-violet-blue text-white hover:bg-[color-mix(in_oklab,var(--color-deep-violet-blue),white_14%)]')}
               >
                 Apply
               </button>

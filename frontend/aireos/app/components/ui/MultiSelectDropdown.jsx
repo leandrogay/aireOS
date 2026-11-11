@@ -2,11 +2,13 @@
 
 import { useId } from 'react';
 
-import Dropdown from '@/components/ui/Dropdown';
+import Dropdown, { DROPDOWN_ROW_CLASS } from '@/components/ui/Dropdown';
 import { cn } from '@/lib/utils';
 
-const checkRowClass =
-  'flex min-w-0 cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2 py-1 text-sm text-deep-violet-blue hover:bg-cream';
+// Focus sits on the tick box, so the row takes its tint from it and the box
+// draws the focus ring.
+const checkRowClass = cn(DROPDOWN_ROW_CLASS, 'cursor-pointer overflow-hidden has-focus-visible:bg-deep-violet-blue/8');
+const checkboxClass = 'size-3.5 accent-deep-violet-blue focus-ring';
 
 /**
  * What the closed button says: the "all" label when nothing narrows the list,
@@ -106,7 +108,7 @@ export default function MultiSelectDropdown({
   return (
     <div className={cn('grid min-w-0 gap-1', className)}>
       {label && (
-        <span id={labelId} className="text-xs font-medium text-deep-violet-blue/70">
+        <span id={labelId} className="text-xs font-medium text-ink-soft">
           {label}
         </span>
       )}
@@ -125,7 +127,7 @@ export default function MultiSelectDropdown({
         searchPlaceholder={searchPlaceholder}
         listClassName={listClassName}
         footer={capped && (
-          <p className="px-2 py-0.5 text-[11px] text-deep-violet-blue/60">Up to {maxSelected} at a time</p>
+          <p className="px-2 py-0.5 text-[11px] text-ink-soft">Up to {maxSelected} at a time</p>
         )}
       >
         {(query) => {
@@ -142,7 +144,7 @@ export default function MultiSelectDropdown({
                     type="checkbox"
                     checked={allTicked}
                     onChange={(event) => toggleAll(event.target.checked)}
-                    className="size-3.5 accent-deep-violet-blue"
+                    className={checkboxClass}
                   />
                   {allLabel}
                 </label>
@@ -157,18 +159,18 @@ export default function MultiSelectDropdown({
                       checked={ticked}
                       disabled={blocked}
                       onChange={() => toggle(option.value)}
-                      className="size-3.5 accent-deep-violet-blue"
+                      className={checkboxClass}
                     />
                     <span className="min-w-0 flex-1 truncate">{option.label}</span>
                     {option.hint && (
-                      <span className="max-w-[45%] shrink-0 truncate text-[11px] text-deep-violet-blue/50">
+                      <span className="max-w-[45%] shrink-0 truncate text-[11px] text-ink-soft">
                         {option.hint}
                       </span>
                     )}
                   </label>
                 );
               })}
-              {!shown.length && <p className="px-2 py-1 text-sm text-deep-violet-blue/60">No matches</p>}
+              {!shown.length && <p className="px-2 py-1.5 text-sm text-ink-soft">No matches</p>}
             </>
           );
         }}

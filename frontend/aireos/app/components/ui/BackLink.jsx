@@ -16,7 +16,7 @@ export default function BackLink({ href, label, className }) {
       title={`Back to ${label}`}
       aria-label={`Back to ${label}`}
       className={cn(
-        'group inline-flex size-8 shrink-0 items-center justify-center rounded-full text-deep-violet-blue transition-colors hover:bg-lavander',
+        'press group inline-flex size-8 shrink-0 items-center justify-center rounded-full text-deep-violet-blue outline-none press-transition hover:bg-lavander focus-ring',
         className,
       )}
     >

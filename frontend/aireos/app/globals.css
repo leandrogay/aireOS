@@ -88,6 +88,7 @@
   --shadow-glass-2: var(--glass-shadow-2);
   --shadow-glass-3: var(--glass-shadow-3);
   --shadow-card: var(--aire-card-shadow);
+  --shadow-thumb: var(--aire-thumb-shadow);
   --ease-standard: var(--motion-ease-standard);
   --ease-enter: var(--motion-ease-enter);
   --ease-exit: var(--motion-ease-exit);
@@ -211,6 +212,15 @@
     0 1px 2px color-mix(in srgb, var(--aire-deep-blue) 6%, transparent),
     0 6px 16px -8px color-mix(in srgb, var(--aire-deep-blue) 16%, transparent);
 
+  /* The selected thumb of a segmented control, tab list or switch
+     (shadow-thumb): a soft lift, solid and never blurred, because it sits in
+     cards and slides on a motion/react layout animation. Its edge (a 70%
+     deep-blue border, 3.3:1 on lavender and cream, 4.2:1 on white) is set where
+     it is used, so the selected state never rests on the lift alone. */
+  --aire-thumb-shadow:
+    0 1px 2px color-mix(in srgb, var(--aire-deep-blue) 14%, transparent),
+    0 2px 6px -2px color-mix(in srgb, var(--aire-deep-blue) 16%, transparent);
+
   /* Motion. Only transform and opacity move. */
   --motion-press: 80ms;
   --motion-hover: 140ms;
@@ -324,11 +334,14 @@
     --tw-shadow: var(--glass-shadow-3);
   }
 
-  /* Solid first; see-through only where the browser can blur behind it. */
+  /* Solid first; see-through only where the browser can blur behind it.
+     --glass-surface is whichever fill is showing, so a part drawn to match
+     the panel (ui/popover's arrow, which inherits it) follows every branch. */
   .glass-1,
   .glass-2,
   .glass-3 {
-    background-color: var(--glass-solid);
+    --glass-surface: var(--glass-solid);
+    background-color: var(--glass-surface);
     border: 1px solid var(--glass-border);
     --tw-inset-shadow: var(--glass-rim);
     box-shadow:
@@ -336,14 +349,16 @@
       var(--tw-ring-shadow), var(--tw-shadow);
 
     @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-      background-color: var(--glass-fill);
+      --glass-surface: var(--glass-fill);
+      background-color: var(--glass-surface);
       -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
       backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
     }
 
     /* Back to solid for anyone who asked the OS for it. */
     @media (prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active) {
-      background-color: var(--glass-solid);
+      --glass-surface: var(--glass-solid);
+      background-color: var(--glass-surface);
       border-color: color-mix(in srgb, var(--aire-deep-blue) 60%, transparent);
       -webkit-backdrop-filter: none;
       backdrop-filter: none;
@@ -429,6 +444,18 @@
     outline: 2px solid var(--aire-focus);
     outline-offset: -2px;
   }
+}
+
+/* The transition of a pressable control (ui/button and the other `press`
+   controls): colours ease at the hover speed, the press scale at the quicker
+   press speed. The durations pair with the properties in order. A caller's own
+   transition-* utility replaces this, and the press then snaps (see .press). */
+@utility press-transition {
+  transition-property: color, background-color, border-color, box-shadow, opacity, scale;
+  transition-timing-function: var(--motion-ease-standard);
+  transition-duration:
+    var(--motion-hover), var(--motion-hover), var(--motion-hover), var(--motion-hover),
+    var(--motion-hover), var(--motion-press);
 }
 
 /* A chart line's dots fade in as the line is drawn past them; the delay is set
@@ -545,7 +572,9 @@
   }
 }
 
-/* Keep long desktop lists scannable without changing their row content. */
+/* Keep long desktop lists scannable without changing their row content.
+   Every sticky cell has an opaque background (cream header, white or striped
+   rows), so nothing scrolls through it; never make these translucent. */
 @media (min-width: 640px) {
   .aire-table-grid thead th:first-child {
     position: sticky;
@@ -566,7 +595,9 @@
 
   :is(.aire-table-grid, .aire-table-rows) tbody > tr:not(:has(> td[colspan])) > td {
     background-color: var(--aire-row-background);
-    transition: background-color 140ms ease, box-shadow 140ms ease;
+    transition:
+      background-color var(--motion-hover) var(--motion-ease-standard),
+      box-shadow var(--motion-hover) var(--motion-ease-standard);
   }
 
   :is(.aire-table-grid, .aire-table-rows) tbody > tr:nth-child(even):not(:has(> td[colspan])) {

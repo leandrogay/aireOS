@@ -17,7 +17,7 @@ export default function MobileRecordCard({ title, subtitle, badge, actions, fiel
             <h3 className="min-w-0 break-words text-sm font-semibold text-deep-violet-blue">{title}</h3>
             {badge}
           </div>
-          {subtitle && <p className="mt-0.5 break-words text-xs text-deep-violet-blue/60">{subtitle}</p>}
+          {subtitle && <p className="mt-0.5 break-words text-xs text-ink-soft">{subtitle}</p>}
         </div>
         {actions && <div className="-mr-1 -mt-1 shrink-0">{actions}</div>}
       </div>
@@ -25,7 +25,7 @@ export default function MobileRecordCard({ title, subtitle, badge, actions, fiel
         <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-lavander/70 pt-3">
           {fields.map(({ label, value }) => (
             <div key={label} className="min-w-0">
-              <dt className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/55">{label}</dt>
+              <dt className="text-[10px] font-semibold uppercase tracking-wide text-ink-soft">{label}</dt>
               <dd className="mt-0.5 break-words text-xs text-deep-violet-blue">{value ?? '—'}</dd>
             </div>
           ))}

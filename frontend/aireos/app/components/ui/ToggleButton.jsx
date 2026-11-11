@@ -14,9 +14,9 @@ import { cn } from '@/lib/utils';
 // on/off filters (chart lines, store formats).
 const LOOK = {
   compact:
-    'h-8 w-full justify-center rounded-md border border-deep-violet-blue/40 bg-white px-2 text-xs shadow-sm hover:bg-cream data-pressed:border-deep-violet-blue data-pressed:bg-deep-violet-blue data-pressed:text-white data-pressed:hover:bg-deep-violet-blue/90',
+    'h-8 w-full justify-center rounded-glass-sm border border-deep-violet-blue/60 bg-white px-2 text-xs hover:border-deep-violet-blue/75 hover:bg-cream data-pressed:border-deep-violet-blue data-pressed:bg-deep-violet-blue data-pressed:text-white data-pressed:hover:bg-[color-mix(in_oklab,var(--color-deep-violet-blue),white_14%)]',
   chip:
-    'h-7 rounded-full border border-lavander bg-white px-2.5 text-[11px] text-deep-violet-blue/60 hover:bg-cream hover:text-deep-violet-blue data-pressed:border-deep-violet-blue data-pressed:bg-deep-violet-blue data-pressed:text-white data-pressed:hover:bg-deep-violet-blue/90',
+    'h-7 rounded-full border border-deep-violet-blue/20 bg-white px-2.5 text-[11px] text-ink-soft hover:bg-cream hover:text-deep-violet-blue data-pressed:border-deep-violet-blue data-pressed:bg-deep-violet-blue data-pressed:text-white data-pressed:hover:bg-[color-mix(in_oklab,var(--color-deep-violet-blue),white_14%)]',
 };
 
 /**
@@ -38,8 +38,8 @@ export default function ToggleButton({ pressed, onChange, look = 'compact', disa
       disabled={disabled}
       title={title}
       className={cn(
-        'inline-flex items-center gap-1.5 font-medium text-deep-violet-blue outline-none transition',
-        'cursor-pointer focus-visible:ring-2 focus-visible:ring-violet disabled:cursor-not-allowed disabled:opacity-50',
+        'press inline-flex items-center gap-1.5 font-medium text-deep-violet-blue outline-none press-transition',
+        'cursor-pointer focus-ring disabled:cursor-not-allowed disabled:opacity-50',
         LOOK[look],
         className,
       )}

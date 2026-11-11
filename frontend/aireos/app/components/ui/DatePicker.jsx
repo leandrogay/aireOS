@@ -14,19 +14,21 @@ import { formatDate } from '@/lib/formatDate';
 import { singaporeToday } from '@/lib/singaporeTime';
 import { cn } from '@/lib/utils';
 
-// The calendar panel, shared with ui/RangeDatePicker's typed variant.
-export const calendarPanelClass =
-  'w-auto max-w-[95vw] gap-0 overflow-hidden rounded-md border border-lavander bg-white p-1 text-deep-violet-blue ring-0';
+// The calendar panel, shared with ui/RangeDatePicker's typed variant. The
+// glass panel itself comes from PopoverContent.
+export const calendarPanelClass = 'w-auto max-w-[95vw] gap-0 overflow-hidden p-1';
 
 // The typed variants' box: the form input look around a dd/mm/yyyy text box
-// and the calendar icon, so it lines up with a Dropdown 'field' beside it.
+// and the calendar icon, so it lines up with a Dropdown 'field' beside it. The
+// box draws the focus ring while its text box has focus (the calendar icon
+// rings itself).
 export const typedBoxClass = cn(
   inputClass,
-  'flex items-center gap-1 py-0 pr-1 focus-within:border-violet has-disabled:opacity-60',
+  'flex items-center gap-1 py-0 pr-1 has-disabled:opacity-60 has-[input:focus-visible]:outline-solid has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-focus',
 );
 export const typedInputClass = 'h-8 bg-transparent tabular-nums outline-none disabled:cursor-not-allowed';
 export const calendarIconClass =
-  'flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-deep-violet-blue/50 hover:bg-cream hover:text-deep-violet-blue focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet disabled:cursor-not-allowed disabled:hover:bg-transparent';
+  'flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-ink-soft outline-none transition-colors duration-hover hover:bg-deep-violet-blue/8 hover:text-deep-violet-blue focus-ring disabled:cursor-not-allowed disabled:hover:bg-transparent';
 
 /**
  * One month grid with a month/year dropdown, opening on the picked day's

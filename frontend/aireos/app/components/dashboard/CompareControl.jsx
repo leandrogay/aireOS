@@ -86,7 +86,7 @@ export default function CompareControl({
         {selectedDates && <span className="text-deep-violet-blue/70">· {selectedDates}</span>}
         <ChevronDown className="size-3.5" />
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-auto max-w-[calc(100vw-2rem)] bg-white p-3">
+      <PopoverContent align="end" className="w-auto max-w-[calc(100vw-2rem)] p-3">
         {!pickingCustom ? (
           <div className="flex w-64 flex-col gap-1">
             {options.map((option) => {

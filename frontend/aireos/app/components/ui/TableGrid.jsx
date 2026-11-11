@@ -15,10 +15,12 @@ export const EXPANDED_ROW_INSET = '1rem + 1px';
 export const CARD_INSET = '0.75rem + 1px';
 
 // `card` sits flush inside DataTable and scrolls both ways under a sticky
-// header; `nested` is a bordered table inside an expanded row or a card.
+// header (the card's own overflow-hidden rounds its corners); `nested` is a
+// bordered table inside an expanded row or a card, on the control radius and
+// the card's hairline. Its own overflow clips the cream header to its corners.
 const FRAMES = {
   card: 'min-h-0 flex-1 overflow-auto border-t border-lavander',
-  nested: 'overflow-x-auto rounded-md border border-lavander bg-white',
+  nested: 'overflow-x-auto rounded-glass-sm border border-(--aire-card-border) bg-white',
 };
 const HEADER_ROW_HEIGHTS = { card: 'h-10', nested: 'h-9' };
 
@@ -144,13 +146,13 @@ export default function TableGrid({
           </colgroup>
         )}
         {/* Stays in view while the rows scroll. Solid cream over the rows
-            so rows do not show through; the bottom rule is an inset shadow
-            because a collapsed table border does not move with a sticky
-            header. */}
+            so rows do not show through (never glass); the bottom rule is an
+            inset shadow because a collapsed table border does not move with
+            a sticky header. The card's hairline colour, so it shows on cream. */}
         <thead className="sticky top-0 z-10 bg-cream">
           <tr
             className={cn(
-              'bg-cream [&>th]:shadow-[inset_0_-1px_0_var(--color-lavander)]',
+              'bg-cream [&>th]:shadow-[inset_0_-1px_0_var(--aire-card-border)]',
               HEADER_ROW_HEIGHTS[variant],
             )}
           >

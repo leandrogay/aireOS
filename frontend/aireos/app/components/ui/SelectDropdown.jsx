@@ -2,7 +2,7 @@
 
 import { Check, Plus } from 'lucide-react';
 
-import Dropdown from '@/components/ui/Dropdown';
+import Dropdown, { DROPDOWN_ROW_CLASS } from '@/components/ui/Dropdown';
 import { cn } from '@/lib/utils';
 
 /**
@@ -87,7 +87,7 @@ export default function SelectDropdown({
             close();
             action.onSelect(query.trim());
           }}
-          className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-sm font-medium text-deep-violet-blue outline-none hover:bg-cream focus-visible:bg-cream"
+          className={cn(DROPDOWN_ROW_CLASS, 'font-medium')}
         >
           <Plus aria-hidden="true" className="size-3.5 shrink-0" />
           <span className="min-w-0 truncate">
@@ -105,12 +105,12 @@ export default function SelectDropdown({
           }))
           .filter((group) => group.options.length);
 
-        if (!shown.length) return <p className="px-2 py-1 text-sm text-deep-violet-blue/60">No matches</p>;
+        if (!shown.length) return <p className="px-2 py-1.5 text-sm text-ink-soft">No matches</p>;
 
         return shown.map((group, index) => (
-          <div key={group.label || index} className={cn(index > 0 && 'mt-1 border-t border-lavander pt-1')}>
+          <div key={group.label || index} className={cn(index > 0 && 'mt-1 border-t border-deep-violet-blue/10 pt-1')}>
             {group.label && (
-              <p className="px-2 pb-0.5 pt-1 text-[11px] font-medium text-deep-violet-blue/60">{group.label}</p>
+              <p className="px-2 pb-0.5 pt-1 text-[11px] font-medium text-ink-soft">{group.label}</p>
             )}
             {group.options.map((option) => {
               const selected = option.value === value;
@@ -126,7 +126,8 @@ export default function SelectDropdown({
                     if (!selected) onChange(option.value);
                   }}
                   className={cn(
-                    'flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-sm text-deep-violet-blue outline-none hover:bg-cream focus-visible:bg-cream disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent',
+                    DROPDOWN_ROW_CLASS,
+                    'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent',
                     selected && 'font-medium',
                   )}
                 >
@@ -140,13 +141,13 @@ export default function SelectDropdown({
                       {/* A hint gives way before the label does, so a long
                           one can never squeeze the label to "T…". */}
                       {option.hint && (
-                        <span className="max-w-[45%] truncate text-[11px] text-deep-violet-blue/50" title={option.hint}>
+                        <span className="max-w-[45%] truncate text-[11px] text-ink-soft" title={option.hint}>
                           {option.hint}
                         </span>
                       )}
                     </span>
                     {option.description && (
-                      <span className="mt-0.5 block whitespace-normal text-[11px] leading-snug text-deep-violet-blue/55">
+                      <span className="mt-0.5 block whitespace-normal text-[11px] leading-snug text-ink-soft">
                         {option.description}
                       </span>
                     )}

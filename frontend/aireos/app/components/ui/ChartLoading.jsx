@@ -28,8 +28,9 @@ export default function ChartLoading({ label = 'Loading chart…', overlay = fal
       role="status"
       aria-live="polite"
       className={cn(
-        'flex flex-col items-center justify-center gap-2 text-deep-violet-blue/60',
-        overlay ? 'absolute inset-0 z-30 rounded-xl bg-white/70' : 'min-h-[220px] w-full',
+        'flex flex-col items-center justify-center gap-2 text-ink-soft',
+        // The card's 16px corner, so the dimmed overlay follows it.
+        overlay ? 'absolute inset-0 z-30 rounded-glass-md bg-white/70' : 'min-h-[220px] w-full',
         className,
       )}
     >

@@ -120,7 +120,7 @@ export default function MonthRangeCalendar({ draft, onDraftChange, latestDataEnd
           return Boolean(lastPickable) && month > lastPickable;
         }}
       />
-      <p className="mt-2 text-xs text-deep-violet-blue/60">{note}</p>
+      <p className="mt-2 text-xs text-ink-soft">{note}</p>
     </div>
   );
 }

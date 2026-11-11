@@ -32,7 +32,7 @@ export default function PriceRangeFilter({ label, min, max, onChange, look = 'fi
 
   return (
     <div className="grid min-w-0 gap-1">
-      <span id={labelId} className="text-xs font-medium text-deep-violet-blue/70">
+      <span id={labelId} className="text-xs font-medium text-ink-soft">
         {label}
       </span>
       <Dropdown
@@ -62,7 +62,7 @@ export default function PriceRangeFilter({ label, min, max, onChange, look = 'fi
             { id: maxId, text: 'Max', value: max, key: 'max' },
           ].map((bound) => (
             <div key={bound.key} className="grid grid-cols-[2.5rem_1fr] items-center gap-2">
-              <label htmlFor={bound.id} className="text-xs font-medium text-deep-violet-blue/70">
+              <label htmlFor={bound.id} className="text-xs font-medium text-ink-soft">
                 {bound.text}
               </label>
               <span className="relative">

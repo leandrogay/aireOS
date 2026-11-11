@@ -1,7 +1,8 @@
 // shadcn/ui Calendar (generated via `npx shadcn add calendar`, react-day-picker),
-// restyled with the AIRE brand tokens so a day grid matches ui/MonthGrid: cream
-// hover, solid deep-violet-blue for a picked day or a range's ends, lavender
-// between them, faded days outside the month. The shadcn structure and props
+// restyled with the AIRE brand tokens so a day grid matches ui/MonthGrid: a
+// deep-blue hover tint (it sits on a glass panel), solid deep-violet-blue for a
+// picked day or a range's ends, lavender between them, faded days outside the
+// month. Focus is the Button's shared focus ring. The shadcn structure and props
 // are kept. Pickers are built on it in ui/DatePicker and ui/RangeDatePicker;
 // see app/testing for both.
 "use client"
@@ -53,12 +54,12 @@ function Calendar({
         ),
         button_previous: cn(
           buttonVariants({ variant: buttonVariant }),
-          "size-(--cell-size) p-0 select-none hover:bg-cream aria-disabled:opacity-30",
+          "size-(--cell-size) p-0 select-none aria-disabled:opacity-30",
           defaultClassNames.button_previous
         ),
         button_next: cn(
           buttonVariants({ variant: buttonVariant }),
-          "size-(--cell-size) p-0 select-none hover:bg-cream aria-disabled:opacity-30",
+          "size-(--cell-size) p-0 select-none aria-disabled:opacity-30",
           defaultClassNames.button_next
         ),
         month_caption: cn(
@@ -70,23 +71,24 @@ function Calendar({
           defaultClassNames.dropdowns
         ),
         dropdown_root: cn(
-          "relative rounded-(--cell-radius) has-focus-visible:ring-2 has-focus-visible:ring-violet",
+          // The select is invisible over its label, so the label's box shows the ring.
+          "relative rounded-(--cell-radius) has-focus-visible:outline-solid has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-focus",
           defaultClassNames.dropdown_root
         ),
         dropdown: cn("absolute inset-0 bg-white opacity-0", defaultClassNames.dropdown),
         caption_label: cn("font-semibold select-none", captionLayout === "label"
           ? "text-sm"
-          : "flex h-7 items-center gap-1 rounded-(--cell-radius) px-1.5 text-sm hover:bg-cream [&>svg]:size-3.5 [&>svg]:text-deep-violet-blue/50", defaultClassNames.caption_label),
+          : "flex h-7 items-center gap-1 rounded-(--cell-radius) px-1.5 text-sm transition-colors duration-hover hover:bg-deep-violet-blue/8 [&>svg]:size-3.5 [&>svg]:text-deep-violet-blue/50", defaultClassNames.caption_label),
         month_grid: cn("w-full border-collapse", defaultClassNames.month_grid),
         weekdays: cn("flex", defaultClassNames.weekdays),
         weekday: cn(
-          "flex-1 rounded-(--cell-radius) text-[0.8rem] font-normal text-deep-violet-blue/50 select-none",
+          "flex-1 rounded-(--cell-radius) text-[0.8rem] font-normal text-ink-soft select-none",
           defaultClassNames.weekday
         ),
         week: cn("mt-1 flex w-full", defaultClassNames.week),
         week_number_header: cn("w-(--cell-size) select-none", defaultClassNames.week_number_header),
         week_number: cn(
-          "text-[0.8rem] text-deep-violet-blue/50 select-none",
+          "text-[0.8rem] text-ink-soft select-none",
           defaultClassNames.week_number
         ),
         day: cn(
@@ -183,7 +185,11 @@ function CalendarDayButton({
       data-range-end={modifiers.range_end}
       data-range-middle={modifiers.range_middle}
       className={cn(
-        "relative isolate z-10 flex aspect-square size-auto w-full min-w-(--cell-size) flex-col gap-1 rounded-(--cell-radius) border-0 leading-none font-normal hover:bg-cream group-data-[focused=true]/day:relative group-data-[focused=true]/day:z-10 group-data-[focused=true]/day:border-violet group-data-[focused=true]/day:ring-[3px] group-data-[focused=true]/day:ring-violet/40",
+        "relative isolate z-10 flex aspect-square size-auto w-full min-w-(--cell-size) flex-col gap-1 rounded-(--cell-radius) border-0 leading-none font-normal group-data-[focused=true]/day:relative group-data-[focused=true]/day:z-10",
+        // An inset ring: the next day cell (relative isolate z-10, and a range
+        // end sits in its own z-0 stack) would paint over an outset one. It
+        // follows the Button's focus-ring in the stylesheet, so it wins.
+        "focus-ring-inset",
         "data-[range-middle=true]:rounded-none data-[range-middle=true]:bg-lavander data-[range-middle=true]:text-deep-violet-blue data-[range-middle=true]:hover:bg-lavander",
         "data-[range-start=true]:bg-deep-violet-blue data-[range-start=true]:text-white data-[range-start=true]:hover:bg-deep-violet-blue",
         "data-[range-end=true]:bg-deep-violet-blue data-[range-end=true]:text-white data-[range-end=true]:hover:bg-deep-violet-blue",

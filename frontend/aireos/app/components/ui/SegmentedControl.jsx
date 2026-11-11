@@ -16,14 +16,20 @@ import { cn } from '@/lib/utils';
 const HIGHLIGHT_SPRING = { type: 'spring', stiffness: 500, damping: 40 };
 
 // `tint`: lavender track, for a switch inside a card (chart metric, form
-// mode). `outline`: white track with a border, for a page's top-level tabs.
+// mode). `outline`: cream track with a hairline border, for a page's
+// top-level tabs. Either way the active option is a white glass-like thumb
+// (shadow-thumb: solid, no blur, since it slides inside cards) with a 70%
+// deep-blue edge, the 3:1 cue that says which one is picked. A hover is a
+// fainter white with no edge, so it never reads as picked. The label keeps its
+// weight when picked: a bolder one would change its width and jolt the slide.
+// The track's 10px radius less its 2px padding gives the options' 8px.
 const TRACK_LOOK = {
-  tint: 'rounded-lg bg-lavander',
-  outline: 'rounded-md border border-violet/40 bg-white',
+  tint: 'rounded-glass-sm bg-lavander',
+  outline: 'rounded-glass-sm border border-deep-violet-blue/15 bg-cream',
 };
 const SEGMENT_HOVER = {
-  tint: 'hover:bg-white/60',
-  outline: 'hover:bg-cream',
+  tint: 'hover:bg-white/40',
+  outline: 'hover:bg-white/40',
 };
 const TRACK_SIZE = {
   sm: 'h-7 text-[11px]',
@@ -75,17 +81,17 @@ export default function SegmentedControl({
                 title={option.title}
                 className={cn(
                   // `isolate` keeps the highlight (-z-10) behind the label but above the track.
-                  'relative isolate inline-flex h-6 min-w-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-2.5 font-medium transition-colors outline-none',
-                  'focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet',
+                  'relative isolate inline-flex h-6 min-w-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-2.5 font-medium transition-colors duration-hover outline-none',
+                  'focus-ring-inset',
                   'cursor-pointer disabled:cursor-not-allowed disabled:opacity-50',
                   fullWidth && 'flex-1',
-                  active ? 'text-white' : cn('text-deep-violet-blue/70 hover:text-deep-violet-blue', SEGMENT_HOVER[look]),
+                  active ? 'text-deep-violet-blue' : cn('text-ink-soft hover:text-deep-violet-blue', SEGMENT_HOVER[look]),
                 )}
               >
                 {active && (
                   <motion.span
                     layoutId={layoutId}
-                    className="absolute inset-0 -z-10 rounded-md bg-deep-violet-blue shadow-sm"
+                    className="absolute inset-0 -z-10 rounded-md border border-deep-violet-blue/70 bg-white shadow-thumb"
                   />
                 )}
                 {Icon && <Icon aria-hidden="true" className="size-3.5 shrink-0" />}

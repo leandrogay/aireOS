@@ -80,7 +80,7 @@ export default function RailFlyout({
         side="right"
         align="start"
         sideOffset={12}
-        className="w-52 gap-0.5 bg-white p-1.5"
+        className="w-52 gap-0.5 p-1.5"
       >
         {/* Laid out like the open sidebar's section (Sidebar): the section's
             row with its icon, then its sub-pages indented on a guide line. A

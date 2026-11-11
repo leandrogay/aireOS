@@ -25,7 +25,7 @@ export default function ChartZoomButton({ picking, zoomed, onPick, onCancel, onR
         aria-label={label}
         title={label}
         className={cn(
-          'inline-flex size-8 items-center justify-center rounded-full border shadow-sm transition',
+          'press inline-flex size-8 items-center justify-center rounded-full border shadow-sm outline-none press-transition focus-ring',
           picking
             ? 'border-deep-violet-blue bg-deep-violet-blue text-white'
             : 'border-lavander bg-cream text-deep-violet-blue hover:bg-white'
@@ -34,7 +34,7 @@ export default function ChartZoomButton({ picking, zoomed, onPick, onCancel, onR
         <Icon className="size-4" aria-hidden="true" />
       </button>
       {picking ? (
-        <span className="rounded-md bg-white/90 px-2 py-0.5 text-[11px] text-deep-violet-blue shadow-sm" role="status">
+        <span className="rounded-glass-sm bg-white/90 px-2 py-0.5 text-[11px] text-deep-violet-blue shadow-glass-1" role="status">
           Drag across the months to zoom in, or click one month.
         </span>
       ) : null}

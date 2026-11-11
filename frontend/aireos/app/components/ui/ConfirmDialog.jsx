@@ -4,6 +4,7 @@ import { useEffect, useId } from 'react';
 import { createPortal } from 'react-dom';
 
 import { Button } from '@/components/ui/button';
+import { DIALOG_BACKDROP_CLASS } from '@/components/ui/dialog';
 
 // The confirm button's colour says how serious the action is: red for
 // anything that cannot be undone, the brand navy otherwise.
@@ -90,17 +91,21 @@ export default function ConfirmDialog({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-deep-violet-blue/40 px-4"
+      className="fixed inset-0 z-50 flex items-center justify-center px-4"
       onClick={() => {
         if (!isPending) onCancel();
       }}
     >
+      {/* The scrim is a sibling of the panel, not its parent: a backdrop-filter
+          on an ancestor would stop the glass panel blurring the page. A click
+          on it still reaches the wrapper above. */}
+      <div aria-hidden="true" className={DIALOG_BACKDROP_CLASS} />
       <div
         role="alertdialog"
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
-        className="w-full max-w-md rounded-lg border border-lavander bg-white p-4 shadow-lg"
+        className="glass-3 relative z-50 w-full max-w-md rounded-glass-lg p-4"
         onClick={(event) => event.stopPropagation()}
       >
         <h3 id={titleId} className="font-serif text-lg text-deep-violet-blue">
@@ -112,10 +117,10 @@ export default function ConfirmDialog({
           </p>
         )}
         {details?.length > 0 && (
-          <dl className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 rounded-md border border-lavander bg-cream/50 px-3 py-2.5 text-sm">
+          <dl className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 rounded-glass-sm border border-(--aire-card-border) bg-white px-3 py-2.5 text-sm">
             {details.map((detail) => (
               <div key={detail.label} className="contents">
-                <dt className="text-deep-violet-blue/60">{detail.label}</dt>
+                <dt className="text-ink-soft">{detail.label}</dt>
                 <dd className="min-w-0 break-words font-medium text-deep-violet-blue">
                   {detail.value}
                 </dd>

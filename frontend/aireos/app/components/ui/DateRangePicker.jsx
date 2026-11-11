@@ -4,8 +4,9 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 
 import { cn } from '@/lib/utils';
 
+// The solid field look (formStyles inputClass), with room for the calendar icon.
 const defaultInputClass =
-  'w-full min-w-0 max-w-full rounded-md border border-lavander bg-cream px-2.5 py-1 pr-8 text-sm text-deep-violet-blue focus:border-violet focus:outline-none disabled:cursor-not-allowed disabled:opacity-60';
+  'w-full min-w-0 max-w-full rounded-glass-sm border border-deep-violet-blue/60 bg-white px-2.5 py-1 pr-8 text-sm text-deep-violet-blue outline-none transition-[border-color,background-color] duration-hover hover:border-deep-violet-blue/75 focus-ring disabled:cursor-not-allowed disabled:opacity-60';
 const defaultLabelClass = 'mb-0.5 block text-xs font-medium text-deep-violet-blue';
 const defaultErrorClass = 'mt-0.5 text-xs text-red-700';
 const ISO_YMD = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -603,7 +604,7 @@ export function DateInput({
         slotsRef.current = reverted;
         setSlots(reverted);
       }}
-      className={cn(!hasDigits && 'text-deep-violet-blue/45', className)}
+      className={cn(!hasDigits && 'text-ink-soft', className)}
     />
   );
 }

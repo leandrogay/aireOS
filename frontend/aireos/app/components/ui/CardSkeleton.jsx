@@ -45,7 +45,7 @@ export default function CardSkeleton({
           {actions > 0 && (
             <div className="flex shrink-0 gap-1.5">
               {Array.from({ length: actions }, (_, i) => (
-                <Skeleton key={i} className={cn(SKELETON_PULSE, 'h-7 w-16 rounded-md')} />
+                <Skeleton key={i} className={cn(SKELETON_PULSE, 'h-7 w-16 rounded-glass-sm')} />
               ))}
             </div>
           )}

@@ -75,7 +75,7 @@ function BlockLinks({ items, onOpen }) {
         <span className="truncate">{manyLabel(items)}</span>
         <ChevronDown className="size-3 shrink-0" aria-hidden="true" />
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-56 bg-white p-1.5">
+      <PopoverContent align="end" className="w-56 p-1.5">
         <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/50">
           Open in the panel
         </p>

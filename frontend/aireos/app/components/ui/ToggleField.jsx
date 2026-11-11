@@ -77,14 +77,14 @@ export default function ToggleField({
               <span
                 className={cn(
                   'rounded-full px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide',
-                  checked ? ON_PILL_TONE[tone] : 'bg-lavander text-deep-violet-blue/70',
+                  checked ? ON_PILL_TONE[tone] : 'bg-lavander text-ink-soft',
                 )}
               >
                 {checked ? 'On' : 'Off'}
               </span>
             )}
           </span>
-          {hint && <span className="mt-0.5 block text-[11px] text-deep-violet-blue/60">{hint}</span>}
+          {hint && <span className="mt-0.5 block text-[11px] text-ink-soft">{hint}</span>}
         </label>
       )}
     </div>

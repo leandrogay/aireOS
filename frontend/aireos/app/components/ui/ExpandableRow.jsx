@@ -73,7 +73,7 @@ export default function ExpandableRow({
               event.stopPropagation();
               onToggle();
             }}
-            className="inline-flex max-w-full items-center gap-2 rounded-md text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+            className="inline-flex max-w-full items-center gap-2 rounded-sm text-left outline-none focus-ring"
           >
             <ChevronRight
               aria-hidden="true"

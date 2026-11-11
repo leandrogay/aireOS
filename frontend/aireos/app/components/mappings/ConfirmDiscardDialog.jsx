@@ -44,7 +44,7 @@ export default function ConfirmDiscardDialog({ mapping, isDiscarding, onCancel, 
           text and buttons stay inside the modal. */}
       <DialogContent
         showCloseButton={false}
-        className="gap-4 border border-lavander bg-white wrap-anywhere sm:max-w-md"
+        className="gap-4 border border-lavander wrap-anywhere sm:max-w-md"
       >
         <div className="space-y-1.5">
           <DialogTitle className="font-serif text-lg text-deep-violet-blue">

@@ -6,9 +6,9 @@ import { cn } from '@/lib/utils';
 
 // Shared by every header cell of the list tables (promotions, uploads,
 // mappings), sortable or not, so the columns line up and read the same.
-export const TABLE_HEADER_CLASS = 'px-4 py-2.5 text-xs font-medium text-deep-violet-blue/60';
+export const TABLE_HEADER_CLASS = 'px-4 py-2.5 text-xs font-medium text-ink-soft';
 export const TABLE_HEADER_ACTION_CLASS =
-  'inline-flex max-w-full cursor-pointer items-center gap-1 bg-transparent py-1 text-xs font-medium text-deep-violet-blue/60 outline-none transition-colors hover:text-deep-violet-blue focus-visible:ring-2 focus-visible:ring-ring/50';
+  'inline-flex max-w-full cursor-pointer items-center gap-1 rounded-sm bg-transparent py-1 text-xs font-medium text-ink-soft outline-none transition-colors duration-hover hover:text-deep-violet-blue focus-ring';
 
 /**
  * Column header that sorts on press. The parent owns the sort state; pressing

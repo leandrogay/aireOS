@@ -138,7 +138,7 @@ export default function DohThresholdForm({ settings, onSaved, onCancel }) {
           <div
             role="status"
             aria-live="polite"
-            className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 rounded-xl bg-white/70 text-deep-violet-blue/70 backdrop-blur-[1px]"
+            className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 rounded-xl bg-white/70 text-deep-violet-blue/70"
           >
             <Loader2 className="h-6 w-6 animate-spin" />
             <p className="text-sm">Saving thresholds…</p>

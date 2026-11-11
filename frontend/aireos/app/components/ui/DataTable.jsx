@@ -85,7 +85,7 @@ export default function DataTable({
       className={fill ? 'min-h-80 flex-1' : undefined}
       header={(
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-deep-violet-blue/70" aria-live="polite">
+          <p className="text-sm text-ink-soft" aria-live="polite">
             {firstLoad ? `Loading ${plural}…` : resultCountLabel(shownCount, totalCount, noun, plural)}
           </p>
           <div className={cn('flex min-w-0 flex-wrap items-center gap-2', toolbar ? 'w-full sm:w-auto' : 'ml-auto')}>
@@ -94,7 +94,7 @@ export default function DataTable({
               onClick={onRefresh}
               isRefreshing={isLoading}
               label={`Refresh ${plural}`}
-              className="rounded-md border-deep-violet-blue/30 bg-white text-deep-violet-blue hover:bg-cream"
+              className="border-deep-violet-blue/60 bg-white text-deep-violet-blue hover:bg-cream"
             />
           </div>
         </div>
@@ -103,7 +103,7 @@ export default function DataTable({
       {error && (
         <div
           role="alert"
-          className="mx-4 mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700"
+          className="mx-4 mb-3 flex flex-wrap items-center justify-between gap-2 rounded-glass-sm border border-red-200 bg-red-50 p-2 text-xs text-red-700"
         >
           <span>{error}</span>
           <Button
@@ -126,10 +126,11 @@ export default function DataTable({
             <div className="min-h-0 flex-1 overflow-y-auto border-t border-lavander bg-cream/25 p-3">
               {firstLoad ? (
                 <div className="grid gap-2" aria-label={`Loading ${plural}`}>
-                  {Array.from({ length: 4 }, (_, index) => <div key={index} className="h-24 animate-pulse rounded-lg border border-lavander bg-white" />)}
+                  {/* Shaped like the MobileRecordCard (aire-card) that replaces it. */}
+                  {Array.from({ length: 4 }, (_, index) => <div key={index} className="h-24 animate-pulse rounded-glass-md border border-(--aire-card-border) bg-white" />)}
                 </div>
               ) : gridProps.emptyState ? (
-                <div className="rounded-lg border border-lavander bg-white p-6 text-center text-sm text-deep-violet-blue/70">{gridProps.emptyState}</div>
+                <div className="rounded-glass-md border border-(--aire-card-border) bg-white p-6 text-center text-sm text-ink-soft">{gridProps.emptyState}</div>
               ) : mobileContent}
             </div>
           )}
