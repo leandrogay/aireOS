@@ -12,10 +12,10 @@ function toggleValue(selected, value) {
     : [...selected, value];
 }
 
-// Used by ForecastTable and inventory's InventoryTableFrame: a plain table
-// header button that opens a portal-rendered checkbox
-// list, positioned relative to the button so it still works inside a
-// scrolling/overflow-hidden table header.
+// A table header button that opens a portal-rendered checkbox list,
+// positioned relative to the button so it still works inside a
+// scrolling/overflow-hidden table header. TableGrid draws one for a column
+// with `filter`; ForecastTable also uses it on its own above the phone cards.
 export default function HeaderCheckboxFilter({ id, label, selected, options, openId, setOpenId, onChange }) {
   const open = openId === id;
   const buttonRef = useRef(null);

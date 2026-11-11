@@ -2,18 +2,18 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-import HeaderCheckboxFilter from '@/components/ui/HeaderCheckboxFilter';
 import { TABLE_HEADER_CLASS } from '@/components/ui/SortHeader';
 import { Skeleton } from '@/components/ui/skeleton';
-import TableSkeleton from '@/components/ui/TableSkeleton';
+import TableGrid from '@/components/ui/TableGrid';
 import TablePagination, { PAGE_SIZES } from '@/components/ui/TablePagination';
 import TableCard from '@/components/ui/TableCard';
 import TableCardHeader from '@/components/ui/TableCardHeader';
 import { monthCheckboxOptions } from '@/app/utils/inventoryForm';
 import { paginate, resultCountLabel } from '@/app/utils/tableView';
 
-// The same look as the list tables on Customers, Promotions and SKUs
-// (ui/DataTable + ui/TableGrid), so every table in the app reads alike.
+// For the inventory tables that are not list tables and so stay hand-rolled
+// (the InventoryQuantityTable form, SellInUploadForm's "Not saved" lines):
+// the same look as ui/TableGrid. List tables go through InventoryTableFrame.
 export const inventoryTableClass = 'aire-table-rows w-full text-left text-sm text-deep-violet-blue [&_td]:align-middle [&_th]:align-middle';
 // Solid cream keeps rows from showing through the sticky header;
 // the bottom rule is an inset shadow because a collapsed border does not move
@@ -24,71 +24,52 @@ export const inventoryThClass = TABLE_HEADER_CLASS;
 export const inventoryTdClass = 'px-4 py-2.5 text-deep-violet-blue';
 export const inventoryRowClass = 'border-b border-lavander/80';
 
-/**
- * Fixed column widths for an inventory table, as ui/TableGrid does: with
- * `table-fixed` on the table, the columns keep the same widths on every page
- * instead of resizing to each page's contents. A null width takes the space
- * left over (the Product column), so give the table a min-width at least the
- * sum of the others.
- *
- * @param {{ widths: Array<string | null | false> }} props one entry per column,
- *   in order; false leaves out a column that isn't shown
- */
-export function InventoryColGroup({ widths }) {
-  const shown = widths.filter((width) => width !== false);
-  return (
-    <colgroup>
-      {shown.map((width, index) => (
-        <col key={index} style={width ? { width } : undefined} />
-      ))}
-    </colgroup>
-  );
-}
-
-/**
- * A column heading whose hyphens never break ("Forecast sell-out" wraps as
- * "Forecast / sell-out", never "Forecast sell- / out"): plain hyphens become
- * non-breaking ones (U+2011), which look the same.
- *
- * @param {string} label
- * @returns {string}
- */
-export function headingLabel(label) {
-  return label.replaceAll('-', '‑');
-}
-
-/**
- * Placeholder rows for an inventory table's first load, sized like the real
- * rows (inventoryRowClass / inventoryTdClass) so nothing moves when they arrive.
- *
- * @param {{ columns: number }} props
- */
-export function InventoryTableSkeleton({ columns }) {
-  return <TableSkeleton columns={columns} rows={5} className="h-10 bg-white" cellClassName="px-4 py-2.5" />;
-}
+// The rows of a frame's table: TableRows, so they animate like every list
+// table's (ui/TableGrid).
+export const inventoryRowHeightClass = 'h-12 border-b border-lavander/80';
+export const inventoryCellClass = 'px-4 py-2.5';
+export const inventoryNumberCellClass = 'px-4 py-2.5 text-right tabular-nums';
 
 /**
  * Table shell shared by the inventory tabs, in the list-table look (see
- * ui/DataTable): the title and row count, the month checkbox filter (cleared
- * from its own popover) and the shared page footer (ui/TablePagination), with
- * the table flush to the card's edges. `children` draws the columns for the
- * current page's rows, and places `monthHeader` on the Month column.
+ * ui/DataTable): the title and row count, a ui/TableGrid whose `month` column
+ * header filters the rows by month (a HeaderCheckboxFilter, through the
+ * column's `filter`), and the shared page footer (ui/TablePagination), with
+ * the table flush to the card's edges.
+ *
+ *   <InventoryTableFrame title="At-risk SKUs" rows={items} columns={AT_RISK_COLUMNS} minWidth="66rem">
+ *     {(pageRows) => pageRows.map((item) => <TableRow key={…}>…</TableRow>)}
+ *   </InventoryTableFrame>
  *
  * @param {object} props
  * @param {string} props.title
  * @param {object[]} props.rows rows before the month filter
+ * @param {object[]} props.columns TableGrid columns (inventory/columns.js); the
+ *   one keyed `month` gets the Month filter
+ * @param {string} [props.minWidth] the table's min-width, at least the sum of
+ *   the fixed column widths
  * @param {string} [props.description]
+ * @param {string} [props.emptyMessage] shown when there are no rows at all
+ *   (rows that only the Month filter hides say so instead)
  * @param {string | number} [props.listId] what the rows belong to when they
  *   don't say (e.g. the customer), so switching it goes back to page 1
- * @param {boolean} [props.loading] first load in flight: the row count shows a
- *   placeholder, and `children` should draw InventoryTableSkeleton rows
- * @param {(visible: object[], monthHeader: import('react').ReactNode) => import('react').ReactNode} props.children
- *   `visible` is the current page's rows; it is empty only when nothing
- *   matches, so a "no rows" message still works
+ * @param {boolean} [props.loading] first load in flight: placeholder rows, and
+ *   the row count shows a placeholder
+ * @param {(pageRows: object[]) => import('react').ReactNode} props.children
+ *   the current page's rows, as TableRows
  */
-export default function InventoryTableFrame({ title, rows, description, loading = false, listId = '', children }) {
+export default function InventoryTableFrame({
+  title,
+  rows,
+  columns,
+  minWidth,
+  description,
+  emptyMessage = 'No rows match these filters.',
+  loading = false,
+  listId = '',
+  children,
+}) {
   const [monthFilter, setMonthFilter] = useState([]);
-  const [openFilter, setOpenFilter] = useState(null);
   const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
   // The page belongs to the list it was picked on (listKey below): when the
   // table is given a different list it starts again at page 1, derived during
@@ -152,19 +133,14 @@ export default function InventoryTableFrame({ title, rows, description, loading 
     setPaging({ page: 1, listKey });
   }
 
-  const monthHeader = (
-    <th className="px-3 py-1.5">
-      <HeaderCheckboxFilter
-        id="month"
-        label="Month"
-        selected={activeMonthFilter}
-        options={monthOptions}
-        openId={openFilter}
-        setOpenId={setOpenFilter}
-        onChange={changeMonthFilter}
-      />
-    </th>
-  );
+  const gridColumns = columns.map((column) => (
+    column.key === 'month'
+      ? { ...column, filter: { selected: activeMonthFilter, options: monthOptions, onChange: changeMonthFilter } }
+      : column
+  ));
+  const emptyState = !loading && visible.length === 0
+    ? (rows.length === 0 ? emptyMessage : 'No rows match these filters.')
+    : null;
 
   return (
     <TableCard
@@ -181,9 +157,19 @@ export default function InventoryTableFrame({ title, rows, description, loading 
     >
 
       {/* One page at full height, so there is no inner scroll box and no long
-          page; overflow-x stays for wide tables on small screens. */}
-      <div ref={boxRef} className="overflow-x-auto border-t border-lavander" style={{ minHeight }}>
-        {children(pageRows, monthHeader)}
+          page; TableGrid still scrolls sideways for a wide table on a small
+          screen. */}
+      <div ref={boxRef} style={{ minHeight }}>
+        <TableGrid
+          columns={gridColumns}
+          minWidth={minWidth}
+          isLoading={loading}
+          skeletonRows={5}
+          emptyState={emptyState}
+          pageKey={currentPage}
+        >
+          {!loading && children(pageRows)}
+        </TableGrid>
       </div>
 
       {!loading && visible.length > 0 && (

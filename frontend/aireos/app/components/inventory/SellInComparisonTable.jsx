@@ -5,8 +5,8 @@ import { cn } from '@/lib/utils';
 
 import { SOURCE_LABEL } from './LastMonthDifference';
 
-// The compact actual-vs-forecast table style the Forecast page's year totals
-// (ForecastYearTotals) and the Scenario builder's tables use: cream 10px
+// The compact actual-vs-forecast table style the Scenario builder's tables
+// also use: cream 10px
 // uppercase headers with the darker HEADER_RULE lines, text-xs rows on the
 // shared zebra and hover (aire-table-rows), a line before each group.
 const headerClass = cn('border-b bg-cream text-[10px] font-bold uppercase tracking-wide text-deep-violet-blue', HEADER_RULE);

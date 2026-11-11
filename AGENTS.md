@@ -108,7 +108,8 @@ calendar, skeleton) plus the team kits:
 - **Toggles:** `SegmentedControl`, `LineToggle`, `ToggleButton`, `ToggleField`.
 - **Tables:** `DataTable` → `TableGrid` (+ `SortHeader`, `TableSearch`, `TablePagination`,
   `TableSkeleton`), `TableRow`, `ExpandableRow`, `RowActions`, `StatusPill`/`StatusBadge`, `MobileRecordCard`
-  in a `RecordCardList`, `HeaderCheckboxFilter`; hooks `useExpandedRows`, `useConfirmAction` + `ConfirmDialog`.
+  in a `RecordCardList`, `HeaderCheckboxFilter` (a TableGrid column's `filter` draws it in that header: the
+  Month filter on Inventory and Forecast); hooks `useExpandedRows`, `useConfirmAction` + `ConfirmDialog`.
   Rows animate as the data changes (`ui/rowMotion.js`, timing `TABLE_ROWS` in `config/transitions.js`): list a
   TableGrid's rows as `TableRow`/`ExpandableRow` and phone cards in `RecordCardList`, or they just snap.
 - **Filters:** `FilterBar` holding `FilterSelect` / `MultiSelectDropdown` / `PriceRangeFilter`
@@ -461,14 +462,14 @@ Migrate these only when you are already in the file for other work (CLAUDE.md §
 - **Router logic.** `mappings.py` reads GCS (`storage.download_json`, `list_mapping_fingerprints`,
   `download_bytes`) to build review packets; that belongs in a service. Don't add a third router like it.
 - **Oversized components** (over ~300 lines): `ForecastChart` (828), `ui/DateRangePicker` (804),
-  `PromotionForm` (683), `ScenarioBuilder` (590), `SkuRanking` (542), `app/dashboard/page.js` (525),
+  `PromotionForm` (683), `ScenarioBuilder` (590), `app/dashboard/page.js` (525),
   `AssistantMessage` (491), `MappingReviewPanel` (538), `app/promotions/page.js` (382), `SkuForm` (474);
-  360-420: `FieldTable`, `UploadProvider`, `PromotionsSection`, `CustomerStep` (413), `StepSettings`,
+  360-420: `SkuRanking` (385), `FieldTable`, `UploadProvider`, `PromotionsSection`, `CustomerStep` (413), `StepSettings`,
   `AssistantWidget`, `Sidebar`; 300-345: `PromotionEditor`, `RevenueSummaryCards`, `SellInOutlookChart`,
   `FieldMethodSettings`, `app/upload/page.js`, `ChannelSplit`, `UploadFileRow`. (`ui/chart.jsx` is shadcn-generated and the
   `app/testing` galleries are dev-only; leave them.)
 - **Manual memoisation.** Performance-only, not needed under the React Compiler: `useMemo` in
-  `ForecastChart` and `ForecastTable`; `useCallback` on the `Dropzone` handlers and the
+  `ForecastChart`; `useCallback` on the `Dropzone` handlers and the
   `app/mappings/[id]` handlers. Check consumers before removing `useAssistant`'s `askQuestion` /
   `askDigest`. Allowed (identity is a correctness need): `UploadProvider`'s context actions, and the
   loaders in `app/upload`, `app/mappings`, `app/promotions`, `MappingReviewPanel`'s `runChecks` (its SKU auto-test effect lists it) and `useToast`'s `dismissToast` (read by

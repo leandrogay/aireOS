@@ -3,18 +3,19 @@
 import { useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import TableRow from '@/components/ui/TableRow';
 import { applySellInUpload, previewSellInUpload } from '@/app/services/inventoryApi';
 import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
 import { customerLabel } from '@/app/utils/retailerLabel';
 
+import { SELL_IN_PREVIEW_COLUMNS } from './columns';
 import { formFieldClass, formLabelClass, StatTag } from './InventoryChrome';
 import InventoryTableFrame, {
-  InventoryColGroup,
-  inventoryHeadRowClass,
+  inventoryCellClass,
+  inventoryNumberCellClass,
   inventoryRowClass,
-  inventoryTableClass,
+  inventoryRowHeightClass,
   inventoryTdClass,
-  inventoryTheadClass,
   inventoryThClass,
 } from './InventoryTableFrame';
 import { primaryButtonClass, secondaryButtonClass } from '@/components/ui/formStyles';
@@ -160,46 +161,24 @@ export default function SellInUploadForm({ onSaved }) {
             {skippedLines > 0 && <StatTag label="Not saved" value={plural(skippedLines, 'line')} />}
           </div>
 
-          <InventoryTableFrame title="Values from the file" rows={preview.rows}>
-            {(visible, monthHeader) => (
-              // Fixed widths so the columns don't move between pages.
-              <table className={`${inventoryTableClass} table-fixed min-w-[46rem]`}>
-                <InventoryColGroup
-                  widths={[
-                    '8rem', // Customer
-                    '7rem', // Month
-                    null, // Product
-                    '6.5rem', // Qty in packs
-                    '5.5rem', // Current
-                    '7rem', // Status
-                  ]}
-                />
-                <thead className={inventoryTheadClass}>
-                  <tr className={inventoryHeadRowClass}>
-                    <th className={inventoryThClass}>Customer</th>
-                    {monthHeader}
-                    <th className={inventoryThClass}>Product</th>
-                    <th className={`${inventoryThClass} text-right`}>Qty in packs</th>
-                    <th className={`${inventoryThClass} text-right`}>Current</th>
-                    <th className={inventoryThClass}>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visible.map((row) => (
-                    <tr key={`${row.customer_id}-${row.month}-${row.sku}`} className={inventoryRowClass}>
-                      <td className={inventoryTdClass}>{customerLabel(row.customer_name)}</td>
-                      <td className={inventoryTdClass}>{formatMonth(row.month)}</td>
-                      <td className={inventoryTdClass}>{row.product_name}</td>
-                      <td className={`${inventoryTdClass} text-right tabular-nums`}>{formatUnits(row.qty)}</td>
-                      <td className={`${inventoryTdClass} text-right tabular-nums`}>
-                        {row.current === null ? '—' : formatUnits(row.current)}
-                      </td>
-                      <td className={inventoryTdClass}>{STATUS_LABELS[row.status]}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+          <InventoryTableFrame
+            title="Values from the file"
+            rows={preview.rows}
+            columns={SELL_IN_PREVIEW_COLUMNS}
+            minWidth="48rem"
+          >
+            {(pageRows) => pageRows.map((row) => (
+              <TableRow key={`${row.customer_id}-${row.month}-${row.sku}`} className={inventoryRowHeightClass}>
+                <td className={inventoryCellClass}>{customerLabel(row.customer_name)}</td>
+                <td className={inventoryCellClass}>{formatMonth(row.month)}</td>
+                <td className={`${inventoryCellClass} truncate`} title={row.product_name}>{row.product_name}</td>
+                <td className={inventoryNumberCellClass}>{formatUnits(row.qty)}</td>
+                <td className={inventoryNumberCellClass}>
+                  {row.current === null ? '—' : formatUnits(row.current)}
+                </td>
+                <td className={inventoryCellClass}>{STATUS_LABELS[row.status]}</td>
+              </TableRow>
+            ))}
           </InventoryTableFrame>
 
           {preview.skipped.length > 0 && (

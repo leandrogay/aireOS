@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import RefreshButton from '@/components/ui/RefreshButton';
 import TableGrid from '@/components/ui/TableGrid';
 import TableCard from '@/components/ui/TableCard';
+import { TABLE_HEADER_BUTTON_CLASS } from '@/components/ui/TableCardHeader';
 import { cn } from '@/lib/utils';
 import { resultCountLabel } from '@/app/utils/tableView';
 import useMediaQuery from '@/hooks/useMediaQuery';
@@ -125,7 +126,7 @@ export default function DataTable({
               onClick={onRefresh}
               isRefreshing={isLoading}
               label={`Refresh ${plural}`}
-              className="rounded-md border-deep-violet-blue/30 bg-white text-deep-violet-blue hover:bg-cream"
+              className={TABLE_HEADER_BUTTON_CLASS}
             />
           </div>
         </div>
