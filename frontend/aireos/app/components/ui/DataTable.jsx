@@ -1,5 +1,8 @@
 'use client';
 
+import { Fragment } from 'react';
+import { motion, useReducedMotion } from 'motion/react';
+
 import { Button } from '@/components/ui/button';
 import RefreshButton from '@/components/ui/RefreshButton';
 import TableGrid from '@/components/ui/TableGrid';
@@ -7,6 +10,8 @@ import TableCard from '@/components/ui/TableCard';
 import { cn } from '@/lib/utils';
 import { resultCountLabel } from '@/app/utils/tableView';
 import useMediaQuery from '@/hooks/useMediaQuery';
+import useAnimatedHeight from '@/hooks/useAnimatedHeight';
+import { TABLE_ROWS } from '@/app/config/transitions';
 
 /**
  * The list-table card every feature uses (Customers, Promotions): a count on
@@ -37,7 +42,12 @@ import useMediaQuery from '@/hooks/useMediaQuery';
  *
  * `fill` makes the card take the height its flex parent gives it (PageLayout
  * fitScreen) with the rows scrolling inside, so searching or paging never
- * resizes it.
+ * resizes it. Without it the card eases to its new height as rows come and go
+ * (TableGrid `animateHeight`; the phone cards the same way).
+ *
+ * Rows animate as they change (TableGrid, TableRow); `pageKey` (the page
+ * number, passed by PaginatedDataTable) makes each new page cascade in, on
+ * phones too. Phone cards go in a RecordCardList so they animate the same way.
  *
  * `title` shows a heading before the count, for a list that shares its page
  * with other sections (Recent uploads under the upload area). Leave it out
@@ -58,6 +68,7 @@ import useMediaQuery from '@/hooks/useMediaQuery';
  *   footer?: import('react').ReactNode,
  *   fill?: boolean,
  *   mobileContent?: import('react').ReactNode,
+ *   pageKey?: string | number,
  * } & Omit<Parameters<typeof TableGrid>[0], 'variant' | 'isLoading'>} props
  */
 export default function DataTable({
@@ -75,12 +86,21 @@ export default function DataTable({
   footer = null,
   fill = false,
   mobileContent = null,
+  pageKey = null,
   ...gridProps
 }) {
   const mobile = useMediaQuery('(max-width: 639px)');
   const showMobile = Boolean(mobileContent) && mobile;
   const firstLoad = isLoading && totalCount === 0;
   const showTable = firstLoad || totalCount > 0;
+  const reduceMotion = useReducedMotion();
+  // The phone cards' box, eased like the table's (TableGrid animateHeight).
+  // Enabled only while its box is on screen, so it starts watching the box
+  // the moment the box mounts.
+  const { frameRef: mobileFrameRef, contentRef: mobileContentRef, height: mobileHeight } = useAnimatedHeight({
+    enabled: showTable && showMobile && !fill && !reduceMotion,
+    transition: TABLE_ROWS.glide,
+  });
 
   return (
     // No visible heading unless `title` is given (the page title usually
@@ -133,19 +153,29 @@ export default function DataTable({
       {showTable && (
         <>
           {showMobile && (
-            <div className="min-h-0 flex-1 overflow-y-auto border-t border-lavander bg-cream/25 p-3">
-              {firstLoad ? (
-                <div className="grid gap-2" aria-label={`Loading ${plural}`}>
-                  {Array.from({ length: 4 }, (_, index) => <div key={index} className="h-24 animate-pulse rounded-lg border border-lavander bg-white" />)}
-                </div>
-              ) : gridProps.emptyState ? (
-                <div className="rounded-lg border border-lavander bg-white p-6 text-center text-sm text-deep-violet-blue/70">{gridProps.emptyState}</div>
-              ) : mobileContent}
-            </div>
+            <motion.div
+              ref={mobileFrameRef}
+              style={mobileHeight ? { height: mobileHeight } : undefined}
+              // Not filling: held to its cards' height, so it never scrolls.
+              className={cn('min-h-0 flex-1 border-t border-lavander bg-cream/25', fill ? 'overflow-y-auto' : 'overflow-y-hidden')}
+            >
+              <div ref={mobileContentRef} className="p-3">
+                {firstLoad ? (
+                  <div className="grid gap-2" aria-label={`Loading ${plural}`}>
+                    {Array.from({ length: 4 }, (_, index) => <div key={index} className="h-24 animate-pulse rounded-lg border border-lavander bg-white" />)}
+                  </div>
+                ) : gridProps.emptyState ? (
+                  <div className="rounded-lg border border-lavander bg-white p-6 text-center text-sm text-deep-violet-blue/70">{gridProps.emptyState}</div>
+                ) : (
+                  // A new page starts the list afresh, so its cards cascade in.
+                  <Fragment key={pageKey ?? ''}>{mobileContent}</Fragment>
+                )}
+              </div>
+            </motion.div>
           )}
           {!showMobile && (
             <div className="flex min-h-0 flex-1">
-              <TableGrid variant="card" isLoading={firstLoad} {...gridProps} />
+              <TableGrid variant="card" isLoading={firstLoad} pageKey={pageKey} animateHeight={!fill} {...gridProps} />
             </div>
           )}
           {footer}

@@ -6,6 +6,7 @@ import InfoTooltip from '@/components/ui/InfoTooltip';
 import RowActions from '@/components/ui/RowActions';
 import StatusPill from '@/components/ui/StatusPill';
 import TableGrid, { ACTIONS_COLUMN } from '@/components/ui/TableGrid';
+import TableRow from '@/components/ui/TableRow';
 import {
   customerColumn,
   formatMomentCounts,
@@ -123,7 +124,7 @@ export default function PromoUpliftTable({ rows, shownUplift, moments, productNa
         const recommended = moments ? recommendedUplift(shownScope, moments) : null;
         const manual = manualUplift(row);
         return (
-          <tr
+          <TableRow
             key={row.view ? `${row.id}-${row.view.customer_name}-${row.view.sku ?? ''}` : row.id}
             onClick={() => onView(row)}
             className={rowClass}
@@ -149,7 +150,7 @@ export default function PromoUpliftTable({ rows, shownUplift, moments, productNa
             <td className="px-2 py-1 text-right" onClick={(event) => event.stopPropagation()}>
               <RowActions label={`Actions for ${row.mechanic_label}`} actions={rowActions(row)} />
             </td>
-          </tr>
+          </TableRow>
         );
       })}
     </TableGrid>

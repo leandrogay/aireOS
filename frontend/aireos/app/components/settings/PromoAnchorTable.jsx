@@ -6,6 +6,7 @@ import ExpandableRow from '@/components/ui/ExpandableRow';
 import RowActions from '@/components/ui/RowActions';
 import StatusPill from '@/components/ui/StatusPill';
 import TableGrid, { ACTIONS_COLUMN, EXPANDED_ROW_INSET } from '@/components/ui/TableGrid';
+import TableRow from '@/components/ui/TableRow';
 import useExpandedRows from '@/hooks/useExpandedRows';
 import { formatDateTime } from '@/lib/formatDate';
 import { customerLabel } from '@/app/utils/retailerLabel';
@@ -135,7 +136,7 @@ export default function PromoAnchorTable({ anchors, editingKey, readOnly, onView
                       row: range,
                     };
                     return (
-                      <tr
+                      <TableRow
                         key={rangeTarget.key}
                         onClick={() => onView(rangeTarget)}
                         className={cn(
@@ -148,7 +149,7 @@ export default function PromoAnchorTable({ anchors, editingKey, readOnly, onView
                         <td className="px-2 py-1 text-right" onClick={(event) => event.stopPropagation()}>
                           <RowActions label={`Actions for ${rangeTarget.name}`} actions={rowActions(rangeTarget)} />
                         </td>
-                      </tr>
+                      </TableRow>
                     );
                   })}
                 </TableGrid>
@@ -161,7 +162,7 @@ export default function PromoAnchorTable({ anchors, editingKey, readOnly, onView
           </ExpandableRow>
         );
       })}
-      <tr
+      <TableRow
         onClick={() => onView(defaultTarget)}
         className={cn(
           'h-12 cursor-pointer border-b border-lavander/80 last:border-b-0 hover:bg-cream/50',
@@ -175,7 +176,7 @@ export default function PromoAnchorTable({ anchors, editingKey, readOnly, onView
         <td className="px-2 py-1 text-right" onClick={(event) => event.stopPropagation()}>
           <RowActions label="Actions for All customers" actions={rowActions(defaultTarget)} />
         </td>
-      </tr>
+      </TableRow>
     </TableGrid>
   );
 }

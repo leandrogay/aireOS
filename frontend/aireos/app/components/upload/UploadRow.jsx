@@ -5,6 +5,7 @@ import { Database, History, RefreshCw, Trash2, Undo2 } from 'lucide-react';
 
 import RowActions from '@/components/ui/RowActions';
 import StatusBadge from '@/components/ui/StatusBadge';
+import TableRow from '@/components/ui/TableRow';
 import { formatDateTime } from '@/lib/formatDate';
 import { cn } from '@/lib/utils';
 import { vendorLabel } from '@/app/utils/retailerLabel';
@@ -106,7 +107,7 @@ export function NomenclatureLink({ upload }) {
  */
 export default function UploadRow({ upload, actions }) {
   return (
-    <tr className="h-12 border-b border-lavander/80">
+    <TableRow className="h-12 border-b border-lavander/80">
       <td className="px-4 py-2.5 font-medium" title={upload.filename}>
         <span className="block truncate">{upload.filename}</span>
       </td>
@@ -121,6 +122,6 @@ export default function UploadRow({ upload, actions }) {
       <td className="px-2 py-1.5 text-right">
         <RowActions label={`Actions for upload ${upload.filename}`} actions={actions} />
       </td>
-    </tr>
+    </TableRow>
   );
 }

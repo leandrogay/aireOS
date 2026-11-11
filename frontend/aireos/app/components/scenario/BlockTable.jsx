@@ -11,6 +11,7 @@ import TableGrid from '@/components/ui/TableGrid';
 import { PAGE_SIZES } from '@/components/ui/TablePagination';
 import TableSearch from '@/components/ui/TableSearch';
 import { Switch } from '@/components/ui/switch';
+import TableRow from '@/components/ui/TableRow';
 import { customerLabel } from '@/app/utils/retailerLabel';
 import { upliftLabel } from '@/app/utils/scenarioBlocks';
 import { monthSpanLabel } from '@/app/utils/scenarioPitch';
@@ -72,14 +73,14 @@ function BlockDetails({ block, months }) {
             ]}
           >
             {months.map((month) => (
-              <tr key={month.month_year} className="h-9 border-b border-lavander/80 last:border-b-0">
+              <TableRow key={month.month_year} className="h-9 border-b border-lavander/80 last:border-b-0">
                 <td className="px-3 py-2">{monthLabel(month.month_year)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{wholeUnits(month.baseUnits)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{wholeUnits(month.baseUnits + month.deltaUnits)}</td>
                 <td className="px-3 py-2 text-right font-semibold tabular-nums text-scenario-ink">
                   {signed(month.deltaUnits, wholeUnits)}
                 </td>
-              </tr>
+              </TableRow>
             ))}
           </TableGrid>
         ) : (

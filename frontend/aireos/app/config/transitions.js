@@ -70,6 +70,26 @@ export const CARD_REVEAL = {
   layout: { type: 'spring', visualDuration: 0.3, bounce: 0.15 },
 };
 
+// Table rows and mobile record cards changing in place (components/ui/
+// rowMotion.js, read by TableRow, TableGrid, MobileRecordCard, RecordCardList
+// and ExpandableRow). A search or filter that drops rows fades them out
+// (`exit`), then the rows left glide up into the gap (`glide`). Rows it brings
+// back spring in where they belong, a little rise like the cards (`enter`, `y`),
+// while the rows around them glide aside. A re-sort glides the same rows to
+// their new places. A new page, or the first rows after the loading
+// placeholders, cascade in top to bottom (`stagger`, capped at `maxStaggered`
+// like the page cascade). `glide` is calmer than the page spring so a long table
+// doesn't wobble. The card's own height (a table not filling the screen) and a
+// row's details opening follow on `glide` too.
+export const TABLE_ROWS = {
+  y: 6,
+  stagger: 0.03,
+  maxStaggered: 10,
+  enter: { ...SPRING, opacity: QUICK_FADE },
+  exit: { duration: 0.15, ease: 'easeIn' },
+  glide: CARD_REVEAL.layout,
+};
+
 // A tab moves less than a page: it is the same place.
 export const TAB_CASCADE = {
   ...PAGE_CASCADE,

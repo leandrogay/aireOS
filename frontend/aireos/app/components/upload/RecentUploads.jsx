@@ -3,6 +3,7 @@
 import { useState } from 'react';
 
 import MobileRecordCard from '@/components/ui/MobileRecordCard';
+import RecordCardList from '@/components/ui/RecordCardList';
 import PaginatedDataTable from '@/components/ui/PaginatedDataTable';
 import RowActions from '@/components/ui/RowActions';
 import { PAGE_SIZES } from '@/components/ui/TablePagination';
@@ -111,7 +112,7 @@ export default function RecentUploads({
           onPageSizeChange: changePageSize,
         }}
         mobileContent={(
-          <div className="grid gap-2">
+          <RecordCardList>
             {pageRows.map((upload) => (
               <MobileRecordCard
                 key={upload.blob_path}
@@ -125,7 +126,7 @@ export default function RecentUploads({
                 ]}
               />
             ))}
-          </div>
+          </RecordCardList>
         )}
       >
         {pageRows.map((upload) => (

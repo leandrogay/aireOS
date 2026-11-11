@@ -6,11 +6,13 @@ import { useState } from 'react';
 import ExpandableRow from '@/components/ui/ExpandableRow';
 import MobileRecordCard from '@/components/ui/MobileRecordCard';
 import PaginatedDataTable from '@/components/ui/PaginatedDataTable';
+import RecordCardList from '@/components/ui/RecordCardList';
 import RowActions from '@/components/ui/RowActions';
 import SegmentedControl from '@/components/ui/SegmentedControl';
 import StatusPill from '@/components/ui/StatusPill';
 import TableGrid, { EXPANDED_ROW_INSET, hideClass } from '@/components/ui/TableGrid';
 import { PAGE_SIZES } from '@/components/ui/TablePagination';
+import TableRow from '@/components/ui/TableRow';
 import TableSearch from '@/components/ui/TableSearch';
 import useExpandedRows from '@/hooks/useExpandedRows';
 import { cn } from '@/lib/utils';
@@ -59,13 +61,13 @@ function StoreSkuTable({ store }) {
   return (
     <TableGrid variant="nested" columns={STORE_SKU_COLUMNS} inset={EXPANDED_ROW_INSET}>
       {store.skus.map((item) => (
-        <tr key={item.sku} className="h-10 border-b border-lavander/80 last:border-b-0">
+        <TableRow key={item.sku} className="h-10 border-b border-lavander/80 last:border-b-0">
           <td className="truncate px-4 py-2 font-medium">{item.sku}</td>
           <td className={cn('px-4 py-2', hideClass(STORE_SKU_COLUMNS[1]))}>{item.range}</td>
           <td className={cn('px-4 py-2', hideClass(STORE_SKU_COLUMNS[2]))}>{item.pack}</td>
           <td className="px-4 py-2 text-right tabular-nums">{numberFormat.format(item.units)}</td>
           <td className="px-4 py-2 text-right tabular-nums">{Math.round(item.share * 100)}%</td>
-        </tr>
+        </TableRow>
       ))}
     </TableGrid>
   );
@@ -145,7 +147,7 @@ export default function TableListDemo() {
             onPageSizeChange: changePageSize,
           }}
           mobileContent={(
-            <div className="grid gap-2">
+            <RecordCardList>
               {pageRows.map((store) => (
                 <MobileRecordCard
                   key={store.id}
@@ -159,7 +161,7 @@ export default function TableListDemo() {
                   ]}
                 />
               ))}
-            </div>
+            </RecordCardList>
           )}
         >
           {pageRows.map((store) => {
