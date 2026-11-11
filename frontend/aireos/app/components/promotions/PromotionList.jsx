@@ -40,13 +40,14 @@ import {
 import { PROMOTION_COLUMNS } from './columns';
 
 // Keys match filterPromotions() in app/utils/promotionOverview.js.
+// Each is a list of picked values; [] means "all".
 const EMPTY_FILTERS = {
-  retailer: '',
-  storeName: '',
-  period: '',
-  promoType: '',
-  mechanic: '',
-  status: '',
+  retailer: [],
+  storeName: [],
+  period: [],
+  promoType: [],
+  mechanic: [],
+  status: [],
 };
 
 /**
@@ -105,7 +106,7 @@ export default function PromotionList({
   // new last page instead of an empty one.
   const { pageRows, currentPage, totalPages } = paginate(sorted, page, pageSize);
 
-  const hasFilters = Object.values(filters).some(Boolean) || search.trim() !== '';
+  const hasFilters = Object.values(filters).some((values) => values.length > 0) || search.trim() !== '';
 
   // Any change to what is listed goes back to page 1, where the result starts.
   const changeFilter = (key, value) => {
@@ -146,9 +147,9 @@ export default function PromotionList({
   );
 
   return (
-    // Fills the height the page gives it (PageLayout fitScreen): the filter
-    // bar keeps its size and the overview card takes the rest.
-    <div className="flex min-h-0 flex-1 flex-col gap-3">
+    // The card is as tall as its rows (no `fill`), like Recent uploads, so a
+    // short page leaves no empty space under the last row.
+    <div className="flex flex-col gap-3">
       <PromotionFilters
         filters={filters}
         options={options}
@@ -166,7 +167,6 @@ export default function PromotionList({
         error={error}
         onRefresh={onRefresh}
         emptyMessage="No promotions yet. Use Create promotion to add the first one."
-        fill
         toolbar={
           <TableSearch
             value={search}

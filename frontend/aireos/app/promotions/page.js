@@ -403,7 +403,6 @@ export default function PromotionsPage() {
   return (
     <PageLayout
       title="Promotions"
-      fitScreen
       headerExtra={
         <Button
           onClick={handleCreate}
@@ -414,7 +413,7 @@ export default function PromotionsPage() {
         </Button>
       }
     >
-      <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <div className="flex flex-col gap-3">
         <PromotionList
           promotions={promotions}
           isLoading={isLoadingList}

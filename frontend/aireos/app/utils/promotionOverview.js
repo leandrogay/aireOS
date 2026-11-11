@@ -355,41 +355,49 @@ export function uniquePromotionMechanics(promotions) {
 }
 
 /**
- * Apply column filters. Store and retailer match when any linked store
- * matches. Overlapping different combinations stay listed.
+ * True when nothing is picked (the filter lets everything through) or any of
+ * `values` is picked.
+ */
+function pickedAny(picked, values) {
+  return !picked.length || values.some((value) => picked.includes(value));
+}
+
+/**
+ * Apply column filters. Each filter is a list of picked values, [] meaning
+ * "all"; a promotion passes a filter when it matches any picked value. Store
+ * and retailer match when any linked store matches. Overlapping different
+ * combinations stay listed.
  *
  * @param {object[]} promotions
  * @param {{
- *   storeName?: string,
- *   period?: string,
- *   promoType?: string,
- *   mechanic?: string,
- *   recurrence?: string,
- *   retailer?: string,
- *   status?: string,
+ *   storeName?: string[],
+ *   period?: string[],
+ *   promoType?: string[],
+ *   mechanic?: string[],
+ *   recurrence?: string[],
+ *   retailer?: string[],
+ *   status?: string[],
  * }} filters
  * @param {Record<string, string>} [recurrenceMap]
  * @returns {object[]}
  */
 export function filterPromotions(promotions, filters, recurrenceMap = {}) {
-  const storeName = filters.storeName || '';
-  const period = filters.period || '';
-  const promoType = filters.promoType || '';
-  const mechanic = filters.mechanic || '';
-  const recurrence = filters.recurrence || '';
-  const retailer = filters.retailer || '';
-  const status = filters.status || '';
+  const storeName = filters.storeName || [];
+  const period = filters.period || [];
+  const promoType = filters.promoType || [];
+  const mechanic = filters.mechanic || [];
+  const recurrence = filters.recurrence || [];
+  const retailer = filters.retailer || [];
+  const status = filters.status || [];
 
   return (promotions || []).filter((promotion) => {
-    if (storeName && !promotionStoreNames(promotion).includes(storeName)) return false;
-    if (period && promotion.period_label !== period) return false;
-    if (promoType && promotion.promo_type !== promoType) return false;
-    if (mechanic && promotion.promotion_mechanic !== mechanic) return false;
-    if (recurrence && recurrenceForPromotion(promotion, recurrenceMap) !== recurrence) {
-      return false;
-    }
-    if (retailer && !promotionRetailerNames(promotion).includes(retailer)) return false;
-    if (status && promotionStatus(promotion) !== status) return false;
+    if (!pickedAny(storeName, promotionStoreNames(promotion))) return false;
+    if (!pickedAny(period, [promotion.period_label])) return false;
+    if (!pickedAny(promoType, [promotion.promo_type])) return false;
+    if (!pickedAny(mechanic, [promotion.promotion_mechanic])) return false;
+    if (!pickedAny(recurrence, [recurrenceForPromotion(promotion, recurrenceMap)])) return false;
+    if (!pickedAny(retailer, promotionRetailerNames(promotion))) return false;
+    if (!pickedAny(status, [promotionStatus(promotion)])) return false;
     return true;
   });
 }
