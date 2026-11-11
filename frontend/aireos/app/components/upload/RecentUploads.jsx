@@ -88,7 +88,7 @@ export default function RecentUploads({
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
         <div className="flex flex-wrap items-baseline gap-x-3">
           <h2 className="font-serif text-xl text-deep-violet-blue">Recent uploads</h2>
-          <p className="text-sm text-deep-violet-blue/70" aria-live="polite">
+          <p className="text-sm text-ink-soft" aria-live="polite">
             {isLoading && !uploads.length
               ? 'Loading uploads…'
               : resultCountLabel(sorted.length, uploads.length, 'upload')}
@@ -232,7 +232,7 @@ export default function RecentUploads({
                             {upload.mapping_name || 'View nomenclature'}
                           </Link>
                         ) : (
-                          <span className="text-deep-violet-blue/60">—</span>
+                          <span className="text-ink-soft">—</span>
                         )}
                       </td>
                       <td className="px-4 py-2.5">

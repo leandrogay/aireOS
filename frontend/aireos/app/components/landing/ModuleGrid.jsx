@@ -13,7 +13,7 @@ export default function ModuleGrid() {
       <h2 id="sections-heading" className="font-serif text-2xl text-deep-violet-blue">
         Everything in one place
       </h2>
-      <p className="mt-1 text-sm text-deep-violet-blue/70">
+      <p className="mt-1 text-sm text-ink-soft">
         Each section reads the same uploaded data, so the numbers agree from page to page.
       </p>
 
@@ -27,7 +27,7 @@ export default function ModuleGrid() {
             >
               <Link
                 href={item.href}
-                className="group flex flex-1 flex-col gap-2 rounded-lg p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet"
+                className="group flex flex-1 flex-col gap-2 rounded-lg p-4 focus-ring"
               >
                 <span className="flex size-9 items-center justify-center rounded-md bg-lavander text-deep-violet-blue">
                   <Icon className="size-4" aria-hidden="true" />
@@ -39,7 +39,7 @@ export default function ModuleGrid() {
                     aria-hidden="true"
                   />
                 </span>
-                <span className="text-sm text-deep-violet-blue/70">{item.description}</span>
+                <span className="text-sm text-ink-soft">{item.description}</span>
               </Link>
 
               {item.children && (
@@ -48,7 +48,7 @@ export default function ModuleGrid() {
                     <li key={child.href}>
                       <Link
                         href={child.href}
-                        className="rounded text-xs text-deep-violet-blue/70 underline-offset-4 hover:text-deep-violet-blue hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet"
+                        className="rounded text-xs text-ink-soft underline-offset-4 hover:text-deep-violet-blue hover:underline focus-ring"
                       >
                         {child.label}
                       </Link>

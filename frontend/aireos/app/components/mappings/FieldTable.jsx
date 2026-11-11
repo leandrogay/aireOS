@@ -123,33 +123,33 @@ function FieldInfo({ entry }) {
       <p>{entry.help}</p>
 
       <dl className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-2 gap-y-1.5 border-t border-lavander pt-2">
-        <dt className="text-deep-violet-blue/60">Read from</dt>
+        <dt className="text-ink-soft">Read from</dt>
         <dd className="text-deep-violet-blue">{sourceText(entry)}</dd>
 
         {entry.status === 'not_available' && entry.reason && (
           <>
-            <dt className="text-deep-violet-blue/60">Why not</dt>
+            <dt className="text-ink-soft">Why not</dt>
             <dd className="text-deep-violet-blue">{entry.reason}</dd>
           </>
         )}
 
         {changes.length > 0 && (
           <>
-            <dt className="text-deep-violet-blue/60">Changes</dt>
+            <dt className="text-ink-soft">Changes</dt>
             <dd className="space-y-0.5 text-deep-violet-blue">
               {changes.map((change) => (
                 <p key={change} className="break-words">
                   {change}
                 </p>
               ))}
-              {entry.field === 'sku' && <p className="text-deep-violet-blue/60">The full list is under Product codes.</p>}
+              {entry.field === 'sku' && <p className="text-ink-soft">The full list is under Product codes.</p>}
             </dd>
           </>
         )}
 
         {entry.status !== 'unmapped' && entry.confidence && (
           <>
-            <dt className="text-deep-violet-blue/60">Confidence</dt>
+            <dt className="text-ink-soft">Confidence</dt>
             <dd>
               <ConfidenceBadge level={level} />
             </dd>
@@ -158,12 +158,12 @@ function FieldInfo({ entry }) {
 
         {reason && (
           <>
-            <dt className="text-deep-violet-blue/60">{PROPOSER}&apos;s reason</dt>
+            <dt className="text-ink-soft">{PROPOSER}&apos;s reason</dt>
             <dd className="text-deep-violet-blue">{reason}</dd>
           </>
         )}
 
-        <dt className="text-deep-violet-blue/60">Stored as</dt>
+        <dt className="text-ink-soft">Stored as</dt>
         <dd className="font-mono text-[11px] text-deep-violet-blue">{entry.field}</dd>
       </dl>
     </InfoTooltip>
@@ -204,7 +204,7 @@ function Confidence({ entry, canUndo, onConfirm, onUndo, canReset, onReset, disa
               // the reviewer's action instead of interrupting a page load.
               autoFocus
               onClick={() => onUndo(entry)}
-              className="font-medium text-deep-violet-blue/70 underline-offset-2 hover:underline"
+              className="font-medium text-ink-soft underline-offset-2 hover:underline"
             >
               Undo
             </button>
@@ -302,7 +302,7 @@ function FieldRow({
           </Button>
         </div>
         {entry.transform && entry.status !== 'auto' && (
-          <p className="truncate text-[11px] text-deep-violet-blue/60" title={summariseTransforms(entry.transform).join('; ')}>
+          <p className="truncate text-[11px] text-ink-soft" title={summariseTransforms(entry.transform).join('; ')}>
             Then: {summariseTransforms(entry.transform).join('; ')}
           </p>
         )}
@@ -316,7 +316,7 @@ function FieldRow({
           />
         )}
         {entry.samples?.length > 0 && (
-          <p className="truncate font-mono text-[11px] text-deep-violet-blue/50" title={entry.samples.join(' · ')}>
+          <p className="truncate font-mono text-[11px] text-ink-soft" title={entry.samples.join(' · ')}>
             {entry.samples.slice(0, 3).join(' · ')}
           </p>
         )}
@@ -393,7 +393,7 @@ export default function FieldTable({ coverage, confirmedNow, ...props }) {
         summary={
           <>
             Optional fields
-            <span className="font-normal text-deep-violet-blue/60">
+            <span className="font-normal text-ink-soft">
               {' '}
               · {optionalFilled} of {optional.length} filled
               {optionalNeedsYou && ' · some need you'}
@@ -403,7 +403,7 @@ export default function FieldTable({ coverage, confirmedNow, ...props }) {
       >
         <div className="border-t border-lavander">{renderRows(optional)}</div>
         {automatic.length > 0 && (
-          <p className="border-t border-lavander px-2 py-1.5 text-[11px] text-deep-violet-blue/60">
+          <p className="border-t border-lavander px-2 py-1.5 text-[11px] text-ink-soft">
             Filled automatically: {automatic.map((entry) => entry.label).join(', ')}.
           </p>
         )}

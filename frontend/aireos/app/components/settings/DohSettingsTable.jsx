@@ -11,7 +11,7 @@ import { formatDateTime } from '@/lib/formatDate';
 import { customerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
-const thClass = 'bg-cream px-2 py-1.5 text-left text-xs font-medium text-deep-violet-blue/60';
+const thClass = 'bg-cream px-2 py-1.5 text-left text-xs font-medium text-ink-soft';
 const tdClass = 'px-2 py-1.5 text-sm text-deep-violet-blue';
 const numClass = 'text-right tabular-nums';
 
@@ -110,7 +110,7 @@ export default function DohSettingsTable({
                 <td className={cn(tdClass, numClass)}>{formatDohDays(row.min_doh)}</td>
                 <td className={cn(tdClass, numClass)}>{formatDohDays(row.target_doh)}</td>
                 <td className={cn(tdClass, numClass)}>{formatDohDays(row.max_doh)}</td>
-                <td className={cn(tdClass, 'whitespace-nowrap')}>{formatDateTime(row.thresholds_updated_at)}</td>
+                <td className={cn(tdClass, 'whitespace-nowrap tabular-nums')}>{formatDateTime(row.thresholds_updated_at)}</td>
                 <td className={tdClass}>
                   <ToggleField
                     ariaLabel={`DOH alerts for ${customerLabel(row.customer_name)}`}

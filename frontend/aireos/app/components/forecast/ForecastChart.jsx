@@ -145,7 +145,7 @@ function PromoBands({ bands, span }) {
 function ScopeTag({ label, value }) {
   return (
     <span className="inline-flex items-center gap-1 rounded-full border border-lavander bg-lavander/70 px-2.5 py-0.5 text-[11px] text-deep-violet-blue">
-      <span className="font-semibold uppercase tracking-wide text-deep-violet-blue/45">{label}</span>
+      <span className="font-semibold uppercase tracking-wide text-ink-soft">{label}</span>
       {value}
     </span>
   );
@@ -195,7 +195,7 @@ function ScenarioPointDetails({ point, items, formatValue, hasEntered = false, c
         if (!groupItems.length) return null;
         return (
           <div key={group.source}>
-            <p className="pt-1 text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/50">
+            <p className="pt-1 text-[11px] font-semibold uppercase tracking-wide text-ink-soft">
               {group.title}
             </p>
             {groupItems.map((item) => (
@@ -205,7 +205,7 @@ function ScenarioPointDetails({ point, items, formatValue, hasEntered = false, c
               </div>
             ))}
             {group.source === 'promotions' && hasEntered ? (
-              <p className="text-[10px] text-deep-violet-blue/60">On top of the entered promotions below.</p>
+              <p className="text-[11px] text-ink-soft">On top of the entered promotions below.</p>
             ) : null}
           </div>
         );
@@ -499,7 +499,7 @@ export default function ForecastChart({
         </div>
 
         {!hasVisibleLine ? (
-          <p className="text-sm text-muted-foreground">No lines selected. Turn a line on to plot values.</p>
+          <p className="text-sm text-ink-soft">No lines selected. Turn a line on to plot values.</p>
         ) : firstLoad.pending || !hasData ? (
           // Rows start empty, so without this the first load would briefly
           // claim there is no data. Same box as the loaded chart below (its
@@ -523,7 +523,7 @@ export default function ForecastChart({
               </div>
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">{emptyMessage}</p>
+            <p className="text-sm text-ink-soft">{emptyMessage}</p>
           )
         ) : (
           <>

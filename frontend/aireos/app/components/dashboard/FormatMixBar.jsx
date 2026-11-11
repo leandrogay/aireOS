@@ -100,13 +100,13 @@ export default function FormatMixBar({
 
   return (
     <div className="mb-2">
-      <p className="mb-1 text-xs text-deep-violet-blue/70">{label}</p>
+      <p className="mb-1 text-xs text-ink-soft">{label}</p>
 
       <div className="grid gap-1.5">
         {bars.map((bar) => (
           <div key={bar.key} className="flex items-center gap-2">
             {comparing && (
-              <span className="w-36 shrink-0 truncate text-xs text-deep-violet-blue/70" title={bar.label}>
+              <span className="w-36 shrink-0 truncate text-xs text-ink-soft" title={bar.label}>
                 {bar.label}
               </span>
             )}
@@ -136,7 +136,7 @@ export default function FormatMixBar({
                       onFocus={() => onHover(format.format)}
                       onBlur={() => onHover(null)}
                       className={cn(
-                        'h-full min-w-[3px] cursor-default transition-opacity focus:outline-none',
+                        'h-full min-w-[3px] cursor-default transition-opacity focus-ring-inset',
                         highlighted && highlighted !== format.format && 'opacity-40',
                       )}
                       style={{

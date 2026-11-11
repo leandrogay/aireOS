@@ -87,7 +87,7 @@ export default function BuildingBlocksOverlay({
         </p>
       )}
       {enabled && !error && !loading && options.length === 0 && (
-        <p className="mt-2 text-xs text-deep-violet-blue/70">
+        <p className="mt-2 text-xs text-ink-soft">
           No building blocks saved for {customerLabel} yet.{' '}
           <Link href="/scenario" className="font-medium text-deep-violet-blue underline underline-offset-2">
             Save some in the Scenario builder
@@ -96,7 +96,7 @@ export default function BuildingBlocksOverlay({
         </p>
       )}
       {enabled && withoutEffect.length > 0 && (
-        <p className="mt-2 text-xs text-deep-violet-blue/70">
+        <p className="mt-2 text-xs text-ink-soft">
           {withoutEffect.join(', ')} {withoutEffect.length === 1 ? "doesn't" : "don't"} change this chart: no
           Current forecast for {withoutEffect.length === 1 ? 'its' : 'their'} SKUs and months here.
         </p>

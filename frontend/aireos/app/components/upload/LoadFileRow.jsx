@@ -101,7 +101,7 @@ export default function LoadFileRow({ file, checked, open, onToggle, onOpen, dis
           onClick={onOpen}
           aria-expanded={open}
           aria-controls={panelId}
-          className="flex min-w-0 flex-1 items-start gap-2 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-deep-violet-blue"
+          className="flex min-w-0 flex-1 items-start gap-2 rounded-md text-left focus-ring"
         >
           <span className={cn('min-w-0 flex-1 text-xs text-deep-violet-blue', !checked && 'opacity-60')}>
             <span className="flex items-center gap-2">
@@ -110,7 +110,7 @@ export default function LoadFileRow({ file, checked, open, onToggle, onOpen, dis
                 <span className="shrink-0 rounded-full border border-lavander bg-cream px-1.5 text-[10px]">Reload</span>
               )}
             </span>
-            <span className="block text-deep-violet-blue/70">
+            <span className="block text-ink-soft">
               {plural(preview.rows_to_store, 'sales row', 'sales rows')} · {periodLabel(preview)} ·{' '}
               {plural(preview.sku_count, 'SKU', 'SKUs')}
             </span>
@@ -121,7 +121,7 @@ export default function LoadFileRow({ file, checked, open, onToggle, onOpen, dis
               </span>
             )}
           </span>
-          <span className="flex shrink-0 items-center gap-0.5 pt-0.5 text-[11px] font-medium text-deep-violet-blue/70">
+          <span className="flex shrink-0 items-center gap-0.5 pt-0.5 text-[11px] font-medium text-ink-soft">
             {open ? 'Hide' : 'Preview'}
             <ChevronRight aria-hidden="true" className={cn('size-3.5 transition-transform', open && 'rotate-90')} />
           </span>
@@ -130,7 +130,7 @@ export default function LoadFileRow({ file, checked, open, onToggle, onOpen, dis
 
       {open && (
         <div id={panelId} className="space-y-2 border-t border-lavander px-3 py-2.5">
-          <p className="text-xs text-deep-violet-blue/70">
+          <p className="text-xs text-ink-soft">
             {file.mapping_name} · version {file.mapping_version}
             {file.reload && file.loaded_version && ` (loaded with version ${file.loaded_version})`}
             {retailers.length > 0 && (
@@ -144,7 +144,7 @@ export default function LoadFileRow({ file, checked, open, onToggle, onOpen, dis
           {preview.preview?.length > 0 ? (
             <OutputPreview preview={preview} fields={LOAD_PREVIEW_FIELDS} total={preview.rows_to_store} />
           ) : (
-            <p className="text-xs text-deep-violet-blue/70">No rows in this file can be stored.</p>
+            <p className="text-xs text-ink-soft">No rows in this file can be stored.</p>
           )}
         </div>
       )}

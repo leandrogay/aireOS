@@ -24,7 +24,7 @@ export default function RollbackDetailsDialog({ open, upload, onClose }) {
           <DialogTitle className="font-serif text-xl text-deep-violet-blue">
             Rollback details
           </DialogTitle>
-          <DialogDescription className="break-words text-xs text-deep-violet-blue/65">
+          <DialogDescription className="break-words text-xs text-ink-soft">
             {upload?.filename || 'Upload audit trail'}
           </DialogDescription>
         </DialogHeader>
@@ -33,7 +33,7 @@ export default function RollbackDetailsDialog({ open, upload, onClose }) {
           <div className="flex gap-3 border-b border-lavander px-3 py-3">
             <UserRound aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-deep-violet-blue/50" />
             <div className="min-w-0">
-              <dt className="text-xs text-deep-violet-blue/60">Performed by</dt>
+              <dt className="text-xs text-ink-soft">Performed by</dt>
               <dd className="mt-0.5 break-words font-medium">
                 {upload?.rolled_back_by || 'Unknown user'}
               </dd>
@@ -42,7 +42,7 @@ export default function RollbackDetailsDialog({ open, upload, onClose }) {
           <div className="flex gap-3 border-b border-lavander px-3 py-3">
             <Clock3 aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-deep-violet-blue/50" />
             <div>
-              <dt className="text-xs text-deep-violet-blue/60">Rolled back on</dt>
+              <dt className="text-xs text-ink-soft">Rolled back on</dt>
               <dd className="mt-0.5 font-medium tabular-nums">
                 {upload?.rolled_back_at ? formatDateTime(upload.rolled_back_at) : 'Unknown time'}
               </dd>
@@ -51,7 +51,7 @@ export default function RollbackDetailsDialog({ open, upload, onClose }) {
           <div className="flex gap-3 px-3 py-3">
             <MessageSquareText aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-deep-violet-blue/50" />
             <div className="min-w-0">
-              <dt className="text-xs text-deep-violet-blue/60">Reason</dt>
+              <dt className="text-xs text-ink-soft">Reason</dt>
               <dd className="mt-0.5 whitespace-pre-wrap break-words font-medium">
                 {upload?.rollback_reason || 'No reason recorded.'}
               </dd>

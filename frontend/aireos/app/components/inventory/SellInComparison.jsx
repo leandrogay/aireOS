@@ -24,17 +24,17 @@ function SideRows({ label, kind, comparison }) {
       <p className="text-xs font-medium text-deep-violet-blue">{label}</p>
       {comparison ? (
         <dl className="mt-0.5 grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 text-xs">
-          <dt className="text-deep-violet-blue/70">Actual</dt>
+          <dt className="text-ink-soft">Actual</dt>
           <dd className="text-right font-semibold tabular-nums text-deep-violet-blue">
             {formatUnits(comparison.actual)} units
           </dd>
-          <dt className="text-deep-violet-blue/70">Forecast · {SOURCE_LABEL[kind][comparison.source]}</dt>
+          <dt className="text-ink-soft">Forecast · {SOURCE_LABEL[kind][comparison.source]}</dt>
           <dd className="text-right font-semibold tabular-nums text-deep-violet-blue">
             {formatUnits(comparison.forecast)} units
           </dd>
         </dl>
       ) : (
-        <p className="mt-0.5 text-xs text-deep-violet-blue/50">No forecast for these months</p>
+        <p className="mt-0.5 text-xs text-ink-soft">No forecast for these months</p>
       )}
     </div>
   );
@@ -70,7 +70,7 @@ export default function SellInComparison({ months }) {
   return (
     <div className="aire-card p-3">
       <h3 className="font-serif text-base text-deep-violet-blue">Comparison</h3>
-      <p className="mb-2 text-xs text-deep-violet-blue/60">
+      <p className="mb-2 text-xs text-ink-soft">
         {monthRangeLabel(months[0].month, months[months.length - 1].month)} · actual vs forecast
       </p>
 

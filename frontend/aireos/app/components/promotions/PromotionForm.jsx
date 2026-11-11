@@ -22,15 +22,15 @@ import {
 import { retailerLabel } from '@/app/utils/retailerLabel';
 
 const inputClass =
-  'w-full min-w-0 max-w-full rounded-md border border-lavander bg-cream px-2.5 py-1.5 text-sm text-deep-violet-blue placeholder:text-deep-violet-blue/45 focus:border-violet focus:outline-none';
+  'w-full min-w-0 max-w-full rounded-glass-sm border border-deep-violet-blue/60 bg-white px-2.5 py-1.5 text-sm text-deep-violet-blue outline-none transition-[border-color,background-color] duration-hover placeholder:text-ink-soft hover:border-deep-violet-blue/75 focus-ring disabled:opacity-60';
 const invalidInputClass = 'border-red-400 focus:border-red-500';
 const labelClass = 'mb-1 block text-xs font-medium text-deep-violet-blue';
 const errorClass = 'mt-1 text-xs text-red-700';
-const hintClass = 'mt-1 text-[11px] text-deep-violet-blue/60';
+const hintClass = 'mt-1 text-[11px] text-ink-soft';
 // Segmented radio chip: the native radio is visually hidden and the label
 // itself shows the checked / focused state.
 const chipClass =
-  'flex flex-1 cursor-pointer items-center justify-center rounded-md border border-lavander bg-cream px-3 py-1.5 text-sm text-deep-violet-blue transition has-[:checked]:border-deep-violet-blue has-[:checked]:bg-deep-violet-blue has-[:checked]:text-white has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-violet';
+  'flex flex-1 cursor-pointer items-center justify-center rounded-glass-sm border border-lavander bg-cream px-3 py-1.5 text-sm text-deep-violet-blue transition has-[:checked]:border-deep-violet-blue has-[:checked]:bg-deep-violet-blue has-[:checked]:text-white has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-violet';
 
 /**
  * Red asterisk shown after a required field's label. The header explains
@@ -51,7 +51,7 @@ function RequiredMark() {
  */
 function OptionalMark() {
   return (
-    <span className="font-normal text-deep-violet-blue/50"> (optional)</span>
+    <span className="font-normal text-ink-soft"> (optional)</span>
   );
 }
 
@@ -86,14 +86,14 @@ function FormSection({ step, title, hint, children }) {
     <section className="grid gap-x-6 gap-y-3 px-4 py-4 md:grid-cols-[11rem_minmax(0,1fr)]">
       <div className="flex items-start gap-2.5">
         <span
-          className="mt-px flex size-5 shrink-0 items-center justify-center rounded-full bg-deep-violet-blue font-mono text-[11px] font-medium text-white"
+          className="mt-px flex size-5 shrink-0 items-center justify-center rounded-full bg-deep-violet-blue tabular-nums text-[11px] font-medium text-white"
           aria-hidden="true"
         >
           {step}
         </span>
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-deep-violet-blue">{title}</h3>
-          <p className="mt-0.5 text-xs leading-snug text-deep-violet-blue/65">{hint}</p>
+          <p className="mt-0.5 text-xs leading-snug text-ink-soft">{hint}</p>
         </div>
       </div>
       <div className="min-w-0">{children}</div>
@@ -187,7 +187,7 @@ function PromotionMechanicField({ form, onChange, error }) {
                   className={cn(inputClass, 'rounded-r-none')}
                   placeholder="e.g. 30"
                 />
-                <span className="inline-flex items-center rounded-r-md border border-l-0 border-lavander bg-cream px-3 text-sm text-deep-violet-blue/65" aria-hidden="true">
+                <span className="inline-flex items-center rounded-r-md border border-l-0 border-lavander bg-cream px-3 text-sm text-ink-soft" aria-hidden="true">
                   %
                 </span>
               </span>
@@ -378,7 +378,7 @@ export default function PromotionForm({
         <div
           role="status"
           aria-live="polite"
-          className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-lg bg-white/70 text-deep-violet-blue/70 backdrop-blur-[1px]"
+          className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-lg bg-white/70 text-ink-soft"
         >
           <Loader2 className="h-6 w-6 animate-spin" />
           <p className="text-sm">{isEdit ? 'Saving changes…' : 'Creating promotion…'}</p>
@@ -390,7 +390,7 @@ export default function PromotionForm({
           <h2 className="font-serif text-xl text-deep-violet-blue">
             {isEdit ? 'Edit promotion' : 'Create promotion'}
           </h2>
-          <p className="mt-0.5 text-xs text-deep-violet-blue/65">
+          <p className="mt-0.5 text-xs text-ink-soft">
             Fields marked <span className="text-red-700">*</span> are required.
           </p>
         </div>
@@ -651,14 +651,14 @@ export default function PromotionForm({
             type="button"
             onClick={onCancel}
             disabled={isSubmitting}
-            className="rounded-md border border-deep-violet-blue/30 bg-white px-4 py-1.5 text-sm font-medium text-deep-violet-blue transition hover:bg-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-glass-sm border border-deep-violet-blue/30 bg-white px-4 py-1.5 text-sm font-medium text-deep-violet-blue transition hover:bg-cream focus-ring disabled:cursor-not-allowed disabled:opacity-60"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={isSubmitting}
-            className="rounded-md border border-deep-violet-blue bg-deep-violet-blue px-4 py-1.5 text-sm font-medium text-white transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-glass-sm border border-deep-violet-blue bg-deep-violet-blue px-4 py-1.5 text-sm font-medium text-white transition hover:opacity-90 focus-ring disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isSubmitting
               ? 'Saving…'

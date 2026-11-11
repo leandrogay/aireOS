@@ -32,7 +32,7 @@ export default function RetailerTable({ retailers, inset, customerName, actionsF
               mappings match on, and on one line it was cut off. */}
           <td className="px-4 py-2" title={retailer.retailer_name}>
             <span className="block truncate font-medium">{retailerLabel(retailer.retailer_name, customerName)}</span>
-            <span className="block truncate font-mono text-xs text-deep-violet-blue/50">{retailer.retailer_name}</span>
+            <span className="block truncate font-mono text-xs text-ink-soft">{retailer.retailer_name}</span>
           </td>
           <td className="px-4 py-2 tabular-nums">{retailer.store_count}</td>
           <td className="px-4 py-2">

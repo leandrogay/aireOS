@@ -23,14 +23,14 @@ import { ChevronRight } from 'lucide-react';
 export function Category({ title, note, children }) {
   return (
     <details className="mb-3 rounded-lg border border-lavander bg-cream/40">
-      <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg px-4 py-3 text-deep-violet-blue outline-none select-none hover:bg-cream focus-visible:ring-2 focus-visible:ring-violet [&::-webkit-details-marker]:hidden">
+      <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg px-4 py-3 text-deep-violet-blue focus-ring-inset select-none hover:bg-cream [&::-webkit-details-marker]:hidden">
         {/* Written out in full: Tailwind only generates classes it finds whole in the source. */}
         <ChevronRight
           aria-hidden="true"
           className="size-5 shrink-0 text-deep-violet-blue/60 transition-transform [details[open]>summary_&]:rotate-90"
         />
         <h2 className="font-serif text-2xl">{title}</h2>
-        {note && <span className="ml-1 hidden truncate text-xs text-deep-violet-blue/60 sm:inline">{note}</span>}
+        {note && <span className="ml-1 hidden truncate text-xs text-ink-soft sm:inline">{note}</span>}
       </summary>
       <div className="px-3 pt-1 pb-1">{children}</div>
     </details>
@@ -47,7 +47,7 @@ export function Panel({ title, note, children }) {
   return (
     <section className="mb-3 aire-card p-4">
       <h3 className="font-serif text-lg text-deep-violet-blue">{title}</h3>
-      {note && <p className="mb-3 text-xs text-deep-violet-blue/60">{note}</p>}
+      {note && <p className="mb-3 text-xs text-ink-soft">{note}</p>}
       {children}
     </section>
   );
@@ -78,9 +78,9 @@ export function Variant({ name, props, value, children }) {
   return (
     <div className="min-w-0">
       <p className="text-xs font-medium text-deep-violet-blue">{name}</p>
-      <p className="mb-1.5 font-mono text-[10px] text-deep-violet-blue/50">{props}</p>
+      <p className="mb-1.5 font-mono text-[10px] text-ink-soft">{props}</p>
       {children}
-      <p className="mt-1.5 truncate font-mono text-[10px] text-deep-violet-blue/60">
+      <p className="mt-1.5 truncate font-mono text-[10px] text-ink-soft">
         value: {JSON.stringify(value)}
       </p>
     </div>
@@ -134,7 +134,7 @@ export function WhichToUse({ rows, note, children }) {
   return (
     <Panel title="Which to use" note={note}>
       <ReferenceTable head={['I need to…', 'Use', 'Main props']} rows={rows} />
-      {children && <div className="mt-3 text-xs text-deep-violet-blue/70">{children}</div>}
+      {children && <div className="mt-3 text-xs text-ink-soft">{children}</div>}
     </Panel>
   );
 }
@@ -163,7 +163,7 @@ export function NotMigrated({ rows, leaveAsIs, children }) {
       {leaveAsIs && (
         <>
           <h4 className="mt-5 text-sm font-medium text-deep-violet-blue">Leave as is</h4>
-          <p className="mb-2 text-xs text-deep-violet-blue/60">Look similar, but aren&apos;t the same thing; don&apos;t migrate these.</p>
+          <p className="mb-2 text-xs text-ink-soft">Look similar, but aren&apos;t the same thing; don&apos;t migrate these.</p>
           <ReferenceTable head={['Page', 'File (components/)', 'Why it stays']} rows={leaveAsIs} />
         </>
       )}

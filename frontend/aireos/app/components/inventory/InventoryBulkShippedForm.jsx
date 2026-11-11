@@ -236,7 +236,7 @@ export default function InventoryBulkShippedForm({ customers, skus: catalogSkus,
         </label>
       </div>
 
-      {showTable && loading && <p className="text-sm text-deep-violet-blue/70">Loading…</p>}
+      {showTable && loading && <p className="text-sm text-ink-soft">Loading…</p>}
 
       {showTable && !loading && loadError && (
         <p className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">

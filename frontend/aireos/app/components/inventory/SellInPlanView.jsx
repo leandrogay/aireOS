@@ -174,7 +174,7 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
                 ? '1 SKU has no forecast'
                 : `${data.skus_without_forecast.length} SKUs have no forecast`}
             </span>
-            <span className="text-deep-violet-blue/70">
+            <span className="text-ink-soft">
               , so {data.skus_without_forecast.length === 1 ? 'it is' : 'they are'} not in this plan.
             </span>
           </p>

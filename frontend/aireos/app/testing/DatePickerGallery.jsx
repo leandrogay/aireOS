@@ -186,7 +186,7 @@ export default function DatePickerGallery() {
             type="date"
             value={oldDate}
             onChange={(event) => setOldDate(event.target.value)}
-            className="w-full rounded-md border border-lavander bg-cream px-2.5 py-1.5 text-sm text-deep-violet-blue focus:border-violet focus:outline-none"
+            className="w-full rounded-glass-sm border border-deep-violet-blue/60 bg-white px-2.5 py-1.5 text-sm text-deep-violet-blue transition-[border-color,background-color] duration-hover hover:border-deep-violet-blue/75 focus-ring"
           />
         </Variant>
         <Variant name="New: DatePicker" props='variant="input"' value={oldDate}>
@@ -197,7 +197,7 @@ export default function DatePickerGallery() {
             type="month"
             value={oldMonth}
             onChange={(event) => setOldMonth(event.target.value)}
-            className="w-full rounded-md border border-lavander bg-cream px-2.5 py-1.5 text-sm text-deep-violet-blue focus:border-violet focus:outline-none"
+            className="w-full rounded-glass-sm border border-deep-violet-blue/60 bg-white px-2.5 py-1.5 text-sm text-deep-violet-blue transition-[border-color,background-color] duration-hover hover:border-deep-violet-blue/75 focus-ring"
           />
         </Variant>
         <Variant name="New: MonthDropdown" props="value (YYYY-MM)" value={oldMonth}>

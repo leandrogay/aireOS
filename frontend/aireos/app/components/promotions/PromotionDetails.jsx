@@ -36,14 +36,14 @@ function FormatTab({ label, count, selected, onSelect }) {
       aria-pressed={selected}
       onClick={onSelect}
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50',
+        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium focus-ring transition-colors',
         selected
           ? 'border-deep-violet-blue bg-deep-violet-blue text-white'
           : 'border-lavander bg-white text-deep-violet-blue hover:bg-lavander',
       )}
     >
       {label}
-      <span className={cn('tabular-nums', selected ? 'text-white/70' : 'text-deep-violet-blue/50')}>
+      <span className={cn('tabular-nums', selected ? 'text-white/70' : 'text-ink-soft')}>
         {count}
       </span>
     </button>
@@ -59,7 +59,7 @@ function StoreList({ stores, showRetailer }) {
   const [format, setFormat] = useState('');
   const [showAll, setShowAll] = useState(false);
 
-  if (!stores.length) return <p className="text-sm text-deep-violet-blue/70">No stores linked.</p>;
+  if (!stores.length) return <p className="text-sm text-ink-soft">No stores linked.</p>;
 
   const tabs = formatCounts(stores);
   const visibleStores = format
@@ -107,14 +107,14 @@ function StoreList({ stores, showRetailer }) {
             >
               <span className="truncate font-medium text-deep-violet-blue">
                 {showRetailer && (
-                  <span className="font-normal text-deep-violet-blue/60">
+                  <span className="font-normal text-ink-soft">
                     {retailerLabel(store.retailer)} ·{' '}
                   </span>
                 )}
                 {name}
               </span>
               {!format && store.store_format && (
-                <span className="shrink-0 text-xs text-deep-violet-blue/50">{store.store_format}</span>
+                <span className="shrink-0 text-xs text-ink-soft">{store.store_format}</span>
               )}
             </li>
           );
@@ -150,7 +150,7 @@ export default function PromotionDetails({ promotion }) {
     <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
       <section className="min-w-0 rounded-lg border border-lavander/80 bg-white p-4">
         <h3 className="mb-3 text-sm font-medium text-deep-violet-blue">
-          Stores <span className="text-deep-violet-blue/50">({stores.length})</span>
+          Stores <span className="text-ink-soft">({stores.length})</span>
         </h3>
         {/* Keyed on the promotion so opening another row never inherits this
             row's selected tab or expanded state. */}
@@ -159,13 +159,13 @@ export default function PromotionDetails({ promotion }) {
 
       <section className="min-w-0 divide-y divide-lavander/80 rounded-lg border border-lavander/80 bg-white text-sm">
         <div className="p-4">
-          <h3 className="text-xs font-medium text-deep-violet-blue/60">Voucher</h3>
+          <h3 className="text-xs font-medium text-ink-soft">Voucher</h3>
           <p className="mt-1 break-words font-medium text-deep-violet-blue">
             {promotion.voucher || '-'}
           </p>
         </div>
         <div className="p-4">
-          <h3 className="text-xs font-medium text-deep-violet-blue/60">SKU range</h3>
+          <h3 className="text-xs font-medium text-ink-soft">SKU range</h3>
           {skuLabels.length ? (
             <ul className="mt-1 space-y-1 font-medium text-deep-violet-blue">
               {skuLabels.map((label) => (

@@ -58,7 +58,7 @@ export default function ModelViewToggle({ value, onChange, disabled = false, sum
             onClick={() => onChange(option.value)}
             className={cn(
               'h-6 rounded px-2.5 text-[11px] font-medium transition disabled:cursor-not-allowed',
-              value === option.value ? 'bg-deep-violet-blue text-white' : 'text-deep-violet-blue/70 hover:bg-white',
+              value === option.value ? 'bg-deep-violet-blue text-white' : 'text-ink-soft hover:bg-white',
               disabled && 'hover:bg-transparent'
             )}
           >
@@ -66,7 +66,7 @@ export default function ModelViewToggle({ value, onChange, disabled = false, sum
           </button>
         ))}
       </div>
-      <p className="min-w-0 flex-1 text-[11px] text-deep-violet-blue/70">{text}</p>
+      <p className="min-w-0 flex-1 text-[11px] text-ink-soft">{text}</p>
     </div>
   );
 }

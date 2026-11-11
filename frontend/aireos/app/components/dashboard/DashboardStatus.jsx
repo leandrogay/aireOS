@@ -31,12 +31,12 @@ export default function DashboardStatus({ kind, error = null }) {
       <h2 className="font-serif text-lg text-deep-violet-blue">
         {failed ? 'Couldn’t load sales data' : 'No sales data yet'}
       </h2>
-      <p className="mt-1 max-w-sm text-sm text-deep-violet-blue/70">
+      <p className="mt-1 max-w-sm text-sm text-ink-soft">
         {failed
           ? 'The sales data didn’t load. Check your connection, then try again.'
           : 'Upload a retailer sell-out file and its sales will appear here.'}
       </p>
-      {failed && error && <p className="mt-2 max-w-md text-xs text-deep-violet-blue/50">{error}</p>}
+      {failed && error && <p className="mt-2 max-w-md text-xs text-ink-soft">{error}</p>}
       {failed ? (
         <Button onClick={() => window.location.reload()} className={primaryButtonClass}>
           Try again

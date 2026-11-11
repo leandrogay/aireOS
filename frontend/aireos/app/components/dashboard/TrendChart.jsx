@@ -98,7 +98,7 @@ function TrendTooltip({ active, payload: shown, granularity, metric, formats = n
       <div className="grid gap-1.5">
         {payload.map((item) => (
           <div key={item.dataKey} className="flex w-full items-center justify-between gap-2">
-            <span className="flex items-center gap-1.5 text-deep-violet-blue/70">
+            <span className="flex items-center gap-1.5 text-ink-soft">
               {stacked && (
                 <span
                   className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
@@ -108,7 +108,7 @@ function TrendTooltip({ active, payload: shown, granularity, metric, formats = n
               {item.name === UNNAMED_FORMAT ? 'Total' : item.name}
             </span>
             {/* One series is the period's total, so it is bold like the Total row. */}
-            <span className={`font-mono text-deep-violet-blue tabular-nums ${stacked ? 'font-medium' : 'font-semibold'}`}>
+            <span className={`text-deep-violet-blue tabular-nums ${stacked ? 'font-medium' : 'font-semibold'}`}>
               {formatMetric(metric, item.value)}
             </span>
           </div>
@@ -116,15 +116,15 @@ function TrendTooltip({ active, payload: shown, granularity, metric, formats = n
         {stacked && (
           <div className="mt-0.5 flex w-full items-center justify-between gap-2 border-t border-lavander pt-1">
             <span className="font-medium text-deep-violet-blue">Total</span>
-            <span className="font-mono font-semibold text-deep-violet-blue tabular-nums">
+            <span className="font-semibold text-deep-violet-blue tabular-nums">
               {formatMetric(metric, total)}
             </span>
           </div>
         )}
         {metric === 'revenue' && hasEstimate(period.estimated) && (
           <div className="flex w-full items-center justify-between gap-2">
-            <span className="text-deep-violet-blue/70">est.</span>
-            <span className="font-mono font-medium text-deep-violet-blue tabular-nums">
+            <span className="text-ink-soft">est.</span>
+            <span className="font-medium text-deep-violet-blue tabular-nums">
               {formatRevenue(period.estimated)}
             </span>
           </div>

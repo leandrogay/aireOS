@@ -13,7 +13,7 @@ import { wasSaved } from '@/app/utils/loadPreview';
 import { filesLabel } from '@/app/utils/uploadFlow';
 
 const action =
-  'inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-deep-violet-blue focus-visible:ring-offset-2';
+  'inline-flex items-center gap-1.5 rounded-glass-sm border px-3 py-1.5 text-sm font-medium transition focus-ring';
 const primary = `${action} border-deep-violet-blue bg-deep-violet-blue text-white hover:opacity-90`;
 const secondary = `${action} border-deep-violet-blue/30 bg-white text-deep-violet-blue hover:bg-cream`;
 
@@ -34,14 +34,14 @@ function LoadableFiles({ title, help, files, detail, buttonLabel, Icon, onLoad }
   return (
     <div className="rounded-md border border-deep-violet-blue/20 border-l-4 border-l-deep-violet-blue bg-cream/40 p-3">
       <p className="text-sm font-medium text-deep-violet-blue">{title}</p>
-      <p className="mt-0.5 text-xs text-deep-violet-blue/75">{help}</p>
+      <p className="mt-0.5 text-xs text-ink-soft">{help}</p>
       <ul className="mt-2 space-y-0.5 text-xs text-deep-violet-blue">
         {files.map((file) => (
           <li key={file.blob_path} className="flex justify-between gap-x-3">
             <span className="min-w-0 truncate font-mono" title={file.filename}>
               {file.filename}
             </span>
-            <span className="shrink-0 text-deep-violet-blue/70">{detail(file)}</span>
+            <span className="shrink-0 text-ink-soft">{detail(file)}</span>
           </li>
         ))}
       </ul>
@@ -85,7 +85,7 @@ export default function ApprovedSummary({ approved }) {
   return (
     <section className="aire-card p-5">
       <div className="flex items-start gap-3">
-        <CheckCircle2 aria-hidden="true" className="mt-0.5 size-7 shrink-0 text-green-600" />
+        <CheckCircle2 aria-hidden="true" className="mt-0.5 size-7 shrink-0 text-green-700" />
         <div className="min-w-0">
           <h2 className="flex flex-wrap items-center gap-2 font-serif text-xl text-deep-violet-blue">
             Nomenclature approved
@@ -93,7 +93,7 @@ export default function ApprovedSummary({ approved }) {
               v{version}
             </span>
           </h2>
-          <p className="mt-0.5 text-sm text-deep-violet-blue/75">
+          <p className="mt-0.5 text-sm text-ink-soft">
             {approved.name} · {customer}
             {version > 1 && ` · replaces v${version - 1}`}
           </p>
@@ -139,7 +139,7 @@ export default function ApprovedSummary({ approved }) {
       {loadedHere.length > 0 && (
         <div className="mt-4 rounded-md border border-green-200 bg-green-50 p-3 text-green-900">
           <p className="flex items-center gap-1.5 text-sm font-medium">
-            <CheckCircle2 aria-hidden="true" className="size-4 shrink-0 text-green-600" />
+            <CheckCircle2 aria-hidden="true" className="size-4 shrink-0 text-green-700" />
             {plural(loadedHere.length, 'file', 'files')} loaded with v{version}
           </p>
           <ul className="mt-1.5 space-y-0.5 pl-5.5 text-xs">
@@ -195,7 +195,7 @@ export default function ApprovedSummary({ approved }) {
         )}
       </div>
 
-      <Disclosure variant="link" summary="Technical details" className="mt-4 text-xs text-deep-violet-blue/70">
+      <Disclosure variant="link" summary="Technical details" className="mt-4 text-xs text-ink-soft">
         <p className="mt-1">
           Stored at <span className="font-mono">{approved.moved_to}</span>
           {approved.archived_previous && (

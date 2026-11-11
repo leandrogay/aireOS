@@ -3,7 +3,7 @@
 import { cn } from '@/lib/utils';
 import { UPLIFT_DIRECTIONS, UPLIFT_MODES, UPLIFT_PRESETS, pctLimit } from '@/app/utils/scenarioBlocks';
 
-const labelClass = 'mb-0.5 block text-[11px] text-deep-violet-blue/70';
+const labelClass = 'mb-0.5 block text-[11px] text-ink-soft';
 
 // A row of two or more toggle buttons (Increase | Decrease, % | Units).
 function Segmented({ options, value, onSelect, labelledBy }) {
@@ -17,7 +17,7 @@ function Segmented({ options, value, onSelect, labelledBy }) {
           onClick={() => onSelect(option.value)}
           className={cn(
             'h-6 rounded px-2 text-[11px] font-medium',
-            value === option.value ? 'bg-deep-violet-blue text-white' : 'text-deep-violet-blue/70 hover:bg-white'
+            value === option.value ? 'bg-deep-violet-blue text-white' : 'text-ink-soft hover:bg-white'
           )}
         >
           {option.label}
@@ -80,11 +80,11 @@ export default function UpliftField({ block, onChange, onModeChange, onDirection
               onChange={(event) => setSize(Math.abs(Number(event.target.value)) || 0)}
               className="h-8 w-full rounded-md border border-violet bg-white px-2 text-xs text-deep-violet-blue"
             />
-            <span className="shrink-0 text-xs text-deep-violet-blue/70">
+            <span className="shrink-0 text-xs text-ink-soft">
               units {decrease ? 'fewer' : 'more'} in total
             </span>
           </div>
-          <p className="text-[11px] text-deep-violet-blue/50">
+          <p className="text-[11px] text-ink-soft">
             Spread over the block&apos;s months{block.sku ? '' : ' and SKUs'} in line with the Current forecast.
           </p>
         </>
@@ -104,7 +104,7 @@ export default function UpliftField({ block, onChange, onModeChange, onDirection
             />
             <output
               htmlFor="block-uplift"
-              className={cn('font-serif text-lg', decrease ? 'text-red-700' : 'text-scenario')}
+              className={cn('font-serif text-lg', decrease ? 'text-red-700' : 'text-scenario-ink')}
             >
               {sign}
               {size}%

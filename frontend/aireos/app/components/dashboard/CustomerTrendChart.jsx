@@ -47,14 +47,14 @@ function TrendTooltip({ active, payload, metric, series }) {
       <div className="col-span-2 font-medium text-deep-violet-blue">{row.exactLabel}</div>
       {series.map((item) => (
         <div key={item.key} className="col-span-2 grid grid-cols-subgrid">
-          <span className="flex items-center gap-1.5 text-deep-violet-blue/70">
+          <span className="flex items-center gap-1.5 text-ink-soft">
             <span className="h-2.5 w-2.5 shrink-0 rounded-[2px]" style={{ backgroundColor: item.color }} />
             {item.label}
             {hasEstimate(row[`${item.key}Estimated`]) && (
               <span className={cn(ESTIMATE_PILL_CLASS, 'h-4 px-1 text-[10px]')}>est.</span>
             )}
           </span>
-          <span className="text-right font-mono font-medium text-deep-violet-blue tabular-nums">
+          <span className="text-right font-medium text-deep-violet-blue tabular-nums">
             {formatValue(metric, row[item.key])}
           </span>
         </div>
@@ -62,7 +62,7 @@ function TrendTooltip({ active, payload, metric, series }) {
       {series.length > 1 && (
         <div className="col-span-2 mt-0.5 grid grid-cols-subgrid border-t border-lavander pt-1">
           <span className="font-medium text-deep-violet-blue">Total</span>
-          <span className="text-right font-mono font-semibold text-deep-violet-blue tabular-nums">
+          <span className="text-right font-semibold text-deep-violet-blue tabular-nums">
             {formatValue(metric, total)}
           </span>
         </div>
@@ -119,7 +119,7 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
 
   if (customers.length === 0) {
     return (
-      <p className="flex flex-1 items-center justify-center text-center text-sm text-deep-violet-blue/60">
+      <p className="flex flex-1 items-center justify-center text-center text-sm text-ink-soft">
         Select at least one customer.
       </p>
     );
@@ -127,7 +127,7 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
 
   if (series.length === 0 || rows.length === 0) {
     return (
-      <p className="flex flex-1 items-center justify-center text-center text-sm text-deep-violet-blue/60">
+      <p className="flex flex-1 items-center justify-center text-center text-sm text-ink-soft">
         No sales for the selected customers in this period.
       </p>
     );

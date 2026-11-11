@@ -11,11 +11,11 @@ export function labelledTooltipRow(config, format) {
   return function TooltipRow(value, name, item) {
     return (
       <div className="flex w-full items-center justify-between gap-4">
-        <span className="flex items-center gap-1.5 text-muted-foreground">
+        <span className="flex items-center gap-1.5 text-ink-soft">
           <span className="h-2.5 w-2.5 shrink-0 rounded-[2px]" style={{ backgroundColor: item.color }} />
           {config[name]?.label ?? name}
         </span>
-        <span className="font-mono font-medium tabular-nums text-foreground">{format(value)}</span>
+        <span className="font-medium tabular-nums text-foreground">{format(value)}</span>
       </div>
     );
   };

@@ -129,7 +129,7 @@ export default function DashboardFilters({
         {customerControl}
 
         <div>
-          <label className="block text-xs text-deep-violet-blue/70 mb-1">SKU</label>
+          <label className="block text-xs text-ink-soft mb-1">SKU</label>
           {/* One SKU at a time (the API takes a single `sku`), so SelectDropdown,
               in the same compact look as the multi-select Customer above. */}
           <SelectDropdown
@@ -151,7 +151,7 @@ export default function DashboardFilters({
         </div>
 
         <div>
-          <label className="block text-xs text-deep-violet-blue/70 mb-1">Store</label>
+          <label className="block text-xs text-ink-soft mb-1">Store</label>
           {/* The wrapper carries the tooltip: a disabled button gets no hover. */}
           <div title={storeDisabled ? 'Store applies when one customer is selected' : undefined}>
             <SelectDropdown
@@ -174,7 +174,7 @@ export default function DashboardFilters({
         </div>
       </div>
 
-      {error && <p className="text-red-600 text-xs mt-2">{error}</p>}
+      {error && <p className="text-red-700 text-xs mt-2">{error}</p>}
 
       {activeFilters && (
         <div className="mt-3 pt-3 border-t border-lavander flex flex-wrap gap-2">{activeFilters}</div>

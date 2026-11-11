@@ -68,11 +68,11 @@ function RetailerLine({ item, choice, customerName, retailers, onChoose, onFix, 
         {status === 'ok' && (
           <CheckCircle2 aria-label="One of the customer's retailers" className="size-3.5 shrink-0 text-green-700" />
         )}
-        {!ok && <AlertTriangle aria-hidden="true" className="size-3.5 shrink-0 text-amber-700" />}
+        {!ok && <AlertTriangle aria-hidden="true" className="size-3.5 shrink-0 text-amber-800" />}
 
         {choice ? (
           <>
-            <span className="text-xs text-deep-violet-blue/70">{choice.when}</span>
+            <span className="text-xs text-ink-soft">{choice.when}</span>
             <span aria-hidden="true" className="text-xs text-deep-violet-blue/40">
               →
             </span>
@@ -274,7 +274,7 @@ export default function CustomerStep({
             </p>
           )}
           {!customersError && customerNote && (
-            <p className="mt-1 text-[11px] text-deep-violet-blue/60">{customerNote}</p>
+            <p className="mt-1 text-[11px] text-ink-soft">{customerNote}</p>
           )}
         </div>
       </div>
@@ -291,9 +291,9 @@ export default function CustomerStep({
           {/* The retailers a proposal names are another customer's until one is
               chosen, and nothing here can be edited yet, so there is nothing to show. */}
           {!customer && (
-            <span className="text-deep-violet-blue/70">· Choose the customer to set where the sales go</span>
+            <span className="text-ink-soft">· Choose the customer to set where the sales go</span>
           )}
-          {customer && !picked && <span className="text-deep-violet-blue/70">· {where.short}</span>}
+          {customer && !picked && <span className="text-ink-soft">· {where.short}</span>}
           <InfoTooltip label="Where the sales go">
             {picked
               ? `Rows are written to ${channelRetailerName(customerRetailerFamily(customer), 'offline')} or ${channelRetailerName(customerRetailerFamily(customer), 'online')}.`

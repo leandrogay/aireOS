@@ -8,7 +8,7 @@ export default function FilterBadge({ label, onClear }) {
         type="button"
         onClick={onClear}
         aria-label={`Clear filter: ${label}`}
-        className="rounded-full leading-none text-deep-violet-blue/70 hover:text-deep-violet-blue"
+        className="rounded-full leading-none text-ink-soft hover:text-deep-violet-blue"
       >
         ×
       </button>

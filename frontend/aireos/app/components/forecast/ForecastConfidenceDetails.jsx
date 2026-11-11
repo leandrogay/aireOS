@@ -28,7 +28,7 @@ export const BAND_STYLES = {
   high: { className: 'border-green-300 bg-green-50 text-green-800', dot: 'bg-green-600', Icon: CheckCircle2 },
   medium: { className: 'border-amber-400 bg-amber-50 text-amber-900', dot: 'bg-amber-500', Icon: Info },
   low: { className: 'border-red-300 bg-red-50 text-red-800', dot: 'bg-red-600', Icon: AlertTriangle },
-  unknown: { className: 'border-lavander bg-cream text-deep-violet-blue/70', dot: 'bg-deep-violet-blue/30', Icon: CircleDashed },
+  unknown: { className: 'border-lavander bg-cream text-ink-soft', dot: 'bg-deep-violet-blue/30', Icon: CircleDashed },
 };
 
 /** A band as a small pill: icon + word ("High"). */
@@ -113,7 +113,7 @@ function MonthRange({ badge, rangePct, low, high, formatValue }) {
         {badge}
         {range ? <span className="font-medium tabular-nums">{range}</span> : null}
       </span>
-      {chance ? <span className="block leading-snug text-deep-violet-blue/75">{chance}</span> : null}
+      {chance ? <span className="block leading-snug text-ink-soft">{chance}</span> : null}
     </span>
   );
 }
@@ -127,7 +127,7 @@ function SingleSkuConfidence({ entry, formatValue, dotSymbols, showPrevious }) {
     <div className="grid grid-cols-[4.5rem_1fr] gap-x-2 gap-y-1">
       {entry.hasCurrent ? (
         <>
-          <span className="pt-px text-[10px] text-deep-violet-blue/60">
+          <span className="pt-px text-[11px] text-ink-soft">
             {labelled ? <LineLabel series={CURRENT_SERIES} /> : THIS_MONTH_LABEL}
           </span>
           <MonthRange
@@ -141,7 +141,7 @@ function SingleSkuConfidence({ entry, formatValue, dotSymbols, showPrevious }) {
       ) : null}
       {previous ? (
         <>
-          <span className="pt-px text-[10px] text-deep-violet-blue/60">
+          <span className="pt-px text-[11px] text-ink-soft">
             <LineLabel series={PREVIOUS_SERIES} />
           </span>
           <MonthRange
@@ -153,7 +153,7 @@ function SingleSkuConfidence({ entry, formatValue, dotSymbols, showPrevious }) {
           />
         </>
       ) : null}
-      <span className="pt-px text-[10px] text-deep-violet-blue/60">{PAST_ACCURACY_LABEL}</span>
+      <span className="pt-px text-[11px] text-ink-soft">{PAST_ACCURACY_LABEL}</span>
       <span className="flex flex-wrap items-center gap-1.5">
         <BandBadge band={entry.pastBand} />
         <span className="font-medium tabular-nums">{smapeText(entry.smape)}</span>
@@ -163,7 +163,7 @@ function SingleSkuConfidence({ entry, formatValue, dotSymbols, showPrevious }) {
 }
 
 function RangeCell({ band, rangePct, label }) {
-  if (!band) return <span className="text-right text-deep-violet-blue/40">—</span>;
+  if (!band) return <span className="text-right text-ink-soft">—</span>;
   return (
     <span className="inline-flex items-center justify-end gap-1 tabular-nums">
       <BandDot band={band} label={label} />
@@ -185,7 +185,7 @@ function SkuConfidenceRows({ entries, showPrevious }) {
   const currentLabel = withPrevious ? CURRENT_SERIES.label : THIS_MONTH_LABEL;
   return (
     <div className="space-y-0.5">
-      <div className={cn('grid gap-x-2 text-[9px] uppercase tracking-wide text-deep-violet-blue/45', columns)}>
+      <div className={cn('grid gap-x-2 text-[9px] uppercase tracking-wide text-ink-soft', columns)}>
         <span />
         <span>{currentLabel}</span>
         {withPrevious ? <span>{PREVIOUS_SERIES.label}</span> : null}
@@ -210,7 +210,7 @@ function SkuConfidenceRows({ entries, showPrevious }) {
           </span>
         </div>
       ))}
-      {more > 0 ? <p className="text-[10px] text-deep-violet-blue/55">+{more} more</p> : null}
+      {more > 0 ? <p className="text-[11px] text-ink-soft">+{more} more</p> : null}
     </div>
   );
 }
@@ -255,7 +255,7 @@ export default function ForecastConfidenceDetails({
   const typicalPromo = visible.some((entry) => entry.typicalPromo);
   return (
     <div className={cn('space-y-1 text-[11px] text-deep-violet-blue', className)}>
-      <p className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/45">
+      <p className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-ink-soft">
         Confidence
         {interactive ? (
           <InfoTooltip label="How to read confidence">
@@ -273,7 +273,7 @@ export default function ForecastConfidenceDetails({
       ) : (
         <SkuConfidenceRows entries={visible} showPrevious={showPrevious} />
       )}
-      {typicalPromo ? <p className="text-[10px] leading-snug text-deep-violet-blue/55">{TYPICAL_PROMO_NOTE}</p> : null}
+      {typicalPromo ? <p className="text-[11px] leading-snug text-ink-soft">{TYPICAL_PROMO_NOTE}</p> : null}
     </div>
   );
 }

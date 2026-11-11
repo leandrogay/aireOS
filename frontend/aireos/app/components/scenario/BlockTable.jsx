@@ -53,11 +53,11 @@ function BlockDetails({ block, months }) {
   return (
     <div className="grid gap-4 text-xs md:grid-cols-[minmax(0,1fr)_minmax(24rem,1.2fr)]">
       <div className="min-w-0">
-        <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">Explanation</p>
+        <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-soft">Explanation</p>
         <p className="whitespace-pre-line leading-relaxed">{block.explanation || '—'}</p>
       </div>
       <div className="min-w-0">
-        <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">
+        <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-soft">
           By month · volume
         </p>
         {months.length ? (
@@ -83,7 +83,7 @@ function BlockDetails({ block, months }) {
             ))}
           </TableGrid>
         ) : (
-          <p className="text-deep-violet-blue/60">
+          <p className="text-ink-soft">
             {block.isActive ? 'Outside chart filters' : 'Switch it on to see what it adds each month.'}
           </p>
         )}
@@ -232,14 +232,14 @@ export default function BlockTable({
               {impact ? (
                 <span className="font-semibold text-scenario-ink">{signed(impact.deltaUnits, wholeUnits)} units</span>
               ) : (
-                <span className="text-deep-violet-blue/45">
+                <span className="text-ink-soft">
                   {!block.isActive ? 'Off' : closedIds.has(block.id) ? 'Months closed' : 'Outside chart filters'}
                 </span>
               )}
             </td>
             <td className="px-4 py-2.5" title={block.explanation || undefined}>
               <span
-                className={block.explanation ? 'block truncate' : 'block truncate italic text-deep-violet-blue/45'}
+                className={block.explanation ? 'block truncate' : 'block truncate italic text-ink-soft'}
               >
                 {block.explanation || 'No explanation added'}
               </span>

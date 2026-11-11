@@ -88,7 +88,7 @@ export default function SellInDetailTable({ rows, loading = false, customerId = 
                     {/* The current forecast does not reach this month yet (backend _plan_forecast). */}
                     {row.forecast_source === 'initial' ? (
                       <span
-                        className="mr-1 rounded-full border border-lavander bg-lavander/60 px-1.5 py-px text-[10px] text-deep-violet-blue/70"
+                        className="mr-1 rounded-full border border-lavander bg-lavander/60 px-1.5 py-px text-[10px] text-ink-soft"
                         title="No current forecast for this month yet, so the Initial Yearly Sell-out Forecast is used."
                       >
                         Initial

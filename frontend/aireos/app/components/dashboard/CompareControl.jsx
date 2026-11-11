@@ -9,7 +9,7 @@ import { formatPeriodName } from '@/app/utils/periodComparison';
 import { isWithinData, outsideDataNote } from '@/app/utils/dataBounds';
 
 const actionButtonClass =
-  'rounded-md px-3 py-1 text-xs font-medium transition-colors disabled:opacity-50';
+  'rounded-glass-sm px-3 py-1 text-xs font-medium transition-colors disabled:opacity-50';
 
 /**
  * "Compare to" control beside the Period control: No comparison, Previous
@@ -79,11 +79,11 @@ export default function CompareControl({
       <PopoverTrigger
         disabled={disabled}
         title={disabled ? disabledReason : undefined}
-        className="flex items-center gap-1.5 rounded-md border border-violet bg-white px-2.5 py-1 text-xs text-deep-violet-blue hover:bg-lavander disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white"
+        className="flex items-center gap-1.5 rounded-glass-sm border border-violet bg-white px-2.5 py-1 text-xs text-deep-violet-blue hover:bg-lavander disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white"
       >
         <GitCompareArrows className="size-3.5" />
         <span className="font-semibold">{selected?.short ?? 'No comparison'}</span>
-        {selectedDates && <span className="text-deep-violet-blue/70">· {selectedDates}</span>}
+        {selectedDates && <span className="text-ink-soft">· {selectedDates}</span>}
         <ChevronDown className="size-3.5" />
       </PopoverTrigger>
       <PopoverContent align="end" className="w-auto max-w-[calc(100vw-2rem)] p-3">
@@ -101,18 +101,18 @@ export default function CompareControl({
                 disabled={outside}
                 title={outside ? outsideDataNote(earliestDataStart, latestDataEnd) : undefined}
                 className={cn(
-                  'rounded-md px-2 py-1.5 text-left text-xs text-deep-violet-blue hover:bg-lavander disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent',
+                  'rounded-glass-sm px-2 py-1.5 text-left text-xs text-deep-violet-blue hover:bg-lavander disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent',
                   value === option.value && 'bg-deep-violet-blue text-white hover:bg-deep-violet-blue',
                 )}
               >
                 <span className="block font-medium">{option.label}</span>
                 {option.range && (
-                  <span className={cn('block', value === option.value ? 'text-white/80' : 'text-deep-violet-blue/60')}>
+                  <span className={cn('block', value === option.value ? 'text-white/80' : 'text-ink-soft')}>
                     {formatPeriodName(option.range.start, option.range.end)}
                   </span>
                 )}
                 {option.value === 'custom' && !option.range && (
-                  <span className="block text-deep-violet-blue/60">Pick the first month, e.g. Mar vs Aug</span>
+                  <span className="block text-ink-soft">Pick the first month, e.g. Mar vs Aug</span>
                 )}
               </button>
               );

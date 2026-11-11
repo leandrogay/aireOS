@@ -62,7 +62,7 @@ export default function LastMonthDifference({ sellIn, sellOut }) {
 
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2" role="status">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/50">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-soft">
         {formatMonth(rows[0].comparison.month)} vs forecast
       </p>
       <div className="flex flex-wrap gap-1.5">

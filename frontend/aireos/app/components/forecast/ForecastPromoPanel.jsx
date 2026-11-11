@@ -37,7 +37,7 @@ function DetailRow({ label, value }) {
   if (!value) return null;
   return (
     <div className="grid grid-cols-[4.5rem_1fr] items-start gap-2">
-      <span className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/45">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-soft">
         {label}
       </span>
       <span className="text-[11px] font-medium text-deep-violet-blue">{value}</span>
@@ -70,7 +70,7 @@ export default function ForecastPromoPanel({
           <ul className="mt-1.5 space-y-1">
             {visibleSeries.map((row) => (
               <li key={row.key} className="flex items-center justify-between gap-3 text-[11px]">
-                <span className="inline-flex min-w-0 items-center gap-1.5 text-deep-violet-blue/70">
+                <span className="inline-flex min-w-0 items-center gap-1.5 text-ink-soft">
                   <span
                     className="size-2 shrink-0 rounded-full"
                     style={{ backgroundColor: row.color }}
@@ -93,7 +93,7 @@ export default function ForecastPromoPanel({
           promotions add this month (ForecastChart's ScenarioPointDetails). */}
       {scenarioDetails ? <div className="border-b border-lavander px-3 py-2">{scenarioDetails}</div> : null}
       <div className="border-b border-lavander px-3 py-1.5">
-        <p className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/45">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-soft">
           {scenarioDetails ? 'Entered promotions' : 'Promotions'}
         </p>
       </div>
@@ -126,7 +126,7 @@ export default function ForecastPromoPanel({
                     {promo.promotion_mechanic || promoTypeLabel(promo.promo_type)}
                   </span>
                   <span
-                    className="block truncate text-[10px] text-deep-violet-blue/55"
+                    className="block truncate text-[11px] text-ink-soft"
                     title={promoSubtitle(promo)}
                   >
                     {promoSubtitle(promo)}
@@ -148,7 +148,7 @@ export default function ForecastPromoPanel({
                   <DetailRow label="Voucher" value={promo.voucher} />
                   {skuNames.length ? (
                     <div className="grid grid-cols-[4.5rem_1fr] items-start gap-2">
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/45">
+                      <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-soft">
                         SKUs
                       </span>
                       <ul className="flex flex-wrap gap-1">

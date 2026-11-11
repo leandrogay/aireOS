@@ -209,7 +209,7 @@ export default function SellInOutlookChart({
   });
 
   if (months.length === 0) {
-    return <p className="text-sm text-deep-violet-blue/70">No actuals for these filters.</p>;
+    return <p className="text-sm text-ink-soft">No actuals for these filters.</p>;
   }
 
   const hints = Object.fromEntries(
@@ -325,7 +325,7 @@ export default function SellInOutlookChart({
         </ChartContainer>
       </div>
       {fallback ? (
-        <p className="text-[11px] text-deep-violet-blue/60">
+        <p className="text-[11px] text-ink-soft">
           {fallback}: no current forecast yet, so the plan uses the Initial Yearly Sell-out Forecast for{' '}
           {fallback.includes('–') ? 'these months' : 'this month'}.
         </p>

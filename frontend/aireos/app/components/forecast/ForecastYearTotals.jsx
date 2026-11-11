@@ -55,7 +55,7 @@ function Amount({ value, emphasis = false, className }) {
     <td
       className={cn(
         'whitespace-nowrap border-l border-lavander/80 px-2.5 py-2 text-right tabular-nums',
-        emphasis ? 'font-medium text-deep-violet-blue' : 'text-deep-violet-blue/75',
+        emphasis ? 'font-medium text-deep-violet-blue' : 'text-ink-soft',
         className
       )}
     >
@@ -92,13 +92,13 @@ export default function ForecastYearTotals({ years, loading = false, horizonVolu
           <article key={year.year} className="rounded-lg border border-lavander bg-white p-3">
             <div className="mb-2 flex flex-wrap items-baseline gap-2 border-b border-lavander/70 pb-2">
               <h3 className="font-semibold text-deep-violet-blue">{year.year}</h3>
-              <span className="text-[11px] text-deep-violet-blue/60">{mixCaption(year)}</span>
+              <span className="text-[11px] text-ink-soft">{mixCaption(year)}</span>
             </div>
             <dl className="min-w-0 space-y-1 text-xs">
               <dt className="font-semibold text-deep-violet-blue">Volume</dt>
               {SPLIT.map((column) => (
                 <div key={column.key} className="flex justify-between gap-1">
-                  <dt className="text-deep-violet-blue/60">{column.label}</dt>
+                  <dt className="text-ink-soft">{column.label}</dt>
                   <dd className="font-medium tabular-nums text-deep-violet-blue">{formatVolume(year.volume[column.key])}</dd>
                 </div>
               ))}
@@ -145,7 +145,7 @@ export default function ForecastYearTotals({ years, loading = false, horizonVolu
                   <td className={cn('whitespace-nowrap px-2.5 py-2 align-middle', rowRule)}>
                     <span className="font-medium">{year.year}</span>
                     {mix ? (
-                      <span className="ml-1.5 text-[10px] font-normal text-deep-violet-blue/50">{mix}</span>
+                      <span className="ml-1.5 text-[11px] font-normal text-ink-soft">{mix}</span>
                     ) : null}
                   </td>
                   {SPLIT.map((column) => (

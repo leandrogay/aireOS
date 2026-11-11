@@ -71,7 +71,7 @@ export default function ConfirmDiscardDialog({ mapping, isDiscarding, onCancel, 
                     {upload.filename}
                   </span>
                   {upload.uploaded_at && (
-                    <span className="shrink-0 text-xs leading-5 text-deep-violet-blue/60">
+                    <span className="shrink-0 text-xs leading-5 text-ink-soft">
                       {formatDate(upload.uploaded_at)}
                     </span>
                   )}
@@ -105,7 +105,7 @@ export default function ConfirmDiscardDialog({ mapping, isDiscarding, onCancel, 
             type="button"
             onClick={onCancel}
             disabled={isDiscarding}
-            className="rounded-md border border-deep-violet-blue/30 bg-white px-3 py-1.5 text-sm font-medium text-deep-violet-blue hover:bg-cream disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-glass-sm border border-deep-violet-blue/30 bg-white px-3 py-1.5 text-sm font-medium text-deep-violet-blue hover:bg-cream disabled:cursor-not-allowed disabled:opacity-60"
           >
             Cancel
           </button>
@@ -113,7 +113,7 @@ export default function ConfirmDiscardDialog({ mapping, isDiscarding, onCancel, 
             type="button"
             onClick={onConfirm}
             disabled={isDiscarding}
-            className="rounded-md border border-red-700 bg-red-700 px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-glass-sm border border-red-700 bg-red-700 px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isDiscarding ? 'Discarding…' : 'Confirm discard'}
           </button>

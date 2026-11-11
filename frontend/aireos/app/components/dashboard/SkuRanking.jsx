@@ -24,9 +24,9 @@ function formatVolume(value) {
 }
 
 function changeColorClass(pct) {
-  if (pct > 0) return 'text-green-600';
-  if (pct < 0) return 'text-red-600';
-  return 'text-deep-violet-blue/60';
+  if (pct > 0) return 'text-green-700';
+  if (pct < 0) return 'text-red-700';
+  return 'text-ink-soft';
 }
 
 // Column header dropdown that opens a single-choice menu, same idea as the
@@ -145,7 +145,7 @@ function SortHeader({ label, active, order, onClick }) {
 
 // A customer with nothing loaded for the period, in place of a 0 that would
 // read as no sales.
-const NO_DATA = <span className="text-deep-violet-blue/50">No data</span>;
+const NO_DATA = <span className="text-ink-soft">No data</span>;
 
 // One row per customer that sells through the active channel, highest metric
 // first unless order is 'asc'. A customer with no sales in the period stays,
@@ -300,7 +300,7 @@ export default function SkuRanking({
   const tableError = noCustomers ? null : (showCustomers ? customerRowsError : error);
   const channelLabel = mode === 'online' ? 'Online' : 'Offline';
 
-  const headerClass = 'px-2.5 py-2 text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60';
+  const headerClass = 'px-2.5 py-2 text-[10px] font-semibold uppercase tracking-wide text-ink-soft';
   const cellClass = 'px-2.5 py-2';
   // Volume, value and change are right-aligned so their digits line up.
   const numCellClass = `${cellClass} text-right tabular-nums`;
@@ -337,7 +337,7 @@ export default function SkuRanking({
         <TableCardHeader
           title={<>
             {showCustomers ? 'Customer Sales' : 'SKU Performance Ranking'}{' '}
-            <span className="font-sans text-sm font-normal text-deep-violet-blue/50">
+            <span className="font-sans text-sm font-normal text-ink-soft">
               ({channelLabel})
             </span>
           </>}
@@ -349,12 +349,12 @@ export default function SkuRanking({
         />
       )}
     >
-      {tableError && <p className="px-4 pb-2 text-sm text-red-600">{tableError}</p>}
+      {tableError && <p className="px-4 pb-2 text-sm text-red-700">{tableError}</p>}
 
       <div className="grid grid-cols-2 gap-2 px-4 pb-3 sm:hidden">
         {comparingCustomers && (
           <div className="min-w-0">
-            <p className="mb-1 text-[11px] font-medium text-deep-violet-blue/65">Show</p>
+            <p className="mb-1 text-[11px] font-medium text-ink-soft">Show</p>
             <SelectDropdown
               value={rankBy}
               onChange={setRankBy}
@@ -366,7 +366,7 @@ export default function SkuRanking({
           </div>
         )}
         <div className={comparingCustomers ? 'min-w-0' : 'col-span-2 min-w-0'}>
-          <p className="mb-1 text-[11px] font-medium text-deep-violet-blue/65">Sort by</p>
+          <p className="mb-1 text-[11px] font-medium text-ink-soft">Sort by</p>
           <SelectDropdown
             value={mobileSort}
             onChange={changeMobileSort}
@@ -380,9 +380,9 @@ export default function SkuRanking({
 
       <div className="overflow-hidden border-t border-lavander sm:hidden">
         {tableLoading ? (
-          <p className="p-4 text-sm text-deep-violet-blue/60">Loading sales ranking...</p>
+          <p className="p-4 text-sm text-ink-soft">Loading sales ranking...</p>
         ) : !tableError && mobileRows.length === 0 ? (
-          <p className="p-4 text-sm text-deep-violet-blue/60">No sales for this channel in the selected period.</p>
+          <p className="p-4 text-sm text-ink-soft">No sales for this channel in the selected period.</p>
         ) : !tableError && mobileRows.map((row) => (
           <article key={showCustomers ? row.customer : row.sku} className="border-b border-lavander/70 p-3 last:border-b-0 even:bg-cream/30">
             <div className="flex min-w-0 items-start gap-2.5">
@@ -394,10 +394,10 @@ export default function SkuRanking({
               </span>
             </div>
             <dl className="mt-3 grid grid-cols-2 gap-3 pl-8">
-              <div><dt className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">Volume</dt><dd>{row.hasData === false ? NO_DATA : formatVolume(row.volume)}</dd></div>
-              <div><dt className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">Value</dt><dd>{row.hasData === false ? NO_DATA : formatRevenue(row.value)}</dd></div>
+              <div><dt className="text-[11px] font-semibold uppercase tracking-wide text-ink-soft">Volume</dt><dd>{row.hasData === false ? NO_DATA : formatVolume(row.volume)}</dd></div>
+              <div><dt className="text-[11px] font-semibold uppercase tracking-wide text-ink-soft">Value</dt><dd>{row.hasData === false ? NO_DATA : formatRevenue(row.value)}</dd></div>
               {!showCustomers && baselineBySku && (
-                <div className="col-span-2"><dt className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">Change {compareShort}</dt><dd>{baselineBySku.get(row.sku)?.[metric] ? formatChangePct(changePct(row[metric], baselineBySku.get(row.sku)[metric])) : 'New'}</dd></div>
+                <div className="col-span-2"><dt className="text-[11px] font-semibold uppercase tracking-wide text-ink-soft">Change {compareShort}</dt><dd>{baselineBySku.get(row.sku)?.[metric] ? formatChangePct(changePct(row[metric], baselineBySku.get(row.sku)[metric])) : 'New'}</dd></div>
               )}
             </dl>
           </article>
@@ -465,7 +465,7 @@ export default function SkuRanking({
               )}
               {!tableLoading && !tableError && (showCustomers ? customersRanked.length === 0 : shownSkus.length === 0) && (
                 <tr>
-                  <td className="px-2.5 py-6 text-center text-deep-violet-blue/50" colSpan={showChange ? 5 : 4}>
+                  <td className="px-2.5 py-6 text-center text-ink-soft" colSpan={showChange ? 5 : 4}>
                     {noCustomers
                       ? 'Select at least one customer.'
                       : showCustomers
@@ -524,7 +524,7 @@ function NameWithEst({ name, value, estimated, color = null }) {
 // with no baseline sales shows "New" rather than an infinite percentage.
 function SkuChange({ current, baseline }) {
   if (!baseline) {
-    return <td className="px-2.5 py-2 text-right text-deep-violet-blue/60">{current ? 'New' : '—'}</td>;
+    return <td className="px-2.5 py-2 text-right text-ink-soft">{current ? 'New' : '—'}</td>;
   }
   const pct = changePct(current, baseline);
   return (

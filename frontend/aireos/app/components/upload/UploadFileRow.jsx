@@ -96,7 +96,7 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoa
           <p className="truncate text-sm font-medium text-deep-violet-blue" title={file.name}>
             {file.name}
           </p>
-          <p className="text-xs text-deep-violet-blue/60">
+          <p className="text-xs text-ink-soft">
             {fileType ? `${fileType} · ` : ''}
             {formatFileSize(file.size)}
           </p>
@@ -130,7 +130,7 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoa
           )}
 
           {kind === 'skipped' && check?.duplicate && (
-            <p className="mt-1 text-xs text-deep-violet-blue/70">
+            <p className="mt-1 text-xs text-ink-soft">
               <DuplicateNote duplicate={check.duplicate} fileName={file.name} /> Not uploaded.
             </p>
           )}
@@ -171,7 +171,7 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoa
                     type="button"
                     aria-expanded={showPreview}
                     onClick={() => setShowPreview((open) => !open)}
-                    className="inline-flex items-center gap-1 rounded-md outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+                    className="inline-flex items-center gap-1 rounded-md focus-ring hover:underline"
                   >
                     <ChevronRight
                       aria-hidden="true"
@@ -183,7 +183,7 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoa
                 {outcome.mappingId && (
                   <Link
                     href={`/mappings/${outcome.mappingId}`}
-                    className="rounded-md underline-offset-2 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+                    className="rounded-md underline-offset-2 focus-ring hover:underline"
                   >
                     View nomenclature
                   </Link>
@@ -207,7 +207,7 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoa
                 {outcome.mappingId && (
                   <Link
                     href={`/mappings/${outcome.mappingId}`}
-                    className="rounded-md text-xs font-medium text-deep-violet-blue underline-offset-2 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+                    className="rounded-md text-xs font-medium text-deep-violet-blue underline-offset-2 focus-ring hover:underline"
                   >
                     View nomenclature
                   </Link>
@@ -292,7 +292,7 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoa
             onClick={() => onRemove(id)}
             aria-label={beforeUpload ? `Don't upload ${file.name}` : `Remove ${file.name} from the list`}
             title={beforeUpload ? "Don't upload" : 'Remove from list'}
-            className="-mt-1.5 -mr-2 shrink-0 text-deep-violet-blue/60 hover:bg-lavander hover:text-deep-violet-blue"
+            className="-mt-1.5 -mr-2 shrink-0 text-ink-soft hover:bg-lavander hover:text-deep-violet-blue"
           >
             <X aria-hidden="true" />
           </Button>

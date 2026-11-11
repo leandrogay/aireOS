@@ -8,17 +8,17 @@ import useDelayedLoading from '@/hooks/useDelayedLoading';
 
 // Same compact field styling as ForecastFilters, so the inventory filter
 // card lines up with the sell-out forecast page.
-export const filterLabelClass = 'mb-0.5 block text-[11px] text-deep-violet-blue/70';
+export const filterLabelClass = 'mb-0.5 block text-[11px] text-ink-soft';
 
 // Data-entry fields. Same white/violet treatment as the filter bar, with the
 // roomier size the forms need. Kept off formStyles.js because DOH Settings
 // still uses those cream inputs.
-export const formLabelClass = 'mb-0.5 block text-[11px] text-deep-violet-blue/70';
+export const formLabelClass = 'mb-0.5 block text-[11px] text-ink-soft';
 export const formFieldClass =
-  'w-full min-w-0 max-w-full rounded-md border border-violet bg-white px-2.5 py-1.5 text-sm text-deep-violet-blue placeholder:text-deep-violet-blue/45 focus:border-deep-violet-blue focus:outline-none disabled:opacity-60';
+  'w-full min-w-0 max-w-full rounded-glass-sm border border-deep-violet-blue/60 bg-white px-2.5 py-1.5 text-sm text-deep-violet-blue outline-none transition-[border-color,background-color] duration-hover placeholder:text-ink-soft hover:border-deep-violet-blue/75 focus-ring disabled:opacity-60';
 
 const CLEAR_BUTTON_CLASS =
-  'h-auto rounded-md border-deep-violet-blue/30 bg-white px-2 py-0.5 text-[10px] font-medium text-deep-violet-blue transition hover:bg-cream hover:text-deep-violet-blue disabled:opacity-40';
+  'h-auto rounded-glass-sm border-deep-violet-blue/30 bg-white px-2 py-0.5 text-[10px] font-medium text-deep-violet-blue transition hover:bg-cream hover:text-deep-violet-blue disabled:opacity-40';
 
 /**
  * @param {string} start 'YYYY-MM' or ''
@@ -43,7 +43,7 @@ export function skuScopeLabel(skus) {
 export function StatTag({ label, value }) {
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full border border-lavander bg-lavander/60 px-2.5 py-1 text-[11px] text-deep-violet-blue">
-      <span className="font-semibold uppercase tracking-wide text-deep-violet-blue/45">{label}</span>
+      <span className="font-semibold uppercase tracking-wide text-ink-soft">{label}</span>
       <span className="font-medium">{value}</span>
     </span>
   );
@@ -52,7 +52,7 @@ export function StatTag({ label, value }) {
 export function ScopeTag({ label, value }) {
   return (
     <span className="inline-flex items-center gap-1 rounded-full border border-lavander bg-lavander/70 px-2.5 py-0.5 text-[11px] text-deep-violet-blue">
-      <span className="font-semibold uppercase tracking-wide text-deep-violet-blue/45">{label}</span>
+      <span className="font-semibold uppercase tracking-wide text-ink-soft">{label}</span>
       {value}
     </span>
   );
@@ -84,7 +84,7 @@ export function InventoryFilterCard({ canClear, onClear, stats, note, children }
           {stats ? <div className="flex flex-wrap items-center justify-end gap-1.5">{stats}</div> : null}
         </div>
         <div className="flex flex-wrap items-end gap-2 [&>*]:min-w-[11rem] [&>*]:flex-1">{children}</div>
-        {note ? <p className="text-[11px] text-deep-violet-blue/70">{note}</p> : null}
+        {note ? <p className="text-[11px] text-ink-soft">{note}</p> : null}
       </CardContent>
     </Card>
   );
@@ -115,7 +115,7 @@ export function InventorySection({ title, tags, description, children }) {
               ))}
             </div>
           ) : null}
-          {description ? <p className="text-[11px] text-deep-violet-blue/60">{description}</p> : null}
+          {description ? <p className="text-[11px] text-ink-soft">{description}</p> : null}
         </div>
       </CardHeader>
       <CardContent>{children}</CardContent>

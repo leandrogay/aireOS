@@ -7,7 +7,7 @@ import TabTransition from '@/components/ui/TabTransition';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const triggerClass =
-  'h-6 px-2.5 text-[11px] text-deep-violet-blue/70 hover:bg-white hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white data-active:hover:bg-deep-violet-blue data-active:hover:text-white';
+  'h-6 px-2.5 text-[11px] text-ink-soft hover:bg-white hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white data-active:hover:bg-deep-violet-blue data-active:hover:text-white';
 
 /**
  * Right-hand column of the Scenario builder (blueprint Part 1.2 and 4.2):
@@ -52,7 +52,7 @@ export default function ScenarioPanel({
         <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-scenario px-1.5 text-[11px] font-bold text-white">
           {itemCount}
         </span>
-        <span className="text-xs font-semibold text-deep-violet-blue/70 min-[1100px]:rotate-180 min-[1100px]:[writing-mode:vertical-rl]">
+        <span className="text-xs font-semibold text-ink-soft min-[1100px]:rotate-180 min-[1100px]:[writing-mode:vertical-rl]">
           Building blocks
         </span>
       </aside>
@@ -67,7 +67,7 @@ export default function ScenarioPanel({
       <div className="flex items-start justify-between gap-2 border-b border-lavander px-3 py-2.5">
         <div className="min-w-0 flex-1">
           <p className="font-serif text-base text-deep-violet-blue">Your scenario</p>
-          <p className="text-[11px] text-deep-violet-blue/60">What-ifs on top of the Current forecast</p>
+          <p className="text-[11px] text-ink-soft">What-ifs on top of the Current forecast</p>
         </div>
         <button
           type="button"

@@ -7,7 +7,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 // data (channel) reads differently from choosing how to draw it. A hairline
 // outline and a faint shadow on both make them read as a button.
 const triggerClass =
-  'px-2.5 font-medium text-deep-violet-blue/55 hover:text-deep-violet-blue data-active:bg-white data-active:text-deep-violet-blue data-active:shadow-sm data-active:ring-1 data-active:ring-violet/30';
+  'px-2.5 font-medium text-ink-soft hover:text-deep-violet-blue data-active:bg-white data-active:text-deep-violet-blue data-active:shadow-sm data-active:ring-1 data-active:ring-violet/30';
 
 /**
  * Offline / Online for the whole Sales Dashboard (the chart, the summary and
@@ -23,7 +23,7 @@ const triggerClass =
 export default function ChannelSwitch({ mode, onChange, onlineEnabled = true }) {
   return (
     <Tabs value={mode} onValueChange={onChange}>
-      <TabsList aria-label="Sales channel" className="h-[26px] w-[152px] bg-lavander/45 p-0.5 group-data-horizontal/tabs:h-[26px] shadow-sm ring-1 ring-violet/25 backdrop-blur-sm">
+      <TabsList aria-label="Sales channel" className="h-[26px] w-[152px] bg-lavander p-0.5 group-data-horizontal/tabs:h-[26px] shadow-sm ring-1 ring-violet/25">
         <TabsTrigger value="offline" className={`text-xs ${triggerClass}`}>
           Offline
         </TabsTrigger>

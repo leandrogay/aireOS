@@ -176,7 +176,7 @@ export default function UploadPage() {
                 size="sm"
                 onClick={clearStaged}
                 title="Take every file that hasn't been sent out of this list."
-                className="text-deep-violet-blue/70 hover:bg-lavander hover:text-deep-violet-blue"
+                className="text-ink-soft hover:bg-lavander hover:text-deep-violet-blue"
               >
                 <ListX aria-hidden="true" />
                 Remove all
@@ -197,7 +197,7 @@ export default function UploadPage() {
           ))}
 
           <div className="mt-6 flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
-            <p aria-live="polite" className="text-sm text-deep-violet-blue/70">
+            <p aria-live="polite" className="text-sm text-ink-soft">
               {blocker}
             </p>
             <Button
@@ -232,7 +232,7 @@ export default function UploadPage() {
                 onClick={clearFinished}
                 disabled={!finishedCount}
                 title="Take finished uploads out of this list. Uploaded files stay in Recent uploads; failed ones can be dropped in again."
-                className="text-deep-violet-blue/70 hover:bg-lavander hover:text-deep-violet-blue"
+                className="text-ink-soft hover:bg-lavander hover:text-deep-violet-blue"
               >
                 <Eraser aria-hidden="true" />
                 Clear finished
@@ -290,9 +290,9 @@ export default function UploadPage() {
             rows={3}
             required
             placeholder="For example: Uploaded under the wrong customer"
-            className="mt-1.5 w-full resize-y rounded-md border border-lavander bg-white px-3 py-2 text-sm text-deep-violet-blue outline-none placeholder:text-deep-violet-blue/40 focus:border-deep-violet-blue"
+            className="mt-1.5 w-full resize-y rounded-glass-sm border border-deep-violet-blue/60 bg-white px-3 py-2 text-sm text-deep-violet-blue placeholder:text-ink-soft hover:border-deep-violet-blue/75 focus-ring"
           />
-          <p className="mt-1 text-xs text-deep-violet-blue/60">
+          <p className="mt-1 text-xs text-ink-soft">
             This reason will be saved in the rollback audit trail.
           </p>
         </ConfirmDialog>

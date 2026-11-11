@@ -21,7 +21,7 @@ import InventoryTableFrame, {
 } from './InventoryTableFrame';
 
 const RISK_LABELS = { below_min: 'Low stock', above_max: 'Overstock' };
-const RISK_CLASSES = { below_min: 'text-red-700', above_max: 'text-amber-700' };
+const RISK_CLASSES = { below_min: 'text-red-700', above_max: 'text-amber-800' };
 const RISK_OPTIONS = [
   { value: '', label: 'All at-risk SKUs' },
   { value: 'below_min', label: 'Low stock (below min)' },

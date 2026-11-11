@@ -16,15 +16,15 @@ function PeriodRow({ name, tag, totals, available = true }) {
     <div className="flex items-baseline justify-between gap-2 py-1.5">
       <p className="min-w-0 truncate text-xs font-medium text-deep-violet-blue">
         {name}
-        {tag && <span className="font-normal text-deep-violet-blue/60"> · {tag}</span>}
+        {tag && <span className="font-normal text-ink-soft"> · {tag}</span>}
       </p>
       {available ? (
         <p className="shrink-0 text-right tabular-nums">
           <span className="text-sm font-semibold text-deep-violet-blue">{formatRevenue(totals.revenue)}</span>
-          <span className="ml-1.5 text-xs text-deep-violet-blue/60">{totals.units.toLocaleString()} units</span>
+          <span className="ml-1.5 text-xs text-ink-soft">{totals.units.toLocaleString()} units</span>
         </p>
       ) : (
-        <p className="shrink-0 text-xs text-deep-violet-blue/50">No sales data</p>
+        <p className="shrink-0 text-xs text-ink-soft">No sales data</p>
       )}
     </div>
   );
@@ -130,13 +130,13 @@ export default function PeriodComparisonDetail({
       <h3 className="mb-1 font-serif text-base text-deep-violet-blue">Comparison</h3>
 
       {!active && (
-        <p className="text-deep-violet-blue/50 text-sm">
+        <p className="text-ink-soft text-sm">
           Choose a period in &ldquo;Compare to&rdquo; above the chart to see how this period compares.
         </p>
       )}
 
       {active && loading && <ComparisonSkeleton />}
-      {active && error && <p className="text-red-600 text-sm">{error}</p>}
+      {active && error && <p className="text-red-700 text-sm">{error}</p>}
 
       {active && !loading && !error && baseline && (
         <>
@@ -151,7 +151,7 @@ export default function PeriodComparisonDetail({
           </div>
 
           {aspPct !== null && (
-            <div className="mt-2 border-t border-lavander pt-2 text-xs text-deep-violet-blue/70">
+            <div className="mt-2 border-t border-lavander pt-2 text-xs text-ink-soft">
               <p className="flex items-baseline justify-between gap-2">
                 <span className="font-medium text-deep-violet-blue">Avg price per unit</span>
                 <ChangeValue pct={aspPct} />
@@ -162,7 +162,7 @@ export default function PeriodComparisonDetail({
                   <dd>
                     <ChangeValue pct={priceMix.pricePct} />
                   </dd>
-                  <dd className="text-deep-violet-blue/60">
+                  <dd className="text-ink-soft">
                     <span className="mr-1.5 text-deep-violet-blue/30" aria-hidden="true">|</span>
                     {priceMix.pricePct > 0 && 'same SKUs selling for more'}
                     {priceMix.pricePct < 0 && 'same SKUs selling for less'}
@@ -171,7 +171,7 @@ export default function PeriodComparisonDetail({
                   <dd>
                     <ChangeValue pct={priceMix.mixPct} />
                   </dd>
-                  <dd className="text-deep-violet-blue/60">
+                  <dd className="text-ink-soft">
                     <span className="mr-1.5 text-deep-violet-blue/30" aria-hidden="true">|</span>
                     {priceMix.mixPct > 0 && 'shift to higher-priced SKUs'}
                     {priceMix.mixPct < 0 && 'shift to lower-priced SKUs'}

@@ -45,7 +45,7 @@ export default function UnlinkedRetailers({ retailers, onLink, onEdit, onDelete 
       <h2 id="unlinked-retailers-title" className="text-sm font-medium text-deep-violet-blue">
         Retailers without a customer
       </h2>
-      <p className="mb-2 mt-0.5 text-xs text-deep-violet-blue/70">
+      <p className="mb-2 mt-0.5 text-xs text-ink-soft">
         Every retailer should belong to a customer. Link each one below to its customer.
       </p>
       <RetailerTable retailers={retailers} inset={CARD_INSET} actionsFor={actionsFor} />

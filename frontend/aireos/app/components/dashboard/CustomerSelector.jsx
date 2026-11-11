@@ -15,7 +15,7 @@ import MultiSelectDropdown from '@/components/ui/MultiSelectDropdown';
 export default function CustomerSelector({ selected, onChange, options, loading, error }) {
   return (
     <div>
-      <label className="block text-xs text-deep-violet-blue/70 mb-1">Customer</label>
+      <label className="block text-xs text-ink-soft mb-1">Customer</label>
       <MultiSelectDropdown
         ariaLabel="Customer"
         look="compact"
@@ -29,7 +29,7 @@ export default function CustomerSelector({ selected, onChange, options, loading,
         placeholder={loading ? 'Loading customers…' : options.length ? 'Select customers' : 'No customers'}
         disabled={loading || options.length === 0}
       />
-      {error && <p className="text-red-600 text-xs mt-1">{error}</p>}
+      {error && <p className="text-red-700 text-xs mt-1">{error}</p>}
     </div>
   );
 }

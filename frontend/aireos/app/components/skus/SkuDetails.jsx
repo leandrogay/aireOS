@@ -112,13 +112,13 @@ export default function SkuDetails({ open, sku, loading, error, onCorrectPricePe
       <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-[min(72rem,calc(100%-2rem))]">
         <DialogHeader>
           <DialogTitle className="font-serif text-xl text-deep-violet-blue">{sku ? `History · ${sku.sku}` : 'SKU history'}</DialogTitle>
-          <DialogDescription className="text-xs text-deep-violet-blue/65">
+          <DialogDescription className="text-xs text-ink-soft">
             {sku?.product_name
               ? `Audit trail for ${sku.product_name}.`
               : 'Recorded changes to this SKU.'}
           </DialogDescription>
         </DialogHeader>
-        {loading && <p className="py-10 text-center text-sm text-deep-violet-blue/70">Loading history...</p>}
+        {loading && <p className="py-10 text-center text-sm text-ink-soft">Loading history...</p>}
         {error && (
           <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
             {error}
@@ -128,7 +128,7 @@ export default function SkuDetails({ open, sku, loading, error, onCorrectPricePe
           <div className="space-y-5">
             <section className="space-y-2">
               <h3 className="text-sm font-semibold text-deep-violet-blue">Price periods</h3>
-              <p className="text-xs text-deep-violet-blue/65">
+              <p className="text-xs text-ink-soft">
                 Correct a saved price or date entered by mistake. This may change past calculated revenue; supplied revenue stays the same.
               </p>
               {priceGaps.length > 0 && (
@@ -168,7 +168,7 @@ export default function SkuDetails({ open, sku, loading, error, onCorrectPricePe
                           step="0.01"
                           value={editing.price}
                           onChange={(event) => setEditing({ ...editing, price: event.target.value })}
-                          className="w-full rounded-md border border-lavander bg-cream px-2 py-1 text-sm text-deep-violet-blue"
+                          className="w-full rounded-glass-sm border border-deep-violet-blue/60 bg-white px-2 py-1 text-sm text-deep-violet-blue transition-[border-color,background-color] duration-hover hover:border-deep-violet-blue/75 focus-ring"
                         />
                       ) : money.format(Number(period.price))}
                     </td>
@@ -179,7 +179,7 @@ export default function SkuDetails({ open, sku, loading, error, onCorrectPricePe
                           aria-label="Correct effective from"
                           value={editing.effective_from}
                           onChange={(event) => setEditing({ ...editing, effective_from: event.target.value })}
-                          className="w-full rounded-md border border-lavander bg-cream px-2 py-1 text-sm text-deep-violet-blue"
+                          className="w-full rounded-glass-sm border border-deep-violet-blue/60 bg-white px-2 py-1 text-sm text-deep-violet-blue transition-[border-color,background-color] duration-hover hover:border-deep-violet-blue/75 focus-ring"
                         />
                       ) : period.effective_from}
                     </td>
@@ -191,7 +191,7 @@ export default function SkuDetails({ open, sku, loading, error, onCorrectPricePe
                           value={editing.effective_to}
                           min={editing.effective_from || undefined}
                           onChange={(event) => setEditing({ ...editing, effective_to: event.target.value })}
-                          className="w-full rounded-md border border-lavander bg-cream px-2 py-1 text-sm text-deep-violet-blue"
+                          className="w-full rounded-glass-sm border border-deep-violet-blue/60 bg-white px-2 py-1 text-sm text-deep-violet-blue transition-[border-color,background-color] duration-hover hover:border-deep-violet-blue/75 focus-ring"
                         />
                       ) : (period.effective_to || 'Until changed')}
                     </td>
@@ -242,7 +242,7 @@ export default function SkuDetails({ open, sku, loading, error, onCorrectPricePe
                           <span className="capitalize">{entry.action}</span>
                         </StatusPill>
                       </td>
-                      <td className="px-4 py-2 text-deep-violet-blue/70">{formatDateTime(entry.changed_at)}</td>
+                      <td className="px-4 py-2 text-ink-soft">{formatDateTime(entry.changed_at)}</td>
                       <td className={cn(SKU_CELL_CLASS, 'px-4 py-2')}>{entry.product_name}</td>
                       <td className={cn(SKU_CELL_CLASS, 'px-4 py-2')}>{entry.sku_range}</td>
                       <td className={cn(SKU_CELL_CLASS, 'px-4 py-2')}>{entry.size}</td>

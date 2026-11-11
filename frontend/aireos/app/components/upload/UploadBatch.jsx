@@ -50,7 +50,7 @@ export default function UploadBatch({ batch, isLatest, onRemove, onRetry, onDeci
             </span>
           )}
         </h3>
-        <p aria-live="polite" className="text-xs text-deep-violet-blue/70 tabular-nums">
+        <p aria-live="polite" className="text-xs text-ink-soft tabular-nums">
           {batch.summary}
         </p>
       </div>
@@ -72,7 +72,7 @@ export default function UploadBatch({ batch, isLatest, onRemove, onRetry, onDeci
           type="button"
           onClick={() => setOpenOverride(!open)}
           aria-expanded={open}
-          className="mt-3 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-deep-violet-blue/70 hover:bg-lavander hover:text-deep-violet-blue"
+          className="mt-3 inline-flex items-center gap-1 rounded-glass-sm px-1.5 py-0.5 text-xs font-medium text-ink-soft hover:bg-lavander hover:text-deep-violet-blue"
         >
           <ChevronRight aria-hidden="true" className={cn('size-3.5 transition-transform', open && 'rotate-90')} />
           {open

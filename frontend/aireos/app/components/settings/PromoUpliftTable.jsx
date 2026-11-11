@@ -30,8 +30,8 @@ function hinted(label, hint) {
 const rowClass = 'h-11 cursor-pointer border-b border-lavander/80 last:border-b-0 hover:bg-cream/60';
 const tdClass = 'px-4 py-2.5';
 const numClass = 'text-right tabular-nums';
-const subClass = 'block text-xs text-deep-violet-blue/50';
-const emptyCell = <span className="text-deep-violet-blue/40">—</span>;
+const subClass = 'block text-xs text-ink-soft';
+const emptyCell = <span className="text-ink-soft">—</span>;
 
 /**
  * Every uplift value: who it applies to, the Recommended Uplift (measured,
@@ -168,7 +168,7 @@ function ManualCell({ row, manual, fallback, inherited }) {
     );
   }
   return (
-    <span className="text-deep-violet-blue/50">
+    <span className="text-ink-soft">
       {formatPct(fallback)}
       <span className={subClass}>{row.source === 'learned' ? 'Learned' : 'Placeholder'}</span>
     </span>
@@ -190,7 +190,7 @@ function RecommendedCell({ row, recommended, recommendFrom }) {
 function MomentsCell({ row, recommended }) {
   if (!recommended) return emptyCell;
   // Vouchers matter online and only offline is measured (promo_moment_rules).
-  if (row.mechanic_key === 'voucher') return <span className="text-deep-violet-blue/50">Not measured</span>;
+  if (row.mechanic_key === 'voucher') return <span className="text-ink-soft">Not measured</span>;
   return (
     <span title={recommended.counts.total ? formatMomentCounts(recommended.counts) : undefined}>
       {recommended.counts.total}

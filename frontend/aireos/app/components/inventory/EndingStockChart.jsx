@@ -67,7 +67,7 @@ export default function EndingStockChart({ monthly, allCustomers }) {
   });
 
   if (rows.length === 0) {
-    return <p className="text-sm text-deep-violet-blue/70">No inventory data for these filters.</p>;
+    return <p className="text-sm text-ink-soft">No inventory data for these filters.</p>;
   }
 
   const colorOrder = customerColorOrder(allCustomers);

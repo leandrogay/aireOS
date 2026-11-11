@@ -45,7 +45,7 @@ function FormSection({ title, hint, children }) {
   return (
     <section>
       <h3 className="text-sm font-semibold text-deep-violet-blue">{title}</h3>
-      <p className="mt-0.5 text-xs leading-snug text-deep-violet-blue/65">{hint}</p>
+      <p className="mt-0.5 text-xs leading-snug text-ink-soft">{hint}</p>
       <div className="mt-3 min-w-0">{children}</div>
     </section>
   );
@@ -138,7 +138,7 @@ export default function DohThresholdForm({ settings, onSaved, onCancel }) {
           <div
             role="status"
             aria-live="polite"
-            className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 rounded-xl bg-white/70 text-deep-violet-blue/70"
+            className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 rounded-xl bg-white/70 text-ink-soft"
           >
             <Loader2 className="h-6 w-6 animate-spin" />
             <p className="text-sm">Saving thresholds…</p>
@@ -155,7 +155,7 @@ export default function DohThresholdForm({ settings, onSaved, onCancel }) {
               {settings.is_global_default ? 'Global Default' : 'Custom thresholds'}
             </span>
           </div>
-          <DialogDescription className="text-xs text-deep-violet-blue/65">
+          <DialogDescription className="text-xs text-ink-soft">
             Fields marked <span className="text-red-700">*</span> are required.
           </DialogDescription>
         </DialogHeader>
@@ -224,7 +224,7 @@ export default function DohThresholdForm({ settings, onSaved, onCancel }) {
                   <button
                     type="button"
                     onClick={handleUndoRestore}
-                    className="font-medium underline underline-offset-2 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet"
+                    className="font-medium underline underline-offset-2 hover:no-underline focus-ring"
                   >
                     Undo
                   </button>

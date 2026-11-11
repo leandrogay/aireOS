@@ -45,10 +45,10 @@ export default function ReviewHeader({ mapping, changed, canDiscard, busy, disca
           </div>
           <h2 className="mt-2 text-sm font-medium text-deep-violet-blue">
             {mappingTitle(mapping)}
-            {customer && <span className="font-normal text-deep-violet-blue/70"> · {customer}</span>}
+            {customer && <span className="font-normal text-ink-soft"> · {customer}</span>}
           </h2>
           {file && (
-            <p className="mt-0.5 flex items-center gap-1 text-xs text-deep-violet-blue/60" title={mapping.filename || undefined}>
+            <p className="mt-0.5 flex items-center gap-1 text-xs text-ink-soft" title={mapping.filename || undefined}>
               <FileSpreadsheet aria-hidden="true" className="size-3.5 shrink-0" />
               <span className="truncate">
                 {file}
@@ -82,7 +82,7 @@ export default function ReviewHeader({ mapping, changed, canDiscard, busy, disca
         // Amber like ModelUnavailableNotice: the reviewer has extra work to do.
         // The fix (a setting) is for whoever deploys, so it sits behind the icon.
         <p role="status" className="mt-2 flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900">
-          <AlertTriangle aria-hidden="true" className="size-3.5 shrink-0 text-amber-700" />
+          <AlertTriangle aria-hidden="true" className="size-3.5 shrink-0 text-amber-800" />
           <span>
             AI was unavailable when this file was uploaded, so the fields start blank. Choose where each one comes from below.
           </span>

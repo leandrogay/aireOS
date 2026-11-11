@@ -19,7 +19,7 @@ export default function UploadPreview({ processing }) {
     <div className="mt-3">
       <div className="overflow-x-auto rounded-md border border-lavander">
         <table className="min-w-full text-left text-xs">
-          <thead className="bg-cream text-deep-violet-blue/70">
+          <thead className="bg-cream text-ink-soft">
             <tr>
               {columns.map((column) => (
                 <th key={column} className="px-2.5 py-1.5 font-medium">
@@ -42,7 +42,7 @@ export default function UploadPreview({ processing }) {
         </table>
       </div>
       {hidden > 0 && (
-        <p className="mt-1 text-xs text-deep-violet-blue/60">
+        <p className="mt-1 text-xs text-ink-soft">
           + {hidden} more target field{hidden === 1 ? '' : 's'}
         </p>
       )}

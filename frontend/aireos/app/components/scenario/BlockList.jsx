@@ -76,12 +76,12 @@ export default function BlockList({ blocks, selectedId, onSelect, onToggle, impa
                 {impact ? (
                   <span className="block truncate text-[11px] font-semibold tabular-nums text-scenario-ink">{impact}</span>
                 ) : null}
-                <span className="block truncate text-[11px] text-deep-violet-blue/60">{blockSummary(block)}</span>
+                <span className="block truncate text-[11px] text-ink-soft">{blockSummary(block)}</span>
                 {status ? (
                   <span
                     className={cn(
                       'block text-[11px]',
-                      status.tone === 'unsaved' ? 'font-medium text-scenario-ink' : 'italic text-deep-violet-blue/50'
+                      status.tone === 'unsaved' ? 'font-medium text-scenario-ink' : 'italic text-ink-soft'
                     )}
                   >
                     {status.text}

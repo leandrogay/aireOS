@@ -102,7 +102,7 @@ function NameForm({
         <div
           role="status"
           aria-live="polite"
-          className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-lg bg-white/70 text-deep-violet-blue/70 backdrop-blur-[1px]"
+          className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-lg bg-white/70 text-ink-soft"
         >
           <Loader2 className="h-6 w-6 animate-spin" />
           <p className="text-sm">{pendingLabel}</p>
@@ -112,7 +112,7 @@ function NameForm({
       {/* ==== Header ==== */}
       <div className="border-b border-lavander py-3 pl-4 pr-12">
         <h2 className="font-serif text-xl text-deep-violet-blue">{title}</h2>
-        <p className="mt-0.5 text-xs text-deep-violet-blue/65">
+        <p className="mt-0.5 text-xs text-ink-soft">
           Fields marked <span className="text-red-700">*</span> are required.
         </p>
       </div>

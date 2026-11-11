@@ -161,7 +161,7 @@ export default function BuildingBlocksSection({
         Add building block
       </button>
       {canAdd ? null : (
-        <p className="text-[11px] text-deep-violet-blue/60">
+        <p className="text-[11px] text-ink-soft">
           Pick a date range that includes forecast months to add building blocks.
         </p>
       )}
@@ -179,7 +179,7 @@ export default function BuildingBlocksSection({
           to edit, switch to take one off), or an empty state when there are none. */}
       {items.length ? null : savedOnChart.length ? (
         <section className="space-y-1.5">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-soft">
             On the chart · {savedOnChart.length} saved
           </p>
           <BlockList
@@ -191,7 +191,7 @@ export default function BuildingBlocksSection({
             closedIds={closedIds}
             togglingIds={togglingIds}
           />
-          {savedElsewhereCount ? <p className="text-[11px] text-deep-violet-blue/60">{elsewhereNote(savedElsewhereCount)}</p> : null}
+          {savedElsewhereCount ? <p className="text-[11px] text-ink-soft">{elsewhereNote(savedElsewhereCount)}</p> : null}
         </section>
       ) : (
         <div className="flex flex-col items-center rounded-lg border border-dashed border-lavander px-4 py-8 text-center">
@@ -201,7 +201,7 @@ export default function BuildingBlocksSection({
           <p className="font-serif text-base text-deep-violet-blue">
             {savedCount ? 'Nothing on the chart' : 'No building blocks yet'}
           </p>
-          <p className="mt-1 max-w-xs text-xs text-deep-violet-blue/60">
+          <p className="mt-1 max-w-xs text-xs text-ink-soft">
             {savedElsewhereCount
               ? `${elsewhereNote(savedElsewhereCount)} Change the filters to see them, or add a new one.`
               : savedCount

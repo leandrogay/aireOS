@@ -31,9 +31,9 @@ import { cn } from '@/lib/utils';
 import ChannelValueList from './ChannelValueList';
 
 const smallButton = 'h-7 border-deep-violet-blue/30 bg-white px-2 text-xs text-deep-violet-blue hover:bg-cream';
-const iconButton = 'rounded-md p-1 text-deep-violet-blue/50 hover:bg-cream hover:text-deep-violet-blue disabled:opacity-60';
+const iconButton = 'rounded-glass-sm p-1 text-ink-soft hover:bg-cream hover:text-deep-violet-blue focus-ring disabled:opacity-60';
 const linkButton =
-  'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-deep-violet-blue/70 hover:bg-cream disabled:opacity-60';
+  'inline-flex items-center gap-1 rounded-glass-sm px-1.5 py-0.5 text-[11px] font-medium text-ink-soft hover:bg-cream focus-ring disabled:opacity-60';
 
 // How many of a side's values are listed before "and n more".
 const LISTED = 8;
@@ -43,7 +43,7 @@ const EMPTY_SPLIT = { mode: 'split', source: '', matches: [] };
 function Values({ title, values, partial }) {
   return (
     <div className="min-w-0 rounded-md border border-lavander px-2 py-1.5">
-      <p className="text-[11px] text-deep-violet-blue/70">
+      <p className="text-[11px] text-ink-soft">
         {title} · {values.length}
         {partial ? '+' : ''}
       </p>
@@ -202,13 +202,13 @@ export default function ChannelSplit({ customer, decision, outputs, mapping, sta
               />
               <span>
                 <span className="font-medium">{option.label}</span>
-                <span className="block text-[11px] text-deep-violet-blue/60">{option.hint}</span>
+                <span className="block text-[11px] text-ink-soft">{option.hint}</span>
               </span>
             </label>
           ))}
         </div>
         {mode === 'custom' && (
-          <p className="text-[11px] text-deep-violet-blue/60">
+          <p className="text-[11px] text-ink-soft">
             The nomenclature sets the retailer its own way, shown below. Choose one of these to replace it.
           </p>
         )}
@@ -310,14 +310,14 @@ export default function ChannelSplit({ customer, decision, outputs, mapping, sta
                       <Plus aria-hidden="true" className="size-3" />
                       {draft.matches.length ? 'Another way it is named' : 'Say what marks a row online'}
                     </button>
-                    <p className="text-[11px] text-deep-violet-blue/60">Capital letters do not matter. Everything else goes offline.</p>
+                    <p className="text-[11px] text-ink-soft">Capital letters do not matter. Everything else goes offline.</p>
 
                     <div className="grid gap-1 sm:grid-cols-2">
                       <Values title="Online" values={preview.online} partial={source.partial} />
                       <Values title="Offline" values={preview.offline} partial={source.partial} />
                     </div>
                     {source.partial && (
-                      <p className="text-[11px] text-deep-violet-blue/60">Some of its values. Testing the nomenclature checks every row.</p>
+                      <p className="text-[11px] text-ink-soft">Some of its values. Testing the nomenclature checks every row.</p>
                     )}
                   </>
                 )}

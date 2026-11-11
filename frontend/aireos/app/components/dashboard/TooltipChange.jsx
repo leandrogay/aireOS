@@ -8,7 +8,7 @@ import { formatChangePct } from '@/app/utils/periodComparison';
  */
 export default function TooltipChange({ pct, suffix }) {
   if (pct === null || pct === undefined) return null;
-  const color = pct > 0 ? 'text-green-600' : pct < 0 ? 'text-red-600' : 'text-deep-violet-blue';
+  const color = pct > 0 ? 'text-green-700' : pct < 0 ? 'text-red-700' : 'text-deep-violet-blue';
   return (
     <div className={`mt-0.5 border-t border-lavander pt-1 font-medium ${color}`}>
       {pct > 0 ? '▲ ' : pct < 0 ? '▼ ' : ''}

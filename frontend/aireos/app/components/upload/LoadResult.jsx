@@ -22,9 +22,9 @@ function ResultSection({ Icon, iconClass, label, note, items, children }) {
       <h3 className="flex items-center gap-1.5 text-sm font-medium text-deep-violet-blue">
         <Icon aria-hidden="true" className={cn('size-4 shrink-0', iconClass)} />
         {label}
-        <span className="font-normal text-deep-violet-blue/50 tabular-nums">({items.length})</span>
+        <span className="font-normal text-ink-soft tabular-nums">({items.length})</span>
       </h3>
-      {note && <p className="mt-0.5 pl-5.5 text-xs text-deep-violet-blue/70">{note}</p>}
+      {note && <p className="mt-0.5 pl-5.5 text-xs text-ink-soft">{note}</p>}
       <ul className="mt-2 space-y-2">
         {items.map((item) => (
           <li key={item.blob_path} className="rounded-md border border-lavander bg-white px-3 py-2">
@@ -87,7 +87,7 @@ export default function LoadResult({ outcome, files }) {
         {outcome.checkedOnly.length > 0 && (
           <ResultSection
             Icon={AlertTriangle}
-            iconClass="text-amber-700"
+            iconClass="text-amber-800"
             label="Not saved"
             note="Saving is off in this environment, so these were read with the approved nomenclature and nothing was written. They're still waiting to load."
             items={outcome.checkedOnly}
@@ -120,7 +120,7 @@ export default function LoadResult({ outcome, files }) {
           is the dashboard, once rows were written; closing is the dialog's X. */}
       {outcome.saved.length > 0 && (
         <div className="flex flex-wrap items-center justify-end gap-2 rounded-b-lg border-t border-lavander bg-cream/40 px-4 py-3">
-          {retailers.length > 1 && <span className="mr-auto text-xs text-deep-violet-blue/70">View sales for a loaded retailer:</span>}
+          {retailers.length > 1 && <span className="mr-auto text-xs text-ink-soft">View sales for a loaded retailer:</span>}
           {(retailers.length ? retailers : [null]).map((retailer) => (
             <Link
               key={retailer ?? 'all'}

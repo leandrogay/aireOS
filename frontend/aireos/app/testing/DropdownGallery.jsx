@@ -338,7 +338,7 @@ export default function DropdownGallery() {
           <select
             value={native.form}
             onChange={(event) => setNative((prev) => ({ ...prev, form: event.target.value }))}
-            className="w-full rounded-md border border-lavander bg-cream px-2.5 py-1.5 text-sm text-deep-violet-blue focus:border-violet focus:outline-none"
+            className="w-full rounded-glass-sm border border-deep-violet-blue/60 bg-white px-2.5 py-1.5 text-sm text-deep-violet-blue transition-[border-color,background-color] duration-hover hover:border-deep-violet-blue/75 focus-ring"
           >
             {CUSTOMERS.map((customer) => (
               <option key={customer.value} value={customer.value}>

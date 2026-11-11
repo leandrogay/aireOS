@@ -80,13 +80,13 @@ export default function DohSettingsView() {
       >
 
         {error && (
-          <p className="px-4 pb-2 text-sm text-red-600" role="alert">
+          <p className="px-4 pb-2 text-sm text-red-700" role="alert">
             {error}
           </p>
         )}
 
         {!loading && data.length === 0 ? (
-          !error && <p className="px-4 pb-4 text-sm text-deep-violet-blue/70">No customers found.</p>
+          !error && <p className="px-4 pb-4 text-sm text-ink-soft">No customers found.</p>
         ) : (
           <DohSettingsTable
             rows={data}

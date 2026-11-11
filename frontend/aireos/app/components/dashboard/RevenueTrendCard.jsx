@@ -19,7 +19,7 @@ const METRIC_OPTIONS = [
 // revenue is shown per bar in the chart's tooltip, not here.
 function ChartFooter({ lastUpdated }) {
   return (
-    <p className="mt-1 text-right text-xs text-deep-violet-blue/60">Last Updated: {formatDateTime(lastUpdated)}</p>
+    <p className="mt-1 text-right text-xs text-ink-soft">Last Updated: {formatDateTime(lastUpdated)}</p>
   )
 }
 
@@ -108,7 +108,7 @@ export default function RevenueTrendCard({
       {/* Only when there is something to say. weeklyGap (weeklyGapMessage)
           names at most a few month ranges; its hover text lists them all. */}
       {(refreshing || freshnessRefreshing || weeklyGap?.text) && (
-        <p className="mb-1 text-xs text-deep-violet-blue/60" title={weeklyGap?.detail}>
+        <p className="mb-1 text-xs text-ink-soft" title={weeklyGap?.detail}>
           {(refreshing || freshnessRefreshing) ? "Refreshing latest data…" : weeklyGap.text}
         </p>
       )}
@@ -136,7 +136,7 @@ export default function RevenueTrendCard({
           </div>
         </div>
       )}
-      {error && <p className="text-red-600 text-sm">{error}</p>}
+      {error && <p className="text-red-700 text-sm">{error}</p>}
       {!busy && !error && comparingCustomers && (
         <div className="flex flex-1 flex-col">
           <CustomerTrendChart customers={customerBars} mode={mode} metric={metric} granularity={granularity} colorOrder={customerColorOrder} />

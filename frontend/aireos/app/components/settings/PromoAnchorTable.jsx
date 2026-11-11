@@ -89,11 +89,11 @@ export default function PromoAnchorTable({ anchors, editingKey, readOnly, onView
           <StatusPill tone={sourceTone(row.source)}>{anchorSourceLabel(row.source)}</StatusPill>
         </td>
         <td className={cn(tdClass, 'truncate')} title={recommendedAnchorLabel(row, windowMonths)}>
-          <span className={row.recommendation_differs ? 'text-amber-700' : 'text-deep-violet-blue/70'}>
+          <span className={row.recommendation_differs ? 'text-amber-800' : 'text-ink-soft'}>
             {recommendedAnchorLabel(row, windowMonths)}
           </span>
         </td>
-        <td className={tdClass}>{row.changed_at ? formatDateTime(row.changed_at) : '—'}</td>
+        <td className={cn(tdClass, 'tabular-nums')}>{row.changed_at ? formatDateTime(row.changed_at) : '—'}</td>
       </>
     );
   }
@@ -153,7 +153,7 @@ export default function PromoAnchorTable({ anchors, editingKey, readOnly, onView
                   })}
                 </TableGrid>
               ) : (
-                <p className="text-sm text-deep-violet-blue/70">No SKU ranges in the catalogue.</p>
+                <p className="text-sm text-ink-soft">No SKU ranges in the catalogue.</p>
               )
             }
           >
@@ -170,8 +170,8 @@ export default function PromoAnchorTable({ anchors, editingKey, readOnly, onView
       >
         {/* pl-10 lines the name up with the customers' names after their chevrons. */}
         <td className="py-2.5 pl-10 pr-4 font-medium">All customers</td>
-        <td className={cn(tdClass, 'font-medium')}>{anchors.default_anchor_pct}% off</td>
-        <td className={cn(tdClass, 'text-deep-violet-blue/70')} colSpan={3}>Fallback</td>
+        <td className={cn(tdClass, 'font-medium tabular-nums')}>{anchors.default_anchor_pct}% off</td>
+        <td className={cn(tdClass, 'text-ink-soft')} colSpan={3}>Fallback</td>
         <td className="px-2 py-1 text-right" onClick={(event) => event.stopPropagation()}>
           <RowActions label="Actions for All customers" actions={rowActions(defaultTarget)} />
         </td>

@@ -20,7 +20,7 @@ import { monthSpanLabel } from '@/app/utils/scenarioPitch';
 
 const fieldClass =
   'h-8 w-full rounded-md border border-violet bg-white px-2 text-xs text-deep-violet-blue disabled:opacity-50';
-const labelClass = 'mb-0.5 block text-[11px] text-deep-violet-blue/70';
+const labelClass = 'mb-0.5 block text-[11px] text-ink-soft';
 const errorClass = 'mt-0.5 text-[11px] text-red-700';
 
 function formatUnits(value) {
@@ -110,7 +110,7 @@ export default function BlockEditor({
 
   return (
     <div className="space-y-2.5 border-t border-lavander pt-3">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-soft">
         Edit selected block
       </p>
 
@@ -207,14 +207,14 @@ export default function BlockEditor({
           </div>
         </div>
         <FieldError message={errors.months} />
-        <p className="mt-1 text-[11px] text-deep-violet-blue/50">
+        <p className="mt-1 text-[11px] text-ink-soft">
           Only forecast months can carry building blocks; months with actuals are locked.
         </p>
       </div>
 
       <div>
         <label className={labelClass} htmlFor="block-explanation">
-          Explanation <span className="text-deep-violet-blue/50">(optional · shown in the blocks table)</span>
+          Explanation <span className="text-ink-soft">(optional · shown in the blocks table)</span>
         </label>
         <textarea
           id="block-explanation"
@@ -222,7 +222,7 @@ export default function BlockEditor({
           value={block.explanation}
           placeholder="What's behind the uplift, e.g. 3 new outlets opening in Punggol."
           onChange={(event) => onChange({ explanation: event.target.value })}
-          className="w-full rounded-md border border-violet bg-white px-2 py-1.5 text-xs text-deep-violet-blue"
+          className="w-full rounded-glass-sm border border-deep-violet-blue/60 bg-white px-2 py-1.5 text-xs text-deep-violet-blue placeholder:text-ink-soft transition-[border-color,background-color] duration-hover hover:border-deep-violet-blue/75 focus-ring"
         />
       </div>
 

@@ -68,14 +68,14 @@ export default function CustomerTable({
                         <span className="min-w-0 flex-1 text-xs text-deep-violet-blue">
                           <span className="block break-words">
                             {retailerLabel(retailer.retailer_name, customer.customer_name)}
-                            <span className="ml-1 text-deep-violet-blue/60">· {retailer.store_count} stores</span>
+                            <span className="ml-1 text-ink-soft">· {retailer.store_count} stores</span>
                           </span>
-                          <span className="block break-all font-mono text-[11px] text-deep-violet-blue/50">{retailer.retailer_name}</span>
+                          <span className="block break-all font-mono text-[11px] text-ink-soft">{retailer.retailer_name}</span>
                         </span>
                         <RowActions label={`Actions for retailer ${retailerLabel(retailer.retailer_name, customer.customer_name)}`} actions={retailerRowActions(retailer, customer, rowHandlers.onEditRetailer, rowHandlers.onDeleteRetailer)} />
                       </div>
                     ))}
-                    {customer.retailers.length === 0 && <p className="py-2 text-xs text-deep-violet-blue/60">No retailers yet.</p>}
+                    {customer.retailers.length === 0 && <p className="py-2 text-xs text-ink-soft">No retailers yet.</p>}
                     <Button variant="link" size="sm" onClick={() => rowHandlers.onAddRetailer(customer)} className="h-auto px-0 py-2 text-xs text-deep-violet-blue">Add retailer</Button>
                   </div>
                 )}

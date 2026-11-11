@@ -98,7 +98,7 @@ export default function StepByExample({ values, onAdd, disabled = false }) {
         ))}
       </ul>
 
-      {unchanged && <p className="text-[11px] text-deep-violet-blue/60">That is the value as it is: no step needed.</p>}
+      {unchanged && <p className="text-[11px] text-ink-soft">That is the value as it is: no step needed.</p>}
 
       {suggestions.length > 0 && (
         <ul className="space-y-1">
@@ -110,7 +110,7 @@ export default function StepByExample({ values, onAdd, disabled = false }) {
               <div className="min-w-0 flex-1">
                 <p className="font-medium">{suggestion.label}</p>
                 <p
-                  className="truncate font-mono text-[11px] text-deep-violet-blue/70"
+                  className="truncate font-mono text-[11px] text-ink-soft"
                   title={suggestion.outputs.map((output) => output ?? '—').join(' · ')}
                 >
                   {suggestion.outputs
@@ -141,7 +141,7 @@ export default function StepByExample({ values, onAdd, disabled = false }) {
       )}
 
       {typed && suggestions.length > 1 && examples.length < MAX_EXAMPLES && (
-        <p className="text-[11px] text-deep-violet-blue/60">
+        <p className="text-[11px] text-ink-soft">
           More than one way fits. Pick by the results, or give another example.
         </p>
       )}

@@ -119,7 +119,7 @@ export default function ComparisonLineChart({ points, formats, names, granularit
           <LineSwatch />
           {names.current}
         </span>
-        <span className="flex items-center gap-1.5 text-deep-violet-blue/70">
+        <span className="flex items-center gap-1.5 text-ink-soft">
           <LineSwatch dashed />
           {names.baseline}
         </span>

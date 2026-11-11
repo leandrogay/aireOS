@@ -95,7 +95,7 @@ export default function PromoAnchorDetails({ target, windowMonths, readOnly, onE
         <dl className="grid gap-x-6 gap-y-3 rounded-lg border border-border p-4 sm:grid-cols-2">
           {fields.map(([label, value]) => (
             <div key={label}>
-              <dt className="text-xs text-muted-foreground">{label}</dt>
+              <dt className="text-xs text-ink-soft">{label}</dt>
               <dd className="mt-0.5 font-medium">{value}</dd>
             </div>
           ))}
@@ -103,12 +103,12 @@ export default function PromoAnchorDetails({ target, windowMonths, readOnly, onE
         {row ? (
           <section>
             <h3 className="mb-2 font-medium">Update history</h3>
-            {history.loading ? <p className="text-sm text-muted-foreground">Loading history…</p> : null}
+            {history.loading ? <p className="text-sm text-ink-soft">Loading history…</p> : null}
             {history.error ? (
               <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{history.error}</p>
             ) : null}
             {!history.loading && !history.error && history.rows.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No versions saved yet.</p>
+              <p className="text-sm text-ink-soft">No versions saved yet.</p>
             ) : null}
             {history.rows.length ? (
               <TableGrid variant="nested" columns={HISTORY_COLUMNS} minWidth="36rem">
@@ -127,7 +127,7 @@ export default function PromoAnchorDetails({ target, windowMonths, readOnly, onE
                     <td className="whitespace-nowrap px-4 py-2">
                       <StatusPill tone={sourceTone(entry.source)}>{anchorSourceLabel(entry.source)}</StatusPill>
                     </td>
-                    <td className="px-4 py-2 text-muted-foreground">{changedLabel(entry)}</td>
+                    <td className="px-4 py-2 text-ink-soft">{changedLabel(entry)}</td>
                   </tr>
                 ))}
               </TableGrid>

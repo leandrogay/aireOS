@@ -95,7 +95,7 @@ export default function PromoUpliftDetails({ row, shownUplift, moments, startEdi
         <RecommendedReadout scopeRow={row.view ?? row} moments={moments} />
         <dl className="grid gap-x-6 gap-y-3 rounded-lg border border-border p-4 sm:grid-cols-2">
           <div>
-            <dt className="text-xs text-muted-foreground">{editing ? 'Manual Uplift (%)' : 'Uplift in use'}</dt>
+            <dt className="text-xs text-ink-soft">{editing ? 'Manual Uplift (%)' : 'Uplift in use'}</dt>
             <dd className="mt-0.5 font-medium">
               {editing ? (
                 <div className="w-28">
@@ -116,7 +116,7 @@ export default function PromoUpliftDetails({ row, shownUplift, moments, startEdi
                 <>
                   {formatPct(shownUplift)}
                   {row.follows_anchor ? (
-                    <span className="block text-[11px] font-normal text-muted-foreground">moves with anchor</span>
+                    <span className="block text-[11px] font-normal text-ink-soft">moves with anchor</span>
                   ) : null}
                 </>
               )}
@@ -124,30 +124,30 @@ export default function PromoUpliftDetails({ row, shownUplift, moments, startEdi
           </div>
           {fields.map(([label, value]) => (
             <div key={label}>
-              <dt className="text-xs text-muted-foreground">{label}</dt>
+              <dt className="text-xs text-ink-soft">{label}</dt>
               <dd className="mt-0.5 font-medium">{value}</dd>
             </div>
           ))}
           {row.note ? (
             <div className="col-span-2">
-              <dt className="text-xs text-muted-foreground">Note</dt>
+              <dt className="text-xs text-ink-soft">Note</dt>
               <dd className="mt-0.5">{row.note}</dd>
             </div>
           ) : null}
         </dl>
         {row.source === 'learned' ? (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-ink-soft">
             Set by the forecasting model after each retrain. Override it for a single promotion in the Scenario builder.
           </p>
         ) : null}
         <section>
           <h3 className="mb-2 font-medium">Update history</h3>
-          {history.loading ? <p className="text-sm text-muted-foreground">Loading history…</p> : null}
+          {history.loading ? <p className="text-sm text-ink-soft">Loading history…</p> : null}
           {history.error ? (
             <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{history.error}</p>
           ) : null}
           {!history.loading && !history.error && history.rows.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No versions saved yet.</p>
+            <p className="text-sm text-ink-soft">No versions saved yet.</p>
           ) : null}
           {history.rows.length ? (
             <TableGrid variant="nested" columns={HISTORY_COLUMNS} minWidth="46rem">
@@ -164,8 +164,8 @@ export default function PromoUpliftDetails({ row, shownUplift, moments, startEdi
                   <td className="whitespace-nowrap px-4 py-2">
                     <StatusPill tone={sourceTone(entry.source)}>{sourceLabel(entry.source)}</StatusPill>
                   </td>
-                  <td className="px-4 py-2 text-muted-foreground">{changedLabel(entry)}</td>
-                  <td className="truncate px-4 py-2 text-muted-foreground" title={entry.note ?? undefined}>
+                  <td className="px-4 py-2 text-ink-soft">{changedLabel(entry)}</td>
+                  <td className="truncate px-4 py-2 text-ink-soft" title={entry.note ?? undefined}>
                     {entry.note || '—'}
                   </td>
                 </tr>

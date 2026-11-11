@@ -33,12 +33,12 @@ function CardChange({ current, baseline, available = true }) {
   const pct = available ? changePct(current, baseline) : null
   if (pct === null) {
     return (
-      <span className="shrink-0 text-xs font-medium text-deep-violet-blue/40" title="Data not available">
+      <span className="shrink-0 text-xs font-medium text-ink-soft" title="Data not available">
         N/A
       </span>
     )
   }
-  const color = pct > 0 ? "text-green-600" : pct < 0 ? "text-red-600" : "text-deep-violet-blue/60"
+  const color = pct > 0 ? "text-green-700" : pct < 0 ? "text-red-700" : "text-ink-soft"
   return (
     <span className={`shrink-0 text-xs font-medium tabular-nums ${color}`}>
       {pct > 0 ? "▲ " : pct < 0 ? "▼ " : ""}
@@ -59,16 +59,16 @@ function PeriodFigures({ totals, periodName, hatched = false, comparing, color =
   return (
     <div className="flex flex-wrap items-center gap-x-1.5" title={comparing ? periodName : undefined}>
       {comparing && color && <PeriodSwatch color={color} tint={hatchTint(color)} hatched={hatched} />}
-      {comparing && !color && hatched && <span className="text-xs text-deep-violet-blue/60">vs</span>}
+      {comparing && !color && hatched && <span className="text-xs text-ink-soft">vs</span>}
       {available ? (
         <>
-          <p className={`tabular-nums ${hatched ? "text-xs text-deep-violet-blue/70" : "text-sm font-semibold"}`}>
+          <p className={`tabular-nums ${hatched ? "text-xs text-ink-soft" : "text-sm font-semibold"}`}>
             {formatRevenue(totals.revenue)}
           </p>
-          <p className="text-xs text-deep-violet-blue/60 tabular-nums">{totals.units.toLocaleString()} units</p>
+          <p className="text-xs text-ink-soft tabular-nums">{totals.units.toLocaleString()} units</p>
         </>
       ) : (
-        <p className={`text-deep-violet-blue/50 ${hatched ? "text-xs" : "text-sm"}`}>No sales data</p>
+        <p className={`text-ink-soft ${hatched ? "text-xs" : "text-sm"}`}>No sales data</p>
       )}
     </div>
   )
@@ -119,7 +119,7 @@ function SummaryCard({
           )}
           {title}
           {share !== null && (
-            <span className="font-normal tabular-nums text-deep-violet-blue/60" title={shareLabel}>
+            <span className="font-normal tabular-nums text-ink-soft" title={shareLabel}>
               {" "}
               · {share > 0 && share < 1 ? "<1" : share.toFixed(0)}%
             </span>
@@ -266,12 +266,12 @@ export default function RevenueSummaryCards({
       <div className="mb-2">
         <h3 className="font-serif text-base text-deep-violet-blue">
           Sell-out Summary{" "}
-          <span className="font-sans text-sm font-normal text-deep-violet-blue/50">
+          <span className="font-sans text-sm font-normal text-ink-soft">
             ({mode === "online" ? "Online" : "Offline"})
           </span>
         </h3>
         {comparingCustomers && (
-          <p className="text-[11px] text-deep-violet-blue/70">
+          <p className="text-[11px] text-ink-soft">
             Each customer&apos;s total for the selected period.
           </p>
         )}
@@ -283,7 +283,7 @@ export default function RevenueSummaryCards({
       {/* No customer ticked: nothing to sum, so no tiles -- the hook still
           holds the last customer's figures, which must not show. */}
       {noCustomers && (
-        <p className="py-6 text-center text-sm text-deep-violet-blue/60">Select at least one customer.</p>
+        <p className="py-6 text-center text-sm text-ink-soft">Select at least one customer.</p>
       )}
       {/* The bar shows for customers, and for a channel with more than one format (online has one). */}
       {!noCustomers && loading && (
@@ -292,7 +292,7 @@ export default function RevenueSummaryCards({
           mixBar={comparingCustomers || mode !== "online"}
         />
       )}
-      {!noCustomers && error && <p className="text-red-600 text-sm">{error}</p>}
+      {!noCustomers && error && <p className="text-red-700 text-sm">{error}</p>}
 
       {!noCustomers && !loading && (comparingCustomers || salesData) && tileFormats.length > 1 && (
         <FormatMixBar

@@ -99,7 +99,7 @@ function LoadConfirmForm({ pathsKey, reload, onClose, onLoaded, onPendingChange 
           {outcome ? outcomeTitle(outcome, reload) : reload ? 'Reload with the new version' : 'Load into sales data'}
         </h2>
         {!outcome && (
-          <p className="mt-0.5 text-xs text-deep-violet-blue/75">
+          <p className="mt-0.5 text-xs text-ink-soft">
             Loading writes these files into the sales data the dashboard and inventory read. It can&apos;t be undone
             from aireOS, so check what it will change first.
           </p>
@@ -114,7 +114,7 @@ function LoadConfirmForm({ pathsKey, reload, onClose, onLoaded, onPendingChange 
             {storageOff && <StorageOffNotice />}
 
             {!files && !previewError && (
-              <p role="status" className="flex items-center gap-2 text-sm text-deep-violet-blue/70">
+              <p role="status" className="flex items-center gap-2 text-sm text-ink-soft">
                 <Loader2 aria-hidden="true" className="size-4 animate-spin" />
                 Working out what loading would change…
               </p>
@@ -126,7 +126,7 @@ function LoadConfirmForm({ pathsKey, reload, onClose, onLoaded, onPendingChange 
               </p>
             )}
 
-            {files && !files.length && <p className="text-sm text-deep-violet-blue/70">There are no files to load.</p>}
+            {files && !files.length && <p className="text-sm text-ink-soft">There are no files to load.</p>}
 
             {files?.length > 0 && (
               <ul className="space-y-2">

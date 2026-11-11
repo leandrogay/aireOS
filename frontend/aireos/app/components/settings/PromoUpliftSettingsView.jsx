@@ -163,7 +163,7 @@ export default function PromoUpliftSettingsView() {
           }
         >
           {error ? (
-            <p className="px-4 pb-3 text-sm text-red-600" role="alert">
+            <p className="px-4 pb-3 text-sm text-red-700" role="alert">
               {error}
             </p>
           ) : null}
@@ -177,7 +177,7 @@ export default function PromoUpliftSettingsView() {
               onAdopt={handleAnchorAdopt}
             />
           ) : (
-            !error && <p className="px-4 pb-3 text-sm text-deep-violet-blue/70">Loading…</p>
+            !error && <p className="px-4 pb-3 text-sm text-ink-soft">Loading…</p>
           )}
         </TableCard>
 
@@ -209,7 +209,7 @@ export default function PromoUpliftSettingsView() {
         {settings?.unmapped_mechanics?.length ? (
           <section className={cardClass} role="status">
             <h2 className="text-sm font-medium text-deep-violet-blue">Mechanics with no uplift value</h2>
-            <p className="mt-1 text-xs text-deep-violet-blue/70">
+            <p className="mt-1 text-xs text-ink-soft">
               {settings.unmapped_mechanics
                 .map((row) => `${row.promotion_mechanic} (${row.promotions} promotion${row.promotions === 1 ? '' : 's'})`)
                 .join(' · ')}
@@ -252,11 +252,11 @@ export default function PromoUpliftSettingsView() {
             onReset={handleUpliftReset}
           />
           {moments.error ? (
-            <p className="px-4 pt-2 text-xs text-red-600" role="alert">
+            <p className="px-4 pt-2 text-xs text-red-700" role="alert">
               Moments could not be loaded: {moments.error}
             </p>
           ) : null}
-          <p className="px-4 py-3 text-xs text-deep-violet-blue/60">
+          <p className="px-4 py-3 text-xs text-ink-soft">
             Placeholder values move with each customer&apos;s ordinary-month discount ({defaultAnchorPct}% for all
             customers).
           </p>

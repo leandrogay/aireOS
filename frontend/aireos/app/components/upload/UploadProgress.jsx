@@ -61,12 +61,12 @@ export default function UploadProgress({ sendPercent, sentAt, finished, check })
           style={{ width: `${percent}%` }}
         />
       </div>
-      <p className="mt-1 text-xs text-deep-violet-blue/70 tabular-nums">
+      <p className="mt-1 text-xs text-ink-soft tabular-nums">
         {status}
-        {!sending && !finished && hint && <span className="text-deep-violet-blue/50"> {hint}</span>}
+        {!sending && !finished && hint && <span className="text-ink-soft"> {hint}</span>}
       </p>
       {facts.length > 0 && (
-        <p className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-deep-violet-blue/60">
+        <p className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-ink-soft">
           {facts.map((fact) => (
             <span key={fact} className="inline-flex items-center gap-1">
               <Check className="size-3 text-green-700" aria-hidden="true" />
@@ -76,7 +76,7 @@ export default function UploadProgress({ sendPercent, sentAt, finished, check })
         </p>
       )}
       {!finished && isStillWorking(elapsed, expectedMs) && (
-        <p className="mt-0.5 text-xs text-deep-violet-blue/60" role="status">
+        <p className="mt-0.5 text-xs text-ink-soft" role="status">
           Still working. Larger files can take up to a minute.
         </p>
       )}

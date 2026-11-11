@@ -59,7 +59,7 @@ export default function DuplicateChoice({ id, fileName, value, result, onChange 
                 'peer-focus-visible:ring-2 peer-focus-visible:ring-inset peer-focus-visible:ring-violet',
                 value === option
                   ? 'bg-deep-violet-blue text-white shadow-sm'
-                  : 'text-deep-violet-blue/70 hover:bg-white/60 hover:text-deep-violet-blue',
+                  : 'text-ink-soft hover:bg-white/60 hover:text-deep-violet-blue',
               )}
             >
               <Icon aria-hidden="true" className="size-3.5" />
@@ -68,7 +68,7 @@ export default function DuplicateChoice({ id, fileName, value, result, onChange 
           </label>
         ))}
       </div>
-      {result && <p className="mt-1.5 text-xs text-deep-violet-blue/70">{result}</p>}
+      {result && <p className="mt-1.5 text-xs text-ink-soft">{result}</p>}
     </fieldset>
   );
 }

@@ -72,7 +72,7 @@ const FORMATS = ['Hypermarket', 'Supermarket', 'Convenience'];
 
 // The dashboard's trigger classes, copied for the legacy demo.
 const LEGACY_TAB_TRIGGER_CLASS =
-  'text-deep-violet-blue/70 hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white data-active:hover:text-white';
+  'text-ink-soft hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white data-active:hover:text-white';
 
 export default function ToggleGallery() {
   const [segments, setSegments] = useState({

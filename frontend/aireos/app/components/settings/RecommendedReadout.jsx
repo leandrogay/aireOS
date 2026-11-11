@@ -13,26 +13,26 @@ import { formatPct } from '@/app/utils/scenarioPromotions';
 export default function RecommendedReadout({ scopeRow, moments }) {
   let body;
   if (!scopeRow) {
-    body = <p className="text-deep-violet-blue/60">Choose what this value applies to, to see its moments.</p>;
+    body = <p className="text-ink-soft">Choose what this value applies to, to see its moments.</p>;
   } else if (!moments) {
-    body = <p className="text-deep-violet-blue/60">Moments are not available.</p>;
+    body = <p className="text-ink-soft">Moments are not available.</p>;
   } else if (scopeRow.mechanic_key === 'voucher') {
-    body = <p className="text-deep-violet-blue/60">Vouchers are not measured: only offline sales are, and vouchers matter online.</p>;
+    body = <p className="text-ink-soft">Vouchers are not measured: only offline sales are, and vouchers matter online.</p>;
   } else {
     const recommended = recommendedUplift(scopeRow, moments);
     body = (
       <>
         <p>
-          <span className="text-deep-violet-blue/60">Moments:</span> {formatMomentCounts(recommended.counts)}
+          <span className="text-ink-soft">Moments:</span> {formatMomentCounts(recommended.counts)}
           <span className="mx-2 text-deep-violet-blue/30">·</span>
-          <span className="text-deep-violet-blue/60">Recommended Uplift:</span>{' '}
+          <span className="text-ink-soft">Recommended Uplift:</span>{' '}
           <b>{recommended.value != null ? formatPct(recommended.value) : 'none'}</b>
           {recommended.products > 1 ? (
-            <span className="text-deep-violet-blue/60"> (average of {recommended.products} SKUs)</span>
+            <span className="text-ink-soft"> (average of {recommended.products} SKUs)</span>
           ) : null}
         </p>
         {recommended.enoughData ? null : (
-          <p className="mt-0.5 text-amber-700">
+          <p className="mt-0.5 text-amber-800">
             Needs {moments.recommend_from} moments to recommend. Key in a Manual Uplift if you have a view.
           </p>
         )}

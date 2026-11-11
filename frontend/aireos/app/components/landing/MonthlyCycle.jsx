@@ -35,13 +35,13 @@ export default function MonthlyCycle() {
           <li key={step.title} className="flex gap-3">
             <span
               aria-hidden="true"
-              className="mt-px flex size-6 shrink-0 items-center justify-center rounded-full bg-deep-violet-blue font-mono text-xs font-medium text-white"
+              className="mt-px flex size-6 shrink-0 items-center justify-center rounded-full bg-deep-violet-blue tabular-nums text-xs font-medium text-white"
             >
               {index + 1}
             </span>
             <div className="min-w-0">
               <p className="text-sm font-medium text-deep-violet-blue">{step.title}</p>
-              <p className="mt-0.5 text-sm text-deep-violet-blue/70">{step.body}</p>
+              <p className="mt-0.5 text-sm text-ink-soft">{step.body}</p>
             </div>
           </li>
         ))}

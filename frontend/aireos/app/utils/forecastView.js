@@ -67,7 +67,7 @@ const SERIES_COLUMNS = {
   current: 'forecast_current',
 };
 
-const DEFAULT_PROMO_BADGE_CLASS = 'border-lavander bg-cream text-deep-violet-blue/70';
+const DEFAULT_PROMO_BADGE_CLASS = 'border-lavander bg-cream text-ink-soft';
 
 // Base types only. Pack vs carton is a second filter; stored values are
 // `monthly` or `carton_monthly` (see splitPromoType in promotionForm.js).

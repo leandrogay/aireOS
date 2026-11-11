@@ -115,13 +115,13 @@ export default function ForecastLegendFooter({
     <div className={cn('space-y-0.5', className)}>
       <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-deep-violet-blue">
         <span>
-          <span className="text-deep-violet-blue/55">{FORECAST_LAST_UPDATED_LABEL}: </span>
+          <span className="text-ink-soft">{FORECAST_LAST_UPDATED_LABEL}: </span>
           <span className="font-medium">{formatSgtTimestamp(lastRun)}</span>
         </span>
         {updatingBadge ? <UpdatingBadge badge={updatingBadge} /> : null}
         <span aria-hidden="true" className="text-deep-violet-blue/40">·</span>
         <span>
-          <span className="text-deep-violet-blue/55">{salesLabel}: </span>
+          <span className="text-ink-soft">{salesLabel}: </span>
           <span className="font-medium">{formatSgtTimestamp(salesLoadedAt)}</span>
         </span>
         {pastAccuracy ? (
@@ -132,7 +132,7 @@ export default function ForecastLegendFooter({
         ) : null}
       </div>
       {notes.map((note) => (
-        <p key={note} className="text-center text-[11px] text-deep-violet-blue/55">
+        <p key={note} className="text-center text-[11px] text-ink-soft">
           {note}
         </p>
       ))}

@@ -6,7 +6,7 @@ import TabTransition from '@/components/ui/TabTransition';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const triggerClass =
-  'h-6 px-2.5 text-[11px] text-deep-violet-blue/70 hover:bg-white hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white data-active:hover:bg-deep-violet-blue data-active:hover:text-white';
+  'h-6 px-2.5 text-[11px] text-ink-soft hover:bg-white hover:text-deep-violet-blue data-active:bg-deep-violet-blue data-active:text-white data-active:hover:bg-deep-violet-blue data-active:hover:text-white';
 
 /**
  * The tables under the Scenario builder chart: By year (Current against

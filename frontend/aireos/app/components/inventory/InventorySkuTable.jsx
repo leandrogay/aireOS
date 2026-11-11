@@ -29,7 +29,7 @@ const numClass = 'text-right tabular-nums';
 
 const STATUS_CLASSES = {
   below_min: 'text-red-700',
-  above_max: 'text-amber-700',
+  above_max: 'text-amber-800',
   within: 'text-emerald-700',
 };
 

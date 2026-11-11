@@ -27,7 +27,7 @@ function formatTableValue(value) {
 function CellValue({ point, seriesKey }) {
   if (seriesKey === 'actual' && point.actualKind === 'missing') {
     return (
-      <span className="text-deep-violet-blue/45" title={TABLE_MISSING_HINT}>
+      <span className="text-ink-soft" title={TABLE_MISSING_HINT}>
         {TABLE_MISSING_LABEL}
       </span>
     );
@@ -36,7 +36,7 @@ function CellValue({ point, seriesKey }) {
   if (seriesKey === 'actual' && point.actualKind === 'partial') {
     return (
       <span title={TABLE_PARTIAL_HINT}>
-        {value} <span className="text-[10px] text-deep-violet-blue/45">{TABLE_PARTIAL_LABEL}</span>
+        {value} <span className="text-[11px] text-ink-soft">{TABLE_PARTIAL_LABEL}</span>
       </span>
     );
   }
@@ -101,14 +101,14 @@ export default function ForecastTable({ points, visibleSeries, modelLabel = '' }
                 type="button"
                 onClick={clearTableFilters}
                 disabled={!hasTableFilters}
-                className="rounded-md border border-deep-violet-blue/30 bg-white px-3 py-1 text-xs font-medium text-deep-violet-blue transition hover:bg-cream disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-glass-sm border border-deep-violet-blue/30 bg-white px-3 py-1 text-xs font-medium text-deep-violet-blue transition hover:bg-cream disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Clear
               </button>
               <button
                 type="button"
                 onClick={() => setExpanded((current) => !current)}
-                className="rounded-md border border-deep-violet-blue/30 bg-white px-3 py-1 text-xs font-medium text-deep-violet-blue transition hover:bg-cream"
+                className="rounded-glass-sm border border-deep-violet-blue/30 bg-white px-3 py-1 text-xs font-medium text-deep-violet-blue transition hover:bg-cream"
               >
                 {expanded ? 'Collapse' : 'Expand'}
               </button>
@@ -120,14 +120,14 @@ export default function ForecastTable({ points, visibleSeries, modelLabel = '' }
 
       <div className={`${expanded ? '' : 'max-h-[55vh]'} overflow-y-auto border-t border-lavander sm:hidden`} aria-label="Monthly forecast values">
         {rows.length === 0 ? (
-          <p className="p-4 text-sm text-deep-violet-blue/70">No rows match these table filters.</p>
+          <p className="p-4 text-sm text-ink-soft">No rows match these table filters.</p>
         ) : rows.map((point) => (
           <article key={point.month_year} className="border-b border-lavander/70 p-3 last:border-b-0 even:bg-cream/30">
             <h4 className="mb-2 font-semibold text-deep-violet-blue">{point.label}</h4>
             <dl className="grid grid-cols-2 gap-x-3 gap-y-2">
               {visibleColumns.map((series) => (
                 <div key={series.key} className="min-w-0">
-                  <dt className="text-[10px] font-semibold uppercase leading-tight tracking-wide text-deep-violet-blue/60">{series.label}</dt>
+                  <dt className="text-[11px] font-semibold uppercase leading-tight tracking-wide text-ink-soft">{series.label}</dt>
                   <dd className="mt-0.5 text-sm font-medium tabular-nums text-deep-violet-blue"><CellValue point={point} seriesKey={series.key} /></dd>
                 </div>
               ))}
@@ -161,7 +161,7 @@ export default function ForecastTable({ points, visibleSeries, modelLabel = '' }
                 {visibleColumns.map((series) => (
                   <th
                     key={series.key}
-                    className="px-2.5 py-2 text-right text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60"
+                    className="px-2.5 py-2 text-right text-[10px] font-semibold uppercase tracking-wide text-ink-soft"
                   >
                     {series.label}
                   </th>

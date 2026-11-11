@@ -42,7 +42,7 @@ function SettingsChangedNote({ change, onUpdate }) {
   return (
     <p className="rounded-md border border-violet/40 bg-lavander/40 px-2.5 py-2 text-[11px] text-deep-violet-blue">
       Promotion uplift settings now say {parts.join(', ')}.{' '}
-      <button type="button" onClick={onUpdate} className="font-medium text-scenario underline-offset-2 hover:underline">
+      <button type="button" onClick={onUpdate} className="font-medium text-scenario-ink underline-offset-2 hover:underline">
         Update
       </button>
     </p>
@@ -206,7 +206,7 @@ export default function PromotionsSection({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <p className="flex items-center gap-1 text-[11px] text-deep-violet-blue/70">
+        <p className="flex items-center gap-1 text-[11px] text-ink-soft">
           Plan a promotion and see its uplift on the chart.
           {SCENARIO_PROMOTIONS_DEMO ? (
             <InfoTooltip label="About demo mode">
@@ -218,7 +218,7 @@ export default function PromotionsSection({
           ) : null}
         </p>
         {placeholderInUse ? (
-          <span className="shrink-0 rounded-full border border-violet/40 bg-cream px-2 py-0.5 text-[10px] font-medium text-deep-violet-blue/70">
+          <span className="shrink-0 rounded-full border border-violet/40 bg-cream px-2 py-0.5 text-[10px] font-medium text-ink-soft">
             Placeholder values
           </span>
         ) : null}
@@ -257,7 +257,7 @@ export default function PromotionsSection({
                 <span className="block truncate text-xs font-medium text-deep-violet-blue">
                   {customerLabel(promotion.customer)} · {promotion.mechanicLabel || 'Draft promotion'}
                 </span>
-                <span className="block truncate text-[11px] text-deep-violet-blue/60">
+                <span className="block truncate text-[11px] text-ink-soft">
                   {promotionSummary(promotion)}
                 </span>
                 <span
@@ -265,13 +265,13 @@ export default function PromotionsSection({
                     'block text-[11px]',
                     hasUnsavedPromotionChanges(promotion)
                       ? 'font-medium text-scenario-ink'
-                      : 'italic text-deep-violet-blue/50'
+                      : 'italic text-ink-soft'
                   )}
                 >
                   {statusText(promotion)}
                 </span>
                 {impacts.has(promotion.id) ? null : (
-                  <span className="block text-[11px] italic text-deep-violet-blue/50">
+                  <span className="block text-[11px] italic text-ink-soft">
                     Not in current chart view
                   </span>
                 )}
@@ -289,7 +289,7 @@ export default function PromotionsSection({
       </ul>
 
       {items.length ? null : (
-        <p className="text-xs text-deep-violet-blue/60">No promotions yet. Add one to start simulating.</p>
+        <p className="text-xs text-ink-soft">No promotions yet. Add one to start simulating.</p>
       )}
 
       <button
@@ -302,7 +302,7 @@ export default function PromotionsSection({
         {uplifts.loading ? 'Loading uplift values…' : 'Add promotion'}
       </button>
       {months.length && customerOptions.length ? null : (
-        <p className="text-[11px] text-deep-violet-blue/60">
+        <p className="text-[11px] text-ink-soft">
           Pick a date range that includes forecast months to add promotions.
         </p>
       )}
@@ -313,7 +313,7 @@ export default function PromotionsSection({
           <button
             type="button"
             onClick={() => setNotice(null)}
-            className="font-medium text-scenario underline-offset-2 hover:underline"
+            className="font-medium text-scenario-ink underline-offset-2 hover:underline"
           >
             Dismiss
           </button>

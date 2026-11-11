@@ -96,7 +96,7 @@ export default function CustomerRow({
           {customer.retailers.length > 0 ? (
             <RetailerTable retailers={customer.retailers} inset={EXPANDED_ROW_INSET} customerName={customer.customer_name} actionsFor={retailerActions} />
           ) : (
-            <p className="text-sm text-deep-violet-blue/70">{name} has no retailers yet.</p>
+            <p className="text-sm text-ink-soft">{name} has no retailers yet.</p>
           )}
           <div>
             <Button

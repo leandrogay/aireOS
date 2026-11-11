@@ -37,7 +37,7 @@ function ItemsBadge({ items }) {
       <TooltipTrigger delay={150} closeDelay={100} className="mr-1.5 inline-flex items-center gap-1 align-[1px]">
         {groups.map((group, index) => (
           <span key={group.key} className="inline-flex items-center gap-1">
-            {index ? <span className="text-[10px] text-deep-violet-blue/50">+</span> : null}
+            {index ? <span className="text-[10px] text-ink-soft">+</span> : null}
             <span
               className={cn(
                 pillClass,
@@ -128,7 +128,7 @@ export default function ScenarioYearComparison({ rows, loading = false }) {
                 <td className={cn('whitespace-nowrap px-2.5 py-1.5 text-left', rule)}>
                   <span className="font-medium">{row.label}</span>
                   {row.caption ? (
-                    <span className="ml-1.5 text-[10px] font-normal text-deep-violet-blue/50">{row.caption}</span>
+                    <span className="ml-1.5 text-[11px] font-normal text-ink-soft">{row.caption}</span>
                   ) : null}
                 </td>
                 <td className={cell}>{formatFigure(row.current)}</td>
@@ -138,10 +138,10 @@ export default function ScenarioYearComparison({ rows, loading = false }) {
                       {row.items.length ? <ItemsBadge items={row.items} /> : null}
                       {row.current == null ? '—' : formatFigure(row.current + row.delta)}
                     </td>
-                    <td className={cn(cell, changed ? 'font-semibold text-scenario-ink' : 'text-deep-violet-blue/45')}>
+                    <td className={cn(cell, changed ? 'font-semibold text-scenario-ink' : 'text-ink-soft')}>
                       {changed ? signedFigure(row.delta) : '—'}
                     </td>
-                    <td className={cn(cell, changed ? 'font-semibold text-scenario-ink' : 'text-deep-violet-blue/45')}>
+                    <td className={cn(cell, changed ? 'font-semibold text-scenario-ink' : 'text-ink-soft')}>
                       {changed && row.current
                         ? `${row.delta < 0 ? '−' : '+'}${Math.abs((row.delta / row.current) * 100).toFixed(1)}%`
                         : '—'}

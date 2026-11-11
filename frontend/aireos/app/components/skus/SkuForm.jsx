@@ -15,11 +15,11 @@ import { buildSkuPayload, formFromSku, validateSkuForm } from '@/app/utils/skuFo
 import { cn } from '@/lib/utils';
 
 const inputClass =
-  'w-full min-w-0 max-w-full rounded-md border border-lavander bg-cream px-2.5 py-1.5 text-sm text-deep-violet-blue placeholder:text-deep-violet-blue/45 focus:border-violet focus:outline-none';
+  'w-full min-w-0 max-w-full rounded-glass-sm border border-deep-violet-blue/60 bg-white px-2.5 py-1.5 text-sm text-deep-violet-blue outline-none transition-[border-color,background-color] duration-hover placeholder:text-ink-soft hover:border-deep-violet-blue/75 focus-ring disabled:opacity-60';
 const invalidInputClass = 'border-red-400 focus:border-red-500';
 const labelClass = 'mb-1 block text-xs font-medium text-deep-violet-blue';
 const errorClass = 'mt-1 text-xs text-red-700';
-const hintClass = 'mt-1 text-[11px] text-deep-violet-blue/60';
+const hintClass = 'mt-1 text-[11px] text-ink-soft';
 const optionRowClass =
   'flex min-w-0 cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2 py-1 text-sm text-deep-violet-blue hover:bg-cream';
 
@@ -46,14 +46,14 @@ function FormSection({ step, title, hint, children }) {
     <section className="grid gap-x-6 gap-y-3 px-4 py-4 md:grid-cols-[11rem_minmax(0,1fr)]">
       <div className="flex items-start gap-2.5">
         <span
-          className="mt-px flex size-5 shrink-0 items-center justify-center rounded-full bg-deep-violet-blue font-mono text-[11px] font-medium text-white"
+          className="mt-px flex size-5 shrink-0 items-center justify-center rounded-full bg-deep-violet-blue tabular-nums text-[11px] font-medium text-white"
           aria-hidden="true"
         >
           {step}
         </span>
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-deep-violet-blue">{title}</h3>
-          <p className="mt-0.5 text-xs leading-snug text-deep-violet-blue/65">{hint}</p>
+          <p className="mt-0.5 text-xs leading-snug text-ink-soft">{hint}</p>
         </div>
       </div>
       <div className="min-w-0">{children}</div>
@@ -181,7 +181,7 @@ function OptionField({
                         : createLabel}
                     </span>
                   </Button>
-                  <p className="px-2 pb-1 text-[11px] text-deep-violet-blue/60">
+                  <p className="px-2 pb-1 text-[11px] text-ink-soft">
                     {exactMatch
                       ? `This ${optionKind} already exists.`
                       : 'Enter a new name above. It will be saved with this SKU.'}
@@ -200,7 +200,7 @@ function OptionField({
                 </button>
               )}
               {!visibleOptions.length && !validCandidate && (
-                <p className="px-2 py-1 text-xs text-deep-violet-blue/60">
+                <p className="px-2 py-1 text-xs text-ink-soft">
                   {numeric ? 'Enter a whole number.' : 'No matching options.'}
                 </p>
               )}
@@ -262,7 +262,7 @@ export default function SkuForm({ open, sku, options = {}, onSave, onClose }) {
             <div
               role="status"
               aria-live="polite"
-              className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-lg bg-white/70 text-deep-violet-blue/70 backdrop-blur-[1px]"
+              className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-lg bg-white/70 text-ink-soft"
             >
               <Loader2 className="h-6 w-6 animate-spin" />
               <p className="text-sm">{isEdit ? 'Saving changes...' : 'Creating SKU...'}</p>
@@ -274,7 +274,7 @@ export default function SkuForm({ open, sku, options = {}, onSave, onClose }) {
               <DialogTitle className="font-serif text-xl text-deep-violet-blue">
                 {isEdit ? `Edit ${sku.sku}` : 'Create SKU'}
               </DialogTitle>
-              <DialogDescription className="mt-0.5 text-xs text-deep-violet-blue/65">
+              <DialogDescription className="mt-0.5 text-xs text-ink-soft">
                 Fields marked <span className="text-red-700">*</span> are required.
               </DialogDescription>
             </div>
@@ -455,14 +455,14 @@ export default function SkuForm({ open, sku, options = {}, onSave, onClose }) {
                 type="button"
                 onClick={onClose}
                 disabled={saving}
-                className="rounded-md border border-deep-violet-blue/30 bg-white px-4 py-1.5 text-sm font-medium text-deep-violet-blue transition hover:bg-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-glass-sm border border-deep-violet-blue/30 bg-white px-4 py-1.5 text-sm font-medium text-deep-violet-blue transition hover:bg-cream focus-ring disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={saving}
-                className="rounded-md border border-deep-violet-blue bg-deep-violet-blue px-4 py-1.5 text-sm font-medium text-white transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-glass-sm border border-deep-violet-blue bg-deep-violet-blue px-4 py-1.5 text-sm font-medium text-white transition hover:opacity-90 focus-ring disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {saving ? 'Saving...' : isEdit ? 'Save changes' : 'Create SKU'}
               </button>

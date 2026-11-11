@@ -23,7 +23,7 @@ import MechanicLookupPopover from '@/components/scenario/MechanicLookupPopover';
 
 const fieldClass =
   'h-8 w-full rounded-md border border-violet bg-white px-2 text-xs text-deep-violet-blue disabled:opacity-50';
-const labelClass = 'mb-0.5 block text-[11px] text-deep-violet-blue/70';
+const labelClass = 'mb-0.5 block text-[11px] text-ink-soft';
 
 function signedUnits(value) {
   const rounded = Math.round(value);
@@ -89,7 +89,7 @@ export default function PromotionEditor({
 
   return (
     <div className="space-y-2.5 border-t border-lavander pt-3">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-soft">
         Edit selected promotion
       </p>
 
@@ -154,7 +154,7 @@ export default function PromotionEditor({
           ))}
         </select>
         {anchor ? (
-          <p className="mt-0.5 text-[11px] text-deep-violet-blue/50">
+          <p className="mt-0.5 text-[11px] text-ink-soft">
             Ordinary month for {customerLabel(promotion.customer)}: {anchor.anchor_pct}% off
             {anchorNote(anchor, Boolean(resolved.product_anchors?.[promotion.sku]))}
           </p>
@@ -190,7 +190,7 @@ export default function PromotionEditor({
       <div className="space-y-1">
         <div className="flex items-center justify-between">
           <label className={labelClass} htmlFor="promo-uplift">Mechanic uplift</label>
-          <output htmlFor="promo-uplift" className="font-serif text-lg text-scenario">
+          <output htmlFor="promo-uplift" className="font-serif text-lg text-scenario-ink">
             {formatPct(sliderValue)}
           </output>
         </div>
@@ -216,29 +216,29 @@ export default function PromotionEditor({
           />
         </div>
         {overridden ? (
-          <p className="text-[11px] text-deep-violet-blue/70">
+          <p className="text-[11px] text-ink-soft">
             Adjusted from {formatPct(promotion.referenceUpliftPct)} ·{' '}
             <button
               type="button"
               onClick={() => onUpdate({ overrideUpliftPct: null })}
-              className="font-medium text-scenario underline-offset-2 hover:underline"
+              className="font-medium text-scenario-ink underline-offset-2 hover:underline"
             >
               Reset
             </button>
           </p>
         ) : (
-          <p className="text-[11px] text-deep-violet-blue/50">
+          <p className="text-[11px] text-ink-soft">
             Reference value ({sourceLabel(promotion.referenceSource)}
             {bySkuCount ? `; ${bySkuCount} SKU${bySkuCount === 1 ? ' has' : 's have'} its own value` : ''}). Move the
             slider to override it for this promotion only.
           </p>
         )}
-        <p className="text-[11px] text-deep-violet-blue/50">
+        <p className="text-[11px] text-ink-soft">
           The forecast already reflects an ordinary month
           {anchor ? ` for ${customerLabel(promotion.customer)} (usual: ${anchor.anchor_pct}% off)` : ''}, so this is
           the change on top of that, not the promotion&apos;s whole effect. Planning the usual discount adds about 0%.
         </p>
-        <p className="text-[11px] text-deep-violet-blue/70">
+        <p className="text-[11px] text-ink-soft">
           Total uplift: <b>{formatPctRange(effectiveUpliftRange(promotion))}</b>
           {promotion.voucher ? ' (mechanic + voucher)' : ''}
         </p>
@@ -262,7 +262,7 @@ export default function PromotionEditor({
               labelClassName={labelClass}
             />
           </div>
-          <p className="mt-1 text-[11px] text-deep-violet-blue/50">
+          <p className="mt-1 text-[11px] text-ink-soft">
             A side offer adds its uplift for the days it runs: 1-10 Nov adds a third of it to November.
           </p>
         </div>
@@ -299,7 +299,7 @@ export default function PromotionEditor({
 
       <div>
         <label className={labelClass} htmlFor="promo-explanation">
-          Explanation <span className="text-deep-violet-blue/50">(optional · shown in the pitch summary)</span>
+          Explanation <span className="text-ink-soft">(optional · shown in the pitch summary)</span>
         </label>
         <textarea
           id="promo-explanation"
@@ -307,7 +307,7 @@ export default function PromotionEditor({
           value={promotion.explanation}
           placeholder="Why this promotion, and what's behind the uplift."
           onChange={(event) => onUpdate({ explanation: event.target.value })}
-          className="w-full rounded-md border border-violet bg-white px-2 py-1.5 text-xs text-deep-violet-blue"
+          className="w-full rounded-glass-sm border border-deep-violet-blue/60 bg-white px-2 py-1.5 text-xs text-deep-violet-blue placeholder:text-ink-soft transition-[border-color,background-color] duration-hover hover:border-deep-violet-blue/75 focus-ring"
         />
       </div>
 
@@ -333,7 +333,7 @@ export default function PromotionEditor({
         )}
       </p>
       {promotion.sku && stacked.count ? (
-        <p className="text-[11px] text-deep-violet-blue/70">
+        <p className="text-[11px] text-ink-soft">
           Added on top of the promotion already in the forecast for {stacked.count} SKU-
           {stacked.count === 1 ? 'month' : 'months'} ({monthSpanLabel(stacked.months)}). Switch to Simulate New
           Promotions above the chart to plan from the forecast without it.

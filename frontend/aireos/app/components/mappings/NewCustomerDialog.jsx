@@ -103,7 +103,7 @@ function NewCustomerForm({ defaults, customers, unlinked, onCreated, onCancel, o
         <div
           role="status"
           aria-live="polite"
-          className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-lg bg-white/70 text-deep-violet-blue/70 backdrop-blur-[1px]"
+          className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-lg bg-white/70 text-ink-soft"
         >
           <Loader2 className="h-6 w-6 animate-spin" />
           <p className="text-sm">Creating customer…</p>
@@ -113,7 +113,7 @@ function NewCustomerForm({ defaults, customers, unlinked, onCreated, onCancel, o
       {/* ==== Header ==== */}
       <div className="border-b border-lavander py-3 pl-4 pr-12">
         <h2 className="font-serif text-xl text-deep-violet-blue">New customer</h2>
-        <p className="mt-0.5 text-xs text-deep-violet-blue/65">
+        <p className="mt-0.5 text-xs text-ink-soft">
           Creates the customer and its retailers, the same as on the Customers page.
         </p>
       </div>
@@ -171,7 +171,7 @@ function NewCustomerForm({ defaults, customers, unlinked, onCreated, onCancel, o
                 />
                 <span>
                   {channel.label}
-                  <span className="block text-[11px] text-deep-violet-blue/60">{channel.help}</span>
+                  <span className="block text-[11px] text-ink-soft">{channel.help}</span>
                 </span>
               </label>
             ))}
@@ -192,12 +192,12 @@ function NewCustomerForm({ defaults, customers, unlinked, onCreated, onCancel, o
                 <li key={item.retailerName}>
                   <span className="font-mono text-[11px]">{item.retailerName}</span>
                   {item.unlinked && (
-                    <span className="text-deep-violet-blue/70"> — already made by an earlier upload; it will be linked</span>
+                    <span className="text-ink-soft"> — already made by an earlier upload; it will be linked</span>
                   )}
                 </li>
               ))}
             </ul>
-            <p className="mt-1.5 flex items-start gap-1 text-[11px] text-deep-violet-blue/60">
+            <p className="mt-1.5 flex items-start gap-1 text-[11px] text-ink-soft">
               <Info aria-hidden="true" className="mt-px size-3 shrink-0" />
               The Sales Dashboard finds a customer&apos;s sales through these names.
             </p>

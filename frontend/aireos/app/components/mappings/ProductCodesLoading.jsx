@@ -10,7 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 export default function ProductCodesLoading() {
   return (
     <div role="status" className="space-y-2">
-      <p className="flex items-center gap-1.5 text-xs text-deep-violet-blue/70">
+      <p className="flex items-center gap-1.5 text-xs text-ink-soft">
         <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />
         Reading the product codes in the example file…
       </p>

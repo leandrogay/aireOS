@@ -23,7 +23,7 @@ function signedUnits(value) {
 function SideCells({ kind, comparison }) {
   if (!comparison) {
     return (
-      <td className={cn(inventoryTdClass, groupStartClass, 'text-deep-violet-blue/50')} colSpan={3}>
+      <td className={cn(inventoryTdClass, groupStartClass, 'text-ink-soft')} colSpan={3}>
         No forecast for this month
       </td>
     );
@@ -36,7 +36,7 @@ function SideCells({ kind, comparison }) {
       </td>
       <td className={cn(inventoryTdClass, numClass)}>
         <ChangeValue pct={comparison.percent} decimals={2} />
-        <span className="block text-[11px] text-deep-violet-blue/60">{signedUnits(comparison.difference)} units</span>
+        <span className="block text-[11px] text-ink-soft">{signedUnits(comparison.difference)} units</span>
       </td>
     </>
   );

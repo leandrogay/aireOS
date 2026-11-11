@@ -10,7 +10,7 @@ import { fileKind } from '@/app/utils/uploadFlow';
 import { trayItems, trayRowKey, trayStatus, trayTitle } from '@/app/utils/uploadTray';
 
 const LINK_CLASS =
-  'mt-1 inline-block rounded-md text-xs font-medium text-deep-violet-blue underline underline-offset-2 outline-none focus-visible:ring-3 focus-visible:ring-ring/50';
+  'mt-1 inline-block rounded-md text-xs font-medium text-deep-violet-blue underline underline-offset-2 focus-ring';
 
 // The next step for a finished file, where there is one. Decisions and the
 // load confirmation live on the upload page, so the tray only points to them.
@@ -22,7 +22,7 @@ function NextStep({ item, onRetry, onFollow }) {
       <button
         type="button"
         onClick={() => onRetry(item.id)}
-        className="mt-1 inline-flex items-center gap-1 rounded-md text-xs font-medium text-deep-violet-blue underline underline-offset-2 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        className="mt-1 inline-flex items-center gap-1 rounded-md text-xs font-medium text-deep-violet-blue underline underline-offset-2 focus-ring"
       >
         <RotateCw aria-hidden="true" className="size-3" />
         Try again
@@ -63,7 +63,7 @@ function TrayRow({ item, onRetry, onFollow }) {
           <p
             className={cn(
               'mt-0.5 text-xs',
-              fileKind(item) === 'failed' ? 'text-red-700' : 'text-deep-violet-blue/70',
+              fileKind(item) === 'failed' ? 'text-red-700' : 'text-ink-soft',
             )}
           >
             {trayStatus(item)}

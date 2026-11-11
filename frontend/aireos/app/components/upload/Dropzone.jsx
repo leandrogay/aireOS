@@ -64,7 +64,7 @@ export default function Dropzone({ onFiles, disabled = false }) {
       // A cool lavender tint, not the page's cream: in cream it read as a hole
       // in the white card. The tint marks it as its own target, and it
       // deepens on hover and goes solid while a file is held over it.
-      className={`group flex flex-col items-center rounded-xl border-2 px-6 py-10 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-deep-violet-blue focus-visible:ring-offset-2 focus-visible:ring-offset-white ${
+      className={`group flex flex-col items-center rounded-xl border-2 px-6 py-10 text-center transition-colors focus-ring ${
         isDragging
           ? 'border-solid border-deep-violet-blue bg-lavander'
           : 'border-dashed border-violet bg-lavander/40 hover:border-deep-violet-blue/60 hover:bg-lavander/70'
@@ -92,7 +92,7 @@ export default function Dropzone({ onFiles, disabled = false }) {
           </>
         )}
       </p>
-      <p className="mt-1 text-sm text-deep-violet-blue/70">{UPLOAD_LIMITS_TEXT}</p>
+      <p className="mt-1 text-sm text-ink-soft">{UPLOAD_LIMITS_TEXT}</p>
 
       <input
         ref={inputRef}

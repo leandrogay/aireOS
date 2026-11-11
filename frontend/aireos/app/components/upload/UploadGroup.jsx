@@ -25,18 +25,18 @@ import UploadFileRow from '@/components/upload/UploadFileRow';
 // be a second animation saying the same thing. Checking has no bar, so its
 // spinner is the only sign the check is running.
 const GROUP_ICONS = {
-  checking: { Icon: Loader2, className: 'animate-spin text-violet motion-reduce:animate-none' },
-  uploading: { Icon: CloudUpload, className: 'text-violet' },
+  checking: { Icon: Loader2, className: 'animate-spin text-deep-violet-blue motion-reduce:animate-none' },
+  uploading: { Icon: CloudUpload, className: 'text-deep-violet-blue' },
   ready: { Icon: CheckCircle2, className: 'text-green-700' },
   uploaded: { Icon: CheckCircle2, className: 'text-green-700' },
-  ready_to_load: { Icon: Database, className: 'text-amber-700' },
-  duplicate: { Icon: CopyCheck, className: 'text-amber-700' },
+  ready_to_load: { Icon: Database, className: 'text-amber-800' },
+  duplicate: { Icon: CopyCheck, className: 'text-amber-800' },
   failed: { Icon: XCircle, className: 'text-red-700' },
-  needs_review: { Icon: AlertTriangle, className: 'text-amber-700' },
-  near_match: { Icon: AlertTriangle, className: 'text-amber-700' },
-  new_layout: { Icon: FilePlus2, className: 'text-amber-700' },
-  unchecked: { Icon: CircleDashed, className: 'text-deep-violet-blue/60' },
-  skipped: { Icon: SkipForward, className: 'text-deep-violet-blue/60' },
+  needs_review: { Icon: AlertTriangle, className: 'text-amber-800' },
+  near_match: { Icon: AlertTriangle, className: 'text-amber-800' },
+  new_layout: { Icon: FilePlus2, className: 'text-amber-800' },
+  unchecked: { Icon: CircleDashed, className: 'text-ink-soft' },
+  skipped: { Icon: SkipForward, className: 'text-ink-soft' },
 };
 
 // "Apply to all" for duplicates, as a file manager offers it once several
@@ -74,7 +74,7 @@ export default function UploadGroup({ group, idPrefix = 'upload', onRemove, onRe
         >
           <Icon aria-hidden="true" className={cn('size-4 shrink-0', className)} />
           {group.label}
-          <span className="font-normal text-deep-violet-blue/50 tabular-nums">
+          <span className="font-normal text-ink-soft tabular-nums">
             ({group.items.length})
           </span>
         </h2>
@@ -84,7 +84,7 @@ export default function UploadGroup({ group, idPrefix = 'upload', onRemove, onRe
           <button
             type="button"
             onClick={() => onLoad(group.items.map((item) => item.id))}
-            className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-deep-violet-blue bg-deep-violet-blue px-3 py-1 text-xs font-medium text-white transition hover:opacity-90"
+            className="ml-auto inline-flex items-center gap-1.5 rounded-glass-sm border border-deep-violet-blue bg-deep-violet-blue px-3 py-1 text-xs font-medium text-white transition hover:opacity-90"
           >
             <Database aria-hidden="true" className="size-3.5" />
             Review and load all {group.items.length}
@@ -97,7 +97,7 @@ export default function UploadGroup({ group, idPrefix = 'upload', onRemove, onRe
                 key={option.value}
                 type="button"
                 onClick={() => group.items.forEach((item) => onDecide(item.id, option.value))}
-                className="rounded-md px-2 py-0.5 text-xs font-medium text-deep-violet-blue/70 transition hover:bg-lavander hover:text-deep-violet-blue"
+                className="rounded-glass-sm px-2 py-0.5 text-xs font-medium text-ink-soft transition hover:bg-lavander hover:text-deep-violet-blue"
               >
                 {option.label}
               </button>
@@ -106,7 +106,7 @@ export default function UploadGroup({ group, idPrefix = 'upload', onRemove, onRe
         )}
       </div>
       {group.note && (
-        <p className="mt-0.5 pl-5.5 text-xs text-deep-violet-blue/70">{group.note}</p>
+        <p className="mt-0.5 pl-5.5 text-xs text-ink-soft">{group.note}</p>
       )}
       <ul className="mt-2 space-y-2">
         {group.items.map((item) => (

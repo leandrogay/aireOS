@@ -41,7 +41,7 @@ function ColumnPicker({ value, columns, rows, samples, onChange, ariaLabel, plac
 function Samples({ values }) {
   if (!values?.length) return null;
   return (
-    <p className="truncate font-mono text-[11px] text-deep-violet-blue/50" title={values.join(' · ')}>
+    <p className="truncate font-mono text-[11px] text-ink-soft" title={values.join(' · ')}>
       e.g. {values.slice(0, 4).join(' · ')}
     </p>
   );
@@ -82,7 +82,7 @@ function RowsAbove({ draft, onChange, groups, layout }) {
                   <span className="font-medium">
                     Row {choice.row} ({choice.rowsAbove === 1 ? 'just above' : `${choice.rowsAbove} rows above`} the headings)
                   </span>
-                  <span className="block truncate font-mono text-deep-violet-blue/70">
+                  <span className="block truncate font-mono text-ink-soft">
                     {columns
                       .slice(0, 6)
                       .map((column) => `${column} → ${choice.cells[column] ?? '—'}`)
@@ -99,7 +99,7 @@ function RowsAbove({ draft, onChange, groups, layout }) {
           again, or say how many rows up to look.
         </p>
       )}
-      <label className="block text-[11px] text-deep-violet-blue/70">
+      <label className="block text-[11px] text-ink-soft">
         Rows above the headings
         <input
           type="number"
@@ -211,7 +211,7 @@ export default function FieldMethodSettings({ field, method, draft, onChange, ma
         <div className="space-y-1.5">
           <Headings groups={groups} />
           {field !== 'period_start' && (
-            <p className="text-[11px] text-deep-violet-blue/60">
+            <p className="text-[11px] text-ink-soft">
               The same headings can fill more than one field — the store code and the store name, say, or the brand.
               Choose this on each.
             </p>
@@ -251,7 +251,7 @@ export default function FieldMethodSettings({ field, method, draft, onChange, ma
             placeholder="Choose the price or cost column…"
           />
           <Samples values={samples[draft.column]} />
-          <p className="text-[11px] text-deep-violet-blue/60">
+          <p className="text-[11px] text-ink-soft">
             Sales value = {fieldLabel('quantity_units')} × this column, row by row. Change it any time, e.g. from a promo
             cost to a normal cost.
           </p>
@@ -309,7 +309,7 @@ export default function FieldMethodSettings({ field, method, draft, onChange, ma
 
     case 'not_available':
       return (
-        <label className="block text-[11px] text-deep-violet-blue/70">
+        <label className="block text-[11px] text-ink-soft">
           Why it is not in the file (kept with the nomenclature)
           <input
             type="text"

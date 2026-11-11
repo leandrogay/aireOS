@@ -497,7 +497,7 @@ export default function ScenarioBuilder() {
           itemCount={itemCount}
           blocksSection={
             scenarioBlocks.loading ? (
-              <p className="text-xs text-deep-violet-blue/60">Loading building blocks…</p>
+              <p className="text-xs text-ink-soft">Loading building blocks…</p>
             ) : (
               <BuildingBlocksSection
                 items={panelBlocks}
@@ -520,7 +520,7 @@ export default function ScenarioBuilder() {
           }
           promotionsSection={
             scenarioPromotions.loading ? (
-              <p className="text-xs text-deep-violet-blue/60">Loading promotions…</p>
+              <p className="text-xs text-ink-soft">Loading promotions…</p>
             ) : (
               <PromotionsSection
                 items={scenarioPromotions.promotions}

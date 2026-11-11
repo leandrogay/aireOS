@@ -6,7 +6,7 @@ import { PACK_OVERLAY_TYPES, PROMO_OVERLAY_TYPES } from '@/app/utils/forecastVie
 function PillGroup({ label, options, selected, onToggle }) {
   return (
     <div className="flex min-w-0 flex-col items-start gap-1.5 sm:flex-row sm:items-center sm:gap-2">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/50">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-soft">
         {label}
       </p>
       <div className="flex flex-wrap gap-1.5">
@@ -22,7 +22,7 @@ function PillGroup({ label, options, selected, onToggle }) {
                 'inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-medium transition',
                 isActive
                   ? 'border-transparent font-semibold shadow-sm'
-                  : 'border-lavander bg-white text-deep-violet-blue/55 hover:bg-cream'
+                  : 'border-lavander bg-white text-ink-soft hover:bg-cream'
               )}
               style={
                 isActive

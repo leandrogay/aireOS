@@ -44,13 +44,13 @@ export default function MappingRow({ mapping, onOpen }) {
             event.stopPropagation();
             onOpen(mapping.mappingId);
           }}
-          className="block max-w-full truncate rounded-md text-left font-medium underline-offset-2 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="block max-w-full truncate rounded-md text-left font-medium underline-offset-2 focus-ring hover:underline"
           title={mappingTitle(mapping)}
         >
           {mappingTitle(mapping)}
         </button>
         {sourceLine && (
-          <p className="truncate text-xs text-deep-violet-blue/60" title={mapping.filename || sourceLine}>
+          <p className="truncate text-xs text-ink-soft" title={mapping.filename || sourceLine}>
             {sourceLine}
           </p>
         )}

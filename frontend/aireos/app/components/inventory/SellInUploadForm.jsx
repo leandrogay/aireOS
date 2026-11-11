@@ -206,7 +206,7 @@ export default function SellInUploadForm({ onSaved }) {
             <div className={`${NOTICE_CLASS} space-y-2`} role="status">
               <p className="text-xs text-deep-violet-blue">
                 <span className="font-medium">Not saved</span>
-                <span className="text-deep-violet-blue/70">
+                <span className="text-ink-soft">
                   {' '}
                   — matched to no inventory customer, product or finished month with sell-out loaded.
                 </span>

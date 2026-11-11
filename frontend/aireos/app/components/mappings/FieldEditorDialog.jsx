@@ -70,11 +70,11 @@ function MethodOption({ item, checked, isCurrent, onChoose }) {
         <span className="min-w-0 flex-1">
           <span className="font-medium">{item.label}</span>
           {isCurrent && (
-            <span className="ml-1.5 rounded-full bg-lavander px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/70">
+            <span className="ml-1.5 rounded-full bg-lavander px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-ink-soft">
               Now
             </span>
           )}
-          {item.reason && <span className="block text-[11px] text-deep-violet-blue/60">{item.reason}</span>}
+          {item.reason && <span className="block text-[11px] text-ink-soft">{item.reason}</span>}
         </span>
       </label>
     </li>
@@ -112,8 +112,8 @@ function EditorForm({ entry, mapping, state, layout, onApply, onClose }) {
     <form noValidate onSubmit={handleSubmit} className="flex max-h-[85vh] flex-col aire-card">
       <div className="border-b border-lavander py-3 pl-4 pr-12">
         <h2 className="font-serif text-xl text-deep-violet-blue">How is {entry.label} filled?</h2>
-        <p className="mt-0.5 text-xs text-deep-violet-blue/65">
-          {entry.help} <span className="text-deep-violet-blue/45">Now: {decisionSummary(current)}.</span>
+        <p className="mt-0.5 text-xs text-ink-soft">
+          {entry.help} <span className="text-ink-soft">Now: {decisionSummary(current)}.</span>
         </p>
       </div>
 
@@ -166,7 +166,7 @@ function EditorForm({ entry, mapping, state, layout, onApply, onClose }) {
         </fieldset>
 
         <div className="min-w-0 space-y-2">
-          <p className="text-[11px] text-deep-violet-blue/70">{methods.find((item) => item.method === method)?.help}</p>
+          <p className="text-[11px] text-ink-soft">{methods.find((item) => item.method === method)?.help}</p>
           <FieldMethodSettings
             field={field}
             method={method}

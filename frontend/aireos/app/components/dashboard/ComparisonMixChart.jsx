@@ -66,9 +66,9 @@ function MixLegend({ rows, names }) {
       <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1 text-xs text-deep-violet-blue">
         {rows.map((row) => (
           <Fragment key={row.key}>
-            <span className={row.hatched ? 'text-deep-violet-blue/70' : 'font-medium'}>{names[row.key]}</span>
+            <span className={row.hatched ? 'text-ink-soft' : 'font-medium'}>{names[row.key]}</span>
             <span className="flex flex-wrap items-center gap-x-3 gap-y-1 border-l border-lavander pl-3">
-              {row.formats.length === 0 && <span className="text-deep-violet-blue/50">No sales data</span>}
+              {row.formats.length === 0 && <span className="text-ink-soft">No sales data</span>}
               {row.formats.filter((format) => format !== UNNAMED_FORMAT).map((format) => (
                 <span key={format} className="flex items-center gap-1.5">
                   <PeriodSwatch color={colorFor(format)} tint={hatchTint(colorFor(format))} hatched={row.hatched} />

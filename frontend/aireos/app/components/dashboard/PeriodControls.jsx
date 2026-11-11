@@ -47,7 +47,7 @@ export default function PeriodControls({
   return (
     <div className="flex flex-wrap items-end gap-2">
       <div>
-        <p className="mb-0.5 text-xs text-deep-violet-blue/70">Period</p>
+        <p className="mb-0.5 text-xs text-ink-soft">Period</p>
         <DateRangeControl
           start={start}
           end={end}
@@ -59,7 +59,7 @@ export default function PeriodControls({
         />
       </div>
       <div>
-        <p className="mb-0.5 text-xs text-deep-violet-blue/70">Compare to</p>
+        <p className="mb-0.5 text-xs text-ink-soft">Compare to</p>
         <CompareControl
           value={compareTo}
           options={compareOptions}
@@ -75,7 +75,7 @@ export default function PeriodControls({
           onChange={onCompareChange}
         />
       </div>
-      {dataThrough && <span className="pb-1 text-xs text-deep-violet-blue/60">Data to {dataThrough}</span>}
+      {dataThrough && <span className="pb-1 text-xs text-ink-soft">Data to {dataThrough}</span>}
     </div>
   );
 }
