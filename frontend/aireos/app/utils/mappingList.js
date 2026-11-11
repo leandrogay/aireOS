@@ -9,9 +9,11 @@ export const MAPPING_STATE_LABELS = {
   pending: { label: 'Needs review' },
 };
 
-export const MAPPING_STATUS_OPTIONS = Object.entries(MAPPING_STATE_LABELS).map(
-  ([value, { label }]) => ({ value, label }),
-);
+export const MAPPING_STATUS_OPTIONS = [
+  { value: 'confirmed', label: 'Confirmed' },
+  { value: 'unused', label: 'Not in use' },
+  { value: 'pending', label: 'Needs review' },
+];
 
 // Values match mappingIssueKind().
 export const MAPPING_ISSUE_OPTIONS = [
@@ -56,13 +58,16 @@ export function issueSummary(mapping) {
  * a colour from.
  *
  * @param {object} mapping
- * @returns {{ kind: 'confirmed' | 'pending' | 'missing' | 'warnings' | 'unknown', label: string, detail: string | null }}
+ * @returns {{ kind: 'confirmed' | 'unused' | 'pending' | 'missing' | 'warnings' | 'unknown', label: string, detail: string | null }}
  */
 export function mappingStatus(mapping) {
   const state = MAPPING_STATE_LABELS[mapping.state];
   const issues = issueSummary(mapping);
 
   if (!state) return { kind: 'unknown', label: mapping.state || 'Unknown', detail: issues };
+  if (mapping.state === 'confirmed' && mapping.uploadCount === 0) {
+    return { kind: 'unused', label: 'Not in use', detail: issues };
+  }
   if (mapping.state === 'confirmed' && issues) {
     return { kind: mappingIssueKind(mapping), label: issues, detail: null };
   }
@@ -136,7 +141,7 @@ export function filterMappings(mappings, filters) {
   return mappings.filter(
     (mapping) =>
       picked(filters.customer, mappingCustomer(mapping)) &&
-      picked(filters.status, mapping.state) &&
+      picked(filters.status, mapping.state === 'confirmed' && mapping.uploadCount === 0 ? 'unused' : mapping.state) &&
       picked(filters.issues, mappingIssueKind(mapping)),
   );
 }
