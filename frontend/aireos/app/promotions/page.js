@@ -13,7 +13,6 @@ import useToast from '@/hooks/useToast';
 import {
   createPromotion,
   deletePromotion,
-  getPromotions,
   getRetailers,
   getSkuRanges,
   getStores,
@@ -26,17 +25,16 @@ import {
   resolveSelectedPeriods,
   validatePromotionForm,
 } from '@/app/utils/promotionForm';
-import {
-  promotionStoreKey,
-  storesCoveredByEvent,
-  promotionStoreNames,
-} from '@/app/utils/promotionOverview';
+import { promotionStoreNames } from '@/app/utils/promotionOverview';
 
 /**
  * One promotion spans many stores, so create is a single POST to
  * /api/promotions with every ticked retailer/store in `stores`.
- * Retailers, stores, and the overview list come from GET after
- * Cloud SQL ingest.
+ * Retailers and stores come from GET after Cloud SQL ingest; the overview
+ * (PromotionList) reads its own page and is told to read it again after a
+ * save or delete. A store already running the same event is the backend's
+ * call (promotion_service.create_promotion / update_promotion), since only
+ * it sees every promotion.
  */
 export default function PromotionsPage() {
   const [form, setForm] = useState(blankPromotionForm);
@@ -47,16 +45,13 @@ export default function PromotionsPage() {
   const [storesError, setStoresError] = useState('');
   const [skuRangeOptions, setSkuRangeOptions] = useState([]);
   const [skuRangesError, setSkuRangesError] = useState('');
-  // True from the start, like isLoadingList: all three load on mount, and
+  // True from the start: all three load on mount, and
   // the loaders only set state after their request returns.
   const [isLoadingRetailers, setIsLoadingRetailers] = useState(true);
   const [isLoadingStores, setIsLoadingStores] = useState(true);
   const [isLoadingSkuRanges, setIsLoadingSkuRanges] = useState(true);
-  const [promotions, setPromotions] = useState([]);
-  const [listError, setListError] = useState('');
-  // True from the start: the list loads on mount, so the first paint shows
-  // placeholder rows rather than the "no promotions yet" message.
-  const [isLoadingList, setIsLoadingList] = useState(true);
+  // Bumped whenever the overview should read its page again.
+  const [listVersion, setListVersion] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   // Form-level errors, shown inside the modal. Outcomes (created, updated,
   // deleted, delete failed) are toasts, so the page itself never shifts.
@@ -120,60 +115,15 @@ export default function PromotionsPage() {
     }
   }, []);
 
-  /**
-   * Apply a saved promotion to the overview immediately so staff do not
-   * wait on GET /api/promotions or the Refresh button.
-   *
-   * @param {object | object[]} next
-   */
-  const applyPromotionsToOverview = (next) => {
-    const rows = (Array.isArray(next) ? next : [next]).filter(
-      (item) => item && item.promotion_id != null,
-    );
-    if (!rows.length) return;
-
-    setPromotions((current) => {
-      const byId = new Map(current.map((item) => [item.promotion_id, item]));
-      for (const item of rows) {
-        byId.set(item.promotion_id, item);
-      }
-      return [...byId.values()];
-    });
-  };
-
-  /**
-   * Load the promotion overview from GET /api/promotions. Silent: it sets
-   * state only once the request returns (refreshPromotions shows the
-   * placeholder rows first).
-   */
-  const loadPromotions = useCallback(async () => {
-    try {
-      const data = await getPromotions();
-      setPromotions(data);
-      setListError('');
-    } catch (error) {
-      // Rows already loaded stay on screen under the error and its Retry.
-      setListError(error.message || 'Failed to load promotions.');
-    } finally {
-      setIsLoadingList(false);
-    }
-  }, []);
-
-  /**
-   * Refresh / Retry on the overview: placeholder rows, then reload.
-   */
-  const refreshPromotions = () => {
-    setIsLoadingList(true);
-    loadPromotions();
-  };
+  const refreshList = () => setListVersion((version) => version + 1);
 
   useEffect(() => {
     async function loadPage() {
-      await Promise.all([loadRetailers(), loadStores(), loadSkuRanges(), loadPromotions()]);
+      await Promise.all([loadRetailers(), loadStores(), loadSkuRanges()]);
     }
 
     loadPage();
-  }, [loadRetailers, loadStores, loadSkuRanges, loadPromotions]);
+  }, [loadRetailers, loadStores, loadSkuRanges]);
 
   // Adjust state during render, once: when the retailer list arrives after
   // Edit was opened, tick the promotion's retailers unless the user already
@@ -252,9 +202,6 @@ export default function PromotionsPage() {
     try {
       await deletePromotion(promotion.promotion_id);
 
-      setPromotions((current) =>
-        current.filter((item) => item.promotion_id !== promotion.promotion_id),
-      );
       setHighlightIds((current) =>
         current.filter((id) => id !== promotion.promotion_id),
       );
@@ -266,7 +213,7 @@ export default function PromotionsPage() {
       }
 
       notify('deleted', 'Promotion deleted');
-      await loadPromotions();
+      refreshList();
     } catch (error) {
       notify('error', error.message || 'Failed to delete promotion.');
     }
@@ -298,27 +245,12 @@ export default function PromotionsPage() {
 
     if (editingPromotion) {
       const payload = buildPromotionPayload(form, storeRefs);
-      const covered = storesCoveredByEvent(
-        promotions,
-        payload,
-        editingPromotion.promotion_id,
-      );
-      const clashes = payload.stores.filter((store) => covered.has(promotionStoreKey(store)));
-
-      if (clashes.length) {
-        setSubmitError(
-          `This combination already exists for ${clashes
-            .map((store) => `${store.retailer} / ${store.store_name}`)
-            .join('; ')}.`,
-        );
-        return;
-      }
-
       setIsSubmitting(true);
 
       try {
+        // A store already running this event is a 409 naming it (the
+        // catch shows it in the form).
         const updated = await updatePromotion(editingPromotion.promotion_id, payload);
-        applyPromotionsToOverview(updated);
         const updatedId = updated?.promotion_id ?? editingPromotion.promotion_id;
         setHighlightIds([updatedId]);
         expanded.expand(updatedId);
@@ -327,7 +259,7 @@ export default function PromotionsPage() {
         setForm(blankPromotionForm());
         setErrors({});
         notify('updated', 'Promotion updated');
-        await loadPromotions();
+        refreshList();
       } catch (error) {
         setSubmitError(error.message || 'Failed to update promotion.');
       } finally {
@@ -339,42 +271,21 @@ export default function PromotionsPage() {
 
     const [period] = resolveSelectedPeriods(form);
     const payload = buildPromotionPayload(form, storeRefs, period);
-
-    // Stores already running this exact event (period, type, mechanic)
-    // are dropped from the request rather than duplicated.
-    const covered = storesCoveredByEvent(promotions, payload);
-    const skipped = [];
-    const newStores = [];
-
-    for (const store of payload.stores) {
-      if (covered.has(promotionStoreKey(store))) {
-        skipped.push(`${store.retailer} / ${store.store_name}`);
-        continue;
-      }
-      newStores.push(store);
-    }
-
-    if (!newStores.length) {
-      setSubmitError(
-        skipped.length
-          ? `This combination already exists for ${skipped.join('; ')}.`
-          : 'This promotion combination already exists.',
-      );
-      return;
-    }
-
     setIsSubmitting(true);
 
     try {
-      const created = await createPromotion({ ...payload, stores: newStores });
+      // Stores already running this exact event (period, type, mechanic)
+      // are left out by the backend and come back as `skipped_stores`; when
+      // every store is, it is a 409 naming them (the catch shows it).
+      const created = await createPromotion(payload);
+      const skipped = created?.skipped_stores ?? [];
 
-      applyPromotionsToOverview(created);
       setHighlightIds(created?.promotion_id != null ? [created.promotion_id] : []);
       if (created?.promotion_id != null) expanded.expand(created.promotion_id);
 
       // Short enough to read in the toast's few seconds; the new row is
       // also highlighted in the overview.
-      const storeCount = promotionStoreNames(created).length || newStores.length;
+      const storeCount = promotionStoreNames(created).length || payload.stores.length - skipped.length;
       const skipNote = skipped.length
         ? ` · ${skipped.length} skipped`
         : '';
@@ -388,11 +299,8 @@ export default function PromotionsPage() {
       setForm(blankPromotionForm());
       setErrors({});
 
-      await Promise.all([
-        loadPromotions(),
-        loadRetailers(),
-        loadStores(),
-      ]);
+      refreshList();
+      await Promise.all([loadRetailers(), loadStores()]);
     } catch (error) {
       setSubmitError(error.message || 'Failed to create promotion.');
     } finally {
@@ -415,16 +323,13 @@ export default function PromotionsPage() {
     >
       <div className="flex flex-col gap-3">
         <PromotionList
-          promotions={promotions}
-          isLoading={isLoadingList}
-          error={listError}
+          refreshKey={listVersion}
           highlightIds={highlightIds}
           editingId={editingPromotion?.promotion_id}
           isExpanded={expanded.isExpanded}
           onToggle={expanded.toggle}
           onEdit={handleEdit}
           onDelete={handleDelete}
-          onRefresh={refreshPromotions}
         />
       </div>
 

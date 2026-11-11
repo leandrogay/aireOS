@@ -12,9 +12,10 @@ import LoadConfirmDialog from '@/components/upload/LoadConfirmDialog';
 import RollbackDetailsDialog from '@/components/upload/RollbackDetailsDialog';
 import UploadRow, { NomenclatureLink, UploadStatusBadge, uploadRowActions } from '@/components/upload/UploadRow';
 import { formatDateTime } from '@/lib/formatDate';
-import { searchUploads, sortUploads } from '@/app/utils/uploadHistory';
-import { nextSort, paginate } from '@/app/utils/tableView';
+import { blockQuery, nextSort, pageFromBlock } from '@/app/utils/tableView';
+import { UPLOAD_HISTORY_BLOCK } from '@/app/config/upload';
 import { vendorLabel } from '@/app/utils/retailerLabel';
+import useUploadHistory from '@/hooks/useUploadHistory';
 
 import { UPLOAD_COLUMNS } from './columns';
 
@@ -24,7 +25,16 @@ import { UPLOAD_COLUMNS } from './columns';
  * refresh above the table, the Status and Uploaded columns sortable, and
  * paging below. It opens sorted by Status, so what needs acting on (a failed
  * nomenclature, a review, a load waiting) is at the top. Titled, because the upload page holds other sections too. No filter bar;
- * the list is short enough that search covers it.
+ * search covers it.
+ *
+ * Unlike the other list tables, the backend searches, sorts and pages
+ * (useUploadHistory), because the bucket holds every upload ever made; this
+ * component only keeps the query. It asks for a block of
+ * UPLOAD_HISTORY_BLOCK rows and pages through it here, so Next / Prev inside
+ * the block are instant; only search, sort, Refresh or leaving the block ask
+ * the backend again. Every upload is listed, however old: this is the only
+ * place to roll one back, delete or reload it. `refreshKey` changes when the
+ * page knows the list moved (an upload finished, a load, rollback or delete).
  *
  * A file whose mapping is approved but whose data is not loaded (or was
  * loaded with an older version) has Load / Reload in its "…" menu. It opens
@@ -32,20 +42,14 @@ import { UPLOAD_COLUMNS } from './columns';
  * screen is closed.
  *
  * @param {{
- *   uploads: object[],
- *   isLoading: boolean,
- *   error: string,
- *   onRefresh: () => void,
+ *   refreshKey: number,
  *   onRollback: (upload: object) => void,
  *   onDelete: (upload: object) => void,
  *   onLoaded: (response: object) => void,
  * }} props
  */
 export default function RecentUploads({
-  uploads,
-  isLoading,
-  error,
-  onRefresh,
+  refreshKey,
   onRollback,
   onDelete,
   onLoaded,
@@ -56,9 +60,24 @@ export default function RecentUploads({
   const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
   const [rollbackDetails, setRollbackDetails] = useState(null);
   const [loading, setLoading] = useState(null); // null | { blobPath, reload }
+  // Refresh and Retry: the same query asked again.
+  const [reloads, setReloads] = useState(0);
 
-  const sorted = sortUploads(searchUploads(uploads, search), sort);
-  const { pageRows, currentPage, totalPages } = paginate(sorted, page, pageSize);
+  const history = useUploadHistory({
+    ...blockQuery(page, pageSize, UPLOAD_HISTORY_BLOCK),
+    search,
+    sort: sort.field,
+    direction: sort.direction,
+    refreshKey: `${refreshKey}:${reloads}`,
+  });
+  const block = history.data && {
+    rows: history.data.uploads,
+    offset: history.data.offset,
+    total: history.data.total,
+  };
+  const { pageRows, currentPage, totalPages } = pageFromBlock(block, page, pageSize);
+  const matching = history.data?.total ?? 0;
+  const everything = history.data?.unfiltered_total ?? 0;
   const handlers = { onLoad: setLoading, onRollbackDetails: setRollbackDetails, onRollback, onDelete };
 
   // Any change to what is listed goes back to page 1, where the result starts.
@@ -83,11 +102,11 @@ export default function RecentUploads({
         label="Recent uploads"
         title="Recent uploads"
         noun="upload"
-        totalCount={uploads.length}
-        shownCount={sorted.length}
-        isLoading={isLoading}
-        error={error || null}
-        onRefresh={onRefresh}
+        totalCount={everything}
+        shownCount={matching}
+        isLoading={history.loading}
+        error={history.error}
+        onRefresh={() => setReloads((count) => count + 1)}
         emptyMessage="Nothing has been uploaded."
         toolbar={(
           <TableSearch
@@ -102,12 +121,12 @@ export default function RecentUploads({
         sort={sort}
         onSort={changeSort}
         skeletonRows={3}
-        emptyState={uploads.length > 0 && sorted.length === 0 ? 'No uploads match this search.' : null}
+        emptyState={everything > 0 && matching === 0 ? 'No uploads match this search.' : null}
         pagination={{
           page: currentPage,
           totalPages,
           pageSize,
-          totalRows: sorted.length,
+          totalRows: matching,
           onPageChange: setPage,
           onPageSizeChange: changePageSize,
         }}

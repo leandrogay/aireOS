@@ -6,8 +6,7 @@ import { ACTIONS_COLUMN } from '@/components/ui/TableGrid';
 // cut off, see PromotionRow). Mechanic takes the rest and truncates (full text
 // in the cell's title). Stores have no column: the expanded row lists them and
 // search still matches them, and the column cost the table a horizontal scroll.
-// `sortField`s are the fields sortPromotions() in
-// app/utils/promotionOverview.js accepts.
+// `sortField`s are accepted by backend promotion_service.PROMOTION_SORT_FIELDS.
 export const PROMOTION_COLUMNS = [
   { key: 'retailer', label: 'Retailer', width: '13rem' },
   { key: 'start', label: 'Start date', width: '8rem', sortField: 'period_start' },
