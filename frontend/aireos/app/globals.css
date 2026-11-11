@@ -270,6 +270,22 @@
   box-shadow: inset 0 1px 0 var(--aire-glass-sheen), 0 16px 34px -20px var(--aire-glass-shadow);
 }
 
+/* Motion belongs to the shared control and popup shells. It never changes
+   when their existing click or open handlers run. */
+.aire-glass-control {
+  transition: background-color var(--motion-control) var(--motion-ease),
+    border-color var(--motion-control) var(--motion-ease),
+    box-shadow var(--motion-control) var(--motion-ease),
+    opacity var(--motion-quick) ease;
+}
+.aire-glass-control:not(:disabled):hover {
+  box-shadow: inset 0 1px 0 var(--aire-glass-sheen), 0 5px 14px -10px var(--aire-glass-shadow);
+}
+.aire-glass-control:not(:disabled):active { opacity: 0.84; }
+.aire-glass-float[data-open] { animation-duration: var(--motion-enter); }
+.aire-glass-float[data-closed] { animation-duration: var(--motion-control); }
+.aire-theme-toggle { min-height: 2.5rem; }
+
 /* Legacy white and dark-blue utility classes remain intact for callers and
    tests. These theme overrides make their existing surfaces legible in dark mode. */
 .dark [class~="bg-white"] { background-color: var(--card); }
@@ -279,8 +295,26 @@
 .dark [class~="bg-white/40"] { background-color: color-mix(in srgb, var(--card) 40%, transparent); }
 .dark [class~="bg-white/10"] { background-color: color-mix(in srgb, var(--card) 10%, transparent); }
 .dark [class~="bg-deep-violet-blue"] { background-color: var(--aire-deep-blue); }
+.dark [class~="bg-deep-violet-blue"]:hover { background-color: var(--aire-deep-blue); }
+.dark [data-active][class*="data-active:bg-deep-violet-blue"],
+.dark [data-pressed][class*="data-pressed:bg-deep-violet-blue"],
+.dark [data-range-start="true"][class*="bg-deep-violet-blue"],
+.dark [data-range-end="true"][class*="bg-deep-violet-blue"],
+.dark [data-selected-single="true"][class*="bg-deep-violet-blue"],
+.dark [class*="has-[:checked]:bg-deep-violet-blue"]:has(:checked) {
+  background-color: var(--aire-deep-blue);
+}
 .dark [class~="bg-violet"] { background-color: #625B90; }
 .dark [class~="text-lavander"] { color: var(--aire-accent); }
+.dark [class~="bg-white"][class*="hover:bg-cream"]:hover,
+.dark [class~="bg-white"][class*="aria-expanded:bg-cream"][aria-expanded="true"] {
+  background-color: var(--aire-soft);
+}
+.dark .aire-glass-surface[class~="bg-white"] {
+  background-color: color-mix(in srgb, var(--aire-glass-tint) 86%, transparent);
+}
+.dark .aire-brand-mark { filter: brightness(0) invert(0.94); }
+.dark .recharts-cartesian-axis-tick-value { fill: var(--aire-ink); }
 
 @supports (backdrop-filter: blur(1px)) {
   .aire-glass-float {
@@ -295,6 +329,14 @@
     background-color: var(--card);
     background-image: none;
     backdrop-filter: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aire-glass-control,
+  .aire-glass-float {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
   }
 }
 

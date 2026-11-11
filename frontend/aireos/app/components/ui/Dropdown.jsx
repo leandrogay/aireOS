@@ -109,7 +109,7 @@ export default function Dropdown({
         aria-labelledby={ariaLabelledby}
         title={title ?? (summary || undefined)}
         className={cn(
-          'flex w-full min-w-0 cursor-pointer items-center justify-between overflow-hidden text-left text-deep-violet-blue outline-none disabled:cursor-not-allowed disabled:opacity-60',
+          'aire-glass-control flex w-full min-w-0 cursor-pointer items-center justify-between overflow-hidden text-left text-deep-violet-blue outline-none disabled:cursor-not-allowed disabled:opacity-60',
           lookClass(look, size, active),
           invalid && 'border-red-400 focus:border-red-500',
           className,

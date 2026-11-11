@@ -9,7 +9,7 @@ export default function TableCard({ label, header, className, variant = 'default
       aria-label={label}
       className={cn(
         'flex w-full min-w-0 flex-col overflow-hidden',
-        glass ? glassSurfaceClass : 'rounded-lg border border-lavander bg-white shadow-sm',
+        glass ? glassSurfaceClass : 'aire-glass-surface rounded-lg border border-lavander bg-white shadow-sm',
         className,
       )}
     >

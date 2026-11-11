@@ -18,6 +18,7 @@
 export const CARD_SELECTOR = [
   '[data-page-heading]',
   '[data-slot="card"]',
+  '.aire-glass-surface',
   '.rounded-lg.border-lavander.bg-white.shadow-sm',
 ].join(', ');
 
