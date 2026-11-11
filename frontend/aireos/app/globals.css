@@ -233,6 +233,11 @@
   --motion-popover: 220ms;
   --motion-dialog: 320ms;
   --motion-page: 420ms;
+  /* Surfaces leave faster than they arrive (the .motion-* surfaces below). */
+  --motion-popover-exit: 130ms;
+  --motion-dialog-exit: 200ms;
+  /* A short list's rows rise in this far apart, up to the 8th. */
+  --motion-stagger: 40ms;
   --motion-ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --motion-ease-enter: cubic-bezier(0.05, 0.7, 0.1, 1);
   --motion-ease-exit: cubic-bezier(0.3, 0, 0.8, 0.15);
@@ -520,6 +525,123 @@
   animation: table-row-in 250ms ease-out backwards;
 }
 
+/* ==== Surfaces materialise and dematerialise ====
+   Every popup fades in while scaling up from 96% at its origin (the trigger:
+   Base UI sets --transform-origin on popovers, menus and tooltips; a dialog
+   grows from its centre), and leaves the same way, faster, on the exit ease.
+   Keyed on Base UI's data-open / data-closed: Base UI waits for the closing
+   animation before it unmounts the popup, so nothing about mounting changes.
+   `scale`, not `transform`, so a dialog's translate centring is left alone.
+   Enters fill `backwards` only, so nothing is held once they end (a press
+   scale or a later transition still applies). The reduced-motion block at
+   the end turns all of these off. */
+@keyframes aire-materialise {
+  from {
+    opacity: 0;
+    scale: 0.96;
+  }
+}
+
+@keyframes aire-dematerialise {
+  to {
+    opacity: 0;
+    scale: 0.96;
+  }
+}
+
+@keyframes aire-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes aire-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+/* Popovers, menus, dropdown panels, tooltips. */
+@utility motion-popover {
+  transform-origin: var(--transform-origin, center);
+
+  &[data-open] {
+    animation: aire-materialise var(--motion-popover) var(--motion-ease-enter) backwards;
+  }
+
+  &[data-closed] {
+    animation: aire-dematerialise var(--motion-popover-exit) var(--motion-ease-exit) forwards;
+  }
+}
+
+/* Dialog windows (ui/dialog). ui/ConfirmDialog does the same with
+   motion/react, since it is not a Base UI dialog. */
+@utility motion-dialog {
+  transform-origin: var(--transform-origin, center);
+
+  &[data-open] {
+    animation: aire-materialise var(--motion-dialog) var(--motion-ease-enter) backwards;
+  }
+
+  /* Base UI leaves a closing dialog in place until this ends, and does not
+     make it inert: without this the page under it would ignore clicks for
+     the length of the exit. */
+  &[data-closed] {
+    pointer-events: none;
+    animation: aire-dematerialise var(--motion-dialog-exit) var(--motion-ease-exit) forwards;
+  }
+}
+
+/* A dialog's scrim fades in and out with it, and lets clicks through while
+   it leaves (same reason as the window above). */
+@utility motion-scrim {
+  &[data-open] {
+    animation: aire-fade-in var(--motion-dialog) var(--motion-ease-standard) backwards;
+  }
+
+  &[data-closed] {
+    pointer-events: none;
+    animation: aire-fade-out var(--motion-dialog-exit) var(--motion-ease-exit) forwards;
+  }
+}
+
+/* A surface with no open/closed attribute (a hand-portalled menu, the upload
+   tray, the assistant launcher): it materialises once, when it mounts. */
+@utility motion-materialise {
+  transform-origin: var(--transform-origin, center);
+  animation: aire-materialise var(--motion-popover) var(--motion-ease-enter) backwards;
+}
+
+@utility motion-fade-in {
+  animation: aire-fade-in var(--motion-dialog) var(--motion-ease-standard) backwards;
+}
+
+/* A short list whose rows rise in as they mount (the upload tray): each
+   child fades up 4px, --motion-stagger (40ms) after the one before, and from
+   the 9th on they start together. CSS on mount only, so put it on a list
+   whose rows are appended, never re-sorted (a moved DOM node replays it). */
+@utility motion-stagger {
+  & > * {
+    animation: table-row-in var(--motion-popover) var(--motion-ease-enter) backwards;
+  }
+
+  & > :nth-child(2) { animation-delay: calc(var(--motion-stagger) * 1); }
+  & > :nth-child(3) { animation-delay: calc(var(--motion-stagger) * 2); }
+  & > :nth-child(4) { animation-delay: calc(var(--motion-stagger) * 3); }
+  & > :nth-child(5) { animation-delay: calc(var(--motion-stagger) * 4); }
+  & > :nth-child(6) { animation-delay: calc(var(--motion-stagger) * 5); }
+  & > :nth-child(7) { animation-delay: calc(var(--motion-stagger) * 6); }
+  & > :nth-child(8) { animation-delay: calc(var(--motion-stagger) * 7); }
+  & > :nth-child(n + 9) { animation-delay: calc(var(--motion-stagger) * 8); }
+}
+
+/* Rows a user just added (a new promotion, customer, SKU: TableGrid rows
+   marked data-highlight="new") rise in once, like a list item. Only those
+   rows, never the whole table on a refresh. */
+.aire-table-grid tbody > tr[data-highlight='new'] {
+  animation: table-row-in var(--motion-popover) var(--motion-ease-enter) backwards;
+}
+
 /* The assistant's "Pondering…" word (AssistantWidget ThinkingIndicator): a
    brighter band sweeps left to right across muted text, like Claude Code's
    working indicator. The text is painted by its background gradient
@@ -552,7 +674,22 @@
 @media (prefers-reduced-motion: reduce) {
   .line-dot-in,
   .promo-band-in,
-  .table-row-in {
+  .table-row-in,
+  .aire-table-grid tbody > tr[data-highlight='new'] {
+    animation: none;
+  }
+
+  /* The materialise / dematerialise surfaces above: they appear and go at
+     once (Base UI then unmounts a closing popup straight away). Unlayered and
+     with the attribute, so it beats the utilities' [data-open] rules. */
+  .motion-popover,
+  .motion-dialog,
+  .motion-scrim,
+  .motion-materialise,
+  .motion-fade-in,
+  .motion-stagger > *,
+  :is(.motion-popover, .motion-dialog, .motion-scrim)[data-open],
+  :is(.motion-popover, .motion-dialog, .motion-scrim)[data-closed] {
     animation: none;
   }
 

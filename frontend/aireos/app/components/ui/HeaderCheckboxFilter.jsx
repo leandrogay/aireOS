@@ -90,7 +90,10 @@ export default function HeaderCheckboxFilter({ id, label, selected, options, ope
               left: menuPos.left,
               maxHeight: menuPos.maxHeight,
             }}
-            className="glass-2 fixed z-50 flex min-w-[12rem] flex-col overflow-hidden rounded-glass-md text-deep-violet-blue"
+            // motion-materialise: it fades and scales up from its top left
+            // corner (under the header button) as it mounts. Enter only: it
+            // unmounts the moment it closes, as before.
+            className="glass-2 motion-materialise fixed z-50 flex min-w-[12rem] flex-col overflow-hidden rounded-glass-md text-deep-violet-blue [--transform-origin:top_left]"
           >
             {isActive ? (
               <button

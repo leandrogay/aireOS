@@ -2,9 +2,19 @@
 
 import { useEffect } from 'react';
 import { CircleCheck, CirclePlus, CircleX, PencilLine, Trash2, TriangleAlert, X } from 'lucide-react';
+import { AnimatePresence, motion, useIsPresent, useReducedMotion } from 'motion/react';
 
 import { POPUP_SHADOW_CLASS } from '@/components/ui/popupShadow';
+import { MOTION_DURATION, MOTION_EASE, SPRINGS } from '@/app/config/transitions';
 import { cn } from '@/lib/utils';
+
+// Arrives on the toast spring, sliding in a touch from the right edge it
+// sits on; leaves faster on the exit ease, back the way it came.
+const TOAST_MOTION = {
+  initial: { opacity: 0, scale: 0.96, x: 8 },
+  animate: { opacity: 1, scale: 1, x: 0, transition: { ...SPRINGS.toast, opacity: { duration: MOTION_DURATION.popover } } },
+  exit: { opacity: 0, scale: 0.96, x: 8, transition: { duration: MOTION_DURATION.popoverExit, ease: MOTION_EASE.exit } },
+};
 
 const DISMISS_AFTER_MS = 4000;
 // One glass panel for every outcome, like the notification panel; the kind of
@@ -86,52 +96,75 @@ export default function Toast({ toast, onDismiss }) {
     return () => clearTimeout(timer);
   }, [toastId, onDismiss]);
 
-  if (!toast) return null;
-
-  const { Icon, label, fill, halo, text } = KINDS[toast.type] || KINDS.success;
-
-  // The key replays the entrance and the countdown for each new toast.
+  // The key replays the entrance and the countdown for each new toast. A
+  // dismissed toast stays on screen for its exit (MOTION_DURATION.popoverExit,
+  // 130ms) and is then removed; the timer above and onDismiss run exactly as
+  // before, since they never wait for it. popLayout takes a leaving toast out
+  // of the flow at once, so a new one lands in its place instead of below it.
   return (
     <div className="pointer-events-none fixed top-4 right-4 z-50 max-w-[calc(100vw-2rem)]">
-      <div
-        key={toast.id}
-        role={toast.type === 'error' ? 'alert' : 'status'}
-        aria-live={toast.type === 'error' ? 'assertive' : 'polite'}
-        className={cn(
-          'glass-2 relative w-96 max-w-full overflow-hidden rounded-glass-md',
-          'animate-in fade-in-0 zoom-in-95 slide-in-from-right-2 duration-300 ease-out motion-reduce:animate-none',
-          POPUP_SHADOW_CLASS,
-        )}
-      >
-        <div className="flex items-center gap-3 py-3 pr-2.5 pl-3.5">
-          <span
-            aria-hidden="true"
-            className={cn('flex size-9 shrink-0 items-center justify-center rounded-full text-white ring-4', fill, halo)}
-          >
-            <Icon className="size-[18px]" strokeWidth={2.25} />
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className={cn('text-[11px] leading-4 font-semibold tracking-wide uppercase', text)}>{label}</p>
-            <p className={cn('text-sm leading-snug font-medium text-deep-violet-blue', toast.type === 'error' ? 'line-clamp-3 wrap-anywhere' : 'truncate')}>
-              {toast.message}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onDismiss}
-            aria-label="Dismiss"
-            className="press pointer-events-auto flex size-7 shrink-0 cursor-pointer items-center justify-center self-start rounded-full text-ink-soft outline-none press-transition hover:bg-deep-violet-blue/8 hover:text-deep-violet-blue focus-ring"
-          >
-            <X className="size-4" aria-hidden="true" />
-          </button>
-        </div>
-        {/* Shows how long until it goes away; hidden if motion is reduced. */}
+      <AnimatePresence mode="popLayout">
+        {toast && <ToastCard key={toast.id} toast={toast} onDismiss={onDismiss} />}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/**
+ * One toast. While it is leaving (useIsPresent false) it is `inert`: its
+ * Dismiss button can't be clicked or keep focus, and it drops out of the
+ * accessibility tree, so the live region is never read again on the way out.
+ *
+ * @param {{ ref?: import('react').Ref<HTMLDivElement>, toast: { id: number, type: string, message: string }, onDismiss: () => void }} props
+ */
+function ToastCard({ ref, toast, onDismiss }) {
+  const isPresent = useIsPresent();
+  const reduceMotion = useReducedMotion();
+  const { Icon, label, fill, halo, text } = KINDS[toast.type] || KINDS.success;
+
+  return (
+    <motion.div
+      ref={ref}
+      role={toast.type === 'error' ? 'alert' : 'status'}
+      aria-live={toast.type === 'error' ? 'assertive' : 'polite'}
+      inert={!isPresent || undefined}
+      variants={TOAST_MOTION}
+      initial={reduceMotion ? false : 'initial'}
+      animate="animate"
+      exit={reduceMotion ? undefined : 'exit'}
+      className={cn(
+        'glass-2 relative w-96 max-w-full overflow-hidden rounded-glass-md',
+        POPUP_SHADOW_CLASS,
+      )}
+    >
+      <div className="flex items-center gap-3 py-3 pr-2.5 pl-3.5">
         <span
           aria-hidden="true"
-          className={cn('toast-countdown absolute inset-x-0 bottom-0 block h-[3px] origin-left motion-reduce:hidden', fill)}
-          style={{ animationDuration: `${DISMISS_AFTER_MS}ms` }}
-        />
+          className={cn('flex size-9 shrink-0 items-center justify-center rounded-full text-white ring-4', fill, halo)}
+        >
+          <Icon className="size-[18px]" strokeWidth={2.25} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className={cn('text-[11px] leading-4 font-semibold tracking-wide uppercase', text)}>{label}</p>
+          <p className={cn('text-sm leading-snug font-medium text-deep-violet-blue', toast.type === 'error' ? 'line-clamp-3 wrap-anywhere' : 'truncate')}>
+            {toast.message}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="Dismiss"
+          className="press pointer-events-auto flex size-7 shrink-0 cursor-pointer items-center justify-center self-start rounded-full text-ink-soft outline-none press-transition hover:bg-deep-violet-blue/8 hover:text-deep-violet-blue focus-ring"
+        >
+          <X className="size-4" aria-hidden="true" />
+        </button>
       </div>
-    </div>
+      {/* Shows how long until it goes away; hidden if motion is reduced. */}
+      <span
+        aria-hidden="true"
+        className={cn('toast-countdown absolute inset-x-0 bottom-0 block h-[3px] origin-left motion-reduce:hidden', fill)}
+        style={{ animationDuration: `${DISMISS_AFTER_MS}ms` }}
+      />
+    </motion.div>
   );
 }

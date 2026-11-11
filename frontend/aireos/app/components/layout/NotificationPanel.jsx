@@ -1,8 +1,10 @@
 'use client';
 
 import { ChevronDown } from 'lucide-react';
+import { motion, useReducedMotion } from 'motion/react';
 
 import { Button } from '@/components/ui/button';
+import { LIST_STAGGER, MOTION_DURATION, MOTION_EASE } from '@/app/config/transitions';
 import useExpandedRows from '@/hooks/useExpandedRows';
 import { formatDateTime } from '@/lib/formatDate';
 import { cn } from '@/lib/utils';
@@ -81,19 +83,34 @@ function MarkReadButton({ onClick, children }) {
  * at the right (siblings of the toggle, since a button can't sit inside
  * another button).
  *
- * @param {{ notification: { notification_id: number, notification_type: string, payload: object, created_at: string, read_at: string | null }, isOpen: boolean, onToggle: () => void, onMarkRead: () => void }} props
+ * `index` (its place in the list) only staggers its entrance: the rows rise
+ * in one after another when the panel opens, LIST_STAGGER apart up to the
+ * 8th. Motion runs on mount only, so a row that moves (marked read, it
+ * drops to the read group) or a row removed is not animated.
+ *
+ * @param {{ notification: { notification_id: number, notification_type: string, payload: object, created_at: string, read_at: string | null }, index: number, isOpen: boolean, onToggle: () => void, onMarkRead: () => void }} props
  */
-function NotificationItem({ notification, isOpen, onToggle, onMarkRead }) {
+function NotificationItem({ notification, index, isOpen, onToggle, onMarkRead }) {
   const { notification_id: id, notification_type: type, payload, created_at: createdAt, read_at: readAt } =
     notification;
   const { tag, tone, title } = notificationHeading(type, payload);
   const unread = !readAt;
   const detailsId = `notification-${id}-details`;
+  const reduceMotion = useReducedMotion();
 
   return (
     // The whole notification tints on hover -- its row, its "Mark as read"
     // and its open details -- so it reads as one item.
-    <li className="relative wrap-anywhere bg-white/40 hover:bg-[linear-gradient(color-mix(in_srgb,var(--aire-deep-blue)_5%,transparent),color-mix(in_srgb,var(--aire-deep-blue)_5%,transparent))]">
+    <motion.li
+      initial={reduceMotion ? false : { opacity: 0, y: 5 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{
+        duration: MOTION_DURATION.popover,
+        ease: MOTION_EASE.enter,
+        delay: Math.min(index, LIST_STAGGER.maxStaggered) * LIST_STAGGER.step,
+      }}
+      className="relative wrap-anywhere bg-white/40 hover:bg-[linear-gradient(color-mix(in_srgb,var(--aire-deep-blue)_5%,transparent),color-mix(in_srgb,var(--aire-deep-blue)_5%,transparent))]"
+    >
       {/* Unread rows get a bar in their type's colour down the left edge. */}
       {unread && (
         <span aria-hidden="true" className={cn('absolute inset-y-0 left-0 w-1', (TONES[tone] || TONES.muted).bar)} />
@@ -159,7 +176,7 @@ function NotificationItem({ notification, isOpen, onToggle, onMarkRead }) {
           <NotificationDetails type={type} payload={payload} />
         </div>
       )}
-    </li>
+    </motion.li>
   );
 }
 
@@ -204,10 +221,11 @@ export default function NotificationPanel({ notifications, markRead }) {
           clips the last row's hover tint to the popup's corners.
           Thin scrollbar (no arrow buttons) in the page's grey (globals.css). */}
       <ul className="max-h-[65vh] divide-y divide-(--glass-border) overflow-y-auto rounded-b-[calc(var(--glass-radius-md)-1px)] [scrollbar-width:thin]">
-        {ordered.map((notification) => (
+        {ordered.map((notification, index) => (
           <NotificationItem
             key={notification.notification_id}
             notification={notification}
+            index={index}
             isOpen={isExpanded(notification.notification_id)}
             onToggle={() => toggle(notification.notification_id)}
             onMarkRead={() => markRead([notification.notification_id])}

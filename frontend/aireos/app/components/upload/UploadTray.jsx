@@ -101,7 +101,9 @@ export default function UploadTray({ items, onRetry }) {
   return (
     <section
       aria-label="File uploads"
-      className="fixed bottom-4 left-4 z-40 w-80 max-w-[calc(100vw-6rem)] overflow-hidden rounded-lg border border-lavander bg-white shadow-xl"
+      // motion-materialise: the tray fades and scales up from its bottom left
+      // corner when it appears; it still goes the moment it is closed.
+      className="motion-materialise fixed bottom-4 left-4 z-40 w-80 max-w-[calc(100vw-6rem)] overflow-hidden rounded-lg border border-lavander bg-white shadow-xl [--transform-origin:bottom_left]"
     >
       <div className="flex min-h-8 items-center justify-between gap-2 bg-violet py-1 pr-1 pl-3">
         <p aria-live="polite" className="truncate text-xs font-medium text-deep-violet-blue tabular-nums">
@@ -120,7 +122,9 @@ export default function UploadTray({ items, onRetry }) {
           </Button>
         )}
       </div>
-      <ul className="max-h-64 divide-y divide-lavander overflow-y-auto">
+      {/* motion-stagger: each upload's row rises in as it joins the tray
+          (rows are only appended here, never re-sorted). */}
+      <ul className="motion-stagger max-h-64 divide-y divide-lavander overflow-y-auto">
         {rows.map((item) => (
           <TrayRow key={item.id} item={item} onRetry={onRetry} onFollow={closeFinished} />
         ))}

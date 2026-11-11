@@ -23,7 +23,10 @@ export default function ModuleGrid() {
           return (
             <li
               key={item.href}
-              className="flex flex-col aire-card transition-colors focus-within:border-violet hover:border-violet sm:last:col-span-2 lg:last:col-span-1"
+              // A link card: on hover it lifts one shadow step (no layout
+              // shift), and it presses in like a button (press scales it, the
+              // same 0.97 as every control; press-transition eases it).
+              className="press press-transition flex flex-col aire-card focus-within:border-violet hover:border-violet hover:shadow-glass-2 sm:last:col-span-2 lg:last:col-span-1"
             >
               <Link
                 href={item.href}

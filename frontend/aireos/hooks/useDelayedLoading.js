@@ -37,6 +37,6 @@ export default function useDelayedLoading({ loading }) {
   return {
     pending: loading || visible,
     visible,
-    placeholderClass: `transition-opacity duration-150 motion-reduce:transition-none ${visible ? 'opacity-100' : 'opacity-0'}`,
+    placeholderClass: `transition-opacity duration-hover ease-standard motion-reduce:transition-none ${visible ? 'opacity-100' : 'opacity-0'}`,
   };
 }

@@ -1,15 +1,59 @@
-// Page and tab transitions, in one place so their timing and feel are tuned
-// together. Read by lib/cardCascade.js, which components/layout/PageTransition
-// (every page, through PageLayout) and components/ui/TabTransition (in-page tab
-// panels: Inventory, Scenario builder) call.
+// Motion, in one place so its timing and feel are tuned together: the shared
+// tokens for motion/react (mirroring the --motion-* CSS variables in
+// app/globals.css, which the CSS-driven popups and lists use), then the page
+// and tab cascade. The cascade is read by lib/cardCascade.js, which
+// components/layout/PageTransition (every page, through PageLayout) and
+// components/ui/TabTransition (in-page tab panels: Inventory, Scenario
+// builder) call.
 //
-// On a navigation or tab switch the cards spring in one after another, top to
-// bottom: each rises a little on a bouncy spring, with a quick opacity ramp
-// underneath so it doesn't pop. Nothing waits for it, and everything can be
-// clicked while it settles.
+// The character is Liquid Glass: calm springs with a small overshoot.
+// Surfaces materialise (fade in while scaling up a little from where they
+// come from) and dematerialise faster than they arrived. Only transform and
+// opacity move; nothing waits for an animation, and everything can be clicked
+// while it settles.
 //
 // Users who ask the OS for reduced motion get no animation at all (an instant
-// swap); both components check useReducedMotion() themselves.
+// swap): the components check useReducedMotion() or use MotionConfig
+// reducedMotion="user", and globals.css gates the CSS animations.
+
+// ==== Shared tokens ====
+
+// Seconds, the same values as the CSS variables (--motion-press: 80ms, ...).
+// The exits are shorter than the enters: a surface leaves faster than it came.
+export const MOTION_DURATION = {
+  press: 0.08,
+  hover: 0.14,
+  popover: 0.22,
+  popoverExit: 0.13,
+  dialog: 0.32,
+  dialogExit: 0.2,
+  page: 0.42,
+};
+
+// Cubic-bezier curves, the same as --motion-ease-standard / -enter / -exit.
+// standard: state changes in place; enter: decelerates into rest; exit:
+// accelerates away.
+export const MOTION_EASE = {
+  standard: [0.2, 0, 0, 1],
+  enter: [0.05, 0.7, 0.1, 1],
+  exit: [0.3, 0, 0.8, 0.15],
+};
+
+// Spring presets. `visualDuration` (seconds) is how long it feels -- the time
+// to reach the target; the overshoot then settles after it. `bounce` is 0 for
+// no overshoot, ~0.3 for a gentle one, 0.5+ for a wobbly one.
+export const SPRINGS = {
+  popover: { type: 'spring', visualDuration: 0.22, bounce: 0.15 },
+  dialog: { type: 'spring', visualDuration: 0.32, bounce: 0.2 },
+  toast: { type: 'spring', visualDuration: 0.3, bounce: 0.25 },
+  press: { type: 'spring', visualDuration: 0.18, bounce: 0.1 },
+};
+
+// The rows of a short list rise in this many seconds apart; rows after
+// `maxStaggered` start together, so a long list does not keep arriving.
+export const LIST_STAGGER = { step: 0.04, maxStaggered: 8 };
+
+// ==== Page and tab cascade ====
 
 // What counts as a card: the page heading row, shadcn <Card>, and the app's
 // card frame: the `aire-card` class (defined in globals.css, CardSkeleton
@@ -23,14 +67,16 @@ export const CARD_SELECTOR = [
   '.rounded-lg.border-lavander.bg-white.shadow-sm',
 ].join(', ');
 
-// The spring. `visualDuration` (seconds) is how long it feels -- the time to
-// reach the target; the overshoot then settles after it. `bounce` is 0 for no
-// overshoot, ~0.3 for a gentle one, 0.5+ for a wobbly one.
-const SPRING = { type: 'spring', visualDuration: 0.3, bounce: 0.5 };
+// The cascade's spring: each card rises on it with a small, calm overshoot
+// (bounce 0.25; it was 0.5, which read as a wobble).
+const SPRING = { type: 'spring', visualDuration: 0.3, bounce: 0.25 };
 
 // Opacity is a short tween, not the spring: a bounce would flicker it.
 const QUICK_FADE = { duration: 0.12, ease: 'easeOut' };
 
+// On a navigation or tab switch the cards spring in one after another, top to
+// bottom: each rises a little on SPRING, with a quick opacity ramp underneath
+// so it doesn't pop.
 // `y`: how far (px) a card rises. Keep it at 16 or less: the page column sits
 // inside <main>'s 16px bottom padding, so the last card's rise never adds
 // scroll height or flashes a scrollbar.
@@ -59,7 +105,8 @@ export const CHART_TRANSITION = { duration: 0.7, ease: 'easeOut' };
 // `delay`: seconds of loading before the placeholder appears at all -- a load
 // faster than this goes straight to the chart (its space is held, blank).
 // `minDuration`: once shown, seconds it stays at least, so it never blinks.
-// The placeholder fades in over 150ms (the `duration-150` class in the hook).
+// The placeholder fades in at the hover speed (the `duration-hover` class in
+// the hook, --motion-hover: 140ms).
 export const PLACEHOLDER_TIMING = { delay: 0.2, minDuration: 0.4 };
 
 // A card that joins a page already on screen (the mapping review's product

@@ -158,7 +158,7 @@ export default function Sidebar() {
         // The border stays on a CSS transition; it fades alongside the width.
         // isolate: the glass layer below sits behind the content (-z-10) but
         // inside the bar. overflow-hidden clips that layer to the bar's width.
-        'isolate flex h-screen shrink-0 flex-col self-start overflow-hidden border-r transition-colors duration-300',
+        'isolate flex h-screen shrink-0 flex-col self-start overflow-hidden border-r transition-colors duration-dialog ease-standard',
         // The first server render does not know the viewport width. Keep its
         // desktop-width nav out of the mobile layout until the media query settles.
         narrow ? 'fixed inset-y-0 left-0 z-40' : 'fixed left-0 top-0 max-md:invisible md:sticky',
@@ -177,7 +177,7 @@ export default function Sidebar() {
       <div
         aria-hidden="true"
         className={cn(
-          'glass-1 pointer-events-none absolute inset-y-0 left-0 -z-10 w-56 rounded-none border-0 transition-opacity duration-300',
+          'glass-1 pointer-events-none absolute inset-y-0 left-0 -z-10 w-56 rounded-none border-0 transition-opacity duration-dialog ease-standard',
           showingMobile && '[--glass-fill:var(--glass-fill-3)]',
           // Hidden, it also drops its blur, so an invisible layer costs nothing.
           // The blur goes at once and only the fill fades; nothing animates it.

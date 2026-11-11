@@ -18,6 +18,7 @@ import {
   useMessageScroller,
 } from '@/components/ui/message-scroller';
 import { cn } from '@/lib/utils';
+import { MOTION_EASE, SPRINGS } from '@/app/config/transitions';
 import { modelNotice } from '@/app/utils/aiModels';
 import useAiModelStatus from '@/hooks/useAiModelStatus';
 import useAssistant, { ALL_CUSTOMERS } from '@/hooks/useAssistant';
@@ -37,8 +38,11 @@ const chipButtonClass = 'rounded-full border-deep-violet-blue/60 bg-white text-[
 const headerButtonClass = 'text-white/80 hover:bg-white/10 hover:text-white focus-visible:outline-white';
 // The launcher: the brand fill with the glass rim's lit top edge and the glass
 // lift, so it floats like the panel it opens. Button brings press and focus-ring.
+// motion-materialise (globals.css): it fades and scales up from its corner
+// when it appears (page load, and coming back after full screen). CSS, so its
+// click handler and the /login early return are untouched.
 const launcherClass =
-  'fixed bottom-4 right-4 z-50 size-12 rounded-full inset-shadow-[0_1px_0_rgb(255_255_255/0.25)] shadow-glass-2';
+  'motion-materialise fixed bottom-4 right-4 z-50 size-12 rounded-full inset-shadow-[0_1px_0_rgb(255_255_255/0.25)] shadow-glass-2 [--transform-origin:bottom_right]';
 
 // shadcn's "Spring Bounce" message preset (lib/message-animations.ts on the
 // shadcn docs site): a message rises 12px and grows from 96% with a quick
@@ -56,13 +60,15 @@ const SPRING_BOUNCE = {
 
 const MotionMessageScrollerItem = motion.create(MessageScrollerItem);
 
-// Opening the assistant pops the panel out of the chat button's corner with
-// the same kind of spring as SPRING_BOUNCE; closing shrinks it back there,
-// quicker, before it unmounts (AnimatePresence). Only transform and opacity
-// move, so the panel's size transition (full screen) is untouched.
+// Opening the assistant pops the panel out of the chat button's corner on the
+// shared dialog spring (SPRINGS.dialog); closing shrinks it back there,
+// quicker, on the exit ease, before it unmounts (AnimatePresence). The exit
+// stays at 0.15s, not the dialog exit: the leaving panel still covers the
+// page, so a longer exit would hold clicks off it for longer. Only transform
+// and opacity move, so the panel's size transition (full screen) is untouched.
 const PANEL_POP = {
-  closed: { opacity: 0, scale: 0.9, y: 16, transition: { duration: 0.15, ease: 'easeIn' } },
-  open: { opacity: 1, scale: 1, y: 0, transition: { type: 'spring', stiffness: 420, damping: 32 } },
+  closed: { opacity: 0, scale: 0.9, y: 16, transition: { duration: 0.15, ease: MOTION_EASE.exit } },
+  open: { opacity: 1, scale: 1, y: 0, transition: SPRINGS.dialog },
 };
 
 const MotionCard = motion.create(Card);

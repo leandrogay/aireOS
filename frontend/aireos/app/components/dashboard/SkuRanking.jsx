@@ -88,7 +88,10 @@ function HeaderMenu({ id, label, active, openId, setOpenId, options, selected, o
           ref={menuRef}
           role="listbox"
           style={{ top: menuPos.top, left: menuPos.left }}
-          className="fixed z-50 min-w-[11rem] overflow-hidden rounded-xl border border-lavander bg-white py-1 shadow-lg"
+          // motion-materialise: fades and scales up from its top left corner
+          // (under the header button) as it mounts; enter only, it still
+          // unmounts the moment it closes.
+          className="motion-materialise fixed z-50 min-w-[11rem] overflow-hidden rounded-xl border border-lavander bg-white py-1 shadow-lg [--transform-origin:top_left]"
         >
           {options.map((option) => {
             const checked = selected === option.value;
