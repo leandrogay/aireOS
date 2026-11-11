@@ -74,6 +74,20 @@ def test_delete_confirmed_mapping_refuses_uploads(monkeypatch):
     assert deleted == []
 
 
+def test_confirmed_mapping_deletion_status_counts_uploads(monkeypatch):
+    FakeBucket([_upload("uploads/a.txt", "mapped")]).install(monkeypatch)
+
+    assert upload_loading.confirmed_mapping_deletion_status("fp") == {
+        "allowed": False,
+        "upload_count": 1,
+    }
+
+    response = client.get("/api/mappings/fp/delete-status")
+
+    assert response.status_code == 200
+    assert response.json() == {"allowed": False, "upload_count": 1}
+
+
 def test_delete_confirmed_mapping_removes_history_before_live_contract(monkeypatch):
     FakeBucket([]).install(monkeypatch)
     history = storage.history_mapping_path("fp", 1)

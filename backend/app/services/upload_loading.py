@@ -132,6 +132,14 @@ class MappingHasUploadsError(ValueError):
     """A nomenclature still belongs to uploaded source files."""
 
 
+def confirmed_mapping_deletion_status(fingerprint: str) -> dict | None:
+    """Check the same upload condition enforced again during deletion."""
+    if storage.download_json(storage.confirmed_mapping_path(fingerprint)) is None:
+        return None
+    upload_count = len(storage.list_uploads_for_mapping(fingerprint))
+    return {"allowed": upload_count == 0, "upload_count": upload_count}
+
+
 def delete_confirmed_mapping(fingerprint: str) -> bool:
     """Remove a confirmed contract only after all source uploads are gone.
 

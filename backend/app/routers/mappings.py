@@ -585,3 +585,15 @@ async def delete_confirmed_mapping(fingerprint: str):
     if not deleted:
         raise HTTPException(status_code=404, detail="No confirmed nomenclature for that fingerprint.")
     return {"success": True, "fingerprint": fingerprint}
+
+
+@router.get("/{fingerprint}/delete-status")
+async def confirmed_mapping_delete_status(fingerprint: str):
+    """Tell the confirmation dialog whether source uploads block deletion."""
+    try:
+        status = await asyncio.to_thread(upload_loading.confirmed_mapping_deletion_status, fingerprint)
+    except storage.GCSUploadError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if status is None:
+        raise HTTPException(status_code=404, detail="No confirmed nomenclature for that fingerprint.")
+    return status

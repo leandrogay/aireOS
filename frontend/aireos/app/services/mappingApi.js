@@ -115,6 +115,12 @@ export async function deleteMapping(baseUrl, fingerprint) {
   });
 }
 
+// GET /api/mappings/:fingerprint/delete-status checks whether source uploads
+// still use this confirmed nomenclature before enabling Delete in the dialog.
+export async function mappingDeleteStatus(baseUrl, fingerprint) {
+  return request(baseUrl, `/api/mappings/${encodeURIComponent(fingerprint)}/delete-status`);
+}
+
 // ========================================
 // API CALL
 // GET /api/mappings/:fingerprint
