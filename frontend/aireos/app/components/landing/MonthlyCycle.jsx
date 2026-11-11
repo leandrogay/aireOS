@@ -25,7 +25,7 @@ export default function MonthlyCycle() {
   return (
     <section
       aria-labelledby="monthly-cycle-heading"
-      className="rounded-lg border border-lavander bg-white p-5 shadow-sm"
+      className="aire-card p-5"
     >
       <h2 id="monthly-cycle-heading" className="text-sm font-medium text-deep-violet-blue">
         The monthly cycle

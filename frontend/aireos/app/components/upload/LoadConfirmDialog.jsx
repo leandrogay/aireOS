@@ -92,7 +92,7 @@ function LoadConfirmForm({ pathsKey, reload, onClose, onLoaded, onPendingChange 
   const outcome = response ? loadOutcome(response) : null;
 
   return (
-    <div className="rounded-lg border border-lavander bg-white shadow-sm">
+    <div className="aire-card">
       {/* ==== Header ==== */}
       <div className="border-b border-lavander py-3 pl-4 pr-12">
         <h2 className="font-serif text-xl text-deep-violet-blue">

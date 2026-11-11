@@ -167,7 +167,7 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
       )}
 
       {data && data.skus_without_forecast.length > 0 && (
-        <div className="rounded-lg border border-lavander bg-white px-3 py-2.5 shadow-sm" role="status">
+        <div className="aire-card px-3 py-2.5" role="status">
           <p className="text-xs text-deep-violet-blue">
             <span className="font-medium">
               {data.skus_without_forecast.length === 1

@@ -83,7 +83,7 @@ export default function ApprovedSummary({ approved }) {
   }
 
   return (
-    <section className="rounded-lg border border-lavander bg-white p-5 shadow-sm">
+    <section className="aire-card p-5">
       <div className="flex items-start gap-3">
         <CheckCircle2 aria-hidden="true" className="mt-0.5 size-7 shrink-0 text-green-600" />
         <div className="min-w-0">

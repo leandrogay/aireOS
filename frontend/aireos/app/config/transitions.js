@@ -12,12 +12,14 @@
 // swap); both components check useReducedMotion() themselves.
 
 // What counts as a card: the page heading row, shadcn <Card>, and the app's
-// card frame (memory: Sales Dashboard card standard -- `rounded-lg border
-// border-lavander bg-white shadow-sm`, CardSkeleton included). Only the
-// outermost match springs: a card inside a card moves with its parent.
+// card frame: the `aire-card` class (defined in globals.css, CardSkeleton
+// included). The old class chain (`rounded-lg border border-lavander bg-white
+// shadow-sm`) is kept for any frame not yet migrated. Only the outermost match
+// springs: a card inside a card moves with its parent.
 export const CARD_SELECTOR = [
   '[data-page-heading]',
   '[data-slot="card"]',
+  '.aire-card',
   '.rounded-lg.border-lavander.bg-white.shadow-sm',
 ].join(', ');
 

@@ -98,7 +98,7 @@ function NewCustomerForm({ defaults, customers, unlinked, onCreated, onCancel, o
   const shownChannelError = submitAttempted || owned.length ? channelError : '';
 
   return (
-    <form noValidate onSubmit={handleSubmit} className="relative rounded-lg border border-lavander bg-white shadow-sm">
+    <form noValidate onSubmit={handleSubmit} className="relative aire-card">
       {submitting && (
         <div
           role="status"

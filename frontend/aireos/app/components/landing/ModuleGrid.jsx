@@ -23,7 +23,7 @@ export default function ModuleGrid() {
           return (
             <li
               key={item.href}
-              className="flex flex-col rounded-lg border border-lavander bg-white shadow-sm transition-colors focus-within:border-violet hover:border-violet sm:last:col-span-2 lg:last:col-span-1"
+              className="flex flex-col aire-card transition-colors focus-within:border-violet hover:border-violet sm:last:col-span-2 lg:last:col-span-1"
             >
               <Link
                 href={item.href}

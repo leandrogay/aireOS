@@ -72,7 +72,7 @@ export default function RevenueTrendCard({
   })
 
   return (
-    <div className="bg-white rounded-lg border border-lavander shadow-sm p-4 h-full flex flex-col">
+    <div className="aire-card p-4 h-full flex flex-col">
       {/* Top row: what data (Period, Compare to) on the left, lined up on
           their bottom edge, and which channel in the card's top right corner
           (self-start), level with the "Period" label. On a phone the channel

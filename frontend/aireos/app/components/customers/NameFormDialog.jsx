@@ -95,7 +95,7 @@ function NameForm({
     <form
       noValidate
       onSubmit={handleSubmit}
-      className="relative rounded-lg border border-lavander bg-white shadow-sm"
+      className="relative aire-card"
     >
       {/* Sits above the disabled fieldset while the request is in flight. */}
       {submitting && (

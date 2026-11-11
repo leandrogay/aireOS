@@ -34,7 +34,7 @@ export default function ReviewHeader({ mapping, changed, canDiscard, busy, disca
   const proposedBy = byHand ? ' · to fill in by hand' : ` · proposed by ${PROPOSER}${model ? ` (${model})` : ''}`;
 
   return (
-    <section className="rounded-lg border border-lavander bg-white p-4 shadow-sm">
+    <section className="aire-card p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">

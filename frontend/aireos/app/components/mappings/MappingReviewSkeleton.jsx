@@ -1,6 +1,6 @@
 import { Skeleton } from '@/components/ui/skeleton';
 
-const card = 'rounded-lg border border-lavander bg-white p-4 shadow-sm';
+const card = 'aire-card p-4';
 const bar = 'rounded bg-lavander';
 
 /**

@@ -21,7 +21,7 @@ import { primaryButtonClass, secondaryButtonClass } from '@/components/ui/formSt
 
 const STATUS_LABELS = { new: 'New', changed: 'Changed', unchanged: 'Same' };
 
-const NOTICE_CLASS = 'rounded-lg border border-lavander bg-white px-3 py-2.5 shadow-sm';
+const NOTICE_CLASS = 'aire-card px-3 py-2.5';
 
 function plural(count, word) {
   return `${count} ${word}${count === 1 ? '' : 's'}`;

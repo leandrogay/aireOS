@@ -22,7 +22,7 @@ import { Button } from '@/components/ui/button';
  */
 export default function FilterBar({ label, hasFilters, onReset, children }) {
   return (
-    <section aria-label={label} className="min-w-0 rounded-lg border border-lavander bg-white p-4 shadow-sm">
+    <section aria-label={label} className="min-w-0 aire-card p-4">
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end">
         <div className="grid min-w-0 flex-1 grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-3">
           {children}

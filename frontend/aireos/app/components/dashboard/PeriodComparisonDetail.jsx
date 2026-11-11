@@ -126,7 +126,7 @@ export default function PeriodComparisonDetail({
   }
 
   return (
-    <div className="bg-white rounded-lg border border-lavander shadow-sm p-4 h-full">
+    <div className="aire-card p-4 h-full">
       <h3 className="mb-1 font-serif text-base text-deep-violet-blue">Comparison</h3>
 
       {!active && (

@@ -52,7 +52,7 @@ export default function BuildingBlocksOverlay({
   }));
 
   return (
-    <div className="rounded-lg border border-lavander bg-white px-3 py-2.5 shadow-sm">
+    <div className="aire-card px-3 py-2.5">
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2">
         <ToggleField
           label="Building blocks overlay"

@@ -109,7 +109,7 @@ function EditorForm({ entry, mapping, state, layout, onApply, onClose }) {
   }
 
   return (
-    <form noValidate onSubmit={handleSubmit} className="flex max-h-[85vh] flex-col rounded-lg border border-lavander bg-white shadow-sm">
+    <form noValidate onSubmit={handleSubmit} className="flex max-h-[85vh] flex-col aire-card">
       <div className="border-b border-lavander py-3 pl-4 pr-12">
         <h2 className="font-serif text-xl text-deep-violet-blue">How is {entry.label} filled?</h2>
         <p className="mt-0.5 text-xs text-deep-violet-blue/65">

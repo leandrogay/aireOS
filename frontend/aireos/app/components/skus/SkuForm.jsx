@@ -256,7 +256,7 @@ export default function SkuForm({ open, sku, options = {}, onSave, onClose }) {
         <form
           noValidate
           onSubmit={submit}
-          className="relative overflow-hidden rounded-lg border border-lavander bg-white shadow-sm"
+          className="relative overflow-hidden aire-card"
         >
           {saving && (
             <div

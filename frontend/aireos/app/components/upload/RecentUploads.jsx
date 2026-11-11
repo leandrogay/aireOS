@@ -84,7 +84,7 @@ export default function RecentUploads({
   };
 
   return (
-    <section className="overflow-hidden rounded-lg border border-lavander bg-white shadow-sm">
+    <section className="overflow-hidden aire-card">
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
         <div className="flex flex-wrap items-baseline gap-x-3">
           <h2 className="font-serif text-xl text-deep-violet-blue">Recent uploads</h2>

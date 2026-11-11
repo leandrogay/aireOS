@@ -88,7 +88,7 @@ export default function UploadFileRow({ item, onRemove, onRetry, onDecide, onLoa
   const beforeUpload = BEFORE_UPLOAD.has(kind);
 
   return (
-    <li className="rounded-lg border border-lavander bg-white px-4 py-3 shadow-sm">
+    <li className="aire-card px-4 py-3">
       {/* Top-aligned, so the remove cross stays in the card's top-right corner
           however tall the row grows (duplicate choice, mapping notes). */}
       <div className="flex items-start gap-3">

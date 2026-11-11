@@ -365,7 +365,7 @@ export default function PromotionForm({
       noValidate
       onSubmit={onSubmit}
       className={cn(
-        'relative rounded-lg border border-lavander bg-white shadow-sm',
+        'relative aire-card',
         isFlashing && 'animate-edit-flash',
       )}
       onAnimationEnd={(event) => {

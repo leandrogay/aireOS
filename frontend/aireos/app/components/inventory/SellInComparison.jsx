@@ -68,7 +68,7 @@ export default function SellInComparison({ months }) {
   }
 
   return (
-    <div className="rounded-lg border border-lavander bg-white p-3 shadow-sm">
+    <div className="aire-card p-3">
       <h3 className="font-serif text-base text-deep-violet-blue">Comparison</h3>
       <p className="mb-2 text-xs text-deep-violet-blue/60">
         {monthRangeLabel(months[0].month, months[months.length - 1].month)} · actual vs forecast

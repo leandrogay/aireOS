@@ -55,7 +55,7 @@ function LinkForm({ retailer, customers, onSubmit, onCancel, onPendingChange }) 
   }
 
   return (
-    <form noValidate onSubmit={handleSubmit} className="relative rounded-lg border border-lavander bg-white shadow-sm">
+    <form noValidate onSubmit={handleSubmit} className="relative aire-card">
       {submitting && (
         <div
           role="status"

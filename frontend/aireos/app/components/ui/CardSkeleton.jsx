@@ -35,7 +35,7 @@ export default function CardSkeleton({
   const hasHeader = title || subtitle || actions > 0;
 
   return (
-    <section className={cn('rounded-lg border border-lavander bg-white shadow-sm', className)}>
+    <section className={cn('aire-card', className)}>
       {hasHeader && (
         <div className={cn('flex items-start justify-between gap-3 px-4 pt-4', divider && 'border-b border-lavander pb-2.5')}>
           <div className="min-w-0 flex-1 space-y-1.5">

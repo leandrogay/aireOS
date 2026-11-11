@@ -23,7 +23,7 @@ export default function DashboardStatus({ kind, error = null }) {
   return (
     <div
       role={failed ? 'alert' : 'status'}
-      className="flex min-h-[420px] flex-col items-center justify-center rounded-lg border border-lavander bg-white p-8 text-center shadow-sm"
+      className="flex min-h-[420px] flex-col items-center justify-center aire-card p-8 text-center"
     >
       <span className="mb-3 flex size-12 items-center justify-center rounded-full bg-lavander text-deep-violet-blue">
         <Icon className="size-6" aria-hidden="true" />

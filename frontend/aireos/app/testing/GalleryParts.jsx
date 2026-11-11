@@ -45,7 +45,7 @@ export function Category({ title, note, children }) {
  */
 export function Panel({ title, note, children }) {
   return (
-    <section className="mb-3 rounded-lg border border-lavander bg-white p-4 shadow-sm">
+    <section className="mb-3 aire-card p-4">
       <h3 className="font-serif text-lg text-deep-violet-blue">{title}</h3>
       {note && <p className="mb-3 text-xs text-deep-violet-blue/60">{note}</p>}
       {children}

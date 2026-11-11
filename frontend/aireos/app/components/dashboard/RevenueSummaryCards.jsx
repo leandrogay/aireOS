@@ -262,7 +262,7 @@ export default function RevenueSummaryCards({
   const emptyTotals = { revenue: 0, units: 0 }
 
   return (
-    <div className="bg-white rounded-lg border border-lavander shadow-sm p-4 h-full">
+    <div className="aire-card p-4 h-full">
       <div className="mb-2">
         <h3 className="font-serif text-base text-deep-violet-blue">
           Sell-out Summary{" "}
