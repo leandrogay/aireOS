@@ -471,3 +471,89 @@ Migrate these only when you are already in the file for other work (CLAUDE.md §
   the service and schema comments still say "migration 006".
 - **`components/landing/`** (LandingHeader, ModuleGrid, …) isn't mounted by any page since `/` redirects
   to `/dashboard`; only a comment in `navItems.js` mentions it.
+
+---
+
+## 7. Frontend visual system and the revamp log (`style/frontend-revamp`)
+
+The frontend was restyled in an Apple Liquid Glass inspired look. It was a visual change only; the
+issues it turned up were logged here, not fixed. Paths below are relative to `frontend/aireos/`.
+
+### 7.1 What to know before styling anything
+
+- **Glass is for the control layer only**: sidebar (`glass-1`), popovers / menus / toasts / the
+  notification panel (`glass-2`), dialogs and the assistant panel (`glass-3`), the login card. Cards,
+  tables (sticky headers and the sticky first column must stay opaque), charts and forms stay solid.
+  Never put `backdrop-filter` inside a card or inside another glass surface, and never animate blur.
+- **The fill alphas are contrast floors** (72 / 88 / 92%): they keep `text-ink-soft` at 4.5:1 when a
+  popup opens over a dark button. Do not lower them. Each glass class falls back to a solid fill without
+  `backdrop-filter` and under `prefers-reduced-transparency`, `prefers-contrast: more` and `forced-colors`.
+- **Tokens and utilities live in `app/globals.css`**: `aire-card` (the card frame; it is in
+  `CARD_SELECTOR`, so the page cascade finds it), `aire-wash` (the page background, on `<body>`; `html`
+  must never get a background), `text-ink-soft` (the one secondary text colour; do not use
+  `text-deep-violet-blue/NN` for readable text), `focus-ring` / `focus-ring-inset` (the one focus style;
+  they do not beat `focus-visible:outline-none`), `press` + `press-transition`, `rounded-glass-sm|md|lg`,
+  `shadow-glass-1|2|3`, `--aire-chart-violet` / `--aire-chart-celest` (data marks; the pale tints are for
+  chart chrome only), and the motion tokens (`--motion-*`, mirrored in `app/config/transitions.js`).
+- **`cn()` knows these tokens** (`lib/utils.js` extends tailwind-merge), so a caller's `rounded-*`,
+  `shadow-*`, `duration-*` or `ease-*` still wins over a primitive's.
+- **Motion**: transform and opacity only; a leaving surface must not hold clicks off the page
+  (`pointer-events: none` / `inert` while it exits); everything is off under reduced motion, gated once
+  in the `prefers-reduced-motion` block of `globals.css`.
+- **No UI tests exist.** `npm test` covers pure `app/utils` helpers only, so lint, tests and build cannot
+  show a visual regression: restyles are checked by eye.
+
+### 7.2 Issues found (not fixed)
+
+Severity: H = users are blocked or misled, M = a real defect with a workaround, L = polish or debt.
+
+**Accessibility**
+
+| File:line | Sev | Issue | Suggested fix |
+| --- | --- | --- | --- |
+| `app/components/ui/ConfirmDialog.jsx:129` | H | A hand-rolled `alertdialog` that never moves focus into the dialog, traps it, or returns it on close; the page behind stays reachable by Tab | Build it on `ui/dialog` (Base UI handles focus), or add initial focus, a Tab trap and focus return |
+| `app/utils/forecastView.js:28` | M | Forecast "Initial" line `#E8922A` is 2.45:1 on white (3:1 needed). Left as is because `backend/app/services/assistant.py:1247` (`_FORECAST_LINES["initial"]`) mirrors it for exported reports | Change the frontend value and the backend hex together (about `#CF7B16`, 3.23:1) |
+| `app/components/assistant/AssistantMessage.jsx:55` | M | Assistant chart `SERIES_COLORS` (violet 2.59:1, celest 1.60:1, lavender about 1.2:1) fail 3:1. Left as is because `assistant.py:1864` (`_SERIES_COLORS_HEX`) mirrors them | Point both sides at the chart-safe shades (`#9088C2`, `#4F95C4`, plus a deeper third) in one change |
+| `app/utils/forecastView.js:40` | M | The "Previous" forecast line is drawn at `strokeOpacity: 0.45`, about 2.06:1 on white; no colour can pass at that opacity | Raise the opacity to about 0.8 and keep it apart from "Current" with its dash pattern |
+| `app/components/forecast/ForecastPromoPanel.jsx:105` | M | The per-promotion dot uses the band `fill` (a pale tint, 1.2 to 2.6:1) | Read the promo type's `swatch` colour instead |
+| `app/components/ui/ToggleButton.jsx:19`, `ui/LineToggle.jsx:70` | L | Unpressed chips and inactive line pills have a `/20` boundary, under 3:1 | `border-deep-violet-blue/60`, as on fields |
+| `app/components/ui/SegmentedControl.jsx`, `ui/tabs.jsx` | L | The selected option is shown by a thumb edge and text colour only; the active label could not be made bolder without changing its width and jolting the sliding thumb | Reserve the bold width with a hidden duplicate label, then use `font-semibold` |
+| `app/components/ui/Disclosure.jsx:19` | L | The `link` variant is about 20px tall, under the 24px target size | An `after:-inset-1` hit area, as on `InfoTooltip` |
+| `app/components/upload/DuplicateChoice.jsx:59` | L | Focus is shown with `peer-focus-visible:ring-violet` (2.59:1) on a sibling label | Use the deep-blue focus colour on that ring |
+| `app/components/layout/Sidebar.jsx:153` | L | The `<nav>` has no `aria-label`, and the app has no skip link | `aria-label="Main"`; add a skip link to `<main>` in `PageLayout` |
+| `app/components/ui/Toast.jsx:165` | L | Under reduced motion the countdown bar is hidden but the toast still dismisses after 4s, with no cue | Show a static bar, or pause the timer on hover and focus |
+| `app/components/forecast/ForecastConfidenceDetails.jsx:188`, `mappings/StepsEditor.jsx:118` and 24 more | L | Text at 9 to 10px in fixed-size badges and dense headers; raising it would overflow the box | Resize the boxes, then use 11px |
+| `app/components/ui/switch.jsx:25` | L | The checked track is `bg-primary` (near black), not a brand colour | `data-checked:bg-deep-violet-blue` |
+
+**Bugs and risks**
+
+| File:line | Sev | Issue | Suggested fix |
+| --- | --- | --- | --- |
+| `app/components/promotions/PromotionForm.jsx:300` | M | `isFlashing` is cleared only by `animationend`; anything that removes the animation leaves it stuck (the reduced-motion rule keeps a 0.01ms animation for this reason) | Also handle `animationcancel`, or clear it on a timer |
+| `app/components/ui/DateRangePicker.jsx:607` | M | `cn(!hasDigits && 'text-ink-soft', className)`: the passed class sets the text colour again, so an empty date mask never looks like a placeholder | Apply the placeholder class after `className` |
+| `app/components/ui/HeaderCheckboxFilter.jsx:26`, `dashboard/SkuRanking.jsx:45` | L | Hand-portalled menus are positioned in `useEffect`, after paint, so their first frame is at 0,0 (the new fade-in hides it). They also have no exit animation: adding one means moving the menu and its ref into a sub-component | `useLayoutEffect` for placement; build them on `ui/popover` |
+| `app/components/forecast/ForecastChart.jsx:402` | L | Measures Recharts internals by class name (`.recharts-xAxis .recharts-cartesian-axis-tick`); a Recharts upgrade can break it silently | Measure from the chart's own tick component |
+| `app/components/promotions/PromotionRow.jsx:79` | L | A row goes `new` → `editing` → `new`, so the new-row entrance (`tr[data-highlight='new']` in `globals.css`) replays | Key the entrance on a one-shot attribute |
+| `app/components/ui/SegmentedControl.jsx:35` | L | `outline` + `size="sm"`: a 28px track leaves 22px for 24px options, a 2px overflow | Size the option to the track's inner height |
+| `app/testing/page.js` | L | The dev-only UI gallery is a reachable route in production | Return `notFound()` unless `NODE_ENV` is development |
+| `app/layout.js:34` | L | Metadata description is still "Generated by create next app" | Describe the app |
+
+**Performance (check in a browser trace)**
+
+| File:line | Sev | Issue | Suggested fix |
+| --- | --- | --- | --- |
+| `app/login/page.js:41` | M | The login card blurs a backdrop that drifts continuously, so that area is blurred again on every frame while the page is open | Add `[backdrop-filter:none]` to the card and rely on its 88% fill if it stutters |
+| `app/components/layout/Sidebar.jsx` | L | The glass sits on a fixed-width layer clipped by the width spring; in the 56px rail the clipped part lies over page content, and whether scrolling then re-renders the blur was not measured | If it does, shrink the layer to the rail width when collapsed |
+| `app/components/layout/Sidebar.jsx:275` | L | Tabs and Sign out animate `width` with a CSS transition (a layout property), beside the Motion width spring | Drive both from the one spring |
+| `app/components/assistant/AssistantWidget.jsx` | L | Going full screen animates `top/left/right/bottom` on a blurred panel over a blurred scrim for 300ms | Make the panel solid while `expanded` changes |
+
+**Code smells**
+
+| File:line | Sev | Issue | Suggested fix |
+| --- | --- | --- | --- |
+| `app/globals.css:246` | L | The `.dark` block is unreachable (nothing adds the class) and has no brand or glass values; 187 hard-coded `bg-white` uses and literal chart colours stand in the way of a real dark mode | Remove it, or build dark mode as its own project |
+| `app/globals.css:3` | L | The "TEMPORARY WORKAROUND" comment describes a path import, but the import below it is already the plain `@import "tw-animate-css"` | Delete the comment |
+| `app/globals.css` (`--color-lavander`) | L | The Tailwind colour is spelled `lavander`, the brand variable `lavender`; about 300 class uses depend on the misspelling | Rename in one mechanical change |
+| `promotions/PromotionForm.jsx:24`, `skus/SkuForm.jsx:17`, `scenario/BlockEditor.jsx:21`, `scenario/PromotionEditor.jsx:24` | L | Local copies of the shared field class | Import `inputClass` from `ui/formStyles.js` |
+| `app/components/ui/formStyles.js:3`, `layout/AppShell.jsx:4` | L | Stale comments (the form "keeps older cream/lavender inputs"; the shell is "shared by dashboard and upload") | Update them |
+| Feature components | L | A `<Button>` given its own `transition-*` class loses the eased press (it still scales, but snaps); about 150 non-control surfaces still use `rounded-md` / `rounded-lg` beside the glass radii | Drop the caller's transition class; move surfaces to the radius tokens when in the file |
