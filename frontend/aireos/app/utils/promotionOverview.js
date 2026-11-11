@@ -211,3 +211,159 @@ export function promotionOccurrences(promotion, recurrence = 'none') {
   }
   return items;
 }
+
+/**
+ * Unique retailer names across every linked store of the loaded rows.
+ *
+ * @param {object[]} promotions
+ * @returns {string[]}
+ */
+export function uniquePromotionRetailers(promotions) {
+  return [
+    ...new Set((promotions || []).flatMap((item) => promotionRetailerNames(item))),
+  ].sort((left, right) => left.localeCompare(right));
+}
+
+/**
+ * Unique period_label values for the time-period filter.
+ *
+ * @param {object[]} promotions
+ * @returns {string[]}
+ */
+export function uniquePromotionPeriods(promotions) {
+  return [...new Set((promotions || []).map((item) => item.period_label).filter(Boolean))].sort();
+}
+
+/**
+ * Unique store names across every linked store of the loaded rows.
+ *
+ * @param {object[]} promotions
+ * @returns {string[]}
+ */
+export function uniquePromotionStoreNames(promotions) {
+  return [
+    ...new Set((promotions || []).flatMap((item) => promotionStoreNames(item))),
+  ].sort((left, right) => left.localeCompare(right));
+}
+
+/**
+ * Unique promo_type values.
+ *
+ * @param {object[]} promotions
+ * @returns {string[]}
+ */
+export function uniquePromotionTypes(promotions) {
+  return [...new Set((promotions || []).map((item) => item.promo_type).filter(Boolean))].sort();
+}
+
+/**
+ * Unique promotion_mechanic values.
+ *
+ * @param {object[]} promotions
+ * @returns {string[]}
+ */
+export function uniquePromotionMechanics(promotions) {
+  return [
+    ...new Set((promotions || []).map((item) => item.promotion_mechanic).filter(Boolean)),
+  ].sort((left, right) => left.localeCompare(right));
+}
+
+/**
+ * True when nothing is picked (the filter lets everything through) or any of
+ * `values` is picked.
+ */
+function pickedAny(picked, values) {
+  return !picked.length || values.some((value) => picked.includes(value));
+}
+
+/**
+ * Apply column filters. Each filter is a list of picked values, [] meaning
+ * "all"; a promotion passes a filter when it matches any picked value. Store
+ * and retailer match when any linked store matches. Overlapping different
+ * combinations stay listed.
+ *
+ * @param {object[]} promotions
+ * @param {{
+ *   storeName?: string[],
+ *   period?: string[],
+ *   promoType?: string[],
+ *   mechanic?: string[],
+ *   recurrence?: string[],
+ *   retailer?: string[],
+ *   status?: string[],
+ * }} filters
+ * @param {Record<string, string>} [recurrenceMap]
+ * @returns {object[]}
+ */
+export function filterPromotions(promotions, filters, recurrenceMap = {}) {
+  const storeName = filters.storeName || [];
+  const period = filters.period || [];
+  const promoType = filters.promoType || [];
+  const mechanic = filters.mechanic || [];
+  const recurrence = filters.recurrence || [];
+  const retailer = filters.retailer || [];
+  const status = filters.status || [];
+
+  return (promotions || []).filter((promotion) => {
+    if (!pickedAny(storeName, promotionStoreNames(promotion))) return false;
+    if (!pickedAny(period, [promotion.period_label])) return false;
+    if (!pickedAny(promoType, [promotion.promo_type])) return false;
+    if (!pickedAny(mechanic, [promotion.promotion_mechanic])) return false;
+    if (!pickedAny(recurrence, [recurrenceForPromotion(promotion, recurrenceMap)])) return false;
+    if (!pickedAny(retailer, promotionRetailerNames(promotion))) return false;
+    if (!pickedAny(status, [promotionStatus(promotion)])) return false;
+    return true;
+  });
+}
+
+/**
+ * Sort by period_start or period_end.
+ *
+ * @param {object[]} promotions
+ * @param {'period_start' | 'period_end'} field
+ * @param {'asc' | 'desc'} direction
+ * @returns {object[]}
+ */
+export function sortPromotions(promotions, field, direction) {
+  const factor = direction === 'desc' ? -1 : 1;
+  return [...(promotions || [])].sort((left, right) => {
+    const leftValue = formatPromoDate(left[field]);
+    const rightValue = formatPromoDate(right[field]);
+    if (leftValue === rightValue) {
+      return Number(right.promotion_id || 0) - Number(left.promotion_id || 0);
+    }
+    return leftValue < rightValue ? -1 * factor : 1 * factor;
+  });
+}
+
+/**
+ * Free-text search across what a row shows: retailer, store, period, promo
+ * type, mechanic, voucher and status. Every word typed must match somewhere,
+ * so "fairprice feb" narrows instead of widening.
+ *
+ * @param {object[]} promotions
+ * @param {string} query
+ * @returns {object[]}
+ */
+export function searchPromotions(promotions, query) {
+  const words = String(query || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return promotions || [];
+
+  return (promotions || []).filter((promotion) => {
+    const retailers = promotionRetailerNames(promotion);
+    const haystack = [
+      ...retailers,
+      ...retailers.map(retailerLabel),
+      ...promotionStoreNames(promotion),
+      promotion.period_label,
+      promoTypeLabel(promotion.promo_type),
+      promotion.promotion_mechanic,
+      promotion.voucher,
+      promotionStatusLabel(promotionStatus(promotion)),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    return words.every((word) => haystack.includes(word));
+  });
+}

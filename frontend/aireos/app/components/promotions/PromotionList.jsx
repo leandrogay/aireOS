@@ -34,13 +34,15 @@ import { PROMOTION_COLUMNS } from './columns';
 
 // The filter bar's choices; each maps to a GET /api/promotions filter
 // (promotionsApi getPromotionPage: storeName -> store).
+// Keys match filterPromotions() in app/utils/promotionOverview.js.
+// Each is a list of picked values; [] means "all".
 const EMPTY_FILTERS = {
-  retailer: '',
-  storeName: '',
-  period: '',
-  promoType: '',
-  mechanic: '',
-  status: '',
+  retailer: [],
+  storeName: [],
+  period: [],
+  promoType: [],
+  mechanic: [],
+  status: [],
 };
 
 /**
@@ -115,7 +117,7 @@ export default function PromotionList({
   const currentPage = list.data ? Math.floor(list.data.offset / shownSize) + 1 : page;
   const totalPages = Math.max(1, Math.ceil(matching / shownSize));
 
-  const hasFilters = Object.values(filters).some(Boolean) || search.trim() !== '';
+  const hasFilters = Object.values(filters).some((values) => values.length > 0) || search.trim() !== '';
 
   // Any change to what is listed goes back to page 1, where the result starts.
   const changeFilter = (key, value) => {
@@ -156,9 +158,9 @@ export default function PromotionList({
   );
 
   return (
-    // Fills the height the page gives it (PageLayout fitScreen): the filter
-    // bar keeps its size and the overview card takes the rest.
-    <div className="flex min-h-0 flex-1 flex-col gap-3">
+    // The card is as tall as its rows (no `fill`), like Recent uploads, so a
+    // short page leaves no empty space under the last row.
+    <div className="flex flex-col gap-3">
       <PromotionFilters
         filters={filters}
         options={options}
@@ -176,7 +178,6 @@ export default function PromotionList({
         error={list.error}
         onRefresh={() => setReloads((count) => count + 1)}
         emptyMessage="No promotions yet. Use Create promotion to add the first one."
-        fill
         toolbar={
           <TableSearch
             value={search}
@@ -187,7 +188,7 @@ export default function PromotionList({
         }
         pagination={{ page: currentPage, totalPages, pageSize, totalRows: matching, onPageChange: setPage, onPageSizeChange: changePageSize }}
         columns={PROMOTION_COLUMNS}
-        minWidth="72rem"
+        minWidth="64rem"
         sort={sort}
         onSort={handleSort}
         emptyState={noMatches || null}

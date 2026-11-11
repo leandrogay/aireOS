@@ -1,6 +1,6 @@
 'use client';
 
-import { Search } from 'lucide-react';
+import { Search, X } from 'lucide-react';
 
 /**
  * Search box for a list table's toolbar. Filtering happens in the parent as
@@ -26,8 +26,20 @@ export default function TableSearch({ value, onChange, label, placeholder = 'Sea
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="h-9 w-full min-w-0 rounded-lg border border-lavander bg-white pl-8 pr-2.5 text-sm text-deep-violet-blue outline-none placeholder:text-deep-violet-blue/40 focus-visible:ring-3 focus-visible:ring-ring/50 sm:w-64"
+        // The browser's own clear button doesn't match the lucide icons, so it
+        // is hidden and replaced by the X button below.
+        className="h-9 w-full min-w-0 rounded-lg border border-lavander bg-white pl-8 pr-8 text-sm text-deep-violet-blue outline-none placeholder:text-deep-violet-blue/40 focus-visible:ring-3 focus-visible:ring-ring/50 sm:w-64 [&::-webkit-search-cancel-button]:appearance-none"
       />
+      {value && (
+        <button
+          type="button"
+          aria-label="Clear search"
+          onClick={() => onChange('')}
+          className="absolute right-1.5 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-deep-violet-blue/50 hover:bg-lavander/40 hover:text-deep-violet-blue focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          <X aria-hidden="true" className="size-4" />
+        </button>
+      )}
     </label>
   );
 }

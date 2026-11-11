@@ -1,7 +1,7 @@
 'use client';
 
 import FilterBar from '@/components/ui/FilterBar';
-import FilterSelect from '@/components/ui/FilterSelect';
+import MultiSelectDropdown from '@/components/ui/MultiSelectDropdown';
 import { promoTypeLabel } from '@/app/utils/promotionForm';
 import { PROMOTION_STATUSES } from '@/app/utils/promotionOverview';
 import { retailerLabel } from '@/app/utils/retailerLabel';
@@ -11,60 +11,76 @@ const asOptions = (values, toLabel = (value) => value) =>
 
 /**
  * Filter bar above the promotion table, one dropdown per filterable column
- * in the shared FilterBar.
+ * in the shared FilterBar. Each takes any number of values in the tick-box
+ * dropdown MappingFilters uses; the long lists (retailer, store, period,
+ * mechanic) can be searched, the short fixed ones (type, status) can't.
  *
  * @param {{
- *   filters: { retailer: string, storeName: string, period: string, promoType: string, mechanic: string, status: string },
+ *   filters: { retailer: string[], storeName: string[], period: string[], promoType: string[], mechanic: string[], status: string[] },
  *   options: { retailers: string[], stores: string[], periods: string[], types: string[], mechanics: string[] },
  *   hasFilters: boolean,
- *   onChange: (key: string, value: string) => void,
+ *   onChange: (key: string, values: string[]) => void,
  *   onReset: () => void,
  * }} props
  */
 export default function PromotionFilters({ filters, options, hasFilters, onChange, onReset }) {
   return (
     <FilterBar label="Filter promotions" hasFilters={hasFilters} onReset={onReset}>
-      <FilterSelect
+      <MultiSelectDropdown
+        look="compact"
         label="Retailer"
-        value={filters.retailer}
         allLabel="All retailers"
         options={asOptions(options.retailers, retailerLabel)}
-        onChange={(value) => onChange('retailer', value)}
+        values={filters.retailer}
+        onChange={(values) => onChange('retailer', values)}
+        searchable
+        searchPlaceholder="Search retailers…"
       />
-      <FilterSelect
+      <MultiSelectDropdown
+        look="compact"
         label="Store"
-        value={filters.storeName}
         allLabel="All stores"
         options={asOptions(options.stores)}
-        onChange={(value) => onChange('storeName', value)}
+        values={filters.storeName}
+        onChange={(values) => onChange('storeName', values)}
+        searchable
+        searchPlaceholder="Search stores…"
       />
-      <FilterSelect
+      <MultiSelectDropdown
+        look="compact"
         label="Period"
-        value={filters.period}
         allLabel="All periods"
         options={asOptions(options.periods)}
-        onChange={(value) => onChange('period', value)}
+        values={filters.period}
+        onChange={(values) => onChange('period', values)}
+        searchable
+        searchPlaceholder="Search periods…"
       />
-      <FilterSelect
+      <MultiSelectDropdown
+        look="compact"
         label="Promo type"
-        value={filters.promoType}
         allLabel="All types"
         options={asOptions(options.types, promoTypeLabel)}
-        onChange={(value) => onChange('promoType', value)}
+        values={filters.promoType}
+        onChange={(values) => onChange('promoType', values)}
       />
-      <FilterSelect
+      <MultiSelectDropdown
+        look="compact"
         label="Mechanic"
-        value={filters.mechanic}
         allLabel="All mechanics"
         options={asOptions(options.mechanics)}
-        onChange={(value) => onChange('mechanic', value)}
+        values={filters.mechanic}
+        onChange={(values) => onChange('mechanic', values)}
+        searchable
+        searchPlaceholder="Search mechanics…"
       />
-      <FilterSelect
+      <MultiSelectDropdown
+        look="compact"
         label="Status"
-        value={filters.status}
         allLabel="All statuses"
         options={PROMOTION_STATUSES}
-        onChange={(value) => onChange('status', value)}
+        values={filters.status}
+        onChange={(values) => onChange('status', values)}
       />
     </FilterBar>
   );
