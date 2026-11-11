@@ -7,7 +7,7 @@ import RefreshButton from '@/components/ui/RefreshButton';
 import { Skeleton } from '@/components/ui/skeleton';
 import StatusPill from '@/components/ui/StatusPill';
 import TableCard from '@/components/ui/TableCard';
-import TableCardHeader from '@/components/ui/TableCardHeader';
+import TableCardHeader, { TABLE_HEADER_BUTTON_CLASS } from '@/components/ui/TableCardHeader';
 import TableGrid from '@/components/ui/TableGrid';
 import TableRow from '@/components/ui/TableRow';
 import ToggleButton from '@/components/ui/ToggleButton';
@@ -67,7 +67,7 @@ function SummaryCard() {
             detail={loading
               ? <Skeleton aria-label="Loading rows" className="h-3 w-24 rounded bg-lavander" />
               : `${LATEST_MONTH.length} SKUs · September 2026`}
-            actions={<RefreshButton onClick={() => {}} isRefreshing={loading} label="Refresh latest month" />}
+            actions={<RefreshButton onClick={() => {}} isRefreshing={loading} label="Refresh latest month" className={TABLE_HEADER_BUTTON_CLASS} />}
           />
         )}
       >

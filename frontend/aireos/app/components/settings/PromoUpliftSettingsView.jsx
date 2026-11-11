@@ -9,7 +9,7 @@ import { cardClass } from '@/components/ui/formStyles';
 import InfoTooltip from '@/components/ui/InfoTooltip';
 import RefreshButton from '@/components/ui/RefreshButton';
 import TableCard from '@/components/ui/TableCard';
-import TableCardHeader from '@/components/ui/TableCardHeader';
+import TableCardHeader, { TABLE_HEADER_BUTTON_CLASS } from '@/components/ui/TableCardHeader';
 import Toast from '@/components/ui/Toast';
 import usePromoMoments from '@/hooks/usePromoMoments';
 import usePromoUpliftSettings from '@/hooks/usePromoUpliftSettings';
@@ -159,7 +159,7 @@ export default function PromoUpliftSettingsView() {
             <TableCardHeader
               title="Ordinary-month discount by customer"
               detail={anchors ? `${anchors.customers.length + 1} customers including the fallback` : 'Loading customers…'}
-              actions={<RefreshButton onClick={refresh} isRefreshing={loading} label="Refresh promotion uplift settings" />}
+              actions={<RefreshButton onClick={refresh} isRefreshing={loading} label="Refresh promotion uplift settings" className={TABLE_HEADER_BUTTON_CLASS} />}
             />
           }
         >

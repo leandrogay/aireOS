@@ -112,6 +112,12 @@ function columnStyle(width, isEdge, inset) {
  * cascade in top to bottom instead. List the rows as TableRow (or
  * ExpandableRow) for this; plain `<tr>`s just snap. `animateHeight` (a card
  * table not held at a fixed height) eases the table's height with them.
+ * `maxHeight` ('28vh') caps the table, its rows scrolling under the sticky
+ * header; with `animateHeight`, changing it (null to expand) eases the table
+ * open or shut (ForecastTable's Expand / Collapse). Either way the eased
+ * height only holds in a row-flex box (`<div className="flex min-h-0">`, as
+ * DataTable does): straight inside a column (TableCard) the frame's flex-1
+ * sizes it to its rows instead.
  * Reduced motion: no animation.
  *
  * @param {{
@@ -131,6 +137,7 @@ function columnStyle(width, isEdge, inset) {
  *   emptyState?: import('react').ReactNode,
  *   pageKey?: string | number,
  *   animateHeight?: boolean,
+ *   maxHeight?: string | null,
  * }} props
  */
 export default function TableGrid({
@@ -146,6 +153,7 @@ export default function TableGrid({
   emptyState = null,
   pageKey = null,
   animateHeight = false,
+  maxHeight = null,
 }) {
   const reduceMotion = useReducedMotion();
   // Which header filter's list is open (a column key); one at a time.
@@ -153,6 +161,7 @@ export default function TableGrid({
   const { frameRef, contentRef, height } = useAnimatedHeight({
     enabled: animateHeight && !reduceMotion,
     transition: TABLE_ROWS.glide,
+    maxHeight,
   });
   const isFixed = columns.some((column) => column.width);
   const lastIndex = columns.length - 1;
@@ -181,9 +190,10 @@ export default function TableGrid({
     <motion.div
       ref={frameRef}
       layoutScroll
-      style={height ? { height } : undefined}
-      // Held to its rows' height, so it never needs to scroll down.
-      className={cn('relative min-w-0 max-w-full', FRAMES[variant], animateHeight && 'overflow-y-hidden')}
+      style={height ? { height } : maxHeight ? { maxHeight } : undefined}
+      // Held to its rows' height, so it never needs to scroll down; capped,
+      // it scrolls.
+      className={cn('relative min-w-0 max-w-full', FRAMES[variant], animateHeight && !maxHeight && 'overflow-y-hidden')}
     >
       <table
         ref={contentRef}

@@ -1,15 +1,21 @@
 'use client';
 
 import { useState } from 'react';
+import { ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
+import { motion, useReducedMotion } from 'motion/react';
 
+import { Button } from '@/components/ui/button';
 import HeaderCheckboxFilter from '@/components/ui/HeaderCheckboxFilter';
 import MobileRecordCard from '@/components/ui/MobileRecordCard';
 import RecordCardList from '@/components/ui/RecordCardList';
 import TableCard from '@/components/ui/TableCard';
-import TableCardHeader from '@/components/ui/TableCardHeader';
+import TableCardHeader, { TABLE_HEADER_BUTTON_CLASS } from '@/components/ui/TableCardHeader';
 import TableGrid from '@/components/ui/TableGrid';
 import TableRow from '@/components/ui/TableRow';
 import { cn } from '@/lib/utils';
+import { TABLE_ROWS } from '@/app/config/transitions';
+import useAnimatedHeight from '@/hooks/useAnimatedHeight';
+import useMediaQuery from '@/hooks/useMediaQuery';
 import {
   TABLE_MISSING_HINT,
   TABLE_MISSING_LABEL,
@@ -19,6 +25,10 @@ import {
 import { FORECAST_SERIES, uniqueMonthOptions } from '@/app/utils/forecastView';
 
 const NO_MATCHES = 'No rows match these table filters.';
+
+// Collapsed, the table and the phone cards show this much and scroll inside.
+const COLLAPSED_TABLE = '28vh';
+const COLLAPSED_CARDS = '55vh';
 
 // Cartons, whole numbers.
 function formatTableValue(value) {
@@ -62,13 +72,21 @@ export default function ForecastTable({ points, visibleSeries, modelLabel = '' }
   // The phone view's Month filter, above the cards (the table's is in its header).
   const [openMobileFilter, setOpenMobileFilter] = useState(null);
   const [expanded, setExpanded] = useState(false);
+  const mobile = useMediaQuery('(max-width: 639px)');
+  const reduceMotion = useReducedMotion();
+  // The phone cards' box eases open and shut like the table (TableGrid
+  // animateHeight + maxHeight).
+  const { frameRef: cardsFrameRef, contentRef: cardsContentRef, height: cardsHeight } = useAnimatedHeight({
+    enabled: mobile && !reduceMotion,
+    transition: TABLE_ROWS.glide,
+    maxHeight: expanded ? null : COLLAPSED_CARDS,
+  });
   const monthOptions = uniqueMonthOptions(points);
   const visibleColumns = FORECAST_SERIES.filter((series) => visibleSeries[series.key]);
 
   const validMonths = new Set(monthOptions.map((option) => option.value));
   const activeMonthFilter = monthFilter.filter((value) => validMonths.has(value));
-  const hasTableFilters = activeMonthFilter.length > 0;
-  const rows = hasTableFilters
+  const rows = activeMonthFilter.length
     ? points.filter((point) => activeMonthFilter.includes(point.month_year))
     : points;
 
@@ -82,11 +100,6 @@ export default function ForecastTable({ points, visibleSeries, modelLabel = '' }
     ...visibleColumns.map((series) => ({ key: series.key, label: series.label, align: 'right' })),
   ];
 
-  function clearTableFilters() {
-    setMonthFilter([]);
-    setOpenMobileFilter(null);
-  }
-
   return (
     <TableCard
       variant="glass"
@@ -97,7 +110,9 @@ export default function ForecastTable({ points, visibleSeries, modelLabel = '' }
           detail={<>{rows.length} of {points.length} months shown{modelLabel ? ` · ${modelLabel}` : ''}</>}
           actions={(
             <>
-              <div className="sm:hidden">
+              {/* Phones have no column headings, so the Month filter sits
+                  here; it clears from its own list, as in the table header. */}
+              {mobile && (
                 <HeaderCheckboxFilter
                   id="month-mobile"
                   label="Month"
@@ -107,69 +122,77 @@ export default function ForecastTable({ points, visibleSeries, modelLabel = '' }
                   setOpenId={setOpenMobileFilter}
                   onChange={setMonthFilter}
                 />
-              </div>
-              <button
+              )}
+              <Button
                 type="button"
-                onClick={clearTableFilters}
-                disabled={!hasTableFilters}
-                className="rounded-md border border-deep-violet-blue/30 bg-white px-3 py-1 text-xs font-medium text-deep-violet-blue transition hover:bg-cream disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Clear
-              </button>
-              <button
-                type="button"
+                variant="outline"
+                size="icon"
                 onClick={() => setExpanded((current) => !current)}
-                className="rounded-md border border-deep-violet-blue/30 bg-white px-3 py-1 text-xs font-medium text-deep-violet-blue transition hover:bg-cream"
+                aria-expanded={expanded}
+                aria-label={expanded ? 'Collapse monthly values' : 'Show every month'}
+                title={expanded ? 'Collapse' : 'Show every month'}
+                className={cn('shrink-0', TABLE_HEADER_BUTTON_CLASS)}
               >
-                {expanded ? 'Collapse' : 'Expand'}
-              </button>
+                {expanded ? <ChevronsDownUp aria-hidden="true" /> : <ChevronsUpDown aria-hidden="true" />}
+              </Button>
             </>
           )}
         />
       )}
     >
-      <div
-        className={cn('overflow-y-auto border-t border-lavander bg-cream/25 p-3 sm:hidden', !expanded && 'max-h-[55vh]')}
-        aria-label="Monthly forecast values"
-      >
-        {rows.length === 0 ? (
-          <p className="rounded-lg border border-lavander bg-white p-6 text-center text-sm text-deep-violet-blue/70">{NO_MATCHES}</p>
-        ) : (
-          <RecordCardList>
-            {rows.map((point) => (
-              <MobileRecordCard
-                key={point.month_year}
-                title={point.label}
-                fields={visibleColumns.map((series) => ({
-                  label: series.label,
-                  value: <span className="tabular-nums"><CellValue point={point} seriesKey={series.key} /></span>,
-                }))}
-              />
-            ))}
-          </RecordCardList>
-        )}
-      </div>
-
-      {/* Collapsed, the table scrolls inside a short box under its sticky
-          header; expanded, it shows every month. */}
-      <div className={cn('hidden min-h-0 flex-col sm:flex', !expanded && 'max-h-[28vh]')}>
-        <TableGrid
-          columns={columns}
-          minWidth="56rem"
-          emptyState={rows.length === 0 ? NO_MATCHES : null}
+      {mobile ? (
+        <motion.div
+          ref={cardsFrameRef}
+          style={cardsHeight ? { height: cardsHeight } : expanded ? undefined : { maxHeight: COLLAPSED_CARDS }}
+          // Scrolls while collapsed; expanded, held to its cards' height.
+          className={cn('border-t border-lavander bg-cream/25', expanded ? 'overflow-y-hidden' : 'overflow-y-auto')}
+          aria-label="Monthly forecast values"
         >
-          {rows.map((point) => (
-            <TableRow key={point.month_year} className="h-12 border-b border-lavander/80">
-              <td className="px-4 py-2.5 font-medium">{point.label}</td>
-              {visibleColumns.map((series) => (
-                <td key={series.key} className="px-4 py-2.5 text-right tabular-nums">
-                  <CellValue point={point} seriesKey={series.key} />
-                </td>
-              ))}
-            </TableRow>
-          ))}
-        </TableGrid>
-      </div>
+          <div ref={cardsContentRef} className="p-3">
+            {rows.length === 0 ? (
+              <p className="rounded-lg border border-lavander bg-white p-6 text-center text-sm text-deep-violet-blue/70">{NO_MATCHES}</p>
+            ) : (
+              <RecordCardList>
+                {rows.map((point) => (
+                  <MobileRecordCard
+                    key={point.month_year}
+                    title={point.label}
+                    fields={visibleColumns.map((series) => ({
+                      label: series.label,
+                      value: <span className="tabular-nums"><CellValue point={point} seriesKey={series.key} /></span>,
+                    }))}
+                  />
+                ))}
+              </RecordCardList>
+            )}
+          </div>
+        </motion.div>
+      ) : (
+        // Collapsed, the rows scroll under the sticky header; Expand eases the
+        // table open to every month. The row-flex wrapper is DataTable's: as a
+        // direct child of the card's column, TableGrid's flex-1 would size it
+        // to its rows and override the eased height.
+        <div className="flex min-h-0">
+          <TableGrid
+            columns={columns}
+            minWidth="56rem"
+            emptyState={rows.length === 0 ? NO_MATCHES : null}
+            animateHeight
+            maxHeight={expanded ? null : COLLAPSED_TABLE}
+          >
+            {rows.map((point) => (
+              <TableRow key={point.month_year} className="h-12 border-b border-lavander/80">
+                <td className="px-4 py-2.5 font-medium">{point.label}</td>
+                {visibleColumns.map((series) => (
+                  <td key={series.key} className="px-4 py-2.5 text-right tabular-nums">
+                    <CellValue point={point} seriesKey={series.key} />
+                  </td>
+                ))}
+              </TableRow>
+            ))}
+          </TableGrid>
+        </div>
+      )}
     </TableCard>
   );
 }
