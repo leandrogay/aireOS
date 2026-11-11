@@ -367,7 +367,10 @@ html.dark { background-color: var(--aire-canvas); }
 .dark [class~="bg-violet"] { background-color: #625B90; }
 .dark [class~="text-lavander"] { color: var(--aire-accent); }
 .dark [class~="bg-white"][class*="hover:bg-cream"]:hover,
-.dark [class~="bg-white"][class*="aria-expanded:bg-cream"][aria-expanded="true"] {
+.dark [class~="bg-white"][class*="aria-expanded:bg-cream"][aria-expanded="true"],
+.dark [class~="bg-white"][class*="hover:bg-lavander"]:hover,
+.dark [class~="bg-white/70"][class*="hover:bg-lavander"]:hover,
+.dark [class~="bg-white/70"][class*="aria-expanded:bg-lavander"][aria-expanded="true"] {
   background-color: var(--aire-soft);
 }
 .dark .aire-glass-surface[class~="bg-white"] {

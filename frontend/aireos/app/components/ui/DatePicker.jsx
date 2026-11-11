@@ -26,7 +26,7 @@ export const typedBoxClass = cn(
 );
 export const typedInputClass = 'h-8 bg-transparent tabular-nums outline-none disabled:cursor-not-allowed';
 export const calendarIconClass =
-  'flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-deep-violet-blue/50 hover:bg-cream hover:text-deep-violet-blue focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet disabled:cursor-not-allowed disabled:hover:bg-transparent';
+  'flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-deep-violet-blue/50 hover:bg-lavander/50 hover:text-deep-violet-blue focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet disabled:cursor-not-allowed disabled:hover:bg-transparent';
 
 /**
  * One month grid with a month/year dropdown, opening on the picked day's

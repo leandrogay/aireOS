@@ -11,7 +11,7 @@ export const labelClass = 'mb-1 block text-xs font-medium text-deep-violet-blue'
 export const errorClass = 'mt-1 text-xs text-red-700';
 export const hintClass = 'mt-1 text-[11px] text-deep-violet-blue/60';
 export const checkRowClass =
-  'flex min-w-0 cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2 py-1 text-sm text-deep-violet-blue hover:bg-cream';
+  'flex min-w-0 cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2 py-1 text-sm text-deep-violet-blue hover:bg-lavander/50';
 export const cardClass = `${glassSurfaceClass} p-4`;
 
 // Superseded by <Button> (default and outline variants, ui/button.jsx), which now
@@ -19,4 +19,4 @@ export const cardClass = `${glassSurfaceClass} p-4`;
 export const primaryButtonClass =
   'h-auto border-deep-violet-blue bg-deep-violet-blue px-4 py-1.5 text-white hover:bg-deep-violet-blue/90';
 export const secondaryButtonClass =
-  'h-auto border-deep-violet-blue/30 bg-white px-4 py-1.5 text-deep-violet-blue hover:bg-cream';
+  'h-auto border-deep-violet-blue/30 bg-white px-4 py-1.5 text-deep-violet-blue hover:bg-lavander/50';

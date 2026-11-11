@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 
 /**
  * The closed button's look, one per kind of place a dropdown sits:
- * - field: forms and the mapping review (cream, lavender border). `size`
+ * - field: forms and the mapping review (translucent white, lavender border). `size`
  *   'sm' is the compact version used inside tables.
  * - filter: a FilterBar (filterControl.js), shared with FilterSelect, with
  *   the darker border while `active`.
@@ -27,10 +27,10 @@ function lookClass(look, size, active) {
   if (look === 'compact') return 'h-8 rounded-md border border-deep-violet-blue/45 bg-white px-2 text-xs';
   if (look === 'outline') {
     // Mirrors ui/button's outline variant at its default size (h-8).
-    return 'h-8 rounded-lg border border-deep-violet-blue/30 bg-white px-2.5 text-sm transition-colors hover:bg-cream aria-expanded:bg-cream focus-visible:border-violet focus-visible:ring-3 focus-visible:ring-violet/40';
+    return 'h-8 rounded-lg border border-deep-violet-blue/30 bg-white px-2.5 text-sm transition-colors hover:bg-lavander/50 aria-expanded:bg-lavander/50 focus-visible:border-violet focus-visible:ring-3 focus-visible:ring-violet/40';
   }
   return cn(
-    'rounded-md border border-lavander bg-cream focus:border-violet',
+    'rounded-md border border-lavander bg-white/70 focus:border-violet',
     size === 'sm' ? 'h-7 px-2 text-xs' : 'px-2.5 py-1.5 text-sm',
   );
 }
@@ -158,7 +158,7 @@ export default function Dropdown({
               onKeyDown={(event) => {
                 if (event.key === 'Enter') event.preventDefault();
               }}
-              className="w-full rounded-md border border-lavander bg-cream px-2 py-1 text-sm text-deep-violet-blue placeholder:text-deep-violet-blue/45 focus:border-violet focus:outline-none"
+              className="w-full rounded-md border border-lavander bg-white/70 px-2 py-1 text-sm text-deep-violet-blue placeholder:text-deep-violet-blue/45 focus:border-violet focus:outline-none"
             />
           </div>
         )}
