@@ -5,7 +5,8 @@ import EstMark from "@/components/dashboard/EstMark"
 import FormatMixBar from "@/components/dashboard/FormatMixBar"
 import { Skeleton } from "@/components/ui/skeleton"
 import { changePct, formatChangePct } from "@/app/utils/periodComparison"
-import { customerColor, formatColor, formatsToShow } from "@/app/utils/storeFormats"
+import { formatsToShow } from "@/app/utils/storeFormats"
+import { customerColor } from "@/app/utils/customerColors"
 import { formatRevenue } from "@/app/utils/trendChart"
 import { PeriodSwatch, hatchTint } from "@/components/dashboard/PeriodTexture"
 import GlassPanel from "@/components/dashboard/GlassPanel"
@@ -220,7 +221,8 @@ export default function RevenueSummaryCards({
   comparingCustomers = false,
   customerRows = [],
   noCustomers = false,
-  customerColorOrder = [],
+  customerPalette,
+  formatColor,
 }) {
   const [hoveredFormat, setHoveredFormat] = useState(null)
   const salesData = summaryByMode[mode]
@@ -256,8 +258,10 @@ export default function RevenueSummaryCards({
   const tileTotal = comparingCustomers ? sumFormats(customerTiles) : total
   const currentByFormat = new Map(tileFormats.map((format) => [format.format, format]))
   const baselineByFormat = new Map(tileBaseline.map((format) => [format.format, format]))
+  // A customer tile in that customer's colour; a format tile in its shade of
+  // the one customer's colour (page.js formatShadeLookup, as on the chart).
   const colorForName = comparingCustomers
-    ? (name) => customerColor(customerTiles.find((tile) => tile.format === name)?.customer, customerColorOrder)
+    ? (name) => customerColor(customerTiles.find((tile) => tile.format === name)?.customer, customerPalette)
     : formatColor
   const formatNames = [...new Set([...currentByFormat.keys(), ...baselineByFormat.keys()])]
   const emptyTotals = { revenue: 0, units: 0 }

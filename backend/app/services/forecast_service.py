@@ -74,7 +74,7 @@ _SELLOUT_WEEKS_QUERY = """
 
 def get_forecast_table_rows() -> pd.DataFrame:
     client = get_bigquery_client()
-    return client.query(f"SELECT * FROM `{FORECAST_TABLE}`").result().to_dataframe()
+    return client.query(f"SELECT * FROM `{FORECAST_TABLE}`").result().to_dataframe(create_bqstorage_client=False)
 
 
 def get_sellout_weeks(customers: list[str]) -> pd.DataFrame:
@@ -86,7 +86,7 @@ def get_sellout_weeks(customers: list[str]) -> pd.DataFrame:
     # The bridge tables live in the same dataset as the view.
     dataset = SALES_ENRICHED_VIEW.rsplit(".", 1)[0]
     query = _SELLOUT_WEEKS_QUERY.format(sales_view=SALES_ENRICHED_VIEW, dataset=dataset)
-    return client.query(query, job_config=job_config).result().to_dataframe()
+    return client.query(query, job_config=job_config).result().to_dataframe(create_bqstorage_client=False)
 
 
 # Carton columns on an output row -> the revenue column each one prices into.

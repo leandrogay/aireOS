@@ -115,7 +115,7 @@ export default function ExpandableRow({
             {/* px-4 here is EXPANDED_ROW_INSET in TableGrid: a nested table
                 lines its columns up with this table's through it. The vertical
                 padding sits inside the sliding box so it closes to nothing. */}
-            <td colSpan={columnCount} className="whitespace-normal bg-cream/50 px-4 py-0">
+            <td colSpan={columnCount} className="whitespace-normal bg-(--aire-row-alt) px-4 py-0">
               <motion.div
                 {...detailsMotionProps(reduceMotion)}
                 // Clipped while it slides; -mx-1 px-1 keeps focus rings inside the clip.

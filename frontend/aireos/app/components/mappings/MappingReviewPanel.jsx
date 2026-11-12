@@ -7,10 +7,11 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Button } from '@/components/ui/button';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import Disclosure from '@/components/ui/Disclosure';
+import { glassInsetClass } from '@/components/ui/surfaceStyles';
 import useCustomers from '@/hooks/useCustomers';
 import useMappingEdits from '@/hooks/useMappingEdits';
 import { createRetailer, linkRetailer } from '@/app/services/catalogApi';
-import { CARD_REVEAL } from '@/app/config/transitions';
+import { CARD_REVEAL, EXIT_FADE } from '@/app/config/transitions';
 import { checkSummary } from '@/app/utils/mappingChecks';
 import {
   newCustomerDefaults,
@@ -381,7 +382,7 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
                 key="products"
                 initial={reduceMotion ? false : { opacity: 0, y: CARD_REVEAL.y }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={reduceMotion ? undefined : { opacity: 0, transition: { duration: 0.12 } }}
+                exit={reduceMotion ? undefined : { opacity: 0, transition: EXIT_FADE }}
                 transition={CARD_REVEAL.transition}
               >
                 <ReviewSection
@@ -465,8 +466,8 @@ export default function MappingReviewPanel({ mapping, onApprove, onDiscard, onPr
               {/* Only once a run has rows to show -- an empty fold is a click
                   that leads nowhere -- and open from the start then. */}
               {preview?.preview?.length > 0 && (
-                <Disclosure open className="mt-2 rounded-md border border-lavander" summary="Sample sales rows">
-                  <div className="border-t border-lavander p-2">
+                <Disclosure open className={`${glassInsetClass} mt-2 overflow-hidden`} summary="Sample sales rows">
+                  <div className="border-t border-deep-violet-blue/10 p-2">
                     <OutputPreview preview={preview} fields={PREVIEW_FIELDS} />
                   </div>
                 </Disclosure>

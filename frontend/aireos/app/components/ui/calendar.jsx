@@ -1,6 +1,6 @@
 // shadcn/ui Calendar (generated via `npx shadcn add calendar`, react-day-picker),
-// restyled with the AIRE brand tokens so a day grid matches ui/MonthGrid: cream
-// hover, solid deep-violet-blue for a picked day or a range's ends, lavender
+// restyled with the AIRE brand tokens so a day grid matches ui/MonthGrid: soft
+// lavender hover, solid deep-violet-blue for a picked day or a range's ends, lavender
 // between them, faded days outside the month. The shadcn structure and props
 // are kept. Pickers are built on it in ui/DatePicker and ui/RangeDatePicker;
 // see app/testing for both.
@@ -54,12 +54,12 @@ function Calendar({
         ),
         button_previous: cn(
           buttonVariants({ variant: buttonVariant }),
-          "size-(--cell-size) p-0 select-none hover:bg-cream aria-disabled:opacity-30",
+          "size-(--cell-size) p-0 select-none hover:bg-lavander/50 aria-disabled:opacity-30",
           defaultClassNames.button_previous
         ),
         button_next: cn(
           buttonVariants({ variant: buttonVariant }),
-          "size-(--cell-size) p-0 select-none hover:bg-cream aria-disabled:opacity-30",
+          "size-(--cell-size) p-0 select-none hover:bg-lavander/50 aria-disabled:opacity-30",
           defaultClassNames.button_next
         ),
         month_caption: cn(
@@ -77,7 +77,7 @@ function Calendar({
         dropdown: cn("absolute inset-0 bg-white opacity-0", defaultClassNames.dropdown),
         caption_label: cn("font-semibold select-none", captionLayout === "label"
           ? "text-sm"
-          : "flex h-7 items-center gap-1 rounded-(--cell-radius) px-1.5 text-sm hover:bg-cream [&>svg]:size-3.5 [&>svg]:text-deep-violet-blue/50", defaultClassNames.caption_label),
+          : "flex h-7 items-center gap-1 rounded-(--cell-radius) px-1.5 text-sm hover:bg-lavander/50 [&>svg]:size-3.5 [&>svg]:text-deep-violet-blue/50", defaultClassNames.caption_label),
         month_grid: cn("w-full border-collapse", defaultClassNames.month_grid),
         weekdays: cn("flex", defaultClassNames.weekdays),
         weekday: cn(
@@ -169,7 +169,7 @@ function CalendarDropdown({ options = [], value, onChange, disabled, "aria-label
         aria-label={ariaLabel}
         // `relative` lifts it above the nav row, which is absolute across the
         // whole caption and would otherwise take the click.
-        className="relative flex h-7 cursor-pointer items-center gap-1 rounded-(--cell-radius) px-1.5 text-sm font-semibold text-deep-violet-blue outline-none select-none hover:bg-cream aria-expanded:bg-cream focus-visible:ring-2 focus-visible:ring-violet disabled:cursor-not-allowed disabled:opacity-60"
+        className="relative flex h-7 cursor-pointer items-center gap-1 rounded-(--cell-radius) px-1.5 text-sm font-semibold text-deep-violet-blue outline-none select-none hover:bg-lavander/50 aria-expanded:bg-lavander/50 focus-visible:ring-2 focus-visible:ring-violet disabled:cursor-not-allowed disabled:opacity-60"
       >
         {current?.label}
         <ChevronDownIcon
@@ -198,7 +198,7 @@ function CalendarDropdown({ options = [], value, onChange, disabled, "aria-label
                   if (!selected) onChange?.({ target: { value: String(option.value) } })
                 }}
                 className={cn(
-                  "flex w-full items-center rounded-md px-2 py-1 text-left text-sm text-deep-violet-blue outline-none hover:bg-cream focus-visible:bg-cream disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent",
+                  "flex w-full items-center rounded-md px-2 py-1 text-left text-sm text-deep-violet-blue outline-none hover:bg-lavander/50 focus-visible:bg-lavander/50 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent",
                   selected && "bg-lavander/60 font-medium hover:bg-lavander/60"
                 )}
               >
@@ -244,7 +244,7 @@ function CalendarDayButton({
       data-range-end={modifiers.range_end}
       data-range-middle={modifiers.range_middle}
       className={cn(
-        "relative isolate z-10 flex aspect-square size-auto w-full min-w-(--cell-size) flex-col gap-1 rounded-(--cell-radius) border-0 leading-none font-normal hover:bg-cream group-data-[focused=true]/day:relative group-data-[focused=true]/day:z-10 group-data-[focused=true]/day:border-violet group-data-[focused=true]/day:ring-[3px] group-data-[focused=true]/day:ring-violet/40",
+        "relative isolate z-10 flex aspect-square size-auto w-full min-w-(--cell-size) flex-col gap-1 rounded-(--cell-radius) border-0 leading-none font-normal hover:bg-lavander/50 group-data-[focused=true]/day:relative group-data-[focused=true]/day:z-10 group-data-[focused=true]/day:border-violet group-data-[focused=true]/day:ring-[3px] group-data-[focused=true]/day:ring-violet/40",
         "data-[range-middle=true]:rounded-none data-[range-middle=true]:bg-lavander data-[range-middle=true]:text-deep-violet-blue data-[range-middle=true]:hover:bg-lavander",
         "data-[range-start=true]:bg-deep-violet-blue data-[range-start=true]:text-white data-[range-start=true]:hover:bg-deep-violet-blue",
         "data-[range-end=true]:bg-deep-violet-blue data-[range-end=true]:text-white data-[range-end=true]:hover:bg-deep-violet-blue",

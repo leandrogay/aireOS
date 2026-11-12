@@ -57,7 +57,7 @@ export default function UploadProgress({ sendPercent, sentAt, finished, check })
         className="h-1.5 overflow-hidden rounded-full bg-lavander"
       >
         <div
-          className="h-full rounded-full bg-deep-violet-blue transition-[width] duration-300 ease-linear motion-reduce:transition-none"
+          className="h-full rounded-full bg-deep-violet-blue transition-[width] duration-(--motion-enter) ease-linear motion-reduce:transition-none"
           style={{ width: `${percent}%` }}
         />
       </div>

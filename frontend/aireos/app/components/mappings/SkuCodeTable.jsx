@@ -3,6 +3,7 @@
 import { AlertTriangle, CheckCircle2 } from 'lucide-react';
 
 import SelectDropdown from '@/components/ui/SelectDropdown';
+import { glassTableFrameClass, glassTableHeadClass } from '@/components/ui/surfaceStyles';
 import { cn } from '@/lib/utils';
 import { PROPOSER } from '@/app/utils/mappingReview';
 
@@ -44,9 +45,12 @@ export default function SkuCodeTable({
         </p>
       )}
 
-      <div className="overflow-x-auto rounded-md border border-lavander">
-        <table className="min-w-full text-left text-xs">
-          <thead className="bg-cream text-[11px] text-deep-violet-blue/70">
+      {/* The shared row look (aire-table-rows: zebra, hover, accent bar) in a
+          clear frame. An unknown code keeps its amber row, set through the
+          row-colour variable the shared look paints with. */}
+      <div className={glassTableFrameClass}>
+        <table className="aire-table-rows min-w-full text-left text-xs">
+          <thead className={cn(glassTableHeadClass, '[&>tr>th]:shadow-[inset_0_-1px_0_var(--color-lavander)]')}>
             <tr>
               <th className="px-2 py-1.5 font-medium">Code in the file</th>
               <th className="px-2 py-1.5 font-medium">Description</th>
@@ -56,7 +60,11 @@ export default function SkuCodeTable({
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.code} className={cn('border-t border-lavander', row.known ? 'bg-white' : 'bg-amber-50')}>
+              <tr
+                key={row.code}
+                className="border-t border-lavander/80"
+                style={row.known ? undefined : { '--aire-row-background': 'var(--color-amber-50)' }}
+              >
                 <td className="px-2 py-1.5 font-mono text-deep-violet-blue">{row.code}</td>
                 <td className="px-2 py-1.5 text-deep-violet-blue/80">{row.description || '—'}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums text-deep-violet-blue/80">{row.rows.toLocaleString()}</td>

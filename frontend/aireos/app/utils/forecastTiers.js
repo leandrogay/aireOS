@@ -184,4 +184,3 @@ export function confidenceEntry(
     typicalPromo: hasCurrent && row.tier === 'tier1_advanced' && Boolean(row.xreg_used_typical_promo),
   };
 }
-

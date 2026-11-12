@@ -11,9 +11,9 @@ import { cn } from '@/lib/utils';
 const smallInput = cn(inputClass, 'py-1 text-xs');
 const codeInput = cn(smallInput, 'font-mono text-[11px]');
 const linkButton =
-  'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-deep-violet-blue/70 hover:bg-cream hover:text-deep-violet-blue disabled:opacity-60';
+  'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-deep-violet-blue/70 hover:bg-lavander/50 hover:text-deep-violet-blue disabled:opacity-60';
 const iconButton =
-  'rounded-md p-1 text-deep-violet-blue/50 hover:bg-cream hover:text-deep-violet-blue disabled:opacity-60';
+  'rounded-md p-1 text-deep-violet-blue/50 hover:bg-lavander/50 hover:text-deep-violet-blue disabled:opacity-60';
 
 const CUSTOM = '__custom__';
 

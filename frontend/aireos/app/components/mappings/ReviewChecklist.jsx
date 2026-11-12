@@ -54,7 +54,7 @@ export default function ReviewChecklist({ items, isConfirmed, aiProposed = false
           <li key={item.id}>
             <a
               href={item.href}
-              className="flex items-start gap-2 rounded-md px-1.5 py-1 outline-none transition hover:bg-cream focus-visible:ring-2 focus-visible:ring-deep-violet-blue"
+              className="flex items-start gap-2 rounded-md px-1.5 py-1 outline-none transition hover:bg-lavander/50 focus-visible:ring-2 focus-visible:ring-deep-violet-blue"
             >
               {item.done ? (
                 <CheckCircle2 aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-green-700" />

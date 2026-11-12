@@ -171,6 +171,8 @@ Every error the client can see is `HTTPException(status_code=..., detail=...)`. 
   `lucide-react`, no second icon library).
 - Animation uses `motion/react` (the only animation library) or the card cascade
   (`lib/cardCascade` via `PageTransition` / `ui/TabTransition`, timing in `app/config/transitions.js`).
+  Every duration comes from the shared scale: `MOTION` / `EXIT_FADE` in `transitions.js` for Motion, the
+  matching `--motion-*` tokens in `globals.css` for CSS (`duration-(--motion-enter)`); no literal timings.
   Cards spring in one by one; no plain fades. Table rows animate through `ui/TableRow` /
   `ExpandableRow` / `RecordCardList` (`ui/rowMotion.js`). Always respect `useReducedMotion`.
 - Keep components (`.jsx` and `page.js`) under ~300 lines. When one grows past that, move pure

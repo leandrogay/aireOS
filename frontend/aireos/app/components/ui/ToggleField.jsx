@@ -5,19 +5,24 @@ import { useId } from 'react';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 
-// The shared Switch is black by default; these are the app's own colourings.
-// `default`: deep violet, the same as the DOH alert toggle. `scenario`: the
-// Scenario builder's pink (the scenario tokens in globals.css), as on its
-// block and promotion switches.
+// The track colours live in the switch tokens (globals.css), which keep 3:1
+// on glass in both themes. `default`: deep blue (lavender in dark), as on the
+// DOH alert toggle. `scenario`: the Scenario builder's pink, as on its block
+// and promotion switches.
 const SWITCH_TONE = {
-  default: 'data-checked:bg-deep-violet-blue',
-  scenario: 'data-checked:bg-scenario',
+  default: '',
+  scenario: 'data-checked:bg-switch-on-scenario',
 };
-// The showState "On" pill, in the same colour as the switch.
+// The showState "On" pill, filled like the track; text at 4.5:1 or better.
+// White on the scenario pink is only 4.46:1, so the light pill uses the
+// deeper scenario ink.
 const ON_PILL_TONE = {
-  default: 'bg-deep-violet-blue text-white',
-  scenario: 'bg-scenario text-white',
+  default: 'bg-switch-on text-switch-thumb-on',
+  scenario: 'bg-scenario-ink text-white dark:bg-switch-on-scenario dark:text-switch-thumb-on',
 };
+// "Off" is outlined rather than filled, so On / Off differ by shape as well
+// as colour.
+const OFF_PILL = 'border border-switch-off-edge bg-transparent text-deep-violet-blue';
 
 /**
  * A setting that is on or off. With no `label` only the switch is drawn, for
@@ -65,26 +70,27 @@ export default function ToggleField({
         onCheckedChange={onChange}
         disabled={disabled}
         aria-label={label ? undefined : ariaLabel}
-        // A pointer on hover so the switch reads as clickable; the primitive's
-        // data-disabled:cursor-not-allowed still wins while it is disabled.
-        className={cn('mt-0.5 cursor-pointer', SWITCH_TONE[tone])}
+        // A pointer on hover so the switch reads as clickable. It stays a
+        // pointer while disabled (a save in flight) so the cursor doesn't
+        // flash a not-allowed sign between the click and the slide.
+        className={cn('cursor-pointer', SWITCH_TONE[tone])}
       />
       {hasText && (
-        <label htmlFor={id} className={cn('min-w-0 text-xs text-deep-violet-blue', disabled ? 'cursor-not-allowed' : 'cursor-pointer')}>
+        <label htmlFor={id} className="min-w-0 cursor-pointer pt-[3px] text-xs text-deep-violet-blue">
           <span className="flex items-center gap-1.5">
             {label && <span className="font-medium">{label}</span>}
             {showState && (
               <span
                 className={cn(
-                  'rounded-full px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide',
-                  checked ? ON_PILL_TONE[tone] : 'bg-lavander text-deep-violet-blue/70',
+                  'rounded-full border border-transparent px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide',
+                  checked ? ON_PILL_TONE[tone] : OFF_PILL,
                 )}
               >
                 {checked ? 'On' : 'Off'}
               </span>
             )}
           </span>
-          {hint && <span className="mt-0.5 block text-[11px] text-deep-violet-blue/60">{hint}</span>}
+          {hint && <span className="mt-0.5 block text-[11px] text-muted-foreground">{hint}</span>}
         </label>
       )}
     </div>

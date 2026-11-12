@@ -50,7 +50,7 @@ export default function StepByExample({ values, onAdd, disabled = false }) {
   }
 
   return (
-    <div className="space-y-1.5 rounded-md border border-dashed border-lavander p-2 text-xs text-deep-violet-blue">
+    <div className="space-y-1.5 rounded-lg border border-dashed border-deep-violet-blue/20 bg-white/40 p-2 text-xs text-deep-violet-blue">
       <p className="flex items-center gap-1 font-medium">
         <Sparkles aria-hidden="true" className="size-3.5 text-deep-violet-blue/60" />
         Or show what a value should become
@@ -105,7 +105,7 @@ export default function StepByExample({ values, onAdd, disabled = false }) {
           {suggestions.map((suggestion) => (
             <li
               key={JSON.stringify(suggestion.step)}
-              className="flex flex-wrap items-center gap-2 rounded-md border border-lavander bg-white px-2 py-1.5"
+              className="flex flex-wrap items-center gap-2 rounded-lg border border-deep-violet-blue/15 bg-white/60 px-2 py-1.5"
             >
               <div className="min-w-0 flex-1">
                 <p className="font-medium">{suggestion.label}</p>

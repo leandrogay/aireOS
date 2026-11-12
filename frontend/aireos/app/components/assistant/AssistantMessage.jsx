@@ -1,12 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Bar, CartesianGrid, ComposedChart, Dot, Legend, Line, LabelList, XAxis, YAxis } from 'recharts';
+import { Bar, CartesianGrid, Cell, ComposedChart, Dot, Legend, Line, LabelList, XAxis, YAxis } from 'recharts';
 import { Button } from '@/components/ui/button';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import { Message, MessageContent } from '@/components/ui/message';
 import SeriesDot from '@/components/forecast/SeriesDot';
 import { cn } from '@/lib/utils';
+import { categoryColors, seriesColors } from '@/app/utils/assistantChartColors';
 import { FORECAST_SERIES, formatAxisValue, formatTooltipValue, niceYDomain } from '@/app/utils/forecastView';
 import { dotRevealDelay, lineSweepTimings } from '@/app/utils/lineAnimation';
 import { BAR_ANIMATION } from '@/app/utils/trendChart';
@@ -51,8 +52,9 @@ function timedDot(timing) {
 // chart_style/chart_trend_values (see assistant.py's chart_style schema
 // field) -- 'default' color falls back to the same CSS var used before this
 // feature existed, so an unstyled chart looks identical to today. The style's
-// colour is the first series'; the others take the AIRE palette in the order
-// the exported files use (assistant.py _SERIES_COLORS_HEX).
+// colour is the first series'; a series or bar that is a customer takes that
+// customer's colour, and the others the AIRE palette in the order the
+// exported files use (utils/assistantChartColors).
 // valueLabelFormat mirrors assistant.py's chart_style.value_label_format --
 // 'whole_number'/'decimal'/'currency' only change how a label is displayed,
 // never the underlying `value` the bar/point is actually plotted at.
@@ -67,9 +69,6 @@ function _formatValueLabel(format) {
 // "make the font bigger" looks consistent between the chat preview and the
 // exported files even though each renderer maps it independently.
 const FONT_SIZE_PX = { small: 7, medium: 9, large: 12 };
-
-// Second and later series, in assistant.py's _SERIES_COLORS_HEX order.
-const SERIES_COLORS = ['var(--aire-violet)', 'var(--aire-celest)', 'var(--aire-lavender)'];
 
 // dataKey per series; the first stays `value`, so a one-series chart is as before.
 function seriesKey(index) {
@@ -97,7 +96,7 @@ function WrappedAxisTick({ x, y, payload, fontSize }) {
 
 function AssistantChart({
   type, categories, series, color, showValueLabels, valueLabelFormat, showGridlines, trendValues, title,
-  showLegend, yAxisLabel, opacity, cornerRadius, fontSize, showDataPoints, animate, expanded,
+  showLegend, yAxisLabel, opacity, cornerRadius, fontSize, showDataPoints, animate, expanded, palette,
 }) {
   const [drawnIn, setDrawnIn] = useState(!animate);
 
@@ -117,14 +116,11 @@ function AssistantChart({
   const forecastLines = series.map((item) => FORECAST_SERIES.find((line) => line.key === item.key));
   const isForecast = forecastLines.every(Boolean);
   const unit = series[0].unit;
-  const chartConfig = Object.fromEntries(
-    series.map((item, i) => {
-      const paletteColor = i === 0 ? 'var(--aire-deep-blue)' : SERIES_COLORS[(i - 1) % SERIES_COLORS.length];
-      const defaultColor = forecastLines[i]?.color ?? paletteColor;
-      return [keys[i], { label: item.label, color: i === 0 && customColor ? customColor : defaultColor }];
-    }),
-  );
+  const colors = seriesColors({ series, forecastLines, customColor, palette });
+  const chartConfig = Object.fromEntries(series.map((item, i) => [keys[i], { label: item.label, color: colors[i] }]));
   const compared = series.length > 1;
+  // One series of bars, one per customer: each bar in its customer's colour.
+  const barColors = type !== 'line' && !compared && !isForecast ? categoryColors(categories, palette, customColor) : [];
   const hasTrend = !compared && trendValues?.length === categories.length;
   const labelFormatter = _formatValueLabel(valueLabelFormat);
   const tickSize = FONT_SIZE_PX[fontSize] ?? FONT_SIZE_PX.medium;
@@ -160,7 +156,7 @@ function AssistantChart({
       <ChartContainer
         config={chartConfig}
         className={cn(
-          'w-full overflow-hidden transition-[height] duration-300 ease-out motion-reduce:transition-none',
+          'w-full overflow-hidden transition-[height] duration-(--motion-enter) ease-out motion-reduce:transition-none',
           expanded ? 'h-[280px]' : isForecast ? 'h-[200px]' : 'h-[140px]',
         )}
       >
@@ -216,6 +212,10 @@ function AssistantChart({
                 maxBarSize={isForecast ? 64 : undefined}
                 {...(animating ? BAR_ANIMATION : NO_ANIMATION)}
               >
+                {barColors.some(Boolean) &&
+                  categories.map((category, i) => (
+                    <Cell key={category} fill={barColors[i] ?? `var(--color-${key})`} />
+                  ))}
                 {valueLabels(key)}
               </Bar>
             ),
@@ -397,7 +397,7 @@ function ExportButtons({ message }) {
  *
  * @param {{ message: object, onFollowUp: (prompt: string) => void, animate?: boolean, expanded?: boolean }} props
  */
-export default function AssistantMessage({ message, onFollowUp, animate = false, expanded = false }) {
+export default function AssistantMessage({ message, onFollowUp, palette, animate = false, expanded = false }) {
   const isUser = message.role === 'user';
   return (
     <Message align={isUser ? 'end' : 'start'}>
@@ -436,6 +436,7 @@ export default function AssistantMessage({ message, onFollowUp, animate = false,
                 showDataPoints={message.chartStyle?.show_data_points}
                 animate={animate}
                 expanded={expanded}
+                palette={palette}
               />
             </div>
           )}

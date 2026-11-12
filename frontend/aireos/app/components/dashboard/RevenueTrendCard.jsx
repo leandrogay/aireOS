@@ -1,6 +1,8 @@
 "use client"
 
 import BarChartSkeleton from "@/components/ui/BarChartSkeleton"
+import ChartCard from "@/components/ui/ChartCard"
+import { CHART_FRAME_CLASS } from "@/components/ui/ChartFrame"
 import { Skeleton } from "@/components/ui/skeleton"
 import SegmentedControl from "@/components/ui/SegmentedControl"
 import ComparisonMixChart from "@/components/dashboard/ComparisonMixChart"
@@ -9,7 +11,7 @@ import { FormatTrendChart } from "@/components/dashboard/TrendChart"
 import { formatDateTime } from "@/lib/formatDate"
 import { relabelFormatRows } from "@/app/utils/storeFormats"
 import useDelayedLoading from "@/hooks/useDelayedLoading"
-import GlassPanel from "@/components/dashboard/GlassPanel"
+import { cn } from "@/lib/utils"
 
 const METRIC_OPTIONS = [
   { value: "units", label: "Volume" },
@@ -32,11 +34,12 @@ function ChartFooter({ lastUpdated }) {
  * switches Volume / Revenue (`metric`, owned by page.js because the comparison
  * rows are built for it) and By week / By month; then the chart.
  *
- * The chart is always stacked by store format, in the format colours, so a
- * colour always means one format: FormatTrendChart with no comparison, and
+ * The chart is always stacked by store format, each a shade of the
+ * customer's colour (`formatColor`, from page.js, shared with the summary
+ * tiles), so a shade always means one format: FormatTrendChart with no comparison, and
  * ComparisonMixChart with one, where solid vs hatched (the comparison is
  * always hatched) separates this period from the comparison. A single-format channel (online) is one stack in
- * that format's colour.
+ * the customer's colour.
  * With a comparison, `comparisonRows` comes pre-aligned from
  * alignComparisonBuckets, so the charts only render.
  * With two or more customers ticked, `customerBars` (get_customer_trends rows)
@@ -61,7 +64,8 @@ export default function RevenueTrendCard({
   comparisonLoading = false,
   periodNames = null,
   customerBars = null,
-  customerColorOrder = [],
+  customerPalette,
+  formatColor,
   metric = "revenue",
   onMetricChange = () => {},
 }) {
@@ -73,7 +77,10 @@ export default function RevenueTrendCard({
   })
 
   return (
-    <GlassPanel className="flex flex-col">
+    // No ChartCard header: the two control rows below keep their order (what
+    // data, then how to draw it, just above the chart). `fill`: as tall as the
+    // Comparison card beside it, the chart taking the rest (ChartFrame fill).
+    <ChartCard label="Sales trend" fill>
       {/* Top row: what data (Period, Compare to) on the left, lined up on
           their bottom edge, and which channel in the card's top right corner
           (self-start), level with the "Period" label. On a phone the channel
@@ -131,7 +138,7 @@ export default function RevenueTrendCard({
             legend
             legendItems={comparingCustomers ? 3 : 4}
             label="Loading dashboard…"
-            className="flex-1"
+            className={cn(CHART_FRAME_CLASS, "flex-1")}
           />
           <div className="mt-1 flex items-baseline justify-end">
             <Skeleton className="h-4 w-40 rounded bg-lavander motion-reduce:animate-none" />
@@ -141,25 +148,32 @@ export default function RevenueTrendCard({
       {error && <p className="text-red-600 text-sm">{error}</p>}
       {!busy && !error && comparingCustomers && (
         <div className="flex flex-1 flex-col">
-          <CustomerTrendChart customers={customerBars} mode={mode} metric={metric} granularity={granularity} colorOrder={customerColorOrder} />
+          <CustomerTrendChart customers={customerBars} mode={mode} metric={metric} granularity={granularity} palette={customerPalette} />
           <ChartFooter lastUpdated={lastUpdated} />
         </div>
       )}
       {!busy && !error && !comparingCustomers && salesData && (
         <div className="flex flex-1 flex-col">
           {comparisonRows ? (
-            <ComparisonMixChart rows={comparisonRows} periodNames={periodNames} granularity={granularity} metric={metric} />
+            <ComparisonMixChart
+              rows={comparisonRows}
+              periodNames={periodNames}
+              granularity={granularity}
+              metric={metric}
+              colorFor={formatColor}
+            />
           ) : (
             <FormatTrendChart
               periodByFormat={relabelFormatRows(salesData.periodByFormat ?? [])}
               periodTotal={salesData.periodTotal}
               granularity={granularity}
               metric={metric}
+              colorFor={formatColor}
             />
           )}
           <ChartFooter lastUpdated={lastUpdated} />
         </div>
       )}
-    </GlassPanel>
+    </ChartCard>
   )
 }

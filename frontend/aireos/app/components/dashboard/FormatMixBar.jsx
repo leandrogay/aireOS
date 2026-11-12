@@ -1,7 +1,6 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { formatColor } from '@/app/utils/storeFormats';
 import { formatRevenue } from '@/app/utils/trendChart';
 import { edgeColor } from '@/components/dashboard/PeriodTexture';
 
@@ -70,7 +69,7 @@ function inOrderOf(formats, order) {
  *   names?: { current: string, baseline: string } | null,
  *   label?: string,
  *   metric: 'revenue' | 'units',
- *   colorFor?: (name: string) => string,
+ *   colorFor: (name: string) => string,
  *   highlighted: string | null,
  *   onHover: (format: string | null) => void,
  * }} props
@@ -81,7 +80,7 @@ export default function FormatMixBar({
   names = null,
   label = 'Format mix',
   metric,
-  colorFor = formatColor,
+  colorFor,
   highlighted,
   onHover,
 }) {

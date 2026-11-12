@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
+import { customerPalette } from '../app/utils/customerColors.js';
 import { rankCustomers, rankSkus } from '../app/utils/salesRanking.js';
 
 const SKUS = [
@@ -44,12 +45,12 @@ describe('rankCustomers', () => {
   ];
 
   test('keeps only customers on the channel, ranked by the metric', () => {
-    const ranked = rankCustomers(ROWS, 'offline', 'value', 'desc', []);
+    const ranked = rankCustomers(ROWS, 'offline', 'value', 'desc', customerPalette());
     assert.deepEqual(ranked.map((row) => [row.customer, row.rank]), [['fairprice', 1], ['sheng_shiong', 2]]);
   });
 
   test('carries the channel totals and whether anything is loaded', () => {
-    const [first, second] = rankCustomers(ROWS, 'offline', 'volume', 'desc', []);
+    const [first, second] = rankCustomers(ROWS, 'offline', 'volume', 'desc', customerPalette());
     assert.equal(first.customer, 'sheng_shiong');
     assert.equal(first.volume, 9);
     assert.equal(first.hasData, false);

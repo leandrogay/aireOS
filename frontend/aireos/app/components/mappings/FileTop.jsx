@@ -1,6 +1,7 @@
 'use client';
 
 import Disclosure from '@/components/ui/Disclosure';
+import { glassInsetClass, glassRuleClass } from '@/components/ui/surfaceStyles';
 import { cn } from '@/lib/utils';
 
 /**
@@ -18,12 +19,12 @@ export default function FileTop({ columns, layout, headRows }) {
   const headerRow = Number(layout?.header_row) || 1;
   if (!columns.length) return null;
 
-  const rowClass = 'border-t border-lavander';
+  const rowClass = cn(glassRuleClass, 'border-t');
   const cellClass = 'max-w-40 truncate whitespace-nowrap px-2 py-1';
 
   return (
     <Disclosure
-      className="mt-2 rounded-md border border-lavander"
+      className={cn(glassInsetClass, 'mt-2 overflow-hidden')}
       summary={
         <>
           Top of the file
@@ -35,12 +36,14 @@ export default function FileTop({ columns, layout, headRows }) {
         </>
       }
     >
-      <div className="overflow-x-auto border-t border-lavander">
+      {/* Solid like any table on glass; the sticky row numbers need an
+          opaque background so cells don't show through as they scroll under. */}
+      <div className={cn(glassRuleClass, 'overflow-x-auto border-t bg-white')}>
         <table className="text-left font-mono text-[11px] text-deep-violet-blue">
           <tbody>
             {above.map((item) => (
-              <tr key={`above-${item.row}`} className={cn(rowClass, 'bg-cream/40')}>
-                <th scope="row" className="sticky left-0 bg-cream px-2 py-1 font-sans font-medium text-deep-violet-blue/60">
+              <tr key={`above-${item.row}`} className={cn(rowClass, 'bg-(--aire-row-alt)')}>
+                <th scope="row" className="sticky left-0 bg-(--aire-row-alt) px-2 py-1 font-sans font-medium text-deep-violet-blue/60">
                   {item.row}
                 </th>
                 {columns.map((column) => (
@@ -50,8 +53,8 @@ export default function FileTop({ columns, layout, headRows }) {
                 ))}
               </tr>
             ))}
-            <tr className={cn(rowClass, 'bg-lavander/50 font-sans font-medium')}>
-              <th scope="row" className="sticky left-0 bg-lavander px-2 py-1 font-medium text-deep-violet-blue/70">
+            <tr className={cn(rowClass, 'bg-(--aire-table-head) font-sans font-medium')}>
+              <th scope="row" className="sticky left-0 bg-(--aire-table-head) px-2 py-1 font-medium text-deep-violet-blue/70">
                 {headerRow}
               </th>
               {columns.map((column) => (
@@ -76,7 +79,7 @@ export default function FileTop({ columns, layout, headRows }) {
         </table>
       </div>
       {!headRows.length && (
-        <p className="border-t border-lavander px-2 py-1.5 text-[11px] text-deep-violet-blue/60">
+        <p className={cn(glassRuleClass, 'border-t px-2 py-1.5 text-[11px] text-deep-violet-blue/60')}>
           This nomenclature was proposed before the first rows were kept. Test it to read them from the example file.
         </p>
       )}

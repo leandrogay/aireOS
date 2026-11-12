@@ -22,7 +22,7 @@ class SlowJob:
         time.sleep(SLOW_SECONDS)
         return self
 
-    def to_dataframe(self):
+    def to_dataframe(self, create_bqstorage_client=True):
         return pd.DataFrame(
             [{"product_name": "Pants L", "customer_name": "fairprice", "first_month": None, "last_month": None}]
         )

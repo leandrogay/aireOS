@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import InfoTooltip from '@/components/ui/InfoTooltip';
 import SelectDropdown from '@/components/ui/SelectDropdown';
 import Disclosure from '@/components/ui/Disclosure';
+import { glassInsetClass, glassRuleClass } from '@/components/ui/surfaceStyles';
 import {
   MEASURE_FIELDS,
   PROPOSER,
@@ -250,7 +251,7 @@ function FieldRow({
   return (
     <li
       className={cn(
-        'grid items-start gap-1.5 border-t border-lavander px-2 py-2 first:border-t-0 sm:grid-cols-[10rem_minmax(0,1fr)_9.5rem] sm:gap-3',
+        'grid items-start gap-1.5 border-t border-deep-violet-blue/10 px-2 py-2 first:border-t-0 sm:grid-cols-[10rem_minmax(0,1fr)_9.5rem] sm:gap-3',
         missing && 'bg-amber-50',
         !missing && unsure && 'bg-amber-50/50',
       )}
@@ -385,11 +386,11 @@ export default function FieldTable({ coverage, confirmedNow, ...props }) {
 
   return (
     <div className="space-y-2">
-      <div className="overflow-hidden rounded-md border border-lavander">{renderRows(required)}</div>
+      <div className={cn(glassInsetClass, 'overflow-hidden')}>{renderRows(required)}</div>
 
       <Disclosure
         open={optionalNeedsYou}
-        className="overflow-hidden rounded-md border border-lavander"
+        className={cn(glassInsetClass, 'overflow-hidden')}
         summary={
           <>
             Optional fields
@@ -401,9 +402,9 @@ export default function FieldTable({ coverage, confirmedNow, ...props }) {
           </>
         }
       >
-        <div className="border-t border-lavander">{renderRows(optional)}</div>
+        <div className={cn(glassRuleClass, 'border-t')}>{renderRows(optional)}</div>
         {automatic.length > 0 && (
-          <p className="border-t border-lavander px-2 py-1.5 text-[11px] text-deep-violet-blue/60">
+          <p className={cn(glassRuleClass, 'border-t px-2 py-1.5 text-[11px] text-deep-violet-blue/60')}>
             Filled automatically: {automatic.map((entry) => entry.label).join(', ')}.
           </p>
         )}

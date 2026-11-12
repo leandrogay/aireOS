@@ -24,7 +24,7 @@ class _FakeJob:
     def result(self):
         return self
 
-    def to_dataframe(self):
+    def to_dataframe(self, create_bqstorage_client=True):
         return self._df
 
 

@@ -258,20 +258,20 @@ def test_customer_options_have_no_period_type_filter(monkeypatch):
 
 def test_customer_options_strip_the_channel_suffix(monkeypatch):
     rows = [
-        {"retailer_name": "fairprice_offline", "customer_id": None, "customer_name": None},
-        {"retailer_name": "fairprice_online", "customer_id": None, "customer_name": None},
+        {"retailer_name": "fairprice_offline", "customer_id": None, "customer_name": None, "color": None},
+        {"retailer_name": "fairprice_online", "customer_id": None, "customer_name": None, "color": None},
     ]
     _install(monkeypatch, lambda sql, params: rows)
 
     options = sellout_service.get_customer_options()
 
-    assert options == [{"value": "fairprice", "label": "Fairprice", "customer_id": None}]
+    assert options == [{"value": "fairprice", "label": "Fairprice", "customer_id": None, "color": None}]
 
 
 def test_customer_options_are_labelled_with_the_owning_customers_name(monkeypatch):
     rows = [
-        {"retailer_name": "fairprice_offline", "customer_id": 1, "customer_name": "FairPrice"},
-        {"retailer_name": "sheng_shiong_offline", "customer_id": 16, "customer_name": "Sheng_Shiong"},
+        {"retailer_name": "fairprice_offline", "customer_id": 1, "customer_name": "FairPrice", "color": "#7A70B8"},
+        {"retailer_name": "sheng_shiong_offline", "customer_id": 16, "customer_name": "Sheng_Shiong", "color": "#9A7B00"},
     ]
     conn = _install(monkeypatch, lambda sql, params: rows)
 
@@ -279,18 +279,18 @@ def test_customer_options_are_labelled_with_the_owning_customers_name(monkeypatc
 
     assert "LEFT JOIN customers c" in conn.calls[0][0]
     assert options == [
-        {"value": "fairprice", "label": "FairPrice", "customer_id": 1},
-        {"value": "sheng_shiong", "label": "Sheng Shiong", "customer_id": 16},
+        {"value": "fairprice", "label": "FairPrice", "customer_id": 1, "color": "#7A70B8"},
+        {"value": "sheng_shiong", "label": "Sheng Shiong", "customer_id": 16, "color": "#9A7B00"},
     ]
 
 
 def test_customer_options_keep_a_short_code_uppercase(monkeypatch):
-    rows = [{"retailer_name": "nhg_offline", "customer_id": None, "customer_name": None}]
+    rows = [{"retailer_name": "nhg_offline", "customer_id": None, "customer_name": None, "color": None}]
     _install(monkeypatch, lambda sql, params: rows)
 
     options = sellout_service.get_customer_options()
 
-    assert options == [{"value": "nhg", "label": "NHG", "customer_id": None}]
+    assert options == [{"value": "nhg", "label": "NHG", "customer_id": None, "color": None}]
 
 
 def test_customer_options_carry_the_linked_customer_id_whatever_its_name(monkeypatch):
@@ -299,9 +299,9 @@ def test_customer_options_carry_the_linked_customer_id_whatever_its_name(monkeyp
     # retailer with no customer record gives None, and one linked channel is
     # enough for the whole customer.
     rows = [
-        {"retailer_name": "sheng_siong_offline", "customer_id": None, "customer_name": None},
-        {"retailer_name": "sheng_siong_online", "customer_id": 16, "customer_name": "Sheng_Shiong"},
-        {"retailer_name": "giant_offline", "customer_id": None, "customer_name": None},
+        {"retailer_name": "sheng_siong_offline", "customer_id": None, "customer_name": None, "color": None},
+        {"retailer_name": "sheng_siong_online", "customer_id": 16, "customer_name": "Sheng_Shiong", "color": "#9A7B00"},
+        {"retailer_name": "giant_offline", "customer_id": None, "customer_name": None, "color": None},
     ]
     conn = _install(monkeypatch, lambda sql, params: rows)
 
@@ -317,14 +317,14 @@ def test_customer_options_take_id_and_label_from_the_same_linked_retailer(monkey
     # first linked retailer by name (offline) gives both id and label, in
     # whatever order the rows arrive.
     rows = [
-        {"retailer_name": "fairprice_online", "customer_id": 9, "customer_name": "Other"},
-        {"retailer_name": "fairprice_offline", "customer_id": 1, "customer_name": "FairPrice"},
+        {"retailer_name": "fairprice_online", "customer_id": 9, "customer_name": "Other", "color": "#2D4A22"},
+        {"retailer_name": "fairprice_offline", "customer_id": 1, "customer_name": "FairPrice", "color": "#7A70B8"},
     ]
     _install(monkeypatch, lambda sql, params: rows)
 
     options = sellout_service.get_customer_options()
 
-    assert options == [{"value": "fairprice", "label": "FairPrice", "customer_id": 1}]
+    assert options == [{"value": "fairprice", "label": "FairPrice", "customer_id": 1, "color": "#7A70B8"}]
 
 
 # ---- get_customer_totals ------------------------------------------------

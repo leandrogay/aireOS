@@ -99,7 +99,7 @@ export default function Toast({ toast, onDismiss }) {
         aria-live={toast.type === 'error' ? 'assertive' : 'polite'}
         className={cn(
           'relative w-96 max-w-full overflow-hidden rounded-2xl border border-lavander bg-white',
-          'animate-in fade-in-0 zoom-in-95 slide-in-from-right-2 duration-300 ease-out motion-reduce:animate-none',
+          'animate-in fade-in-0 zoom-in-95 slide-in-from-right-2 duration-(--motion-enter) ease-out motion-reduce:animate-none',
           POPUP_SHADOW_CLASS,
         )}
       >

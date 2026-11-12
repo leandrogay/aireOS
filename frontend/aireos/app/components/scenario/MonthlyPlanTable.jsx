@@ -5,13 +5,9 @@ import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import InfoTooltip from '@/components/ui/InfoTooltip';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { HEADER_RULE } from '@/components/forecast/ForecastYearTotals';
+import TableGrid from '@/components/ui/TableGrid';
+import TableRow from '@/components/ui/TableRow';
 import { formatMonthLabel } from '@/app/utils/forecastView';
-
-const headerCell = cn(
-  'border-b bg-cream px-2 py-1.5 text-right align-bottom text-[10px] font-bold uppercase leading-tight tracking-wide text-deep-violet-blue',
-  HEADER_RULE
-);
 
 function units(value) {
   return Math.round(value).toLocaleString('en-US');
@@ -25,16 +21,59 @@ function percent(share) {
   return share == null ? '—' : `${share < 0 ? '−' : '+'}${Math.abs(share * 100).toFixed(1)}%`;
 }
 
-function Header({ label, hint, align = 'right' }) {
+// A column heading with its explanation behind an info button; TableGrid
+// draws the <th> around it.
+function HintLabel({ label, hint }) {
   return (
-    <th className={cn(headerCell, align === 'left' && 'text-left')}>
-      <span className={cn('inline-flex items-end gap-1', align === 'right' && 'justify-end')}>
-        {label}
-        {hint ? <InfoTooltip label={`About ${label}`}>{hint}</InfoTooltip> : null}
-      </span>
-    </th>
+    <span className="inline-flex items-center gap-1">
+      {label}
+      <InfoTooltip label={`About ${label}`}>{hint}</InfoTooltip>
+    </span>
   );
 }
+
+const COLUMNS = [
+  { key: 'month', label: 'Month', width: '7rem' },
+  {
+    key: 'lastYear',
+    label: <HintLabel label="Last year actual" hint="Sell-out in the same month a year earlier." />,
+    align: 'right',
+  },
+  {
+    key: 'model',
+    label: <HintLabel label="Model forecast" hint="The Current forecast line, before any building blocks." />,
+    align: 'right',
+  },
+  {
+    key: 'blocks',
+    label: <HintLabel label="Building blocks" hint="What the switched-on building blocks add this month." />,
+    align: 'right',
+  },
+  {
+    key: 'adjusted',
+    label: (
+      <HintLabel
+        label="Adjusted forecast"
+        hint="Model forecast plus building blocks: the Simulated line on the chart."
+      />
+    ),
+    align: 'right',
+  },
+  {
+    key: 'variance',
+    label: <HintLabel label="vs last year" hint="Adjusted forecast minus last year's actual." />,
+    align: 'right',
+  },
+  {
+    key: 'variancePct',
+    label: <HintLabel label="%" hint="The change against last year as a share of last year's actual." />,
+    width: '6rem',
+    align: 'right',
+  },
+];
+
+const CELL_CLASS = 'px-3 py-2 align-top';
+const NUMBER_CELL_CLASS = 'px-3 py-2 text-right align-top tabular-nums';
 
 const chipClass =
   'mt-1 inline-flex max-w-[7.5rem] items-center gap-1 rounded-full px-2 py-px text-[10px] font-semibold text-scenario-ink';
@@ -100,12 +139,13 @@ function BlockLinks({ items, onOpen }) {
 }
 
 /**
- * The Scenario builder's monthly plan for the filters' scope: one row per
- * forecast month with Last year actual, Model forecast, Building blocks and
- * Adjusted forecast in units, and the variance against last
- * year. Months a switched-on block changes are shaded, and a block's name
- * opens it in the panel (new blocks are added there). All numbers come from
- * scenarioPlan.buildPlanRows.
+ * The Scenario builder's monthly plan for the filters' scope, on the shared
+ * TableGrid: one row per forecast month with Last year actual, Model
+ * forecast, Building blocks and Adjusted forecast in units, and the variance
+ * against last year. Months a switched-on block changes are tinted
+ * (`data-highlight="scenario"`, globals.css) with a scenario rule on their
+ * left edge, and a block's name opens it in the panel (new blocks are added
+ * there). All numbers come from scenarioPlan.buildPlanRows.
  *
  * @param {{
  *   rows: ReturnType<typeof import('@/app/utils/scenarioPlan').buildPlanRows>,
@@ -123,98 +163,65 @@ export default function MonthlyPlanTable({ rows, lastYearLoading, onOpenItem, sc
     );
   }
 
+  const pending = <span className="text-deep-violet-blue/45">{lastYearLoading ? '…' : '—'}</span>;
+  const tone = (value) => (value < 0 ? 'text-red-700' : 'text-emerald-700');
+
   return (
     <section aria-label="Monthly plan" className="space-y-1.5">
       <p className="text-[11px] text-deep-violet-blue/60">
         <span className="font-semibold text-deep-violet-blue">{scope}</span> · Units.
         Shaded months have a switched-on building block.
       </p>
-      <div className="overflow-x-auto rounded-md border border-lavander">
-        <table className="w-full border-separate border-spacing-0 text-xs text-deep-violet-blue">
-          <thead>
-            <tr>
-              <Header label="Month" align="left" />
-              <Header label="Last year actual" hint="Sell-out in the same month a year earlier." />
-              <Header label="Model forecast" hint="The Current forecast line, before any building blocks." />
-              <Header label="Building blocks" hint="What the switched-on building blocks add this month." />
-              <Header
-                label="Adjusted forecast"
-                hint="Model forecast plus building blocks: the Simulated line on the chart."
-              />
-              <Header
-                label="vs last year"
-                hint="Adjusted forecast minus last year's actual."
-              />
-              <Header label="%" hint="The change against last year as a share of last year's actual." />
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, index) => {
-              const marked = row.items.length > 0;
-              const rule = index < rows.length - 1 ? 'border-b border-lavander/70' : '';
-              const cell = cn('whitespace-nowrap px-2 py-1.5 text-right align-top tabular-nums', rule);
-              const label = formatMonthLabel(row.month_year);
-              const change = row.variance;
-              const tone = (value) => (value < 0 ? 'text-red-700' : 'text-emerald-700');
-              return (
-                <tr key={row.month_year} className={marked ? 'bg-scenario-soft/50' : 'bg-white'}>
-                  <td
-                    className={cn(
-                      'whitespace-nowrap px-2 py-1.5 text-left align-top font-medium',
-                      rule,
-                      marked ? 'border-l-[3px] border-l-scenario' : 'border-l-[3px] border-l-transparent'
-                    )}
-                  >
-                    {label}
-                  </td>
-                  <td className={cell}>
-                    {row.lastYear ? (
-                      <span className="font-semibold">{units(row.lastYear.units)}</span>
-                    ) : (
-                      <span className="text-deep-violet-blue/45">{lastYearLoading ? '…' : 'No sales'}</span>
-                    )}
-                  </td>
-                  <td className={cell}>
-                    <span className="font-semibold">{units(row.model.units)}</span>
-                  </td>
-                  <td className={cell}>
-                    {marked ? (
-                      <>
-                        <span className="block font-semibold text-scenario-ink">{signed(row.blocks.units, units)}</span>
-                        <BlockLinks items={row.items} onOpen={onOpenItem} />
-                      </>
-                    ) : (
-                      <span className="text-deep-violet-blue/45">—</span>
-                    )}
-                  </td>
-                  <td className={cell}>
-                    <span className={cn('font-semibold', marked && 'text-scenario-ink')}>{units(row.adjusted.units)}</span>
-                  </td>
-                  {change ? (
-                    <>
-                      <td className={cell}>
-                        <span className={cn('font-semibold', tone(change.units))}>{signed(change.units, units)}</span>
-                      </td>
-                      <td className={cell}>
-                        <span className={cn('font-semibold', tone(change.units))}>{percent(change.unitsPct)}</span>
-                      </td>
-                    </>
-                  ) : (
-                    <>
-                      <td className={cell}>
-                        <span className="text-deep-violet-blue/45">{lastYearLoading ? '…' : '—'}</span>
-                      </td>
-                      <td className={cell}>
-                        <span className="text-deep-violet-blue/45">{lastYearLoading ? '…' : '—'}</span>
-                      </td>
-                    </>
-                  )}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      <TableGrid variant="nested" columns={COLUMNS} minWidth="52rem">
+        {rows.map((row) => {
+          const marked = row.items.length > 0;
+          const change = row.variance;
+          return (
+            <TableRow
+              key={row.month_year}
+              data-highlight={marked ? 'scenario' : undefined}
+              className="border-b border-lavander/80 last:border-b-0"
+            >
+              <td
+                className={cn(
+                  CELL_CLASS,
+                  'font-medium',
+                  marked && 'shadow-[inset_3px_0_0_var(--color-scenario)]'
+                )}
+              >
+                {formatMonthLabel(row.month_year)}
+              </td>
+              <td className={NUMBER_CELL_CLASS}>
+                {row.lastYear ? (
+                  units(row.lastYear.units)
+                ) : (
+                  <span className="text-deep-violet-blue/45">{lastYearLoading ? '…' : 'No sales'}</span>
+                )}
+              </td>
+              <td className={NUMBER_CELL_CLASS}>{units(row.model.units)}</td>
+              <td className={NUMBER_CELL_CLASS}>
+                {marked ? (
+                  <>
+                    <span className="block font-semibold text-scenario-ink">{signed(row.blocks.units, units)}</span>
+                    <BlockLinks items={row.items} onOpen={onOpenItem} />
+                  </>
+                ) : (
+                  <span className="text-deep-violet-blue/45">—</span>
+                )}
+              </td>
+              <td className={cn(NUMBER_CELL_CLASS, 'font-medium', marked && 'font-semibold text-scenario-ink')}>
+                {units(row.adjusted.units)}
+              </td>
+              <td className={cn(NUMBER_CELL_CLASS, change && cn('font-semibold', tone(change.units)))}>
+                {change ? signed(change.units, units) : pending}
+              </td>
+              <td className={cn(NUMBER_CELL_CLASS, change && cn('font-semibold', tone(change.units)))}>
+                {change ? percent(change.unitsPct) : pending}
+              </td>
+            </TableRow>
+          );
+        })}
+      </TableGrid>
     </section>
   );
 }
