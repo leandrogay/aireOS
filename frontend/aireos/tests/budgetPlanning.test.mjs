@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { MAX_COMPARED_VERSIONS, budgetYears, budgetVersionKey, budgetVersionSeries, initialBudgetRows, initialSplitProblem, withBudgetPoints } from '../app/utils/budgetPlanning.js';
+import { MAX_COMPARED_VERSIONS, budgetAsInitial, budgetAsInitialMonths, budgetYears, budgetVersionKey, budgetVersionSeries, hasBudgetMonths, hasBudgetPoints, initialBudgetRows, initialSplitProblem, withBudgetPoints } from '../app/utils/budgetPlanning.js';
 import { promotionCells, tier0SplitIndex } from '../app/utils/scenarioTier0Split.js';
 
 test('budget simulation uses Initial and excludes series without it, without changing the original forecast', () => {
@@ -68,4 +68,41 @@ test('budget years are this year and next, once each has an Initial Yearly Forec
   assert.deepEqual(budgetYears([{ forecast_year: 2026 }], 2026), [2026]);
   assert.deepEqual(budgetYears([{ forecast_year: '2026' }, { forecast_year: 2027 }, { forecast_year: 2025 }], 2026), [2026, 2027]);
   assert.deepEqual(budgetYears([], 2026), [2026, 2027]);
+});
+
+// ---- Locked budget as the Initial Yearly Forecast ----
+
+test('the locked budget replaces Initial only in the months it covers, without its range or the plan comparison', () => {
+  const planMonth = { month_year: '2027-01-01', initial: 100, initialSeries: 2, initialBand: 'high', budget: null,
+    confidence: [{ key: 'a', initial: { low: 80, high: 120 } }] };
+  const budgetMonth = { ...planMonth, month_year: '2027-02-01', budget: 130 };
+  const [plan, budget] = budgetAsInitial([planMonth, budgetMonth]);
+  assert.equal(plan, planMonth);
+  assert.equal(budget.initial, 130);
+  assert.equal(budget.initialFromBudget, true);
+  assert.equal(budget.initialSeries, 0);
+  assert.equal(budget.initialBand, null);
+  assert.equal(budget.confidence[0].initial, null);
+  assert.equal(budgetMonth.initial, 100);
+});
+
+test('a budget of 0 still replaces the plan', () => {
+  assert.equal(budgetAsInitial([{ month_year: '2027-01-01', initial: 100, budget: 0 }])[0].initial, 0);
+});
+
+test('the switch is only available while a budget covers a month in view', () => {
+  assert.equal(hasBudgetPoints([{ budget: null }, { budget: 0 }]), true);
+  assert.equal(hasBudgetPoints([{ budget: null }]), false);
+  assert.equal(hasBudgetPoints([]), false);
+  assert.equal(hasBudgetMonths([{ sell_in_budget: null, sell_out_budget: 5 }]), true);
+  assert.equal(hasBudgetMonths([{ sell_in_budget: null, sell_out_budget: null }]), false);
+});
+
+test('Inventory Initial lines take the budget where it has values and keep the plan elsewhere', () => {
+  const months = [
+    { month: '2027-01-01', sell_in_initial: 10, sell_out_initial: 20, sell_in_budget: 15, sell_out_budget: 25 },
+    { month: '2027-02-01', sell_in_initial: 11, sell_out_initial: 21, sell_in_budget: null, sell_out_budget: null },
+  ];
+  assert.deepEqual(budgetAsInitialMonths(months).map((row) => [row.sell_in_initial, row.sell_out_initial]), [[15, 25], [11, 21]]);
+  assert.equal(months[0].sell_in_initial, 10);
 });

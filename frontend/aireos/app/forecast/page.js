@@ -4,7 +4,14 @@ import { Suspense, useEffect, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
 import useBudgets from '@/hooks/useBudgets';
-import { BUDGET_SERIES, withBudgetPoints } from '@/app/utils/budgetPlanning';
+import {
+  INITIAL_BUDGET_HINT,
+  INITIAL_BUDGET_LABEL,
+  budgetAsInitial,
+  hasBudgetPoints,
+  withBudgetPoints,
+} from '@/app/utils/budgetPlanning';
+import BudgetInitialToggle from '@/components/budget/BudgetInitialToggle';
 import PageLayout from '@/components/layout/PageLayout';
 import TableCard from '@/components/ui/TableCard';
 import TableCardHeader from '@/components/ui/TableCardHeader';
@@ -38,6 +45,7 @@ import {
   ALL_PACK_TYPE_VALUES,
   ALL_PROMO_TYPE_VALUES,
   ALL_SERIES_VISIBLE,
+  FORECAST_SERIES,
   buildMonthlyPoints,
   emptyMonthlyPoint,
   formatSgtTimestamp,
@@ -65,7 +73,10 @@ function ForecastView() {
   const { productName, customerName, startDate, endDate, ready } = filters;
   const [selectedPromoTypes, setSelectedPromoTypes] = useState(ALL_PROMO_TYPE_VALUES);
   const [selectedPackTypes, setSelectedPackTypes] = useState(ALL_PACK_TYPE_VALUES);
-  const [visibleSeries, setVisibleSeries] = useState({ ...ALL_SERIES_VISIBLE, budget: true });
+  const [visibleSeries, setVisibleSeries] = useState(ALL_SERIES_VISIBLE);
+  // "Show locked yearly budget": on by default, the Initial line shows Aire's
+  // locked budget in the months it covers (utils/budgetPlanning).
+  const [budgetOn, setBudgetOn] = useState(true);
   // Every tier comes back in one request, so switching models redraws from
   // rows already here (utils/forecastTiers.js).
   const view = useForecastView({ ready, productName, customerName, startDate, endDate, tier: ALL_TIERS });
@@ -121,8 +132,16 @@ function ForecastView() {
   const singleSeries = Boolean(productName && customerName);
   // Volume only (cartons): the page shows no revenue.
   const budgets = useBudgets();
-  const points = withBudgetPoints(buildMonthlyPoints(rows, actuals, 'units', { singleSeries }), budgets.data.rows,
+  const pointsWithBudget = withBudgetPoints(buildMonthlyPoints(rows, actuals, 'units', { singleSeries }), budgets.data.rows,
     { productName, customerName, startDate, endDate }, emptyMonthlyPoint);
+  const budgetAvailable = hasBudgetPoints(pointsWithBudget);
+  const budgetShown = budgetOn && budgetAvailable;
+  const points = budgetShown ? budgetAsInitial(pointsWithBudget) : pointsWithBudget;
+  // While the budget stands in for the plan, the Initial pill (and the
+  // tooltip, which reads the same label) says so.
+  const chartSeries = budgetShown
+    ? FORECAST_SERIES.map((series) => (series.key === 'initial' ? { ...series, label: INITIAL_BUDGET_LABEL } : series))
+    : FORECAST_SERIES;
   // "Next 12 months" is each SKU's whole Current line, which the date
   // filter can cut short (a Jan-Dec view of a line running Sep-Aug), so it
   // comes from the backend's total, not from the points in view.
@@ -256,7 +275,9 @@ function ForecastView() {
 
           <ForecastChart
             points={points}
-            extraSeries={[BUDGET_SERIES]}
+            baseSeries={chartSeries}
+            hintOverrides={budgetShown ? { initial: INITIAL_BUDGET_HINT } : {}}
+            legendAction={<BudgetInitialToggle checked={budgetOn} onChange={setBudgetOn} available={budgetAvailable} />}
             startDate={startDate}
             endDate={endDate}
             singleSeries={singleSeries}
@@ -321,7 +342,7 @@ function ForecastView() {
           ) : null}
 
           {points.length > 0 && hasTableColumn ? (
-            <ForecastTable points={points} visibleSeries={tableSeries} modelLabel={modelLabel} />
+            <ForecastTable points={points} visibleSeries={tableSeries} modelLabel={modelLabel} series={chartSeries} />
           ) : null}
         </div>
       </PageLayout>

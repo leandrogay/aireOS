@@ -64,10 +64,12 @@ function CellValue({ point, seriesKey }) {
  * Month-by-month values of the lines on the chart, for the model the chart
  * shows (`modelLabel`, e.g. "Tier 0 · Baseline"): `points` are already that
  * one tier's (utils/forecastTiers.js), so the table has no per-month model.
+ * `series` are the chart's lines, so a renamed one (Initial while it shows
+ * the locked budget) is named the same here.
  *
- * @param {{ points: object[], visibleSeries: Record<string, boolean>, modelLabel?: string }} props
+ * @param {{ points: object[], visibleSeries: Record<string, boolean>, modelLabel?: string, series?: object[] }} props
  */
-export default function ForecastTable({ points, visibleSeries, modelLabel = '' }) {
+export default function ForecastTable({ points, visibleSeries, modelLabel = '', series: lines = FORECAST_SERIES }) {
   const [monthFilter, setMonthFilter] = useState([]);
   // The phone view's Month filter, above the cards (the table's is in its header).
   const [openMobileFilter, setOpenMobileFilter] = useState(null);
@@ -82,7 +84,7 @@ export default function ForecastTable({ points, visibleSeries, modelLabel = '' }
     maxHeight: expanded ? null : COLLAPSED_CARDS,
   });
   const monthOptions = uniqueMonthOptions(points);
-  const visibleColumns = FORECAST_SERIES.filter((series) => visibleSeries[series.key]);
+  const visibleColumns = lines.filter((series) => visibleSeries[series.key]);
 
   const validMonths = new Set(monthOptions.map((option) => option.value));
   const activeMonthFilter = monthFilter.filter((value) => validMonths.has(value));

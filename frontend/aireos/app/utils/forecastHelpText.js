@@ -374,9 +374,11 @@ export const HELP_SECTIONS = {
         p:
           "Aire's budget: in the Scenario builder's Budget planning mode, Aire can add building blocks and " +
           "promotions on top of next year's plan and lock the result as the budget with the Lock budget button. " +
-          'Once a budget is locked, the Initial Yearly Forecast line shows the budget instead of the plan, on this ' +
-          'page and on the Inventory page. Only Aire locks a budget; locking again saves a new version, and the ' +
-          'newest version is the one shown.',
+          'Once a budget is locked, the Initial Yearly Forecast line shows the budget instead of the plan in the ' +
+          'months it covers, on this page and on the Inventory page, and is renamed Initial Yearly Forecast ' +
+          '(Budget). The Show locked yearly budget switch (top right of the line pills here, under the building blocks ' +
+          'overlay on Inventory) is on by default; turn it off to see the plan. Only Aire locks a budget; locking ' +
+          'again saves a new version, and the newest version is the one shown.',
       },
     ],
   },
@@ -412,8 +414,15 @@ export const HELP_SECTIONS = {
           ],
           [
             'Why did the Initial Yearly Forecast line change after it locked?',
-            'Aire locked a budget, or a new version of it. The line then shows the budget: the yearly plan plus the ' +
-              'building blocks and promotions added on top in the Scenario builder.',
+            'Aire locked a budget, or a new version of it. While Show locked yearly budget is on, the line shows the ' +
+              'budget: the yearly plan plus the building blocks and promotions added on top in the Scenario ' +
+              'builder. Turn the switch off to see the plan itself.',
+          ],
+          [
+            'Where did the Budget line go?',
+            'The locked budget is shown as the Initial Yearly Forecast line itself, renamed Initial Yearly ' +
+              'Forecast (Budget), rather than as a separate line. Show locked yearly budget switches between the budget ' +
+              'and the plan.',
           ],
           [
             'Why is Tier 1 Advanced greyed out?',
@@ -458,7 +467,7 @@ export const HELP_SECTIONS = {
           ['Tier 1 Basic', "A time-series model of each product's trend and seasons."],
           ['Tier 1 Advanced', 'Tier 1 Basic plus the promotion calendar.'],
           ['Initial', "The yearly plan, from Tier 0, fixed once it locks; shows Aire's locked budget once there is one."],
-          ['Budget', "Next year's plan plus the building blocks and promotions Aire adds on top, locked by Aire."],
+          ['Budget', "Next year's plan plus the building blocks and promotions Aire adds on top, locked by Aire; shown as the Initial line while Show locked yearly budget is on."],
           ['Previous forecast', 'The same model with one month less sales data.'],
           ['Current forecast', 'The latest forecast.'],
           ['Made with sales up to', 'The last month of sales a forecast learned from.'],

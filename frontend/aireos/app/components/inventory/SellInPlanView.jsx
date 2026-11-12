@@ -14,6 +14,8 @@ import { formatDoh, formatMonth } from '@/app/utils/inventoryForm';
 import { customerColorById, customerPalette } from '@/app/utils/customerColors';
 import { customerLabel } from '@/app/utils/retailerLabel';
 
+import BudgetInitialToggle from '@/components/budget/BudgetInitialToggle';
+import { hasBudgetMonths } from '@/app/utils/budgetPlanning';
 import BuildingBlocksOverlay from './BuildingBlocksOverlay';
 import {
   filterLabelClass,
@@ -69,6 +71,9 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
   // picked by hand, drawn as extra lines (BuildingBlocksOverlay).
   const [overlayOn, setOverlayOn] = useState(false);
   const [blockIds, setBlockIds] = useState([]);
+  // "Show locked yearly budget": on by default, the Initial lines show Aire's locked
+  // budget in the months it covers (utils/budgetPlanning).
+  const [budgetOn, setBudgetOn] = useState(true);
 
   // Adjust state during render: pick the first customer once the list arrives,
   // so the view is never empty by default. Runs only while nothing is chosen.
@@ -84,6 +89,7 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
   const { data, loading, error } = useSellInPlan({ customerId, months, skus, refreshKey });
   const outlook = useSellInOutlook({ customerId, months, skus, startYear, blockIds: appliedBlockIds, refreshKey });
   const chartMonths = outlook.data?.months ?? [];
+  const budgetAvailable = hasBudgetMonths(chartMonths);
   const outlookTags = [
     { label: 'Customer', value: customerName ? customerLabel(customerName) : '—' },
     { label: 'SKU', value: skuScopeLabel(skus) },
@@ -198,17 +204,23 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
 
       <InventorySection title="Sell-in and sell-out" tags={outlookTags}>
         <div className="space-y-2">
-          <BuildingBlocksOverlay
-            enabled={overlayOn}
-            onEnabledChange={setOverlayOn}
-            blocks={offeredBlocks}
-            blockIds={appliedBlockIds}
-            onBlockIdsChange={setBlockIds}
-            customerLabel={customerName ? customerLabel(customerName) : 'this customer'}
-            loading={savedBlocks.loading}
-            error={savedBlocks.error}
-            withoutEffect={appliedBlockIds.length ? blocksWithoutEffect(outlook.data?.building_blocks ?? []) : []}
-          />
+          {/* One card, the two switches stacked so they line up, split by an
+              inset hairline. */}
+          <div className="rounded-lg border border-lavander bg-white px-3 py-2.5 shadow-sm">
+            <BuildingBlocksOverlay
+              enabled={overlayOn}
+              onEnabledChange={setOverlayOn}
+              blocks={offeredBlocks}
+              blockIds={appliedBlockIds}
+              onBlockIdsChange={setBlockIds}
+              customerLabel={customerName ? customerLabel(customerName) : 'this customer'}
+              loading={savedBlocks.loading}
+              error={savedBlocks.error}
+              withoutEffect={appliedBlockIds.length ? blocksWithoutEffect(outlook.data?.building_blocks ?? []) : []}
+            />
+            <div aria-hidden="true" className="mx-6 my-2.5 h-px bg-lavander" />
+            <BudgetInitialToggle checked={budgetOn} onChange={setBudgetOn} available={budgetAvailable} align="center" />
+          </div>
           <InventoryChartSlot
             loading={outlook.loading}
             ready={Boolean(outlook.data)}
@@ -232,6 +244,7 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
                 sellInComparison={outlook.data.last_month_sell_in_vs_forecast}
                 sellOutComparison={outlook.data.last_month_vs_forecast}
                 showBlocks={appliedBlockIds.length > 0}
+                showBudget={budgetOn && budgetAvailable}
                 customerColor={customerColorById(customerId, customerPalette(customers))}
               />
             )}

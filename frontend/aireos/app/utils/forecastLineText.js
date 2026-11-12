@@ -26,7 +26,8 @@ export const ACTUAL_HINT =
 // budget replaces the Initial line on the Forecast and Inventory charts.
 export const INITIAL_BUDGET_NOTE =
   'Once Aire locks a budget in the Scenario builder (this plan plus the building blocks and promotions added on ' +
-  'top of it), this line shows that budget instead, here and on the Inventory page. Locking again saves a new ' +
+  'top of it), this line shows that budget instead in the months it covers, here and on the Inventory page, ' +
+  'while Show locked yearly budget is on (it is on by default; turn it off to see the plan). Locking again saves a new ' +
   'version, and the newest one is shown.';
 
 // The backend gives every model Tier 0's Initial (bigquery.with_tier0_initial).
