@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from 'react';
 
+import { getDefaultDateRange } from '@/app/services/salesApi';
+
+const EMPTY_RANGE = { start: '', end: '', periodType: null, earliestStart: '', latestWeekStart: '', error: null };
+
 /**
  * Bounds anchored to the latest available PREFERRED period for the given
  * channel (not the wall-clock date) — see backend get_default_date_range.
@@ -18,40 +22,58 @@ import { useEffect, useState } from 'react';
  * monthly total.
  * `periodType` tells callers whether the
  * anchor is a genuine week or a whole month, so they don't assume +6 days.
+ * `customers` (the ticked ones) reads across all of them instead of
+ * `customer`: the latest period any of them has, the earliest any has.
+ *
+ * While a new selection (customers / channel) is being read, the last bounds
+ * stay, with `updating` true: the page keeps its charts and dates on screen
+ * instead of flashing placeholders on every tick, but must not *decide*
+ * anything from them (enable months, drop a saved Period) until `updating`
+ * is false, since they belong to the previous selection. A failed read
+ * blanks them with `error` set, so the page shows its failed card instead of
+ * loading for ever. A dataVersion refetch keeps the bounds and isn't
+ * `updating` (same selection).
  */
 export default function useDefaultDateRange({
   customer = '',
+  customers = [],
   mode = 'offline',
   dataVersion = 0,
   period = 'month',
 }) {
-  const [range, setRange] = useState({ start: '', end: '', periodType: null, earliestStart: '', latestWeekStart: '' });
+  const [range, setRange] = useState({ key: '', ...EMPTY_RANGE });
+
+  // One string, so a new array with the same names doesn't refetch.
+  const customersKey = customers.join(',');
+  const key = JSON.stringify({ customer, customersKey, mode, period });
 
   useEffect(() => {
-    if (!customer) return undefined;
+    if (!customer && !customersKey) return undefined;
 
     let cancelled = false;
 
     async function fetchRange() {
       try {
-        const params = new URLSearchParams({ period, customer });
-        if (mode) params.set('mode', mode);
-        const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/api/sales/default-date-range?${params.toString()}`,
-          { credentials: 'include' },
-        );
-        const data = await res.json();
-        if (!res.ok || cancelled) return;
+        const data = await getDefaultDateRange({
+          customer,
+          customers: customersKey ? customersKey.split(',') : [],
+          mode,
+          period,
+        });
+        if (cancelled) return;
         setRange({
+          key,
           start: data.start ?? '',
           end: data.end ?? '',
           periodType: data.period_type ?? null,
           earliestStart: data.earliest_start ?? '',
           latestWeekStart: data.latest_week_start ?? '',
+          error: null,
         });
-      } catch {
-        // Silent — if this fails, callers just get '' bounds, same as no
-        // filter/default at all (all-time), rather than blocking the page.
+      } catch (err) {
+        // '' bounds for these customers, never the previous customers'
+        // months; `error` lets the page show its failed card with Try again.
+        if (!cancelled) setRange({ key, ...EMPTY_RANGE, error: err.message || 'Failed to load the latest loaded period' });
       }
     }
 
@@ -59,7 +81,11 @@ export default function useDefaultDateRange({
     return () => {
       cancelled = true;
     };
-  }, [customer, mode, dataVersion, period]);
+  }, [key, customer, customersKey, mode, dataVersion, period]);
 
-  return range;
+  // Pending for a new selection: the last bounds stay (see above), and an
+  // earlier error only counts for the selection it was read for.
+  const updating = Boolean(customer || customersKey) && range.key !== key;
+  const { key: _readFor, ...bounds } = range;
+  return { ...bounds, error: updating ? null : bounds.error, updating };
 }

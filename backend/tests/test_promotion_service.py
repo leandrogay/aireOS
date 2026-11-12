@@ -4,7 +4,7 @@ import pytest
 from conftest import FakeConnection, FakeEngine
 
 from app.schemas.promotions import PromotionCreate
-from app.services import promotion_service
+from app.services import forecast_refresh_events, promotion_service
 
 
 # ---- helpers -----------------------------------------------------------------
@@ -23,8 +23,15 @@ def _payload(stores=None, skus=None) -> PromotionCreate:
     )
 
 
-def _respond(sql, params):
+# Stores already running the event, as (retailer_name, store_code) rows.
+_COVERED_STORES_SQL = "TRIM(COALESCE(p.promotion_mechanic, '')) = :mechanic"
+
+
+def _respond(sql, params, covered=()):
     """Canned Cloud SQL: one retailer, stores 10.. by position, two ranges."""
+    if _COVERED_STORES_SQL in sql:
+        return list(covered)
+
     if "INSERT INTO promotions" in sql:
         return [(99,)]
 
@@ -65,6 +72,9 @@ def _respond(sql, params):
 def _install_fake_engine(monkeypatch, respond=_respond):
     conn = FakeConnection(respond)
     monkeypatch.setattr(promotion_service, "_get_engine", lambda: FakeEngine(conn))
+    # Every write records a forecast refresh; that has its own tests.
+    monkeypatch.setattr(forecast_refresh_events, "record_change", lambda conn, kind, source: None)
+    monkeypatch.setattr(forecast_refresh_events, "enqueue_best_effort", lambda request_id: None)
     return conn
 
 
@@ -82,9 +92,9 @@ def test_create_with_many_stores_costs_a_fixed_number_of_statements(monkeypatch)
     result = promotion_service.create_promotion(_payload(stores=stores))
 
     assert result["promotion_id"] == 99
-    # insert promotion, upsert retailers, upsert stores,
-    # insert links, fetch. Never one statement per store.
-    assert len(conn.calls) == 5
+    # covered-store lookup, insert promotion, upsert retailers,
+    # upsert stores, insert links, fetch. Never one per store.
+    assert len(conn.calls) == 6
 
 
 def test_store_links_are_inserted_from_one_array(monkeypatch):
@@ -214,6 +224,7 @@ def test_list_forecast_promotions_filters_product_customer_and_overlap(monkeypat
         "product_name": "Aire Adult Pants S/M",
         "start_date": "2026-01-01",
         "end_date": "2026-12-31",
+        "customer_name": "fairprice",
         "customer_offline": "fairprice_offline",
         "customer_online": "fairprice_online",
     }
@@ -236,6 +247,27 @@ def test_list_forecast_promotions_filters_product_customer_and_overlap(monkeypat
             ],
         }
     ]
+
+
+def test_list_forecast_promotions_matches_capitalised_customer_to_slug_retailers(monkeypatch):
+    # The forecast page sends the customer as named (FairPrice); its
+    # retailers are lowercase slugs, so a case-sensitive match found nothing.
+    def respond(sql, params):
+        assert "customer_retailers" in sql
+        assert "LOWER(c.customer_name) = LOWER(:customer_name)" in sql
+        return []
+
+    conn = FakeConnection(respond)
+    monkeypatch.setattr(promotion_service, "_get_engine", lambda: FakeEngine(conn))
+
+    promotion_service.list_forecast_promotions(customer_name="FairPrice")
+
+    [(_, params)] = conn.calls
+    assert params == {
+        "customer_name": "FairPrice",
+        "customer_offline": "fairprice_offline",
+        "customer_online": "fairprice_online",
+    }
 
 
 def test_list_forecast_promotions_skips_optional_filters(monkeypatch):
@@ -314,3 +346,254 @@ def test_promotion_saves_record_no_recalculation_while_it_is_disabled(monkeypatc
     promotion_service.create_promotion(_payload())
 
     assert conn.sql_containing("promo_recalc_requests") == []
+
+
+# ---- duplicate events ----------------------------------------------------------
+
+
+def _covering(*rows):
+    """A fake where (retailer_name, store_code) rows already run the event."""
+    return lambda sql, params: _respond(sql, params, covered=rows)
+
+
+def test_create_skips_stores_already_running_the_event(monkeypatch):
+    conn = _install_fake_engine(monkeypatch, _covering(("FairPrice", " BM01 ")))
+
+    result = promotion_service.create_promotion(
+        _payload(
+            stores=[
+                {"retailer": "fairprice", "store_name": "Bedok", "store_code": "BM01"},
+                {"retailer": "fairprice", "store_name": "Tampines", "store_code": "TM02"},
+            ]
+        )
+    )
+
+    [(_, params)] = conn.sql_containing("INSERT INTO stores")
+    assert params["store_codes"] == ["TM02"]
+    assert result["skipped_stores"] == [
+        {"retailer": "fairprice", "store_name": "Bedok", "store_code": "BM01"},
+    ]
+
+
+def test_create_where_every_store_runs_the_event_raises_without_writing(monkeypatch):
+    conn = _install_fake_engine(monkeypatch, _covering(("fairprice", "BM01")))
+
+    with pytest.raises(promotion_service.PromotionClashError, match="fairprice / Bedok"):
+        promotion_service.create_promotion(_payload())
+
+    assert conn.sql_containing("INSERT INTO") == []
+
+
+def test_the_event_is_matched_on_dates_type_and_trimmed_mechanic(monkeypatch):
+    conn = _install_fake_engine(monkeypatch)
+    payload = _payload()
+    payload.promotion_mechanic = "  10% off "
+
+    promotion_service.create_promotion(payload)
+
+    [(_, params)] = conn.sql_containing(_COVERED_STORES_SQL)
+    assert params == {
+        "period_start": payload.period_start,
+        "period_end": payload.period_end,
+        "promo_type": "monthly",
+        "mechanic": "10% off",
+        "exclude_id": None,
+    }
+
+
+def test_update_into_a_clash_raises_and_ignores_the_promotion_itself(monkeypatch):
+    def respond(sql, params):
+        if "SELECT 1 FROM promotions" in sql:
+            return [(1,)]
+        return _respond(sql, params, covered=[("fairprice", "BM01")])
+
+    conn = _install_fake_engine(monkeypatch, respond)
+
+    with pytest.raises(promotion_service.PromotionClashError):
+        promotion_service.update_promotion(7, _payload())
+
+    [(_, params)] = conn.sql_containing(_COVERED_STORES_SQL)
+    assert params["exclude_id"] == 7
+    assert conn.sql_containing("UPDATE promotions") == []
+
+
+# ---- overview page -------------------------------------------------------------
+
+TODAY = datetime.date(2026, 11, 11)
+
+
+def _page_respond(total=3, unfiltered=5):
+    def respond(sql, params):
+        if "AS unfiltered_total" in sql:
+            return [{"unfiltered_total": unfiltered, "total": total}]
+        if "LIMIT :limit" in sql:
+            return [{"promotion_id": 1, "stores": [], "skus": []}]
+        return []
+    return respond
+
+
+def _page_query(conn):
+    [(sql, params)] = conn.sql_containing("LIMIT :limit")
+    return sql, params
+
+
+def test_page_returns_its_rows_and_both_counts(monkeypatch):
+    _install_fake_engine(monkeypatch, _page_respond(total=3, unfiltered=5))
+
+    result = promotion_service.list_promotion_page(limit=25, today=TODAY)
+
+    assert result == {
+        "promotions": [{"promotion_id": 1, "stores": [], "skus": []}],
+        "total": 3,
+        "unfiltered_total": 5,
+        "limit": 25,
+        "offset": 0,
+    }
+
+
+def test_page_hides_older_copies_of_the_same_promotion(monkeypatch):
+    conn = _install_fake_engine(monkeypatch, _page_respond())
+
+    promotion_service.list_promotion_page(limit=25, today=TODAY)
+
+    sql, _ = _page_query(conn)
+    assert "copy_rank = 1" in sql
+    assert "ORDER BY p.promotion_id DESC ) AS copy_rank" in sql
+
+
+def test_offset_past_the_end_moves_back_to_the_last_page(monkeypatch):
+    conn = _install_fake_engine(monkeypatch, _page_respond(total=30))
+
+    result = promotion_service.list_promotion_page(limit=25, offset=100, today=TODAY)
+
+    assert result["offset"] == 25
+    assert _page_query(conn)[1]["offset"] == 25
+
+
+def test_sort_and_direction_order_the_page_with_newest_first_on_ties(monkeypatch):
+    conn = _install_fake_engine(monkeypatch, _page_respond())
+
+    promotion_service.list_promotion_page(limit=10, sort="period_end", direction="asc", today=TODAY)
+
+    sql, params = _page_query(conn)
+    assert "ORDER BY p.period_end ASC, p.promotion_id DESC" in sql
+    assert params["limit"] == 10
+
+
+def test_filters_are_bound_parameters(monkeypatch):
+    conn = _install_fake_engine(monkeypatch, _page_respond())
+
+    promotion_service.list_promotion_page(
+        limit=25,
+        retailer="fairprice_offline",
+        store="Bedok",
+        period="Nov 2026",
+        promo_type="monthly",
+        mechanic="10% off",
+        today=TODAY,
+    )
+
+    sql, params = _page_query(conn)
+    assert {key: params[key] for key in ("retailer", "store", "period", "promo_type", "mechanic")} == {
+        "retailer": ["fairprice_offline"],
+        "store": ["Bedok"],
+        "period": ["Nov 2026"],
+        "promo_type": ["monthly"],
+        "mechanic": ["10% off"],
+    }
+    assert "r.retailer_name = ANY(CAST(:retailer AS text[]))" in sql
+    assert "s.store_name = ANY(CAST(:store AS text[]))" in sql
+
+
+def test_multi_select_filters_match_any_selected_value(monkeypatch):
+    conn = _install_fake_engine(monkeypatch, _page_respond())
+
+    promotion_service.list_promotion_page(
+        limit=25,
+        retailer=["fairprice_offline", "prime_offline"],
+        status=["active", "upcoming"],
+        today=TODAY,
+    )
+
+    sql, params = _page_query(conn)
+    assert params["retailer"] == ["fairprice_offline", "prime_offline"]
+    assert "r.retailer_name = ANY(CAST(:retailer AS text[]))" in sql
+    assert " OR " in sql
+    assert "CAST(:today AS date) < p.period_start" in sql
+
+
+def test_status_filter_compares_dates_to_the_given_day(monkeypatch):
+    conn = _install_fake_engine(monkeypatch, _page_respond())
+
+    promotion_service.list_promotion_page(limit=25, status="upcoming", today=TODAY)
+
+    sql, params = _page_query(conn)
+    assert params["today"] == TODAY
+    assert "CAST(:today AS date) < p.period_start" in sql
+
+
+def test_each_search_word_must_match_and_wildcards_are_literal(monkeypatch):
+    conn = _install_fake_engine(monkeypatch, _page_respond())
+
+    promotion_service.list_promotion_page(limit=25, search="  FairPrice 50%  ", today=TODAY)
+
+    sql, params = _page_query(conn)
+    assert params["word_0"] == "%fairprice%"
+    assert params["word_1"] == "%50\\%%"
+    assert ":word_0" in sql and ":word_1" in sql
+
+
+def test_search_matches_promo_type_and_status_labels(monkeypatch):
+    conn = _install_fake_engine(monkeypatch, _page_respond())
+
+    promotion_service.list_promotion_page(limit=25, search="offer upcoming", today=TODAY)
+
+    sql, params = _page_query(conn)
+    assert params["word_0_types"] == ["side_offer", "carton_side_offer"]
+    assert "CAST(:today AS date) < p.period_start" in sql
+
+
+@pytest.mark.parametrize("query", [{"sort": "voucher"}, {"direction": "up"}, {"status": "soon"}])
+def test_invalid_query_raises_without_querying(monkeypatch, query):
+    def _no_client_allowed():
+        raise AssertionError("an invalid query must not reach the database")
+
+    monkeypatch.setattr(promotion_service, "_get_engine", _no_client_allowed)
+
+    with pytest.raises(ValueError):
+        promotion_service.list_promotion_page(limit=25, **query)
+
+
+def test_filter_options_come_from_every_listed_promotion(monkeypatch):
+    def respond(sql, params):
+        if "r.retailer_name AS value" in sql:
+            return [("fairprice_offline",), ("giant_offline",)]
+        if "p.period_label AS value" in sql:
+            return [("Nov 2026",)]
+        return []
+
+    conn = _install_fake_engine(monkeypatch, respond)
+
+    options = promotion_service.get_promotion_filter_options()
+
+    assert options == {
+        "retailers": ["fairprice_offline", "giant_offline"],
+        "stores": [],
+        "periods": ["Nov 2026"],
+        "types": [],
+        "mechanics": [],
+    }
+    assert all("copy_rank = 1" in sql for sql, _ in conn.calls)
+
+
+def test_search_also_matches_the_customer_that_owns_the_retailer(monkeypatch):
+    # sheng_siong_offline belongs to the customer Sheng_Shiong: "shiong" is
+    # only in the customer's name.
+    conn = _install_fake_engine(monkeypatch, _page_respond())
+
+    promotion_service.list_promotion_page(limit=25, search="sheng shiong", today=TODAY)
+
+    sql, params = _page_query(conn)
+    assert params["word_1"] == "%shiong%"
+    assert "cr.retailer_id = r.retailer_id" in sql
+    assert "REPLACE(c.customer_name, '_', ' ') ILIKE :word_1" in sql

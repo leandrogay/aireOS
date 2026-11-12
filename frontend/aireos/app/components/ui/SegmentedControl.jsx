@@ -4,6 +4,7 @@ import { Tabs as TabsPrimitive } from '@base-ui/react/tabs';
 import { MotionConfig, motion } from 'motion/react';
 import { useId } from 'react';
 
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 // Pick exactly one of a few options that share a track, with the active
@@ -11,19 +12,45 @@ import { cn } from '@/lib/utils';
 // ui/tabs) so it doesn't fight the shadcn defaults; Base UI gives the
 // keyboard handling (arrow keys between options) and tablist semantics.
 
-// Same spring as the Sidebar's active highlight, so every slide in the app
-// moves alike.
+// A short spring keeps the thumb attached to the selected option.
 const HIGHLIGHT_SPRING = { type: 'spring', stiffness: 500, damping: 40 };
 
 // `tint`: lavender track, for a switch inside a card (chart metric, form
 // mode). `outline`: white track with a border, for a page's top-level tabs.
+// `glass`: a tinted track with a bordered white thumb for the dashboard's
+// chart controls. `soft`: a see-through track with a white pill, lighter
+// than the solid navy of `tint`; for choosing which data a page shows (the
+// dashboard's Offline / Online) as opposed to how to draw it.
 const TRACK_LOOK = {
   tint: 'rounded-lg bg-lavander',
-  outline: 'rounded-md border border-violet/40 bg-white',
+  outline: 'rounded-md border border-violet/40 bg-lavander/35 shadow-sm',
+  glass: 'rounded-lg border border-deep-violet-blue/30 bg-lavander/55 shadow-sm',
+  soft: 'rounded-lg bg-lavander/45 shadow-sm ring-1 ring-violet/25 backdrop-blur-sm',
 };
+// not-data-disabled: a disabled option keeps its faded look under the pointer.
 const SEGMENT_HOVER = {
-  tint: 'hover:bg-white/60',
-  outline: 'hover:bg-cream',
+  tint: 'not-data-disabled:hover:bg-white/60',
+  outline: 'not-data-disabled:hover:bg-cream',
+  glass: 'not-data-disabled:hover:bg-white/45',
+  soft: '',
+};
+const HIGHLIGHT_LOOK = {
+  tint: 'bg-deep-violet-blue shadow-sm',
+  outline: 'bg-deep-violet-blue shadow-sm ring-1 ring-deep-violet-blue/40',
+  glass: 'bg-white shadow-sm ring-1 ring-deep-violet-blue/55',
+  soft: 'bg-white shadow-sm ring-1 ring-deep-violet-blue/45',
+};
+const ACTIVE_TEXT = {
+  tint: 'text-white',
+  outline: 'text-white',
+  glass: 'text-deep-violet-blue',
+  soft: 'text-deep-violet-blue',
+};
+const INACTIVE_TEXT = {
+  tint: 'text-deep-violet-blue/70',
+  outline: 'text-deep-violet-blue/70',
+  glass: 'text-deep-violet-blue/80',
+  soft: 'text-deep-violet-blue/75',
 };
 const TRACK_SIZE = {
   sm: 'h-7 text-[11px]',
@@ -34,13 +61,16 @@ const TRACK_SIZE = {
  * @param {{
  *   value: string,
  *   onChange: (value: string) => void,
- *   options: { value: string, label: string, icon?: import('react').ElementType, disabled?: boolean, title?: string }[],
- *   look?: 'tint' | 'outline',
+ *   options: { value: string, label: string, icon?: import('react').ElementType, disabled?: boolean, disabledReason?: string, title?: string }[],
+ *   look?: 'tint' | 'outline' | 'glass' | 'soft',
  *   size?: 'sm' | 'md',
  *   fullWidth?: boolean,
  *   ariaLabel?: string,
  *   className?: string,
  * }} props `fullWidth` stretches the track and shares its width between the options.
+ * An option with `disabled` stays in the track, faded, and can't be picked;
+ * give it a `disabledReason` (e.g. "No weekly data in this range") to say why
+ * in a tooltip on hover.
  */
 export default function SegmentedControl({
   value,
@@ -67,7 +97,7 @@ export default function SegmentedControl({
           {options.map((option) => {
             const active = option.value === value;
             const Icon = option.icon;
-            return (
+            const tab = (
               <TabsPrimitive.Tab
                 key={option.value}
                 value={option.value}
@@ -77,20 +107,35 @@ export default function SegmentedControl({
                   // `isolate` keeps the highlight (-z-10) behind the label but above the track.
                   'relative isolate inline-flex h-6 min-w-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-2.5 font-medium transition-colors outline-none',
                   'focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet',
-                  'cursor-pointer disabled:cursor-not-allowed disabled:opacity-50',
+                  // Base UI marks a disabled tab with data-disabled / aria-disabled, not the
+                  // native `disabled` attribute (it stays focusable), so `disabled:` never matches.
+                  'cursor-pointer data-disabled:cursor-not-allowed data-disabled:opacity-40',
                   fullWidth && 'flex-1',
-                  active ? 'text-white' : cn('text-deep-violet-blue/70 hover:text-deep-violet-blue', SEGMENT_HOVER[look]),
+                  active
+                    ? ACTIVE_TEXT[look]
+                    : cn(INACTIVE_TEXT[look], 'not-data-disabled:hover:text-deep-violet-blue', SEGMENT_HOVER[look]),
                 )}
               >
                 {active && (
                   <motion.span
                     layoutId={layoutId}
-                    className="absolute inset-0 -z-10 rounded-md bg-deep-violet-blue shadow-sm"
+                    className={cn('absolute inset-0 -z-10 rounded-md', HIGHLIGHT_LOOK[look])}
                   />
                 )}
                 {Icon && <Icon aria-hidden="true" className="size-3.5 shrink-0" />}
                 <span className="truncate">{option.label}</span>
+                {/* The tooltip is hover-only, so screen readers get the reason with the label. */}
+                {option.disabled && option.disabledReason && <span className="sr-only">, {option.disabledReason}</span>}
               </TabsPrimitive.Tab>
+            );
+            if (!option.disabled || !option.disabledReason) return tab;
+            // The tab is the tooltip's trigger (render), so the whole segment answers the
+            // hover. It still gets pointer events: aria-disabled, not native disabled.
+            return (
+              <Tooltip key={option.value}>
+                <TooltipTrigger delay={150} closeDelay={100} render={tab} />
+                <TooltipContent>{option.disabledReason}</TooltipContent>
+              </Tooltip>
             );
           })}
         </TabsPrimitive.List>

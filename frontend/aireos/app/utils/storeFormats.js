@@ -27,21 +27,23 @@ const MISSING_FORMAT = 'UNKNOWN';
 // off the legend, because there is no format to call it.
 export const UNNAMED_FORMAT = 'Total';
 
-// AIRE brand colours and their shades first, then the other colours the forecast
-// lines and promotion types use. No cream or lavender: both are too light to
-// see against the white card and cream page (the same reason FORMAT_COLORS
-// dropped cream).
-const CUSTOMER_COLORS = [
-  'var(--aire-violet)',
+// The original customer colours stay attached to their names, even if a new
+// customer is added or an old one is removed. These are shared by every
+// customer chart, summary tile and ranking.
+const KNOWN_CUSTOMER_COLORS = {
+  fairprice: 'var(--aire-violet)',
+  nhg: '#2E7BA6',
+  prime: '#8A7460',
+  sheng_siong: '#C4B6A6',
+  singhealth: '#C45C26',
+};
+
+const OTHER_CUSTOMER_COLORS = [
   'var(--aire-celest)',
-  '#2E7BA6',
   '#5C5299',
   '#0D9488',
   '#4F7A3A',
   '#7C3AED',
-  '#8A7460',
-  '#C4B6A6',
-  '#C45C26',
   '#E8922A',
 ];
 
@@ -55,23 +57,40 @@ function extraCustomerColor(position) {
 
 /**
  * The order customers take colours in: by customer_id, so a new customer takes
- * the next colour and nobody else's changes. `otherNames` are customers with
- * sales but no customer record; they go last, so they can't shift anyone either.
+ * the next colour and nobody else's changes. Each slot is named the way the
+ * page names that customer: the dashboard passes its Customer filter options,
+ * named from the sales data (`fairprice`) and linked to a customer record by
+ * `customer_id` (backend get_customer_options), so a renamed record
+ * ("FairPrice", "Sheng_Shiong") keeps its colour. A record no option links to
+ * keeps its own name (the inventory page names customers that way). Options
+ * with no customer record go last, so they can't shift anyone either.
  *
  * @param {Array<{ customer_id: number, customer_name: string }>} customers every customer (GET /api/inventory/customers)
- * @param {string[]} [otherNames] customer slugs that may not be in `customers`
- * @returns {string[]} customer slugs
+ * @param {Array<{ value: string, customer_id?: number | null }>} [options] the page's customers, when it names them differently
+ * @returns {string[]} customer names, as the page uses them
  */
-export function customerColorOrder(customers, otherNames = []) {
+export function customerColorOrder(customers, options = []) {
+  const nameById = new Map(
+    options.filter((option) => option.customer_id != null).map((option) => [option.customer_id, option.value]),
+  );
   const byId = [...customers].sort((a, b) => a.customer_id - b.customer_id);
-  return [...new Set([...byId.map((customer) => customer.customer_name), ...otherNames])];
+  const named = byId.map((customer) => nameById.get(customer.customer_id) ?? customer.customer_name);
+  return [...new Set([...named, ...options.map((option) => option.value)])];
+}
+
+function customerColorKey(name) {
+  return String(name ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
 }
 
 // One customer's colour, the same on every page. No two customers in `order`
 // (customerColorOrder) share a colour, however many there are.
 export function customerColor(customerName, order) {
-  const index = Math.max(order.indexOf(customerName), 0);
-  return CUSTOMER_COLORS[index] ?? extraCustomerColor(index - CUSTOMER_COLORS.length);
+  const key = customerColorKey(customerName);
+  if (Object.hasOwn(KNOWN_CUSTOMER_COLORS, key)) return KNOWN_CUSTOMER_COLORS[key];
+  const otherNames = [...new Set(order.map(customerColorKey))]
+    .filter((name) => !Object.hasOwn(KNOWN_CUSTOMER_COLORS, name));
+  const index = Math.max(otherNames.indexOf(key), 0);
+  return OTHER_CUSTOMER_COLORS[index] ?? extraCustomerColor(index - OTHER_CUSTOMER_COLORS.length);
 }
 
 // Named formats stay as they are. Rows with no format become one "Others"

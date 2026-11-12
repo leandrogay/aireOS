@@ -2,6 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { glassSurfaceClass } from '@/components/ui/surfaceStyles';
 import ChartLoading from '@/components/ui/ChartLoading';
 import { formatMonth } from '@/app/utils/inventoryForm';
 import useDelayedLoading from '@/hooks/useDelayedLoading';
@@ -72,7 +73,7 @@ export function ScopeTag({ label, value }) {
  */
 export function InventoryFilterCard({ canClear, onClear, stats, note, children }) {
   return (
-    <Card className="relative z-10 overflow-visible rounded-lg border border-lavander bg-white text-deep-violet-blue shadow-sm ring-0">
+    <Card className={`${glassSurfaceClass} relative z-10 overflow-visible text-deep-violet-blue`}>
       <CardContent className="space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
@@ -102,7 +103,7 @@ export function InventoryFilterCard({ canClear, onClear, stats, note, children }
  */
 export function InventorySection({ title, tags, description, children }) {
   return (
-    <Card className="overflow-visible rounded-lg border border-lavander bg-white text-deep-violet-blue shadow-sm ring-0">
+    <Card className={`${glassSurfaceClass} overflow-visible text-deep-violet-blue`}>
       <CardHeader className="pb-1">
         <div className="min-w-0 space-y-1.5">
           <CardTitle className="font-serif text-base font-normal text-deep-violet-blue group-data-[size=sm]/card:text-base">

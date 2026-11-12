@@ -8,7 +8,9 @@ import { cn } from '@/lib/utils';
 /**
  * Pick one option from a list, on the shared ui/Dropdown shell
  * (ui/MultiSelectDropdown is the pick-many version). The panel closes on a
- * pick and the picked row carries a tick.
+ * pick and the picked row carries a tick -- `tick={false}` drops it (and the
+ * space it keeps on every row) for a short list whose button already shows
+ * the pick, like the page size; the picked row is still in bold.
  *
  * Options come as `options`, or as `groups` with a heading each ("Columns not
  * used yet"). An option can be `disabled`, with a `hint` saying why. A
@@ -32,13 +34,14 @@ import { cn } from '@/lib/utils';
  *   ariaLabel?: string,
  *   searchable?: boolean,
  *   searchPlaceholder?: string,
- *   look?: 'field' | 'filter' | 'compact',
+ *   look?: 'field' | 'filter' | 'compact' | 'outline',
  *   size?: 'md' | 'sm',
  *   disabled?: boolean,
  *   invalid?: boolean,
  *   id?: string,
  *   className?: string,
  *   triggerClassName?: string,
+ *   tick?: boolean,
  *   action?: { label: string | ((query: string) => string), onSelect: (query: string) => void },
  * }} props
  */
@@ -58,6 +61,7 @@ export default function SelectDropdown({
   id,
   className,
   triggerClassName,
+  tick = true,
   action,
 }) {
   const allGroups = (groups || [{ options: options || [] }]).filter((group) => group.options.length);
@@ -130,10 +134,12 @@ export default function SelectDropdown({
                     selected && 'font-medium',
                   )}
                 >
-                  <Check
-                    aria-hidden="true"
-                    className={cn('size-3.5 shrink-0 self-start', option.description && 'mt-0.5', selected ? 'opacity-100' : 'opacity-0')}
-                  />
+                  {tick && (
+                    <Check
+                      aria-hidden="true"
+                      className={cn('size-3.5 shrink-0 self-start', option.description && 'mt-0.5', selected ? 'opacity-100' : 'opacity-0')}
+                    />
+                  )}
                   <span className="min-w-0 flex-1">
                     <span className="flex min-w-0 items-baseline gap-2">
                       <span className="min-w-0 flex-1 truncate">{option.label}</span>

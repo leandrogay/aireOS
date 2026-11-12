@@ -5,9 +5,12 @@ import { singaporeToday } from '../../lib/singaporeTime.js';
 // bound, or a range that doesn't reach the year, still returns something
 // sane). ISO 'YYYY-MM-DD' strings compare lexicographically the same as
 // chronologically, so plain string comparison is enough here.
+// The end is 1 Dec, not 31 Dec: monthly rows are keyed by the first of the
+// month (month_year), so 1 Dec still takes in December (backend filters
+// month_year <= end_date, see bigquery._read_forecast_output_rows).
 function yearDateRange(year, bounds) {
   const yearStart = `${year}-01-01`;
-  const yearEnd = `${year}-12-31`;
+  const yearEnd = `${year}-12-01`;
   return {
     start: bounds.start && bounds.start > yearStart ? bounds.start : yearStart,
     end: bounds.end && bounds.end < yearEnd ? bounds.end : yearEnd,

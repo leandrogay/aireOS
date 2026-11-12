@@ -29,7 +29,6 @@ const GUIDE = [
 // Selects that should move to the kit, page by page. Remove a row when its
 // page migrates.
 const NOT_MIGRATED = [
-  ['Promotions', 'promotions/PromotionFilters.jsx', 'ui/FilterSelect (native select)', 'SelectDropdown look="filter"'],
   ['SKUs', 'skus/SkuFilters.jsx', 'ui/FilterSelect (native select)', 'SelectDropdown look="filter"'],
   ['Settings', 'settings/PromoUpliftFilters.jsx', 'ui/FilterSelect (native select)', 'SelectDropdown look="filter"'],
   ['Dashboard', 'dashboard/DashboardFilters.jsx', 'Raw <select> (2)', 'SelectDropdown look="compact"'],
@@ -38,7 +37,6 @@ const NOT_MIGRATED = [
   ['Promotions', 'promotions/PromotionForm.jsx', 'Raw <select>', 'SelectDropdown look="field"'],
   ['Scenario', 'scenario/BlockEditor.jsx (4), PromotionEditor.jsx (6)', 'Raw <select>', 'SelectDropdown look="field"'],
   ['Customers', 'customers/LinkRetailerDialog.jsx', 'Raw <select>', 'SelectDropdown look="field"'],
-  ['Tables', 'ui/TablePagination.jsx', 'Raw <select> (page size)', 'SelectDropdown look="field" size="sm"'],
 ];
 
 const CUSTOMERS = [
@@ -100,6 +98,7 @@ export default function DropdownGallery() {
     fieldSm: '',
     filter: '',
     compact: '1',
+    outline: '10',
     searchable: '',
     groups: '',
     action: '',
@@ -128,7 +127,8 @@ export default function DropdownGallery() {
       >
         <span className="font-medium">look</span> sets where it sits: <span className="font-mono">field</span> in
         forms and tables, <span className="font-mono">filter</span> in a FilterBar,{' '}
-        <span className="font-mono">compact</span> in the inventory filter cards. Turn on search with{' '}
+        <span className="font-mono">compact</span> in the inventory filter cards,{' '}
+        <span className="font-mono">outline</span> beside outline buttons (table pagination). Turn on search with{' '}
         <span className="font-mono">searchable</span> for long lists.
       </WhichToUse>
 
@@ -148,6 +148,18 @@ export default function DropdownGallery() {
         <Variant name="Compact (inventory filters)" props={'look="compact"'} value={single.compact}>
           <span className={filterLabelClass}>Customer</span>
           <SelectDropdown value={single.compact} onChange={setOne('compact')} options={CUSTOMERS} look="compact" />
+        </Variant>
+        <Variant name="Outline (table pagination)" props={'look="outline" tick={false}'} value={single.outline}>
+          <div className="w-[4.5rem]">
+            <SelectDropdown
+              value={single.outline}
+              onChange={setOne('outline')}
+              options={[{ value: '10', label: '10' }, { value: '25', label: '25' }, { value: '50', label: '50' }]}
+              look="outline"
+              tick={false}
+              ariaLabel="Rows per page"
+            />
+          </div>
         </Variant>
         <Variant name="Searchable, long labels" props="searchable" value={single.searchable}>
           <SelectDropdown
@@ -282,11 +294,12 @@ export default function DropdownGallery() {
             <p className="px-2 py-1 text-sm">Anything can go in the panel.</p>
           </Dropdown>
         </Variant>
-        <Variant name="Each look, empty" props="look field / filter / compact" value={null}>
+        <Variant name="Each look, empty" props="look field / filter / compact / outline" value={null}>
           <div className="space-y-2">
             <Dropdown summary="" placeholder="field" look="field">{null}</Dropdown>
             <Dropdown summary="" placeholder="filter" look="filter">{null}</Dropdown>
             <Dropdown summary="" placeholder="compact" look="compact">{null}</Dropdown>
+            <Dropdown summary="" placeholder="outline" look="outline">{null}</Dropdown>
           </div>
         </Variant>
       </Section>

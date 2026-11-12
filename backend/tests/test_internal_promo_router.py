@@ -24,6 +24,12 @@ def test_the_callback_rejects_a_caller_without_the_task_identity(monkeypatch):
     monkeypatch.setattr(internal_promo.config, "PROMO_RECALC_ENABLED", "true")
     monkeypatch.setattr(internal_promo.config, "PROMO_RECALC_HANDLER_URL", URL)
 
+    # Google's verifier rejects a forged token with ValueError; faked so the
+    # test never fetches Google's signing certificates.
+    def reject(token, request, audience):
+        raise ValueError("Could not verify token signature.")
+
+    monkeypatch.setattr(internal_forecast.id_token, "verify_oauth2_token", reject)
     client = _client()
 
     assert client.post("/internal/promo/recalc").status_code == 401

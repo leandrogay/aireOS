@@ -60,7 +60,7 @@ from openpyxl.utils import get_column_letter
 from app import config
 from app.config import ConfigError
 from app.schemas.catalog import normalise_name
-from app.services import forecast_summary, inventory_calc, inventory_service, promotion_service, sellout_service
+from app.services import ai_models, forecast_summary, inventory_calc, inventory_service, promotion_service, sellout_service
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -3968,7 +3968,34 @@ def _digest_chart(sales: dict | None) -> dict:
 ALL_CUSTOMERS = "all"
 
 
+def _model_unavailable(error: genai_errors.ClientError) -> ai_models.ModelUnavailableError | None:
+    """
+    The error to raise instead when a Gemini error means GEMINI_ASSISTANT_MODEL
+    no longer exists, after noting it as a notification; None for any other
+    error, which the caller re-raises as it was.
+    """
+    if not ai_models.is_model_not_found(error):
+        return None
+    unavailable = ai_models.ModelUnavailableError("assistant")
+    ai_models.record_unavailable(unavailable)
+    return unavailable
+
+
 def generate_digest(customer: str) -> dict:
+    """
+    The "what's changed" overview (_generate_digest), with a retired model
+    turned into ModelUnavailableError.
+    """
+    try:
+        return _generate_digest(customer)
+    except genai_errors.ClientError as e:
+        unavailable = _model_unavailable(e)
+        if unavailable is None:
+            raise
+        raise unavailable from e
+
+
+def _generate_digest(customer: str) -> dict:
     """
     Deterministic "what's changed" overview, for one customer or every
     customer (ALL_CUSTOMERS): the figures are read here, and
@@ -4076,6 +4103,27 @@ def _run_tool_loop(client, contents: list, config, customer: str, chart_sources:
 
 
 def ask(
+    question: str,
+    history: list[dict] | None,
+    customer: str,
+    last_chart: dict | None = None,
+    last_chart_style: dict | None = None,
+    last_answer: str | None = None,
+) -> dict:
+    """
+    One question through the agentic loop (_ask), with a retired model turned
+    into ModelUnavailableError.
+    """
+    try:
+        return _ask(question, history, customer, last_chart, last_chart_style, last_answer)
+    except genai_errors.ClientError as e:
+        unavailable = _model_unavailable(e)
+        if unavailable is None:
+            raise
+        raise unavailable from e
+
+
+def _ask(
     question: str,
     history: list[dict] | None,
     customer: str,

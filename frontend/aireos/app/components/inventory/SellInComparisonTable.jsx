@@ -1,17 +1,27 @@
 import { ChangeValue } from '@/components/ui/ComparisonFigures';
+import { HEADER_RULE } from '@/components/forecast/ForecastYearTotals';
 import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
 import { cn } from '@/lib/utils';
 
-import { inventoryTdClass, inventoryThClass } from './InventoryTableFrame';
 import { SOURCE_LABEL } from './LastMonthDifference';
 
-const numClass = 'text-right tabular-nums';
-const groupStartClass = 'border-l border-lavander';
+// The compact actual-vs-forecast table style the Scenario builder's tables
+// also use: cream 10px
+// uppercase headers with the darker HEADER_RULE lines, text-xs rows on the
+// shared zebra and hover (aire-table-rows), a line before each group.
+const headerClass = cn('border-b bg-cream text-[10px] font-bold uppercase tracking-wide text-deep-violet-blue', HEADER_RULE);
+const splitHeaderClass = cn(
+  'border-b border-l bg-cream px-2 py-1 text-right text-[10px] font-bold uppercase tracking-wide text-deep-violet-blue/80',
+  HEADER_RULE,
+);
+const amountClass = 'whitespace-nowrap border-l border-lavander/80 px-2.5 py-2 text-right tabular-nums';
 
 const SIDES = [
   { kind: 'sell_in', key: 'sellIn', label: 'Sell-in' },
   { kind: 'sell_out', key: 'sellOut', label: 'Sell-out' },
 ];
+
+const SPLIT = ['Actual', 'Forecast', 'vs forecast'];
 
 function signedUnits(value) {
   const sign = value > 0 ? '+' : value < 0 ? '−' : '';
@@ -19,24 +29,29 @@ function signedUnits(value) {
 }
 
 // One side's three cells for one month: actual, forecast (what it was
-// measured against on hover) and the difference.
-function SideCells({ kind, comparison }) {
+// measured against on hover) and the difference. A month with no forecast
+// shows a dash in each, as the Forecast page does, rather than one spanning
+// cell, which would drop the row out of the shared zebra.
+function SideCells({ kind, comparison, rule }) {
   if (!comparison) {
-    return (
-      <td className={cn(inventoryTdClass, groupStartClass, 'text-deep-violet-blue/50')} colSpan={3}>
-        No forecast for this month
+    return SPLIT.map((column) => (
+      <td key={column} className={cn(amountClass, 'text-deep-violet-blue/45', rule)} title="No forecast for this month">
+        —
       </td>
-    );
+    ));
   }
   return (
     <>
-      <td className={cn(inventoryTdClass, groupStartClass, numClass)}>{formatUnits(comparison.actual)}</td>
-      <td className={cn(inventoryTdClass, numClass)} title={`Measured against ${SOURCE_LABEL[kind][comparison.source]}`}>
+      <td className={cn(amountClass, 'text-deep-violet-blue/75', rule)}>{formatUnits(comparison.actual)}</td>
+      <td
+        className={cn(amountClass, 'text-deep-violet-blue/75', rule)}
+        title={`Measured against ${SOURCE_LABEL[kind][comparison.source]}`}
+      >
         {formatUnits(comparison.forecast)}
       </td>
-      <td className={cn(inventoryTdClass, numClass)}>
+      <td className={cn(amountClass, 'font-medium', rule)}>
         <ChangeValue pct={comparison.percent} decimals={2} />
-        <span className="block text-[11px] text-deep-violet-blue/60">{signedUnits(comparison.difference)} units</span>
+        <span className="ml-1.5 text-[10px] font-normal text-deep-violet-blue/50">{signedUnits(comparison.difference)} units</span>
       </td>
     </>
   );
@@ -52,42 +67,43 @@ function SideCells({ kind, comparison }) {
  */
 export default function SellInComparisonTable({ rows }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-left text-sm text-deep-violet-blue [&_td]:align-middle [&_th]:align-middle">
+    <div className="overflow-x-auto rounded-md border border-lavander">
+      <table className="aire-table-rows w-full border-separate border-spacing-0 text-left text-xs text-deep-violet-blue">
         <thead>
-          <tr className="bg-cream/60">
-            <th className={inventoryThClass} rowSpan={2}>
+          <tr>
+            <th rowSpan={2} className={cn(headerClass, 'px-2.5 pb-1 align-bottom')}>
               Month
             </th>
             {SIDES.map((side) => (
-              <th key={side.kind} className={cn(inventoryThClass, groupStartClass, 'text-center')} colSpan={3}>
+              <th key={side.kind} colSpan={3} className={cn(headerClass, 'border-l px-2 py-1.5 text-center')}>
                 {side.label}
               </th>
             ))}
           </tr>
-          <tr className="bg-cream/60 [&>th]:shadow-[inset_0_-1px_0_var(--color-lavander)]">
-            {SIDES.map((side) => [
-              <th key={`${side.kind}-actual`} className={cn(inventoryThClass, groupStartClass, numClass)}>
-                Actual
-              </th>,
-              <th key={`${side.kind}-forecast`} className={cn(inventoryThClass, numClass)}>
-                Forecast
-              </th>,
-              <th key={`${side.kind}-vs`} className={cn(inventoryThClass, numClass)}>
-                vs forecast
-              </th>,
-            ])}
+          <tr>
+            {SIDES.map((side) =>
+              SPLIT.map((column) => (
+                <th key={`${side.kind}-${column}`} className={splitHeaderClass}>
+                  {column}
+                </th>
+              )),
+            )}
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr key={row.month} className="border-b border-lavander/80 last:border-b-0">
-              <td className={cn(inventoryTdClass, 'font-medium')}>{formatMonth(row.month)}</td>
-              {SIDES.map((side) => (
-                <SideCells key={side.kind} kind={side.kind} comparison={row[side.key]} />
-              ))}
-            </tr>
-          ))}
+          {rows.map((row, index) => {
+            const rule = index < rows.length - 1 ? 'border-b border-lavander/70' : '';
+            return (
+              <tr key={row.month} className="h-10">
+                <td className={cn('whitespace-nowrap px-2.5 py-2 align-middle font-medium', rule)}>
+                  {formatMonth(row.month)}
+                </td>
+                {SIDES.map((side) => (
+                  <SideCells key={side.kind} kind={side.kind} comparison={row[side.key]} rule={rule} />
+                ))}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

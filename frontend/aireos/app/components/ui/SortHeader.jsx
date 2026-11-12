@@ -7,11 +7,17 @@ import { cn } from '@/lib/utils';
 // Shared by every header cell of the list tables (promotions, uploads,
 // mappings), sortable or not, so the columns line up and read the same.
 export const TABLE_HEADER_CLASS = 'px-4 py-2.5 text-xs font-medium text-deep-violet-blue/60';
+export const TABLE_HEADER_ACTION_CLASS =
+  'inline-flex max-w-full cursor-pointer items-center gap-1 bg-transparent py-1 text-xs font-medium text-deep-violet-blue/60 outline-none transition-colors hover:text-deep-violet-blue focus-visible:ring-2 focus-visible:ring-ring/50';
 
 /**
  * Column header that sorts on press. The parent owns the sort state; pressing
  * the active column again is expected to flip its direction (nextSort() in
  * app/utils/tableView.js).
+ *
+ * The arrow shows the order the rows are in now, not the order a press would
+ * give: up is highest first (descending; Z to A for text), down is lowest
+ * first (ascending).
  *
  * @param {{
  *   label: string,
@@ -24,7 +30,7 @@ export const TABLE_HEADER_CLASS = 'px-4 py-2.5 text-xs font-medium text-deep-vio
  */
 export default function SortHeader({ label, field, sortField, sortDirection, onSort, className }) {
   const active = sortField === field;
-  const Icon = !active ? ArrowUpDown : sortDirection === 'asc' ? ArrowUp : ArrowDown;
+  const Icon = !active ? ArrowUpDown : sortDirection === 'desc' ? ArrowUp : ArrowDown;
   const ariaSort = !active ? 'none' : sortDirection === 'asc' ? 'ascending' : 'descending';
 
   return (
@@ -33,7 +39,7 @@ export default function SortHeader({ label, field, sortField, sortDirection, onS
         type="button"
         onClick={() => onSort(field)}
         className={cn(
-          'inline-flex items-center gap-1 rounded-md outline-none transition-colors hover:text-deep-violet-blue focus-visible:ring-3 focus-visible:ring-ring/50',
+          TABLE_HEADER_ACTION_CLASS,
           active && 'text-deep-violet-blue',
         )}
       >

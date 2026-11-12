@@ -6,6 +6,7 @@ import { AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import StatusPill from '@/components/ui/StatusPill';
 import TableGrid from '@/components/ui/TableGrid';
+import TableRow from '@/components/ui/TableRow';
 import {
   Dialog,
   DialogContent,
@@ -158,7 +159,7 @@ export default function SkuDetails({ open, sku, loading, error, onCorrectPricePe
                   : null}
               >
                 {periods.map((period) => (
-                  <tr key={period.price_period_id} className="border-b border-lavander/80 last:border-b-0">
+                  <TableRow key={period.price_period_id} className="border-b border-lavander/80 last:border-b-0">
                     <td className="px-4 py-2 tabular-nums">
                       {editing?.periodId === period.price_period_id ? (
                         <input
@@ -205,7 +206,7 @@ export default function SkuDetails({ open, sku, loading, error, onCorrectPricePe
                         <Button size="sm" variant="outline" onClick={() => startCorrection(period)}>Edit</Button>
                       )}
                     </td>
-                  </tr>
+                  </TableRow>
                 ))}
               </TableGrid>
               {saveError && <p className="text-xs text-red-700" role="alert">{saveError}</p>}
@@ -216,12 +217,12 @@ export default function SkuDetails({ open, sku, loading, error, onCorrectPricePe
                 <h3 className="text-sm font-semibold text-deep-violet-blue">Price corrections</h3>
                 <TableGrid variant="nested" columns={SKU_PRICE_CORRECTION_COLUMNS} minWidth="48rem">
                   {sku.price_corrections.map((correction) => (
-                    <tr key={correction.correction_id} className="border-b border-lavander/80 last:border-b-0">
+                    <TableRow key={correction.correction_id} className="border-b border-lavander/80 last:border-b-0">
                       <td className="px-4 py-2">{formatDateTime(correction.corrected_at)}</td>
                       <td className="px-4 py-2">{money.format(Number(correction.old_price))} · {dateRange(correction.old_effective_from, correction.old_effective_to)}</td>
                       <td className="px-4 py-2">{money.format(Number(correction.new_price))} · {dateRange(correction.new_effective_from, correction.new_effective_to)}</td>
                       <td className="px-4 py-2 break-all">{correction.corrected_by}</td>
-                    </tr>
+                    </TableRow>
                   ))}
                 </TableGrid>
               </section>
@@ -236,7 +237,7 @@ export default function SkuDetails({ open, sku, loading, error, onCorrectPricePe
               ) : (
                 <TableGrid variant="nested" columns={SKU_HISTORY_COLUMNS} minWidth="84rem">
                   {sku.history.map((entry) => (
-                    <tr key={entry.sku_history_id} className="h-11 border-b border-lavander/80 last:border-b-0">
+                    <TableRow key={entry.sku_history_id} className="h-11 border-b border-lavander/80 last:border-b-0">
                       <td className="px-4 py-2">
                         <StatusPill tone={ACTION_TONES[entry.action]}>
                           <span className="capitalize">{entry.action}</span>
@@ -256,7 +257,7 @@ export default function SkuDetails({ open, sku, loading, error, onCorrectPricePe
                       <td className="px-4 py-2 tabular-nums">
                         {entry.price_effective_from ? (entry.price_effective_to || 'Until changed') : '—'}
                       </td>
-                    </tr>
+                    </TableRow>
                   ))}
                 </TableGrid>
               )}

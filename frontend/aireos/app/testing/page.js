@@ -4,13 +4,15 @@ import ButtonGallery from './ButtonGallery';
 import DatePickerGallery from './DatePickerGallery';
 import DropdownGallery from './DropdownGallery';
 import { Category } from './GalleryParts';
+import TableGallery from './TableGallery';
 import ToggleGallery from './ToggleGallery';
 
 // A living reference for the shared kits, one Category each: buttons
 // (components/ui/button), dropdowns (Dropdown, SelectDropdown,
 // MultiSelectDropdown, MonthDropdown), date pickers (DatePicker,
-// RangeDatePicker on ui/calendar) and toggles (SegmentedControl,
-// ToggleButton, ToggleField). A kit opens and closes (closed to start with,
+// RangeDatePicker on ui/calendar), toggles (SegmentedControl,
+// ToggleButton, ToggleField) and tables (DataTable, TableGrid, TableCard and
+// the row parts). A kit opens and closes (closed to start with,
 // so only the names show); everything inside it is open. Every kit has the
 // same blocks: "Which to use", its components, then "Not migrated yet" (the
 // pages still on the old version, with the old and new side by side). See
@@ -31,6 +33,9 @@ export default function TestingPage() {
       </Category>
       <Category title="Toggles" note="SegmentedControl, ToggleButton, ToggleField">
         <ToggleGallery />
+      </Category>
+      <Category title="Tables" note="PaginatedDataTable, DataTable, TableGrid, TableCard, row parts">
+        <TableGallery />
       </Category>
     </PageLayout>
   );

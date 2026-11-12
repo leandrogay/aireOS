@@ -1,10 +1,11 @@
 import { Skeleton } from '@/components/ui/skeleton';
 import { SKELETON_PULSE } from '@/components/ui/ChartSkeletonFrame';
+import { glassSurfaceClass } from '@/components/ui/surfaceStyles';
 import { cn } from '@/lib/utils';
 
 /**
- * Placeholder for one card on a loading page: the app's card frame (lavender
- * border, white, shadow-sm), a header of pulsing bars where the title,
+ * Placeholder for one card on a loading page: the app's glass card frame,
+ * a header of pulsing bars where the title,
  * subtitle and header buttons go, and a body the caller fills with
  * SkeletonBars, a chart skeleton or anything else. Put it inside a
  * PageSkeleton, which announces the loading state for the whole page.
@@ -35,7 +36,7 @@ export default function CardSkeleton({
   const hasHeader = title || subtitle || actions > 0;
 
   return (
-    <section className={cn('rounded-lg border border-lavander bg-white shadow-sm', className)}>
+    <section className={cn(glassSurfaceClass, className)}>
       {hasHeader && (
         <div className={cn('flex items-start justify-between gap-3 px-4 pt-4', divider && 'border-b border-lavander pb-2.5')}>
           <div className="min-w-0 flex-1 space-y-1.5">

@@ -12,7 +12,6 @@ import {
   promotionRetailerNames,
   promotionStatus,
   promotionStatusLabel,
-  promotionStoreNames,
 } from '@/app/utils/promotionOverview';
 import { retailerLabel } from '@/app/utils/retailerLabel';
 import { summariseNames } from '@/app/utils/tableView';
@@ -65,7 +64,6 @@ export default function PromotionRow({
   onDelete,
 }) {
   const retailerNames = promotionRetailerNames(promotion).map(retailerLabel);
-  const storeNames = promotionStoreNames(promotion);
   const retailerSummary = summariseNames(retailerNames);
   const status = promotionStatus(promotion);
 
@@ -85,9 +83,6 @@ export default function PromotionRow({
       actions={<RowActions label={`Actions for promotion ${promotion.promotion_id}`} actions={actions} />}
       details={<PromotionDetails promotion={promotion} />}
     >
-      <td className="px-4 py-2.5 font-medium" title={storeNames.join(', ') || undefined}>
-        <span className="block truncate">{summariseNames(storeNames)}</span>
-      </td>
       <td className="px-4 py-2.5">{formatDate(promotion.period_start)}</td>
       <td className="px-4 py-2.5">{formatDate(promotion.period_end)}</td>
       {/* Multi-week labels ("W20-2025, W21-2025, W22-2025") wrap instead of

@@ -5,10 +5,11 @@ import { RefreshCw } from 'lucide-react';
 
 import PageLayout from '@/components/layout/PageLayout';
 import { Button } from '@/components/ui/button';
-import { cardClass } from '@/components/ui/formStyles';
 import InfoTooltip from '@/components/ui/InfoTooltip';
 import RefreshButton from '@/components/ui/RefreshButton';
 import StatusPill from '@/components/ui/StatusPill';
+import TableCard from '@/components/ui/TableCard';
+import TableCardHeader, { TABLE_HEADER_BUTTON_CLASS } from '@/components/ui/TableCardHeader';
 import Toast from '@/components/ui/Toast';
 import usePromoMoments from '@/hooks/usePromoMoments';
 import usePromoUpliftCalc from '@/hooks/usePromoUpliftCalc';
@@ -25,8 +26,6 @@ import PromoAnchorTable from './PromoAnchorTable';
 import PromoMechanicDiscountForm from './PromoMechanicDiscountForm';
 import PromoMechanicTable from './PromoMechanicTable';
 import PromoUpliftTable from './PromoUpliftTable';
-
-const headingClass = 'text-sm font-medium text-deep-violet-blue';
 
 /**
  * The Promotion uplift settings page: each customer's anchor (the mechanic
@@ -92,29 +91,48 @@ export default function PromoUpliftSettingsView() {
   return (
     <PageLayout title="Promotion uplift settings">
       <div className="grid grid-cols-1 gap-3">
-        <section className={cardClass}>
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <h2 className={headingClass}>Ordinary-month discount by customer</h2>
-            <div className="flex items-center gap-2">
-              {calculated.data ? (
-                <span className="inline-flex items-center gap-1">
-                  <StatusPill tone={status.tone}>{status.label}</StatusPill>
-                  {status.error ? (
-                    <InfoTooltip label="Why the last run failed">{status.error}</InfoTooltip>
+        <TableCard
+          variant="glass"
+          label="Ordinary-month discount by customer"
+          header={
+            <TableCardHeader
+              title="Ordinary-month discount by customer"
+              detail={anchors ? `${anchors.customers.length} customer${anchors.customers.length === 1 ? '' : 's'}` : 'Loading customers…'}
+              actions={
+                <>
+                  {calculated.data ? (
+                    <span className="inline-flex items-center gap-1">
+                      <StatusPill tone={status.tone}>{status.label}</StatusPill>
+                      {status.error ? (
+                        <InfoTooltip label="Why the last run failed">{status.error}</InfoTooltip>
+                      ) : null}
+                    </span>
                   ) : null}
-                </span>
-              ) : null}
-              {readOnly ? null : (
-                <Button variant="outline" size="sm" onClick={handleRecalculate} disabled={recalculating}>
-                  <RefreshCw data-icon="inline-start" className={recalculating ? 'animate-spin' : undefined} />
-                  {recalculating ? 'Recalculating…' : 'Recalculate'}
-                </Button>
-              )}
-              <RefreshButton onClick={refresh} isRefreshing={loading} label="Refresh promotion uplift settings" />
-            </div>
-          </div>
+                  {readOnly ? null : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRecalculate}
+                      disabled={recalculating}
+                      className={TABLE_HEADER_BUTTON_CLASS}
+                    >
+                      <RefreshCw data-icon="inline-start" className={recalculating ? 'animate-spin' : undefined} />
+                      {recalculating ? 'Recalculating…' : 'Recalculate'}
+                    </Button>
+                  )}
+                  <RefreshButton
+                    onClick={refresh}
+                    isRefreshing={loading}
+                    label="Refresh promotion uplift settings"
+                    className={TABLE_HEADER_BUTTON_CLASS}
+                  />
+                </>
+              }
+            />
+          }
+        >
           {error ? (
-            <p className="mb-2 text-sm text-red-600" role="alert">
+            <p className="px-4 pb-3 text-sm text-red-600" role="alert">
               {error}
             </p>
           ) : null}
@@ -128,10 +146,10 @@ export default function PromoUpliftSettingsView() {
               onAdopt={handleAnchorAdopt}
             />
           ) : (
-            !error && <p className="text-sm text-deep-violet-blue/70">Loading…</p>
+            !error && <p className="px-4 pb-3 text-sm text-deep-violet-blue/70">Loading…</p>
           )}
           {fallback ? (
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-deep-violet-blue">
+            <div className="flex flex-wrap items-center gap-2 border-t border-lavander/80 px-4 py-3 text-sm text-deep-violet-blue">
               <span className="inline-flex items-center gap-1">
                 If nothing is set: <span className="font-medium">{fallback.anchor_pct}% off</span>
                 {fallback.effective_from ? ` · from ${monthText(fallback.effective_from)}` : null}
@@ -146,7 +164,7 @@ export default function PromoUpliftSettingsView() {
               )}
             </div>
           ) : null}
-        </section>
+        </TableCard>
 
         {anchorDetails ? (
           <PromoAnchorDetails
@@ -187,13 +205,21 @@ export default function PromoUpliftSettingsView() {
           />
         ) : null}
 
-        <section className={cardClass}>
-          <h2 className={`mb-2 flex items-center gap-1 ${headingClass}`}>
-            Mechanic discounts
-            <InfoTooltip label="About mechanic discounts">
-              The discount each mechanic counts as. The placeholder rule and the anchors use it.
-            </InfoTooltip>
-          </h2>
+        <TableCard
+          variant="glass"
+          label="Mechanic discounts"
+          header={
+            <TableCardHeader
+              title="Mechanic discounts"
+              detail={settings ? `${mechanics.length} mechanic${mechanics.length === 1 ? '' : 's'}` : 'Loading mechanics…'}
+              actions={
+                <InfoTooltip label="About mechanic discounts">
+                  The discount each mechanic counts as. The placeholder rule and the anchors use it.
+                </InfoTooltip>
+              }
+            />
+          }
+        >
           {settings ? (
             <PromoMechanicTable
               mechanics={mechanics}
@@ -202,17 +228,17 @@ export default function PromoUpliftSettingsView() {
               onEdit={setMechanicTarget}
             />
           ) : (
-            !error && <p className="text-sm text-deep-violet-blue/70">Loading…</p>
+            !error && <p className="px-4 pb-3 text-sm text-deep-violet-blue/70">Loading…</p>
           )}
           {settings?.unmapped_mechanics?.length ? (
-            <p className="mt-2 text-xs text-deep-violet-blue/70" role="status">
+            <p className="px-4 py-3 text-xs text-deep-violet-blue/70" role="status">
               No discount yet:{' '}
               {settings.unmapped_mechanics
                 .map((row) => `${row.promotion_mechanic} (${row.promotions} promotion${row.promotions === 1 ? '' : 's'})`)
                 .join(' · ')}
             </p>
           ) : null}
-        </section>
+        </TableCard>
 
         {mechanicTarget ? (
           <PromoMechanicDiscountForm

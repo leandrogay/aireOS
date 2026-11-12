@@ -3,12 +3,14 @@
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import DataTable from '@/components/ui/DataTable';
-import TablePagination, { PAGE_SIZES } from '@/components/ui/TablePagination';
+import PaginatedDataTable from '@/components/ui/PaginatedDataTable';
+import { PAGE_SIZES } from '@/components/ui/TablePagination';
 import TableSearch from '@/components/ui/TableSearch';
 import MappingFilters from '@/components/mappings/MappingFilters';
-import MappingRow from '@/components/mappings/MappingRow';
+import MappingRow, { mappingRowActions } from '@/components/mappings/MappingRow';
 import MobileRecordCard from '@/components/ui/MobileRecordCard';
+import RowActions from '@/components/ui/RowActions';
+import RecordCardList from '@/components/ui/RecordCardList';
 import StatusPill from '@/components/ui/StatusPill';
 import { formatDate } from '@/lib/formatDate';
 import {
@@ -41,9 +43,10 @@ const EMPTY_FILTERS = { customer: [], status: [], issues: [] };
  *   error: string,
  *   onOpen: (mappingId: string) => void,
  *   onRefresh: () => void,
+ *   onDelete: (mapping: object) => void,
  * }} props
  */
-export default function MappingList({ mappings, isLoading, error, onOpen, onRefresh }) {
+export default function MappingList({ mappings, isLoading, error, onOpen, onRefresh, onDelete }) {
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [search, setSearch] = useState('');
   // No sort to start with: the backend lists confirmed mappings first, then
@@ -108,7 +111,7 @@ export default function MappingList({ mappings, isLoading, error, onOpen, onRefr
         onReset={resetFilters}
       />
 
-      <DataTable
+      <PaginatedDataTable
         label="Stored nomenclatures"
         noun="nomenclature"
         totalCount={mappings.length}
@@ -126,32 +129,24 @@ export default function MappingList({ mappings, isLoading, error, onOpen, onRefr
             placeholder="Search name, file, customer…"
           />
         }
-        footer={
-          <TablePagination
-            page={currentPage}
-            totalPages={totalPages}
-            pageSize={pageSize}
-            totalRows={sorted.length}
-            onPageChange={setPage}
-            onPageSizeChange={changePageSize}
-          />
-        }
+        pagination={{ page: currentPage, totalPages, pageSize, totalRows: sorted.length, onPageChange: setPage, onPageSizeChange: changePageSize }}
         columns={MAPPING_COLUMNS}
         minWidth="48rem"
         sort={sort}
         onSort={changeSort}
         emptyState={noMatches || null}
         mobileContent={
-          <div className="grid gap-2">
+          <RecordCardList>
             {pageRows.map((mapping) => {
               const status = mappingStatus(mapping);
-              const tones = { confirmed: 'success', pending: 'warning', missing: 'danger', warnings: 'warning', unknown: 'muted' };
+              const tones = { confirmed: 'success', unused: 'muted', pending: 'warning', missing: 'danger', warnings: 'warning', unknown: 'muted' };
               return (
                 <MobileRecordCard
                   key={mapping.mappingId}
                   title={mappingTitle(mapping)}
                   subtitle={mappingSourceLine(mapping)}
                   badge={<StatusPill tone={tones[status.kind]}>{status.label}</StatusPill>}
+                  actions={<RowActions label={`Actions for nomenclature ${mappingTitle(mapping)}`} actions={mappingRowActions(mapping, onOpen, onDelete)} />}
                   fields={[
                     { label: 'Customer', value: mappingCustomer(mapping) || '—' },
                     { label: 'Validated', value: mapping.validatedAt ? formatDate(mapping.validatedAt) : '—' },
@@ -161,13 +156,13 @@ export default function MappingList({ mappings, isLoading, error, onOpen, onRefr
                 </MobileRecordCard>
               );
             })}
-          </div>
+          </RecordCardList>
         }
       >
         {pageRows.map((mapping) => (
-          <MappingRow key={mapping.mappingId} mapping={mapping} onOpen={onOpen} />
+          <MappingRow key={mapping.mappingId} mapping={mapping} onOpen={onOpen} onDelete={onDelete} />
         ))}
-      </DataTable>
+      </PaginatedDataTable>
     </div>
   );
 }

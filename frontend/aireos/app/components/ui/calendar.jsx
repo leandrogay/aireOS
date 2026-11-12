@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils"
 import { DayPicker, getDefaultClassNames } from "react-day-picker";
 
 import { Button, buttonVariants } from "@/components/ui/button"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { toYmd } from "@/app/utils/datePicker"
 import { ChevronLeftIcon, ChevronRightIcon, ChevronDownIcon } from "lucide-react"
 
@@ -132,6 +133,7 @@ function Calendar({
 
           return (<ChevronDownIcon className={cn("size-4", className)} {...props} />);
         },
+        Dropdown: CalendarDropdown,
         DayButton: ({ ...props }) => (
           <CalendarDayButton locale={locale} {...props} />
         ),
@@ -149,6 +151,65 @@ function Calendar({
       }}
       {...props} />
   );
+}
+
+// The month / year pickers of captionLayout="dropdown". The closed button
+// keeps the calendar's own caption look, but the list opens in a panel styled
+// like ui/Dropdown's instead of the browser's native <select> list.
+// react-day-picker hands over numeric option values and reads the pick back
+// as `event.target.value`.
+function CalendarDropdown({ options = [], value, onChange, disabled, "aria-label": ariaLabel }) {
+  const [open, setOpen] = React.useState(false)
+  const current = options.find((option) => option.value === value)
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        disabled={disabled}
+        aria-label={ariaLabel}
+        // `relative` lifts it above the nav row, which is absolute across the
+        // whole caption and would otherwise take the click.
+        className="relative flex h-7 cursor-pointer items-center gap-1 rounded-(--cell-radius) px-1.5 text-sm font-semibold text-deep-violet-blue outline-none select-none hover:bg-cream aria-expanded:bg-cream focus-visible:ring-2 focus-visible:ring-violet disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {current?.label}
+        <ChevronDownIcon
+          aria-hidden="true"
+          className={cn("size-3.5 text-deep-violet-blue/50 transition-transform", open && "rotate-180")}
+        />
+      </PopoverTrigger>
+      <PopoverContent
+        align="center"
+        className="aire-glass-dropdown-panel w-max min-w-(--anchor-width) gap-0 overflow-hidden rounded-md border border-lavander bg-white p-0 text-deep-violet-blue ring-0"
+      >
+        <div role="listbox" aria-label={ariaLabel} className="max-h-60 overflow-y-auto overflow-x-hidden p-1.5">
+          {options.map((option) => {
+            const selected = option.value === value
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                disabled={option.disabled}
+                // Opens scrolled to the current month / year, not the top.
+                ref={selected ? (node) => node?.scrollIntoView({ block: "nearest" }) : undefined}
+                onClick={() => {
+                  setOpen(false)
+                  if (!selected) onChange?.({ target: { value: String(option.value) } })
+                }}
+                className={cn(
+                  "flex w-full items-center rounded-md px-2 py-1 text-left text-sm text-deep-violet-blue outline-none hover:bg-cream focus-visible:bg-cream disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent",
+                  selected && "bg-lavander/60 font-medium hover:bg-lavander/60"
+                )}
+              >
+                {option.label}
+              </button>
+            )
+          })}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
 }
 
 function CalendarDayButton({

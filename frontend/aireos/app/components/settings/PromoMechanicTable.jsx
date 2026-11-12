@@ -5,6 +5,7 @@ import { Pencil } from 'lucide-react';
 import MobileRecordCard from '@/components/ui/MobileRecordCard';
 import RowActions from '@/components/ui/RowActions';
 import TableGrid, { ACTIONS_COLUMN } from '@/components/ui/TableGrid';
+import TableRow from '@/components/ui/TableRow';
 import { formatDateTime } from '@/lib/formatDate';
 import { changedByLabel } from '@/app/utils/promoUpliftSettings';
 import { cn } from '@/lib/utils';
@@ -49,7 +50,7 @@ export default function PromoMechanicTable({ mechanics, editingKey, readOnly, on
   return (
     <>
       {/* Phone width: one card per mechanic, as DohSettingsTable does; the table from sm up. */}
-      <div className="grid min-w-0 gap-2 sm:hidden">
+      <div className="grid min-w-0 gap-2 px-4 pb-3 sm:hidden">
         {mechanics.length === 0 ? <p className="text-sm text-deep-violet-blue/70">No mechanics yet.</p> : null}
         {mechanics.map((row) => (
           <MobileRecordCard
@@ -65,13 +66,12 @@ export default function PromoMechanicTable({ mechanics, editingKey, readOnly, on
       </div>
       <div className="hidden min-w-0 sm:block">
         <TableGrid
-          variant="nested"
           columns={COLUMNS}
           minWidth="34rem"
           emptyState={mechanics.length === 0 ? 'No mechanics yet.' : null}
         >
           {mechanics.map((row) => (
-            <tr
+            <TableRow
               key={row.mechanic_key}
               onClick={() => !readOnly && onEdit(row)}
               className={cn(rowClass, readOnly && 'cursor-default', editingKey === row.mechanic_key && 'bg-lavander/90')}
@@ -84,7 +84,7 @@ export default function PromoMechanicTable({ mechanics, editingKey, readOnly, on
               <td className="px-2 py-1 text-right" onClick={(event) => event.stopPropagation()}>
                 <RowActions label={`Actions for ${row.mechanic_label}`} actions={actions(row)} />
               </td>
-            </tr>
+            </TableRow>
           ))}
         </TableGrid>
       </div>

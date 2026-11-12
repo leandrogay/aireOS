@@ -2,11 +2,13 @@
 
 import { useState } from 'react';
 import { AlertTriangle, CheckCircle2, Loader2, Plus } from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 
 import { Button } from '@/components/ui/button';
 import InfoTooltip from '@/components/ui/InfoTooltip';
 import SelectDropdown from '@/components/ui/SelectDropdown';
 import { inputClass, labelClass } from '@/components/ui/formStyles';
+import { CARD_REVEAL } from '@/app/config/transitions';
 import { canRenameOutputs, channelRetailerName, customerRetailerFamily, retailerChoices } from '@/app/utils/mappingCustomer';
 import { PROPOSER } from '@/app/utils/mappingReview';
 import { customerLabel } from '@/app/utils/retailerLabel';
@@ -203,6 +205,7 @@ export default function CustomerStep({
   const statusOf = (retailerName) =>
     statuses.find((item) => item.name === retailerName) || { name: retailerName, status: null };
   const where = decisionText(decision, outputs);
+  const reduceMotion = useReducedMotion();
   // All offline, all online or split by a column: the channel picker shows
   // and edits it whole. Anything else keeps its rule-by-rule lines.
   const picked = Boolean(customer) && SPLIT_MODES.includes(splitFromDecision(decision).mode);
@@ -278,7 +281,13 @@ export default function CustomerStep({
 
       <div>
         <div className="flex items-center gap-1 text-xs text-deep-violet-blue">
-          <span className="font-medium">Retailer</span>
+          <span className="font-medium">
+            Retailer
+            <span className="text-red-700" aria-hidden="true">
+              {' '}
+              *
+            </span>
+          </span>
           {/* The retailers a proposal names are another customer's until one is
               chosen, and nothing here can be edited yet, so there is nothing to show. */}
           {!customer && (
@@ -301,79 +310,117 @@ export default function CustomerStep({
           )}
         </div>
 
-        {customer && !retailers.length && (
-          <p className="mt-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900">
-            {customerLabel(customer.customer_name)} has no retailers yet. Choose how rows split below, then add the
-            retailers it needs.
-          </p>
-        )}
+        {/* The retailer options open as soon as a customer is chosen: the block
+            grows to its height (so step 2 slides down rather than jumps) while
+            its contents rise on the page spring (CARD_REVEAL). Only its arrival
+            animates -- ChannelSplit remounts on every pick, and that must not. */}
+        <AnimatePresence initial={false}>
+          {customer && (
+            <motion.div
+              key="retailer-options"
+              initial={reduceMotion ? false : { opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={reduceMotion ? undefined : { opacity: 0, height: 0 }}
+              transition={{ height: CARD_REVEAL.layout, opacity: { duration: 0.15, ease: 'easeOut' } }}
+              // Clipped while it grows; the padding keeps focus rings inside the clip.
+              className="-mx-1 overflow-hidden px-1 pb-1"
+            >
+              <motion.div
+                initial={reduceMotion ? false : { y: CARD_REVEAL.y }}
+                animate={{ y: 0 }}
+                transition={CARD_REVEAL.transition}
+              >
+              {customer && !retailers.length && (
+                <p className="mt-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900">
+                  {customerLabel(customer.customer_name)} has no retailers yet. Choose how rows split below, then add the
+                  retailers it needs.
+                </p>
+              )}
 
-        {customer && (
-          <div className="mt-1.5">
-            {/* Remounted when the decision or customer changes, so it starts
-                from what the mapping does now. */}
-            <ChannelSplit
-              key={`${customer.customer_id}:${JSON.stringify(decision.transforms)}:${decision.value ?? ''}:${decision.kind}`}
-              customer={customer}
-              decision={decision}
-              outputs={outputs}
-              mapping={mapping}
-              state={state}
-              layout={layout}
-              onApply={onApplyRetailer}
-              disabled={disabled}
-            />
-          </div>
-        )}
+              {customer && (
+                <div className="mt-1.5">
+                  {/* Starts again from the mapping by itself when the decision or
+                      customer changes (ChannelSplit), so its panel can animate. */}
+                  <ChannelSplit
+                    customer={customer}
+                    decision={decision}
+                    outputs={outputs}
+                    mapping={mapping}
+                    state={state}
+                    layout={layout}
+                    onApply={onApplyRetailer}
+                    disabled={disabled}
+                  />
+                </div>
+              )}
 
-        {/* The channel picker above already shows what the mapping does, so
-            only a retailer that needs fixing is listed under it. */}
-        {picked && problems.length > 0 && (
-          <ul className="mt-1.5 space-y-1">
-            {problems.map((item) => (
-              <RetailerLine
-                key={item.name}
-                item={item}
-                customerName={customer.customer_name}
-                retailers={retailers}
-                onFix={onFixRetailer}
-                disabled={disabled}
-              />
-            ))}
-          </ul>
-        )}
+              {/* The channel picker above already shows what the mapping does, so
+                  only a retailer that needs fixing is listed under it. Switching
+                  between All offline and All online changes which retailer that
+                  is, so the list shrinks shut and the new one grows open (keyed by
+                  the retailers it names) instead of swapping in place; the gap
+                  above it is inside, so it moves with it. */}
+              <AnimatePresence initial={false} mode="wait">
+                {picked && problems.length > 0 && (
+                  <motion.div
+                    key={problems.map((item) => item.name).join('|')}
+                    initial={reduceMotion ? false : { opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={reduceMotion ? undefined : { opacity: 0, height: 0 }}
+                    transition={{ height: CARD_REVEAL.layout, opacity: { duration: 0.15, ease: 'easeOut' } }}
+                    className="-mx-1 overflow-hidden px-1"
+                  >
+                    <ul className="space-y-1 pt-1.5 pb-px">
+                      {problems.map((item) => (
+                        <RetailerLine
+                          key={item.name}
+                          item={item}
+                          customerName={customer.customer_name}
+                          retailers={retailers}
+                          onFix={onFixRetailer}
+                          disabled={disabled}
+                        />
+                      ))}
+                    </ul>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
-        {customer && !picked && choices.length > 0 && (
-          <ul className="mt-1.5 space-y-1">
-            {choices.map((choice) => (
-              <RetailerLine
-                key={choice.key}
-                item={statusOf(choice.output)}
-                choice={choice}
-                customerName={customer.customer_name}
-                retailers={retailers}
-                onChoose={onSetRetailerChoice}
-                onFix={onFixRetailer}
-                disabled={disabled}
-              />
-            ))}
-          </ul>
-        )}
+              {customer && !picked && choices.length > 0 && (
+                <ul className="mt-1.5 space-y-1">
+                  {choices.map((choice) => (
+                    <RetailerLine
+                      key={choice.key}
+                      item={statusOf(choice.output)}
+                      choice={choice}
+                      customerName={customer.customer_name}
+                      retailers={retailers}
+                      onChoose={onSetRetailerChoice}
+                      onFix={onFixRetailer}
+                      disabled={disabled}
+                    />
+                  ))}
+                </ul>
+              )}
 
-        {customer && !picked && !choices.length && statuses.length > 0 && (
-          <ul className="mt-1.5 space-y-1">
-            {statuses.map((item) => (
-              <RetailerLine
-                key={item.name}
-                item={item}
-                customerName={customer.customer_name}
-                retailers={retailers}
-                onFix={onFixRetailer}
-                disabled={disabled}
-              />
-            ))}
-          </ul>
-        )}
+              {customer && !picked && !choices.length && statuses.length > 0 && (
+                <ul className="mt-1.5 space-y-1">
+                  {statuses.map((item) => (
+                    <RetailerLine
+                      key={item.name}
+                      item={item}
+                      customerName={customer.customer_name}
+                      retailers={retailers}
+                      onFix={onFixRetailer}
+                      disabled={disabled}
+                    />
+                  ))}
+                </ul>
+              )}
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

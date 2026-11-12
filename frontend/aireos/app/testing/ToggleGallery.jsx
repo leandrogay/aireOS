@@ -16,6 +16,7 @@ import { NotMigrated, Section, Variant, WhichToUse } from './GalleryParts';
 // Which component to reach for; keep in step with the components themselves.
 const GUIDE = [
   ['Pick one of a few, side by side', 'SegmentedControl', 'value, onChange, options, look, size, fullWidth'],
+  ['…with an option shown but not available', 'SegmentedControl', 'options[].disabled, options[].disabledReason'],
   ['Turn one thing on or off', 'ToggleButton', 'pressed, onChange, look'],
   ['A setting with a switch and an explanation', 'ToggleField', 'label or ariaLabel, checked, onChange, showState, onHint, offHint, tone'],
 ];
@@ -23,7 +24,6 @@ const GUIDE = [
 // Controls that should move to the kit, page by page. Remove a row when its
 // page migrates.
 const NOT_MIGRATED = [
-  ['Dashboard', 'dashboard/RevenueTrendCard.jsx', 'ui/tabs: Offline / Online, Volume / Revenue, By week / By month (jumps)', 'SegmentedControl'],
   ['Forecast, Inventory', 'ui/LineToggle.jsx (shared chart line pills), forecast/ForecastPromoToggle.jsx', 'Hand-rolled chips with per-series colours', 'ToggleButton look="chip" (needs a colour option first)'],
   ['Promotions', 'promotions/PromotionDetails.jsx (FormatTab)', 'Hand-rolled chips with a count', 'ToggleButton look="chip"'],
   ['Upload', 'upload/DuplicateChoice.jsx', 'Radio inputs styled as a track, with icons', 'SegmentedControl with option icons'],
@@ -43,9 +43,23 @@ const METRICS = [
   { value: 'revenue', label: 'Revenue' },
 ];
 
-const GRANULARITIES = [
-  { value: 'week', label: 'By week', disabled: true, title: 'No weekly data in this range' },
-  { value: 'month', label: 'By month' },
+// The dashboard's By week / By month switch: By week stays in the track but
+// can't be picked when no month in the range has weekly rows.
+function granularityOptions(weekAvailable) {
+  return [
+    {
+      value: 'week',
+      label: 'By week',
+      disabled: !weekAvailable,
+      disabledReason: 'No weekly data for this selection. Only monthly totals are loaded.',
+    },
+    { value: 'month', label: 'By month' },
+  ];
+}
+
+const CHANNELS = [
+  { value: 'offline', label: 'Offline' },
+  { value: 'online', label: 'Online', disabled: true, disabledReason: 'No ticked customer sells online.' },
 ];
 
 const MODES = [
@@ -56,10 +70,10 @@ const MODES = [
 ];
 
 const VIEWS = [
-  { value: 'overview', label: 'Overview' },
+  { value: 'plan', label: 'Sell-in plan' },
+  { value: 'overview', label: 'Stock' },
   { value: 'customer', label: 'By customer' },
   { value: 'risk', label: 'At risk' },
-  { value: 'plan', label: 'Sell-in plan' },
 ];
 
 const DUPLICATE_CHOICES = [
@@ -78,6 +92,8 @@ export default function ToggleGallery() {
   const [segments, setSegments] = useState({
     metric: 'revenue',
     granularity: 'month',
+    granularityLive: 'week',
+    channel: 'offline',
     mode: 'upload',
     view: 'overview',
     duplicate: 'replace',
@@ -94,9 +110,17 @@ export default function ToggleGallery() {
     scenario: true,
   });
   const [legacy, setLegacy] = useState('week');
+  const [weekAvailable, setWeekAvailable] = useState(true);
 
   const setSetting = (key) => (value) => setSettings((prev) => ({ ...prev, [key]: value }));
   const setSegment = (key) => (value) => setSegments((prev) => ({ ...prev, [key]: value }));
+
+  // Turning weekly data off while By week is picked falls back to By month, as
+  // the dashboard would: a disabled option can't stay selected.
+  function changeWeekAvailable(available) {
+    setWeekAvailable(available);
+    if (!available) setSegments((prev) => ({ ...prev, granularityLive: 'month' }));
+  }
 
   function toggleFormat(format) {
     setPressed((prev) => ({
@@ -115,13 +139,14 @@ export default function ToggleGallery() {
       >
         SegmentedControl&apos;s <span className="font-medium">look</span>: <span className="font-mono">tint</span>{' '}
         (lavender track) inside cards, <span className="font-mono">outline</span> (white, bordered) for a
-        page&apos;s top-level tabs. Its highlight slides on the Sidebar&apos;s spring and is instant for users who
+        page&apos;s top-level tabs, <span className="font-mono">soft</span> (see-through track, white pill) for
+        choosing which data a page shows. Its highlight slides on the Sidebar&apos;s spring and is instant for users who
         ask for reduced motion.
       </WhichToUse>
 
       <Section
         title="SegmentedControl — pick one of a few"
-        note="The highlight slides between options. Arrow keys move between them. Used by Inventory's tabs and the Enter / edit data modes."
+        note="The highlight slides between options. Arrow keys move between them. Used by Inventory's tabs and the Input data modes."
       >
         <Variant name="Tint, sm (chart metric)" props={'look="tint" size="sm"'} value={segments.metric}>
           <SegmentedControl value={segments.metric} onChange={setSegment('metric')} options={METRICS} />
@@ -129,8 +154,61 @@ export default function ToggleGallery() {
         <Variant name="Tint, sm, form modes (inventory)" props={'look="tint" size="sm"'} value={segments.mode}>
           <SegmentedControl value={segments.mode} onChange={setSegment('mode')} options={MODES} />
         </Variant>
-        <Variant name="Disabled option, with title" props="options[].disabled, options[].title" value={segments.granularity}>
-          <SegmentedControl value={segments.granularity} onChange={setSegment('granularity')} options={GRANULARITIES} />
+        <Variant
+          name="Disabled option, with reason (dashboard By week)"
+          props="options[].disabled, options[].disabledReason"
+          value={segments.granularity}
+        >
+          {/* 152px and fullWidth, as on the dashboard (RevenueTrendCard). Hover By week for the reason. */}
+          <SegmentedControl
+            fullWidth
+            className="w-[152px]"
+            value={segments.granularity}
+            onChange={setSegment('granularity')}
+            options={granularityOptions(false)}
+            ariaLabel="Group by"
+          />
+        </Variant>
+        <Variant
+          name="Disabled by the filters (try it)"
+          props="options[].disabled = !weekAvailable"
+          value={{ granularity: segments.granularityLive, weekAvailable }}
+        >
+          <div className="space-y-2">
+            <SegmentedControl
+              fullWidth
+              className="w-[152px]"
+              value={segments.granularityLive}
+              onChange={setSegment('granularityLive')}
+              options={granularityOptions(weekAvailable)}
+              ariaLabel="Group by"
+            />
+            <ToggleButton pressed={weekAvailable} onChange={changeWeekAvailable}>
+              Weekly data loaded
+            </ToggleButton>
+          </div>
+        </Variant>
+        <Variant name="Soft (dashboard Offline / Online)" props={'look="soft" fullWidth'} value={segments.channel}>
+          <SegmentedControl
+            look="soft"
+            fullWidth
+            className="w-[152px]"
+            value={segments.channel}
+            onChange={setSegment('channel')}
+            options={[CHANNELS[0], { value: 'online', label: 'Online' }]}
+            ariaLabel="Sales channel"
+          />
+        </Variant>
+        <Variant name="Soft, with a disabled option" props={'look="soft" options[].disabled'} value={segments.channel}>
+          <SegmentedControl
+            look="soft"
+            fullWidth
+            className="w-[152px]"
+            value="offline"
+            onChange={() => {}}
+            options={CHANNELS}
+            ariaLabel="Sales channel"
+          />
         </Variant>
         <Variant name="With icons" props="options[].icon" value={segments.duplicate}>
           <SegmentedControl value={segments.duplicate} onChange={setSegment('duplicate')} options={DUPLICATE_CHOICES} />
@@ -219,7 +297,7 @@ export default function ToggleGallery() {
         </Variant>
         <Variant name="Label + state + hints (file settings)" props="label showState onHint offHint" value={settings.full}>
           <ToggleField
-            label="Add up rows into monthly totals"
+            label="Combine into monthly totals"
             showState
             checked={settings.full}
             onChange={setSetting('full')}
@@ -245,7 +323,7 @@ export default function ToggleGallery() {
       </Section>
 
       <NotMigrated rows={NOT_MIGRATED} leaveAsIs={LEAVE_AS_IS}>
-        <Variant name="Old: ui/tabs (Dashboard)" props="jumps, doesn't slide" value={legacy}>
+        <Variant name="Old: ui/tabs (Dashboard, before the move)" props="jumps, doesn't slide" value={legacy}>
           <Tabs value={legacy} onValueChange={setLegacy}>
             <TabsList className="h-7 bg-lavander">
               <TabsTrigger value="week" className={`text-xs ${LEGACY_TAB_TRIGGER_CLASS}`}>

@@ -878,6 +878,12 @@ def _customer_retailers(customer: str) -> list[str]:
     return [_retailer_for(customer, mode) for mode in DASHBOARD_MODES]
 
 
+def _ticked_customers(customers: list[str] | None) -> list[str]:
+    # The dashboard's ticked customer slugs, blanks and stray spaces dropped
+    # (the routers pass the comma-split query string as-is).
+    return [name.strip() for name in customers or [] if name and name.strip()]
+
+
 def _retailer_family(retailer: str) -> str:
     for suffix in ("_online", "_offline"):
         if retailer.endswith(suffix):
@@ -1105,9 +1111,16 @@ def get_customer_options() -> list[dict]:
     # unfiltered). A newly ingested customer shows up automatically.
     # The value stays the family slug (it builds the retailer names every
     # dashboard read filters on); the label is the owning customer's name.
+    # customer_id is that customer record (customer_retailers), or None when
+    # no customer owns the family: the dashboard orders customer colours by
+    # it, so a renamed customer (fairprice -> "FairPrice") keeps its colour
+    # rather than being matched by name. The id and the label come from the
+    # same linked retailer, the first by name (offline before online), so
+    # they can't disagree if a family's channels were linked to different
+    # customers.
     query = text(
         """
-        SELECT DISTINCT r.retailer_name, c.customer_name
+        SELECT DISTINCT r.retailer_name, cr.customer_id, c.customer_name
         FROM sellout s
         JOIN retailers r ON r.retailer_id = s.retailer_id
         LEFT JOIN customer_retailers cr ON cr.retailer_id = r.retailer_id
@@ -1116,9 +1129,19 @@ def get_customer_options() -> list[dict]:
     )
     with _get_read_engine().connect() as conn:
         rows = conn.execute(query).mappings().all()
-    families = sorted({_retailer_family(row["retailer_name"]) for row in rows})
-    names = _customer_names_by_family(rows)
-    return [{"value": family, "label": _customer_label(family, names.get(family))} for family in families]
+    linked: dict[str, dict | None] = {}
+    for row in sorted(rows, key=lambda row: row["retailer_name"]):
+        family = _retailer_family(row["retailer_name"])
+        if linked.get(family) is None:
+            linked[family] = row if row["customer_id"] is not None else None
+    return [
+        {
+            "value": family,
+            "label": _customer_label(family, row["customer_name"] if row else None),
+            "customer_id": row["customer_id"] if row else None,
+        }
+        for family, row in sorted(linked.items())
+    ]
 
 
 def _format_last_updated(value) -> str | None:
@@ -1395,6 +1418,10 @@ def get_customer_totals(
                 "revenue": round(float(row["revenue"] or 0), 2) if row else 0.0,
                 "units": float(row["units"] or 0) if row else 0.0,
                 "estimated_revenue": round(float(row["estimated_revenue"] or 0), 2) if row else 0.0,
+                # Whether any sell-out is loaded for the period: the 0s above
+                # are then real, not a month no one has uploaded yet (the
+                # latest month can come from another ticked customer).
+                "has_data": row is not None,
             }
             entry[f"has_{mode}"] = retailer in present
         result.append(entry)
@@ -1477,13 +1504,19 @@ def get_monthly_only_months(
     store: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
+    customers: list[str] | None = None,
 ) -> dict:
     """Per channel, the months in the range loaded only as a monthly total
     (no weekly rows for that retailer+month, e.g. August 2026), as sorted
     YYYY-MM-01 strings. A weekly dashboard-summary is missing those months,
     so the dashboard reads both sides of a comparison by month instead, and
-    names the months so users know which weekly data to upload."""
-    where_clauses, params = _dashboard_scope(customer, sku, store, start_date, end_date)
+    names the months so users know which weekly data to upload.
+
+    `customers` (the dashboard's ticked customers) replaces `customer`: a
+    month is listed when any of them has only a monthly total for it, so By
+    week isn't offered for a month another ticked customer has no weeks in."""
+    names = _ticked_customers(customers) or [customer]
+    where_clauses, params = _dashboard_scope(names, sku, store, start_date, end_date)
     query = text(
         f"""
         SELECT DISTINCT r.retailer_name AS retailer, date_trunc('month', s.period_start)::date AS month
@@ -1504,23 +1537,29 @@ def get_monthly_only_months(
     months = {mode: set() for mode in DASHBOARD_MODES}
     for row in rows:
         for mode in DASHBOARD_MODES:
-            if row["retailer"] == _retailer_for(customer, mode):
+            if row["retailer"] in {_retailer_for(name, mode) for name in names}:
                 months[mode].add(pd.Timestamp(row["month"]).strftime("%Y-%m-%d"))
     return {mode: sorted(found) for mode, found in months.items()}
 
 
 def _dashboard_scope(
-    customer: str, sku: str | None, store: str | None, start_date: str | None, end_date: str | None
+    customer: str | list[str],
+    sku: str | None,
+    store: str | None,
+    start_date: str | None,
+    end_date: str | None,
 ) -> tuple[list[str], dict]:
-    # WHERE clauses + bind params for one customer's sellout rows, shared by
-    # get_dashboard_summary and get_monthly_only_months so both read the same
-    # rows. A row counts when its period_start falls inside the range.
+    # WHERE clauses + bind params for one customer's sellout rows (or several
+    # customers', given a list), shared by get_dashboard_summary and
+    # get_monthly_only_months so both read the same rows. A row counts when
+    # its period_start falls inside the range.
     _validate_date(start_date, "start_date")
     _validate_date(end_date, "end_date")
     where_clauses = [
         "s.retailer_id IN (SELECT retailer_id FROM retailers WHERE retailer_name = ANY(CAST(:retailer_names AS text[])))",
     ]
-    params: dict = {"retailer_names": _customer_retailers(customer)}
+    names = customer if isinstance(customer, list) else [customer]
+    params: dict = {"retailer_names": [retailer for name in names for retailer in _customer_retailers(name)]}
     if sku:
         where_clauses.append("s.sku = :sku")
         params["sku"] = sku
@@ -1541,15 +1580,28 @@ def _dashboard_scope(
 # ============================================================
 
 
-def _latest_week_start(retailer: str | None) -> pd.Timestamp | None:
+def _retailer_scope(retailer: str | list[str] | None) -> tuple[list[str], dict]:
+    # WHERE clause + params limiting sellout rows to one retailer, several
+    # (the dashboard's ticked customers), or none (every retailer).
+    if not retailer:
+        return [], {}
+    if isinstance(retailer, list):
+        return (
+            ["retailer_id IN (SELECT retailer_id FROM retailers WHERE retailer_name = ANY(CAST(:retailer_names AS text[])))"],
+            {"retailer_names": retailer},
+        )
+    return (
+        ["retailer_id IN (SELECT retailer_id FROM retailers WHERE retailer_name = :retailer_name)"],
+        {"retailer_name": retailer},
+    )
+
+
+def _latest_week_start(retailer: str | list[str] | None) -> pd.Timestamp | None:
     # Most recent GENUINE week row's period_start -- for a week-over-week
     # comparison and the dashboard's week grid, which are inherently weekly
     # and must not silently substitute a monthly period.
-    where_clauses = ["period_type = 'week'"]
-    params: dict = {}
-    if retailer:
-        where_clauses.append("retailer_id IN (SELECT retailer_id FROM retailers WHERE retailer_name = :retailer_name)")
-        params["retailer_name"] = retailer
+    scope, params = _retailer_scope(retailer)
+    where_clauses = ["period_type = 'week'", *scope]
     query = text(
         f"""
         SELECT period_start FROM sellout
@@ -1563,11 +1615,12 @@ def _latest_week_start(retailer: str | None) -> pd.Timestamp | None:
     return pd.Timestamp(row[0]) if row else None
 
 
-def _latest_preferred_period(retailer: str | None) -> dict | None:
+def _latest_preferred_period(retailer: str | list[str] | None) -> dict | None:
     """
     The single most recent period from the effective-sellout view (monthly
     rows preferred over weekly for the same retailer+month), optionally
-    scoped to one retailer/channel -- None when there's no data. Returns
+    scoped to one retailer/channel or a list of them (the latest across all
+    of them) -- None when there's no data. Returns
     {"start": date, "end": date, "period_type": "week"|"month"}; period_end
     already correctly bounds coverage for both a week row and a month row,
     so callers never need to special-case granularity to know "how much of
@@ -1578,11 +1631,7 @@ def _latest_preferred_period(retailer: str | None) -> dict | None:
     anchors on the single latest period across every retailer, not just one
     customer's. Preserved rather than "fixed" as a drive-by here.
     """
-    where_clauses = []
-    params: dict = {}
-    if retailer:
-        where_clauses.append("retailer_id IN (SELECT retailer_id FROM retailers WHERE retailer_name = :retailer_name)")
-        params["retailer_name"] = retailer
+    where_clauses, params = _retailer_scope(retailer)
     where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
     # Only dates are read, so nothing is priced.
     params["revenue_estimates"] = NO_REVENUE_ESTIMATES
@@ -1603,15 +1652,12 @@ def _latest_preferred_period(retailer: str | None) -> dict | None:
     return {"start": row["period_start"], "end": row["period_end"], "period_type": row["period_type"]}
 
 
-def _earliest_period_start(retailer: str | None):
+def _earliest_period_start(retailer: str | list[str] | None):
     # Start of the first sellout row (week or month), scoped like
-    # _latest_preferred_period: one retailer/channel, or every retailer when
-    # None. None when there's no data.
-    where_sql = ""
-    params: dict = {}
-    if retailer:
-        where_sql = "WHERE retailer_id IN (SELECT retailer_id FROM retailers WHERE retailer_name = :retailer_name)"
-        params["retailer_name"] = retailer
+    # _latest_preferred_period: one retailer/channel, a list of them, or every
+    # retailer when None. None when there's no data.
+    scope, params = _retailer_scope(retailer)
+    where_sql = f"WHERE {' AND '.join(scope)}" if scope else ""
     query = text(f"SELECT MIN(period_start) AS earliest_start FROM sellout {where_sql}")
     with _get_read_engine().connect() as conn:
         row = conn.execute(query, params).mappings().first()
@@ -1631,7 +1677,10 @@ def _year_bounds(anchor: pd.Timestamp) -> tuple[pd.Timestamp, pd.Timestamp]:
 
 
 def get_default_date_range(
-    customer: str = DEFAULT_CUSTOMER, mode: str | None = None, period: str = "month"
+    customer: str = DEFAULT_CUSTOMER,
+    mode: str | None = None,
+    period: str = "month",
+    customers: list[str] | None = None,
 ) -> dict:
     # Bounds anchored to the latest available PREFERRED period (monthly rows
     # win over weekly for the same retailer+month) -- not just the latest
@@ -1642,13 +1691,25 @@ def get_default_date_range(
     # '6months'/'12months' count calendar months back from that period's
     # month. `period_type` in the response tells the frontend whether the
     # latest period is a week or a month.
+    # `customers` (the dashboard's ticked customers) widens this to all of
+    # them: the latest period any of them has loaded, and the earliest, so a
+    # customer whose data stops sooner (FairPrice at August) never holds the
+    # whole dashboard back. It replaces `customer` when given.
     month_spans = {"month": 1, "6months": 6, "12months": 12}
     if period not in ("week", *month_spans):
         raise ValueError(f"period must be one of {('week', *month_spans)}")
     if mode is not None and mode not in DASHBOARD_MODES:
         raise ValueError(f"mode must be one of {DASHBOARD_MODES}")
 
-    retailer = _retailer_for(customer, mode) if mode else None
+    names = _ticked_customers(customers)
+    if names:
+        retailer = (
+            [_retailer_for(name, mode) for name in names]
+            if mode
+            else [r for name in names for r in _customer_retailers(name)]
+        )
+    else:
+        retailer = _retailer_for(customer, mode) if mode else None
     latest = _latest_preferred_period(retailer)
     if latest is None:
         return {"start": None, "end": None, "period_type": None, "earliest_start": None, "latest_week_start": None}

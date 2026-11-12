@@ -3,20 +3,18 @@
 import { useState } from 'react';
 
 import SelectDropdown from '@/components/ui/SelectDropdown';
+import TableRow from '@/components/ui/TableRow';
 import useAtRisk from '@/hooks/useAtRisk';
 import { formatDoh, formatMonth, formatUnits } from '@/app/utils/inventoryForm';
 import { customerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
+import { AT_RISK_COLUMNS } from './columns';
 import { filterLabelClass, InventoryFilterCard, StatTag } from './InventoryChrome';
 import InventoryTableFrame, {
-  inventoryHeadRowClass,
-  inventoryTableClass,
-  inventoryTheadClass,
-  InventoryTableSkeleton,
-  inventoryRowClass,
-  inventoryTdClass,
-  inventoryThClass,
+  inventoryCellClass,
+  inventoryNumberCellClass,
+  inventoryRowHeightClass,
 } from './InventoryTableFrame';
 
 const RISK_LABELS = { below_min: 'Low stock', above_max: 'Overstock' };
@@ -26,7 +24,6 @@ const RISK_OPTIONS = [
   { value: 'below_min', label: 'Low stock (below min)' },
   { value: 'above_max', label: 'Overstock (above max)' },
 ];
-const numClass = 'text-right tabular-nums';
 
 /**
  * One list of every SKU at risk across all customers: days of holding below the
@@ -96,53 +93,26 @@ export default function AtRiskView({ customers, refreshKey }) {
         <InventoryTableFrame
           title="At-risk SKUs"
           rows={data?.items ?? []}
+          columns={AT_RISK_COLUMNS}
+          minWidth="68rem"
+          emptyMessage="No SKUs are at risk."
           loading={loading && !data}
           description="A SKU is at risk when its days of holding is outside the customer's min-max band. It leaves this list automatically once its days of holding is back inside the band."
         >
-          {(visible, monthHeader) => (
-            <table className={inventoryTableClass}>
-              <thead className={inventoryTheadClass}>
-                <tr className={inventoryHeadRowClass}>
-                  <th className={inventoryThClass}>Customer</th>
-                  {monthHeader}
-                  <th className={inventoryThClass}>SKU</th>
-                  <th className={inventoryThClass}>Product</th>
-                  <th className={cn(inventoryThClass, numClass)}>Ending stock</th>
-                  <th className={cn(inventoryThClass, numClass)}>DOH</th>
-                  <th className={cn(inventoryThClass, numClass)}>Min</th>
-                  <th className={cn(inventoryThClass, numClass)}>Max</th>
-                  <th className={cn(inventoryThClass, numClass)}>Days outside band</th>
-                  <th className={inventoryThClass}>Risk</th>
-                </tr>
-              </thead>
-              <tbody aria-busy={loading && !data}>
-                {!data ? (
-                  <InventoryTableSkeleton columns={10} />
-                ) : visible.length === 0 ? (
-                  <tr>
-                    <td className="px-2.5 py-3 text-deep-violet-blue/80" colSpan={10}>
-                      {data.items.length === 0 ? 'No SKUs are at risk.' : 'No rows match these filters.'}
-                    </td>
-                  </tr>
-                ) : (
-                  visible.map((item) => (
-                    <tr key={`${item.customer_id}-${item.sku}`} className={inventoryRowClass}>
-                      <td className={inventoryTdClass}>{customerLabel(item.customer_name)}</td>
-                      <td className={cn(inventoryTdClass, 'font-medium')}>{formatMonth(item.month)}</td>
-                      <td className={cn(inventoryTdClass, 'font-mono')}>{item.sku}</td>
-                      <td className={inventoryTdClass}>{item.product_name}</td>
-                      <td className={cn(inventoryTdClass, numClass)}>{formatUnits(item.ending_stock)}</td>
-                      <td className={cn(inventoryTdClass, numClass)}>{formatDoh(item.doh)}</td>
-                      <td className={cn(inventoryTdClass, numClass)}>{formatDoh(item.min_doh)}</td>
-                      <td className={cn(inventoryTdClass, numClass)}>{formatDoh(item.max_doh)}</td>
-                      <td className={cn(inventoryTdClass, numClass, 'font-medium')}>{formatDoh(item.days_outside_band)}</td>
-                      <td className={cn(inventoryTdClass, RISK_CLASSES[item.doh_status])}>{RISK_LABELS[item.doh_status]}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          )}
+          {(pageRows) => pageRows.map((item) => (
+            <TableRow key={`${item.customer_id}-${item.sku}`} className={inventoryRowHeightClass}>
+              <td className={inventoryCellClass}>{customerLabel(item.customer_name)}</td>
+              <td className={cn(inventoryCellClass, 'font-medium')}>{formatMonth(item.month)}</td>
+              <td className={cn(inventoryCellClass, 'font-mono')}>{item.sku}</td>
+              <td className={cn(inventoryCellClass, 'truncate')} title={item.product_name}>{item.product_name}</td>
+              <td className={inventoryNumberCellClass}>{formatUnits(item.ending_stock)}</td>
+              <td className={inventoryNumberCellClass}>{formatDoh(item.doh)}</td>
+              <td className={inventoryNumberCellClass}>{formatDoh(item.min_doh)}</td>
+              <td className={inventoryNumberCellClass}>{formatDoh(item.max_doh)}</td>
+              <td className={cn(inventoryNumberCellClass, 'font-medium')}>{formatDoh(item.days_outside_band)}</td>
+              <td className={cn(inventoryCellClass, RISK_CLASSES[item.doh_status])}>{RISK_LABELS[item.doh_status]}</td>
+            </TableRow>
+          ))}
         </InventoryTableFrame>
       )}
     </div>

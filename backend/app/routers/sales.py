@@ -165,11 +165,19 @@ def get_monthly_only(
     store: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
+    customers: str = "",
 ):
-    """{offline, online}: the months in the range with monthly-only data (no weekly breakdown), as YYYY-MM-01."""
+    """{offline, online}: the months in the range with monthly-only data (no weekly breakdown), as YYYY-MM-01.
+
+    `customers` (comma-separated, the ticked ones) reads across all of them instead of `customer`."""
     try:
         return sellout_service.get_monthly_only_months(
-            sku=sku, customer=customer, store=store, start_date=start_date, end_date=end_date
+            sku=sku,
+            customer=customer,
+            store=store,
+            start_date=start_date,
+            end_date=end_date,
+            customers=customers.split(","),
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -208,10 +216,19 @@ def get_period_comparison(
 
 @router.get("/default-date-range")
 def get_default_date_range(
-    customer: str = sellout_service.DEFAULT_CUSTOMER, mode: str | None = None, period: str = "month"
+    customer: str = sellout_service.DEFAULT_CUSTOMER,
+    mode: str | None = None,
+    period: str = "month",
+    customers: str = "",
 ):
+    """Latest loaded period for one customer, or across `customers` (comma-separated) when given."""
     try:
-        return sellout_service.get_default_date_range(customer=customer, mode=mode, period=period)
+        return sellout_service.get_default_date_range(
+            customer=customer,
+            mode=mode,
+            period=period,
+            customers=customers.split(","),
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except (SQLAlchemyError, config.ConfigError, GoogleAuthError) as e:

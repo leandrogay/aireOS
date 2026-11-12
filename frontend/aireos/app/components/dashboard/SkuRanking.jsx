@@ -1,22 +1,29 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { ArrowDown, ArrowUp } from 'lucide-react';
-import TableSkeleton from '@/components/ui/TableSkeleton';
+import { useEffect, useState } from 'react';
+import MobileRecordCard from '@/components/ui/MobileRecordCard';
+import RecordCardList from '@/components/ui/RecordCardList';
+import SegmentedControl from '@/components/ui/SegmentedControl';
+import SelectDropdown from '@/components/ui/SelectDropdown';
+import TableCard from '@/components/ui/TableCard';
+import TableCardHeader from '@/components/ui/TableCardHeader';
+import TableGrid from '@/components/ui/TableGrid';
+import TableRow from '@/components/ui/TableRow';
+import { cn } from '@/lib/utils';
 import { changePct, formatChangePct } from '@/app/utils/periodComparison';
-import { customerColor } from '@/app/utils/storeFormats';
+import { rankCustomers, rankSkus } from '@/app/utils/salesRanking';
 import { formatRevenue } from '@/app/utils/trendChart';
 import EstMark from '@/components/dashboard/EstMark';
-import SelectDropdown from '@/components/ui/SelectDropdown';
 
 const GRAINS = [
   { value: 'customer', label: 'Customers' },
   { value: 'product', label: 'Products' },
 ];
 
-const headerPillClass =
-  'inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide';
+const CELL_CLASS = 'px-4 py-2.5';
+// Volume, value and change are right-aligned so their digits line up.
+const NUMBER_CELL_CLASS = 'px-4 py-2.5 text-right tabular-nums';
+const ROW_CLASS = 'h-12 border-b border-lavander/80';
 
 function formatVolume(value) {
   return Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 });
@@ -28,155 +35,30 @@ function changeColorClass(pct) {
   return 'text-deep-violet-blue/60';
 }
 
-// Pill in a column header that opens a single-choice menu, same idea as the
-// forecast table's month filter. The menu is portalled because the table
-// scrolls and would clip a dropdown drawn inside it.
-function HeaderMenu({ id, label, active, openId, setOpenId, options, selected, onSelect }) {
-  const open = openId === id;
-  const buttonRef = useRef(null);
-  const menuRef = useRef(null);
-  const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
-
-  useEffect(() => {
-    if (!open || !buttonRef.current) return undefined;
-
-    const placeMenu = () => {
-      const rect = buttonRef.current.getBoundingClientRect();
-      setMenuPos({
-        top: rect.bottom + 6,
-        left: Math.min(rect.left, window.innerWidth - 180),
-      });
-    };
-
-    placeMenu();
-    window.addEventListener('resize', placeMenu);
-    window.addEventListener('scroll', placeMenu, true);
-    return () => {
-      window.removeEventListener('resize', placeMenu);
-      window.removeEventListener('scroll', placeMenu, true);
-    };
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return undefined;
-
-    const handlePointerDown = (event) => {
-      if (buttonRef.current?.contains(event.target) || menuRef.current?.contains(event.target)) return;
-      setOpenId(null);
-    };
-
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => document.removeEventListener('mousedown', handlePointerDown);
-  }, [open, setOpenId]);
-
-  return (
-    <div className="relative">
-      <button
-        ref={buttonRef}
-        type="button"
-        aria-expanded={open}
-        aria-haspopup="listbox"
-        onClick={() => setOpenId(open ? null : id)}
-        className={`${headerPillClass} ${
-          active
-            ? 'border-deep-violet-blue bg-deep-violet-blue text-white'
-            : 'border-lavander bg-white text-deep-violet-blue hover:bg-cream'
-        }`}
-      >
-        <span className="truncate">{label}</span>
-        <span className="text-[8px] leading-none" aria-hidden="true">{open ? '▲' : '▼'}</span>
-      </button>
-      {open && typeof document !== 'undefined' && createPortal(
-        <div
-          ref={menuRef}
-          role="listbox"
-          style={{ top: menuPos.top, left: menuPos.left }}
-          className="fixed z-50 min-w-[11rem] overflow-hidden rounded-xl border border-lavander bg-white py-1 shadow-lg"
-        >
-          {options.map((option) => {
-            const checked = selected === option.value;
-            return (
-              <button
-                key={option.value}
-                type="button"
-                role="option"
-                aria-selected={checked}
-                onClick={() => onSelect(option.value)}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] font-normal normal-case tracking-normal text-deep-violet-blue hover:bg-cream"
-              >
-                <span className="w-3 text-[10px]" aria-hidden="true">{checked ? '✓' : ''}</span>
-                {option.label}
-              </button>
-            );
-          })}
-        </div>,
-        document.body,
-      )}
-    </div>
-  );
+/**
+ * The ranking's columns (ui/TableGrid). Volume and Value sort the rows
+ * (`metric`); Change only shows with a "Compare to" baseline.
+ *
+ * @param {{ showCustomers: boolean, showChange: boolean, compareShort: string }} options
+ * @returns {object[]}
+ */
+function rankingColumns({ showCustomers, showChange, compareShort }) {
+  return [
+    { key: 'rank', label: 'Rank', width: '4.5rem' },
+    { key: 'name', label: showCustomers ? 'Customer' : 'Product' },
+    { key: 'volume', label: 'Volume', width: '7rem', align: 'right', sortField: 'volume' },
+    { key: 'value', label: 'Value', width: '8.5rem', align: 'right', sortField: 'value' },
+    showChange && { key: 'change', label: `Change ${compareShort}`, width: '8rem', align: 'right' },
+  ].filter(Boolean);
 }
 
-// Only the column the rows are sorted by shows an arrow. ▼ is highest
-// first, ▲ is lowest first. The other column has none, because its numbers
-// are not in that order.
-function SortHeader({ label, active, order, onClick }) {
-  const descending = order !== 'asc';
-  const Arrow = descending ? ArrowDown : ArrowUp;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={`${headerPillClass} ${
-        active
-          ? 'border-deep-violet-blue bg-deep-violet-blue text-white'
-          : 'border-lavander bg-white text-deep-violet-blue hover:bg-cream'
-      }`}
-    >
-      <span className="truncate">{label}</span>
-      {/* The slot stays either way, so the header does not jump when the
-          arrow moves to the other column. */}
-      <span className="inline-flex size-3 shrink-0 items-center justify-center" aria-hidden="true">
-        {active && <Arrow className="size-3" />}
-      </span>
-      <span className="sr-only">
-        {active
-          ? descending
-            ? ', highest first. Click to sort lowest first.'
-            : ', lowest first. Click to sort highest first.'
-          : ', not sorting. Click to sort highest first.'}
-      </span>
-    </button>
-  );
-}
+// A customer with nothing loaded for the period, in place of a 0 that would
+// read as no sales.
+const NO_DATA = <span className="text-deep-violet-blue/50">No data</span>;
 
-// One row per customer that sells through the active channel, highest metric
-// first unless order is 'asc'. A customer with no sales in the period stays,
-// at 0, so the bottom of the list is the quiet one. Rank is the row number
-// after that sort.
-function rankCustomers(rows, mode, metric, order, colorOrder) {
-  const shown = rows.filter((row) => (mode === 'online' ? row.has_online : row.has_offline));
-  const ranked = shown
-    .map((row) => {
-      const channel = row[mode] ?? { revenue: 0, units: 0 };
-      return {
-        customer: row.customer,
-        label: row.label,
-        color: customerColor(row.customer, colorOrder),
-        volume: channel.units ?? 0,
-        value: channel.revenue ?? 0,
-        estimatedValue: channel.estimated_revenue ?? 0,
-      };
-    });
-  ranked.sort((a, b) => {
-    const diff = order === 'asc' ? a[metric] - b[metric] : b[metric] - a[metric];
-    if (diff !== 0) return diff;
-    return a.label.localeCompare(b.label);
-  });
-  return ranked.map((row, index) => ({ ...row, rank: index + 1 }));
-}
-
-// Ranks SKUs for the selected period. With a "Compare to" baseline
+// Ranks SKUs for the selected period, sorted on the client
+// (utils/salesRanking.js) so a new sort moves the rows rather than reloading
+// them. With a "Compare to" baseline
 // (comparisonStart/comparisonEnd), the same ranking is fetched for the
 // baseline too and each SKU gets a change column for the chosen metric —
 // the ranking endpoint returns every SKU, so matching by code is complete.
@@ -205,11 +87,10 @@ export default function SkuRanking({
   // Products is one row per SKU, summed across whoever is ticked.
   const [rankBy, setRankBy] = useState('customer');
   // Before either header is clicked the rows are already ranked by sales
-  // value, highest first, so Value opens with the down arrow and Volume
-  // opens with none. Choosing the other column moves the arrow across.
+  // value, highest first, so Value opens with the up arrow (ui/SortHeader)
+  // and Volume opens with none. Choosing the other column moves the arrow across.
   const [metric, setMetric] = useState('value');
   const [order, setOrder] = useState('desc');
-  const [openHeader, setOpenHeader] = useState(null);
   const showCustomers = comparingCustomers && rankBy === 'customer';
   const customerKey = customers.join(',');
   const [skus, setSkus] = useState([]);
@@ -220,10 +101,10 @@ export default function SkuRanking({
   // No customer ticked: an empty table that says so. The last ranking stays
   // in state (the fetch is skipped), so it is hidden rather than shown stale.
   const noCustomers = customers.length === 0;
-  const shownSkus = noCustomers ? [] : skus;
+  const shownSkus = noCustomers ? [] : rankSkus(skus, metric, order);
+  // The sort (metric, order) is not part of it: the ranking holds every SKU
+  // either way, so sorting never fetches.
   const productRequestKey = JSON.stringify({
-    metric,
-    order,
     sku,
     mode,
     scope: comparingCustomers ? customerKey : customer,
@@ -245,7 +126,7 @@ export default function SkuRanking({
 
     async function fetchRanking() {
       async function fetchSkus(rangeStart, rangeEnd) {
-        const params = new URLSearchParams({ metric, order });
+        const params = new URLSearchParams();
         if (comparingCustomers) params.set('customers', customerKey);
         else params.set('customer', customer);
         if (sku) params.set('sku', sku);
@@ -285,7 +166,7 @@ export default function SkuRanking({
     return () => {
       cancelled = true;
     };
-  }, [rankingProducts, productRequestKey, dataVersion, metric, order, sku, mode, customer, customerKey, comparingCustomers, store, startDate, endDate, comparisonStart, comparisonEnd]);
+  }, [rankingProducts, productRequestKey, dataVersion, sku, mode, customer, customerKey, comparingCustomers, store, startDate, endDate, comparisonStart, comparisonEnd]);
 
   // While loading, the Change column follows the comparison being fetched,
   // not the previous result, so the skeleton has the columns the data will.
@@ -300,11 +181,8 @@ export default function SkuRanking({
   const tableError = noCustomers ? null : (showCustomers ? customerRowsError : error);
   const channelLabel = mode === 'online' ? 'Online' : 'Offline';
 
-  const headerClass = 'px-2.5 py-2 text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60';
-  const cellClass = 'px-2.5 py-2';
-  // Volume, value and change are right-aligned so their digits line up.
-  const numCellClass = `${cellClass} text-right tabular-nums`;
-
+  // Pressing the sorted column flips its order; the other column starts
+  // highest first.
   function clickSort(columnMetric) {
     if (metric !== columnMetric) {
       setMetric(columnMetric);
@@ -328,180 +206,125 @@ export default function SkuRanking({
     setOrder(nextOrder);
   }
 
-  const mobileRows = showCustomers ? customersRanked : skus;
+  const shownRows = showCustomers ? customersRanked : shownSkus;
+  const showRows = !tableLoading && !tableError;
+  const emptyMessage = noCustomers
+    ? 'Select at least one customer.'
+    : showCustomers
+      ? 'No customer sales for this channel in the selected period.'
+      : comparingCustomers
+        ? 'No product sales for this channel in the selected period.'
+        : 'No SKU data available yet.';
+  const emptyState = showRows && shownRows.length === 0 ? emptyMessage : null;
 
   return (
-    <section className="bg-white rounded-lg border border-lavander shadow-sm p-4">
-      <div className="mb-2">
-        <h3 className="font-serif text-base text-deep-violet-blue">
-          {showCustomers ? 'Customer Sales' : 'SKU Performance Ranking'}{' '}
-          <span className="font-sans text-sm font-normal text-deep-violet-blue/50">
-            ({channelLabel})
-          </span>
-        </h3>
-        {comparingCustomers && (
-          <p className="text-[11px] text-deep-violet-blue/70">
-            {showCustomers
+    <TableCard
+      variant="glass"
+      label={`${showCustomers ? 'Customer' : 'Product'} sales ranking`}
+      header={(
+        <TableCardHeader
+          title={<>
+            {showCustomers ? 'Customer Sales' : 'SKU Performance Ranking'}{' '}
+            <span className="font-sans text-sm font-normal text-deep-violet-blue/50">
+              ({channelLabel})
+            </span>
+          </>}
+          detail={comparingCustomers
+            ? (showCustomers
               ? "Showing each customer's total for the selected period."
-              : 'Showing each product, summed across the selected customers.'}
-          </p>
-        )}
-      </div>
-
-      {tableError && <p className="mb-2 text-sm text-red-600">{tableError}</p>}
-
-      <div className="mb-2 grid grid-cols-2 gap-2 sm:hidden">
-        {comparingCustomers && (
-          <div className="min-w-0">
-            <p className="mb-1 text-[11px] font-medium text-deep-violet-blue/65">Show</p>
-            <SelectDropdown
+              : 'Showing each product, summed across the selected customers.')
+            : null}
+          actions={comparingCustomers && (
+            <SegmentedControl
               value={rankBy}
               onChange={setRankBy}
               options={GRAINS}
               ariaLabel="Rank customers or products"
-              look="filter"
-              className="min-w-0"
             />
-          </div>
-        )}
-        <div className={comparingCustomers ? 'min-w-0' : 'col-span-2 min-w-0'}>
-          <p className="mb-1 text-[11px] font-medium text-deep-violet-blue/65">Sort by</p>
-          <SelectDropdown
-            value={mobileSort}
-            onChange={changeMobileSort}
-            options={mobileSortOptions}
-            ariaLabel="Sort sales ranking"
-            look="filter"
-            className="min-w-0"
-          />
-        </div>
+          )}
+        />
+      )}
+    >
+      {tableError && <p className="px-4 pb-2 text-sm text-red-600">{tableError}</p>}
+
+      {/* Phones: no column headers to press, so the sort is a dropdown. */}
+      <div className="px-4 pb-3 sm:hidden">
+        <p className="mb-1 text-[11px] font-medium text-deep-violet-blue/65">Sort by</p>
+        <SelectDropdown
+          value={mobileSort}
+          onChange={changeMobileSort}
+          options={mobileSortOptions}
+          ariaLabel="Sort sales ranking"
+          look="filter"
+          className="min-w-0"
+        />
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-lavander sm:hidden" aria-label={`${showCustomers ? 'Customer' : 'Product'} sales ranking`}>
+      <div className="border-t border-lavander bg-cream/25 p-3 sm:hidden">
         {tableLoading ? (
-          <p className="p-4 text-sm text-deep-violet-blue/60">Loading sales ranking...</p>
-        ) : !tableError && mobileRows.length === 0 ? (
-          <p className="p-4 text-sm text-deep-violet-blue/60">No sales for this channel in the selected period.</p>
-        ) : !tableError && mobileRows.map((row) => (
-          <article key={showCustomers ? row.customer : row.sku} className="border-b border-lavander/70 p-3 last:border-b-0 even:bg-cream/30">
-            <div className="flex min-w-0 items-start gap-2.5">
-              <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-lavander/50 text-xs font-semibold text-deep-violet-blue" aria-label={`Rank ${row.rank}`}>
-                {row.rank}
-              </span>
-              <span className="min-w-0 flex-1 break-words font-medium text-deep-violet-blue">
-                {showCustomers ? row.label : row.product_name}
-              </span>
-            </div>
-            <dl className="mt-3 grid grid-cols-2 gap-3 pl-8">
-              <div><dt className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">Volume</dt><dd>{formatVolume(row.volume)}</dd></div>
-              <div><dt className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">Value</dt><dd>{formatRevenue(row.value)}</dd></div>
-              {!showCustomers && baselineBySku && (
-                <div className="col-span-2"><dt className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">Change {compareShort}</dt><dd>{baselineBySku.get(row.sku)?.[metric] ? formatChangePct(changePct(row[metric], baselineBySku.get(row.sku)[metric])) : 'New'}</dd></div>
-              )}
-            </dl>
-          </article>
-        ))}
+          <div className="grid gap-2" aria-label="Loading sales ranking">
+            {Array.from({ length: 3 }, (_, index) => <div key={index} className="h-24 animate-pulse rounded-lg border border-lavander bg-white" />)}
+          </div>
+        ) : emptyState ? (
+          <p className="rounded-lg border border-lavander bg-white p-6 text-center text-sm text-deep-violet-blue/70">{emptyState}</p>
+        ) : showRows && (
+          <RecordCardList>
+            {shownRows.map((row) => (
+              <MobileRecordCard
+                key={showCustomers ? row.customer : row.sku}
+                title={showCustomers ? row.label : row.product_name}
+                subtitle={`Rank ${row.rank}`}
+                fields={[
+                  { label: 'Volume', value: row.hasData === false ? NO_DATA : formatVolume(row.volume) },
+                  { label: 'Value', value: row.hasData === false ? NO_DATA : formatRevenue(row.value) },
+                  ...(!showCustomers && baselineBySku
+                    ? [{ label: `Change ${compareShort}`, value: <ChangeText current={row[metric]} baseline={baselineBySku.get(row.sku)?.[metric] ?? 0} /> }]
+                    : []),
+                ]}
+              />
+            ))}
+          </RecordCardList>
+        )}
       </div>
 
-      <div className="hidden w-full overflow-x-auto rounded-md border border-lavander sm:block">
-          <table className="aire-table-rows w-full table-fixed text-left text-xs text-deep-violet-blue" aria-busy={tableLoading}>
-            <colgroup>
-              <col className="w-[8%]" />
-              <col className={showChange ? 'w-[36%]' : 'w-[44%]'} />
-              <col className={showChange ? 'w-[18%]' : 'w-[24%]'} />
-              <col className={showChange ? 'w-[20%]' : 'w-[24%]'} />
-              {showChange && <col className="w-[18%]" />}
-            </colgroup>
-            <thead className="bg-cream">
-              <tr className="border-b border-lavander">
-                <th className={headerClass}>Rank</th>
-                {comparingCustomers ? (
-                  <th className="px-1.5 py-2">
-                    <HeaderMenu
-                      id="grain"
-                      label={showCustomers ? 'Customer' : 'Product'}
-                      active={false}
-                      openId={openHeader}
-                      setOpenId={setOpenHeader}
-                      options={GRAINS}
-                      selected={rankBy}
-                      onSelect={(value) => {
-                        setRankBy(value);
-                        setOpenHeader(null);
-                      }}
-                    />
-                  </th>
-                ) : (
-                  <th className={headerClass}>Product</th>
-                )}
-                <th className="px-1.5 py-2 text-right" aria-sort={metric === 'volume' ? (order === 'asc' ? 'ascending' : 'descending') : 'none'}>
-                  <SortHeader
-                    label="Volume"
-                    active={metric === 'volume'}
-                    order={order}
-                    onClick={() => clickSort('volume')}
-                  />
-                </th>
-                <th className="px-1.5 py-2 text-right" aria-sort={metric === 'value' ? (order === 'asc' ? 'ascending' : 'descending') : 'none'}>
-                  <SortHeader
-                    label="Value"
-                    active={metric === 'value'}
-                    order={order}
-                    onClick={() => clickSort('value')}
-                  />
-                </th>
-                {showChange && <th className={`${headerClass} text-right`}>Change {compareShort}</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {tableLoading && (
-                <TableSkeleton
-                  columns={showChange ? 5 : 4}
-                  rows={5}
-                  className="h-auto border-lavander/80"
-                  cellClassName={cellClass}
-                />
+      <div className="hidden sm:block">
+        <TableGrid
+          columns={rankingColumns({ showCustomers, showChange, compareShort })}
+          minWidth="30rem"
+          sort={{ field: metric, direction: order }}
+          onSort={clickSort}
+          isLoading={tableLoading}
+          skeletonRows={5}
+          emptyState={emptyState}
+        >
+          {showRows && showCustomers && customersRanked.map((row) => (
+            <TableRow key={row.customer} className={ROW_CLASS}>
+              <td className={NUMBER_CELL_CLASS}>{row.rank}</td>
+              <td className={CELL_CLASS} title={row.label}>
+                <NameWithEst name={row.label} value={row.value} estimated={row.estimatedValue} color={row.color} />
+              </td>
+              <td className={NUMBER_CELL_CLASS}>{row.hasData ? formatVolume(row.volume) : NO_DATA}</td>
+              <td className={NUMBER_CELL_CLASS}>{row.hasData ? formatRevenue(row.value) : NO_DATA}</td>
+            </TableRow>
+          ))}
+          {showRows && !showCustomers && shownSkus.map((s) => (
+            <TableRow key={s.sku} className={ROW_CLASS}>
+              <td className={NUMBER_CELL_CLASS}>{s.rank}</td>
+              <td className={CELL_CLASS} title={s.product_name}>
+                <NameWithEst name={s.product_name} value={s.value} estimated={s.estimated_value} />
+              </td>
+              <td className={NUMBER_CELL_CLASS}>{formatVolume(s.volume)}</td>
+              <td className={NUMBER_CELL_CLASS}>{formatRevenue(s.value)}</td>
+              {baselineBySku && (
+                <td className={NUMBER_CELL_CLASS}>
+                  <ChangeText current={s[metric]} baseline={baselineBySku.get(s.sku)?.[metric] ?? 0} />
+                </td>
               )}
-              {!tableLoading && !tableError && (showCustomers ? customersRanked.length === 0 : shownSkus.length === 0) && (
-                <tr>
-                  <td className="px-2.5 py-6 text-center text-deep-violet-blue/50" colSpan={showChange ? 5 : 4}>
-                    {noCustomers
-                      ? 'Select at least one customer.'
-                      : showCustomers
-                      ? 'No customer sales for this channel in the selected period.'
-                      : comparingCustomers
-                        ? 'No product sales for this channel in the selected period.'
-                        : 'No SKU data available yet.'}
-                  </td>
-                </tr>
-              )}
-              {!tableLoading && !tableError && showCustomers && customersRanked.map((row) => (
-                <tr key={row.customer} className="border-b border-lavander/80 bg-white last:border-b-0 hover:bg-cream/50">
-                  <td className={`${cellClass} tabular-nums`}>{row.rank}</td>
-                  <td className={cellClass}>
-                    <NameWithEst name={row.label} value={row.value} estimated={row.estimatedValue} color={row.color} />
-                  </td>
-                  <td className={numCellClass}>{formatVolume(row.volume)}</td>
-                  <td className={numCellClass}>{formatRevenue(row.value)}</td>
-                </tr>
-              ))}
-              {!tableLoading && !tableError && !showCustomers && shownSkus.map((s) => (
-                <tr key={s.sku} className="border-b border-lavander/80 bg-white last:border-b-0 hover:bg-cream/50">
-                  <td className={`${cellClass} tabular-nums`}>{s.rank}</td>
-                  <td className={cellClass} title={s.product_name}>
-                    <NameWithEst name={s.product_name} value={s.value} estimated={s.estimated_value} />
-                  </td>
-                  <td className={numCellClass}>{formatVolume(s.volume)}</td>
-                  <td className={numCellClass}>{formatRevenue(s.value)}</td>
-                  {baselineBySku && (
-                    <SkuChange current={s[metric]} baseline={baselineBySku.get(s.sku)?.[metric] ?? 0} />
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+            </TableRow>
+          ))}
+        </TableGrid>
       </div>
-    </section>
+    </TableCard>
   );
 }
 
@@ -521,15 +344,15 @@ function NameWithEst({ name, value, estimated, color = null }) {
 
 // Change in the ranking's metric (value or volume) vs the baseline. A SKU
 // with no baseline sales shows "New" rather than an infinite percentage.
-function SkuChange({ current, baseline }) {
+function ChangeText({ current, baseline }) {
   if (!baseline) {
-    return <td className="px-2.5 py-2 text-right text-deep-violet-blue/60">{current ? 'New' : '—'}</td>;
+    return <span className="text-deep-violet-blue/60">{current ? 'New' : '—'}</span>;
   }
   const pct = changePct(current, baseline);
   return (
-    <td className={`px-2.5 py-2 text-right font-medium tabular-nums ${changeColorClass(pct)}`}>
+    <span className={cn('font-medium', changeColorClass(pct))}>
       {pct > 0 ? '▲ ' : pct < 0 ? '▼ ' : ''}
       {formatChangePct(pct)}
-    </td>
+    </span>
   );
 }

@@ -18,6 +18,7 @@
 export const CARD_SELECTOR = [
   '[data-page-heading]',
   '[data-slot="card"]',
+  '.aire-glass-surface',
   '.rounded-lg.border-lavander.bg-white.shadow-sm',
 ].join(', ');
 
@@ -50,7 +51,7 @@ export const PAGE_CASCADE = {
 // what a chart draws, its bars/lines and its y-axis (range, gridlines, tick
 // labels) move together on this one tween, so the axis never snaps while the
 // data glides. Seconds; matches the bars' first draw (trendChart BAR_ANIMATION).
-export const CHART_TRANSITION = { duration: 0.7, ease: 'easeOut' };
+export const CHART_TRANSITION = { duration: 0.45, ease: 'easeOut' };
 
 // Loading placeholders (hooks/useDelayedLoading). A placeholder that shows
 // for a frame or two before the chart replaces it reads as a flicker, so:
@@ -58,10 +59,48 @@ export const CHART_TRANSITION = { duration: 0.7, ease: 'easeOut' };
 // faster than this goes straight to the chart (its space is held, blank).
 // `minDuration`: once shown, seconds it stays at least, so it never blinks.
 // The placeholder fades in over 150ms (the `duration-150` class in the hook).
-export const PLACEHOLDER_TIMING = { delay: 0.2, minDuration: 0.4 };
+export const PLACEHOLDER_TIMING = { delay: 0.18, minDuration: 0.15 };
+
+// A card that joins a page already on screen (the mapping review's product
+// codes, once a product code column is chosen): it rises on the page spring,
+// and the cards below glide down to make room (`layout`, a calmer spring so
+// the whole column does not wobble) instead of jumping.
+export const CARD_REVEAL = {
+  y: PAGE_CASCADE.y,
+  transition: PAGE_CASCADE.transition,
+  layout: { type: 'spring', visualDuration: 0.3, bounce: 0.15 },
+};
+
+// Table rows and mobile record cards changing in place (components/ui/
+// rowMotion.js, read by TableRow, TableGrid, MobileRecordCard, RecordCardList
+// and ExpandableRow). A search or filter that drops rows fades them out
+// (`exit`), then the rows left glide up into the gap (`glide`). Rows it brings
+// back spring in where they belong, a little rise like the cards (`enter`, `y`),
+// while the rows around them glide aside. A re-sort glides the same rows to
+// their new places. A new page, or the first rows after the loading
+// placeholders, cascade in top to bottom (`stagger`, capped at `maxStaggered`
+// like the page cascade). `glide` is calmer than the page spring so a long table
+// doesn't wobble. The card's own height (a table not filling the screen) and a
+// row's details opening follow on `glide` too.
+export const TABLE_ROWS = {
+  y: 6,
+  stagger: 0.03,
+  maxStaggered: 10,
+  enter: { ...SPRING, opacity: QUICK_FADE },
+  exit: { duration: 0.15, ease: 'easeIn' },
+  glide: CARD_REVEAL.layout,
+};
 
 // A tab moves less than a page: it is the same place.
 export const TAB_CASCADE = {
   ...PAGE_CASCADE,
   y: 8,
 };
+
+// The refresh arrow (components/ui/RefreshButton). A reload that answers
+// in a few milliseconds would barely twitch it, which reads as a broken
+// button, so a click spins it at once and it always finishes whole turns:
+// at least `minTurns`, then on to the end of the turn it is in when the
+// reload lands, so it never snaps back mid-rotation. `turn` (seconds) must
+// match the spin class in RefreshButton (SPIN_CLASS).
+export const REFRESH_SPIN = { turn: 0.7, minTurns: 1 };

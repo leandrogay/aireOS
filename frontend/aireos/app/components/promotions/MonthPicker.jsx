@@ -16,6 +16,7 @@ import { formatMonthLabel, monthPeriod } from '@/app/utils/promotionForm';
 export default function MonthPicker({ value, onChange, invalid = false }) {
   return (
     <MonthDropdown
+      look="compact"
       value={value ? value.slice(0, 7) : ''}
       summary={formatMonthLabel(value)}
       invalid={invalid}

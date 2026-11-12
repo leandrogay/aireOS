@@ -4,6 +4,7 @@ import { ChangeFigure, ChangeValue, ComparisonNote } from '@/components/ui/Compa
 import { Skeleton } from '@/components/ui/skeleton';
 import { changePct, parseIso } from '@/app/utils/periodComparison';
 import { formatRevenue } from '@/app/utils/trendChart';
+import GlassPanel from '@/components/dashboard/GlassPanel';
 
 function formatDayMonth(iso) {
   return parseIso(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
@@ -126,7 +127,7 @@ export default function PeriodComparisonDetail({
   }
 
   return (
-    <div className="bg-white rounded-lg border border-lavander shadow-sm p-4 h-full">
+    <GlassPanel>
       <h3 className="mb-1 font-serif text-base text-deep-violet-blue">Comparison</h3>
 
       {!active && (
@@ -199,6 +200,6 @@ export default function PeriodComparisonDetail({
           {note && <ComparisonNote>{note}</ComparisonNote>}
         </>
       )}
-    </div>
+    </GlassPanel>
   );
 }

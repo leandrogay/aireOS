@@ -9,10 +9,11 @@ import pytest
 from conftest import FrozenDatetime
 
 from google.api_core.exceptions import ServiceUnavailable
+from google.genai import errors as genai_errors
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.util import Inches
 
-from app.services import assistant, forecast_summary, inventory_service, promotion_service, sellout_service
+from app.services import ai_models, assistant, forecast_summary, inventory_service, promotion_service, sellout_service
 
 
 def _freeze_clock(monkeypatch):
@@ -1073,6 +1074,7 @@ def test_a_bigquery_outage_inside_an_inventory_tool_is_also_a_tool_error_not_a_c
     def _boom(**kwargs):
         raise ServiceUnavailable("BigQuery is down")
 
+    monkeypatch.setattr(inventory_service, "list_customers", lambda: [{"customer_id": 1, "customer_name": "fairprice"}])
     monkeypatch.setattr(inventory_service, "get_customer_view", _boom)
 
     tool_call = _tool_call_response(("tu_1", "get_customer_inventory", {"customer": "fairprice"}))
@@ -4602,3 +4604,86 @@ def test_the_old_sheng_shiong_spelling_still_finds_sheng_siong():
 def test_sheng_siong_written_as_one_word_finds_the_customer():
     assert assistant._customer_slug("ShengSiong") == "sheng_siong"
 
+
+
+# ---- A model that is no longer available ----------------------------------------
+
+
+class GoneModels:
+    """Every call fails the way Vertex AI answers a retired model (or with `code`)."""
+
+    def __init__(self, code=404, status="NOT_FOUND"):
+        self.code, self.status = code, status
+
+    def generate_content(self, **kwargs):
+        raise genai_errors.ClientError(self.code, {"error": {"code": self.code, "message": "gone", "status": self.status}})
+
+
+def _install_gone_model(monkeypatch, code=404, status="NOT_FOUND"):
+    client = FakeClient([])
+    client.models = GoneModels(code, status)
+    monkeypatch.setattr(assistant, "get_client", lambda: client)
+    recorded = []
+    monkeypatch.setattr(ai_models, "record_unavailable", recorded.append)
+    return recorded
+
+
+def test_a_retired_model_is_a_model_unavailable_error_and_is_recorded(monkeypatch):
+    recorded = _install_gone_model(monkeypatch)
+
+    with pytest.raises(ai_models.ModelUnavailableError) as raised:
+        assistant.ask("How did we do last week?", history=None, customer="fairprice")
+
+    assert raised.value.feature == "assistant"
+    assert recorded == [raised.value]
+
+
+def test_the_digest_on_a_retired_model_is_a_model_unavailable_error(monkeypatch):
+    recorded = _install_gone_model(monkeypatch)
+    monkeypatch.setattr(assistant, "_gather_digest", lambda customer: {})
+
+    with pytest.raises(ai_models.ModelUnavailableError):
+        assistant.generate_digest("fairprice")
+
+    assert len(recorded) == 1
+
+
+def test_other_gemini_client_errors_pass_through_unrecorded(monkeypatch):
+    recorded = _install_gone_model(monkeypatch, code=429, status="RESOURCE_EXHAUSTED")
+
+    with pytest.raises(genai_errors.ClientError):
+        assistant.ask("How did we do last week?", history=None, customer="fairprice")
+
+    assert recorded == []
+
+
+def test_ask_route_returns_503_with_the_settings_to_change(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    def gone(**kwargs):
+        raise ai_models.ModelUnavailableError("assistant")
+
+    monkeypatch.setattr(assistant, "ask", gone)
+
+    response = TestClient(app).post("/api/assistant/ask", json={"question": "hi", "customer": "fairprice"})
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == ai_models.unavailable_message(ai_models.config.GEMINI_ASSISTANT_MODEL)
+
+
+def test_digest_route_returns_503_with_the_settings_to_change(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    def gone(customer):
+        raise ai_models.ModelUnavailableError("assistant")
+
+    monkeypatch.setattr(assistant, "generate_digest", gone)
+
+    response = TestClient(app).post("/api/assistant/digest", json={"customer": "fairprice"})
+
+    assert response.status_code == 503
+    assert "is no longer available" in response.json()["detail"]

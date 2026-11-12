@@ -2,8 +2,6 @@
 
 import { useState } from 'react';
 
-import { cardClass } from '@/components/ui/formStyles';
-import RefreshButton from '@/components/ui/RefreshButton';
 import Toast from '@/components/ui/Toast';
 import useDohSettings from '@/hooks/useDohSettings';
 import useToast from '@/hooks/useToast';
@@ -17,9 +15,10 @@ import DohThresholdForm from './DohThresholdForm';
 /**
  * The DOH Settings page: every customer's current thresholds and alert
  * toggle, and an edit dialog (opened from a row) to change one customer's
- * thresholds or reset them to the global default. Each write returns the
- * customer's new settings row, which replaces that row in place; the refresh
- * button refetches everything.
+ * thresholds or reset them to the global default, in the shared list table
+ * (DohSettingsTable on DataTable). Each write returns the customer's new
+ * settings row, which replaces that row in place; the refresh button
+ * refetches everything.
  */
 export default function DohSettingsView() {
   const [refreshKey, setRefreshKey] = useState(0);
@@ -67,39 +66,20 @@ export default function DohSettingsView() {
 
   return (
     <div className="grid min-w-0 gap-3">
-      <section className={`${cardClass} min-w-0`}>
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <h2 className="text-sm font-medium text-deep-violet-blue">Customer DOH thresholds</h2>
-          <RefreshButton
-            onClick={() => setRefreshKey((key) => key + 1)}
-            isRefreshing={loading}
-            label="Refresh DOH settings"
-          />
-        </div>
+      <p className="text-sm text-deep-violet-blue/70">
+        Customers without thresholds of their own use the Global Default.
+      </p>
 
-        {error && (
-          <p className="mb-2 text-sm text-red-600" role="alert">
-            {error}
-          </p>
-        )}
-
-        {!loading && data.length === 0 ? (
-          !error && <p className="text-sm text-deep-violet-blue/70">No customers found.</p>
-        ) : (
-          <DohSettingsTable
-            rows={data}
-            loading={loading && data.length === 0}
-            editingId={editingId}
-            pendingAlerts={pendingAlerts}
-            onEdit={handleEdit}
-            onToggleAlert={handleToggleAlert}
-          />
-        )}
-
-        <p className="mt-2 text-xs text-deep-violet-blue/60">
-          Customers without thresholds of their own use the Global Default.
-        </p>
-      </section>
+      <DohSettingsTable
+        rows={data}
+        loading={loading}
+        error={error}
+        editingId={editingId}
+        pendingAlerts={pendingAlerts}
+        onEdit={handleEdit}
+        onToggleAlert={handleToggleAlert}
+        onRefresh={() => setRefreshKey((key) => key + 1)}
+      />
 
       {editingRow && (
         <DohThresholdForm

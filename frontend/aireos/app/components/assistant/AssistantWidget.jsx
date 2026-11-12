@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
-import { Maximize2, MessageCircle, Minimize2, X } from 'lucide-react';
+import { AlertCircle, Maximize2, MessageCircle, Minimize2, X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -19,9 +19,12 @@ import {
 } from '@/components/ui/message-scroller';
 import { POPUP_SHADOW_CLASS } from '@/components/ui/popupShadow';
 import { cn } from '@/lib/utils';
+import { modelNotice } from '@/app/utils/aiModels';
+import useAiModelStatus from '@/hooks/useAiModelStatus';
 import useAssistant, { ALL_CUSTOMERS } from '@/hooks/useAssistant';
 import useCustomerOptions from '@/hooks/useCustomerOptions';
 import AssistantMessage from './AssistantMessage';
+import AssistantUnavailable from './AssistantUnavailable';
 // The words shown while the assistant works ("Pondering…"); edit the list there.
 import THINKING_WORDS from './thinkingWords';
 
@@ -156,7 +159,7 @@ function DigestChips({ options, onAsk, loading }) {
 }
 
 // The question box.
-function QuestionForm({ onAsk, loading }) {
+function QuestionForm({ onAsk, loading, unavailable }) {
   const [draft, setDraft] = useState('');
 
   function handleSubmit(e) {
@@ -173,12 +176,12 @@ function QuestionForm({ onAsk, loading }) {
         type="text"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
-        placeholder="Ask a business question..."
-        disabled={loading}
+        placeholder={unavailable ? 'The Assistant is unavailable' : 'Ask a business question...'}
+        disabled={loading || unavailable}
         aria-label="Business question"
         className="border-violet text-xs text-deep-violet-blue md:text-xs"
       />
-      <Button type="submit" size="sm" disabled={loading || !draft.trim()} className={primaryButtonClass}>
+      <Button type="submit" size="sm" disabled={loading || unavailable || !draft.trim()} className={primaryButtonClass}>
         Ask
       </Button>
     </form>
@@ -222,6 +225,13 @@ export default function AssistantWidget() {
     enabled: pathname !== '/login',
   });
   const reduceMotion = useReducedMotion();
+  // Read again on each opening and after each failed question, so a question
+  // that just found the model retired turns the panel into its unavailable state.
+  const { data: modelStatus } = useAiModelStatus({
+    refreshKey: `${timesOpened}|${error || ''}`,
+    enabled: pathname !== '/login',
+  });
+  const unavailable = modelNotice(modelStatus, 'assistant');
 
   function toggleOpen() {
     if (!open) {
@@ -304,6 +314,8 @@ export default function AssistantWidget() {
               </div>
             </CardHeader>
 
+            {unavailable && <AssistantUnavailable title={unavailable.text} message={unavailable.detail} />}
+
             <MessageScrollerProvider autoScroll defaultScrollPosition="end">
               <FollowNewQuestions messages={messages} />
               <CardContent className="min-h-0 flex-1 overflow-hidden px-0">
@@ -315,7 +327,7 @@ export default function AssistantWidget() {
                           <p className="text-xs text-deep-violet-blue/60">
                             Ask a plain-English question about your sales or inventory data
                           </p>
-                          <DigestChips options={customerOptions} onAsk={askDigest} loading={loading} />
+                          <DigestChips options={customerOptions} onAsk={askDigest} loading={loading || Boolean(unavailable)} />
                         </MessageScrollerItem>
                       )}
                       {messages.map((message, i) => (
@@ -339,11 +351,16 @@ export default function AssistantWidget() {
                           <ThinkingIndicator />
                         </MessageScrollerItem>
                       )}
-                      {error && (
+                      {/* The unavailable banner already says it: one problem, one message. */}
+                      {error && !unavailable && (
                         <MessageScrollerItem>
-                          <p role="alert" className="text-xs text-red-600">
-                            {error}
-                          </p>
+                          <div
+                            role="alert"
+                            className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-xs leading-relaxed text-red-800"
+                          >
+                            <AlertCircle aria-hidden="true" className="mt-px size-4 shrink-0 text-red-600" />
+                            <span>{error}</span>
+                          </div>
                         </MessageScrollerItem>
                       )}
                     </MessageScrollerContent>
@@ -353,7 +370,7 @@ export default function AssistantWidget() {
               </CardContent>
 
               <CardFooter className="border-lavander bg-white p-2">
-                <QuestionForm onAsk={askQuestion} loading={loading} />
+                <QuestionForm onAsk={askQuestion} loading={loading} unavailable={Boolean(unavailable)} />
               </CardFooter>
             </MessageScrollerProvider>
           </MotionCard>

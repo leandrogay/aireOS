@@ -1,6 +1,5 @@
 import json
 import hashlib
-import calendar
 import datetime
 from pathlib import Path
 from typing import Any
@@ -438,23 +437,9 @@ def annotate_upload(blob_path: str, annotations: dict[str, str]) -> bool:
         return False
 
 
-def months_before(moment: datetime.datetime, months: int) -> datetime.datetime:
+def list_uploads() -> list[dict]:
     """
-    The same day and time `months` calendar months earlier, clamped to the end
-    of a shorter month (31 May minus 3 months is 28 Feb), so "the last 3
-    months" means what a person reading the upload page expects.
-    """
-    month_index = moment.year * 12 + (moment.month - 1) - months
-    year, month = divmod(month_index, 12)
-    month += 1
-    day = min(moment.day, calendar.monthrange(year, month)[1])
-    return moment.replace(year=year, month=month, day=day)
-
-
-def list_uploads(limit: int = 50, since: datetime.datetime | None = None) -> list[dict]:
-    """
-    Recent uploads, newest first, optionally only those created at or after
-    `since` (timezone-aware UTC, like GCS times).
+    Every upload, newest first (upload_history searches and pages them).
 
     The bucket is the record of what has been uploaded -- there is no upload
     table -- so this reads the blob listing and its custom metadata. Sorting
@@ -475,16 +460,11 @@ def list_uploads(limit: int = 50, since: datetime.datetime | None = None) -> lis
     # Cloud Console writes when a folder is created -- not an uploaded file.
     blobs = [blob for blob in blobs if not blob.name.endswith("/")]
 
-    # An undated blob cannot be shown to fall inside the window, so a cutoff
-    # leaves it out.
-    if since is not None:
-        blobs = [blob for blob in blobs if blob.time_created and blob.time_created >= since]
-
     # GCS time_created is timezone-aware UTC, so the fallback must be too.
     oldest = datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
     blobs.sort(key=lambda blob: blob.time_created or oldest, reverse=True)
 
-    return [_upload_row(blob) for blob in blobs[:limit]]
+    return [_upload_row(blob) for blob in blobs]
 
 
 # ---- Mapping contracts: JSON objects in the bucket --------------------------
@@ -504,6 +484,22 @@ def confirmed_mapping_path(fingerprint: str) -> str:
 def history_mapping_path(fingerprint: str, version: int) -> str:
     """Where a superseded confirmed version is kept (see move_pending_mapping_to_confirmed)."""
     return f"{MAPPING_PREFIX}history/{fingerprint}/v{version}.json"
+
+
+def list_mapping_history_paths(fingerprint: str) -> list[str]:
+    """The archived versions belonging to one exact nomenclature."""
+    prefix = f"{MAPPING_PREFIX}history/{fingerprint}/"
+    try:
+        return [
+            blob.name for blob in get_storage_client().list_blobs(BUCKET_NAME, prefix=prefix)
+            if blob.name.startswith(prefix) and blob.name.endswith(".json")
+        ]
+    except gcloud_exceptions.NotFound:
+        return []
+    except gcloud_exceptions.Forbidden as e:
+        raise GCSPermissionError(f"List denied on {prefix}. Details: {e}") from e
+    except Exception as e:
+        raise GCSUploadError(f"Failed listing {prefix}: {e}") from e
 
 
 def _blob(path: str):

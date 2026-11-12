@@ -9,6 +9,7 @@ import { FormatTrendChart } from "@/components/dashboard/TrendChart"
 import { formatDateTime } from "@/lib/formatDate"
 import { relabelFormatRows } from "@/app/utils/storeFormats"
 import useDelayedLoading from "@/hooks/useDelayedLoading"
+import GlassPanel from "@/components/dashboard/GlassPanel"
 
 const METRIC_OPTIONS = [
   { value: "units", label: "Volume" },
@@ -72,7 +73,7 @@ export default function RevenueTrendCard({
   })
 
   return (
-    <div className="bg-white rounded-lg border border-lavander shadow-sm p-4 h-full flex flex-col">
+    <GlassPanel className="flex flex-col">
       {/* Top row: what data (Period, Compare to) on the left, lined up on
           their bottom edge, and which channel in the card's top right corner
           (self-start), level with the "Period" label. On a phone the channel
@@ -86,13 +87,14 @@ export default function RevenueTrendCard({
       {/* How to draw it: the view switches on their own line, on the right,
           just above the chart they change. */}
       <div className="mb-2 flex flex-wrap items-center justify-end gap-2">
-        <SegmentedControl value={metric} onChange={onMetricChange} options={METRIC_OPTIONS} ariaLabel="Metric" />
+        <SegmentedControl look="glass" value={metric} onChange={onMetricChange} options={METRIC_OPTIONS} ariaLabel="Metric" />
         {/* By week is disabled (faded) when no month in the range has weekly
             rows (page.js weekAvailable). */}
         {/* 152px, as wide as the Offline / Online switch above it
             (ChannelSwitch), so the two line up on both edges; wide enough
             for "By month" in an equal half. */}
         <SegmentedControl
+          look="glass"
           fullWidth
           className="w-[152px]"
           value={granularity}
@@ -158,6 +160,6 @@ export default function RevenueTrendCard({
           <ChartFooter lastUpdated={lastUpdated} />
         </div>
       )}
-    </div>
+    </GlassPanel>
   )
 }

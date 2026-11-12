@@ -16,6 +16,7 @@ import {
 
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { glassSurfaceClass } from '@/components/ui/surfaceStyles';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import ChartLoading from '@/components/ui/ChartLoading';
 import LineChartSkeleton from '@/components/ui/LineChartSkeleton';
@@ -25,9 +26,7 @@ import ForecastConfidenceDetails from '@/components/forecast/ForecastConfidenceD
 import ForecastPointDetails from '@/components/forecast/ForecastPointDetails';
 import ForecastPromoPanel from '@/components/forecast/ForecastPromoPanel';
 import ForecastPromoToggle from '@/components/forecast/ForecastPromoToggle';
-import ForecastTable from '@/components/forecast/ForecastTable';
 import SeriesDot from '@/components/forecast/SeriesDot';
-import ForecastYearTotals from '@/components/forecast/ForecastYearTotals';
 import ForecastLegendFooter from '@/components/forecast/ForecastLegendFooter';
 import {
   FORECAST_SERIES,
@@ -369,23 +368,20 @@ export default function ForecastChart({
   // any SKU in scope (greys out that pill; per SKU and tier, from the
   // page). undefined falls back to "no value in view". `confidenceDots`
   // draws the Current dots by this month's confidence (one SKU and
-  // customer). `notes` are extra lines under the legend, `modelLabel` names
-  // the model in the table, `emptyMessage` replaces the no-data text.
+  // customer). `notes` are extra lines under the legend, `emptyMessage`
+  // replaces the no-data text.
   initialMissingHint,
   previousMissing,
   confidenceDots = false,
   notes = [],
-  modelLabel = '',
   emptyMessage = 'No forecast data matches these filters.',
-  yearTotals = [],
-  yearTotalsLoading = false,
-  horizonVolume = null,
   loading = false,
   scenario = null,
-  // Scenario builder only (all default off, so /forecast is unchanged):
-  // `toolbar` renders under the card header, `summary` right under the
-  // chart; `yearTable` replaces ForecastYearTotals. Both pages are volume
-  // only (cartons): there is no revenue view.
+  // Scenario builder only (all default off): `toolbar` renders under the
+  // card header, `summary` right under the chart, `yearTable` under that.
+  // /forecast shows its year totals and monthly table as cards of their own
+  // under this one, never inside it. Both pages are volume only (cartons):
+  // there is no revenue view.
   toolbar = null,
   summary = null,
   yearTable = null,
@@ -605,7 +601,7 @@ export default function ForecastChart({
   }
 
   return (
-    <Card className="min-w-0 max-w-full overflow-visible rounded-lg border border-lavander bg-white text-deep-violet-blue shadow-sm ring-0">
+    <Card className={cn(glassSurfaceClass, 'min-w-0 max-w-full overflow-visible text-deep-violet-blue')}>
       <CardHeader className="flex flex-row items-start justify-between gap-3 pb-1">
         <div className="min-w-0 space-y-1.5">
           <CardTitle className="font-serif text-base font-normal text-deep-violet-blue group-data-[size=sm]/card:text-base">
@@ -960,26 +956,7 @@ export default function ForecastChart({
               />
             </div>
             {summary}
-            {/* `loading` too: while the page refetches, `points` still hold
-                the previous filter's months, and a year total from those
-                would be wrong rather than merely stale. */}
-            {yearTable ?? (
-              <ForecastYearTotals
-                years={yearTotals}
-                loading={yearTotalsLoading || loading}
-                horizonVolume={horizonVolume}
-              />
-            )}
-
-            {/* The Scenario builder reviews changes in its comparison and
-                blocks tables instead, so the monthly table is /forecast only. */}
-            {scenario ? null : (
-              <ForecastTable
-                points={points}
-                visibleSeries={shownSeries}
-                modelLabel={modelLabel}
-              />
-            )}
+            {yearTable}
           </>
         )}
       </CardContent>

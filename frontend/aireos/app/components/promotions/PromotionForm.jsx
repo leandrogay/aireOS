@@ -116,25 +116,25 @@ function PromotionMechanicField({ form, onChange, error }) {
         Mechanic
         <RequiredMark />
       </legend>
-      <select
+      <SelectDropdown
+        ariaLabel="Promotion mechanic"
+        look="compact"
         value={form.mechanicType}
-        onChange={(event) => onChange({
-          mechanicType: event.target.value,
+        onChange={(mechanicType) => onChange({
+          mechanicType,
           buyQuantity: '',
           getQuantity: '',
           discountPercent: '',
           legacyMechanic: '',
         })}
-        className={cn(inputClass, error && invalidInputClass)}
-        aria-invalid={Boolean(error)}
-        aria-label="Promotion mechanic"
-        required={!form.legacyMechanic}
-      >
-        <option value="">Choose a mechanic</option>
-        <option value="buy_get_free">Buy [items], get [free items]</option>
-        <option value="buy_get_percent">Buy [items], get [discount %] off one item</option>
-        <option value="percent_off">Get [discount %] off every item</option>
-      </select>
+        options={[
+          { value: 'buy_get_free', label: 'Buy [items], get [free items]' },
+          { value: 'buy_get_percent', label: 'Buy [items], get [discount %] off one item' },
+          { value: 'percent_off', label: 'Get [discount %] off every item' },
+        ]}
+        placeholder="Choose a mechanic"
+        invalid={Boolean(error)}
+      />
       {!form.legacyMechanic && (
         <p className={hintClass}>Choose an offer, then enter the bracketed values below.</p>
       )}
@@ -422,6 +422,7 @@ export default function PromotionForm({
               </legend>
               <MultiSelectDropdown
                 ariaLabel="Retailers"
+                look="compact"
                 allLabel="All retailers"
                 noneMeansAll={false}
                 options={retailerOptions.map((retailer) => ({
@@ -452,6 +453,7 @@ export default function PromotionForm({
                   name or code. */}
               <MultiSelectDropdown
                 ariaLabel="Stores"
+                look="compact"
                 allLabel="All stores"
                 noneMeansAll={false}
                 options={storeOptions.map((store) => ({
@@ -506,6 +508,7 @@ export default function PromotionForm({
               </legend>
               <SelectDropdown
                 ariaLabel="Promo type"
+                look="compact"
                 value={form.promoType}
                 onChange={(promoType) => patchForm(promoTypePatch(form, promoType))}
                 options={PROMO_TYPES}
@@ -616,6 +619,7 @@ export default function PromotionForm({
             </legend>
             <MultiSelectDropdown
               ariaLabel="SKU range"
+              look="compact"
               allLabel="All SKU ranges"
               noneMeansAll={false}
               options={skuRangeOptions.map((range) => ({ value: range, label: range }))}

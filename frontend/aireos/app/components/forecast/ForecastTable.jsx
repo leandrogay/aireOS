@@ -1,8 +1,21 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
+import { ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
+import { motion, useReducedMotion } from 'motion/react';
 
+import { Button } from '@/components/ui/button';
 import HeaderCheckboxFilter from '@/components/ui/HeaderCheckboxFilter';
+import MobileRecordCard from '@/components/ui/MobileRecordCard';
+import RecordCardList from '@/components/ui/RecordCardList';
+import TableCard from '@/components/ui/TableCard';
+import TableCardHeader, { TABLE_HEADER_BUTTON_CLASS } from '@/components/ui/TableCardHeader';
+import TableGrid from '@/components/ui/TableGrid';
+import TableRow from '@/components/ui/TableRow';
+import { cn } from '@/lib/utils';
+import { TABLE_ROWS } from '@/app/config/transitions';
+import useAnimatedHeight from '@/hooks/useAnimatedHeight';
+import useMediaQuery from '@/hooks/useMediaQuery';
 import {
   TABLE_MISSING_HINT,
   TABLE_MISSING_LABEL,
@@ -10,6 +23,12 @@ import {
   TABLE_PARTIAL_LABEL,
 } from '@/app/utils/forecastLineText';
 import { FORECAST_SERIES, uniqueMonthOptions } from '@/app/utils/forecastView';
+
+const NO_MATCHES = 'No rows match these table filters.';
+
+// Collapsed, the table and the phone cards show this much and scroll inside.
+const COLLAPSED_TABLE = '28vh';
+const COLLAPSED_CARDS = '55vh';
 
 // Cartons, whole numbers.
 function formatTableValue(value) {
@@ -50,147 +69,130 @@ function CellValue({ point, seriesKey }) {
  */
 export default function ForecastTable({ points, visibleSeries, modelLabel = '' }) {
   const [monthFilter, setMonthFilter] = useState([]);
-  const [openFilter, setOpenFilter] = useState(null);
+  // The phone view's Month filter, above the cards (the table's is in its header).
+  const [openMobileFilter, setOpenMobileFilter] = useState(null);
   const [expanded, setExpanded] = useState(false);
-  const monthOptions = useMemo(() => uniqueMonthOptions(points), [points]);
+  const mobile = useMediaQuery('(max-width: 639px)');
+  const reduceMotion = useReducedMotion();
+  // The phone cards' box eases open and shut like the table (TableGrid
+  // animateHeight + maxHeight).
+  const { frameRef: cardsFrameRef, contentRef: cardsContentRef, height: cardsHeight } = useAnimatedHeight({
+    enabled: mobile && !reduceMotion,
+    transition: TABLE_ROWS.glide,
+    maxHeight: expanded ? null : COLLAPSED_CARDS,
+  });
+  const monthOptions = uniqueMonthOptions(points);
   const visibleColumns = FORECAST_SERIES.filter((series) => visibleSeries[series.key]);
 
-  const activeMonthFilter = useMemo(() => {
-    const valid = new Set(monthOptions.map((option) => option.value));
-    return monthFilter.filter((value) => valid.has(value));
-  }, [monthFilter, monthOptions]);
-  const hasTableFilters = activeMonthFilter.length > 0;
+  const validMonths = new Set(monthOptions.map((option) => option.value));
+  const activeMonthFilter = monthFilter.filter((value) => validMonths.has(value));
+  const rows = activeMonthFilter.length
+    ? points.filter((point) => activeMonthFilter.includes(point.month_year))
+    : points;
 
-  const rows = useMemo(
-    () =>
-      points.filter((point) => {
-        if (activeMonthFilter.length && !activeMonthFilter.includes(point.month_year)) return false;
-        return true;
-      }),
-    [points, activeMonthFilter]
-  );
-
-  function clearTableFilters() {
-    setMonthFilter([]);
-    setOpenFilter(null);
-  }
+  const columns = [
+    {
+      key: 'month',
+      label: 'Month',
+      width: '16%',
+      filter: { selected: activeMonthFilter, options: monthOptions, onChange: setMonthFilter },
+    },
+    ...visibleColumns.map((series) => ({ key: series.key, label: series.label, align: 'right' })),
+  ];
 
   return (
-    <section className="min-w-0 bg-white">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h3 className="font-serif text-base text-deep-violet-blue">Monthly values</h3>
-          <p className="text-[11px] text-deep-violet-blue/70">
-            {rows.length} of {points.length} months shown
-            {modelLabel ? ` · ${modelLabel}` : ''}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="sm:hidden">
-            <HeaderCheckboxFilter
-              id="month-mobile"
-              label="Month"
-              selected={activeMonthFilter}
-              options={monthOptions}
-              openId={openFilter}
-              setOpenId={setOpenFilter}
-              onChange={setMonthFilter}
-            />
-          </div>
-          <button
-            type="button"
-            onClick={clearTableFilters}
-            disabled={!hasTableFilters}
-            className="rounded-md border border-deep-violet-blue/30 bg-white px-3 py-1 text-xs font-medium text-deep-violet-blue transition hover:bg-cream disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Clear
-          </button>
-          <button
-            type="button"
-            onClick={() => setExpanded((current) => !current)}
-            className="rounded-md border border-deep-violet-blue/30 bg-white px-3 py-1 text-xs font-medium text-deep-violet-blue transition hover:bg-cream"
-          >
-            {expanded ? 'Collapse' : 'Expand'}
-          </button>
-        </div>
-      </div>
-
-      <div className={`${expanded ? '' : 'max-h-[55vh]'} overflow-y-auto rounded-lg border border-lavander sm:hidden`} aria-label="Monthly forecast values">
-        {rows.length === 0 ? (
-          <p className="p-4 text-sm text-deep-violet-blue/70">No rows match these table filters.</p>
-        ) : rows.map((point) => (
-          <article key={point.month_year} className="border-b border-lavander/70 p-3 last:border-b-0 even:bg-cream/30">
-            <h4 className="mb-2 font-semibold text-deep-violet-blue">{point.label}</h4>
-            <dl className="grid grid-cols-2 gap-x-3 gap-y-2">
-              {visibleColumns.map((series) => (
-                <div key={series.key} className="min-w-0">
-                  <dt className="text-[10px] font-semibold uppercase leading-tight tracking-wide text-deep-violet-blue/60">{series.label}</dt>
-                  <dd className="mt-0.5 text-sm font-medium tabular-nums text-deep-violet-blue"><CellValue point={point} seriesKey={series.key} /></dd>
-                </div>
-              ))}
-            </dl>
-          </article>
-        ))}
-      </div>
-
-      <div className="hidden min-w-0 overflow-x-auto rounded-md border border-lavander sm:block">
-        <div className={expanded ? '' : 'max-h-[28vh] overflow-y-auto'}>
-          <table className="aire-table-rows w-full min-w-[44rem] table-fixed text-left text-xs text-deep-violet-blue">
-            <colgroup>
-              <col className="w-[16%]" />
-              {visibleColumns.map((series) => (
-                <col key={series.key} />
-              ))}
-            </colgroup>
-            <thead className="sticky top-0 z-10 bg-cream">
-              <tr className="border-b border-lavander">
-                <th className="px-1.5 py-2">
-                  <HeaderCheckboxFilter
-                    id="month"
-                    label="Month"
-                    selected={activeMonthFilter}
-                    options={monthOptions}
-                    openId={openFilter}
-                    setOpenId={setOpenFilter}
-                    onChange={setMonthFilter}
-                  />
-                </th>
-                {visibleColumns.map((series) => (
-                  <th
-                    key={series.key}
-                    className="px-2.5 py-2 text-right text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/60"
-                  >
-                    {series.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 ? (
-                <tr>
-                  <td className="px-2.5 py-3 text-deep-violet-blue/80" colSpan={visibleColumns.length + 1}>
-                    No rows match these table filters.
-                  </td>
-                </tr>
-              ) : (
-                rows.map((point) => (
-                  <tr
-                    key={point.month_year}
-                    className="border-b border-lavander/80 bg-white hover:bg-cream/50"
-                  >
-                    <td className="px-2 py-2 font-medium">{point.label}</td>
-                    {visibleColumns.map((series) => (
-                      <td key={series.key} className="px-2.5 py-2 text-right tabular-nums">
-                        <CellValue point={point} seriesKey={series.key} />
-                      </td>
-                    ))}
-                  </tr>
-                ))
+    <TableCard
+      variant="glass"
+      label="Monthly forecast values"
+      header={(
+        <TableCardHeader
+          title="Monthly values"
+          detail={<>{rows.length} of {points.length} months shown{modelLabel ? ` · ${modelLabel}` : ''}</>}
+          actions={(
+            <>
+              {/* Phones have no column headings, so the Month filter sits
+                  here; it clears from its own list, as in the table header. */}
+              {mobile && (
+                <HeaderCheckboxFilter
+                  id="month-mobile"
+                  label="Month"
+                  selected={activeMonthFilter}
+                  options={monthOptions}
+                  openId={openMobileFilter}
+                  setOpenId={setOpenMobileFilter}
+                  onChange={setMonthFilter}
+                />
               )}
-            </tbody>
-          </table>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => setExpanded((current) => !current)}
+                aria-expanded={expanded}
+                aria-label={expanded ? 'Collapse monthly values' : 'Show every month'}
+                title={expanded ? 'Collapse' : 'Show every month'}
+                className={cn('shrink-0', TABLE_HEADER_BUTTON_CLASS)}
+              >
+                {expanded ? <ChevronsDownUp aria-hidden="true" /> : <ChevronsUpDown aria-hidden="true" />}
+              </Button>
+            </>
+          )}
+        />
+      )}
+    >
+      {mobile ? (
+        <motion.div
+          ref={cardsFrameRef}
+          style={cardsHeight ? { height: cardsHeight } : expanded ? undefined : { maxHeight: COLLAPSED_CARDS }}
+          // Scrolls while collapsed; expanded, held to its cards' height.
+          className={cn('border-t border-lavander bg-cream/25', expanded ? 'overflow-y-hidden' : 'overflow-y-auto')}
+          aria-label="Monthly forecast values"
+        >
+          <div ref={cardsContentRef} className="p-3">
+            {rows.length === 0 ? (
+              <p className="rounded-lg border border-lavander bg-white p-6 text-center text-sm text-deep-violet-blue/70">{NO_MATCHES}</p>
+            ) : (
+              <RecordCardList>
+                {rows.map((point) => (
+                  <MobileRecordCard
+                    key={point.month_year}
+                    title={point.label}
+                    fields={visibleColumns.map((series) => ({
+                      label: series.label,
+                      value: <span className="tabular-nums"><CellValue point={point} seriesKey={series.key} /></span>,
+                    }))}
+                  />
+                ))}
+              </RecordCardList>
+            )}
+          </div>
+        </motion.div>
+      ) : (
+        // Collapsed, the rows scroll under the sticky header; Expand eases the
+        // table open to every month. The row-flex wrapper is DataTable's: as a
+        // direct child of the card's column, TableGrid's flex-1 would size it
+        // to its rows and override the eased height.
+        <div className="flex min-h-0">
+          <TableGrid
+            columns={columns}
+            minWidth="56rem"
+            emptyState={rows.length === 0 ? NO_MATCHES : null}
+            animateHeight
+            maxHeight={expanded ? null : COLLAPSED_TABLE}
+          >
+            {rows.map((point) => (
+              <TableRow key={point.month_year} className="h-12 border-b border-lavander/80">
+                <td className="px-4 py-2.5 font-medium">{point.label}</td>
+                {visibleColumns.map((series) => (
+                  <td key={series.key} className="px-4 py-2.5 text-right tabular-nums">
+                    <CellValue point={point} seriesKey={series.key} />
+                  </td>
+                ))}
+              </TableRow>
+            ))}
+          </TableGrid>
         </div>
-      </div>
-    </section>
+      )}
+    </TableCard>
   );
 }

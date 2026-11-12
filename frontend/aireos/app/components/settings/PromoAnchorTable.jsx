@@ -7,6 +7,7 @@ import MobileRecordCard from '@/components/ui/MobileRecordCard';
 import RowActions from '@/components/ui/RowActions';
 import StatusPill from '@/components/ui/StatusPill';
 import TableGrid, { ACTIONS_COLUMN, EXPANDED_ROW_INSET } from '@/components/ui/TableGrid';
+import TableRow from '@/components/ui/TableRow';
 import useExpandedRows from '@/hooks/useExpandedRows';
 import { formatDateTime } from '@/lib/formatDate';
 import { customerLabel } from '@/app/utils/retailerLabel';
@@ -125,7 +126,7 @@ export default function PromoAnchorTable({ anchors, editingKey, readOnly, onView
   // Phone width: one card per customer with its ranges listed inside, as
   // DohSettingsTable does; the table from sm up.
   const cards = (
-    <div className="grid min-w-0 gap-2 sm:hidden">
+    <div className="grid min-w-0 gap-2 px-4 pb-3 sm:hidden">
       {anchors.customers.map((customer) => {
         const target = customerTarget(customer);
         const upcoming = upcomingAnchorText(customer, monthText);
@@ -172,7 +173,7 @@ export default function PromoAnchorTable({ anchors, editingKey, readOnly, onView
     <>
       {cards}
       <div className="hidden min-w-0 sm:block">
-        <TableGrid variant="nested" columns={CUSTOMER_COLUMNS} minWidth="52rem">
+        <TableGrid columns={CUSTOMER_COLUMNS} minWidth="52rem">
           {anchors.customers.map((customer) => {
             const target = customerTarget(customer);
             const name = target.name;
@@ -194,7 +195,7 @@ export default function PromoAnchorTable({ anchors, editingKey, readOnly, onView
                       {customer.ranges.map((range) => {
                         const item = rangeTarget(customer, range);
                         return (
-                          <tr
+                          <TableRow
                             key={item.key}
                             onClick={() => onView(item)}
                             className={cn(
@@ -207,7 +208,7 @@ export default function PromoAnchorTable({ anchors, editingKey, readOnly, onView
                             <td className="px-2 py-1 text-right" onClick={(event) => event.stopPropagation()}>
                               <RowActions label={`Actions for ${item.name}`} actions={rowActions(item)} />
                             </td>
-                          </tr>
+                          </TableRow>
                         );
                       })}
                     </TableGrid>

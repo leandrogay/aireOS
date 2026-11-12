@@ -29,13 +29,16 @@ import SkuDropdown from './SkuDropdown';
 const MONTH_OPTIONS = [3, 6, 12].map((n) => ({ value: String(n), label: `${n} months` }));
 
 /**
- * Where the plan starts. Each SKU plans from its own last actual month, so when
- * they differ (actuals were entered for only some SKUs) the range is shown.
+ * The last actual month the plan builds on (it recommends from the month
+ * after). Each SKU plans from its own last actual month. A SKU with no
+ * sell-in in the customer's last sell-in month counts it as 0 shipped
+ * (backend _fetch_actuals), so they normally agree; when they don't, the
+ * range is shown.
  *
  * @param {Record<string, string>} lastActualBySku 'YYYY-MM-DD' per SKU
  * @returns {string}
  */
-function startsFromLabel(lastActualBySku) {
+function actualsToLabel(lastActualBySku) {
   const months = [...new Set(Object.values(lastActualBySku))].sort();
   if (months.length === 1) return formatMonth(months[0]);
   return `${formatMonth(months[0])} – ${formatMonth(months[months.length - 1])}`;
@@ -113,13 +116,13 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
         onClear={clearFilters}
         stats={data?.actuals_through ? (
           <>
-            <StatTag label="Starts" value={startsFromLabel(data.actuals_through_by_sku)} />
+            <StatTag label="Actuals to" value={actualsToLabel(data.actuals_through_by_sku)} />
             <StatTag label="Target" value={`${formatDoh(data.threshold.target_doh)} days`} />
             {data.threshold.is_global_default ? <StatTag label="Source" value="Global default" /> : null}
           </>
         ) : null}
         note={data?.actuals_through_by_sku && new Set(Object.values(data.actuals_through_by_sku)).size > 1
-          ? 'Each SKU starts from its own last actual month.'
+          ? 'Each SKU plans from the month after its own last actual month.'
           : null}
       >
         <div className="min-w-0">
@@ -233,7 +236,7 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
         </div>
       </InventorySection>
 
-      {(data || loading) && <SellInDetailTable rows={data?.rows ?? []} loading={loading && !data} />}
+      {(data || loading) && <SellInDetailTable rows={data?.rows ?? []} loading={loading && !data} customerId={customerId} />}
     </div>
   );
 }

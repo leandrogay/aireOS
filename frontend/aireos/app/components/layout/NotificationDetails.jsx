@@ -5,7 +5,8 @@ import {
   isRefreshFailure,
   startedByLabel,
 } from '@/app/utils/forecastNotificationText';
-import { daysLeftValue, lowStockItemText, modelFeatureLabel } from '@/app/utils/notificationText';
+import { daysLeftValue, lowStockItemText } from '@/app/utils/notificationText';
+import { joinWords, modelFeaturesText, modelImpactSentence } from '@/app/utils/aiModels';
 import { customerLabel, vendorLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
@@ -218,29 +219,31 @@ function RollbackDetails({ payload, success }) {
   );
 }
 
-// The AI model a feature uses is being retired by Google (or already has
-// been). The payload contract is listed with modelHeading in
-// utils/notificationText.js. The model names come from backend config.py
-// (MAPPING_MODEL / GEMINI_ASSISTANT_MODEL), so the fix is a settings change.
+// The AI model one or more features use is being retired by Google, or a call
+// to it has already come back "not found" (backend ai_models). The payload
+// contract is listed with modelHeading in utils/notificationText.js. The model
+// names come from backend config.py (MAPPING_MODEL / GEMINI_ASSISTANT_MODEL),
+// so the fix is a settings change.
 function ModelDetails({ payload }) {
-  const feature = modelFeatureLabel(payload.feature);
+  const features = modelFeaturesText(payload.features);
   const retired = payload.status === 'retired';
   const date = payload.retires_on ? formatDate(payload.retires_on) : null;
+  const settings = joinWords(payload.settings);
   return (
     <>
       <Summary>
         {retired
-          ? `The model ${feature} uses has been retired, so ${feature} won't work until it is switched to a newer model.`
-          : `Google is retiring the model ${feature} uses${date ? ` on ${date}` : ''}. Switch to a newer model before then so it keeps working.`}
+          ? modelImpactSentence(payload)
+          : `Google is retiring the model ${features} uses${date ? ` on ${date}` : ''}. Switch to a newer model before then so it keeps working.`}
       </Summary>
       <Fields>
-        <Field label="Feature" value={feature} />
+        <Field label={payload.features?.length > 1 ? 'Features' : 'Feature'} value={features} />
         <Field label="Current model" value={payload.current_model || '—'} />
         {date && <Field label={retired ? 'Retired on' : 'Retires on'} value={date} />}
         <Field label="Suggested model" value={payload.suggested_model || 'Check Google’s current models'} />
         <Field
-          label="Setting"
-          value={<span className="font-mono text-[11px]">{payload.setting || '—'}</span>}
+          label={payload.settings?.length > 1 ? 'Settings' : 'Setting'}
+          value={<span className="font-mono text-[11px]">{settings || '—'}</span>}
         />
         <Field label="How to change" value="Update the setting in the backend config, then redeploy." />
       </Fields>

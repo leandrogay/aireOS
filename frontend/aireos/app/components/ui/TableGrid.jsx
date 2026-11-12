@@ -1,8 +1,16 @@
 'use client';
 
+import { Children, useState } from 'react';
+import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from 'motion/react';
+
 import { cn } from '@/lib/utils';
+import { TABLE_ROWS } from '@/app/config/transitions';
+import { LIST_MOTION_PROPS } from '@/components/ui/rowMotion';
+import HeaderCheckboxFilter from '@/components/ui/HeaderCheckboxFilter';
 import SortHeader, { TABLE_HEADER_CLASS } from '@/components/ui/SortHeader';
+import TableRow from '@/components/ui/TableRow';
 import TableSkeleton from '@/components/ui/TableSkeleton';
+import useAnimatedHeight from '@/hooks/useAnimatedHeight';
 
 // The "..." column every list table ends with (RowActions). Its header is
 // only for screen readers.
@@ -16,9 +24,11 @@ export const CARD_INSET = '0.75rem + 1px';
 
 // `card` sits flush inside DataTable and scrolls both ways under a sticky
 // header; `nested` is a bordered table inside an expanded row or a card.
+// `nested` never scrolls down (overflow-x alone would make it scrollable both
+// ways), so a row springing in near its bottom can't flash a scrollbar.
 const FRAMES = {
   card: 'min-h-0 flex-1 overflow-auto border-t border-lavander',
-  nested: 'overflow-x-auto rounded-md border border-lavander bg-white',
+  nested: 'overflow-x-auto overflow-y-hidden rounded-md border border-lavander bg-white',
 };
 const HEADER_ROW_HEIGHTS = { card: 'h-10', nested: 'h-9' };
 
@@ -84,6 +94,9 @@ function columnStyle(width, isEdge, inset) {
  * nested or not (`inset`).
  *
  * A column with `sortField` gets a SortHeader driven by `sort` / `onSort`.
+ * A column with `filter` ({ selected, options, onChange }) gets a
+ * HeaderCheckboxFilter instead: its label opens a checkbox list of `options`
+ * and the parent filters the rows (the Month column on Inventory and Forecast).
  * `hideBelow` (a key of HIDE_BELOW) hides a column (header, <col> and, through
  * hideClass, the rows' cells) under that breakpoint or pixel width (HIDE_BELOW).
  * `align: 'right'` right-aligns the header, for numeric columns; the rows'
@@ -92,8 +105,27 @@ function columnStyle(width, isEdge, inset) {
  * the rows with a centred message, e.g. "No promotions match these filters".
  * DataTable wraps this in the standard card; use it alone for a nested table.
  *
+ * Rows animate when they change (TableRow, timing in transitions.js
+ * TABLE_ROWS): ones a search drops fade out and the rest glide up, ones it
+ * brings back spring in, a re-sort glides them to their new places. The first
+ * rows after the placeholders, and each new `pageKey` (the page number),
+ * cascade in top to bottom instead. List the rows as TableRow (or
+ * ExpandableRow) for this; plain `<tr>`s just snap. `animateHeight` (a card
+ * table not held at a fixed height) eases the table's height with them.
+ * `maxHeight` ('28vh') caps the table, its rows scrolling under the sticky
+ * header; with `animateHeight`, changing it (null to expand) eases the table
+ * open or shut (ForecastTable's Expand / Collapse). Either way the eased
+ * height only holds in a row-flex box (`<div className="flex min-h-0">`, as
+ * DataTable does): straight inside a column (TableCard) the frame's flex-1
+ * sizes it to its rows instead.
+ * Reduced motion: no animation.
+ *
  * @param {{
- *   columns: Array<{ key: string, label: string, width?: string, sortField?: string, hideLabel?: boolean, align?: 'left' | 'right' }>,
+ *   columns: Array<{
+ *     key: string, label: string, width?: string, sortField?: string, hideLabel?: boolean, align?: 'left' | 'right',
+ *     hideBelow?: string,
+ *     filter?: { selected: string[], options: Array<{ value: string, label: string }>, onChange: (selected: string[]) => void },
+ *   }>,
  *   children?: import('react').ReactNode,
  *   variant?: 'card' | 'nested',
  *   minWidth?: string,
@@ -103,6 +135,9 @@ function columnStyle(width, isEdge, inset) {
  *   isLoading?: boolean,
  *   skeletonRows?: number,
  *   emptyState?: import('react').ReactNode,
+ *   pageKey?: string | number,
+ *   animateHeight?: boolean,
+ *   maxHeight?: string | null,
  * }} props
  */
 export default function TableGrid({
@@ -116,16 +151,52 @@ export default function TableGrid({
   isLoading = false,
   skeletonRows = 6,
   emptyState = null,
+  pageKey = null,
+  animateHeight = false,
+  maxHeight = null,
 }) {
+  const reduceMotion = useReducedMotion();
+  // Which header filter's list is open (a column key); one at a time.
+  const [openFilter, setOpenFilter] = useState(null);
+  const { frameRef, contentRef, height } = useAnimatedHeight({
+    enabled: animateHeight && !reduceMotion,
+    transition: TABLE_ROWS.glide,
+    maxHeight,
+  });
   const isFixed = columns.some((column) => column.width);
   const lastIndex = columns.length - 1;
+
+  const skeleton = isLoading && (
+    <TableSkeleton
+      columns={columns.length}
+      rows={skeletonRows}
+      columnClassNames={columns.map(hideClass)}
+    />
+  );
+  const rows = emptyState ? (
+    <TableRow key="empty-state">
+      <td colSpan={columns.length} className="whitespace-normal px-4 py-24 text-center text-deep-violet-blue/80">
+        {emptyState}
+      </td>
+    </TableRow>
+  ) : children;
 
   return (
     // relative: the header's sr-only labels are absolutely positioned;
     // without a positioned ancestor they escape this scroll box and widen
     // the whole page on narrow windows.
-    <div className={cn('relative min-w-0 max-w-full', FRAMES[variant])}>
+    // layoutScroll: rows measure their glide inside this scroll box, so a
+    // scroll position that changes with the rows doesn't read as movement.
+    <motion.div
+      ref={frameRef}
+      layoutScroll
+      style={height ? { height } : maxHeight ? { maxHeight } : undefined}
+      // Held to its rows' height, so it never needs to scroll down; capped,
+      // it scrolls.
+      className={cn('relative min-w-0 max-w-full', FRAMES[variant], animateHeight && !maxHeight && 'overflow-y-hidden')}
+    >
       <table
+        ref={contentRef}
         style={minWidth ? { minWidth } : undefined}
         className={cn(
           'aire-table-grid w-full whitespace-nowrap text-left text-sm text-deep-violet-blue [&_td]:align-middle [&_th]:align-middle',
@@ -143,23 +214,40 @@ export default function TableGrid({
             ))}
           </colgroup>
         )}
-        {/* Stays in view while the rows scroll. Solid cream over the rows
+        {/* Stays in view while the rows scroll. Solid tint over the rows
             so rows do not show through; the bottom rule is an inset shadow
             because a collapsed table border does not move with a sticky
             header. */}
-        <thead className="sticky top-0 z-10 bg-cream">
+        <thead className="sticky top-0 z-10 bg-(--aire-table-head)">
           <tr
             className={cn(
-              'bg-cream [&>th]:shadow-[inset_0_-1px_0_var(--color-lavander)]',
+              'bg-(--aire-table-head) [&>th]:shadow-[inset_0_-1px_0_var(--color-lavander)]',
               HEADER_ROW_HEIGHTS[variant],
             )}
           >
             {columns.map((column) => {
-              const alignClass = cn(column.align === 'right' && 'text-right', hideClass(column));
+              // whitespace-normal: a label longer than its fixed width wraps
+              // inside it rather than spilling over the next heading.
+              const alignClass = cn('whitespace-normal', column.align === 'right' && 'text-right', hideClass(column));
               if (column.hideLabel) {
                 return (
                   <th key={column.key} scope="col" className={cn('px-2 py-2', hideClass(column))}>
                     <span className="sr-only">{column.label}</span>
+                  </th>
+                );
+              }
+              if (column.filter) {
+                return (
+                  <th key={column.key} scope="col" className={cn('px-3 py-1.5', alignClass)}>
+                    <HeaderCheckboxFilter
+                      id={column.key}
+                      label={column.label}
+                      selected={column.filter.selected}
+                      options={column.filter.options}
+                      openId={openFilter}
+                      setOpenId={setOpenFilter}
+                      onChange={column.filter.onChange}
+                    />
                   </th>
                 );
               }
@@ -184,25 +272,30 @@ export default function TableGrid({
             })}
           </tr>
         </thead>
-        <tbody aria-busy={isLoading}>
-          {isLoading && (
-            <TableSkeleton
-              columns={columns.length}
-              rows={skeletonRows}
-              columnClassNames={columns.map(hideClass)}
-            />
-          )}
-          {emptyState ? (
-            <tr>
-              <td colSpan={columns.length} className="whitespace-normal px-4 py-24 text-center text-deep-violet-blue/80">
-                {emptyState}
-              </td>
-            </tr>
-          ) : (
-            children
-          )}
-        </tbody>
+        {reduceMotion ? (
+          <tbody aria-busy={isLoading}>
+            {skeleton}
+            {rows}
+          </tbody>
+        ) : (
+          // LayoutGroup: when a dropped row has faded out, the rows left get
+          // re-measured, so they glide up rather than jump. A new key (the
+          // first rows after the placeholders, a new page) starts the body
+          // afresh, so its rows cascade in instead of crossing with the old
+          // ones. toArray keys the rows uniquely even when they come from
+          // several lists.
+          <LayoutGroup>
+            <motion.tbody
+              key={isLoading ? 'loading' : `rows-${pageKey ?? ''}`}
+              aria-busy={isLoading}
+              {...LIST_MOTION_PROPS}
+            >
+              {skeleton}
+              <AnimatePresence>{Children.toArray(rows)}</AnimatePresence>
+            </motion.tbody>
+          </LayoutGroup>
+        )}
       </table>
-    </div>
+    </motion.div>
   );
 }

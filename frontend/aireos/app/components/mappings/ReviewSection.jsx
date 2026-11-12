@@ -1,6 +1,7 @@
 import { CheckCircle2, CircleAlert } from 'lucide-react';
 
 import InfoTooltip from '@/components/ui/InfoTooltip';
+import { glassSurfaceClass } from '@/components/ui/surfaceStyles';
 import { cn } from '@/lib/utils';
 
 /**
@@ -38,7 +39,7 @@ export default function ReviewSection({
       id={id}
       aria-labelledby={`${id}-title`}
       // Leaves room above the heading when a checklist link scrolls here.
-      className="scroll-mt-4 rounded-lg border border-lavander bg-white p-4 shadow-sm"
+      className={`${glassSurfaceClass} scroll-mt-4 p-4`}
     >
       <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
         <div className="flex min-w-0 items-start gap-2.5">

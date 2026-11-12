@@ -7,9 +7,11 @@ import DataTable from '@/components/ui/DataTable';
 import ExpandableRow from '@/components/ui/ExpandableRow';
 import { cardClass } from '@/components/ui/formStyles';
 import MobileRecordCard from '@/components/ui/MobileRecordCard';
+import RecordCardList from '@/components/ui/RecordCardList';
 import InfoTooltip from '@/components/ui/InfoTooltip';
 import StatusPill from '@/components/ui/StatusPill';
 import TableGrid, { EXPANDED_ROW_INSET } from '@/components/ui/TableGrid';
+import TableRow from '@/components/ui/TableRow';
 import TablePagination, { PAGE_SIZES } from '@/components/ui/TablePagination';
 import TableSearch from '@/components/ui/TableSearch';
 import useExpandedRows from '@/hooks/useExpandedRows';
@@ -218,7 +220,7 @@ export default function PromoUpliftTable({ rows, isLoading, error, onRefresh, me
         minWidth="72rem"
         emptyState={noMatches || null}
         mobileContent={
-          <div className="grid gap-2">
+          <RecordCardList>
             {pageRows.map((row) => {
               const [current] = row.versions;
               const upcoming = upcomingText(row);
@@ -251,7 +253,7 @@ export default function PromoUpliftTable({ rows, isLoading, error, onRefresh, me
                 </MobileRecordCard>
               );
             })}
-          </div>
+          </RecordCardList>
         }
       >
         {pageRows.map((row) => {
@@ -277,7 +279,7 @@ export default function PromoUpliftTable({ rows, isLoading, error, onRefresh, me
               details={
                 <TableGrid variant="nested" columns={SKU_COLUMNS} inset={EXPANDED_ROW_INSET} minWidth="40rem">
                   {current.skus.map((sku) => (
-                    <tr key={sku.sku} className="h-11 border-b border-lavander/80 last:border-b-0">
+                    <TableRow key={sku.sku} className="h-11 border-b border-lavander/80 last:border-b-0">
                       <td className={cn(tdClass, 'truncate')} title={`${sku.product_name ?? ''} · ${sku.sku}`}>
                         {sku.product_name ?? sku.sku}
                         <span className={subClass}>{sku.sku}</span>
@@ -288,7 +290,7 @@ export default function PromoUpliftTable({ rows, isLoading, error, onRefresh, me
                       <td className={tdClass}>
                         <Basis level={sku.level} lines={explanationLines(sku, current.anchor)} />
                       </td>
-                    </tr>
+                    </TableRow>
                   ))}
                 </TableGrid>
               }

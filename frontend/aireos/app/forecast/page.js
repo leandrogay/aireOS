@@ -4,8 +4,12 @@ import { Suspense, useEffect, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
 import PageLayout from '@/components/layout/PageLayout';
+import TableCard from '@/components/ui/TableCard';
+import TableCardHeader from '@/components/ui/TableCardHeader';
 import ForecastChart from '@/components/forecast/ForecastChart';
 import ForecastFilters from '@/components/forecast/ForecastFilters';
+import ForecastTable from '@/components/forecast/ForecastTable';
+import ForecastYearTotals from '@/components/forecast/ForecastYearTotals';
 import { customerLabel } from '@/app/utils/retailerLabel';
 import {
   FORECAST_TIER_OPTIONS,
@@ -156,6 +160,19 @@ function ForecastView() {
     lineCoverageNote('Previous', previousCoverage),
   ].filter(Boolean);
 
+  // The monthly table shows the lines the chart shows: a pill greyed out for
+  // a missing Initial / Previous is off there too (as in ForecastChart).
+  const tableSeries = {
+    ...visibleSeries,
+    ...(previousOff ? { previous: false } : {}),
+    ...(initialOff ? { initial: false } : {}),
+  };
+  const hasTableColumn = Object.values(tableSeries).some(Boolean);
+  // `loading` too: while the page refetches, the year figures still hold the
+  // previous filter's months, and a total from those would be wrong rather
+  // than merely stale.
+  const yearTotalsBusy = yearTotalsLoading || loading;
+
   const scopeTags = [
     { label: 'SKU', value: productName || 'All SKUs' },
     { label: 'Customer', value: customerName ? customerLabel(customerName) : 'All customers' },
@@ -220,13 +237,25 @@ function ForecastView() {
           previousMissing={previousOff}
           confidenceDots={singleSeries}
           notes={modelNotes}
-          modelLabel={modelLabel}
           emptyMessage={allRows.length ? NO_DATA_FOR_TIER : undefined}
-          yearTotals={yearTotals}
-          yearTotalsLoading={yearTotalsLoading}
-          horizonVolume={horizonVolume}
           loading={loading}
         />
+
+        {/* Each table is a card of its own under the chart card, as on the
+            other pages -- never a table inside the chart's card. */}
+        {yearTotalsBusy || yearTotals.length ? (
+          <TableCard
+            variant="glass"
+            label="Full-year totals"
+            header={<TableCardHeader title="Full-year totals" detail={<>Actual and forecast volume in cartons for each calendar year in view{modelLabel ? ` · ${modelLabel}` : ''}</>} />}
+          >
+            <ForecastYearTotals years={yearTotals} loading={yearTotalsBusy} horizonVolume={horizonVolume} />
+          </TableCard>
+        ) : null}
+
+        {points.length > 0 && hasTableColumn ? (
+          <ForecastTable points={points} visibleSeries={tableSeries} modelLabel={modelLabel} />
+        ) : null}
       </div>
     </PageLayout>
   );

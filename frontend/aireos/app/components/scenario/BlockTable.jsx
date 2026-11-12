@@ -4,12 +4,14 @@ import { useState } from 'react';
 import { Pencil, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import DataTable from '@/components/ui/DataTable';
+import PaginatedDataTable from '@/components/ui/PaginatedDataTable';
 import ExpandableRow from '@/components/ui/ExpandableRow';
 import RowActions from '@/components/ui/RowActions';
-import TablePagination, { PAGE_SIZES } from '@/components/ui/TablePagination';
+import TableGrid from '@/components/ui/TableGrid';
+import { PAGE_SIZES } from '@/components/ui/TablePagination';
 import TableSearch from '@/components/ui/TableSearch';
 import { Switch } from '@/components/ui/switch';
+import TableRow from '@/components/ui/TableRow';
 import { customerLabel } from '@/app/utils/retailerLabel';
 import { blockScopeLabel, upliftLabel } from '@/app/utils/scenarioBlocks';
 import { monthSpanLabel } from '@/app/utils/scenarioPitch';
@@ -51,38 +53,37 @@ function sortBlocks(blocks, field, direction) {
 
 function BlockDetails({ block, months }) {
   return (
-    <div className="grid gap-4 text-xs md:grid-cols-2">
-      <div>
+    <div className="grid gap-4 text-xs md:grid-cols-[minmax(0,1fr)_minmax(24rem,1.2fr)]">
+      <div className="min-w-0">
         <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">Explanation</p>
         <p className="whitespace-pre-line leading-relaxed">{block.explanation || '—'}</p>
       </div>
-      <div>
+      <div className="min-w-0">
         <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">
           By month · volume
         </p>
         {months.length ? (
-          <table className="tabular-nums">
-            <thead>
-              <tr className="text-[11px] text-deep-violet-blue/60">
-                <th className="py-0.5 pr-4 text-left font-normal">Month</th>
-                <th className="py-0.5 pr-4 text-right font-normal">Current</th>
-                <th className="py-0.5 pr-4 text-right font-normal">Simulated</th>
-                <th className="py-0.5 text-right font-normal">Gain</th>
-              </tr>
-            </thead>
-            <tbody>
-              {months.map((month) => (
-                <tr key={month.month_year}>
-                  <td className="py-0.5 pr-4">{monthLabel(month.month_year)}</td>
-                  <td className="py-0.5 pr-4 text-right">{wholeUnits(month.baseUnits)}</td>
-                  <td className="py-0.5 pr-4 text-right">{wholeUnits(month.baseUnits + month.deltaUnits)}</td>
-                  <td className="py-0.5 text-right font-semibold text-scenario-ink">
-                    {signed(month.deltaUnits, wholeUnits)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <TableGrid
+            variant="nested"
+            minWidth="24rem"
+            columns={[
+              { key: 'month', label: 'Month' },
+              { key: 'current', label: 'Current', align: 'right' },
+              { key: 'simulated', label: 'Simulated', align: 'right' },
+              { key: 'gain', label: 'Gain', align: 'right' },
+            ]}
+          >
+            {months.map((month) => (
+              <TableRow key={month.month_year} className="h-9 border-b border-lavander/80 last:border-b-0">
+                <td className="px-3 py-2">{monthLabel(month.month_year)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{wholeUnits(month.baseUnits)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{wholeUnits(month.baseUnits + month.deltaUnits)}</td>
+                <td className="px-3 py-2 text-right font-semibold tabular-nums text-scenario-ink">
+                  {signed(month.deltaUnits, wholeUnits)}
+                </td>
+              </TableRow>
+            ))}
+          </TableGrid>
         ) : (
           <p className="text-deep-violet-blue/60">
             {block.isActive ? 'Outside chart filters' : 'Switch it on to see what it adds each month.'}
@@ -109,7 +110,6 @@ function BlockDetails({ block, months }) {
  *   isLoading: boolean,
  *   error?: string,
  *   editingId: string | null,
- *   newIds: string[],
  *   togglingIds: string[],
  *   isExpanded: (id: string) => boolean,
  *   onToggleRow: (id: string) => void,
@@ -128,7 +128,6 @@ export default function BlockTable({
   isLoading,
   error = '',
   editingId,
-  newIds,
   togglingIds,
   isExpanded,
   onToggleRow,
@@ -168,7 +167,7 @@ export default function BlockTable({
   );
 
   return (
-    <DataTable
+    <PaginatedDataTable
       label="Building blocks"
       noun="building block"
       totalCount={blocks.length}
@@ -187,19 +186,7 @@ export default function BlockTable({
           placeholder="Search name, explanation…"
         />
       }
-      footer={
-        <TablePagination
-          page={currentPage}
-          totalPages={totalPages}
-          pageSize={pageSize}
-          totalRows={sorted.length}
-          onPageChange={setPage}
-          onPageSizeChange={(size) => {
-            setPageSize(size);
-            setPage(1);
-          }}
-        />
-      }
+      pagination={{ page: currentPage, totalPages, pageSize, totalRows: sorted.length, onPageChange: setPage, onPageSizeChange: (size) => { setPageSize(size); setPage(1); } }}
       columns={columns}
       minWidth="62rem"
       sort={sort}
@@ -231,7 +218,7 @@ export default function BlockTable({
             columnCount={columns.length}
             isOpen={isExpanded(block.id)}
             onToggle={() => onToggleRow(block.id)}
-            highlight={isEditing ? 'editing' : newIds.includes(block.id) ? 'new' : null}
+            highlight={isEditing ? 'editing' : null}
             primary={block.name}
             title={block.name}
             toggleLabel={isExpanded(block.id) ? `Hide details for ${block.name}` : `Show details for ${block.name}`}
@@ -271,6 +258,6 @@ export default function BlockTable({
           </ExpandableRow>
         );
       })}
-    </DataTable>
+    </PaginatedDataTable>
   );
 }

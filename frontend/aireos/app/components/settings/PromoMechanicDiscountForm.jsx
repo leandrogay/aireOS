@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import StatusPill from '@/components/ui/StatusPill';
 import TableGrid from '@/components/ui/TableGrid';
+import TableRow from '@/components/ui/TableRow';
 import {
   Dialog,
   DialogContent,
@@ -109,7 +110,7 @@ export default function PromoMechanicDiscountForm({ row, onSaved, onCancel }) {
             {history.rows.length ? (
               <TableGrid variant="nested" columns={HISTORY_COLUMNS} minWidth="24rem">
                 {history.rows.map((entry) => (
-                  <tr key={entry.id} className="h-11 border-b border-lavander/80 last:border-b-0">
+                  <TableRow key={entry.id} className="h-11 border-b border-lavander/80 last:border-b-0">
                     <td className="px-4 py-2 tabular-nums">
                       <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                         <span className="font-medium">
@@ -121,7 +122,7 @@ export default function PromoMechanicDiscountForm({ row, onSaved, onCancel }) {
                     <td className="px-4 py-2 text-muted-foreground">
                       {entry.changed_at ? `${formatDateTime(entry.changed_at)} · ${changedByLabel(entry.changed_by)}` : '—'}
                     </td>
-                  </tr>
+                  </TableRow>
                 ))}
               </TableGrid>
             ) : null}

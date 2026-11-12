@@ -1,9 +1,13 @@
 'use client';
 
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+
 import DataTable from '@/components/ui/DataTable';
 import { Button } from '@/components/ui/button';
 import MobileRecordCard from '@/components/ui/MobileRecordCard';
+import RecordCardList from '@/components/ui/RecordCardList';
 import RowActions from '@/components/ui/RowActions';
+import { detailsMotionProps } from '@/components/ui/rowMotion';
 import UsageStatus from './UsageStatus';
 import { customerLabel, retailerLabel } from '@/app/utils/retailerLabel';
 
@@ -34,6 +38,8 @@ export default function CustomerTable({
   onRefresh,
   ...rowHandlers
 }) {
+  const reduceMotion = useReducedMotion();
+
   return (
     <DataTable
       label="Customers"
@@ -47,7 +53,7 @@ export default function CustomerTable({
       minWidth="26rem"
       skeletonRows={4}
       mobileContent={
-        <div className="grid gap-2">
+        <RecordCardList>
           {customers.map((customer) => {
             const name = customerLabel(customer.customer_name);
             const open = isExpanded(customer.customer_id);
@@ -61,28 +67,33 @@ export default function CustomerTable({
                 <Button variant="link" size="sm" aria-expanded={open} onClick={() => onToggle(customer.customer_id)} className="mt-2 h-auto px-0 text-xs text-deep-violet-blue">
                   {open ? 'Hide retailers' : `View retailers (${customer.retailers.length})`}
                 </Button>
-                {open && (
-                  <div className="mt-2 divide-y divide-lavander/70 border-t border-lavander/70">
-                    {customer.retailers.map((retailer) => (
-                      <div key={retailer.retailer_id} className="flex items-center gap-2 py-2">
-                        <span className="min-w-0 flex-1 text-xs text-deep-violet-blue">
-                          <span className="block break-words">
-                            {retailerLabel(retailer.retailer_name, customer.customer_name)}
-                            <span className="ml-1 text-deep-violet-blue/60">· {retailer.store_count} stores</span>
-                          </span>
-                          <span className="block break-all font-mono text-[11px] text-deep-violet-blue/50">{retailer.retailer_name}</span>
-                        </span>
-                        <RowActions label={`Actions for retailer ${retailerLabel(retailer.retailer_name, customer.customer_name)}`} actions={retailerRowActions(retailer, customer, rowHandlers.onEditRetailer, rowHandlers.onDeleteRetailer)} />
+                {/* Slides open like a table row's details (ExpandableRow). */}
+                <AnimatePresence initial={false}>
+                  {open && (
+                    <motion.div key="retailers" {...detailsMotionProps(reduceMotion)} className="-mx-1 overflow-hidden px-1">
+                      <div className="mt-2 divide-y divide-lavander/70 border-t border-lavander/70">
+                        {customer.retailers.map((retailer) => (
+                          <div key={retailer.retailer_id} className="flex items-center gap-2 py-2">
+                            <span className="min-w-0 flex-1 text-xs text-deep-violet-blue">
+                              <span className="block break-words">
+                                {retailerLabel(retailer.retailer_name, customer.customer_name)}
+                                <span className="ml-1 text-deep-violet-blue/60">· {retailer.store_count} stores</span>
+                              </span>
+                              <span className="block break-all font-mono text-[11px] text-deep-violet-blue/50">{retailer.retailer_name}</span>
+                            </span>
+                            <RowActions label={`Actions for retailer ${retailerLabel(retailer.retailer_name, customer.customer_name)}`} actions={retailerRowActions(retailer, customer, rowHandlers.onEditRetailer, rowHandlers.onDeleteRetailer)} />
+                          </div>
+                        ))}
+                        {customer.retailers.length === 0 && <p className="py-2 text-xs text-deep-violet-blue/60">No retailers yet.</p>}
+                        <Button variant="link" size="sm" onClick={() => rowHandlers.onAddRetailer(customer)} className="h-auto px-0 py-2 text-xs text-deep-violet-blue">Add retailer</Button>
                       </div>
-                    ))}
-                    {customer.retailers.length === 0 && <p className="py-2 text-xs text-deep-violet-blue/60">No retailers yet.</p>}
-                    <Button variant="link" size="sm" onClick={() => rowHandlers.onAddRetailer(customer)} className="h-auto px-0 py-2 text-xs text-deep-violet-blue">Add retailer</Button>
-                  </div>
-                )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </MobileRecordCard>
             );
           })}
-        </div>
+        </RecordCardList>
       }
     >
       {customers.map((customer) => (

@@ -1,19 +1,15 @@
 'use client';
 
 import { formatDoh, formatMonth, formatUnits } from '@/app/utils/inventoryForm';
+import TableRow from '@/components/ui/TableRow';
 import { cn } from '@/lib/utils';
 
+import { SELL_IN_PLAN_COLUMNS } from './columns';
 import InventoryTableFrame, {
-  inventoryHeadRowClass,
-  inventoryTableClass,
-  inventoryTheadClass,
-  InventoryTableSkeleton,
-  inventoryRowClass,
-  inventoryTdClass,
-  inventoryThClass,
+  inventoryCellClass,
+  inventoryNumberCellClass,
+  inventoryRowHeightClass,
 } from './InventoryTableFrame';
-
-const numClass = 'text-right tabular-nums';
 
 /**
  * The plan per SKU and month, in the order it is worked out: the opening
@@ -24,65 +20,46 @@ const numClass = 'text-right tabular-nums';
  * marked Initial is the Initial Yearly Forecast, used where the current
  * forecast does not reach the month yet.
  *
- * @param {{ rows: object[], loading?: boolean }} props `loading`: first load in
- *   flight, so placeholder rows
+ * @param {{ rows: object[], loading?: boolean, customerId?: number | null }} props
+ *   `loading`: first load in flight, so placeholder rows. `customerId`: the
+ *   plan's customer, which its rows don't carry, so another customer's plan
+ *   starts at page 1
  */
-export default function SellInDetailTable({ rows, loading = false }) {
+export default function SellInDetailTable({ rows, loading = false, customerId = null }) {
   return (
-    <InventoryTableFrame title="Sell-in plan by SKU and month" rows={rows} loading={loading}>
-      {(visible, monthHeader) => (
-        <table className={cn(inventoryTableClass, 'min-w-[68rem]')}>
-          <thead className={inventoryTheadClass}>
-            <tr className={inventoryHeadRowClass}>
-              {monthHeader}
-              <th className={inventoryThClass}>Product</th>
-              <th className={cn(inventoryThClass, numClass)}>Opening inventory</th>
-              <th className={cn(inventoryThClass, numClass)}>Forecast sell-out</th>
-              <th className={cn(inventoryThClass, numClass)}>Temporary sell-in</th>
-              <th className={cn(inventoryThClass, numClass)}>Stock needed</th>
-              <th className={cn(inventoryThClass, numClass)}>Recommended sell-in</th>
-              <th className={cn(inventoryThClass, numClass)}>DOH after sell-in</th>
-              <th className={cn(inventoryThClass, numClass)}>Projected ending</th>
-            </tr>
-          </thead>
-          <tbody aria-busy={loading}>
-            {loading ? (
-              <InventoryTableSkeleton columns={9} />
-            ) : visible.length === 0 ? (
-              <tr>
-                <td className="px-2.5 py-3 text-deep-violet-blue/80" colSpan={9}>
-                  {rows.length === 0 ? 'No SKUs are in this plan.' : 'No rows match these filters.'}
-                </td>
-              </tr>
-            ) : (
-              visible.map((row) => (
-                <tr key={`${row.sku}-${row.month}`} className={inventoryRowClass}>
-                  <td className={cn(inventoryTdClass, 'font-medium')}>{formatMonth(row.month)}</td>
-                  <td className={inventoryTdClass}>{row.product_name}</td>
-                  <td className={cn(inventoryTdClass, numClass)}>{formatUnits(row.opening_stock)}</td>
-                  <td className={cn(inventoryTdClass, numClass)}>
-                    {/* The current forecast does not reach this month yet (backend _plan_forecast). */}
-                    {row.forecast_source === 'initial' ? (
-                      <span
-                        className="mr-1 rounded-full border border-lavander bg-lavander/60 px-1.5 py-px text-[10px] text-deep-violet-blue/70"
-                        title="No current forecast for this month yet, so the Initial Yearly Sell-out Forecast is used."
-                      >
-                        Initial
-                      </span>
-                    ) : null}
-                    {formatUnits(row.forecast_sell_out)}
-                  </td>
-                  <td className={cn(inventoryTdClass, numClass)}>{formatUnits(row.shipped_so_far)}</td>
-                  <td className={cn(inventoryTdClass, numClass)}>{formatUnits(row.stock_needed)}</td>
-                  <td className={cn(inventoryTdClass, numClass, 'font-medium')}>{formatUnits(row.recommended_sell_in)}</td>
-                  <td className={cn(inventoryTdClass, numClass)}>{formatDoh(row.doh_after_sell_in)}</td>
-                  <td className={cn(inventoryTdClass, numClass)}>{formatUnits(row.projected_ending_stock)}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      )}
+    <InventoryTableFrame
+      title="Sell-in plan by SKU and month"
+      rows={rows}
+      columns={SELL_IN_PLAN_COLUMNS}
+      minWidth="72rem"
+      emptyMessage="No SKUs are in this plan."
+      loading={loading}
+      listId={customerId ?? ''}
+    >
+      {(pageRows) => pageRows.map((row) => (
+        <TableRow key={`${row.sku}-${row.month}`} className={inventoryRowHeightClass}>
+          <td className={cn(inventoryCellClass, 'font-medium')}>{formatMonth(row.month)}</td>
+          <td className={cn(inventoryCellClass, 'truncate')} title={row.product_name}>{row.product_name}</td>
+          <td className={inventoryNumberCellClass}>{formatUnits(row.opening_stock)}</td>
+          <td className={inventoryNumberCellClass}>
+            {/* The current forecast does not reach this month yet (backend _plan_forecast). */}
+            {row.forecast_source === 'initial' ? (
+              <span
+                className="mr-1 rounded-full border border-lavander bg-lavander/60 px-1.5 py-px text-[10px] text-deep-violet-blue/70"
+                title="No current forecast for this month yet, so the Initial Yearly Sell-out Forecast is used."
+              >
+                Initial
+              </span>
+            ) : null}
+            {formatUnits(row.forecast_sell_out)}
+          </td>
+          <td className={inventoryNumberCellClass}>{formatUnits(row.shipped_so_far)}</td>
+          <td className={inventoryNumberCellClass}>{formatUnits(row.stock_needed)}</td>
+          <td className={cn(inventoryNumberCellClass, 'font-medium')}>{formatUnits(row.recommended_sell_in)}</td>
+          <td className={inventoryNumberCellClass}>{formatDoh(row.doh_after_sell_in)}</td>
+          <td className={inventoryNumberCellClass}>{formatUnits(row.projected_ending_stock)}</td>
+        </TableRow>
+      ))}
     </InventoryTableFrame>
   );
 }

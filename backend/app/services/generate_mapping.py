@@ -16,6 +16,10 @@ is sent back with the evidence, a limited number of times; whatever survives
 is parked under mappings/pending/ for a person to review, with the checks
 attached and each field's confidence taken from them.
 
+A model Google has retired (ai_models) does not stop the upload: the file
+gets a blank proposal -- every field not available -- for a person to fill in
+by hand on the same review page, and the review says why.
+
 This module only produces contracts. It never transforms or loads data.
 """
 
@@ -30,7 +34,7 @@ from google.genai import types
 
 from app import config
 from app.schemas.sellout import BUSINESS_COLUMNS
-from app.services import catalog_service, layout_detection, mapping_checks, mapping_prompt, storage
+from app.services import ai_models, catalog_service, layout_detection, mapping_checks, mapping_prompt, storage
 from app.services.column_profile import (
     column_samples,
     detect_column_groups,
@@ -176,6 +180,8 @@ def _ask_gemini(messages: list[dict], schema: dict) -> str:
     except GoogleAuthError as e:
         raise MappingConfigError(f"Google credentials for Vertex AI are unusable: {e}") from e
     except genai_errors.APIError as e:
+        if ai_models.is_model_not_found(e):
+            raise ai_models.ModelUnavailableError("mapping") from e
         raise MappingGenerationError(f"The Gemini API call failed: {e}") from e
 
     # A prompt blocked outright comes back with no candidates at all.
@@ -291,6 +297,37 @@ def generate_mapping_contract(
     }
 
 
+def blank_mapping_contract(
+    filename: str,
+    frame: pd.DataFrame,
+    layout: dict,
+    master_skus: list[dict] | None = None,
+) -> dict:
+    """
+    A proposal with no field decided, for a person to fill in by hand when the
+    model is unavailable. It has the file's layout and the same checks as a
+    model's proposal (the required fields fail until they are filled), in the
+    same shape as generate_mapping_contract's result. No provider is recorded,
+    so the review shows no AI disclaimer, as for a hand-written contract, and
+    no confidence is taken from the checks: nothing was guessed, so there is
+    nothing "low" for a reviewer to confirm (or for confirm to block on).
+    """
+    if master_skus is None:
+        master_skus = fetch_master_skus()
+    columns = [str(column) for column in frame.columns]
+    profile = profile_columns(frame, layout)
+    proposed = {"fields": {}, "layout": layout_instructions(layout)}
+    contract = validate_contract(proposed, columns, TARGET_SCHEMA, samples=_check_values(profile))
+    checks = check_contract(frame, layout, contract, filename, master_skus)
+    return {
+        "contract": contract,
+        "checks": checks,
+        "attempts": 0,
+        "provider": None,
+        "model": None,
+    }
+
+
 # ---- Stored mappings -------------------------------------------------------------
 
 def find_confirmed(columns: list[str]) -> tuple[str, dict] | tuple[None, None]:
@@ -363,7 +400,8 @@ def resolve_mapping(filename: str, data: bytes, uploaded_to: str | None = None) 
       - a confirmed contract exists for this layout: returned as-is, no model
         call
       - the layout is unrecognised: a contract is proposed and checked, parked under
-        mappings/pending/, and returned for the user to review
+        mappings/pending/, and returned for the user to review -- a blank one
+        to fill in by hand when the model is no longer available
 
     This is a blocking function (network I/O to Vertex AI and GCS) -- the
     router runs it in a thread.
@@ -385,7 +423,16 @@ def resolve_mapping(filename: str, data: bytes, uploaded_to: str | None = None) 
         }
 
     fp = fingerprint(columns)
-    proposal = generate_mapping_contract(filename, frame, layout)
+    ai_unavailable = None
+    try:
+        proposal = generate_mapping_contract(filename, frame, layout)
+    except ai_models.ModelUnavailableError as error:
+        # The data can still be transformed without a model: the file gets a
+        # blank proposal to fill in by hand, and the message travels with it to
+        # the upload row and the review page.
+        ai_models.record_unavailable(error)
+        ai_unavailable = str(error)
+        proposal = blank_mapping_contract(filename, frame, layout)
 
     envelope = {
         "fingerprint": fp,
@@ -412,6 +459,8 @@ def resolve_mapping(filename: str, data: bytes, uploaded_to: str | None = None) 
         "source_filename": filename,
         "provider": proposal["provider"],
         "model": proposal["model"],
+        # Set when the model was unavailable and the proposal starts blank.
+        "ai_unavailable": ai_unavailable,
         "proposed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }
     storage.upload_json(storage.pending_mapping_path(fp), envelope)
@@ -421,7 +470,8 @@ def resolve_mapping(filename: str, data: bytes, uploaded_to: str | None = None) 
         "fingerprint": fp,
         "contract": proposal["contract"],
         "checks": proposal["checks"],
-        "source": "generated",
+        "source": "manual" if ai_unavailable else "generated",
+        "ai_unavailable": ai_unavailable,
     }
 
 

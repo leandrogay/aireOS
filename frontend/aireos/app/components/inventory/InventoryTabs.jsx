@@ -17,16 +17,17 @@ import InventoryOverview from './InventoryOverview';
 import SellInPlanView from './SellInPlanView';
 
 const TABS = [
-  { value: 'overview', label: 'Overview' },
+  { value: 'plan', label: 'Sell-in plan' },
+  { value: 'overview', label: 'Stock' },
   { value: 'customer', label: 'By customer' },
   { value: 'risk', label: 'At risk' },
-  { value: 'plan', label: 'Sell-in plan' },
-  { value: 'manage', label: 'Enter / edit data' },
+  { value: 'manage', label: 'Input data' },
 ];
 
 /**
- * The inventory page: overall view for all customers, one customer with DOH,
- * the at-risk list, the sell-in plan, and the create/edit form. A view tab is
+ * The inventory page, in tab order: the sell-in plan (the default), stock for
+ * all customers, one customer with DOH, the at-risk list, and the input data
+ * form. A view tab is
  * mounted the first time it is opened and then kept (hidden while inactive), so
  * switching back shows its data and filters straight away instead of refetching;
  * `refreshKey` (bumped after any write) makes every mounted view refetch. The
@@ -35,8 +36,8 @@ const TABS = [
  */
 export default function InventoryTabs() {
   const options = useInventoryOptions();
-  const [tab, setTab] = useState('overview');
-  const [visitedTabs, setVisitedTabs] = useState(['overview']);
+  const [tab, setTab] = useState('plan');
+  const [visitedTabs, setVisitedTabs] = useState(['plan']);
   const [refreshKey, setRefreshKey] = useState(0);
   const [editRow, setEditRow] = useState(null);
   const { toast, notify, dismissToast } = useToast();

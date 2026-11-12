@@ -68,4 +68,19 @@ describe('currentLineValues', () => {
     assert.equal(lines[2].sell_out_with_blocks, 2671);
     assert.equal(lines[3].sell_out_with_blocks, 2750);
   });
+  it('starts at the last actual month only while that actual line is shown', () => {
+    const lines = currentLineValues(MONTHS, '2026-10-01', { joinSellIn: false, joinSellOut: true });
+
+    assert.equal(lines[2].sell_in_recommended, null);
+    assert.equal(lines[2].sell_out_current, 2671);
+    assert.equal(lines[3].sell_in_recommended, 2644);
+  });
+
+  it('starts both lines at their first forecast month with both actual lines hidden', () => {
+    const lines = currentLineValues(MONTHS, '2026-10-01', { joinSellIn: false, joinSellOut: false });
+
+    assert.equal(lines[2].sell_in_recommended, null);
+    assert.equal(lines[2].sell_out_current, null);
+    assert.equal(lines[3].sell_out_current, 2648);
+  });
 });

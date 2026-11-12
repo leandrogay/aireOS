@@ -2,18 +2,20 @@
 
 import { Pencil } from 'lucide-react';
 
-import RowActions from '@/components/ui/RowActions';
+import DataTable from '@/components/ui/DataTable';
 import MobileRecordCard from '@/components/ui/MobileRecordCard';
-import TableSkeleton from '@/components/ui/TableSkeleton';
+import RecordCardList from '@/components/ui/RecordCardList';
+import RowActions from '@/components/ui/RowActions';
+import TableRow from '@/components/ui/TableRow';
 import ToggleField from '@/components/ui/ToggleField';
 import { formatDohDays } from '@/app/utils/dohSettingsForm';
-import { formatDateTime } from '@/lib/formatDate';
 import { customerLabel } from '@/app/utils/retailerLabel';
-import { cn } from '@/lib/utils';
+import { formatDateTime } from '@/lib/formatDate';
 
-const thClass = 'bg-cream px-2 py-1.5 text-left text-xs font-medium text-deep-violet-blue/60';
-const tdClass = 'px-2 py-1.5 text-sm text-deep-violet-blue';
-const numClass = 'text-right tabular-nums';
+import { DOH_COLUMNS } from './dohColumns';
+
+const cellClass = 'px-4 py-2.5';
+const numberCellClass = 'px-4 py-2.5 text-right tabular-nums';
 
 function editAction(row, editingId, onEdit) {
   return [{
@@ -25,114 +27,104 @@ function editAction(row, editingId, onEdit) {
   }];
 }
 
+// The alert value shown while its save is in flight is the one being saved.
+function alertState(row, pendingAlerts) {
+  const pending = row.customer_id in pendingAlerts;
+  return { pending, on: pending ? pendingAlerts[row.customer_id] : row.doh_alert_enabled };
+}
+
 /**
- * One row per customer: min / target / max DOH, when the thresholds were last
- * saved, the alert toggle, and an actions menu. Whether a customer is on the
- * global default is shown in the edit dialog's badge, not here.
- * Reset to default lives in the edit form (DohThresholdForm). Holds no state
- * of its own; the parent (DohSettingsView) owns editing and pending requests.
+ * One row per customer in the shared list table (DataTable): min / target /
+ * max DOH, when the thresholds were last saved, the alert toggle, and an
+ * actions menu. Whether a customer is on the global default is shown in the
+ * edit dialog's badge, not here; Reset to default lives in the edit form
+ * (DohThresholdForm). Holds no state of its own; the parent (DohSettingsView)
+ * owns editing and pending requests. The row being edited is highlighted.
  *
- * @param {object} props
- * @param {object[]} props.rows settings rows from getDohSettings
- * @param {number | null} props.editingId customer whose form is open
- * @param {Record<number, boolean>} props.pendingAlerts customer_id -> value being saved
- * @param {(row: object) => void} props.onEdit
- * @param {(row: object, enabled: boolean) => void} props.onToggleAlert
- * @param {boolean} [props.loading] first load in flight: placeholder rows,
- *   sized like the real ones
+ * @param {{
+ *   rows: object[],
+ *   loading: boolean,
+ *   error: string | null,
+ *   editingId: number | null,
+ *   pendingAlerts: Record<number, boolean>,
+ *   onEdit: (row: object) => void,
+ *   onToggleAlert: (row: object, enabled: boolean) => void,
+ *   onRefresh: () => void,
+ * }} props
  */
 export default function DohSettingsTable({
   rows,
+  loading,
+  error,
   editingId,
   pendingAlerts,
   onEdit,
   onToggleAlert,
-  loading = false,
+  onRefresh,
 }) {
   return (
-    <>
-    <div className="grid min-w-0 gap-2 sm:hidden">
-      {loading && Array.from({ length: 4 }, (_, index) => (
-        <div key={index} className="h-28 animate-pulse rounded-lg border border-lavander bg-white" />
-      ))}
-      {rows.map((row) => {
-        const alertPending = row.customer_id in pendingAlerts;
-        const alertOn = alertPending ? pendingAlerts[row.customer_id] : row.doh_alert_enabled;
-        const customer = customerLabel(row.customer_name);
-        return (
-          <MobileRecordCard
-            key={row.customer_id}
-            title={customer}
-            actions={<RowActions label={`Actions for DOH settings for ${customer}`} actions={editAction(row, editingId, onEdit)} />}
-            fields={[
-              { label: 'Min DOH', value: formatDohDays(row.min_doh) },
-              { label: 'Target DOH', value: formatDohDays(row.target_doh) },
-              { label: 'Max DOH', value: formatDohDays(row.max_doh) },
-              { label: 'Last updated', value: formatDateTime(row.thresholds_updated_at) },
-              { label: 'Alerts', value: <ToggleField ariaLabel={`DOH alerts for ${customer}`} checked={alertOn} disabled={alertPending} onChange={(checked) => onToggleAlert(row, checked)} /> },
-            ]}
-          />
-        );
-      })}
-    </div>
-    <div className="hidden max-w-full min-w-0 overflow-auto rounded-md border border-lavander sm:block">
-      <table className="aire-table-rows w-full min-w-[44rem] border-collapse">
-        <thead>
-          <tr>
-            <th className={thClass}>Customer</th>
-            <th className={cn(thClass, numClass)}>Min DOH</th>
-            <th className={cn(thClass, numClass)}>Target DOH</th>
-            <th className={cn(thClass, numClass)}>Max DOH</th>
-            <th className={thClass}>Last updated</th>
-            <th className={thClass}>Alerts</th>
-            <th className={thClass}><span className="sr-only">Actions</span></th>
-          </tr>
-        </thead>
-        <tbody aria-busy={loading}>
-          {loading && (
-            <TableSkeleton
-              columns={7}
-              rows={4}
-              className="h-10 border-b-0 border-t border-lavander"
-              cellClassName="px-2 py-1.5"
-            />
-          )}
+    <DataTable
+      label="Customer DOH thresholds"
+      noun="customer"
+      totalCount={rows.length}
+      isLoading={loading}
+      error={error}
+      onRefresh={onRefresh}
+      emptyMessage="No customers yet. Add one on the Customers page to set its DOH thresholds."
+      columns={DOH_COLUMNS}
+      minWidth="44rem"
+      skeletonRows={4}
+      mobileContent={
+        <RecordCardList>
           {rows.map((row) => {
-            const alertPending = row.customer_id in pendingAlerts;
-            const alertOn = alertPending ? pendingAlerts[row.customer_id] : row.doh_alert_enabled;
-
+            const customer = customerLabel(row.customer_name);
+            const alert = alertState(row, pendingAlerts);
             return (
-              <tr
+              <MobileRecordCard
                 key={row.customer_id}
-                className={cn('border-t border-lavander', editingId === row.customer_id && 'bg-cream')}
-              >
-                <td className={cn(tdClass, 'font-medium')}>{customerLabel(row.customer_name)}</td>
-                <td className={cn(tdClass, numClass)}>{formatDohDays(row.min_doh)}</td>
-                <td className={cn(tdClass, numClass)}>{formatDohDays(row.target_doh)}</td>
-                <td className={cn(tdClass, numClass)}>{formatDohDays(row.max_doh)}</td>
-                <td className={cn(tdClass, 'whitespace-nowrap')}>{formatDateTime(row.thresholds_updated_at)}</td>
-                <td className={tdClass}>
-                  <ToggleField
-                    ariaLabel={`DOH alerts for ${customerLabel(row.customer_name)}`}
-                    checked={alertOn}
-                    disabled={alertPending}
-                    onChange={(checked) => onToggleAlert(row, checked)}
-                  />
-                </td>
-                <td className={cn(tdClass, 'text-right')}>
-                  <div className="flex justify-end">
-                    <RowActions
-                      label={`Actions for DOH settings for ${customerLabel(row.customer_name)}`}
-                      actions={editAction(row, editingId, onEdit)}
-                    />
-                  </div>
-                </td>
-              </tr>
+                title={customer}
+                actions={<RowActions label={`Actions for DOH settings for ${customer}`} actions={editAction(row, editingId, onEdit)} />}
+                fields={[
+                  { label: 'Min DOH', value: formatDohDays(row.min_doh) },
+                  { label: 'Target DOH', value: formatDohDays(row.target_doh) },
+                  { label: 'Max DOH', value: formatDohDays(row.max_doh) },
+                  { label: 'Last updated', value: formatDateTime(row.thresholds_updated_at) },
+                  { label: 'Alerts', value: <ToggleField ariaLabel={`DOH alerts for ${customer}`} checked={alert.on} disabled={alert.pending} onChange={(checked) => onToggleAlert(row, checked)} /> },
+                ]}
+              />
             );
           })}
-        </tbody>
-      </table>
-    </div>
-    </>
+        </RecordCardList>
+      }
+    >
+      {rows.map((row) => {
+        const customer = customerLabel(row.customer_name);
+        const alert = alertState(row, pendingAlerts);
+        return (
+          <TableRow
+            key={row.customer_id}
+            data-highlight={editingId === row.customer_id ? 'editing' : undefined}
+            className="h-12 border-b border-lavander/80"
+          >
+            <td className="truncate px-4 py-2.5 font-medium" title={customer}>{customer}</td>
+            <td className={numberCellClass}>{formatDohDays(row.min_doh)}</td>
+            <td className={numberCellClass}>{formatDohDays(row.target_doh)}</td>
+            <td className={numberCellClass}>{formatDohDays(row.max_doh)}</td>
+            <td className={cellClass}>{formatDateTime(row.thresholds_updated_at)}</td>
+            <td className={cellClass}>
+              <ToggleField
+                ariaLabel={`DOH alerts for ${customer}`}
+                checked={alert.on}
+                disabled={alert.pending}
+                onChange={(checked) => onToggleAlert(row, checked)}
+              />
+            </td>
+            <td className="px-2 py-1.5 text-right">
+              <RowActions label={`Actions for DOH settings for ${customer}`} actions={editAction(row, editingId, onEdit)} />
+            </td>
+          </TableRow>
+        );
+      })}
+    </DataTable>
   );
 }

@@ -14,14 +14,21 @@ import { cn } from '@/lib/utils';
  * - filter: a FilterBar (filterControl.js), shared with FilterSelect, with
  *   the darker border while `active`.
  * - compact: the inventory filter card (white, violet border, small text).
+ * - outline: beside outline Buttons in a toolbar or footer (TablePagination's
+ *   rows per page): the outline Button's own height, border, radius and hover,
+ *   so the two read as one row of controls.
  *
- * @param {'field' | 'filter' | 'compact'} look
+ * @param {'field' | 'filter' | 'compact' | 'outline'} look
  * @param {'md' | 'sm'} size
  * @param {boolean} active
  */
 function lookClass(look, size, active) {
   if (look === 'filter') return filterControlClass(active);
-  if (look === 'compact') return 'h-8 rounded-md border border-violet bg-white px-2 text-xs';
+  if (look === 'compact') return 'h-8 rounded-md border border-deep-violet-blue/45 bg-white px-2 text-xs';
+  if (look === 'outline') {
+    // Mirrors ui/button's outline variant at its default size (h-8).
+    return 'h-8 rounded-lg border border-deep-violet-blue/30 bg-white px-2.5 text-sm transition-colors hover:bg-cream aria-expanded:bg-cream focus-visible:border-violet focus-visible:ring-3 focus-visible:ring-violet/40';
+  }
   return cn(
     'rounded-md border border-lavander bg-cream focus:border-violet',
     size === 'sm' ? 'h-7 px-2 text-xs' : 'px-2.5 py-1.5 text-sm',
@@ -47,7 +54,7 @@ function lookClass(look, size, active) {
  * @param {string} props.summary text on the closed button ('' shows `placeholder`)
  * @param {string} [props.placeholder]
  * @param {string} [props.title] tooltip on the closed button; defaults to `summary`
- * @param {'field' | 'filter' | 'compact'} [props.look]
+ * @param {'field' | 'filter' | 'compact' | 'outline'} [props.look]
  * @param {'md' | 'sm'} [props.size] only for the field look
  * @param {boolean} [props.active] filter look: darker border while narrowing a list
  * @param {boolean} [props.disabled]
@@ -109,7 +116,7 @@ export default function Dropdown({
         aria-labelledby={ariaLabelledby}
         title={title ?? (summary || undefined)}
         className={cn(
-          'flex w-full min-w-0 cursor-pointer items-center justify-between overflow-hidden text-left text-deep-violet-blue outline-none disabled:cursor-not-allowed disabled:opacity-60',
+          'aire-glass-control flex w-full min-w-0 cursor-pointer items-center justify-between overflow-hidden text-left text-deep-violet-blue outline-none disabled:cursor-not-allowed disabled:opacity-60',
           lookClass(look, size, active),
           invalid && 'border-red-400 focus:border-red-500',
           className,
@@ -132,7 +139,7 @@ export default function Dropdown({
         align="start"
         initialFocus={searchable ? searchRef : undefined}
         className={cn(
-          'w-max min-w-(--anchor-width) max-w-[min(28rem,90vw)] gap-0 overflow-hidden rounded-md border border-lavander bg-white p-0 text-deep-violet-blue ring-0',
+          'aire-glass-dropdown-panel w-max min-w-(--anchor-width) max-w-[min(28rem,90vw)] gap-0 overflow-hidden rounded-md border border-lavander bg-white p-0 text-deep-violet-blue ring-0',
           panelClassName,
         )}
       >
