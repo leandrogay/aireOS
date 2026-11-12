@@ -131,7 +131,7 @@ export default function DohThresholdForm({ settings, onSaved, onCancel }) {
       {/* The cursor goes to the first field (Min DOH) on open. */}
       <DialogContent
         initialFocus={firstInputRef}
-        className="max-h-[90vh] overflow-y-auto sm:max-w-2xl"
+        className="max-h-[90vh] overflow-y-auto sm:max-w-[38rem]"
       >
         {/* Sits above the disabled fieldset while the request is in flight. */}
         {submitting && (
@@ -234,9 +234,9 @@ export default function DohThresholdForm({ settings, onSaved, onCancel }) {
           </fieldset>
 
           {/* ==== Actions ==== */}
-          <DialogFooter className="mt-4 flex-wrap items-center gap-3 sm:justify-start">
+          <DialogFooter className="mt-4 flex-wrap items-center gap-3 sm:justify-between">
             <div className="flex min-w-0 flex-wrap items-center gap-3">
-              {/* Keep all actions together at the left of the footer. */}
+              {/* Restore stays separate from the save actions. */}
               <Button
                 type="button"
                 variant="ghost"
