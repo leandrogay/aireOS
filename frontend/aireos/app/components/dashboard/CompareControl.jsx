@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { ChevronDown, GitCompareArrows } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Tooltip, TooltipContent, TooltipTrigger, NOTE_TOOLTIP_CLASS } from '@/components/ui/tooltip';
 import MonthRangeCalendar from '@/components/ui/MonthRangeCalendar';
 import { cn } from '@/lib/utils';
 import { formatPeriodName } from '@/app/utils/periodComparison';
@@ -38,7 +39,7 @@ export default function CompareControl({
   earliestDataStart,
   periodLength,
   disabled = false,
-  disabledReason = 'Compare to applies when one customer is selected',
+  disabledReason = 'Select exactly one customer in Filter to compare its sales across periods.',
   onChange,
 }) {
   const [open, setOpen] = useState(false);
@@ -47,6 +48,20 @@ export default function CompareControl({
 
   const selected = options.find((option) => option.value === value);
   const selectedDates = selected?.range ? formatPeriodName(selected.range.start, selected.range.end) : null;
+  const trigger = (
+    <PopoverTrigger
+      disabled={disabled}
+      className={cn(
+        'flex items-center gap-1.5 rounded-md border border-violet bg-white px-2.5 py-1 text-xs text-deep-violet-blue hover:bg-lavander disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white',
+        disabled && 'pointer-events-none',
+      )}
+    >
+      <GitCompareArrows className="size-3.5" />
+      <span className="font-semibold">{selected?.short ?? 'No comparison'}</span>
+      {selectedDates && <span className="text-deep-violet-blue/70">· {selectedDates}</span>}
+      <ChevronDown className="size-3.5" />
+    </PopoverTrigger>
+  );
 
   function handleOpenChange(nextOpen) {
     if (nextOpen) setPickingCustom(false);
@@ -76,16 +91,31 @@ export default function CompareControl({
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverTrigger
-        disabled={disabled}
-        title={disabled ? disabledReason : undefined}
-        className="flex items-center gap-1.5 rounded-md border border-violet bg-white px-2.5 py-1 text-xs text-deep-violet-blue hover:bg-lavander disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white"
-      >
-        <GitCompareArrows className="size-3.5" />
-        <span className="font-semibold">{selected?.short ?? 'No comparison'}</span>
-        {selectedDates && <span className="text-deep-violet-blue/70">· {selectedDates}</span>}
-        <ChevronDown className="size-3.5" />
-      </PopoverTrigger>
+      {disabled ? (
+        <Tooltip>
+          <TooltipTrigger
+            delay={150}
+            closeDelay={100}
+            render={
+              <span
+                className="inline-flex cursor-not-allowed rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-deep-violet-blue"
+                tabIndex={0}
+                role="group"
+                aria-label="Compare to unavailable"
+              >
+                {trigger}
+              </span>
+            }
+          />
+          <TooltipContent
+            side="bottom"
+            align="end"
+            className={NOTE_TOOLTIP_CLASS}
+          >
+            {disabledReason}
+          </TooltipContent>
+        </Tooltip>
+      ) : trigger}
       <PopoverContent align="end" className="w-auto max-w-[calc(100vw-2rem)] bg-white p-3">
         {!pickingCustom ? (
           <div className="flex w-64 flex-col gap-1">

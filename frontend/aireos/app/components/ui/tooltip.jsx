@@ -3,6 +3,8 @@
 import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip"
 import { cn } from "@/lib/utils"
 
+const NOTE_TOOLTIP_CLASS = "max-w-64 rounded-lg bg-popover p-2.5 text-xs font-normal text-deep-violet-blue/80 shadow-md ring-1 ring-foreground/10 *:data-[side]:hidden"
+
 function TooltipProvider({
   delay = 0,
   ...props
@@ -62,4 +64,4 @@ function TooltipContent({
   )
 }
 
-export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider }
+export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider, NOTE_TOOLTIP_CLASS }

@@ -70,7 +70,9 @@ export default function PeriodControls({
           disabled={compareDisabled || datesUpdating}
           // Said only when it's the reason: several customers outrank a brief update.
           disabledReason={
-            compareDisabled ? 'Compare to applies when one customer is selected' : 'Updating the months for these customers…'
+            compareDisabled
+              ? 'Select exactly one customer in Filter to compare its sales across periods.'
+              : 'Wait for the available months to finish updating.'
           }
           onChange={onCompareChange}
         />

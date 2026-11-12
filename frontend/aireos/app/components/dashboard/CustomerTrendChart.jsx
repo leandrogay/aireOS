@@ -116,6 +116,12 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
   const tooltip = (
     <ChartTooltip content={<TrendTooltip metric={metric} series={series} />} wrapperStyle={{ zIndex: 10 }} />
   );
+  const legend = (
+    <ChartLegend
+      height={mobile ? 52 : undefined}
+      content={<ChartLegendContent className="max-sm:flex-wrap max-sm:gap-x-3 max-sm:gap-y-1 max-sm:px-1 max-sm:[&>div]:whitespace-nowrap" />}
+    />
+  );
 
   if (customers.length === 0) {
     return (
@@ -143,7 +149,7 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
             {yAxis}
             <MonthAxis groups={monthGroups} />
             {tooltip}
-            <ChartLegend content={<ChartLegendContent />} />
+            {legend}
             {series.map((item) => (
               <Bar key={item.key} dataKey={item.key} fill={`var(--color-${item.key})`} maxBarSize={MAX_BAR_SIZE} {...BAR_ANIMATION} {...transition.seriesAnimation} />
             ))}
@@ -155,7 +161,7 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
             {yAxis}
             <MonthAxis groups={monthGroups} />
             {tooltip}
-            <ChartLegend content={<ChartLegendContent />} />
+            {legend}
             {series.map((item) => (
               <Line
                 key={item.key}
