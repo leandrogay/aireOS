@@ -47,6 +47,24 @@ def test_weekly_and_monthly_layouts_fingerprint_differently():
     assert cp.fingerprint(FAIRPRICE) != cp.fingerprint(weekly)
 
 
+def test_a_month_heading_over_a_product_column_fingerprints_the_same_each_month():
+    august = ["Aug-26", "YISHUN", "TAMPINES", "Unnamed: 3"]
+
+    assert cp.fingerprint(august) == cp.fingerprint(["Jul-26", *august[1:]])
+
+
+# ---- Months named in a heading ----------------------------------------------------
+
+def test_a_heading_that_is_only_a_month_and_year_names_that_month():
+    assert cp.month_year("Aug-26") == pd.Timestamp("2026-08-01")
+    assert cp.month_year("July 2026") == pd.Timestamp("2026-07-01")
+
+
+def test_a_heading_that_names_a_month_among_other_words_is_not_a_month():
+    assert cp.month_year("Sales Aug 2026") is None
+    assert cp.month_year("YISHUN") is None
+
+
 # ---- Groups ------------------------------------------------------------------------
 
 def test_period_columns_are_grouped_with_a_pattern_that_matches_other_months():

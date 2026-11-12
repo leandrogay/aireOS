@@ -602,6 +602,35 @@ def test_the_prompt_shows_the_cells_above_the_header_counted_up_from_it():
     assert '"rows_above": 3' in prompt
 
 
+def test_the_prompt_shows_the_headings_under_the_header_counted_down_from_it():
+    layout = {"header_row": 1, "rows_below_header": [{"row": 2, "cells": {"YISHUN": "HQ"}, "in_table": False}]}
+
+    prompt = gm.mapping_prompt.user_prompt("codes.xlsx", {}, [], layout, 2, [], [])
+
+    assert '"cells_below_header"' in prompt
+    assert '"rows_below": 1' in prompt and '"HQ"' in prompt
+
+
+@pytest.mark.parametrize("answer_label, label", [
+    ({"rows_above": 0, "rows_below": 1, "target": "store_code"}, {"rows_below": 1, "target": "store_code"}),
+    ({"rows_above": 1, "rows_below": 0, "target": "store_code"}, {"rows_above": 1, "target": "store_code"}),
+    ({"rows_above": 0, "rows_below": 0, "target": "store_code"}, {"rows_above": 0, "target": "store_code"}),
+])
+def test_a_proposed_label_reads_under_the_headings_only_when_rows_below_is_set(answer_label, label):
+    answer = {
+        "fields": [],
+        "melt_groups": [{
+            "id": "outlets", "select_kind": "pattern", "select_pattern": "^[A-Z]+$", "select_after": "",
+            "select_before": "", "key_target": "store_name", "key_pattern": "", "date_format": "",
+            "period_type": "", "value_target": "quantity_units", "labels": [answer_label],
+            "confidence": "high", "rationale": "",
+        }],
+        "aggregate_to_month": False,
+    }
+
+    assert gm.mapping_prompt.parse_proposal(answer)["melt_groups"][0]["labels"] == [label]
+
+
 def test_disable_examples_flag_leaves_every_reference_contract_out_of_the_prompt(monkeypatch):
     monkeypatch.delenv("MAPPING_DISABLE_EXAMPLES", raising=False)
     with_examples = gm.mapping_prompt.user_prompt("new.xlsx", {}, [], {}, 2, [], [])

@@ -29,7 +29,7 @@ from app import config
 from app.services.reference_contracts import REFERENCE_CONTRACTS
 
 FIELD_DEFINITIONS = {
-    "period_start": "First day of the calendar month the sales fall in. Read from a period header, or from a transaction date with month_start. When the table has neither, derive it from_layout 'stated_period' (the period written above the table), with period_type the constant 'month'.",
+    "period_start": "First day of the calendar month the sales fall in. Read from a period header, or from a transaction date with month_start. When the table has neither, derive it from_layout 'stated_period' (the period written above the table, or the one heading that is only a month such as 'Aug-26' -- see stated_period in the layout), with period_type the constant 'month'. When the month sits in one cell at the top of the sheet (listed under cells in the layout, e.g. A1 'Jul-26'), from_cell that cell is the same. Never type the month in as a constant: next month's file is read through the same contract.",
     "period_type": "'month' for every retailer. Derived when period column headers say Month/Week; otherwise a constant.",
     "retailer": "Retailer + channel code, lower case: '<family>_online' or '<family>_offline' (fairprice_online, fairprice_offline, nhg_offline, sheng_siong_online, sheng_siong_offline). A supplier or vendor name is NOT the retailer.",
     "store_code": "The retailer's own store/outlet identifier. Not available when the file reports all stores together.",
@@ -71,7 +71,9 @@ How the contract works
 - Every field listed in the schema gets exactly one entry, with a status:
   mapped (from a source column, or from a melt group's key, value or label),
   derived (period_type from period headers; another field run through
-  transforms via from_field; or period_start from_layout 'stated_period'),
+  transforms via from_field; period_start from_layout 'stated_period'; or
+  from_cell, one cell of the sheet such as 'A1' written on every row, for
+  the period or a descriptive field the file states once at its top),
   constant (same value on every row), or not_available.
 - not_available is the expected, correct answer when the file does not hold
   a field. Give the reason. Never force a column into a field it does not fit,
@@ -85,9 +87,12 @@ How the contract works
 - A group's labels read more about each melted column: rows_above N fills a
   descriptive field from the cell N rows above its heading (see
   cells_above_header in the layout -- an outlet code written over the outlet
-  name), and rows_above 0 reads the heading again for a second field. A
-  melted column with nothing above it fails the file, so only label from a
-  row that has a cell over every melted column.
+  name), rows_below N (with rows_above 0) from the cell N rows under it (see
+  cells_below_header -- an outlet code written under the outlet name; that
+  row is then a heading, not data), and rows_above 0 with rows_below 0 reads
+  the heading again for a second field. A melted column with nothing there
+  fails the file, so only label from a row that has a cell at every melted
+  column.
 - Select a group's columns by rule, never by listing them: select_kind
   'pattern' with a regex that also matches next month's headers, or 'between'
   two marker columns (select_before "" runs to the last column) so a new
@@ -217,7 +222,7 @@ def output_schema(columns: list[str]) -> dict:
         "additionalProperties": False,
         "required": [
             "target", "status", "source", "melt_group", "from_field", "from_layout",
-            "value", "reason", "transforms", "confidence", "rationale",
+            "from_cell", "value", "reason", "transforms", "confidence", "rationale",
         ],
         "properties": {
             "target": {"type": "string", "enum": list(DECIDABLE_FIELDS)},
@@ -226,6 +231,7 @@ def output_schema(columns: list[str]) -> dict:
             "melt_group": {"type": "string"},
             "from_field": _optional({"type": "string", "enum": list(DECIDABLE_FIELDS)}),
             "from_layout": _optional({"type": "string", "enum": list(LAYOUT_SOURCES)}),
+            "from_cell": {"type": "string"},
             "value": {"type": "string"},
             "reason": {"type": "string"},
             "transforms": {"type": "array", "items": transform},
@@ -254,9 +260,10 @@ def output_schema(columns: list[str]) -> dict:
                 "items": {
                     "type": "object",
                     "additionalProperties": False,
-                    "required": ["rows_above", "target"],
+                    "required": ["rows_above", "rows_below", "target"],
                     "properties": {
                         "rows_above": {"type": "integer"},
+                        "rows_below": {"type": "integer"},
                         "target": {"type": "string", "enum": list(LABEL_TARGETS)},
                     },
                 },
@@ -352,6 +359,20 @@ def user_prompt(
             {"rows_above": int(layout["header_row"]) - item["row"], "cells": item["cells"]}
             for item in layout["rows_above_header"]
         ]
+    # Counted down from the header, as rows_below counts them.
+    if layout.get("rows_below_header") and layout.get("header_row"):
+        layout_notes["cells_below_header"] = [
+            {"rows_below": item["row"] - int(layout["header_row"]), "cells": item["cells"]}
+            for item in layout["rows_below_header"]
+        ]
+    # Cells by reference, from the top of the sheet down to the header: what from_cell may name.
+    if layout.get("cells") and layout.get("header_row"):
+        top = int(layout["header_row"])
+        layout_notes["cells"] = {
+            reference: value
+            for reference, value in layout["cells"].items()
+            if int(reference.lstrip("ABCDEFGHIJKLMNOPQRSTUVWXYZ")) <= top
+        }
 
     examples = "\n\n".join(
         _example(key, entry)
@@ -417,7 +438,7 @@ def parse_proposal(answer: dict) -> dict:
         if not target or target in fields:
             continue
         entry = {"status": item.get("status")}
-        for key in ("source", "melt_group", "from_field", "from_layout", "value", "reason", "confidence", "rationale"):
+        for key in ("source", "melt_group", "from_field", "from_layout", "from_cell", "value", "reason", "confidence", "rationale"):
             if _used(item.get(key)) is not None:
                 entry[key] = item[key]
         transforms = []
@@ -471,9 +492,15 @@ def parse_proposal(answer: dict) -> dict:
         }
         if item.get("period_type"):
             group["period_type"] = item["period_type"]
-        # rows_above 0 is meaningful here (the heading again), so not _used().
+        # rows_above 0 is meaningful here (the heading again), so not _used();
+        # a rows_below of 1 or more reads under the heading instead.
         if item.get("labels"):
-            group["labels"] = [{"rows_above": label["rows_above"], "target": label["target"]} for label in item["labels"]]
+            group["labels"] = [
+                {"rows_below": label["rows_below"], "target": label["target"]}
+                if _used(label.get("rows_below"))
+                else {"rows_above": label["rows_above"], "target": label["target"]}
+                for label in item["labels"]
+            ]
         groups.append(group)
 
     contract = {"fields": fields, "melt_groups": groups}

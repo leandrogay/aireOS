@@ -290,6 +290,27 @@ def singhealth_xlsx(outlets=SINGHEALTH_OUTLETS, period: str = "01 Aug 2026 TO 31
     return _workbook_bytes(workbook)
 
 
+CODES_BELOW_OUTLETS = [("YISHUN", "HQ"), ("TAMPINES", "OTH")]
+
+
+def outlet_codes_below_xlsx(total_column: bool = True, month: str = "Aug-26") -> bytes:
+    """
+    One column per outlet named in the header, each outlet's code in the row
+    under it, a TOTAL footer; the product column is headed by the month the
+    file covers ("Aug-26", "Jul-26"). With `total_column` the codes row ends
+    in "TOTAL" over the row totals, which also marks it as a subtotal row.
+    """
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    total = ["TOTAL"] if total_column else []
+    sheet.append([month, *[name for name, _ in CODES_BELOW_OUTLETS]])
+    sheet.append(["SKUs", *[code for _, code in CODES_BELOW_OUTLETS], *total])
+    sheet.append(["AIRE PULL UP PANTS SIZE S/M", 34, 29, *([63] if total_column else [])])
+    sheet.append(["AIRE PULL UP PANTS SIZE L", 38, 0, *([38] if total_column else [])])
+    sheet.append(["TOTAL", 72, 29, *([101] if total_column else [])])
+    return _workbook_bytes(workbook)
+
+
 def prime_xlsx() -> bytes:
     """A withdrawal report: one row per pallet sent from the distribution centre to an outlet."""
     workbook = openpyxl.Workbook()

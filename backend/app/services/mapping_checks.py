@@ -6,7 +6,8 @@ transformation's job). Each check reads the contract's instructions and the
 file's own columns and values -- every field accounted for, the required ones
 filled, every product code a master SKU, every rule value covered, revenue not
 read from a claim or price column, periods inside the period the file states,
-every store label above the header present. (One check, a store keeping to
+every store label above the header present, every cell a field is read from
+filled. (One check, a store keeping to
 one retailer, reads the rows the transformation made instead; it is called on
 them by whoever ran it -- see check_store_channels.)
 A check that fails names the fields it implicates, and those fields'
@@ -23,7 +24,19 @@ from collections import Counter
 import pandas as pd
 
 from app.schemas.sellout import BUSINESS_COLUMNS
-from app.services.mapping_contract import REQUIRED_FIELDS, group_columns, read_contract, resolve_selector
+from app.services.mapping_contract import (
+    REQUIRED_FIELDS,
+    cell_period,
+    cell_value,
+    group_columns,
+    label_cells,
+    label_row,
+    read_contract,
+    reads_headings,
+    resolve_selector,
+    table_rows,
+    with_file_columns,
+)
 
 # A column with one of these words in its name is a claim against the
 # supplier, a price or a cost -- never the gross sales value of units sold.
@@ -112,21 +125,20 @@ def _translated_code(code: str, transforms: list[dict]) -> str:
 def _heading_sku_codes(frame: pd.DataFrame, layout: dict | None, contract: dict, entry: dict) -> list[dict]:
     """
     The product codes of a file with one column per product: the codes are the
-    melt group's headings, or the cells above them. Each is counted once per
-    column carrying it, since there are no rows of codes to count.
+    melt group's headings, or the cells above or below them. Each is counted
+    once per column carrying it, since there are no rows of codes to count.
     """
     group = next((g for g in contract.get("melt_groups") or [] if g["id"] == entry.get("melt_group")), None)
     if group is None:
         return []
     columns = resolve_selector(group.get("select") or {}, list(frame.columns))
     label = next((item for item in group.get("labels") or [] if item["target"] == "sku"), None)
-    if group["key"]["target"] == "sku" or (label and label["rows_above"] == 0):
+    if group["key"]["target"] == "sku" or (label and reads_headings(label)):
         pattern = group["key"].get("pattern") if group["key"]["target"] == "sku" else None
         found = [re.search(pattern, column) if pattern else None for column in columns]
         values = [match.group(1) if match else column for match, column in zip(found, columns)]
     elif label:
-        row = int((layout or {}).get("header_row") or 1) - label["rows_above"]
-        cells = next((item["cells"] for item in (layout or {}).get("rows_above_header") or [] if item["row"] == row), {})
+        cells = label_cells(label, layout)
         values = [cells.get(column) for column in columns]
     else:
         return []
@@ -143,9 +155,11 @@ def sku_codes(frame: pd.DataFrame, contract: dict, layout: dict | None = None) -
     Every product code in the file, with what the contract's code table makes
     of it, the file's description of it (when product_name is read from a
     column), and how many rows carry it. What the review screen's code table
-    is built from. `layout` lets codes written over the column headings be read.
+    is built from. `layout` lets codes written over or under the column
+    headings be read, and keeps a row of headings out of the data.
     """
-    contract = read_contract(contract)
+    contract = with_file_columns(contract, list(frame.columns))
+    frame = table_rows(frame, contract, layout)
     fields = contract.get("fields") or {}
     entry = fields.get("sku") or {}
     source = entry.get("source")
@@ -178,14 +192,15 @@ def sku_codes(frame: pd.DataFrame, contract: dict, layout: dict | None = None) -
 
 def stated_period(layout: dict, filename: str) -> dict | None:
     """
-    The period the file states for itself: its title or preamble first, then
-    its filename (FairPrice: "..._01-01-2026_01-08-2026_1.txt"; NHG: "... Aug
+    The period the file states for itself: its title or preamble first (or,
+    when they state none, a heading that is a month: "Aug-26"), then its
+    filename (FairPrice: "..._01-01-2026_01-08-2026_1.txt"; NHG: "... Aug
     26.xlsx"). A date in a filename that is not a range or a month -- Sheng
     Siong's "03JUL26" is the statement's creation date -- is not read as one.
     """
     stated = (layout or {}).get("stated_period")
     if stated:
-        return {"start": stated["start"], "end": stated["end"], "source": "title"}
+        return {"start": stated["start"], "end": stated["end"], "source": stated.get("source", "title")}
 
     name = str(filename or "")
     match = FILENAME_RANGE.search(name)
@@ -206,9 +221,16 @@ def stated_period(layout: dict, filename: str) -> dict | None:
     return None
 
 
-def _period_dates(frame: pd.DataFrame, contract: dict) -> pd.Series | None:
-    """The dates the contract reads periods from: period headers, or a date column."""
+def _period_dates(frame: pd.DataFrame, contract: dict, layout: dict | None = None) -> pd.Series | None:
+    """
+    The dates the contract reads periods from: period headers, a date column,
+    the one date typed in, or the one cell it reads.
+    """
     entry = (contract.get("fields") or {}).get("period_start") or {}
+    if entry.get("status") == "constant":
+        return pd.to_datetime(pd.Series([entry.get("value")]), errors="coerce").dropna()
+    if entry.get("from_cell"):
+        return pd.to_datetime(pd.Series([cell_period(cell_value(layout, entry["from_cell"]))])).dropna()
     if entry.get("melt_group"):
         group = next((g for g in contract.get("melt_groups") or [] if g["id"] == entry["melt_group"]), None)
         if not group:
@@ -279,14 +301,13 @@ def _check_skus(frame: pd.DataFrame, layout: dict, contract: dict, master_skus: 
 
 
 def _label_values(layout: dict, group: dict, target: str, columns: list[str]) -> list[str] | None:
-    """The cells a melt group's label reads above its columns (an outlet's code over its name)."""
+    """The cells a melt group's label reads above or below its columns (an outlet's code over its name)."""
     label = next((item for item in group.get("labels") or [] if item["target"] == target), None)
     if label is None:
         return None
-    if label["rows_above"] == 0:
+    if reads_headings(label):
         return sorted(columns)
-    row = int((layout or {}).get("header_row") or 1) - label["rows_above"]
-    cells = next((item["cells"] for item in (layout or {}).get("rows_above_header") or [] if item["row"] == row), {})
+    cells = label_cells(label, layout)
     return sorted({cells[column] for column in columns if column in cells})
 
 
@@ -401,20 +422,22 @@ def _check_quantity_sign(frame: pd.DataFrame, contract: dict) -> dict:
 
 
 def _check_stated_month(layout: dict) -> dict:
-    """A contract that reads its period from the file's title needs a title stating one month."""
+    """A contract that reads the period the file states needs a title or a heading stating one month."""
     stated = (layout or {}).get("stated_period")
     if not stated:
         return _check(
             "period", "error", False,
-            "The period is read from the file's title, but this file's title states no period.",
+            "The period is read from what the file states, but this file states no period in its title "
+            "or as a month heading.",
             ["period_start"], {"stated": None},
         )
+    source = stated.get("source", "title")
     one_month = pd.Timestamp(stated["start"]).to_period("M") == pd.Timestamp(stated["end"]).to_period("M")
     return _check(
         "period", "error", one_month,
-        f"Every row is dated to the month the title states: {stated['start']} to {stated['end']}."
+        f"Every row is dated to the month the {source} states: {stated['start']} to {stated['end']}."
         if one_month
-        else f"The title states {stated['start']} to {stated['end']}, more than one month, "
+        else f"The {source} states {stated['start']} to {stated['end']}, more than one month, "
              "so rows cannot be dated to a month from it.",
         ["period_start"], {"stated": stated},
     )
@@ -425,7 +448,7 @@ def _check_period(frame: pd.DataFrame, layout: dict, contract: dict, filename: s
     if entry.get("from_layout") == "stated_period":
         return _check_stated_month(layout)
     stated = stated_period(layout, filename)
-    dates = _period_dates(frame, contract)
+    dates = _period_dates(frame, contract, layout)
     if stated is None or dates is None or dates.empty:
         return _check("period", "info", True, "The file states no period to check against.", ["period_start"])
     first, last = pd.Timestamp(stated["start"]).to_period("M"), pd.Timestamp(stated["end"]).to_period("M")
@@ -442,24 +465,47 @@ def _check_period(frame: pd.DataFrame, layout: dict, contract: dict, filename: s
 def _check_labels(frame: pd.DataFrame, layout: dict, contract: dict) -> list[dict]:
     """Every column a melt group reads a label for has a cell in the label's row."""
     checks = []
-    header_row = int((layout or {}).get("header_row") or 1)
-    above = {item["row"]: item["cells"] for item in (layout or {}).get("rows_above_header") or []}
     for group in contract.get("melt_groups") or []:
         columns = resolve_selector(group.get("select") or {}, list(frame.columns))
         for label in group.get("labels") or []:
-            if label["rows_above"] == 0:
+            if reads_headings(label):
                 continue  # the headings themselves are always there
-            row = header_row - label["rows_above"]
-            cells = above.get(row) or {}
+            row = label_row(label, layout)
+            where = "below" if label.get("rows_below") is not None else "above"
+            cells = label_cells(label, layout)
             missing = [column for column in columns if column not in cells]
             target = label["target"]
             checks.append(_check(
                 f"labels_{target}", "error", not missing,
-                f"{target}: read from row {row} above all {len(columns)} columns." if not missing
-                else f"{target}: row {row} has nothing above {', '.join(missing[:10])}.",
+                f"{target}: read from row {row} {where} all {len(columns)} columns." if not missing
+                else f"{target}: row {row} has nothing {where} {', '.join(missing[:10])}.",
                 [target],
                 {"row": row, "read": {c: cells[c] for c in columns[:20] if c in cells}, "missing": missing},
             ))
+    return checks
+
+
+def _check_cells(layout: dict, contract: dict) -> list[dict]:
+    """
+    Every field read from one cell finds a value there, and a period cell
+    names a month or a date. A cell is read as it is, before any steps, so a
+    period cell with steps is only checked for a value.
+    """
+    checks = []
+    for target, entry in (contract.get("fields") or {}).items():
+        reference = entry.get("from_cell")
+        if not reference:
+            continue
+        value = cell_value(layout, reference)
+        if value is None:
+            passed, message = False, f"{target}: cell {reference} is empty in this file."
+        elif target == "period_start" and not entry.get("transforms") and cell_period(value) is None:
+            passed, message = False, f"{target}: cell {reference} holds {value!r}, which is not a month or a date."
+        else:
+            passed, message = True, f"{target}: {value!r} from cell {reference}, on every row."
+        checks.append(_check(
+            f"cell_{target}", "error", passed, message, [target], {"cell": reference, "value": value},
+        ))
     return checks
 
 
@@ -559,7 +605,9 @@ def run_checks(
     Every static check, most serious first. `master_skus` is the SKU master's
     codes; None when it could not be read, which fails the product-code check.
     """
-    contract = read_contract(contract)
+    contract = with_file_columns(contract, list(frame.columns))
+    # A row of headings the contract reads under the header is not data.
+    frame = table_rows(frame, contract, layout)
     checks = [
         _check_accounted(contract),
         *_check_required(contract),
@@ -569,6 +617,7 @@ def run_checks(
         _check_quantity_sign(frame, contract),
         _check_period(frame, layout, contract, filename),
         *_check_labels(frame, layout, contract),
+        *_check_cells(layout, contract),
         _check_not_available(contract),
         _check_instructions(contract),
     ]

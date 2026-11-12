@@ -20,6 +20,8 @@ from pathlib import Path
 import openpyxl
 import pandas as pd
 
+from app.services.column_profile import month_year
+
 
 class LayoutError(ValueError):
     """No usable data table could be found in the file."""
@@ -28,6 +30,10 @@ class LayoutError(ValueError):
 # A header row is looked for in the first rows only; a sheet whose header sits
 # lower than this is not a layout we have seen.
 HEADER_SCAN_ROWS = 30
+# How far under the header a second row of headings is looked for (outlet
+# codes written under the outlet names), and the cells a contract may read
+# one value from are kept (`cells`): the top of the sheet, not its data.
+HEADING_ROWS_BELOW = 3
 
 # Labels Excel writes into a pivot table. A sheet carrying them is a summary of
 # the data, never the data itself. "Grand Total" alone is not one: an ordinary
@@ -166,6 +172,34 @@ def _text_sheet(filename: str, data: bytes) -> dict:
     return {"name": None, "rows": rows, "has_pivot": False, "merged": set()}
 
 
+# ---- Cell references -----------------------------------------------------------
+
+def column_letter(index: int) -> str:
+    """The spreadsheet letter of a 0-based column index: 0 is A, 26 is AA."""
+    letters = ""
+    index += 1
+    while index:
+        index, remainder = divmod(index - 1, 26)
+        letters = chr(ord("A") + remainder) + letters
+    return letters
+
+
+def _top_cells(rows: list[list], last_row: int) -> dict[str, str]:
+    """
+    Every filled cell from row 1 down to `last_row`, by its spreadsheet
+    reference ("A1"). A contract can read one value from here and write it on
+    every row (mapping_contract `from_cell`): Pharmex writes its month in A1.
+    Rows and columns count from A1 as the spreadsheet does, since sheets and
+    CSV files are both read from there.
+    """
+    cells = {}
+    for row_index, row in enumerate(rows[:last_row]):
+        for column_index, value in enumerate(row):
+            if value is not None:
+                cells[f"{column_letter(column_index)}{row_index + 1}"] = value
+    return cells
+
+
 # ---- Finding the table on a sheet --------------------------------------------
 
 def _filled(row: list) -> list[str]:
@@ -174,6 +208,12 @@ def _filled(row: list) -> list[str]:
 
 def _is_number_or_date(value: str) -> bool:
     return bool(NUMBER_LIKE.match(value) or DATE_LIKE.match(value))
+
+
+def _mostly_words(cells: list[str]) -> bool:
+    """Whether a row's cells are mostly words rather than numbers or dates, as headings are."""
+    words = [value for value in cells if not _is_number_or_date(value)]
+    return len(words) >= 0.8 * len(cells)
 
 
 def _find_header_row(rows: list[list]) -> int | None:
@@ -193,8 +233,7 @@ def _find_header_row(rows: list[list]) -> int | None:
         cells = _filled(row)
         if len(cells) < max(2, widest / 2):
             continue
-        words = [value for value in cells if not _is_number_or_date(value)]
-        if len(words) < 0.8 * len(cells):
+        if not _mostly_words(cells):
             continue
         if any(_filled(later) for later in rows[index + 1 :]):
             return index
@@ -260,10 +299,32 @@ def _parse_preamble(rows: list[list]) -> dict:
                     "start": start.date().isoformat(),
                     "end": end.date().isoformat(),
                     "stated_in": text,
+                    "source": "title",
                 }
                 break
 
     return {"title": title, "metadata": metadata, "stated_period": stated_period}
+
+
+def _heading_period(headers: list[str]) -> dict | None:
+    """
+    The month the file states in its headings: the one heading that is a
+    month and year and nothing else. Pharmex writes "Aug-26" over its product
+    column and "Jul-26" in July's file, so the month is read from there rather
+    than typed into the nomenclature. Several such headings are a file with a
+    column per month, which states no single period.
+    """
+    named = [(header, month_year(header)) for header in headers]
+    named = [(header, month) for header, month in named if month is not None]
+    if len(named) != 1:
+        return None
+    header, month = named[0]
+    return {
+        "start": month.date().isoformat(),
+        "end": (month + pd.offsets.MonthEnd(0)).date().isoformat(),
+        "stated_in": header,
+        "source": "heading",
+    }
 
 
 def _rows_above_header(rows: list[list], headers: list[str], keep: list[int]) -> list[dict]:
@@ -282,6 +343,36 @@ def _rows_above_header(rows: list[list], headers: list[str], keep: list[int]) ->
         if cells:
             above.append({"row": index + 1, "cells": cells})
     return above
+
+
+def _rows_below_header(
+    rows: list[list], header_index: int, headers: list[str], keep: list[int], table_rows: set[int]
+) -> list[dict]:
+    """
+    The rows of headings just under the header, keyed by the header of the
+    column each cell sits in: a file that names its outlets in the header and
+    writes their codes in the row under them. Only rows of words count, and
+    the first row of figures ends them, so a sales row is never one.
+
+    `in_table` says whether the row was also kept as a data row (nothing
+    marked it as anything else). A contract that reads a label from it takes
+    it back out of the data (mapping_contract.table_rows); one that does not
+    leaves the table as it is, since a row of words can be data too.
+    """
+    below = []
+    for index in range(header_index + 1, min(header_index + 1 + HEADING_ROWS_BELOW, len(rows))):
+        row = rows[index]
+        cells = {
+            headers[column]: row[column]
+            for column in keep
+            if column < len(row) and row[column] is not None
+        }
+        if not cells:
+            continue
+        if not _mostly_words(list(cells.values())):
+            break
+        below.append({"row": index + 1, "cells": cells, "in_table": index in table_rows})
+    return below
 
 
 def _footer_label(row: list) -> str | None:
@@ -396,11 +487,13 @@ def _table_on_sheet(sheet: dict) -> dict | None:
 
     subtotal_rows = 0
     data_rows = []
-    for _, row in indexed:
+    data_row_indexes = set()
+    for number, row in indexed:
         if any(value and SUBTOTAL_LABEL.match(value) for value in row):
             subtotal_rows += 1
             continue
         data_rows.append(row)
+        data_row_indexes.add(number)
 
     columns_with_data = {
         index for row in data_rows for index, value in enumerate(row) if value is not None
@@ -427,6 +520,11 @@ def _table_on_sheet(sheet: dict) -> dict | None:
     )
     frame = frame.astype(object).where(frame.notna(), None)
 
+    # A period stated above the table wins over one named in a heading.
+    preamble = _parse_preamble(rows[:header_index])
+    if preamble["stated_period"] is None:
+        preamble["stated_period"] = _heading_period(kept_headers)
+
     return {
         "frame": frame,
         "header_row": header_index + 1,
@@ -437,7 +535,9 @@ def _table_on_sheet(sheet: dict) -> dict | None:
         "spacer_columns": spacer_columns,
         "filled_columns": filled_columns,
         "rows_above_header": _rows_above_header(rows[:header_index], headers, keep),
-        **_parse_preamble(rows[:header_index]),
+        "rows_below_header": _rows_below_header(rows, header_index, headers, keep, data_row_indexes),
+        "cells": _top_cells(rows, header_index + 1 + HEADING_ROWS_BELOW),
+        **preamble,
     }
 
 
@@ -460,9 +560,10 @@ def read_table(filename: str, data: bytes) -> tuple[pd.DataFrame, dict]:
     Of a workbook's sheets the one chosen is the non-pivot sheet with the most
     data rows; every other sheet is listed in `rejected_sheets` with the
     reason. The layout also carries what was set aside so it can be checked
-    against: the preamble and any period it states, the cells above the
-    header by column, footer rows, total and spacer columns, and a pivot
-    sheet's grand totals.
+    against: the preamble and any period it (or else a month heading) states, the cells above the
+    header by column (and any row of headings just under it), the cells at
+    the top of the sheet by reference ("A1"), footer rows, total and spacer
+    columns, and a pivot sheet's grand totals.
     """
     sheets = read_sheets(filename, data)
 

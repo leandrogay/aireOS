@@ -42,7 +42,10 @@ Statuses:
                  (`from_field`, e.g. retailer from the outlet code's _Ecomm suffix,
                  revenue as quantity times a per-unit price column), or the
                  period the file states above its table (`from_layout`:
-                 "stated_period", SingHealth's "DATE : 01 Aug 2026 TO 31 Aug 2026")
+                 "stated_period", SingHealth's "DATE : 01 Aug 2026 TO 31 Aug 2026"),
+                 or one cell of the sheet written on every row (`from_cell`:
+                 "A1", where Pharmex writes its month "Jul-26"); each month's
+                 file is read at the same cell, so it is dated by itself
   constant       the same `value` on every row (NHG's retailer)
   system         written by the pipeline (source_file)
   not_available  the file does not hold it; `reason` says why. Never invented.
@@ -52,7 +55,10 @@ code or a store name). Its `labels` read more of it: {"rows_above": 1,
 "target": "store_code"} fills store_code from the cell directly above each
 melted column, where SingHealth writes the outlet's code over its name, and
 {"rows_above": 0, "target": "store_name"} reads the header itself again, so one
-heading can fill both the store code and the store name.
+heading can fill both the store code and the store name. {"rows_below": 1,
+"target": "store_code"} reads the cell directly under each melted column's
+header instead, for a file that writes the outlet's code under its name; that
+row is a heading, so it is never read as data (table_rows).
 
 The sku field's value_map is the product-code table: each retailer code in the
 file and the master SKU it is. A field with no value_map uses the file's codes
@@ -67,6 +73,7 @@ import re
 import pandas as pd
 
 from app.schemas.sellout import BUSINESS_COLUMNS
+from app.services.column_profile import header_template, month_year
 
 FIELD_STATUSES = ("mapped", "derived", "constant", "system", "not_available")
 CONFIDENCE_LEVELS = ("high", "medium", "low")
@@ -97,6 +104,12 @@ MELT_KEY_TARGETS = ("period_start", *HEADING_FIELDS)
 LABEL_TARGETS = HEADING_FIELDS
 # What a field may be read from in the file's layout rather than its table.
 LAYOUT_SOURCES = ("stated_period",)
+# What one cell of the sheet may fill on every row: the period, or any
+# descriptive field (an outlet written once at the top, say). A figure is
+# never one cell repeated.
+CELL_TARGETS = ("period_start", *HEADING_FIELDS)
+# A cell named the way a spreadsheet names it: "A1", "AB12".
+CELL_REFERENCE = re.compile(r"^[A-Z]{1,3}[1-9]\d*$")
 PERIOD_TYPES = ("month", "week")
 SELECTOR_KINDS = ("pattern", "between", "columns")
 
@@ -134,6 +147,52 @@ def read_contract(contract: dict | None) -> dict:
     contract = copy.deepcopy(contract or {})
     contract.setdefault("fields", {})
     contract.setdefault("melt_groups", [])
+    return contract
+
+
+def with_file_columns(contract: dict | None, columns: list[str]) -> dict:
+    """
+    A copy of a contract whose column names are this file's.
+
+    A file is matched to a contract by its headings with their months and
+    numbers set aside (column_profile.fingerprint), so next month's file may
+    head a column "Jul-26" where the contract, made from August's, names
+    "Aug-26". Each column the contract names that the file lacks becomes the
+    file's one column whose heading reads the same once its month and numbers
+    are set aside (header_template). A name with no such column, or with
+    several, is left as it is and fails where it is read, as before.
+    """
+    contract = read_contract(contract)
+    present = set(columns)
+    by_template: dict[str, list[str]] = {}
+    for column in columns:
+        by_template.setdefault(header_template(column), []).append(column)
+
+    def renamed(name):
+        if not isinstance(name, str) or name in present:
+            return name
+        matches = by_template.get(header_template(name)) or []
+        return matches[0] if len(matches) == 1 else name
+
+    for entry in contract["fields"].values():
+        if entry.get("source"):
+            entry["source"] = renamed(entry["source"])
+        for transform in entry.get("transforms") or []:
+            if transform.get("column"):
+                transform["column"] = renamed(transform["column"])
+            for factor in (transform.get("factors") or {}).values():
+                if isinstance(factor, dict) and factor.get("column"):
+                    factor["column"] = renamed(factor["column"])
+    for group in contract["melt_groups"]:
+        select = group.get("select") or {}
+        for marker in ("after", "before"):
+            if select.get(marker):
+                select[marker] = renamed(select[marker])
+        if select.get("columns"):
+            select["columns"] = [renamed(column) for column in select["columns"]]
+    layout = contract.get("layout")
+    if isinstance(layout, dict) and layout.get("fill_down"):
+        layout["fill_down"] = [renamed(column) for column in layout["fill_down"]]
     return contract
 
 
@@ -190,6 +249,103 @@ def group_columns(contract: dict, columns: list[str]) -> dict[str, list[str]]:
         except (ValueError, re.error):
             resolved[group["id"]] = []
     return resolved
+
+
+# ---- The rows a melt group's labels read ----------------------------------------------
+
+def reads_headings(label: dict) -> bool:
+    """Whether a label reads the headings themselves again (rows_above 0) rather than another row."""
+    return label.get("rows_below") is None and label.get("rows_above") == 0
+
+
+def label_row(label: dict, layout: dict | None) -> int:
+    """The file row a label reads: counted up from the header row, or down with rows_below."""
+    header_row = int((layout or {}).get("header_row") or 1)
+    if label.get("rows_below") is not None:
+        return header_row + label["rows_below"]
+    return header_row - label["rows_above"]
+
+
+def label_cells(label: dict, layout: dict | None) -> dict[str, str]:
+    """
+    The cells of the row a label reads, keyed by the header each sits under
+    (layout_detection rows_above_header / rows_below_header); {} when the
+    file has nothing on that row.
+    """
+    key = "rows_below_header" if label.get("rows_below") is not None else "rows_above_header"
+    row = label_row(label, layout)
+    return next((item["cells"] for item in (layout or {}).get(key) or [] if item.get("row") == row), {})
+
+
+def table_rows(frame: pd.DataFrame, contract: dict, layout: dict | None) -> pd.DataFrame:
+    """
+    The file's data rows without the rows of headings under its header that
+    the contract reads labels from: outlet codes under the outlet names are
+    headings, not sales. Layout detection keeps such a row in the table when
+    nothing else marks it (layout_detection _rows_below_header, `in_table`),
+    always at the top. Rows are matched by their cells, so a table they were
+    already taken out of comes back as it is.
+    """
+    deepest = max(
+        (
+            label["rows_below"]
+            for group in (contract or {}).get("melt_groups") or []
+            for label in group.get("labels") or []
+            if label.get("rows_below") is not None
+        ),
+        default=0,
+    )
+    if not deepest:
+        return frame
+    # Every row from the header down to the deepest one read is a heading.
+    last = int((layout or {}).get("header_row") or 1) + deepest
+    headings = [
+        item["cells"]
+        for item in (layout or {}).get("rows_below_header") or []
+        if item["row"] <= last and item.get("in_table")
+    ]
+    if not headings:
+        return frame
+    top = frame.head(len(headings))
+    taken = [
+        index
+        for index, record in zip(top.index, top.to_dict(orient="records"))
+        if {column: value for column, value in record.items() if value is not None} in headings
+    ]
+    return frame.drop(index=taken).reset_index(drop=True)
+
+
+# ---- One cell written on every row --------------------------------------------------
+
+def clean_cell_reference(value) -> str | None:
+    """A cell reference as the contract stores it ("a1", "$A$1" -> "A1"), or None when it is not one."""
+    text = str(value if value is not None else "").strip().upper().replace("$", "")
+    return text if CELL_REFERENCE.match(text) else None
+
+
+def cell_value(layout: dict | None, reference: str) -> str | None:
+    """
+    The text in one cell at the top of the sheet (layout_detection `cells`),
+    or None when the cell is empty or lies below the rows that are kept.
+    """
+    return ((layout or {}).get("cells") or {}).get(reference)
+
+
+def cell_period(text) -> pd.Timestamp | None:
+    """
+    The date a cell's value names, or None: a month and year ("Jul-26",
+    "August 2026") is its first day, else a date as Excel or a person writes
+    it ("2026-07-01", "01/07/2026").
+    """
+    if text is None or not str(text).strip():
+        return None
+    month = month_year(text)
+    if month is not None:
+        return month
+    parsed = pd.to_datetime(str(text).strip(), format="ISO8601", errors="coerce")
+    if pd.isna(parsed):
+        parsed = pd.to_datetime(str(text).strip(), dayfirst=True, errors="coerce")
+    return None if pd.isna(parsed) else parsed.normalize()
 
 
 # ---- Validation ---------------------------------------------------------------------
@@ -409,18 +565,32 @@ def _validate_labels(raw, key_target: str, label: str, warnings: list[str]) -> l
     clean = []
     for item in raw:
         item = item if isinstance(item, dict) else {}
-        rows_above, target = item.get("rows_above"), item.get("target")
-        if not isinstance(rows_above, int) or isinstance(rows_above, bool) or rows_above < 0:
+        rows_above, rows_below, target = item.get("rows_above"), item.get("rows_below"), item.get("target")
+        if rows_below is not None:
+            if rows_above is not None or not _whole_number(rows_below) or rows_below < 1:
+                warnings.append(
+                    f"Dropped melt group for {label!r} — a label reads rows_above or rows_below, "
+                    "not both, and rows_below must be 1 or more"
+                )
+                return None
+            position = {"rows_below": rows_below}
+        elif not _whole_number(rows_above) or rows_above < 0:
             warnings.append(f"Dropped melt group for {label!r} — a label's rows_above must be 0 (the header) or more")
             return None
+        else:
+            position = {"rows_above": rows_above}
         if target not in LABEL_TARGETS or target == key_target or any(c["target"] == target for c in clean):
             warnings.append(
                 f"Dropped melt group for {label!r} — each label fills one descriptive field "
                 f"({', '.join(LABEL_TARGETS)}) once, and not the field the key fills"
             )
             return None
-        clean.append({"rows_above": rows_above, "target": target})
+        clean.append({**position, "target": target})
     return clean
+
+
+def _whole_number(value) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
 
 
 def _group_fills(group: dict) -> tuple[str, ...]:
@@ -521,6 +691,18 @@ def _validate_group(group, raw_columns, target_schema, trust_review, warnings):
     return clean, columns
 
 
+def _has_values(entry: dict) -> bool:
+    """
+    Whether a field gives another field values to be worked out from: not one
+    that is missing, nor one itself worked out from a field, which would chain.
+    A field read from the title or a cell is derived but has its value.
+    """
+    status = entry.get("status")
+    if status == "derived":
+        return bool(entry.get("from_cell") or entry.get("from_layout"))
+    return status not in ("not_available", None)
+
+
 def _fixed_entry(target: str) -> dict | None:
     """The entry a field gets whatever was proposed for it, or None if it is decidable."""
     if target in SYSTEM_FIELDS:
@@ -559,7 +741,8 @@ def validate_contract(
     a reviewer; a freshly generated contract has every "reviewed" flag cleared.
     """
     target_schema = list(target_schema or BUSINESS_COLUMNS)
-    proposed = read_contract(contract)
+    # Next month's file names its month heading differently; it is still the column meant.
+    proposed = with_file_columns(contract, raw_columns)
     warnings: list[str] = list(proposed.get("warnings") or [])
     samples = samples or {}
     raw_set = set(raw_columns)
@@ -614,7 +797,7 @@ def validate_contract(
     for target, entry in fields.items():
         source_field = entry.get("from_field")
         if entry["status"] == "derived" and source_field:
-            if fields.get(source_field, {}).get("status") in ("not_available", "derived", None):
+            if not _has_values(fields.get(source_field) or {}):
                 warnings.append(
                     f"Dropped field nomenclature — {target!r} is derived from {source_field!r}, "
                     "which has no values"
@@ -720,6 +903,30 @@ def monthly_aggregate() -> dict:
     return {"period": "month", "by": list(AGGREGATE_KEY), "sum": list(MEASURE_FIELDS)}
 
 
+def _validate_cell_field(target, raw, raw_columns, annotation, trust_review, warnings):
+    """A field read from one cell and written on every row, cleaned; not_available when unusable."""
+    reference = clean_cell_reference(raw["from_cell"])
+    if target not in CELL_TARGETS:
+        warnings.append(
+            f"Dropped field nomenclature — {target!r} cannot be read from one cell: only the period "
+            f"or a descriptive field ({', '.join(CELL_TARGETS[1:])}) is the same on every row"
+        )
+        return _not_available("This field cannot be read from one cell.", raw, trust_review)
+    if reference is None:
+        warnings.append(
+            f"Dropped field nomenclature — {target!r} reads cell {raw['from_cell']!r}, "
+            "which is not a cell like 'A1'"
+        )
+        return _not_available("Its cell is not a cell like A1.", raw, trust_review)
+    transforms = validate_transforms(target, raw.get("transforms"), raw_columns, [], None, warnings)
+    if transforms is None:
+        return _not_available("Its transform was rejected.", raw, trust_review)
+    entry = {"status": "derived", "from_cell": reference, **annotation}
+    if transforms:
+        entry["transforms"] = transforms
+    return entry
+
+
 def _validate_field(target, raw, raw_columns, raw_set, groups, group_cols, samples, trust_review, warnings):
     """One decidable field's entry, cleaned; not_available with a reason when unusable."""
     if not isinstance(raw, dict):
@@ -753,6 +960,8 @@ def _validate_field(target, raw, raw_columns, raw_set, groups, group_cols, sampl
                 )
                 return _not_available("No period columns to read the period type from.", raw, trust_review)
             return {"status": "derived", **annotation}
+        if raw.get("from_cell") is not None:
+            return _validate_cell_field(target, raw, raw_columns, annotation, trust_review, warnings)
         if raw.get("from_layout"):
             if target != "period_start" or raw["from_layout"] not in LAYOUT_SOURCES:
                 warnings.append(
@@ -849,8 +1058,9 @@ def unreviewed_low_confidence(contract: dict) -> list[str]:
 
 def _heading_values(contract: dict, entry: dict, target: str, columns: list[str], layout: dict | None) -> list[str] | None:
     """
-    What a field read from a melt group's headings -- or the cells above them
-    -- is filled with, or None when that cannot be told without the file.
+    What a field read from a melt group's headings -- or the cells above or
+    below them -- is filled with, or None when that cannot be told without
+    the file.
     """
     group = next((g for g in contract.get("melt_groups") or [] if g.get("id") == entry.get("melt_group")), None)
     if group is None:
@@ -860,12 +1070,11 @@ def _heading_values(contract: dict, entry: dict, target: str, columns: list[str]
     except (ValueError, re.error):
         return None
     label = next((item for item in group.get("labels") or [] if item.get("target") == target), None)
-    if (group.get("key") or {}).get("target") == target or (label and label.get("rows_above") == 0):
+    if (group.get("key") or {}).get("target") == target or (label and reads_headings(label)):
         return selected
     if label is None or layout is None:
         return None
-    row = int(layout.get("header_row") or 1) - label["rows_above"]
-    cells = next((item["cells"] for item in layout.get("rows_above_header") or [] if item.get("row") == row), {})
+    cells = label_cells(label, layout)
     return [cells[column] for column in selected if column in cells]
 
 
@@ -918,7 +1127,7 @@ def retailer_outputs(
     return list(dict.fromkeys(str(output) for output in outputs if output not in (None, "")))
 
 
-DECISION_KEYS = ("status", "source", "melt_group", "from_field", "from_layout", "value", "transforms")
+DECISION_KEYS = ("status", "source", "melt_group", "from_field", "from_layout", "from_cell", "value", "transforms")
 
 
 def contract_diff(before: dict | None, after: dict) -> list[dict]:

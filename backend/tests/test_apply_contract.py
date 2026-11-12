@@ -4,7 +4,7 @@ import copy
 
 import pandas as pd
 import pytest
-from conftest import prime_xlsx, singhealth_xlsx
+from conftest import outlet_codes_below_xlsx, prime_xlsx, singhealth_xlsx
 
 from app.services import (
     apply_contract,
@@ -285,6 +285,123 @@ def test_one_outlet_heading_can_fill_both_the_store_code_and_the_store_name():
 
     assert set(zip(result["store_code"], result["store_name"])) == {("BEDOK", "BEDOK"), ("ONLINE", "ONLINE")}
     assert set(result.loc[result["store_code"] == "ONLINE", "retailer"]) == {"singhealth_online"}
+
+
+# ---- Outlet codes under the headings ----------------------------------------------
+
+CODES_BELOW = {
+    "fields": {
+        "period_start": {"status": "constant", "value": "2026-08-01"},
+        "period_type": {"status": "constant", "value": "month"},
+        "retailer": {"status": "constant", "value": "acme_offline"},
+        "sku": {"status": "mapped", "source": "Aug-26", "transforms": [{"type": "value_map", "values": {
+            "AIRE PULL UP PANTS SIZE S/M": "13255044", "AIRE PULL UP PANTS SIZE L": "13255045",
+        }}]},
+        "store_name": {"status": "mapped", "melt_group": "outlets"},
+        "store_code": {"status": "mapped", "melt_group": "outlets"},
+        "quantity_units": {"status": "mapped", "melt_group": "outlets", "transforms": [{"type": "zero_as_empty"}]},
+    },
+    "melt_groups": [{
+        "id": "outlets",
+        "select": {"kind": "columns", "columns": ["YISHUN", "TAMPINES"]},
+        "key": {"target": "store_name"},
+        "labels": [{"rows_below": 1, "target": "store_code"}],
+        "value_target": "quantity_units",
+    }],
+    "aggregate": {"period": "month"},
+}
+
+
+@pytest.mark.parametrize("total_column", [True, False])
+def test_outlet_codes_are_read_from_the_row_under_the_outlet_names(total_column):
+    result = _transformed(CODES_BELOW, "codes.xlsx", outlet_codes_below_xlsx(total_column))
+
+    totals = result.set_index(["store_code", "store_name", "sku"])["quantity_units"].to_dict()
+    # The codes row is a heading whether or not a TOTAL cell set it aside: no
+    # "SKUs" product or "HQ" quantity is loaded from it.
+    assert totals == {
+        ("HQ", "YISHUN", "13255044"): 34,
+        ("HQ", "YISHUN", "13255045"): 38,
+        ("OTH", "TAMPINES", "13255044"): 29,
+    }
+    assert validation_service.validate_mapped_dataframe(result)["total_rejected"] == 0
+
+
+def _read_through(contract: dict, made_from: bytes, data: bytes) -> pd.DataFrame:
+    """A file transformed through a contract validated and approved on another month's file."""
+    frame, layout = layout_detection.read_table("made_from.xlsx", made_from)
+    proposed = copy.deepcopy(contract)
+    proposed["layout"] = mapping_contract.layout_instructions(layout)
+    return sellout_ingestion.transform_confirmed_upload("next.xlsx", data, _validated(proposed, frame))
+
+
+def test_julys_file_reads_through_the_contract_made_from_augusts_and_is_dated_july():
+    contract = copy.deepcopy(CODES_BELOW)
+    contract["fields"]["period_start"] = {"status": "derived", "from_layout": "stated_period"}
+
+    result = _read_through(contract, outlet_codes_below_xlsx(), outlet_codes_below_xlsx(month="Jul-26"))
+
+    assert set(result["period_start"]) == {pd.Timestamp("2026-07-01")}
+    assert set(result["sku"]) == {"13255044", "13255045"}
+    assert set(result["store_code"]) == {"HQ", "OTH"}
+
+
+def test_a_fixed_august_date_fails_julys_file_rather_than_loading_it_as_august():
+    with pytest.raises(apply_contract.ContractApplicationError, match="dates every row Aug 2026"):
+        _read_through(CODES_BELOW, outlet_codes_below_xlsx(), outlet_codes_below_xlsx(month="Jul-26"))
+
+
+def test_an_outlet_with_no_code_under_it_fails_rather_than_loading_as_all_stores():
+    dataframe = pd.DataFrame([{"Aug-26": "AIRE PULL UP PANTS SIZE L", "YISHUN": "3", "TAMPINES": "4"}])
+    layout = {"header_row": 1, "rows_below_header": [{"row": 2, "cells": {"YISHUN": "HQ"}, "in_table": False}]}
+
+    with pytest.raises(apply_contract.ContractApplicationError, match="nothing below"):
+        apply_contract.apply_contract(dataframe, _validated(CODES_BELOW, dataframe), layout=layout)
+
+
+# ---- One cell written on every row --------------------------------------------------------
+
+def test_julys_file_is_dated_by_the_month_in_cell_a1_through_augusts_contract():
+    contract = copy.deepcopy(CODES_BELOW)
+    contract["fields"]["period_start"] = {"status": "derived", "from_cell": "A1"}
+
+    result = _read_through(contract, outlet_codes_below_xlsx(), outlet_codes_below_xlsx(month="Jul-26"))
+
+    assert set(result["period_start"]) == {pd.Timestamp("2026-07-01")}
+    assert set(result["period_end"]) == {pd.Timestamp("2026-07-31")}
+
+
+def test_a_value_in_one_cell_is_written_on_every_row_after_its_steps():
+    dataframe = pd.DataFrame([{"Product": "13255043", "Qty": "3"}, {"Product": "13255044", "Qty": "5"}])
+    contract = {
+        "fields": {
+            "period_start": {"status": "derived", "from_cell": "B1"},
+            "period_type": {"status": "constant", "value": "month"},
+            "retailer": {"status": "derived", "from_cell": "A1", "transforms": [
+                {"type": "value_map", "values": {"ACME STORES": "acme_offline"}},
+            ]},
+            "sku": {"status": "mapped", "source": "Product"},
+            "quantity_units": {"status": "mapped", "source": "Qty"},
+        },
+    }
+    layout = {"header_row": 2, "cells": {"A1": "ACME STORES", "B1": "01/08/2026", "A2": "Product", "B2": "Qty"}}
+
+    result = apply_contract.apply_contract(dataframe, _validated(contract, dataframe), layout=layout)
+
+    assert list(result["retailer"]) == ["acme_offline", "acme_offline"]
+    assert list(result["period_start"]) == [pd.Timestamp("2026-08-01")] * 2
+
+
+def test_an_empty_cell_fails_the_file_rather_than_loading_rows_without_a_value():
+    dataframe = pd.DataFrame([{"Aug-26": "AIRE PULL UP PANTS SIZE L", "YISHUN": "3", "TAMPINES": "4"}])
+    contract = copy.deepcopy(CODES_BELOW)
+    contract["fields"]["period_start"] = {"status": "derived", "from_cell": "A1"}
+    layout = {"header_row": 1, "cells": {}, "rows_below_header": [
+        {"row": 2, "cells": {"YISHUN": "HQ", "TAMPINES": "OTH"}, "in_table": False},
+    ]}
+
+    with pytest.raises(apply_contract.ContractApplicationError, match="cell A1, which is empty"):
+        apply_contract.apply_contract(dataframe, _validated(contract, dataframe), layout=layout)
 
 
 # ---- Headings read for any descriptive field -----------------------------------------

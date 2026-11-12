@@ -10,7 +10,7 @@ import io
 
 import openpyxl
 import pytest
-from conftest import fairprice_txt, nhg_xlsx, sheng_siong_xlsx, singhealth_xlsx
+from conftest import fairprice_txt, nhg_xlsx, outlet_codes_below_xlsx, sheng_siong_xlsx, singhealth_xlsx
 
 from app.services import layout_detection as ld
 
@@ -126,6 +126,64 @@ def test_the_cells_above_the_header_are_kept_by_column():
     assert layout["header_row"] == 4
     codes = next(item for item in layout["rows_above_header"] if item["row"] == 3)
     assert codes["cells"] == {"BEDOK": "81001", "ONLINE": "88001"}
+
+
+def test_a_row_of_outlet_codes_under_the_header_is_kept_as_headings_below_it():
+    _, layout = ld.read_table("codes.xlsx", outlet_codes_below_xlsx(total_column=False))
+
+    assert layout["header_row"] == 1
+    assert layout["rows_below_header"] == [
+        {"row": 2, "cells": {"Aug-26": "SKUs", "YISHUN": "HQ", "TAMPINES": "OTH"}, "in_table": True},
+    ]
+
+
+def test_a_codes_row_set_aside_as_a_subtotal_is_still_a_heading_below_but_not_in_the_table():
+    frame, layout = ld.read_table("codes.xlsx", outlet_codes_below_xlsx(total_column=True))
+
+    assert [item["row"] for item in layout["rows_below_header"]] == [2]
+    assert layout["rows_below_header"][0]["in_table"] is False
+    assert "SKUs" not in frame["Aug-26"].tolist()
+
+
+def test_a_month_heading_states_the_period_when_the_title_states_none():
+    _, layout = ld.read_table("codes.xlsx", outlet_codes_below_xlsx(month="Jul-26"))
+
+    assert layout["stated_period"] == {
+        "start": "2026-07-01", "end": "2026-07-31", "stated_in": "Jul-26", "source": "heading",
+    }
+
+
+def test_the_title_states_the_period_before_any_heading():
+    _, layout = ld.read_table("XEL.xlsx", singhealth_xlsx())
+
+    assert layout["stated_period"]["source"] == "title"
+
+
+def test_a_column_per_month_states_no_single_period():
+    data = b"Product,Jan 2026,Feb 2026\nA1,1,2\n"
+
+    _, layout = ld.read_table("months.csv", data)
+
+    assert layout["stated_period"] is None
+
+
+def test_the_first_row_of_figures_under_the_header_is_never_a_heading():
+    _, layout = ld.read_table("XEL.xlsx", singhealth_xlsx())
+
+    assert layout["rows_below_header"] == []
+
+
+def test_the_cells_at_the_top_of_the_sheet_are_kept_by_reference():
+    _, layout = ld.read_table("codes.xlsx", outlet_codes_below_xlsx(month="Jul-26"))
+
+    assert (layout["cells"]["A1"], layout["cells"]["B1"], layout["cells"]["C2"]) == ("Jul-26", "YISHUN", "OTH")
+    # Only the header and the rows just under it: the TOTAL footer on row 5 is data's end, not the top.
+    assert "A5" not in layout["cells"]
+
+
+@pytest.mark.parametrize("index, letter", [(0, "A"), (25, "Z"), (26, "AA"), (701, "ZZ"), (702, "AAA")])
+def test_columns_are_lettered_as_a_spreadsheet_letters_them(index, letter):
+    assert ld.column_letter(index) == letter
 
 
 def test_merged_date_cells_are_filled_down():

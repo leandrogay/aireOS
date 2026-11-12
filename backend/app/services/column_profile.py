@@ -177,6 +177,21 @@ def _guess_month_year_format(keys: list[str]) -> str | None:
     return None
 
 
+def month_year(text: str) -> pd.Timestamp | None:
+    """
+    The first day of the month a text names when it is a month and year and
+    nothing else ("Aug-26", "August 2026"), else None. "Sales Aug 2026" is a
+    metric for a month, not a month, so it is None.
+    """
+    text = str(text).strip()
+    if not MONTH_YEAR_TOKEN.fullmatch(text):
+        return None
+    date_format = _guess_month_year_format([text])
+    if date_format is None:
+        return None
+    return pd.to_datetime(text, format=date_format).to_period("M").to_timestamp()
+
+
 def _month_year_patterns(header: str, token: re.Match) -> tuple[str, str]:
     def generalise(text: str) -> str:
         return re.sub(r"\d+", r"\\d+", re.escape(text))

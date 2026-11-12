@@ -66,16 +66,19 @@ def _describe(target: str, entry: dict, groups: dict) -> str:
     if status == "derived" and entry.get("from_field"):
         return f"From {entry['from_field']}"
     if status == "derived" and entry.get("from_layout") == "stated_period":
-        return "The month the file's title states"
+        return "The month the file states (its title or a month heading)"
+    if status == "derived" and entry.get("from_cell"):
+        return f"Read from cell {entry['from_cell']}, the same on every row"
     if status == "derived" and target == "period_type":
         return "Read from the period column headers"
     if status == "mapped" and entry.get("melt_group") in groups:
         group = groups[entry["melt_group"]]
         label = next((item for item in group.get("labels") or [] if item["target"] == target), None)
-        if label and label["rows_above"] == 0:
+        if label and mapping_contract.reads_headings(label):
             return f"Read from the column headers of melt group {entry['melt_group']!r}"
         if label:
-            return f"Read from the cells above the column headers of melt group {entry['melt_group']!r}"
+            where = "below" if label.get("rows_below") is not None else "above"
+            return f"Read from the cells {where} the column headers of melt group {entry['melt_group']!r}"
         return f"Read from the column headers of melt group {entry['melt_group']!r}"
     return STATUS_DESCRIPTIONS.get(status, status or "")
 

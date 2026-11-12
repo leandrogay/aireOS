@@ -8,7 +8,7 @@ reference contracts must pass them all.
 """
 
 import pytest
-from conftest import fairprice_txt, nhg_xlsx, sheng_siong_xlsx, singhealth_xlsx
+from conftest import fairprice_txt, nhg_xlsx, outlet_codes_below_xlsx, sheng_siong_xlsx, singhealth_xlsx
 
 from app.services import layout_detection, mapping_checks as mk, mapping_contract, reference_contracts
 
@@ -300,6 +300,87 @@ def test_headings_read_for_both_store_fields_need_no_row_above_and_feed_a_rule_o
     assert mk.failures(checks) == []
     assert not any(check["id"].startswith("labels_") for check in checks)
     assert _by_id(checks)["rules_retailer"]["evidence"]["matched"] == ["ONLINE"]
+
+
+# ---- Outlet codes written under the column headings -----------------------------------
+
+def _codes_below_contract():
+    return {
+        "fields": {
+            "period_start": {"status": "constant", "value": "2026-08-01"},
+            "period_type": {"status": "constant", "value": "month"},
+            "retailer": {"status": "constant", "value": "acme_offline"},
+            "sku": {"status": "mapped", "source": "Aug-26", "transforms": [{"type": "value_map", "values": {
+                "AIRE PULL UP PANTS SIZE S/M": "13255044", "AIRE PULL UP PANTS SIZE L": "13255045",
+            }}]},
+            "store_name": {"status": "mapped", "melt_group": "outlets"},
+            "store_code": {"status": "mapped", "melt_group": "outlets"},
+            "quantity_units": {"status": "mapped", "melt_group": "outlets"},
+        },
+        "melt_groups": [{
+            "id": "outlets", "select": {"kind": "columns", "columns": ["YISHUN", "TAMPINES"]},
+            "key": {"target": "store_name"}, "labels": [{"rows_below": 1, "target": "store_code"}],
+            "value_target": "quantity_units",
+        }],
+    }
+
+
+@pytest.mark.parametrize("total_column", [True, False])
+def test_store_codes_read_from_the_row_under_the_headings_pass_the_checks(total_column):
+    checks, _, _ = _run(None, "codes.xlsx", outlet_codes_below_xlsx(total_column), _codes_below_contract())
+
+    assert mk.failures(checks) == []
+    labels = _by_id(checks)["labels_store_code"]
+    assert labels["message"] == "store_code: read from row 2 below all 2 columns."
+    assert labels["evidence"]["read"] == {"YISHUN": "HQ", "TAMPINES": "OTH"}
+
+
+def test_a_fixed_period_outside_the_month_the_heading_states_fails_the_period_check():
+    checks, _, _ = _run(None, "codes.xlsx", outlet_codes_below_xlsx(month="Jul-26"), _codes_below_contract())
+
+    period = _by_id(checks)["period"]
+    assert (period["passed"], period["evidence"]["outside"]) == (False, ["2026-08"])
+    assert "(heading)" in period["message"]
+
+
+def test_the_heading_row_under_the_header_is_not_counted_as_a_product_code():
+    frame, layout = layout_detection.read_table("codes.xlsx", outlet_codes_below_xlsx(total_column=False))
+    contract = mapping_contract.validate_contract(_codes_below_contract(), list(frame.columns), trust_review=True)
+
+    codes = mk.sku_codes(frame, contract, layout)
+
+    assert [item["code"] for item in codes] == ["AIRE PULL UP PANTS SIZE S/M", "AIRE PULL UP PANTS SIZE L"]
+
+
+# ---- One cell written on every row ------------------------------------------------------
+
+def _period_in_cell(reference):
+    contract = _codes_below_contract()
+    contract["fields"]["period_start"] = {"status": "derived", "from_cell": reference}
+    return contract
+
+
+def test_a_period_read_from_a_cell_is_checked_against_the_month_the_file_states():
+    checks, _, _ = _run(None, "codes.xlsx", outlet_codes_below_xlsx(month="Jul-26"), _period_in_cell("A1"))
+
+    assert mk.failures(checks) == []
+    cell = _by_id(checks)["cell_period_start"]
+    assert cell["message"] == "period_start: 'Jul-26' from cell A1, on every row."
+    assert _by_id(checks)["period"]["passed"] is True
+
+
+def test_an_empty_cell_fails_the_check_with_the_cell_named():
+    checks, _, _ = _run(None, "codes.xlsx", outlet_codes_below_xlsx(), _period_in_cell("Z1"))
+
+    cell = _by_id(checks)["cell_period_start"]
+    assert (cell["passed"], cell["fields"]) == (False, ["period_start"])
+    assert "Z1 is empty" in cell["message"]
+
+
+def test_a_period_cell_that_names_no_date_fails_the_check():
+    checks, _, _ = _run(None, "codes.xlsx", outlet_codes_below_xlsx(), _period_in_cell("A2"))
+
+    assert "'SKUs', which is not a month or a date" in _by_id(checks)["cell_period_start"]["message"]
 
 
 # ---- Product codes written over the column headings -----------------------------------

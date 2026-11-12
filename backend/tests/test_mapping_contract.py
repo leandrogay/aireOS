@@ -7,6 +7,9 @@ says so, with a reason), nothing unsafe is applied silently, and product
 attributes always come from the SKU master.
 """
 
+import pandas as pd
+import pytest
+
 from app.schemas.sellout import BUSINESS_COLUMNS
 from app.services import mapping_contract as mc
 
@@ -348,6 +351,52 @@ def test_only_the_period_can_be_read_from_the_stated_period():
     assert contract["fields"]["store_code"]["status"] == "not_available"
 
 
+# ---- One cell written on every row ------------------------------------------------------
+
+def test_a_field_can_be_read_from_one_cell_named_as_a_spreadsheet_names_it():
+    contract = _validate_outlets(_outlet_contract(period_start={"status": "derived", "from_cell": "$a$1"}))
+
+    assert contract["fields"]["period_start"]["from_cell"] == "A1"
+    assert mc.required_missing_fields(contract) == []
+
+
+def test_a_figure_is_never_one_cell_repeated():
+    contract = _validate_outlets(_outlet_contract(quantity_units={"status": "derived", "from_cell": "B2"}))
+
+    assert contract["fields"]["quantity_units"]["status"] == "not_available"
+    assert any("cannot be read from one cell" in w for w in contract["warnings"])
+
+
+def test_a_cell_must_be_named_like_a1():
+    contract = _validate_outlets(_outlet_contract(store_name={"status": "derived", "from_cell": "row 1"}))
+
+    assert contract["fields"]["store_name"]["status"] == "not_available"
+
+
+def test_a_field_can_be_worked_out_from_one_read_from_a_cell():
+    contract = _validate_outlets(_outlet_contract(
+        store_format={"status": "derived", "from_cell": "A1"},
+        brand={"status": "derived", "from_field": "store_format"},
+    ))
+
+    assert contract["fields"]["brand"]["from_field"] == "store_format"
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("Jul-26", "2026-07-01"),
+    ("August 2026", "2026-08-01"),
+    ("2026-07-15", "2026-07-15"),
+    ("15/07/2026", "2026-07-15"),
+])
+def test_a_cell_names_a_month_or_a_date(text, expected):
+    assert mc.cell_period(text) == pd.Timestamp(expected)
+
+
+@pytest.mark.parametrize("text", ["SKUs", "", None])
+def test_a_cell_naming_no_date_is_no_period(text):
+    assert mc.cell_period(text) is None
+
+
 # ---- Confidence and review ----------------------------------------------------------
 
 def test_missing_or_unrecognised_confidence_becomes_low():
@@ -493,6 +542,26 @@ def test_a_label_cannot_read_a_negative_number_of_rows_above():
     assert _validate_outlets(_outlet_contract(group))["melt_groups"] == []
 
 
+def test_a_label_can_read_the_row_under_the_headings():
+    group = {**OUTLETS, "labels": [{"rows_below": 1, "target": "store_code"}]}
+
+    contract = _validate_outlets(_outlet_contract(group))
+
+    assert contract["warnings"] == []
+    assert contract["melt_groups"][0]["labels"] == [{"rows_below": 1, "target": "store_code"}]
+
+
+@pytest.mark.parametrize("label", [
+    {"rows_below": 0, "target": "store_code"},
+    {"rows_below": "1", "target": "store_code"},
+    {"rows_above": 1, "rows_below": 1, "target": "store_code"},
+])
+def test_a_label_reads_one_row_at_least_one_under_the_headings_or_one_above(label):
+    group = {**OUTLETS, "labels": [label]}
+
+    assert _validate_outlets(_outlet_contract(group))["melt_groups"] == []
+
+
 def test_a_retailer_read_from_the_headings_writes_the_headings():
     group = {**OUTLETS, "key": {"target": "retailer"}, "labels": []}
     contract = _validate_outlets(_outlet_contract(group, retailer={"status": "mapped", "melt_group": "outlets"}))
@@ -508,3 +577,72 @@ def test_a_retailer_read_from_the_cells_above_the_headings_writes_those_cells():
     layout = {"header_row": 2, "rows_above_header": [{"row": 1, "cells": {"BEDOK": "81001", "ONLINE": "88001"}}]}
 
     assert mc.retailer_outputs(contract, columns=OUTLET_COLUMNS, layout=layout) == ["81001", "88001"]
+
+
+def test_a_retailer_read_from_the_cells_under_the_headings_writes_those_cells():
+    group = {**OUTLETS, "labels": [{"rows_below": 1, "target": "retailer"}]}
+    contract = _validate_outlets(_outlet_contract(group, retailer={"status": "mapped", "melt_group": "outlets"}))
+    layout = {"header_row": 1, "rows_below_header": [{"row": 2, "cells": {"BEDOK": "a_offline", "ONLINE": "a_online"}}]}
+
+    assert mc.retailer_outputs(contract, columns=OUTLET_COLUMNS, layout=layout) == ["a_offline", "a_online"]
+
+
+# ---- Next month's file names its month heading differently ---------------------------
+
+PHARMEX = {
+    "fields": {
+        "sku": {"status": "mapped", "source": "Aug-26"},
+        "quantity_units": {"status": "mapped", "melt_group": "outlets"},
+    },
+    "melt_groups": [{**OUTLETS, "select": {"kind": "between", "after": "Aug-26", "before": "Unnamed: 3"}}],
+}
+
+
+def test_a_column_named_for_last_month_reads_this_months_column():
+    contract = mc.with_file_columns(PHARMEX, ["Jul-26", "YISHUN", "TAMPINES", "Unnamed: 3"])
+
+    assert contract["fields"]["sku"]["source"] == "Jul-26"
+    assert contract["melt_groups"][0]["select"] == {"kind": "between", "after": "Jul-26", "before": "Unnamed: 3"}
+    # The caller's contract is left as it was.
+    assert PHARMEX["fields"]["sku"]["source"] == "Aug-26"
+
+
+def test_a_column_name_two_of_the_files_columns_could_be_is_left_to_fail():
+    contract = mc.with_file_columns(PHARMEX, ["Jul-26", "Jun-26", "YISHUN", "Unnamed: 3"])
+
+    assert contract["fields"]["sku"]["source"] == "Aug-26"
+
+
+def test_next_months_file_validates_against_last_months_contract():
+    contract = mc.validate_contract(PHARMEX, ["Jul-26", "YISHUN", "TAMPINES", "Unnamed: 3"])
+
+    assert contract["fields"]["sku"] == {**contract["fields"]["sku"], "status": "mapped", "source": "Jul-26"}
+    assert [group["id"] for group in contract["melt_groups"]] == ["outlets"]
+
+
+# ---- Heading rows under the header are not data -------------------------------------
+
+def _codes_below_layout(in_table: bool) -> dict:
+    return {
+        "header_row": 1,
+        "rows_below_header": [{"row": 2, "cells": {"Product Code": "SKUs", "BEDOK": "HQ"}, "in_table": in_table}],
+    }
+
+
+def test_the_row_a_label_reads_under_the_headings_is_taken_out_of_the_data():
+    frame = pd.DataFrame([["SKUs", "HQ"], ["A1", "5"]], columns=["Product Code", "BEDOK"], dtype=object)
+    contract = {"melt_groups": [{**OUTLETS, "labels": [{"rows_below": 1, "target": "store_code"}]}]}
+
+    rows = mc.table_rows(frame, contract, _codes_below_layout(in_table=True))
+
+    assert rows.values.tolist() == [["A1", "5"]]
+    # Taken out once only: the table it was taken from comes back as it is.
+    assert mc.table_rows(rows, contract, _codes_below_layout(in_table=True)).values.tolist() == [["A1", "5"]]
+
+
+def test_a_row_under_the_headings_stays_data_when_no_label_reads_it():
+    frame = pd.DataFrame([["SKUs", "HQ"], ["A1", "5"]], columns=["Product Code", "BEDOK"], dtype=object)
+
+    rows = mc.table_rows(frame, {"melt_groups": [OUTLETS]}, _codes_below_layout(in_table=True))
+
+    assert len(rows) == 2

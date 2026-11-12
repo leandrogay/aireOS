@@ -111,26 +111,25 @@ def preview_rows(dataframe: pd.DataFrame, limit: int = 3) -> list[dict[str, Any]
 def _labels(group: dict, layout: dict | None, columns: list[str]) -> dict[str, dict[str, str]]:
     """
     Each label field of a melt group and, per melted column, the cell above
-    that column's header it reads (SingHealth's outlet code over its name).
+    or below that column's header it reads (SingHealth's outlet code over its
+    name, another file's code under it).
 
     A melted column with no cell there fails the file: its rows would load
     with no store code and be counted as the retailer's "all stores".
     """
     labels = {}
-    header_row = int((layout or {}).get("header_row") or 1)
-    above = {item["row"]: item["cells"] for item in (layout or {}).get("rows_above_header") or []}
     for label in group.get("labels") or []:
         # No rows above: the header itself, read for a second field.
-        if label["rows_above"] == 0:
+        if mapping_contract.reads_headings(label):
             labels[label["target"]] = {column: column for column in columns}
             continue
-        row = header_row - label["rows_above"]
-        cells = above.get(row) or {}
+        cells = mapping_contract.label_cells(label, layout)
         missing = [column for column in columns if column not in cells]
         if missing:
+            where = "below" if label.get("rows_below") is not None else "above"
             raise ContractApplicationError(
-                f"Melt group {group['id']!r} reads {label['target']!r} from row {row}, "
-                f"which has nothing above {missing[:3]}."
+                f"Melt group {group['id']!r} reads {label['target']!r} from row "
+                f"{mapping_contract.label_row(label, layout)}, which has nothing {where} {missing[:3]}."
             )
         labels[label["target"]] = {column: cells[column] for column in columns}
     return labels
@@ -388,7 +387,8 @@ def _stated_month(layout: dict | None) -> pd.Timestamp:
     stated = (layout or {}).get("stated_period")
     if not stated:
         raise ContractApplicationError(
-            "The nomenclature reads the period from the file's title, but this file states no period."
+            "The nomenclature reads the period the file states, but this file states no period "
+            "in its title or as a month heading."
         )
     start, end = pd.Timestamp(stated["start"]), pd.Timestamp(stated["end"])
     if start.to_period("M") != end.to_period("M"):
@@ -397,6 +397,53 @@ def _stated_month(layout: dict | None) -> pd.Timestamp:
             "than one month, so its rows cannot be dated to a month."
         )
     return start.to_period("M").to_timestamp()
+
+
+def _cell_field(target: str, entry: dict, layout: dict | None, context: pd.DataFrame) -> pd.Series:
+    """
+    A field read from one cell of the sheet and written on every row, after
+    its steps. Each file is read at the same cell, so July's file gives
+    "Jul-26" where August's gives "Aug-26". An empty cell, or a period cell
+    that names no date, fails the file rather than load rows without one.
+    """
+    reference = entry["from_cell"]
+    value = mapping_contract.cell_value(layout, reference)
+    if value is None:
+        raise ContractApplicationError(
+            f"The nomenclature reads {target!r} from cell {reference}, which is empty in this file."
+        )
+    series = _transformed_field(pd.Series(value, index=context.index, dtype=object), target, entry, context)
+    if target != "period_start":
+        return series
+    periods = series.map(mapping_contract.cell_period)
+    if periods.isna().any():
+        raise ContractApplicationError(
+            f"The nomenclature reads the period from cell {reference}, but {value!r} is not a month or a date."
+        )
+    return pd.to_datetime(periods)
+
+
+def _check_fixed_period(contract: dict, layout: dict | None) -> None:
+    """
+    A period typed into the contract as one fixed date must fall in the
+    period the file states, when it states one. A monthly file read through
+    the contract made from last month's would otherwise load every row into
+    last month without a word.
+    """
+    entry = (contract.get("fields") or {}).get("period_start") or {}
+    stated = (layout or {}).get("stated_period")
+    if entry.get("status") != "constant" or not stated:
+        return
+    fixed = pd.to_datetime(entry.get("value"), errors="coerce")
+    if pd.isna(fixed):
+        return
+    first, last = pd.Timestamp(stated["start"]).to_period("M"), pd.Timestamp(stated["end"]).to_period("M")
+    if not first <= fixed.to_period("M") <= last:
+        raise ContractApplicationError(
+            f"The nomenclature dates every row {fixed:%b %Y}, but this file states {stated['start']} to "
+            f"{stated['end']} (“{stated['stated_in']}”). Read Period start from the period the file "
+            "states instead of a fixed date, so each month's file is dated by itself."
+        )
 
 
 def apply_contract(
@@ -409,12 +456,19 @@ def apply_contract(
     """
     Execute every instruction in one approved contract, deterministically and
     without using AI. `layout` is what layout detection found in the file
-    (read_table); the contract reads its stated period and the cells above
-    its header from there.
+    (read_table); the contract reads its stated period, the cells above or
+    below its header and any one cell it writes on every row (`from_cell`)
+    from there, and a row of headings under the header
+    is not data (mapping_contract.table_rows). Columns are read by this
+    file's names for them ("Jul-26" for the "Aug-26" the contract was made
+    with, mapping_contract.with_file_columns).
     """
     if not contract.get("fields"):
         raise ContractApplicationError("Nomenclature contract is empty.")
 
+    contract = mapping_contract.with_file_columns(contract, list(dataframe.columns))
+    _check_fixed_period(contract, layout)
+    dataframe = mapping_contract.table_rows(dataframe, contract, layout)
     working = _melt(dataframe, contract, layout)
     fields = contract["fields"]
     output = pd.DataFrame(index=working.index)
@@ -436,6 +490,8 @@ def apply_contract(
             output[target] = pd.NA
         elif status == "derived" and entry.get("from_layout") == "stated_period":
             output[target] = _stated_month(layout)
+        elif status == "derived" and entry.get("from_cell"):
+            output[target] = _cell_field(target, entry, layout, working)
         elif target == "period_type" and status == "derived":
             if "_period_type" not in working:
                 raise ContractApplicationError(
