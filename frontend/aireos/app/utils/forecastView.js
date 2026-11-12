@@ -1,5 +1,11 @@
-import { monthNotes, monthlyActuals, previousMadeByMonth } from '@/app/utils/forecastActuals';
-import { confidenceBand } from '@/app/utils/forecastLineText';
+import { dataMonthsByMonth, initialVsActual, monthNotes, monthlyActuals } from '@/app/utils/forecastActuals';
+import {
+  CURRENT_DETAIL_LABEL,
+  INITIAL_VS_ACTUAL_LABEL,
+  PREVIOUS_DETAIL_LABEL,
+  confidenceBand,
+  initialVsActualText,
+} from '@/app/utils/forecastLineText';
 import { confidenceEntry, pastAccuracy } from '@/app/utils/forecastTiers';
 import { splitPromoType } from '@/app/utils/promotionForm';
 import { customerLabel } from '@/app/utils/retailerLabel';
@@ -20,19 +26,19 @@ const ALL_FORECAST_SERIES = [
   // dashed segment (forecastActuals.withActualBridges), so a missing month
   // is never drawn as a point, let alone as 0.
   { key: 'actual', label: 'Actual', color: '#3A4369', dash: undefined, shape: 'circle', connectNulls: false },
-  // The year's Jan-Dec plan (aire_forecasting_initial): created from the
-  // first September sales, rebuilt as that year's promotions or Oct/Nov
-  // sales arrive, locked at 23:59 SGT on 31 December. 2026 was a one-off
+  // The year's Jan-Dec plan (aire_forecasting_initial), always Tier 0's:
+  // made from 1 Sep, rebuilt by every retrain until it locks at the end of
+  // 31 Oct (forecastLineText INITIAL_BUILD_DAY / INITIAL_LOCK_DAY). 2026 was a one-off
   // backfill trained on data up to Dec 2025. A SKU with no initial row
   // (e.g. Ultra Tape in 2026) simply draws no line.
   { key: 'initial', label: 'Initial Yearly Forecast', color: '#E8922A', dash: '2 4', shape: 'square' },
-  // The forecast made before each SKU's latest month of sales
-  // (forecast_previous, chosen per SKU and tier). A model with none for the
+  // The same model retrained with one month less sales (forecast_previous,
+  // rebuilt on every retrain; previous_data_month). A model with none for the
   // SKUs in scope greys its pill out instead of drawing it.
   // Faint, so Current reads as the line to plan on.
   {
     key: 'previous',
-    label: 'Previous',
+    label: 'Previous forecast',
     color: '#7C3AED',
     dash: '8 3',
     shape: 'triangle',
@@ -41,7 +47,7 @@ const ALL_FORECAST_SERIES = [
     strokeWidth: 1.8,
   },
   // The latest run, 12 months after the newest sales month. Bold and solid.
-  { key: 'current', label: 'Current', color: '#0D9488', dash: undefined, shape: 'diamond', strokeWidth: 3 },
+  { key: 'current', label: 'Current forecast', color: '#0D9488', dash: undefined, shape: 'diamond', strokeWidth: 3 },
 ];
 
 export const FORECAST_SERIES = ALL_FORECAST_SERIES.filter((series) => !series.archived);
@@ -247,7 +253,8 @@ export function formatTimestamp(value) {
  * (actual_status 'missing_file') stays null, never 0, and `actualKind` /
  * `actualCoverage` say whether a month is missing or only partly reported.
  * Actuals and forecasts are separate series and never added together.
- * `previousMade` lists when each SKU's Previous was made.
+ * `currentData` / `previousData` list the last sales month each SKU's
+ * Current / Previous that month was made with.
  *
  * The promo situation and Current dot band belong to one series, so they
  * are only filled when `singleSeries` is true (one customer + one SKU).
@@ -281,8 +288,11 @@ export function buildMonthlyPoints(rows, actuals = [], _metric = 'units', { sing
     point.actualCoverage = actual.coverage;
   }
 
-  for (const [monthYear, made] of previousMadeByMonth(rows)) {
-    pointFor(monthYear).previousMade = made;
+  for (const [monthYear, entries] of dataMonthsByMonth(rows, 'current')) {
+    pointFor(monthYear).currentData = entries;
+  }
+  for (const [monthYear, entries] of dataMonthsByMonth(rows, 'previous')) {
+    pointFor(monthYear).previousData = entries;
   }
 
   // Past accuracy per customer x SKU, for months that only have a Previous
@@ -305,6 +315,8 @@ export function buildMonthlyPoints(rows, actuals = [], _metric = 'units', { sing
       const value = row[column] ?? null;
       if (value != null) point[seriesKey] = (point[seriesKey] ?? 0) + value;
     }
+    // One row per customer x SKU x month (one tier), so this counts series.
+    if (row.forecast_initial != null) point.initialSeries += 1;
 
     const confidence = row.tier
       ? confidenceEntry(row, {
@@ -312,6 +324,8 @@ export function buildMonthlyPoints(rows, actuals = [], _metric = 'units', { sing
           high: row.current_high_80 ?? null,
           previousLow: row.previous_low_80 ?? null,
           previousHigh: row.previous_high_80 ?? null,
+          initialLow: row.initial_low_80 ?? null,
+          initialHigh: row.initial_high_80 ?? null,
           past: pastBySeries.get(`${row.customer_id}|${row.sku}`),
         })
       : null;
@@ -320,6 +334,8 @@ export function buildMonthlyPoints(rows, actuals = [], _metric = 'units', { sing
     if (singleSeries) {
       point.promoMix = row.promo_mix;
       point.currentBand = row.forecast_current != null ? confidenceBand(row.month_confidence_band) : null;
+      point.previousBand = row.forecast_previous != null ? confidenceBand(row.previous_confidence_band) : null;
+      point.initialBand = row.forecast_initial != null ? confidenceBand(row.initial_confidence_band) : null;
     }
   }
 
@@ -328,25 +344,35 @@ export function buildMonthlyPoints(rows, actuals = [], _metric = 'units', { sing
 
 /**
  * The rest of a month for the tooltip and promo panel: a missing or partial
- * Actual, what the Current value assumed about promotions, and when the
- * Previous values were made (with `showPrevious`, the Previous line being
- * on). The model is the whole line's (the Model dropdown), and the 80%
- * range sits in the CONFIDENCE section (ForecastConfidenceDetails).
+ * Actual, what the Current value assumed about promotions, and the last
+ * sales month the Current and Previous values were made with (each while
+ * its line is on: `showCurrent`, `showPrevious`). With `showInitial` (Initial
+ * and Actual both on), a fully reported month also says how far Initial was
+ * from the Actual. The model is the whole line's (the Model dropdown), and
+ * the 80% range sits in the CONFIDENCE section (ForecastConfidenceDetails).
  */
-export function forecastPointDetails(point, { showPrevious = false } = {}) {
+export function forecastPointDetails(
+  point,
+  { showCurrent = false, showPrevious = false, showInitial = false } = {}
+) {
   if (!point) return [];
   const notes = monthNotes(point, {
     formatCustomer: customerLabel,
-    formatStamp: formatSgtTimestamp,
+    showCurrent,
     showPrevious,
   });
   const actualNotes = notes.filter((note) => note.label === 'Actual');
-  const previousNotes = notes.filter((note) => note.label === 'Previous');
+  const currentNotes = notes.filter((note) => note.label === CURRENT_DETAIL_LABEL);
+  const previousNotes = notes.filter((note) => note.label === PREVIOUS_DETAIL_LABEL);
   const details = [...actualNotes];
+  const initialGap = showInitial ? initialVsActual(point) : null;
+  if (initialGap) {
+    details.push({ label: INITIAL_VS_ACTUAL_LABEL, value: initialVsActualText(initialGap) });
+  }
   if (point.promoMix) {
     details.push({ label: 'Promo', value: PROMO_MIX_LABELS[point.promoMix] ?? point.promoMix });
   }
-  return [...details, ...previousNotes];
+  return [...details, ...currentNotes, ...previousNotes];
 }
 
 export function emptyMonthlyPoint(monthYear) {
@@ -357,10 +383,14 @@ export function emptyMonthlyPoint(monthYear) {
     actualKind: null,
     actualCoverage: null,
     initial: null,
+    initialSeries: 0,
     previous: null,
-    previousMade: [],
+    currentData: [],
+    previousData: [],
     current: null,
     currentBand: null,
+    previousBand: null,
+    initialBand: null,
     confidence: [],
     promoMix: null,
   };

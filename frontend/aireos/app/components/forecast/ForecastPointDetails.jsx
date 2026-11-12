@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils';
 export default function ForecastPointDetails({ details, className }) {
   if (!details?.length) return null;
   return (
-    <dl className={cn('grid grid-cols-[4.5rem_1fr] gap-x-2 gap-y-1 text-[11px]', className)}>
+    <dl className={cn('grid grid-cols-[5.5rem_1fr] gap-x-2 gap-y-1 text-[11px]', className)}>
       {details.map((detail, index) => (
         <div key={`${detail.label}-${index}`} className="contents">
           <dt className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/45">

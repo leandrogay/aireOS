@@ -10,17 +10,22 @@ import ForecastChart from '@/components/forecast/ForecastChart';
 import ForecastFilters from '@/components/forecast/ForecastFilters';
 import ForecastTable from '@/components/forecast/ForecastTable';
 import ForecastYearTotals from '@/components/forecast/ForecastYearTotals';
+import ForecastHelpPanel, { ForecastHelpButton } from '@/components/forecast/ForecastHelpPanel';
+import ForecastInfo, { ForecastHelpProvider } from '@/components/forecast/ForecastInfo';
+import { initialPlanLines, missingMonthsLines } from '@/app/utils/forecastHelpText';
+import useForecastHelp from '@/hooks/useForecastHelp';
 import { customerLabel } from '@/app/utils/retailerLabel';
 import {
   FORECAST_TIER_OPTIONS,
   NO_DATA_FOR_TIER,
+  dataMonthsText,
   forecastUpdatingBadge,
   initialMissingHint,
   initialStatusNotes,
   lineCoverageNote,
   yearsInRange,
 } from '@/app/utils/forecastLineText';
-import { lineCoverage } from '@/app/utils/forecastActuals';
+import { dataMonthEntries, lineCoverage } from '@/app/utils/forecastActuals';
 import { ALL_TIERS, forecastModelView, parseTier, pastAccuracy, rowsForTier } from '@/app/utils/forecastTiers';
 import {
   ALL_PACK_TYPE_VALUES,
@@ -68,6 +73,7 @@ function ForecastView() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const help = useForecastHelp();
   const requestedTier = parseTier(searchParams.get('tier'));
   // One model for every scope, All customers included: never an average or
   // a mix of tiers (utils/forecastTiers.js).
@@ -149,15 +155,19 @@ function ForecastView() {
   const initialOff =
     initialCoverage.total > 0 && initialCoverage.withLine === 0
       ? initialMissingHint({
-          tier: model.tier,
           years: yearsInRange(startDate, endDate),
           skuCount: initialCoverage.total,
         })
       : '';
   const previousOff = previousCoverage.withLine === 0;
+  // What the lines in scope were made with, read from this response's rows
+  // (current_data_month / previous_data_month), so a retrain's new months
+  // show on their own. Per customer when the months differ.
+  const currentMonths = dataMonthsText(dataMonthEntries(rows, 'current'), customerLabel);
+  const previousMonths = dataMonthsText(dataMonthEntries(rows, 'previous'), customerLabel);
   const modelNotes = [
     lineCoverageNote('Initial yearly forecast', initialCoverage),
-    lineCoverageNote('Previous', previousCoverage),
+    lineCoverageNote('Previous forecast', previousCoverage),
   ].filter(Boolean);
 
   // The monthly table shows the lines the chart shows: a pill greyed out for
@@ -179,84 +189,103 @@ function ForecastView() {
     { label: 'Model', value: modelLabel },
   ];
 
+  // The page's own facts for the help panel: never hard-coded there.
+  const helpData = {
+    missing: missingMonthsLines(rows, customerLabel),
+    initial: initialPlanLines(initialMeta),
+  };
+
   return (
-    <PageLayout title="Sell-Out Forecast">
-      <div className="min-w-0 space-y-3">
-        {error && (
-          <p className="rounded-md border border-violet bg-lavander/50 px-3 py-2 text-sm text-deep-violet-blue">
-            {error}
-          </p>
-        )}
-
-        <ForecastFilters
-          productName={productName}
-          onProductNameChange={filters.setProductName}
-          productOptions={filters.productOptions}
-          customerName={customerName}
-          onCustomerNameChange={filters.setCustomerName}
-          customerOptions={filters.customerOptions}
-          startDate={startDate}
-          endDate={endDate}
-          onStartDateChange={filters.setStartDate}
-          onEndDateChange={filters.setEndDate}
-          minDate={filters.bounds.start}
-          maxDate={filters.bounds.end}
-          onClearFilters={filters.clear}
-          canClearFilters={filters.canClear}
-          model={{
-            value: model.tier,
-            onChange: setTier,
-            options: model.options,
-          }}
+    <ForecastHelpProvider openHelp={help.openHelp}>
+      <PageLayout
+        title="Sell-Out Forecast"
+        headerExtra={<ForecastHelpButton onClick={() => help.openHelp()} />}
+      >
+        <ForecastHelpPanel
+          open={help.data.open}
+          section={help.data.section}
+          onOpenChange={help.onOpenChange}
+          dataLines={helpData}
         />
+        <div className="min-w-0 space-y-3">
+          {error && (
+            <p className="rounded-md border border-violet bg-lavander/50 px-3 py-2 text-sm text-deep-violet-blue">
+              {error}
+            </p>
+          )}
 
-        <ForecastChart
-          points={points}
-          startDate={startDate}
-          endDate={endDate}
-          singleSeries={singleSeries}
-          scopeTags={scopeTags}
-          promotions={promotions}
-          selectedPromoTypes={selectedPromoTypes}
-          onTogglePromoType={(value) =>
-            setSelectedPromoTypes((current) => toggleSelectedValue(current, value))
-          }
-          selectedPackTypes={selectedPackTypes}
-          onTogglePackType={(value) =>
-            setSelectedPackTypes((current) => toggleSelectedValue(current, value))
-          }
-          visibleSeries={visibleSeries}
-          onToggleSeries={(key) => setVisibleSeries((current) => toggleSeriesVisibility(current, key))}
-          lastRun={lastRun}
-          salesLabel={salesLabel}
-          salesLoadedAt={freshness.latest_sales_loaded_at}
-          pastAccuracy={accuracy}
-          updatingBadge={updatingBadge}
-          initialNotes={initialNotes}
-          initialMissingHint={initialOff}
-          previousMissing={previousOff}
-          confidenceDots={singleSeries}
-          notes={modelNotes}
-          emptyMessage={allRows.length ? NO_DATA_FOR_TIER : undefined}
-          loading={loading}
-        />
+          <ForecastFilters
+            productName={productName}
+            onProductNameChange={filters.setProductName}
+            productOptions={filters.productOptions}
+            customerName={customerName}
+            onCustomerNameChange={filters.setCustomerName}
+            customerOptions={filters.customerOptions}
+            startDate={startDate}
+            endDate={endDate}
+            onStartDateChange={filters.setStartDate}
+            onEndDateChange={filters.setEndDate}
+            minDate={filters.bounds.start}
+            maxDate={filters.bounds.end}
+            onClearFilters={filters.clear}
+            canClearFilters={filters.canClear}
+            model={{
+              value: model.tier,
+              onChange: setTier,
+              options: model.options,
+            }}
+          />
 
-        {/* Each table is a card of its own under the chart card, as on the
-            other pages -- never a table inside the chart's card. */}
-        {yearTotalsBusy || yearTotals.length ? (
-          <TableCard
-            variant="glass"
-            label="Full-year totals"
-            header={<TableCardHeader title="Full-year totals" detail={<>Actual and forecast volume in cartons for each calendar year in view{modelLabel ? ` · ${modelLabel}` : ''}</>} />}
-          >
-            <ForecastYearTotals years={yearTotals} loading={yearTotalsBusy} horizonVolume={horizonVolume} />
-          </TableCard>
-        ) : null}
+          <ForecastChart
+            points={points}
+            startDate={startDate}
+            endDate={endDate}
+            singleSeries={singleSeries}
+            scopeTags={scopeTags}
+            promotions={promotions}
+            selectedPromoTypes={selectedPromoTypes}
+            onTogglePromoType={(value) =>
+              setSelectedPromoTypes((current) => toggleSelectedValue(current, value))
+            }
+            selectedPackTypes={selectedPackTypes}
+            onTogglePackType={(value) =>
+              setSelectedPackTypes((current) => toggleSelectedValue(current, value))
+            }
+            visibleSeries={visibleSeries}
+            onToggleSeries={(key) => setVisibleSeries((current) => toggleSeriesVisibility(current, key))}
+            lastRun={lastRun}
+            salesLabel={salesLabel}
+            salesLoadedAt={freshness.latest_sales_loaded_at}
+            pastAccuracy={accuracy}
+            updatingBadge={updatingBadge}
+            initialNotes={initialNotes}
+            initialMissingHint={initialOff}
+            previousMissing={previousOff}
+            currentMonths={currentMonths}
+            previousMonths={previousMonths}
+            confidenceDots={singleSeries}
+            notes={modelNotes}
+            emptyMessage={allRows.length ? NO_DATA_FOR_TIER : undefined}
+            loading={loading}
+          />
 
-        {points.length > 0 && hasTableColumn ? (
-          <ForecastTable points={points} visibleSeries={tableSeries} modelLabel={modelLabel} />
-        ) : null}
-      </div>
-    </PageLayout>
+          {/* Each table is a card of its own under the chart card, as on the
+              other pages -- never a table inside the chart's card. */}
+          {yearTotalsBusy || yearTotals.length ? (
+            <TableCard
+              variant="glass"
+              label="Full-year totals"
+              header={<TableCardHeader title="Full-year totals" detail={<>Actual and forecast volume in cartons for each calendar year in view{modelLabel ? ` · ${modelLabel}` : ''} <ForecastInfo helpKey="yearColumns" label="About the year columns" className="inline-flex align-middle" /></>} />}
+            >
+              <ForecastYearTotals years={yearTotals} loading={yearTotalsBusy} horizonVolume={horizonVolume} />
+            </TableCard>
+          ) : null}
+
+          {points.length > 0 && hasTableColumn ? (
+            <ForecastTable points={points} visibleSeries={tableSeries} modelLabel={modelLabel} />
+          ) : null}
+        </div>
+      </PageLayout>
+    </ForecastHelpProvider>
   );
 }

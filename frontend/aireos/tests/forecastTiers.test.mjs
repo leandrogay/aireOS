@@ -60,14 +60,14 @@ describe('availability', () => {
     assert.equal(tierStatus(AVAILABILITY, ['A'], 'tier1_basic').available, true);
     assert.deepEqual(tierStatus(AVAILABILITY, ['A', 'B'], 'tier1_basic'), {
       available: false,
-      reason: 'Not available for 1 of 2 selected SKUs · Needs 12+ months of sales history',
+      reason: "Not available for 1 of 2 selected SKUs · Needs 12 months of sales. Months with no sales file don't count.",
     });
   });
 
   test('a SKU with no entry for the tier counts as having no forecast from it', () => {
     assert.deepEqual(tierStatus({ A: { tier0: available() } }, ['A'], 'tier1_basic'), {
       available: false,
-      reason: 'No forecast from this model yet',
+      reason: 'No forecast from this model for this product yet.',
     });
   });
 
@@ -75,7 +75,7 @@ describe('availability', () => {
     const options = modelOptions(AVAILABILITY, ['A']);
     assert.deepEqual(options.map((option) => option.value), ['tier0', 'tier1_basic', 'tier1_advanced']);
     assert.deepEqual(options.map((option) => Boolean(option.disabled)), [false, false, true]);
-    assert.equal(options[2].description, 'No familiar promotions in the next 12 months');
+    assert.match(options[2].description, /^No promotion planned in the next 12 months/);
   });
 
   test('an unavailable tier falls back to Tier 0', () => {
@@ -137,7 +137,7 @@ describe('rows for the chart', () => {
     assert.equal(view.tier, 'tier0');
     const basic = view.options.find((option) => option.value === 'tier1_basic');
     assert.equal(basic.disabled, true);
-    assert.equal(basic.description, 'Not available for 1 of 2 selected SKUs · Needs 12+ months of sales history');
+    assert.equal(basic.description, "Not available for 1 of 2 selected SKUs · Needs 12 months of sales. Months with no sales file don't count.");
   });
 });
 
@@ -154,8 +154,33 @@ describe('confidence', () => {
     assert.equal(pastAccuracy([]), null);
   });
 
-  test('a month with neither a Current nor a Previous forecast has no confidence entry', () => {
+  test('a month with no Current, Previous or Initial forecast has no confidence entry', () => {
     assert.equal(confidenceEntry(row('A', 'tier0', '2026-12-01', { forecast_current: null })), null);
+  });
+
+  test('an Initial-only month carries the plan band and range', () => {
+    const entry = confidenceEntry(
+      row('A', 'tier0', '2026-02-01', {
+        forecast_current: null,
+        forecast_initial: 2520,
+        initial_confidence_band: 'low',
+        initial_range_pct: 64.2,
+      }),
+      { initialLow: -12, initialHigh: 4060 }
+    );
+    assert.equal(entry.hasCurrent, false);
+    assert.equal(entry.previous, null);
+    // The raw lower bound is kept, even below 0.
+    assert.deepEqual(entry.initial, { band: 'low', rangePct: 64.2, low: -12, high: 4060 });
+  });
+
+  test('an Initial with no usable range reads as unknown', () => {
+    const entry = confidenceEntry(row('A', 'tier0', '2026-12-01', { forecast_initial: 500 }));
+    assert.deepEqual(entry.initial, { band: 'unknown', rangePct: null, low: null, high: null });
+  });
+
+  test('a month with no Initial has no Initial part', () => {
+    assert.equal(confidenceEntry(row('A', 'tier0', '2026-12-01')).initial, null);
   });
 
   test('a month with a Previous carries its own band and range', () => {
