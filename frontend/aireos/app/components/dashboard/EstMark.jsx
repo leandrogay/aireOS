@@ -1,6 +1,6 @@
 'use client';
 
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger, NOTE_TOOLTIP_CLASS } from '@/components/ui/tooltip';
 import { estimateNote, hasEstimate } from '@/app/utils/estimatedRevenue';
 import { cn } from '@/lib/utils';
 
@@ -45,7 +45,7 @@ export default function EstMark({ estimated, total, className }) {
       <TooltipContent
         side="bottom"
         align="end"
-        className="max-w-64 rounded-lg bg-popover p-2.5 text-xs font-normal text-deep-violet-blue/80 shadow-md ring-1 ring-foreground/10 *:data-[side]:hidden"
+        className={NOTE_TOOLTIP_CLASS}
       >
         {estimateNote(estimated, total)}
       </TooltipContent>
