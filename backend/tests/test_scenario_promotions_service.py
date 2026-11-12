@@ -313,7 +313,7 @@ MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
 
 
 def test_the_migrations_create_every_column_the_service_reads_and_writes():
-    table = (MIGRATIONS / "018_create_scenario_promotions.sql").read_text().split(
+    table = (MIGRATIONS / "021_create_scenario_promotions.sql").read_text().split(
         "CREATE TABLE IF NOT EXISTS scenario_promotions (", 1
     )[1]
     created = set(re.findall(r"^    ([a-z_]+) ", table, flags=re.MULTILINE)) - {"CONSTRAINT"}

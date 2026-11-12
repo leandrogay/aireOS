@@ -7,7 +7,7 @@ from sqlalchemy.engine import Connection
 from app.services.scenario import building_blocks, common
 
 
-# Scenario builder promotions (scenario_promotions, migration 018): planned
+# Scenario builder promotions (scenario_promotions, migration 021): planned
 # by SKU range (sku_ranges; sku only on ones saved before ranges),
 # promotions that only move the Scenario builder's Simulated line, saved
 # and switched on/off exactly like building blocks (building_blocks.py).
@@ -21,7 +21,7 @@ from app.services.scenario import building_blocks, common
 # edit, a moved anchor, measured values) never moves a saved promotion.
 #
 # Like building blocks, a promotion covers several customers (customer_ids,
-# migration 022; NULL = every customer) and each customer x SKU range can be
+# migration 025; NULL = every customer) and each customer x SKU range can be
 # switched off (excluded_pairs, 023). Each customer's copied values are kept
 # in references_by_customer (025), keyed by customer id; the single
 # reference_* / voucher_* columns carry the first customer's.

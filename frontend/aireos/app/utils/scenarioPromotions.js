@@ -10,16 +10,16 @@
 //   {
 //     id,                                   // client id, stable while the page is open
 //     promotionId,                          // server id, null until first saved
-//     customers,                            // forecast customer_names ([] = every customer), migration 022
+//     customers,                            // forecast customer_names ([] = every customer), migration 025
 //     skuRanges,                            // SKU ranges ([] = All SKU ranges): promotions follow ranges
-//     excludedPairs,                        // [{ customer, skuRange }] switched off on their own (migration 023)
+//     excludedPairs,                        // [{ customer, skuRange }] switched off on their own (migration 026)
 //     sku,                                  // one product_name, only on promotions saved before ranges
-//                                           // (backend migration 018); new ones keep ''
+//                                           // (backend migration 021); new ones keep ''
 //     promoType,                            // 'monthly' | 'side_offer' | 'bundle' | 'others'
 //     mechanicKey, mechanicLabel,
 //     references,                           // per customer: { referenceUpliftPct, referenceSource,
 //                                           // referenceBySku, voucherUpliftPct, voucherBySku } -- the
-//                                           // values when chosen (migration 025); each customer x SKU
+//                                           // values when chosen (migration 028); each customer x SKU
 //                                           // takes its own customer's
 //     overrideUpliftPct,                    // null unless the user moved the slider; one for every customer
 //     voucher,                              // Yes/No
@@ -762,7 +762,7 @@ export function buildScenarioPromotionPayload(promotion) {
   };
 }
 
-// Each customer's kept values; a promotion saved before migration 025 has
+// Each customer's kept values; a promotion saved before migration 028 has
 // only the single reference_* fields, which were its one customer's.
 function referencesFromApi(row) {
   const fromRow = (values) => ({

@@ -1,4 +1,4 @@
--- To run this migration in Cloud SQL, after 017_scenario_blocks_by_sku_range.sql.
+-- To run this migration in Cloud SQL, after 020_scenario_blocks_by_sku_range.sql.
 
 -- Scenario builder promotions: planned promotions (a mechanic such as
 -- "30% Off", an optional voucher and an optional override of the uplift)
@@ -6,7 +6,7 @@
 -- forecast, Inventory, Dashboard, the real `promotions` table and the
 -- promo anchors (promo_anchor_settings, 012/013) never read or change this
 -- table: an anchor moves only once real sales show the new discount.
--- Same shape and rules as scenario_building_blocks (004, 014, 017): saved
+-- Same shape and rules as scenario_building_blocks (004, 014, 020): saved
 -- straight away, switched on or off with is_active, and a delete is a real
 -- DELETE. Deleting a customer deletes its promotions.
 --
@@ -18,7 +18,7 @@
 -- frontend works out the units from the forecast each time
 -- (app/utils/scenarioPromotions.js).
 --
--- SKU scope follows building blocks (017):
+-- SKU scope follows building blocks (020):
 --   sku_ranges set:           every SKU of those ranges (never an empty list).
 --   sku and sku_ranges NULL:  every SKU of the customer ("All SKU ranges").
 --   sku set:                  one SKU -- promotions planned before ranges

@@ -1,6 +1,6 @@
 """Work out the promotion moments, uplifts and projected anchors again.
 
-Run after migration 020 (the first fill), after repairing promotion store
+Run after migration 023 (the first fill), after repairing promotion store
 links, or whenever the worked-out tables look wrong: they are derived, so
 rebuilding loses nothing. --customer-id limits it to one customer.
 Writes to Cloud SQL (the three calc tables, and projected rows in

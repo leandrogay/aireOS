@@ -1,4 +1,4 @@
--- To run this migration in Cloud SQL, after 021_promo_mechanic_discount_effective_from.sql.
+-- To run this migration in Cloud SQL, after 024_promo_mechanic_discount_effective_from.sql.
 
 -- Scenario builder building blocks and promotions can cover several
 -- customers at once, the way they already cover several SKU ranges:
@@ -8,7 +8,7 @@
 --
 -- customer_id stays, now optional: it is filled when an item names exactly
 -- one customer (growth always does), so the growth unique index
--- (customer_id x range x year, 017) and its ON DELETE CASCADE keep working,
+-- (customer_id x range x year, 020) and its ON DELETE CASCADE keep working,
 -- and code deployed before this change still reads one-customer items.
 -- A list has no foreign key, so deleting a customer also takes its id out
 -- of every list and deletes items left with none

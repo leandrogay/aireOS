@@ -23,7 +23,7 @@ UpliftMode = Literal["pct", "units"]
 
 # 'growth' is the budget's year-on-year growth (next year = this year x (1 + g)):
 # a % block on every SKU of one customer from January to December, at most one
-# per customer x year (migrations 016 and 024). Tier 0 has no growth of its own.
+# per customer x year (migrations 019 and 027). Tier 0 has no growth of its own.
 BlockKind = Literal["block", "growth"]
 
 # Same limits as MIN_UPLIFT_PCT / MAX_UPLIFT_PCT on the frontend. A negative
@@ -33,7 +33,7 @@ MAX_UPLIFT_PCT = Decimal("50")
 
 
 class ExcludedPair(_Base):
-    """One customer x SKU range switched off on an item (migration 023); sku_range None = the customer's SKUs with no range."""
+    """One customer x SKU range switched off on an item (migration 026); sku_range None = the customer's SKUs with no range."""
 
     customer_name: str = Field(min_length=1, max_length=255)
     sku_range: str | None = Field(default=None, max_length=255)
@@ -52,14 +52,14 @@ class ScenarioBuildingBlockBase(_Base):
     # A PUT replaces every field, so the page must send kind back unchanged.
     kind: BlockKind = "block"
 
-    # A block can cover several customers (migration 022); None (or an empty
+    # A block can cover several customers (migration 025); None (or an empty
     # list) = every customer. A growth names exactly one.
     customer_names: list[str] | None = Field(default=None, max_length=100)
 
     # Blocks follow SKU ranges: sku_ranges = every SKU of those ranges; None
     # (or an empty list) with no product_name = every SKU of the customer.
     # product_name (one SKU) is only for blocks saved before ranges
-    # (migration 017), so they can still be edited; never both.
+    # (migration 020), so they can still be edited; never both.
     sku_ranges: list[str] | None = Field(default=None, max_length=100)
     product_name: str | None = Field(default=None, min_length=1, max_length=255)
 

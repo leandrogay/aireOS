@@ -3,7 +3,7 @@ import { request } from '@/app/services/promotionsApi';
 // ============================================================
 // Scenario builder promotions: /api/scenario/promotions
 // (backend app/routers/scenario/promotions.py, table scenario_promotions,
-// migration 018_create_scenario_promotions.sql)
+// migration 021_create_scenario_promotions.sql)
 //
 // Bodies come from buildScenarioPromotionPayload and rows are read back
 // with scenarioPromotionFromApi (app/utils/scenarioPromotions.js). Saving

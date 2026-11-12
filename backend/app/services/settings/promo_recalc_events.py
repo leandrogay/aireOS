@@ -16,7 +16,7 @@ from app.services import forecast_refresh_events
 # the sell-out and promotion services can import this without a cycle.
 #
 # Requests are only recorded while PROMO_RECALC_ENABLED is on (after
-# migration 020 has run), so a save never fails on a missing table.
+# migration 023 has run), so a save never fails on a missing table.
 
 logger = logging.getLogger("uvicorn.error")
 

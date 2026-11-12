@@ -17,12 +17,12 @@
 //     kind,                         // 'block', or 'growth' (scenarioGrowth.js); never
 //                                   // changes, and every save sends it back
 //     customers,                    // forecast customer_names ([] = every customer;
-//                                   // a growth names exactly one), migration 022
+//                                   // a growth names exactly one), migration 025
 //     skuRanges,                    // SKU ranges ([] = All SKU ranges): blocks follow ranges
 //     excludedPairs,                // [{ customer, skuRange }] switched off on their own
 //                                   // (skuRange null = no range); the block stays one entry
 //     sku,                          // one product_name, only on blocks saved before
-//                                   // ranges (backend migration 017); new blocks keep ''
+//                                   // ranges (backend migration 020); new blocks keep ''
 //     name, explanation,            // free text; explanation is optional
 //     upliftMode, upliftValue,      // 'pct' + 18 = +18% on Current each month,
 //                                   // 'units' + 900 = +900 units over the whole range;

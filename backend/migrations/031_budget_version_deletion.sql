@@ -1,4 +1,4 @@
--- Apply by hand after 027. A budget version deleted in the app is only
+-- Apply by hand after 030. A budget version deleted in the app is only
 -- hidden: its header and rows stay for the record, stamped with who deleted
 -- it and when. A deleted version is never official (the app refuses to
 -- delete the official one or make a deleted one official).

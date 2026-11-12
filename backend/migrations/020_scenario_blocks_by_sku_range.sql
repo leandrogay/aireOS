@@ -1,4 +1,4 @@
--- To run this migration in Cloud SQL, after 016_scenario_growth_blocks.sql.
+-- To run this migration in Cloud SQL, after 019_scenario_growth_blocks.sql.
 
 -- Scenario builder building blocks and growth follow SKU ranges
 -- (skus.sku_range, e.g. every Ultra Pants size), not one SKU at a time, and a
@@ -18,7 +18,7 @@
 -- dropped. Safe to rerun.
 BEGIN;
 
--- A growth saved under 016 covers every SKU, which this migration no longer
+-- A growth saved under 019 covers every SKU, which this migration no longer
 -- allows. Stop rather than guess which range it was meant for: delete or
 -- re-enter those rows first (there should be none -- the growth control was
 -- never released before this change). Checked only before any range column
@@ -29,7 +29,7 @@ BEGIN
         SELECT 1 FROM information_schema.columns
         WHERE table_name = 'scenario_building_blocks' AND column_name IN ('sku_range', 'sku_ranges')
     ) AND EXISTS (SELECT 1 FROM scenario_building_blocks WHERE kind = 'growth') THEN
-        RAISE EXCEPTION 'scenario_building_blocks has growth rows without a SKU range; remove them before running 017';
+        RAISE EXCEPTION 'scenario_building_blocks has growth rows without a SKU range; remove them before running 020';
     END IF;
 END
 $$;

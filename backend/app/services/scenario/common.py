@@ -38,7 +38,7 @@ def read_connection() -> Connection:
 # CUSTOMERS
 # ============================================================
 
-# Both kinds of item can cover several customers (customer_ids, migration 022).
+# Both kinds of item can cover several customers (customer_ids, migration 025).
 _ITEM_TABLES = ("scenario_building_blocks", "scenario_promotions")
 
 
@@ -48,7 +48,7 @@ class BudgetSetupRequiredError(Exception):
 
 BUDGET_SETUP_DETAIL = (
     "Budget planning is not enabled on this database yet. A database owner must apply "
-    "backend/migrations/026_budget_planning.sql, 027_budget_versions.sql and 028_budget_version_deletion.sql. Current forecast mode remains available."
+    "backend/migrations/029_budget_planning.sql, 030_budget_versions.sql and 031_budget_version_deletion.sql. Current forecast mode remains available."
 )
 
 
@@ -88,7 +88,7 @@ def has_budget_tables(conn: Connection) -> bool:
 
 
 def require_budget_schema(conn: Connection) -> None:
-    """Refuse budget writes before every part of migrations 026-028 is present."""
+    """Refuse budget writes before every part of migrations 029-031 is present."""
     for table in _ITEM_TABLES:
         require_plan(conn, table, "budget")
     if not has_budget_tables(conn):
@@ -122,7 +122,7 @@ def remove_customer(conn: Connection, customer_id: int) -> None:
             ),
             {"customer_id": customer_id},
         )
-        # Its switched-off pairs (excluded_pairs, migration 023) go too.
+        # Its switched-off pairs (excluded_pairs, migration 026) go too.
         conn.execute(
             text(
                 f"""

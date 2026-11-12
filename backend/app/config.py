@@ -249,7 +249,7 @@ FORECAST_REFRESH_MAX_WAIT = os.environ.get("FORECAST_REFRESH_MAX_WAIT", "2h")
 # describe): the worker records a refresh failure on the last one.
 FORECAST_REFRESH_MAX_ATTEMPTS = os.environ.get("FORECAST_REFRESH_MAX_ATTEMPTS", "10")
 
-# Worked-out promotion moments and uplifts (migration 020). Keep disabled until
+# Worked-out promotion moments and uplifts (migration 023). Keep disabled until
 # 020 has run: saves only record recalculation requests while this is on.
 # The task reuses the forecast-refresh queue, location and invoker; with no
 # handler URL, requests wait for Recalculate or scripts/rebuild_promo_calc.py.

@@ -7,7 +7,7 @@
 // 3-month run-rate), so the planner sets g here, per customer.
 //
 // A growth is stored as a building block with kind 'growth' (backend
-// migrations 016 and 024): a % block on every SKU of one customer from
+// migrations 019 and 027): a % block on every SKU of one customer from
 // January to December, at most one per customer x year. It is
 // applied exactly like a % block (scenarioGrowthSource in scenarioBlocks.js),
 // added to the other blocks and promotions, never multiplied with them. It

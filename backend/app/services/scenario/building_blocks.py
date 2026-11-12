@@ -15,22 +15,22 @@ from app.services.scenario import common
 # the way the Forecast page does, and they are resolved to customer_ids /
 # sku here.
 #
-# A block can cover several customers (migration 022): customer_ids = those
+# A block can cover several customers (migration 025): customer_ids = those
 # customers, NULL = every customer. customer_id is also filled when it names
 # exactly one (growth always does), for the growth index and ON DELETE CASCADE;
 # customer_service.delete_customer takes a deleted customer out of the lists.
 #
 # Each customer x SKU range a block covers can be switched off on its own
-# (excluded_pairs, migration 023: [{customer_id, sku_range}], sku_range null
+# (excluded_pairs, migration 026: [{customer_id, sku_range}], sku_range null
 # = the SKUs with no range); the block stays one entry.
 #
-# Blocks follow SKU ranges (migration 017): sku_ranges = every SKU of those
+# Blocks follow SKU ranges (migration 020): sku_ranges = every SKU of those
 # ranges, sku and sku_ranges both NULL = every SKU ("All SKU ranges"), and
 # sku alone = one SKU, kept for blocks saved before ranges.
 #
 # kind = 'growth' marks the budget's year-on-year growth: a % block on every
 # SKU of one customer from January to December (the schema checks the shape),
-# one per customer x year (migration 024). It is applied exactly like any
+# one per customer x year (migration 027). It is applied exactly like any
 # other % block.
 
 

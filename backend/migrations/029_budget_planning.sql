@@ -1,4 +1,4 @@
--- Apply by hand after 025. Existing entries remain Current-mode scenarios.
+-- Apply by hand after 028. Existing entries remain Current-mode scenarios.
 BEGIN;
 ALTER TABLE scenario_building_blocks ADD COLUMN IF NOT EXISTS plan TEXT NOT NULL DEFAULT 'scenario'
     CHECK (plan IN ('scenario', 'budget'));

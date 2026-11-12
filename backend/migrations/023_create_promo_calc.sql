@@ -1,4 +1,4 @@
--- To run this migration in Cloud SQL, after 019_promo_anchor_effective_from.sql.
+-- To run this migration in Cloud SQL, after 022_promo_anchor_effective_from.sql.
 
 -- Worked-out promotion moments and uplifts, so Promotion Uplift Settings and
 -- the Scenario builder read them with plain SELECTs instead of reading every
