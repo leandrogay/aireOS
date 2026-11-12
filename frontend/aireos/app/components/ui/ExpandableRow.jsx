@@ -32,7 +32,9 @@ import TableRow from '@/components/ui/TableRow';
  * unless `wrapPrimary`, which lets it wrap so it is always read in full.
  *
  * Both rows are TableRows, so they come, go and glide with the table's other
- * rows (TableGrid); the details slide open and shut.
+ * rows (TableGrid); the details slide open and shut. With `details` null the
+ * row opens with no details row, for a table that lists the opened row's
+ * children as rows of its own right under it (PromoAnchorTable's SKU ranges).
  *
  * @param {{
  *   columnCount: number,
@@ -44,7 +46,7 @@ import TableRow from '@/components/ui/TableRow';
  *   title?: string,
  *   highlight?: 'editing' | 'new' | null,
  *   actions?: import('react').ReactNode,
- *   details: import('react').ReactNode,
+ *   details: import('react').ReactNode | null,
  *   children?: import('react').ReactNode,
  * }} props
  */
@@ -108,7 +110,7 @@ export default function ExpandableRow({
           slide open. propagate: when the whole row leaves the table its
           details fade with it. */}
       <AnimatePresence initial={false} propagate>
-        {isOpen && (
+        {isOpen && details != null && (
           <TableRow key="details" className="border-b border-lavander/80">
             {/* px-4 here is EXPANDED_ROW_INSET in TableGrid: a nested table
                 lines its columns up with this table's through it. The vertical
