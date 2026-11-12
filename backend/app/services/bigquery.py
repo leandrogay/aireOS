@@ -24,6 +24,17 @@ BQ_MONTHLY_SALES_VIEW = config.BQ_MONTHLY_SALES_VIEW
 # (Inventory, the Assistant, the Scenario builder) use it.
 FORECAST_TIERS = ("tier0", "tier1_basic", "tier1_advanced")
 DEFAULT_FORECAST_TIER = "tier0"
+# The Initial Yearly Forecast is Tier 0's on every model (with_tier0_initial).
+INITIAL_TIER = "tier0"
+INITIAL_COLUMNS = (
+    "forecast_initial",
+    "initial_source_model",
+    "initial_generated_at",
+    "initial_low_80",
+    "initial_high_80",
+    "initial_range_pct",
+    "initial_confidence_band",
+)
 
 # Named explicitly, never SELECT *, so columns the pipeline adds later can't
 # change the API's shape. All from the view except customer_name /
@@ -64,6 +75,8 @@ FORECAST_OUTPUT_COLUMNS = [
     "promo_mix",
     "actual_status",
     "output_built_at",
+    "current_data_month",
+    "previous_data_month",
 ]
 # The two above come from the catalog joins, not the output table.
 _JOINED_NAME_COLUMNS = ("customer_name", "product_name")
@@ -213,6 +226,10 @@ def _forecast_output_row(record: dict) -> dict:
     previous_low = _json_number(record.get("previous_low_80"))
     previous_high = _json_number(record.get("previous_high_80"))
     previous_range_pct, previous_band = month_range(forecast_previous, previous_low, previous_high)
+    forecast_initial = _json_number(record.get("forecast_initial"))
+    initial_low = _json_number(record.get("initial_low_80"))
+    initial_high = _json_number(record.get("initial_high_80"))
+    initial_range_pct, initial_band = month_range(forecast_initial, initial_low, initial_high)
     return {
         "customer_id": _json_int(record.get("customer_id")),
         "customer_name": _json_str(record.get("customer_name")),
@@ -227,13 +244,21 @@ def _forecast_output_row(record: dict) -> dict:
         "is_available": bool(_json_bool(record.get("is_available"))),
         "unavailable_reason": _json_str(record.get("unavailable_reason")),
         "months_of_history": _json_int(record.get("months_of_history")),
-        "forecast_initial": _json_number(record.get("forecast_initial")),
+        "forecast_initial": forecast_initial,
         "initial_source_model": _json_str(record.get("initial_source_model")),
         "initial_generated_at": _iso_stamp(record.get("initial_generated_at")),
-        "initial_low_80": _json_number(record.get("initial_low_80")),
-        "initial_high_80": _json_number(record.get("initial_high_80")),
+        # Initial's 80% range is set when the plan is made (same
+        # aire_forecasting_initial row as forecast_initial), and its band uses
+        # the same cut-offs as Current's and Previous's.
+        "initial_low_80": initial_low,
+        "initial_high_80": initial_high,
+        "initial_range_pct": initial_range_pct,
+        "initial_confidence_band": initial_band,
         "forecast_previous": forecast_previous,
         "previous_source_model": _json_str(record.get("previous_source_model")),
+        # Not shown to users: the pipeline stores the rebuilt Previous at the
+        # Current run's time minus one second. It is only the key for the
+        # Previous range join on aire_forecasting_runs.
         "previous_generated_at": _iso_stamp(record.get("previous_generated_at")),
         # Previous's own 80% range (from its run) and that month's band, the
         # same measures Current gets, so the tooltip can show both.
@@ -260,6 +285,13 @@ def _forecast_output_row(record: dict) -> dict:
         # turned into a number here, so a missing month can't read as 0.
         "actual_status": _json_str(record.get("actual_status")),
         "output_built_at": _iso_stamp(record.get("output_built_at")),
+        # The last sales month each line was trained on, the same on every
+        # row of a customer x SKU x tier: Previous is the same model retrained
+        # with one month less sales (normally current_data_month - 1). NULL
+        # when the tier isn't available; previous_data_month also NULL when
+        # the SKU has no Previous (its first sales month is Current's month).
+        "current_data_month": _iso_date(record.get("current_data_month")),
+        "previous_data_month": _iso_date(record.get("previous_data_month")),
     }
 
 
@@ -420,9 +452,14 @@ def _read_forecast_output_rows(
     scope_clauses, scope_parameters = _scope_filters(scope, "output.")
     where_clauses += scope_clauses
     query_parameters += scope_parameters
-    if tier is not None:
+    if tier == INITIAL_TIER:
         where_clauses.append("output.tier = @tier")
         query_parameters.append(bigquery.ScalarQueryParameter("tier", "STRING", tier))
+    elif tier is not None:
+        # A Tier 1 read still needs Tier 0's rows: they carry its Initial.
+        where_clauses.append("output.tier IN (@tier, @initial_tier)")
+        query_parameters.append(bigquery.ScalarQueryParameter("tier", "STRING", tier))
+        query_parameters.append(bigquery.ScalarQueryParameter("initial_tier", "STRING", INITIAL_TIER))
     query = f"""
         SELECT
           {", ".join(f"output.{column}" for column in _OUTPUT_TABLE_COLUMNS)},
@@ -447,7 +484,32 @@ def _read_forecast_output_rows(
     df = run_query(query, query_parameters).to_dataframe()
     if df.empty:
         return []
-    return [_forecast_output_row(record) for record in df.to_dict(orient="records")]
+    rows = with_tier0_initial([_forecast_output_row(record) for record in df.to_dict(orient="records")])
+    return rows if tier is None else [row for row in rows if row["tier"] == tier]
+
+
+def with_tier0_initial(rows: list[dict]) -> list[dict]:
+    """Every tier's Initial Yearly Forecast replaced by Tier 0's for the same
+    customer x SKU x month (None when Tier 0 has none).
+
+    The yearly plan is made with the Tier 0 baseline only, whichever model
+    the page shows: the pipeline also writes a Tier 1 Initial, but switching
+    model must move Previous and Current only, never the plan the year is
+    measured against.
+    """
+    tier0 = {
+        (row["customer_id"], row["sku"], row["month_year"]): row
+        for row in rows
+        if row["tier"] == INITIAL_TIER
+    }
+    result = []
+    for row in rows:
+        if row["tier"] == INITIAL_TIER:
+            result.append(row)
+            continue
+        source = tier0.get((row["customer_id"], row["sku"], row["month_year"]), {})
+        result.append({**row, **{column: source.get(column) for column in INITIAL_COLUMNS}})
+    return result
 
 
 def get_forecast_output_rows(

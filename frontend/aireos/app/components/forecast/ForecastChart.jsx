@@ -31,7 +31,7 @@ import {
   promosOverlappingMonth,
 } from '@/app/utils/forecastView';
 import { withActualBridges } from '@/app/utils/forecastActuals';
-import { CURRENT_DOT_FILL, INITIAL_MISSING_HINT, forecastLineHints } from '@/app/utils/forecastLineText';
+import { CONFIDENCE_DOT_FILL, forecastLineHints, initialMissingHint as noInitialHint } from '@/app/utils/forecastLineText';
 import { dotRevealDelay, lineSweepTimings } from '@/app/utils/lineAnimation';
 import { yearAxisProps } from '@/app/utils/trendChart';
 import useChartTransition from '@/hooks/useChartTransition';
@@ -57,7 +57,9 @@ const ACTUAL_COLOR = FORECAST_SERIES.find((series) => series.key === 'actual')?.
 
 function dotFill(seriesKey, payload, confidenceDots) {
   if (seriesKey === 'actual' && payload?.actualKind === 'partial') return 'hollow';
-  if (seriesKey === 'current' && confidenceDots && payload?.currentBand) return CURRENT_DOT_FILL[payload.currentBand];
+  if (seriesKey === 'current' && confidenceDots && payload?.currentBand) return CONFIDENCE_DOT_FILL[payload.currentBand];
+  if (seriesKey === 'previous' && confidenceDots && payload?.previousBand) return CONFIDENCE_DOT_FILL[payload.previousBand];
+  if (seriesKey === 'initial' && confidenceDots && payload?.initialBand) return CONFIDENCE_DOT_FILL[payload.initialBand];
   return 'filled';
 }
 
@@ -242,6 +244,11 @@ export default function ForecastChart({
   // replaces the no-data text.
   initialMissingHint,
   previousMissing,
+  // /forecast only: the last sales month(s) the Current and Previous lines
+  // in scope were made with, for their pills (forecastLineText.dataMonthsText);
+  // '' leaves the month out.
+  currentMonths = '',
+  previousMonths = '',
   confidenceDots = false,
   notes = [],
   emptyMessage = 'No forecast data matches these filters.',
@@ -282,7 +289,7 @@ export default function ForecastChart({
   const previousOff = previousMissing ?? !points.some((point) => point.previous != null);
   const initialOffHint =
     initialMissingHint ??
-    (singleSeries && !points.some((point) => point.initial != null) ? INITIAL_MISSING_HINT : '');
+    (singleSeries && !points.some((point) => point.initial != null) ? noInitialHint({ years: [] }) : '');
   const shownSeries = {
     ...visibleSeries,
     ...(previousOff ? { previous: false } : {}),
@@ -345,6 +352,8 @@ export default function ForecastChart({
   const lineHints = forecastLineHints({
     initialMissing: initialOffHint,
     previousMissing: previousOff,
+    currentMonths,
+    previousMonths,
   });
   const yDomain = visibleValues.length ? niceYDomain(visibleValues) : [0, 1];
   const hoverPoint = chartPoints.find((point) => point.month_year === hoverMonth);
@@ -596,10 +605,11 @@ export default function ForecastChart({
                                 formatValue={formatValue}
                                 dotSymbols={confidenceDots}
                                 showPrevious={Boolean(shownSeries.previous)}
+                                showInitial={Boolean(shownSeries.initial)}
                                 className="mt-1 border-t border-lavander pt-1.5"
                               />
                               <ForecastPointDetails
-                                details={forecastPointDetails(point, { showPrevious: shownSeries.previous })}
+                                details={forecastPointDetails(point, { showCurrent: shownSeries.current, showPrevious: shownSeries.previous, showInitial: shownSeries.initial && shownSeries.actual })}
                                 className="mt-1 border-t border-lavander pt-1.5"
                               />
                             </>
@@ -755,7 +765,7 @@ export default function ForecastChart({
                   <ForecastPromoPanel
                     monthLabel={hoverPoint?.label ?? formatMonthLabel(hoverMonth)}
                     seriesValues={seriesValues}
-                    details={forecastPointDetails(hoverPoint, { showPrevious: shownSeries.previous })}
+                    details={forecastPointDetails(hoverPoint, { showCurrent: shownSeries.current, showPrevious: shownSeries.previous, showInitial: shownSeries.initial && shownSeries.actual })}
                     formatValue={formatValue}
                     confidenceDetails={
                       <ForecastConfidenceDetails
@@ -763,6 +773,7 @@ export default function ForecastChart({
                         formatValue={formatValue}
                         dotSymbols={confidenceDots}
                         showPrevious={Boolean(shownSeries.previous)}
+                        showInitial={Boolean(shownSeries.initial)}
                         interactive
                       />
                     }
@@ -791,7 +802,8 @@ export default function ForecastChart({
                 salesLoadedAt={salesLoadedAt}
                 pastAccuracy={pastAccuracy}
                 updatingBadge={updatingBadge}
-                notes={[...initialNotes, ...notes]}
+                initialNotes={initialNotes}
+                notes={notes}
                 className="-mt-6 px-3 pb-1 pt-0"
               />
             </div>

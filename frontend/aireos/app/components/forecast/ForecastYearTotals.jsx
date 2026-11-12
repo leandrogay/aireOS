@@ -4,6 +4,7 @@ import MobileRecordCard from '@/components/ui/MobileRecordCard';
 import RecordCardList from '@/components/ui/RecordCardList';
 import TableGrid from '@/components/ui/TableGrid';
 import TableRow from '@/components/ui/TableRow';
+import ForecastInfo from '@/components/forecast/ForecastInfo';
 import { cn } from '@/lib/utils';
 
 // Volume in cartons; the card's detail line says so, so the headings don't.
@@ -86,6 +87,7 @@ export default function ForecastYearTotals({ years, loading = false, horizonVolu
                 <td className={cn(CELL_CLASS, 'truncate')}>
                   <span className="font-medium">{year.year}</span>
                   {mix ? <span className="ml-2 text-xs text-deep-violet-blue/55">{mix}</span> : null}
+                  <ForecastInfo helpKey="yearRow" label="About the year total" className="ml-0.5 inline-flex align-middle" />
                 </td>
                 <td className={NUMBER_CELL_CLASS}>{formatVolume(year.volume.actual)}</td>
                 <td className={NUMBER_CELL_CLASS}>{formatVolume(year.volume.forecast)}</td>
@@ -99,7 +101,10 @@ export default function ForecastYearTotals({ years, loading = false, horizonVolu
       {!loading && (
         // The footer strip, like TablePagination's: not a year, so not a row.
         <div className="flex items-center justify-between gap-3 border-t border-lavander px-4 py-3 text-sm text-deep-violet-blue">
-          <span className="text-deep-violet-blue/70">Next 12 months forecast</span>
+          <span className="inline-flex items-center gap-0.5 text-deep-violet-blue/70">
+            Next 12 months forecast
+            <ForecastInfo helpKey="next12" label="About the next 12 months" />
+          </span>
           <span className="font-medium tabular-nums">{formatVolume(horizonVolume)}</span>
         </div>
       )}
