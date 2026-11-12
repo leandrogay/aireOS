@@ -40,6 +40,68 @@ The foundation script expects `v_inventory_history` to expose
 `customer_id`, `sku`, and `period_start`; its opening assertion stops the run
 if that prerequisite is missing.
 
+## Live forecast contract capture
+
+On 2026-11-09, an authenticated read-only inspection was run against project
+`aire-data`, location `asia-southeast1`. The application dataset is
+`aireos_forecast_validation_sg`; `Aire_Data_Analytics` contains an older,
+different Tier 0 definition and must not be used as the current application
+contract.
+
+The raw read results are retained as dated reference captures:
+
+- `views/live_2026-11-09_aireos_forecast_validation_sg_fc_tier0_forecasts.txt`
+- `views/live_2026-11-09_Aire_Data_Analytics_fc_tier0_forecasts.txt`
+- `schemas/live_2026-11-09_aire_forecasting_output.txt`
+- `schemas/live_2026-11-09_aire_forecasting_runs.txt`
+- `procedures/live_2026-11-09_aireos_forecast_validation_sg_routines.txt`
+- `procedures/live_2026-11-09_Aire_Data_Analytics_routines.txt`
+
+These are reference copies only. They are not deployment migrations and must
+not be applied automatically.
+
+The validation dataset currently has `aire_forecasting_output` as a table,
+not a view. Its current run is identified by
+`current_generated_at = 2026-11-08 15:59:46 UTC`; the same timestamp appears
+as `forecast_generated_at` in `aire_forecasting_runs`. This timestamp is a
+provisional run key until the pipeline exposes a dedicated immutable
+`forecast_run_id`.
+
+The live validation Tier 0 view uses a per-customer/SKU `latest_month` and
+averages the available months in the three-month window ending at that
+month. When same-month-last-year actuals exist, its base is a 50/50 blend of
+that value and the run-rate; otherwise it is the run-rate. The current
+validation definition has no active growth factor. This differs from the
+older `Aire_Data_Analytics` view, which still contains clipped growth logic.
+
+The proposed application-facing fields and parity contract are documented in
+`schemas/tier0_component_contract.md`. It deliberately keeps `growth`
+nullable until the live validation pipeline writes a real growth value.
+
+Phase 2 deployment material is read-only until reviewed:
+
+- `procedures/phase-2_tier0_components_validation.sql` proposes nullable
+  provenance columns and records the required pipeline-owner procedure edits.
+- `queries/phase-2_tier0_component_parity.sql` compares the current output to
+  the matching Tier 0 run.
+
+These files are not invoked by the backend and have not been executed against
+BigQuery.
+
+The repository-only Phase 3 proposal adds:
+
+- `views/011_create_validation_tier0_components_view.sql`, a replacement
+  validation-dataset view that preserves the live no-growth formula while
+  exposing the exact per-series component provenance.
+- `procedures/phase-3_run_tier0_legacy.sql`, a replacement Tier 0 procedure
+  that writes those components to the run table.
+- `queries/phase-3_sync_output_components.sql`, a guarded synchronization
+  statement for the current output rows.
+
+These are reviewed deployment inputs only. The backend still uses its existing
+forecast row shape until a live run has populated the new columns and the
+parity query passes.
+
 ## Tier 0 legacy baseline
 
 The Tier 0 forecast (the P&L sell-out formula from
@@ -60,6 +122,14 @@ then `procedures/run_tier0_legacy.sql`, then apply the two edits in
 Before deploying a change to the formula, run
 `python scripts/check_tier0_parity.py` from `backend/`. It runs the view's
 query read-only and checks it against `pl_forecast.py` on live data.
+
+`views/010_…` is the live `aireos_forecast_validation_sg` definition (8 Nov
+2026 evening): `0.5 x same month last year + 0.5 x 3-month run-rate`, or the
+run-rate alone when that month last year is missing, over a 15-month horizon.
+There is no growth factor. Growth is a planning choice that the Scenario
+builder applies on top of Tier 0 as a growth building block
+(`scenario_building_blocks.kind = 'growth'`, backend migration
+`016_scenario_growth_blocks.sql`), never inside the forecast.
 
 Tier 0 has no promotion uplift. The P&L's Sell-out Building Blocks are
 hand-entered activity cartons (AO, display, expansion, promoter sampling) that

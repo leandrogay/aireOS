@@ -28,6 +28,7 @@ import { shiftMonth } from '@/app/utils/scenarioPlan';
 export default function useLastYearActuals({
   ready = false,
   productName = '',
+  skuRange = '',
   customerName = '',
   startDate = '',
   endDate = '',
@@ -41,7 +42,7 @@ export default function useLastYearActuals({
   const lastYearEnd = endDate ? shiftMonth(`${endDate.slice(0, 7)}-01`, -12) : '';
   // The filter's own actuals already hold last year's months.
   const covered = Boolean(startDate) && startDate <= lastYearStart;
-  const key = JSON.stringify({ productName, customerName, lastYearStart, lastYearEnd });
+  const key = JSON.stringify({ productName, skuRange, customerName, lastYearStart, lastYearEnd });
 
   useEffect(() => {
     if (!ready || covered || !lastYearStart || !lastYearEnd) return undefined;
@@ -53,6 +54,7 @@ export default function useLastYearActuals({
       try {
         const payload = await getForecastView({
           productName,
+          skuRange,
           customerName,
           startDate: lastYearStart,
           endDate: lastYearEnd,
@@ -72,7 +74,7 @@ export default function useLastYearActuals({
     return () => {
       cancelled = true;
     };
-  }, [ready, covered, key, productName, customerName, lastYearStart, lastYearEnd]);
+  }, [ready, covered, key, productName, skuRange, customerName, lastYearStart, lastYearEnd]);
 
   if (covered) return { actuals, loading: false, error: null };
   // Never show the previous filter's last year against this one's forecast.

@@ -1074,6 +1074,7 @@ def test_a_bigquery_outage_inside_an_inventory_tool_is_also_a_tool_error_not_a_c
     def _boom(**kwargs):
         raise ServiceUnavailable("BigQuery is down")
 
+    monkeypatch.setattr(inventory_service, "list_customers", lambda: [{"customer_id": 1, "customer_name": "fairprice"}])
     monkeypatch.setattr(inventory_service, "get_customer_view", _boom)
 
     tool_call = _tool_call_response(("tu_1", "get_customer_inventory", {"customer": "fairprice"}))

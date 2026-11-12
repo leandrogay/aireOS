@@ -12,6 +12,7 @@ from sqlalchemy.engine import Connection, Engine
 
 from app import config
 from app.services import forecast_refresh_events, notification_service, sql, storage
+from app.services.settings import promo_recalc_events
 
 
 class IngestionNotFoundError(LookupError):
@@ -571,6 +572,10 @@ def _rollback_latest_run(
                 "sales_upload",
                 f"sales:{run['source_file']}",
             )
+            # A rollback can restore any customer's earlier rows: every customer.
+            recalc_recorded = promo_recalc_events.record_customers(
+                connection, "sales_rollback", None, f"sales:{run['source_file']}"
+            )
 
             result = {
                 "ingestion_id": ingestion_id,
@@ -582,6 +587,7 @@ def _rollback_latest_run(
                 "rows_removed": max(rows_removed_from_current - rows_restored, 0),
             }
         forecast_refresh_events.enqueue_best_effort(refresh_request_id)
+        promo_recalc_events.enqueue_best_effort(recalc_recorded)
         return result
     except (
         IngestionNotFoundError,

@@ -139,7 +139,7 @@ def test_the_cache_key_covers_the_sku_selection(monkeypatch):
     monkeypatch.setattr(
         bigquery,
         "resolve_forecast_scope",
-        lambda product_name=None, customer_name=None: scopes[product_name],
+        lambda product_name=None, customer_name=None, sku_range=None: scopes[product_name],
     )
 
     bigquery.get_forecast_output_rows(product_name="Pants L", customer_name="fairprice")

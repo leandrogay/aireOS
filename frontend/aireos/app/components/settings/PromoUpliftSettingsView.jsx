@@ -1,96 +1,63 @@
 'use client';
 
 import { useState } from 'react';
-import { Plus } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 
 import PageLayout from '@/components/layout/PageLayout';
 import { Button } from '@/components/ui/button';
-import { cardClass } from '@/components/ui/formStyles';
 import InfoTooltip from '@/components/ui/InfoTooltip';
 import RefreshButton from '@/components/ui/RefreshButton';
+import StatusPill from '@/components/ui/StatusPill';
 import TableCard from '@/components/ui/TableCard';
 import TableCardHeader, { TABLE_HEADER_BUTTON_CLASS } from '@/components/ui/TableCardHeader';
 import Toast from '@/components/ui/Toast';
 import usePromoMoments from '@/hooks/usePromoMoments';
+import usePromoUpliftCalc from '@/hooks/usePromoUpliftCalc';
 import usePromoUpliftSettings from '@/hooks/usePromoUpliftSettings';
-import useSkuCatalog from '@/hooks/useSkuCatalog';
 import useToast from '@/hooks/useToast';
-import {
-  adoptPromoAnchor,
-  resetPromoUplift,
-  savePromoUplift,
-} from '@/app/services/promoUpliftsApi';
-import { anchorLabel, filteredUpliftRows, overrideTargetChoices, placeholderUplift } from '@/app/utils/promoUpliftSettings';
-import { retailerLabel } from '@/app/utils/retailerLabel';
+import { adoptPromoAnchor, recalculatePromoUplifts } from '@/app/services/promoUpliftsApi';
+import { calcStatus, monthText } from '@/app/utils/promoUpliftCalc';
+import { anchorLabel } from '@/app/utils/promoUpliftSettings';
 
 import PromoAnchorDetails from './PromoAnchorDetails';
 import PromoAnchorForm from './PromoAnchorForm';
+import PromoAnchorOverwriteForm from './PromoAnchorOverwriteForm';
 import PromoAnchorTable from './PromoAnchorTable';
-import PromoOverrideForm from './PromoOverrideForm';
-import PromoUpliftFilters from './PromoUpliftFilters';
-import PromoUpliftDetails from './PromoUpliftDetails';
+import PromoMechanicDiscountForm from './PromoMechanicDiscountForm';
+import PromoMechanicTable from './PromoMechanicTable';
 import PromoUpliftTable from './PromoUpliftTable';
 
-const NO_FILTERS = { customer: '', sku: '', mechanic: '' };
-
 /**
- * The Promotion uplift settings page: each customer's ordinary-month
- * discount and the uplift per mechanic the Scenario builder uses. Every write
- * is a new version; the page refetches after one, since an anchor change
- * moves every placeholder value.
+ * The Promotion uplift settings page: each customer's anchor (the mechanic
+ * of an ordinary month) with its versions, the fallback anchor, each
+ * mechanic's discount, and the uplift per customer x SKU range x mechanic,
+ * worked out from moments (promo_recalc) -- never typed here. Edits are to
+ * anchors and discounts only; each queues a recalculation, so the page
+ * refetches after one and shows whether a recalculation is still waiting.
  */
 export default function PromoUpliftSettingsView() {
   const [refreshKey, setRefreshKey] = useState(0);
   const { settings, anchors, loading, error } = usePromoUpliftSettings({ refreshKey });
+  const calculated = usePromoUpliftCalc({ refreshKey });
   const moments = usePromoMoments({ refreshKey });
-  const catalog = useSkuCatalog();
-  const productNames = new Map(catalog.skus.map((sku) => [sku.sku, sku.product_name]));
-  const [filters, setFilters] = useState(NO_FILTERS);
   const readOnly = !settings;
   const [anchorTarget, setAnchorTarget] = useState(null);
-  const [addingOverride, setAddingOverride] = useState(false);
   const [anchorDetails, setAnchorDetails] = useState(null);
-  const [detailsTarget, setDetailsTarget] = useState(null);
+  const [editingFallback, setEditingFallback] = useState(false);
+  const [mechanicTarget, setMechanicTarget] = useState(null);
+  const [recalculating, setRecalculating] = useState(false);
   const { toast, notify, dismissToast } = useToast();
 
   const refresh = () => setRefreshKey((key) => key + 1);
   const rows = settings?.settings ?? [];
   const mechanics = rows.filter((row) => row.scope === 'all');
-  const defaultAnchorPct = settings?.default_anchor_pct ?? 20;
+  const fallback = anchors?.fallback ?? null;
+  const calcRows = calculated.data?.rows ?? [];
+  const status = calcStatus(calculated.data?.calc_status);
 
-  const customerNames = (anchors?.customers ?? []).map((row) => row.customer_name);
-  const tableRows = filteredUpliftRows(rows, {
-    customerName: filters.customer,
-    sku: filters.sku,
-    skuRange: catalog.skus.find((row) => row.sku === filters.sku)?.sku_range ?? null,
-    mechanicKey: filters.mechanic,
-    customers: customerNames,
-  });
-
-  // A row resolved for one customer uses that customer's ordinary-month
-  // discount (its SKU range's, when filtered to a SKU), as the Scenario
-  // builder does; the unfiltered list shows the all-customers one.
-  function shownUplift(row) {
-    if (!row.follows_anchor) return row.uplift_pct;
-    const customerAnchor = anchors?.customers.find((item) => item.customer_name === row.view?.customer_name);
-    const rangeAnchor = customerAnchor?.ranges.find((item) => item.sku_range === row.view?.sku_range);
-    const anchorPct = rangeAnchor?.anchor_pct ?? customerAnchor?.anchor_pct ?? defaultAnchorPct;
-    return placeholderUplift(row.effective_discount_pct, anchorPct);
-  }
-
-  function handleFilterChange(key, value) {
-    setFilters((current) => ({ ...current, [key]: value }));
-  }
-
-  function handleAnchorSaved(result, target) {
-    setAnchorTarget(null);
+  function savedNotice(result, message) {
     refresh();
-    notify(
-      'success',
-      result.changed
-        ? 'Ordinary-month discount saved'
-        : 'No changes to save'
-    );
+    notify('success', result.changed ? `${message} · recalculating` : 'No changes to save');
   }
 
   async function handleAnchorAdopt(target) {
@@ -98,59 +65,31 @@ export default function PromoUpliftSettingsView() {
       const result = await adoptPromoAnchor(target.customerId, target.skuRange);
       const entry = result.anchor.ranges.find((item) => item.sku_range === target.skuRange) ?? result.anchor;
       setAnchorDetails(null);
-      refresh();
-      notify('success', `Anchor set to ${anchorLabel(entry)}`);
+      savedNotice(result, `Anchor set to ${anchorLabel(entry)}`);
     } catch (err) {
       notify('error', err.message);
     }
   }
 
-  async function handleUpliftSave(row, upliftPct) {
+  async function handleRecalculate() {
+    setRecalculating(true);
     try {
-      const result = await savePromoUplift(row.id, { uplift_pct: upliftPct, note: row.note });
-      // A save is a new version with a new id, so the open row is now stale.
-      setDetailsTarget(null);
+      const result = await recalculatePromoUplifts();
       refresh();
-      notify('success', result.changed ? 'Saved as an Estimate' : 'No changes to save');
-      return true;
+      if (result.failed.length) {
+        notify('error', `Recalculated, but ${result.failed.length} customer${result.failed.length === 1 ? '' : 's'} failed`);
+      } else {
+        notify('success', 'Recalculated');
+      }
     } catch (err) {
       notify('error', err.message);
-      return false;
+    } finally {
+      setRecalculating(false);
     }
-  }
-
-  async function handleUpliftReset(row) {
-    try {
-      await resetPromoUplift(row.id);
-      setDetailsTarget(null);
-      refresh();
-      notify('success', row.scope === 'all' ? 'Back to a placeholder' : 'Value removed');
-    } catch (err) {
-      notify('error', err.message);
-    }
-  }
-
-  function handleOverrideSaved(result) {
-    setAddingOverride(false);
-    refresh();
-    notify('success', 'Value added');
   }
 
   return (
-    <PageLayout
-      title="Promotion uplift settings"
-      headerExtra={
-        readOnly ? null : (
-          <Button
-            onClick={() => setAddingOverride(true)}
-            className="w-full bg-deep-violet-blue text-white hover:bg-deep-violet-blue/90 md:w-auto"
-          >
-            <Plus data-icon="inline-start" />
-            Add uplift value
-          </Button>
-        )
-      }
-    >
+    <PageLayout title="Promotion uplift settings">
       <div className="grid grid-cols-1 gap-3">
         <TableCard
           variant="glass"
@@ -158,8 +97,37 @@ export default function PromoUpliftSettingsView() {
           header={
             <TableCardHeader
               title="Ordinary-month discount by customer"
-              detail={anchors ? `${anchors.customers.length + 1} customers including the fallback` : 'Loading customers…'}
-              actions={<RefreshButton onClick={refresh} isRefreshing={loading} label="Refresh promotion uplift settings" className={TABLE_HEADER_BUTTON_CLASS} />}
+              detail={anchors ? `${anchors.customers.length} customer${anchors.customers.length === 1 ? '' : 's'}` : 'Loading customers…'}
+              actions={
+                <>
+                  {calculated.data ? (
+                    <span className="inline-flex items-center gap-1">
+                      <StatusPill tone={status.tone}>{status.label}</StatusPill>
+                      {status.error ? (
+                        <InfoTooltip label="Why the last run failed">{status.error}</InfoTooltip>
+                      ) : null}
+                    </span>
+                  ) : null}
+                  {readOnly ? null : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRecalculate}
+                      disabled={recalculating}
+                      className={TABLE_HEADER_BUTTON_CLASS}
+                    >
+                      <RefreshCw data-icon="inline-start" className={recalculating ? 'animate-spin' : undefined} />
+                      {recalculating ? 'Recalculating…' : 'Recalculate'}
+                    </Button>
+                  )}
+                  <RefreshButton
+                    onClick={refresh}
+                    isRefreshing={loading}
+                    label="Refresh promotion uplift settings"
+                    className={TABLE_HEADER_BUTTON_CLASS}
+                  />
+                </>
+              }
             />
           }
         >
@@ -180,13 +148,29 @@ export default function PromoUpliftSettingsView() {
           ) : (
             !error && <p className="px-4 pb-3 text-sm text-deep-violet-blue/70">Loading…</p>
           )}
+          {fallback ? (
+            <div className="flex flex-wrap items-center gap-2 border-t border-lavander/80 px-4 py-3 text-sm text-deep-violet-blue">
+              <span className="inline-flex items-center gap-1">
+                If nothing is set: <span className="font-medium">{fallback.anchor_pct}% off</span>
+                {fallback.effective_from ? ` · from ${monthText(fallback.effective_from)}` : null}
+                <InfoTooltip label="About the fallback anchor">
+                  A SKU range with no anchor uses its customer&apos;s; a customer with none uses this.
+                </InfoTooltip>
+              </span>
+              {readOnly ? null : (
+                <Button variant="outline" size="sm" onClick={() => setEditingFallback(true)}>
+                  Edit
+                </Button>
+              )}
+            </div>
+          ) : null}
         </TableCard>
 
         {anchorDetails ? (
           <PromoAnchorDetails
             key={anchorDetails.key}
             target={anchorDetails}
-          windowMonths={anchors?.window_months}
+            windowMonths={anchors?.window_months}
             readOnly={readOnly}
             onEdit={(target) => {
               setAnchorDetails(null);
@@ -198,96 +182,88 @@ export default function PromoUpliftSettingsView() {
         ) : null}
 
         {anchorTarget ? (
-          <PromoAnchorForm
+          <PromoAnchorOverwriteForm
             key={anchorTarget.key}
             target={anchorTarget}
-            settings={rows}
-            onSaved={handleAnchorSaved}
+            onSaved={(result) => {
+              setAnchorTarget(null);
+              savedNotice(result, 'Anchor saved');
+            }}
             onCancel={() => setAnchorTarget(null)}
           />
         ) : null}
 
-        {settings?.unmapped_mechanics?.length ? (
-          <section className={cardClass} role="status">
-            <h2 className="text-sm font-medium text-deep-violet-blue">Mechanics with no uplift value</h2>
-            <p className="mt-1 text-xs text-deep-violet-blue/70">
-              {settings.unmapped_mechanics
-                .map((row) => `${row.promotion_mechanic} (${row.promotions} promotion${row.promotions === 1 ? '' : 's'})`)
-                .join(' · ')}
-            </p>
-          </section>
+        {editingFallback && fallback ? (
+          <PromoAnchorForm
+            anchorPct={fallback.anchor_pct}
+            settings={rows}
+            onSaved={(result) => {
+              setEditingFallback(false);
+              savedNotice(result, 'Fallback anchor saved');
+            }}
+            onCancel={() => setEditingFallback(false)}
+          />
         ) : null}
 
         <TableCard
           variant="glass"
-          label="Uplift by mechanic"
+          label="Mechanic discounts"
           header={
             <TableCardHeader
-              title="Uplift by mechanic"
-              detail={`${tableRows.length} values`}
+              title="Mechanic discounts"
+              detail={settings ? `${mechanics.length} mechanic${mechanics.length === 1 ? '' : 's'}` : 'Loading mechanics…'}
               actions={
-                <InfoTooltip label="About uplift">
-                  How much more or less a month with this mechanic sells than an ordinary month, which the forecast already
-                  reflects. Used when planning future promotions in the Scenario builder.
+                <InfoTooltip label="About mechanic discounts">
+                  The discount each mechanic counts as. The placeholder rule and the anchors use it.
                 </InfoTooltip>
               }
             />
           }
         >
-          <div className="px-4 pb-3">
-            <PromoUpliftFilters
-              filters={filters}
-              customers={customerNames}
-              skuOptions={overrideTargetChoices(catalog.skus).skus}
-              mechanicOptions={mechanics.map((row) => ({ value: row.mechanic_key, label: row.mechanic_label }))}
-              onChange={handleFilterChange}
-              onReset={() => setFilters(NO_FILTERS)}
+          {settings ? (
+            <PromoMechanicTable
+              mechanics={mechanics}
+              editingKey={mechanicTarget?.mechanic_key ?? null}
+              readOnly={readOnly}
+              onEdit={setMechanicTarget}
             />
-          </div>
-          <PromoUpliftTable
-            rows={tableRows}
-            shownUplift={shownUplift}
-            moments={moments.data}
-            productNames={productNames}
-            readOnly={readOnly}
-            onView={(row, options) => setDetailsTarget({ row, editing: Boolean(options?.editing) })}
-            onReset={handleUpliftReset}
-          />
-          {moments.error ? (
-            <p className="px-4 pt-2 text-xs text-red-600" role="alert">
-              Moments could not be loaded: {moments.error}
+          ) : (
+            !error && <p className="px-4 pb-3 text-sm text-deep-violet-blue/70">Loading…</p>
+          )}
+          {settings?.unmapped_mechanics?.length ? (
+            <p className="px-4 py-3 text-xs text-deep-violet-blue/70" role="status">
+              No discount yet:{' '}
+              {settings.unmapped_mechanics
+                .map((row) => `${row.promotion_mechanic} (${row.promotions} promotion${row.promotions === 1 ? '' : 's'})`)
+                .join(' · ')}
             </p>
           ) : null}
-          <p className="px-4 py-3 text-xs text-deep-violet-blue/60">
-            Placeholder values move with each customer&apos;s ordinary-month discount ({defaultAnchorPct}% for all
-            customers).
-          </p>
         </TableCard>
 
-        {addingOverride && anchors ? (
-          <PromoOverrideForm
-            mechanics={mechanics}
-            customers={anchors.customers}
-            catalog={catalog}
-            moments={moments.data}
-            initial={filters}
-            onSaved={handleOverrideSaved}
-            onCancel={() => setAddingOverride(false)}
+        {mechanicTarget ? (
+          <PromoMechanicDiscountForm
+            key={mechanicTarget.mechanic_key}
+            row={mechanicTarget}
+            onSaved={(result) => {
+              setMechanicTarget(null);
+              savedNotice(result, 'Discount saved');
+            }}
+            onCancel={() => setMechanicTarget(null)}
           />
         ) : null}
 
-        {detailsTarget ? (
-          <PromoUpliftDetails
-            key={detailsTarget.row.id}
-            row={detailsTarget.row}
-            shownUplift={shownUplift(detailsTarget.row)}
-            moments={moments.data}
-            startEditing={detailsTarget.editing}
-            readOnly={readOnly}
-            onSave={handleUpliftSave}
-            onReset={handleUpliftReset}
-            onClose={() => setDetailsTarget(null)}
-          />
+        <PromoUpliftTable
+          rows={calcRows}
+          isLoading={calculated.loading}
+          error={calculated.error}
+          onRefresh={refresh}
+          mechanicOptions={mechanics.map((row) => ({ value: row.mechanic_key, label: row.mechanic_label }))}
+          moments={moments.data}
+        />
+        {moments.error ? (
+          <p className="-mt-1 text-xs text-red-600" role="alert">
+            Moments could not be loaded: {moments.error}
+          </p>
         ) : null}
 
         <Toast toast={toast} onDismiss={dismissToast} />

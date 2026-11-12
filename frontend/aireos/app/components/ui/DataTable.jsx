@@ -114,9 +114,10 @@ export default function DataTable({
       className={fill ? 'min-h-80 flex-1' : undefined}
       header={(
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex min-w-0 flex-wrap items-baseline gap-x-3">
-            {title && <h2 className="font-serif text-xl text-deep-violet-blue">{title}</h2>}
-            <p className="text-sm text-deep-violet-blue/70" aria-live="polite">
+          {/* With a title, title and count follow TableCardHeader, like every other table card. */}
+          <div className={cn('min-w-0', title ? null : 'flex flex-wrap items-baseline gap-x-3')}>
+            {title && <h2 className="font-serif text-base text-deep-violet-blue">{title}</h2>}
+            <p className={cn('text-deep-violet-blue/70', title ? 'mt-0.5 text-xs' : 'text-sm')} aria-live="polite">
               {firstLoad ? `Loading ${plural}…` : resultCountLabel(shownCount, totalCount, noun, plural)}
             </p>
           </div>

@@ -26,6 +26,8 @@ export default function useForecastOptions() {
         if (cancelled) return;
         setData({
           products: options.products ?? [],
+          // The Scenario builder's filter (backend get_forecast_options sku_ranges).
+          skuRanges: options.sku_ranges ?? [],
           customers: options.customers ?? [],
           bounds: { start: options.start_date ?? '', end: options.end_date ?? '' },
         });

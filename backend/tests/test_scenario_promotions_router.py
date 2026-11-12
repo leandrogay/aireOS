@@ -7,7 +7,7 @@ from app.services.scenario import promotions as promotions_service
 client = TestClient(app)
 
 BODY = {
-    "customer_name": "fairprice",
+    "customer_names": ["fairprice"],
     "product_name": "Comfort Pants M",
     "promo_type": "monthly",
     "mechanic_key": "pct_off_30",
@@ -83,10 +83,12 @@ def test_create_with_months_out_of_order_is_422_without_calling_the_service(monk
     assert response.status_code == 422
 
 
-def test_create_without_a_product_is_422(monkeypatch):
+def test_create_naming_both_ranges_and_one_sku_is_422(monkeypatch):
     monkeypatch.setattr(promotions_service, "create_scenario_promotion", _no_service_call)
 
-    response = client.post("/api/scenario/promotions", json={**BODY, "product_name": None})
+    response = client.post(
+        "/api/scenario/promotions", json={**BODY, "product_name": "Aire Pants L", "sku_ranges": ["Pants"]}
+    )
 
     assert response.status_code == 422
 

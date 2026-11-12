@@ -20,6 +20,16 @@ export function customerLabel(value) {
 }
 
 /**
+ * Display label for the customers a Scenario builder item covers:
+ * `FairPrice, NHG`, or `All customers` for none (= every customer).
+ *
+ * @param {string[] | undefined} customers
+ */
+export function customersLabel(customers) {
+  return customers?.length ? customers.map(customerLabel).join(', ') : 'All customers';
+}
+
+/**
  * Display label for a stored retailer name slug, e.g. `fairprice_online` →
  * `Fairprice Online`. The raw slug stays the identity used for matching and
  * API payloads; only call this at render time. Customer names use

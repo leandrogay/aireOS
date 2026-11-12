@@ -1,15 +1,16 @@
 // Everything that reads or writes promotion uplifts imports from here: the
 // /api/settings/promo-uplifts wrappers in settingsApi.js (tables from
-// migration 012_create_promo_uplift_settings.sql).
+// migrations 012_create_promo_uplift_settings.sql and 020_create_promo_calc.sql).
 export {
   getPromoUpliftSettings,
   getResolvedPromoUplifts,
-  savePromoUplift,
-  resetPromoUplift,
-  addPromoUpliftOverride,
+  getCalculatedUplifts,
+  saveMechanicDiscount,
+  recalculatePromoUplifts,
   getPromoUpliftHistory,
   getPromoAnchors,
-  savePromoAnchor,
+  overwritePromoAnchor,
+  saveFallbackAnchor,
   adoptPromoAnchor,
   getPromoAnchorHistory,
   getPromoMoments,

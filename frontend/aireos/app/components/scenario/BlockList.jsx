@@ -4,13 +4,13 @@ import { Tag } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { Switch } from '@/components/ui/switch';
-import { customerLabel } from '@/app/utils/retailerLabel';
-import { hasUnsavedChanges, upliftLabel } from '@/app/utils/scenarioBlocks';
+import { customersLabel } from '@/app/utils/retailerLabel';
+import { blockScopeLabel, hasUnsavedChanges, upliftLabel } from '@/app/utils/scenarioBlocks';
 import { monthSpanLabel } from '@/app/utils/scenarioPitch';
 
 function blockSummary(block) {
   const span = monthSpanLabel([block.startMonth, block.endMonth].filter(Boolean));
-  return `${block.sku || 'All SKUs'} · ${upliftLabel(block)} · ${span}`;
+  return `${blockScopeLabel(block)} · ${upliftLabel(block)} · ${span}`;
 }
 
 // What the block adds on the Simulated line, when it is on it.
@@ -71,7 +71,7 @@ export default function BlockList({ blocks, selectedId, onSelect, onToggle, impa
               <Tag className="mt-0.5 size-3.5 shrink-0 text-scenario" aria-hidden="true" />
               <span className="min-w-0">
                 <span className="block truncate text-xs font-medium text-deep-violet-blue">
-                  {customerLabel(block.customer)} · {block.name}
+                  {customersLabel(block.customers)} · {block.name}
                 </span>
                 {impact ? (
                   <span className="block truncate text-[11px] font-semibold tabular-nums text-scenario-ink">{impact}</span>

@@ -6,9 +6,14 @@ Mirrors the sell-out half of Aire's P&L workbook ("Forecast with Build" and
 already recognises:
 
     predicted units = Sell-out Base + Sell-out Building Blocks
-    Sell-out Base   = ly_weight       x (same month last year x YoY growth)   P&L: =L104*1.05
+    Sell-out Base   = ly_weight       x (same month last year)              P&L: =L104
                     + (1 - ly_weight) x (3-month run-rate)                  P&L: =X58
     Building Blocks = Base x uplift for that month's promo_type             P&L: 'Building Blocks'!
+
+There is no growth factor (team decision, 8 Nov 2026; the live Tier 0 view in
+bigquery/views/010_create_tier0_legacy_forecasts_view.sql dropped it too).
+Growth is a planning choice: the Scenario builder applies it on top of the
+base as a growth building block (scenario_building_blocks, kind = 'growth').
 
 Sell-out forecasting is self-contained: it only ever needs historical
 quantity_units/revenue actuals (see get_sellout_weeks in forecast_service.py),
@@ -36,9 +41,7 @@ HORIZON_MONTHS = 12
 class ForecastParams:
     """Tuning knobs, defaulted to what reproduces the P&L's behaviour."""
 
-    ly_weight: float = 0.5          # share of Base that comes from last year x growth
-    growth_floor: float = 0.85      # YoY growth is clipped so one odd quarter can't swing a year
-    growth_cap: float = 1.25
+    ly_weight: float = 0.5          # share of Base that comes from the same month last year
     runrate_months: int = 3         # same 3-month window the P&L's DOH formula averages over
     uplift_cap: float = 1.0         # no promo is allowed to more than double sell-out
     min_uplift_obs: int = 3         # fewer promo months than this => too noisy, uplift 0
@@ -47,8 +50,6 @@ class ForecastParams:
     def __post_init__(self) -> None:
         if not 0 <= self.ly_weight <= 1:
             raise ValueError("ly_weight must be between 0 and 1")
-        if not 0 < self.growth_floor <= self.growth_cap:
-            raise ValueError("growth_floor must be > 0 and <= growth_cap")
         if self.runrate_months < 1 or self.min_uplift_obs < 1:
             raise ValueError("runrate_months and min_uplift_obs must be at least 1")
 
@@ -292,14 +293,6 @@ def _base_history(history: pd.DataFrame, uplifts: dict[str, float]) -> pd.Series
     return history["quantity_units"] / uplift_factor
 
 
-def _growth_factor(base: pd.Series, window: list[pd.Period], params: ForecastParams) -> float | None:
-    recent = base.reindex(window)
-    last_year = base.reindex([month - 12 for month in window])
-    if recent.isna().any() or last_year.isna().any() or last_year.sum() <= 0:
-        return None
-    return min(max(recent.sum() / last_year.sum(), params.growth_floor), params.growth_cap)
-
-
 def forecast_sku(history: pd.DataFrame, promo_by_month: dict, months: list[pd.Period],
                  uplifts: dict[str, float], params: ForecastParams) -> pd.DataFrame:
     """Monthly Base, Building Blocks and total for one SKU x customer.
@@ -311,14 +304,13 @@ def forecast_sku(history: pd.DataFrame, promo_by_month: dict, months: list[pd.Pe
     latest = base.index.max()
     window = [latest - offset for offset in range(params.runrate_months)]
     run_rate = base.reindex(window).dropna().mean()
-    growth = _growth_factor(base, window, params)
 
     forecast = []
     for month in months:
         last_year = base.get(month - 12)
-        if growth is not None and last_year is not None and not pd.isna(last_year):
-            month_base = params.ly_weight * last_year * growth + (1 - params.ly_weight) * run_rate
-            method = "ly_x_growth+runrate"
+        if last_year is not None and not pd.isna(last_year):
+            month_base = params.ly_weight * last_year + (1 - params.ly_weight) * run_rate
+            method = "ly+runrate"
         else:
             month_base = run_rate
             method = "runrate"

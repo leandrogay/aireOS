@@ -18,29 +18,58 @@ const dateBoxClass = 'h-8 border-deep-violet-blue/45 bg-white px-2 text-xs';
 const clearClass =
   'rounded-md border border-deep-violet-blue/30 bg-white px-2 py-0.5 text-[10px] font-medium text-deep-violet-blue transition hover:bg-cream disabled:cursor-not-allowed disabled:opacity-40';
 
-// SKU and customer are the shared ui/SelectDropdown in the same compact look
-// as Model beside them (and the Dashboard's filters); '' is "All".
-function SkuField({ value, onChange, options }) {
+// SKU (or SKU range) and customer are the shared ui/SelectDropdown in the
+// same compact look as Model beside them (and the Dashboard's filters); '' is "All".
+function PickField({ id, label, helpKey, allLabel, searchPlaceholder, value, onChange, options }) {
   return (
     <div>
-      <span className={labelClass} id="forecast-sku-label">
-        SKU
-        <ForecastInfo helpKey="filterSku" label="About the SKU filter" />
+      <span className={labelClass} id={`${id}-label`}>
+        {label}
+        {helpKey ? <ForecastInfo helpKey={helpKey} label={`About the ${label} filter`} /> : null}
       </span>
       <SelectDropdown
-        id="forecast-sku"
-        ariaLabel="SKU"
+        id={id}
+        ariaLabel={label}
         value={value}
         onChange={onChange}
-        options={[{ value: '', label: 'All SKUs' }, ...options.map((name) => ({ value: name, label: name }))]}
-        placeholder="All SKUs"
+        options={[{ value: '', label: allLabel }, ...options.map((name) => ({ value: name, label: name }))]}
+        placeholder={allLabel}
         searchable
-        searchPlaceholder="Search SKUs…"
+        searchPlaceholder={searchPlaceholder}
         look="compact"
         size="sm"
         className="w-full"
       />
     </div>
+  );
+}
+
+function SkuField({ value, onChange, options }) {
+  return (
+    <PickField
+      id="forecast-sku"
+      label="SKU"
+      helpKey="filterSku"
+      allLabel="All SKUs"
+      searchPlaceholder="Search SKUs…"
+      value={value}
+      onChange={onChange}
+      options={options}
+    />
+  );
+}
+
+function SkuRangeField({ value, onChange, options }) {
+  return (
+    <PickField
+      id="forecast-sku-range"
+      label="SKU range"
+      allLabel="All SKU ranges"
+      searchPlaceholder="Search SKU ranges…"
+      value={value}
+      onChange={onChange}
+      options={options}
+    />
   );
 }
 
@@ -143,13 +172,18 @@ function ModelField({ value, onChange, options }) {
  * Forecast filters: SKU, customer, Model (when `model` is given -- /forecast
  * only), date range, Clear. The default is the
  * card /forecast uses. `variant="toolbar"` (Scenario builder only) is the
- * same fields in one row with no card, inside the chart card.
+ * same fields in one row with no card, inside the chart card. Given
+ * `onSkuRangeChange`, the SKU field picks a SKU range instead (the Scenario
+ * builder plans by range).
  */
 
 export default function ForecastFilters({
   productName,
   onProductNameChange,
   productOptions,
+  skuRange = '',
+  onSkuRangeChange = null,
+  skuRangeOptions = [],
   customerName,
   onCustomerNameChange,
   customerOptions,
@@ -164,15 +198,19 @@ export default function ForecastFilters({
   model = null,
   variant = 'card',
 }) {
+  const skuField = onSkuRangeChange ? (
+    <SkuRangeField value={skuRange} onChange={onSkuRangeChange} options={skuRangeOptions} />
+  ) : (
+    <SkuField value={productName} onChange={onProductNameChange} options={productOptions} />
+  );
+
   if (variant === 'toolbar') {
     return (
       <div className="flex flex-wrap items-end gap-2">
         <div className="w-full sm:w-44">
           <CustomerField value={customerName} onChange={onCustomerNameChange} options={customerOptions} />
         </div>
-        <div className="w-full sm:w-44">
-          <SkuField value={productName} onChange={onProductNameChange} options={productOptions} />
-        </div>
+        <div className="w-full sm:w-44">{skuField}</div>
         <div className="w-full sm:w-80">
           <DateRangeFields
             startDate={startDate}
@@ -201,7 +239,7 @@ export default function ForecastFilters({
         </div>
 
         <div className={cn('grid grid-cols-2 gap-2', model ? 'lg:grid-cols-5' : 'lg:grid-cols-4')}>
-          <SkuField value={productName} onChange={onProductNameChange} options={productOptions} />
+          {skuField}
           <CustomerField value={customerName} onChange={onCustomerNameChange} options={customerOptions} />
           {model ? (
             <div className="col-span-2 lg:col-span-1">

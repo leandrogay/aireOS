@@ -5,8 +5,8 @@ import { ACTIONS_COLUMN } from '@/components/ui/TableGrid';
 // well under the page's 72rem (max-w-6xl), so Explanation always keeps room
 // of its own and the Actions menu never slides off the right edge.
 // Explanation truncates (full text in the expanded row). Customer and SKU share a column; the customer
-// part only shows when the page's Customer filter is "All customers" --
-// otherwise every row would repeat it. `sortField`s are the fields
+// part stays visible when the saved list includes records outside the chart.
+// `sortField`s are the fields
 // sortBlocks() in BlockTable accepts.
 const NAME = { key: 'name', label: 'Building block', width: '13rem', sortField: 'name' };
 const REST = [

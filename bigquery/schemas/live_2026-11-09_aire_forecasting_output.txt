@@ -1,0 +1,165 @@
+{
+  "clustering": {
+    "fields": [
+      "customer_id",
+      "sku",
+      "tier"
+    ]
+  },
+  "creationTime": "1794159040944",
+  "etag": "CvXCyvWOST90GLMto2Ye2A==",
+  "id": "aire-data:aireos_forecast_validation_sg.aire_forecasting_output",
+  "kind": "bigquery#table",
+  "lastModifiedTime": "1794159040945",
+  "location": "asia-southeast1",
+  "numActiveLogicalBytes": "502282",
+  "numActivePhysicalBytes": "349629",
+  "numBytes": "502282",
+  "numCurrentPhysicalBytes": "65415",
+  "numLongTermBytes": "0",
+  "numLongTermLogicalBytes": "0",
+  "numLongTermPhysicalBytes": "0",
+  "numRows": "2628",
+  "numTimeTravelPhysicalBytes": "284214",
+  "numTotalLogicalBytes": "502282",
+  "numTotalPhysicalBytes": "349629",
+  "schema": {
+    "fields": [
+      {
+        "name": "customer_id",
+        "type": "INTEGER"
+      },
+      {
+        "name": "sku",
+        "type": "STRING"
+      },
+      {
+        "name": "month_year",
+        "type": "DATE"
+      },
+      {
+        "name": "tier",
+        "type": "STRING"
+      },
+      {
+        "name": "tier_label",
+        "type": "STRING"
+      },
+      {
+        "name": "tier_order",
+        "type": "INTEGER"
+      },
+      {
+        "name": "source_model",
+        "type": "STRING"
+      },
+      {
+        "name": "is_available",
+        "type": "BOOLEAN"
+      },
+      {
+        "name": "unavailable_reason",
+        "type": "STRING"
+      },
+      {
+        "name": "months_of_history",
+        "type": "INTEGER"
+      },
+      {
+        "name": "actual_quantity_cartons",
+        "type": "FLOAT"
+      },
+      {
+        "name": "forecast_initial",
+        "type": "FLOAT"
+      },
+      {
+        "name": "initial_source_model",
+        "type": "STRING"
+      },
+      {
+        "name": "initial_low_80",
+        "type": "FLOAT"
+      },
+      {
+        "name": "initial_high_80",
+        "type": "FLOAT"
+      },
+      {
+        "name": "forecast_previous",
+        "type": "FLOAT"
+      },
+      {
+        "name": "previous_source_model",
+        "type": "STRING"
+      },
+      {
+        "name": "forecast_current",
+        "type": "FLOAT"
+      },
+      {
+        "name": "current_source_model",
+        "type": "STRING"
+      },
+      {
+        "name": "current_low_80",
+        "type": "FLOAT"
+      },
+      {
+        "name": "current_high_80",
+        "type": "FLOAT"
+      },
+      {
+        "name": "month_range_pct",
+        "type": "FLOAT"
+      },
+      {
+        "name": "month_confidence_band",
+        "type": "STRING"
+      },
+      {
+        "name": "promo_mix",
+        "type": "STRING"
+      },
+      {
+        "name": "xreg_used_typical_promo",
+        "type": "BOOLEAN"
+      },
+      {
+        "name": "current_backtest_smape",
+        "type": "FLOAT"
+      },
+      {
+        "name": "current_confidence_band",
+        "type": "STRING"
+      },
+      {
+        "name": "current_generated_at",
+        "type": "TIMESTAMP"
+      },
+      {
+        "name": "previous_generated_at",
+        "type": "TIMESTAMP"
+      },
+      {
+        "name": "initial_generated_at",
+        "type": "TIMESTAMP"
+      },
+      {
+        "name": "actual_status",
+        "type": "STRING"
+      },
+      {
+        "name": "output_built_at",
+        "type": "TIMESTAMP"
+      }
+    ]
+  },
+  "selfLink": "https://bigquery.googleapis.com/bigquery/v2/projects/aire-data/datasets/aireos_forecast_validation_sg/tables/aire_forecasting_output",
+  "tableReference": {
+    "datasetId": "aireos_forecast_validation_sg",
+    "projectId": "aire-data",
+    "tableId": "aire_forecasting_output"
+  },
+  "type": "TABLE"
+}

@@ -12,11 +12,13 @@ import { PAGE_SIZES } from '@/components/ui/TablePagination';
 import TableSearch from '@/components/ui/TableSearch';
 import { Switch } from '@/components/ui/switch';
 import TableRow from '@/components/ui/TableRow';
-import { customerLabel } from '@/app/utils/retailerLabel';
-import { upliftLabel } from '@/app/utils/scenarioBlocks';
+import { customersLabel } from '@/app/utils/retailerLabel';
+import { blockScopeLabel, upliftLabel } from '@/app/utils/scenarioBlocks';
 import { monthSpanLabel } from '@/app/utils/scenarioPitch';
-import { matchesSearch, nextSort, paginate } from '@/app/utils/tableView';
+import { nextSort, paginate } from '@/app/utils/tableView';
+import { savedScenarioItems } from '@/app/utils/scenarioSavedItems';
 
+import ItemPairs from './ItemPairs';
 import { blockColumns } from './columns';
 
 function wholeUnits(value) {
@@ -31,31 +33,25 @@ function monthLabel(monthYear) {
   return monthSpanLabel([monthYear]);
 }
 
-/**
- * True when the page's filters show this block: its customer (or All
- * customers), its SKU (an All SKUs block shows for any one SKU too, since
- * it applies to it), and any month of it inside the period. Overlap, not
- * containment: a block reaching past the period still belongs in the list.
- */
-export function blockInView(block, view) {
-  if (view.customerName && view.customerName !== block.customer) return false;
-  if (view.productName && block.sku && view.productName !== block.sku) return false;
-  if (view.startMonth && block.endMonth < view.startMonth) return false;
-  if (view.endMonth && block.startMonth > view.endMonth) return false;
-  return true;
-}
-
 function sortBlocks(blocks, field, direction) {
   const sign = direction === 'asc' ? 1 : -1;
   return [...blocks].sort((a, b) => String(a[field] ?? '').localeCompare(String(b[field] ?? '')) * sign);
 }
 
-function BlockDetails({ block, months }) {
+function BlockDetails({ block, months, pairs, toggling, onTogglePair, baseLabel }) {
   return (
     <div className="grid gap-4 text-xs md:grid-cols-[minmax(0,1fr)_minmax(24rem,1.2fr)]">
       <div className="min-w-0">
         <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">Explanation</p>
         <p className="whitespace-pre-line leading-relaxed">{block.explanation || '—'}</p>
+        <div className="mt-3">
+          <ItemPairs
+            pairs={pairs}
+            active={block.isActive}
+            disabled={toggling}
+            onToggle={(customer, skuRange, on) => onTogglePair(block, customer, skuRange, on)}
+          />
+        </div>
       </div>
       <div className="min-w-0">
         <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">
@@ -67,7 +63,7 @@ function BlockDetails({ block, months }) {
             minWidth="24rem"
             columns={[
               { key: 'month', label: 'Month' },
-              { key: 'current', label: 'Current', align: 'right' },
+              { key: 'current', label: baseLabel, align: 'right' },
               { key: 'simulated', label: 'Simulated', align: 'right' },
               { key: 'gain', label: 'Gain', align: 'right' },
             ]}
@@ -95,15 +91,14 @@ function BlockDetails({ block, months }) {
 
 /**
  * Saved building blocks, under the chart, in the shared list-table card
- * Promotions uses. Rows follow the page's Customer / SKU / Period filters
- * (`view`), plus a search over name and explanation. Each row shows what the block
+ * Promotions uses. All saved blocks in the mode remain visible, with local
+ * search independent of chart filters. Each row shows what the block
  * adds while it is switched on; the switch saves straight away. Edit opens
  * the block in the side panel; Delete asks first (`onDelete` is the page's
  * confirm request). The row open in the panel is marked as editing.
  *
  * @param {{
  *   blocks: object[],                 saved blocks
- *   view: ReturnType<import('@/app/utils/scenarioEngine').chartView>,
  *   impacts: Map<string, { deltaUnits: number }>,
  *   monthsByItem: Map<string, object[]>,
  *   isLoading: boolean,
@@ -113,15 +108,17 @@ function BlockDetails({ block, months }) {
  *   isExpanded: (id: string) => boolean,
  *   onToggleRow: (id: string) => void,
  *   onToggleActive: (block: object, isActive: boolean) => void,
+ *   pairsFor: (block: object) => ReturnType<typeof import('@/app/utils/scenarioEngine').itemPairs>,
+ *   onTogglePair: (block: object, customer: string, skuRange: string | null, on: boolean) => void,
  *   onEdit: (block: object) => void,
  *   onDelete: (block: object) => void,
- *   onClearFilters: () => void,
+ *   onRefresh?: () => void,
+ *   baseLabel?: string,
  *   closedIds?: Set<string>,          blocks whose months all have actual sales
  * }} props
  */
 export default function BlockTable({
   blocks,
-  view,
   impacts,
   monthsByItem,
   isLoading,
@@ -131,9 +128,12 @@ export default function BlockTable({
   isExpanded,
   onToggleRow,
   onToggleActive,
+  pairsFor,
+  onTogglePair,
   onEdit,
   onDelete,
-  onClearFilters,
+  onRefresh,
+  baseLabel = 'Current',
   closedIds = new Set(),
 }) {
   const [search, setSearch] = useState('');
@@ -141,26 +141,24 @@ export default function BlockTable({
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
 
-  const showCustomer = !view.customerName;
+  const showCustomer = true;
   const columns = blockColumns(showCustomer);
-  const inView = blocks.filter((block) => blockInView(block, view));
-  const matching = inView.filter((block) => matchesSearch([block.name, block.explanation], search));
+  const matching = savedScenarioItems(blocks, search);
   const sorted = sortBlocks(matching, sort.field, sort.direction);
   const { pageRows, currentPage, totalPages } = paginate(sorted, page, pageSize);
 
   const noMatches = !isLoading && blocks.length > 0 && sorted.length === 0 && (
     <>
-      <p>No building blocks match these filters.</p>
+      <p>No building blocks match this search.</p>
       <Button
         variant="outline"
         className="mt-3"
         onClick={() => {
           setSearch('');
           setPage(1);
-          onClearFilters();
         }}
       >
-        Reset filters
+        Clear search
       </Button>
     </>
   );
@@ -168,10 +166,12 @@ export default function BlockTable({
   return (
     <PaginatedDataTable
       label="Building blocks"
+      title="Saved building blocks"
       noun="building block"
       totalCount={blocks.length}
       shownCount={sorted.length}
       isLoading={isLoading}
+      onRefresh={onRefresh}
       error={error}
       emptyMessage="No saved building blocks yet. Use Add building block to create one."
       toolbar={
@@ -199,8 +199,10 @@ export default function BlockTable({
         const impact = block.isActive ? impacts.get(block.id) : null;
         const isEditing = editingId === block.id;
         const toggling = togglingIds.includes(block.id);
-        const sku = block.sku || 'All SKUs';
-        const appliesTo = showCustomer ? `${customerLabel(block.customer)} · ${sku}` : sku;
+        const sku = blockScopeLabel(block);
+        // With one customer in view, a block that also covers others still says so.
+        const appliesTo =
+          showCustomer || block.customers?.length !== 1 ? `${customersLabel(block.customers)} · ${sku}` : sku;
         const actions = [
           {
             key: 'edit',
@@ -222,7 +224,16 @@ export default function BlockTable({
             title={block.name}
             toggleLabel={isExpanded(block.id) ? `Hide details for ${block.name}` : `Show details for ${block.name}`}
             actions={<RowActions label={`Actions for ${block.name}`} actions={actions} />}
-            details={<BlockDetails block={block} months={monthsByItem.get(block.id) ?? []} />}
+            details={
+              <BlockDetails
+                block={block}
+                months={monthsByItem.get(block.id) ?? []}
+                pairs={pairsFor(block)}
+                toggling={toggling}
+                onTogglePair={onTogglePair}
+                baseLabel={baseLabel}
+              />
+            }
           >
             <td className="truncate px-4 py-2.5" title={appliesTo}>{appliesTo}</td>
             <td className="whitespace-nowrap px-4 py-2.5 tabular-nums">
@@ -234,7 +245,7 @@ export default function BlockTable({
                 <span className="font-semibold text-scenario-ink">{signed(impact.deltaUnits, wholeUnits)} units</span>
               ) : (
                 <span className="text-deep-violet-blue/45">
-                  {!block.isActive ? 'Off' : closedIds.has(block.id) ? 'Months closed' : 'Outside chart filters'}
+                  {!block.isActive ? 'Off' : closedIds.has(block.id) ? 'Milestone' : 'Outside chart filters'}
                 </span>
               )}
             </td>

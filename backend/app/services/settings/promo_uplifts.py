@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import text
@@ -6,6 +7,7 @@ from sqlalchemy.engine import Connection
 from app.services.settings import common
 from app.services.settings import promo_moment_rules as moment_rules
 from app.services.settings import promo_moments
+from app.services.settings import promo_recalc_events
 from app.services.settings import promo_uplift_rules as rules
 from app.services.settings.common import CustomerNotFoundError
 
@@ -26,10 +28,6 @@ from app.services.settings.common import CustomerNotFoundError
 # ============================================================
 # Custom Exceptions
 # ============================================================
-
-
-class UpliftSettingNotFoundError(Exception):
-    pass
 
 
 class MechanicNotFoundError(Exception):
@@ -172,6 +170,11 @@ def _ranges(conn: Connection) -> list[str]:
 # (fewer than RECOMMEND_FROM months in the window) can a discount be typed
 # in instead ('manual'). A range with nothing saved uses its customer's
 # anchor, a customer the all-customers value, else 20%.
+#
+# Each version applies from a month (effective_from, migration 019; NULL =
+# from the start), so a change already decided for the future is saved
+# ahead without moving the months before it. The anchor shown is the one in
+# effect this month; `upcoming` lists the later changes.
 # ============================================================
 
 
@@ -186,6 +189,7 @@ def _anchor_rows(conn: Connection) -> list[dict]:
                 promotion_mechanic,
                 anchor_pct,
                 source,
+                effective_from,
                 updated_by,
                 updated_at
 
@@ -197,8 +201,21 @@ def _anchor_rows(conn: Connection) -> list[dict]:
     return [dict(row) for row in rows]
 
 
-def _current_anchors(anchor_rows: list[dict]) -> dict[tuple, dict]:
-    return common.newest(anchor_rows, lambda row: (row["customer_id"], row["sku_range"]))
+def _anchor_target(row: dict) -> tuple:
+    return (row["customer_id"], row["sku_range"])
+
+
+def _current_anchors(anchor_rows: list[dict], month: date | None = None) -> dict[tuple, dict]:
+    """The rows in effect in `month` (this month when not given), per customer x range."""
+
+    return common.in_effect(anchor_rows, _anchor_target, month or common.this_month())
+
+
+def _anchors_by_month(anchor_rows: list[dict], month: date) -> list[tuple[date, dict[tuple, dict]]]:
+    """The rows in effect from each later month a version starts in, oldest first."""
+
+    starts = sorted({row["effective_from"] for row in anchor_rows if row["effective_from"] and row["effective_from"] > month})
+    return [(start, _current_anchors(anchor_rows, start)) for start in starts]
 
 
 def _default_anchor(current: dict[tuple, dict]) -> Decimal:
@@ -221,68 +238,115 @@ def _recommended_view(recommendation: dict | None, current: list[dict]) -> dict 
     }
 
 
-def _anchor_entry(row: dict | None, fallback: dict, recommendation: dict | None, current: list[dict]) -> dict:
+def _anchor_values(saved: dict[tuple, dict], customer_id: int, sku_range: str | None) -> dict:
+    """
+    A target's anchor among `saved` (the rows in effect in one month): its
+    own row, else a range takes its customer's ('customer') and a customer
+    the all-customers value ('default').
+    """
+
+    row = saved.get((customer_id, sku_range))
     if row is not None:
-        values = {
+        return {
             "anchor_pct": _num(row["anchor_pct"]),
             "mechanic_key": rules.mechanic_key(row["promotion_mechanic"]),
             "mechanic_label": row["promotion_mechanic"],
             "source": row["source"],
+            "effective_from": row["effective_from"].isoformat() if row["effective_from"] else None,
             "changed_by": row["updated_by"],
             "changed_at": common.iso(row["updated_at"]),
         }
-    else:
-        values = {**fallback, "changed_by": None, "changed_at": None}
 
+    if sku_range is not None:
+        inherited = _anchor_values(saved, customer_id, None)
+        fallback = {key: inherited[key] for key in ("anchor_pct", "mechanic_key", "mechanic_label")}
+        source = "customer"
+    else:
+        fallback = {"anchor_pct": _num(_default_anchor(saved)), "mechanic_key": None, "mechanic_label": None}
+        source = "default"
+    return {**fallback, "source": source, "effective_from": None, "changed_by": None, "changed_at": None}
+
+
+def _upcoming(
+    values: dict,
+    later: list[tuple[date, dict[tuple, dict]]],
+    customer_id: int,
+    sku_range: str | None,
+) -> list[dict]:
+    """The months after this one where a target's anchor changes, and what it changes to."""
+
+    changes = []
+    previous = values
+    for start, saved in later:
+        values = _anchor_values(saved, customer_id, sku_range)
+        if (values["anchor_pct"], values["mechanic_key"]) != (previous["anchor_pct"], previous["mechanic_key"]):
+            changes.append({**values, "effective_from": start.isoformat()})
+        previous = values
+    return changes
+
+
+def _anchor_entry(
+    values: dict,
+    upcoming: list[dict],
+    recommendation: dict | None,
+    current: list[dict],
+    options: list[dict],
+) -> dict:
     window_months = recommendation["window_months"] if recommendation else 0
     recommended = _recommended_view(recommendation, current)
     return {
         **values,
+        "upcoming": upcoming,
         "recommended": recommended,
         "window_months": window_months,
-        # A typed discount only where the data cannot recommend one.
-        "manual_allowed": window_months < moment_rules.RECOMMEND_FROM,
+        # What an overwrite can pick (overwrite_anchor).
+        "mechanic_options": options,
         "recommendation_differs": recommended is not None and (
             values["source"] != "recommended" or recommended["mechanic_key"] != values["mechanic_key"]
         ),
     }
 
 
+def _target_view(
+    saved: dict[tuple, dict],
+    later: list[tuple[date, dict[tuple, dict]]],
+    customer_id: int,
+    sku_range: str | None,
+    recommendations: dict[tuple, dict],
+    current: list[dict],
+    options: dict[tuple, list[dict]],
+) -> dict:
+    values = _anchor_values(saved, customer_id, sku_range)
+    upcoming = _upcoming(values, later, customer_id, sku_range)
+    return _anchor_entry(
+        values,
+        upcoming,
+        recommendations.get((customer_id, sku_range)),
+        current,
+        options.get((customer_id, sku_range), []),
+    )
+
+
 def _anchor_view(
     customer: dict,
     saved: dict[tuple, dict],
+    later: list[tuple[date, dict[tuple, dict]]],
     ranges: list[str],
     recommendations: dict[tuple, dict],
     current: list[dict],
+    options: dict[tuple, list[dict]],
 ) -> dict:
     customer_id = customer["customer_id"]
-    default = {
-        "anchor_pct": _num(_default_anchor(saved)),
-        "mechanic_key": None,
-        "mechanic_label": None,
-        "source": "default",
-    }
-    entry = _anchor_entry(saved.get((customer_id, None)), default, recommendations.get((customer_id, None)), current)
-    inherited = {key: entry[key] for key in ("anchor_pct", "mechanic_key", "mechanic_label")}
-
     range_views = [
-        {
-            "sku_range": sku_range,
-            **_anchor_entry(
-                saved.get((customer_id, sku_range)),
-                {**inherited, "source": "customer"},
-                recommendations.get((customer_id, sku_range)),
-                current,
-            ),
-        }
+        {"sku_range": sku_range, **_target_view(saved, later, customer_id, sku_range, recommendations, current, options)}
         for sku_range in ranges
     ]
 
     return {
         "customer_id": customer_id,
         "customer_name": customer["customer_name"],
-        **entry,
-        "default_anchor_pct": default["anchor_pct"],
+        **_target_view(saved, later, customer_id, None, recommendations, current, options),
+        "default_anchor_pct": _num(_default_anchor(saved)),
         "ranges": range_views,
     }
 
@@ -291,12 +355,58 @@ def _anchors(conn: Connection, customer_id: int | None = None, with_recommendati
     # Recommendations read every customer's sell-out, so resolve_uplifts,
     # which only needs the saved anchors, leaves them out.
     customers = _customers(conn, customer_id)
-    saved = _current_anchors(_anchor_rows(conn))
+    rows = _anchor_rows(conn)
+    month = common.this_month()
+    saved = _current_anchors(rows, month)
+    later = _anchors_by_month(rows, month)
     current = _current_uplifts(_uplift_rows(conn))
     ranges = _ranges(conn)
     recommendations = promo_moments.anchor_recommendations(conn) if with_recommendations else {}
+    options = _mechanic_options(conn, current) if with_recommendations else {}
 
-    return [_anchor_view(customer, saved, ranges, recommendations, current) for customer in customers]
+    return [_anchor_view(customer, saved, later, ranges, recommendations, current, options) for customer in customers]
+
+
+def _mechanic_options(conn: Connection, current: list[dict]) -> dict[tuple, list[dict]]:
+    """
+    Per customer x SKU range (and per customer, sku_range None): the
+    mechanics its official whole-month promotions use (promo_moment_calc,
+    real and planned) that have a discount, so an overwrite can pick one.
+    A mechanic nobody has run yet is added on the Promotions page first.
+    """
+
+    rows = conn.execute(
+        text(
+            """
+            SELECT DISTINCT
+                m.customer_id,
+                s.sku_range,
+                m.mechanic_key
+
+            FROM promo_moment_calc m
+            JOIN skus s
+                ON s.sku = m.sku
+            """
+        )
+    ).mappings().all()
+
+    discounts = _discount_by_key(current)
+    labels = {row["mechanic_key"]: row["promotion_mechanic"] for row in current if row["scope"] == "all"}
+    used: dict[tuple, set[str]] = {}
+    for row in rows:
+        if row["mechanic_key"] not in discounts:
+            continue
+        used.setdefault((row["customer_id"], None), set()).add(row["mechanic_key"])
+        if row["sku_range"]:
+            used.setdefault((row["customer_id"], row["sku_range"]), set()).add(row["mechanic_key"])
+
+    return {
+        target: [
+            {"mechanic_key": key, "mechanic_label": labels[key], "anchor_pct": _num(discounts[key])}
+            for key in sorted(keys, key=lambda key: (discounts[key], key))
+        ]
+        for target, keys in used.items()
+    }
 
 
 def _anchor_pct_for(anchor: dict, sku_range: str | None) -> Decimal:
@@ -308,15 +418,25 @@ def _anchor_pct_for(anchor: dict, sku_range: str | None) -> Decimal:
     return Decimal(str(anchor["anchor_pct"]))
 
 
+def _fallback_view(anchor_rows: list[dict]) -> dict:
+    """The anchor every target without its own (or its customer's) uses: one setting, versioned by month."""
+
+    month = common.this_month()
+    values = _anchor_values(_current_anchors(anchor_rows, month), None, None)
+    return {**values, "upcoming": _upcoming(values, _anchors_by_month(anchor_rows, month), None, None)}
+
+
 def list_anchors() -> dict:
-    """Every customer's anchor and each of its ranges', with what the data recommends now, plus the all-customers value."""
+    """Every customer's anchor and each of its ranges', with what the data recommends now, plus the fallback."""
 
     with common.read_connection() as conn:
         customers = _anchors(conn)
-        default = _default_anchor(_current_anchors(_anchor_rows(conn)))
+        anchor_rows = _anchor_rows(conn)
 
+    fallback = _fallback_view(anchor_rows)
     return {
-        "default_anchor_pct": _num(default),
+        "default_anchor_pct": fallback["anchor_pct"],
+        "fallback": fallback,
         "recommend_from": moment_rules.RECOMMEND_FROM,
         "window_months": moment_rules.ANCHOR_WINDOW_MONTHS,
         "customers": customers,
@@ -338,6 +458,7 @@ def _insert_anchor(conn: Connection, values: dict) -> None:
                 promotion_mechanic,
                 anchor_pct,
                 source,
+                effective_from,
                 updated_by
             )
             VALUES (
@@ -346,12 +467,16 @@ def _insert_anchor(conn: Connection, values: dict) -> None:
                 :promotion_mechanic,
                 CAST(:anchor_pct AS numeric(5, 2)),
                 :source,
+                CAST(:effective_from AS date),
                 :updated_by
             )
             """
         ),
         values,
     )
+    if values["source"] != "projected":
+        customer_ids = [values["customer_id"]] if values["customer_id"] is not None else None
+        promo_recalc_events.record_customers(conn, "anchor_change", customer_ids, "promo_anchor_settings")
 
 
 def _check_anchor_target(conn: Connection, customer_id: int | None, sku_range: str | None) -> None:
@@ -372,58 +497,86 @@ def _target_entry(conn: Connection, customer_id: int, sku_range: str | None) -> 
     return next(item for item in anchor["ranges"] if item["sku_range"] == sku_range)
 
 
-def set_anchor(
-    customer_id: int | None,
-    anchor_pct: Decimal,
+def set_fallback_anchor(anchor_pct: Decimal, updated_by: str | None = None) -> dict:
+    """
+    Type the fallback anchor: the discount of an ordinary month for every
+    customer x SKU range with no anchor of its own or its customer's. It
+    applies from this month; earlier months keep the value they had.
+    `changed` is False when it already is that value.
+    """
+
+    with common.get_engine().begin() as conn:
+        _lock(conn, "promo_anchor_settings")
+
+        current = _current_anchors(_anchor_rows(conn)).get((None, None))
+        changed = current is None or Decimal(current["anchor_pct"]) != Decimal(anchor_pct)
+        if changed:
+            _insert_anchor(conn, {
+                "customer_id": None,
+                "sku_range": None,
+                "promotion_mechanic": None,
+                "anchor_pct": anchor_pct,
+                "source": "manual",
+                "effective_from": common.this_month(),
+                "updated_by": updated_by or DEFAULT_CHANGED_BY,
+            })
+        fallback = _fallback_view(_anchor_rows(conn))
+
+    promo_recalc_events.enqueue_best_effort(changed and promo_recalc_events.enabled())
+    return {"changed": changed, "fallback": fallback}
+
+
+def overwrite_anchor(
+    customer_id: int,
+    mechanic_key: str,
     sku_range: str | None = None,
     updated_by: str | None = None,
 ) -> dict:
     """
-    Type in a discount as the anchor, for a customer x range or a customer
-    with too few moments to recommend from, or (customer_id None) for all
-    customers. `changed` is False when it already has that typed value.
+    Overwrite a customer's (or one of its SKU ranges') anchor with a
+    mechanic its official promotions already use, from this month on. Its
+    discount comes from the mechanic. Projected changes later on still
+    apply. `changed` is False when it is already that overwrite.
     """
 
     with common.get_engine().begin() as conn:
         _check_anchor_target(conn, customer_id, sku_range)
         _lock(conn, "promo_anchor_settings")
 
-        if customer_id is not None:
-            entry = _target_entry(conn, customer_id, sku_range)
-            if not entry["manual_allowed"]:
-                raise UpliftSettingConflictError(
-                    f"There are {entry['window_months']} months of moments to recommend from; "
-                    "adopt the recommended anchor instead of typing a discount."
-                )
+        entry = _target_entry(conn, customer_id, sku_range)
+        option = next((item for item in entry["mechanic_options"] if item["mechanic_key"] == mechanic_key), None)
+        if option is None:
+            raise ValueError(
+                "Only mechanics used in official promotions for this customer and SKU range can be anchors. "
+                "Add a promotion with this mechanic on the Promotions page first."
+            )
 
         current = _current_anchors(_anchor_rows(conn)).get((customer_id, sku_range))
         changed = not (
             current is not None
             and current["source"] == "manual"
-            and Decimal(current["anchor_pct"]) == Decimal(anchor_pct)
+            and rules.mechanic_key(current["promotion_mechanic"]) == mechanic_key
         )
         if changed:
             _insert_anchor(conn, {
                 "customer_id": customer_id,
                 "sku_range": sku_range,
-                "promotion_mechanic": None,
-                "anchor_pct": anchor_pct,
+                "promotion_mechanic": option["mechanic_label"],
+                "anchor_pct": Decimal(str(option["anchor_pct"])),
                 "source": "manual",
+                "effective_from": common.this_month(),
                 "updated_by": updated_by or DEFAULT_CHANGED_BY,
             })
-
-        if customer_id is None:
-            default = _default_anchor(_current_anchors(_anchor_rows(conn)))
-            return {"changed": changed, "default_anchor_pct": _num(default)}
         anchor = _anchors(conn, customer_id)[0]
 
+    promo_recalc_events.enqueue_best_effort(changed and promo_recalc_events.enabled())
     return {"changed": changed, "anchor": anchor}
 
 
 def _adopt_values(entry: dict, customer_id: int, sku_range: str | None, updated_by: str) -> dict:
     recommended = entry["recommended"]
     if recommended is None:
-        raise UpliftSettingConflictError("Too few moments; type a discount")
+        raise UpliftSettingConflictError("Too few moments to recommend an anchor; pick a mechanic instead")
     if recommended["anchor_pct"] is None:
         raise UpliftSettingConflictError(
             f"Add an uplift for {recommended['mechanic_label']} first"
@@ -434,6 +587,7 @@ def _adopt_values(entry: dict, customer_id: int, sku_range: str | None, updated_
         "promotion_mechanic": recommended["mechanic_label"],
         "anchor_pct": recommended["anchor_pct"],
         "source": "recommended",
+        "effective_from": common.this_month(),
         "updated_by": updated_by,
     }
 
@@ -452,6 +606,7 @@ def adopt_anchor(customer_id: int, sku_range: str | None = None, updated_by: str
 
         anchor = _anchors(conn, customer_id)[0]
 
+    promo_recalc_events.enqueue_best_effort(changed and promo_recalc_events.enabled())
     return {"changed": changed, "anchor": anchor}
 
 
@@ -482,19 +637,28 @@ def seed_anchors(apply: bool = False, updated_by: str | None = None) -> list[dic
             for values in planned:
                 _insert_anchor(conn, {key: value for key, value in values.items() if key not in ("customer_name", "months")})
 
+    promo_recalc_events.enqueue_best_effort(apply and bool(planned) and promo_recalc_events.enabled())
     return planned
 
 
-def anchor_history(customer_id: int, sku_range: str | None = None) -> list[dict]:
-    """Every anchor version for a customer (or one of its ranges), newest first."""
+def anchor_history(customer_id: int | None, sku_range: str | None = None) -> list[dict]:
+    """
+    Every anchor version for a customer (or one of its ranges; customer_id
+    None = the fallback), newest save first: the month each applies from,
+    the one in effect this month (is_current) and those that start later
+    (is_upcoming).
+    """
 
     with common.read_connection() as conn:
-        _customers(conn, customer_id)
+        if customer_id is not None:
+            _customers(conn, customer_id)
         rows = [
             row for row in _anchor_rows(conn)
             if row["customer_id"] == customer_id and row["sku_range"] == sku_range
         ]
 
+    month = common.this_month()
+    in_effect = _current_anchors(rows, month).get((customer_id, sku_range))
     rows.sort(key=lambda row: (row["updated_at"], row["id"]), reverse=True)
     return [
         {
@@ -502,11 +666,13 @@ def anchor_history(customer_id: int, sku_range: str | None = None) -> list[dict]
             "anchor_pct": _num(row["anchor_pct"]),
             "mechanic_label": row["promotion_mechanic"],
             "source": row["source"],
+            "effective_from": row["effective_from"].isoformat() if row["effective_from"] else None,
             "changed_by": row["updated_by"],
             "changed_at": common.iso(row["updated_at"]),
-            "is_current": index == 0,
+            "is_current": in_effect is not None and row["id"] == in_effect["id"],
+            "is_upcoming": row["effective_from"] is not None and row["effective_from"] > month,
         }
-        for index, row in enumerate(rows)
+        for row in rows
     ]
 
 
@@ -544,6 +710,7 @@ def _uplift_rows(conn: Connection) -> list[dict]:
                 u.uplift_pct,
                 u.source,
                 u.note,
+                u.effective_from,
                 u.updated_by,
                 u.updated_at
 
@@ -585,6 +752,38 @@ def _discount_by_key(current: list[dict]) -> dict[str, Decimal]:
     }
 
 
+def mechanic_discounts(conn: Connection) -> dict[str, dict]:
+    """Each mechanic's standard label and effective discount, from its all-customers uplift row."""
+
+    return {
+        row["mechanic_key"]: {"label": row["promotion_mechanic"], "discount_pct": row["effective_discount_pct"]}
+        for row in _current_uplifts(_uplift_rows(conn))
+        if row["scope"] == "all" and row["mechanic_key"]
+    }
+
+
+def mechanic_discount_lookup(conn: Connection):
+    """
+    discount_in(mechanic_key, month): the mechanic's effective discount in
+    effect that month (migration 021: a change applies from the month it was
+    made, NULL = from the start), or None. For months in the past, so a
+    discount changed today never moves them.
+    """
+
+    rows = [row for row in _uplift_rows(conn) if row["scope"] == "all" and row["mechanic_key"]]
+    by_month: dict[date, dict[tuple, dict]] = {}
+
+    def discount_in(mechanic_key: str, month: date) -> Decimal | None:
+        if month not in by_month:
+            by_month[month] = common.in_effect(rows, lambda row: (row["mechanic_key"],), month)
+        row = by_month[month].get((mechanic_key,))
+        if row is None or row["source"] == "removed" or row["effective_discount_pct"] is None:
+            return None
+        return Decimal(row["effective_discount_pct"])
+
+    return discount_in
+
+
 def _uplift_view(row: dict) -> dict:
     return {
         "id": row["id"],
@@ -602,6 +801,7 @@ def _uplift_view(row: dict) -> dict:
         # customer's (and range's) anchor; every other value is used as stored.
         "follows_anchor": row["source"] == "placeholder" and row["effective_discount_pct"] is not None,
         "note": row["note"],
+        "effective_from": row["effective_from"].isoformat() if row.get("effective_from") else None,
         "changed_by": row["updated_by"],
         "changed_at": common.iso(row["updated_at"]),
     }
@@ -680,7 +880,9 @@ def _applies(row: dict, customer_id: int, sku: str | None, sku_range: str | None
         return True
     if row["scope"] == "range":
         return sku_range is not None and row["sku_range"] == sku_range
-    return sku is not None and row["sku"] == sku
+    # A SKU-level row (saved before uplifts followed SKU ranges) is kept in
+    # the history but no longer applies: promotions are planned per range.
+    return False
 
 
 def _pick_uplifts(
@@ -711,12 +913,26 @@ def _pick_uplifts(
     return uplifts
 
 
-def resolve_uplifts(customer_name: str, product_name: str | None = None) -> dict:
+def _uplift_basis(uplifts: list[dict], anchor_pct: Decimal) -> dict:
+    """The exact rule inputs for displaying a copied value's derivation."""
+
+    return {
+        row["mechanic_key"]: {
+            "uplift_pct": row["uplift_pct"], "source": row["source"],
+            "follows_anchor": row["follows_anchor"],
+            "discount_pct": row["effective_discount_pct"], "anchor_pct": _num(anchor_pct),
+        }
+        for row in uplifts
+    }
+
+
+def resolve_uplifts(customer_name: str, product_name: str | None = None, sku_range: str | None = None) -> dict:
     """
-    The uplift of every mechanic for one customer and product (None = all
-    SKUs), as the Scenario builder uses it: the most specific current row
-    (SKU, range, customer, all), with placeholder values recalculated from
-    the product's range anchor (the customer's for all SKUs).
+    The uplift of every mechanic for one customer and SKU range (the
+    Scenario builder plans promotions per range; product_name, one SKU, only
+    for promotions saved before that; both None = all SKUs): the most
+    specific current row (range, customer, all), with placeholder values
+    recalculated from the range's anchor (the customer's for all SKUs).
 
     For all SKUs, `product_uplifts` also lists the products whose own value
     differs from the customer's, as {product_name: {mechanic_key:
@@ -729,9 +945,16 @@ def resolve_uplifts(customer_name: str, product_name: str | None = None) -> dict
     with common.read_connection() as conn:
         customer = _customer_by_name(conn, customer_name)
         anchor = _anchors(conn, customer["customer_id"], with_recommendations=False)[0]
-        product = _sku_for_product(conn, product_name) if product_name else {"sku": None, "sku_range": None}
+        if sku_range:
+            product = {"sku": None, "sku_range": sku_range}
+        elif product_name:
+            product = _sku_for_product(conn, product_name)
+        else:
+            product = {"sku": None, "sku_range": None}
         current = _current_uplifts(_uplift_rows(conn))
-        products = _products(conn) if product_name is None else []
+        all_skus = product_name is None and sku_range is None
+        products = _products(conn) if all_skus else []
+        ranges = _ranges(conn) if all_skus else []
 
     customer_id = customer["customer_id"]
     uplifts = _pick_uplifts(
@@ -742,11 +965,13 @@ def resolve_uplifts(customer_name: str, product_name: str | None = None) -> dict
     customer_anchor = Decimal(str(anchor["anchor_pct"]))
     product_uplifts: dict[str, dict[str, float]] = {}
     product_anchors: dict[str, float] = {}
+    product_basis: dict[str, dict] = {}
     for item in products:
         item_anchor = _anchor_pct_for(anchor, item["sku_range"])
         if item_anchor != customer_anchor:
             product_anchors[item["product_name"]] = _num(item_anchor)
         own = _pick_uplifts(current, customer_id, item["sku"], item["sku_range"], item_anchor)
+        product_basis[item["product_name"]] = _uplift_basis(own, item_anchor)
         differing = {
             view["mechanic_key"]: view["uplift_pct"]
             for view in own
@@ -755,13 +980,40 @@ def resolve_uplifts(customer_name: str, product_name: str | None = None) -> dict
         if differing:
             product_uplifts[item["product_name"]] = differing
 
+    # The same per SKU range, which is how the Scenario builder plans
+    # promotions: a range promotion takes its range's values and anchor.
+    range_uplifts: dict[str, dict[str, float]] = {}
+    range_anchors: dict[str, float] = {}
+    range_basis: dict[str, dict] = {}
+    for range_name in ranges:
+        range_anchor = _anchor_pct_for(anchor, range_name)
+        if range_anchor != customer_anchor:
+            range_anchors[range_name] = _num(range_anchor)
+        own = _pick_uplifts(current, customer_id, None, range_name, range_anchor)
+        range_basis[range_name] = _uplift_basis(own, range_anchor)
+        differing = {
+            view["mechanic_key"]: view["uplift_pct"]
+            for view in own
+            if view["uplift_pct"] != customer_values.get(view["mechanic_key"])
+        }
+        if differing:
+            range_uplifts[range_name] = differing
+
     return {
         "customer_name": customer["customer_name"],
         "product_name": product_name,
+        "sku_range": product["sku_range"],
         "anchor": anchor,
         "uplifts": uplifts,
         "product_uplifts": product_uplifts,
         "product_anchors": product_anchors,
+        "range_uplifts": range_uplifts,
+        "range_anchors": range_anchors,
+        "product_basis": product_basis,
+        "range_basis": range_basis,
+        # Which range each product is in, so a promotion on some ranges keeps
+        # only those products' own values.
+        "product_ranges": {item["product_name"]: item["sku_range"] for item in products if item["sku_range"]},
     }
 
 
@@ -804,33 +1056,14 @@ def mechanic_history(mechanic_key: str) -> list[dict]:
 
 
 # ============================================================
-# MECHANIC UPLIFTS: WRITES
+# MECHANIC DISCOUNTS: WRITES
 #
-# An edit inserts a new version of the row's target. A typed value becomes
-# source 'estimate', so it no longer follows the anchor; reset puts an
-# all-customers value back on the placeholder rule and removes a narrower
-# one ('removed'), so the broader value applies again. Learned values
-# belong to the forecasting model and cannot be edited here.
+# Uplifts are never typed: they are worked out from moments and the anchor
+# (promo_recalc, promo_uplift_calc). What a person edits is a mechanic's
+# effective discount, which the placeholder rule and anchors use; an edit
+# inserts a new version of the mechanic's all-customers row. Earlier typed
+# values ('estimate' rows, overrides) stay in the history, unused.
 # ============================================================
-
-
-def _current_version(conn: Connection, setting_id: int) -> tuple[dict, list[dict]]:
-    """The row being edited, which must still be its target's current version, and every current row."""
-
-    rows = _uplift_rows(conn)
-    row = next((row for row in rows if row["id"] == setting_id), None)
-    if row is None or row["source"] == "removed":
-        raise UpliftSettingNotFoundError(f"Uplift setting {setting_id} does not exist.")
-
-    if common.newest(rows, _uplift_target)[_uplift_target(row)]["id"] != setting_id:
-        raise UpliftSettingConflictError(
-            "Out of date; reload and try again"
-        )
-    if row["source"] == "learned":
-        raise UpliftSettingConflictError(
-            "Learned values can't be edited"
-        )
-    return row, _current_uplifts(rows)
 
 
 def _insert_uplift(conn: Connection, values: dict) -> int:
@@ -846,6 +1079,7 @@ def _insert_uplift(conn: Connection, values: dict) -> int:
                 uplift_pct,
                 source,
                 note,
+                effective_from,
                 updated_by
             )
             VALUES (
@@ -857,6 +1091,7 @@ def _insert_uplift(conn: Connection, values: dict) -> int:
                 CAST(:uplift_pct AS numeric(6, 2)),
                 :source,
                 :note,
+                CAST(:effective_from AS date),
                 :updated_by
             )
             RETURNING uplift_id
@@ -865,6 +1100,7 @@ def _insert_uplift(conn: Connection, values: dict) -> int:
         values,
     ).first()
 
+    promo_recalc_events.record_customers(conn, "mechanic_change", None, "promo_uplift_settings")
     return row[0]
 
 
@@ -881,127 +1117,49 @@ def _copy(row: dict, **changes) -> dict:
     return {**values, **changes}
 
 
-def update_uplift(
-    setting_id: int,
-    uplift_pct: Decimal,
-    note: str | None = None,
-    updated_by: str | None = None,
-) -> dict:
-    """
-    Type a mechanic's uplift as a new version (source 'estimate'). `changed`
-    is False when it is already that estimate.
-    """
-
-    with common.get_engine().begin() as conn:
-        _lock(conn, "promo_uplift_settings")
-        row, _ = _current_version(conn, setting_id)
-
-        if row["source"] == "estimate" and Decimal(row["uplift_pct"]) == Decimal(uplift_pct) and row["note"] == note:
-            return {"changed": False, "setting": _uplift_view(row)}
-
-        new_id = _insert_uplift(
-            conn,
-            _copy(row, uplift_pct=uplift_pct, note=note, source="estimate", updated_by=updated_by or DEFAULT_CHANGED_BY),
-        )
-        setting = _fetch_uplift(conn, new_id)
-
-    return {"changed": True, "setting": setting}
-
-
-def _seed_placeholder(rows: list[dict], mechanic_key: str) -> Decimal | None:
-    # The voucher has no discount to calculate from, so its placeholder is
-    # the latest placeholder value it was given.
-    placeholders = [
-        row for row in rows
-        if row["mechanic_key"] == mechanic_key and row["scope"] == "all" and row["source"] == "placeholder"
-    ]
-    if not placeholders:
-        return None
-    return max(placeholders, key=lambda row: (row["updated_at"], row["id"]))["uplift_pct"]
-
-
-def reset_uplift(setting_id: int, updated_by: str | None = None) -> dict:
-    """
-    Undo a typed value. An all-customers row goes back on the placeholder
-    rule; a customer, range or SKU row is removed, so the broader value
-    applies again. `changed` is False when it is already a placeholder.
-    """
-
-    with common.get_engine().begin() as conn:
-        _lock(conn, "promo_uplift_settings")
-        row, _ = _current_version(conn, setting_id)
-        changed_by = updated_by or DEFAULT_CHANGED_BY
-
-        if row["source"] == "placeholder":
-            return {"changed": False, "setting": _uplift_view(row)}
-
-        if row["scope"] != "all":
-            _insert_uplift(conn, _copy(row, uplift_pct=None, note=None, source="removed", updated_by=changed_by))
-            return {"changed": True, "setting": None}
-
-        if row["effective_discount_pct"] is not None:
-            uplift_pct = rules.placeholder_uplift(row["effective_discount_pct"], rules.FALLBACK_ANCHOR_PCT)
-        else:
-            uplift_pct = _seed_placeholder(_uplift_rows(conn), row["mechanic_key"])
-            if uplift_pct is None:
-                raise UpliftSettingConflictError(f"{row['promotion_mechanic']} has no placeholder value")
-
-        new_id = _insert_uplift(
-            conn,
-            _copy(row, uplift_pct=uplift_pct, note=None, source="placeholder", updated_by=changed_by),
-        )
-        setting = _fetch_uplift(conn, new_id)
-
-    return {"changed": True, "setting": setting}
-
-
-def add_override(
+def set_mechanic_discount(
     mechanic_key: str,
-    scope: str,
-    customer_id: int,
-    uplift_pct: Decimal,
-    sku_range: str | None = None,
-    sku: str | None = None,
+    discount_pct: Decimal,
     note: str | None = None,
     updated_by: str | None = None,
 ) -> dict:
-    """A mechanic's own value for one customer, SKU range or SKU (source 'estimate')."""
+    """
+    Change a mechanic's effective discount, as a new version of its
+    all-customers row, from this month on (earlier months keep theirs). Every customer is recalculated, since
+    the placeholder rule and the anchors that use the mechanic move with it.
+    `changed` is False when it already has that discount.
+    """
 
     with common.get_engine().begin() as conn:
-        common.lock_customer(conn, customer_id)
         _lock(conn, "promo_uplift_settings")
-
-        current = _current_uplifts(_uplift_rows(conn))
-        base = next((row for row in current if row["mechanic_key"] == mechanic_key and row["scope"] == "all"), None)
+        rows = _uplift_rows(conn)
+        base = next(
+            (row for row in _current_uplifts(rows) if row["scope"] == "all" and row["mechanic_key"] == mechanic_key),
+            None,
+        )
         if base is None:
             raise MechanicNotFoundError(f"Mechanic {mechanic_key} does not exist.")
 
-        duplicate = any(
-            row["mechanic_key"] == mechanic_key
-            and row["scope"] == scope
-            and row["customer_id"] == customer_id
-            and row["sku_range"] == sku_range
-            and row["sku"] == sku
-            for row in current
-        )
-        if duplicate:
-            raise UpliftSettingConflictError(
-                f"{base['promotion_mechanic']} already has a value at this scope; edit that one instead."
-            )
+        current = base["effective_discount_pct"]
+        if current is not None and Decimal(current) == Decimal(discount_pct):
+            return {"changed": False, "setting": _uplift_view(base)}
 
+        uplift_pct = base["uplift_pct"]
+        if base["source"] == "placeholder":
+            uplift_pct = rules.placeholder_uplift(discount_pct, rules.FALLBACK_ANCHOR_PCT)
         new_id = _insert_uplift(
             conn,
             _copy(
                 base,
-                customer_id=customer_id,
-                sku_range=sku_range,
-                sku=sku,
+                effective_discount_pct=discount_pct,
                 uplift_pct=uplift_pct,
                 note=note,
-                source="estimate",
+                source=base["source"],
+                effective_from=common.this_month(),
                 updated_by=updated_by or DEFAULT_CHANGED_BY,
             ),
         )
-        setting = _fetch_uplift(conn, new_id)
+        setting = _uplift_view(next(row for row in _uplift_rows(conn) if row["id"] == new_id))
 
+    promo_recalc_events.enqueue_best_effort(promo_recalc_events.enabled())
     return {"changed": True, "setting": setting}

@@ -86,6 +86,7 @@ export default function UpliftField({ block, onChange, onModeChange, onDirection
           </div>
           <p className="text-[11px] text-deep-violet-blue/50">
             Spread over the block&apos;s months{block.sku ? '' : ' and SKUs'} in line with the Current forecast.
+            {block.skuRanges?.length ? ` Only ${block.skuRanges.join(', ')} SKUs.` : ''}
           </p>
         </>
       ) : (

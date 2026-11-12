@@ -1,9 +1,12 @@
-from fastapi import APIRouter, HTTPException
+from typing import Literal
+
+from fastapi import APIRouter, HTTPException, Query
 from google.auth.exceptions import GoogleAuthError
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app import config
 from app.schemas.scenario.building_blocks import ScenarioBuildingBlockCreate, ScenarioBuildingBlockUpdate
+from app.services.scenario import common
 from app.services.scenario import building_blocks as building_blocks_service
 
 
@@ -32,9 +35,13 @@ def _database_error(e: Exception) -> HTTPException:
 
 
 @router.get("")
-def list_building_blocks():
+def list_building_blocks(plan: Literal["scenario", "budget"] = "scenario", year: int | None = Query(None, ge=2000, le=2100)):
     try:
-        return building_blocks_service.list_building_blocks()
+        # Budget planning lists one year's entries (year); Current forecast has no years.
+        return building_blocks_service.list_building_blocks() if plan == "scenario" else building_blocks_service.list_building_blocks(plan, year)
+
+    except common.BudgetSetupRequiredError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
     except (SQLAlchemyError, config.ConfigError, GoogleAuthError) as e:
         raise _database_error(e)
@@ -56,6 +63,9 @@ def create_building_block(block: ScenarioBuildingBlockCreate):
     try:
         return building_blocks_service.create_building_block(block.model_dump())
 
+    except building_blocks_service.GrowthBlockExistsError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -65,6 +75,9 @@ def create_building_block(block: ScenarioBuildingBlockCreate):
             status_code=409,
             detail="The customer or SKU changed while saving. Refresh the page and try again.",
         )
+
+    except common.BudgetSetupRequiredError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
     except (SQLAlchemyError, config.ConfigError, GoogleAuthError) as e:
         raise _database_error(e)
@@ -87,6 +100,9 @@ def update_building_block(block_id: int, block: ScenarioBuildingBlockUpdate):
     except HTTPException:
         raise
 
+    except building_blocks_service.GrowthBlockExistsError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -95,6 +111,9 @@ def update_building_block(block_id: int, block: ScenarioBuildingBlockUpdate):
             status_code=409,
             detail="The customer or SKU changed while saving. Refresh the page and try again.",
         )
+
+    except common.BudgetSetupRequiredError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
     except (SQLAlchemyError, config.ConfigError, GoogleAuthError) as e:
         raise _database_error(e)
@@ -107,14 +126,17 @@ def update_building_block(block_id: int, block: ScenarioBuildingBlockUpdate):
 
 
 @router.delete("/{block_id}")
-def delete_building_block(block_id: int):
+def delete_building_block(block_id: int, plan: Literal["scenario", "budget"] = "scenario"):
     try:
-        if not building_blocks_service.delete_building_block(block_id):
+        if not (building_blocks_service.delete_building_block(block_id) if plan == "scenario" else building_blocks_service.delete_building_block(block_id, plan)):
             raise HTTPException(status_code=404, detail=_NOT_FOUND_DETAIL)
         return {"deleted": True}
 
     except HTTPException:
         raise
+
+    except common.BudgetSetupRequiredError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
     except (SQLAlchemyError, config.ConfigError, GoogleAuthError) as e:
         raise _database_error(e)
