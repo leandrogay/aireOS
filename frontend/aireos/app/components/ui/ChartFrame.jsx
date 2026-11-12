@@ -26,15 +26,20 @@ export const CHART_TOOLTIP_CLASS = 'border-violet/40 bg-white';
  * a skeleton for a chart with a toolbar takes `height` = 32 + the
  * ChartContainer's height.
  *
+ * `fill` grows the frame inside a `fill` ChartCard (or any flex column), for a
+ * chart whose ChartContainer grows too (trendChart's CHART_SIZE_CLASS,
+ * flex-1 with a 220px minimum). Its skeleton is a `fill` BarChartSkeleton.
+ *
  * @param {{
  *   toolbar?: import('react').ReactNode,
+ *   fill?: boolean,
  *   className?: string,
  *   children: import('react').ReactNode,
  * }} props
  */
-export default function ChartFrame({ toolbar, className, children }) {
+export default function ChartFrame({ toolbar, fill = false, className, children }) {
   return (
-    <div className={cn(CHART_FRAME_CLASS, className)}>
+    <div className={cn(CHART_FRAME_CLASS, fill && 'flex flex-1 flex-col', className)}>
       {toolbar ? <div className="relative z-10 flex h-8 items-center justify-end gap-2 pr-2">{toolbar}</div> : null}
       {children}
     </div>

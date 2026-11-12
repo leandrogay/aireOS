@@ -3,6 +3,7 @@
 import { Fragment, useId } from 'react';
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
+import ChartFrame from '@/components/ui/ChartFrame';
 import { formatColor as colorFor, UNNAMED_FORMAT } from '@/app/utils/storeFormats';
 import ComparisonLineChart from '@/components/dashboard/ComparisonLineChart';
 import ComparisonTooltip from '@/components/dashboard/ComparisonTooltip';
@@ -178,83 +179,86 @@ export default function ComparisonMixChart({ rows, periodNames, granularity, met
 
   return (
     <>
-      <ChartContainer config={{}} className={CHART_SIZE_CLASS}>
-        {/* stackOffset="sign": negative segments (returns) go down from 0, as
-            chartDataRange measures them, not on top of the positive ones. */}
-        <BarChart
-          accessibilityLayer
-          data={chartData}
-          margin={{ top: CHART_TOP_MARGIN, bottom: 8, left: TILTED_LABEL_LEFT_MARGIN }}
-          stackOffset="sign"
-        >
-          <CartesianGrid vertical={false} />
-          <XAxis
-            dataKey="axisLabel"
-            {...axisProps}
-            tick={false}
-          />
-          <YAxis {...metricYAxisProps(metric, dataRange)} />
-          <ChartTooltip content={<ComparisonTooltip formats={formats} metric={metric} />} />
-          <defs>
+      <ChartFrame fill>
+        <ChartContainer config={{}} className={CHART_SIZE_CLASS}>
+          {/* stackOffset="sign": negative segments (returns) go down from 0, as
+              chartDataRange measures them, not on top of the positive ones. */}
+          <BarChart
+            accessibilityLayer
+            data={chartData}
+            margin={{ top: CHART_TOP_MARGIN, bottom: 8, left: TILTED_LABEL_LEFT_MARGIN }}
+            stackOffset="sign"
+          >
+            <CartesianGrid vertical={false} />
+            <XAxis
+              dataKey="axisLabel"
+              {...axisProps}
+              tick={false}
+            />
+            <YAxis {...metricYAxisProps(metric, dataRange)} />
+            <ChartTooltip content={<ComparisonTooltip formats={formats} metric={metric} />} />
+            <defs>
+              {formats.map((format) => (
+                <HatchPattern
+                  key={format}
+                  id={patternId(baseId, format)}
+                  tint={hatchTint(colorFor(format))}
+                  stripe={edgeColor(colorFor(format))}
+                />
+              ))}
+            </defs>
+            {/* Recharts places stacks left to right in the order their first
+                bar is rendered: this period first, matching the Period /
+                Compare to controls above. Each stack starts with an empty
+                bar that carries its x-axis label; minPointSize keeps it as an
+                invisible 1px bar, since Recharts drops a zero-value bar (and
+                its label) entirely. Those label bars stay unanimated, since
+                Recharts holds a bar's labels back until its animation ends;
+                only the data bars grow. */}
+            <Bar
+              dataKey="currentAxis"
+              stackId="current"
+              fill="none"
+              minPointSize={1}
+              isAnimationActive={false}
+              label={axisLabel(mobile ? 'mobileCurrentYear' : 'axisLabel', false)}
+            />
             {formats.map((format) => (
-              <HatchPattern
-                key={format}
-                id={patternId(baseId, format)}
-                tint={hatchTint(colorFor(format))}
-                stripe={edgeColor(colorFor(format))}
+              <Bar
+                key={`current_${format}`}
+                dataKey={`current_${format}`}
+                stackId="current"
+                fill={colorFor(format)}
+                stroke={edgeColor(colorFor(format))}
+                strokeWidth={1}
+                maxBarSize={MAX_BAR_SIZE}
+                {...BAR_ANIMATION}
               />
             ))}
-          </defs>
-          {/* Recharts places stacks left to right in the order their first
-              bar is rendered: this period first, matching the Period /
-              Compare to controls above. Each stack starts with an empty
-              bar that carries its x-axis label; minPointSize keeps it as an
-              invisible 1px bar, since Recharts drops a zero-value bar (and
-              its label) entirely. Those label bars stay unanimated, since
-              Recharts holds a bar's labels back until its animation ends;
-              only the data bars grow. */}
-          <Bar
-            dataKey="currentAxis"
-            stackId="current"
-            fill="none"
-            minPointSize={1}
-            isAnimationActive={false}
-            label={axisLabel(mobile ? 'mobileCurrentYear' : 'axisLabel', false)}
-          />
-          {formats.map((format) => (
             <Bar
-              key={`current_${format}`}
-              dataKey={`current_${format}`}
-              stackId="current"
-              fill={colorFor(format)}
-              stroke={edgeColor(colorFor(format))}
-              strokeWidth={1}
-              maxBarSize={MAX_BAR_SIZE}
-              {...BAR_ANIMATION}
-            />
-          ))}
-          <Bar
-            dataKey="baselineAxis"
-            stackId="baseline"
-            fill="none"
-            minPointSize={1}
-            isAnimationActive={false}
-            label={axisLabel(mobile ? 'mobileBaselineYear' : 'baselineAxisLabel', true)}
-          />
-          {formats.map((format) => (
-            <Bar
-              key={`baseline_${format}`}
-              dataKey={`baseline_${format}`}
+              dataKey="baselineAxis"
               stackId="baseline"
-              fill={`url(#${patternId(baseId, format)})`}
-              stroke={edgeColor(colorFor(format))}
-              strokeWidth={1}
-              maxBarSize={MAX_BAR_SIZE}
-              {...BAR_ANIMATION}
+              fill="none"
+              minPointSize={1}
+              isAnimationActive={false}
+              label={axisLabel(mobile ? 'mobileBaselineYear' : 'baselineAxisLabel', true)}
             />
-          ))}
-        </BarChart>
-      </ChartContainer>
+            {formats.map((format) => (
+              <Bar
+                key={`baseline_${format}`}
+                dataKey={`baseline_${format}`}
+                stackId="baseline"
+                fill={`url(#${patternId(baseId, format)})`}
+                stroke={edgeColor(colorFor(format))}
+                strokeWidth={1}
+                maxBarSize={MAX_BAR_SIZE}
+                {...BAR_ANIMATION}
+              />
+            ))}
+          </BarChart>
+        </ChartContainer>
+      </ChartFrame>
+      {/* The period legend is not Recharts', so it goes under the frame. */}
       <MixLegend
         names={names}
         rows={[

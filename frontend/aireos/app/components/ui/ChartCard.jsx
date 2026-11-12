@@ -12,21 +12,27 @@ import { cn } from '@/lib/utils';
  *
  * overflow-visible: a tooltip near the edge may hang over the card.
  *
+ * `fill` makes the card as tall as its parent (a grid cell beside a taller
+ * card) and lets its content grow, so a `fill` ChartFrame stretches the chart
+ * down to the card's bottom edge: the Dashboard's trend card, level with the
+ * Comparison card beside it.
+ *
  * @param {{
  *   title?: import('react').ReactNode,
  *   detail?: import('react').ReactNode,
  *   actions?: import('react').ReactNode,
  *   label?: string,
+ *   fill?: boolean,
  *   className?: string,
  *   children: import('react').ReactNode,
  * }} props `label` names the card for screen readers when it has no title.
  */
-export default function ChartCard({ title, detail, actions, label, className, children }) {
+export default function ChartCard({ title, detail, actions, label, fill = false, className, children }) {
   return (
     <Card
       role="region"
       aria-label={label ?? (typeof title === 'string' ? title : undefined)}
-      className={cn(glassSurfaceClass, 'min-w-0 overflow-visible text-deep-violet-blue', className)}
+      className={cn(glassSurfaceClass, 'min-w-0 overflow-visible text-deep-violet-blue', fill && 'h-full', className)}
     >
       {title ? (
         <CardHeader className="pb-1">
@@ -38,7 +44,7 @@ export default function ChartCard({ title, detail, actions, label, className, ch
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">{actions}</div>
         </CardHeader>
       ) : null}
-      <CardContent className="min-w-0">{children}</CardContent>
+      <CardContent className={cn('min-w-0', fill && 'flex flex-1 flex-col')}>{children}</CardContent>
     </Card>
   );
 }

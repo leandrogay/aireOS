@@ -3,6 +3,7 @@
 import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts';
 
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip } from '@/components/ui/chart';
+import ChartFrame, { CHART_TOOLTIP_CLASS } from '@/components/ui/ChartFrame';
 import { ESTIMATE_PILL_CLASS } from '@/components/dashboard/EstMark';
 import { hasEstimate } from '@/app/utils/estimatedRevenue';
 import { cn } from '@/lib/utils';
@@ -43,7 +44,13 @@ function TrendTooltip({ active, payload, metric, series }) {
   const total = series.reduce((sum, item) => sum + (row[item.key] ?? 0), 0);
 
   return (
-    <div className="grid min-w-40 grid-cols-[auto_auto] items-center gap-x-6 gap-y-1.5 rounded-lg border border-lavander bg-white px-2.5 py-1.5 text-xs shadow-xl">
+    // ChartTooltipContent's box in the shared tooltip look; the rows are this chart's own.
+    <div
+      className={cn(
+        'grid min-w-40 grid-cols-[auto_auto] items-center gap-x-6 gap-y-1.5 rounded-lg border px-2.5 py-1.5 text-xs shadow-xl',
+        CHART_TOOLTIP_CLASS,
+      )}
+    >
       <div className="col-span-2 font-medium text-deep-violet-blue">{row.exactLabel}</div>
       {series.map((item) => (
         <div key={item.key} className="col-span-2 grid grid-cols-subgrid">
@@ -134,7 +141,7 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
   }
 
   return (
-    <div className="flex flex-1 flex-col">
+    <ChartFrame fill>
       <ChartContainer config={chartConfig} className={CHART_SIZE_CLASS}>
         {kind === 'bars' ? (
           <BarChart accessibilityLayer data={transition.rows} margin={margin}>
@@ -171,6 +178,6 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
           </LineChart>
         )}
       </ChartContainer>
-    </div>
+    </ChartFrame>
   );
 }

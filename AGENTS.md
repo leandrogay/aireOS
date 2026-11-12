@@ -116,8 +116,9 @@ calendar, skeleton) plus the team kits:
 - **Charts:** `ChartCard` (glass shell, optional `title`/`detail`/`actions` header via `TableCardHeader`) around a
   `ChartFrame` (the solid chart panel, with an optional `toolbar` row for plot controls such as zoom; it turns
   `ChartContainer`'s own panel off); `CHART_FRAME_CLASS` goes on the chart's skeleton, `CHART_TOOLTIP_CLASS`
-  on `ChartTooltipContent`. Inventory and `ForecastChart` (Forecast, Scenario) use them; the Dashboard is listed as not
-  migrated in `app/testing`'s Charts gallery.
+  on `ChartTooltipContent` (or on a custom tooltip's box: the Dashboard's). `fill` on both lets a chart grow to its
+  card's height (the Dashboard trend card). Every page chart uses them: Inventory, `ForecastChart` (Forecast,
+  Scenario) and the Dashboard; the assistant's chat chart is left as is.
 - **Cards:** outer cards are glass (`glassSurfaceClass`): `ChartCard` (charts), `TableCard` (tables), `FilterBar`
   (list filters), `MobileRecordCard` (a row on a phone), `CardSkeleton` (loading), and `ui/card`'s `Card` as the
   fallback; feature shells `inventory/InventoryFilterCard`, `mappings/ReviewSection`, `dashboard/GlassPanel`.

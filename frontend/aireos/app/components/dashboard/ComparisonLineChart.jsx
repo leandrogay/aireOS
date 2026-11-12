@@ -3,6 +3,7 @@
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts';
 
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
+import ChartFrame from '@/components/ui/ChartFrame';
 import ComparisonTooltip from '@/components/dashboard/ComparisonTooltip';
 import MonthAxis from '@/components/dashboard/MonthAxis';
 import {
@@ -84,36 +85,39 @@ export default function ComparisonLineChart({ points, formats, names, granularit
 
   return (
     <>
-      <ChartContainer config={{}} className={CHART_SIZE_CLASS}>
-        <LineChart accessibilityLayer data={transition.rows} margin={margin}>
-          <CartesianGrid vertical={false} />
-          <XAxis dataKey="displayLabel" {...axisProps} padding={{ left: 24, right: 24 }} />
-          <YAxis {...yAxisProps} domain={transition.domain} ticks={transition.ticks} />
-          <MonthAxis groups={monthGroups} />
-          <ChartTooltip content={<ComparisonTooltip formats={formats} metric={metric} />} wrapperStyle={{ zIndex: 10 }} />
-          {/* The comparison first, so this period's solid line is drawn on top. */}
-          <Line
-            dataKey="baselineTotal"
-            type="linear"
-            stroke={LINE_COLOR}
-            strokeWidth={2}
-            strokeDasharray={BASELINE_DASH}
-            strokeOpacity={BASELINE_OPACITY}
-            dot={dot && { ...dot, strokeOpacity: BASELINE_OPACITY }}
-            activeDot={{ r: 4 }}
-            {...transition.seriesAnimation}
-          />
-          <Line
-            dataKey="currentTotal"
-            type="linear"
-            stroke={LINE_COLOR}
-            strokeWidth={2}
-            dot={dot}
-            activeDot={{ r: 4 }}
-            {...transition.seriesAnimation}
-          />
-        </LineChart>
-      </ChartContainer>
+      <ChartFrame fill>
+        <ChartContainer config={{}} className={CHART_SIZE_CLASS}>
+          <LineChart accessibilityLayer data={transition.rows} margin={margin}>
+            <CartesianGrid vertical={false} />
+            <XAxis dataKey="displayLabel" {...axisProps} padding={{ left: 24, right: 24 }} />
+            <YAxis {...yAxisProps} domain={transition.domain} ticks={transition.ticks} />
+            <MonthAxis groups={monthGroups} />
+            <ChartTooltip content={<ComparisonTooltip formats={formats} metric={metric} />} wrapperStyle={{ zIndex: 10 }} />
+            {/* The comparison first, so this period's solid line is drawn on top. */}
+            <Line
+              dataKey="baselineTotal"
+              type="linear"
+              stroke={LINE_COLOR}
+              strokeWidth={2}
+              strokeDasharray={BASELINE_DASH}
+              strokeOpacity={BASELINE_OPACITY}
+              dot={dot && { ...dot, strokeOpacity: BASELINE_OPACITY }}
+              activeDot={{ r: 4 }}
+              {...transition.seriesAnimation}
+            />
+            <Line
+              dataKey="currentTotal"
+              type="linear"
+              stroke={LINE_COLOR}
+              strokeWidth={2}
+              dot={dot}
+              activeDot={{ r: 4 }}
+              {...transition.seriesAnimation}
+            />
+          </LineChart>
+        </ChartContainer>
+      </ChartFrame>
+      {/* The period legend is not Recharts', so it goes under the frame. */}
       <div className="flex flex-wrap justify-center gap-x-5 gap-y-1 pt-2 text-xs text-deep-violet-blue">
         <span className="flex items-center gap-1.5 font-medium">
           <LineSwatch />

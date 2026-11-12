@@ -1,6 +1,8 @@
 "use client"
 
 import BarChartSkeleton from "@/components/ui/BarChartSkeleton"
+import ChartCard from "@/components/ui/ChartCard"
+import { CHART_FRAME_CLASS } from "@/components/ui/ChartFrame"
 import { Skeleton } from "@/components/ui/skeleton"
 import SegmentedControl from "@/components/ui/SegmentedControl"
 import ComparisonMixChart from "@/components/dashboard/ComparisonMixChart"
@@ -9,7 +11,7 @@ import { FormatTrendChart } from "@/components/dashboard/TrendChart"
 import { formatDateTime } from "@/lib/formatDate"
 import { relabelFormatRows } from "@/app/utils/storeFormats"
 import useDelayedLoading from "@/hooks/useDelayedLoading"
-import GlassPanel from "@/components/dashboard/GlassPanel"
+import { cn } from "@/lib/utils"
 
 const METRIC_OPTIONS = [
   { value: "units", label: "Volume" },
@@ -73,7 +75,10 @@ export default function RevenueTrendCard({
   })
 
   return (
-    <GlassPanel className="flex flex-col">
+    // No ChartCard header: the two control rows below keep their order (what
+    // data, then how to draw it, just above the chart). `fill`: as tall as the
+    // Comparison card beside it, the chart taking the rest (ChartFrame fill).
+    <ChartCard label="Sales trend" fill>
       {/* Top row: what data (Period, Compare to) on the left, lined up on
           their bottom edge, and which channel in the card's top right corner
           (self-start), level with the "Period" label. On a phone the channel
@@ -131,7 +136,7 @@ export default function RevenueTrendCard({
             legend
             legendItems={comparingCustomers ? 3 : 4}
             label="Loading dashboard…"
-            className="flex-1"
+            className={cn(CHART_FRAME_CLASS, "flex-1")}
           />
           <div className="mt-1 flex items-baseline justify-end">
             <Skeleton className="h-4 w-40 rounded bg-lavander motion-reduce:animate-none" />
@@ -160,6 +165,6 @@ export default function RevenueTrendCard({
           <ChartFooter lastUpdated={lastUpdated} />
         </div>
       )}
-    </GlassPanel>
+    </ChartCard>
   )
 }
