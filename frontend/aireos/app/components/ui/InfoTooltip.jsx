@@ -15,7 +15,7 @@ const triggerClass = 'cursor-default rounded-full p-0.5 text-deep-violet-blue/50
  * a compact form where a hint paragraph under every input (as the single-record
  * inventory form uses) would not fit.
  *
- * The help is the dark tooltip bubble with an arrow (ui/tooltip). A hint that
+ * The help is the shared tooltip bubble with an arrow (ui/tooltip). A hint that
  * is a small card with its own coloured text (the mapping field details) uses
  * `variant="card"`: a white popover, which also stays open while the pointer
  * is on it.
