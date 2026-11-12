@@ -331,11 +331,12 @@ export default function Sidebar() {
               disabled={isSigningOut}
               title={rail ? 'Sign out' : undefined}
               className={cn(
-                'flex cursor-pointer items-center gap-3 overflow-hidden rounded-lg px-3 py-2 text-sm text-deep-violet-blue/75 transition-[width,background-color,color] [transition-duration:var(--motion-panel),var(--motion-control),var(--motion-control)] hover:bg-lavander/85 hover:text-deep-violet-blue disabled:cursor-wait disabled:opacity-60',
+                // Same hover as the nav tabs above: a lifted card tint and a growing icon.
+                'group/sign-out flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm text-deep-violet-blue/75 transition-[width,background-color,box-shadow,color] ease-out [transition-duration:var(--motion-panel),var(--motion-control),var(--motion-control),var(--motion-control)] hover:bg-card/80 hover:text-deep-violet-blue hover:shadow-sm focus-visible:outline-2 focus-visible:outline-violet disabled:cursor-wait disabled:opacity-60',
                 rail ? 'w-10' : 'w-full',
               )}
             >
-              {isSigningOut ? <LoaderCircle className="size-4 shrink-0 animate-spin motion-reduce:animate-none" /> : <LogOut className="size-4 shrink-0" />}
+              {isSigningOut ? <LoaderCircle className="size-4 shrink-0 animate-spin motion-reduce:animate-none" /> : <LogOut className="size-4 shrink-0 transition-transform duration-200 group-hover/sign-out:scale-125 motion-reduce:transform-none" />}
               <span className={labelClass(rail)}>
                 {isSigningOut ? 'Signing out...' : 'Sign out'}
               </span>
