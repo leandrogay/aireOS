@@ -29,20 +29,18 @@ export function formatVolume(value) {
 }
 
 /**
- * "10 mo actual · 2 mo forecast" for a year row. `spelled` writes the unit out
- * ("1 month actual · 11 months forecast"): the Forecast page's own table has
- * the room, while the Scenario builder's narrower caption keeps "mo".
+ * "10 months actual · 1 month part actual · 1 month forecast" for a year row,
+ * on the Forecast page and in the Scenario builder.
  *
  * @param {{ actualMonths?: number, partialMonths?: number, forecastMonths?: number }} year
- * @param {{ spelled?: boolean }} [options]
  */
-export function mixCaption(year, { spelled = false } = {}) {
-  const unit = (count) => (spelled ? (count === 1 ? 'month' : 'months') : 'mo');
+export function mixCaption(year) {
+  const months = (count) => `${count} ${count === 1 ? 'month' : 'months'}`;
   const parts = [];
-  if (year.actualMonths) parts.push(`${year.actualMonths} ${unit(year.actualMonths)} actual`);
+  if (year.actualMonths) parts.push(`${months(year.actualMonths)} actual`);
   // Some customer x SKUs reported, others still forecast (forecastYearTotals).
-  if (year.partialMonths) parts.push(`${year.partialMonths} ${unit(year.partialMonths)} part actual`);
-  if (year.forecastMonths) parts.push(`${year.forecastMonths} ${unit(year.forecastMonths)} forecast`);
+  if (year.partialMonths) parts.push(`${months(year.partialMonths)} part actual`);
+  if (year.forecastMonths) parts.push(`${months(year.forecastMonths)} forecast`);
   return parts.join(' · ');
 }
 
@@ -72,7 +70,7 @@ export default function ForecastYearTotals({ years, loading = false }) {
               <MobileRecordCard
                 key={year.year}
                 title={String(year.year)}
-                subtitle={mixCaption(year, { spelled: true }) || undefined}
+                subtitle={mixCaption(year) || undefined}
                 fields={[
                   { label: 'YTD', value: <span className="tabular-nums">{formatVolume(year.volume.actual)}</span> },
                   { label: 'MTG', value: <span className="tabular-nums">{formatVolume(year.volume.forecast)}</span> },
@@ -87,7 +85,7 @@ export default function ForecastYearTotals({ years, loading = false }) {
       <div className="hidden sm:block">
         <TableGrid columns={COLUMNS} minWidth="36rem" isLoading={loading} skeletonRows={1}>
           {!loading && years.map((year) => {
-            const mix = mixCaption(year, { spelled: true });
+            const mix = mixCaption(year);
             return (
               <TableRow key={year.year} className="h-12 border-b border-lavander/80">
                 <td className={cn(CELL_CLASS, 'truncate')}>
