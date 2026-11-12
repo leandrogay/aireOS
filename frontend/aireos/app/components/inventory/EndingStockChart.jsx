@@ -13,7 +13,7 @@ import {
 import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
 import { customerLabel } from '@/app/utils/retailerLabel';
 import { customerColor, customerColorOrder } from '@/app/utils/storeFormats';
-import { BAR_ANIMATION, chartDataRange, metricYAxisProps, yearAxisProps } from '@/app/utils/trendChart';
+import { AXIS_TICK, BAR_ANIMATION, chartDataRange, metricYAxisProps, yearAxisProps } from '@/app/utils/trendChart';
 import useChartTransition from '@/hooks/useChartTransition';
 import useMediaQuery from '@/hooks/useMediaQuery';
 
@@ -87,12 +87,12 @@ export default function EndingStockChart({ monthly, allCustomers }) {
             data={transition.rows}
             margin={{ top: 8, right: 8, left: 0, bottom: 8 }}
           >
-            <CartesianGrid vertical={false} stroke="var(--aire-lavender)" />
+            <CartesianGrid vertical={false} />
             <XAxis
               dataKey={mobile ? 'month' : 'label'}
               interval={0}
               height={mobile ? 28 : 52}
-              tick={{ fontSize: 9, fill: '#3A4369' }}
+              tick={AXIS_TICK}
               angle={mobile ? 0 : -40}
               textAnchor={mobile ? 'middle' : 'end'}
               tickMargin={6}
@@ -103,7 +103,7 @@ export default function EndingStockChart({ monthly, allCustomers }) {
               ticks={transition.ticks}
               tickFormatter={formatUnits}
               width={48}
-              tick={{ fontSize: 10, fill: '#3A4369' }}
+              tick={AXIS_TICK}
             />
             {/* Above the legend, which is drawn after it and would show through. */}
             <ChartTooltip

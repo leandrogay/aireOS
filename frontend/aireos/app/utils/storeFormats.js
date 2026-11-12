@@ -30,11 +30,13 @@ export const UNNAMED_FORMAT = 'Total';
 // The original customer colours stay attached to their names, even if a new
 // customer is added or an old one is removed. These are shared by every
 // customer chart, summary tile and ranking.
+// FairPrice and Sheng Siong are darker shades of their first colours (violet
+// #A29BCC, sand #C4B6A6), which fell under 3:1 on the chart surface.
 const KNOWN_CUSTOMER_COLORS = {
-  fairprice: 'var(--aire-violet)',
+  fairprice: '#7A70B8',
   nhg: '#2E7BA6',
   prime: '#8A7460',
-  sheng_siong: '#C4B6A6',
+  sheng_siong: '#A88B5E',
   singhealth: '#C45C26',
 };
 

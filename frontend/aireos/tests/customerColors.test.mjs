@@ -31,7 +31,7 @@ describe('customerColorOrder', () => {
 
   test('a renamed customer keeps the colour of its customer_id slot', () => {
     const order = customerColorOrder(RECORDS, OPTIONS);
-    assert.equal(customerColor('fairprice', order), 'var(--aire-violet)');
+    assert.equal(customerColor('fairprice', order), '#7A70B8');
   });
 
   test('an option with no customer record goes after every record', () => {

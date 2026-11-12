@@ -29,7 +29,8 @@ const ALL_FORECAST_SERIES = [
   // The forecast made before each SKU's latest month of sales
   // (forecast_previous, chosen per SKU and tier). A model with none for the
   // SKUs in scope greys its pill out instead of drawing it.
-  // Faint, so Current reads as the line to plan on.
+  // Thinner and dashed, so Current reads as the line to plan on. Kept at full
+  // opacity: faded, it vanished into the lavender promo bands behind it.
   {
     key: 'previous',
     label: 'Previous',
@@ -37,7 +38,6 @@ const ALL_FORECAST_SERIES = [
     dash: '8 3',
     shape: 'triangle',
     connectNulls: false,
-    strokeOpacity: 0.45,
     strokeWidth: 1.8,
   },
   // The latest run, 12 months after the newest sales month. Bold and solid.
@@ -75,7 +75,9 @@ export const PROMO_OVERLAY_TYPES = [
   {
     value: 'monthly',
     label: 'Monthly',
-    color: '#DFE4F7',
+    // Deeper than brand lavender (#DFE4F7), which is all but the chart's own
+    // background colour, so a lavender band could not be seen.
+    color: '#B9C1E6',
     swatch: '#3A4369',
     selectedBg: '#3A4369',
     selectedFg: '#FFFFFF',

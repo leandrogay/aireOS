@@ -155,6 +155,9 @@
   /* Shared table header (ui/TableGrid): a cool lavender tint that sits with
      the glass cards, rather than the warm cream canvas. */
   --aire-table-head: color-mix(in srgb, var(--aire-lavender) 60%, white);
+  /* Solid panel under every chart (ui/chart ChartContainer): the glass card
+     behind it is translucent lavender, which washes out pale series colours. */
+  --aire-chart-surface: color-mix(in srgb, var(--aire-lavender) 20%, white);
   /* Motion timing for CSS transitions and tw-animate popups. MOTION in
      app/config/transitions.js is the same scale, in seconds, for Motion
      (motion/react); change a step in both places. Use them as
@@ -211,6 +214,7 @@
   --aire-switch-thumb-on: var(--aire-canvas);
   --aire-switch-thumb-off: #DDE1EF;
   --aire-table-head: #2C3450;
+  --aire-chart-surface: #1B2034;
   --background: var(--aire-canvas);
   --foreground: var(--aire-ink);
   --card: #232A40;

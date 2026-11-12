@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/chart';
 
 import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
-import { BAR_ANIMATION, chartDataRange, metricYAxisProps, yearAxisProps } from '@/app/utils/trendChart';
+import { AXIS_TICK, BAR_ANIMATION, chartDataRange, metricYAxisProps, yearAxisProps } from '@/app/utils/trendChart';
 import useChartTransition from '@/hooks/useChartTransition';
 import useMediaQuery from '@/hooks/useMediaQuery';
 
@@ -42,15 +42,15 @@ export default function SellInTrendChart({ trend }) {
   }
 
   return (
-    <div className="overflow-visible rounded-xl border border-lavander bg-white pl-1 pr-3 pt-2">
+    <div className="overflow-visible">
       <ChartContainer config={chartConfig} className="aspect-auto h-[280px] w-full">
         <BarChart accessibilityLayer data={transition.rows} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
-          <CartesianGrid vertical={false} stroke="var(--aire-lavender)" />
+          <CartesianGrid vertical={false} />
           <XAxis
             dataKey={mobile ? 'month' : 'label'}
             interval={0}
             height={mobile ? 28 : 52}
-            tick={{ fontSize: 9, fill: '#3A4369' }}
+            tick={AXIS_TICK}
             angle={mobile ? 0 : -40}
             textAnchor={mobile ? 'middle' : 'end'}
             tickMargin={6}
@@ -60,7 +60,7 @@ export default function SellInTrendChart({ trend }) {
             domain={transition.domain}
             ticks={transition.ticks}
             width={48}
-            tick={{ fontSize: 10, fill: '#3A4369' }}
+            tick={AXIS_TICK}
             tickFormatter={formatUnits}
           />
           <ChartTooltip

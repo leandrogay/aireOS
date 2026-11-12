@@ -33,7 +33,7 @@ import {
 import { withActualBridges } from '@/app/utils/forecastActuals';
 import { CURRENT_DOT_FILL, INITIAL_MISSING_HINT, forecastLineHints } from '@/app/utils/forecastLineText';
 import { dotRevealDelay, lineSweepTimings } from '@/app/utils/lineAnimation';
-import { yearAxisProps } from '@/app/utils/trendChart';
+import { AXIS_TICK, yearAxisProps } from '@/app/utils/trendChart';
 import useChartTransition from '@/hooks/useChartTransition';
 import useDelayedLoading from '@/hooks/useDelayedLoading';
 import useMediaQuery from '@/hooks/useMediaQuery';
@@ -557,7 +557,7 @@ export default function ForecastChart({
                     ticks={ticks}
                     interval={0}
                     height={mobile ? 28 : 48}
-                    tick={{ fontSize: 9, fill: '#3A4369' }}
+                    tick={AXIS_TICK}
                     tickFormatter={(index) => mobile
                       ? formatMobileYear(plotData[index]?.month_year)
                       : (plotData[index]?.label ?? '')}
@@ -570,7 +570,7 @@ export default function ForecastChart({
                     domain={transition.domain}
                     ticks={transition.ticks}
                     allowDataOverflow
-                    tick={{ fontSize: 10, fill: '#3A4369' }}
+                    tick={AXIS_TICK}
                     tickFormatter={(value) => formatAxisValue(value, 'units')}
                   />
                   <ChartTooltip
