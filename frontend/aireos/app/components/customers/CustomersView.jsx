@@ -85,7 +85,7 @@ function nameDialogProps(dialog, customers, unlinked) {
  */
 export default function CustomersView() {
   const [refreshKey, setRefreshKey] = useState(0);
-  const { data, unlinked, colorChoices, loading, error, applyCustomer, removeCustomer, applyUnlinked, removeUnlinked } =
+  const { data, unlinked, loading, error, applyCustomer, removeCustomer, applyUnlinked, removeUnlinked } =
     useCustomers({ refreshKey });
   const { toast, notify, dismissToast } = useToast();
   // { type: 'customer-create' | 'customer-edit' | 'retailer-create' | 'retailer-edit', customer?, retailer? }
@@ -259,7 +259,6 @@ export default function CustomersView() {
       <CustomerColorDialog
         customer={coloring}
         customers={data}
-        choices={colorChoices}
         onSubmit={saveColor}
         onClose={() => setColoring(null)}
       />

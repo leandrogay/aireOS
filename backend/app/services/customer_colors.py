@@ -44,8 +44,8 @@ MIN_CONTRAST = 3.0
 MIN_LINE_DISTANCE = 25.0
 MIN_CUSTOMER_DISTANCE = 20.0
 
-# The colours offered on the Customers page and tried first for a new customer.
-# The first ten are the ones customers had before colours were stored
+# The colours a new customer is given, the most distinct free one first (the
+# Customers page can then change it on a colour wheel). The first ten are the ones customers had before colours were stored
 # (migration 018); the rest were picked as far from those and from the line
 # colours as possible. tests/test_customer_colors.py checks every rule above.
 COLOR_CHOICES = (

@@ -1,35 +1,39 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, CircleAlert, Loader2 } from 'lucide-react';
+import { CircleAlert, Loader2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { errorClass, hintClass, primaryButtonClass, secondaryButtonClass } from '@/components/ui/formStyles';
+import { errorClass, hintClass, labelClass, primaryButtonClass, secondaryButtonClass } from '@/components/ui/formStyles';
+import { clampLightness, hexToHsl, hslToHex } from '@/app/utils/colorWheel';
 import { customerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
+import ColorWheel from './ColorWheel';
 import CustomerSwatch from './CustomerSwatch';
 
+// A customer with no colour yet starts the wheel on the AIRE violet.
+const START_COLOR = '#7A70B8';
+
 /**
- * The swatch grid inside the dialog. Mounted fresh each time the dialog opens
- * (the parent keys it), so it always starts on the saved colour.
+ * The wheel inside the dialog. Mounted fresh each time the dialog opens (the
+ * parent keys it), so it always starts on the saved colour.
  */
-function ColorForm({ customer, customers, choices, onSubmit, onCancel, onPendingChange }) {
-  const [picked, setPicked] = useState(customer.color);
+function ColorForm({ customer, customers, onSubmit, onCancel, onPendingChange }) {
+  const saved = hexToHsl(customer.color ?? START_COLOR);
+  const [hsl, setHsl] = useState({ ...saved, l: clampLightness(saved.l) });
+  // The wheel works in whole degrees and percents, so the saved colour may
+  // come back a step off: only a colour the user moved counts as a change.
+  const [moved, setMoved] = useState(false);
   const [requestError, setRequestError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const name = customerLabel(customer.customer_name);
+  const picked = moved ? hslToHex(hsl) : (customer.color ?? hslToHex(hsl));
 
-  // A colour another customer has can't be picked: no two customers share one
-  // (the backend also refuses one that only looks alike, with its reason).
-  const owners = new Map(
-    customers
-      .filter((row) => row.customer_id !== customer.customer_id && row.color)
-      .map((row) => [row.color, customerLabel(row.customer_name)]),
-  );
-  // The saved colour first, even when it is not one of the choices.
-  const shown = customer.color && !choices.includes(customer.color) ? [customer.color, ...choices] : choices;
+  // The other customers' colours, to keep clear of (the backend refuses one
+  // that looks too alike, with its reason).
+  const others = customers.filter((row) => row.customer_id !== customer.customer_id && row.color);
 
   function setPending(pending) {
     setSubmitting(pending);
@@ -38,7 +42,7 @@ function ColorForm({ customer, customers, choices, onSubmit, onCancel, onPending
 
   async function handleSubmit(event) {
     event.preventDefault();
-    if (!picked || picked === customer.color) {
+    if (picked === customer.color) {
       onCancel();
       return;
     }
@@ -48,7 +52,7 @@ function ColorForm({ customer, customers, choices, onSubmit, onCancel, onPending
       await onSubmit(picked);
       onPendingChange(false);
     } catch (err) {
-      // e.g. a 409: looks like a forecast line or another customer's colour.
+      // e.g. a 409: too light, or looks like a forecast line or another customer's colour.
       setRequestError(err.message);
       setPending(false);
     }
@@ -77,46 +81,39 @@ function ColorForm({ customer, customers, choices, onSubmit, onCancel, onPending
 
       <fieldset disabled={submitting} aria-busy={submitting} className="min-w-0 px-4 py-4">
         <legend className="sr-only">Chart colour</legend>
-        <div role="radiogroup" aria-label="Chart colour" className="grid grid-cols-8 gap-2">
-          {shown.map((color) => {
-            const owner = owners.get(color);
-            const selected = picked === color;
-            return (
-              <button
-                key={color}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                aria-label={owner ? `${color}, used by ${owner}` : color}
-                title={owner ? `Used by ${owner}` : color}
-                disabled={Boolean(owner)}
-                onClick={() => {
-                  setPicked(color);
-                  setRequestError('');
-                }}
-                className={cn(
-                  'flex aspect-square items-center justify-center rounded-full border border-deep-violet-blue/15 outline-none transition-transform focus-visible:ring-3 focus-visible:ring-ring/50',
-                  selected && 'ring-2 ring-deep-violet-blue ring-offset-2',
-                  owner ? 'cursor-not-allowed opacity-30' : 'cursor-pointer hover:scale-110',
-                )}
-                style={{ backgroundColor: color }}
-              >
-                {selected && <Check aria-hidden="true" className="size-4 text-white" />}
-              </button>
-            );
-          })}
-        </div>
+        <ColorWheel
+          value={hsl}
+          onChange={(next) => {
+            setHsl(next);
+            setMoved(true);
+            setRequestError('');
+          }}
+        />
+
+        {others.length > 0 && (
+          <div className="mt-4">
+            <p className={labelClass}>Other customers</p>
+            <ul className="flex flex-wrap gap-x-3 gap-y-1.5">
+              {others.map((row) => (
+                <li key={row.customer_id} className="flex items-center gap-1.5 text-xs text-deep-violet-blue/80">
+                  <CustomerSwatch color={row.color} />
+                  {customerLabel(row.customer_name)}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* One line is always reserved, so a message appears without moving the buttons. */}
-        <div className="mt-2 min-h-4">
+        <div className="mt-3 min-h-4">
           {requestError ? (
             <p role="alert" className={cn(errorClass, 'mt-0 flex items-start gap-1 leading-4')}>
               <CircleAlert aria-hidden="true" className="mt-px size-3.5 shrink-0" />
               <span>{requestError}</span>
             </p>
           ) : (
-            <p className={cn(hintClass, 'mt-0 flex items-center gap-1.5')}>
-              <CustomerSwatch color={picked} />
-              {picked ?? 'No colour yet'}. Faded colours belong to another customer.
+            <p className={cn(hintClass, 'mt-0')}>
+              Pick a colour that stands apart from the other customers and the forecast lines.
             </p>
           )}
         </div>
@@ -136,21 +133,21 @@ function ColorForm({ customer, customers, choices, onSubmit, onCancel, onPending
 }
 
 /**
- * Pick a customer's chart colour from the allowed set (backend
- * customer_colors.COLOR_CHOICES, sent with the customer list). Colours other
- * customers have are faded and can't be picked; the backend checks the pick
- * again and its 409 sentence is shown under the swatches. Cancel, Escape and
- * the backdrop close it with nothing sent, except while a save is in flight.
+ * Pick a customer's chart colour on a colour wheel (ColorWheel), with the
+ * other customers' colours listed to keep clear of. The backend checks the
+ * pick (customer_colors.color_problem: too light, like a forecast line, like
+ * another customer's) and its 409 sentence is shown under the wheel. Cancel,
+ * Escape and the backdrop close it with nothing sent, except while a save is
+ * in flight.
  *
  * @param {{
  *   customer: object | null,
  *   customers: object[],
- *   choices: string[],
  *   onSubmit: (color: string) => Promise<void>,
  *   onClose: () => void,
  * }} props
  */
-export default function CustomerColorDialog({ customer, customers, choices, onSubmit, onClose }) {
+export default function CustomerColorDialog({ customer, customers, onSubmit, onClose }) {
   const [pending, setPending] = useState(false);
 
   function close() {
@@ -171,7 +168,6 @@ export default function CustomerColorDialog({ customer, customers, choices, onSu
             key={customer.customer_id}
             customer={customer}
             customers={customers}
-            choices={choices}
             onSubmit={onSubmit}
             onCancel={close}
             onPendingChange={setPending}

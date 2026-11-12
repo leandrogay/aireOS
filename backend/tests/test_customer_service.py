@@ -59,11 +59,7 @@ def test_list_returns_customers_with_retailers_and_the_unlinked_retailers(monkey
 
     result = customer_service.list_customers()
 
-    assert result == {
-        "customers": [customer],
-        "unlinked_retailers": [unlinked],
-        "color_choices": list(customer_colors.COLOR_CHOICES),
-    }
+    assert result == {"customers": [customer], "unlinked_retailers": [unlinked]}
     sql, params = conn.sql_containing("FROM customers c")[0]
     assert params == {"customer_id": None}
     # A customer is in use through its retailers' stores or its own inventory rows.

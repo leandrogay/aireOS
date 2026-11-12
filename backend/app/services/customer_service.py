@@ -391,8 +391,6 @@ def list_customers() -> dict:
             dict(row)
             for row in unlinked
         ],
-        # The colours the page offers when changing one (customer_colors).
-        "color_choices": list(customer_colors.COLOR_CHOICES),
     }
 
 
