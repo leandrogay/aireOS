@@ -16,7 +16,7 @@ from app.services.settings import promo_uplifts
 
 # Works out one customer's promotion moments, uplifts and projected anchors
 # and saves them (promo_moment_calc, promo_uplift_calc, projected rows in
-# promo_anchor_settings; migration 020), so pages only read the results.
+# promo_anchor_settings; migration 023), so pages only read the results.
 # Run by the queue (process_pending: the Cloud Task, Recalculate on
 # Promotion Uplift Settings, scripts/rebuild_promo_calc.py), never by a page
 # load. Each customer is one transaction; the rules are pure and live in

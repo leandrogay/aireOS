@@ -6,8 +6,7 @@
 -- Grain: origin month + customer + SKU + target month
 -- history_months = months of sales the series had at that origin.
 --
--- Matches the live view captured on 2026-11-09
--- (live_2026-11-09_aireos_forecast_validation_sg_fc_tier0_forecasts.txt).
+-- Matches the live view as read on 2026-11-09.
 --
 -- The P&L's "Forecast with Build" sheet sets each future Sell-out Base by hand
 -- from two habits: same month last year (there with a growth factor, =M58*1.2,

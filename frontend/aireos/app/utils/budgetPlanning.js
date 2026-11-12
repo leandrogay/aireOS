@@ -95,3 +95,76 @@ export function budgetYears(initialStatus, thisYear) {
   const available = candidates.filter((year) => known.has(year));
   return available.length ? available : candidates;
 }
+
+// ============================================================
+// LOCKED BUDGET AS THE INITIAL YEARLY FORECAST
+// A "Show locked yearly budget" switch on the Forecast page and the Inventory sell-in
+// chart (on by default): in months a locked budget covers, the Initial Yearly
+// Forecast line shows the budget instead of Tier 0's plan, and is relabelled
+// so it never passes the budget off as the plan. Off shows the plan.
+// ============================================================
+
+export const BUDGET_TOGGLE_LABEL = 'Show locked yearly budget';
+export const BUDGET_TOGGLE_ON_HINT =
+  "The Initial Yearly Forecast line shows Aire's latest locked budget in the months it covers. Other lines remain unchanged.";
+export const BUDGET_TOGGLE_OFF_HINT = 'Turn on to show the budget on the Initial Yearly Forecast line only.';
+export const BUDGET_TOGGLE_NONE_HINT = 'No locked budget for these months. Changes only the Initial Yearly Forecast line.';
+export const INITIAL_BUDGET_LABEL = 'Initial Yearly Forecast (Budget)';
+export const INITIAL_BUDGET_HINT =
+  "Initial Yearly Forecast (Budget): Aire's latest locked budget in the months it covers (the yearly plan plus " +
+  "the building blocks and promotions added on top in the Scenario builder), and Tier 0's yearly plan in other " +
+  'months. Its units stay frozen when the forecast changes. Turn off Show locked yearly budget to see the plan alone.';
+// The Inventory chart's two Initial lines, while they show the budget.
+export const INITIAL_BUDGET_INVENTORY_LABELS = {
+  sell_in_initial: 'Initial Yearly Sell-in Forecast (Budget)',
+  sell_out_initial: 'Initial Yearly Sell-out Forecast (Budget)',
+};
+
+/** Whether any Forecast page month in view has a locked budget (withBudgetPoints' `budget`). */
+export function hasBudgetPoints(points) {
+  return (points ?? []).some((point) => point.budget != null);
+}
+
+/**
+ * Forecast page months with the locked budget as the Initial value where it
+ * has one. The budget has no 80% range and isn't the plan the Initial vs
+ * actual note measures, so in those months both are cleared; other months
+ * keep the plan untouched. `initialFromBudget` marks the swapped months.
+ *
+ * @param {object[]} points buildMonthlyPoints + withBudgetPoints
+ */
+export function budgetAsInitial(points) {
+  return (points ?? []).map((point) => {
+    if (point.budget == null) return point;
+    return {
+      ...point,
+      initial: point.budget,
+      initialFromBudget: true,
+      // Never equal to the reported count, so no "Initial x% over actual".
+      initialSeries: 0,
+      initialBand: null,
+      confidence: (point.confidence ?? []).map((entry) => ({ ...entry, initial: null })),
+    };
+  });
+}
+
+/** Whether any Inventory sell-in chart month has a locked budget (backend sell_in_budget / sell_out_budget). */
+export function hasBudgetMonths(months) {
+  return (months ?? []).some((row) => row.sell_in_budget != null || row.sell_out_budget != null);
+}
+
+/**
+ * Inventory sell-in chart months with the locked budget as the two Initial
+ * lines where it has values: sell-out budget for Initial sell-out, and the
+ * sell-in plan worked out from it for Initial sell-in (backend
+ * get_sell_in_outlook). Other months keep the plan's values.
+ *
+ * @param {object[]} months get_sell_in_outlook months
+ */
+export function budgetAsInitialMonths(months) {
+  return (months ?? []).map((row) => ({
+    ...row,
+    sell_in_initial: row.sell_in_budget ?? row.sell_in_initial,
+    sell_out_initial: row.sell_out_budget ?? row.sell_out_initial,
+  }));
+}

@@ -9,7 +9,7 @@ import ChartZoomButton from '@/components/ui/ChartZoomButton';
 import LineToggle from '@/components/ui/LineToggle';
 import useChartZoom from '@/hooks/useChartZoom';
 
-import { BUDGET_COLORS, BUDGET_SERIES } from '@/app/utils/budgetPlanning';
+import { INITIAL_BUDGET_INVENTORY_LABELS, budgetAsInitialMonths } from '@/app/utils/budgetPlanning';
 import { NO_CUSTOMER_COLOR, customerShades } from '@/app/utils/customerColors';
 import { FORECAST_SERIES } from '@/app/utils/forecastView';
 import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
@@ -53,8 +53,6 @@ const SELL_OUT_CURRENT_COLOR = '#00AEC2';
 // `dot`: the line has a dot per month (the actual lines), so its sample does too.
 // `shape: 'line'` makes LineToggle show that line sample on its pill.
 const SERIES = [
-  { key: 'sell_in_budget', group: 'Sell-in', label: 'Sell-in Budget', color: BUDGET_COLORS.sellIn, dash: BUDGET_SERIES.dash },
-  { key: 'sell_out_budget', group: 'Sell-out', label: 'Sell-out Budget', color: BUDGET_SERIES.color, dash: '3 3' },
   { key: 'sell_in_actual', group: 'Sell-in', label: 'Sell-in (actual)', dot: true },
   { key: 'sell_in_recommended', group: 'Sell-in', label: 'Sell-in Forecast (Current)', color: SELL_IN_CURRENT_COLOR, dash: DASH.current },
   {
@@ -82,11 +80,16 @@ const SERIES = [
 ];
 
 // Every line with its colour: the actual lines in the customer's colour
-// (sell-out) and its first shade (sell-in).
-function outlookSeries(customerColor) {
+// (sell-out) and its first shade (sell-in). While the Initial lines show the
+// locked budget (`showBudget`), they say so in their names.
+function outlookSeries(customerColor, showBudget) {
   const [sellOutColor, sellInColor] = customerShades(customerColor, 2);
   const actualColors = { sell_in_actual: sellInColor, sell_out_actual: sellOutColor };
-  return SERIES.map((series) => (actualColors[series.key] ? { ...series, color: actualColors[series.key] } : series));
+  return SERIES.map((series) => ({
+    ...series,
+    ...(actualColors[series.key] ? { color: actualColors[series.key] } : {}),
+    ...(showBudget && INITIAL_BUDGET_INVENTORY_LABELS[series.key] ? { label: INITIAL_BUDGET_INVENTORY_LABELS[series.key] } : {}),
+  }));
 }
 
 // The lines on the chart: the overlay's two only while blocks are picked.
@@ -108,8 +111,6 @@ const ALL_VISIBLE = Object.fromEntries(SERIES.map((series) => [series.key, true]
 // sell-out forecast where none was saved, so both Previous lines are empty
 // only when neither exists.
 const NO_DATA_HINT = {
-  sell_in_budget: 'No locked budget plan in this scope yet.',
-  sell_out_budget: 'No locked budget in this scope yet.',
   sell_in_previous: 'No previous forecast yet.',
   sell_out_previous: 'No previous forecast yet.',
 };
@@ -177,19 +178,24 @@ export function initialFallbackLabel(months) {
  * `showBlocks` adds the building blocks overlay's lines (sell_in_with_blocks,
  * sell_out_with_blocks: the plan worked out again with the picked blocks,
  * backend get_sell_in_outlook), each beside the Current line it adjusts.
+ * `showBudget` ("Show locked yearly budget", on by default in SellInPlanView) draws
+ * the locked budget as the two Initial lines in the months it covers
+ * (budgetPlanning.budgetAsInitialMonths), renamed "... (Budget)".
  *
  * @param {{ customerColor?: string, showBlocks?: boolean, months: Array<{ month: string, sell_in_actual: number | null, sell_in_recommended: number | null, sell_in_previous: number | null, sell_in_initial: number | null, sell_out_actual: number | null, sell_out_forecast: number | null, sell_out_initial: number | null, sell_out_previous: number | null, forecast_source: 'current' | 'initial' | 'mixed' | null }>, actualsThrough: string | null, sellInComparison?: object | null, sellOutComparison?: object | null }} props
  */
 export default function SellInOutlookChart({
-  months,
+  months: outlookMonths,
   actualsThrough,
   sellInComparison = null,
   sellOutComparison = null,
   showBlocks = false,
+  showBudget = false,
   customerColor = NO_CUSTOMER_COLOR,
 }) {
   const [visible, setVisible] = useState(ALL_VISIBLE);
-  const allSeries = outlookSeries(customerColor);
+  const months = showBudget ? budgetAsInitialMonths(outlookMonths) : outlookMonths;
+  const allSeries = outlookSeries(customerColor, showBudget);
   const chartConfig = Object.fromEntries(allSeries.map((line) => [line.key, { label: line.label, color: line.color }]));
   const series = seriesFor(allSeries, showBlocks);
   const tooltipOrder = series.map((line) => line.key);

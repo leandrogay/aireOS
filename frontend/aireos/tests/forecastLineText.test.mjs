@@ -36,6 +36,7 @@ import {
   tierUnavailableText,
   forecastUpdatingBadge,
   INITIAL_UPDATING_HINT,
+  EARLY_LOCK_NOTES,
   initialStatusNotes,
   nextStatusCheckDelay,
   sgtDay,
@@ -57,8 +58,8 @@ describe('line hints', () => {
     });
   });
 
-  test('the initial hint says it is always made with Tier 0, whichever model is selected', () => {
-    assert.match(INITIAL_HINT, /always made with the Tier 0 model, whichever model is selected/);
+  test('the initial hint says it is made with Tier 0, whichever model is selected', () => {
+    assert.match(INITIAL_HINT, /made with the Tier 0 model whichever model is selected/);
   });
 
   test('the initial hint describes the 1 Sep to 31 Oct cycle, not a December lock', () => {
@@ -90,7 +91,7 @@ describe('line hints', () => {
     assert.equal(
       previousHint('Sep 2026'),
       "Previous forecast: the same model's forecast with one month less sales data (made with sales up to " +
-        "Sep 2026). Compare it with Current to see what the newest month changed. It's rebuilt at every update, " +
+        "Sep 2026). Compare it with the Current forecast to see what the newest month changed. It's rebuilt at every update, " +
         'so it always means "one month less data", whatever order files were uploaded in.'
     );
     assert.equal(
@@ -115,7 +116,7 @@ describe('line hints', () => {
     assert.equal(hints.previous, PREVIOUS_MISSING_HINT);
     assert.equal(
       PREVIOUS_MISSING_HINT,
-      'No Previous for this model yet — it appears once this product has two months of sales (or once it has ' +
+      'No Previous forecast for this model yet — it appears once this product has two months of sales (or once it has ' +
         'enough history for this model).'
     );
   });
@@ -324,49 +325,63 @@ describe('confidence wording', () => {
 
 // ---- Initial Yearly Forecast status (F7) ----
 
-const stamp = (value) => `at ${value}`;
-const OPEN_2027 = {
-  forecast_year: 2027,
-  lock_at: '2026-12-31T15:59:00Z',
-  refreshed_at: '2026-11-04T03:00:00Z',
+// A 2028 plan: built from 1 Sep 2027, locked at the end of 31 Oct 2027 SGT.
+const PLAN_2028 = {
+  forecast_year: 2028,
+  lock_at: '2027-10-31T15:59:59Z',
+  refreshed_at: '2027-10-04T03:00:00Z',
+  data_cutoff: '2027-09-01',
   locked: false,
 };
+const OCT_2027 = new Date(2027, 9, 10);
 
 describe('initial status notes', () => {
-  test('an open year says when it locks, in Singapore time, and when it last updated', () => {
-    const notes = initialStatusNotes({
-      rangeYears: [2027], meta: [OPEN_2027], formatStamp: stamp,
-    });
-    assert.deepEqual(notes, ['2027 Initial: updating until 31 Dec 2026 · last updated at 2026-11-04T03:00:00Z']);
+  test('an open plan says when it locks, read from its own lock time', () => {
+    const notes = initialStatusNotes({ rangeYears: [2028], meta: [PLAN_2028], today: OCT_2027 });
+    assert.deepEqual(notes, [
+      "Updating until 31 Oct 2027. The 2028 plan still takes in new sales and promotion changes. After 31 Oct 2027 it's fixed.",
+    ]);
   });
 
-  test('a locked year gets no note', () => {
+  test('a locked plan is a fixed plan, with its lock day and the sales month it used', () => {
     const notes = initialStatusNotes({
-      rangeYears: [2027], meta: [{ ...OPEN_2027, locked: true }], formatStamp: stamp,
+      rangeYears: [2028], meta: [{ ...PLAN_2028, locked: true }], today: new Date(2027, 10, 5),
     });
+    assert.deepEqual(notes, [
+      "Fixed plan. The 2028 plan was locked on 31 Oct 2027, using sales up to Sep 2027. It won't change.",
+    ]);
+  });
+
+  test('a locked plan with no sales month leaves that part out', () => {
+    const notes = initialStatusNotes({
+      rangeYears: [2028], meta: [{ ...PLAN_2028, locked: true, data_cutoff: null }], today: new Date(2027, 10, 5),
+    });
+    assert.deepEqual(notes, ["Fixed plan. The 2028 plan was locked on 31 Oct 2027. It won't change."]);
+  });
+
+  test('before 1 Sep, next year with no plan says when it will be made', () => {
+    const notes = initialStatusNotes({ rangeYears: [2027, 2028], meta: [], today: new Date(2027, 7, 31) });
+    assert.deepEqual(notes, [
+      "The 2028 plan is made from 1 Sep 2027. Until then only this year's plan is shown.",
+    ]);
+  });
+
+  test('from 1 Sep, a plan not built yet gets no note', () => {
+    const notes = initialStatusNotes({ rangeYears: [2028], meta: [], today: new Date(2027, 8, 1) });
     assert.deepEqual(notes, []);
   });
 
-  test('a year with no meta row (the 2026 backfill) gets no note', () => {
-    const notes = initialStatusNotes({
-      rangeYears: [2026], meta: [OPEN_2027], formatStamp: stamp,
-    });
+  test('a year with no row that is not next year (the 2026 backfill) gets no note', () => {
+    const notes = initialStatusNotes({ rangeYears: [2026], meta: [PLAN_2028], today: OCT_2027 });
     assert.deepEqual(notes, []);
   });
 
-  test('only open years in range are listed', () => {
-    const notes = initialStatusNotes({
-      rangeYears: yearsInRange('2026-01-01', '2027-12-01'), meta: [OPEN_2027], formatStamp: stamp,
-    });
-    assert.equal(notes.length, 1);
-    assert.ok(notes[0].startsWith('2027 Initial: updating until 31 Dec 2026'));
-  });
-
-  test('no refreshed time drops the last-updated part', () => {
-    const notes = initialStatusNotes({
-      rangeYears: [2027], meta: [{ ...OPEN_2027, refreshed_at: null }], formatStamp: stamp,
-    });
-    assert.deepEqual(notes, ['2027 Initial: updating until 31 Dec 2026']);
+  test('the 2027 plan adds why it was locked straight away', () => {
+    const plan2027 = { ...PLAN_2028, forecast_year: 2027, lock_at: '2026-10-31T15:59:59Z', data_cutoff: '2026-09-01', locked: true };
+    const notes = initialStatusNotes({ rangeYears: [2027], meta: [plan2027], today: new Date(2026, 10, 12) });
+    assert.equal(notes.length, 2);
+    assert.ok(notes[0].startsWith('Fixed plan. The 2027 plan was locked on 31 Oct 2026'));
+    assert.equal(notes[1], EARLY_LOCK_NOTES[2027]);
   });
 
   test('the lock day is the Singapore day, not the UTC one', () => {
@@ -394,18 +409,18 @@ describe('forecast updating badge', () => {
   });
 
   test('while an Initial year is still open, the badge names the forecast and the Initial line', () => {
-    const badge = forecastUpdatingBadge({ updating: true, since: '2026-11-06T02:30:00Z' }, [OPEN_2027]);
+    const badge = forecastUpdatingBadge({ updating: true, since: '2026-11-06T02:30:00Z' }, [PLAN_2028]);
     assert.equal(badge.label, 'Forecast updating… (incl. Initial)');
     assert.equal(badge.hint, INITIAL_UPDATING_HINT);
   });
 
   test('only locked Initial years keep the plain forecast badge', () => {
-    const badge = forecastUpdatingBadge({ updating: true }, [{ ...OPEN_2027, locked: true }]);
+    const badge = forecastUpdatingBadge({ updating: true }, [{ ...PLAN_2028, locked: true }]);
     assert.equal(badge.label, 'Forecast updating…');
   });
 
   test('an open Initial year with nothing updating shows no badge', () => {
-    assert.equal(forecastUpdatingBadge({ updating: false, since: null }, [OPEN_2027]), null);
+    assert.equal(forecastUpdatingBadge({ updating: false, since: null }, [PLAN_2028]), null);
   });
 
   test('nothing updating, or no response, shows no badge', () => {

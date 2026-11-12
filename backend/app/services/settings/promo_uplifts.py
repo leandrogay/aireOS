@@ -171,7 +171,7 @@ def _ranges(conn: Connection) -> list[str]:
 # in instead ('manual'). A range with nothing saved uses its customer's
 # anchor, a customer the all-customers value, else 20%.
 #
-# Each version applies from a month (effective_from, migration 019; NULL =
+# Each version applies from a month (effective_from, migration 022; NULL =
 # from the start), so a change already decided for the future is saved
 # ahead without moving the months before it. The anchor shown is the one in
 # effect this month; `upcoming` lists the later changes.
@@ -765,7 +765,7 @@ def mechanic_discounts(conn: Connection) -> dict[str, dict]:
 def mechanic_discount_lookup(conn: Connection):
     """
     discount_in(mechanic_key, month): the mechanic's effective discount in
-    effect that month (migration 021: a change applies from the month it was
+    effect that month (migration 024: a change applies from the month it was
     made, NULL = from the start), or None. For months in the past, so a
     discount changed today never moves them.
     """

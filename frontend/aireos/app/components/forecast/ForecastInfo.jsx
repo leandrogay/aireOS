@@ -21,8 +21,10 @@ export function ForecastHelpProvider({ openHelp, children }) {
 }
 
 /**
- * A small ⓘ with one forecastHelpText HELP entry: opens on hover and on
- * click or tap, closes with Escape. Nothing outside ForecastHelpProvider.
+ * A small ⓘ with one forecastHelpText HELP entry, in the shared dark hint
+ * look (ui/InfoTooltip): opens on hover and on click or tap, closes with
+ * Escape. Its "Learn more" opens the help panel at the entry's section
+ * (?help=<section>). Nothing outside ForecastHelpProvider.
  *
  * @param {{ helpKey: string, label?: string, className?: string }} props
  */
@@ -31,20 +33,8 @@ export default function ForecastInfo({ helpKey, label = 'What this means', class
   if (!openHelp) return null;
   return (
     <span className={className}>
-      <InfoTooltip
-        variant="card"
-        label={label}
-        footer={
-          <button
-            type="button"
-            onClick={() => openHelp(helpSection(helpKey))}
-            className="w-fit text-[11px] font-medium text-deep-violet-blue underline underline-offset-2 hover:text-deep-violet-blue/70"
-          >
-            Learn more
-          </button>
-        }
-      >
-        <span className="block leading-snug">{helpText(helpKey)}</span>
+      <InfoTooltip label={label} learnMore={{ onClick: () => openHelp(helpSection(helpKey)) }}>
+        {helpText(helpKey)}
       </InfoTooltip>
     </span>
   );

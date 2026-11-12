@@ -62,7 +62,7 @@ def in_effect(rows: list[dict], target, month: date) -> dict[tuple, dict]:
     """
     The row in effect in `month` per target, for append-only settings tables
     whose versions say the month they apply from (promo_anchor_settings,
-    migration 019): the latest effective_from on or before `month` (NULL =
+    migration 022): the latest effective_from on or before `month` (NULL =
     from the start), then the newest save. Rows need effective_from,
     updated_at and id.
     """

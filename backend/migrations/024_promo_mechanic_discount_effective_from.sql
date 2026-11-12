@@ -1,8 +1,8 @@
--- To run this migration in Cloud SQL, after 020_create_promo_calc.sql.
+-- To run this migration in Cloud SQL, after 023_create_promo_calc.sql.
 
 -- A mechanic's effective discount (the 30 in "30% Off", which the placeholder
 -- rule and anchors use) now says which month it applies from, like anchor
--- versions (019). A discount edit applies from the month it is made in, so
+-- versions (022). A discount edit applies from the month it is made in, so
 -- the months before it keep the discount they had: the Scenario builder's
 -- split of Tier 0 into the baseline and last year's promotions never jumps
 -- for a past month when a discount is changed today.

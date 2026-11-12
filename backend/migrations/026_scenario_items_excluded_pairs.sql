@@ -1,4 +1,4 @@
--- To run this migration in Cloud SQL, after 022_scenario_items_several_customers.sql.
+-- To run this migration in Cloud SQL, after 025_scenario_items_several_customers.sql.
 
 -- A Scenario builder building block or promotion stays one entry for
 -- several customers x SKU ranges, but each customer x range can be switched

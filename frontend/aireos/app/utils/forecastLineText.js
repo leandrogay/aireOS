@@ -20,12 +20,24 @@ export const ACTUAL_HINT =
   "Actual: reported sell-out from the customer's sales files, in cartons. A month with no sales for a product " +
   "counts as 0. A month the customer hasn't sent is shown as Missing, never 0.";
 
+// Budgeting (Scenario builder, Budget planning mode): Aire builds a budget on
+// top of next year's plan (building blocks and promotions) and locks it with
+// "Lock budget"; locking again saves a new version, the newest shown. A locked
+// budget replaces the Initial line on the Forecast and Inventory charts.
+export const INITIAL_BUDGET_NOTE =
+  'Once Aire locks a budget in the Scenario builder (this plan plus the building blocks and promotions added on ' +
+  'top of it), this line shows that budget instead in the months it covers, here and on the Inventory page, ' +
+  'while Show locked yearly budget is on (it is on by default; turn it off to see the plan). Locking again saves a new ' +
+  'version, and the newest one is shown.';
+
 // The backend gives every model Tier 0's Initial (bigquery.with_tier0_initial).
 export const INITIAL_HINT =
-  'Initial Yearly Forecast: the plan for the year, always made with the Tier 0 model, whichever model is ' +
-  `selected. Next year's plan is made from ${INITIAL_BUILD_DAY}, using the sales available then (usually up to ` +
-  'July or August), updated whenever new sales (up to September) or promotion changes come in, then locked at ' +
-  `the end of ${INITIAL_LOCK_DAY} so the year is measured against a fixed plan.`;
+  'Initial Yearly Forecast: the plan for the year, made with the Tier 0 model whichever model is selected. ' +
+  `Next year's plan is made from ${INITIAL_BUILD_DAY}, using the sales available then (usually up to July or ` +
+  "August). It's updated whenever new sales (up to September) or promotion changes come in, then locked at the " +
+  `end of ${INITIAL_LOCK_DAY}, so the whole year is measured against one fixed plan. October sales and later ` +
+  'never change it. ' +
+  INITIAL_BUDGET_NOTE;
 
 function joinYears(years) {
   const list = [...new Set(years ?? [])].sort((a, b) => a - b);
@@ -67,7 +79,7 @@ export function previousHint(months = '') {
   const data = months ? ` (made with sales up to ${months})` : '';
   return (
     `Previous forecast: the same model's forecast with one month less sales data${data}. Compare it with ` +
-    "Current to see what the newest month changed. It's rebuilt at every update, so it always means \"one month " +
+    "the Current forecast to see what the newest month changed. It's rebuilt at every update, so it always means \"one month " +
     'less data", whatever order files were uploaded in.'
   );
 }
@@ -78,7 +90,7 @@ export const PREVIOUS_HINT = previousHint();
 // forecast_previous on that tier's rows). A SKU's first month of sales has
 // nothing to leave out, so Previous needs a second one.
 export const PREVIOUS_MISSING_HINT =
-  'No Previous for this model yet — it appears once this product has two months of sales (or once it has ' +
+  'No Previous forecast for this model yet — it appears once this product has two months of sales (or once it has ' +
   'enough history for this model).';
 
 /** The Current pill's hover; `months` (current_data_month) as previousHint. */
@@ -341,7 +353,7 @@ export function confidenceBand(band) {
 }
 
 export const CONFIDENCE_INFO =
-  "This month = how wide the model's 80% range is for this month (Current, Previous and Initial each have their own). " +
+  "This month = how wide the model's 80% range is for this month (the Current forecast, Previous forecast and Initial each have their own). " +
   "Past accuracy = the model's average error (sMAPE) when tested on recent months we hid from it; " +
   'one score for both lines, since the same model made them.';
 
@@ -417,36 +429,68 @@ const SGT_DAY = new Intl.DateTimeFormat('en-SG', {
   year: 'numeric',
 });
 
-/** A UTC ISO stamp as its Singapore calendar day, e.g. "31 Dec 2026"; '' when missing. */
+/** A UTC ISO stamp as its Singapore calendar day, e.g. "31 Oct 2026"; '' when missing. */
 export function sgtDay(stamp) {
   if (!stamp) return '';
   const date = new Date(stamp);
   return Number.isNaN(date.getTime()) ? '' : SGT_DAY.format(date);
 }
 
+// Plans locked on a day other than the rule's, and why. 2027 was still open
+// when the 31 Oct rule started (12 Nov 2026), so it was locked straight away.
+// A fixed fact about that one plan, shown only when 2027 is in view.
+export const EARLY_LOCK_NOTES = {
+  2027:
+    'The yearly plan now locks on 31 Oct. 2027 was still open when this rule started on 12 Nov 2026, so it ' +
+    'was locked straight away, with the sales and promotions it had that day.',
+};
+
 /**
- * One note per year in the selected range whose Initial is still open (a row
- * in aire_forecasting_initial_meta that the backend hasn't marked `locked`):
- * "updating until <lock day>". Locked years and the 2026 backfill (values but
- * no row) get no note -- a fixed plan needs no explanation under the chart.
+ * One note per year in the selected range, from that year's row in
+ * aire_forecasting_initial_meta (GET /api/forecast/initial-status):
+ *   - open (not `locked`): "Updating until <lock day>. The <year> plan still
+ *     takes in new sales and promotion changes. After <lock day> it's fixed."
+ *   - locked: "Fixed plan. The <year> plan was locked on <lock day>, using
+ *     sales up to <data_cutoff month>. It won't change."
+ *   - no row yet for next year, 1 Jan - 31 Aug: "The <year> plan is made
+ *     from 1 Sep <this year>. Until then only this year's plan is shown."
+ * Lock days come from each row's lock_at (Singapore day), never typed in. A
+ * year with no row otherwise (the 2026 backfill) gets no note. A plan in
+ * EARLY_LOCK_NOTES adds that line after its own.
  *
  * @param {{
  *   rangeYears: number[],
- *   meta: { forecast_year: number, lock_at: string | null, refreshed_at: string | null, locked: boolean }[],
- *   formatStamp: (stamp: string) => string,
- * }} options formatStamp shows refreshed_at (the page passes formatSgtTimestamp)
+ *   meta: { forecast_year: number, lock_at: string | null, data_cutoff?: string | null, locked: boolean }[],
+ *   today: Date,
+ * }} options today is Singapore's (lib/singaporeTime.singaporeToday)
  * @returns {string[]}
  */
-export function initialStatusNotes({ rangeYears, meta, formatStamp }) {
+export function initialStatusNotes({ rangeYears, meta, today }) {
   const metaByYear = new Map((meta ?? []).map((row) => [row.forecast_year, row]));
+  const thisYear = today.getFullYear();
+  // Next year's plan can't exist before 1 Sep (month index 8).
+  const beforeBuild = today.getMonth() < 8;
   return [...new Set(rangeYears ?? [])]
     .sort((a, b) => a - b)
     .flatMap((year) => {
       const row = metaByYear.get(year);
-      if (!row || row.locked) return [];
-      const until = sgtDay(row.lock_at);
-      const updated = row.refreshed_at ? ` · last updated ${formatStamp(row.refreshed_at)}` : '';
-      return [`${year} Initial: updating${until ? ` until ${until}` : ''}${updated}`];
+      if (!row) {
+        if (year === thisYear + 1 && beforeBuild) {
+          return [`The ${year} plan is made from ${INITIAL_BUILD_DAY} ${thisYear}. Until then only this year's plan is shown.`];
+        }
+        return [];
+      }
+      const lockDay = sgtDay(row.lock_at);
+      let note;
+      if (row.locked) {
+        const locked = lockDay ? ` was locked on ${lockDay}` : ' is locked';
+        const data = row.data_cutoff ? `, using sales up to ${dataMonthLabel(row.data_cutoff)}` : '';
+        note = `Fixed plan. The ${year} plan${locked}${data}. It won't change.`;
+      } else {
+        const until = lockDay || INITIAL_LOCK_DAY;
+        note = `Updating until ${until}. The ${year} plan still takes in new sales and promotion changes. After ${until} it's fixed.`;
+      }
+      return EARLY_LOCK_NOTES[year] ? [note, EARLY_LOCK_NOTES[year]] : [note];
     });
 }
 

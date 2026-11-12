@@ -1021,16 +1021,71 @@ def get_sales_loaded_at(customer_name: str | None = None) -> str | None:
     return _iso_stamp(df.iloc[0]["latest_sales_loaded_at"])
 
 
+# A month a customer never sent: between its first and latest complete month
+# with any sales row, a month with none. The same months the chart marks
+# actual_status 'missing_file', read from the actuals the Actual line uses.
+# All customers and all history, whatever the page's filters.
+_MISSING_MONTHS_SQL = """
+    WITH sent AS (
+      SELECT customer_id, DATE_TRUNC(period_start, MONTH) AS month_year
+      FROM `{view}`
+      -- The current month is still filling up.
+      WHERE period_start < DATE_TRUNC(CURRENT_DATE(), MONTH)
+      GROUP BY customer_id, month_year
+    ),
+    span AS (
+      SELECT customer_id, MIN(month_year) AS first_month, MAX(month_year) AS last_month
+      FROM sent
+      GROUP BY customer_id
+    )
+    SELECT span.customer_id, customer.customer_name, month AS month_year
+    FROM span
+    CROSS JOIN UNNEST(GENERATE_DATE_ARRAY(span.first_month, span.last_month, INTERVAL 1 MONTH)) AS month
+    JOIN `{catalog}.public_customers` AS customer
+      ON customer.customer_id = span.customer_id
+    LEFT JOIN sent
+      ON sent.customer_id = span.customer_id AND sent.month_year = month
+    WHERE sent.customer_id IS NULL
+    ORDER BY customer.customer_name, month_year
+"""
+# A small read behind a best-effort note: it gives up rather than hold the panel.
+MISSING_MONTHS_TIMEOUT_MS = 30_000
+
+
+def _read_missing_months() -> list[dict]:
+    query = _MISSING_MONTHS_SQL.format(view=BQ_MONTHLY_SALES_VIEW, catalog=_catalog_dataset())
+    job_config = bigquery.QueryJobConfig(job_timeout_ms=MISSING_MONTHS_TIMEOUT_MS)
+    # Over REST, like read_frame: the list is small.
+    df = get_bigquery_client().query(query, job_config=job_config).result().to_dataframe(create_bqstorage_client=False)
+    return [
+        {
+            "customer_id": _json_int(record["customer_id"]),
+            "customer_name": _json_str(record["customer_name"]),
+            "month_year": _iso_date(record["month_year"]),
+        }
+        for record in df.to_dict(orient="records")
+    ]
+
+
+def get_missing_months() -> list[dict]:
+    """Every customer x month with no sales file, oldest first per customer
+    (customer_id, customer_name, month_year 'YYYY-MM-DD'). Shared by
+    overlapping calls and cached like the forecast reads (cached_read)."""
+    return cached_read(("missing_months",), _read_missing_months)
+
+
 def get_initial_meta() -> list[dict]:
     """One row per Initial Yearly Forecast year: when it locks and when it was last rebuilt.
 
     aire_forecasting_initial_meta is written by Sandra's procedures (one row
     per forecast_year, timestamps in UTC). The dataset is read at call time so
     a test or redeploy can point it elsewhere. 2026 was backfilled outside the
-    procedure, so it has no row.
+    procedure, so it has no row. data_cutoff is the last sales month the plan
+    learned from (refresh_initial_if_needed sets it on every build), for the
+    "Fixed plan" note.
     """
     query = f"""
-        SELECT forecast_year, lock_at, refreshed_at
+        SELECT forecast_year, lock_at, refreshed_at, data_cutoff
         FROM `{config.BQ_FORECAST_DATASET}.aire_forecasting_initial_meta`
         ORDER BY forecast_year
     """
@@ -1040,6 +1095,7 @@ def get_initial_meta() -> list[dict]:
             "forecast_year": int(record["forecast_year"]),
             "lock_at": _iso_stamp(record["lock_at"]),
             "refreshed_at": _iso_stamp(record["refreshed_at"]),
+            "data_cutoff": _iso_date(record["data_cutoff"]),
         }
         for record in df.to_dict(orient="records")
         if not pd.isna(record["forecast_year"])

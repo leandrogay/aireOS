@@ -140,7 +140,7 @@ export default function BlockEditor({
       </div>
 
       <div className="grid grid-cols-2 gap-2">
-        {/* Any number of customers, or none for every customer (migration 022),
+        {/* Any number of customers, or none for every customer (migration 025),
             like the SKU ranges beside it. */}
         <div className="min-w-0">
           <span id="block-customers-label" className={labelClass}>Customers</span>

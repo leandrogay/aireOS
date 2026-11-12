@@ -1,9 +1,9 @@
--- To run this migration in Cloud SQL, after 023_scenario_items_excluded_pairs.sql.
+-- To run this migration in Cloud SQL, after 026_scenario_items_excluded_pairs.sql.
 
 -- The budget's growth is set per customer, not per SKU range: a growth
 -- (kind = 'growth') is a % on every SKU of one customer from January to
 -- December, at most one per customer x year. It replaces the per-range rule
--- of 017.
+-- of 020.
 --
 -- Growth already saved per range is merged: where all of a customer's
 -- ranges for a year have the same %, they become one growth on every SKU.

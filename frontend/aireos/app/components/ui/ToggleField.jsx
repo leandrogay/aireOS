@@ -41,10 +41,15 @@ const OFF_PILL = 'border border-switch-off-edge bg-transparent text-deep-violet-
  *   disabled?: boolean,
  *   showState?: boolean,
  *   tone?: 'default' | 'scenario',
+ *   align?: 'start' | 'top' | 'center',
  *   className?: string,
  * }} props `label` is shown beside the switch; `ariaLabel` names it when there
  *   is no label. `onHint` / `offHint` explain the state the switch is in now.
- *   `tone` colours the switch (and the On pill) when it is on.
+ *   `tone` colours the switch (and the On pill) when it is on. `align="top"`
+ *   sets the switch a little
+ *   lower, so its top meets the top of the label's text (the Forecast legend's
+ *   budget switch); `align="center"` centres it on the label and hint together,
+ *   for switches stacked in one card.
  */
 export default function ToggleField({
   label,
@@ -56,14 +61,17 @@ export default function ToggleField({
   disabled = false,
   showState = false,
   tone = 'default',
+  align = 'start',
   className,
 }) {
+  const centred = align === 'center';
+  const top = align === 'top';
   const id = useId();
   const hint = checked ? onHint : offHint;
   const hasText = Boolean(label || showState || hint);
 
   return (
-    <div className={cn('flex items-start gap-2.5', className)}>
+    <div className={cn('flex gap-2.5', centred ? 'items-center' : 'items-start', className)}>
       <Switch
         id={id}
         checked={checked}
@@ -73,10 +81,10 @@ export default function ToggleField({
         // A pointer on hover so the switch reads as clickable. It stays a
         // pointer while disabled (a save in flight) so the cursor doesn't
         // flash a not-allowed sign between the click and the slide.
-        className={cn('cursor-pointer', SWITCH_TONE[tone])}
+        className={cn('shrink-0 cursor-pointer', top && 'mt-1', SWITCH_TONE[tone])}
       />
       {hasText && (
-        <label htmlFor={id} className="min-w-0 cursor-pointer pt-[3px] text-xs text-deep-violet-blue">
+        <label htmlFor={id} className={cn('min-w-0 cursor-pointer text-xs text-deep-violet-blue', top ? 'pt-px' : !centred && 'pt-[3px]')}>
           <span className="flex items-center gap-1.5">
             {label && <span className="font-medium">{label}</span>}
             {showState && (

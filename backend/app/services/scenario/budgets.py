@@ -13,10 +13,10 @@ from app.services.scenario.budget_calc import calculate_budget
 
 # A year's budget is drafted in the Budget planning entries (plan 'budget',
 # scoped to the year by their months) and frozen by a lock into a numbered
-# version. One version per year is official (migration 027): the Budget line
+# version. One version per year is official (migration 030): the Budget line
 # on Forecast and Inventory. Any version can be copied back into the entries
 # to edit and lock again, or the entries cleared to start from Initial alone.
-# Deleting a version in the app only hides it (migration 028): it is kept for
+# Deleting a version in the app only hides it (migration 031): it is kept for
 # the record, but never listed, compared, copied or made official again.
 
 

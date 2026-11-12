@@ -28,12 +28,19 @@ export function formatVolume(value) {
   return Math.round(value).toLocaleString();
 }
 
+/**
+ * "10 months actual · 1 month part actual · 1 month forecast" for a year row,
+ * on the Forecast page and in the Scenario builder.
+ *
+ * @param {{ actualMonths?: number, partialMonths?: number, forecastMonths?: number }} year
+ */
 export function mixCaption(year) {
+  const months = (count) => `${count} ${count === 1 ? 'month' : 'months'}`;
   const parts = [];
-  if (year.actualMonths) parts.push(`${year.actualMonths} mo actual`);
+  if (year.actualMonths) parts.push(`${months(year.actualMonths)} actual`);
   // Some customer x SKUs reported, others still forecast (forecastYearTotals).
-  if (year.partialMonths) parts.push(`${year.partialMonths} mo part actual`);
-  if (year.forecastMonths) parts.push(`${year.forecastMonths} mo forecast`);
+  if (year.partialMonths) parts.push(`${months(year.partialMonths)} part actual`);
+  if (year.forecastMonths) parts.push(`${months(year.forecastMonths)} forecast`);
   return parts.join(' · ');
 }
 

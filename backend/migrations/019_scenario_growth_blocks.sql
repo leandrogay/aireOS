@@ -1,4 +1,4 @@
--- To run this migration in Cloud SQL, after 014_scenario_building_blocks_decrease.sql.
+-- To run this migration in Cloud SQL, after 018_add_customer_color.sql.
 
 -- Growth for the budget: next year = this year x (1 + g). Tier 0 has no growth
 -- factor any more (bigquery/views/010_create_tier0_legacy_forecasts_view.sql,

@@ -118,6 +118,19 @@ export async function getForecastInitialStatus() {
 }
 
 /**
+ * GET /api/forecast/missing-months
+ * { customers: [{ customer_id, customer_name, months: ['YYYY-MM-DD'] }], available }:
+ * every customer's months with no sales file, all history, whatever the
+ * page's filters. Best effort on the backend
+ * (forecast_service.get_missing_months): a failed read returns no customers
+ * with `available` false.
+ */
+export async function getForecastMissingMonths() {
+  const data = await request('/api/forecast/missing-months');
+  return { customers: data.customers ?? [], available: data.available !== false };
+}
+
+/**
  * GET /api/forecast/refresh-status
  * { updating, since }: whether an event forecast refresh is waiting or
  * running (backend forecast_refresh_worker.refresh_status_best_effort).

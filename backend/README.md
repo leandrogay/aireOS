@@ -91,19 +91,19 @@ line shows the newest plan saved before each month. Until the table exists the
 save is skipped and logged, and the line stays empty; the refresh itself is
 unaffected.
 
-Apply `migrations/018_create_scenario_promotions.sql` before using the
+Apply `migrations/021_create_scenario_promotions.sql` before using the
 Scenario builder's Promotions tab: it saves through `/api/scenario/promotions`,
 and until the table exists listing and saving fail with a database error.
 
-Apply `migrations/019_promo_anchor_effective_from.sql` after 018. It adds the
+Apply `migrations/022_promo_anchor_effective_from.sql` after 021. It adds the
 month each promo anchor version applies from; existing rows apply from the
 start, so no anchor changes when it runs.
 
-Apply `migrations/020_create_promo_calc.sql` after 019, then fill it once with
+Apply `migrations/023_create_promo_calc.sql` after 022, then fill it once with
 `python scripts/rebuild_promo_calc.py`. Promotion Uplift Settings reads its
 moments and recommendations from these tables, not live sell-out, so the
 page errors until 020 exists and shows no moments until the first rebuild.
-Apply `migrations/021_promo_mechanic_discount_effective_from.sql` after 020
+Apply `migrations/024_promo_mechanic_discount_effective_from.sql` after 023
 (as the tables' owner). A mechanic discount change then applies from the month
 it is made in, so the Scenario builder's split of past months never moves;
 existing rows apply from the start.

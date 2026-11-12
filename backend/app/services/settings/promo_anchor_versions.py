@@ -8,7 +8,7 @@ from app.services.settings import promo_uplift_rules as uplift_rules
 
 
 # Pure rules for anchor VERSIONS (promo_anchor_settings.effective_from,
-# migration 019): which anchor applies in which month, the anchor changes the
+# migration 022): which anchor applies in which month, the anchor changes the
 # official promotions already keyed in for the future will bring, and the
 # uplift of a mechanic measured against the anchor version of the month it
 # is for. No database here; promo_moments.py feeds these the rows it reads.

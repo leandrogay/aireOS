@@ -16,7 +16,7 @@ from app.services.settings import promo_moment_rules as rules
 # the same retailers' monthly sell-out (sellout_units, the effective-sellout
 # view), read per customer by promo_recalc when its inputs change.
 #
-# The reads: the worked-out moments in promo_moment_calc (migration 020),
+# The reads: the worked-out moments in promo_moment_calc (migration 023),
 # each measured against the anchor version of its own month, so a page load
 # never reads sell-out. The rules are pure and live in promo_moment_rules.py
 # and promo_anchor_versions.py.
@@ -156,7 +156,7 @@ def sku_ranges(conn: Connection) -> dict[str, str | None]:
 
 
 # ============================================================
-# READS (from the worked-out tables, migration 020)
+# READS (from the worked-out tables, migration 023)
 # ============================================================
 
 

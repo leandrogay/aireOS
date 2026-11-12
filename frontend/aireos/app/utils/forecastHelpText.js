@@ -5,11 +5,11 @@
 // fails if a key a component uses is missing here.
 //
 // Nothing here states a fact that changes with the data. Months a customer
-// hasn't sent and each year's lock date are read from the page's data
-// (missingMonthsText, initialPlanLines); the line wording that names a month
-// lives in forecastLineText.js. Pure and import-light so `npm test` can run it.
+// hasn't sent come from the backend (missingMonthsByCustomer); the line
+// wording that names a month lives in forecastLineText.js. Pure and import-light so `npm test` can run it.
 
 import {
+  EARLY_LOCK_NOTES,
   FORECAST_UPDATING_HINT,
   INITIAL_BUILD_DAY,
   INITIAL_LOCK_DAY,
@@ -19,7 +19,6 @@ import {
   TIER1_ADVANCED_HINT,
   TIER1_BASIC_HINT,
   dataMonthLabel,
-  sgtDay,
 } from './forecastLineText.js';
 
 // Help panel sections, in the order the panel shows them. `?help=<id>` opens
@@ -58,7 +57,8 @@ export const HELP = {
   model: {
     text:
       'Three ways of forecasting the same sales. Pick the one you plan with; we don\'t choose a "best" one for you. ' +
-      'Switching the model switches the Previous and Current lines; the Initial Yearly Forecast always comes from Tier 0.',
+      'Switching the model switches the Previous forecast and Current forecast lines; the Initial Yearly Forecast always comes from Tier 0 ' +
+      "(or, once Aire locks one, from Aire's budget built on it).",
     section: 'models',
   },
   dateRange: {
@@ -120,8 +120,10 @@ export const HELP = {
   updating: { text: FORECAST_UPDATING_HINT, section: 'updates' },
   initialStatus: {
     text:
-      `"Updating until ${INITIAL_LOCK_DAY}": next year's plan still takes in new sales and promotion changes. ` +
-      '"Fixed plan": the plan is locked and won\'t change.',
+      `"Updating until ${INITIAL_LOCK_DAY}": the plan still takes in new sales and promotion changes; after that ` +
+      "it's fixed. \"Fixed plan\": the plan is locked, with the month of sales it used, and won't change. " +
+      `"Made from ${INITIAL_BUILD_DAY}": next year's plan isn't made yet, so only this year's plan is shown. ` +
+      'Once Aire locks a budget on top of a plan, the line shows that budget instead.',
     section: 'initial',
   },
 
@@ -147,7 +149,7 @@ export const HELP = {
   },
   yearColumns: {
     text:
-      "Actual = reported months; Forecast = remaining months from the selected model's Current line; Total = both.",
+      "Actual = reported months; Forecast = remaining months from the selected model's Current forecast line; Total = both.",
     section: 'overview',
   },
   next12: {
@@ -178,49 +180,51 @@ export function parseHelpSection(value) {
 // FROM THE DATA (never hard-coded)
 // ============================================================
 
+// The help panel's "Missing months" list, from GET /api/forecast/missing-months
+// (all customers, all history: backend forecast_service.get_missing_months).
+export const MISSING_MONTHS_TITLE = 'Sales files not sent';
+export const MISSING_MONTHS_NONE = 'Every customer has sent every month so far.';
+export const MISSING_MONTHS_UNAVAILABLE = "The list of missing months couldn't load. Try reopening this panel.";
+
 /**
- * ["NHG: Jan 2026", "SingHealth: May 2026"]: the months each customer in view
- * hasn't sent (actual_status 'missing_file' on any of its rows), [] when
- * none. Only what the page has loaded: the customers and months in view.
+ * Each customer's missing months as labels, customers A-Z and months oldest
+ * first: [{ key, name, months: ['Jan 2026', 'Mar 2026'] }]. A customer with
+ * none is left out.
  *
- * @param {object[]} rows forecast rows (one tier)
+ * @param {{ customer_id: number, customer_name: string, months: string[] }[]} customers
  * @param {(name: string) => string} [formatCustomer] customerLabel
  */
-export function missingMonthsLines(rows, formatCustomer = (name) => name) {
-  const byCustomer = new Map();
-  for (const row of rows ?? []) {
-    if (row.actual_status !== 'missing_file' || !row.month_year) continue;
-    const name = row.customer_name ?? '';
-    if (!byCustomer.has(name)) byCustomer.set(name, new Set());
-    byCustomer.get(name).add(String(row.month_year).slice(0, 10));
-  }
-  return [...byCustomer]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([name, months]) => `${formatCustomer(name)}: ${[...months].sort().map(dataMonthLabel).join(', ')}`);
+export function missingMonthsByCustomer(customers, formatCustomer = (name) => name) {
+  return (customers ?? [])
+    .filter((customer) => customer.months?.length)
+    .map((customer) => ({
+      key: String(customer.customer_id ?? customer.customer_name),
+      name: formatCustomer(customer.customer_name ?? ''),
+      months: [...customer.months].sort().map(dataMonthLabel),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**
- * One line per yearly plan the initial-status endpoint knows: "2027 plan:
- * updating until 31 Oct 2026" or "2027 plan: fixed since 31 Oct 2026", from
- * its own lock time (Singapore day). Newest year first.
+ * How the list is drawn: 'none' when nothing is missing, 'table' when
+ * several customers are missing and at least one of them more than one month
+ * (one row each reads better than a stack of cards), else 'cards' (one card
+ * per customer).
  *
- * @param {{ forecast_year: number, lock_at: string | null, locked: boolean }[]} meta
+ * @param {ReturnType<typeof missingMonthsByCustomer>} entries
+ * @returns {'none' | 'cards' | 'table'}
  */
-export function initialPlanLines(meta) {
-  return [...(meta ?? [])]
-    .sort((a, b) => b.forecast_year - a.forecast_year)
-    .map((row) => {
-      const day = sgtDay(row.lock_at);
-      if (row.locked) return `${row.forecast_year} plan: fixed${day ? ` since ${day}` : ''}`;
-      return `${row.forecast_year} plan: updating${day ? ` until ${day}` : ''}`;
-    });
+export function missingMonthsLayout(entries) {
+  if (!entries.length) return 'none';
+  const manyMonths = entries.some((entry) => entry.months.length > 1);
+  return entries.length > 1 && manyMonths ? 'table' : 'cards';
 }
 
 // ============================================================
 // "HOW THIS FORECAST WORKS" PANEL
 // Each section: title, then blocks of { p } (a paragraph), { list } (bullets)
 // or { diagram } (drawn by ForecastHelpDiagrams). Dynamic lines are added by
-// the panel itself (missing months, each year's plan).
+// the panel itself (missing months).
 // ============================================================
 
 export const UPDATE_FLOW_STEPS = [
@@ -236,9 +240,11 @@ export const UPDATE_FLOW_STEPS = [
 ];
 
 export const INITIAL_TIMELINE_STEPS = [
-  `${INITIAL_BUILD_DAY}: next year's plan is made from the sales available (usually up to July or August)`,
-  'Updated with each new month of sales (up to September) and promotion changes',
+  INITIAL_BUILD_DAY,
+  'Plan made from the latest sales',
+  'Updated with new sales (up to September) and promotion changes',
   `Locked at the end of ${INITIAL_LOCK_DAY}`,
+  'Any time after: Aire can lock a budget on top of it, and the line shows that budget',
 ];
 
 export const HELP_SECTIONS = {
@@ -247,9 +253,9 @@ export const HELP_SECTIONS = {
     blocks: [
       {
         p:
-          'Four lines per model: Actual (what sold), Initial (the year\'s plan), Previous (the forecast with one month ' +
-          'less data) and Current (the latest forecast). Each month\'s 80% range is in the hover card. The Model ' +
-          'dropdown switches Previous and Current; the Initial Yearly Forecast is always the Tier 0 plan. Everything ' +
+          'Four lines per model: Actual (what sold), Initial (the year\'s plan), Previous forecast (the forecast ' +
+          'with one month less data) and Current forecast (the latest forecast). Each month\'s 80% range is in the ' +
+          'hover card. The Model dropdown switches the Previous forecast and Current forecast; the Initial Yearly Forecast is always the Tier 0 plan, or Aire\'s locked budget built on it. Everything ' +
           'is monthly sell-out in cartons, per customer and product.',
       },
     ],
@@ -260,9 +266,9 @@ export const HELP_SECTIONS = {
       { list: [`Tier 0 · Baseline: ${TIER0_HINT}`, `Tier 1 · Basic: ${TIER1_BASIC_HINT}`, `Tier 1 · Advanced: ${TIER1_ADVANCED_HINT}`] },
       {
         p:
-          'All three forecast 15 months ahead so next year\'s plan can reach December; the page shows 12. We don\'t ' +
+          'All three forecast 15 months ahead; the page shows 12. We don\'t ' +
           'pick a winner: each is shown on its own, with its accuracy, so you can plan with the one you trust. The ' +
-          'yearly plan (Initial) is made with Tier 0 only.',
+          'yearly plan (Initial) is made with Tier 0 only, and Aire\'s budget is built on that plan.',
       },
     ],
   },
@@ -328,15 +334,15 @@ export const HELP_SECTIONS = {
     ],
   },
   lines: {
-    title: 'Previous and Current',
+    title: 'Previous forecast and Current forecast',
     blocks: [
       {
         p:
-          'For each product, Current is made with sales up to its latest month; Previous is the same model rebuilt ' +
-          'in the same update with one month less. So if a customer\'s latest month is October, Current starts in ' +
-          'November (made with sales to October) and Previous starts in October (made with sales to September), and ' +
-          "you can see how October's sales moved the forecast. Previous is a rebuild with today's method, not a copy " +
-          'of what the page showed last month. A brand-new product has no Previous until its second month of sales.',
+          'For each product, the Current forecast is made with sales up to its latest month; the Previous forecast ' +
+          'is the same model rebuilt in the same update with one month less. So if a customer\'s latest month is ' +
+          'October, the Current forecast starts in November (made with sales to October) and the Previous forecast ' +
+          "starts in October (made with sales to September), and you can see how October's sales moved the " +
+          'forecast. A brand-new product has no Previous forecast until its second month of sales.',
       },
     ],
   },
@@ -346,10 +352,33 @@ export const HELP_SECTIONS = {
       { diagram: 'initialTimeline' },
       {
         p:
-          'October sales never change it. The plan is made with the Tier 0 model only, and covers every product; ' +
-          'it shows the same on every model. New products and customers join a plan that\'s still open; a product ' +
-          `that starts selling after September has no plan that year. Enter next year's promotions before ` +
-          `${INITIAL_LOCK_DAY} so the plan includes them.`,
+          'Each plan is one calendar year: 12 months, January to December of next year. To cover all of next ' +
+          'year, the plan looks up to 18 months ahead, further than the 15 months the other forecasts use, and ' +
+          'keeps only those 12 months.',
+      },
+      {
+        list: [
+          'Why lock it? So everyone plans against the same numbers for the whole year, and we can measure how ' +
+            'close the year comes to the plan.',
+          'Which model: Tier 0 for every product, whichever model is selected.',
+          'New products: a product that starts selling before the lock joins the plan. A product that starts ' +
+            'selling after September has no plan that year, and the page says so.',
+          `Promotions: enter next year's promotions before ${INITIAL_LOCK_DAY} so the plan includes them. ` +
+            'Promotions added after the lock show up in the Current forecast, but not in the plan.',
+          `If no plan appears by 1 Nov, nobody saved anything in the app between ${INITIAL_BUILD_DAY} and ` +
+            `${INITIAL_LOCK_DAY}, so the plan was never built. Our team can build it by hand.`,
+        ],
+      },
+      { p: `The 2027 plan: ${EARLY_LOCK_NOTES[2027]}` },
+      {
+        p:
+          "Aire's budget: in the Scenario builder's Budget planning mode, Aire can add building blocks and " +
+          "promotions on top of next year's plan and lock the result as the budget with the Lock budget button. " +
+          'Once a budget is locked, the Initial Yearly Forecast line shows the budget instead of the plan in the ' +
+          'months it covers, on this page and on the Inventory page, and is renamed Initial Yearly Forecast ' +
+          '(Budget). The Show locked yearly budget switch (top right of the line pills here, under the building blocks ' +
+          'overlay on Inventory) is on by default; turn it off to see the plan. Only Aire locks a budget; locking ' +
+          'again saves a new version, and the newest version is the one shown.',
       },
     ],
   },
@@ -374,6 +403,28 @@ export const HELP_SECTIONS = {
             'New sales, a revised file, a promotion change, or a file rolled back. Each one retrains the models.',
           ],
           [
+            "Why doesn't the plan change when I upload October sales?",
+            `It locked on ${INITIAL_LOCK_DAY} and only uses sales up to September. October sales update the ` +
+              'Current forecast instead.',
+          ],
+          [
+            'Why is the 2027 plan different from the Current forecast?',
+            'The plan was fixed using the sales of early November 2026. The Current forecast keeps learning from ' +
+              'every new month. The gap between them shows how far reality has moved from the plan.',
+          ],
+          [
+            'Why did the Initial Yearly Forecast line change after it locked?',
+            'Aire locked a budget, or a new version of it. While Show locked yearly budget is on, the line shows the ' +
+              'budget: the yearly plan plus the building blocks and promotions added on top in the Scenario ' +
+              'builder. Turn the switch off to see the plan itself.',
+          ],
+          [
+            'Where did the Budget line go?',
+            'The locked budget is shown as the Initial Yearly Forecast line itself, renamed Initial Yearly ' +
+              'Forecast (Budget), rather than as a separate line. Show locked yearly budget switches between the budget ' +
+              'and the plan.',
+          ],
+          [
             'Why is Tier 1 Advanced greyed out?',
             "It needs 12 months of sales and a promotion ahead of a type the product has run at least 3 times. The " +
               'greyed-out option says which one is missing.',
@@ -393,8 +444,8 @@ export const HELP_SECTIONS = {
             "Where there's no same month last year, Tier 0 is the average of the last 3 months alone, so it stays flat.",
           ],
           [
-            'Why is there no Previous line?',
-            'Previous needs one month less data than Current, so a product needs two months of sales (and enough ' +
+            'Why is there no Previous forecast line?',
+            'The Previous forecast needs one month less data than the Current forecast, so a product needs two months of sales (and enough ' +
               'history for the chosen model).',
           ],
           [
@@ -415,9 +466,10 @@ export const HELP_SECTIONS = {
           ['Tier 0', 'The simple baseline from last year and the last 3 months; also the model the yearly plan uses.'],
           ['Tier 1 Basic', "A time-series model of each product's trend and seasons."],
           ['Tier 1 Advanced', 'Tier 1 Basic plus the promotion calendar.'],
-          ['Initial', 'The yearly plan, from Tier 0, fixed once it locks.'],
-          ['Previous', 'The same model with one month less sales data.'],
-          ['Current', 'The latest forecast.'],
+          ['Initial', "The yearly plan, from Tier 0, fixed once it locks; shows Aire's locked budget once there is one."],
+          ['Budget', "Next year's plan plus the building blocks and promotions Aire adds on top, locked by Aire; shown as the Initial line while Show locked yearly budget is on."],
+          ['Previous forecast', 'The same model with one month less sales data.'],
+          ['Current forecast', 'The latest forecast.'],
           ['Made with sales up to', 'The last month of sales a forecast learned from.'],
           ['80% range', 'Where actual sales should land about 8 times out of 10.'],
           ['sMAPE', 'Average % error, counting over- and under-forecasts alike.'],

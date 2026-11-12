@@ -1,4 +1,4 @@
--- To run this migration in Cloud SQL, after 018_create_scenario_promotions.sql.
+-- To run this migration in Cloud SQL, after 021_create_scenario_promotions.sql.
 
 -- An anchor version now says which month it applies from, so a change to the
 -- usual discount that is already decided for the future (promotions keyed in

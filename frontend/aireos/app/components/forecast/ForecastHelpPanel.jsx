@@ -8,13 +8,6 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { HELP_DIAGRAMS } from '@/components/forecast/ForecastHelpDiagrams';
 import { HELP_SECTIONS, HELP_SECTION_IDS } from '@/app/utils/forecastHelpText';
 
-// Lines the panel adds from the page's data, by section: never hard-coded
-// facts (forecastHelpText).
-const DATA_LINE_LABELS = {
-  missing: 'Missing in your current view',
-  initial: 'Yearly plans',
-};
-
 /** The page header's "How this works" button, which opens the panel. */
 export function ForecastHelpButton({ onClick }) {
   return (
@@ -56,38 +49,22 @@ function Block({ block }) {
   return Diagram ? <Diagram /> : null;
 }
 
-function DataLines({ label, lines }) {
-  return (
-    <div className="rounded-md border border-lavander bg-cream/40 px-2.5 py-1.5">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/55">{label}</p>
-      {lines.length ? (
-        lines.map((line) => (
-          <p key={line} className="leading-relaxed">
-            {line}
-          </p>
-        ))
-      ) : (
-        <p className="text-deep-violet-blue/60">None</p>
-      )}
-    </div>
-  );
-}
-
 /**
  * "How this forecast works": a side panel beside the chart (not modal, so
  * the chart stays usable), one collapsible section per HELP_SECTIONS entry.
- * `section` (from ?help=) opens that section and scrolls to it. `dataLines`
- * are the page's own facts by section id: { missing: string[], initial:
- * string[] }.
+ * `section` (from ?help=) opens that section and scrolls to it. `extras`
+ * are drawn at the end of a section, by id, for what comes from the data
+ * (e.g. { missing: <ForecastMissingMonths /> }).
  *
  * @param {{
  *   open: boolean,
  *   section: string | null,
  *   onOpenChange: (open: boolean) => void,
- *   dataLines?: Record<string, string[]>,
+ *   requests?: number,
+ *   extras?: Record<string, import('react').ReactNode>,
  * }} props
  */
-export default function ForecastHelpPanel({ open, section, onOpenChange, dataLines = {} }) {
+export default function ForecastHelpPanel({ open, section, onOpenChange, requests = 0, extras = {} }) {
   const sectionRefs = useRef({});
 
   useEffect(() => {
@@ -97,7 +74,8 @@ export default function ForecastHelpPanel({ open, section, onOpenChange, dataLin
       sectionRefs.current[section]?.scrollIntoView({ block: 'start', behavior: 'smooth' });
     });
     return () => cancelAnimationFrame(frame);
-  }, [open, section]);
+  // `requests`: every Learn more scrolls, even to the section already open.
+  }, [open, section, requests]);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
@@ -111,7 +89,8 @@ export default function ForecastHelpPanel({ open, section, onOpenChange, dataLin
             const content = HELP_SECTIONS[id];
             return (
               <section
-                key={`${id}-${section === id}`}
+                // Remounted on each Learn more to it, so it reopens if it was closed.
+                key={section === id ? `${id}-open-${requests}` : id}
                 id={`forecast-help-${id}`}
                 ref={(node) => {
                   sectionRefs.current[id] = node;
@@ -126,9 +105,7 @@ export default function ForecastHelpPanel({ open, section, onOpenChange, dataLin
                     {content.blocks.map((block, blockIndex) => (
                       <Block key={blockIndex} block={block} />
                     ))}
-                    {DATA_LINE_LABELS[id] ? (
-                      <DataLines label={DATA_LINE_LABELS[id]} lines={dataLines[id] ?? []} />
-                    ) : null}
+                    {extras[id] ?? null}
                   </div>
                 </Disclosure>
               </section>

@@ -69,7 +69,7 @@ def test_budget_requests_never_fall_back_to_current_entries(monkeypatch, service
     conn = _legacy_database(monkeypatch, FakeBlocksDatabase())
     for action in [lambda: getattr(service, create)(payload), lambda: getattr(service, update)(1, payload),
                    lambda: getattr(service, delete)(1, "budget"), lambda: getattr(service, listing)("budget")]:
-        with pytest.raises(common.BudgetSetupRequiredError, match="026_budget_planning.sql"):
+        with pytest.raises(common.BudgetSetupRequiredError, match="029_budget_planning.sql"):
             action()
     assert not conn.sql_containing("INSERT")
     assert not conn.sql_containing("UPDATE")
@@ -118,5 +118,5 @@ def test_budget_routes_return_an_actionable_setup_error_and_current_routes_still
     for path in ["/api/scenario/building-blocks?plan=budget", "/api/scenario/promotions?plan=budget", "/api/scenario/budgets?year=2027"]:
         response = client.get(path)
         assert response.status_code == 503
-        assert "026_budget_planning.sql" in response.json()["detail"]
+        assert "029_budget_planning.sql" in response.json()["detail"]
         assert "pg8000" not in response.json()["detail"]

@@ -12,8 +12,8 @@ import {
   HELP_SECTION_IDS,
   helpSection,
   helpText,
-  initialPlanLines,
-  missingMonthsLines,
+  missingMonthsByCustomer,
+  missingMonthsLayout,
   parseHelpSection,
 } from '../app/utils/forecastHelpText.js';
 
@@ -97,32 +97,37 @@ describe('?help= opens the panel at a section', () => {
 
 describe('facts that come from the data', () => {
   test('no section names a specific missing month or lock date', () => {
-    const text = JSON.stringify(HELP_SECTIONS) + JSON.stringify(HELP);
+    // The 2027 plan's early lock (12 Nov 2026) is the one dated fact, kept to
+    // its own paragraph and FAQ (forecastLineText.EARLY_LOCK_NOTES).
+    const text = JSON.stringify(HELP) + JSON.stringify({ ...HELP_SECTIONS, initial: null, faq: null });
     assert.doesNotMatch(text, /NHG January 2026|SingHealth May 2026|12 Nov 2026|31 Dec/);
   });
 
-  test('missing months come from the rows, one line per customer', () => {
-    const rows = [
-      { customer_name: 'nhg', month_year: '2026-01-01', actual_status: 'missing_file' },
-      { customer_name: 'nhg', month_year: '2026-01-01', actual_status: 'missing_file' },
-      { customer_name: 'singhealth', month_year: '2026-05-01', actual_status: 'missing_file' },
-      { customer_name: 'nhg', month_year: '2026-03-01', actual_status: 'missing_file' },
-      { customer_name: 'fairprice', month_year: '2026-05-01', actual_status: 'reported' },
-      { customer_name: 'fairprice', month_year: '2026-11-01', actual_status: 'not_yet' },
+  test('missing months are labelled per customer, customers A-Z and months oldest first', () => {
+    const customers = [
+      { customer_id: 9, customer_name: 'singhealth', months: ['2026-05-01'] },
+      { customer_id: 7, customer_name: 'nhg', months: ['2026-03-01', '2026-01-01'] },
+      { customer_id: 3, customer_name: 'fairprice', months: [] },
     ];
     const label = (name) => ({ nhg: 'NHG', singhealth: 'SingHealth' })[name] ?? name;
 
-    assert.deepEqual(missingMonthsLines(rows, label), ['NHG: Jan 2026, Mar 2026', 'SingHealth: May 2026']);
-    assert.deepEqual(missingMonthsLines([], label), []);
+    assert.deepEqual(missingMonthsByCustomer(customers, label), [
+      { key: '7', name: 'NHG', months: ['Jan 2026', 'Mar 2026'] },
+      { key: '9', name: 'SingHealth', months: ['May 2026'] },
+    ]);
+    assert.deepEqual(missingMonthsByCustomer([], label), []);
   });
 
-  test('each yearly plan reads its own lock time from the status endpoint, newest first', () => {
-    const lines = initialPlanLines([
-      { forecast_year: 2027, lock_at: '2026-10-31T15:59:59Z', locked: false },
-      { forecast_year: 2026, lock_at: '2025-12-31T15:59:59Z', locked: true },
-    ]);
+  test('nothing missing draws no list', () => {
+    assert.equal(missingMonthsLayout([]), 'none');
+  });
 
-    assert.deepEqual(lines, ['2027 plan: updating until 31 Oct 2026', '2026 plan: fixed since 31 Dec 2025']);
-    assert.deepEqual(initialPlanLines([]), []);
+  test('one customer, or several missing one month each, are cards', () => {
+    assert.equal(missingMonthsLayout([{ months: ['Jan 2026', 'Mar 2026'] }]), 'cards');
+    assert.equal(missingMonthsLayout([{ months: ['Jan 2026'] }, { months: ['May 2026'] }]), 'cards');
+  });
+
+  test('several customers with one of them missing several months is a table', () => {
+    assert.equal(missingMonthsLayout([{ months: ['Jan 2026', 'Mar 2026'] }, { months: ['May 2026'] }]), 'table');
   });
 });

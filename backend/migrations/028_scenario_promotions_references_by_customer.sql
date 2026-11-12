@@ -1,6 +1,6 @@
--- To run this migration in Cloud SQL, after 024_scenario_growth_per_customer.sql.
+-- To run this migration in Cloud SQL, after 027_scenario_growth_per_customer.sql.
 
--- A Scenario builder promotion can cover several customers (022), and each
+-- A Scenario builder promotion can cover several customers (025), and each
 -- customer takes its own uplift: the values copied in from Promotion uplift
 -- settings when it was set up are kept per customer, keyed by customer id
 -- (so renaming a customer keeps them):

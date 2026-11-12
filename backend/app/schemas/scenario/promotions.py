@@ -37,7 +37,7 @@ class ReferenceDetail(_Base):
 
 
 class CustomerReferences(_Base):
-    """One customer's values copied in from Promotion Uplift Settings (migration 025)."""
+    """One customer's values copied in from Promotion Uplift Settings (migration 028)."""
 
     reference_uplift_pct: Decimal = Field(**_UPLIFT)
     reference_source: str = Field(min_length=1, max_length=20)
@@ -50,7 +50,7 @@ class CustomerReferences(_Base):
 class ScenarioPromotionBase(_Base):
     plan: Literal["scenario", "budget"] = "scenario"
 
-    # Like building blocks: several customers (migration 022), None (or an
+    # Like building blocks: several customers (migration 025), None (or an
     # empty list) = every customer; each customer x SKU range can be
     # switched off on its own (023).
     customer_names: list[str] | None = Field(default=None, max_length=100)

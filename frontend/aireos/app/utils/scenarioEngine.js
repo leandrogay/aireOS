@@ -57,7 +57,7 @@ const CURRENT_UNITS = 'forecast_current';
 
 /**
  * The customers an item covers, [] meaning every customer: a building
- * block names a list (`customers`, migration 022); a promotion still names
+ * block names a list (`customers`, migration 025); a promotion still names
  * one (`customer`). null when it names none yet (a draft being set up).
  *
  * @param {{ customers?: string[], customer?: string }} item
@@ -86,7 +86,7 @@ function pairKey(customer, skuRange) {
 
 /**
  * Whether a customer x SKU range is switched off on an item (its
- * `excludedPairs`, backend migration 023). The item stays one entry.
+ * `excludedPairs`, backend migration 026). The item stays one entry.
  *
  * @param {{ excludedPairs?: Array<{ customer: string, skuRange: string | null }> }} item
  * @param {string} customer

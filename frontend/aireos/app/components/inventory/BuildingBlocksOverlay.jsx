@@ -18,7 +18,8 @@ function monthsLabel(block) {
  * overlay: building blocks saved in the Scenario builder, added to the
  * Current sell-out forecast with the plan worked out again on it (backend
  * get_sell_in_outlook's block_ids). A what-if only, like the Scenario
- * builder: the plan and its table stay as they are.
+ * builder: the plan and its table stay as they are. Unframed: SellInPlanView
+ * puts it in one card with the Show locked yearly budget switch.
  *
  * @param {{
  *   enabled: boolean,
@@ -52,10 +53,11 @@ export default function BuildingBlocksOverlay({
   }));
 
   return (
-    <div className="rounded-lg border border-lavander bg-white px-3 py-2.5 shadow-sm">
+    <div>
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2">
         <ToggleField
           label="Building blocks overlay"
+          align="center"
           checked={enabled}
           onChange={onEnabledChange}
           offHint="Show building blocks saved in the Scenario builder on the chart."

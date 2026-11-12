@@ -340,7 +340,7 @@ function ScenarioPointDetails({ point, items, anchor, baseLabel = 'Tier 0', form
         </>
       ) : (
         <div className="flex justify-between gap-3">
-          <span>Difference from Current</span>
+          <span>Difference from Current forecast</span>
           <span className="font-semibold text-scenario-ink">
             {signed(delta)}
             {pct}
@@ -419,6 +419,11 @@ export default function ForecastChart({
   // under this one, never inside it. Both pages are volume only (cartons):
   // there is no revenue view.
   toolbar = null,
+  // /forecast only: `legendAction` sits at the top right of the legend card
+  // (the "Show locked yearly budget" switch); `hintOverrides` replace a line pill's
+  // hover by series key (Initial while it shows the budget).
+  legendAction = null,
+  hintOverrides = {},
   summary = null,
   yearTable = null,
   // The Actual line's colour: the picked customer's (utils/customerColors),
@@ -532,9 +537,7 @@ export default function ForecastChart({
     currentMonths,
     previousMonths,
   });
-  lineHints.budget = points.some((point) => point.budget != null)
-    ? 'Latest locked Tier 0 budget. Its units stay frozen when the forecast changes.'
-    : 'No locked budget in this scope yet.';
+  Object.assign(lineHints, hintOverrides);
   const referenceDomain = referenceValues.length ? niceYDomain(referenceValues) : null;
   const scenarioFits =
     referenceDomain && scenarioValues.every((value) => value >= referenceDomain[0] && value <= referenceDomain[1]);
@@ -680,20 +683,29 @@ export default function ForecastChart({
     >
       <div className="min-w-0 space-y-3">
         {toolbar}
-        <div className={cn(glassInsetClass, 'flex flex-wrap items-center justify-between gap-3 px-3 py-2')}>
-          <LineToggle
-            series={allSeries}
-            visible={shownSeries}
-            onToggle={onToggleSeries}
-            hints={lineHints}
-            disabled={{ previous: previousOff, initial: Boolean(initialOffHint), budget: !points.some((point) => point.budget != null) }}
-          />
-          <ForecastPromoToggle
-            selectedTypes={selectedPromoTypes}
-            onToggleType={onTogglePromoType}
-            selectedPacks={selectedPackTypes}
-            onTogglePack={onTogglePackType}
-          />
+        <div className={cn(glassInsetClass, 'flex flex-col-reverse gap-2.5 px-3 py-2.5 sm:flex-row sm:items-stretch sm:gap-4')}>
+          <div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-3">
+            <LineToggle
+              series={allSeries}
+              visible={shownSeries}
+              onToggle={onToggleSeries}
+              hints={lineHints}
+              disabled={{ previous: previousOff, initial: Boolean(initialOffHint) }}
+            />
+            <ForecastPromoToggle
+              selectedTypes={selectedPromoTypes}
+              onToggleType={onTogglePromoType}
+              selectedPacks={selectedPackTypes}
+              onTogglePack={onTogglePackType}
+            />
+          </div>
+          {/* Its own column, centred on the pill rows and set off by a hairline
+              (a rule under it on phones, where it sits above the pills). */}
+          {legendAction ? (
+            <div className="flex shrink-0 items-center border-b border-deep-violet-blue/10 pb-2.5 sm:w-60 sm:border-b-0 sm:border-l sm:pb-0 sm:pl-4">
+              {legendAction}
+            </div>
+          ) : null}
         </div>
 
         {!hasVisibleLine ? (
