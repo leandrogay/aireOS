@@ -9,9 +9,9 @@ import { cn } from '@/lib/utils';
 // Volume in cartons; the card's detail line says so, so the headings don't.
 const COLUMNS = [
   { key: 'year', label: 'Year' },
-  { key: 'actual', label: 'Actual', width: '9rem', align: 'right' },
-  { key: 'forecast', label: 'Forecast', width: '9rem', align: 'right' },
-  { key: 'total', label: 'Total', width: '9rem', align: 'right' },
+  { key: 'actual', label: 'YTD actual', width: '9rem', align: 'right' },
+  { key: 'forecast', label: 'MTG forecast', width: '9rem', align: 'right' },
+  { key: 'total', label: 'Full year', width: '9rem', align: 'right' },
 ];
 
 // The darker header line of the compact report table (Inventory's sell-in
@@ -64,8 +64,8 @@ export default function ForecastYearTotals({ years, loading = false }) {
                 title={String(year.year)}
                 subtitle={mixCaption(year) || undefined}
                 fields={[
-                  { label: 'Actual', value: <span className="tabular-nums">{formatVolume(year.volume.actual)}</span> },
-                  { label: 'Forecast', value: <span className="tabular-nums">{formatVolume(year.volume.forecast)}</span> },
+                  { label: 'YTD', value: <span className="tabular-nums">{formatVolume(year.volume.actual)}</span> },
+                  { label: 'MTG', value: <span className="tabular-nums">{formatVolume(year.volume.forecast)}</span> },
                   { label: 'Total', value: <span className="font-medium tabular-nums">{formatVolume(year.volume.total)}</span> },
                 ]}
               />
