@@ -41,9 +41,7 @@ export default function EstMark({ estimated, total, className }) {
         est.
         <span className="sr-only">: includes estimated revenue</span>
       </TooltipTrigger>
-      {/* The white card of the app's other hover cards, not the tooltip's
-          default dark bubble; *:data-[side]:hidden hides that bubble's arrow
-          (its one child with a data-side), which would stay dark. */}
+      {/* Keep the estimate note as a compact hover card without an arrow. */}
       <TooltipContent
         side="bottom"
         align="end"
