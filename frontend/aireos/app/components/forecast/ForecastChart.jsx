@@ -187,7 +187,7 @@ function ScenarioPointDetails({ point, items, formatValue, hasEntered = false, c
   return (
     <div className={cn('space-y-0.5 text-[11px] tabular-nums', className)}>
       <div className="flex justify-between gap-3">
-        <span>Difference from Current</span>
+        <span>Difference from Current forecast</span>
         <span className="font-semibold text-scenario-ink">
           {signed(delta)}
           {pct}

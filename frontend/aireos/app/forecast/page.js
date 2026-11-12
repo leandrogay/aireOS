@@ -11,10 +11,12 @@ import ForecastFilters from '@/components/forecast/ForecastFilters';
 import ForecastTable from '@/components/forecast/ForecastTable';
 import ForecastYearTotals from '@/components/forecast/ForecastYearTotals';
 import ForecastHelpPanel, { ForecastHelpButton } from '@/components/forecast/ForecastHelpPanel';
+import ForecastMissingMonths from '@/components/forecast/ForecastMissingMonths';
 import ForecastInfo, { ForecastHelpProvider } from '@/components/forecast/ForecastInfo';
-import { initialPlanLines, missingMonthsLines } from '@/app/utils/forecastHelpText';
 import useForecastHelp from '@/hooks/useForecastHelp';
+import useForecastMissingMonths from '@/hooks/useForecastMissingMonths';
 import { customerLabel } from '@/app/utils/retailerLabel';
+import { singaporeToday } from '@/lib/singaporeTime';
 import {
   FORECAST_TIER_OPTIONS,
   NO_DATA_FOR_TIER,
@@ -32,7 +34,6 @@ import {
   ALL_PROMO_TYPE_VALUES,
   ALL_SERIES_VISIBLE,
   buildMonthlyPoints,
-  formatSgtTimestamp,
   toggleSelectedValue,
   toggleSeriesVisibility,
 } from '@/app/utils/forecastView';
@@ -145,7 +146,7 @@ function ForecastView() {
   const initialNotes = initialStatusNotes({
     rangeYears: yearsInRange(startDate, endDate),
     meta: initialMeta,
-    formatStamp: formatSgtTimestamp,
+    today: singaporeToday(),
   });
   // Initial and Previous are per SKU and tier. None of the customer x SKUs
   // in scope has one on this model: its pill is greyed out (its hover says
@@ -189,10 +190,11 @@ function ForecastView() {
     { label: 'Model', value: modelLabel },
   ];
 
-  // The page's own facts for the help panel: never hard-coded there.
-  const helpData = {
-    missing: missingMonthsLines(rows, customerLabel),
-    initial: initialPlanLines(initialMeta),
+  // What the help panel reads from the data, never hard-coded there: every
+  // customer's missing months, read each time the panel opens.
+  const missingMonths = useForecastMissingMonths({ enabled: help.data.open });
+  const helpExtras = {
+    missing: <ForecastMissingMonths data={missingMonths.data} loading={missingMonths.loading} />,
   };
 
   return (
@@ -204,8 +206,9 @@ function ForecastView() {
         <ForecastHelpPanel
           open={help.data.open}
           section={help.data.section}
+          requests={help.data.requests}
           onOpenChange={help.onOpenChange}
-          dataLines={helpData}
+          extras={helpExtras}
         />
         <div className="min-w-0 space-y-3">
           {error && (
