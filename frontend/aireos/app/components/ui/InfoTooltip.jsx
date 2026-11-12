@@ -18,13 +18,18 @@ const triggerClass = 'cursor-pointer rounded-full p-0.5 text-deep-violet-blue/50
  * `variant="card"`: a white popover, which also stays open while the pointer
  * is on it.
  *
+ * The card opens on hover and on click or tap (touch has no hover), and
+ * closes with Escape or a click outside; `footer` (card only) goes under the
+ * text, e.g. a "Learn more" link.
+ *
  * @param {object} props
  * @param {string} props.label read by screen readers; not shown
  * @param {import('react').ReactNode} props.children the hint text, or a small card of it
  * @param {'tooltip' | 'card'} [props.variant]
  * @param {string} [props.className] for the popup, e.g. a wider card
+ * @param {import('react').ReactNode} [props.footer] under the text, card variant only
  */
-export default function InfoTooltip({ label, children, variant = 'tooltip', className }) {
+export default function InfoTooltip({ label, children, variant = 'tooltip', className, footer = null }) {
   const icon = (
     <>
       <Info className="size-3.5" />
@@ -40,6 +45,7 @@ export default function InfoTooltip({ label, children, variant = 'tooltip', clas
         </PopoverTrigger>
         <PopoverContent align="start" className={cn('w-64 text-xs font-normal text-deep-violet-blue/80', className)}>
           {children}
+          {footer}
         </PopoverContent>
       </Popover>
     );

@@ -6,10 +6,12 @@ import { describe, test } from 'node:test';
 
 import {
   actualKind,
+  dataMonthEntries,
+  dataMonthsByMonth,
+  initialVsActual,
   lineCoverage,
   monthNotes,
   monthlyActuals,
-  previousMadeByMonth,
   withActualBridges,
 } from '../app/utils/forecastActuals.js';
 
@@ -242,34 +244,101 @@ describe('line coverage', () => {
   });
 });
 
-describe('when Previous was made', () => {
-  test('each SKU keeps its own Previous time, and the tooltip lists them when they differ', () => {
+describe('what Current and Previous were made with', () => {
+  // FairPrice is on October, NHG on September; Previous is one month less.
+  const months = (customer) =>
+    customer === 'fairprice'
+      ? { current_data_month: '2026-10-01', previous_data_month: '2026-09-01' }
+      : { current_data_month: '2026-09-01', previous_data_month: '2026-08-01' };
+  const forecastRow = (customer, sku, month, extra = {}) =>
+    row(customer, sku, month, 'not_yet', { forecast_previous: 90, ...months(customer), ...extra });
+
+  test('the hover card reads the data month, never previous_generated_at', () => {
     const rows = [
-      row('fairprice', 'L', '2026-09-01', 'not_yet', {
-        forecast_previous: 90,
-        previous_generated_at: '2026-08-02T03:00:00Z',
-      }),
-      row('fairprice', 'XL', '2026-09-01', 'not_yet', {
-        forecast_previous: 40,
-        previous_generated_at: '2026-07-03T03:00:00Z',
-      }),
+      forecastRow('fairprice', 'L', '2026-11-01', { previous_generated_at: '2026-11-12T03:14:59Z' }),
+      forecastRow('fairprice', 'XL', '2026-11-01'),
     ];
+    const point = {
+      month_year: '2026-11-01',
+      current: 200,
+      previous: 180,
+      currentData: dataMonthsByMonth(rows, 'current').get('2026-11-01'),
+      previousData: dataMonthsByMonth(rows, 'previous').get('2026-11-01'),
+    };
 
-    const made = previousMadeByMonth(rows).get('2026-09-01');
-    const notes = monthNotes({ month_year: '2026-09-01', previous: 130, previousMade: made }, format);
-
-    assert.deepEqual(notes, [
-      { label: 'Previous', value: 'Pants L: made 2026-08-02T03:00:00Z' },
-      { label: 'Previous', value: 'Pants XL: made 2026-07-03T03:00:00Z' },
+    assert.deepEqual(monthNotes(point, format), [
+      { label: 'Current forecast', value: 'Made with sales up to Oct 2026' },
+      { label: 'Previous forecast', value: 'Made with sales up to Sep 2026' },
     ]);
   });
 
-  test('the Previous time is left out while the Previous line is off', () => {
-    const made = [{ productName: 'Pants L', customerName: 'fairprice', at: '2026-08-02T03:00:00Z' }];
+  test('mixed customers get a row each', () => {
+    const rows = [forecastRow('fairprice', 'L', '2026-11-01'), forecastRow('nhg', 'L', '2026-11-01')];
+    const point = { month_year: '2026-11-01', previous: 180, previousData: dataMonthsByMonth(rows, 'previous').get('2026-11-01') };
 
-    assert.deepEqual(
-      monthNotes({ month_year: '2026-09-01', previous: 90, previousMade: made }, { ...format, showPrevious: false }),
-      []
-    );
+    assert.deepEqual(monthNotes(point, { ...format, showCurrent: false }), [
+      { label: 'Previous forecast', value: 'FAIRPRICE: sales up to Sep 2026' },
+      { label: 'Previous forecast', value: 'NHG: sales up to Aug 2026' },
+    ]);
+  });
+
+  test('a series with no Previous adds no Previous month', () => {
+    const rows = [
+      forecastRow('fairprice', 'L', '2026-11-01'),
+      forecastRow('fairprice', 'NEW', '2026-11-01', { forecast_previous: null, previous_data_month: null }),
+    ];
+
+    assert.deepEqual(dataMonthEntries(rows, 'previous'), [
+      { productName: 'Pants L', customerName: 'fairprice', month: '2026-09-01' },
+    ]);
+    assert.equal(dataMonthEntries(rows, 'current').length, 2);
+  });
+
+  test('each customer x SKU counts once across its months', () => {
+    const rows = [forecastRow('fairprice', 'L', '2026-11-01'), forecastRow('fairprice', 'L', '2026-12-01')];
+
+    assert.equal(dataMonthEntries(rows, 'previous').length, 1);
+  });
+
+  test('a line\'s month is left out while that line is off', () => {
+    const entries = [{ productName: 'Pants L', customerName: 'fairprice', month: '2026-09-01' }];
+    const point = { month_year: '2026-11-01', current: 9, previous: 9, currentData: entries, previousData: entries };
+
+    assert.deepEqual(monthNotes(point, { ...format, showCurrent: false, showPrevious: false }), []);
+  });
+});
+
+// ---- Initial vs actual ------------------------------------------------------
+
+// A month point as buildMonthlyPoints makes it, `reported` series reporting.
+function point({ actual, initial, kind = 'full', reported = 1, initialSeries = reported }) {
+  return {
+    actual,
+    initial,
+    initialSeries,
+    actualKind: kind,
+    actualCoverage: { reported: Array.from({ length: reported }, (_, i) => ({ key: `1|S${i}` })), missing: [], waiting: [] },
+  };
+}
+
+describe('initial vs actual', () => {
+  test('a fully reported month gives the gap as cartons and a % of the actual', () => {
+    assert.deepEqual(initialVsActual(point({ actual: 200, initial: 216 })), { diff: 16, pct: 8 });
+  });
+
+  test('an actual of 0 gives the gap with no percentage', () => {
+    assert.deepEqual(initialVsActual(point({ actual: 0, initial: 50 })), { diff: 50, pct: null });
+  });
+
+  test('a partial month is not compared', () => {
+    assert.equal(initialVsActual(point({ actual: 200, initial: 216, kind: 'partial' })), null);
+  });
+
+  test('a month where some SKUs have no Initial is not compared', () => {
+    assert.equal(initialVsActual(point({ actual: 200, initial: 216, reported: 3, initialSeries: 2 })), null);
+  });
+
+  test('a month with no Initial is not compared', () => {
+    assert.equal(initialVsActual(point({ actual: 200, initial: null, initialSeries: 0 })), null);
   });
 });

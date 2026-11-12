@@ -6,9 +6,12 @@ import { glassSurfaceClass } from '@/components/ui/surfaceStyles';
 import DatePicker from '@/components/ui/DatePicker';
 import { maxYmd, minYmd } from '@/components/ui/DateRangePicker';
 import SelectDropdown from '@/components/ui/SelectDropdown';
+import ForecastInfo from '@/components/forecast/ForecastInfo';
 import { customerLabel } from '@/app/utils/retailerLabel';
 
 const labelClass = 'mb-0.5 block text-[11px] text-deep-violet-blue/70';
+// A label with its ⓘ beside it (ForecastInfo shows only on /forecast).
+const infoLabelClass = 'mb-0.5 flex items-center gap-0.5 text-[11px] text-deep-violet-blue/70';
 // The typed DatePicker box in the compact white look of the dropdowns beside it.
 const dateBoxClass = 'h-8 border-deep-violet-blue/45 bg-white px-2 text-xs';
 const clearClass =
@@ -19,8 +22,9 @@ const clearClass =
 function SkuField({ value, onChange, options }) {
   return (
     <div>
-      <span className={labelClass} id="forecast-sku-label">
+      <span className={infoLabelClass} id="forecast-sku-label">
         SKU
+        <ForecastInfo helpKey="filterSku" label="About the SKU filter" />
       </span>
       <SelectDropdown
         id="forecast-sku"
@@ -42,8 +46,9 @@ function SkuField({ value, onChange, options }) {
 function CustomerField({ value, onChange, options }) {
   return (
     <div>
-      <span className={labelClass} id="forecast-customer-label">
+      <span className={infoLabelClass} id="forecast-customer-label">
         Sales customer
+        <ForecastInfo helpKey="filterCustomer" label="About the customer filter" />
       </span>
       <SelectDropdown
         id="forecast-customer"
@@ -74,9 +79,10 @@ function DateRangeFields({ startDate, endDate, onStartDateChange, onEndDateChang
   return (
     <div className="grid grid-cols-2 gap-2 [&>*]:min-w-0">
       <div>
-        <label htmlFor="forecast-start-date" className={labelClass}>
-          From
-        </label>
+        <span className={infoLabelClass}>
+          <label htmlFor="forecast-start-date">From</label>
+          <ForecastInfo helpKey="dateRange" label="About the date range" />
+        </span>
         <DatePicker
           id="forecast-start-date"
           variant="input"
@@ -114,8 +120,9 @@ function DateRangeFields({ startDate, endDate, onStartDateChange, onEndDateChang
 function ModelField({ value, onChange, options }) {
   return (
     <div>
-      <span className={labelClass} id="forecast-model-label">
+      <span className={infoLabelClass} id="forecast-model-label">
         Model
+        <ForecastInfo helpKey="model" label="About the models" />
       </span>
       <SelectDropdown
         id="forecast-model"
