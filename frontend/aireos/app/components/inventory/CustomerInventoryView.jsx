@@ -3,6 +3,7 @@
 import { useState } from 'react';
 
 import BarChartSkeleton from '@/components/ui/BarChartSkeleton';
+import { CHART_FRAME_CLASS } from '@/components/ui/ChartFrame';
 import SelectDropdown from '@/components/ui/SelectDropdown';
 import useCustomerInventory from '@/hooks/useCustomerInventory';
 import { currentYearDateRange } from '@/app/utils/dateRange';
@@ -149,7 +150,7 @@ export default function CustomerInventoryView({ customers, skuOptions, refreshKe
               bars={19}
               height={280}
               label="Loading inventory…"
-              className="rounded-xl border border-lavander bg-white pl-1 pr-3 pt-2"
+              className={CHART_FRAME_CLASS}
             />
           )}
         >

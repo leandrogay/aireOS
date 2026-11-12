@@ -7,6 +7,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from '@/components/ui/chart';
+import ChartFrame, { CHART_TOOLTIP_CLASS } from '@/components/ui/ChartFrame';
 
 import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
 import { AXIS_TICK, BAR_ANIMATION, MAX_BAR_SIZE, chartDataRange, metricYAxisProps, yearAxisProps } from '@/app/utils/trendChart';
@@ -42,7 +43,8 @@ export default function SellInTrendChart({ trend }) {
   }
 
   return (
-    <div className="overflow-visible">
+    // In the same frame as its skeleton (CustomerInventoryView), so nothing moves when it arrives.
+    <ChartFrame>
       <ChartContainer config={chartConfig} className="aspect-auto h-[280px] w-full">
         <BarChart accessibilityLayer data={transition.rows} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
           <CartesianGrid vertical={false} />
@@ -66,7 +68,7 @@ export default function SellInTrendChart({ trend }) {
           <ChartTooltip
             content={
               <ChartTooltipContent
-                className="border-violet/40 bg-white"
+                className={CHART_TOOLTIP_CLASS}
                 formatter={labelledTooltipRow(chartConfig, (value) => `${formatUnits(value)} units`)}
               />
             }
@@ -74,6 +76,6 @@ export default function SellInTrendChart({ trend }) {
           <Bar dataKey="sell_in" fill="var(--color-sell_in)" radius={[10, 10, 0, 0]} maxBarSize={MAX_BAR_SIZE} {...BAR_ANIMATION} {...transition.seriesAnimation} />
         </BarChart>
       </ChartContainer>
-    </div>
+    </ChartFrame>
   );
 }

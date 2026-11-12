@@ -3,6 +3,7 @@
 import { useState } from 'react';
 
 import BarChartSkeleton from '@/components/ui/BarChartSkeleton';
+import { CHART_FRAME_CLASS } from '@/components/ui/ChartFrame';
 import LineChartSkeleton from '@/components/ui/LineChartSkeleton';
 import SelectDropdown from '@/components/ui/SelectDropdown';
 import useSavedBuildingBlocks from '@/hooks/useSavedBuildingBlocks';
@@ -219,7 +220,7 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
                 legend
                 legendItems={4}
                 label="Loading inventory…"
-                className="rounded-xl border border-lavander bg-white pl-1 pr-3 pt-2"
+                className={CHART_FRAME_CLASS}
               />
             )}
           >

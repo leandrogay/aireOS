@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { CartesianGrid, ComposedChart, Dot, Line, ReferenceArea, ReferenceLine, XAxis, YAxis } from 'recharts';
 
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
+import ChartFrame, { CHART_TOOLTIP_CLASS } from '@/components/ui/ChartFrame';
 import ChartZoomButton from '@/components/ui/ChartZoomButton';
 import LineToggle from '@/components/ui/LineToggle';
 import useChartZoom from '@/hooks/useChartZoom';
@@ -253,11 +254,10 @@ export default function SellInOutlookChart({
         }
       />
 
-      <div className="relative overflow-visible rounded-xl border border-lavander bg-white pl-1 pr-3 pt-2">
-        {/* Top right, in the space the chart's top margin leaves, its right
-            edge in line with the end of the plot (the chart's right margin
-            plus the card's padding). */}
-        <div className="absolute right-5 top-2 z-10">
+      {/* The toolbar row (32px) plus the 328px chart make the 360px its
+          skeleton (SellInPlanView) reserves. */}
+      <ChartFrame
+        toolbar={(
           <ChartZoomButton
             picking={zoom.picking}
             zoomed={zoom.zoomed}
@@ -266,15 +266,16 @@ export default function SellInOutlookChart({
             onReset={zoom.reset}
             align="end"
           />
-        </div>
+        )}
+      >
         <ChartContainer
           config={CHART_CONFIG}
-          className={cn('aspect-auto h-[360px] w-full', zoom.picking && 'cursor-crosshair select-none')}
+          className={cn('aspect-auto h-[328px] w-full', zoom.picking && 'cursor-crosshair select-none')}
         >
           <ComposedChart
             accessibilityLayer
             data={transition.rows}
-            margin={{ top: 40, right: 8, left: 0, bottom: 8 }}
+            margin={{ top: 8, right: 8, left: 0, bottom: 8 }}
             {...zoom.chartHandlers}
           >
             <CartesianGrid vertical={false} />
@@ -298,7 +299,7 @@ export default function SellInOutlookChart({
             <ChartTooltip
               wrapperStyle={{ zIndex: 10 }}
               itemSorter={(item) => tooltipOrder.indexOf(item.dataKey)}
-              content={<ChartTooltipContent className="border-violet/40 bg-white" formatter={formatTooltipRow} />}
+              content={<ChartTooltipContent className={CHART_TOOLTIP_CLASS} formatter={formatTooltipRow} />}
             />
             {singleMonth ? (
               <ReferenceLine x={mobile ? rows[zoom.start].month : rows[zoom.start].label} stroke="var(--aire-violet)" strokeWidth={1.5} strokeDasharray="4 3" />
@@ -328,7 +329,7 @@ export default function SellInOutlookChart({
             ))}
           </ComposedChart>
         </ChartContainer>
-      </div>
+      </ChartFrame>
       {fallback ? (
         <p className="text-[11px] text-deep-violet-blue/60">
           {fallback}: no current forecast yet, so the plan uses the Initial Yearly Sell-out Forecast for{' '}

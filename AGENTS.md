@@ -113,6 +113,11 @@ calendar, skeleton) plus the team kits:
   Month filter on Inventory and Forecast); hooks `useExpandedRows`, `useConfirmAction` + `ConfirmDialog`.
   Rows animate as the data changes (`ui/rowMotion.js`, timing `TABLE_ROWS` in `config/transitions.js`): list a
   TableGrid's rows as `TableRow`/`ExpandableRow` and phone cards in `RecordCardList`, or they just snap.
+- **Charts:** `ChartCard` (glass shell, optional `title`/`detail`/`actions` header via `TableCardHeader`) around a
+  `ChartFrame` (the solid chart panel, with an optional `toolbar` row for plot controls such as zoom; it turns
+  `ChartContainer`'s own panel off); `CHART_FRAME_CLASS` goes on the chart's skeleton, `CHART_TOOLTIP_CLASS`
+  on `ChartTooltipContent`. Inventory uses them; the Dashboard and `ForecastChart` are listed as not migrated in
+  `app/testing`'s Charts gallery.
 - **Filters:** `FilterBar` holding `FilterSelect` / `MultiSelectDropdown` / `PriceRangeFilter`
   (closed look from `filterControl.js`).
 - **Loading:** `PageSkeleton` + `CardSkeleton`, `ChartSkeletonFrame` → `BarChartSkeleton` /

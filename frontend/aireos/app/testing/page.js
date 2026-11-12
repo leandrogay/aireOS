@@ -1,6 +1,7 @@
 import PageLayout from '@/components/layout/PageLayout';
 
 import ButtonGallery from './ButtonGallery';
+import ChartGallery from './ChartGallery';
 import DatePickerGallery from './DatePickerGallery';
 import DropdownGallery from './DropdownGallery';
 import { Category } from './GalleryParts';
@@ -11,8 +12,8 @@ import ToggleGallery from './ToggleGallery';
 // (components/ui/button), dropdowns (Dropdown, SelectDropdown,
 // MultiSelectDropdown, MonthDropdown), date pickers (DatePicker,
 // RangeDatePicker on ui/calendar), toggles (SegmentedControl,
-// ToggleButton, ToggleField) and tables (DataTable, TableGrid, TableCard and
-// the row parts). A kit opens and closes (closed to start with,
+// ToggleButton, ToggleField), tables (DataTable, TableGrid, TableCard and
+// the row parts) and charts (ChartCard, ChartFrame). A kit opens and closes (closed to start with,
 // so only the names show); everything inside it is open. Every kit has the
 // same blocks: "Which to use", its components, then "Not migrated yet" (the
 // pages still on the old version, with the old and new side by side). See
@@ -36,6 +37,9 @@ export default function TestingPage() {
       </Category>
       <Category title="Tables" note="PaginatedDataTable, DataTable, TableGrid, TableCard, row parts">
         <TableGallery />
+      </Category>
+      <Category title="Charts" note="ChartCard, ChartFrame, chart skeletons and tooltip">
+        <ChartGallery />
       </Category>
     </PageLayout>
   );

@@ -1,9 +1,11 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { glassSurfaceClass } from '@/components/ui/surfaceStyles';
+import { Card, CardContent } from '@/components/ui/card';
+import ChartCard from '@/components/ui/ChartCard';
+import { CHART_FRAME_CLASS } from '@/components/ui/ChartFrame';
 import ChartLoading from '@/components/ui/ChartLoading';
+import { glassSurfaceClass } from '@/components/ui/surfaceStyles';
 import { formatMonth } from '@/app/utils/inventoryForm';
 import useDelayedLoading from '@/hooks/useDelayedLoading';
 
@@ -92,35 +94,28 @@ export function InventoryFilterCard({ canClear, onClear, stats, note, children }
 }
 
 /**
- * Content card under the filters: serif title and optional scope tags, matching
- * the "Monthly forecast" card.
+ * Chart card under the filters (ui/ChartCard): serif title and optional scope
+ * tags saying which customer, SKUs and months the chart shows.
  *
  * @param {object} props
  * @param {string} props.title
  * @param {Array<{ label: string, value: string }>} [props.tags]
- * @param {string} [props.description]
  * @param {import('react').ReactNode} props.children
  */
-export function InventorySection({ title, tags, description, children }) {
+export function InventorySection({ title, tags, children }) {
   return (
-    <Card className={`${glassSurfaceClass} overflow-visible text-deep-violet-blue`}>
-      <CardHeader className="pb-1">
-        <div className="min-w-0 space-y-1.5">
-          <CardTitle className="font-serif text-base font-normal text-deep-violet-blue group-data-[size=sm]/card:text-base">
-            {title}
-          </CardTitle>
-          {tags?.length ? (
-            <div className="flex flex-wrap gap-1.5">
-              {tags.map((tag) => (
-                <ScopeTag key={tag.label} label={tag.label} value={tag.value} />
-              ))}
-            </div>
-          ) : null}
-          {description ? <p className="text-[11px] text-deep-violet-blue/60">{description}</p> : null}
+    <ChartCard
+      title={title}
+      detail={tags?.length ? (
+        <div className="mt-1 flex flex-wrap gap-1.5">
+          {tags.map((tag) => (
+            <ScopeTag key={tag.label} label={tag.label} value={tag.value} />
+          ))}
         </div>
-      </CardHeader>
-      <CardContent>{children}</CardContent>
-    </Card>
+      ) : null}
+    >
+      {children}
+    </ChartCard>
   );
 }
 
@@ -147,7 +142,7 @@ export function InventoryChartSlot({ loading, ready, placeholder, children }) {
     return (
       <div className={firstLoad.placeholderClass}>
         {placeholder ?? (
-          <ChartLoading label="Loading inventory…" className="h-[290px] rounded-xl border border-lavander bg-white" />
+          <ChartLoading label="Loading inventory…" className={`${CHART_FRAME_CLASS} h-[290px]`} />
         )}
       </div>
     );
