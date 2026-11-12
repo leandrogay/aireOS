@@ -6,6 +6,8 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { primaryButtonClass, secondaryButtonClass } from '@/components/ui/formStyles';
 import MultiSelectDropdown from '@/components/ui/MultiSelectDropdown';
+import SelectDropdown from '@/components/ui/SelectDropdown';
+import ScenarioDateFields from '@/components/scenario/ScenarioDateFields';
 import SkuRangePicker from '@/components/scenario/SkuRangePicker';
 import UpliftField from '@/components/scenario/UpliftField';
 import { formatMonthLabel } from '@/app/utils/forecastView';
@@ -20,8 +22,6 @@ import {
 } from '@/app/utils/scenarioBlocks';
 import { monthSpanLabel } from '@/app/utils/scenarioPitch';
 
-const fieldClass =
-  'h-8 w-full rounded-md border border-violet bg-white px-2 text-xs text-deep-violet-blue disabled:opacity-50';
 const labelClass = 'mb-0.5 block text-[11px] text-deep-violet-blue/70';
 const errorClass = 'mt-0.5 text-[11px] text-red-700';
 
@@ -120,28 +120,29 @@ export default function BlockEditor({
 
       <div>
         <label className={labelClass} htmlFor="block-name">Building block</label>
-        <input
+        <SelectDropdown
           id="block-name"
-          list="block-name-suggestions"
-          autoComplete="off"
+          ariaLabel="Building block"
           value={block.name}
           placeholder="Name it, or pick a common one"
-          onChange={(event) => onChange({ name: event.target.value })}
-          onFocus={(event) => event.target.select()}
-          className={fieldClass}
+          onChange={(name) => onChange({ name })}
+          options={[...new Set([block.name, ...BLOCK_NAME_SUGGESTIONS].filter(Boolean))]
+            .map((name) => ({ value: name, label: name }))}
+          searchable
+          searchPlaceholder="Find or enter a building block…"
+          invalid={Boolean(errors.name)}
+          action={{
+            label: (query) => query ? `Use “${query}”` : 'Enter a building block name above',
+            onSelect: (name) => { if (name) onChange({ name }); },
+          }}
         />
-        <datalist id="block-name-suggestions">
-          {BLOCK_NAME_SUGGESTIONS.map((name) => (
-            <option key={name} value={name} />
-          ))}
-        </datalist>
         <FieldError message={errors.name} />
       </div>
 
       <div className="grid grid-cols-2 gap-2">
         {/* Any number of customers, or none for every customer (migration 022),
             like the SKU ranges beside it. */}
-        <div>
+        <div className="min-w-0">
           <span id="block-customers-label" className={labelClass}>Customers</span>
           <MultiSelectDropdown
             ariaLabel="Customers"
@@ -152,7 +153,7 @@ export default function BlockEditor({
             noneMeansAll
             placeholder="All customers"
             look="field"
-            searchable={customerOptions.length > 8}
+            searchable
             searchPlaceholder="Search customers…"
             invalid={Boolean(errors.customer)}
             className="w-full"
@@ -180,38 +181,19 @@ export default function BlockEditor({
       />
 
       <div>
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <label className={labelClass} htmlFor="block-start">From</label>
-            <select
-              id="block-start"
-              value={block.startMonth}
-              onChange={(event) => onChange({ startMonth: event.target.value })}
-              className={fieldClass}
-            >
-              {monthOptions.map(({ month, past, locked }) => (
-                <option key={month} value={month} disabled={locked}>
-                  {formatMonthLabel(month)}{past ? ' (milestone)' : locked ? ' (off the chart)' : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className={labelClass} htmlFor="block-end">Until</label>
-            <select
-              id="block-end"
-              value={block.endMonth}
-              onChange={(event) => onChange({ endMonth: event.target.value })}
-              className={fieldClass}
-            >
-              {monthOptions.map(({ month, past, locked }) => (
-                <option key={month} value={month} disabled={locked}>
-                  {formatMonthLabel(month)}{past ? ' (milestone)' : locked ? ' (off the chart)' : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
+        <ScenarioDateFields
+          id="block"
+          start={block.startMonth}
+          end={block.endMonth}
+          onStartChange={(startMonth) => onChange({ startMonth })}
+          onEndChange={(endMonth) => onChange({ endMonth })}
+          options={monthOptions.map(({ month, past, locked }) => ({
+            value: month,
+            label: `${formatMonthLabel(month)}${past ? ' (milestone)' : locked ? ' (off the chart)' : ''}`,
+            disabled: locked,
+          }))}
+          invalid={Boolean(errors.months)}
+        />
         <FieldError message={errors.months} />
         <p className="mt-1 text-[11px] text-deep-violet-blue/50">
           In months with actual sales a block is a milestone: it marks an event behind the actuals and never moves a line.

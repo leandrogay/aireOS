@@ -8,6 +8,7 @@ import ChartZoomButton from '@/components/ui/ChartZoomButton';
 import LineToggle from '@/components/ui/LineToggle';
 import useChartZoom from '@/hooks/useChartZoom';
 
+import { BUDGET_COLORS, BUDGET_SERIES } from '@/app/utils/budgetPlanning';
 import { FORECAST_SERIES } from '@/app/utils/forecastView';
 import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
 import { dotRevealDelay, lineSweepTimings } from '@/app/utils/lineAnimation';
@@ -48,6 +49,8 @@ const SELL_OUT_CURRENT_COLOR = '#00AEC2';
 // `dot`: the line has a dot per month (the actual lines), so its sample does too.
 // `shape: 'line'` makes LineToggle show that line sample on its pill.
 const SERIES = [
+  { key: 'sell_in_budget', group: 'Sell-in', label: 'Sell-in Budget', color: BUDGET_COLORS.sellIn, dash: BUDGET_SERIES.dash },
+  { key: 'sell_out_budget', group: 'Sell-out', label: 'Sell-out Budget', color: BUDGET_SERIES.color, dash: '3 3' },
   { key: 'sell_in_actual', group: 'Sell-in', label: 'Sell-in (actual)', color: '#D81B1B', dot: true },
   { key: 'sell_in_recommended', group: 'Sell-in', label: 'Sell-in Forecast (Current)', color: SELL_IN_CURRENT_COLOR, dash: DASH.current },
   {
@@ -95,6 +98,8 @@ const ALL_VISIBLE = Object.fromEntries(SERIES.map((series) => [series.key, true]
 // sell-out forecast where none was saved, so both Previous lines are empty
 // only when neither exists.
 const NO_DATA_HINT = {
+  sell_in_budget: 'No locked budget plan in this scope yet.',
+  sell_out_budget: 'No locked budget in this scope yet.',
   sell_in_previous: 'No previous forecast yet.',
   sell_out_previous: 'No previous forecast yet.',
 };

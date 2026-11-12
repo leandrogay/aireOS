@@ -5,6 +5,8 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+
+pytestmark = pytest.mark.usefixtures("migrated_budget_schema")
 from conftest import FakeConnection, FakeEngine
 
 from app.services.scenario import common
@@ -228,6 +230,26 @@ def test_a_promotion_for_several_customers_keeps_each_ones_values_by_id(monkeypa
     assert saved["customer_names"] == ["fairprice", "nhg"]
     assert saved["references_by_customer"]["nhg"]["reference_uplift_pct"] == 9.0
     assert saved["excluded_pairs"] == [{"customer_name": "nhg", "sku_range": None}]
+
+
+def test_copied_derivations_survive_saving_and_loading_without_changing_units(monkeypatch):
+    db = FakePromotionsDatabase()
+    conn = _install(monkeypatch, db)
+    detail = {"product_name": "Comfort Pants M", "sku_range": "Pants", "uplift_pct": 6.0,
+              "level": "placeholder", "lines": ["Anchor: 15% off.", "(30% - 15%) / 5 x 2 = +6%."]}
+    references = {"fairprice": {"reference_uplift_pct": Decimal("4"), "reference_source": "placeholder",
+                               "reference_by_sku": {"Comfort Pants M": Decimal("6")},
+                               "voucher_uplift_pct": Decimal("3"), "voucher_by_sku": {},
+                               "reference_details": [detail]}}
+
+    saved = promotions_service.create_scenario_promotion(_promotion(references_by_customer=references))
+    loaded = promotions_service.list_scenario_promotions()[0]
+
+    (_, params), = conn.sql_containing("INSERT INTO scenario_promotions")
+    assert json.loads(params["references_by_customer"])["1"]["reference_details"] == [detail]
+    assert saved["references_by_customer"]["fairprice"]["reference_details"] == [detail]
+    assert loaded["references_by_customer"]["fairprice"]["reference_by_sku"] == {"Comfort Pants M": 6.0}
+    assert loaded["references_by_customer"]["fairprice"]["reference_details"] == [detail]
 
 
 def test_a_promotion_for_every_customer_is_stored_as_null(monkeypatch):

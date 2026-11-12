@@ -19,8 +19,8 @@ const BASE_PATH = '/api/scenario/building-blocks';
  *
  * @returns {Promise<Array<{ block_id: number, kind: 'block' | 'growth', customer_name: string, sku: string | null, product_name: string | null, name: string, explanation: string | null, uplift_mode: 'pct' | 'units', uplift_value: number, start_month: string, end_month: string, is_active: boolean, created_at: string, updated_at: string }>>}
  */
-export async function getScenarioBuildingBlocks() {
-  return request(BASE_PATH);
+export async function getScenarioBuildingBlocks(plan = 'scenario') {
+  return request(`${BASE_PATH}?${new URLSearchParams({ plan })}`);
 }
 
 /**
@@ -52,6 +52,6 @@ export async function updateScenarioBuildingBlock(blockId, payload) {
  * @param {number} blockId
  * @returns {Promise<{ deleted: true }>}
  */
-export async function deleteScenarioBuildingBlock(blockId) {
-  return request(`${BASE_PATH}/${encodeURIComponent(blockId)}`, { method: 'DELETE' });
+export async function deleteScenarioBuildingBlock(blockId, plan = 'scenario') {
+  return request(`${BASE_PATH}/${encodeURIComponent(blockId)}?${new URLSearchParams({ plan })}`, { method: 'DELETE' });
 }

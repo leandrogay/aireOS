@@ -59,3 +59,18 @@ def test_customers_are_stored_in_order_once_and_none_means_every_customer():
         "nhg",
     ]
     assert ScenarioPromotionCreate(**_promotion(customer_names=[])).customer_names is None
+
+
+def test_copied_calculation_details_are_validated_and_kept_per_customer():
+    detail = {"product_name": "Pants M", "sku_range": "Comfort Pants", "uplift_pct": 4,
+              "level": "placeholder", "lines": ["Anchor: 20% off.", "(30% - 20%) / 5 x 2 = +4%."]}
+    references = {"fairprice": {"reference_uplift_pct": 4, "reference_source": "placeholder",
+                               "reference_details": [detail]}}
+
+    result = ScenarioPromotionCreate(**_promotion(references_by_customer=references)).model_dump()
+
+    assert result["references_by_customer"]["fairprice"]["reference_details"] == [detail]
+    with pytest.raises(ValidationError):
+        ScenarioPromotionCreate(**_promotion(references_by_customer={"fairprice": {
+            **references["fairprice"], "reference_details": [{**detail, "uplift_pct": float("inf")}],
+        }}))

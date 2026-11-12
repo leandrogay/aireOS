@@ -28,11 +28,30 @@ export const COMPOSITION_KEYS = [
   'promotionsLayer',
   'carriedDownLayer',
   'officialDownLayer',
-  'decreaseLayer',
+  'growthDownLayer',
+  'blocksDownLayer',
+  'promotionsDownLayer',
 ];
 
 // The bands drawn above the line: what takes units away.
-const DOWN_KEYS = ['carriedDownLayer', 'officialDownLayer', 'decreaseLayer'];
+const DOWN_KEYS = ['carriedDownLayer', 'officialDownLayer', 'growthDownLayer', 'blocksDownLayer', 'promotionsDownLayer'];
+
+const PART_LAYERS = {
+  baseline: ['baselineLayer'], carried: ['carriedLayer', 'carriedDownLayer'],
+  official: ['officialLayer', 'officialDownLayer'], growth: ['growthLayer', 'growthDownLayer'],
+  blocks: ['blocksLayer', 'blocksDownLayer'], promotions: ['promotionsLayer', 'promotionsDownLayer'],
+};
+
+/** Keep stack geometry intact while identifying a sidebar part's positive and negative bands. */
+export function isSpotlightLayer(key, spotlight) {
+  return !spotlight || Boolean(PART_LAYERS[spotlight]?.includes(key));
+}
+
+/** Spotlight changes paint only; all bands stay mounted at their original stack positions. */
+export function compositionOpacity(layer, spotlight) {
+  if (!spotlight) return layer.hatch ? 1 : (layer.opacity ?? 0.3);
+  return isSpotlightLayer(layer.key, spotlight) ? (layer.hatch ? 1 : 0.7) : 0.025;
+}
 
 // A band's number shows only when it is at least this tall on screen, so
 // labels never overlap or spill out of a thin band.
@@ -90,6 +109,7 @@ export function withComposition(point, items, split = null) {
   let officialAdded = 0;
   let promotionsAdded = 0;
   const up = { growthLayer: 0, blocksLayer: 0, promotionsLayer: 0 };
+  const down = { growthDownLayer: 0, blocksDownLayer: 0, promotionsDownLayer: 0 };
   let decrease = 0;
   for (const item of items) {
     if (!(item.source in net)) continue;
@@ -103,6 +123,7 @@ export function withComposition(point, items, split = null) {
       up[`${item.source}Layer`] += added;
     } else {
       decrease -= added;
+      down[`${item.source}DownLayer`] -= added;
     }
   }
 
@@ -114,6 +135,7 @@ export function withComposition(point, items, split = null) {
     carriedDownLayer: Math.max(0, -carried),
     officialDownLayer: Math.max(0, -officialAdded),
     decreaseLayer: decrease,
+    ...down,
   };
   const simulated = point.simulated ?? tier0;
   const added = layers.carriedLayer + layers.officialLayer + up.growthLayer + up.blocksLayer + up.promotionsLayer;

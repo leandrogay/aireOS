@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.routers.scenario import building_blocks, promotions, tier0_breakdown
+from app.routers.scenario import budgets, building_blocks, promotions, tier0_breakdown
 
 
 # Scenario builder items are under /api/scenario, one sub-router per kind
@@ -12,3 +12,4 @@ router = APIRouter(prefix="/api/scenario")
 router.include_router(building_blocks.router)
 router.include_router(promotions.router)
 router.include_router(tier0_breakdown.router)
+router.include_router(budgets.router)

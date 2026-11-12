@@ -118,6 +118,7 @@ function GrowthRow({ label, block, impact, onEdit, onSave, onRemove, inputId }) 
  * All customers picked it only lists them.
  *
  * @param {{
+ *   plan?: 'scenario' | 'budget',
  *   blocks: object[],
  *   customer: string,
  *   years: string[],
@@ -127,7 +128,7 @@ function GrowthRow({ label, block, impact, onEdit, onSave, onRemove, inputId }) 
  *   onRemove: (block: object) => Promise<void>,
  * }} props blocks = growth blocks only
  */
-export default function GrowthControl({ blocks, customer, years, impacts, onChange, onSave, onRemove }) {
+export default function GrowthControl({ plan = 'scenario', blocks, customer, years, impacts, onChange, onSave, onRemove }) {
   // A value typed for a year with no growth yet starts a draft; clearing a
   // draft drops it (0% is no growth, and the backend never stores 0).
   function edit(year, value) {
@@ -184,9 +185,9 @@ export default function GrowthControl({ blocks, customer, years, impacts, onChan
           );
         })}
         <p className="text-[11px] leading-snug text-deep-violet-blue/60">
-          Grows Tier 0 for every SKU of {customerLabel(customer)}, January to December. Tier 0 is half last year and
-          half the recent 3-month average, so if sales have been rising lately some of that is in it already and the
-          result may run a little high.
+          Grows {plan === 'budget' ? 'the Initial Yearly Forecast' : 'Tier 0'} for every SKU of {customerLabel(customer)},
+          {' '}January to December. This base blends last year with the recent 3-month average at its data cut-off,
+          so a recent rise in sales may already be reflected. This percentage is an additional adjustment.
         </p>
       </>
     );

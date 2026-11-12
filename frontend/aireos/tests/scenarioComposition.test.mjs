@@ -1,19 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { bandLabels, breakdownTotals, compactUnits, totalLabel, withComposition } from '../app/utils/scenarioComposition.js';
+import { bandLabels, breakdownTotals, compactUnits, compositionOpacity, COMPOSITION_KEYS, isSpotlightLayer, totalLabel, withComposition } from '../app/utils/scenarioComposition.js';
 
-const ALL = {
-  baselineLayer: true,
-  carriedLayer: true,
-  officialLayer: true,
-  growthLayer: true,
-  blocksLayer: true,
-  promotionsLayer: true,
-  carriedDownLayer: true,
-  officialDownLayer: true,
-  decreaseLayer: true,
-};
+const ALL = Object.fromEntries(COMPOSITION_KEYS.map((key) => [key, true]));
 
 function point(current, simulated) {
   return { month_year: '2027-06-01', current, simulated };
@@ -182,4 +172,30 @@ test('tiny labels are compact', () => {
   assert.equal(compactUnits(12400), '12.4k');
   assert.equal(compactUnits(20000), '20k');
   assert.equal(compactUnits(1250000), '1.3M');
+});
+
+test('each adjustment keeps its own negative band so a spotlight cannot include another source', () => {
+  const result = withComposition(point(100, 65), [
+    { source: 'growth', deltaUnits: -5 }, { source: 'blocks', deltaUnits: -10 }, { source: 'promotions', deltaUnits: -20 },
+  ]);
+  assert.equal(result.growthDownLayer, 5);
+  assert.equal(result.blocksDownLayer, 10);
+  assert.equal(result.promotionsDownLayer, 20);
+  assert.equal(result.decreaseLayer, 35);
+  assert.equal(COMPOSITION_KEYS.reduce((sum, key) => sum + (result[key] ?? 0), 0), 100);
+  assert.deepEqual(COMPOSITION_KEYS.filter((key) => isSpotlightLayer(key, 'blocks')), ['blocksLayer', 'blocksDownLayer']);
+  assert.deepEqual(COMPOSITION_KEYS.filter((key) => isSpotlightLayer(key, 'carried')), ['carriedLayer', 'carriedDownLayer']);
+});
+
+test('spotlighting only changes opacity and keeps a selected band at its original height', () => {
+  const result = withComposition(point(100, 135), [{ source: 'growth', deltaUnits: 10 }, { source: 'blocks', deltaUnits: 25 }]);
+  const before = JSON.stringify(result);
+  const labels = bandLabels(result, ALL);
+  const focused = labels.filter((band) => isSpotlightLayer(band.key, 'blocks'));
+  assert.deepEqual(focused, [{ key: 'blocksLayer', low: 110, high: 135, text: '+25' }]);
+  assert.equal(compositionOpacity({ key: 'blocksLayer', opacity: 0.4 }, 'blocks'), 0.7);
+  assert.equal(compositionOpacity({ key: 'growthLayer', opacity: 0.35 }, 'blocks'), 0.025);
+  assert.equal(compositionOpacity({ key: 'blocksDownLayer', hatch: true }, 'blocks'), 1);
+  assert.equal(compositionOpacity({ key: 'blocksLayer', opacity: 0.4 }, null), 0.4);
+  assert.equal(JSON.stringify(result), before);
 });

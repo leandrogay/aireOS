@@ -41,7 +41,7 @@ import {
   promoPeriodDividerXs,
   promosOverlappingMonth,
 } from '@/app/utils/forecastView';
-import { PART_COLORS, bandLabels, MIN_LABEL_PX, MIN_LABEL_SLOT_PX, totalLabel } from '@/app/utils/scenarioComposition';
+import { PART_COLORS, bandLabels, compositionOpacity, isSpotlightLayer, MIN_LABEL_PX, MIN_LABEL_SLOT_PX, totalLabel } from '@/app/utils/scenarioComposition';
 import { withActualBridges } from '@/app/utils/forecastActuals';
 import { CURRENT_DOT_FILL, INITIAL_MISSING_HINT, forecastLineHints } from '@/app/utils/forecastLineText';
 import { dotRevealDelay, lineSweepTimings } from '@/app/utils/lineAnimation';
@@ -257,7 +257,7 @@ function MilestoneDetails({ milestones, formatValue, className }) {
 // figure inside it when there is room (MIN_LABEL_PX tall, months
 // MIN_LABEL_SLOT_PX apart), and the Simulated total on top. Drawn inside the
 // chart's SVG with its scales, like dashboard/MonthAxis.
-function CompositionLabels({ rows, visible }) {
+function CompositionLabels({ rows, visible, spotlight }) {
   const xScale = useXAxisScale();
   const yScale = useYAxisScale();
   if (!xScale || !yScale) return null;
@@ -269,6 +269,7 @@ function CompositionLabels({ rows, visible }) {
       {points.flatMap((point) => {
         const x = xScale(point.x);
         const bands = bandLabels(point, visible)
+          .filter((band) => isSpotlightLayer(band.key, spotlight))
           .map((band) => ({ ...band, top: yScale(band.high), bottom: yScale(band.low) }))
           .filter((band) => band.bottom - band.top >= MIN_LABEL_PX)
           .map((band) => (
@@ -283,7 +284,7 @@ function CompositionLabels({ rows, visible }) {
               {band.text}
             </text>
           ));
-        const total = totalLabel(point, visible);
+        const total = spotlight ? null : totalLabel(point, visible);
         if (!total) return bands;
         return [
           ...bands,
@@ -309,7 +310,7 @@ function CompositionLabels({ rows, visible }) {
 // in effect when one customer and SKU range is in view, and every
 // switched-on building block and planned promotion in it, even one that
 // adds 0%.
-function ScenarioPointDetails({ point, items, anchor, formatValue, className }) {
+function ScenarioPointDetails({ point, items, anchor, baseLabel = 'Tier 0', formatValue, className }) {
   if (point?.simulated == null || point.current == null) return null;
   const delta = point.simulated - point.current;
   if (!delta && !items.length) return null;
@@ -323,7 +324,7 @@ function ScenarioPointDetails({ point, items, anchor, formatValue, className }) 
         <>
           {SCENARIO_BREAKDOWN_ROWS.filter((row) => !row.onlyWhenSet || Math.round(breakdown[row.key] ?? 0)).map((row) => (
             <div key={row.key} className="flex justify-between gap-3">
-              <span>{row.label}</span>
+              <span>{row.key === 'tier0' ? baseLabel : row.label}</span>
               <span className={row.key === 'tier0' ? 'font-semibold' : 'font-semibold text-scenario-ink'}>
                 {row.key === 'tier0' ? formatValue(breakdown.tier0) : signed(breakdown[row.key])}
               </span>
@@ -407,6 +408,8 @@ export default function ForecastChart({
   emptyMessage = 'No forecast data matches these filters.',
   loading = false,
   scenario = null,
+  baseSeries = FORECAST_SERIES,
+  extraSeries = [],
   // Scenario builder only (all default off): `toolbar` renders under the
   // card header, `summary` right under the chart, `yearTable` under that.
   // /forecast shows its year totals and monthly table as cards of their own
@@ -430,13 +433,8 @@ export default function ForecastChart({
   // bands, seasonal average) through `scenario`; /forecast passes nothing,
   // so it draws exactly the committed lines. All values arrive precomputed
   // (app/utils/scenarioEngine.js); this component only draws them.
-  const allSeries = scenario ? [...FORECAST_SERIES, ...scenario.series] : FORECAST_SERIES;
-  const config = scenario
-    ? {
-        ...chartConfig,
-        ...Object.fromEntries(scenario.series.map((series) => [series.key, { label: series.label, color: series.color }])),
-      }
-    : chartConfig;
+  const allSeries = [...baseSeries, ...extraSeries, ...(scenario?.series ?? [])];
+  const config = { ...chartConfig, ...Object.fromEntries(allSeries.map((series) => [series.key, { label: series.label, color: series.color }])) };
   // A line the selected model has for none of the SKUs in scope: its pill
   // is greyed out (its hover says why) and the line and table column stay off.
   const previousOff = previousMissing ?? !points.some((point) => point.previous != null);
@@ -521,6 +519,9 @@ export default function ForecastChart({
     initialMissing: initialOffHint,
     previousMissing: previousOff,
   });
+  lineHints.budget = points.some((point) => point.budget != null)
+    ? 'Latest locked Tier 0 budget. Its units stay frozen when the forecast changes.'
+    : 'No locked budget in this scope yet.';
   const referenceDomain = referenceValues.length ? niceYDomain(referenceValues) : null;
   const scenarioFits =
     referenceDomain && scenarioValues.every((value) => value >= referenceDomain[0] && value <= referenceDomain[1]);
@@ -672,7 +673,7 @@ export default function ForecastChart({
             visible={shownSeries}
             onToggle={onToggleSeries}
             hints={lineHints}
-            disabled={{ previous: previousOff, initial: Boolean(initialOffHint) }}
+            disabled={{ previous: previousOff, initial: Boolean(initialOffHint), budget: !points.some((point) => point.budget != null) }}
           />
           <ForecastPromoToggle
             selectedTypes={selectedPromoTypes}
@@ -772,6 +773,7 @@ export default function ForecastChart({
                                   point={point}
                                   items={scenario.monthItems?.get(point.month_year) ?? []}
                                   anchor={scenario.anchorForMonth?.(point.month_year) ?? null}
+                                  baseLabel={scenario.baseLabel}
                                   formatValue={formatValue}
                                   className="mt-1 border-t border-lavander pt-1.5"
                                 />
@@ -841,6 +843,7 @@ export default function ForecastChart({
                   {scenario?.seasonalAverage != null && visibleSeries.simulated ? (
                     <ReferenceLine
                       y={scenario.seasonalAverage}
+                      zIndex={450}
                       stroke="#A8741A"
                       strokeDasharray="4 4"
                       strokeWidth={1.4}
@@ -848,8 +851,12 @@ export default function ForecastChart({
                       label={{
                         value: `Seasonal avg ${formatAxisValue(Math.round(scenario.seasonalAverage), 'units')}`,
                         position: 'insideTopRight',
+                        dy: 18,
                         fontSize: 10,
                         fill: '#A8741A',
+                        stroke: 'var(--aire-cream)',
+                        strokeWidth: 3,
+                        paintOrder: 'stroke',
                       }}
                     />
                   ) : null}
@@ -864,7 +871,7 @@ export default function ForecastChart({
                           stackId="scenario-composition"
                           stroke="none"
                           fill={layer.hatch ? `url(#${compositionHatchId(layer.key)})` : layer.color}
-                          fillOpacity={layer.hatch ? 1 : (layer.opacity ?? 0.3)}
+                          fillOpacity={compositionOpacity(layer, scenario.compositionSpotlight)}
                           tooltipType="none"
                           legendType="none"
                           activeDot={false}
@@ -873,7 +880,7 @@ export default function ForecastChart({
                       ))
                   ) : null}
                   {showComposition ? (
-                    <CompositionLabels rows={transition.rows} visible={scenario.compositionVisible ?? {}} />
+                    <CompositionLabels rows={transition.rows} visible={scenario.compositionVisible ?? {}} spotlight={scenario.compositionSpotlight} />
                   ) : null}
                   {/* The layers already show what the gap is made of. */}
                   {showSimulated && !showComposition ? (
@@ -999,6 +1006,7 @@ export default function ForecastChart({
                               point={hoverPoint}
                               items={scenario.monthItems?.get(hoverMonth) ?? []}
                               anchor={scenario.anchorForMonth?.(hoverMonth) ?? null}
+                              baseLabel={scenario.baseLabel}
                               formatValue={formatValue}
                             />
                           ) : null}

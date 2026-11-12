@@ -47,6 +47,8 @@ def excluded_pairs_in_order_once(pairs: list[ExcludedPair]) -> list[ExcludedPair
 
 
 class ScenarioBuildingBlockBase(_Base):
+    plan: Literal["scenario", "budget"] = "scenario"
+
     # A PUT replaces every field, so the page must send kind back unchanged.
     kind: BlockKind = "block"
 
@@ -110,6 +112,9 @@ class ScenarioBuildingBlockBase(_Base):
     def validate_block(self):
         if self.start_month.day != 1 or self.end_month.day != 1:
             raise ValueError("start_month and end_month must be the first day of a month")
+
+        if self.plan == "budget" and self.start_month.year != self.end_month.year:
+            raise ValueError("Budget entries must stay within one calendar year")
 
         if self.end_month < self.start_month:
             raise ValueError("end_month cannot be before start_month")

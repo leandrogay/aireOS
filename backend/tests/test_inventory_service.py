@@ -3,6 +3,8 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import pytest
+
+pytestmark = pytest.mark.usefixtures("migrated_budget_schema")
 from conftest import FakeConnection, FakeEngine, FrozenDatetime
 
 from app.schemas.inventory import InventoryRecordCreate, InventoryRecordUpdate
@@ -1029,6 +1031,18 @@ def test_the_outlook_takes_recommended_sell_in_and_forecast_sell_out_after_the_a
     assert march["sell_out_actual"] is None
     assert march["sell_out_forecast"] == 310
     assert march["sell_in_recommended"] == 390
+
+
+def test_budget_sell_in_is_recalculated_from_locked_sellout_without_changing_current(monkeypatch):
+    budget = {sku: {month: units * 2 for month, units in months.items()} for sku, months in _PLAN_FORECAST.items()}
+    monkeypatch.setattr(inventory_service.budget_service, "sellout_for_customer", lambda conn, customer_id: budget)
+    view = _outlook_view(monkeypatch)
+    march = _month(view, "2026-03-01")
+    assert march["sell_out_budget"] == 620
+    assert march["sell_in_budget"] > 390
+    assert march["sell_out_forecast"] == 310
+    assert march["sell_in_recommended"] == 390
+    assert _month(view, "2027-02-01")["sell_out_budget"] is None
 
 
 def test_the_outlook_is_limited_to_the_skus_chosen(monkeypatch):

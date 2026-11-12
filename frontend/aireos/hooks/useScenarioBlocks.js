@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import {
   createScenarioBuildingBlock,
@@ -14,6 +14,7 @@ import {
   hasUnsavedChanges,
   scenarioBlockFromApi,
 } from '@/app/utils/scenarioBlocks';
+import { mergeScenarioItems } from '@/app/utils/scenarioSavedItems';
 
 /**
  * The Scenario builder's building blocks: the saved ones from
@@ -32,23 +33,35 @@ import {
  *   unsavedCount: number,
  *   loading: boolean,
  *   error: string | null,
+ *   refresh: () => void,
  * }}
  */
-export default function useScenarioBlocks() {
+export default function useScenarioBlocks({ plan = 'scenario' } = {}) {
   const [blocks, setBlocks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const requests = useRef({ plan, revision: 0 });
   const unsavedCount = blocks.filter(hasUnsavedChanges).length;
 
   useEffect(() => {
     let cancelled = false;
+    if (requests.current.plan !== plan) {
+      requests.current = { plan, revision: requests.current.revision + 1 };
+      setBlocks([]);
+    }
+    const revision = requests.current.revision;
 
     async function load() {
+      setLoading(true);
       try {
-        const rows = await getScenarioBuildingBlocks();
-        if (!cancelled) setBlocks(rows.map(scenarioBlockFromApi));
+        const rows = await getScenarioBuildingBlocks(plan);
+        if (!cancelled && revision === requests.current.revision) {
+          setBlocks((current) => mergeScenarioItems(current, rows.map(scenarioBlockFromApi), 'blockId', hasUnsavedChanges));
+          setError(null);
+        }
       } catch (err) {
-        if (!cancelled) setError(`Couldn't load saved building blocks: ${err.message}`);
+        if (!cancelled && revision === requests.current.revision) setError(`Couldn't load saved building blocks: ${err.message}`);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -58,7 +71,7 @@ export default function useScenarioBlocks() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [plan, refreshKey]);
 
   // Warn before closing or reloading the tab while something is unsaved.
   useEffect(() => {
@@ -72,7 +85,8 @@ export default function useScenarioBlocks() {
   }, [unsavedCount]);
 
   async function saveBlock(block) {
-    const payload = buildScenarioBlockPayload(block);
+    requests.current.revision += 1;
+    const payload = { ...buildScenarioBlockPayload(block), plan };
     const row = block.blockId == null
       ? await createScenarioBuildingBlock(payload)
       : await updateScenarioBuildingBlock(block.blockId, payload);
@@ -83,9 +97,10 @@ export default function useScenarioBlocks() {
   }
 
   async function deleteBlock(block) {
-    if (block.blockId != null) await deleteScenarioBuildingBlock(block.blockId);
+    requests.current.revision += 1;
+    if (block.blockId != null) await deleteScenarioBuildingBlock(block.blockId, plan);
     setBlocks((current) => current.filter((item) => item.id !== block.id));
   }
 
-  return { blocks, setBlocks, saveBlock, deleteBlock, unsavedCount, loading, error };
+  return { blocks, setBlocks, saveBlock, deleteBlock, unsavedCount, loading, error, refresh: () => setRefreshKey((key) => key + 1) };
 }

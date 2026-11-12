@@ -55,6 +55,7 @@ import { customersLabel } from '@/app/utils/retailerLabel';
 import { coversCustomer, itemRows, pairExcluded } from '@/app/utils/scenarioEngine';
 import { promotionCells } from '@/app/utils/scenarioTier0Split';
 import { liveReferences, liveUplift, liveUpliftValues, weakestLevel } from '@/app/utils/scenarioLiveUplifts';
+import { resolvedUpliftDetails, snapshotUpliftDetails } from './promotionUpliftDetails.js';
 
 export const MIN_OVERRIDE_PCT = -20;
 export const MAX_OVERRIDE_PCT = 50;
@@ -238,6 +239,9 @@ export function withReferences(promotion, upliftsByCustomer, liveIndex) {
       voucherUpliftPct: voucher.value ?? before.voucherUpliftPct,
       voucherBySku: voucher.bySku,
     };
+    references[customer].referenceDetails = live
+      ? snapshotUpliftDetails(liveUpliftValues(liveIndex, { ...promotion, customer, endMonth: promotion.startMonth }))
+      : resolvedUpliftDetails(resolved, promotion, references[customer]);
   }
   return { ...promotion, mechanicLabel, references };
 }
@@ -310,7 +314,9 @@ export function withLiveReferences(promotion, liveIndex) {
   for (const customer of promotionCustomers(promotion)) {
     const live = liveReferences(liveIndex, { ...promotion, customer });
     if (!live) continue;
-    references[customer] = { ...referencesFor(promotion, customer), ...live };
+    references[customer] = { ...referencesFor(promotion, customer), ...live,
+      referenceDetails: snapshotUpliftDetails(liveUpliftValues(liveIndex, { ...promotion, customer, endMonth: promotion.startMonth })),
+    };
     changed = true;
   }
   return changed ? { ...promotion, references } : promotion;
@@ -742,7 +748,10 @@ export function buildScenarioPromotionPayload(promotion) {
     mechanic_key: promotion.mechanicKey,
     mechanic_label: promotion.mechanicLabel,
     ...referencePayload(lead),
-    references_by_customer: Object.fromEntries(customers.map((customer) => [customer, referencePayload(referencesFor(promotion, customer))])),
+    references_by_customer: Object.fromEntries(customers.map((customer) => [customer, {
+      ...referencePayload(referencesFor(promotion, customer)),
+      reference_details: referencesFor(promotion, customer).referenceDetails ?? [],
+    }])),
     override_uplift_pct: promotion.overrideUpliftPct,
     voucher: promotion.voucher,
     explanation: promotion.explanation.trim() || null,
@@ -763,6 +772,7 @@ function referencesFromApi(row) {
     referenceBySku: values.reference_by_sku ?? {},
     voucherUpliftPct: Number(values.voucher_uplift_pct),
     voucherBySku: values.voucher_by_sku ?? {},
+    referenceDetails: values.reference_details ?? [],
   });
   const byCustomer = row.references_by_customer ?? {};
   if (Object.keys(byCustomer).length) {

@@ -3,6 +3,8 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import pytest
+
+pytestmark = pytest.mark.usefixtures("migrated_budget_schema")
 from conftest import FakeConnection, FakeEngine
 
 from app.services.scenario import building_blocks as building_blocks_service
@@ -174,6 +176,7 @@ def test_create_returns_the_block_as_the_list_shows_it(monkeypatch):
     )
 
     assert saved == {
+        "plan": "scenario",
         "block_id": 1,
         "kind": "block",
         "customer_names": ["fairprice"],

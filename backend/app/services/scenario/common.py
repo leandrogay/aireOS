@@ -42,6 +42,54 @@ def read_connection() -> Connection:
 _ITEM_TABLES = ("scenario_building_blocks", "scenario_promotions")
 
 
+class BudgetSetupRequiredError(Exception):
+    """The database owner has not applied the budget migration yet."""
+
+
+BUDGET_SETUP_DETAIL = (
+    "Budget planning is not enabled on this database yet. A database owner must apply "
+    "backend/migrations/026_budget_planning.sql. Current forecast mode remains available."
+)
+
+
+def has_plan_column(conn: Connection, table: str) -> bool:
+    """Check the connected schema without failing a transaction on a missing column."""
+    if table not in _ITEM_TABLES:
+        raise ValueError("Unknown scenario table")
+    return bool(conn.execute(text("""
+        SELECT EXISTS (
+            SELECT 1 FROM pg_attribute
+            WHERE attrelid = to_regclass(:table_name)
+                AND attname = 'plan' AND NOT attisdropped
+        )
+    """), {"table_name": f"public.{table}"}).scalar_one())
+
+
+def require_plan(conn: Connection, table: str, plan: str) -> bool:
+    """Legacy rows belong to scenario; budget operations require the plan column."""
+    validate_plan(plan)
+    present = has_plan_column(conn, table)
+    if plan == "budget" and not present:
+        raise BudgetSetupRequiredError(BUDGET_SETUP_DETAIL)
+    return present
+
+
+def has_budget_tables(conn: Connection) -> bool:
+    """Both snapshot tables must exist before reading a locked Budget line."""
+    return bool(conn.execute(text("""
+        SELECT to_regclass('public.budget_snapshots') IS NOT NULL
+            AND to_regclass('public.budget_snapshot_rows') IS NOT NULL
+    """)).scalar_one())
+
+
+def require_budget_schema(conn: Connection) -> None:
+    """Refuse locking before every part of migration 026 is present."""
+    for table in _ITEM_TABLES:
+        require_plan(conn, table, "budget")
+    if not has_budget_tables(conn):
+        raise BudgetSetupRequiredError(BUDGET_SETUP_DETAIL)
+
+
 def remove_customer(conn: Connection, customer_id: int) -> None:
     """
     Take a customer that is being deleted out of every Scenario builder item,
@@ -129,3 +177,9 @@ def excluded_pairs_select(alias: str) -> str:
 def iso(value: datetime | None) -> str | None:
     # TIMESTAMPTZ comes back timezone-aware, so the offset is kept.
     return value.isoformat() if value is not None else None
+
+
+def validate_plan(plan: str) -> None:
+    """Reject unknown plan scopes before opening a connection."""
+    if plan not in ("scenario", "budget"):
+        raise ValueError("plan must be scenario or budget")

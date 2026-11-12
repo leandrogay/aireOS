@@ -11,6 +11,7 @@ import useLastYearActuals from '@/hooks/useLastYearActuals';
  * the engine's per-month uplift.
  *
  * @param {{
+ *   allowOfficialPlanning?: boolean,
  *   ready: boolean,
  *   productName: string,
  *   skuRange: string,        the Scenario builder's SKU range filter ('' = all)
@@ -28,9 +29,11 @@ import useLastYearActuals from '@/hooks/useLastYearActuals';
  *   split: boolean,          Tier 0 is split into its baseline and carried promotions
  *   detailsFor: (month: string) => import('react').ReactNode,
  *   flagged: (month: string) => boolean,
+ *   baseLabel?: string,      Current or Initial base in budget mode
  * }} props
  */
 export default function MonthlyPlan({
+  allowOfficialPlanning = true,
   ready,
   productName,
   skuRange = '',
@@ -48,6 +51,7 @@ export default function MonthlyPlan({
   split,
   detailsFor,
   flagged,
+  baseLabel = 'Current',
 }) {
   const lastYear = useLastYearActuals({ ready, productName, skuRange, customerName, startDate, endDate, actuals });
   const planRows = buildPlanRows({ rows, lastYearActuals: lastYear.actuals, byMonth, monthItems, breakdowns, splits });
@@ -60,6 +64,7 @@ export default function MonthlyPlan({
         </p>
       ) : null}
       <MonthlyPlanTable
+        allowOfficialPlanning={allowOfficialPlanning}
         rows={planRows}
         lastYearLoading={lastYear.loading}
         onOpenItem={onOpenItem}
@@ -67,6 +72,7 @@ export default function MonthlyPlan({
         split={split}
         detailsFor={detailsFor}
         flagged={flagged}
+        baseLabel={baseLabel}
       />
     </div>
   );

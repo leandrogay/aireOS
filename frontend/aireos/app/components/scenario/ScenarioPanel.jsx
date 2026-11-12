@@ -26,6 +26,7 @@ const TABS = [
  * section component, not this one.
  *
  * @param {{
+ *   plan?: 'scenario' | 'budget',
  *   collapsed: boolean,
  *   onCollapsedChange: (collapsed: boolean) => void,
  *   tab: 'breakdown' | 'blocks' | 'promotions',
@@ -36,6 +37,7 @@ const TABS = [
  * }} props
  */
 export default function ScenarioPanel({
+  plan = 'scenario',
   collapsed,
   onCollapsedChange,
   tab,
@@ -44,12 +46,13 @@ export default function ScenarioPanel({
   blocksSection,
   promotionsSection,
 }) {
+  const budget = plan === 'budget';
   const selected = TABS.find((item) => item.value === tab) ?? TABS[0];
 
   if (collapsed) {
     return (
       <aside
-        aria-label="Scenario builder"
+        aria-label={budget ? 'Budget planning' : 'Scenario builder'}
         className={`${glassSurfaceClass} flex items-center justify-center gap-3 py-3 min-[1100px]:flex-col`}
       >
         <button
@@ -69,13 +72,15 @@ export default function ScenarioPanel({
 
   return (
     <aside
-      aria-label="Scenario builder"
+      aria-label={budget ? 'Budget planning' : 'Scenario builder'}
       className={`${glassSurfaceClass} flex flex-col overflow-hidden text-deep-violet-blue`}
     >
       <div className="flex items-start justify-between gap-2 border-b border-lavander px-3 py-2.5">
         <div className="min-w-0 flex-1">
-          <p className="font-serif text-base text-deep-violet-blue">Your scenario</p>
-          <p className="text-[11px] text-deep-violet-blue/60">What-ifs on top of the Current forecast</p>
+          <p className="font-serif text-base text-deep-violet-blue">{budget ? 'Your budget' : 'Your scenario'}</p>
+          <p className="text-[11px] text-deep-violet-blue/60">
+            {budget ? 'Adjustments to the Initial Yearly Forecast' : 'What-ifs on top of the Current forecast'}
+          </p>
         </div>
         <button
           type="button"

@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 
+import BudgetLockControl from '@/components/scenario/BudgetLockControl';
+import { initialBudgetRows, initialSplitProblem } from '@/app/utils/budgetPlanning';
 import { cn } from '@/lib/utils';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import ForecastChart from '@/components/forecast/ForecastChart';
@@ -12,6 +14,7 @@ import BuildingBlocksSection from '@/components/scenario/BuildingBlocksSection';
 import GrowthControl from '@/components/scenario/GrowthControl';
 import MonthlyPlan from '@/components/scenario/MonthlyPlan';
 import PromotionsSection from '@/components/scenario/PromotionsSection';
+import PromotionTable from '@/components/scenario/PromotionTable';
 import ScenarioBuilderSkeleton from '@/components/scenario/ScenarioBuilderSkeleton';
 import ScenarioPanel from '@/components/scenario/ScenarioPanel';
 import ScenarioTotals from '@/components/scenario/ScenarioTotals';
@@ -26,6 +29,7 @@ import {
   ALL_PACK_TYPE_VALUES,
   ALL_PROMO_TYPE_VALUES,
   ALL_SERIES_VISIBLE,
+  FORECAST_SERIES,
   buildMonthlyPoints,
   sumHorizonForecast,
   toggleSelectedValue,
@@ -75,6 +79,7 @@ import useConfirmAction from '@/hooks/useConfirmAction';
 import useExpandedRows from '@/hooks/useExpandedRows';
 import useScenarioBlocks from '@/hooks/useScenarioBlocks';
 import useScenarioPromotions from '@/hooks/useScenarioPromotions';
+import useScenarioPromotionEditor from '@/hooks/useScenarioPromotionEditor';
 import useTier0Breakdown from '@/hooks/useTier0Breakdown';
 import useUnitsSplitBasis from '@/hooks/useUnitsSplitBasis';
 
@@ -155,8 +160,9 @@ function partsInMonths(monthCells, months) {
  * items. Saving a block never changes the Current forecast: only the
  * Simulated line reads them.
  */
-export default function ScenarioBuilder() {
-  const filters = useForecastFilters({ defaultRange: nextYearDateRange, sessionKey: SCENARIO_DATE_SESSION_KEY });
+export default function ScenarioBuilder({ plan = 'scenario', budgetYear } = {}) {
+  const budget = plan === 'budget';
+  const filters = useForecastFilters({ defaultRange: budget ? () => ({ start: `${budgetYear}-01-01`, end: `${budgetYear}-12-01` }) : nextYearDateRange, sessionKey: `${SCENARIO_DATE_SESSION_KEY}.${plan}` });
   // Planned by SKU range, not SKU: the filter, blocks and growth all follow
   // ranges. productName stays '' here (promotions still pick one SKU).
   const { productName, skuRange, customerName, startDate, endDate, ready } = filters;
@@ -167,20 +173,37 @@ export default function ScenarioBuilder() {
     [SIMULATED_SERIES.key]: true,
   });
   const [panelCollapsed, setPanelCollapsed] = useState(false);
+  const [compositionSpotlight, setCompositionSpotlight] = useState(null);
   // The panel's tab, here so opening a block from the Monthly plan shows it.
   const [panelTab, setPanelTab] = useState('breakdown');
-  const view = useForecastView({ ready, productName, skuRange, customerName, startDate, endDate, tier: DEFAULT_TIER });
-  const { rows, actuals, promotions, freshness } = view.data;
-  const scenarioBlocks = useScenarioBlocks();
+  const view = useForecastView({ ready,
+    productName: budget ? '' : productName, skuRange: budget ? '' : skuRange, customerName: budget ? '' : customerName,
+    startDate: budget ? `${budgetYear}-01-01` : startDate, endDate: budget ? `${budgetYear}-12-01` : endDate, tier: DEFAULT_TIER });
+  const fullInitial = budget ? initialBudgetRows(view.data.rows) : [];
+  const rows = budget ? fullInitial.filter((row) => (!customerName || row.customer_name === customerName)
+    && (!skuRange || row.sku_range === skuRange) && (!productName || row.product_name === productName)
+    && row.month_year >= startDate && row.month_year <= endDate) : view.data.rows;
+  const actuals = budget ? [] : view.data.actuals;
+  const months = forecastMonths(rows);
+  const promotions = budget ? [] : view.data.promotions;
+  const { freshness } = view.data;
+  const initialBasis = new Map([...new Set(fullInitial.map((row) => row.customer_name))].map((name) =>
+    [name, { startMonth: `${budgetYear}-01-01`, endMonth: `${budgetYear}-12-01`, rows: fullInitial.filter((row) => row.customer_name === name) }]));
+  const scenarioBlocks = useScenarioBlocks({ plan });
   // Planned promotions: saved like blocks (hooks/useScenarioPromotions.js).
-  const scenarioPromotions = useScenarioPromotions();
+  const scenarioPromotions = useScenarioPromotions({ plan });
   // The uplifts Promotion Uplift Settings has worked out now: promotions take
   // these per product and month (scenarioLiveUplifts.js), else their saved values.
   const calculated = usePromoUpliftCalc();
+  const liveIndex = !budget && calculated.data ? liveUpliftIndex(calculated.data.rows) : null;
+  const promotionEditor = useScenarioPromotionEditor({ items: scenarioPromotions.promotions,
+    onChange: scenarioPromotions.setPromotions, onSave: scenarioPromotions.savePromotion, onDelete: scenarioPromotions.deletePromotion,
+    customerOptions: filters.customerOptions, defaultCustomer: customerName, defaultSkuRange: skuRange, months, liveIndex });
   const anchors = usePromoAnchors();
   // Tier 0 split into its baseline and the promotions it carries; official
   // and scenario promotions are worked out on it (scenarioTier0Split.js).
-  const tier0Breakdown = useTier0Breakdown({ ready, customerName, skuRange });
+  const tier0Breakdown = useTier0Breakdown({ ready, customerName: budget ? '' : customerName,
+    skuRange: budget ? '' : skuRange, basis: budget ? 'initial' : 'current', year: budget ? budgetYear : null });
   // The block open in the panel's editor (a draft, or a saved block opened
   // from the table with Edit); its months are banded on the chart.
   const [selectedId, setSelectedId] = useState(null);
@@ -210,11 +233,12 @@ export default function ScenarioBuilder() {
     rows,
     actuals,
     tier: DEFAULT_TIER,
+    mapRows: budget ? initialBudgetRows : (value) => value,
   });
   // Units blocks the filters only partly show (an All SKUs block while one
   // SKU is picked) are split over rows fetched for their whole scope.
   const splitBasis = useUnitsSplitBasis({
-    ready,
+    ready: ready && !budget,
     needs: splitBasisNeeds(activeScenarioBlocks(scenarioBlocks.blocks), chartView(filters), rows),
   });
 
@@ -240,15 +264,16 @@ export default function ScenarioBuilder() {
   const allBlocks = scenarioBlocks.blocks.filter((block) => !isGrowthBlock(block));
   const growthBlocks = scenarioBlocks.blocks.filter(isGrowthBlock);
   const activePromotions = activeScenarioPromotions(scenarioPromotions.promotions);
-  const liveIndex = calculated.data ? liveUpliftIndex(calculated.data.rows) : null;
-  const tier0Split = tier0Breakdown.data ? tier0SplitIndex(tier0Breakdown.data) : null;
+  const budgetSplitError = budget ? tier0Breakdown.error ?? (tier0Breakdown.data ? initialSplitProblem(tier0Breakdown.data, fullInitial) : null) : null;
+  const budgetReady = !budget || Boolean(tier0Breakdown.data && !tier0Breakdown.loading && !budgetSplitError);
+  const tier0Split = tier0Breakdown.data && !budgetSplitError ? tier0SplitIndex(tier0Breakdown.data) : null;
   // Everything switched on counts; the official promotions whenever the
   // split is in.
   const counted = {
-    official: tier0Split ? [OFFICIAL_ITEM] : [],
-    growth: activeScenarioBlocks(growthBlocks),
-    blocks: activeScenarioBlocks(allBlocks),
-    promotions: withLiveIndex(activePromotions, liveIndex),
+    official: !budget && tier0Split ? [OFFICIAL_ITEM] : [],
+    growth: budgetReady ? activeScenarioBlocks(growthBlocks) : [],
+    blocks: budgetReady ? activeScenarioBlocks(allBlocks) : [],
+    promotions: budgetReady ? withLiveIndex(activePromotions, liveIndex) : [],
   };
   const itemInfo = new Map([
     [OFFICIAL_ITEM.id, { name: OFFICIAL_ITEM.name, kind: 'official', state: 'saved' }],
@@ -264,7 +289,7 @@ export default function ScenarioBuilder() {
     rows,
     counted,
     SCENARIO_SOURCES,
-    chartView(filters, splitBasis.basis, tier0Split)
+    chartView(filters, budget ? initialBasis : splitBasis.basis, tier0Split)
   );
   // Nothing simulated until a switched-on item changes something in view:
   // no Simulated line, legend entry or table columns before that.
@@ -313,9 +338,10 @@ export default function ScenarioBuilder() {
     const breakdown = breakdowns.get(month);
     return breakdown ? bigChange(breakdown.tier0, breakdown.official + breakdown.promotions) : null;
   }
-  const tier0SplitState = { index: tier0Split, loading: tier0Breakdown.loading, error: tier0Breakdown.error };
+  const tier0SplitState = { index: tier0Split, loading: tier0Breakdown.loading, error: budgetSplitError ?? tier0Breakdown.error,
+    basis: budget ? 'initial' : 'current', dataCutoff: tier0Breakdown.data?.data_cutoff ?? null };
   // The anchor in the hover card: one customer x SKU range has one.
-  const anchorTarget = rangePicked
+  const anchorTarget = !budget && rangePicked
     ? anchorTargets(anchors.data).find((target) => target.customerName === customerName && target.skuRange === skuRange)
     : null;
   function anchorForMonth(month) {
@@ -367,6 +393,7 @@ export default function ScenarioBuilder() {
 
   const simulatedYears = simulatedYearTotals(years, byMonth);
   const scenario = {
+    baseLabel: budget ? 'Initial forecast' : 'Tier 0',
     // The chart takes the Simulated colour from series[0].
     series: hasSimulated ? [SIMULATED_SERIES] : [],
     markers: hasSimulated ? itemMarkers(byItem) : [],
@@ -422,9 +449,8 @@ export default function ScenarioBuilder() {
       : []),
   ];
 
-  const months = forecastMonths(rows);
   const error =
-    filters.error ?? view.error ?? scenarioBlocks.error ?? scenarioPromotions.error ?? splitBasis.error ?? actionError;
+    filters.error ?? view.error ?? scenarioBlocks.error ?? scenarioPromotions.error ?? promotionEditor.error ?? budgetSplitError ?? splitBasis.error ?? actionError;
 
   const customerText = customerName ? customerLabel(customerName) : 'All customers';
 
@@ -471,8 +497,19 @@ export default function ScenarioBuilder() {
 
   function editSaved(block) {
     setSelectedId(block.id);
-    setPanelTab('blocks');
+    changePanelTab('blocks');
     setPanelCollapsed(false);
+  }
+
+  function editSavedPromotion(promotion) {
+    promotionEditor.select(promotion.id);
+    changePanelTab('promotions');
+    setPanelCollapsed(false);
+  }
+
+  function changePanelTab(tab) {
+    setCompositionSpotlight(null);
+    setPanelTab(tab);
   }
 
   // From the monthly plan: open a block (draft promotions aren't edited
@@ -491,6 +528,9 @@ export default function ScenarioBuilder() {
 
   return (
     <div className="space-y-3">
+      {budget ? <BudgetLockControl year={budgetYear} unsaved={scenarioBlocks.unsavedCount + scenarioPromotions.unsavedCount}
+        loading={view.loading || scenarioBlocks.loading || scenarioPromotions.loading || tier0Breakdown.loading || promotionEditor.saving || promotionEditor.togglingIds.length > 0} hasInitial={fullInitial.length > 0}
+        loadError={view.error ?? scenarioBlocks.error ?? scenarioPromotions.error ?? promotionEditor.error ?? budgetSplitError} /> : null}
       {error && (
         <p className="rounded-md border border-violet bg-lavander/50 px-3 py-2 text-sm text-deep-violet-blue">
           {error}
@@ -508,6 +548,7 @@ export default function ScenarioBuilder() {
         <div className="min-w-0 space-y-3 min-[1100px]:flex min-[1100px]:flex-col min-[1100px]:[&>[data-slot=card]]:flex-1">
           <ForecastChart
           points={chartPoints}
+            baseSeries={budget ? FORECAST_SERIES.filter((series) => series.key === 'current').map((series) => ({ ...series, label: 'Initial base' })) : undefined}
             startDate={startDate}
             endDate={endDate}
             metric="units"
@@ -527,8 +568,8 @@ export default function ScenarioBuilder() {
                 endDate={endDate}
                 onStartDateChange={filters.setStartDate}
                 onEndDateChange={filters.setEndDate}
-                minDate={filters.bounds.start}
-                maxDate={filters.bounds.end}
+                minDate={budget ? `${budgetYear}-01-01` : filters.bounds.start}
+                maxDate={budget ? `${budgetYear}-12-31` : filters.bounds.end}
                 onClearFilters={filters.clear}
                 canClearFilters={filters.canClear}
               />
@@ -539,11 +580,14 @@ export default function ScenarioBuilder() {
                 yearTable={
                   <ScenarioYearComparison
                     rows={comparisonRows}
+                    baseLabel={budget ? 'Initial base' : 'Current'}
                     loading={yearTotalsLoading || view.loading}
                   />
                 }
                 monthlyPlan={
                   <MonthlyPlan
+                    allowOfficialPlanning={!budget}
+                    baseLabel={budget ? 'Initial base' : 'Current'}
                     ready={ready}
                     productName={productName}
                     skuRange={skuRange}
@@ -580,14 +624,15 @@ export default function ScenarioBuilder() {
             onTogglePackType={(value) => setSelectedPackTypes((current) => toggleSelectedValue(current, value))}
             visibleSeries={visibleSeries}
             onToggleSeries={(key) => setVisibleSeries((current) => toggleSeriesVisibility(current, key))}
-            lastRun={freshness.current_generated_at}
+            lastRun={budget ? freshness.initial_generated_at : freshness.current_generated_at}
             salesLabel={customerName ? `${customerText} sales` : 'All customers sales'}
             salesLoadedAt={freshness.latest_sales_loaded_at}
-            loading={view.loading}
+            loading={view.loading || (budget && tier0Breakdown.loading)}
             scenario={{
               ...scenario,
               // Every layer drawn: a part left out is 0, so it has nothing to show.
               compositionVisible: Object.fromEntries(COMPOSITION_LAYERS.map((layer) => [layer.key, true])),
+              compositionSpotlight,
               // Stacked bottom to top: Tier 0's baseline and what it carries,
               // official promotions, what growth, blocks and scenario
               // promotions add, then what takes units away, hatched
@@ -604,18 +649,22 @@ export default function ScenarioBuilder() {
             chart, so a short panel never shows as a blank column. */}
         <div className={cn('min-w-0', panelCollapsed ? null : 'min-[1100px]:[&>aside]:h-full')}>
         <ScenarioPanel
+          plan={plan}
           collapsed={panelCollapsed}
-          onCollapsedChange={setPanelCollapsed}
+          onCollapsedChange={(collapsed) => { setCompositionSpotlight(null); setPanelCollapsed(collapsed); }}
           tab={panelTab}
-          onTabChange={setPanelTab}
+          onTabChange={changePanelTab}
           breakdownSection={
             <FrozenBaselinePanel
+              onSpotlight={setCompositionSpotlight}
+              plan={plan}
               tier0Split={tier0SplitState}
               growthSection={
                 scenarioBlocks.loading ? (
                   <p className="text-xs text-deep-violet-blue/60">Loading growth…</p>
                 ) : (
                   <GrowthControl
+                    plan={plan}
                     blocks={growthBlocks}
                     customer={customerName}
                     years={growthYears(months)}
@@ -661,10 +710,8 @@ export default function ScenarioBuilder() {
               <p className="text-xs text-deep-violet-blue/60">Loading promotions…</p>
             ) : (
               <PromotionsSection
-                items={scenarioPromotions.promotions}
-                onChange={scenarioPromotions.setPromotions}
-                onSave={scenarioPromotions.savePromotion}
-                onDelete={scenarioPromotions.deletePromotion}
+                editor={promotionEditor}
+                plan={plan}
                 rows={rows}
                 pairsFor={(promotion) => itemPairs(rows, promotion, cells)}
                 skuRangeOptions={filters.skuRangeOptions}
@@ -682,10 +729,12 @@ export default function ScenarioBuilder() {
 
       <BlockTable
         blocks={savedBlocks}
-        view={chartView(filters)}
+        baseLabel={budget ? 'Initial base' : 'Current'}
         impacts={byItem}
         monthsByItem={monthsByItem}
         isLoading={scenarioBlocks.loading}
+        error={scenarioBlocks.error}
+        onRefresh={scenarioBlocks.refresh}
         editingId={selectedBlock?.saved ? selectedBlock.id : null}
         togglingIds={togglingIds}
         isExpanded={expandedRows.isExpanded}
@@ -695,9 +744,13 @@ export default function ScenarioBuilder() {
         onTogglePair={togglePair}
         onEdit={editSaved}
         onDelete={deletion.request}
-        onClearFilters={filters.clear}
         closedIds={closedIds}
       />
+
+      <PromotionTable items={scenarioPromotions.promotions} editor={promotionEditor} impacts={byItem}
+        monthsByItem={monthsByItem} liveIndex={liveIndex} onEdit={editSavedPromotion} onRefresh={scenarioPromotions.refresh}
+        isLoading={scenarioPromotions.loading} error={scenarioPromotions.error} baseLabel={budget ? 'Initial base' : 'Current'}
+        previewReady={budgetReady} showNotice={panelTab !== 'promotions'} />
 
       <ConfirmDialog
         open={Boolean(deletion.target)}

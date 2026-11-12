@@ -41,9 +41,9 @@ export function monthSpan(months) {
  * come from (`kind`). Used by the Monthly plan's Promotions column and an
  * opened month (Tier0Details), so the two read the same.
  *
- * @param {{ kind: 'lastYear' | 'runRate' | 'planned', mechanics: string[] }} props
+ * @param {{ kind: 'lastYear' | 'runRate' | 'planned', mechanics: string[], wrap?: boolean }} props
  */
-export default function MechanicPills({ kind, mechanics }) {
+export default function MechanicPills({ kind, mechanics, wrap = false }) {
   if (!mechanics.length) return <span className="text-[11px] text-deep-violet-blue/50">No promotion</span>;
   return (
     <span className="flex flex-wrap gap-1">
@@ -52,7 +52,8 @@ export default function MechanicPills({ kind, mechanics }) {
           key={mechanic}
           title={`${mechanic}: ${PILL_HINTS[kind].toLowerCase()}`}
           className={cn(
-            'inline-flex items-center whitespace-nowrap rounded-full px-2 py-px text-[10px] font-semibold',
+            'inline-flex max-w-full items-center rounded-full px-2 py-px text-[10px] font-semibold',
+            wrap ? 'whitespace-normal break-words' : 'whitespace-nowrap',
             PILL_STYLES[kind]
           )}
         >

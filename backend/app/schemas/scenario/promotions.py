@@ -1,6 +1,6 @@
 from datetime import date
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator, model_validator
 
@@ -26,6 +26,16 @@ ScenarioPromoType = Literal["monthly", "side_offer", "bundle", "others"]
 _UPLIFT = {"ge": Decimal("-90"), "le": Decimal("300"), "max_digits": 6, "decimal_places": 2}
 
 
+class ReferenceDetail(_Base):
+    """The calculation explanation kept with one customer's copied product uplift."""
+
+    product_name: str = Field(min_length=1, max_length=255)
+    sku_range: str | None = Field(default=None, max_length=255)
+    uplift_pct: float = Field(ge=-90, le=300, allow_inf_nan=False)
+    level: str = Field(min_length=1, max_length=20)
+    lines: list[Annotated[str, Field(max_length=1000)]] = Field(default_factory=list, max_length=20)
+
+
 class CustomerReferences(_Base):
     """One customer's values copied in from Promotion Uplift Settings (migration 025)."""
 
@@ -34,9 +44,12 @@ class CustomerReferences(_Base):
     reference_by_sku: dict[str, Decimal] = Field(default_factory=dict)
     voucher_uplift_pct: Decimal = Field(default=Decimal("0"), **_UPLIFT)
     voucher_by_sku: dict[str, Decimal] = Field(default_factory=dict)
+    reference_details: list[ReferenceDetail] = Field(default_factory=list, max_length=1000)
 
 
 class ScenarioPromotionBase(_Base):
+    plan: Literal["scenario", "budget"] = "scenario"
+
     # Like building blocks: several customers (migration 022), None (or an
     # empty list) = every customer; each customer x SKU range can be
     # switched off on its own (023).
@@ -110,6 +123,9 @@ class ScenarioPromotionBase(_Base):
     def validate_promotion(self):
         if self.start_month.day != 1 or self.end_month.day != 1:
             raise ValueError("start_month and end_month must be the first day of a month")
+
+        if self.plan == "budget" and self.start_month.year != self.end_month.year:
+            raise ValueError("Budget entries must stay within one calendar year")
 
         if self.end_month < self.start_month:
             raise ValueError("end_month cannot be before start_month")

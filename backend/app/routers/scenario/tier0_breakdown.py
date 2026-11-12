@@ -29,9 +29,12 @@ _DATABASE_DETAIL = (
 
 
 @router.get("")
-def get_tier0_breakdown(customer_name: str | None = None, sku_range: str | None = None):
+def get_tier0_breakdown(
+    customer_name: str | None = None, sku_range: str | None = None,
+    basis: str = "current", year: int | None = None,
+):
     try:
-        return breakdown_service.get_tier0_breakdown(customer_name=customer_name, sku_range=sku_range)
+        return breakdown_service.get_tier0_breakdown(customer_name=customer_name, sku_range=sku_range, basis=basis, year=year)
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

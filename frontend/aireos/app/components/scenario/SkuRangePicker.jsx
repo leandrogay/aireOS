@@ -35,7 +35,7 @@ export default function SkuRangePicker({ id, label, values, options, legacySku =
         noneMeansAll
         placeholder={onOneSku ? legacySku : 'All SKU ranges'}
         look="field"
-        searchable={options.length > 8}
+        searchable
         searchPlaceholder="Search SKU ranges…"
         className="w-full"
       />

@@ -46,6 +46,15 @@ SIGNED_IN_EMAIL = "staff@shop-aire.com"
 
 
 @pytest.fixture
+def migrated_budget_schema(monkeypatch):
+    """Modern-schema service fakes; compatibility tests exercise the real schema probes."""
+    from app.services.scenario import common
+
+    monkeypatch.setattr(common, "has_plan_column", lambda conn, table: True)
+    monkeypatch.setattr(common, "has_budget_tables", lambda conn: True)
+
+
+@pytest.fixture
 def signed_in():
     """Requests come from SIGNED_IN_EMAIL's session (routes that record who made a change)."""
     from app.auth import require_user

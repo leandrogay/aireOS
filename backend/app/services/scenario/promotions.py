@@ -34,6 +34,7 @@ from app.services.scenario import building_blocks, common
 _PROMOTION_SELECT = f"""
     SELECT
         promotion.promotion_id,
+        promotion.plan,
         {common.customer_names_select("promotion")},
         promotion.sku_ranges,
         {common.excluded_pairs_select("promotion")},
@@ -90,12 +91,14 @@ def _references_view(values: dict) -> dict:
         "reference_by_sku": _by_sku_view(values.get("reference_by_sku")),
         "voucher_uplift_pct": float(values.get("voucher_uplift_pct") or 0),
         "voucher_by_sku": _by_sku_view(values.get("voucher_by_sku")),
+        "reference_details": values.get("reference_details") or [],
     }
 
 
 def _promotion_view(row: dict) -> dict:
     return {
         "promotion_id": row["promotion_id"],
+        "plan": row.get("plan", "scenario"),
         # None = every customer, as sku_ranges.
         "customer_names": list(row["customer_names"]) or None,
         "sku_ranges": list(row["sku_ranges"]) if row["sku_ranges"] else None,
@@ -126,11 +129,15 @@ def _promotion_view(row: dict) -> dict:
     }
 
 
-def _fetch_promotion(conn: Connection, promotion_id: int) -> dict | None:
+def _select_for_schema(has_plan: bool) -> str:
+    return _PROMOTION_SELECT if has_plan else _PROMOTION_SELECT.replace("promotion.plan,", "'scenario' AS plan,")
+
+
+def _fetch_promotion(conn: Connection, promotion_id: int, has_plan: bool = True) -> dict | None:
     row = conn.execute(
         text(
             f"""
-            {_PROMOTION_SELECT}
+            {_select_for_schema(has_plan)}
 
             WHERE
                 promotion.promotion_id = :promotion_id
@@ -142,20 +149,26 @@ def _fetch_promotion(conn: Connection, promotion_id: int) -> dict | None:
     return _promotion_view(dict(row)) if row is not None else None
 
 
-def list_scenario_promotions() -> list[dict]:
+def list_scenario_promotions(plan: str = "scenario") -> list[dict]:
     """Every saved Scenario promotion, newest first; the page filters them itself."""
+    common.validate_plan(plan)
 
     with common.read_connection() as conn:
+        has_plan = common.require_plan(conn, "scenario_promotions", plan)
+        scope = "promotion.plan = :plan" if has_plan else "TRUE"
         rows = conn.execute(
             text(
                 f"""
-                {_PROMOTION_SELECT}
+                {_select_for_schema(has_plan)}
+
+                WHERE {scope}
 
                 ORDER BY
                     promotion.created_at DESC,
                     promotion.promotion_id DESC
                 """
-            )
+            ),
+            {"plan": plan},
         ).mappings().all()
 
     return [_promotion_view(dict(row)) for row in rows]
@@ -184,6 +197,7 @@ def _references_json(conn: Connection, references: dict[str, dict]) -> str:
                 "reference_by_sku": {product: float(value) for product, value in values["reference_by_sku"].items()},
                 "voucher_uplift_pct": float(values["voucher_uplift_pct"]),
                 "voucher_by_sku": {product: float(value) for product, value in values["voucher_by_sku"].items()},
+                "reference_details": values.get("reference_details") or [],
             }
             for name, values in references.items()
         }
@@ -195,6 +209,7 @@ def _write_params(conn: Connection, promotion: dict) -> dict:
     # a customer or product the same way.
     customer_ids = building_blocks.resolve_customer_ids(conn, promotion["customer_names"])
     return {
+        "plan": promotion.get("plan", "scenario"),
         "customer_ids": customer_ids,
         # The one customer, or None for several or every customer.
         "customer_id": customer_ids[0] if customer_ids and len(customer_ids) == 1 else None,
@@ -233,10 +248,14 @@ def create_scenario_promotion(promotion: dict) -> dict:
     """Save a new Scenario promotion and return it as the list returns it."""
 
     with common.get_engine().begin() as conn:
+        has_plan = common.require_plan(conn, "scenario_promotions", promotion.get("plan", "scenario"))
+        plan_column = "plan," if has_plan else ""
+        plan_value = ":plan," if has_plan else ""
         promotion_id = conn.execute(
             text(
-                """
+                f"""
                 INSERT INTO scenario_promotions (
+                    {plan_column}
                     customer_id,
                     customer_ids,
                     excluded_pairs,
@@ -261,6 +280,7 @@ def create_scenario_promotion(promotion: dict) -> dict:
                     is_active
                 )
                 VALUES (
+                    {plan_value}
                     :customer_id,
                     CAST(:customer_ids AS INTEGER[]),
                     CAST(:excluded_pairs AS JSONB),
@@ -290,16 +310,17 @@ def create_scenario_promotion(promotion: dict) -> dict:
             _write_params(conn, promotion),
         ).scalar_one()
 
-        return _fetch_promotion(conn, promotion_id)
+        return _fetch_promotion(conn, promotion_id, has_plan)
 
 
 def update_scenario_promotion(promotion_id: int, promotion: dict) -> dict | None:
     """Replace every field of a Scenario promotion; None when it doesn't exist."""
 
     with common.get_engine().begin() as conn:
+        has_plan = common.require_plan(conn, "scenario_promotions", promotion.get("plan", "scenario"))
         updated = conn.execute(
             text(
-                """
+                f"""
                 UPDATE scenario_promotions
 
                 SET
@@ -329,6 +350,7 @@ def update_scenario_promotion(promotion_id: int, promotion: dict) -> dict | None
 
                 WHERE
                     promotion_id = :promotion_id
+                    {"AND plan = :plan" if has_plan else ""}
 
                 RETURNING promotion_id
                 """
@@ -338,25 +360,28 @@ def update_scenario_promotion(promotion_id: int, promotion: dict) -> dict | None
 
         if updated is None:
             return None
-        return _fetch_promotion(conn, promotion_id)
+        return _fetch_promotion(conn, promotion_id, has_plan)
 
 
-def delete_scenario_promotion(promotion_id: int) -> bool:
+def delete_scenario_promotion(promotion_id: int, plan: str = "scenario") -> bool:
     """Delete a Scenario promotion for good; False when it doesn't exist."""
+    common.validate_plan(plan)
 
     with common.get_engine().begin() as conn:
+        has_plan = common.require_plan(conn, "scenario_promotions", plan)
         deleted = conn.execute(
             text(
-                """
+                f"""
                 DELETE FROM scenario_promotions
 
                 WHERE
                     promotion_id = :promotion_id
+                    {"AND plan = :plan" if has_plan else ""}
 
                 RETURNING promotion_id
                 """
             ),
-            {"promotion_id": promotion_id},
+            {"promotion_id": promotion_id, "plan": plan},
         ).first()
 
     return deleted is not None

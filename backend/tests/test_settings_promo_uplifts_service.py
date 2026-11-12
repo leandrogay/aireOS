@@ -524,6 +524,22 @@ def test_placeholders_use_the_products_range_anchor(monkeypatch):
     assert all_skus["product_anchors"] == {"Aire Pants L": 30.0}
 
 
+def test_resolved_derivations_use_the_same_product_and_range_anchors_as_the_values(monkeypatch):
+    db = FakePromoUpliftDatabase()
+    db.skus["Aire Tape M"] = {"sku": "SKU-TM", "sku_range": "Tape"}
+    db.add_anchor(1, "30", "manual", sku_range="Pants")
+    _install(monkeypatch, db)
+
+    result = service.resolve_uplifts("fairprice")
+
+    pants = result["product_basis"]["Aire Pants L"]["pct_off_30"]
+    tape = result["product_basis"]["Aire Tape M"]["pct_off_30"]
+    assert (pants["discount_pct"], pants["anchor_pct"], pants["uplift_pct"]) == (30.0, 30.0, 0.0)
+    assert (tape["discount_pct"], tape["anchor_pct"], tape["uplift_pct"]) == (30.0, 20.0, 4.0)
+    assert pants["follows_anchor"] is True
+    assert result["range_basis"]["Pants"]["pct_off_30"] == pants
+
+
 def test_a_typed_estimate_does_not_follow_the_anchor(monkeypatch):
     db = FakePromoUpliftDatabase()
     db.add_anchor(1, "30", "manual")

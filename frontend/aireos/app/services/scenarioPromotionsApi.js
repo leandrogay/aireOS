@@ -20,8 +20,8 @@ const BASE_PATH = '/api/scenario/promotions';
  *
  * @returns {Promise<Array<{ promotion_id: number, customer_name: string, sku_ranges: string[] | null, sku: string | null, product_name: string | null, promo_type: string, mechanic_key: string, mechanic_label: string, reference_uplift_pct: number, reference_source: string, reference_by_sku: Record<string, number>, override_uplift_pct: number | null, voucher: boolean, voucher_uplift_pct: number, voucher_by_sku: Record<string, number>, explanation: string | null, start_month: string, end_month: string, start_date: string | null, end_date: string | null, is_active: boolean, created_at: string, updated_at: string }>>}
  */
-export async function getScenarioPromotions() {
-  return request(BASE_PATH);
+export async function getScenarioPromotions(plan = 'scenario') {
+  return request(`${BASE_PATH}?${new URLSearchParams({ plan })}`);
 }
 
 /**
@@ -53,6 +53,6 @@ export async function updateScenarioPromotion(promotionId, payload) {
  * @param {number} promotionId
  * @returns {Promise<{ deleted: true }>}
  */
-export async function deleteScenarioPromotion(promotionId) {
-  return request(`${BASE_PATH}/${encodeURIComponent(promotionId)}`, { method: 'DELETE' });
+export async function deleteScenarioPromotion(promotionId, plan = 'scenario') {
+  return request(`${BASE_PATH}/${encodeURIComponent(promotionId)}?${new URLSearchParams({ plan })}`, { method: 'DELETE' });
 }

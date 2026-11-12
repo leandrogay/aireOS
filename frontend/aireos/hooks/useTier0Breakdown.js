@@ -9,12 +9,12 @@ import { getTier0Breakdown } from '@/app/services/scenarioTier0BreakdownApi';
  * customer and SKU range in view (backend scenario/tier0_breakdown), read
  * again when either changes.
  *
- * @param {{ ready: boolean, customerName: string, skuRange: string }} options
+ * @param {{ ready: boolean, customerName: string, skuRange: string, basis?: 'current' | 'initial', year?: number | null }} options
  * @returns {{ data: { rows: object[] } | null, loading: boolean, error: string | null }}
  */
-export default function useTier0Breakdown({ ready, customerName, skuRange }) {
+export default function useTier0Breakdown({ ready, customerName, skuRange, basis = 'current', year = null }) {
   const [state, setState] = useState({ data: null, loading: true, error: null, key: null });
-  const key = JSON.stringify({ customerName, skuRange });
+  const key = JSON.stringify({ customerName, skuRange, basis, year });
 
   useEffect(() => {
     if (!ready) return undefined;
@@ -22,7 +22,7 @@ export default function useTier0Breakdown({ ready, customerName, skuRange }) {
 
     async function fetchBreakdown() {
       try {
-        const data = await getTier0Breakdown({ customerName, skuRange });
+        const data = await getTier0Breakdown({ customerName, skuRange, basis, year });
         if (!cancelled) setState({ data, loading: false, error: null, key });
       } catch (err) {
         if (!cancelled) setState({ data: null, loading: false, error: err.message, key });
@@ -33,7 +33,7 @@ export default function useTier0Breakdown({ ready, customerName, skuRange }) {
     return () => {
       cancelled = true;
     };
-  }, [ready, customerName, skuRange, key]);
+  }, [ready, customerName, skuRange, basis, year, key]);
 
   // A change of filters shows loading until its own answer arrives.
   if (state.key !== key) return { data: null, loading: true, error: null };

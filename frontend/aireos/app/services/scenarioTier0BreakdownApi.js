@@ -17,13 +17,15 @@ const BASE_PATH = '/api/scenario/tier0-breakdown';
  *
  * One row per customer x SKU x forecast month (backend tier0_split.month_split).
  *
- * @param {{ customerName?: string, skuRange?: string }} [filters] '' = every customer / SKU range
+ * @param {{ customerName?: string, skuRange?: string, basis?: 'current' | 'initial', year?: number | null }} [filters] '' = every customer / SKU range
  * @returns {Promise<{ rows: Array<{ customer_id: number, sku: string, month_year: string, latest_month: string, tier0: number, baseline: number, carried: number, base_method: string, last_year: object | null, recent: object[], carried_level: string | null, official: { planned: boolean, uplift_pct: number, promotions: object[], level: string | null, missing: string[] } }> }>}
  */
-export async function getTier0Breakdown({ customerName = '', skuRange = '' } = {}) {
+export async function getTier0Breakdown({ customerName = '', skuRange = '', basis = 'current', year = null } = {}) {
   const params = new URLSearchParams();
   if (customerName) params.set('customer_name', customerName);
   if (skuRange) params.set('sku_range', skuRange);
+  if (basis !== 'current') params.set('basis', basis);
+  if (year != null) params.set('year', String(year));
   const query = params.toString();
   return request(query ? `${BASE_PATH}?${query}` : BASE_PATH);
 }

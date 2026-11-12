@@ -1,5 +1,7 @@
 'use client';
 
+import InitialSourceDetails from '@/components/scenario/InitialSourceDetails';
+
 import Link from 'next/link';
 
 import { cn } from '@/lib/utils';
@@ -41,7 +43,7 @@ function SubLine({ label, kind, mechanics }) {
   return (
     <div className="mt-1 pl-2">
       <p className="mb-0.5 text-[11px] text-deep-violet-blue/60">{label}</p>
-      <MechanicPills kind={kind} mechanics={mechanics} />
+      <MechanicPills kind={kind} mechanics={mechanics} wrap />
     </div>
   );
 }
@@ -64,6 +66,7 @@ function SubLine({ label, kind, mechanics }) {
  * }} props
  */
 export default function Tier0Details({ month, rows, tier0Split, anchor, change }) {
+  const initial = tier0Split.basis === 'initial';
   const split = tier0Split.index ? monthSplit(rows, tier0Split.index, month) : null;
   const shown = split && split.splitRows > 0;
   const lastYearMonth = sameMonthLastYear(month);
@@ -82,7 +85,7 @@ export default function Tier0Details({ month, rows, tier0Split, anchor, change }
           <StatusPill tone="warning">Big change</StatusPill>
           <p className="mt-1">
             The promotions planned take this month to Tier 0 × {change.ratio.toFixed(1)} ({signedUnits(change.change)}),
-            because they replace last year&apos;s. Check their uplifts on{' '}
+            because they replace carried promotion effects. Check their uplifts on{' '}
             <Link href="/promo-uplift-settings" className={LINK_CLASS}>
               Promotion uplift settings
             </Link>
@@ -105,7 +108,14 @@ export default function Tier0Details({ month, rows, tier0Split, anchor, change }
 
   return (
     <div className="space-y-1.5 text-xs text-deep-violet-blue">
-      <p className="text-[10px] font-bold uppercase tracking-wide text-deep-violet-blue/55">How Tier 0 is built</p>
+      <p className="text-[10px] font-bold uppercase tracking-wide text-deep-violet-blue/55">{initial ? 'How Initial is built' : 'How Tier 0 is built'}</p>
+      {initial && tier0Split.dataCutoff ? (
+        <p className="text-[11px] text-deep-violet-blue/60">
+          Source data through {formatMonthLabel(tier0Split.dataCutoff)}. Each SKU uses its own latest available months at that cut-off.
+          {' '}The split reconciles to the published Initial; later sales months are left out.
+        </p>
+      ) : null}
+      {initial && shown ? <InitialSourceDetails rows={rows} index={tier0Split.index} month={month} /> : null}
       {tier0Split.error ? (
         <p className="rounded-md border border-violet bg-lavander/50 px-2.5 py-2 text-xs" role="alert">
           Tier 0 could not be split into its baseline and promotions: {tier0Split.error}
@@ -150,7 +160,7 @@ export default function Tier0Details({ month, rows, tier0Split, anchor, change }
             <dl>
               <Fact label="Tier 0 = ½ same month last year + ½ recent months" value={units(split.tier0)} strong />
               <Fact label="Baseline at the anchor" value={units(split.baseline)} />
-              <Fact label="Last year's promotions in it" value={signedUnits(split.carried)}>
+              <Fact label={initial ? 'Carried promotion effects' : "Last year's promotions in it"} value={signedUnits(split.carried)}>
                 {split.carriedLevel ? (
                   <p className="mt-0.5 flex justify-end">
                     <StatusPill tone={levelTone(split.carriedLevel)}>{levelLabel(split.carriedLevel)}</StatusPill>

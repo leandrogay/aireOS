@@ -175,7 +175,7 @@ def split(ly_units: float | None, ly_uplift: float, recent: list[tuple[float, fl
 
 
 def _source(month: date, units: float, carried: dict) -> dict:
-    return {
+    result = {
         "month": month.isoformat(),
         "units": units,
         "uplift_pct": round(carried["uplift"] * 100, 2),
@@ -183,6 +183,11 @@ def _source(month: date, units: float, carried: dict) -> dict:
         "level": carried["level"],
         "missing": carried["missing"],
     }
+    if carried.get("anchor"):
+        anchor = carried["anchor"]
+        result["anchor"] = {**anchor, "anchor_pct": float(anchor["anchor_pct"]),
+                            "effective_from": anchor["effective_from"].isoformat() if anchor["effective_from"] else None}
+    return result
 
 
 def month_split(series: dict[date, float], latest: date, target: date, carried_for) -> dict | None:

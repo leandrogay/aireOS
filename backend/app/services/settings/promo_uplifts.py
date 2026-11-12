@@ -913,6 +913,19 @@ def _pick_uplifts(
     return uplifts
 
 
+def _uplift_basis(uplifts: list[dict], anchor_pct: Decimal) -> dict:
+    """The exact rule inputs for displaying a copied value's derivation."""
+
+    return {
+        row["mechanic_key"]: {
+            "uplift_pct": row["uplift_pct"], "source": row["source"],
+            "follows_anchor": row["follows_anchor"],
+            "discount_pct": row["effective_discount_pct"], "anchor_pct": _num(anchor_pct),
+        }
+        for row in uplifts
+    }
+
+
 def resolve_uplifts(customer_name: str, product_name: str | None = None, sku_range: str | None = None) -> dict:
     """
     The uplift of every mechanic for one customer and SKU range (the
@@ -952,11 +965,13 @@ def resolve_uplifts(customer_name: str, product_name: str | None = None, sku_ran
     customer_anchor = Decimal(str(anchor["anchor_pct"]))
     product_uplifts: dict[str, dict[str, float]] = {}
     product_anchors: dict[str, float] = {}
+    product_basis: dict[str, dict] = {}
     for item in products:
         item_anchor = _anchor_pct_for(anchor, item["sku_range"])
         if item_anchor != customer_anchor:
             product_anchors[item["product_name"]] = _num(item_anchor)
         own = _pick_uplifts(current, customer_id, item["sku"], item["sku_range"], item_anchor)
+        product_basis[item["product_name"]] = _uplift_basis(own, item_anchor)
         differing = {
             view["mechanic_key"]: view["uplift_pct"]
             for view in own
@@ -969,11 +984,13 @@ def resolve_uplifts(customer_name: str, product_name: str | None = None, sku_ran
     # promotions: a range promotion takes its range's values and anchor.
     range_uplifts: dict[str, dict[str, float]] = {}
     range_anchors: dict[str, float] = {}
+    range_basis: dict[str, dict] = {}
     for range_name in ranges:
         range_anchor = _anchor_pct_for(anchor, range_name)
         if range_anchor != customer_anchor:
             range_anchors[range_name] = _num(range_anchor)
         own = _pick_uplifts(current, customer_id, None, range_name, range_anchor)
+        range_basis[range_name] = _uplift_basis(own, range_anchor)
         differing = {
             view["mechanic_key"]: view["uplift_pct"]
             for view in own
@@ -992,6 +1009,8 @@ def resolve_uplifts(customer_name: str, product_name: str | None = None, sku_ran
         "product_anchors": product_anchors,
         "range_uplifts": range_uplifts,
         "range_anchors": range_anchors,
+        "product_basis": product_basis,
+        "range_basis": range_basis,
         # Which range each product is in, so a promotion on some ranges keeps
         # only those products' own values.
         "product_ranges": {item["product_name"]: item["sku_range"] for item in products if item["sku_range"]},

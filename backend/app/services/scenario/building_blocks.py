@@ -46,6 +46,7 @@ class GrowthBlockExistsError(Exception):
 _BLOCK_SELECT = f"""
     SELECT
         block.block_id,
+        block.plan,
         block.kind,
         {common.customer_names_select("block")},
         block.sku_ranges,
@@ -72,6 +73,7 @@ _BLOCK_SELECT = f"""
 def _block_view(row: dict) -> dict:
     return {
         "block_id": row["block_id"],
+        "plan": row.get("plan", "scenario"),
         "kind": row["kind"],
         # None = every customer, as sku_ranges.
         "customer_names": list(row["customer_names"]) or None,
@@ -91,11 +93,15 @@ def _block_view(row: dict) -> dict:
     }
 
 
-def _fetch_block(conn: Connection, block_id: int) -> dict | None:
+def _select_for_schema(has_plan: bool) -> str:
+    return _BLOCK_SELECT if has_plan else _BLOCK_SELECT.replace("block.plan,", "'scenario' AS plan,")
+
+
+def _fetch_block(conn: Connection, block_id: int, has_plan: bool = True) -> dict | None:
     row = conn.execute(
         text(
             f"""
-            {_BLOCK_SELECT}
+            {_select_for_schema(has_plan)}
 
             WHERE
                 block.block_id = :block_id
@@ -107,20 +113,26 @@ def _fetch_block(conn: Connection, block_id: int) -> dict | None:
     return _block_view(dict(row)) if row is not None else None
 
 
-def list_building_blocks() -> list[dict]:
+def list_building_blocks(plan: str = "scenario") -> list[dict]:
     """Every saved building block, newest first; the page filters them itself."""
+    common.validate_plan(plan)
 
     with common.read_connection() as conn:
+        has_plan = common.require_plan(conn, "scenario_building_blocks", plan)
+        scope = "block.plan = :plan" if has_plan else "TRUE"
         rows = conn.execute(
             text(
                 f"""
-                {_BLOCK_SELECT}
+                {_select_for_schema(has_plan)}
+
+                WHERE {scope}
 
                 ORDER BY
                     block.created_at DESC,
                     block.block_id DESC
                 """
-            )
+            ),
+            {"plan": plan},
         ).mappings().all()
 
     return [_block_view(dict(row)) for row in rows]
@@ -140,9 +152,11 @@ def fetch_blocks_for_customer(conn: Connection, customer_id: int, block_ids: lis
 
     if not block_ids:
         return []
+    has_plan = common.require_plan(conn, "scenario_building_blocks", "scenario")
+    plan_scope = "AND block.plan = 'scenario'" if has_plan else ""
     rows = conn.execute(
         text(
-            """
+            f"""
             SELECT
                 block.block_id,
                 block.sku,
@@ -178,6 +192,7 @@ def fetch_blocks_for_customer(conn: Connection, customer_id: int, block_ids: lis
 
             WHERE
                 (block.customer_ids IS NULL OR CAST(:customer_id AS INTEGER) = ANY(block.customer_ids))
+                {plan_scope}
                 AND block.block_id = ANY(:block_ids)
 
             ORDER BY
@@ -304,7 +319,7 @@ def _resolve_sku_ranges(conn: Connection, sku_ranges: list[str] | None) -> list[
     return list(sku_ranges)
 
 
-def _ensure_one_growth_per_year(conn: Connection, block: dict, params: dict, block_id: int | None) -> None:
+def _ensure_one_growth_per_year(conn: Connection, block: dict, params: dict, block_id: int | None, has_plan: bool = True) -> None:
     """
     Refuse a second growth block for the customer and year, so
     the page gets a clear 409 instead of the unique index's error (the index
@@ -314,9 +329,10 @@ def _ensure_one_growth_per_year(conn: Connection, block: dict, params: dict, blo
     if params["kind"] != "growth":
         return
 
+    plan_scope = "AND plan = :plan" if has_plan else ""
     existing = conn.execute(
         text(
-            """
+            f"""
             SELECT
                 block_id
 
@@ -324,12 +340,14 @@ def _ensure_one_growth_per_year(conn: Connection, block: dict, params: dict, blo
 
             WHERE
                 kind = 'growth'
+                {plan_scope}
                 AND customer_id = :customer_id
                 AND start_month = :start_month
                 AND block_id <> :block_id
             """
         ),
         {
+            "plan": params["plan"],
             "customer_id": params["customer_id"],
             "start_month": params["start_month"],
             # BIGSERIAL starts at 1, so 0 excludes nothing on a create.
@@ -357,6 +375,7 @@ def excluded_pairs_json(conn: Connection, pairs: list[dict]) -> str:
 def _write_params(conn: Connection, block: dict) -> dict:
     customer_ids = resolve_customer_ids(conn, block["customer_names"])
     return {
+        "plan": block.get("plan", "scenario"),
         "kind": block["kind"],
         "customer_ids": customer_ids,
         # The one customer, or None for several or every customer.
@@ -386,13 +405,17 @@ def create_building_block(block: dict) -> dict:
     """Save a new building block and return it as the list returns it."""
 
     with common.get_engine().begin() as conn:
+        has_plan = common.require_plan(conn, "scenario_building_blocks", block.get("plan", "scenario"))
         params = _write_params(conn, block)
-        _ensure_one_growth_per_year(conn, block, params, None)
+        _ensure_one_growth_per_year(conn, block, params, None, has_plan)
 
+        plan_column = "plan," if has_plan else ""
+        plan_value = ":plan," if has_plan else ""
         block_id = conn.execute(
             text(
-                """
+                f"""
                 INSERT INTO scenario_building_blocks (
+                    {plan_column}
                     kind,
                     customer_id,
                     customer_ids,
@@ -408,6 +431,7 @@ def create_building_block(block: dict) -> dict:
                     is_active
                 )
                 VALUES (
+                    {plan_value}
                     :kind,
                     :customer_id,
                     CAST(:customer_ids AS INTEGER[]),
@@ -428,19 +452,20 @@ def create_building_block(block: dict) -> dict:
             params,
         ).scalar_one()
 
-        return _fetch_block(conn, block_id)
+        return _fetch_block(conn, block_id, has_plan)
 
 
 def update_building_block(block_id: int, block: dict) -> dict | None:
     """Replace every field of a building block; None when it doesn't exist."""
 
     with common.get_engine().begin() as conn:
+        has_plan = common.require_plan(conn, "scenario_building_blocks", block.get("plan", "scenario"))
         params = _write_params(conn, block)
-        _ensure_one_growth_per_year(conn, block, params, block_id)
+        _ensure_one_growth_per_year(conn, block, params, block_id, has_plan)
 
         updated = conn.execute(
             text(
-                """
+                f"""
                 UPDATE scenario_building_blocks
 
                 SET
@@ -461,6 +486,7 @@ def update_building_block(block_id: int, block: dict) -> dict | None:
 
                 WHERE
                     block_id = :block_id
+                    {"AND plan = :plan" if has_plan else ""}
 
                 RETURNING block_id
                 """
@@ -470,25 +496,28 @@ def update_building_block(block_id: int, block: dict) -> dict | None:
 
         if updated is None:
             return None
-        return _fetch_block(conn, block_id)
+        return _fetch_block(conn, block_id, has_plan)
 
 
-def delete_building_block(block_id: int) -> bool:
+def delete_building_block(block_id: int, plan: str = "scenario") -> bool:
     """Delete a building block for good; False when it doesn't exist."""
+    common.validate_plan(plan)
 
     with common.get_engine().begin() as conn:
+        has_plan = common.require_plan(conn, "scenario_building_blocks", plan)
         deleted = conn.execute(
             text(
-                """
+                f"""
                 DELETE FROM scenario_building_blocks
 
                 WHERE
                     block_id = :block_id
+                    {"AND plan = :plan" if has_plan else ""}
 
                 RETURNING block_id
                 """
             ),
-            {"block_id": block_id},
+            {"block_id": block_id, "plan": plan},
         ).first()
 
     return deleted is not None

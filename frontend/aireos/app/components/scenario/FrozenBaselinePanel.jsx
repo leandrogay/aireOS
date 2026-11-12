@@ -3,6 +3,7 @@
 import { LockKeyhole } from 'lucide-react';
 
 import InfoTooltip from '@/components/ui/InfoTooltip';
+import { Button } from '@/components/ui/button';
 import { formatMonthLabel } from '@/app/utils/forecastView';
 import { PART_COLORS } from '@/app/utils/scenarioComposition';
 import { milestoneTotals } from '@/app/utils/scenarioMilestones';
@@ -19,7 +20,9 @@ export const COMPOSITION_LAYERS = [
   { key: 'promotionsLayer', label: 'Scenario promotions', color: PART_COLORS.promotions, opacity: 0.4 },
   { key: 'carriedDownLayer', label: "Last year's promotions (below an ordinary month)", color: PART_COLORS.carried, hatch: true },
   { key: 'officialDownLayer', label: 'Official promotions (below the anchor)', color: PART_COLORS.official, hatch: true },
-  { key: 'decreaseLayer', label: 'Decreases', color: PART_COLORS.decrease, hatch: true },
+  { key: 'growthDownLayer', label: 'Growth decreases', color: PART_COLORS.growth, hatch: true },
+  { key: 'blocksDownLayer', label: 'Building block decreases', color: PART_COLORS.blocks, hatch: true },
+  { key: 'promotionsDownLayer', label: 'Scenario promotion decreases', color: PART_COLORS.promotions, hatch: true },
 ];
 
 function units(value) {
@@ -40,14 +43,23 @@ function periodLabel(months) {
 }
 
 // One line of the list, with its chart band's colour.
-function Part({ color, label, value }) {
+function Part({ color, label, value, partKey, onSpotlight }) {
+  const content = <>
+    <span className="inline-flex min-w-0 items-center gap-2">
+      <span aria-hidden="true" className="size-2.5 shrink-0 rounded-sm" style={{ backgroundColor: color }} />
+      <span className="truncate">{label}</span>
+    </span>
+    <span className="shrink-0 font-semibold tabular-nums">{value}</span>
+  </>;
   return (
-    <li className="flex items-center justify-between gap-3 py-1">
-      <span className="inline-flex min-w-0 items-center gap-2">
-        <span aria-hidden="true" className="size-2.5 shrink-0 rounded-sm" style={{ backgroundColor: color }} />
-        <span className="truncate">{label}</span>
-      </span>
-      <span className="shrink-0 font-semibold tabular-nums">{value}</span>
+    <li>
+      {partKey && onSpotlight ? <Button type="button" variant="ghost" size="sm"
+        onPointerEnter={() => onSpotlight(partKey)} onPointerLeave={() => onSpotlight(null)}
+        onFocus={() => onSpotlight(partKey)} onBlur={() => onSpotlight(null)}
+        aria-label={`${label}: ${value}. Spotlight its area on the chart.`}
+        className="-mx-1 flex h-auto w-[calc(100%+0.5rem)] items-center justify-between gap-3 rounded px-1 py-1 text-left text-xs font-normal transition-colors hover:bg-lavander/60 focus-visible:bg-lavander/60 motion-reduce:transition-none">
+        {content}
+      </Button> : <div className="flex items-center justify-between gap-3 py-1">{content}</div>}
     </li>
   );
 }
@@ -63,23 +75,27 @@ const GROUP_CLASS = 'mt-2 text-[10px] font-bold uppercase tracking-wide text-dee
  * Monthly plan's columns.
  *
  * @param {{
+ *   plan?: 'scenario' | 'budget',
  *   growthSection: import('react').ReactNode,
  *   tier0Split: { index: Map<string, object> | null, loading: boolean, error: string | null },
  *   totals: ReturnType<typeof import('@/app/utils/scenarioComposition').breakdownTotals>,
  *   milestones: ReturnType<typeof import('@/app/utils/scenarioMilestones').milestoneBreakdown>,
+ *   onSpotlight?: (part: string | null) => void,
  * }} props
  */
-export default function FrozenBaselinePanel({ growthSection, tier0Split, totals, milestones }) {
+export default function FrozenBaselinePanel({ plan = 'scenario', growthSection, tier0Split, totals, milestones, onSpotlight }) {
+  const budget = plan === 'budget';
   const split = Boolean(tier0Split.index);
+  const title = budget ? 'Budget breakdown' : 'Forecast breakdown';
   const period = periodLabel(totals.months);
   // Past months with milestones: their actual, worked back (scenarioMilestones.js).
   const past = milestoneTotals(milestones);
 
   return (
-    <div className="space-y-3" aria-label="Forecast breakdown">
+    <div className="space-y-3" aria-label={title}>
       <div className="flex items-center gap-1.5">
         <LockKeyhole className="size-3.5 text-deep-violet-blue/60" aria-hidden="true" />
-        <h2 className="text-sm font-semibold text-deep-violet-blue">Forecast breakdown</h2>
+        <h2 className="text-sm font-semibold text-deep-violet-blue">{title}</h2>
       </div>
 
       {growthSection}
@@ -88,10 +104,16 @@ export default function FrozenBaselinePanel({ growthSection, tier0Split, totals,
         <p className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-deep-violet-blue/55">
           What Simulated is made of{period ? ` · ${period}` : ''}
           <InfoTooltip label="About the breakdown">
-            The months on the chart added up. In the forecast: Tier 0 split into an ordinary month at the anchor and
-            the promotions it carries from last year, with official promotions from the Promotions page in their place.
-            You add: growth, building blocks and scenario promotions from this sidebar. Month by month, these are the
-            Monthly plan&apos;s columns.
+            {budget ? (
+              <>Initial is reconstructed at its own data cut-off: an ordinary-month baseline at the source anchors,
+                plus promotion effects carried from its historical sales. Budget promotions replace the carried
+                effects for their covered share of a month. Growth and building blocks are adjustments to Initial.</>
+            ) : (
+              <>The months on the chart added up. In the forecast: Tier 0 split into an ordinary month at the anchor and
+                the promotions it carries from last year, with official promotions from the Promotions page in their place.
+                You add: growth, building blocks and scenario promotions from this sidebar. Month by month, these are the
+                Monthly plan&apos;s columns.</>
+            )}
           </InfoTooltip>
         </p>
         {totals.months.length ? (
@@ -100,19 +122,26 @@ export default function FrozenBaselinePanel({ growthSection, tier0Split, totals,
             <ul>
               {split ? (
                 <>
-                  <Part color={PART_COLORS.baseline} label="Baseline" value={units(totals.baseline)} />
-                  <Part color={PART_COLORS.carried} label="Last year's promotions" value={signedUnits(totals.carried)} />
-                  <Part color={PART_COLORS.official} label="Official promotions" value={signedUnits(totals.official)} />
+                  <Part partKey="baseline" onSpotlight={onSpotlight} color={PART_COLORS.baseline} label={budget ? 'Baseline at the anchor' : 'Baseline'} value={units(totals.baseline)} />
+                  <Part partKey="carried" onSpotlight={onSpotlight} color={PART_COLORS.carried} label={budget ? 'Carried promotion effects' : "Last year's promotions"} value={signedUnits(totals.carried)} />
+                  {!budget ? <Part partKey="official" onSpotlight={onSpotlight} color={PART_COLORS.official} label="Official promotions" value={signedUnits(totals.official)} /> : null}
                 </>
               ) : (
-                <Part color={PART_COLORS.baseline} label="Tier 0" value={units(totals.baseline)} />
+                <Part partKey="baseline" onSpotlight={onSpotlight} color={PART_COLORS.baseline} label={budget ? 'Initial forecast (unsplit)' : 'Tier 0'} value={units(totals.baseline)} />
               )}
             </ul>
-            <p className={GROUP_CLASS}>You add</p>
+            {budget ? (
+              <p className="mt-1 text-[11px] leading-snug text-deep-violet-blue/60">
+                {split ? <>Reconstructed at Initial&apos;s own data cut-off{tier0Split.dataCutoff ? ` (${formatMonthLabel(tier0Split.dataCutoff)})` : ''}.
+                  {' '}Carried effects remain where you have no budget promotion; elsewhere your promotion replaces its covered share.</>
+                  : <>The Initial breakdown is needed before budget adjustments can be previewed or locked.</>}
+              </p>
+            ) : null}
+            <p className={GROUP_CLASS}>{budget ? 'Your adjustments' : 'You add'}</p>
             <ul>
-              <Part color={PART_COLORS.growth} label="Growth" value={signedUnits(totals.growth)} />
-              <Part color={PART_COLORS.blocks} label="Building blocks" value={signedUnits(totals.blocks)} />
-              <Part color={PART_COLORS.promotions} label="Scenario promotions" value={signedUnits(totals.promotions)} />
+              <Part partKey="growth" onSpotlight={onSpotlight} color={PART_COLORS.growth} label="Growth" value={signedUnits(totals.growth)} />
+              <Part partKey="blocks" onSpotlight={onSpotlight} color={PART_COLORS.blocks} label="Building blocks" value={signedUnits(totals.blocks)} />
+              <Part partKey="promotions" onSpotlight={onSpotlight} color={PART_COLORS.promotions} label="Scenario promotions" value={signedUnits(totals.promotions)} />
             </ul>
             <p className="mt-2 flex items-center justify-between border-t border-lavander pt-1.5 font-semibold">
               <span>Simulated</span>
@@ -146,10 +175,12 @@ export default function FrozenBaselinePanel({ growthSection, tier0Split, totals,
         ) : null}
         {tier0Split.error ? (
           <p className="mt-2 rounded-md border border-violet bg-lavander/50 px-2.5 py-2 text-xs" role="alert">
-            Tier 0 could not be split into its baseline and promotions: {tier0Split.error}
+            {budget ? 'Initial' : 'Tier 0'} could not be split into its baseline and promotions: {tier0Split.error}
           </p>
         ) : !split && tier0Split.loading ? (
-          <p className="mt-2 text-[11px] text-deep-violet-blue/60">Splitting Tier 0 into its baseline and promotions…</p>
+          <p className="mt-2 text-[11px] text-deep-violet-blue/60">
+            {budget ? 'Reconstructing Initial at its own data cut-off…' : 'Splitting Tier 0 into its baseline and promotions…'}
+          </p>
         ) : null}
       </div>
     </div>

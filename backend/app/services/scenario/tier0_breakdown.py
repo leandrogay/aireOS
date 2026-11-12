@@ -69,7 +69,7 @@ def _measured(moment: dict) -> dict:
     return {**moment, "version_id": moment["anchor_id"]}
 
 
-def _carried_for(inputs: dict, promotions: list[dict], measured: list[dict], customer_id: int, sku: str):
+def _carried_for(inputs: dict, promotions: list[dict], measured: list[dict], customer_id: int, sku: str, trace: bool = False):
     sku_range = inputs["sku_ranges"].get(sku)
 
     def uplift_for(mechanic_key: str, month: date) -> dict:
@@ -79,7 +79,10 @@ def _carried_for(inputs: dict, promotions: list[dict], measured: list[dict], cus
         )
 
     def carried_for(month: date) -> dict:
-        return tier0_split.month_uplift(promotions, month, uplift_for)
+        result = tier0_split.month_uplift(promotions, month, uplift_for)
+        if trace:
+            result["anchor"] = inputs["anchor_for"](customer_id, sku_range, month)
+        return result
 
     return carried_for
 
@@ -89,7 +92,10 @@ def _carried_for(inputs: dict, promotions: list[dict], measured: list[dict], cus
 # ============================================================
 
 
-def get_tier0_breakdown(customer_name: str | None = None, sku_range: str | None = None) -> dict:
+def get_tier0_breakdown(
+    customer_name: str | None = None, sku_range: str | None = None,
+    basis: str = "current", year: int | None = None,
+) -> dict:
     """
     Every forecast month of the customers and SKU range asked for, split into
     Tier 0's baseline at the anchor and the promotions it carries, with the
@@ -98,6 +104,14 @@ def get_tier0_breakdown(customer_name: str | None = None, sku_range: str | None 
     replacing the carried promotions does.
     """
 
+    if basis not in ("current", "initial"):
+        raise ValueError("basis must be current or initial")
+    if basis == "initial":
+        if year is None:
+            raise ValueError("Choose a year for the Initial forecast breakdown.")
+        from app.services.scenario.initial_breakdown import get_initial_breakdown
+
+        return get_initial_breakdown(year, customer_name, sku_range)
     scope = bigquery.resolve_forecast_scope(customer_name=customer_name, sku_range=sku_range)
     if bigquery._scope_is_empty(scope):
         return {"rows": []}
