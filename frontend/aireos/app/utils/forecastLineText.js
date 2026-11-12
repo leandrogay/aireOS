@@ -437,12 +437,14 @@ export function sgtDay(stamp) {
 }
 
 // Plans locked on a day other than the rule's, and why. 2027 was still open
-// when the 31 Oct rule started (12 Nov 2026), so it was locked straight away.
+// when the 31 Oct rule started, so it was locked on 12 Nov 2026 instead; every
+// plan from 2028 locks on 31 Oct.
 // A fixed fact about that one plan, shown only when 2027 is in view.
 export const EARLY_LOCK_NOTES = {
   2027:
-    'The yearly plan now locks on 31 Oct. 2027 was still open when this rule started on 12 Nov 2026, so it ' +
-    'was locked straight away, with the sales and promotions it had that day.',
+    '2027 is an exception: its plan was locked on 12 Nov 2026, when the 31 Oct rule started, with the sales ' +
+    '(up to October) and promotions it had that day. From the 2028 plan onwards, every plan locks at the end ' +
+    'of 31 Oct.',
 };
 
 /**
