@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Loader2, Plus } from 'lucide-react';
 
 import Dropdown from '@/components/ui/Dropdown';
+import DatePicker from '@/components/ui/DatePicker';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -398,19 +399,19 @@ export default function SkuForm({ open, sku, options = {}, onSave, onClose }) {
                   )}
                   <FieldError message={errors.price} />
                 </label>
-                <label>
-                  <span className={labelClass}>
+                <div>
+                  <label htmlFor="sku-price-effective-from" className={labelClass}>
                     Effective from
                     {priceChanged && <RequiredMark />}
-                  </span>
-                  <input
-                    type="date"
-                    required={priceChanged}
+                  </label>
+                  <DatePicker
+                    id="sku-price-effective-from"
+                    variant="input"
                     disabled={!priceChanged}
                     value={form.price_effective_from}
-                    onChange={(event) => change('price_effective_from', event.target.value)}
-                    aria-invalid={Boolean(errors.price_effective_from)}
-                    className={cn(inputClass, errors.price_effective_from && invalidInputClass)}
+                    onChange={(value) => change('price_effective_from', value)}
+                    invalid={Boolean(errors.price_effective_from)}
+                    boxClassName="bg-cream"
                   />
                   <span className={cn(hintClass, 'block')}>
                     {priceChanged
@@ -418,23 +419,24 @@ export default function SkuForm({ open, sku, options = {}, onSave, onClose }) {
                       : 'To correct a saved price or its dates, use History > Price periods.'}
                   </span>
                   <FieldError message={errors.price_effective_from} />
-                </label>
-                <label>
-                  <span className={labelClass}>Effective to (optional)</span>
-                  <input
-                    type="date"
+                </div>
+                <div>
+                  <label htmlFor="sku-price-effective-to" className={labelClass}>Effective to (optional)</label>
+                  <DatePicker
+                    id="sku-price-effective-to"
+                    variant="input"
                     disabled={!priceChanged}
-                    min={form.price_effective_from || undefined}
+                    min={form.price_effective_from || ''}
                     value={form.price_effective_to}
-                    onChange={(event) => change('price_effective_to', event.target.value)}
-                    aria-invalid={Boolean(errors.price_effective_to)}
-                    className={cn(inputClass, errors.price_effective_to && invalidInputClass)}
+                    onChange={(value) => change('price_effective_to', value)}
+                    invalid={Boolean(errors.price_effective_to)}
+                    boxClassName="bg-cream"
                   />
                   <span className={cn(hintClass, 'block')}>
                     Leave blank to keep this price until the next price change.
                   </span>
                   <FieldError message={errors.price_effective_to} />
-                </label>
+                </div>
               </div>
             </FormSection>
           </fieldset>
