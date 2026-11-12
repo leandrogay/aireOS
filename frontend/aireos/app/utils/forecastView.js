@@ -1,3 +1,4 @@
+import { NO_CUSTOMER_COLOR } from '@/app/utils/customerColors';
 import { monthNotes, monthlyActuals, previousMadeByMonth } from '@/app/utils/forecastActuals';
 import { confidenceBand } from '@/app/utils/forecastLineText';
 import { confidenceEntry, pastAccuracy } from '@/app/utils/forecastTiers';
@@ -18,8 +19,10 @@ export const DEFAULT_PRODUCT_NAME = 'Aire Ultra Tape L';
 const ALL_FORECAST_SERIES = [
   // Breaks at a month with no actual; ForecastChart joins each gap with a
   // dashed segment (forecastActuals.withActualBridges), so a missing month
-  // is never drawn as a point, let alone as 0.
-  { key: 'actual', label: 'Actual', color: '#3A4369', dash: undefined, shape: 'circle', connectNulls: false },
+  // is never drawn as a point, let alone as 0. Its colour here is the one for
+  // no single customer; with one customer picked it is that customer's
+  // (forecastSeriesWithActualColor).
+  { key: 'actual', label: 'Actual', color: NO_CUSTOMER_COLOR, dash: undefined, shape: 'circle', connectNulls: false },
   // The year's Jan-Dec plan (aire_forecasting_initial): created from the
   // first September sales, rebuilt as that year's promotions or Oct/Nov
   // sales arrive, locked at 23:59 SGT on 31 December. 2026 was a one-off
@@ -45,6 +48,18 @@ const ALL_FORECAST_SERIES = [
 ];
 
 export const FORECAST_SERIES = ALL_FORECAST_SERIES.filter((series) => !series.archived);
+
+/**
+ * The forecast lines with Actual drawn in `actualColor`: the picked customer's
+ * colour (utils/customerColors), or NO_CUSTOMER_COLOR for All customers. The
+ * Current, Previous and Initial lines keep their own colours.
+ *
+ * @param {string} actualColor
+ * @returns {typeof FORECAST_SERIES}
+ */
+export function forecastSeriesWithActualColor(actualColor) {
+  return FORECAST_SERIES.map((series) => (series.key === 'actual' ? { ...series, color: actualColor } : series));
+}
 
 export const ALL_SERIES_VISIBLE = Object.fromEntries(
   FORECAST_SERIES.map((series) => [series.key, true])

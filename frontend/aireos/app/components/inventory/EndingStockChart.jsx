@@ -13,7 +13,7 @@ import ChartFrame, { CHART_TOOLTIP_CLASS } from '@/components/ui/ChartFrame';
 
 import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
 import { customerLabel } from '@/app/utils/retailerLabel';
-import { customerColor, customerColorOrder } from '@/app/utils/storeFormats';
+import { customerColorById, customerPalette } from '@/app/utils/customerColors';
 import { AXIS_TICK, BAR_ANIMATION, chartDataRange, metricYAxisProps, yearAxisProps } from '@/app/utils/trendChart';
 import useChartTransition from '@/hooks/useChartTransition';
 import useMediaQuery from '@/hooks/useMediaQuery';
@@ -71,11 +71,12 @@ export default function EndingStockChart({ monthly, allCustomers }) {
     return <p className="text-sm text-deep-violet-blue/70">No inventory data for these filters.</p>;
   }
 
-  const colorOrder = customerColorOrder(allCustomers);
+  // By customer_id, the same colour the customer has on every page.
+  const palette = customerPalette(allCustomers);
   const config = Object.fromEntries(
     customers.map(([id, name]) => [
       `c${id}`,
-      { label: customerLabel(name), color: customerColor(name, colorOrder) },
+      { label: customerLabel(name), color: customerColorById(id, palette) },
     ]),
   );
 

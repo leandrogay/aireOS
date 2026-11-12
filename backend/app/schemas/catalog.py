@@ -99,6 +99,18 @@ class CustomerUpdate(CustomerBase):
     pass
 
 
+class CustomerColorUpdate(_Base):
+    # A customer's chart colour as #RRGGBB, stored uppercase (the column's
+    # check constraint, migration 018). Whether it reads on the charts and
+    # stands apart is checked in customer_service (customer_colors).
+    color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+
+    @field_validator("color")
+    @classmethod
+    def _upper(cls, value: str) -> str:
+        return value.upper()
+
+
 # ============================================================
 # RETAILER
 # ============================================================

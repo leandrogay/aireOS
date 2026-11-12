@@ -3,7 +3,7 @@ from functools import lru_cache
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
-from app.services import sql
+from app.services import customer_colors, sql
 from app.services.settings import doh
 
 
@@ -39,6 +39,10 @@ class CustomerHasRetailersError(Exception):
 
 
 class RetailerOwnedError(Exception):
+    pass
+
+
+class CustomerColorError(Exception):
     pass
 
 
@@ -84,6 +88,7 @@ _CUSTOMER_QUERY = f"""
     SELECT
         c.customer_id,
         c.customer_name,
+        c.color,
 
         COALESCE(
             (
@@ -239,6 +244,37 @@ def _ensure_customer_name_free(
         )
 
 
+def _taken_colors(
+    conn: Connection,
+    exclude_customer_id: int | None = None,
+) -> dict[str, str]:
+    # Every other customer's colour, by its name as the page shows it
+    # ("Sheng Shiong"), for picking and checking a colour.
+    rows = conn.execute(
+        text(
+            """
+            SELECT
+                customer_name,
+                color
+
+            FROM customers
+
+            WHERE
+                color IS NOT NULL
+                AND customer_id IS DISTINCT FROM CAST(:exclude_id AS INTEGER)
+            """
+        ),
+        {
+            "exclude_id": exclude_customer_id,
+        },
+    ).mappings().all()
+
+    return {
+        " ".join(row["customer_name"].replace("_", " ").split()): row["color"]
+        for row in rows
+    }
+
+
 def _attach_retailer(
     conn: Connection,
     customer_id: int,
@@ -372,14 +408,23 @@ def create_customer(
             customer.customer_name,
         )
 
+        # Picked once and stored, so it never moves when another customer
+        # comes or goes: the free colour farthest from every other customer's
+        # and from the forecast line colours.
+        color = customer_colors.pick_color(
+            list(_taken_colors(conn).values())
+        )
+
         customer_id = conn.execute(
             text(
                 """
                 INSERT INTO customers (
-                    customer_name
+                    customer_name,
+                    color
                 )
                 VALUES (
-                    :customer_name
+                    :customer_name,
+                    :color
                 )
 
                 RETURNING customer_id
@@ -387,6 +432,7 @@ def create_customer(
             ),
             {
                 "customer_name": customer.customer_name,
+                "color": color,
             },
         ).scalar_one()
 
@@ -455,6 +501,60 @@ def update_customer(
             {
                 "customer_id": customer_id,
                 "customer_name": customer.customer_name,
+            },
+        )
+
+        return fetch_customer(
+            conn,
+            customer_id,
+        )
+
+
+# ============================================================
+# CUSTOMER COLOUR
+# ============================================================
+
+
+def update_customer_color(
+    customer_id: int,
+    color: str,
+) -> dict | None:
+    """
+    Sets a customer's chart colour (#RRGGBB, uppercase), refused with
+    CustomerColorError when it looks like another customer's colour. None when there is no such customer.
+    """
+
+    with _get_engine().begin() as conn:
+        current = fetch_customer(
+            conn,
+            customer_id,
+        )
+
+        if current is None:
+            return None
+
+        problem = customer_colors.color_problem(
+            color,
+            _taken_colors(conn, exclude_customer_id=customer_id),
+        )
+        if problem:
+            raise CustomerColorError(problem)
+
+        conn.execute(
+            text(
+                """
+                UPDATE customers
+
+                SET
+                    color = :color
+
+                WHERE
+                    customer_id = :customer_id
+                """
+            ),
+            {
+                "customer_id": customer_id,
+                "color": color,
             },
         )
 

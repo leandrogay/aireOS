@@ -12,6 +12,7 @@ import ForecastTable from '@/components/forecast/ForecastTable';
 import ForecastYearTotals, { formatVolume } from '@/components/forecast/ForecastYearTotals';
 import { cardClass } from '@/components/ui/formStyles';
 import { cn } from '@/lib/utils';
+import { customerColor, customerPalette, NO_CUSTOMER_COLOR } from '@/app/utils/customerColors';
 import { customerLabel } from '@/app/utils/retailerLabel';
 import {
   FORECAST_TIER_OPTIONS,
@@ -38,6 +39,7 @@ import useForecastView from '@/hooks/useForecastView';
 import useForecastInitialStatus from '@/hooks/useForecastInitialStatus';
 import useForecastRefreshStatus from '@/hooks/useForecastRefreshStatus';
 import useForecastYearTotals from '@/hooks/useForecastYearTotals';
+import useAllCustomers from '@/hooks/useAllCustomers';
 
 // useSearchParams (the ?tier= model) wants a Suspense boundary above it.
 export default function ForecastPage() {
@@ -58,6 +60,11 @@ function ForecastView() {
   // rows already here (utils/forecastTiers.js).
   const view = useForecastView({ ready, productName, customerName, startDate, endDate, tier: ALL_TIERS });
   const { rows: allRows, availability, actuals, promotions, freshness } = view.data;
+  // The Actual line is the picked customer's colour, as on every page; All
+  // customers is a total, so the no-customer colour. A failed read of the
+  // customer list leaves it at that colour rather than an error.
+  const { customers: allCustomers } = useAllCustomers();
+  const actualColor = customerName ? customerColor(customerName, customerPalette(allCustomers)) : NO_CUSTOMER_COLOR;
   const error = filters.error ?? view.error;
   // Rows start empty, so the chart needs `loading` while the options are
   // still on their way too, or it would briefly claim there is no data.
@@ -238,6 +245,7 @@ function ForecastView() {
           initialMissingHint={initialOff}
           previousMissing={previousOff}
           confidenceDots={singleSeries}
+          actualColor={actualColor}
           notes={modelNotes}
           emptyMessage={allRows.length ? NO_DATA_FOR_TIER : undefined}
           loading={loading}

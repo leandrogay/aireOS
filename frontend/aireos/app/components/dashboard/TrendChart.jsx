@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 import { hasEstimate } from '@/app/utils/estimatedRevenue';
 import { trendChartKind } from '@/app/utils/chartKind';
 import { changePct } from '@/app/utils/periodComparison';
-import { formatColor, UNNAMED_FORMAT } from '@/app/utils/storeFormats';
+import { UNNAMED_FORMAT } from '@/app/utils/storeFormats';
 import {
   CHART_SIZE_CLASS,
   BAR_ANIMATION,
@@ -35,10 +35,10 @@ import TooltipChange from '@/components/dashboard/TooltipChange';
 // card's Revenue / Volume switch) stacked by store format; RevenueTrendCard
 // uses ComparisonMixChart while comparing.
 
-// The total line past the bar limit: its data key, and the colour the
-// comparison chart's total line uses (ComparisonLineChart).
+// The total line past the bar limit. It is drawn in the customer's colour
+// (colorFor of the unnamed series), like the comparison chart's total line
+// (ComparisonLineChart).
 const TOTAL_KEY = 'total';
-const TOTAL_LINE_COLOR = 'var(--aire-deep-blue)';
 
 function weekOrMonth(periodLabel) {
   return periodLabel.startsWith('Week ') ? 'week' : 'month';
@@ -75,10 +75,10 @@ function pivotByFormat(periodByFormat, periodTotal, metric) {
 
 // The total line draws one series, but its tooltip still breaks the period
 // down by format, like a stacked bar's: one row per format that sold.
-function formatRows(period, formats) {
+function formatRows(period, formats, colorFor) {
   return formats
     .filter((format) => typeof period[format] === 'number')
-    .map((format) => ({ dataKey: format, name: format, value: period[format], color: formatColor(format) }));
+    .map((format) => ({ dataKey: format, name: format, value: period[format], color: colorFor(format) }));
 }
 
 // Titled with the hovered bar's exact dates, one row per series — with a
@@ -86,10 +86,10 @@ function formatRows(period, formats) {
 // something — a Total row when stacked, the estimated revenue (Revenue view
 // only: units are always reported), and the % change vs the previous bar.
 // On the total line (`formats` given) the rows are the formats, not the line.
-function TrendTooltip({ active, payload: shown, granularity, metric, formats = null }) {
+function TrendTooltip({ active, payload: shown, granularity, metric, formats = null, colorFor }) {
   if (!active || !shown?.length) return null;
   const period = shown[0].payload;
-  const payload = formats ? formatRows(period, formats) : shown;
+  const payload = formats ? formatRows(period, formats, colorFor) : shown;
   if (!payload.length) return null;
   const total = payload.reduce((sum, item) => sum + (typeof item.value === 'number' ? item.value : 0), 0);
   const stacked = payload.length > 1;
@@ -140,7 +140,8 @@ function TrendTooltip({ active, payload: shown, granularity, metric, formats = n
 
 /**
  * The trend with no comparison: one bar per week/month stacked by store
- * format, in the format colours (a single-format channel is one colour).
+ * format, each format a shade of the customer's colour (`colorFor`, from
+ * page.js formatShadeLookup; a single-format channel is the colour itself).
  * Each bar is labelled by its row's own type (weekOrMonth), so a
  * month-only row is never titled as a week in the tooltip. One customer is
  * one bar per period, so past the screen's bar limit (chartKind: 12 periods
@@ -148,13 +149,13 @@ function TrendTooltip({ active, payload: shown, granularity, metric, formats = n
  * one customer on the cross-customer chart; hovering a point still shows the
  * split by format.
  *
- * @param {{ periodByFormat: Array<object>, periodTotal: Array<object>, granularity: 'week' | 'month', metric?: 'revenue' | 'units' }} props
+ * @param {{ periodByFormat: Array<object>, periodTotal: Array<object>, granularity: 'week' | 'month', metric?: 'revenue' | 'units', colorFor: (format: string) => string }} props
  */
-export function FormatTrendChart({ periodByFormat, periodTotal, granularity, metric = 'revenue' }) {
+export function FormatTrendChart({ periodByFormat, periodTotal, granularity, metric = 'revenue', colorFor }) {
   const mobile = useMediaQuery('(max-width: 639px)');
   const formats = sortFormatsByTotalDesc(periodByFormat);
   const unnamedOnly = formats.length === 1 && formats[0] === UNNAMED_FORMAT;
-  const chartConfig = Object.fromEntries(formats.map((format) => [format, { label: format, color: formatColor(format) }]));
+  const chartConfig = Object.fromEntries(formats.map((format) => [format, { label: format, color: colorFor(format) }]));
   const chartData = pivotByFormat(periodByFormat, periodTotal, metric);
   const axisProps = mobile ? yearAxisProps(chartData, 'periodStart') : periodAxisProps(chartData, granularity);
   // On a phone the axis is labelled by year (yearAxisProps), so no month axis.
@@ -189,14 +190,14 @@ export function FormatTrendChart({ periodByFormat, periodTotal, granularity, met
     // One line, so no legend: the tooltip names the formats.
     return (
       <ChartFrame fill>
-        <ChartContainer config={{ [TOTAL_KEY]: { label: 'Total', color: TOTAL_LINE_COLOR } }} className={CHART_SIZE_CLASS}>
+        <ChartContainer config={{ [TOTAL_KEY]: { label: 'Total', color: colorFor(UNNAMED_FORMAT) } }} className={CHART_SIZE_CLASS}>
           <LineChart accessibilityLayer data={transition.rows} margin={margin}>
             <CartesianGrid vertical={false} />
             <XAxis dataKey={mobile ? 'periodStart' : 'displayLabel'} {...axisProps} padding={{ left: 24, right: 24 }} />
             {yAxis}
             <MonthAxis groups={monthGroups} />
             <ChartTooltip
-              content={<TrendTooltip granularity={granularity} metric={metric} formats={formats} />}
+              content={<TrendTooltip granularity={granularity} metric={metric} formats={formats} colorFor={colorFor} />}
               wrapperStyle={{ zIndex: 10 }}
             />
             <Line

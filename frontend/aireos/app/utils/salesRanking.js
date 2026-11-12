@@ -4,7 +4,7 @@
 // sort reorders the rows already on screen -- they glide to their new places
 // -- instead of fetching the ranking again.
 
-import { customerColor } from './storeFormats.js';
+import { customerColor } from './customerColors.js';
 
 /**
  * `rows` sorted by `metric` (`volume` or `value`), highest first unless
@@ -50,17 +50,17 @@ export function rankSkus(skus, metric, order) {
  * @param {'offline' | 'online'} mode
  * @param {'volume' | 'value'} metric
  * @param {'asc' | 'desc'} order
- * @param {Array<number | null>} colorOrder
+ * @param {{ byName: Map<string, string> }} palette from customerPalette
  * @returns {object[]}
  */
-export function rankCustomers(rows, mode, metric, order, colorOrder) {
+export function rankCustomers(rows, mode, metric, order, palette) {
   const shown = rows.filter((row) => (mode === 'online' ? row.has_online : row.has_offline));
   const totals = shown.map((row) => {
     const channel = row[mode] ?? { revenue: 0, units: 0 };
     return {
       customer: row.customer,
       label: row.label,
-      color: customerColor(row.customer, colorOrder),
+      color: customerColor(row.customer, palette),
       volume: channel.units ?? 0,
       value: channel.revenue ?? 0,
       estimatedValue: channel.estimated_revenue ?? 0,

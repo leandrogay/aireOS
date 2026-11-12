@@ -19,7 +19,7 @@ import ForecastPromoToggle from '@/components/forecast/ForecastPromoToggle';
 import SeriesDot from '@/components/forecast/SeriesDot';
 import ForecastLegendFooter from '@/components/forecast/ForecastLegendFooter';
 import {
-  FORECAST_SERIES,
+  forecastSeriesWithActualColor,
   buildPromoOverlayBands,
   forecastPointDetails,
   formatAxisValue,
@@ -31,6 +31,7 @@ import {
   promoPeriodDividerXs,
   promosOverlappingMonth,
 } from '@/app/utils/forecastView';
+import { NO_CUSTOMER_COLOR } from '@/app/utils/customerColors';
 import { withActualBridges } from '@/app/utils/forecastActuals';
 import { CURRENT_DOT_FILL, INITIAL_MISSING_HINT, forecastLineHints } from '@/app/utils/forecastLineText';
 import { dotRevealDelay, lineSweepTimings } from '@/app/utils/lineAnimation';
@@ -49,12 +50,6 @@ const LATE_BAND_MS = 300;
 
 // Room for carton ticks ("1.5k"); the chart is volume only.
 const Y_AXIS_WIDTH = 40;
-
-const chartConfig = Object.fromEntries(
-  FORECAST_SERIES.map((series) => [series.key, { label: series.label, color: series.color }])
-);
-
-const ACTUAL_COLOR = FORECAST_SERIES.find((series) => series.key === 'actual')?.color;
 
 function dotFill(seriesKey, payload, confidenceDots) {
   if (seriesKey === 'actual' && payload?.actualKind === 'partial') return 'hollow';
@@ -256,6 +251,9 @@ export default function ForecastChart({
   toolbar = null,
   summary = null,
   yearTable = null,
+  // The Actual line's colour: the picked customer's (utils/customerColors),
+  // or the no-customer colour for All customers.
+  actualColor = NO_CUSTOMER_COLOR,
 }) {
   const mobile = useMediaQuery('(max-width: 639px)');
   const chartWrapRef = useRef(null);
@@ -271,13 +269,9 @@ export default function ForecastChart({
   // bands, seasonal average) through `scenario`; /forecast passes nothing,
   // so it draws exactly the committed lines. All values arrive precomputed
   // (app/utils/scenarioEngine.js); this component only draws them.
-  const allSeries = scenario ? [...FORECAST_SERIES, ...scenario.series] : FORECAST_SERIES;
-  const config = scenario
-    ? {
-        ...chartConfig,
-        ...Object.fromEntries(scenario.series.map((series) => [series.key, { label: series.label, color: series.color }])),
-      }
-    : chartConfig;
+  const forecastSeries = forecastSeriesWithActualColor(actualColor);
+  const allSeries = scenario ? [...forecastSeries, ...scenario.series] : forecastSeries;
+  const config = Object.fromEntries(allSeries.map((series) => [series.key, { label: series.label, color: series.color }]));
   // A line the selected model has for none of the SKUs in scope: its pill
   // is greyed out (its hover says why) and the line and table column stay off.
   const previousOff = previousMissing ?? !points.some((point) => point.previous != null);
@@ -716,7 +710,7 @@ export default function ForecastChart({
                             key={key}
                             dataKey={key}
                             type="linear"
-                            stroke={ACTUAL_COLOR}
+                            stroke={actualColor}
                             strokeWidth={1.6}
                             strokeOpacity={0.7}
                             strokeDasharray="4 4"

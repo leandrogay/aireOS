@@ -20,7 +20,9 @@ import {
 import { POPUP_SHADOW_CLASS } from '@/components/ui/popupShadow';
 import { cn } from '@/lib/utils';
 import { modelNotice } from '@/app/utils/aiModels';
+import { customerPalette } from '@/app/utils/customerColors';
 import useAiModelStatus from '@/hooks/useAiModelStatus';
+import useAllCustomers from '@/hooks/useAllCustomers';
 import useAssistant, { ALL_CUSTOMERS } from '@/hooks/useAssistant';
 import useCustomerOptions from '@/hooks/useCustomerOptions';
 import { ASSISTANT } from '@/app/config/transitions';
@@ -225,6 +227,12 @@ export default function AssistantWidget() {
     dataVersion: timesOpened,
     enabled: pathname !== '/login',
   });
+  // Customer records, once the panel is first opened, so a chart draws each
+  // customer in the colour it has on every page: with the options above
+  // (named by sales slug, as the answers name customers) they make the same
+  // palette as the Dashboard's.
+  const { customers: allCustomers } = useAllCustomers({ enabled: timesOpened > 0 });
+  const palette = customerPalette(allCustomers, customerOptions);
   const reduceMotion = useReducedMotion();
   // Read again on each opening and after each failed question, so a question
   // that just found the model retired turns the panel into its unavailable state.
@@ -342,6 +350,7 @@ export default function AssistantWidget() {
                           <AssistantMessage
                             message={message}
                             onFollowUp={askQuestion}
+                            palette={palette}
                             animate={!reduceMotion && i >= animateFrom}
                             expanded={expanded}
                           />

@@ -8,6 +8,7 @@ import SelectDropdown from '@/components/ui/SelectDropdown';
 import useCustomerInventory from '@/hooks/useCustomerInventory';
 import { currentYearDateRange } from '@/app/utils/dateRange';
 import { DOH_STATUS_LABELS, earliestMonthInput, formatDoh, filterMonthRange, latestMonthInput } from '@/app/utils/inventoryForm';
+import { customerColorById, customerPalette } from '@/app/utils/customerColors';
 import { customerLabel } from '@/app/utils/retailerLabel';
 
 import {
@@ -154,7 +155,7 @@ export default function CustomerInventoryView({ customers, skuOptions, refreshKe
             />
           )}
         >
-          {data && <SellInTrendChart trend={trend} />}
+          {data && <SellInTrendChart trend={trend} color={customerColorById(customerId, customerPalette(customers))} />}
         </InventoryChartSlot>
       </InventorySection>
 
