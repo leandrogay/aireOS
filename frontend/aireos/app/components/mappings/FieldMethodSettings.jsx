@@ -264,6 +264,14 @@ export default function FieldMethodSettings({ field, method, draft, onChange, ma
       );
     }
 
+    case 'filename':
+      return (
+        <p className={note}>
+          Every row is dated the month this file is named for, and the period type becomes Month. A file whose name
+          states no month, or two, fails when it is loaded rather than being dated by guesswork.
+        </p>
+      );
+
     case 'cell':
       return (
         <div className="space-y-3">

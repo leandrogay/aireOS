@@ -94,13 +94,14 @@ def _proposed_contract(
     The contract a request asks for: rebuilt from the review screen's rules,
     sent whole, or the stored one. Rules carry fields, not the contract-wide
     instructions, so those are kept from the stored contract -- where the data
-    sits and whether rows roll up -- unless the reviewer changed the roll-up
+    sits, which rows are left out, whether rows roll up, what the proposal
+    flagged as unsupported -- unless the reviewer changed the roll-up
     (`instructions`).
     """
     stored = mapping_contract.read_contract(envelope.get("contract") or {})
     if rules is not None:
         proposed = mapping_view.rules_to_contract(rules)
-        for key in ("layout", "aggregate"):
+        for key in ("layout", "filters", "aggregate", "unsupported"):
             proposed[key] = stored.get(key)
     elif contract is not None:
         return contract

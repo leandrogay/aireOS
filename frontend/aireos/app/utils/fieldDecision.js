@@ -43,6 +43,10 @@ export const METHOD_INFO = {
     label: "In the file's title or a month heading",
     help: 'The month the title or the lines above the table state, e.g. “DATE : 01 Aug 2026 TO 31 Aug 2026”, or a heading that is only a month, e.g. “Aug-26”. Every row gets that month, and next month’s file gets its own.',
   },
+  filename: {
+    label: "In the file's name",
+    help: 'The month the file is named for, e.g. “Prime - Jan 2026 - Sales report”, for a file with no date inside it. Every row gets that month, and next month’s file gets its own.',
+  },
   cell: {
     label: 'In one cell, the same on every row',
     help: 'One cell at the top of the sheet, e.g. A1, written on every row. Each file is read at that cell, so next month’s file gives its own value.',
@@ -69,7 +73,7 @@ const TITLE_FIELDS = ['period_start'];
 // What one cell may fill on every row (backend mapping_contract.CELL_TARGETS):
 // never a figure.
 const CELL_FIELDS = ['period_start', ...HEADING_FIELDS];
-const ENTRY_METHODS = ['title', 'cell', 'price', 'constant', 'derived', 'not_available'];
+const ENTRY_METHODS = ['title', 'filename', 'cell', 'price', 'constant', 'derived', 'not_available'];
 
 function asList(transforms) {
   if (Array.isArray(transforms)) return transforms;
@@ -95,7 +99,7 @@ export function fieldMethods(field, groups) {
   if (field === 'period_start' || field === 'period_type') {
     methods.push({ method: 'headings', reason: kind === 'period' ? '' : 'Read Units sold from a group of period columns first.' });
   }
-  if (TITLE_FIELDS.includes(field)) methods.push({ method: 'title', reason: '' });
+  if (TITLE_FIELDS.includes(field)) methods.push({ method: 'title', reason: '' }, { method: 'filename', reason: '' });
   if (CELL_FIELDS.includes(field)) methods.push({ method: 'cell', reason: '' });
   if (field === 'revenue') methods.push({ method: 'price', reason: '' });
   methods.push({ method: 'constant', reason: '' }, { method: 'derived', reason: '' }, { method: 'not_available', reason: '' });
@@ -151,6 +155,8 @@ export function entryDecision(field, entry) {
       return { method: 'system' };
     case 'derived':
       if (entry.from_layout === 'stated_period') return { method: 'title' };
+      // backend mapping_contract LAYOUT_SOURCES
+      if (entry.from_layout === 'filename_period') return { method: 'filename' };
       if (entry.from_cell) return { method: 'cell', cell: entry.from_cell, transforms };
       if (
         field === 'revenue' &&
@@ -213,6 +219,8 @@ export function decisionEntry(field, decision) {
   switch (decision.method) {
     case 'title':
       return { status: 'derived', from_layout: 'stated_period' };
+    case 'filename':
+      return { status: 'derived', from_layout: 'filename_period' };
     case 'cell':
       return {
         status: 'derived',
@@ -289,6 +297,8 @@ export function decisionSummary(decision) {
       return `In ${positionPhrase(decision)} the headings`;
     case 'title':
       return 'The month the file states';
+    case 'filename':
+      return "The month in the file's name";
     case 'cell':
       return `Cell ${cleanCellReference(decision.cell) || decision.cell}, on every row`;
     case 'price':
@@ -452,9 +462,10 @@ export function withFieldDecision(mapping, state, field, decision) {
     return columnGroup ? withGroupChosen(state, field, columnGroup, decision.transforms || []) : state;
   }
 
-  // The title's period is a month: the period type follows, unless it
-  // already is the constant 'month'.
-  const periodType = decision.method === 'title' ? currentDecision(mapping, state, 'period_type') : null;
+  // The title's period (or the file name's) is a month: the period type
+  // follows, unless it already is the constant 'month'.
+  const statesMonth = decision.method === 'title' || decision.method === 'filename';
+  const periodType = statesMonth ? currentDecision(mapping, state, 'period_type') : null;
   const monthly = !periodType || (periodType.method === 'constant' && periodType.value === 'month');
 
   const rows = state.rows.map((row) => {

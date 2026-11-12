@@ -10,7 +10,14 @@ import io
 
 import openpyxl
 import pytest
-from conftest import fairprice_txt, nhg_xlsx, outlet_codes_below_xlsx, sheng_siong_xlsx, singhealth_xlsx
+from conftest import (
+    fairprice_txt,
+    nhg_xlsx,
+    outlet_codes_below_xlsx,
+    prime_sales_xlsx,
+    sheng_siong_xlsx,
+    singhealth_xlsx,
+)
 
 from app.services import layout_detection as ld
 
@@ -223,3 +230,81 @@ def test_a_csv_preamble_line_shorter_than_the_header_does_not_break_the_read():
 def test_an_unsupported_extension_is_refused():
     with pytest.raises(ld.LayoutError):
         ld.read_table("report.pdf", b"%PDF")
+
+
+# ---- One table split over several sheets ------------------------------------------------------
+
+def test_sheets_with_the_same_headers_are_stacked_into_one_table():
+    frame, layout = ld.read_table("sales.xlsx", prime_sales_xlsx())
+
+    assert layout["stacked_sheets"] == ["0303001303", "0303001304"]
+    assert layout["rejected_sheets"] == []
+    assert (len(frame), layout["data_rows"]) == (4, 4)
+    assert frame["Item No."].tolist() == ["0303001303"] * 3 + ["0303001304"]
+
+
+def test_each_stacked_row_says_which_sheet_it_came_from_in_a_last_column():
+    frame, _ = ld.read_table("sales.xlsx", prime_sales_xlsx())
+
+    assert list(frame.columns)[-1] == ld.SHEET_COLUMN
+    assert frame[ld.SHEET_COLUMN].tolist() == ["0303001303"] * 3 + ["0303001304"]
+
+
+def test_a_sheet_with_other_headers_is_not_stacked():
+    workbook = openpyxl.load_workbook(io.BytesIO(prime_sales_xlsx()))
+    notes = workbook.create_sheet("Notes")
+    notes.append(["Store", "Remark"])
+    notes.append(["BB17", "Closed for renovation"])
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+
+    frame, layout = ld.read_table("sales.xlsx", buffer.getvalue())
+
+    assert layout["stacked_sheets"] == ["0303001303", "0303001304"]
+    assert layout["rejected_sheets"] == [{"name": "Notes", "reason": "fewer data rows"}]
+    assert len(frame) == 4
+
+
+def test_a_workbook_with_one_data_sheet_gets_no_sheet_column():
+    frame, layout = ld.read_table("nhg.xlsx", nhg_xlsx())
+
+    assert "stacked_sheets" not in layout
+    assert ld.SHEET_COLUMN not in frame.columns
+
+
+# ---- A total column named beside the header ------------------------------------------------------
+
+def test_a_column_labelled_total_in_the_row_under_a_blank_header_is_a_total_column():
+    _, layout = ld.read_table("grid.xlsx", outlet_codes_below_xlsx(total_column=True))
+
+    assert layout["total_columns"] == ["Unnamed: 3"]
+
+
+# ---- The period a file's name states ------------------------------------------------------------
+
+@pytest.mark.parametrize("filename, start, end", [
+    ("Prime - Jan 2026 - Sales report.xlsx", "2026-01-01", "2026-01-31"),
+    ("Aire Sell Out Aug 26.xlsx", "2026-08-01", "2026-08-31"),
+    ("XEL Lifecare JKDC Withdrawal Report (Jul'26).xlsx", "2026-07-01", "2026-07-31"),
+    ("Inventory_Sept_26.xlsx", "2026-09-01", "2026-09-30"),
+    ("XEL_VENDORS_BRANDS_MONTH_01-01-2026_01-08-2026_1.txt", "2026-01-01", "2026-08-01"),
+])
+def test_a_month_or_a_range_in_a_files_name_is_its_period(filename, start, end):
+    assert ld.filename_period(filename) == {"start": start, "end": end, "source": "filename"}
+
+
+@pytest.mark.parametrize("filename", [
+    "XEL.xlsx",
+    "Aire Sell Out Jul.xlsx",
+    # The day the statement was made, not the period it covers.
+    "Claim_Sales_Summary_Report_XLPL_CSTANG_P100039274_03MAY26.xlsx",
+    "Sales Jan 2026 vs Feb 2026.xlsx",
+])
+def test_a_name_with_no_month_or_two_states_no_period(filename):
+    assert ld.filename_period(filename) is None
+
+
+def test_a_month_heading_written_sept_is_the_stated_period():
+    _, layout = ld.read_table("grid.xlsx", outlet_codes_below_xlsx(month="Sept-26"))
+
+    assert (layout["stated_period"]["start"], layout["stated_period"]["source"]) == ("2026-09-01", "heading")

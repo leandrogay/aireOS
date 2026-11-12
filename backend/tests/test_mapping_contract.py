@@ -646,3 +646,185 @@ def test_a_row_under_the_headings_stays_data_when_no_label_reads_it():
     rows = mc.table_rows(frame, {"melt_groups": [OUTLETS]}, _codes_below_layout(in_table=True))
 
     assert len(rows) == 2
+
+
+# ---- The transform vocabulary ------------------------------------------------------------
+
+def _steps(*steps, target="store_code", source="Store Code"):
+    contract = _validate(_contract(**{target: {"status": "mapped", "source": source, "transforms": list(steps)}}))
+    return contract["fields"][target], contract["warnings"]
+
+
+@pytest.mark.parametrize("step, stored", [
+    ({"type": "parse_number"}, {"type": "parse_number", "decimal": "."}),
+    ({"type": "parse_number", "decimal": ","}, {"type": "parse_number", "decimal": ","}),
+    ({"type": "scale", "factor": 0.01}, {"type": "scale", "factor": 0.01}),
+    ({"type": "parse_date", "format": "%d/%m/%Y"}, {"type": "parse_date", "format": "%d/%m/%Y"}),
+    ({"type": "month_start", "format": "excel_serial"}, {"type": "month_start", "format": "excel_serial"}),
+    ({"type": "month_start"}, {"type": "month_start"}),
+    ({"type": "divide", "column": "Brand"}, {"type": "divide", "column": "Brand"}),
+    ({"type": "add", "column": "Brand"}, {"type": "add", "column": "Brand"}),
+    ({"type": "subtract", "column": "Brand"}, {"type": "subtract", "column": "Brand"}),
+    ({"type": "normalize_text"}, {"type": "normalize_text", "case": "keep"}),
+    ({"type": "normalize_text", "case": "UPPER"}, {"type": "normalize_text", "case": "upper"}),
+    ({"type": "replace", "pattern": "^0+"}, {"type": "replace", "pattern": "^0+", "replacement": ""}),
+    ({"type": "blank_if", "tokens": ["N/A", " - ", "N/A"]}, {"type": "blank_if", "tokens": ["N/A", "-"]}),
+    ({"type": "fill_empty", "default": "HQ"}, {"type": "fill_empty", "default": "HQ"}),
+    ({"type": "fill_empty", "column": "Brand"}, {"type": "fill_empty", "column": "Brand"}),
+    ({"type": "concat", "columns": ["Brand"], "separator": "|"}, {"type": "concat", "columns": ["Brand"], "separator": "|"}),
+    ({"type": "split_part", "separator": "-", "index": -1}, {"type": "split_part", "separator": "-", "index": -1}),
+])
+def test_each_new_step_is_stored_with_its_settings_and_defaults(step, stored):
+    entry, warnings = _steps(step)
+
+    assert entry["transforms"] == [stored]
+    assert warnings == []
+
+
+@pytest.mark.parametrize("step, reason", [
+    ({"type": "parse_number", "decimal": ";"}, "decimal must be"),
+    ({"type": "scale", "factor": 0}, "factor other than 0"),
+    ({"type": "scale"}, "factor other than 0"),
+    ({"type": "parse_date", "format": "dd/mm/yyyy"}, "not a strptime format"),
+    ({"type": "divide", "column": "Nope"}, "divide column 'Nope' is not in the file"),
+    ({"type": "normalize_text", "case": "camel"}, "case must be one of"),
+    ({"type": "replace", "pattern": "("}, "invalid regex"),
+    ({"type": "replace", "pattern": "a", "replacement": r"\2"}, "invalid replacement"),
+    ({"type": "blank_if", "tokens": []}, "at least one token"),
+    ({"type": "fill_empty"}, "needs a default or a column"),
+    ({"type": "concat", "columns": ["Nope"]}, "concat columns not in the file"),
+    ({"type": "split_part", "separator": "-", "index": 0}, "never 0"),
+    ({"type": "split_part", "separator": "", "index": 1}, "needs a separator"),
+    ({"type": "round", "digits": 2}, "unsupported type: 'round'"),
+])
+def test_a_step_the_transformation_cannot_run_drops_the_field_and_says_why(step, reason):
+    entry, warnings = _steps(step)
+
+    # Never passed through without the step: that would be a different mapping.
+    assert entry["status"] == "not_available"
+    assert any(reason in warning for warning in warnings)
+
+
+def test_every_transform_type_has_a_validator():
+    for kind in mc.TRANSFORM_TYPES:
+        warnings: list[str] = []
+        mc.validate_transforms("size", [{"type": kind}], COLUMNS, [], None, warnings)
+
+        assert not any("unsupported type" in warning for warning in warnings), kind
+
+
+def test_a_factor_may_be_negative_for_rows_marked_as_returns():
+    entry, warnings = _steps({"type": "uom_factor", "column": "Sales UOM", "factors": {"RETURN": -1}})
+
+    assert entry["transforms"][0]["factors"] == {"RETURN": -1}
+    assert warnings == []
+
+
+def test_a_code_table_after_a_step_is_not_held_to_the_columns_raw_values():
+    entry, warnings = _steps(
+        {"type": "concat", "columns": ["Brand"], "separator": "|"},
+        {"type": "value_map", "values": {"HYPER|AIRE": "hyper_aire"}},
+        target="store_format", source="Store Format",
+    )
+
+    assert [step["type"] for step in entry["transforms"]] == ["concat", "value_map"]
+    assert warnings == []
+
+
+# ---- Row filters and flagged gaps -----------------------------------------------------------
+
+def test_row_filters_are_cleaned_and_kept_in_order():
+    contract = _validate({**_contract(), "filters": [
+        {"column": "Brand", "op": "EQUALS", "value": " OTHER ", "action": "drop"},
+        {"column": "SKU No.", "op": "empty", "action": "drop", "value": "ignored"},
+    ]})
+
+    assert contract["filters"] == [
+        {"column": "Brand", "op": "equals", "action": "drop", "case_sensitive": False, "value": "OTHER"},
+        {"column": "SKU No.", "op": "empty", "action": "drop", "case_sensitive": False},
+    ]
+
+
+@pytest.mark.parametrize("row_filter", [
+    {"column": "Brand", "op": "like", "value": "x", "action": "drop"},
+    {"column": "Brand", "op": "equals", "value": "x", "action": "hide"},
+    {"column": "Brand", "op": "equals", "value": "", "action": "drop"},
+    {"column": "Brand", "op": "regex", "value": "(", "action": "drop"},
+    {"op": "equals", "value": "x", "action": "drop"},
+])
+def test_a_filter_that_is_not_one_is_dropped_with_a_warning(row_filter):
+    contract = _validate({**_contract(), "filters": [row_filter]})
+
+    assert contract["filters"] == []
+    assert any("Dropped row filter" in warning for warning in contract["warnings"])
+
+
+def test_a_filter_on_a_column_this_file_lacks_is_kept_to_fail_loudly():
+    row_filter = {"column": "Status", "op": "equals", "value": "VOID", "action": "drop"}
+
+    contract = _validate({**_contract(), "filters": [row_filter]})
+
+    assert [item["column"] for item in contract["filters"]] == ["Status"]
+
+
+def test_rows_matching_reads_a_filter_the_way_a_rule_reads_a_value():
+    frame = pd.DataFrame({"Type": ["SALE", "sale ", None, "TRANSFER"]}, dtype=object)
+
+    equals = mc.rows_matching(frame, {"column": "Type", "op": "equals", "value": "sale"})
+    empty = mc.rows_matching(frame, {"column": "Type", "op": "empty"})
+
+    assert equals.tolist() == [True, True, False, False]
+    assert empty.tolist() == [False, False, True, False]
+
+
+def test_what_a_proposal_flags_as_unsupported_is_kept_with_its_field():
+    contract = _validate({**_contract(), "unsupported": [
+        {"field": "revenue", "issue": " Sales are in two currencies. "},
+        {"field": "made_up", "issue": "Weeks are numbered, not dated."},
+        {"field": "size", "issue": ""},
+    ]})
+
+    assert contract["unsupported"] == [
+        {"field": "revenue", "issue": "Sales are in two currencies."},
+        {"field": None, "issue": "Weeks are numbered, not dated."},
+    ]
+
+
+def test_a_contract_with_no_filters_or_flags_has_empty_lists():
+    contract = _validate(_contract())
+
+    assert contract["filters"] == [] and contract["unsupported"] == []
+
+
+# ---- The period a file's name states ----------------------------------------------------------
+
+def test_the_period_may_be_read_from_the_files_name_when_rows_are_monthly():
+    contract = _validate(_contract(
+        period_start={"status": "derived", "from_layout": "filename_period"},
+        period_type={"status": "constant", "value": "month"},
+    ))
+
+    assert contract["fields"]["period_start"] == {
+        "status": "derived", "from_layout": "filename_period", "confidence": "low", "rationale": "", "reviewed": False,
+    }
+
+
+def test_a_period_from_the_files_name_needs_monthly_rows():
+    contract = _validate(_contract(
+        period_start={"status": "derived", "from_layout": "filename_period"},
+        period_type={"status": "constant", "value": "week"},
+    ))
+
+    assert contract["fields"]["period_start"]["status"] == "not_available"
+
+
+def test_next_months_file_renames_the_columns_filters_and_concat_name():
+    contract = {
+        "fields": {"sku": {"status": "mapped", "source": "Aug-26", "transforms": [{"type": "concat", "columns": ["Aug-26"]}]}},
+        "filters": [{"column": "Aug-26", "op": "empty", "action": "drop"}],
+    }
+
+    renamed = mc.with_file_columns(contract, ["Sep-26", "YISHUN"])
+
+    assert renamed["fields"]["sku"]["transforms"][0]["columns"] == ["Sep-26"]
+    assert renamed["filters"][0]["column"] == "Sep-26"

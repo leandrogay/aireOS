@@ -168,3 +168,32 @@ def test_a_column_already_in_a_dated_group_is_not_offered_twice():
 
     assert len(groups) == 1
     assert groups[0]["template"] == cp.header_template(columns[0])
+
+
+# ---- How a text column's values are written ------------------------------------------------------
+
+def test_a_text_column_of_currency_figures_says_it_is_written_as_numbers():
+    frame = pd.DataFrame({"Sales": ["$1,250.50", "$30.00", "($20.00)"]}, dtype=object)
+
+    entry = cp.profile_columns(frame)["Sales"]
+
+    assert entry["type"] == "text"
+    assert entry["written_as"] == {
+        "kind": "number", "decimal": ".",
+        "written_with": ["currency", "thousands separators", "negatives in brackets"], "unreadable": [],
+    }
+
+
+def test_a_text_column_of_day_first_dates_offers_its_format():
+    frame = pd.DataFrame({"Date": ["31/12/2025", "01/02/2026"]}, dtype=object)
+
+    assert cp.profile_columns(frame)["Date"]["written_as"] == {"kind": "date", "date_formats": ["%d/%m/%Y"]}
+
+
+def test_plain_numbers_iso_dates_and_words_are_not_written_as_anything_else():
+    frame = pd.DataFrame({"Qty": ["1", "2"], "Date": ["2026-08-01", "2026-08-02"], "Format": ["HYPER", "SUPER"]}, dtype=object)
+
+    profile = cp.profile_columns(frame)
+
+    assert [profile[column]["type"] for column in frame] == ["number", "date", "text"]
+    assert not any("written_as" in entry for entry in profile.values())

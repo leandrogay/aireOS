@@ -24,10 +24,18 @@ Open decisions they assume, each a one-line change here:
       it at Normal cost instead (SINGHEALTH_PRICE_COLUMN)
   D12 Prime's JKDC withdrawal report is sell-out: Total Shipped Qty (column G)
       as the volume, no revenue
+  D13 Pharmex's outlet grid is sell-out to pharmex_offline, each product
+      matched to a master SKU by its description (it carries no codes), the
+      outlet's short code (row 2) as the store code
+  D14 Prime's monthly sales report (one sheet per product, no date inside)
+      is sell-out to prime_offline, dated by the month in its file name. It
+      and the JKDC withdrawal report (D12) count the same products at two
+      points of the chain: load one of them for a month, not both
 
 FairPrice weekly is not shown to the model as an example (`prompt_example`):
 it repeats the monthly example. SingHealth is the example of a stated period,
-labels above the header and multiply.
+labels above the header and multiply; Pharmex of a period read from one cell,
+labels below the header and a total column left out.
 """
 
 import copy
@@ -63,6 +71,16 @@ PRIME_CODES = {
     "0303001304": "13255044", "0303001303": "13255045", "0303001327": "13255043",
     "0303001344": "13271339", "0303001345": "13271340", "0303001376": "13271337",
     "0303001342": "13271341", "0303001343": "13271338",
+}
+
+# D13: Pharmex names products by description only.
+PHARMEX_CODES = {
+    "AIRE PULL UP PANTS SIZE S/M": "13255044", "AIRE PULL UP PANTS SIZE L": "13255045",
+    "AIRE PULL UP PANTS SIZE XL": "13255043",
+    "AIRE ULTRA PROTECTION PANTS SIZE S/M": "13271339", "AIRE ULTRA PROTECTION PANTS SIZE L": "13271340",
+    "AIRE ULTRA PROTECTION PANTS SIZE XL": "13271337",
+    "AIRE ULTRA PROTECTION TAPE SIZE S/M": "13271341", "AIRE ULTRA PROTECTION TAPE SIZE L": "13271338",
+    "AIRE ULTRA PROTECTION TAPE SIZE XL": "13271342",
 }
 
 # D11: the per-unit price SingHealth's units are valued at by default. The
@@ -355,6 +373,81 @@ PRIME_JKDC = {
 }
 
 
+PHARMEX_GRID = {
+    "fields": {
+        # The month is the heading of the product column ("Aug-26"), cell A1.
+        "period_start": _field(status="derived", from_cell="A1"),
+        "period_type": _field(status="constant", value="month"),
+        "retailer": _field(status="constant", value="pharmex_offline"),
+        # Each outlet column is headed by its name, with its short code in the row below.
+        "store_code": _field(status="mapped", melt_group="outlets"),
+        "store_name": _field(status="mapped", melt_group="outlets"),
+        "store_format": _not_in_file("Outlets are named only."),
+        # No product codes: the description is the code.
+        "sku": _field(
+            status="mapped", source="Aug-26",
+            transforms=[{"type": "value_map", "values": dict(PHARMEX_CODES)}],
+        ),
+        "product_name": _field(status="mapped", source="Aug-26"),
+        "sku_range": _not_in_file("No range column."),
+        "size": _size_from("Aug-26"),
+        "brand": _not_in_file("No brand column."),
+        "product_category": _not_in_file("No category column."),
+        "uom": _PACKS,
+        "pack_size": _not_in_file("No pack size column."),
+        "quantity_units": _field(
+            status="mapped", melt_group="outlets", transforms=[{"type": "zero_as_empty"}],
+        ),
+        "revenue": _not_in_file("The grid carries quantities only."),
+    },
+    "melt_groups": [
+        {
+            "id": "outlets",
+            # Up to the row-total column, which has no heading of its own.
+            "select": {"kind": "between", "after": "Aug-26", "before": "Unnamed: 8"},
+            "key": {"target": "store_name"},
+            "labels": [{"rows_below": 1, "target": "store_code"}],
+            "value_target": "quantity_units",
+            **_SURE,
+        },
+    ],
+    "aggregate": monthly_aggregate(),
+}
+
+
+PRIME_SALES = {
+    "fields": {
+        # No date anywhere in the workbook: "Prime - Jan 2026 - Sales report".
+        "period_start": _field(status="derived", from_layout="filename_period"),
+        "period_type": _field(status="constant", value="month"),
+        "retailer": _field(status="constant", value="prime_offline"),
+        "store_code": _field(status="mapped", source="Store No_"),
+        "store_name": _not_in_file("Outlets are named by code only."),
+        "store_format": _not_in_file("Outlets are named by code only."),
+        "sku": _field(
+            status="mapped", source="Item No.",
+            transforms=[{"type": "value_map", "values": dict(PRIME_CODES)}],
+        ),
+        "product_name": _field(status="mapped", source="Item Description"),
+        "sku_range": _not_in_file("No range column."),
+        "size": _size_from("Item Description"),
+        "brand": _not_in_file("No brand column."),
+        "product_category": _not_in_file("No category column."),
+        "uom": _PACKS,
+        # "1X10S": one pack of ten pieces.
+        "pack_size": _field(
+            status="mapped", source="Unit of Measure",
+            transforms=[{"type": "regex_extract", "pattern": r"X(\d+)S$", "group": 1}],
+        ),
+        "quantity_units": _field(status="mapped", source="Base UOM Quantity Sold"),
+        "revenue": _not_in_file("The report carries quantities only."),
+    },
+    "melt_groups": [],
+    # One row per sale, one sheet per product (stacked by layout detection).
+    "aggregate": monthly_aggregate(),
+}
+
+
 REFERENCE_CONTRACTS = {
     "fairprice_monthly": {
         "name": "FairPrice monthly sell-out",
@@ -393,6 +486,21 @@ REFERENCE_CONTRACTS = {
         "vendor": "Prime",
         "description": "One row per pallet withdrawn from the distribution centre to an outlet, quantity in packs, no revenue.",
         "contract": PRIME_JKDC,
+    },
+    "pharmex_grid": {
+        "name": "Pharmex outlet grid",
+        "vendor": "Pharmex",
+        "description": "Workbook: the month in A1 heading the product column, wide by outlet name with each outlet's code in the row below, an unheaded row-total column, products named by description only.",
+        "contract": PHARMEX_GRID,
+    },
+    "prime_sales": {
+        "name": "Prime monthly sales report",
+        "vendor": "Prime",
+        "description": "Workbook with one sheet per product, all with the same headers and stacked into one table; one row per sale, no date inside -- the month is in the file's name.",
+        "contract": PRIME_SALES,
+        # Shown to the eval and the golden tests, not the model: the
+        # withdrawal report is already Prime's worked example.
+        "prompt_example": False,
     },
 }
 

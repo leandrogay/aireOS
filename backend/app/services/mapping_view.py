@@ -6,7 +6,7 @@ from typing import Any, Dict, List
 import pandas as pd
 
 from app.schemas.sellout import BUSINESS_COLUMNS
-from app.services import mapping_contract
+from app.services import mapping_contract, value_parsing
 from app.services.column_profile import review_column_groups
 from app.services.mapping_contract import (
     DECIDABLE_FIELDS,
@@ -67,6 +67,8 @@ def _describe(target: str, entry: dict, groups: dict) -> str:
         return f"From {entry['from_field']}"
     if status == "derived" and entry.get("from_layout") == "stated_period":
         return "The month the file states (its title or a month heading)"
+    if status == "derived" and entry.get("from_layout") == "filename_period":
+        return "The month the file's name states"
     if status == "derived" and entry.get("from_cell"):
         return f"Read from cell {entry['from_cell']}, the same on every row"
     if status == "derived" and target == "period_type":
@@ -284,7 +286,7 @@ def _read_keys(group: dict, columns: list[str]) -> tuple[list, str | None]:
         return [], "The dates in these headings could not be read."
     try:
         raw = [re.search(pattern, column).group(1) for column in columns]
-        dates = pd.to_datetime(pd.Series(raw), format=date_format, errors="raise")
+        dates = pd.to_datetime(pd.Series(raw).map(value_parsing.month_names), format=date_format, errors="raise")
     except Exception:
         return [], "The dates in these headings could not be read."
     return list(dates), None
@@ -470,6 +472,10 @@ def envelope_to_packet(
         "instructions": {
             "layout": contract.get("layout"),
             "aggregate": contract.get("aggregate"),
+            # Which rows are left out before anything is read, and what the
+            # proposal said the transformation cannot do for this file.
+            "filters": contract.get("filters") or [],
+            "unsupported": contract.get("unsupported") or [],
         },
         # Every product code in the example file, for the review screen's
         # code table (mapping_checks.sku_codes).

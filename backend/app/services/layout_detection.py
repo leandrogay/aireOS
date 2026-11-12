@@ -20,7 +20,7 @@ from pathlib import Path
 import openpyxl
 import pandas as pd
 
-from app.services.column_profile import month_year
+from app.services.column_profile import MONTH_YEAR_TOKEN, month_year
 
 
 class LayoutError(ValueError):
@@ -56,6 +56,12 @@ STATED_PERIOD = re.compile(
     rf"({_STATED_DATE})\s*(?:to|-|–)\s*({_STATED_DATE})",
     re.IGNORECASE,
 )
+# A file named for the range it covers: FairPrice's
+# "..._01-01-2026_01-08-2026_1.txt".
+FILENAME_RANGE = re.compile(r"(\d{2}-\d{2}-\d{4})_(\d{2}-\d{2}-\d{4})")
+# The column a workbook's sheets are told apart by once they are stacked
+# into one table (read_table).
+SHEET_COLUMN = "Sheet name"
 NUMBER_LIKE = re.compile(r"^-?\d+(\.\d+)?$")
 DATE_LIKE = re.compile(r"^\d{4}-\d{2}-\d{2}")
 
@@ -506,7 +512,20 @@ def _table_on_sheet(sheet: dict) -> dict | None:
     kept_headers = [headers[index] for index in keep]
 
     spacer_columns = [headers[index] for index in keep if index not in columns_with_data]
-    total_columns = [header for header in kept_headers if TOTAL_COLUMN.match(header)]
+    rows_above = _rows_above_header(rows[:header_index], headers, keep)
+    rows_below = _rows_below_header(rows, header_index, headers, keep, data_row_indexes)
+    # A total column is named in the header, or in the row of headings just
+    # over or under it: Pharmex leaves the header blank and writes "TOTAL"
+    # beside the outlet codes in the row below.
+    beside_header = [item["cells"] for item in rows_above[-1:] if item["row"] == header_index] + [
+        item["cells"] for item in rows_below
+    ]
+    total_columns = [
+        header
+        for header in kept_headers
+        if TOTAL_COLUMN.match(header)
+        or any(TOTAL_COLUMN.match(cells.get(header) or "") for cells in beside_header)
+    ]
     filled_columns = sorted({
         headers[left]
         for top, left in sheet["merged"]
@@ -534,10 +553,41 @@ def _table_on_sheet(sheet: dict) -> dict | None:
         "total_columns": total_columns,
         "spacer_columns": spacer_columns,
         "filled_columns": filled_columns,
-        "rows_above_header": _rows_above_header(rows[:header_index], headers, keep),
-        "rows_below_header": _rows_below_header(rows, header_index, headers, keep, data_row_indexes),
+        "rows_above_header": rows_above,
+        "rows_below_header": rows_below,
         "cells": _top_cells(rows, header_index + 1 + HEADING_ROWS_BELOW),
         **preamble,
+    }
+
+
+# ---- The period a file's name states -----------------------------------------------
+
+def filename_period(filename: str | None) -> dict | None:
+    """
+    The period a file's name states, or None: a range of dates (FairPrice:
+    "..._01-01-2026_01-08-2026_1.txt") or one month and year ("Prime - Jan
+    2026 - Sales report.xlsx", "Aire Sell Out Aug 26.xlsx", "(Jul'26)"). A
+    date that is neither -- Sheng Siong's "03JUL26" is the day the statement
+    was made -- is not read as one, and a name with two different months
+    states no single period.
+    """
+    name = Path(str(filename or "")).stem
+    match = FILENAME_RANGE.search(name)
+    if match:
+        start = pd.to_datetime(match.group(1), format="%d-%m-%Y", errors="coerce")
+        end = pd.to_datetime(match.group(2), format="%d-%m-%Y", errors="coerce")
+        if pd.notna(start) and pd.notna(end):
+            return {"start": start.date().isoformat(), "end": end.date().isoformat(), "source": "filename"}
+
+    months = {month_year(token.group(0)) for token in MONTH_YEAR_TOKEN.finditer(name.replace("_", " "))}
+    months.discard(None)
+    if len(months) != 1:
+        return None
+    month = months.pop()
+    return {
+        "start": month.date().isoformat(),
+        "end": (month + pd.offsets.MonthEnd(0)).date().isoformat(),
+        "source": "filename",
     }
 
 
@@ -559,7 +609,11 @@ def read_table(filename: str, data: bytes) -> tuple[pd.DataFrame, dict]:
 
     Of a workbook's sheets the one chosen is the non-pivot sheet with the most
     data rows; every other sheet is listed in `rejected_sheets` with the
-    reason. The layout also carries what was set aside so it can be checked
+    reason -- except sheets with the very same headers, which are the same
+    table split over several sheets (Prime's sales report has one sheet per
+    product). Those are stacked into one table in workbook order, named in
+    `stacked_sheets`, with each row's sheet in a last column (SHEET_COLUMN)
+    so what only the sheet's name says can still be read. The layout also carries what was set aside so it can be checked
     against: the preamble and any period it (or else a month heading) states, the cells above the
     header by column (and any row of headings just under it), the cells at
     the top of the sheet by reference ("A1"), footer rows, total and spacer
@@ -570,7 +624,8 @@ def read_table(filename: str, data: bytes) -> tuple[pd.DataFrame, dict]:
     chosen = None
     rejected = []
     pivot_totals = []
-    for sheet in sheets:
+    tables = {}
+    for position, sheet in enumerate(sheets):
         table = _table_on_sheet(sheet)
         reason = _pivot_reason(sheet, table and table["header_row"])
         if reason:
@@ -580,6 +635,7 @@ def read_table(filename: str, data: bytes) -> tuple[pd.DataFrame, dict]:
         if table is None or not table["data_rows"]:
             rejected.append({"name": sheet["name"], "reason": "no data table found"})
             continue
+        tables[position] = table
         if chosen is None or table["data_rows"] > chosen[1]["data_rows"]:
             if chosen is not None:
                 rejected.append({"name": chosen[0]["name"], "reason": "fewer data rows"})
@@ -595,6 +651,27 @@ def read_table(filename: str, data: bytes) -> tuple[pd.DataFrame, dict]:
 
     sheet, table = chosen
     frame = table.pop("frame")
+    stacked = [
+        position
+        for position, other in tables.items()
+        if other is table or list(other["frame"].columns) == list(frame.columns)
+    ]
+    if len(stacked) > 1 and SHEET_COLUMN not in frame.columns:
+        parts = [frame if tables[position] is table else tables[position]["frame"] for position in stacked]
+        frame = pd.concat(
+            [part.assign(**{SHEET_COLUMN: sheets[position]["name"]}) for position, part in zip(stacked, parts)],
+            ignore_index=True,
+        )
+        names = [sheets[position]["name"] for position in stacked]
+        rejected = [item for item in rejected if item["name"] not in names]
+        others = [tables[position] for position in stacked if tables[position] is not table]
+        table = {
+            **table,
+            "stacked_sheets": names,
+            "data_rows": len(frame),
+            "footer_rows": table["footer_rows"] + [row for other in others for row in other["footer_rows"]],
+            "subtotal_rows": table["subtotal_rows"] + sum(other["subtotal_rows"] for other in others),
+        }
     layout = {
         "sheet": sheet["name"],
         "sheets": [item["name"] for item in sheets],

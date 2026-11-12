@@ -417,6 +417,7 @@ function describeDecision(field, entry, fallback) {
       return 'Not in this file';
     case 'derived': {
       if (entry.from_layout === 'stated_period') return 'The month the file states';
+      if (entry.from_layout === 'filename_period') return "The month in the file's name";
       if (entry.from_cell) return `Cell ${entry.from_cell}, on every row`;
       const multiply = (entry.transforms || []).find((transform) => transform.type === 'multiply');
       if (entry.from_field && multiply) return `${fieldLabel(entry.from_field)} × ${multiply.column}`;

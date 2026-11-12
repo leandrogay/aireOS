@@ -160,8 +160,11 @@ def _no_real_notification_database(monkeypatch):
 # in git, so CI exercises every layout trait through these instead: NHG's pivot
 # sheet first, Sheng Siong's preamble / merged dates / spacer / total column /
 # footers, FairPrice's CAR + EA rows and blank cells, SingHealth's stated
-# period and outlet codes above the header.
+# period and outlet codes above the header, Prime's one sheet per product.
+# ledger_csv is no retailer's file: it writes its dates, figures and outlets
+# the awkward ways a text export can, to exercise the reading steps.
 
+import csv
 import io
 
 import openpyxl
@@ -326,6 +329,48 @@ def prime_xlsx() -> bytes:
     return _workbook_bytes(workbook)
 
 
+def prime_sales_xlsx() -> bytes:
+    """A sales report with one sheet per product, the same headers on each and no date anywhere."""
+    workbook = openpyxl.Workbook()
+    products = {
+        "0303001303": ("AIRE ADULT PULL PANTS (L)", [("BB17", 2), ("BB17", 1), ("CC08", 3)]),
+        "0303001304": ("AIRE ADULT PULL PANTS (S/M)", [("BB17", 4)]),
+    }
+    for code, (name, sales) in products.items():
+        sheet = workbook.create_sheet(code)
+        sheet.append(["Product Code", code])
+        sheet.append(["Product Name", name])
+        sheet.append(["Store No_", "Item No.", "Item Description", "Unit of Measure", "Base UOM Quantity Sold"])
+        for store, quantity in sales:
+            sheet.append([store, code, name, "1X10S", quantity])
+    del workbook["Sheet"]
+    return _workbook_bytes(workbook)
+
+
+LEDGER_HEADER = ["Txn Date", "Type", "Outlet", "Item", "Supplier", "Qty", "Net Sales", "Discount"]
+LEDGER_ROWS = [
+    ["05/08/2026", "SALE", "BB17 - bedok  north", "A-1", "XEL", "1,200", "$1,250.50", "$50.00"],
+    ["07/08/2026", "SALE", "BB17 - bedok  north", "A-1", "XEL", "3", "$30.00", "N/A"],
+    ["09/08/2026", "RETURN", "CC08 - clementi", "A-2", "XEL", "2", "($20.00)", "$0.00"],
+    ["11/08/2026", "SALE", "CC08 - clementi", "B-9", "OTHER CO", "7", "$70.00", "$0.00"],
+    ["12/08/2026", "TRANSFER", "CC08 - clementi", "A-2", "XEL", "40", "$0.00", "$0.00"],
+]
+
+
+def ledger_csv(rows=LEDGER_ROWS) -> bytes:
+    """
+    A transaction export written the way text files are: day-first dates,
+    figures with currency signs, thousands separators and brackets, a return
+    marked by a type column, an outlet's code and name in one cell, another
+    supplier's rows and a stock transfer mixed in.
+    """
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(LEDGER_HEADER)
+    writer.writerows(rows)
+    return buffer.getvalue().encode("utf-8")
+
+
 @pytest.fixture
 def retailer_files():
     """(filename, bytes) for each synthetic layout, keyed by reference contract."""
@@ -335,4 +380,6 @@ def retailer_files():
         "sheng_siong_claim": ("Claim_Sales_Summary_Report_XLPL_CSTANG_P100045355_03JUL26.xlsx", sheng_siong_xlsx()),
         "singhealth_er130": ("XEL.xlsx", singhealth_xlsx()),
         "prime_jkdc": ("XEL Lifecare JKDC Withdrawal Report (Aug'26).xlsx", prime_xlsx()),
+        "pharmex_grid": ("Inventory_Aug_26.xlsx", outlet_codes_below_xlsx()),
+        "prime_sales": ("Prime - Jan 2026 - Sales report.xlsx", prime_sales_xlsx()),
     }

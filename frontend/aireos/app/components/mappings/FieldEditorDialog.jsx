@@ -38,6 +38,7 @@ function startingDrafts(field, current, { groups, layout, columns }) {
     headings: { method: 'headings' },
     headingRow: { method: 'headingRow', side: firstRow?.side || 'above', rows: firstRow?.rows || 1 },
     title: { method: 'title' },
+    filename: { method: 'filename' },
     cell: { method: 'cell', cell: cellGuess(layout, field), transforms: [] },
     price: { method: 'price', column: priceGuess || '' },
     constant: { method: 'constant', value: field === 'period_type' ? 'month' : '' },
