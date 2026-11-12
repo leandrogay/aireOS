@@ -227,12 +227,14 @@ export function FormatTrendChart({ periodByFormat, periodTotal, granularity, met
           <MonthAxis groups={monthGroups} />
           {tooltip}
           {!unnamedOnly && <ChartLegend content={<ChartLegendContent />} />}
-          {formats.map((format) => (
+          {formats.map((format, index) => (
             <Bar
               key={format}
               dataKey={format}
               stackId="format"
               fill={`var(--color-${format})`}
+              // Only the top segment of the stack is rounded, like the Inventory bars.
+              radius={index === formats.length - 1 ? [10, 10, 0, 0] : 0}
               maxBarSize={MAX_BAR_SIZE}
               {...BAR_ANIMATION}
               {...transition.seriesAnimation}

@@ -152,7 +152,7 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
             {tooltip}
             <ChartLegend content={<ChartLegendContent />} />
             {series.map((item) => (
-              <Bar key={item.key} dataKey={item.key} fill={`var(--color-${item.key})`} maxBarSize={MAX_BAR_SIZE} {...BAR_ANIMATION} {...transition.seriesAnimation} />
+              <Bar key={item.key} dataKey={item.key} fill={`var(--color-${item.key})`} radius={[10, 10, 0, 0]} maxBarSize={MAX_BAR_SIZE} {...BAR_ANIMATION} {...transition.seriesAnimation} />
             ))}
           </BarChart>
         ) : (
