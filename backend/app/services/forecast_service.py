@@ -134,8 +134,11 @@ def current_horizon_totals(series: list[dict]) -> dict:
     return totals
 
 
-# Stamp column on an output row per forecast line.
-_GENERATED_AT_COLUMNS = ("current_generated_at", "previous_generated_at", "initial_generated_at")
+# Stamp column on an output row per forecast line. Not previous_generated_at:
+# the rebuilt Previous is stored at the Current run's time minus one second,
+# so it says nothing about when Previous was made and is never shown
+# (previous_data_month says what Previous was made with).
+_GENERATED_AT_COLUMNS = ("current_generated_at", "initial_generated_at")
 
 
 def _latest_stamps(rows: list[dict]) -> dict:
@@ -174,18 +177,27 @@ def forecast_tiers_from_rows(rows: list[dict]) -> list[dict]:
     return sorted(tiers.values(), key=lambda item: (item["tier_order"] is None, item["tier_order"] or 0, item["tier"]))
 
 
+# The data-month columns on an output row (bigquery._forecast_output_row).
+_DATA_MONTH_COLUMNS = ("current_data_month", "previous_data_month")
+
+
 def forecast_availability(rows: list[dict]) -> dict:
-    """{sku: {tier: {is_available, unavailable_reason, has_initial, has_previous}}} for the rows in scope.
+    """{sku: {tier: {is_available, unavailable_reason, has_initial, has_previous,
+    current_data_month, previous_data_month}}} for the rows in scope.
 
     is_available is the same on every row of a customer x SKU x tier. With
     several customers in scope (All customers) a SKU's tier counts as
     available only when it is for all of them, so the Model dropdown only
     offers a model every customer x SKU in scope has. has_initial /
     has_previous: whether any month has a forecast_initial /
-    forecast_previous. A tier can be available with neither: no Initial when
-    the SKU had under 12 months of history when the yearly plan was made (or
-    launched after it, on Tier 0), no Previous before its first earlier
-    forecast.
+    forecast_previous. Initial is Tier 0's on every tier
+    (bigquery.with_tier0_initial), so has_initial is the same on all three. A
+    tier can be available with neither: no Initial when the SKU launched after
+    the yearly plan was made, no Previous until the SKU has two months
+    of sales. current_data_month / previous_data_month: the last sales month
+    each line was trained on; with several customers in scope, the latest
+    across them (each row still carries its own customer's month, which the
+    page's per-customer text reads). None when no row in scope has one.
     """
     availability: dict[str, dict[str, dict]] = {}
     for row in rows:
@@ -193,7 +205,15 @@ def forecast_availability(rows: list[dict]) -> dict:
         if not sku or not tier:
             continue
         entry = availability.setdefault(sku, {}).setdefault(
-            tier, {"is_available": True, "unavailable_reason": None, "has_initial": False, "has_previous": False}
+            tier,
+            {
+                "is_available": True,
+                "unavailable_reason": None,
+                "has_initial": False,
+                "has_previous": False,
+                "current_data_month": None,
+                "previous_data_month": None,
+            },
         )
         if not row.get("is_available"):
             entry["is_available"] = False
@@ -202,6 +222,11 @@ def forecast_availability(rows: list[dict]) -> dict:
             entry["has_initial"] = True
         if row.get("forecast_previous") is not None:
             entry["has_previous"] = True
+        # YYYY-MM-DD strings, so max() on the strings is the latest month.
+        for column in _DATA_MONTH_COLUMNS:
+            month = row.get(column)
+            if month and (entry[column] is None or month > entry[column]):
+                entry[column] = month
     return availability
 
 

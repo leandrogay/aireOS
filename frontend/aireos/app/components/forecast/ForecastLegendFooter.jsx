@@ -5,6 +5,7 @@ import { RefreshCw } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { BAND_STYLES } from '@/components/forecast/ForecastConfidenceDetails';
+import ForecastInfo from '@/components/forecast/ForecastInfo';
 import {
   FORECAST_LAST_UPDATED_LABEL,
   PAST_ACCURACY_BADGE_HINT,
@@ -89,8 +90,9 @@ function UpdatingBadge({ badge }) {
  * Past accuracy badge. How to read confidence, and what each Current dot
  * means, live in the hover card's CONFIDENCE section.
  * `updatingBadge` (forecastUpdatingBadge) shows while a refresh is pending;
- * `notes` (Initial status, Initial / Previous coverage) are one line each
- * under that row.
+ * `initialNotes` (Initial status) and `notes` (Initial / Previous coverage)
+ * are one line each under that row; ⓘ icons show on /forecast only
+ * (ForecastInfo).
  *
  * @param {{
  *   lastRun?: string | null,
@@ -98,6 +100,7 @@ function UpdatingBadge({ badge }) {
  *   salesLoadedAt?: string | null,
  *   pastAccuracy?: { band: string, smape: number | null } | null,
  *   updatingBadge?: { label: string, hint: string } | null,
+ *   initialNotes?: string[],
  *   notes?: string[],
  *   className?: string,
  * }} props
@@ -108,21 +111,24 @@ export default function ForecastLegendFooter({
   salesLoadedAt,
   pastAccuracy = null,
   updatingBadge = null,
+  initialNotes = [],
   notes = [],
   className,
 }) {
   return (
     <div className={cn('space-y-0.5', className)}>
       <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-deep-violet-blue">
-        <span>
+        <span className="inline-flex items-center gap-0.5">
           <span className="text-deep-violet-blue/55">{FORECAST_LAST_UPDATED_LABEL}: </span>
           <span className="font-medium">{formatSgtTimestamp(lastRun)}</span>
+          <ForecastInfo helpKey="lastUpdated" label="About the last update" />
         </span>
         {updatingBadge ? <UpdatingBadge badge={updatingBadge} /> : null}
         <span aria-hidden="true" className="text-deep-violet-blue/40">·</span>
-        <span>
+        <span className="inline-flex items-center gap-0.5">
           <span className="text-deep-violet-blue/55">{salesLabel}: </span>
           <span className="font-medium">{formatSgtTimestamp(salesLoadedAt)}</span>
+          <ForecastInfo helpKey="salesDate" label="About the sales date" />
         </span>
         {pastAccuracy ? (
           <>
@@ -131,6 +137,12 @@ export default function ForecastLegendFooter({
           </>
         ) : null}
       </div>
+      {initialNotes.map((note) => (
+        <p key={note} className="flex items-center justify-center gap-0.5 text-[11px] text-deep-violet-blue/55">
+          {note}
+          <ForecastInfo helpKey="initialStatus" label="About the yearly plan's status" />
+        </p>
+      ))}
       {notes.map((note) => (
         <p key={note} className="text-center text-[11px] text-deep-violet-blue/55">
           {note}

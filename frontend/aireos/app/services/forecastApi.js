@@ -33,7 +33,6 @@ export async function getForecastOptions() {
 
 export const EMPTY_FORECAST_FRESHNESS = {
   current_generated_at: null,
-  previous_generated_at: null,
   initial_generated_at: null,
   by_tier: {},
   latest_sales_loaded_at: null,

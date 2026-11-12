@@ -4,6 +4,7 @@ import MobileRecordCard from '@/components/ui/MobileRecordCard';
 import RecordCardList from '@/components/ui/RecordCardList';
 import TableGrid from '@/components/ui/TableGrid';
 import TableRow from '@/components/ui/TableRow';
+import ForecastInfo from '@/components/forecast/ForecastInfo';
 import { cn } from '@/lib/utils';
 
 // Volume in cartons; the card's detail line says so, so the headings don't.
@@ -83,6 +84,7 @@ export default function ForecastYearTotals({ years, loading = false }) {
                 <td className={cn(CELL_CLASS, 'truncate')}>
                   <span className="font-medium">{year.year}</span>
                   {mix ? <span className="ml-2 text-xs text-deep-violet-blue/55">{mix}</span> : null}
+                  <ForecastInfo helpKey="yearRow" label="About the year total" className="ml-0.5 inline-flex align-middle" />
                 </td>
                 <td className={NUMBER_CELL_CLASS}>{formatVolume(year.volume.actual)}</td>
                 <td className={NUMBER_CELL_CLASS}>{formatVolume(year.volume.forecast)}</td>
