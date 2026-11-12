@@ -1,34 +1,25 @@
 // One colour per customer, the same on every page and chart: Dashboard,
 // Inventory, Forecast, Scenario and the assistant. Pure functions, no React.
 //
-// The colour is decided by customer_id. Pages name a customer in different
-// ways (the sales slug `sheng_siong` on the Dashboard, the record name
-// `Sheng_Shiong` on Inventory and Forecast, `Sheng Siong` in the assistant),
-// so a palette maps every name a page uses back to the customer_id first.
-// Keying by name broke whenever two pages spelled a customer differently.
+// Each customer's colour is stored on its record (customers.color, migration
+// 018): the backend picks it when the customer is created and the Customers
+// page can change it (backend customer_colors). Stored, so adding, renaming
+// or deleting a customer never moves anyone else's colour. Pages name a
+// customer in different ways (the sales slug `sheng_siong` on the Dashboard,
+// the record name `Sheng_Shiong` on Inventory and Forecast, `Sheng Siong` in
+// the assistant), so a palette maps every name a page uses back to the
+// customer_id, and the id to its colour.
 
 // ==== Colours ====
 
-// Every environment shares one Cloud SQL database, so a customer_id names the
-// same customer everywhere. FairPrice is a darker shade of its first colour
-// (violet #A29BCC), which fell under 3:1 on the chart surface. Sheng Siong
-// (gold) and Prime (olive) were two similar browns; they are now clearly apart.
-const NAMED_CUSTOMER_COLORS = {
-  1: '#7A70B8', // FairPrice
-  16: '#9A7B00', // Sheng Siong (gold)
-  21: '#2E7BA6', // NHG
-  22: '#C45C26', // SingHealth
-  23: '#6B8E23', // Prime (olive green)
-};
+// Only for a customer with no stored colour: a customer created before colours
+// were stored past the ones migration 018 filled in, or sales whose retailer no
+// customer owns yet. Given out in customer_id order, skipping any a customer
+// already has. None is close to a line colour on Forecast, Scenario or the
+// Sell-in Outlook (tests/customerColors.test.mjs checks the distance).
+const FALLBACK_CUSTOMER_COLORS = ['#2D4A22', '#8E5572', '#7B2D26', '#5F0F40', '#3B2F80'];
 
-// Customers without a named colour take these in customer_id order, so a new
-// customer takes the next one and nobody else's changes. None is close to a
-// line colour on Forecast, Scenario or the Sell-in Outlook (Current, Previous,
-// Initial...), so a customer never reads as a forecast line
-// (tests/customerColors.test.mjs checks the distance).
-const SPARE_CUSTOMER_COLORS = ['#2D4A22', '#8E5572', '#7B2D26', '#5F0F40', '#3B2F80'];
-
-// Past the spare colours each customer still gets a colour of its own: this
+// Past the fallback colours each customer still gets a colour of its own: this
 // angle keeps successive hues far apart without landing on the same one twice.
 const GOLDEN_ANGLE_DEGREES = 137.508;
 
@@ -56,31 +47,30 @@ export function customerColorKey(name) {
 /**
  * Every customer's colour, by customer_id, and by every name the page uses for
  * them. `customers` are the customer records (GET /api/inventory/customers:
- * `customer_name` as typed, `FairPrice`, `Sheng_Shiong`); `options` are the
- * Dashboard's customer options (GET /api/sales/customer-options: `value` is
- * the sales slug, linked to a record by `customer_id`, or null when no record
- * owns it). Either list alone gives the same colours for the customers in it:
- * colours are by customer_id, never by position in a list. Options with no
- * record take spare colours after every record, so they can't shift anyone.
+ * `customer_name` as typed, `FairPrice`, `Sheng_Shiong`, and `color`);
+ * `options` are the Dashboard's customer options (GET /api/sales/customer-options:
+ * `value` is the sales slug, linked to a record by `customer_id` and carrying
+ * its `color`, or null for both when no record owns it). Either list alone
+ * gives the same colours for the customers in it. A customer with no stored
+ * colour takes a fallback one.
  *
- * @param {Array<{ customer_id: number, customer_name: string }>} [customers]
- * @param {Array<{ value: string, label?: string, customer_id?: number | null }>} [options]
+ * @param {Array<{ customer_id: number, customer_name: string, color?: string | null }>} [customers]
+ * @param {Array<{ value: string, label?: string, customer_id?: number | null, color?: string | null }>} [options]
  * @returns {{ byId: Map<number, string>, byName: Map<string, string> }}
  */
 export function customerPalette(customers = [], options = []) {
-  const ids = new Set();
-  for (const customer of customers) ids.add(customer.customer_id);
-  for (const option of options) if (option.customer_id != null) ids.add(option.customer_id);
-
-  const byId = new Map();
-  let spare = 0;
-  for (const id of [...ids].sort((a, b) => a - b)) {
-    if (Object.hasOwn(NAMED_CUSTOMER_COLORS, id)) {
-      byId.set(id, NAMED_CUSTOMER_COLORS[id]);
-    } else {
-      byId.set(id, spareColor(spare));
-      spare += 1;
+  const stored = new Map();
+  for (const customer of customers) stored.set(customer.customer_id, customer.color ?? null);
+  for (const option of options) {
+    if (option.customer_id != null && !stored.get(option.customer_id)) {
+      stored.set(option.customer_id, option.color ?? null);
     }
+  }
+
+  const fallback = fallbackColors(new Set([...stored.values()].filter(Boolean)));
+  const byId = new Map();
+  for (const id of [...stored.keys()].sort((a, b) => a - b)) {
+    byId.set(id, stored.get(id) || fallback.next().value);
   }
 
   const byName = new Map();
@@ -93,15 +83,18 @@ export function customerPalette(customers = [], options = []) {
       byName.set(customerColorKey(option.value), color);
       if (option.label) byName.set(customerColorKey(option.label), color);
     } else if (!byName.has(customerColorKey(option.value))) {
-      byName.set(customerColorKey(option.value), spareColor(spare));
-      spare += 1;
+      byName.set(customerColorKey(option.value), fallback.next().value);
     }
   }
   return { byId, byName };
 }
 
-function spareColor(position) {
-  return SPARE_CUSTOMER_COLORS[position] ?? extraCustomerColor(position - SPARE_CUSTOMER_COLORS.length);
+// The fallback colours no customer has stored, then generated ones, forever.
+function* fallbackColors(used) {
+  for (const color of FALLBACK_CUSTOMER_COLORS) {
+    if (!used.has(color)) yield color;
+  }
+  for (let position = 0; ; position += 1) yield extraCustomerColor(position);
 }
 
 /**

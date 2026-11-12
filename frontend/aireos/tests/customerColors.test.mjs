@@ -1,5 +1,5 @@
-// Customer colours: one colour per customer_id, whatever name a page uses for
-// the customer, plus the shades used inside one customer (store formats,
+// Customer colours: each customer's stored colour (customers.color), whatever
+// name a page uses for the customer, plus the shades used inside one customer (store formats,
 // sell-in beside sell-out) and the assistant chart's colours.
 // Run with `npm test`.
 
@@ -18,31 +18,31 @@ import {
 } from '../app/utils/customerColors.js';
 import { UNNAMED_FORMAT, formatShadeLookup, rankFormats } from '../app/utils/storeFormats.js';
 
-// The customer records as GET /api/inventory/customers returns them, renamed.
+// The customer records as GET /api/inventory/customers returns them, renamed,
+// each with its stored colour.
 const RECORDS = [
-  { customer_id: 1, customer_name: 'FairPrice' },
-  { customer_id: 21, customer_name: 'NHG' },
-  { customer_id: 23, customer_name: 'Prime' },
-  { customer_id: 16, customer_name: 'Sheng_Shiong' },
-  { customer_id: 22, customer_name: 'SingHealth' },
+  { customer_id: 1, customer_name: 'FairPrice', color: '#7A70B8' },
+  { customer_id: 21, customer_name: 'NHG', color: '#2E7BA6' },
+  { customer_id: 23, customer_name: 'Prime', color: '#6B8E23' },
+  { customer_id: 16, customer_name: 'Sheng_Shiong', color: '#9A7B00' },
+  { customer_id: 22, customer_name: 'SingHealth', color: '#C45C26' },
 ];
 
-// The dashboard's Customer filter options, named from the sales data.
-const OPTIONS = [
-  { value: 'fairprice', label: 'FairPrice', customer_id: 1 },
-  { value: 'nhg', label: 'NHG', customer_id: 21 },
-  { value: 'prime', label: 'Prime', customer_id: 23 },
-  { value: 'sheng_siong', label: 'Sheng Siong', customer_id: 16 },
-  { value: 'singhealth', label: 'SingHealth', customer_id: 22 },
-];
+// The dashboard's Customer filter options, named from the sales data, with
+// the linked customer's colour.
+const OPTIONS = RECORDS.map((record) => ({
+  value: { 1: 'fairprice', 21: 'nhg', 23: 'prime', 16: 'sheng_siong', 22: 'singhealth' }[record.customer_id],
+  label: record.customer_name.replace('_', ' '),
+  customer_id: record.customer_id,
+  color: record.color,
+}));
 
 // Every line colour on Forecast / Scenario (forecastView FORECAST_SERIES,
-// PROMO_OVERLAY_TYPES bands, scenarioEngine's Simulated, scenarioModelView)
-// and the Sell-in Outlook (SellInOutlookChart SERIES). A spare customer
-// colour must not be mistaken for one of these.
+// scenarioEngine's Simulated, scenarioModelView) and the Sell-in Outlook
+// (SellInOutlookChart SERIES), as backend customer_colors.LINE_COLORS. A
+// fallback customer colour must not be mistaken for one of these.
 const LINE_COLORS = [
   '#3A4369', '#E8922A', '#7C3AED', '#0D9488',
-  '#B9C1E6', '#A7D2F2', '#A29BCC', '#EAE4DE',
   '#D23F74', '#9AA0B4',
   '#0B4FD9', '#00AEC2', '#1E9E3A', '#7F4A08', '#E02FA6', '#F58A00',
 ];
@@ -77,6 +77,16 @@ describe('customerPalette', () => {
     assert.equal(customerColor('Sheng Siong', palette), colour);
   });
 
+  test("every customer is drawn in its stored colour", () => {
+    const palette = customerPalette(RECORDS, OPTIONS);
+    for (const record of RECORDS) assert.equal(customerColorById(record.customer_id, palette), record.color);
+  });
+
+  test('options alone carry the stored colours, if the records could not be read', () => {
+    const palette = customerPalette([], OPTIONS);
+    assert.equal(customerColor('sheng_siong', palette), '#9A7B00');
+  });
+
   test('records alone give the same colours as records with options', () => {
     const withOptions = customerPalette(RECORDS, OPTIONS);
     const recordsOnly = customerPalette(RECORDS);
@@ -92,9 +102,16 @@ describe('customerPalette', () => {
     assert.equal(customerColorById(1, renamed), '#7A70B8');
   });
 
-  test('a new customer takes a colour of its own and changes nobody else', () => {
+  test('a customer with no stored colour takes a fallback no one else has', () => {
+    const records = [...RECORDS, { customer_id: 2, customer_name: 'Giant', color: '#2D4A22' }, { customer_id: 30, customer_name: 'Cold_Storage', color: null }];
+    const palette = customerPalette(records);
+    const coldStorage = customerColorById(30, palette);
+    assert.ok(!records.some((record) => record.color === coldStorage));
+  });
+
+  test('a new customer with no stored colour changes nobody else', () => {
     const before = customerPalette(RECORDS);
-    const after = customerPalette([...RECORDS, { customer_id: 30, customer_name: 'Giant' }]);
+    const after = customerPalette([...RECORDS, { customer_id: 30, customer_name: 'Giant', color: null }]);
     for (const record of RECORDS) {
       assert.equal(customerColorById(record.customer_id, after), customerColorById(record.customer_id, before));
     }
@@ -120,7 +137,7 @@ describe('customerPalette', () => {
     assert.equal(findCustomerColor('fairprice', undefined), null);
   });
 
-  test('no spare customer colour looks like a forecast or outlook line', () => {
+  test('no fallback customer colour looks like a forecast or outlook line', () => {
     const spares = customerPalette(
       [100, 101, 102, 103, 104].map((id) => ({ customer_id: id, customer_name: `c${id}` })),
     );

@@ -1,6 +1,6 @@
 'use client';
 
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { Palette, Pencil, Plus, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import ExpandableRow from '@/components/ui/ExpandableRow';
@@ -9,6 +9,7 @@ import { customerLabel } from '@/app/utils/retailerLabel';
 import { customerDeleteBlockReason, retailerBlockReason } from '@/app/utils/customerForm';
 
 import { CUSTOMER_COLUMNS } from './columns';
+import CustomerSwatch from './CustomerSwatch';
 import RetailerTable from './RetailerTable';
 import UsageStatus from './UsageStatus';
 
@@ -23,12 +24,13 @@ import UsageStatus from './UsageStatus';
  *   onToggle: () => void,
  *   onEdit: (customer: object) => void,
  *   onDelete: (customer: object) => void,
+ *   onColor: (customer: object) => void,
  *   onAddRetailer: (customer: object) => void,
  *   onEditRetailer: (retailer: object, customer: object) => void,
  *   onDeleteRetailer: (retailer: object, customer: object) => void,
  * }} props
  */
-export function customerRowActions(customer, onEdit, onDelete, onAddRetailer) {
+export function customerRowActions(customer, onEdit, onDelete, onAddRetailer, onColor) {
   return [
     {
       key: 'edit',
@@ -36,6 +38,7 @@ export function customerRowActions(customer, onEdit, onDelete, onAddRetailer) {
       icon: Pencil,
       onSelect: () => onEdit(customer),
     },
+    { key: 'color', label: 'Change colour', icon: Palette, onSelect: () => onColor(customer) },
     { key: 'add-retailer', label: 'Add retailer', icon: Plus, onSelect: () => onAddRetailer(customer) },
     {
       key: 'delete',
@@ -70,13 +73,14 @@ export default function CustomerRow({
   onToggle,
   onEdit,
   onDelete,
+  onColor,
   onAddRetailer,
   onEditRetailer,
   onDeleteRetailer,
 }) {
   const name = customerLabel(customer.customer_name);
 
-  const customerActions = customerRowActions(customer, onEdit, onDelete, onAddRetailer);
+  const customerActions = customerRowActions(customer, onEdit, onDelete, onAddRetailer, onColor);
 
   const retailerActions = (retailer) => retailerRowActions(retailer, customer, onEditRetailer, onDeleteRetailer);
 
@@ -86,7 +90,12 @@ export default function CustomerRow({
       isOpen={isOpen}
       onToggle={onToggle}
       highlight={isNew ? 'new' : null}
-      primary={name}
+      primary={(
+        <>
+          <CustomerSwatch color={customer.color} className="mr-2" />
+          {name}
+        </>
+      )}
       title={name}
       toggleLabel={isOpen ? `Hide retailers for ${name}` : `Show retailers for ${name}`}
       actions={<RowActions label={`Actions for customer ${name}`} actions={customerActions} />}

@@ -18,11 +18,13 @@ import {
   deleteRetailer,
   linkRetailer,
   updateCustomer,
+  updateCustomerColor,
   updateRetailer,
 } from '@/app/services/catalogApi';
 import { allRetailerNames, normaliseName } from '@/app/utils/customerForm';
 import { customerLabel, retailerLabel } from '@/app/utils/retailerLabel';
 
+import CustomerColorDialog from './CustomerColorDialog';
 import CustomerTable from './CustomerTable';
 import LinkRetailerDialog from './LinkRetailerDialog';
 import NameFormDialog from './NameFormDialog';
@@ -75,19 +77,21 @@ function nameDialogProps(dialog, customers, unlinked) {
 
 /**
  * The Customers page: customers (customers table) and the retailers under
- * each (customer_retailers), with add, rename and delete for both, and
+ * each (customer_retailers), with add, rename and delete for both, each
+ * customer's chart colour (customers.color) with a way to change it, and
  * linking for retailers created without a customer. Every write answers with
  * the affected customer row, which replaces that row in place
  * (useCustomers); the refresh button refetches everything.
  */
 export default function CustomersView() {
   const [refreshKey, setRefreshKey] = useState(0);
-  const { data, unlinked, loading, error, applyCustomer, removeCustomer, applyUnlinked, removeUnlinked } =
+  const { data, unlinked, colorChoices, loading, error, applyCustomer, removeCustomer, applyUnlinked, removeUnlinked } =
     useCustomers({ refreshKey });
   const { toast, notify, dismissToast } = useToast();
   // { type: 'customer-create' | 'customer-edit' | 'retailer-create' | 'retailer-edit', customer?, retailer? }
   const [dialog, setDialog] = useState(null);
   const [linking, setLinking] = useState(null);
+  const [coloring, setColoring] = useState(null);
   // target: { customer } for a customer, { retailer, customer } for a retailer (customer null when unlinked).
   const deletion = useConfirmAction({ onConfirm: deleteRecord });
   const expanded = useExpandedRows();
@@ -155,6 +159,20 @@ export default function CustomersView() {
     }
   }
 
+  async function saveColor(color) {
+    try {
+      const updated = await updateCustomerColor(coloring.customer_id, color);
+      applyCustomer(updated);
+      setHighlightId(updated.customer_id);
+      notify('updated', `${customerLabel(updated.customer_name)}'s colour changed`);
+      setColoring(null);
+    } catch (err) {
+      // A 409 can mean another customer took the colour since the list loaded.
+      refreshOnConflict(err);
+      throw err;
+    }
+  }
+
   async function deleteRecord({ customer, retailer }) {
     try {
       if (retailer) {
@@ -211,6 +229,7 @@ export default function CustomersView() {
           onRefresh={refresh}
           onEdit={(customer) => setDialog({ type: 'customer-edit', customer })}
           onDelete={(customer) => deletion.request({ customer })}
+          onColor={setColoring}
           onAddRetailer={(customer) => setDialog({ type: 'retailer-create', customer })}
           onEditRetailer={(retailer, customer) => setDialog({ type: 'retailer-edit', retailer, customer })}
           onDeleteRetailer={(retailer, customer) => deletion.request({ retailer, customer })}
@@ -235,6 +254,14 @@ export default function CustomersView() {
         onClose={() => setDialog(null)}
         onSubmit={saveName}
         {...(dialog ? nameDialogProps(dialog, data, unlinked) : { formKey: 'closed', takenNames: new Set() })}
+      />
+
+      <CustomerColorDialog
+        customer={coloring}
+        customers={data}
+        choices={colorChoices}
+        onSubmit={saveColor}
+        onClose={() => setColoring(null)}
       />
 
       <LinkRetailerDialog

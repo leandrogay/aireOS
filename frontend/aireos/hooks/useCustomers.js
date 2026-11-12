@@ -13,13 +13,15 @@ import { getCustomers } from '@/app/services/catalogApi';
  * instead of refetching: `applyCustomer` swaps it in (or adds it) and drops
  * its retailers from `unlinked` (a retailer that was just linked),
  * `removeCustomer` drops one, and `applyUnlinked` / `removeUnlinked` do the
- * same for a retailer with no customer.
+ * same for a retailer with no customer. `colorChoices` are the chart colours
+ * a customer can be given (backend customer_colors.COLOR_CHOICES).
  *
  * @param {{ refreshKey?: number }} [options]
  */
 export default function useCustomers({ refreshKey = 0 } = {}) {
   const [data, setData] = useState([]);
   const [unlinked, setUnlinked] = useState([]);
+  const [colorChoices, setColorChoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -33,6 +35,7 @@ export default function useCustomers({ refreshKey = 0 } = {}) {
         if (cancelled) return;
         setData(result.customers);
         setUnlinked(result.unlinked_retailers);
+        setColorChoices(result.color_choices ?? []);
         setError(null);
       } catch (err) {
         if (!cancelled) setError(err.message);
@@ -68,5 +71,5 @@ export default function useCustomers({ refreshKey = 0 } = {}) {
     setUnlinked((rows) => rows.filter((row) => row.retailer_id !== retailerId));
   }
 
-  return { data, unlinked, loading, error, applyCustomer, removeCustomer, applyUnlinked, removeUnlinked };
+  return { data, unlinked, colorChoices, loading, error, applyCustomer, removeCustomer, applyUnlinked, removeUnlinked };
 }
