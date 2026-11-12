@@ -39,19 +39,16 @@ function totalsByMonth(rows, unitsKey) {
 }
 
 // The Promotions column of one month: what last year's promotions still add
-// and what the official ones planned add in their place, each with the
-// mechanics behind it in groups -- same month last year, the recent
-// (run-rate) months, or planned. A part left out in the Breakdown tab has no
-// line; with official promotions left out, last year's carry on in their
-// months too.
-function promotionLines(parts, split, { carriedOn, officialOn }) {
+// (for the SKUs nothing official is planned for) and what the official ones
+// planned add in their place, each with the mechanics behind it in groups --
+// same month last year, the recent (run-rate) months, or planned.
+function promotionLines(parts, split) {
   if (!parts || !split?.splitRows) return [];
   const lines = [];
-  if (carriedOn && Math.round(parts.carried)) {
-    const groups = officialOn ? split.carriedPromotions.unplanned : split.carriedPromotions.all;
-    lines.push({ kind: 'carried', units: parts.carried, groups });
+  if (Math.round(parts.carried)) {
+    lines.push({ kind: 'carried', units: parts.carried, groups: split.carriedPromotions.unplanned });
   }
-  if (officialOn && split.official.plannedRows) {
+  if (split.official.plannedRows) {
     const groups = [{ kind: 'planned', months: [], mechanics: split.official.mechanics }];
     lines.push({ kind: 'official', units: parts.official, groups });
   }
@@ -90,7 +87,6 @@ function variance(adjusted, lastYear) {
  *   monthItems: Map,              month_year → [{ itemId, name, state }]
  *   breakdowns?: Map,             month_year → the chart point's breakdown (scenarioComposition.withComposition)
  *   splits?: Map,                 month_year → scenarioTier0Split.monthSplit
- *   included?: Record<string, boolean>, the Breakdown tab's toggles (carried, official)
  * }} input
  */
 export function buildPlanRows({
@@ -100,7 +96,6 @@ export function buildPlanRows({
   monthItems,
   breakdowns = new Map(),
   splits = new Map(),
-  included = { carried: true, official: true },
 }) {
   const model = totalsByMonth(rows, CURRENT_UNITS);
   const lastYear = totalsByMonth(lastYearActuals, 'quantity_cartons');
@@ -131,10 +126,7 @@ export function buildPlanRows({
       adjusted,
       variance: variance(adjusted, previous),
       parts,
-      promotionLines: promotionLines(parts, split, {
-        carriedOn: included.carried !== false,
-        officialOn: included.official !== false,
-      }),
+      promotionLines: promotionLines(parts, split),
       planStatus: planStatus(split),
       items: (monthItems.get(monthYear) ?? []).map(({ itemId, name, state, source }) => ({ itemId, name, state, source })),
     };

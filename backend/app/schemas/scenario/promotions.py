@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import Field, field_validator, model_validator
 
 from app.schemas.catalog import _Base
+from app.schemas.scenario.building_blocks import ExcludedPair, excluded_pairs_in_order_once
 
 
 # ============================================================
@@ -25,8 +26,22 @@ ScenarioPromoType = Literal["monthly", "side_offer", "bundle", "others"]
 _UPLIFT = {"ge": Decimal("-90"), "le": Decimal("300"), "max_digits": 6, "decimal_places": 2}
 
 
+class CustomerReferences(_Base):
+    """One customer's values copied in from Promotion Uplift Settings (migration 025)."""
+
+    reference_uplift_pct: Decimal = Field(**_UPLIFT)
+    reference_source: str = Field(min_length=1, max_length=20)
+    reference_by_sku: dict[str, Decimal] = Field(default_factory=dict)
+    voucher_uplift_pct: Decimal = Field(default=Decimal("0"), **_UPLIFT)
+    voucher_by_sku: dict[str, Decimal] = Field(default_factory=dict)
+
+
 class ScenarioPromotionBase(_Base):
-    customer_name: str = Field(min_length=1, max_length=255)
+    # Like building blocks: several customers (migration 022), None (or an
+    # empty list) = every customer; each customer x SKU range can be
+    # switched off on its own (023).
+    customer_names: list[str] | None = Field(default=None, max_length=100)
+    excluded_pairs: list[ExcludedPair] = Field(default_factory=list, max_length=1000)
 
     # Promotions are planned by SKU range: sku_ranges = every SKU of those
     # ranges; None (or empty) with no product_name = all SKU ranges.
@@ -40,7 +55,10 @@ class ScenarioPromotionBase(_Base):
     mechanic_label: str = Field(min_length=1, max_length=120)
 
     # Copied from Promotion Uplift Settings when the promotion was set up,
-    # so a later settings change does not move a saved promotion.
+    # so a later settings change does not move a saved promotion: each
+    # customer's in references_by_customer (by name), the first customer's
+    # also in the single fields below.
+    references_by_customer: dict[str, CustomerReferences] = Field(default_factory=dict)
     reference_uplift_pct: Decimal = Field(**_UPLIFT)
     reference_source: str = Field(min_length=1, max_length=20)
     reference_by_sku: dict[str, Decimal] = Field(default_factory=dict)
@@ -66,6 +84,20 @@ class ScenarioPromotionBase(_Base):
     @classmethod
     def _blank_explanation_is_none(cls, value: str | None) -> str | None:
         return value or None
+
+    @field_validator("customer_names")
+    @classmethod
+    def _customers_in_order_once(cls, value: list[str] | None) -> list[str] | None:
+        # Same rule as building blocks: nothing left = every customer (None).
+        names = sorted({item.strip() for item in value or [] if item and item.strip()})
+        if any(len(item) > 255 for item in names):
+            raise ValueError("A customer name is at most 255 characters")
+        return names or None
+
+    @field_validator("excluded_pairs")
+    @classmethod
+    def _pairs_in_order_once(cls, value: list[ExcludedPair]) -> list[ExcludedPair]:
+        return excluded_pairs_in_order_once(value)
 
     @field_validator("sku_ranges")
     @classmethod
@@ -99,9 +131,15 @@ class ScenarioPromotionBase(_Base):
             ):
                 raise ValueError("start_month and end_month must be the months of start_date and end_date")
 
-        for values in (self.reference_by_sku, self.voucher_by_sku):
+        per_sku = [self.reference_by_sku, self.voucher_by_sku]
+        for references in self.references_by_customer.values():
+            per_sku += [references.reference_by_sku, references.voucher_by_sku]
+        for values in per_sku:
             if any(value < Decimal("-90") or value > Decimal("300") for value in values.values()):
                 raise ValueError("Per-SKU uplifts must be between -90% and 300%")
+
+        if self.customer_names and set(self.references_by_customer) - set(self.customer_names):
+            raise ValueError("references_by_customer names a customer the promotion doesn't cover")
 
         return self
 

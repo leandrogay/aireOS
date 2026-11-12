@@ -79,11 +79,26 @@ export function coversCustomer(item, customerName) {
   return Boolean(customers) && (!customers.length || customers.includes(customerName));
 }
 
-// The forecast rows an item applies to: its customers, its SKU ranges (every
-// SKU of them, by the rows' sku_range) or its one SKU (items saved before
-// ranges; every SKU when neither is set), its months, and only rows with a
-// Current value (months with actuals have none, so they are never changed).
-export function itemRows(rows, item) {
+// One customer x SKU range of an item; skuRange null = the SKUs with no range.
+function pairKey(customer, skuRange) {
+  return `${customer}|${skuRange ?? ''}`;
+}
+
+/**
+ * Whether a customer x SKU range is switched off on an item (its
+ * `excludedPairs`, backend migration 023). The item stays one entry.
+ *
+ * @param {{ excludedPairs?: Array<{ customer: string, skuRange: string | null }> }} item
+ * @param {string} customer
+ * @param {string | null} skuRange
+ */
+export function pairExcluded(item, customer, skuRange) {
+  const key = pairKey(customer, skuRange);
+  return (item.excludedPairs ?? []).some((pair) => pairKey(pair.customer, pair.skuRange) === key);
+}
+
+// The forecast rows an item covers, its switched-off pairs included.
+function coveredRows(rows, item) {
   if (!itemCustomers(item) || !item.startMonth || !item.endMonth) return [];
   return rows.filter(
     (row) =>
@@ -95,6 +110,66 @@ export function itemRows(rows, item) {
       row.month_year <= item.endMonth
   );
 }
+
+// The forecast rows an item applies to: its customers, its SKU ranges (every
+// SKU of them, by the rows' sku_range) or its one SKU (items saved before
+// ranges; every SKU when neither is set), its months, and only rows with a
+// Current value (months with actuals have none, so they are never changed),
+// less its switched-off customer x ranges.
+export function itemRows(rows, item) {
+  return coveredRows(rows, item).filter((row) => !pairExcluded(item, row.customer_name, row.sku_range ?? null));
+}
+
+/**
+ * An item's customer x SKU ranges, for its opened row: each pair the rows
+ * hold, with what the item adds there (`cells` from simulate(), its own
+ * only) and whether it is switched off; switched-off pairs the rows don't
+ * hold are listed too, so they can be switched back on. By customer, then range.
+ *
+ * @param {object[]} rows forecast rows
+ * @param {object} item
+ * @param {object[]} cells simulate().cells
+ * @returns {Array<{ customer: string, skuRange: string | null, deltaUnits: number, excluded: boolean }>}
+ */
+export function itemPairs(rows, item, cells) {
+  const pairs = new Map();
+  const rangeOf = new Map();
+  for (const row of coveredRows(rows, item)) {
+    const skuRange = row.sku_range ?? null;
+    rangeOf.set(`${row.customer_name}|${row.product_name}`, skuRange);
+    const key = pairKey(row.customer_name, skuRange);
+    if (!pairs.has(key)) {
+      pairs.set(key, { customer: row.customer_name, skuRange, deltaUnits: 0, excluded: pairExcluded(item, row.customer_name, skuRange) });
+    }
+  }
+  for (const pair of item.excludedPairs ?? []) {
+    const key = pairKey(pair.customer, pair.skuRange);
+    if (!pairs.has(key)) pairs.set(key, { customer: pair.customer, skuRange: pair.skuRange ?? null, deltaUnits: 0, excluded: true });
+  }
+  for (const cell of cells) {
+    if (cell.itemId !== item.id) continue;
+    const pair = pairs.get(pairKey(cell.customer, rangeOf.get(`${cell.customer}|${cell.sku}`) ?? null));
+    if (pair) pair.deltaUnits += cell.deltaUnits;
+  }
+  return [...pairs.values()].sort(
+    (a, b) => a.customer.localeCompare(b.customer) || (a.skuRange ?? '').localeCompare(b.skuRange ?? '')
+  );
+}
+
+/**
+ * The item's switched-off pairs with one pair switched on or off.
+ *
+ * @param {object} item
+ * @param {string} customer
+ * @param {string | null} skuRange
+ * @param {boolean} on
+ */
+export function withPairSwitched(item, customer, skuRange, on) {
+  const key = pairKey(customer, skuRange);
+  const others = (item.excludedPairs ?? []).filter((pair) => pairKey(pair.customer, pair.skuRange) !== key);
+  return on ? others : [...others, { customer, skuRange }];
+}
+
 
 function deltaCell(row, item, source, deltaUnits) {
   return {
@@ -122,18 +197,12 @@ function deltaCell(row, item, source, deltaUnits) {
  *
  * @param {{ productName?: string, skuRange?: string, customerName: string, startDate: string, endDate: string }} filters
  * @param {Map<string, { startMonth: string, endMonth: string, rows: object[] }>} [splitBasis]
- * `officialOn` / `promotions` say what Simulated counts (the Breakdown
- * tab's toggles): whether official promotions replace what Tier 0 carries,
- * and the scenario promotions that do where they don't.
- *
  * @param {Map<string, object>} [tier0Split]
- * @param {{ officialOn?: boolean, promotions?: object[] }} [counted]
  */
 export function chartView(
   { productName = '', skuRange = '', customerName = '', startDate = '', endDate = '' },
   splitBasis = null,
-  tier0Split = null,
-  { officialOn = true, promotions = [] } = {}
+  tier0Split = null
 ) {
   return {
     productName,
@@ -143,8 +212,6 @@ export function chartView(
     endMonth: endDate ? `${endDate.slice(0, 7)}-01` : '',
     splitBasis,
     tier0Split,
-    officialOn,
-    promotions,
   };
 }
 

@@ -1,7 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { chartView, coversCustomer, itemRows, splitBasisNeeds, unitsDeltaCells, viewCoversItem } from '../app/utils/scenarioEngine.js';
+import {
+  chartView,
+  coversCustomer,
+  itemPairs,
+  itemRows,
+  splitBasisNeeds,
+  unitsDeltaCells,
+  viewCoversItem,
+  withPairSwitched,
+} from '../app/utils/scenarioEngine.js';
 
 const MONTH = '2027-06-01';
 
@@ -61,4 +70,46 @@ test('a units block for several customers fetches only the customer in view, whe
     'FairPrice',
   ]);
   assert.deepEqual(Object.keys(splitBasisNeeds([units], chartView({ skuRange: 'Pants' }), ROWS)).sort(), ['FairPrice', 'NHG']);
+});
+
+// ---- switched-off customer x ranges ---------------------------------------------------
+
+test('a switched-off customer x range leaves the item, the rest stays one entry', () => {
+  const item = block([], { excludedPairs: [{ customer: 'NHG', skuRange: 'Pants' }] });
+
+  assert.deepEqual(
+    itemRows(ROWS, item).map((r) => r.customer_name),
+    ['FairPrice', 'FairPrice', 'Prime']
+  );
+});
+
+test('the units of a customer go only to its pairs still switched on', () => {
+  const rows = [...ROWS, { ...row('NHG', 'T', 100), sku_range: 'Tape' }];
+  const item = block(['NHG'], { excludedPairs: [{ customer: 'NHG', skuRange: 'Pants' }] });
+
+  const cells = unitsDeltaCells(rows, item, 100, 'blocks', chartView({}));
+
+  assert.deepEqual(cells.map((cell) => [cell.sku, cell.deltaUnits]), [['T', 100]]);
+});
+
+test('an item lists its pairs with what it adds, switched-off ones included', () => {
+  const item = block(['FairPrice', 'NHG'], { excludedPairs: [{ customer: 'NHG', skuRange: 'Pants' }, { customer: 'NHG', skuRange: 'Tape' }] });
+  const cells = [
+    { itemId: 'b1', customer: 'FairPrice', sku: 'A', deltaUnits: 30 },
+    { itemId: 'b1', customer: 'FairPrice', sku: 'B', deltaUnits: 10 },
+    { itemId: 'other', customer: 'FairPrice', sku: 'A', deltaUnits: 999 },
+  ];
+
+  assert.deepEqual(itemPairs(ROWS, item, cells), [
+    { customer: 'FairPrice', skuRange: 'Pants', deltaUnits: 40, excluded: false },
+    { customer: 'NHG', skuRange: 'Pants', deltaUnits: 0, excluded: true },
+    { customer: 'NHG', skuRange: 'Tape', deltaUnits: 0, excluded: true },
+  ]);
+});
+
+test('switching a pair off and back on', () => {
+  const off = withPairSwitched(block([]), 'NHG', null, false);
+
+  assert.deepEqual(off, [{ customer: 'NHG', skuRange: null }]);
+  assert.deepEqual(withPairSwitched(block([], { excludedPairs: off }), 'NHG', null, true), []);
 });

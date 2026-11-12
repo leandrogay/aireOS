@@ -103,16 +103,15 @@ export function officialCells(rows, index, item) {
  * @param {(promotion: object) => object[]} rowsFor the forecast rows one promotion covers
  * @param {(promotion: object, row: object) => number} upliftFor
  * @param {(promotion: object, month: string) => number} shareFor
- * @param {boolean} [officialOn] false when the official promotions are left out of Simulated
  */
-export function promotionCells(promotions, index, rowsFor, upliftFor, shareFor, officialOn = true) {
+export function promotionCells(promotions, index, rowsFor, upliftFor, shareFor) {
   const entries = promotions.flatMap((promotion) =>
     rowsFor(promotion).map((row) => ({ promotion, row, split: splitForRow(index, row) }))
   );
 
   // The share of each row's month the promotions replace, together.
   const replacing = new Map();
-  const official = (split) => officialOn && split.official?.planned;
+  const official = (split) => split.official?.planned;
   for (const entry of entries) {
     if (!entry.split || official(entry.split)) continue;
     const key = splitKey(entry.row.customer_id, entry.row.sku, entry.row.month_year);
@@ -131,40 +130,6 @@ export function promotionCells(promotions, index, rowsFor, upliftFor, shareFor, 
   });
 }
 
-/**
- * Cells that leave last year's promotions out of Simulated (the Breakdown
- * tab's toggle): in each split row, what is left of the carried block once
- * official promotions (when counted) and scenario promotions have replaced
- * their share of it, taken away.
- *
- * @param {object[]} rows forecast rows
- * @param {Map<string, object> | null} index tier0SplitIndex
- * @param {{ id: string }} item the one item standing for the toggle
- * @param {{ officialOn: boolean, promotions: object[], rowsFor: (promotion: object) => object[], shareFor: (promotion: object, month: string) => number }} counted
- */
-export function carriedOffCells(rows, index, item, { officialOn, promotions, rowsFor, shareFor }) {
-  const replacedShare = new Map();
-  for (const promotion of promotions) {
-    for (const row of rowsFor(promotion)) {
-      const key = splitKey(row.customer_id, row.sku, row.month_year);
-      replacedShare.set(key, (replacedShare.get(key) ?? 0) + shareFor(promotion, row.month_year));
-    }
-  }
-  const cells = [];
-  for (const row of rows) {
-    const split = splitForRow(index, row);
-    if (!split || !split.carried) continue;
-    const share = officialOn && split.official?.planned
-      ? 1
-      : Math.min(1, replacedShare.get(splitKey(row.customer_id, row.sku, row.month_year)) ?? 0);
-    const kept = split.carried * (1 - share);
-    if (kept) cells.push(cell(row, item, 'carried', 0, kept));
-  }
-  return cells;
-}
-
-// The one item standing for "last year's promotions left out".
-export const CARRIED_OFF_ITEM = { id: 'carried-promotions-off', name: "Last year's promotions left out" };
 
 // ============================================================
 // ONE MONTH, FOR THE BREAKDOWN TAB
@@ -323,7 +288,7 @@ export const scenarioOfficialSource = {
   itemsKey: 'official',
   label: 'Official promotions',
   deltas(items, rows, view) {
-    return items.length && view?.officialOn !== false ? officialCells(rows, view?.tier0Split ?? null, items[0]) : [];
+    return items.length ? officialCells(rows, view?.tier0Split ?? null, items[0]) : [];
   },
   describe() {
     return {

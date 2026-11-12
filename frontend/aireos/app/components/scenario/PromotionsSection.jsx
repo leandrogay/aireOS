@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Percent, Plus, Trash2 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
-import { customerLabel } from '@/app/utils/retailerLabel';
+import { customersLabel } from '@/app/utils/retailerLabel';
 import { monthSpanLabel } from '@/app/utils/scenarioPitch';
 import {
   clashingActivePromotions,
@@ -31,7 +31,7 @@ import PromotionEditor from '@/components/scenario/PromotionEditor';
 import usePromoUplifts from '@/hooks/usePromoUplifts';
 
 // Changing any of these picks the setting values again (withReferences).
-const REFERENCE_FIELDS = ['customer', 'skuRanges', 'sku', 'mechanicKey'];
+const REFERENCE_FIELDS = ['customers', 'skuRanges', 'sku', 'mechanicKey'];
 
 // A saved promotion takes the uplift worked out now; this says what it was
 // when saved, so a change since then is never silent. Nothing to apply.
@@ -88,6 +88,7 @@ function promotionSummary(promotion, liveIndex) {
  *   defaultSkuRange: string,
  *   impacts: Map<string, { deltaUnits: number, months: string[] }>,
  *   rows: object[],
+ *   pairsFor: (promotion: object) => ReturnType<typeof import('@/app/utils/scenarioEngine').itemPairs>,
  *   liveIndex: Map<string, object[]> | null,
  *   liveLoading: boolean,
  *   liveError: string | null,
@@ -105,6 +106,7 @@ export default function PromotionsSection({
   defaultSkuRange,
   impacts,
   rows = [],
+  pairsFor,
   liveIndex = null,
   liveLoading = false,
   liveError = null,
@@ -115,17 +117,19 @@ export default function PromotionsSection({
   const [notice, setNotice] = useState(null);
   const uplifts = usePromoUplifts({ customers: customerOptions });
   const selected = items.find((promotion) => promotion.id === selectedId) ?? items[0] ?? null;
-  const addCustomer = defaultCustomer || customerOptions[0] || '';
-  const canAdd = months.length > 0 && customerOptions.length > 0 && mechanicOptions(uplifts.data[addCustomer]).length > 0;
+  // The chart's customer to start with; none = every customer.
+  const addCustomers = defaultCustomer ? [defaultCustomer] : [];
+  const lead = addCustomers[0] ?? customerOptions[0];
+  const canAdd = months.length > 0 && customerOptions.length > 0 && mechanicOptions(uplifts.data[lead]).length > 0;
   const savedNow = selected ? upliftChangedSinceSaved(selected, liveIndex) : null;
 
   function addPromotion() {
     const promotion = newDraftPromotion({
-      customer: addCustomer,
+      customers: addCustomers,
       // The chart's range to start with; none picked = All SKU ranges.
       skuRanges: defaultSkuRange ? [defaultSkuRange] : [],
       months,
-      resolved: uplifts.data[addCustomer],
+      upliftsByCustomer: uplifts.data,
     });
     const withLive = withLiveReferences(promotion, liveIndex);
     onChange((current) => [...current, withLive]);
@@ -199,7 +203,7 @@ export default function PromotionsSection({
   function applyChanges(promotion, changes) {
     const next = updateDraftPromotion(promotion, changes);
     const needsReferences = REFERENCE_FIELDS.some((field) => field in changes);
-    return needsReferences ? withReferences(next, uplifts.data[next.customer], liveIndex) : next;
+    return needsReferences ? withReferences(next, uplifts.data, liveIndex) : next;
   }
 
   function updateSelected(changes) {
@@ -252,7 +256,7 @@ export default function PromotionsSection({
               <Percent className="mt-0.5 size-3.5 shrink-0 text-scenario" aria-hidden="true" />
               <span className="min-w-0">
                 <span className="block truncate text-xs font-medium text-deep-violet-blue">
-                  {customerLabel(promotion.customer)} · {promotion.mechanicLabel || 'Draft promotion'}
+                  {customersLabel(promotion.customers)} · {promotion.mechanicLabel || 'Draft promotion'}
                 </span>
                 <span className="block truncate text-[11px] text-deep-violet-blue/60">
                   {promotionSummary(promotion, liveIndex)}
@@ -323,7 +327,8 @@ export default function PromotionsSection({
         <PromotionEditor
           promotion={selected}
           onUpdate={updateSelected}
-          resolved={uplifts.data[selected.customer]}
+          upliftsByCustomer={uplifts.data}
+          pairs={pairsFor(selected)}
           liveIndex={liveIndex}
           liveLoading={liveLoading}
           customerOptions={customerOptions}

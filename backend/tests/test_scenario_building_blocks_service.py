@@ -1,3 +1,4 @@
+import json
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
@@ -29,6 +30,7 @@ def _block(**changes):
         "kind": "block",
         "customer_names": ["fairprice"],
         "sku_ranges": None,
+        "excluded_pairs": [],
         "product_name": None,
         "name": "New Store Opening",
         "explanation": None,
@@ -58,11 +60,22 @@ class FakeBlocksDatabase:
         # As the SELECT's ARRAY(...): empty for NULL customer_ids (every customer).
         customer_names = sorted(name for name, cid in CUSTOMERS.items() if cid in (block["customer_ids"] or []))
         product_name = next((row["product_name"] for row in SKUS if row["sku"] == block["sku"]), None)
+        # As the SELECT: stored ids named back.
+        names = {cid: name for name, cid in CUSTOMERS.items()}
+        excluded = [
+            {"customer_name": names[pair["customer_id"]], "sku_range": pair["sku_range"]}
+            for pair in json.loads(block["excluded_pairs"])
+        ]
         return {
             "block_id": block_id,
             "customer_names": customer_names,
+            "excluded_pairs": excluded,
             "product_name": product_name,
-            **{key: value for key, value in block.items() if key not in ("customer_id", "customer_ids")},
+            **{
+                key: value
+                for key, value in block.items()
+                if key not in ("customer_id", "customer_ids", "excluded_pairs")
+            },
             "created_at": STAMP,
             "updated_at": STAMP,
         }
@@ -98,7 +111,6 @@ class FakeBlocksDatabase:
                 for block_id, block in self.blocks.items()
                 if block["kind"] == "growth"
                 and block["customer_id"] == params["customer_id"]
-                and block["sku_ranges"][0] == params["sku_range"]
                 and block["start_month"] == params["start_month"]
                 and block_id != params["block_id"]
             ]
@@ -166,6 +178,7 @@ def test_create_returns_the_block_as_the_list_shows_it(monkeypatch):
         "kind": "block",
         "customer_names": ["fairprice"],
         "sku_ranges": None,
+        "excluded_pairs": [],
         "sku": "SKU-A",
         "product_name": "Comfort Pants M",
         "name": "New Store Opening",
@@ -264,7 +277,7 @@ def test_update_of_a_missing_block_returns_none(monkeypatch):
 
 
 def _growth(**changes):
-    return _block(**{"kind": "growth", "name": "Budget growth", "sku_ranges": ["Comfort Pants"],
+    return _block(**{"kind": "growth", "name": "Budget growth",
                      "start_month": date(2027, 1, 1), "end_month": date(2027, 12, 1),
                      "uplift_value": Decimal("8"), **changes})
 
@@ -287,7 +300,7 @@ def test_a_second_growth_for_the_same_customer_and_year_raises_without_writing(m
 
     with pytest.raises(
         building_blocks_service.GrowthBlockExistsError,
-        match="fairprice already has growth for Comfort Pants in 2027",
+        match="fairprice already has growth for 2027",
     ):
         building_blocks_service.create_building_block(_growth(uplift_value=Decimal("12")))
 
@@ -357,19 +370,6 @@ def test_a_leftover_range_name_row_does_not_make_a_range_real(monkeypatch):
         building_blocks_service.create_building_block(_block(sku_ranges=["Ghost Range"]))
 
 
-def test_growth_for_another_range_in_the_same_year_is_allowed(monkeypatch):
-    db = FakeBlocksDatabase()
-    _install(monkeypatch, db)
-    SKUS.append({"sku": "SKU-E", "product_name": "Ultra Tape L", "is_active": True, "sku_range": "Ultra Tape"})
-    try:
-        building_blocks_service.create_building_block(_growth())
-        other_range = building_blocks_service.create_building_block(_growth(sku_ranges=["Ultra Tape"]))
-    finally:
-        SKUS.pop()
-
-    assert other_range["block_id"] == 2
-
-
 def test_overlay_blocks_read_the_sku_codes_of_their_range():
     conn = FakeConnection(lambda sql, params: [])
 
@@ -392,6 +392,51 @@ def test_a_block_for_several_ranges_stores_them_all(monkeypatch):
     (_, params), = conn.sql_containing("INSERT INTO scenario_building_blocks")
     assert params["sku_ranges"] == ["Comfort Pants", "Ultra Tape"]
     assert saved["sku_ranges"] == ["Comfort Pants", "Ultra Tape"]
+
+
+# ---- Switched-off customer x ranges ------------------------------------------------
+
+
+def test_switched_off_pairs_are_stored_by_customer_id_and_read_back_by_name(monkeypatch):
+    db = FakeBlocksDatabase()
+    conn = _install(monkeypatch, db)
+    pairs = [
+        {"customer_name": "sheng_siong", "sku_range": "Comfort Pants"},
+        {"customer_name": "fairprice", "sku_range": None},
+    ]
+
+    saved = building_blocks_service.create_building_block(
+        _block(customer_names=["fairprice", "sheng_siong"], excluded_pairs=pairs)
+    )
+
+    (_, params), = conn.sql_containing("INSERT INTO scenario_building_blocks")
+    assert json.loads(params["excluded_pairs"]) == [
+        {"customer_id": 2, "sku_range": "Comfort Pants"},
+        {"customer_id": 1, "sku_range": None},
+    ]
+    assert saved["excluded_pairs"] == pairs
+
+
+def test_a_switched_off_pair_for_an_unknown_customer_raises_without_writing(monkeypatch):
+    db = FakeBlocksDatabase()
+    conn = _install(monkeypatch, db)
+
+    with pytest.raises(ValueError, match="Unknown customer: giant"):
+        building_blocks_service.create_building_block(
+            _block(excluded_pairs=[{"customer_name": "giant", "sku_range": "Comfort Pants"}])
+        )
+
+    assert conn.sql_containing("INSERT INTO") == []
+
+
+def test_overlay_blocks_read_this_customers_switched_off_skus():
+    conn = FakeConnection(lambda sql, params: [])
+
+    building_blocks_service.fetch_blocks_for_customer(conn, 4, [7])
+
+    sql, _ = conn.calls[0]
+    assert "AS excluded_skus" in sql
+    assert "(pair ->> 'customer_id')::INTEGER = CAST(:customer_id AS INTEGER)" in sql
 
 
 # ---- Several customers ----------------------------------------------------------
@@ -492,6 +537,7 @@ def test_overlay_blocks_are_read_for_the_one_customer_and_the_picked_ids():
             {
                 "block_id": 7,
                 "sku": None,
+                "excluded_skus": [],
                 "name": "New store",
                 "uplift_mode": "units",
                 "uplift_value": Decimal("-120"),

@@ -7,7 +7,7 @@ from app.services.scenario import promotions as promotions_service
 client = TestClient(app)
 
 BODY = {
-    "customer_name": "fairprice",
+    "customer_names": ["fairprice"],
     "product_name": "Comfort Pants M",
     "promo_type": "monthly",
     "mechanic_key": "pct_off_30",

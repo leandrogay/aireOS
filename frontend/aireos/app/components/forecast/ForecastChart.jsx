@@ -217,7 +217,6 @@ function CompositionHatches({ layers }) {
 const SCENARIO_BREAKDOWN_ROWS = [
   { key: 'tier0', label: 'Tier 0' },
   { key: 'official', label: 'Official promotions', onlyWhenSet: true },
-  { key: 'carriedOff', label: "Last year's promotions left out", onlyWhenSet: true },
   { key: 'growth', label: 'Growth' },
   { key: 'blocks', label: 'Building blocks' },
   { key: 'promotions', label: 'Scenario promotions' },
@@ -317,7 +316,7 @@ function ScenarioPointDetails({ point, items, anchor, formatValue, className }) 
         </div>
       )}
       {breakdown &&
-      Math.round(breakdown.tier0 + (breakdown.official ?? 0) + (breakdown.carriedOff ?? 0) + breakdown.growth + breakdown.blocks + breakdown.promotions) !==
+      Math.round(breakdown.tier0 + (breakdown.official ?? 0) + breakdown.growth + breakdown.blocks + breakdown.promotions) !==
         Math.round(breakdown.simulated) ? (
         <p className="pt-0.5 text-deep-violet-blue/60">
           Some SKUs would fall below 0 and are kept at 0, so Simulated is more than the sum.
@@ -473,14 +472,28 @@ export default function ForecastChart({
   const compositionTops = scenario?.composition?.length
     ? chartData.map((point) => totalLabel(point, scenario.compositionVisible ?? {})?.value)
     : [];
-  const visibleValues = [...chartData.flatMap((point) => visibleKeys.map((key) => point[key])), ...compositionTops]
-    .filter((value) => typeof value === 'number');
+  const numbers = (values) => values.filter((value) => typeof value === 'number');
+  // The axis fits the reference lines (Actual, Initial, Previous, Current),
+  // not what the scenario adds, so switching a block or promotion on or off
+  // doesn't rescale the chart and make the lines look as if they moved. It
+  // grows only when the Simulated line or its bands would leave the chart.
+  const referenceValues = numbers(
+    chartData.flatMap((point) => visibleKeys.filter((key) => key !== 'simulated').map((key) => point[key]))
+  );
+  const scenarioValues = numbers([
+    ...(visibleKeys.includes('simulated') ? chartData.map((point) => point.simulated) : []),
+    ...compositionTops,
+  ]);
+  const visibleValues = [...referenceValues, ...scenarioValues];
   // Hover text for the line pills, so the explanations don't crowd the chart.
   const lineHints = forecastLineHints({
     initialMissing: initialOffHint,
     previousMissing: previousOff,
   });
-  const yDomain = visibleValues.length ? niceYDomain(visibleValues) : [0, 1];
+  const referenceDomain = referenceValues.length ? niceYDomain(referenceValues) : null;
+  const scenarioFits =
+    referenceDomain && scenarioValues.every((value) => value >= referenceDomain[0] && value <= referenceDomain[1]);
+  const yDomain = scenarioFits ? referenceDomain : visibleValues.length ? niceYDomain(visibleValues) : [0, 1];
   const hoverPoint = chartPoints.find((point) => point.month_year === hoverMonth);
   const hoverPromos = promosOverlappingMonth(
     promotions,

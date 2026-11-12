@@ -110,8 +110,7 @@ function BlockLinks({ items, onOpen }) {
 }
 
 // The parts of the Simulated figure, in the order the chart stacks them.
-// `part` is the plan row's parts key; `include` the Breakdown tab toggles
-// that leave it out (the baseline is always in). Last year's and official
+// `part` is the plan row's parts key. Last year's and official
 // promotions share one column, since a planned promotion takes the place
 // of last year's: each month says which it is and the mechanics behind it.
 const PART_COLUMNS = [
@@ -125,16 +124,14 @@ const PART_COLUMNS = [
     part: 'promotionLines',
     label: 'Promotions',
     hint: "What promotions add to the baseline. Last year's: carried by Tier 0 until a promotion is planned (negative when they sold less than an ordinary month); filled pills ran in the same month last year, dashed ones in the recent months Tier 0 averages. Planned (blue): official promotions on the Promotions page, in their place.",
-    include: ['carried', 'official'],
     split: true,
   },
-  { part: 'growth', label: 'Growth', hint: 'Growth on Tier 0, set in the Breakdown tab.', include: ['growth'] },
-  { part: 'blocks', label: 'Building blocks', hint: 'What the switched-on building blocks add this month.', include: ['blocks'] },
+  { part: 'growth', label: 'Growth', hint: 'Growth on Tier 0, set in the Breakdown tab.' },
+  { part: 'blocks', label: 'Building blocks', hint: 'What the switched-on building blocks add this month.' },
   {
     part: 'promotions',
     label: 'Scenario promotions',
     hint: 'What the promotions planned here add, on the baseline.',
-    include: ['promotions'],
   },
 ];
 
@@ -154,8 +151,7 @@ function columnHasValues(column, rows) {
  * forecast month with Last year actual, what the Simulated figure is made
  * of part by part (the baseline, promotions -- last year's or the official
  * ones planned, with their mechanics -- growth, building blocks, scenario
- * promotions; a part left out in the Breakdown tab, or empty in every month,
- * has no column) and the variance against last year. Each month says
+ * promotions; a part empty in every month has no column) and the variance against last year. Each month says
  * whether its promotions are planned on the Promotions page.
  * Opening a month shows how its Tier 0 is built (`detailsFor`). A block's
  * name opens it in the panel. All numbers come from scenarioPlan.buildPlanRows.
@@ -165,13 +161,12 @@ function columnHasValues(column, rows) {
  *   lastYearLoading: boolean,
  *   onOpenItem: (itemId: string) => void,
  *   scope: string,
- *   included: Record<string, boolean>,
  *   split: boolean,                   Tier 0 is split (else one Tier 0 column)
  *   detailsFor: (month: string) => import('react').ReactNode,
  *   flagged: (month: string) => boolean, the month moves more than 35% (Big change)
  * }} props
  */
-export default function MonthlyPlanTable({ rows, lastYearLoading, onOpenItem, scope, included, split, detailsFor, flagged }) {
+export default function MonthlyPlanTable({ rows, lastYearLoading, onOpenItem, scope, split, detailsFor, flagged }) {
   const expanded = useExpandedRows();
   if (!rows.length) {
     return (
@@ -181,9 +176,7 @@ export default function MonthlyPlanTable({ rows, lastYearLoading, onOpenItem, sc
     );
   }
 
-  const columns = PART_COLUMNS.filter(
-    (column) => (!column.include || column.include.some((key) => included[key])) && (!column.split || split)
-  );
+  const columns = PART_COLUMNS.filter((column) => !column.split || split);
   // Without the split, Tier 0 is one column.
   const partColumns = (
     split

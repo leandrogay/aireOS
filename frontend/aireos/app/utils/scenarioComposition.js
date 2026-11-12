@@ -51,7 +51,7 @@ export const MIN_LABEL_SLOT_PX = 34;
  * Adds a value per COMPOSITION_KEYS key and `breakdown`: { tier0, baseline,
  * carried (what is left of the carried promotions; 0 when they are switched
  * off), carriedTotal, replaced, officialAdded / promotionsAdded (what they
- * add on the baseline), official, carriedOff, growth, blocks, promotions
+ * add on the baseline), official, growth, blocks, promotions
  * (each source's net change on Tier 0), simulated }. Baseline + carried +
  * officialAdded + growth + blocks + promotionsAdded = Simulated (before the
  * 0 floor).
@@ -66,21 +66,19 @@ export function withComposition(point, items, split = null) {
 
   const baseline = split ? split.baseline : tier0;
   const carriedTotal = split ? split.carried : 0;
-  // Each source's net change on Tier 0; switching last year's promotions off is carriedOff.
-  const net = { official: 0, carriedOff: 0, growth: 0, blocks: 0, promotions: 0 };
+  // Each source's net change on Tier 0.
+  const net = { official: 0, growth: 0, blocks: 0, promotions: 0 };
   let replaced = 0;
   let officialAdded = 0;
   let promotionsAdded = 0;
   const up = { growthLayer: 0, blocksLayer: 0, promotionsLayer: 0 };
   let decrease = 0;
   for (const item of items) {
-    const netKey = item.source === 'carried' ? 'carriedOff' : item.source;
-    if (!(netKey in net)) continue;
-    net[netKey] += item.deltaUnits;
+    if (!(item.source in net)) continue;
+    net[item.source] += item.deltaUnits;
     replaced += item.replacedUnits ?? 0;
     const added = item.addedUnits ?? item.deltaUnits;
     if (item.source === 'promotions') promotionsAdded += added;
-    if (item.source === 'carried') continue;
     if (item.source === 'official') {
       officialAdded += added;
     } else if (added > 0) {
@@ -124,6 +122,29 @@ export function compactUnits(value) {
 
 function signed(value) {
   return `${value < 0 ? '−' : '+'}${compactUnits(Math.abs(value))}`;
+}
+
+/**
+ * The Breakdown tab's contribution list: each month's breakdown on the chart
+ * (withComposition) added up -- what the forecast already holds (baseline,
+ * last year's promotions, official promotions) and what the scenario adds
+ * (growth, building blocks, scenario promotions), adding up to Simulated
+ * before the 0 floor. `months` are the months it covers, in order.
+ *
+ * @param {Map<string, object>} breakdowns month_year → breakdown
+ */
+export function breakdownTotals(breakdowns) {
+  const totals = { months: [...breakdowns.keys()].sort(), baseline: 0, carried: 0, official: 0, growth: 0, blocks: 0, promotions: 0, simulated: 0 };
+  for (const breakdown of breakdowns.values()) {
+    totals.baseline += breakdown.baseline;
+    totals.carried += breakdown.carried;
+    totals.official += breakdown.officialAdded ?? 0;
+    totals.growth += breakdown.growth;
+    totals.blocks += breakdown.blocks;
+    totals.promotions += breakdown.promotionsAdded ?? breakdown.promotions;
+    totals.simulated += breakdown.simulated;
+  }
+  return totals;
 }
 
 /**

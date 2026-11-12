@@ -1,3 +1,5 @@
+import json
+
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
@@ -18,17 +20,22 @@ from app.services.scenario import common
 # exactly one (growth always does), for the growth index and ON DELETE CASCADE;
 # customer_service.delete_customer takes a deleted customer out of the lists.
 #
+# Each customer x SKU range a block covers can be switched off on its own
+# (excluded_pairs, migration 023: [{customer_id, sku_range}], sku_range null
+# = the SKUs with no range); the block stays one entry.
+#
 # Blocks follow SKU ranges (migration 017): sku_ranges = every SKU of those
 # ranges, sku and sku_ranges both NULL = every SKU ("All SKU ranges"), and
 # sku alone = one SKU, kept for blocks saved before ranges.
 #
-# kind = 'growth' marks the budget's year-on-year growth: a % block on one
-# SKU range from January to December (the schema checks the shape), one per
-# customer x range x year. It is applied exactly like any other % block.
+# kind = 'growth' marks the budget's year-on-year growth: a % block on every
+# SKU of one customer from January to December (the schema checks the shape),
+# one per customer x year (migration 024). It is applied exactly like any
+# other % block.
 
 
 class GrowthBlockExistsError(Exception):
-    """The customer already has a growth block for that SKU range and year."""
+    """The customer already has a growth block for that year."""
 
 
 # ============================================================
@@ -36,18 +43,13 @@ class GrowthBlockExistsError(Exception):
 # ============================================================
 
 # Joined back to names, so the page gets what it sent.
-_BLOCK_SELECT = """
+_BLOCK_SELECT = f"""
     SELECT
         block.block_id,
         block.kind,
-        -- Empty for NULL customer_ids (every customer).
-        ARRAY(
-            SELECT customer.customer_name
-            FROM customers AS customer
-            WHERE customer.customer_id = ANY(block.customer_ids)
-            ORDER BY customer.customer_name
-        ) AS customer_names,
+        {common.customer_names_select("block")},
         block.sku_ranges,
+        {common.excluded_pairs_select("block")},
         block.sku,
         product.product_name,
         block.name,
@@ -74,6 +76,7 @@ def _block_view(row: dict) -> dict:
         # None = every customer, as sku_ranges.
         "customer_names": list(row["customer_names"]) or None,
         "sku_ranges": list(row["sku_ranges"]) if row["sku_ranges"] else None,
+        "excluded_pairs": list(row["excluded_pairs"] or []),
         "sku": row["sku"],
         "product_name": row["product_name"],
         "name": row["name"],
@@ -129,7 +132,8 @@ def fetch_blocks_for_customer(conn: Connection, customer_id: int, block_ids: lis
     they cover every customer), as the sell-in plan's
     building blocks overlay applies them (scenario/block_effects): sku is a
     single SKU's code, range_skus the codes of the block's SKU range (both
-    None = every SKU), months are dates. A picked block of another customer,
+    None = every SKU), excluded_skus the SKUs of this customer's switched-off
+    ranges, months are dates. A picked block of another customer,
     or one deleted since, is simply not returned. Whether a block is switched
     on in the Scenario builder doesn't matter: the overlay is picked by hand.
     """
@@ -152,6 +156,18 @@ def fetch_blocks_for_customer(conn: Connection, customer_id: int, block_ids: lis
                         ORDER BY product.sku
                     )
                 END AS range_skus,
+                -- This customer's switched-off SKU ranges, as SKU codes.
+                ARRAY(
+                    SELECT product.sku
+                    FROM skus AS product
+                    WHERE EXISTS (
+                        SELECT 1
+                        FROM jsonb_array_elements(block.excluded_pairs) AS pair
+                        WHERE (pair ->> 'customer_id')::INTEGER = CAST(:customer_id AS INTEGER)
+                            AND product.sku_range IS NOT DISTINCT FROM pair ->> 'sku_range'
+                    )
+                    ORDER BY product.sku
+                ) AS excluded_skus,
                 block.name,
                 block.uplift_mode,
                 block.uplift_value,
@@ -171,33 +187,15 @@ def fetch_blocks_for_customer(conn: Connection, customer_id: int, block_ids: lis
         {"customer_id": customer_id, "block_ids": list(block_ids)},
     ).mappings().all()
 
-    return [{**dict(row), "uplift_value": float(row["uplift_value"])} for row in rows]
+    return [
+        {**dict(row), "uplift_value": float(row["uplift_value"]), "excluded_skus": list(row["excluded_skus"] or [])}
+        for row in rows
+    ]
 
 
 # ============================================================
 # NAME LOOKUPS
 # ============================================================
-
-
-def _resolve_customer_id(conn: Connection, customer_name: str) -> int:
-    customer_id = conn.execute(
-        text(
-            """
-            SELECT
-                customer_id
-
-            FROM customers
-
-            WHERE
-                customer_name = :customer_name
-            """
-        ),
-        {"customer_name": customer_name},
-    ).scalar()
-
-    if customer_id is None:
-        raise ValueError(f"Unknown customer: {customer_name}")
-    return customer_id
 
 
 def resolve_customer_ids(conn: Connection, customer_names: list[str] | None) -> list[int] | None:
@@ -308,7 +306,7 @@ def _resolve_sku_ranges(conn: Connection, sku_ranges: list[str] | None) -> list[
 
 def _ensure_one_growth_per_year(conn: Connection, block: dict, params: dict, block_id: int | None) -> None:
     """
-    Refuse a second growth block for the customer's SKU range and year, so
+    Refuse a second growth block for the customer and year, so
     the page gets a clear 409 instead of the unique index's error (the index
     stays the backstop). The block being updated doesn't count against itself.
     """
@@ -327,15 +325,12 @@ def _ensure_one_growth_per_year(conn: Connection, block: dict, params: dict, blo
             WHERE
                 kind = 'growth'
                 AND customer_id = :customer_id
-                AND sku_ranges[1] = :sku_range
                 AND start_month = :start_month
                 AND block_id <> :block_id
             """
         ),
         {
             "customer_id": params["customer_id"],
-            # A growth names exactly one range (the schema checks).
-            "sku_range": params["sku_ranges"][0],
             "start_month": params["start_month"],
             # BIGSERIAL starts at 1, so 0 excludes nothing on a create.
             "block_id": block_id or 0,
@@ -344,9 +339,19 @@ def _ensure_one_growth_per_year(conn: Connection, block: dict, params: dict, blo
 
     if existing is not None:
         raise GrowthBlockExistsError(
-            f"{block['customer_names'][0]} already has growth for {params['sku_ranges'][0]} in {params['start_month'].year}; "
+            f"{block['customer_names'][0]} already has growth for {params['start_month'].year}; "
             "edit that one instead."
         )
+
+
+def excluded_pairs_json(conn: Connection, pairs: list[dict]) -> str:
+    """The switched-off pairs as stored: customer ids (every name must exist), sku_range None for no range."""
+
+    names = sorted({pair["customer_name"] for pair in pairs})
+    ids = dict(zip(names, resolve_customer_ids(conn, names) or []))
+    return json.dumps(
+        [{"customer_id": ids[pair["customer_name"]], "sku_range": pair["sku_range"] or None} for pair in pairs]
+    )
 
 
 def _write_params(conn: Connection, block: dict) -> dict:
@@ -357,6 +362,7 @@ def _write_params(conn: Connection, block: dict) -> dict:
         # The one customer, or None for several or every customer.
         "customer_id": customer_ids[0] if customer_ids and len(customer_ids) == 1 else None,
         "sku_ranges": _resolve_sku_ranges(conn, block["sku_ranges"]),
+        "excluded_pairs": excluded_pairs_json(conn, block["excluded_pairs"]),
         "sku": _resolve_sku(conn, block["product_name"]),
         "name": block["name"],
         "explanation": block["explanation"],
@@ -391,6 +397,7 @@ def create_building_block(block: dict) -> dict:
                     customer_id,
                     customer_ids,
                     sku_ranges,
+                    excluded_pairs,
                     sku,
                     name,
                     explanation,
@@ -405,6 +412,7 @@ def create_building_block(block: dict) -> dict:
                     :customer_id,
                     CAST(:customer_ids AS INTEGER[]),
                     CAST(:sku_ranges AS TEXT[]),
+                    CAST(:excluded_pairs AS JSONB),
                     :sku,
                     :name,
                     :explanation,
@@ -440,6 +448,7 @@ def update_building_block(block_id: int, block: dict) -> dict | None:
                     customer_id = :customer_id,
                     customer_ids = CAST(:customer_ids AS INTEGER[]),
                     sku_ranges = CAST(:sku_ranges AS TEXT[]),
+                    excluded_pairs = CAST(:excluded_pairs AS JSONB),
                     sku = :sku,
                     name = :name,
                     explanation = :explanation,

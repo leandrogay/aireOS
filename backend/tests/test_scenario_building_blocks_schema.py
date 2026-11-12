@@ -120,7 +120,7 @@ def test_customers_are_stored_in_order_once_and_none_means_every_customer():
 
 
 def _growth(**changes):
-    growth = _block(kind="growth", name="Budget growth", sku_ranges=["Ultra Tape"], start_month="2027-01-01",
+    growth = _block(kind="growth", name="Budget growth", start_month="2027-01-01",
                     end_month="2027-12-01", uplift_value=8)
     growth.update(changes)
     return growth
@@ -130,11 +130,12 @@ def test_kind_defaults_to_an_ordinary_block():
     assert ScenarioBuildingBlockCreate(**_block()).kind == "block"
 
 
-def test_growth_for_one_sku_range_over_a_whole_year_is_valid():
+def test_growth_on_every_sku_of_one_customer_over_a_whole_year_is_valid():
     block = ScenarioBuildingBlockCreate(**_growth())
 
     assert block.kind == "growth"
-    assert block.sku_ranges == ["Ultra Tape"]
+    assert block.sku_ranges is None
+    assert block.product_name is None
     assert block.start_month == date(2027, 1, 1)
     assert block.end_month == date(2027, 12, 1)
 
@@ -147,15 +148,15 @@ def test_negative_growth_is_valid():
     "changes",
     [
         {"uplift_mode": "units", "uplift_value": 900},
-        {"sku_ranges": None},
-        {"sku_ranges": None, "product_name": "Comfort Pants M"},
+        {"sku_ranges": ["Ultra Tape"]},
+        {"product_name": "Comfort Pants M"},
         {"start_month": "2027-02-01"},
         {"end_month": "2027-11-01"},
         {"start_month": "2027-01-01", "end_month": "2028-12-01"},
     ],
-    ids=["units", "no range", "one sku", "starts after january", "ends before december", "two years"],
+    ids=["units", "one range", "one sku", "starts after january", "ends before december", "two years"],
 )
-def test_growth_that_is_not_a_pct_on_one_range_for_one_year_is_rejected(changes):
+def test_growth_that_is_not_a_pct_on_every_sku_for_one_year_is_rejected(changes):
     with pytest.raises(ValidationError):
         ScenarioBuildingBlockCreate(**{**_growth(), **changes})
 
@@ -185,11 +186,6 @@ def test_an_empty_range_list_means_all_sku_ranges():
     assert ScenarioBuildingBlockCreate(**_block(sku_ranges=[])).sku_ranges is None
 
 
-def test_growth_for_two_ranges_at_once_is_rejected():
-    with pytest.raises(ValidationError):
-        ScenarioBuildingBlockCreate(**{**_growth(), "sku_ranges": ["Ultra Tape", "Comfort Pants"]})
-
-
 def test_a_block_cannot_name_both_a_range_and_one_sku():
     with pytest.raises(ValidationError):
         ScenarioBuildingBlockCreate(**_block(sku_ranges=["Ultra Tape"], product_name="Comfort Pants M"))
@@ -199,3 +195,27 @@ def test_a_block_cannot_name_both_a_range_and_one_sku():
 def test_growth_names_exactly_one_customer(customers):
     with pytest.raises(ValidationError, match="Growth is set for one customer"):
         ScenarioBuildingBlockCreate(**_growth(customer_names=customers))
+
+
+def test_switched_off_pairs_are_stored_in_order_once():
+    block = ScenarioBuildingBlockCreate(
+        **_block(
+            excluded_pairs=[
+                {"customer_name": "nhg", "sku_range": "Ultra Tape"},
+                {"customer_name": "fairprice", "sku_range": None},
+                {"customer_name": "nhg", "sku_range": "Ultra Tape"},
+            ]
+        )
+    )
+
+    assert [(pair.customer_name, pair.sku_range) for pair in block.excluded_pairs] == [
+        ("fairprice", None),
+        ("nhg", "Ultra Tape"),
+    ]
+
+
+def test_growth_switches_nothing_off():
+    with pytest.raises(ValidationError, match="nothing can be switched off"):
+        ScenarioBuildingBlockCreate(
+            **_growth(excluded_pairs=[{"customer_name": "fairprice", "sku_range": "Ultra Tape"}])
+        )

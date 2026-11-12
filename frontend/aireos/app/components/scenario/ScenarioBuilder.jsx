@@ -16,7 +16,7 @@ import ScenarioBuilderSkeleton from '@/components/scenario/ScenarioBuilderSkelet
 import ScenarioPanel from '@/components/scenario/ScenarioPanel';
 import ScenarioTotals from '@/components/scenario/ScenarioTotals';
 import ScenarioYearComparison from '@/components/scenario/ScenarioYearComparison';
-import FrozenBaselinePanel, { COMPOSITION_LAYERS, SIMULATED_PARTS } from '@/components/scenario/FrozenBaselinePanel';
+import FrozenBaselinePanel, { COMPOSITION_LAYERS } from '@/components/scenario/FrozenBaselinePanel';
 import Tier0Details from '@/components/scenario/Tier0Details';
 import { nextYearDateRange } from '@/app/utils/dateRange';
 import { FORECAST_TIER_OPTIONS } from '@/app/utils/forecastLineText';
@@ -39,9 +39,11 @@ import {
   forecastMonths,
   itemCustomers,
   itemMarkers,
+  itemPairs,
   simulate,
   simulatedYearTotals,
   splitBasisNeeds,
+  withPairSwitched,
   withSimulatedLine,
 } from '@/app/utils/scenarioEngine';
 import { monthSpanLabel, seasonalAverage } from '@/app/utils/scenarioPitch';
@@ -52,8 +54,8 @@ import {
   withLiveIndex,
 } from '@/app/utils/scenarioPromotions';
 import { liveUpliftIndex } from '@/app/utils/scenarioLiveUplifts';
-import { withComposition } from '@/app/utils/scenarioComposition';
-import { CARRIED_OFF_ITEM, OFFICIAL_ITEM, bigChange, monthSplit, tier0SplitIndex } from '@/app/utils/scenarioTier0Split';
+import { breakdownTotals, withComposition } from '@/app/utils/scenarioComposition';
+import { OFFICIAL_ITEM, bigChange, monthSplit, tier0SplitIndex } from '@/app/utils/scenarioTier0Split';
 import { anchorInMonth, anchorLabel, anchorSourceLabel, anchorTargets } from '@/app/utils/promoUpliftSettings';
 import {
   activeScenarioBlocks,
@@ -61,7 +63,7 @@ import {
   hasUnsavedChanges,
   updateScenarioBlock,
 } from '@/app/utils/scenarioBlocks';
-import { growthRanges, growthYears, isGrowthBlock, skusWithoutRange } from '@/app/utils/scenarioGrowth';
+import { growthYears, isGrowthBlock } from '@/app/utils/scenarioGrowth';
 import { SCENARIO_SOURCES } from '@/app/utils/scenarioSources';
 import useForecastFilters from '@/hooks/useForecastFilters';
 import useForecastView from '@/hooks/useForecastView';
@@ -183,9 +185,6 @@ export default function ScenarioBuilder() {
   const [selectedId, setSelectedId] = useState(null);
   const [togglingIds, setTogglingIds] = useState([]);
   const [actionError, setActionError] = useState(null);
-  // The Breakdown tab's toggles: which parts the Simulated line, its
-  // shading and both tables count (the baseline is always in).
-  const [included, setIncluded] = useState(Object.fromEntries(SIMULATED_PARTS.map((part) => [part.key, true])));
   const expandedRows = useExpandedRows();
   const deletion = useConfirmAction({ onConfirm: deleteSaved });
 
@@ -242,19 +241,16 @@ export default function ScenarioBuilder() {
   const activePromotions = activeScenarioPromotions(scenarioPromotions.promotions);
   const liveIndex = calculated.data ? liveUpliftIndex(calculated.data.rows) : null;
   const tier0Split = tier0Breakdown.data ? tier0SplitIndex(tier0Breakdown.data) : null;
-  // Only what the Breakdown tab's toggles leave in counts. The official
-  // promotions count whenever the split is in; switching last year's
-  // promotions off adds an item that takes them out.
+  // Everything switched on counts; the official promotions whenever the
+  // split is in.
   const counted = {
-    official: tier0Split && included.official ? [OFFICIAL_ITEM] : [],
-    carried: tier0Split && !included.carried ? [CARRIED_OFF_ITEM] : [],
-    growth: included.growth ? activeScenarioBlocks(growthBlocks) : [],
-    blocks: included.blocks ? activeScenarioBlocks(allBlocks) : [],
-    promotions: included.promotions ? withLiveIndex(activePromotions, liveIndex) : [],
+    official: tier0Split ? [OFFICIAL_ITEM] : [],
+    growth: activeScenarioBlocks(growthBlocks),
+    blocks: activeScenarioBlocks(allBlocks),
+    promotions: withLiveIndex(activePromotions, liveIndex),
   };
   const itemInfo = new Map([
     [OFFICIAL_ITEM.id, { name: OFFICIAL_ITEM.name, kind: 'official', state: 'saved' }],
-    [CARRIED_OFF_ITEM.id, { name: CARRIED_OFF_ITEM.name, kind: 'carried', state: 'saved' }],
     ...counted.growth.map((block) => [block.id, { name: block.name, kind: 'growth', state: itemState(block, false) }]),
     ...counted.blocks.map((block) => [block.id, { name: block.name, kind: 'block', state: itemState(block, false) }]),
     ...activePromotions.map((promotion) => [
@@ -267,7 +263,7 @@ export default function ScenarioBuilder() {
     rows,
     counted,
     SCENARIO_SOURCES,
-    chartView(filters, splitBasis.basis, tier0Split, { officialOn: included.official, promotions: counted.promotions })
+    chartView(filters, splitBasis.basis, tier0Split)
   );
   // Nothing simulated until a switched-on item changes something in view:
   // no Simulated line, legend entry or table columns before that.
@@ -278,7 +274,6 @@ export default function ScenarioBuilder() {
   // Promotions have no name of their own; their mechanic stands in.
   const names = new Map([
     [OFFICIAL_ITEM.id, OFFICIAL_ITEM.name],
-    [CARRIED_OFF_ITEM.id, CARRIED_OFF_ITEM.name],
     ...scenarioBlocks.blocks.map((block) => [block.id, block.name]),
     ...scenarioPromotions.promotions.map((promotion) => [promotion.id, promotion.mechanicLabel]),
   ]);
@@ -447,6 +442,24 @@ export default function ScenarioBuilder() {
     }
   }
 
+  // A customer x SKU range switched on or off saves straight away, like the
+  // block's own switch; on failure the block goes back to how it was.
+  async function togglePair(block, customer, skuRange, on) {
+    const next = updateScenarioBlock(block, { excludedPairs: withPairSwitched(block, customer, skuRange, on) });
+    const label = `${customerLabel(customer)} · ${skuRange ?? 'No SKU range'}`;
+    setActionError(null);
+    setTogglingIds((current) => [...current, block.id]);
+    scenarioBlocks.setBlocks((current) => current.map((item) => (item.id === block.id ? next : item)));
+    try {
+      await scenarioBlocks.saveBlock(next);
+    } catch (err) {
+      scenarioBlocks.setBlocks((current) => current.map((item) => (item.id === block.id ? block : item)));
+      setActionError(`Couldn't ${on ? 'switch on' : 'switch off'} ${label} in ${block.name}: ${err.message}`);
+    } finally {
+      setTogglingIds((current) => current.filter((id) => id !== block.id));
+    }
+  }
+
   function editSaved(block) {
     setSelectedId(block.id);
     setPanelTab('blocks');
@@ -536,7 +549,6 @@ export default function ScenarioBuilder() {
                     scope={`${customerText} · ${skuRange || 'All SKU ranges'}`}
                     breakdowns={breakdowns}
                     splits={monthSplits}
-                    included={included}
                     split={Boolean(tier0Split)}
                     flagged={(month) => Boolean(monthChange(month))}
                     detailsFor={(month) => (
@@ -598,8 +610,6 @@ export default function ScenarioBuilder() {
                     blocks={growthBlocks}
                     customer={customerName}
                     years={growthYears(months)}
-                    ranges={growthRanges(rows, customerName)}
-                    unrangedSkus={skusWithoutRange(rows, customerName)}
                     impacts={byItem}
                     onChange={scenarioBlocks.setBlocks}
                     onSave={scenarioBlocks.saveBlock}
@@ -607,8 +617,7 @@ export default function ScenarioBuilder() {
                   />
                 )
               }
-              included={included}
-              onToggle={(key) => setIncluded((current) => ({ ...current, [key]: !current[key] }))}
+              totals={breakdownTotals(breakdowns)}
             />
           }
           blocksSection={
@@ -646,6 +655,7 @@ export default function ScenarioBuilder() {
                 onSave={scenarioPromotions.savePromotion}
                 onDelete={scenarioPromotions.deletePromotion}
                 rows={rows}
+                pairsFor={(promotion) => itemPairs(rows, promotion, cells)}
                 skuRangeOptions={filters.skuRangeOptions}
                 defaultSkuRange={skuRange}
                 liveIndex={liveIndex}
@@ -670,6 +680,8 @@ export default function ScenarioBuilder() {
         isExpanded={expandedRows.isExpanded}
         onToggleRow={expandedRows.toggle}
         onToggleActive={toggleSaved}
+        pairsFor={(block) => itemPairs(rows, block, cells)}
+        onTogglePair={togglePair}
         onEdit={editSaved}
         onDelete={deletion.request}
         onClearFilters={filters.clear}

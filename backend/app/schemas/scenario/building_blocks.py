@@ -22,14 +22,28 @@ from app.schemas.catalog import _Base
 UpliftMode = Literal["pct", "units"]
 
 # 'growth' is the budget's year-on-year growth (next year = this year x (1 + g)):
-# a % block on one SKU range from January to December, at most one per customer
-# x range x year (migrations 016 and 017). Tier 0 has no growth of its own.
+# a % block on every SKU of one customer from January to December, at most one
+# per customer x year (migrations 016 and 024). Tier 0 has no growth of its own.
 BlockKind = Literal["block", "growth"]
 
 # Same limits as MIN_UPLIFT_PCT / MAX_UPLIFT_PCT on the frontend. A negative
 # uplift is a decrease (a flood, a store closing); -100% is no sales at all.
 MIN_UPLIFT_PCT = Decimal("-100")
 MAX_UPLIFT_PCT = Decimal("50")
+
+
+class ExcludedPair(_Base):
+    """One customer x SKU range switched off on an item (migration 023); sku_range None = the customer's SKUs with no range."""
+
+    customer_name: str = Field(min_length=1, max_length=255)
+    sku_range: str | None = Field(default=None, max_length=255)
+
+
+def excluded_pairs_in_order_once(pairs: list[ExcludedPair]) -> list[ExcludedPair]:
+    """Repeats dropped and sorted, so one set of pairs is always stored the same way."""
+
+    unique = {(pair.customer_name, pair.sku_range or None): pair for pair in pairs}
+    return [unique[key] for key in sorted(unique, key=lambda key: (key[0], key[1] or ""))]
 
 
 class ScenarioBuildingBlockBase(_Base):
@@ -46,6 +60,9 @@ class ScenarioBuildingBlockBase(_Base):
     # (migration 017), so they can still be edited; never both.
     sku_ranges: list[str] | None = Field(default=None, max_length=100)
     product_name: str | None = Field(default=None, min_length=1, max_length=255)
+
+    # Customer x SKU ranges switched off on their own; the block stays one entry.
+    excluded_pairs: list[ExcludedPair] = Field(default_factory=list, max_length=1000)
 
     name: str = Field(min_length=1, max_length=120)
     explanation: str | None = Field(default=None, max_length=2000)
@@ -73,6 +90,11 @@ class ScenarioBuildingBlockBase(_Base):
         if any(len(item) > 255 for item in names):
             raise ValueError("A customer name is at most 255 characters")
         return names or None
+
+    @field_validator("excluded_pairs")
+    @classmethod
+    def _pairs_in_order_once(cls, value: list[ExcludedPair]) -> list[ExcludedPair]:
+        return excluded_pairs_in_order_once(value)
 
     @field_validator("sku_ranges")
     @classmethod
@@ -116,8 +138,11 @@ class ScenarioBuildingBlockBase(_Base):
         if self.customer_names is None or len(self.customer_names) != 1:
             raise ValueError("Growth is set for one customer")
 
-        if self.sku_ranges is None or len(self.sku_ranges) != 1 or self.product_name is not None:
-            raise ValueError("Growth is set for one SKU range")
+        if self.excluded_pairs:
+            raise ValueError("Growth covers its one customer and range; nothing can be switched off")
+
+        if self.sku_ranges is not None or self.product_name is not None:
+            raise ValueError("Growth covers every SKU of the customer")
 
         if self.start_month.month != 1 or self.end_month != date(self.start_month.year, 12, 1):
             raise ValueError("Growth covers one whole year, January to December")

@@ -8,7 +8,9 @@ import InfoTooltip from '@/components/ui/InfoTooltip';
 import StatusPill from '@/components/ui/StatusPill';
 import { formatMonthLabel, PROMO_OVERLAY_TYPES } from '@/app/utils/forecastView';
 import { anchorLine, explanationLines, levelLabel, levelTone, monthText } from '@/app/utils/promoUpliftCalc';
-import { customerLabel } from '@/app/utils/retailerLabel';
+import MultiSelectDropdown from '@/components/ui/MultiSelectDropdown';
+import { customerLabel, customersLabel } from '@/app/utils/retailerLabel';
+import { withPairSwitched } from '@/app/utils/scenarioEngine';
 import { monthSpanLabel } from '@/app/utils/scenarioPitch';
 import { liveReferences, liveUpliftValues, weakestLevel } from '@/app/utils/scenarioLiveUplifts';
 import {
@@ -19,14 +21,18 @@ import {
   formatPctRange,
   mechanicOptions,
   lastDayOf,
+  promotionCustomers,
+  referencesFor,
   SIDE_OFFER_TYPE,
   sourceLabel,
   upliftBasis,
   valuesAcrossSkus,
+  voucherChange,
   voucherEdited,
   voucherOption,
   voucherReferences,
 } from '@/app/utils/scenarioPromotions';
+import ItemPairs from '@/components/scenario/ItemPairs';
 import MechanicLookupPopover from '@/components/scenario/MechanicLookupPopover';
 import SkuRangePicker from '@/components/scenario/SkuRangePicker';
 
@@ -66,7 +72,7 @@ function basisLines(values) {
   return lines;
 }
 
-function UpliftBasis({ basis, onReset, workedOut, loading }) {
+function UpliftBasis({ basis, onReset, workedOutText, loading }) {
   if (loading && basis.kind === 'saved') {
     return <p className="text-[11px] text-deep-violet-blue/50">Loading worked-out uplifts…</p>;
   }
@@ -74,7 +80,7 @@ function UpliftBasis({ basis, onReset, workedOut, loading }) {
     return (
       <p className="flex flex-wrap items-center gap-1.5 text-[11px] text-deep-violet-blue/70">
         <StatusPill tone="info">Edited for this scenario</StatusPill>
-        Worked out: {formatPct(workedOut)} ·
+        Worked out: {workedOutText} ·
         <button
           type="button"
           onClick={onReset}
@@ -115,16 +121,21 @@ function UpliftBasis({ basis, onReset, workedOut, loading }) {
  *
  * The mechanic's uplift is the one worked out now (`liveIndex`,
  * scenarioLiveUplifts), with its level and an 'i' card; the mechanic list,
- * anchor and voucher come from `resolved` (the promotion customer's
- * GET /api/settings/promo-uplifts/resolved answer). Choosing a mechanic only
- * sends its key, and the section copies the values in (withReferences). The
- * voucher's value can be edited for this scenario, and Reset goes back to the
- * setting's.
+ * anchors and vouchers come from `upliftsByCustomer` (each customer's
+ * GET /api/settings/promo-uplifts/resolved answer; the mechanics are the
+ * same for every customer, so the first one's lists them). A promotion can
+ * cover several customers: each takes its own worked-out uplift, the slider
+ * shows their spread and moving it sets one value for all of them. Choosing
+ * a mechanic only sends its key, and the section copies the values in
+ * (withReferences). The voucher's value can be edited for this scenario (one
+ * value for every customer), and Reset goes back to each one's setting.
+ * Each customer x SKU range can be switched off on its own (`pairs`).
  *
  * @param {{
  *   promotion: object,
  *   onUpdate: (changes: object) => void,
- *   resolved: object | undefined,
+ *   upliftsByCustomer: Record<string, object>,
+ *   pairs: ReturnType<typeof import('@/app/utils/scenarioEngine').itemPairs>,
  *   liveIndex?: Map<string, object[]> | null,
  *   liveLoading?: boolean,
  *   customerOptions: string[],
@@ -137,7 +148,8 @@ function UpliftBasis({ basis, onReset, workedOut, loading }) {
 export default function PromotionEditor({
   promotion,
   onUpdate,
-  resolved,
+  upliftsByCustomer,
+  pairs,
   liveIndex = null,
   liveLoading = false,
   customerOptions,
@@ -146,31 +158,54 @@ export default function PromotionEditor({
   impact,
   stacked,
 }) {
+  const customers = promotionCustomers(promotion);
+  const oneCustomer = customers.length === 1 ? customers[0] : null;
+  // Mechanics are the same for every customer: the first one's set lists them.
+  const resolved = upliftsByCustomer?.[customers[0]];
   const mechanics = mechanicOptions(resolved);
   const voucherRow = voucherOption(resolved);
   const skuRanges = promotion.skuRanges ?? [];
-  // The ordinary month is the SKU range's anchor when one range is picked
-  // and it differs from the customer's (backend resolve_uplifts
+  // Each customer's ordinary month: the SKU range's anchor when one range is
+  // picked and it differs from the customer's (backend resolve_uplifts
   // range_anchors; product_anchors for a promotion saved on one SKU before
   // ranges). With several ranges the customer's is shown, noting that some
   // ranges have their own.
-  let ownAnchorPct;
-  if (skuRanges.length === 1) ownAnchorPct = resolved?.range_anchors?.[skuRanges[0]];
-  else if (!skuRanges.length && promotion.sku) ownAnchorPct = resolved?.product_anchors?.[promotion.sku];
-  const anchorVaries = skuRanges.length > 1 && skuRanges.some((name) => resolved?.range_anchors?.[name] != null);
-  const anchor = resolved?.anchor ? { ...resolved.anchor, anchor_pct: ownAnchorPct ?? resolved.anchor.anchor_pct } : null;
+  const anchors = customers
+    .map((customer) => {
+      const set = upliftsByCustomer?.[customer];
+      if (!set?.anchor) return null;
+      let own;
+      if (skuRanges.length === 1) own = set.range_anchors?.[skuRanges[0]];
+      else if (!skuRanges.length && promotion.sku) own = set.product_anchors?.[promotion.sku];
+      const varies = skuRanges.length > 1 && skuRanges.some((name) => set.range_anchors?.[name] != null);
+      return { customer, anchor: { ...set.anchor, anchor_pct: own ?? set.anchor.anchor_pct }, own: own != null, varies };
+    })
+    .filter(Boolean);
+  const anchor = oneCustomer ? anchors[0]?.anchor ?? null : null;
   // One SKU (older promotions) or one range has a single value; otherwise
   // the value can differ by SKU range.
   const singleValue = skuRanges.length === 1 || (!skuRanges.length && Boolean(promotion.sku));
   const basis = upliftBasis(promotion, liveIndex);
-  // What the slider sits on unless edited: the value worked out now for the
-  // first month, else the one saved with the promotion.
-  const workedOut = (liveIndex ? liveReferences(liveIndex, promotion)?.referenceUpliftPct : null) ?? promotion.referenceUpliftPct;
+  // What each customer's uplift is worked out at now for the first month,
+  // else the one saved with the promotion. The slider sits on their average
+  // unless edited; moving it sets one value for every customer.
+  const workedOutValues = customers.map(
+    (customer) =>
+      (liveIndex ? liveReferences(liveIndex, { ...promotion, customer })?.referenceUpliftPct : null) ??
+      referencesFor(promotion, customer).referenceUpliftPct
+  );
+  const workedOut = workedOutValues.length
+    ? Math.round(workedOutValues.reduce((sum, value) => sum + value, 0) / workedOutValues.length)
+    : 0;
+  const workedOutText = workedOutValues.length ? formatPctRange(workedOutValues) : formatPct(0);
+  const spread = new Set(workedOutValues).size > 1;
   const sliderValue = promotion.overrideUpliftPct ?? workedOut;
   const range = MAX_OVERRIDE_PCT - MIN_OVERRIDE_PCT;
   const markerLeft = `${((workedOut - MIN_OVERRIDE_PCT) / range) * 100}%`;
-  const voucherSetting = voucherReferences(promotion, resolved);
-  const voucherChanged = voucherEdited(promotion, resolved);
+  const voucherSettings = voucherReferences(promotion, upliftsByCustomer);
+  const voucherSettingValues = Object.values(voucherSettings ?? {}).map((setting) => setting.voucherUpliftPct);
+  const voucherChanged = voucherEdited(promotion, upliftsByCustomer);
+  const voucherValue = referencesFor(promotion, customers[0]).voucherUpliftPct ?? 0;
   // What is being typed in the voucher box, kept until it is left, so the
   // box can be emptied and retyped; null = show the promotion's value.
   const [voucherText, setVoucherText] = useState(null);
@@ -180,16 +215,19 @@ export default function PromotionEditor({
     setVoucherText(null);
     if (voucherText == null || voucherText.trim() === '' || !Number.isFinite(value)) return;
     const pct = Math.min(MAX_OVERRIDE_PCT, Math.max(0, Math.round(value)));
-    // Typing the setting's own value back is the setting again, per-SKU values included.
-    if (voucherSetting && pct === voucherSetting.voucherUpliftPct) onUpdate(voucherSetting);
-    else onUpdate({ voucherUpliftPct: pct, voucherBySku: {} });
+    // Typing the settings' own value back (every customer's the same) is the
+    // settings again, per-SKU values included; anything else is one value for all.
+    const backToSettings = voucherSettings && voucherSettingValues.every((setting) => setting === pct);
+    onUpdate(voucherChange(promotion, backToSettings ? { settings: voucherSettings } : { pct }));
   }
 
   // What each mechanic is worth now for this promotion: its worked-out
   // values and their weakest level, else the resolved settings.
   function liveOption(row) {
     if (!liveIndex) return null;
-    const values = liveUpliftValues(liveIndex, { ...promotion, mechanicKey: row.mechanic_key });
+    const values = customers.flatMap((customer) =>
+      liveUpliftValues(liveIndex, { ...promotion, customer, mechanicKey: row.mechanic_key })
+    );
     return values.length ? values : null;
   }
 
@@ -230,18 +268,23 @@ export default function PromotionEditor({
         Edit selected promotion
       </p>
 
+      {/* Any number of customers, or none for every customer (migration 022),
+          like the SKU ranges under it. */}
       <div>
-        <label className={labelClass} htmlFor="promo-customer">Customer</label>
-        <select
-          id="promo-customer"
-          value={promotion.customer}
-          onChange={(event) => onUpdate({ customer: event.target.value })}
-          className={fieldClass}
-        >
-          {customerOptions.map((name) => (
-            <option key={name} value={name}>{customerLabel(name)}</option>
-          ))}
-        </select>
+        <span className={labelClass}>Customers</span>
+        <MultiSelectDropdown
+          ariaLabel="Customers"
+          options={customerOptions.map((name) => ({ value: name, label: customerLabel(name) }))}
+          values={promotion.customers ?? []}
+          onChange={(next) => onUpdate({ customers: next })}
+          allLabel="All customers"
+          noneMeansAll
+          placeholder="All customers"
+          look="field"
+          searchable={customerOptions.length > 8}
+          searchPlaceholder="Search customers…"
+          className="w-full"
+        />
       </div>
 
       <SkuRangePicker
@@ -291,8 +334,13 @@ export default function PromotionEditor({
         </select>
         {anchor ? (
           <p className="mt-0.5 text-[11px] text-deep-violet-blue/50">
-            Ordinary month for {customerLabel(promotion.customer)}: {anchor.anchor_pct}% off
-            {anchorNote(anchor, ownAnchorPct != null, anchorVaries)}
+            Ordinary month for {customerLabel(oneCustomer)}: {anchor.anchor_pct}% off
+            {anchorNote(anchor, anchors[0].own, anchors[0].varies)}
+          </p>
+        ) : anchors.length ? (
+          <p className="mt-0.5 text-[11px] text-deep-violet-blue/50">
+            Ordinary month:{' '}
+            {anchors.map((item) => `${customerLabel(item.customer)} ${item.anchor.anchor_pct}% off`).join(' · ')}
           </p>
         ) : null}
       </div>
@@ -301,7 +349,11 @@ export default function PromotionEditor({
         <span className={labelClass}>
           Voucher
           {voucherRow && !promotion.voucher
-            ? ` · ${singleValue ? formatPct(voucherSetting?.voucherUpliftPct ?? 0) : formatPctRange(optionValues(voucherRow))}`
+            ? ` · ${
+                singleValue && voucherSettingValues.length
+                  ? formatPctRange(voucherSettingValues)
+                  : formatPctRange(optionValues(voucherRow))
+              }`
             : ''}
         </span>
         <div className="flex gap-1" role="group" aria-label="Voucher">
@@ -337,7 +389,7 @@ export default function PromotionEditor({
               min={0}
               max={MAX_OVERRIDE_PCT}
               step={1}
-              value={voucherText ?? String(promotion.voucherUpliftPct)}
+              value={voucherText ?? String(voucherValue)}
               onChange={(event) => setVoucherText(event.target.value)}
               onBlur={commitVoucher}
               onKeyDown={(event) => {
@@ -351,10 +403,10 @@ export default function PromotionEditor({
                 <StatusPill tone="info">Edited for this scenario</StatusPill>
                 <button
                   type="button"
-                  onClick={() => onUpdate(voucherSetting)}
+                  onClick={() => onUpdate(voucherChange(promotion, { settings: voucherSettings }))}
                   className="text-[11px] font-medium text-scenario underline-offset-2 hover:underline"
                 >
-                  Reset to {formatPct(voucherSetting.voucherUpliftPct)}
+                  Reset to {formatPctRange(voucherSettingValues)}
                 </button>
               </>
             ) : null}
@@ -379,26 +431,34 @@ export default function PromotionEditor({
             value={sliderValue}
             onChange={(event) => {
               const value = Number(event.target.value);
-              onUpdate({ overrideUpliftPct: value === workedOut ? null : value });
+              // With one worked-out value, moving back onto it is no edit; with
+              // several, any position is one value for every customer.
+              onUpdate({ overrideUpliftPct: !spread && value === workedOut ? null : value });
             }}
             className="w-full accent-scenario"
           />
           <span
             className="pointer-events-none absolute -bottom-1.5 h-2 w-0.5 -translate-x-1/2 bg-deep-violet-blue/50"
             style={{ left: markerLeft }}
-            title={`Worked out ${formatPct(workedOut)}`}
+            title={`Worked out ${workedOutText}`}
             aria-hidden="true"
           />
         </div>
+        {spread && promotion.overrideUpliftPct == null ? (
+          <p className="text-[11px] text-deep-violet-blue/70">
+            Worked out by customer: <b>{workedOutText}</b>. Each customer takes its own; moving the slider sets one value for
+            all of them.
+          </p>
+        ) : null}
         <UpliftBasis
           basis={basis}
-          workedOut={workedOut}
+          workedOutText={workedOutText}
           loading={liveLoading}
           onReset={() => onUpdate({ overrideUpliftPct: null })}
         />
         <p className="text-[11px] text-deep-violet-blue/50">
           The forecast already reflects an ordinary month
-          {anchor ? ` for ${customerLabel(promotion.customer)} (usual: ${anchor.anchor_pct}% off)` : ''}, so this is
+          {anchor ? ` for ${customerLabel(oneCustomer)} (usual: ${anchor.anchor_pct}% off)` : ' for each customer'}, so this is
           the change on top of that, not the promotion&apos;s whole effect. Planning the usual discount adds about 0%.
         </p>
         <p className="text-[11px] text-deep-violet-blue/70">
@@ -474,6 +534,15 @@ export default function PromotionEditor({
         />
       </div>
 
+      {/* Switching a pair off is an edit like any other: Save keeps it. */}
+      <ItemPairs
+        pairs={pairs}
+        active={promotion.isActive}
+        onToggle={(customer, skuRange, on) =>
+          onUpdate({ excludedPairs: withPairSwitched(promotion, customer, skuRange, on) })
+        }
+      />
+
       {/* Same rule as BlockEditor: scenario colour only when the note gives
           simulated numbers, otherwise the neutral information style. */}
       <p
@@ -484,7 +553,7 @@ export default function PromotionEditor({
       >
         {impact ? (
           <>
-            This promotion changes {customerLabel(promotion.customer)} sell-out by{' '}
+            This promotion changes {customersLabel(promotion.customers)} sell-out by{' '}
             <b>{signedUnits(impact.deltaUnits)} units</b> across{' '}
             {monthSpanLabel(impact.months)}.
           </>

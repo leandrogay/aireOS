@@ -22,9 +22,9 @@ function signedUnits(value) {
   return `${number < 0 ? '−' : '+'}${Math.abs(number).toLocaleString('en-US')}`;
 }
 
-// One SKU range's growth for a year: a % box, Save / Discard while it has
+// The customer's growth for one year: a % box, Save / Discard while it has
 // unsaved changes, Remove once saved.
-function GrowthRow({ skuRange, block, impact, onEdit, onSave, onRemove, inputId }) {
+function GrowthRow({ label, block, impact, onEdit, onSave, onRemove, inputId }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(null);
   const unsaved = block ? hasUnsavedChanges(block) : false;
@@ -46,7 +46,7 @@ function GrowthRow({ skuRange, block, impact, onEdit, onSave, onRemove, inputId 
     <div className="rounded border border-lavander/80 bg-white p-2">
       <div className="flex items-center gap-2">
         <label htmlFor={inputId} className="min-w-0 flex-1 truncate text-xs font-semibold text-deep-violet-blue">
-          {skuRange}
+          {label}
         </label>
         <div className="relative w-20 shrink-0">
           <input
@@ -95,7 +95,7 @@ function GrowthRow({ skuRange, block, impact, onEdit, onSave, onRemove, inputId 
             size="sm"
             variant="ghost"
             disabled={pending}
-            aria-label={`Remove growth for ${skuRange}`}
+            aria-label={`Remove growth for ${label}`}
             onClick={() => run(() => onRemove(block))}
           >
             <Trash2 className="size-3.5" />
@@ -112,44 +112,32 @@ function GrowthRow({ skuRange, block, impact, onEdit, onSave, onRemove, inputId 
 
 /**
  * The budget's year-on-year growth in the Breakdown tab: next year = Tier 0
- * x (1 + g), one % per customer x SKU range x year in view
+ * x (1 + g), one % per customer x year in view on every SKU
  * (scenarioGrowth.js). Typing moves the Simulated line at once, like a
- * block; Save stores it as that range's growth block. With All customers
- * picked it only lists them.
+ * block; Save stores it as the customer's growth block for the year. With
+ * All customers picked it only lists them.
  *
  * @param {{
  *   blocks: object[],
  *   customer: string,
  *   years: string[],
- *   ranges: string[],
- *   unrangedSkus: number,
  *   impacts: Map<string, { deltaUnits: number }>,
  *   onChange: (update: (blocks: object[]) => object[]) => void,
  *   onSave: (block: object) => Promise<void>,
  *   onRemove: (block: object) => Promise<void>,
- * }} props blocks = growth blocks only; ranges = the customer's SKU ranges in view
+ * }} props blocks = growth blocks only
  */
-export default function GrowthControl({
-  blocks,
-  customer,
-  years,
-  ranges,
-  unrangedSkus,
-  impacts,
-  onChange,
-  onSave,
-  onRemove,
-}) {
-  // A value typed for a range with no growth yet starts a draft; clearing a
+export default function GrowthControl({ blocks, customer, years, impacts, onChange, onSave, onRemove }) {
+  // A value typed for a year with no growth yet starts a draft; clearing a
   // draft drops it (0% is no growth, and the backend never stores 0).
-  function edit(skuRange, year, value) {
-    const existing = findGrowth(blocks, customer, skuRange, year);
+  function edit(year, value) {
+    const existing = findGrowth(blocks, customer, year);
     const changes = { upliftValue: value, decrease: Number(value) < 0 };
     if (!existing) {
       if (value === '' || Number(value) === 0) return;
       onChange((current) => [
         ...current,
-        { ...newScenarioBlock({ customers: [customer] }), ...growthFields(customer, skuRange, year), ...changes },
+        { ...newScenarioBlock({ customers: [customer] }), ...growthFields(customer, year), ...changes },
       ]);
       return;
     }
@@ -169,7 +157,7 @@ export default function GrowthControl({
         {growthInYears(blocks, years).map((block) => (
           <p key={block.id} className="flex justify-between gap-2 text-xs text-deep-violet-blue">
             <span className="min-w-0 truncate">
-              {customerLabel(block.customers[0])} · {block.skuRanges[0]} · {block.startMonth.slice(0, 4)}
+              {customerLabel(block.customers[0])} · {block.startMonth.slice(0, 4)}
             </span>
             <span className="font-semibold tabular-nums">{upliftLabel(block)}</span>
           </p>
@@ -177,41 +165,28 @@ export default function GrowthControl({
         <p className="text-[11px] text-deep-violet-blue/60">Pick a customer to set its growth.</p>
       </>
     );
-  } else if (!ranges.length) {
-    body = <p className="text-[11px] text-deep-violet-blue/60">No SKU ranges in view to grow.</p>;
   } else {
     body = (
       <>
-        {years.map((year) => (
-          <div key={year} className="space-y-1">
-            {years.length > 1 ? <p className="text-[11px] font-semibold text-deep-violet-blue/70">{year}</p> : null}
-            {ranges.map((skuRange) => {
-              const block = findGrowth(blocks, customer, skuRange, year);
-              return (
-                <GrowthRow
-                  key={skuRange}
-                  inputId={`growth-${customer}-${skuRange}-${year}`}
-                  skuRange={skuRange}
-                  block={block}
-                  impact={block ? impacts.get(block.id)?.deltaUnits ?? null : null}
-                  onEdit={(value) => edit(skuRange, year, value)}
-                  onSave={onSave}
-                  onRemove={onRemove}
-                />
-              );
-            })}
-          </div>
-        ))}
-        {unrangedSkus ? (
-          <p className="text-[11px] text-amber-800">
-            {unrangedSkus} SKU{unrangedSkus === 1 ? ' has' : 's have'} no SKU range, so no growth reaches{' '}
-            {unrangedSkus === 1 ? 'it' : 'them'}. Set the range in the SKU catalogue.
-          </p>
-        ) : null}
+        {years.map((year) => {
+          const block = findGrowth(blocks, customer, year);
+          return (
+            <GrowthRow
+              key={year}
+              inputId={`growth-${customer}-${year}`}
+              label={`${year} · every SKU`}
+              block={block}
+              impact={block ? impacts.get(block.id)?.deltaUnits ?? null : null}
+              onEdit={(value) => edit(year, value)}
+              onSave={onSave}
+              onRemove={onRemove}
+            />
+          );
+        })}
         <p className="text-[11px] leading-snug text-deep-violet-blue/60">
-          Grows Tier 0 for every SKU of the range, January to December. Tier 0 is half last year and half the recent
-          3-month average, so if sales have been rising lately some of that is in it already and the result may run a
-          little high.
+          Grows Tier 0 for every SKU of {customerLabel(customer)}, January to December. Tier 0 is half last year and
+          half the recent 3-month average, so if sales have been rising lately some of that is in it already and the
+          result may run a little high.
         </p>
       </>
     );

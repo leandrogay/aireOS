@@ -21,7 +21,6 @@ BODY = {
 GROWTH_BODY = {
     **BODY,
     "kind": "growth",
-    "sku_ranges": ["Ultra Tape"],
     "uplift_mode": "pct",
     "uplift_value": 8,
     "start_month": "2027-01-01",

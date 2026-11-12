@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { bandLabels, compactUnits, totalLabel, withComposition } from '../app/utils/scenarioComposition.js';
+import { bandLabels, breakdownTotals, compactUnits, totalLabel, withComposition } from '../app/utils/scenarioComposition.js';
 
 const ALL = {
   baselineLayer: true,
@@ -107,18 +107,6 @@ test('a scenario promotion on top of an official one adds its own band', () => {
   );
 });
 
-test('last year\'s promotions switched off leave the baseline alone', () => {
-  const result = withComposition(
-    point(110, 100),
-    [{ source: 'carried', deltaUnits: -10, addedUnits: 0, replacedUnits: 10 }],
-    { baseline: 100, carried: 10 }
-  );
-
-  assert.equal(result.carriedLayer, 0);
-  assert.equal(result.baselineLayer, 100);
-  assert.equal(result.breakdown.carriedOff, -10);
-});
-
 test('the parts add up to Simulated', () => {
   const result = withComposition(
     point(110, 120),
@@ -132,6 +120,32 @@ test('the parts add up to Simulated', () => {
   const b = result.breakdown;
 
   assert.equal(b.baseline + b.carried + b.officialAdded + b.growth + b.blocks + b.promotionsAdded, 120);
+});
+
+test('the breakdown adds the months on the chart up into what the forecast holds and what is added', () => {
+  const june = withComposition(
+    point(110, 120),
+    [
+      { source: 'official', deltaUnits: -5, addedUnits: 5, replacedUnits: 10 },
+      { source: 'growth', deltaUnits: 6, addedUnits: 6, replacedUnits: 0 },
+      { source: 'promotions', deltaUnits: 9, addedUnits: 9, replacedUnits: 0 },
+    ],
+    { baseline: 100, carried: 10 }
+  );
+  const july = withComposition({ month_year: '2027-07-01', current: 50, simulated: 50 }, []);
+
+  const totals = breakdownTotals(new Map([['2027-07-01', july.breakdown], ['2027-06-01', june.breakdown]]));
+
+  assert.deepEqual(totals, {
+    months: ['2027-06-01', '2027-07-01'],
+    baseline: 150,
+    carried: 0,
+    official: 5,
+    growth: 6,
+    blocks: 0,
+    promotions: 9,
+    simulated: 170,
+  });
 });
 
 // ---- labels -------------------------------------------------------------------------

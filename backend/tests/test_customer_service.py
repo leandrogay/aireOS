@@ -264,6 +264,7 @@ def test_deleting_a_customer_takes_it_out_of_scenario_item_lists_first(monkeypat
     for table in tables:
         assert any(kind == "DELETE" and table in sql and "ARRAY[" in sql for kind, sql, _ in statements)
         assert any(kind == "UPDATE" and table in sql and "array_remove" in sql for kind, sql, _ in statements)
+        assert any(kind == "UPDATE" and table in sql and "excluded_pairs" in sql for kind, sql, _ in statements)
     assert statements[-1][1].startswith("DELETE FROM customers")
     assert all(params["customer_id"] == 3 for _, _, params in statements)
 

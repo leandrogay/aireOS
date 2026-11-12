@@ -2,10 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  CARRIED_OFF_ITEM,
   OFFICIAL_ITEM,
   bigChange,
-  carriedOffCells,
   monthSplit,
   officialCells,
   planStatus,
@@ -108,39 +106,6 @@ test('with no split a scenario promotion works on Tier 0 as before', () => {
 
   assert.equal(cell.addedUnits, 22);
   assert.equal(cell.replacedUnits, 0);
-});
-
-test('with official promotions left out, a scenario promotion replaces what is carried even in their months', () => {
-  const index = tier0SplitIndex({ rows: [split('A', { official: { planned: true, uplift_pct: 5, promotions: [] } })] });
-
-  const [cell] = promotionCells([promotion], index, () => [row('A', 110)], () => 20, () => 1, false);
-
-  assert.equal(cell.replacedUnits, 10);
-});
-
-// ---- last year's promotions switched off ----------------------------------------------
-
-function carriedOff(index, { officialOn = true, promotions = [], share = 1 } = {}) {
-  return carriedOffCells([row('A', 110)], index, CARRIED_OFF_ITEM, {
-    officialOn,
-    promotions,
-    rowsFor: () => [row('A', 110)],
-    shareFor: () => share,
-  });
-}
-
-test('switching last year\'s promotions off takes the carried block out', () => {
-  const [cell] = carriedOff(tier0SplitIndex({ rows: [split('A')] }));
-
-  assert.equal(cell.deltaUnits, -10);
-  assert.equal(cell.source, 'carried');
-});
-
-test('what a planned promotion already replaces is not taken out twice', () => {
-  const official = tier0SplitIndex({ rows: [split('A', { official: { planned: true, uplift_pct: 5, promotions: [] } })] });
-
-  assert.deepEqual(carriedOff(official), []);
-  assert.equal(carriedOff(tier0SplitIndex({ rows: [split('A')] }), { promotions: [promotion], share: 0.5 })[0].deltaUnits, -5);
 });
 
 // ---- one month for the Breakdown tab ----------------------------------------------------

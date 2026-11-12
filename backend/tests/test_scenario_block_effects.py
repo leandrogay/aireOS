@@ -112,3 +112,18 @@ def test_apply_blocks_keeps_months_no_block_reaches():
 
     assert adjusted["A1"] == {OCT: pytest.approx(110.0), NOV: 200.0, DEC: 300.0}
     assert adjusted["B2"] == CURRENT["B2"]
+
+
+def test_a_switched_off_customer_x_range_never_changes():
+    current = {"A": {date(2026, 11, 1): 100.0}, "B": {date(2026, 11, 1): 100.0}}
+    block = {
+        "range_skus": None,
+        "sku": None,
+        "excluded_skus": ["B"],
+        "uplift_mode": "pct",
+        "uplift_value": 10,
+        "start_month": date(2026, 11, 1),
+        "end_month": date(2026, 11, 1),
+    }
+
+    assert block_deltas(current, [block]) == {"A": {date(2026, 11, 1): 10.0}}

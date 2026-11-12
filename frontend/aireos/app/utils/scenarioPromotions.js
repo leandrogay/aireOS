@@ -10,17 +10,19 @@
 //   {
 //     id,                                   // client id, stable while the page is open
 //     promotionId,                          // server id, null until first saved
-//     customer,
+//     customers,                            // forecast customer_names ([] = every customer), migration 022
 //     skuRanges,                            // SKU ranges ([] = All SKU ranges): promotions follow ranges
+//     excludedPairs,                        // [{ customer, skuRange }] switched off on their own (migration 023)
 //     sku,                                  // one product_name, only on promotions saved before ranges
 //                                           // (backend migration 018); new ones keep ''
 //     promoType,                            // 'monthly' | 'side_offer' | 'bundle' | 'others'
 //     mechanicKey, mechanicLabel,
-//     referenceUpliftPct, referenceSource,  // the setting's value and source when chosen
-//     referenceBySku,                       // all SKUs only: products whose own value differs
-//     overrideUpliftPct,                    // null unless the user moved the slider
-//     voucher, voucherUpliftPct,            // Yes/No, and the voucher's value when chosen
-//     voucherBySku,
+//     references,                           // per customer: { referenceUpliftPct, referenceSource,
+//                                           // referenceBySku, voucherUpliftPct, voucherBySku } -- the
+//                                           // values when chosen (migration 025); each customer x SKU
+//                                           // takes its own customer's
+//     overrideUpliftPct,                    // null unless the user moved the slider; one for every customer
+//     voucher,                              // Yes/No
 //     explanation,
 //     startMonth, endMonth,                 // 'YYYY-MM-01', forecast months only
 //     startDate, endDate,                   // side offers only: the exact days it runs ('YYYY-MM-DD'); '' = whole months
@@ -49,8 +51,9 @@
 
 import { PROMO_OVERLAY_TYPES } from '@/app/utils/forecastView';
 import { levelLabel } from '@/app/utils/promoUpliftCalc';
-import { itemRows } from '@/app/utils/scenarioEngine';
-import { CARRIED_OFF_ITEM, carriedOffCells, promotionCells } from '@/app/utils/scenarioTier0Split';
+import { customersLabel } from '@/app/utils/retailerLabel';
+import { coversCustomer, itemRows, pairExcluded } from '@/app/utils/scenarioEngine';
+import { promotionCells } from '@/app/utils/scenarioTier0Split';
 import { liveReferences, liveUplift, liveUpliftValues, weakestLevel } from '@/app/utils/scenarioLiveUplifts';
 
 export const MIN_OVERRIDE_PCT = -20;
@@ -173,75 +176,149 @@ function valueFor(resolved, key, skuRanges, sku) {
   return { value: base.uplift_pct, source: base.source, bySku };
 }
 
-/**
- * Copy the current setting values for a promotion's customer, SKU and
- * mechanic onto it. Keeps any override; called whenever one of those three
- * changes (not on every render).
- *
- * @param {object} promotion
- * @param {object | undefined} resolved the promotion customer's resolved set
- */
-export function withReferences(promotion, resolved, liveIndex) {
-  if (!resolved) return promotion;
-  const mechanic = valueFor(resolved, promotion.mechanicKey, promotion.skuRanges ?? [], promotion.sku);
-  const voucher = valueFor(resolved, VOUCHER_KEY, promotion.skuRanges ?? [], promotion.sku);
-  const row = mechanicOptions(resolved).find((option) => option.mechanic_key === promotion.mechanicKey);
-  // The worked-out value when there is one; the resolved setting otherwise.
-  const live = liveIndex ? liveReferences(liveIndex, promotion) : null;
+const NO_REFERENCES = { referenceUpliftPct: 0, referenceSource: '', referenceBySku: {}, voucherUpliftPct: 0, voucherBySku: {} };
 
-  return {
-    ...promotion,
-    mechanicLabel: row?.mechanic_label ?? promotion.mechanicLabel,
-    referenceUpliftPct: live?.referenceUpliftPct ?? mechanic.value ?? promotion.referenceUpliftPct,
-    referenceSource: live?.referenceSource ?? (mechanic.source || promotion.referenceSource),
-    referenceBySku: live?.referenceBySku ?? mechanic.bySku,
-    voucherUpliftPct: voucher.value ?? promotion.voucherUpliftPct,
-    voucherBySku: voucher.bySku,
-  };
+/**
+ * The customers a promotion's values are kept for: the ones it names, or,
+ * covering every customer, each one it has values for.
+ *
+ * @param {{ customers?: string[], references?: Record<string, object> }} promotion
+ */
+export function promotionCustomers(promotion) {
+  return promotion.customers?.length ? promotion.customers : Object.keys(promotion.references ?? {}).sort();
 }
 
 /**
- * The voucher's value from Promotion uplift settings for this promotion's
- * customer and SKU ranges: what "Reset" goes back to after the voucher was
- * edited for this scenario.
+ * One customer's values kept on a promotion (zeros when it has none).
  *
  * @param {object} promotion
- * @param {object | undefined} resolved
- * @returns {{ voucherUpliftPct: number, voucherBySku: Record<string, number> } | null}
+ * @param {string} customer
  */
-export function voucherReferences(promotion, resolved) {
-  const voucher = valueFor(resolved, VOUCHER_KEY, promotion.skuRanges ?? [], promotion.sku);
-  if (voucher.value == null) return null;
-  return { voucherUpliftPct: voucher.value, voucherBySku: voucher.bySku };
+export function referencesFor(promotion, customer) {
+  return promotion.references?.[customer] ?? NO_REFERENCES;
+}
+
+// Every customer's kept values, in promotionCustomers order.
+function allReferences(promotion) {
+  const customers = promotionCustomers(promotion);
+  return customers.length ? customers.map((customer) => referencesFor(promotion, customer)) : [NO_REFERENCES];
 }
 
 /**
- * True when the voucher's value was edited for this scenario (it differs
- * from the setting's).
+ * Copy the current setting values for each of a promotion's customers, its
+ * SKU ranges and mechanic onto it. Keeps any override; called whenever one
+ * of those changes (not on every render).
  *
  * @param {object} promotion
- * @param {object | undefined} resolved
+ * @param {Record<string, object>} upliftsByCustomer each customer's resolved set (usePromoUplifts)
+ * @param {Map<string, object[]> | null} [liveIndex]
  */
-export function voucherEdited(promotion, resolved) {
-  const setting = voucherReferences(promotion, resolved);
-  if (!setting) return false;
-  return (
-    setting.voucherUpliftPct !== promotion.voucherUpliftPct ||
-    !sameValue(setting.voucherBySku, promotion.voucherBySku ?? {})
-  );
+export function withReferences(promotion, upliftsByCustomer, liveIndex) {
+  const customers = promotion.customers?.length ? promotion.customers : Object.keys(upliftsByCustomer ?? {}).sort();
+  if (!customers.some((customer) => upliftsByCustomer?.[customer])) return promotion;
+  let mechanicLabel = promotion.mechanicLabel;
+  const references = {};
+  for (const customer of customers) {
+    const resolved = upliftsByCustomer?.[customer];
+    const before = referencesFor(promotion, customer);
+    if (!resolved) {
+      references[customer] = before;
+      continue;
+    }
+    const mechanic = valueFor(resolved, promotion.mechanicKey, promotion.skuRanges ?? [], promotion.sku);
+    const voucher = valueFor(resolved, VOUCHER_KEY, promotion.skuRanges ?? [], promotion.sku);
+    const row = mechanicOptions(resolved).find((option) => option.mechanic_key === promotion.mechanicKey);
+    if (row) mechanicLabel = row.mechanic_label;
+    // The worked-out value when there is one; the resolved setting otherwise.
+    const live = liveIndex ? liveReferences(liveIndex, { ...promotion, customer }) : null;
+    references[customer] = {
+      referenceUpliftPct: live?.referenceUpliftPct ?? mechanic.value ?? before.referenceUpliftPct,
+      referenceSource: live?.referenceSource ?? (mechanic.source || before.referenceSource),
+      referenceBySku: live?.referenceBySku ?? mechanic.bySku,
+      voucherUpliftPct: voucher.value ?? before.voucherUpliftPct,
+      voucherBySku: voucher.bySku,
+    };
+  }
+  return { ...promotion, mechanicLabel, references };
 }
 
 /**
- * The promotion with its "when saved" values set to what is worked out now,
- * so a save records them (the fallback, and the note's "When saved"). The
- * voucher is left as it is. Unchanged when nothing is worked out for it.
+ * Each customer's voucher value from Promotion uplift settings for this
+ * promotion's SKU ranges: what "Reset" goes back to after the voucher was
+ * edited for this scenario. Null when no customer has one.
+ *
+ * @param {object} promotion
+ * @param {Record<string, object>} upliftsByCustomer
+ * @returns {Record<string, { voucherUpliftPct: number, voucherBySku: Record<string, number> }> | null}
+ */
+export function voucherReferences(promotion, upliftsByCustomer) {
+  const settings = {};
+  for (const customer of promotionCustomers(promotion)) {
+    const voucher = valueFor(upliftsByCustomer?.[customer], VOUCHER_KEY, promotion.skuRanges ?? [], promotion.sku);
+    if (voucher.value != null) settings[customer] = { voucherUpliftPct: voucher.value, voucherBySku: voucher.bySku };
+  }
+  return Object.keys(settings).length ? settings : null;
+}
+
+/**
+ * True when the voucher was edited for this scenario (some customer's
+ * value differs from its setting's).
+ *
+ * @param {object} promotion
+ * @param {Record<string, object>} upliftsByCustomer
+ */
+export function voucherEdited(promotion, upliftsByCustomer) {
+  const settings = voucherReferences(promotion, upliftsByCustomer);
+  if (!settings) return false;
+  return Object.entries(settings).some(([customer, setting]) => {
+    const kept = referencesFor(promotion, customer);
+    return setting.voucherUpliftPct !== kept.voucherUpliftPct || !sameValue(setting.voucherBySku, kept.voucherBySku ?? {});
+  });
+}
+
+/**
+ * The change that sets the voucher: one value for every customer (an edit
+ * for this scenario), or, given `settings`, each customer's own again.
+ *
+ * @param {object} promotion
+ * @param {{ pct?: number, settings?: Record<string, { voucherUpliftPct: number, voucherBySku: object }> }} voucher
+ * @returns {{ references: Record<string, object> }}
+ */
+export function voucherChange(promotion, { pct, settings }) {
+  const references = {};
+  for (const customer of promotionCustomers(promotion)) {
+    const kept = referencesFor(promotion, customer);
+    const value = settings ? settings[customer] ?? { voucherUpliftPct: kept.voucherUpliftPct, voucherBySku: kept.voucherBySku } : { voucherUpliftPct: pct, voucherBySku: {} };
+    references[customer] = { ...kept, ...value };
+  }
+  return { references };
+}
+
+/**
+ * The promotion with each customer's "when saved" values set to what is
+ * worked out now, so a save records them (the fallback, and the note's
+ * "When saved"). Vouchers are left as they are. Unchanged when nothing is
+ * worked out for it.
  *
  * @param {object} promotion
  * @param {Map<string, object[]> | null} liveIndex
  */
 export function withLiveReferences(promotion, liveIndex) {
-  const live = liveIndex ? liveReferences(liveIndex, promotion) : null;
-  return live ? { ...promotion, ...live } : promotion;
+  if (!liveIndex) return promotion;
+  let changed = false;
+  const references = { ...promotion.references };
+  for (const customer of promotionCustomers(promotion)) {
+    const live = liveReferences(liveIndex, { ...promotion, customer });
+    if (!live) continue;
+    references[customer] = { ...referencesFor(promotion, customer), ...live };
+    changed = true;
+  }
+  return changed ? { ...promotion, references } : promotion;
+}
+
+// The worked-out values a promotion takes, over every customer it covers.
+function liveValuesAcross(index, promotion) {
+  return promotionCustomers(promotion).flatMap((customer) => liveUpliftValues(index, { ...promotion, customer }));
 }
 
 /**
@@ -285,25 +362,24 @@ export function defaultMechanic(resolved) {
  * exactly on the anchor; with an anchor between steps (e.g. 23%) the nearest
  * one may still be +/-1%.
  *
- * @param {{ customer: string, skuRanges?: string[], months: string[], resolved: object | undefined }} defaults
+ * @param {{ customers?: string[], skuRanges?: string[], months: string[], upliftsByCustomer: Record<string, object> }} defaults
  */
-export function newDraftPromotion({ customer = '', skuRanges = [], months = [], resolved }) {
-  const mechanic = defaultMechanic(resolved);
+export function newDraftPromotion({ customers = [], skuRanges = [], months = [], upliftsByCustomer = {} }) {
+  // Mechanics are the same for every customer; the first one's set picks the default.
+  const lead = customers[0] ?? Object.keys(upliftsByCustomer).sort()[0];
+  const mechanic = defaultMechanic(upliftsByCustomer[lead]);
   const promotion = {
     id: `promo-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    customer,
+    customers,
     skuRanges,
+    excludedPairs: [],
     sku: '',
     promoType: PROMO_OVERLAY_TYPES[0].value,
     mechanicKey: mechanic?.mechanic_key ?? '',
     mechanicLabel: mechanic?.mechanic_label ?? '',
-    referenceUpliftPct: 0,
-    referenceSource: '',
-    referenceBySku: {},
+    references: {},
     overrideUpliftPct: null,
     voucher: false,
-    voucherUpliftPct: 0,
-    voucherBySku: {},
     explanation: '',
     startMonth: months[0] ?? '',
     endMonth: months[0] ?? '',
@@ -313,7 +389,7 @@ export function newDraftPromotion({ customer = '', skuRanges = [], months = [], 
     isActive: true,
     saved: null,
   };
-  return withReferences(promotion, resolved);
+  return withReferences(promotion, upliftsByCustomer);
 }
 
 /**
@@ -341,51 +417,51 @@ export function updateDraftPromotion(promotion, changes) {
 }
 
 /**
- * The mechanic part of the uplift for one product in one month: the
- * override if set, else the value worked out now for that month (when the
- * promotion carries `liveIndex` and a month is given), else that product's
- * value when saved.
+ * The mechanic part of the uplift for one customer's product in one month:
+ * the override if set (one for every customer), else that customer's value
+ * worked out now for that month (when the promotion carries `liveIndex`),
+ * else that customer's value for the product when saved.
  *
  * @param {object} promotion
+ * @param {string} customer
  * @param {string} [product] a product_name
  * @param {string} [month] 'YYYY-MM-01'
  */
-export function mechanicUpliftPct(promotion, product, month) {
+export function mechanicUpliftPct(promotion, customer, product, month) {
   if (promotion.overrideUpliftPct != null) return promotion.overrideUpliftPct;
   if (promotion.liveIndex && product && month) {
-    const live = liveUplift(promotion.liveIndex, {
-      customer: promotion.customer,
-      mechanicKey: promotion.mechanicKey,
-      product,
-      month,
-    });
+    const live = liveUplift(promotion.liveIndex, { customer, mechanicKey: promotion.mechanicKey, product, month });
     if (live) return live.upliftPct;
   }
-  return promotion.referenceBySku?.[product] ?? promotion.referenceUpliftPct ?? 0;
+  const kept = referencesFor(promotion, customer);
+  return kept.referenceBySku?.[product] ?? kept.referenceUpliftPct ?? 0;
 }
 
 /**
- * The voucher part for one product: the value saved with the promotion
- * (vouchers are never measured), when the voucher is Yes.
+ * The voucher part for one customer's product: the value saved with the
+ * promotion (vouchers are never measured), when the voucher is Yes.
  *
  * @param {object} promotion
+ * @param {string} customer
  * @param {string} [product]
  */
-export function voucherUpliftPct(promotion, product) {
+export function voucherUpliftPct(promotion, customer, product) {
   if (!promotion.voucher) return 0;
-  return promotion.voucherBySku?.[product] ?? promotion.voucherUpliftPct ?? 0;
+  const kept = referencesFor(promotion, customer);
+  return kept.voucherBySku?.[product] ?? kept.voucherUpliftPct ?? 0;
 }
 
 /**
  * Effective uplift = mechanic uplift + voucher uplift when the voucher is
- * Yes (design Section 6.2).
+ * Yes (design Section 6.2), for one customer's product in one month.
  *
  * @param {object} promotion
+ * @param {string} customer
  * @param {string} [product]
  * @param {string} [month]
  */
-export function effectiveUpliftPct(promotion, product, month) {
-  return mechanicUpliftPct(promotion, product, month) + voucherUpliftPct(promotion, product);
+export function effectiveUpliftPct(promotion, customer, product, month) {
+  return mechanicUpliftPct(promotion, customer, product, month) + voucherUpliftPct(promotion, customer, product);
 }
 
 /**
@@ -399,9 +475,9 @@ export function effectiveUpliftPct(promotion, product, month) {
  */
 export function mechanicUpliftRange(promotion, liveIndex = promotion.liveIndex) {
   if (promotion.overrideUpliftPct != null) return [promotion.overrideUpliftPct];
-  const live = liveIndex ? liveUpliftValues(liveIndex, promotion) : [];
+  const live = liveIndex ? liveValuesAcross(liveIndex, promotion) : [];
   if (live.length) return live.map((item) => item.upliftPct);
-  return [promotion.referenceUpliftPct ?? 0, ...Object.values(promotion.referenceBySku ?? {})];
+  return allReferences(promotion).flatMap((kept) => [kept.referenceUpliftPct ?? 0, ...Object.values(kept.referenceBySku ?? {})]);
 }
 
 /**
@@ -412,7 +488,7 @@ export function mechanicUpliftRange(promotion, liveIndex = promotion.liveIndex) 
  */
 export function effectiveUpliftRange(promotion, liveIndex = promotion.liveIndex) {
   const vouchers = promotion.voucher
-    ? [promotion.voucherUpliftPct ?? 0, ...Object.values(promotion.voucherBySku ?? {})]
+    ? allReferences(promotion).flatMap((kept) => [kept.voucherUpliftPct ?? 0, ...Object.values(kept.voucherBySku ?? {})])
     : [0];
   const mechanics = mechanicUpliftRange(promotion, liveIndex);
   return mechanics.flatMap((mechanic) => vouchers.map((voucher) => mechanic + voucher));
@@ -429,9 +505,10 @@ export function effectiveUpliftRange(promotion, liveIndex = promotion.liveIndex)
  */
 export function upliftBasis(promotion, liveIndex) {
   if (promotion.overrideUpliftPct != null) return { kind: 'override', level: null, values: [] };
-  const values = liveIndex ? liveUpliftValues(liveIndex, promotion) : [];
+  const values = liveIndex ? liveValuesAcross(liveIndex, promotion) : [];
   if (values.length) return { kind: 'live', level: weakestLevel(values), values };
-  return { kind: 'saved', level: promotion.referenceSource || null, values: [] };
+  const sources = allReferences(promotion).map((kept) => kept.referenceSource).filter(Boolean);
+  return { kind: 'saved', level: sources.length ? weakestLevel(sources.map((level) => ({ level }))) : null, values: [] };
 }
 
 /**
@@ -445,18 +522,22 @@ export function upliftBasis(promotion, liveIndex) {
  */
 export function upliftChangedSinceSaved(promotion, liveIndex) {
   if (!promotion.saved || promotion.overrideUpliftPct != null || !liveIndex) return null;
-  const values = liveUpliftValues(liveIndex, promotion);
+  const values = liveValuesAcross(liveIndex, promotion);
   if (!values.length) return null;
-  const saved = [promotion.saved.referenceUpliftPct ?? 0, ...Object.values(promotion.saved.referenceBySku ?? {})];
+  const savedReferences = allReferences({ ...promotion, ...promotion.saved });
+  const saved = savedReferences.flatMap((kept) => [kept.referenceUpliftPct ?? 0, ...Object.values(kept.referenceBySku ?? {})]);
   const now = values.map((item) => item.upliftPct);
   const sameValues = Math.min(...saved) === Math.min(...now) && Math.max(...saved) === Math.max(...now);
   if (sameValues) return null;
-  return { saved, savedLevel: promotion.saved.referenceSource || null, now, nowLevel: weakestLevel(values) };
+  const savedSources = savedReferences.map((kept) => kept.referenceSource).filter(Boolean);
+  const savedLevel = savedSources.length ? weakestLevel(savedSources.map((level) => ({ level }))) : null;
+  return { saved, savedLevel, now, nowLevel: weakestLevel(values) };
 }
 
 function inPromotion(row, promotion) {
   if (row.forecast_current == null) return false;
-  if (row.customer_name !== promotion.customer) return false;
+  if (!coversCustomer(promotion, row.customer_name)) return false;
+  if (pairExcluded(promotion, row.customer_name, row.sku_range ?? null)) return false;
   if (promotion.skuRanges?.length && !promotion.skuRanges.includes(row.sku_range)) return false;
   if (promotion.sku && row.product_name !== promotion.sku) return false;
   return row.month_year >= promotion.startMonth && row.month_year <= promotion.endMonth;
@@ -502,7 +583,8 @@ function describeTitle(promotion) {
     const mechanicPart = overridden
       ? `edited to ${formatPct(promotion.overrideUpliftPct)}`
       : formatPctRange(mechanicUpliftRange(promotion));
-    return `${label} + voucher (${mechanicPart}, voucher ${formatPct(promotion.voucherUpliftPct)})`;
+    const vouchers = allReferences(promotion).map((kept) => kept.voucherUpliftPct ?? 0);
+    return `${label} + voucher (${mechanicPart}, voucher ${formatPctRange(vouchers)})`;
   }
   if (overridden) return `${label} (edited to ${formatPct(promotion.overrideUpliftPct)})`;
   return label;
@@ -524,50 +606,20 @@ export const scenarioPromotionsSource = {
       view?.tier0Split ?? null,
       (promotion) => itemRows(rows, promotion),
       (promotion, row) =>
-        effectiveUpliftPct(promotion, row.product_name, row.month_year) * dayShare(promotion, row.month_year),
-      (promotion, month) => dayShare(promotion, month),
-      view?.officialOn !== false
+        effectiveUpliftPct(promotion, row.customer_name, row.product_name, row.month_year) *
+        dayShare(promotion, row.month_year),
+      (promotion, month) => dayShare(promotion, month)
     );
   },
   describe(promotion) {
     return {
       title: describeTitle(promotion),
       upliftLabel: formatPctRange(effectiveUpliftRange(promotion)),
-      customer: promotion.customer,
+      customer: customersLabel(promotion.customers),
       sku: promotionScopeLabel(promotion),
       explanation: promotion.explanation,
       startMonth: promotion.startMonth,
       endMonth: promotion.endMonth,
-    };
-  },
-};
-
-// "Last year's promotions" switched off in the Breakdown tab: what is left of
-// the promotions Tier 0 carries is taken out of Simulated. Its one item is
-// CARRIED_OFF_ITEM; the promotions it needs (what replaces the carried
-// block) come through the view (scenarioEngine.chartView).
-export const scenarioCarriedSource = {
-  key: 'carried',
-  itemsKey: 'carried',
-  label: "Last year's promotions",
-  deltas(items, rows, view) {
-    if (!items.length) return [];
-    return carriedOffCells(rows, view?.tier0Split ?? null, items[0], {
-      officialOn: view?.officialOn !== false,
-      promotions: view?.promotions ?? [],
-      rowsFor: (promotion) => itemRows(rows, promotion),
-      shareFor: (promotion, month) => dayShare(promotion, month),
-    });
-  },
-  describe() {
-    return {
-      title: CARRIED_OFF_ITEM.name,
-      upliftLabel: '',
-      customer: '',
-      sku: '',
-      explanation: 'Switched off in the Breakdown tab: Simulated starts from the ordinary-month baseline.',
-      startMonth: '',
-      endMonth: '',
     };
   },
 };
@@ -599,19 +651,16 @@ export function draftPromotionBands(promotions) {
 
 // The fields a save writes; `saved` keeps a copy of exactly these.
 const SAVED_FIELDS = [
-  'customer',
+  'customers',
   'skuRanges',
+  'excludedPairs',
   'sku',
   'promoType',
   'mechanicKey',
   'mechanicLabel',
-  'referenceUpliftPct',
-  'referenceSource',
-  'referenceBySku',
+  'references',
   'overrideUpliftPct',
   'voucher',
-  'voucherUpliftPct',
-  'voucherBySku',
   'explanation',
   'startMonth',
   'endMonth',
@@ -656,7 +705,6 @@ export function discardPromotionChanges(promotion) {
  * @param {object} promotion
  */
 export function validateScenarioPromotion(promotion) {
-  if (!promotion.customer) return 'Choose a customer.';
   if (!promotion.mechanicKey) return 'Choose a mechanic.';
   if (!promotion.startMonth || !promotion.endMonth) return 'Choose the months.';
   if (promotion.promoType === SIDE_OFFER_TYPE && (!promotion.startDate || !promotion.endDate)) {
@@ -667,26 +715,36 @@ export function validateScenarioPromotion(promotion) {
 
 /**
  * Request body for saving a promotion: backend ScenarioPromotionBase
- * (app/schemas/scenario/promotions.py): sku_ranges (null = All SKU ranges),
- * or product_name, which is only set on a promotion saved before ranges.
+ * (app/schemas/scenario/promotions.py): customer_names (null = every
+ * customer), sku_ranges (null = All SKU ranges), or product_name, which is
+ * only set on a promotion saved before ranges. Each customer's values go in
+ * references_by_customer; the single reference_* fields carry the first
+ * customer's, for code that reads one.
  *
  * @param {object} promotion
  */
 export function buildScenarioPromotionPayload(promotion) {
+  const customers = promotionCustomers(promotion);
+  const lead = referencesFor(promotion, customers[0]);
+  const referencePayload = (kept) => ({
+    reference_uplift_pct: Number(kept.referenceUpliftPct) || 0,
+    reference_source: kept.referenceSource || 'placeholder',
+    reference_by_sku: kept.referenceBySku ?? {},
+    voucher_uplift_pct: Number(kept.voucherUpliftPct) || 0,
+    voucher_by_sku: kept.voucherBySku ?? {},
+  });
   return {
-    customer_name: promotion.customer,
+    customer_names: promotion.customers?.length ? promotion.customers : null,
     sku_ranges: promotion.skuRanges?.length ? promotion.skuRanges : null,
+    excluded_pairs: (promotion.excludedPairs ?? []).map((pair) => ({ customer_name: pair.customer, sku_range: pair.skuRange ?? null })),
     product_name: promotion.skuRanges?.length ? null : promotion.sku || null,
     promo_type: promotion.promoType,
     mechanic_key: promotion.mechanicKey,
     mechanic_label: promotion.mechanicLabel,
-    reference_uplift_pct: Number(promotion.referenceUpliftPct) || 0,
-    reference_source: promotion.referenceSource || 'placeholder',
-    reference_by_sku: promotion.referenceBySku ?? {},
+    ...referencePayload(lead),
+    references_by_customer: Object.fromEntries(customers.map((customer) => [customer, referencePayload(referencesFor(promotion, customer))])),
     override_uplift_pct: promotion.overrideUpliftPct,
     voucher: promotion.voucher,
-    voucher_uplift_pct: Number(promotion.voucherUpliftPct) || 0,
-    voucher_by_sku: promotion.voucherBySku ?? {},
     explanation: promotion.explanation.trim() || null,
     start_month: promotion.startMonth,
     end_month: promotion.endMonth,
@@ -694,6 +752,23 @@ export function buildScenarioPromotionPayload(promotion) {
     end_date: promotion.endDate || null,
     is_active: promotion.isActive,
   };
+}
+
+// Each customer's kept values; a promotion saved before migration 025 has
+// only the single reference_* fields, which were its one customer's.
+function referencesFromApi(row) {
+  const fromRow = (values) => ({
+    referenceUpliftPct: Number(values.reference_uplift_pct),
+    referenceSource: values.reference_source,
+    referenceBySku: values.reference_by_sku ?? {},
+    voucherUpliftPct: Number(values.voucher_uplift_pct),
+    voucherBySku: values.voucher_by_sku ?? {},
+  });
+  const byCustomer = row.references_by_customer ?? {};
+  if (Object.keys(byCustomer).length) {
+    return Object.fromEntries(Object.entries(byCustomer).map(([customer, values]) => [customer, fromRow(values)]));
+  }
+  return Object.fromEntries((row.customer_names ?? []).map((customer) => [customer, fromRow(row)]));
 }
 
 /**
@@ -707,19 +782,16 @@ export function scenarioPromotionFromApi(row) {
   const promotion = {
     id: `saved-promo-${row.promotion_id}`,
     promotionId: row.promotion_id,
-    customer: row.customer_name,
+    customers: row.customer_names ?? [],
     skuRanges: row.sku_ranges ?? [],
+    excludedPairs: (row.excluded_pairs ?? []).map((pair) => ({ customer: pair.customer_name, skuRange: pair.sku_range ?? null })),
     sku: row.product_name ?? '',
     promoType: row.promo_type,
     mechanicKey: row.mechanic_key,
     mechanicLabel: row.mechanic_label,
-    referenceUpliftPct: Number(row.reference_uplift_pct),
-    referenceSource: row.reference_source,
-    referenceBySku: row.reference_by_sku ?? {},
+    references: referencesFromApi(row),
     overrideUpliftPct: row.override_uplift_pct == null ? null : Number(row.override_uplift_pct),
     voucher: row.voucher,
-    voucherUpliftPct: Number(row.voucher_uplift_pct),
-    voucherBySku: row.voucher_by_sku ?? {},
     explanation: row.explanation ?? '',
     startMonth: row.start_month,
     endMonth: row.end_month,
@@ -817,9 +889,9 @@ function monthsOverlap(a, b) {
 }
 
 /**
- * True when two promotions compete for the same slot: same customer, same
- * promotion type, overlapping months, and the same SKU or one of them
- * covering all SKUs. A monthly promotion and a side offer can run together,
+ * True when two promotions compete for the same slot: a customer in common
+ * (every customer shares each one), same promotion type, overlapping months,
+ * and the same SKU or one of them covering all SKUs. A monthly promotion and a side offer can run together,
  * so different types never clash.
  *
  * @param {object} a
@@ -827,7 +899,10 @@ function monthsOverlap(a, b) {
  */
 export function promotionsClash(a, b) {
   if (a.id === b.id) return false;
-  if (a.customer !== b.customer || a.promoType !== b.promoType) return false;
+  if (a.promoType !== b.promoType) return false;
+  const shareCustomer =
+    !a.customers?.length || !b.customers?.length || a.customers.some((customer) => b.customers.includes(customer));
+  if (!shareCustomer) return false;
   // Ranges clash only when they share one ([] = all ranges shares every one).
   if (a.skuRanges?.length && b.skuRanges?.length && !a.skuRanges.some((range) => b.skuRanges.includes(range))) {
     return false;

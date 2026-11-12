@@ -12,13 +12,17 @@ from datetime import date
 #   their Current forecast (evenly when it is 0 everywhere).
 # - Only months with a Current forecast change. A block reaches the SKUs of
 #   its range (range_skus, the codes of its sku_range), or its one sku (blocks
-#   saved before ranges), or every SKU when both are None.
+#   saved before ranges), or every SKU when both are None -- except the SKUs
+#   of a customer x range switched off on the block (excluded_skus).
 # - Each block is measured against Current alone, so blocks simply add up,
 #   and a decrease never takes a SKU x month below 0: that cell's decreases
 #   are all scaled down by the same share (floorAtZero).
 
 
 def _reaches(block: dict, sku: str) -> bool:
+    # A switched-off customer x range (excluded_pairs) never changes.
+    if sku in (block.get("excluded_skus") or ()):
+        return False
     range_skus = block.get("range_skus")
     if range_skus is not None:
         return sku in range_skus

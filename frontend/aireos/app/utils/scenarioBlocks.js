@@ -19,6 +19,8 @@
 //     customers,                    // forecast customer_names ([] = every customer;
 //                                   // a growth names exactly one), migration 022
 //     skuRanges,                    // SKU ranges ([] = All SKU ranges): blocks follow ranges
+//     excludedPairs,                // [{ customer, skuRange }] switched off on their own
+//                                   // (skuRange null = no range); the block stays one entry
 //     sku,                          // one product_name, only on blocks saved before
 //                                   // ranges (backend migration 017); new blocks keep ''
 //     name, explanation,            // free text; explanation is optional
@@ -84,6 +86,7 @@ export const NEW_BLOCK_NAME = 'New building block';
 // The fields a save writes; `saved` keeps a copy of exactly these.
 const SAVED_FIELDS = [
   'customers',
+  'excludedPairs',
   'skuRanges',
   'sku',
   'name',
@@ -121,6 +124,7 @@ export function newScenarioBlock({ customers = [], skuRanges = [], months = [] }
     kind: 'block',
     customers,
     skuRanges,
+    excludedPairs: [],
     sku: '',
     name: NEW_BLOCK_NAME,
     explanation: '',
@@ -303,6 +307,7 @@ export function buildScenarioBlockPayload(block) {
     kind: block.kind ?? 'block',
     customer_names: block.customers?.length ? block.customers : null,
     sku_ranges: block.skuRanges?.length ? block.skuRanges : null,
+    excluded_pairs: (block.excludedPairs ?? []).map((pair) => ({ customer_name: pair.customer, sku_range: pair.skuRange ?? null })),
     product_name: block.skuRanges?.length ? null : block.sku || null,
     name: block.name.trim(),
     explanation: block.explanation.trim() || null,
@@ -327,6 +332,7 @@ export function scenarioBlockFromApi(row) {
     kind: row.kind ?? 'block',
     customers: row.customer_names ?? [],
     skuRanges: row.sku_ranges ?? [],
+    excludedPairs: (row.excluded_pairs ?? []).map((pair) => ({ customer: pair.customer_name, skuRange: pair.sku_range ?? null })),
     sku: row.product_name ?? '',
     name: row.name,
     explanation: row.explanation ?? '',
@@ -389,8 +395,8 @@ export const scenarioGrowthSource = {
       title: block.name,
       upliftLabel: upliftLabel(block),
       customer: customersLabel(block.customers),
-      sku: block.skuRanges[0],
-      explanation: `Growth on Tier 0 for every ${block.skuRanges[0]} SKU, January to December.`,
+      sku: 'All SKUs',
+      explanation: 'Growth on Tier 0 for every SKU, January to December.',
       startMonth: block.startMonth,
       endMonth: block.endMonth,
     };

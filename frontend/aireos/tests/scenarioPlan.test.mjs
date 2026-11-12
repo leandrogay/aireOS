@@ -46,7 +46,7 @@ const SPLIT = {
   },
 };
 
-function planRow(included, breakdown = { baseline: 200, carried: 10, officialAdded: 5, growth: 0, blocks: 0, promotionsAdded: 0 }) {
+function planRow(breakdown = { baseline: 200, carried: 10, officialAdded: 5, growth: 0, blocks: 0, promotionsAdded: 0 }) {
   const [row] = buildPlanRows({
     rows: [{ month_year: MONTH, forecast_current: 220 }],
     lastYearActuals: [],
@@ -54,13 +54,12 @@ function planRow(included, breakdown = { baseline: 200, carried: 10, officialAdd
     monthItems: new Map(),
     breakdowns: new Map([[MONTH, breakdown]]),
     splits: new Map([[MONTH, SPLIT]]),
-    included,
   });
   return row;
 }
 
 test('a partly planned month lists last year\'s promotions still carried and the planned ones', () => {
-  const row = planRow({ carried: true, official: true });
+  const row = planRow();
 
   assert.deepEqual(row.promotionLines, [
     { kind: 'carried', units: 10, groups: SPLIT.carriedPromotions.unplanned },
@@ -69,14 +68,8 @@ test('a partly planned month lists last year\'s promotions still carried and the
   assert.equal(row.planStatus, 'partly');
 });
 
-test('with official promotions left out, last year\'s are listed for every SKU', () => {
-  const row = planRow({ carried: true, official: false }, { baseline: 200, carried: 20, officialAdded: 0, growth: 0, blocks: 0 });
-
-  assert.deepEqual(row.promotionLines, [{ kind: 'carried', units: 20, groups: SPLIT.carriedPromotions.all }]);
-});
-
-test('last year\'s promotions left out have no line', () => {
-  const row = planRow({ carried: false, official: true }, { baseline: 200, carried: 0, officialAdded: 5, growth: 0, blocks: 0 });
+test('a month with nothing carried has no line for last year\'s promotions', () => {
+  const row = planRow({ baseline: 200, carried: 0, officialAdded: 5, growth: 0, blocks: 0 });
 
   assert.deepEqual(row.promotionLines.map((line) => line.kind), ['official']);
 });

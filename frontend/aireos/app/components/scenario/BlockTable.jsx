@@ -18,6 +18,7 @@ import { blockScopeLabel, upliftLabel } from '@/app/utils/scenarioBlocks';
 import { monthSpanLabel } from '@/app/utils/scenarioPitch';
 import { matchesSearch, nextSort, paginate } from '@/app/utils/tableView';
 
+import ItemPairs from './ItemPairs';
 import { blockColumns } from './columns';
 
 function wholeUnits(value) {
@@ -52,12 +53,20 @@ function sortBlocks(blocks, field, direction) {
   return [...blocks].sort((a, b) => String(a[field] ?? '').localeCompare(String(b[field] ?? '')) * sign);
 }
 
-function BlockDetails({ block, months }) {
+function BlockDetails({ block, months, pairs, toggling, onTogglePair }) {
   return (
     <div className="grid gap-4 text-xs md:grid-cols-[minmax(0,1fr)_minmax(24rem,1.2fr)]">
       <div className="min-w-0">
         <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">Explanation</p>
         <p className="whitespace-pre-line leading-relaxed">{block.explanation || '—'}</p>
+        <div className="mt-3">
+          <ItemPairs
+            pairs={pairs}
+            active={block.isActive}
+            disabled={toggling}
+            onToggle={(customer, skuRange, on) => onTogglePair(block, customer, skuRange, on)}
+          />
+        </div>
       </div>
       <div className="min-w-0">
         <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-deep-violet-blue/60">
@@ -115,6 +124,8 @@ function BlockDetails({ block, months }) {
  *   isExpanded: (id: string) => boolean,
  *   onToggleRow: (id: string) => void,
  *   onToggleActive: (block: object, isActive: boolean) => void,
+ *   pairsFor: (block: object) => ReturnType<typeof import('@/app/utils/scenarioEngine').itemPairs>,
+ *   onTogglePair: (block: object, customer: string, skuRange: string | null, on: boolean) => void,
  *   onEdit: (block: object) => void,
  *   onDelete: (block: object) => void,
  *   onClearFilters: () => void,
@@ -133,6 +144,8 @@ export default function BlockTable({
   isExpanded,
   onToggleRow,
   onToggleActive,
+  pairsFor,
+  onTogglePair,
   onEdit,
   onDelete,
   onClearFilters,
@@ -226,7 +239,15 @@ export default function BlockTable({
             title={block.name}
             toggleLabel={isExpanded(block.id) ? `Hide details for ${block.name}` : `Show details for ${block.name}`}
             actions={<RowActions label={`Actions for ${block.name}`} actions={actions} />}
-            details={<BlockDetails block={block} months={monthsByItem.get(block.id) ?? []} />}
+            details={
+              <BlockDetails
+                block={block}
+                months={monthsByItem.get(block.id) ?? []}
+                pairs={pairsFor(block)}
+                toggling={toggling}
+                onTogglePair={onTogglePair}
+              />
+            }
           >
             <td className="truncate px-4 py-2.5" title={appliesTo}>{appliesTo}</td>
             <td className="whitespace-nowrap px-4 py-2.5 tabular-nums">

@@ -25,7 +25,6 @@ import useLastYearActuals from '@/hooks/useLastYearActuals';
  *   scope: string,           what the rows add up, e.g. "Fairprice · All SKUs"
  *   breakdowns: Map,         month_year → the chart point's breakdown (scenarioComposition)
  *   splits: Map,             month_year → scenarioTier0Split.monthSplit (the Promotions column, plan status)
- *   included: Record<string, boolean>, the Breakdown tab's toggles
  *   split: boolean,          Tier 0 is split into its baseline and carried promotions
  *   detailsFor: (month: string) => import('react').ReactNode,
  *   flagged: (month: string) => boolean,
@@ -46,13 +45,12 @@ export default function MonthlyPlan({
   scope,
   breakdowns,
   splits,
-  included,
   split,
   detailsFor,
   flagged,
 }) {
   const lastYear = useLastYearActuals({ ready, productName, skuRange, customerName, startDate, endDate, actuals });
-  const planRows = buildPlanRows({ rows, lastYearActuals: lastYear.actuals, byMonth, monthItems, breakdowns, splits, included });
+  const planRows = buildPlanRows({ rows, lastYearActuals: lastYear.actuals, byMonth, monthItems, breakdowns, splits });
 
   return (
     <div className="space-y-1.5">
@@ -66,7 +64,6 @@ export default function MonthlyPlan({
         lastYearLoading={lastYear.loading}
         onOpenItem={onOpenItem}
         scope={scope}
-        included={included}
         split={split}
         detailsFor={detailsFor}
         flagged={flagged}
