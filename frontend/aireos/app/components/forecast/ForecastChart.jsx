@@ -218,6 +218,7 @@ function CompositionHatches({ layers }) {
 const SCENARIO_BREAKDOWN_ROWS = [
   { key: 'tier0', label: 'Tier 0' },
   { key: 'official', label: 'Official promotions', onlyWhenSet: true },
+  { key: 'carriedOff', label: "Last year's promotions left out", onlyWhenSet: true },
   { key: 'growth', label: 'Growth' },
   { key: 'blocks', label: 'Building blocks' },
   { key: 'promotions', label: 'Scenario promotions' },
@@ -317,7 +318,7 @@ function ScenarioPointDetails({ point, items, anchor, formatValue, className }) 
         </div>
       )}
       {breakdown &&
-      Math.round(breakdown.tier0 + (breakdown.official ?? 0) + breakdown.growth + breakdown.blocks + breakdown.promotions) !==
+      Math.round(breakdown.tier0 + (breakdown.official ?? 0) + (breakdown.carriedOff ?? 0) + breakdown.growth + breakdown.blocks + breakdown.promotions) !==
         Math.round(breakdown.simulated) ? (
         <p className="pt-0.5 text-deep-violet-blue/60">
           Some SKUs would fall below 0 and are kept at 0, so Simulated is more than the sum.

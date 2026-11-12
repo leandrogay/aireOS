@@ -2,10 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  CARRIED_OFF_ITEM,
   OFFICIAL_ITEM,
   bigChange,
+  carriedOffCells,
   monthSplit,
   officialCells,
+  planStatus,
   promotionCells,
   splitForRow,
   tier0SplitIndex,
@@ -107,6 +110,39 @@ test('with no split a scenario promotion works on Tier 0 as before', () => {
   assert.equal(cell.replacedUnits, 0);
 });
 
+test('with official promotions left out, a scenario promotion replaces what is carried even in their months', () => {
+  const index = tier0SplitIndex({ rows: [split('A', { official: { planned: true, uplift_pct: 5, promotions: [] } })] });
+
+  const [cell] = promotionCells([promotion], index, () => [row('A', 110)], () => 20, () => 1, false);
+
+  assert.equal(cell.replacedUnits, 10);
+});
+
+// ---- last year's promotions switched off ----------------------------------------------
+
+function carriedOff(index, { officialOn = true, promotions = [], share = 1 } = {}) {
+  return carriedOffCells([row('A', 110)], index, CARRIED_OFF_ITEM, {
+    officialOn,
+    promotions,
+    rowsFor: () => [row('A', 110)],
+    shareFor: () => share,
+  });
+}
+
+test('switching last year\'s promotions off takes the carried block out', () => {
+  const [cell] = carriedOff(tier0SplitIndex({ rows: [split('A')] }));
+
+  assert.equal(cell.deltaUnits, -10);
+  assert.equal(cell.source, 'carried');
+});
+
+test('what a planned promotion already replaces is not taken out twice', () => {
+  const official = tier0SplitIndex({ rows: [split('A', { official: { planned: true, uplift_pct: 5, promotions: [] } })] });
+
+  assert.deepEqual(carriedOff(official), []);
+  assert.equal(carriedOff(tier0SplitIndex({ rows: [split('A')] }), { promotions: [promotion], share: 0.5 })[0].deltaUnits, -5);
+});
+
 // ---- one month for the Breakdown tab ----------------------------------------------------
 
 test('a month adds up its rows and names the promotions behind each source month', () => {
@@ -128,4 +164,28 @@ test('a change of more than 35% of Tier 0 is flagged', () => {
   assert.equal(bigChange(100, 30), null);
   assert.deepEqual(bigChange(100, 200), { ratio: 3, change: 200 });
   assert.deepEqual(bigChange(100, -40), { ratio: 0.6, change: -40 });
+});
+
+test('a month names the promotions behind what is still carried, without the planned SKUs', () => {
+  const index = tier0SplitIndex({
+    rows: [split('A'), split('B', { lastYear: 'Buy 2 Get 1 Free', official: { planned: true, uplift_pct: 5, promotions: [{ mechanic: '25% Off' }] } })],
+  });
+
+  const { carriedPromotions } = monthSplit([row('A', 110), row('B', 110)], index, MONTH);
+
+  assert.deepEqual(carriedPromotions.unplanned, [
+    { kind: 'lastYear', months: ['2026-06-01'], mechanics: ['30% Off'] },
+    { kind: 'runRate', months: ['2027-03-01'], mechanics: ['30% Off'] },
+  ]);
+  assert.deepEqual(carriedPromotions.all[0].mechanics, ['30% Off', 'Buy 2 Get 1 Free']);
+});
+
+test('a month is planned, partly planned, not planned yet or ordinary', () => {
+  const planned = { planned: true, uplift_pct: 5, promotions: [] };
+  const status = (splits) => planStatus(monthSplit(splits.map((s) => row(s.sku, 110)), tier0SplitIndex({ rows: splits }), MONTH));
+
+  assert.equal(status([split('A', { official: planned })]), 'planned');
+  assert.equal(status([split('A', { official: planned }), split('B')]), 'partly');
+  assert.equal(status([split('A')]), 'not_planned');
+  assert.equal(status([split('A', { baseline: 110, carried: 0 })]), null);
 });

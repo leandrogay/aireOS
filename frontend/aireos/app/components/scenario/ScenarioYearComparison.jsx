@@ -70,6 +70,16 @@ function ItemsBadge({ items }) {
   );
 }
 
+// What each part changes on Current, in the chart's stacking order; a part
+// shows only when it changes something in some row.
+const PART_COLUMNS = [
+  { part: 'official', label: 'Official promotions' },
+  { part: 'carried', label: "Last year's promotions left out" },
+  { part: 'growth', label: 'Growth' },
+  { part: 'blocks', label: 'Building blocks' },
+  { part: 'promotions', label: 'Scenario promotions' },
+];
+
 const headerCell = cn(
   'border-b bg-cream px-2.5 py-1.5 text-right text-[10px] font-bold uppercase tracking-wide text-deep-violet-blue',
   HEADER_RULE
@@ -78,7 +88,9 @@ const headerCell = cn(
 /**
  * Scenario builder's comparison table, under the chart, in units (the
  * scenario predicts volume only): each year in view and the next 12
- * months, Current against Simulated with the change. Styled like
+ * months, Current against Simulated with the change, and what each part
+ * (official promotions, growth, building blocks, scenario promotions, last
+ * year's promotions when left out) adds to it. Styled like
  * ForecastYearTotals, whose /forecast table it stands in for here.
  *
  * Until a switched-on block or promotion changes something in view (`rows`
@@ -87,6 +99,7 @@ const headerCell = cn(
  * @param {{
  *   rows: Array<{ key: string, label: string, caption?: string,
  *     current: number | null, delta: number,
+ *     parts?: Record<string, number>,
  *     items: Array<{ id: string, name: string, kind: 'block' | 'promotion',
  *       state: 'saved' | 'draft' | 'edited', deltaUnits: number }> }>,
  *   loading?: boolean,
@@ -101,6 +114,7 @@ export default function ScenarioYearComparison({ rows, loading = false }) {
   // Items that change nothing (notCounted) are listed but don't open the
   // Simulated columns on their own.
   const compare = rows.some((row) => row.items.some((item) => !item.notCounted));
+  const parts = PART_COLUMNS.filter((column) => rows.some((row) => Math.round(row.parts?.[column.part] ?? 0)));
 
   return (
     <section aria-label="Current and simulated totals" className="overflow-x-auto rounded-md border border-lavander">
@@ -111,6 +125,11 @@ export default function ScenarioYearComparison({ rows, loading = false }) {
             <th className={headerCell}>Current</th>
             {compare ? (
               <>
+                {parts.map((column) => (
+                  <th key={column.part} className={headerCell}>
+                    {column.label}
+                  </th>
+                ))}
                 <th className={headerCell}>Simulated</th>
                 <th className={headerCell}>Δ</th>
                 <th className={headerCell}>Δ%</th>
@@ -134,6 +153,14 @@ export default function ScenarioYearComparison({ rows, loading = false }) {
                 <td className={cell}>{formatFigure(row.current)}</td>
                 {compare ? (
                   <>
+                    {parts.map((column) => {
+                      const value = row.parts?.[column.part] ?? 0;
+                      return (
+                        <td key={column.part} className={cn(cell, Math.round(value) ? 'text-scenario-ink' : 'text-deep-violet-blue/45')}>
+                          {Math.round(value) && row.current != null ? signedFigure(value) : '—'}
+                        </td>
+                      );
+                    })}
                     <td className={cell}>
                       {row.items.length ? <ItemsBadge items={row.items} /> : null}
                       {row.current == null ? '—' : formatFigure(row.current + row.delta)}

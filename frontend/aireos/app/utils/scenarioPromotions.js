@@ -50,7 +50,7 @@
 import { PROMO_OVERLAY_TYPES } from '@/app/utils/forecastView';
 import { levelLabel } from '@/app/utils/promoUpliftCalc';
 import { itemRows } from '@/app/utils/scenarioEngine';
-import { promotionCells } from '@/app/utils/scenarioTier0Split';
+import { CARRIED_OFF_ITEM, carriedOffCells, promotionCells } from '@/app/utils/scenarioTier0Split';
 import { liveReferences, liveUplift, liveUpliftValues, weakestLevel } from '@/app/utils/scenarioLiveUplifts';
 
 export const MIN_OVERRIDE_PCT = -20;
@@ -525,7 +525,8 @@ export const scenarioPromotionsSource = {
       (promotion) => itemRows(rows, promotion),
       (promotion, row) =>
         effectiveUpliftPct(promotion, row.product_name, row.month_year) * dayShare(promotion, row.month_year),
-      (promotion, month) => dayShare(promotion, month)
+      (promotion, month) => dayShare(promotion, month),
+      view?.officialOn !== false
     );
   },
   describe(promotion) {
@@ -537,6 +538,36 @@ export const scenarioPromotionsSource = {
       explanation: promotion.explanation,
       startMonth: promotion.startMonth,
       endMonth: promotion.endMonth,
+    };
+  },
+};
+
+// "Last year's promotions" switched off in the Breakdown tab: what is left of
+// the promotions Tier 0 carries is taken out of Simulated. Its one item is
+// CARRIED_OFF_ITEM; the promotions it needs (what replaces the carried
+// block) come through the view (scenarioEngine.chartView).
+export const scenarioCarriedSource = {
+  key: 'carried',
+  itemsKey: 'carried',
+  label: "Last year's promotions",
+  deltas(items, rows, view) {
+    if (!items.length) return [];
+    return carriedOffCells(rows, view?.tier0Split ?? null, items[0], {
+      officialOn: view?.officialOn !== false,
+      promotions: view?.promotions ?? [],
+      rowsFor: (promotion) => itemRows(rows, promotion),
+      shareFor: (promotion, month) => dayShare(promotion, month),
+    });
+  },
+  describe() {
+    return {
+      title: CARRIED_OFF_ITEM.name,
+      upliftLabel: '',
+      customer: '',
+      sku: '',
+      explanation: 'Switched off in the Breakdown tab: Simulated starts from the ordinary-month baseline.',
+      startMonth: '',
+      endMonth: '',
     };
   },
 };

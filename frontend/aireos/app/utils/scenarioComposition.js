@@ -49,9 +49,12 @@ export const MIN_LABEL_SLOT_PX = 34;
  * the layers always meet the line.
  *
  * Adds a value per COMPOSITION_KEYS key and `breakdown`: { tier0, baseline,
- * carried (what is left of the carried promotions), carriedTotal, replaced,
- * official, growth, blocks, promotions (each source's net change on Tier
- * 0), simulated }.
+ * carried (what is left of the carried promotions; 0 when they are switched
+ * off), carriedTotal, replaced, officialAdded / promotionsAdded (what they
+ * add on the baseline), official, carriedOff, growth, blocks, promotions
+ * (each source's net change on Tier 0), simulated }. Baseline + carried +
+ * officialAdded + growth + blocks + promotionsAdded = Simulated (before the
+ * 0 floor).
  *
  * @param {object} point withSimulatedLine output (or a point with no Simulated)
  * @param {{ source: string, deltaUnits: number, addedUnits?: number, replacedUnits?: number }[]} items
@@ -63,16 +66,21 @@ export function withComposition(point, items, split = null) {
 
   const baseline = split ? split.baseline : tier0;
   const carriedTotal = split ? split.carried : 0;
-  const net = { official: 0, growth: 0, blocks: 0, promotions: 0 };
+  // Each source's net change on Tier 0; switching last year's promotions off is carriedOff.
+  const net = { official: 0, carriedOff: 0, growth: 0, blocks: 0, promotions: 0 };
   let replaced = 0;
   let officialAdded = 0;
+  let promotionsAdded = 0;
   const up = { growthLayer: 0, blocksLayer: 0, promotionsLayer: 0 };
   let decrease = 0;
   for (const item of items) {
-    if (!(item.source in net)) continue;
-    net[item.source] += item.deltaUnits;
+    const netKey = item.source === 'carried' ? 'carriedOff' : item.source;
+    if (!(netKey in net)) continue;
+    net[netKey] += item.deltaUnits;
     replaced += item.replacedUnits ?? 0;
     const added = item.addedUnits ?? item.deltaUnits;
+    if (item.source === 'promotions') promotionsAdded += added;
+    if (item.source === 'carried') continue;
     if (item.source === 'official') {
       officialAdded += added;
     } else if (added > 0) {
@@ -98,7 +106,7 @@ export function withComposition(point, items, split = null) {
     ...point,
     baselineLayer: Math.max(0, simulated - added),
     ...layers,
-    breakdown: { tier0, baseline, carried, carriedTotal, replaced, ...net, simulated },
+    breakdown: { tier0, baseline, carried, carriedTotal, replaced, officialAdded, promotionsAdded, ...net, simulated },
   };
 }
 

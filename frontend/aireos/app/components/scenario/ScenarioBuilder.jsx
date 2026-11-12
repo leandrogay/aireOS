@@ -16,7 +16,8 @@ import ScenarioBuilderSkeleton from '@/components/scenario/ScenarioBuilderSkelet
 import ScenarioPanel from '@/components/scenario/ScenarioPanel';
 import ScenarioTotals from '@/components/scenario/ScenarioTotals';
 import ScenarioYearComparison from '@/components/scenario/ScenarioYearComparison';
-import FrozenBaselinePanel, { COMPOSITION_LAYERS } from '@/components/scenario/FrozenBaselinePanel';
+import FrozenBaselinePanel, { COMPOSITION_LAYERS, SIMULATED_PARTS } from '@/components/scenario/FrozenBaselinePanel';
+import Tier0Details from '@/components/scenario/Tier0Details';
 import { nextYearDateRange } from '@/app/utils/dateRange';
 import { FORECAST_TIER_OPTIONS } from '@/app/utils/forecastLineText';
 import { DEFAULT_TIER } from '@/app/utils/forecastTiers';
@@ -50,7 +51,7 @@ import {
 } from '@/app/utils/scenarioPromotions';
 import { liveUpliftIndex } from '@/app/utils/scenarioLiveUplifts';
 import { withComposition } from '@/app/utils/scenarioComposition';
-import { OFFICIAL_ITEM, monthSplit, tier0SplitIndex } from '@/app/utils/scenarioTier0Split';
+import { CARRIED_OFF_ITEM, OFFICIAL_ITEM, bigChange, monthSplit, tier0SplitIndex } from '@/app/utils/scenarioTier0Split';
 import { anchorInMonth, anchorLabel, anchorSourceLabel, anchorTargets } from '@/app/utils/promoUpliftSettings';
 import {
   activeScenarioBlocks,
@@ -117,6 +118,19 @@ function itemsInMonths(monthCells, months, itemInfo, { activeItems, filters, fir
   return { items: [...counting, ...idle] };
 }
 
+// What each source changes over `months`, for the By year table's part
+// columns: { official, carried, growth, blocks, promotions } in units, adding
+// up to the row's Δ.
+function partsInMonths(monthCells, months) {
+  const parts = { official: 0, carried: 0, growth: 0, blocks: 0, promotions: 0 };
+  for (const month of months) {
+    for (const totals of monthCells.get(month)?.values() ?? []) {
+      if (totals.source in parts) parts[totals.source] += totals.deltaUnits;
+    }
+  }
+  return parts;
+}
+
 /**
  * The Scenario builder workspace (blueprint Part 4): the same filters and
  * chart as /forecast, with the switched-on building blocks (and draft
@@ -166,11 +180,9 @@ export default function ScenarioBuilder() {
   const [newIds, setNewIds] = useState([]);
   const [togglingIds, setTogglingIds] = useState([]);
   const [actionError, setActionError] = useState(null);
-  // Keyed by the chart's composition layer keys (ForecastChart reads
-  // compositionVisible[layer.key]), so the Breakdown toggles match them.
-  const [compositionVisible, setCompositionVisible] = useState(
-    Object.fromEntries(COMPOSITION_LAYERS.map((layer) => [layer.key, true]))
-  );
+  // The Breakdown tab's toggles: which parts the Simulated line, its
+  // shading and both tables count (the baseline is always in).
+  const [included, setIncluded] = useState(Object.fromEntries(SIMULATED_PARTS.map((part) => [part.key, true])));
   const expandedRows = useExpandedRows();
   const deletion = useConfirmAction({ onConfirm: deleteSaved });
 
@@ -227,15 +239,19 @@ export default function ScenarioBuilder() {
   const activePromotions = activeScenarioPromotions(scenarioPromotions.promotions);
   const liveIndex = calculated.data ? liveUpliftIndex(calculated.data.rows) : null;
   const tier0Split = tier0Breakdown.data ? tier0SplitIndex(tier0Breakdown.data) : null;
+  // Only what the Breakdown tab's toggles leave in counts. The official
+  // promotions count whenever the split is in; switching last year's
+  // promotions off adds an item that takes them out.
   const counted = {
-    // The official promotions count whenever the split is in.
-    official: tier0Split ? [OFFICIAL_ITEM] : [],
-    growth: activeScenarioBlocks(growthBlocks),
-    blocks: activeScenarioBlocks(allBlocks),
-    promotions: withLiveIndex(activePromotions, liveIndex),
+    official: tier0Split && included.official ? [OFFICIAL_ITEM] : [],
+    carried: tier0Split && !included.carried ? [CARRIED_OFF_ITEM] : [],
+    growth: included.growth ? activeScenarioBlocks(growthBlocks) : [],
+    blocks: included.blocks ? activeScenarioBlocks(allBlocks) : [],
+    promotions: included.promotions ? withLiveIndex(activePromotions, liveIndex) : [],
   };
   const itemInfo = new Map([
     [OFFICIAL_ITEM.id, { name: OFFICIAL_ITEM.name, kind: 'official', state: 'saved' }],
+    [CARRIED_OFF_ITEM.id, { name: CARRIED_OFF_ITEM.name, kind: 'carried', state: 'saved' }],
     ...counted.growth.map((block) => [block.id, { name: block.name, kind: 'growth', state: itemState(block, false) }]),
     ...counted.blocks.map((block) => [block.id, { name: block.name, kind: 'block', state: itemState(block, false) }]),
     ...activePromotions.map((promotion) => [
@@ -248,7 +264,7 @@ export default function ScenarioBuilder() {
     rows,
     counted,
     SCENARIO_SOURCES,
-    chartView(filters, splitBasis.basis, tier0Split)
+    chartView(filters, splitBasis.basis, tier0Split, { officialOn: included.official, promotions: counted.promotions })
   );
   // Nothing simulated until a switched-on item changes something in view:
   // no Simulated line, legend entry or table columns before that.
@@ -259,6 +275,7 @@ export default function ScenarioBuilder() {
   // Promotions have no name of their own; their mechanic stands in.
   const names = new Map([
     [OFFICIAL_ITEM.id, OFFICIAL_ITEM.name],
+    [CARRIED_OFF_ITEM.id, CARRIED_OFF_ITEM.name],
     ...scenarioBlocks.blocks.map((block) => [block.id, block.name]),
     ...scenarioPromotions.promotions.map((promotion) => [promotion.id, promotion.mechanicLabel]),
   ]);
@@ -276,13 +293,21 @@ export default function ScenarioBuilder() {
   // What each month is made of, for the shaded layers, their labels and the
   // hover card (scenarioComposition.js): built on the Simulated line, so the
   // layers always meet it, with Tier 0 split where the split is in.
-  const chartPoints = (hasSimulated ? withSimulatedLine(basePoints, byMonth) : basePoints).map((point) =>
-    withComposition(
-      point,
-      [...(monthCells.get(point.month_year)?.values() ?? [])],
-      tier0Split ? monthSplit(rows, tier0Split, point.month_year) : null
-    )
+  // Each month's Tier 0 split, worked out once for the chart and the Monthly plan.
+  const monthSplits = new Map(
+    tier0Split ? basePoints.map((point) => [point.month_year, monthSplit(rows, tier0Split, point.month_year)]) : []
   );
+  const chartPoints = (hasSimulated ? withSimulatedLine(basePoints, byMonth) : basePoints).map((point) =>
+    withComposition(point, [...(monthCells.get(point.month_year)?.values() ?? [])], monthSplits.get(point.month_year) ?? null)
+  );
+  // Each month's parts, for the Monthly plan, and the months the promotions
+  // planned move by more than 35% of Tier 0 (Big change).
+  const breakdowns = new Map(chartPoints.filter((point) => point.breakdown).map((point) => [point.month_year, point.breakdown]));
+  function monthChange(month) {
+    const breakdown = breakdowns.get(month);
+    return breakdown ? bigChange(breakdown.tier0, breakdown.official + breakdown.promotions) : null;
+  }
+  const tier0SplitState = { index: tier0Split, loading: tier0Breakdown.loading, error: tier0Breakdown.error };
   // The anchor in the hover card: one customer x SKU range has one.
   const anchorTarget = rangePicked
     ? anchorTargets(anchors.data).find((target) => target.customerName === customerName && target.skuRange === skuRange)
@@ -362,6 +387,7 @@ export default function ScenarioBuilder() {
         caption: base ? mixCaption(base) : '',
         current: base?.volume.total ?? null,
         delta: year.deltaUnits,
+        parts: partsInMonths(monthCells, yearMonths),
         ...itemsInMonths(monthCells, yearMonths, itemInfo, {
           activeItems,
           filters,
@@ -377,6 +403,7 @@ export default function ScenarioBuilder() {
             label: 'Next 12 months',
             current: sumHorizonForecast(basePoints),
             delta: horizonMonths.reduce((total, month) => total + (byMonth.get(month)?.deltaUnits ?? 0), 0),
+            parts: partsInMonths(monthCells, horizonMonths),
             ...itemsInMonths(monthCells, horizonMonths, itemInfo, {
               activeItems,
               filters,
@@ -505,6 +532,20 @@ export default function ScenarioBuilder() {
                     monthItems={monthItems}
                     onOpenItem={openItem}
                     scope={`${customerText} · ${skuRange || 'All SKU ranges'}`}
+                    breakdowns={breakdowns}
+                    splits={monthSplits}
+                    included={included}
+                    split={Boolean(tier0Split)}
+                    flagged={(month) => Boolean(monthChange(month))}
+                    detailsFor={(month) => (
+                      <Tier0Details
+                        month={month}
+                        rows={rows}
+                        tier0Split={tier0SplitState}
+                        anchor={anchorForMonth(month)}
+                        change={monthChange(month)}
+                      />
+                    )}
                   />
                 }
               />
@@ -525,7 +566,8 @@ export default function ScenarioBuilder() {
             loading={view.loading}
             scenario={{
               ...scenario,
-              compositionVisible,
+              // Every layer drawn: a part left out is 0, so it has nothing to show.
+              compositionVisible: Object.fromEntries(COMPOSITION_LAYERS.map((layer) => [layer.key, true])),
               // Stacked bottom to top: Tier 0's baseline and what it carries,
               // official promotions, what growth, blocks and scenario
               // promotions add, then what takes units away, hatched
@@ -547,12 +589,7 @@ export default function ScenarioBuilder() {
           itemCount={itemCount}
           breakdownSection={
             <FrozenBaselinePanel
-              rows={rows}
-              monthItems={monthItems}
-              tier0Split={{ index: tier0Split, loading: tier0Breakdown.loading, error: tier0Breakdown.error }}
-              anchors={anchors}
-              customerName={customerName}
-              skuRange={skuRange}
+              tier0Split={tier0SplitState}
               growthSection={
                 scenarioBlocks.loading ? (
                   <p className="text-xs text-deep-violet-blue/60">Loading growth…</p>
@@ -570,10 +607,8 @@ export default function ScenarioBuilder() {
                   />
                 )
               }
-              compositionVisible={compositionVisible}
-              onToggleComposition={(key) =>
-                setCompositionVisible((current) => ({ ...current, [key]: !current[key] }))
-              }
+              included={included}
+              onToggle={(key) => setIncluded((current) => ({ ...current, [key]: !current[key] }))}
             />
           }
           blocksSection={

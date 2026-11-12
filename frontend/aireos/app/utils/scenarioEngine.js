@@ -98,12 +98,18 @@ function deltaCell(row, item, source, deltaUnits) {
  *
  * @param {{ productName?: string, skuRange?: string, customerName: string, startDate: string, endDate: string }} filters
  * @param {Map<string, { startMonth: string, endMonth: string, rows: object[] }>} [splitBasis]
+ * `officialOn` / `promotions` say what Simulated counts (the Breakdown
+ * tab's toggles): whether official promotions replace what Tier 0 carries,
+ * and the scenario promotions that do where they don't.
+ *
  * @param {Map<string, object>} [tier0Split]
+ * @param {{ officialOn?: boolean, promotions?: object[] }} [counted]
  */
 export function chartView(
   { productName = '', skuRange = '', customerName = '', startDate = '', endDate = '' },
   splitBasis = null,
-  tier0Split = null
+  tier0Split = null,
+  { officialOn = true, promotions = [] } = {}
 ) {
   return {
     productName,
@@ -113,6 +119,8 @@ export function chartView(
     endMonth: endDate ? `${endDate.slice(0, 7)}-01` : '',
     splitBasis,
     tier0Split,
+    officialOn,
+    promotions,
   };
 }
 

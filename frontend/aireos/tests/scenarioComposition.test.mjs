@@ -107,6 +107,33 @@ test('a scenario promotion on top of an official one adds its own band', () => {
   );
 });
 
+test('last year\'s promotions switched off leave the baseline alone', () => {
+  const result = withComposition(
+    point(110, 100),
+    [{ source: 'carried', deltaUnits: -10, addedUnits: 0, replacedUnits: 10 }],
+    { baseline: 100, carried: 10 }
+  );
+
+  assert.equal(result.carriedLayer, 0);
+  assert.equal(result.baselineLayer, 100);
+  assert.equal(result.breakdown.carriedOff, -10);
+});
+
+test('the parts add up to Simulated', () => {
+  const result = withComposition(
+    point(110, 120),
+    [
+      { source: 'official', deltaUnits: -5, addedUnits: 5, replacedUnits: 10 },
+      { source: 'growth', deltaUnits: 6, addedUnits: 6, replacedUnits: 0 },
+      { source: 'promotions', deltaUnits: 9, addedUnits: 9, replacedUnits: 0 },
+    ],
+    { baseline: 100, carried: 10 }
+  );
+  const b = result.breakdown;
+
+  assert.equal(b.baseline + b.carried + b.officialAdded + b.growth + b.blocks + b.promotionsAdded, 120);
+});
+
 // ---- labels -------------------------------------------------------------------------
 
 test('each band is labelled with what it adds, and the baseline only when nothing is taken away', () => {
