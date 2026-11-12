@@ -5,7 +5,7 @@ import { Area, ComposedChart, Line, ReferenceArea, ReferenceDot, ReferenceLine, 
 
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { glassSurfaceClass } from '@/components/ui/surfaceStyles';
+import { glassInsetClass, glassSurfaceClass } from '@/components/ui/surfaceStyles';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import ChartLoading from '@/components/ui/ChartLoading';
 import LineChartSkeleton from '@/components/ui/LineChartSkeleton';
@@ -487,7 +487,7 @@ export default function ForecastChart({
       </CardHeader>
       <CardContent className="min-w-0 space-y-3">
         {toolbar}
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-lavander bg-white px-3 py-2">
+        <div className={cn(glassInsetClass, 'flex flex-wrap items-center justify-between gap-3 px-3 py-2')}>
           <LineToggle
             series={allSeries}
             visible={shownSeries}

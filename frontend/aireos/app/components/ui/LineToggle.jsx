@@ -1,6 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
+import { glassInsetClass, glassRuleClass } from '@/components/ui/surfaceStyles';
 
 // The pill's sample of its line: a marker shape (the Forecast page), or a
 // short stretch of the line itself for charts whose lines differ by dash
@@ -64,15 +65,16 @@ function LineRow({ label, labelClassName, series, visible, onToggle, hints, disa
                 className={cn(
                   'inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-medium transition',
                   isDisabled
-                    ? 'cursor-not-allowed border-dashed border-lavander bg-white text-deep-violet-blue/40'
+                    ? 'cursor-not-allowed border-dashed border-deep-violet-blue/20 bg-transparent text-deep-violet-blue/40'
                     : isActive
                       ? 'border-transparent text-deep-violet-blue shadow-sm'
-                      : 'border-lavander bg-white text-deep-violet-blue/55 hover:bg-cream'
+                      : 'border-deep-violet-blue/15 bg-white/35 text-deep-violet-blue/60 hover:bg-white/65'
                 )}
                 style={
                   isActive
                     ? {
-                        backgroundColor: `color-mix(in srgb, ${line.color} 20%, white)`,
+                        // A tint over the glass, not a solid pastel: the card shows through.
+                        backgroundColor: `color-mix(in srgb, ${line.color} 22%, transparent)`,
                         color: 'var(--aire-deep-blue)',
                       }
                     : undefined
@@ -147,8 +149,8 @@ export default function LineToggle({
   }
 
   return (
-    <div className="space-y-1.5 rounded-lg border border-lavander bg-white px-3 py-2">
-      {header ? <div className="border-b border-lavander pb-1.5">{header}</div> : null}
+    <div className={cn(glassInsetClass, 'space-y-1.5 px-3 py-2')}>
+      {header ? <div className={cn(glassRuleClass, 'border-b pb-1.5')}>{header}</div> : null}
       {rows.map((row) => (
         <LineRow
           key={row.label}
