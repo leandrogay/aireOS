@@ -29,8 +29,12 @@ export function initialSplitProblem(data, rows) {
   return null;
 }
 
-/** Frozen budget totals in the requested scope, including months the rolling forecast no longer reaches. */
-export function withBudgetPoints(points, rows, scope = {}, makePoint = (month) => ({ month_year: month })) {
+/**
+ * Frozen budget totals in the requested scope, including months the rolling
+ * forecast no longer reaches, as `key` on each point (the Budget line's
+ * 'budget', or a compared version's key).
+ */
+export function withBudgetPoints(points, rows, scope = {}, makePoint = (month) => ({ month_year: month }), key = 'budget') {
   const totals = new Map();
   for (const row of rows) {
     if (scope.customerName && scope.customerName !== row.customer_name) continue;
@@ -40,7 +44,54 @@ export function withBudgetPoints(points, rows, scope = {}, makePoint = (month) =
     if (scope.endDate && row.month_year > scope.endDate) continue;
     totals.set(row.month_year, (totals.get(row.month_year) ?? 0) + row.units);
   }
-  const merged = new Map(points.map((point) => [point.month_year, { ...point, budget: null }]));
-  for (const [month, units] of totals) merged.set(month, { ...(merged.get(month) ?? makePoint(month)), budget: units });
+  const merged = new Map(points.map((point) => [point.month_year, { ...point, [key]: null }]));
+  for (const [month, units] of totals) merged.set(month, { ...(merged.get(month) ?? makePoint(month)), [key]: units });
   return [...merged.values()].sort((a, b) => a.month_year.localeCompare(b.month_year));
+}
+
+// At most this many locked versions are compared on the Budget planning
+// chart at once. They share the Budget colour and differ by dash and marker,
+// so they read as budgets beside the draft's Simulated line.
+export const MAX_COMPARED_VERSIONS = 3;
+const VERSION_STYLES = [
+  { dash: '12 3 2 3', shape: 'square' },
+  { dash: '6 4', shape: 'triangle' },
+  { dash: '2 3', shape: 'circle' },
+];
+
+/** The chart key of a compared locked version. */
+export function budgetVersionKey(version) {
+  return `budget_v${version}`;
+}
+
+/** A version's name as the history and the legend show it: "Version 2 · Base case". */
+export function budgetVersionLabel(item) {
+  return `Version ${item.version}${item.name ? ` · ${item.name}` : ''}`;
+}
+
+/**
+ * The chart series of compared versions, in the order picked.
+ *
+ * @param {{ version: number, name?: string | null }[]} items history entries
+ */
+export function budgetVersionSeries(items) {
+  return items.slice(0, MAX_COMPARED_VERSIONS).map((item, index) => ({
+    key: budgetVersionKey(item.version), label: budgetVersionLabel(item), color: BUDGET_COLORS.sellOut,
+    connectNulls: false, ...VERSION_STYLES[index],
+  }));
+}
+
+/**
+ * The years Budget planning offers: this year and next, those with an
+ * Initial Yearly Forecast (initial-status `forecast_year`s). Next year's
+ * appears from about September; with no status (a failed read) both are offered.
+ *
+ * @param {{ forecast_year: number | string }[]} initialStatus
+ * @param {number} thisYear
+ */
+export function budgetYears(initialStatus, thisYear) {
+  const candidates = [thisYear, thisYear + 1];
+  const known = new Set((initialStatus ?? []).map((item) => Number(item.forecast_year)));
+  const available = candidates.filter((year) => known.has(year));
+  return available.length ? available : candidates;
 }

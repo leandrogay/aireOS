@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from functools import lru_cache
 
 from sqlalchemy import text
@@ -48,7 +48,7 @@ class BudgetSetupRequiredError(Exception):
 
 BUDGET_SETUP_DETAIL = (
     "Budget planning is not enabled on this database yet. A database owner must apply "
-    "backend/migrations/026_budget_planning.sql. Current forecast mode remains available."
+    "backend/migrations/026_budget_planning.sql, 027_budget_versions.sql and 028_budget_version_deletion.sql. Current forecast mode remains available."
 )
 
 
@@ -75,15 +75,20 @@ def require_plan(conn: Connection, table: str, plan: str) -> bool:
 
 
 def has_budget_tables(conn: Connection) -> bool:
-    """Both snapshot tables must exist before reading a locked Budget line."""
+    """Both snapshot tables, with 027's official version and 028's deletion, must exist before reading a locked Budget line."""
     return bool(conn.execute(text("""
         SELECT to_regclass('public.budget_snapshots') IS NOT NULL
             AND to_regclass('public.budget_snapshot_rows') IS NOT NULL
+            AND (
+                SELECT COUNT(*) FROM pg_attribute
+                WHERE attrelid = to_regclass('public.budget_snapshots')
+                    AND attname IN ('is_official', 'deleted_at') AND NOT attisdropped
+            ) = 2
     """)).scalar_one())
 
 
 def require_budget_schema(conn: Connection) -> None:
-    """Refuse locking before every part of migration 026 is present."""
+    """Refuse budget writes before every part of migrations 026-028 is present."""
     for table in _ITEM_TABLES:
         require_plan(conn, table, "budget")
     if not has_budget_tables(conn):
@@ -177,6 +182,20 @@ def excluded_pairs_select(alias: str) -> str:
 def iso(value: datetime | None) -> str | None:
     # TIMESTAMPTZ comes back timezone-aware, so the offset is kept.
     return value.isoformat() if value is not None else None
+
+
+def year_scope(alias: str, year: int | None) -> tuple[str, dict]:
+    """
+    The SQL condition and parameters for one budget year's entries: those
+    whose months fall in it (a budget entry never spans two years, see the
+    schemas). No year = no condition.
+    """
+    if year is None:
+        return "", {}
+    return (
+        f"AND {alias}.start_month <= :year_end AND {alias}.end_month >= :year_start",
+        {"year_start": date(year, 1, 1), "year_end": date(year, 12, 1)},
+    )
 
 
 def validate_plan(plan: str) -> None:

@@ -149,26 +149,28 @@ def _fetch_promotion(conn: Connection, promotion_id: int, has_plan: bool = True)
     return _promotion_view(dict(row)) if row is not None else None
 
 
-def list_scenario_promotions(plan: str = "scenario") -> list[dict]:
-    """Every saved Scenario promotion, newest first; the page filters them itself."""
+def list_scenario_promotions(plan: str = "scenario", year: int | None = None) -> list[dict]:
+    """Every saved Scenario promotion of a plan (or of one budget year), newest first; the page filters them itself."""
     common.validate_plan(plan)
 
     with common.read_connection() as conn:
         has_plan = common.require_plan(conn, "scenario_promotions", plan)
         scope = "promotion.plan = :plan" if has_plan else "TRUE"
+        # Budget planning reads one year's entries at a time.
+        year_condition, year_params = common.year_scope("promotion", year)
         rows = conn.execute(
             text(
                 f"""
                 {_select_for_schema(has_plan)}
 
-                WHERE {scope}
+                WHERE {scope} {year_condition}
 
                 ORDER BY
                     promotion.created_at DESC,
                     promotion.promotion_id DESC
                 """
             ),
-            {"plan": plan},
+            {"plan": plan, **year_params},
         ).mappings().all()
 
     return [_promotion_view(dict(row)) for row in rows]
@@ -244,72 +246,76 @@ def _write_params(conn: Connection, promotion: dict) -> dict:
 # ============================================================
 
 
+def insert_scenario_promotion(conn: Connection, promotion: dict, has_plan: bool = True) -> int:
+    """Insert one Scenario promotion inside the caller's transaction; its new id. Budget versions copy promotions back through it."""
+    plan_column = "plan," if has_plan else ""
+    plan_value = ":plan," if has_plan else ""
+    return conn.execute(
+        text(
+            f"""
+            INSERT INTO scenario_promotions (
+                {plan_column}
+                customer_id,
+                customer_ids,
+                excluded_pairs,
+                references_by_customer,
+                sku_ranges,
+                sku,
+                promo_type,
+                mechanic_key,
+                mechanic_label,
+                reference_uplift_pct,
+                reference_source,
+                reference_by_sku,
+                override_uplift_pct,
+                voucher,
+                voucher_uplift_pct,
+                voucher_by_sku,
+                explanation,
+                start_month,
+                end_month,
+                start_date,
+                end_date,
+                is_active
+            )
+            VALUES (
+                {plan_value}
+                :customer_id,
+                CAST(:customer_ids AS INTEGER[]),
+                CAST(:excluded_pairs AS JSONB),
+                CAST(:references_by_customer AS JSONB),
+                CAST(:sku_ranges AS TEXT[]),
+                :sku,
+                :promo_type,
+                :mechanic_key,
+                :mechanic_label,
+                :reference_uplift_pct,
+                :reference_source,
+                CAST(:reference_by_sku AS JSONB),
+                :override_uplift_pct,
+                :voucher,
+                :voucher_uplift_pct,
+                CAST(:voucher_by_sku AS JSONB),
+                :explanation,
+                :start_month,
+                :end_month,
+                :start_date,
+                :end_date,
+                :is_active
+            )
+            RETURNING promotion_id
+            """
+        ),
+        _write_params(conn, promotion),
+    ).scalar_one()
+
+
 def create_scenario_promotion(promotion: dict) -> dict:
     """Save a new Scenario promotion and return it as the list returns it."""
 
     with common.get_engine().begin() as conn:
         has_plan = common.require_plan(conn, "scenario_promotions", promotion.get("plan", "scenario"))
-        plan_column = "plan," if has_plan else ""
-        plan_value = ":plan," if has_plan else ""
-        promotion_id = conn.execute(
-            text(
-                f"""
-                INSERT INTO scenario_promotions (
-                    {plan_column}
-                    customer_id,
-                    customer_ids,
-                    excluded_pairs,
-                    references_by_customer,
-                    sku_ranges,
-                    sku,
-                    promo_type,
-                    mechanic_key,
-                    mechanic_label,
-                    reference_uplift_pct,
-                    reference_source,
-                    reference_by_sku,
-                    override_uplift_pct,
-                    voucher,
-                    voucher_uplift_pct,
-                    voucher_by_sku,
-                    explanation,
-                    start_month,
-                    end_month,
-                    start_date,
-                    end_date,
-                    is_active
-                )
-                VALUES (
-                    {plan_value}
-                    :customer_id,
-                    CAST(:customer_ids AS INTEGER[]),
-                    CAST(:excluded_pairs AS JSONB),
-                    CAST(:references_by_customer AS JSONB),
-                    CAST(:sku_ranges AS TEXT[]),
-                    :sku,
-                    :promo_type,
-                    :mechanic_key,
-                    :mechanic_label,
-                    :reference_uplift_pct,
-                    :reference_source,
-                    CAST(:reference_by_sku AS JSONB),
-                    :override_uplift_pct,
-                    :voucher,
-                    :voucher_uplift_pct,
-                    CAST(:voucher_by_sku AS JSONB),
-                    :explanation,
-                    :start_month,
-                    :end_month,
-                    :start_date,
-                    :end_date,
-                    :is_active
-                )
-                RETURNING promotion_id
-                """
-            ),
-            _write_params(conn, promotion),
-        ).scalar_one()
-
+        promotion_id = insert_scenario_promotion(conn, promotion, has_plan)
         return _fetch_promotion(conn, promotion_id, has_plan)
 
 

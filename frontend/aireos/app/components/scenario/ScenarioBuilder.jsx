@@ -3,7 +3,7 @@
 import { useState } from 'react';
 
 import BudgetLockControl from '@/components/scenario/BudgetLockControl';
-import { initialBudgetRows, initialSplitProblem } from '@/app/utils/budgetPlanning';
+import { budgetVersionKey, budgetVersionSeries, initialBudgetRows, initialSplitProblem, withBudgetPoints } from '@/app/utils/budgetPlanning';
 import { cn } from '@/lib/utils';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import ForecastChart from '@/components/forecast/ForecastChart';
@@ -21,7 +21,6 @@ import ScenarioTotals from '@/components/scenario/ScenarioTotals';
 import ScenarioYearComparison from '@/components/scenario/ScenarioYearComparison';
 import FrozenBaselinePanel, { COMPOSITION_LAYERS } from '@/components/scenario/FrozenBaselinePanel';
 import Tier0Details from '@/components/scenario/Tier0Details';
-import { nextYearDateRange } from '@/app/utils/dateRange';
 import { FORECAST_TIER_OPTIONS } from '@/app/utils/forecastLineText';
 import { DEFAULT_TIER } from '@/app/utils/forecastTiers';
 import { customerLabel, customersLabel } from '@/app/utils/retailerLabel';
@@ -33,7 +32,6 @@ import {
   buildMonthlyPoints,
   sumHorizonForecast,
   toggleSelectedValue,
-  toggleSeriesVisibility,
 } from '@/app/utils/forecastView';
 import {
   SIMULATED_SERIES,
@@ -75,6 +73,7 @@ import useForecastView from '@/hooks/useForecastView';
 import useForecastYearTotals from '@/hooks/useForecastYearTotals';
 import usePromoAnchors from '@/hooks/usePromoAnchors';
 import usePromoUpliftCalc from '@/hooks/usePromoUpliftCalc';
+import useBudgetVersions from '@/hooks/useBudgetVersions';
 import useConfirmAction from '@/hooks/useConfirmAction';
 import useExpandedRows from '@/hooks/useExpandedRows';
 import useScenarioBlocks from '@/hooks/useScenarioBlocks';
@@ -160,9 +159,10 @@ function partsInMonths(monthCells, months) {
  * items. Saving a block never changes the Current forecast: only the
  * Simulated line reads them.
  */
-export default function ScenarioBuilder({ plan = 'scenario', budgetYear } = {}) {
+export default function ScenarioBuilder({ plan = 'scenario', budgetYear, onBudgetRestarted } = {}) {
   const budget = plan === 'budget';
-  const filters = useForecastFilters({ defaultRange: budget ? () => ({ start: `${budgetYear}-01-01`, end: `${budgetYear}-12-01` }) : nextYearDateRange, sessionKey: `${SCENARIO_DATE_SESSION_KEY}.${plan}` });
+  // Current forecast opens on this year (the hook's default); Budget planning on the budget year.
+  const filters = useForecastFilters({ defaultRange: budget ? () => ({ start: `${budgetYear}-01-01`, end: `${budgetYear}-12-01` }) : undefined, sessionKey: `${SCENARIO_DATE_SESSION_KEY}.${plan}${budget ? `.${budgetYear}` : ''}` });
   // Planned by SKU range, not SKU: the filter, blocks and growth all follow
   // ranges. productName stays '' here (promotions still pick one SKU).
   const { productName, skuRange, customerName, startDate, endDate, ready } = filters;
@@ -173,6 +173,9 @@ export default function ScenarioBuilder({ plan = 'scenario', budgetYear } = {}) 
     [SIMULATED_SERIES.key]: true,
   });
   const [panelCollapsed, setPanelCollapsed] = useState(false);
+  // Locked budget versions drawn beside the draft to compare ({ version, name }, in the order picked).
+  const [comparedVersions, setComparedVersions] = useState([]);
+  const compared = useBudgetVersions({ year: budgetYear, versions: budget ? comparedVersions.map((item) => item.version) : [] });
   const [compositionSpotlight, setCompositionSpotlight] = useState(null);
   // The panel's tab, here so opening a block from the Monthly plan shows it.
   const [panelTab, setPanelTab] = useState('breakdown');
@@ -189,9 +192,10 @@ export default function ScenarioBuilder({ plan = 'scenario', budgetYear } = {}) 
   const { freshness } = view.data;
   const initialBasis = new Map([...new Set(fullInitial.map((row) => row.customer_name))].map((name) =>
     [name, { startMonth: `${budgetYear}-01-01`, endMonth: `${budgetYear}-12-01`, rows: fullInitial.filter((row) => row.customer_name === name) }]));
-  const scenarioBlocks = useScenarioBlocks({ plan });
+  // Budget planning works on one year's entries.
+  const scenarioBlocks = useScenarioBlocks({ plan, year: budget ? budgetYear : null });
   // Planned promotions: saved like blocks (hooks/useScenarioPromotions.js).
-  const scenarioPromotions = useScenarioPromotions({ plan });
+  const scenarioPromotions = useScenarioPromotions({ plan, year: budget ? budgetYear : null });
   // The uplifts Promotion Uplift Settings has worked out now: promotions take
   // these per product and month (scenarioLiveUplifts.js), else their saved values.
   const calculated = usePromoUpliftCalc();
@@ -256,6 +260,8 @@ export default function ScenarioBuilder({ plan = 'scenario', budgetYear } = {}) 
   // Volume only (scenarioEngine.js): the chart, tables and impact strip all
   // read units.
   const singleSeries = Boolean(productName && customerName);
+  // What the base line is called in the legend and the tables.
+  const baseLabel = budget ? 'Initial base' : 'Current forecast';
   const basePoints = buildMonthlyPoints(rows, actuals, 'units', { singleSeries });
 
   // Only switched-on blocks and promotions count, on the chart and in the tables.
@@ -268,10 +274,11 @@ export default function ScenarioBuilder({ plan = 'scenario', budgetYear } = {}) 
   const budgetReady = !budget || Boolean(tier0Breakdown.data && !tier0Breakdown.loading && !budgetSplitError);
   const tier0Split = tier0Breakdown.data && !budgetSplitError ? tier0SplitIndex(tier0Breakdown.data) : null;
   // Everything switched on counts; the official promotions whenever the
-  // split is in.
+  // split is in. Growth is the budget's only: Current forecast's Tier 0
+  // already follows recent sales, so growth saved in that mode is ignored.
   const counted = {
     official: !budget && tier0Split ? [OFFICIAL_ITEM] : [],
-    growth: budgetReady ? activeScenarioBlocks(growthBlocks) : [],
+    growth: budget && budgetReady ? activeScenarioBlocks(growthBlocks) : [],
     blocks: budgetReady ? activeScenarioBlocks(allBlocks) : [],
     promotions: budgetReady ? withLiveIndex(activePromotions, liveIndex) : [],
   };
@@ -326,11 +333,18 @@ export default function ScenarioBuilder({ plan = 'scenario', budgetYear } = {}) 
   const pastMonths = basePoints.filter((point) => point.actual != null && point.current == null).map((point) => point.month_year);
   const rangeOf = Object.fromEntries(rows.map((row) => [row.product_name, row.sku_range ?? null]));
   const milestones = milestoneBreakdown(actuals, activeScenarioBlocks(allBlocks), rangeOf);
-  const chartPoints = (hasSimulated ? withSimulatedLine(basePoints, byMonth) : basePoints).map((point) => {
+  const composedPoints = (hasSimulated ? withSimulatedLine(basePoints, byMonth) : basePoints).map((point) => {
     const composed = withComposition(point, [...(monthCells.get(point.month_year)?.values() ?? [])], monthSplits.get(point.month_year) ?? null);
     const milestone = milestones.get(point.month_year);
     return milestone ? { ...composed, milestones: milestone } : composed;
   });
+  // Compared locked versions, each totalled in the chart's scope under its own
+  // key; one shows until its legend pill is switched off.
+  const versionSeries = budgetVersionSeries(comparedVersions);
+  const shownSeries = { ...Object.fromEntries(versionSeries.map((series) => [series.key, true])), ...visibleSeries };
+  const chartPoints = versionSeries.reduce((points, series, index) => withBudgetPoints(points,
+    compared.data[comparedVersions[index].version] ?? [], { productName, customerName, skuRange, startDate, endDate },
+    undefined, budgetVersionKey(comparedVersions[index].version)), composedPoints);
   // Each month's parts, for the Monthly plan, and the months the promotions
   // planned move by more than 35% of Tier 0 (Big change).
   const breakdowns = new Map(chartPoints.filter((point) => point.breakdown).map((point) => [point.month_year, point.breakdown]));
@@ -530,7 +544,10 @@ export default function ScenarioBuilder({ plan = 'scenario', budgetYear } = {}) 
     <div className="space-y-3">
       {budget ? <BudgetLockControl year={budgetYear} unsaved={scenarioBlocks.unsavedCount + scenarioPromotions.unsavedCount}
         loading={view.loading || scenarioBlocks.loading || scenarioPromotions.loading || tier0Breakdown.loading || promotionEditor.saving || promotionEditor.togglingIds.length > 0} hasInitial={fullInitial.length > 0}
-        loadError={view.error ?? scenarioBlocks.error ?? scenarioPromotions.error ?? promotionEditor.error ?? budgetSplitError} /> : null}
+        loadError={view.error ?? scenarioBlocks.error ?? scenarioPromotions.error ?? promotionEditor.error ?? budgetSplitError}
+        entryCount={scenarioBlocks.blocks.filter((block) => block.blockId != null).length + scenarioPromotions.promotions.filter((promotion) => promotion.promotionId != null).length}
+        compared={comparedVersions} onComparedChange={setComparedVersions} compareError={compared.error}
+        onRestarted={onBudgetRestarted} /> : null}
       {error && (
         <p className="rounded-md border border-violet bg-lavander/50 px-3 py-2 text-sm text-deep-violet-blue">
           {error}
@@ -542,13 +559,16 @@ export default function ScenarioBuilder({ plan = 'scenario', budgetYear } = {}) 
           'grid items-start gap-3',
           panelCollapsed
             ? 'min-[1100px]:grid-cols-[minmax(0,1fr)_56px]'
-            : 'min-[1100px]:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)] min-[1100px]:items-stretch'
+            // A capped panel width leaves the chart card room for the Monthly plan's columns.
+            : 'min-[1100px]:grid-cols-[minmax(0,1fr)_minmax(300px,340px)] min-[1100px]:items-stretch'
         )}
       >
         <div className="min-w-0 space-y-3 min-[1100px]:flex min-[1100px]:flex-col min-[1100px]:[&>[data-slot=card]]:flex-1">
           <ForecastChart
           points={chartPoints}
-            baseSeries={budget ? FORECAST_SERIES.filter((series) => series.key === 'current').map((series) => ({ ...series, label: 'Initial base' })) : undefined}
+            baseSeries={budget
+              ? FORECAST_SERIES.filter((series) => series.key === 'current').map((series) => ({ ...series, label: baseLabel }))
+              : FORECAST_SERIES.map((series) => (series.key === 'current' ? { ...series, label: baseLabel } : series))}
             startDate={startDate}
             endDate={endDate}
             metric="units"
@@ -580,14 +600,14 @@ export default function ScenarioBuilder({ plan = 'scenario', budgetYear } = {}) 
                 yearTable={
                   <ScenarioYearComparison
                     rows={comparisonRows}
-                    baseLabel={budget ? 'Initial base' : 'Current'}
+                    baseLabel={baseLabel}
                     loading={yearTotalsLoading || view.loading}
                   />
                 }
                 monthlyPlan={
                   <MonthlyPlan
                     allowOfficialPlanning={!budget}
-                    baseLabel={budget ? 'Initial base' : 'Current'}
+                    baseLabel={baseLabel}
                     ready={ready}
                     productName={productName}
                     skuRange={skuRange}
@@ -622,8 +642,9 @@ export default function ScenarioBuilder({ plan = 'scenario', budgetYear } = {}) 
             onTogglePromoType={(value) => setSelectedPromoTypes((current) => toggleSelectedValue(current, value))}
             selectedPackTypes={selectedPackTypes}
             onTogglePackType={(value) => setSelectedPackTypes((current) => toggleSelectedValue(current, value))}
-            visibleSeries={visibleSeries}
-            onToggleSeries={(key) => setVisibleSeries((current) => toggleSeriesVisibility(current, key))}
+            extraSeries={versionSeries}
+            visibleSeries={shownSeries}
+            onToggleSeries={(key) => setVisibleSeries((current) => ({ ...current, [key]: !shownSeries[key] }))}
             lastRun={budget ? freshness.initial_generated_at : freshness.current_generated_at}
             salesLabel={customerName ? `${customerText} sales` : 'All customers sales'}
             salesLoadedAt={freshness.latest_sales_loaded_at}
@@ -660,7 +681,7 @@ export default function ScenarioBuilder({ plan = 'scenario', budgetYear } = {}) 
               plan={plan}
               tier0Split={tier0SplitState}
               growthSection={
-                scenarioBlocks.loading ? (
+                !budget ? null : scenarioBlocks.loading ? (
                   <p className="text-xs text-deep-violet-blue/60">Loading growth…</p>
                 ) : (
                   <GrowthControl
@@ -729,7 +750,7 @@ export default function ScenarioBuilder({ plan = 'scenario', budgetYear } = {}) 
 
       <BlockTable
         blocks={savedBlocks}
-        baseLabel={budget ? 'Initial base' : 'Current'}
+        baseLabel={baseLabel}
         impacts={byItem}
         monthsByItem={monthsByItem}
         isLoading={scenarioBlocks.loading}
@@ -749,7 +770,7 @@ export default function ScenarioBuilder({ plan = 'scenario', budgetYear } = {}) 
 
       <PromotionTable items={scenarioPromotions.promotions} editor={promotionEditor} impacts={byItem}
         monthsByItem={monthsByItem} liveIndex={liveIndex} onEdit={editSavedPromotion} onRefresh={scenarioPromotions.refresh}
-        isLoading={scenarioPromotions.loading} error={scenarioPromotions.error} baseLabel={budget ? 'Initial base' : 'Current'}
+        isLoading={scenarioPromotions.loading} error={scenarioPromotions.error} baseLabel={baseLabel}
         previewReady={budgetReady} showNotice={panelTab !== 'promotions'} />
 
       <ConfirmDialog

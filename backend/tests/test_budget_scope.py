@@ -30,6 +30,19 @@ def test_budget_lists_and_deletes_bind_the_plan_and_default_to_scenario(monkeypa
     assert conn.calls[-1][1] == {"plan": "scenario"}
 
 
+@pytest.mark.parametrize("service,listing,alias", [
+    (building_blocks, "list_building_blocks", "block"),
+    (promotions, "list_scenario_promotions", "promotion"),
+])
+def test_a_budget_list_for_one_year_reads_only_that_years_entries(monkeypatch, service, listing, alias):
+    conn = FakeConnection()
+    monkeypatch.setattr(common, "read_connection", lambda: FakeEngine(conn))
+    getattr(service, listing)("budget", 2028)
+    sql, params = conn.calls[-1]
+    assert f"{alias}.start_month <= :year_end AND {alias}.end_month >= :year_start" in sql
+    assert params == {"plan": "budget", "year_start": date(2028, 1, 1), "year_end": date(2028, 12, 1)}
+
+
 def test_updates_cannot_move_a_scenario_into_a_budget(monkeypatch):
     conn = FakeConnection()
     monkeypatch.setattr(common, "get_engine", lambda: FakeEngine(conn))

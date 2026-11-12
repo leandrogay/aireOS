@@ -14,14 +14,17 @@ import { request } from '@/app/services/promotionsApi';
 const BASE_PATH = '/api/scenario/promotions';
 
 /**
- * GET /api/scenario/promotions
+ * GET /api/scenario/promotions?plan=&year=
  *
  * Every saved Scenario promotion, newest first.
  *
  * @returns {Promise<Array<{ promotion_id: number, customer_name: string, sku_ranges: string[] | null, sku: string | null, product_name: string | null, promo_type: string, mechanic_key: string, mechanic_label: string, reference_uplift_pct: number, reference_source: string, reference_by_sku: Record<string, number>, override_uplift_pct: number | null, voucher: boolean, voucher_uplift_pct: number, voucher_by_sku: Record<string, number>, explanation: string | null, start_month: string, end_month: string, start_date: string | null, end_date: string | null, is_active: boolean, created_at: string, updated_at: string }>>}
  */
-export async function getScenarioPromotions(plan = 'scenario') {
-  return request(`${BASE_PATH}?${new URLSearchParams({ plan })}`);
+export async function getScenarioPromotions(plan = 'scenario', year = null) {
+  // Budget planning reads one year's entries at a time.
+  const params = new URLSearchParams({ plan });
+  if (year) params.set('year', year);
+  return request(`${BASE_PATH}?${params}`);
 }
 
 /**

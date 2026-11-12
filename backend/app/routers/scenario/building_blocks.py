@@ -1,6 +1,6 @@
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from google.auth.exceptions import GoogleAuthError
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
@@ -35,9 +35,10 @@ def _database_error(e: Exception) -> HTTPException:
 
 
 @router.get("")
-def list_building_blocks(plan: Literal["scenario", "budget"] = "scenario"):
+def list_building_blocks(plan: Literal["scenario", "budget"] = "scenario", year: int | None = Query(None, ge=2000, le=2100)):
     try:
-        return building_blocks_service.list_building_blocks() if plan == "scenario" else building_blocks_service.list_building_blocks(plan)
+        # Budget planning lists one year's entries (year); Current forecast has no years.
+        return building_blocks_service.list_building_blocks() if plan == "scenario" else building_blocks_service.list_building_blocks(plan, year)
 
     except common.BudgetSetupRequiredError as e:
         raise HTTPException(status_code=503, detail=str(e))

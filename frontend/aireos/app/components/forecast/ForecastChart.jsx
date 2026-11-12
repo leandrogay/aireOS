@@ -271,12 +271,14 @@ function CompositionLabels({ rows, visible, spotlight }) {
         const bands = bandLabels(point, visible)
           .filter((band) => isSpotlightLayer(band.key, spotlight))
           .map((band) => ({ ...band, top: yScale(band.high), bottom: yScale(band.low) }))
-          .filter((band) => band.bottom - band.top >= MIN_LABEL_PX)
+          // A spotlit part is labelled even when its band is too thin to see
+          // (a few units on a chart of thousands), just above the band.
+          .filter((band) => spotlight || band.bottom - band.top >= MIN_LABEL_PX)
           .map((band) => (
             <text
               key={`${point.x}-${band.key}`}
               x={x}
-              y={(band.top + band.bottom) / 2}
+              y={band.bottom - band.top >= MIN_LABEL_PX ? (band.top + band.bottom) / 2 : band.top - 6}
               textAnchor="middle"
               dominantBaseline="middle"
               className="fill-deep-violet-blue/80 text-[9px] tabular-nums"
@@ -828,15 +830,19 @@ export default function ForecastChart({
                       }}
                     />
                   ) : null}
+                  {/* Spotlighting scenario promotions in the Breakdown tab fills
+                      their boxes; another part's spotlight fades them. */}
                   {scenarioBands.map((band) => (
                     <ReferenceArea
                       key={band.key}
                       x1={band.x1}
                       x2={band.x2}
-                      fill="none"
+                      fill={scenario?.compositionSpotlight === 'promotions' ? band.color : 'none'}
+                      fillOpacity={0.12}
                       stroke={band.color}
+                      strokeOpacity={scenario?.compositionSpotlight && scenario.compositionSpotlight !== 'promotions' ? 0.25 : 1}
                       strokeDasharray="4 3"
-                      strokeWidth={1.5}
+                      strokeWidth={scenario?.compositionSpotlight === 'promotions' ? 2.5 : 1.5}
                       ifOverflow="visible"
                     />
                   ))}

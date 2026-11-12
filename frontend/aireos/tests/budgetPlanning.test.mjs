@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { initialBudgetRows, initialSplitProblem, withBudgetPoints } from '../app/utils/budgetPlanning.js';
+import { MAX_COMPARED_VERSIONS, budgetYears, budgetVersionKey, budgetVersionSeries, initialBudgetRows, initialSplitProblem, withBudgetPoints } from '../app/utils/budgetPlanning.js';
 import { promotionCells, tier0SplitIndex } from '../app/utils/scenarioTier0Split.js';
 
 test('budget simulation uses Initial and excludes series without it, without changing the original forecast', () => {
@@ -49,4 +49,23 @@ test('preview reconciliation rejects a Current split or a different Initial snap
 test('missing source history reports the server explanation and blocks Budget preview', () => {
   const error = initialSplitProblem({ basis: 'initial', rows: [], unavailable: [{ reason: 'No recorded data cut-off' }] }, [initialRow]);
   assert.match(error, /No recorded data cut-off/);
+});
+
+test('a compared version is totalled under its own key, leaving the Budget line alone', () => {
+  const rows = [{ month_year: '2027-01-01', units: 4, customer_name: 'FairPrice' }, { month_year: '2027-01-01', units: 6, customer_name: 'Sheng' }];
+  const points = withBudgetPoints([{ month_year: '2027-01-01', budget: 99 }], rows, { customerName: 'FairPrice' }, undefined, budgetVersionKey(2));
+  assert.deepEqual(points, [{ month_year: '2027-01-01', budget: 99, budget_v2: 4 }]);
+});
+
+test('compared versions are labelled by number and name, at most three, each with its own dash', () => {
+  const series = budgetVersionSeries([{ version: 1, name: 'Base case' }, { version: 3, name: null }, { version: 4 }, { version: 5 }]);
+  assert.deepEqual(series.map((item) => item.label), ['Version 1 · Base case', 'Version 3', 'Version 4']);
+  assert.equal(new Set(series.map((item) => item.dash)).size, MAX_COMPARED_VERSIONS);
+  assert.equal(series[1].key, 'budget_v3');
+});
+
+test('budget years are this year and next, once each has an Initial Yearly Forecast', () => {
+  assert.deepEqual(budgetYears([{ forecast_year: 2026 }], 2026), [2026]);
+  assert.deepEqual(budgetYears([{ forecast_year: '2026' }, { forecast_year: 2027 }, { forecast_year: 2025 }], 2026), [2026, 2027]);
+  assert.deepEqual(budgetYears([], 2026), [2026, 2027]);
 });

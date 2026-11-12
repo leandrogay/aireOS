@@ -113,26 +113,28 @@ def _fetch_block(conn: Connection, block_id: int, has_plan: bool = True) -> dict
     return _block_view(dict(row)) if row is not None else None
 
 
-def list_building_blocks(plan: str = "scenario") -> list[dict]:
-    """Every saved building block, newest first; the page filters them itself."""
+def list_building_blocks(plan: str = "scenario", year: int | None = None) -> list[dict]:
+    """Every saved building block of a plan (or of one budget year), newest first; the page filters them itself."""
     common.validate_plan(plan)
 
     with common.read_connection() as conn:
         has_plan = common.require_plan(conn, "scenario_building_blocks", plan)
         scope = "block.plan = :plan" if has_plan else "TRUE"
+        # Budget planning reads one year's entries at a time.
+        year_condition, year_params = common.year_scope("block", year)
         rows = conn.execute(
             text(
                 f"""
                 {_select_for_schema(has_plan)}
 
-                WHERE {scope}
+                WHERE {scope} {year_condition}
 
                 ORDER BY
                     block.created_at DESC,
                     block.block_id DESC
                 """
             ),
-            {"plan": plan},
+            {"plan": plan, **year_params},
         ).mappings().all()
 
     return [_block_view(dict(row)) for row in rows]
@@ -401,57 +403,61 @@ def _write_params(conn: Connection, block: dict) -> dict:
 # ============================================================
 
 
+def insert_building_block(conn: Connection, block: dict, has_plan: bool = True) -> int:
+    """Insert one building block inside the caller's transaction; its new id. Budget versions copy blocks back through it."""
+    params = _write_params(conn, block)
+    _ensure_one_growth_per_year(conn, block, params, None, has_plan)
+
+    plan_column = "plan," if has_plan else ""
+    plan_value = ":plan," if has_plan else ""
+    return conn.execute(
+        text(
+            f"""
+            INSERT INTO scenario_building_blocks (
+                {plan_column}
+                kind,
+                customer_id,
+                customer_ids,
+                sku_ranges,
+                excluded_pairs,
+                sku,
+                name,
+                explanation,
+                uplift_mode,
+                uplift_value,
+                start_month,
+                end_month,
+                is_active
+            )
+            VALUES (
+                {plan_value}
+                :kind,
+                :customer_id,
+                CAST(:customer_ids AS INTEGER[]),
+                CAST(:sku_ranges AS TEXT[]),
+                CAST(:excluded_pairs AS JSONB),
+                :sku,
+                :name,
+                :explanation,
+                :uplift_mode,
+                :uplift_value,
+                :start_month,
+                :end_month,
+                :is_active
+            )
+            RETURNING block_id
+            """
+        ),
+        params,
+    ).scalar_one()
+
+
 def create_building_block(block: dict) -> dict:
     """Save a new building block and return it as the list returns it."""
 
     with common.get_engine().begin() as conn:
         has_plan = common.require_plan(conn, "scenario_building_blocks", block.get("plan", "scenario"))
-        params = _write_params(conn, block)
-        _ensure_one_growth_per_year(conn, block, params, None, has_plan)
-
-        plan_column = "plan," if has_plan else ""
-        plan_value = ":plan," if has_plan else ""
-        block_id = conn.execute(
-            text(
-                f"""
-                INSERT INTO scenario_building_blocks (
-                    {plan_column}
-                    kind,
-                    customer_id,
-                    customer_ids,
-                    sku_ranges,
-                    excluded_pairs,
-                    sku,
-                    name,
-                    explanation,
-                    uplift_mode,
-                    uplift_value,
-                    start_month,
-                    end_month,
-                    is_active
-                )
-                VALUES (
-                    {plan_value}
-                    :kind,
-                    :customer_id,
-                    CAST(:customer_ids AS INTEGER[]),
-                    CAST(:sku_ranges AS TEXT[]),
-                    CAST(:excluded_pairs AS JSONB),
-                    :sku,
-                    :name,
-                    :explanation,
-                    :uplift_mode,
-                    :uplift_value,
-                    :start_month,
-                    :end_month,
-                    :is_active
-                )
-                RETURNING block_id
-                """
-            ),
-            params,
-        ).scalar_one()
-
+        block_id = insert_building_block(conn, block, has_plan)
         return _fetch_block(conn, block_id, has_plan)
 
 

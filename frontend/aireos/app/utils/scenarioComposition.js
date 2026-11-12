@@ -66,8 +66,10 @@ export const MIN_LABEL_SLOT_PX = 34;
 // in hue (growth / Current, scenario promotions / Initial, blocks /
 // Simulated), but those are faint labelled fills, not lines.
 export const PART_COLORS = {
-  baseline: '#9CA3AF',
-  carried: '#374151',
+  // Cyan, a hue no line or overlay uses, so the baseline isn't read as the Actual line.
+  baseline: '#38B2CC',
+  // Deep violet, well apart from the Actual line's navy (#3A4369).
+  carried: '#5B21B6',
   official: '#2A78D6',
   growth: '#3F8F3A',
   blocks: '#E87BA4',

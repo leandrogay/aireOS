@@ -37,18 +37,19 @@ import { mergeScenarioItems } from '@/app/utils/scenarioSavedItems';
  *   refresh: () => void,
  * }}
  */
-export default function useScenarioPromotions({ plan = 'scenario' } = {}) {
+export default function useScenarioPromotions({ plan = 'scenario', year = null } = {}) {
   const [promotions, setPromotions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
-  const requests = useRef({ plan, revision: 0 });
+  // A new plan or budget year starts a new list, so an older reply is dropped.
+  const requests = useRef({ plan, year, revision: 0 });
   const unsavedCount = promotions.filter(hasUnsavedPromotionChanges).length;
 
   useEffect(() => {
     let cancelled = false;
-    if (requests.current.plan !== plan) {
-      requests.current = { plan, revision: requests.current.revision + 1 };
+    if (requests.current.plan !== plan || requests.current.year !== year) {
+      requests.current = { plan, year, revision: requests.current.revision + 1 };
       setPromotions([]);
     }
     const revision = requests.current.revision;
@@ -56,7 +57,7 @@ export default function useScenarioPromotions({ plan = 'scenario' } = {}) {
     async function load() {
       setLoading(true);
       try {
-        const rows = await getScenarioPromotions(plan);
+        const rows = await getScenarioPromotions(plan, year);
         if (!cancelled && revision === requests.current.revision) {
           setPromotions((current) => mergeScenarioItems(current, rows.map(scenarioPromotionFromApi), 'promotionId', hasUnsavedPromotionChanges));
           setError(null);
@@ -72,7 +73,7 @@ export default function useScenarioPromotions({ plan = 'scenario' } = {}) {
     return () => {
       cancelled = true;
     };
-  }, [plan, refreshKey]);
+  }, [plan, year, refreshKey]);
 
   // Warn before closing or reloading the tab while something is unsaved.
   useEffect(() => {

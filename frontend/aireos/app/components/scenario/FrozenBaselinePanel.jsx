@@ -68,7 +68,7 @@ const GROUP_CLASS = 'mt-2 text-[10px] font-bold uppercase tracking-wide text-dee
 
 /**
  * The Scenario builder's Breakdown tab: the growth control (a slot, since
- * it saves through the page's blocks) and what the Simulated line is made of
+ * it saves through the page's blocks; Budget planning only) and what the Simulated line is made of
  * over the months on the chart (scenarioComposition.breakdownTotals): what
  * the forecast already holds, then what is added here in the sidebar, each
  * with its chart band's colour. Month by month the same parts are the
@@ -109,16 +109,17 @@ export default function FrozenBaselinePanel({ plan = 'scenario', growthSection, 
                 plus promotion effects carried from its historical sales. Budget promotions replace the carried
                 effects for their covered share of a month. Growth and building blocks are adjustments to Initial.</>
             ) : (
-              <>The months on the chart added up. In the forecast: Tier 0 split into an ordinary month at the anchor and
-                the promotions it carries from last year, with official promotions from the Promotions page in their place.
-                You add: growth, building blocks and scenario promotions from this sidebar. Month by month, these are the
-                Monthly plan&apos;s columns.</>
+              <>The months on the chart added up. In the Current forecast: its Tier 0 split into an ordinary month at the
+                anchor and the promotions it carries from last year, with official promotions from the Promotions page in
+                their place. Tier 0 already follows recent sales, so there is no growth to add here. Your adjustments: building blocks
+                and scenario promotions from this sidebar. Month by month, these are the Monthly plan&apos;s columns.</>
             )}
           </InfoTooltip>
         </p>
         {totals.months.length ? (
           <>
-            <p className={GROUP_CLASS}>In the forecast</p>
+            {/* The baseline differs per tab: Tier 0 of the Current forecast here, Tier 0 of the Initial Yearly Forecast for a budget. */}
+            <p className={GROUP_CLASS}>{budget ? 'In the Initial Yearly Forecast · Tier 0' : 'In the Current forecast · Tier 0'}</p>
             <ul>
               {split ? (
                 <>
@@ -137,9 +138,9 @@ export default function FrozenBaselinePanel({ plan = 'scenario', growthSection, 
                   : <>The Initial breakdown is needed before budget adjustments can be previewed or locked.</>}
               </p>
             ) : null}
-            <p className={GROUP_CLASS}>{budget ? 'Your adjustments' : 'You add'}</p>
+            <p className={GROUP_CLASS}>Your adjustments</p>
             <ul>
-              <Part partKey="growth" onSpotlight={onSpotlight} color={PART_COLORS.growth} label="Growth" value={signedUnits(totals.growth)} />
+              {budget ? <Part partKey="growth" onSpotlight={onSpotlight} color={PART_COLORS.growth} label="Growth" value={signedUnits(totals.growth)} /> : null}
               <Part partKey="blocks" onSpotlight={onSpotlight} color={PART_COLORS.blocks} label="Building blocks" value={signedUnits(totals.blocks)} />
               <Part partKey="promotions" onSpotlight={onSpotlight} color={PART_COLORS.promotions} label="Scenario promotions" value={signedUnits(totals.promotions)} />
             </ul>

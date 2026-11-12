@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { getBudgets } from '@/app/services/budgetsApi';
 
-/** Latest locked Budget rows and history; refresh after a new lock. */
+/** Each year's official locked Budget rows (or one year's) and the version history; refresh after a lock or a change of official version. */
 export default function useBudgets({ year } = {}) {
   const [data, setData] = useState({ rows: [], history: [] });
   const [loading, setLoading] = useState(true);

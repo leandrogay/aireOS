@@ -52,6 +52,7 @@
 import { PROMO_OVERLAY_TYPES } from '@/app/utils/forecastView';
 import { levelLabel } from '@/app/utils/promoUpliftCalc';
 import { customersLabel } from '@/app/utils/retailerLabel';
+import { PART_COLORS } from '@/app/utils/scenarioComposition';
 import { coversCustomer, itemRows, pairExcluded } from '@/app/utils/scenarioEngine';
 import { promotionCells } from '@/app/utils/scenarioTier0Split';
 import { liveReferences, liveUplift, liveUpliftValues, weakestLevel } from '@/app/utils/scenarioLiveUplifts';
@@ -632,7 +633,8 @@ export const scenarioPromotionsSource = {
 
 /**
  * Outlined bands for draft promotions on the chart, one per promotion:
- * { key, startMonth, endMonth, color }, coloured by promotion type.
+ * { key, startMonth, endMonth, color }, in the scenario promotions' part
+ * colour (not the promotion type's) so they match the Breakdown tab.
  * ForecastChart draws them through its `scenario.promoBands` prop.
  *
  * @param {object[]} promotions the draft's promotions
@@ -640,15 +642,12 @@ export const scenarioPromotionsSource = {
 export function draftPromotionBands(promotions) {
   return promotions
     .filter((promotion) => promotion.startMonth && promotion.endMonth)
-    .map((promotion) => {
-      const type = PROMO_OVERLAY_TYPES.find((option) => option.value === promotion.promoType) ?? PROMO_OVERLAY_TYPES[0];
-      return {
-        key: promotion.id,
-        startMonth: promotion.startMonth,
-        endMonth: promotion.endMonth,
-        color: type.strokeColor ?? type.selectedBg,
-      };
-    });
+    .map((promotion) => ({
+      key: promotion.id,
+      startMonth: promotion.startMonth,
+      endMonth: promotion.endMonth,
+      color: PART_COLORS.promotions,
+    }));
 }
 
 // ============================================================
